@@ -1,0 +1,97 @@
+{
+  "source_label": "yula-bodrum-validation",
+  "source_accounts": [],
+  "extracted_at": "2026-05-22T10:44:51.871023Z",
+  "image_sample_count": 10,
+  "caption_sample_count": 0,
+  "palette": {
+    "primary": "#f5a25d",
+    "accent": "#2a7f8e",
+    "neutral": "#f3f1e7",
+    "shadow": "#2b2b2b",
+    "palette_description": "The palette evokes a warm, inviting Mediterranean atmosphere with sun-kissed oranges and deep ocean blues. It captures the essence of leisurely coastal living, blending vibrant energy with tranquil relaxation."
+  },
+  "typography": {
+    "heading_personality": "modern sans-serif, uppercase, wide tracking, bold weight",
+    "body_personality": "light sans-serif, lowercase, medium tracking",
+    "text_overlay_density": "minimal",
+    "typography_role": "used sparingly as poetic punctuation, enhancing the visual storytelling without overpowering the imagery"
+  },
+  "motion": {
+    "pace": "slow_observational",
+    "cuts_per_10_seconds_estimate": 2,
+    "camera_movement": "subtle parallax, slow push-ins, steady handheld shots",
+    "shot_grammar": "close-up of drinks and food, wide shots of the sea and environment, hands in frame"
+  },
+  "grading": {
+    "look": "golden_hour",
+    "lut_directive": "Emphasize warm tones with a slight golden cast, maintain moderate contrast, and enhance saturation to highlight the vibrancy of the scene, especially during sunset."
+  },
+  "audio": {
+    "mood": "chill_house",
+    "description": "The music should feel relaxed yet upbeat, complementing the leisurely and sophisticated coastal vibe with smooth, rhythmic beats."
+  },
+  "composition": {
+    "primary_pattern": "rule_of_thirds",
+    "framing_rules": "consistent use of natural frames like windows and doorways, emphasis on horizon lines, balanced negative space",
+    "subject_focus": "foregrounds drinks and food, with a backdrop of the sea or social gatherings"
+  },
+  "content_pillars_visual": [
+    "sunset over the sea",
+    "hands holding drinks",
+    "DJ performing by the water",
+    "intimate dining setups",
+    "vibrant cocktails against ocean views"
+  ],
+  "what_makes_this_agency_level": "The content captures a luxurious yet approachable lifestyle, using natural lighting and thoughtful composition to create a sense of place and mood. The seamless integration of environment and subject matter, along with a consistent color palette, elevates the visual storytelling to a professional level.",
+  "anti_patterns": [
+    "no neon graphic overlays",
+    "no excessive emojis in image",
+    "no over-saturated stock-photo look",
+    "no harsh artificial lighting",
+    "no cluttered compositions"
+  ],
+  "caption_voice": {},
+  "reference_frames": [
+    {
+      "url": "https://yulabodrum.com/galeri/1.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/2.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/3.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/4.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/6.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/8.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/9.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/14.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/15.webp",
+      "source_account": "yula-bodrum-validation"
+    },
+    {
+      "url": "https://yulabodrum.com/galeri/19.webp",
+      "source_account": "yula-bodrum-validation"
+    }
+  ]
+}

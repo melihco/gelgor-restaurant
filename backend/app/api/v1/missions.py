@@ -1,0 +1,586 @@
+"""
+Mission API — autonomous campaign orchestration endpoints.
+
+Endpoints:
+  GET  /{workspace_id}                        → list missions (filter by status)
+  POST /{workspace_id}/propose                → run StrategistAgent → persist proposals
+  GET  /{workspace_id}/{mission_id}           → full mission detail + all task nodes
+  GET  /{workspace_id}/{mission_id}/progress  → DAG progress (node-by-node status)
+  PUT  /{workspace_id}/{mission_id}/approve   → approve a proposed mission
+  PUT  /{workspace_id}/{mission_id}/reject    → reject a proposed mission
+  PUT  /{workspace_id}/{mission_id}/cancel    → cancel an in-flight mission
+
+All routes are workspace-scoped — a mission can only be read/mutated by
+the workspace that owns it (enforced via workspace_id FK check in service layer).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Any
+
+import structlog
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_db
+from app.models.mission import Mission, MissionTaskNode
+from app.schemas.mission import (
+    MissionApprove,
+    MissionReject,
+    MissionStatus,
+    TaskNodeStatus,
+)
+from app.services.mission_service import (
+    approve_mission,
+    get_ready_nodes,
+    list_missions,
+    reject_mission,
+)
+from app.services.strategist_service import propose_missions_for_workspace
+
+logger = structlog.get_logger()
+router = APIRouter()
+
+
+# ── Response models (inline — keeps this file self-contained) ─────────────────
+
+class NodeProgressItem(BaseModel):
+    node_key: str
+    title: str
+    phase_index: int
+    task_type: str
+    agent_role: str
+    depends_on: list[str]
+    status: str
+    is_ready: bool          # pending + all deps completed → ready to run
+    output_artifact_id: str | None
+    output_summary: str | None  # full agent output for UI display (up to 8000 chars)
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_message: str | None
+    retry_count: int
+
+
+class MissionProgressResponse(BaseModel):
+    mission_id: str
+    title: str
+    status: str
+    priority: str
+    confidence: float
+    timeline_days: int | None
+    total_nodes: int
+    completed_nodes: int
+    running_nodes: int
+    failed_nodes: int
+    pending_nodes: int
+    skipped_nodes: int
+    completion_pct: float       # completed / total * 100
+    nodes: list[NodeProgressItem]
+    created_at: datetime
+    approved_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class MissionSummaryItem(BaseModel):
+    id: str
+    title: str
+    type: str
+    trigger_signal: str | None
+    objective: str | None
+    timeline_days: int | None
+    priority: str
+    confidence: float
+    status: str
+    assigned_agent_roles: list[str] | None
+    total_nodes: int
+    completed_nodes: int
+    failed_nodes: int
+    completion_pct: float
+    created_at: datetime
+    approved_at: datetime | None
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class MissionDetailResponse(MissionSummaryItem):
+    trigger_evidence: str | None
+    creative_brief: str | None
+    phases: list[dict[str, Any]] | None
+    performance_summary: dict[str, Any] | None
+    rejected_at: datetime | None
+    rejected_reason: str | None
+    approved_by: str | None
+    nodes: list[NodeProgressItem]
+
+
+class ProposeMissionsResponse(BaseModel):
+    workspace_id: str
+    proposals_created: int
+    missions: list[dict[str, Any]]
+    message: str
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _compute_node_items(
+    nodes: list[MissionTaskNode],
+    ready_keys: set[str],
+) -> list[NodeProgressItem]:
+    return [
+        NodeProgressItem(
+            node_key=n.node_key,
+            title=n.title,
+            phase_index=n.phase_index,
+            task_type=n.task_type,
+            agent_role=n.agent_role,
+            depends_on=n.depends_on or [],
+            status=n.status,
+            is_ready=n.node_key in ready_keys,
+            output_artifact_id=n.output_artifact_id,
+            output_summary=n.output_summary,
+            started_at=n.started_at,
+            completed_at=n.completed_at,
+            error_message=n.error_message,
+            retry_count=n.retry_count,
+        )
+        for n in sorted(nodes, key=lambda x: (x.phase_index, x.node_key))
+    ]
+
+
+def _build_progress(
+    mission: Mission,
+    nodes: list[MissionTaskNode],
+    ready_keys: set[str],
+) -> MissionProgressResponse:
+    total     = len(nodes)
+    completed = sum(1 for n in nodes if n.status == TaskNodeStatus.COMPLETED.value)
+    running   = sum(1 for n in nodes if n.status == TaskNodeStatus.RUNNING.value)
+    failed    = sum(1 for n in nodes if n.status == TaskNodeStatus.FAILED.value)
+    skipped   = sum(1 for n in nodes if n.status == TaskNodeStatus.SKIPPED.value)
+    pending   = total - completed - running - failed - skipped
+    pct       = round((completed / total * 100) if total else 0.0, 1)
+
+    return MissionProgressResponse(
+        mission_id=str(mission.id),
+        title=mission.title,
+        status=mission.status,
+        priority=mission.priority,
+        confidence=mission.confidence,
+        timeline_days=mission.timeline_days,
+        total_nodes=total,
+        completed_nodes=completed,
+        running_nodes=running,
+        failed_nodes=failed,
+        pending_nodes=pending,
+        skipped_nodes=skipped,
+        completion_pct=pct,
+        nodes=_compute_node_items(nodes, ready_keys),
+        created_at=mission.created_at,
+        approved_at=mission.approved_at,
+        started_at=mission.started_at,
+        completed_at=mission.completed_at,
+    )
+
+
+async def _load_mission_or_404(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+) -> Mission:
+    r = await db.execute(
+        select(Mission).where(
+            Mission.id == mission_id,
+            Mission.workspace_id == workspace_id,
+        )
+    )
+    mission = r.scalar_one_or_none()
+    if not mission:
+        raise HTTPException(404, "Mission not found")
+    return mission
+
+
+async def _load_nodes(
+    db: AsyncSession, mission_id: uuid.UUID
+) -> list[MissionTaskNode]:
+    r = await db.execute(
+        select(MissionTaskNode)
+        .where(MissionTaskNode.mission_id == mission_id)
+        .order_by(MissionTaskNode.phase_index, MissionTaskNode.node_key)
+    )
+    return list(r.scalars().all())
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/{workspace_id}", response_model=list[MissionSummaryItem])
+async def list_workspace_missions(
+    workspace_id: uuid.UUID,
+    status: str | None = Query(None, description="Filter by status (proposed/approved/in_flight/completed/rejected)"),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List missions for a workspace, newest first.
+    Includes per-mission node completion counts for the Mission Hub cards.
+    """
+    missions = await list_missions(db, workspace_id, status=status, limit=limit)
+
+    items = []
+    for m in missions:
+        # Use eagerly-loaded task_nodes (selectinload in list_missions) — avoids N+1.
+        # Sort to match _load_nodes() ordering for backward-compat output.
+        nodes = sorted(
+            m.task_nodes or [],
+            key=lambda n: (n.phase_index, n.node_key),
+        )
+        total     = len(nodes)
+        completed = sum(1 for n in nodes if n.status == TaskNodeStatus.COMPLETED.value)
+        failed    = sum(1 for n in nodes if n.status == TaskNodeStatus.FAILED.value)
+        pct = round((completed / total * 100) if total else 0.0, 1)
+
+        items.append(MissionSummaryItem(
+            id=str(m.id),
+            title=m.title,
+            type=m.type,
+            trigger_signal=m.trigger_signal,
+            objective=m.objective,
+            timeline_days=m.timeline_days,
+            priority=m.priority,
+            confidence=m.confidence,
+            status=m.status,
+            assigned_agent_roles=m.assigned_agent_roles,
+            total_nodes=total,
+            completed_nodes=completed,
+            failed_nodes=failed,
+            completion_pct=pct,
+            created_at=m.created_at,
+            approved_at=m.approved_at,
+            started_at=m.started_at,
+            completed_at=m.completed_at,
+        ))
+
+    return items
+
+
+@router.post("/{workspace_id}/propose", response_model=ProposeMissionsResponse)
+async def propose_missions(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run the StrategistAgent and persist the resulting MissionProposal[] as proposed missions.
+
+    The agent reads all available intelligence signals (competitor_pulse,
+    market_opportunity_ideas, industry_calendar, trend_brief, social_signals,
+    learning_context) and generates 2-3 coordinated campaign missions with
+    full TaskGraphs.
+
+    Each proposal is persisted with status='proposed' — the operator
+    approves or rejects from the Mission Hub.
+
+    NOTE: This call runs a CrewAI agent and may take 30-90 seconds.
+    The frontend should show a loading/progress indicator.
+    """
+    logger.info("propose_missions_requested", workspace_id=str(workspace_id))
+    try:
+        created = await propose_missions_for_workspace(db, workspace_id)
+    except RuntimeError as exc:
+        # Human-readable LLM/quota errors — return 402 so frontend can display them
+        err_msg = str(exc)
+        logger.warning("propose_missions_quota_error",
+                       workspace_id=str(workspace_id), error=err_msg)
+        raise HTTPException(402, err_msg) from exc
+    except Exception as exc:
+        logger.error("propose_missions_endpoint_failed",
+                     workspace_id=str(workspace_id), error=str(exc)[:400])
+        raise HTTPException(500, f"Mission proposal generation failed: {exc}") from exc
+
+    return ProposeMissionsResponse(
+        workspace_id=str(workspace_id),
+        proposals_created=len(created),
+        missions=created,
+        message=(
+            f"{len(created)} yeni misyon önerisi oluşturuldu. "
+            "Mission Hub'dan inceleyip onaylayabilirsiniz."
+            if created else
+            "Misyon önerisi üretilemedi. Marka bağlamı ve sinyal verilerini kontrol edin."
+        ),
+    )
+
+
+@router.get("/{workspace_id}/{mission_id}", response_model=MissionDetailResponse)
+async def get_mission_detail(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Full mission detail — includes creative brief, phases, and all task nodes with status."""
+    mission = await _load_mission_or_404(db, workspace_id, mission_id)
+    nodes   = await _load_nodes(db, mission_id)
+
+    ready_nodes = await get_ready_nodes(db, mission_id)
+    ready_keys  = {n.node_key for n in ready_nodes}
+
+    total     = len(nodes)
+    completed = sum(1 for n in nodes if n.status == TaskNodeStatus.COMPLETED.value)
+    failed    = sum(1 for n in nodes if n.status == TaskNodeStatus.FAILED.value)
+    pct = round((completed / total * 100) if total else 0.0, 1)
+
+    return MissionDetailResponse(
+        id=str(mission.id),
+        title=mission.title,
+        type=mission.type,
+        trigger_signal=mission.trigger_signal,
+        trigger_evidence=mission.trigger_evidence,
+        objective=mission.objective,
+        timeline_days=mission.timeline_days,
+        priority=mission.priority,
+        confidence=mission.confidence,
+        status=mission.status,
+        assigned_agent_roles=mission.assigned_agent_roles,
+        creative_brief=mission.creative_brief,
+        phases=mission.phases,
+        performance_summary=mission.performance_summary,
+        total_nodes=total,
+        completed_nodes=completed,
+        failed_nodes=failed,
+        completion_pct=pct,
+        created_at=mission.created_at,
+        approved_at=mission.approved_at,
+        started_at=mission.started_at,
+        completed_at=mission.completed_at,
+        rejected_at=mission.rejected_at,
+        rejected_reason=mission.rejected_reason,
+        approved_by=mission.approved_by,
+        nodes=_compute_node_items(nodes, ready_keys),
+    )
+
+
+@router.get("/{workspace_id}/{mission_id}/progress", response_model=MissionProgressResponse)
+async def get_mission_progress(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Real-time DAG progress — returns each node's current status plus which
+    nodes are ready to run (deps completed, status still pending).
+
+    The Mission Hub polls this every 5-10 seconds while a mission is in_flight.
+    The TaskGraphExecutor (Task 6) uses the same ready_nodes logic.
+    """
+    mission     = await _load_mission_or_404(db, workspace_id, mission_id)
+    nodes       = await _load_nodes(db, mission_id)
+    ready_nodes = await get_ready_nodes(db, mission_id)
+    ready_keys  = {n.node_key for n in ready_nodes}
+
+    return _build_progress(mission, nodes, ready_keys)
+
+
+@router.put("/{workspace_id}/{mission_id}/approve")
+async def approve_workspace_mission(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    data: MissionApprove,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Approve a proposed mission.
+
+    Transitions status: proposed → approved.
+    The TaskGraphExecutor picks up approved missions on the next tick (Task 6)
+    and starts scheduling task nodes in dependency order.
+
+    Returns the updated mission summary.
+    """
+    mission = await approve_mission(db, mission_id, workspace_id, data.approved_by)
+    if not mission:
+        raise HTTPException(
+            400,
+            "Mission not found or not in 'proposed' status. "
+            "Only proposed missions can be approved."
+        )
+
+    nodes = await _load_nodes(db, mission_id)
+    total     = len(nodes)
+    completed = sum(1 for n in nodes if n.status == TaskNodeStatus.COMPLETED.value)
+    pct = round((completed / total * 100) if total else 0.0, 1)
+
+    logger.info("mission_approved_via_api",
+                mission_id=str(mission_id), approved_by=data.approved_by)
+
+    # ── Immediately advance the mission graph — no waiting for scheduler tick ──
+    # Fire-and-forget: launch ready nodes right now so the operator sees progress
+    # within seconds rather than waiting up to 5 minutes for the scheduler.
+    try:
+        import asyncio as _asyncio
+        from app.services.task_graph_executor import advance_mission
+        _asyncio.create_task(
+            advance_mission(mission_id, workspace_id),
+            name=f"advance_on_approve_{mission_id}",
+        )
+    except Exception as _e:
+        logger.warning("immediate_advance_failed", error=str(_e)[:200])
+
+    return {
+        "id":           str(mission.id),
+        "title":        mission.title,
+        "status":       mission.status,
+        "approved_at":  mission.approved_at.isoformat() if mission.approved_at else None,
+        "approved_by":  mission.approved_by,
+        "total_nodes":  total,
+        "completion_pct": pct,
+        "message": f"Misyon onaylandı. {total} görev başlatılıyor...",
+    }
+
+
+@router.put("/{workspace_id}/{mission_id}/reject")
+async def reject_workspace_mission(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    data: MissionReject,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Reject a proposed or approved mission.
+
+    Transitions status: proposed|approved → rejected.
+    In-flight missions cannot be rejected — cancel them instead.
+    """
+    mission = await reject_mission(db, mission_id, workspace_id, data.reason)
+    if not mission:
+        raise HTTPException(
+            400,
+            "Mission not found or cannot be rejected. "
+            "In-flight missions must be cancelled, not rejected."
+        )
+
+    logger.info("mission_rejected_via_api",
+                mission_id=str(mission_id), reason=data.reason)
+
+    return {
+        "id":          str(mission.id),
+        "title":       mission.title,
+        "status":      mission.status,
+        "rejected_at": mission.rejected_at.isoformat() if mission.rejected_at else None,
+        "reason":      mission.rejected_reason,
+        "message":     "Misyon reddedildi.",
+    }
+
+
+@router.put("/{workspace_id}/{mission_id}/cancel")
+async def cancel_workspace_mission(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cancel an in-flight or approved mission.
+
+    Transitions status: approved|in_flight → cancelled.
+    Pending task nodes are left as-is; the TaskGraphExecutor
+    checks mission status before scheduling new nodes.
+    """
+    mission = await _load_mission_or_404(db, workspace_id, mission_id)
+
+    cancellable = {MissionStatus.APPROVED.value, MissionStatus.IN_FLIGHT.value}
+    if mission.status not in cancellable:
+        raise HTTPException(
+            400,
+            f"Mission has status '{mission.status}' and cannot be cancelled. "
+            "Only approved or in_flight missions can be cancelled."
+        )
+
+    from datetime import datetime, timezone
+    from sqlalchemy import update
+
+    await db.execute(
+        update(Mission)
+        .where(Mission.id == mission_id)
+        .values(status=MissionStatus.CANCELLED.value,
+                rejected_at=datetime.now(timezone.utc))
+    )
+    await db.commit()
+
+    logger.info("mission_cancelled_via_api", mission_id=str(mission_id))
+
+    return {
+        "id":      str(mission_id),
+        "status":  MissionStatus.CANCELLED.value,
+        "message": "Misyon iptal edildi.",
+    }
+
+
+@router.put("/{workspace_id}/{mission_id}/restart")
+async def restart_workspace_mission(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Restart a stalled, failed-partial, or cancelled mission.
+
+    - Resets mission status → in_progress
+    - Resets failed/skipped/blocked task nodes → pending
+    - Completed nodes are left untouched (partial work preserved)
+    - The TaskGraphExecutor picks it up on the next scheduler tick
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import update
+
+    mission = await _load_mission_or_404(db, workspace_id, mission_id)
+
+    restartable = {
+        MissionStatus.IN_FLIGHT.value,
+        MissionStatus.APPROVED.value,
+        MissionStatus.CANCELLED.value,
+        "completed",   # allow restart of partially-completed missions
+    }
+    if mission.status not in restartable:
+        raise HTTPException(
+            400,
+            f"Mission has status '{mission.status}' and cannot be restarted."
+        )
+
+    # Reset mission
+    await db.execute(
+        update(Mission)
+        .where(Mission.id == mission_id)
+        .values(
+            status=MissionStatus.IN_FLIGHT.value,
+            completed_at=None,
+            rejected_at=None,
+            rejected_reason=None,
+        )
+    )
+
+    # Reset only failed/skipped/blocked nodes — keep completed ones
+    await db.execute(
+        update(MissionTaskNode)
+        .where(
+            MissionTaskNode.mission_id == mission_id,
+            MissionTaskNode.status.in_(["failed", "skipped", "blocked"]),
+        )
+        .values(
+            status=TaskNodeStatus.PENDING.value,
+            output_summary=None,
+            error_message=None,
+            started_at=None,
+            completed_at=None,
+        )
+    )
+
+    await db.commit()
+
+    logger.info("mission_restarted_via_api", mission_id=str(mission_id))
+
+    return {
+        "id":      str(mission_id),
+        "status":  MissionStatus.IN_FLIGHT.value,
+        "message": "Misyon yeniden başlatıldı.",
+    }

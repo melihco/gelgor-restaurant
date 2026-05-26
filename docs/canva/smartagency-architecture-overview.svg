@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <rect width="1920" height="1080" fill="#0f172a"/>
+  <rect x="60" y="50" width="1800" height="980" rx="36" fill="#111827" stroke="#334155" stroke-width="2"/>
+
+  <text x="100" y="112" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700">Smart Agency / AI Agent Office OS</text>
+  <text x="100" y="154" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="22">Module-by-module architecture map: Web workspace, Nexus API, Python Crew orchestration, integrations, artifacts, and Canva workflow.</text>
+
+  <g transform="translate(100 205)">
+    <rect x="0" y="0" width="500" height="250" rx="24" fill="#1e293b" stroke="#38bdf8" stroke-width="3"/>
+    <text x="28" y="48" fill="#e0f2fe" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">1. Next.js Web App</text>
+    <text x="28" y="88" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="18">apps/web - AI Agent Office OS UI</text>
+    <text x="28" y="126" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="19">Modules</text>
+    <text x="48" y="160" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Dashboard, Agents, Content Studio, Brand Hub</text>
+    <text x="48" y="188" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Ads, Reviews, Outputs, Approvals, Billing</text>
+    <text x="48" y="216" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">3D Office, Artifact Center, Preview Modal</text>
+  </g>
+
+  <g transform="translate(710 205)">
+    <rect x="0" y="0" width="500" height="250" rx="24" fill="#1e293b" stroke="#a78bfa" stroke-width="3"/>
+    <text x="28" y="48" fill="#ede9fe" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">2. Nexus Product API</text>
+    <text x="28" y="88" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="18">apps/api - .NET 8 REST + SignalR backend</text>
+    <text x="28" y="126" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="19">Controllers</text>
+    <text x="48" y="160" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Agents, Tasks, Artifacts, Reviews, Actions</text>
+    <text x="48" y="188" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Operations, Integrations, Setup, Security</text>
+    <text x="48" y="216" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">OfficeHub publishes real-time state to the UI</text>
+  </g>
+
+  <g transform="translate(1320 205)">
+    <rect x="0" y="0" width="500" height="250" rx="24" fill="#1e293b" stroke="#34d399" stroke-width="3"/>
+    <text x="28" y="48" fill="#d1fae5" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">3. Python Crew Layer</text>
+    <text x="28" y="88" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="18">backend/app - FastAPI + Crew orchestration</text>
+    <text x="28" y="126" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="19">Runtime</text>
+    <text x="48" y="160" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">/internal/v1/orchestration/execute</text>
+    <text x="48" y="188" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Crews, agents, tasks, tools, provider actions</text>
+    <text x="48" y="216" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Google Ads, analytics, Instagram, image tools</text>
+  </g>
+
+  <line x1="600" y1="330" x2="710" y2="330" stroke="#64748b" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="1210" y1="330" x2="1320" y2="330" stroke="#64748b" stroke-width="4" marker-end="url(#arrow)"/>
+
+  <g transform="translate(100 535)">
+    <rect x="0" y="0" width="390" height="185" rx="20" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+    <text x="24" y="40" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">Frontend State</text>
+    <text x="24" y="78" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">React Query caches server state</text>
+    <text x="24" y="108" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Zustand stores navigation, office UI,</text>
+    <text x="24" y="138" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">notifications, activity and interaction</text>
+  </g>
+
+  <g transform="translate(535 535)">
+    <rect x="0" y="0" width="390" height="185" rx="20" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+    <text x="24" y="40" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">API Client + Real Time</text>
+    <text x="24" y="78" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">api-client.ts targets Nexus REST</text>
+    <text x="24" y="108" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">runtime-config.ts controls base URLs</text>
+    <text x="24" y="138" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">signalr.ts subscribes to OfficeHub</text>
+  </g>
+
+  <g transform="translate(970 535)">
+    <rect x="0" y="0" width="390" height="185" rx="20" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+    <text x="24" y="40" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">Artifact Lifecycle</text>
+    <text x="24" y="78" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Crew outputs become artifacts</text>
+    <text x="24" y="108" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Artifact Center reviews, approves, rejects</text>
+    <text x="24" y="138" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Content Studio turns content into media</text>
+  </g>
+
+  <g transform="translate(1405 535)">
+    <rect x="0" y="0" width="390" height="185" rx="20" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+    <text x="24" y="40" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">Canva + Media BFF</text>
+    <text x="24" y="78" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">OAuth, Brand Templates, matching, autofill</text>
+    <text x="24" y="108" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">OpenAI / Flux images stay server-side</text>
+    <text x="24" y="138" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">Runway route creates reel video drafts</text>
+  </g>
+
+  <g transform="translate(100 785)">
+    <rect x="0" y="0" width="1695" height="160" rx="24" fill="#172554" stroke="#2563eb" stroke-width="2"/>
+    <text x="28" y="42" fill="#dbeafe" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">Primary Execution Flow</text>
+    <text x="28" y="82" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22">Content / agent action starts in UI -> api-client calls Nexus -> Nexus validates and delegates -> Python Crew executes -> artifacts return -> SignalR + React Query update UI -> Canva/media BFF generates visual outputs.</text>
+    <text x="28" y="124" fill="#bfdbfe" font-family="Inter, Arial, sans-serif" font-size="18">Key files: apps/web/src/app/page.tsx, api-client.ts, signalr.ts, ContentPage.tsx, BrandHubPage.tsx, apps/api/src/Nexus.Api/Program.cs, backend/app/main.py, backend/app/api/internal/orchestration.py</text>
+  </g>
+
+  <text x="100" y="995" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="16">Generated for Canva: SmartAgency system architecture overview, May 2026.</text>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+</svg>

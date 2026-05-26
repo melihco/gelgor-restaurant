@@ -1,0 +1,151 @@
+version: "3.8"
+
+services:
+  # ── Database ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus_dev_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Cache / Task Queue ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Vector DB (for future memory/RAG features) ──────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-nexus_vector_dev}
+
+  # ── Python Crew Service (internal orchestration only) ───
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "if [ \"$${APP_ENV}\" = \"development\" ];
+      then uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload;
+      else uvicorn app.main:app --host 0.0.0.0 --port 8000;
+      fi"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      ENABLE_PUBLIC_API: "false"
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-smartagency-internal-dev-key}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_dev_2024}@postgres:5432/${POSTGRES_DB:-nexus_db}
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      CREWAI_LLM_PROVIDER: ${CREWAI_LLM_PROVIDER:-openai}
+      # Agent memory uses embedded Chroma and often slows or stalls runs; set true only if you need it.
+      CREWAI_AGENT_MEMORY: ${CREWAI_AGENT_MEMORY:-false}
+      CREW_EXECUTION_TIMEOUT_SECONDS: ${CREW_EXECUTION_TIMEOUT_SECONDS:-270}
+      CREWAI_CONTENT_MAX_ITER: ${CREWAI_CONTENT_MAX_ITER:-7}
+      CREWAI_CONTENT_IDEATION_MAX_ITER: ${CREWAI_CONTENT_IDEATION_MAX_ITER:-5}
+      CREWAI_CONTENT_IDEATION_INSTAGRAM_TOOLS: ${CREWAI_CONTENT_IDEATION_INSTAGRAM_TOOLS:-false}
+      CREWAI_CONTENT_AGENT_MAX_EXECUTION_SECONDS: ${CREWAI_CONTENT_AGENT_MAX_EXECUTION_SECONDS:-180}
+      CURSOR_DEBUG_SESSION_LOG: /session_debug/debug-9bb618.log
+    volumes:
+      - ./backend:/app
+      - ./.cursor:/session_debug:rw
+      - backend_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Customer-facing .NET App API ────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-nexus_db};Username=${POSTGRES_USER:-nexus};Password=${POSTGRES_PASSWORD:-nexus_dev_2024}
+      OrchestrationService__BaseUrl: http://backend:8000
+      OrchestrationService__ApiKey: ${INTERNAL_API_KEY:-smartagency-internal-dev-key}
+      OrchestrationService__TimeoutSeconds: ${ORCHESTRATION_TIMEOUT_SECONDS:-300}
+      OrchestrationService__UseDevMock: "false"
+      ActionExecution__Mode: ${ACTION_EXECUTION_MODE:-dry-run}
+      ActionExecution__TimeoutSeconds: ${ACTION_EXECUTION_TIMEOUT_SECONDS:-90}
+      Qdrant__Enabled: ${QDRANT_ENABLED:-true}
+      Qdrant__BaseUrl: http://qdrant:6333
+      Qdrant__ApiKey: ${QDRANT_API_KEY:-nexus_vector_dev}
+      Qdrant__Collection: ${QDRANT_COLLECTION:-brand_memory}
+      Qdrant__VectorSize: ${QDRANT_VECTOR_SIZE:-1536}
+      OpenAI__ApiKey: ${OPENAI_API_KEY:-}
+      OpenAI__EmbeddingModel: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      Tenant__DemoTenantId: ${DEMO_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      Tenant__DemoUserId: ${DEMO_USER_ID:-00000000-0000-0000-0000-000000000001}
+      Tenant__DemoOfficeId: ${DEMO_OFFICE_ID:-00000000-0000-0000-0000-000000000002}
+      RateLimit__PermitLimit: ${RATE_LIMIT_PER_MINUTE:-120}
+      Google__OAuth__ClientId: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      Google__OAuth__ClientSecret: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      Google__OAuth__RedirectUri: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:5000/api/integrations/google/callback}
+      Frontend__BaseUrl: ${FRONTEND_BASE_URL:-http://localhost:3002}
+      Deployment__EnvironmentName: ${DEPLOYMENT_ENVIRONMENT:-local}
+      CURSOR_DEBUG_SESSION_LOG: /session_debug/debug-9bb618.log
+    volumes:
+      - ./.cursor:/session_debug:rw
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      qdrant:
+        condition: service_started
+
+  # ── Next.js Frontend ────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+      NEXT_PUBLIC_SIGNALR_URL: ${NEXT_PUBLIC_SIGNALR_URL:-http://localhost:5000}
+      NEXT_PUBLIC_TENANT_ID: ${DEMO_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      NEXT_PUBLIC_OFFICE_ID: ${DEMO_OFFICE_ID:-00000000-0000-0000-0000-000000000002}
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  backend_storage:
+
+networks:
+  default:
+    name: smartagency_network

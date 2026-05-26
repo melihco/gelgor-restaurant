@@ -1,0 +1,67 @@
+import type { NextConfig } from 'next';
+
+/** Sunucu tarafında rewrite hedefi; tarayıcı `localhost:3000` (npm run dev) → API’ye proxylanır */
+/** Yerel `dotnet run` çoğunlukla 5050; 5000 macOS’ta AirPlay ile çakışır. Docker için .env ile 5000 verin. */
+const BACKEND_ORIGIN =
+  process.env.BACKEND_ORIGIN ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://127.0.0.1:5050';
+
+const normalizedBackend = BACKEND_ORIGIN.replace(/\/$/, '');
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  output: 'standalone',
+  /**
+   * `next dev` sırasında Next.js 15+, localhost dışındaki Host/Origin’leri (ngrok vb.)
+   * güvenlik için reddedebilir ve 403 döner. Tünel ile Canva OAuth / webhook testi için gerekli.
+   */
+  allowedDevOrigins: ['*.ngrok-free.app', '*.ngrok-free.dev', '*.ngrok.io'],
+  experimental: {
+    optimizePackageImports: ['@react-three/fiber', '@react-three/drei', 'lucide-react'],
+    /**
+     * Varsayılan ~30 sn proxy limiti, Crew/LLM çağrılarını keser (content_ideation vb. 1–5 dk sürebilir).
+     * .NET OrchestrationService:TimeoutSeconds (ör. 300) + pay bırakır.
+     */
+    proxyTimeout: 360_000,
+  },
+  // Satori (canvas export) WASM + native binaries must not be bundled
+  serverExternalPackages: ['@resvg/resvg-js', 'satori'],
+  webpack: (config) => {
+    config.externals.push('pino-pretty', 'lokijs', 'encoding');
+    config.module.rules.push({
+      test: /\.svg$/i,
+      issuer: /\.[jt]sx?$/,
+      use: ['@svgr/webpack'],
+    });
+    // Allow webpack to load WASM modules (used by satori/yoga)
+    config.experiments = { ...(config.experiments ?? {}), asyncWebAssembly: true };
+    return config;
+  },
+  turbopack: {
+    rules: {
+      '*.svg': {
+        loaders: ['@svgr/webpack'],
+        as: '*.js',
+      },
+    },
+  },
+
+  /** `beforeFiles` — yoksa App Router `/api/nexus-backend/*` için sayfa arayıp HTML 404 üretiyor */
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: '/api/nexus-backend/:path*',
+          destination: `${normalizedBackend}/api/:path*`,
+        },
+        {
+          source: '/nexus-signalr/:path*',
+          destination: `${normalizedBackend}/:path*`,
+        },
+      ],
+    };
+  },
+};
+
+export default nextConfig;

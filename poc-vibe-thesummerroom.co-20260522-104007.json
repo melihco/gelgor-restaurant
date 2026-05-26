@@ -1,0 +1,73 @@
+{
+  "source_label": "thesummerroom.co",
+  "source_accounts": [
+    "thesummerroom.co"
+  ],
+  "extracted_at": "2026-05-22T10:40:07.073144Z",
+  "image_sample_count": 10,
+  "caption_sample_count": 8,
+  "error": "not enough images downloaded",
+  "downloaded": 0,
+  "caption_voice": {
+    "style": "minimal_poetic",
+    "avg_word_count": 4,
+    "uses_emojis": true,
+    "uses_hashtags_in_caption_body": false,
+    "punctuation_style": "minimal punctuation, often no full stops, uses line breaks for emphasis",
+    "tonal_anchors": [
+      "playful",
+      "dreamy",
+      "nostalgic"
+    ],
+    "writing_rules": [
+      "Keep it short and sweet, often under 5 words",
+      "Use emojis to convey mood or theme",
+      "Focus on summer and beach-related imagery",
+      "Invoke a sense of longing or desire",
+      "Avoid complex sentences or punctuation"
+    ],
+    "example_template": "[seasonal activity or item] —\n\n[emotional or sensory appeal]"
+  },
+  "reference_frames": [
+    {
+      "url": "https://scontent-sea1-1.cdninstagram.com/v/t51.71878-15/695978991_1509762677184096_24294132451177181_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/703382702_18127088494544567_6861542009630770105_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/702911428_18126783823544567_5829305089822718425_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/701301879_18126339400544567_2560627992516219921_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/696508698_18125956864544567_1649269842471447362_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/696043061_18125656726544567_5633098427533755673_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/696640454_18125358556544567_4250908459434838_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/694269622_18125358115544567_6892719810068097953_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea1-1.cdninstagram.com/v/t51.71878-15/673876484_1392662879335500_1104454406040113986_n.jpg",
+      "source_account": "thesummerroom.co"
+    },
+    {
+      "url": "https://scontent-sea5-1.cdninstagram.com/v/t51.82787-15/689480340_18124891678544567_3590175247267817899_n.jpg",
+      "source_account": "thesummerroom.co"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+
+WORKDIR /src
+
+COPY apps/api/Nexus.sln apps/api/
+COPY apps/api/src/Nexus.Api/Nexus.Api.csproj apps/api/src/Nexus.Api/
+COPY apps/api/src/Nexus.Application/Nexus.Application.csproj apps/api/src/Nexus.Application/
+COPY apps/api/src/Nexus.Contracts/Nexus.Contracts.csproj apps/api/src/Nexus.Contracts/
+COPY apps/api/src/Nexus.Domain/Nexus.Domain.csproj apps/api/src/Nexus.Domain/
+COPY apps/api/src/Nexus.Infrastructure/Nexus.Infrastructure.csproj apps/api/src/Nexus.Infrastructure/
+
+RUN dotnet restore apps/api/Nexus.sln
+
+COPY apps/api/ apps/api/
+
+RUN dotnet publish apps/api/src/Nexus.Api/Nexus.Api.csproj -c Release -o /app/publish
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+
+WORKDIR /app
+
+COPY --from=build /app/publish .
+
+EXPOSE 5000
+
+ENV ASPNETCORE_URLS=http://+:5000
+
+ENTRYPOINT ["dotnet", "Nexus.Api.dll"]

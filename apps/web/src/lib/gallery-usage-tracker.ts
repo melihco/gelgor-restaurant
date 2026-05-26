@@ -1,0 +1,185 @@
+/**
+ * Tracks which brand gallery photos are already used per Instagram post type.
+ * Source of truth: Nexus OutputArtifacts (pending + approved, not rejected).
+ */
+
+export type PostTypeBucket = 'feed' | 'story' | 'reel' | 'carousel';
+
+export interface UsedGalleryUsage {
+  byType: Record<PostTypeBucket, string[]>;
+}
+
+const EMPTY_USAGE: UsedGalleryUsage = {
+  byType: { feed: [], story: [], reel: [], carousel: [] },
+};
+
+export function normalizeGalleryUrl(url: string): string {
+  return (url.split('?')[0] ?? url).trim();
+}
+
+export function kindToPostType(kind: string): PostTypeBucket {
+  const k = kind.toLowerCase();
+  if (k.includes('carousel')) return 'carousel';
+  if (k.includes('reel')) return 'reel';
+  if (k.includes('story') || k.includes('canvas') || k.includes('event') || k.includes('announcement')) {
+    return 'story';
+  }
+  return 'feed';
+}
+
+export function contentTypeToPostType(contentType: string): PostTypeBucket {
+  const ct = contentType.toLowerCase();
+  if (ct.includes('carousel')) return 'carousel';
+  if (ct.includes('reel')) return 'reel';
+  if (ct.includes('story') || ct.includes('canvas')) return 'story';
+  return 'feed';
+}
+
+function isRejectedReviewStatus(status: unknown): boolean {
+  const s = String(status ?? '').toLowerCase();
+  return s === '2' || s === 'rejected' || s === '3' || s.includes('revision');
+}
+
+function parseJsonRecord(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function pushUrl(set: Set<string>, url: unknown): void {
+  if (typeof url !== 'string' || !url.startsWith('http')) return;
+  set.add(normalizeGalleryUrl(url));
+}
+
+function resolvePostType(meta: Record<string, unknown>, content: Record<string, unknown>): PostTypeBucket {
+  const kind = String(meta.kind ?? content.kind ?? '');
+  if (kind) return kindToPostType(kind);
+  const ct = String(meta.contentType ?? content.contentType ?? content.content_type ?? 'feed');
+  return contentTypeToPostType(ct);
+}
+
+/** Extract source gallery URLs (not enhanced R2 outputs) from a Nexus artifact. */
+export function extractGalleryUrlsFromArtifact(
+  artifact: Record<string, unknown>,
+): { postType: PostTypeBucket; urls: string[] } | null {
+  if (isRejectedReviewStatus(artifact.reviewStatus ?? artifact.ReviewStatus)) {
+    return null;
+  }
+
+  const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
+  const content = parseJsonRecord(artifact.content ?? artifact.Content);
+  const postType = resolvePostType(meta, content);
+
+  const urls = new Set<string>();
+  pushUrl(urls, meta.reference_photo_url);
+  pushUrl(urls, content.reference_photo_url);
+  pushUrl(urls, meta.selected_gallery_url);
+  pushUrl(urls, content.selected_gallery_url);
+
+  const vps = parseJsonRecord(meta.visual_production_spec ?? content.visual_production_spec);
+  pushUrl(urls, vps.selected_gallery_url);
+
+  const galleryList = meta.gallery_photo_urls ?? content.gallery_photo_urls;
+  if (Array.isArray(galleryList)) {
+    for (const u of galleryList) pushUrl(urls, u);
+  }
+
+  const carouselUrls = meta.carousel_urls ?? content.carousel_urls;
+  if (Array.isArray(carouselUrls)) {
+    for (const u of carouselUrls) pushUrl(urls, u);
+  }
+
+  if (urls.size === 0) return null;
+  return { postType, urls: [...urls] };
+}
+
+export function buildGalleryUsageFromArtifacts(
+  artifacts: Record<string, unknown>[],
+): UsedGalleryUsage {
+  const byType: Record<PostTypeBucket, Set<string>> = {
+    feed: new Set(),
+    story: new Set(),
+    reel: new Set(),
+    carousel: new Set(),
+  };
+
+  for (const artifact of artifacts) {
+    const extracted = extractGalleryUrlsFromArtifact(artifact);
+    if (!extracted) continue;
+    for (const url of extracted.urls) {
+      byType[extracted.postType].add(url);
+    }
+  }
+
+  return {
+    byType: {
+      feed: [...byType.feed],
+      story: [...byType.story],
+      reel: [...byType.reel],
+      carousel: [...byType.carousel],
+    },
+  };
+}
+
+export function isGalleryUrlUsedForPostType(
+  usage: UsedGalleryUsage,
+  url: string,
+  postType: PostTypeBucket,
+): boolean {
+  const base = normalizeGalleryUrl(url);
+  return usage.byType[postType].some(u => normalizeGalleryUrl(u) === base);
+}
+
+export function getExcludeUrlsForPostType(
+  usage: UsedGalleryUsage,
+  postType: PostTypeBucket,
+  batchUsed: string[] = [],
+): string[] {
+  const seen = new Set<string>();
+  for (const u of usage.byType[postType]) seen.add(normalizeGalleryUrl(u));
+  for (const u of batchUsed) seen.add(normalizeGalleryUrl(u));
+  return [...seen];
+}
+
+export function markGalleryUrlUsedForPostType(
+  usage: UsedGalleryUsage,
+  url: string,
+  postType: PostTypeBucket,
+): void {
+  if (!url.startsWith('http')) return;
+  const base = normalizeGalleryUrl(url);
+  const bucket = usage.byType[postType];
+  if (!bucket.some(u => normalizeGalleryUrl(u) === base)) {
+    bucket.push(url);
+  }
+}
+
+export async function fetchUsedGalleryImages(
+  workspaceId: string,
+  nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
+  internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
+): Promise<UsedGalleryUsage> {
+  try {
+    const res = await fetch(`${nexusApi}/api/artifacts`, {
+      headers: {
+        'X-Tenant-Id': workspaceId,
+        'X-Internal-Api-Key': internalKey,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return { ...EMPTY_USAGE, byType: { ...EMPTY_USAGE.byType } };
+    const artifacts = (await res.json()) as Record<string, unknown>[];
+    return buildGalleryUsageFromArtifacts(Array.isArray(artifacts) ? artifacts : []);
+  } catch {
+    return { byType: { feed: [], story: [], reel: [], carousel: [] } };
+  }
+}

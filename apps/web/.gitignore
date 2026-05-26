@@ -1,0 +1,8 @@
+
+# Environment secrets
+.env.local
+.env*.local
+.env
+.canva-token.json
+.canva-template-registry.json
+public/generated/

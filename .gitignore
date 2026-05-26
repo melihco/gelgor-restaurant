@@ -1,0 +1,48 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.pem
+*.key
+
+# ── Next.js ───────────────────────────────────────────────────────────────────
+.next/
+out/
+
+# ── Generated assets (large / temporary) ──────────────────────────────────────
+apps/web/public/generated/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.cursor/
+.claude/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── dotnet ────────────────────────────────────────────────────────────────────
+apps/api/src/**/bin/
+apps/api/src/**/obj/
+
+# ── MCP config (may contain tokens) ──────────────────────────────────────────
+.mcp.json

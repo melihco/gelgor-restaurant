@@ -1,0 +1,49 @@
+# Core framework
+fastapi[standard]>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+python-multipart>=0.0.12
+
+# Database
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+alembic>=1.14.0
+
+# CrewAI orchestration
+crewai>=0.86.0
+crewai-tools>=0.14.0
+
+# LLM Providers — Anthropic Claude (required for per-agent model routing)
+anthropic>=0.40.0
+
+# Vector memory for CrewAI agent memory (optional, uncomment to enable)
+# chromadb>=0.5.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# HTTP & integrations
+httpx>=0.28.0
+aiofiles>=24.1.0
+
+# Google APIs
+google-ads>=25.1.0
+google-analytics-data>=0.18.14
+google-auth>=2.36.0
+google-auth-oauthlib>=1.2.1
+google-api-python-client>=2.159.0
+
+# Task queue & scheduling
+celery[redis]>=5.4.0
+redis>=5.2.0
+apscheduler>=3.10.4
+
+# Observability
+structlog>=24.4.0
+
+# Utilities
+python-dotenv>=1.0.1
+tenacity>=9.0.0
+Pillow>=11.0.0

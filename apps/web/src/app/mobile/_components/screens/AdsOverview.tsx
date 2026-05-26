@@ -1,0 +1,274 @@
+'use client';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTheme } from '../theme-context';
+import { useMobileStore } from '../mobile-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { apiClient } from '@/lib/api-client';
+import { IcoBack } from '../Icons';
+import type { T } from '../theme-context';
+import type { MetaCampaign } from '@/types/meta-ads.types';
+
+type DateRange = '7d' | '30d' | '90d';
+
+const summaryData: Record<DateRange, { spend: string; clicks: string; conversions: string; roas: string }> = {
+  '7d':  { spend: '₺4.280',  clicks: '2.140',  conversions: '38', roas: '3.2x' },
+  '30d': { spend: '₺18.640', clicks: '9.420',  conversions: '162', roas: '3.8x' },
+  '90d': { spend: '₺52.100', clicks: '27.800', conversions: '481', roas: '4.1x' },
+};
+
+interface Campaign {
+  id: string;
+  name: string;
+  status: 'ENABLED' | 'PAUSED';
+  budget: string;
+  spend: string;
+  clicks: number;
+  conversions: number;
+  ctr: string;
+  roas: number;
+  risk: boolean;
+}
+
+const campaigns: Campaign[] = [
+  { id: 'c1', name: 'Yaz Hediye — Search',     status: 'ENABLED', budget: '₺500/gün',  spend: '₺1.840', clicks: 920,  conversions: 18, ctr: '4.2%', roas: 3.8, risk: false },
+  { id: 'c2', name: 'Bayram — Display',          status: 'ENABLED', budget: '₺300/gün',  spend: '₺1.120', clicks: 640,  conversions: 11, ctr: '2.1%', roas: 2.9, risk: false },
+  { id: 'c3', name: 'Brand Keywords',             status: 'ENABLED', budget: '₺200/gün',  spend: '₺740',   clicks: 480,  conversions: 7,  ctr: '6.8%', roas: 4.2, risk: false },
+  { id: 'c4', name: 'Fıstıklı Lokum — Shopping', status: 'ENABLED', budget: '₺400/gün',  spend: '₺380',   clicks: 72,   conversions: 0,  ctr: '0.9%', roas: 0.0, risk: true  },
+  { id: 'c5', name: 'Retargeting',                status: 'PAUSED',  budget: '₺150/gün',  spend: '₺0',     clicks: 0,    conversions: 0,  ctr: '—',    roas: 0.0, risk: false },
+];
+
+const aiRecommendations = [
+  { text: 'Fıstıklı Lokum Shopping kampanyasında 72 tıklama ve 0 dönüşüm var — durdurmayı veya hedeflemeyi değiştirmeyi düşünün.', severity: 'high', color: '#fb7185' },
+  { text: 'Bayram Display kampanyasının ROAS\'ı 2.9x — brand keywords kampanyasına bütçe kaydırın.', severity: 'medium', color: '#f59e0b' },
+  { text: 'Search kampanyası 3.8x ROAS ile en verimli kanal. Bütçe artışı öneriliyor.', severity: 'info', color: '#34d399' },
+];
+
+const OBJ_LABEL: Record<string, string> = {
+  OUTCOME_AWARENESS: 'Erişim', OUTCOME_ENGAGEMENT: 'Etkileşim', OUTCOME_TRAFFIC: 'Trafik',
+};
+
+function MetaCampaignCard({ campaign, onActivate, isActivating }: {
+  campaign: MetaCampaign; onActivate: () => void; isActivating: boolean;
+}) {
+  const { t } = useTheme();
+  const isPaused    = campaign.status === 'PAUSED';
+  const isActive    = campaign.status === 'ACTIVE';
+  const statusColor = isActive ? '#10B981' : isPaused ? '#F59E0B' : '#94A3B8';
+
+  return (
+    <div style={{ padding: '14px 16px', borderRadius: 16, marginBottom: 8,
+      background: t.isDark ? 'rgba(255,255,255,0.04)' : '#fff',
+      border: `0.5px solid ${t.separator}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, padding: '2px 9px', borderRadius: 20, fontWeight: 700,
+            background: `${statusColor}14`, color: statusColor }}>
+            {isActive ? 'Aktif' : isPaused ? 'Duraklatıldı' : campaign.status}
+          </span>
+          <span style={{ fontSize: 11, color: t.textMuted }}>
+            {OBJ_LABEL[campaign.objective] ?? campaign.objective}
+          </span>
+        </div>
+        <span style={{ fontSize: 11, color: t.textMuted }}>
+          {campaign.budgetTl}₺ / {campaign.durationDays} gün
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: isPaused ? 12 : 0 }}>
+        {[
+          { label: 'Erişim',       value: campaign.actualReach > 0 ? campaign.actualReach.toLocaleString('tr-TR') : `~${campaign.estimatedReach.toLocaleString('tr-TR')}` },
+          { label: 'Etkileşim',   value: campaign.impressions.toLocaleString('tr-TR') },
+          { label: 'Tıklama',     value: campaign.clicks.toLocaleString('tr-TR') },
+          { label: 'Harcama',     value: `${campaign.spendTl.toFixed(2)}₺` },
+        ].map(m => (
+          <div key={m.label}>
+            <div style={{ fontSize: 9, color: t.labelColor, marginBottom: 2 }}>{m.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: t.textSecondary,
+              fontVariantNumeric: 'tabular-nums' }}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {isPaused && (
+        <button onClick={onActivate} disabled={isActivating} style={{
+          width: '100%', padding: '10px', borderRadius: 12, border: 'none', cursor: isActivating ? 'default' : 'pointer',
+          background: isActivating ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)',
+          color: '#10B981', fontSize: 12, fontWeight: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        }}>
+          {isActivating
+            ? <><div style={{ width: 11, height: 11, borderRadius: '50%',
+                border: '1.5px solid rgba(16,185,129,0.3)', borderTop: '1.5px solid #10B981',
+                animation: 'spinSlow 0.8s linear infinite' }} />Aktive ediliyor…</>
+            : '▶ Aktive Et — Yayınlamaya Başla'
+          }
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function AdsOverview() {
+  const { t } = useTheme();
+  const { goBack } = useMobileStore();
+  const { tenantId } = useWorkspaceStore();
+  const queryClient = useQueryClient();
+  const [range, setRange] = useState<DateRange>('7d');
+  const summary = summaryData[range];
+
+  const { data: metaCampaigns = [], isLoading: loadingMeta } = useQuery({
+    queryKey: ['meta-campaigns', tenantId],
+    queryFn: () => apiClient.getMetaCampaigns(tenantId),
+    staleTime: 2 * 60_000,
+    enabled: Boolean(tenantId),
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: (campaignId: string) => apiClient.activateCampaign(tenantId, campaignId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['meta-campaigns', tenantId] }),
+  });
+
+  return (
+    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
+      {/* Header */}
+      <div style={{ padding: '56px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <IcoBack color={t.textSecondary} />
+          </button>
+          <div>
+            <p style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 3 }}>Google Ads</p>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.025em' }}>Reklam Performansı</h1>
+          </div>
+        </div>
+
+        {/* Range selector */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['7d', '30d', '90d'] as DateRange[]).map((d) => (
+            <button key={d} onClick={() => setRange(d)} style={{
+              padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: range === d ? 600 : 400,
+              ...(range === d ? t.pillActive(t.info) : t.pillIdle),
+            }}>{d}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary KPIs */}
+      <div style={{ padding: '20px 24px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[
+            { label: 'Toplam Harcama', value: summary.spend,       color: t.textPrimary,  sub: 'Bu dönem' },
+            { label: 'Tıklama',        value: summary.clicks,       color: t.info,         sub: 'Toplam'   },
+            { label: 'Dönüşüm',        value: summary.conversions,  color: t.success,      sub: 'Satın alma' },
+            { label: 'ROAS',           value: summary.roas,         color: t.accent,       sub: 'Gelir/Harcama' },
+          ].map((s) => (
+            <div key={s.label} style={{ ...t.surfaceCard, padding: '16px' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: s.color, lineHeight: 1, marginBottom: 4, fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary, marginBottom: 2 }}>{s.label}</div>
+              <div style={{ fontSize: 10, color: t.textMuted }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* AI Recommendations */}
+      <div style={{ padding: '24px 24px 0' }}>
+        <SectionLabel t={t} text="AI Önerileri" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {aiRecommendations.map((rec, i) => (
+            <div key={i} style={{
+              padding: '14px 16px', borderRadius: 14,
+              background: t.isDark ? `${rec.color}07` : `${rec.color}06`,
+              border: `0.5px solid ${rec.color}22`,
+              display: 'flex', gap: 10, alignItems: 'flex-start',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: rec.color, flexShrink: 0, marginTop: 4 }} />
+              <p style={{ fontSize: 13, color: t.textSecondary, lineHeight: 1.55, margin: 0 }}>{rec.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Campaign list */}
+      <div style={{ padding: '24px 24px 0' }}>
+        <SectionLabel t={t} text="Kampanyalar" />
+        <div style={{ ...t.surfaceGroup }}>
+          {campaigns.map((c, i) => (
+            <div key={c.id} style={{ padding: '15px 18px', ...(i < campaigns.length - 1 ? t.surfaceRow : {}), position: 'relative' }}>
+              {c.risk && (
+                <div style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: 3, borderRadius: '0 2px 2px 0', background: t.danger }} />
+              )}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: c.risk ? t.danger : t.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2 }}>
+                    {c.name}
+                    {c.risk && <span style={{ marginLeft: 6, fontSize: 10, color: t.danger }}>⚑ Düşük ROAS</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted }}>{c.budget}</div>
+                </div>
+                <span style={{
+                  fontSize: 10, padding: '3px 8px', borderRadius: 20, fontWeight: 600, flexShrink: 0,
+                  background: c.status === 'ENABLED' ? t.successDim : (t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'),
+                  color: c.status === 'ENABLED' ? t.success : t.textMuted,
+                }}>
+                  {c.status === 'ENABLED' ? 'Aktif' : 'Duraklatıldı'}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+                {[
+                  { label: 'Harcama', value: c.spend    },
+                  { label: 'Tıklama', value: String(c.clicks) },
+                  { label: 'CTR',     value: c.ctr      },
+                  { label: 'ROAS',    value: c.roas > 0 ? `${c.roas}x` : '—', risky: c.roas === 0 && c.status === 'ENABLED' },
+                ].map((m) => (
+                  <div key={m.label}>
+                    <div style={{ fontSize: 9, color: t.labelColor, marginBottom: 2 }}>{m.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: m.risky ? t.danger : t.textSecondary, fontVariantNumeric: 'tabular-nums' }}>{m.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Meta Reklamları */}
+      <div style={{ padding: '24px 24px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <SectionLabel t={t} text="📣 Meta Reklamları" />
+          {loadingMeta && (
+            <div style={{ width: 14, height: 14, borderRadius: '50%',
+              border: `2px solid ${t.separator}`, borderTop: `2px solid ${t.accent}`,
+              animation: 'spinSlow 1s linear infinite' }} />
+          )}
+        </div>
+
+        {!loadingMeta && metaCampaigns.length === 0 && (
+          <div style={{ padding: '20px', borderRadius: 16, textAlign: 'center',
+            background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+            border: `0.5px solid ${t.separator}` }}>
+            <p style={{ fontSize: 13, color: t.textMuted, margin: 0 }}>
+              Henüz Meta kampanyası yok.
+              <br />Onaylı bir içeriğin detayından "Bu Görseli Tanıt" ile başla.
+            </p>
+          </div>
+        )}
+
+        {metaCampaigns.map(camp => (
+          <MetaCampaignCard
+            key={camp.id}
+            campaign={camp}
+            onActivate={() => activateMutation.mutate(camp.campaignId)}
+            isActivating={activateMutation.isPending && (activateMutation.variables === camp.campaignId)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ t, text }: { t: T; text: string }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, color: t.labelColor, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12 }}>{text}</div>;
+}

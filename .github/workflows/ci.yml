@@ -1,0 +1,71 @@
+name: SmartAgency CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  api:
+    name: API build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore API
+        run: dotnet restore apps/api/Nexus.sln
+      - name: Build API
+        run: dotnet build apps/api/Nexus.sln --configuration Release --no-restore
+
+  web:
+    name: Web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web dependencies
+        working-directory: apps/web
+        run: npm ci
+      - name: Type-check web
+        working-directory: apps/web
+        run: npm run type-check
+      - name: Build web
+        working-directory: apps/web
+        run: npm run build
+
+  python:
+    name: Python smoke compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile smoke scripts and provider endpoints
+        run: |
+          python -m py_compile \
+            scripts/agent-runtime-smoke.py \
+            scripts/production-e2e-smoke.py \
+            backend/app/api/v1/provider_actions.py \
+            backend/app/api/v1/router.py
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -f apps/api/Dockerfile .
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile apps/web
+      - name: Build backend image
+        working-directory: backend
+        run: docker build .
