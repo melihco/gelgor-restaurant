@@ -14,6 +14,7 @@
 
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import { ensureBrandTemplateLibrary } from '@/lib/brand-template-library';
+import { applyAgencyProductionThemeDefaults } from '@/lib/agency-production-defaults';
 import { fetchBrandThemeForProduction, resolveProductionVisualStandard } from '@/lib/brand-theme-ai-settings';
 import {
   isAiEnhanceEnabled,
@@ -66,6 +67,8 @@ export interface ProductionContext {
   readonly templateLibrary: BrandTemplateLibrary;
   /** Brand kit ID for this sector. */
   readonly kitId: string;
+  /** true when agency defaults merged ai_photo_enhance for pilot/locked/service sector */
+  readonly agencyProductionForced: boolean;
 
   // ── AI visual settings ────────────────────────────────────────────────────
   readonly aiPhotoEnhanceEnabled: boolean;
@@ -209,24 +212,6 @@ export async function fetchProductionContext(
   ) as Record<string, unknown> | null | undefined ?? null;
   const hasVibe = Boolean(vibeProfile && Object.keys(vibeProfile).length > 0);
 
-  // ── AI visual settings ─────────────────────────────────────────────────
-  const aiPhotoEnhanceEnabled = isAiEnhanceEnabled(brandTheme);
-  const aiPhotoEnhanceLevel = resolveAiEnhanceLevel(brandTheme);
-  const aiVisualStandard = resolveProductionVisualStandard(brandTheme);
-  const resolvedVisualSubject = resolveVisualSubject(
-    aiVisualStandard.visualSubject,
-    brandBusinessType,
-  );
-
-  // ── Grading / LUT ─────────────────────────────────────────────────────
-  const themeGrading = (brandTheme?.grading ?? brandTheme?.Grading) as Record<string, unknown> | undefined;
-  const brandLutDirective = (typeof themeGrading?.lut_directive === 'string' ? themeGrading.lut_directive : null);
-  const brandGradingLook = (typeof themeGrading?.look === 'string' ? themeGrading.look : null);
-  const brandAntiPatterns: string[] = (() => {
-    const ap = brandTheme?.anti_patterns ?? vibeProfile?.anti_patterns;
-    return Array.isArray(ap) ? ap.map(String) : [];
-  })();
-
   // ── Template library & kit ─────────────────────────────────────────────
   const kitId = resolveKitForSector(brandBusinessType, tenantKitSeed(workspaceId));
   const templateLibrary = ensureBrandTemplateLibrary(brandTheme, {
@@ -235,12 +220,43 @@ export async function fetchProductionContext(
     tenantId: workspaceId,
   });
 
+  const agencyDefaults = applyAgencyProductionThemeDefaults(brandTheme, {
+    tenantId: workspaceId,
+    sector: brandBusinessType,
+    templateLibrary,
+  });
+  const productionBrandTheme = agencyDefaults.theme;
+  if (agencyDefaults.forced) {
+    console.log(
+      `[production-context] Agency defaults applied workspace=${workspaceId} ` +
+      `reasons=${agencyDefaults.reasons.join(',')}`,
+    );
+  }
+
+  // ── AI visual settings ─────────────────────────────────────────────────
+  const aiPhotoEnhanceEnabled = isAiEnhanceEnabled(productionBrandTheme);
+  const aiPhotoEnhanceLevel = resolveAiEnhanceLevel(productionBrandTheme);
+  const aiVisualStandard = resolveProductionVisualStandard(productionBrandTheme);
+  const resolvedVisualSubject = resolveVisualSubject(
+    aiVisualStandard.visualSubject,
+    brandBusinessType,
+  );
+
+  // ── Grading / LUT ─────────────────────────────────────────────────────
+  const themeGrading = (productionBrandTheme?.grading ?? productionBrandTheme?.Grading) as Record<string, unknown> | undefined;
+  const brandLutDirective = (typeof themeGrading?.lut_directive === 'string' ? themeGrading.lut_directive : null);
+  const brandGradingLook = (typeof themeGrading?.look === 'string' ? themeGrading.look : null);
+  const brandAntiPatterns: string[] = (() => {
+    const ap = productionBrandTheme?.anti_patterns ?? vibeProfile?.anti_patterns;
+    return Array.isArray(ap) ? ap.map(String) : [];
+  })();
+
   // ── Typography / motion ────────────────────────────────────────────────
   const typographyDensity = (
-    (brandTheme?.typography as Record<string, unknown>)?.text_overlay_density
-    ?? (brandTheme?.typography as Record<string, unknown>)?.textOverlayDensity
+    (productionBrandTheme?.typography as Record<string, unknown>)?.text_overlay_density
+    ?? (productionBrandTheme?.typography as Record<string, unknown>)?.textOverlayDensity
   ) as 'minimal' | 'medium' | 'dense' | undefined;
-  const motionProfile = parseMotionProfileFromTheme(brandTheme, {
+  const motionProfile = parseMotionProfileFromTheme(productionBrandTheme, {
     sector: brandBusinessType,
     languages: (raw.languages as string) ?? undefined,
     textOverlayDensity: typographyDensity,
@@ -256,7 +272,7 @@ export async function fetchProductionContext(
   const brandKitObj = getBrandKit(kitId);
   const tokens = resolveBrandProductionTokens({
     brandContext: raw,
-    brandTheme: brandTheme ?? null,
+    brandTheme: productionBrandTheme ?? brandTheme ?? null,
     vibeProfile: hasVibe ? vibeProfile : null,
     sector: brandBusinessType,
     kitHeading: brandKitObj?.headingFont,
@@ -302,10 +318,11 @@ export async function fetchProductionContext(
     brandTone,
     brandLogoUrl,
     raw,
-    brandTheme: brandTheme ?? null,
+    brandTheme: productionBrandTheme ?? brandTheme ?? null,
     tokens,
     templateLibrary,
     kitId,
+    agencyProductionForced: agencyDefaults.forced,
     aiPhotoEnhanceEnabled,
     aiPhotoEnhanceLevel,
     aiVisualStandard,

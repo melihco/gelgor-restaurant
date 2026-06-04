@@ -1405,6 +1405,7 @@ async function runProduction(params: RunProductionParams): Promise<NextResponse>
   const brandAntiPatterns = pctx.brandAntiPatterns;
   const motionProfile = pctx.motionProfile;
   const brandCtxForVisual = pctx.brandCtxForVisual;
+  const agencyProductionForced = pctx.agencyProductionForced;
 
   const vibePalette = hasVibe
     ? ((brandCtx.brand_vibe_profile as Record<string, unknown>)?.palette as Record<string, string> | undefined)
@@ -1608,6 +1609,7 @@ async function runProduction(params: RunProductionParams): Promise<NextResponse>
       postIndex,
       storyIndex,
       reelIndex,
+      sector: brandBusinessType,
     });
     if (pkgFmt === 'post' || pkgFmt === 'carousel') slotPostCount += 1;
     else if (pkgFmt === 'story') slotStoryCount += 1;
@@ -2538,6 +2540,18 @@ async function runProduction(params: RunProductionParams): Promise<NextResponse>
       auto_produced: true,
       gallery_sourced: true,
       gallery_only: GALLERY_ONLY,
+      renderer_executed: (() => {
+        if (videoUrl) return 'runway_reel';
+        if (willRemotionStoryRender) return 'remotion_story_async';
+        if (designedPosterSyncUrl) return 'remotion_poster_sync';
+        if (markyBranded && imageUrl && referenceUrl && imageUrl !== referenceUrl) return 'remotion_poster_marky';
+        if (willRemotionPostRender) return 'remotion_post_async';
+        if (aiEnhanceApplied) return 'gpt_image_enhance';
+        if (assignment.pipeline === 'gallery_photo') return 'gallery_raw';
+        return assignment.pipeline;
+      })(),
+      flux_used: false,
+      agency_defaults_forced: agencyProductionForced,
       agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0),
       runway_produced: Boolean(videoUrl),
       ...(runwayProduceMeta ? {

@@ -13,6 +13,8 @@ import { isPromoOfferCopy } from './poster-quality';
 import {
   applyMissionRemotionStoryAssignment,
 } from './mission-remotion-story';
+import { mapProductionContextToLibrarySlotKey } from './brand-template-library';
+import { isAgencyServiceSector } from './agency-production-defaults';
 import { detectIdeaPackageFormat } from './weekly-publish-package';
 import type { StoryCompositionId } from '@/remotion/types';
 
@@ -51,6 +53,7 @@ export function inferProductionAssignment(
   postIndex: number,
   storyIndex: number,
   reelIndex: number,
+  sector?: string,
 ): ProductionAssignment {
   const fmt = detectIdeaPackageFormat(idea);
   const campaign = isCampaignIdea(idea);
@@ -91,15 +94,20 @@ export function inferProductionAssignment(
     };
   }
 
-  // post: first → organic gallery, second+ designed (or campaign → designed)
-  if (campaign || postIndex > 0) {
+  // post: berber/ajans → tüm postlar tasarımsal; diğer sektörlerde 2.+ post designed
+  const agencyPosts = sector ? isAgencyServiceSector(sector) : false;
+  if (campaign || postIndex > 0 || agencyPosts) {
     return {
       idea_index: ideaIndex,
       slot_role: 'designed_post',
       pipeline: 'remotion_poster',
       copy_bundle_id: bundleId,
       publish_channel: campaign ? 'instagram_campaign' : 'instagram_organic',
-      rationale: campaign ? 'heuristic_campaign_post' : 'heuristic_designed_post',
+      rationale: campaign
+        ? 'heuristic_campaign_post'
+        : agencyPosts
+          ? 'heuristic_agency_designed_post'
+          : 'heuristic_designed_post',
     };
   }
 
@@ -140,6 +148,23 @@ export function parseProductionAssignments(
   return out;
 }
 
+function enrichAssignment(
+  assignment: ProductionAssignment,
+  idea: Record<string, unknown>,
+): ProductionAssignment {
+  const librarySlotKey = assignment.library_slot_key
+    ?? mapProductionContextToLibrarySlotKey({
+      slotRole: assignment.slot_role,
+      templateUseCase: String(idea.template_use_case || ''),
+      treatment: String(idea.treatment || idea.visual_production_spec?.treatment || ''),
+      hasEventDetails: Boolean(
+        (idea.event_details as Record<string, unknown> | undefined)?.artist_name
+        || (idea.event_details as Record<string, unknown> | undefined)?.date,
+      ),
+    });
+  return librarySlotKey ? { ...assignment, library_slot_key: librarySlotKey } : assignment;
+}
+
 export function resolveProductionAssignment(input: {
   ideaIndex: number;
   idea: Record<string, unknown>;
@@ -148,6 +173,7 @@ export function resolveProductionAssignment(input: {
   postIndex: number;
   storyIndex: number;
   reelIndex: number;
+  sector?: string;
 }): ProductionAssignment {
   const fromReport = parseProductionAssignments(input.report).find(
     (a) => a.idea_index === input.ideaIndex,
@@ -155,12 +181,12 @@ export function resolveProductionAssignment(input: {
   let assignment: ProductionAssignment;
   if (fromReport?.slot_role) {
     const pipeline = fromReport.pipeline || pipelineForSlotRole(fromReport.slot_role);
-    assignment = {
+    assignment = enrichAssignment({
       ...fromReport,
       pipeline,
       copy_bundle_id: fromReport.copy_bundle_id || defaultCopyBundleId(input.missionId),
       publish_channel: fromReport.publish_channel || publishChannelForRole(fromReport.slot_role),
-    };
+    }, input.idea);
   } else {
     assignment = inferProductionAssignment(
       input.ideaIndex,
@@ -169,8 +195,10 @@ export function resolveProductionAssignment(input: {
       input.postIndex,
       input.storyIndex,
       input.reelIndex,
+      input.sector,
     );
   }
+  assignment = enrichAssignment(assignment, input.idea);
   if (detectIdeaPackageFormat(input.idea) === 'story') {
     return applyMissionRemotionStoryAssignment(assignment, input.storyIndex);
   }
