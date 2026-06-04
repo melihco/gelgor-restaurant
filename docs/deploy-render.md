@@ -21,11 +21,16 @@
    - `smartagency-crew` (private)
    - `smartagency-api`
    - `smartagency-web`
-5. Dashboard → her serviste **Environment** → ekle:
-   - `OPENAI_API_KEY`
-   - `APIFY_API_KEY` (opsiyonel)
-   - `FAL_API_KEY`, `RUNWAY_API_SECRET` (web)
-6. İlk deploy bitince:
+5. Publish env'leri yükle (yerel `.env.local` değerlerinden):
+   ```bash
+   ./scripts/render-push-publish-env.sh --dry-run
+   # Dashboard → smartagency-web → Add from .env → render.env.publish.web.local
+   # Dashboard → smartagency-crew → Add from .env → render.env.publish.crew.local
+   # veya: export RENDER_API_KEY=rnd_... && ./scripts/render-push-publish-env.sh
+   ```
+   Zorunlu publish alanları: `META_APP_*`, `MERTCAFE_*`, `R2_*`, `OPENAI_API_KEY`, `FAL_API_KEY`, `RUNWAY_API_SECRET`
+6. Public URL'ler `RENDER_EXTERNAL_URL` ile otomatik bağlanır (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, CORS).
+7. İlk deploy bitince:
    ```bash
    curl https://<api-host>/health/ready
    ```

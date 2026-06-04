@@ -13,6 +13,14 @@ envVarGroups:
     envVars:
       - key: INTERNAL_API_KEY
         generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APIFY_API_KEY
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
       - key: APP_ENV
         value: production
       - key: ASPNETCORE_ENVIRONMENT
@@ -52,6 +60,8 @@ services:
           name: smartagency-web
           type: web
           property: hostport
+      - key: META_USD_TRY_RATE
+        value: "32.0"
 
   - type: web
     name: smartagency-api
@@ -75,12 +85,12 @@ services:
         fromService:
           name: smartagency-web
           type: web
-          property: hostport
+          envVarKey: RENDER_EXTERNAL_URL
       - key: Cors__AllowedOrigins__0
         fromService:
           name: smartagency-web
           type: web
-          property: hostport
+          envVarKey: RENDER_EXTERNAL_URL
 
   - type: web
     name: smartagency-web
@@ -91,16 +101,57 @@ services:
     healthCheckPath: /
     envVars:
       - fromGroup: smartagency-shared
+      - key: FAL_API_KEY
+        sync: false
+      - key: RUNWAY_API_SECRET
+        sync: false
+      - key: SMART_AGENCY_IMAGE_PROVIDER
+        value: flux
+      # Instagram / Meta OAuth + Graph publish (desktop ApprovalFeedback)
+      - key: NEXT_PUBLIC_SITE_URL
+        fromService:
+          name: smartagency-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXUS_API_URL
+        fromService:
+          name: smartagency-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: MERTCAFE_BASE_URL
+        sync: false
+      - key: MERTCAFE_WORKSPACE_API_KEYS
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: VENUE_PHOTO_PRESERVE
+        value: "true"
+      - key: AUTO_PRODUCE_GALLERY_ONLY
+        value: "true"
+      - key: AUTO_PRODUCE_BYPASS_LIMITS
+        value: "false"
+      - key: AUTO_PRODUCE_RUNWAY
+        value: "true"
       - key: NEXT_PUBLIC_API_URL
         fromService:
           name: smartagency-api
           type: web
-          property: hostport
+          envVarKey: RENDER_EXTERNAL_URL
       - key: NEXT_PUBLIC_SIGNALR_URL
         fromService:
           name: smartagency-api
           type: web
-          property: hostport
+          envVarKey: RENDER_EXTERNAL_URL
       - key: BACKEND_ORIGIN
         fromService:
           name: smartagency-api
@@ -116,5 +167,3 @@ services:
           name: smartagency-crew
           type: pserv
           property: hostport
-      - key: INTERNAL_API_KEY
-        fromGroup: smartagency-shared
