@@ -63,6 +63,21 @@ def _is_rejected(status: Any) -> bool:
     return s in ("2", "rejected", "3", "revisionrequested", "revision_requested")
 
 
+_GENERATED_URL_MARKERS = (
+    "oaidalleapiprodscus",  # OpenAI DALL-E CDN
+    "r2.dev",               # Cloudflare R2 (enhanced outputs)
+    "cdn.creatomate",
+    "storage.googleapis.com",
+    "blob.core.windows.net",
+    "runway",
+    "fal.ai",
+)
+
+
+def _looks_generated(url: str) -> bool:
+    return any(marker in url for marker in _GENERATED_URL_MARKERS)
+
+
 def _push_url(bucket: set[str], url: Any) -> None:
     if isinstance(url, str) and url.startswith("http"):
         bucket.add(normalize_gallery_url(url))
@@ -107,6 +122,15 @@ def extract_gallery_urls_from_artifact(artifact: dict[str, Any]) -> tuple[str, l
     if isinstance(carousel_urls, list):
         for u in carousel_urls:
             _push_url(urls, u)
+
+    # Secondary: imageUrl / contentUrl — track only if they look like real venue photos
+    for field in ("imageUrl", "image_url"):
+        image_url_candidate = str(meta.get(field) or content.get(field) or "")
+        if image_url_candidate and not _looks_generated(image_url_candidate):
+            _push_url(urls, image_url_candidate)
+    content_url = str(artifact.get("contentUrl") or artifact.get("content_url") or "")
+    if content_url and not _looks_generated(content_url):
+        _push_url(urls, content_url)
 
     if not urls:
         return None

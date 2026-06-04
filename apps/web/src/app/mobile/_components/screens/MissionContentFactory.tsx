@@ -15,13 +15,13 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
+import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { buildCanvaMissionSignal } from '@/lib/canva-mission-signal';
 import { AutoProductionFeed } from './AutoProductionFeed';
 import { apiClient } from '@/lib/api-client';
-import dynamic from 'next/dynamic';
 import type { BrandTheme } from '@/types/brand-theme';
 
-const LayoutEngine = dynamic(() => import('@/components/canvas/LayoutEngine').then(m => m.LayoutEngine), { ssr: false });
 import {
   buildGalleryUsageFromArtifacts,
   contentTypeToPostType,
@@ -35,6 +35,7 @@ import {
   buildGalleryLookup,
   rankPhotosForContent,
   rankPhotosForContentSeeded,
+  enrichGalleryAnalysis,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
@@ -55,6 +56,23 @@ import {
 import {
   resolveAnnouncementBrandKit,
 } from '@/lib/announcement-brand-kit';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { isCanvaEnabledClient } from '@/lib/canva-config';
+import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import {
+  NON_VENUE_SECTORS,
+  SYNTHETIC_GALLERY_MIN,
+  resolveSyntheticGalleryTarget,
+} from '@/lib/sector-gallery-seed';
+import {
+  buildMultiReelPhotoInputs,
+  callGenerateMultiReel,
+  isUsableReelPhotoUrl,
+  maxPhotosForStrategy,
+  resolveRunwayReelStrategy,
+} from '@/lib/reel-multi-production';
+
+const CANVA_ACTIVE = isCanvaEnabledClient();
 
 // ── Design card prompt builder ────────────────────────────────────────────────
 /**
@@ -739,6 +757,20 @@ function artifactIdeaToRecord(idea: ArtifactIdea, raw?: Record<string, unknown>)
   const vps = idea.visualProductionSpec;
   const headline = idea.headline ?? idea.title ?? '';
   const caption = idea.caption ?? '';
+
+  // Sprint 3 (ICS): preserve design-layer copy + intent that the agent produced.
+  // Previously canvaFieldCopy / asset_intent / event_date were dropped here, so the
+  // Canva autofill and announcement renderers had to re-synthesise everything.
+  const canvaFieldCopy = idea.canvaFieldCopy
+    ?? (raw?.canva_field_copy as Record<string, string> | undefined)
+    ?? (raw?.canvaFieldCopy as Record<string, string> | undefined);
+  const assetIntent = idea.assetIntent
+    ?? (raw ? getIdeaField(raw, 'asset_intent', 'assetIntent', 'asset_recommendation') : '');
+  const eventDate = idea.eventDate
+    ?? (raw ? getIdeaField(raw, 'event_date', 'eventDate', 'date_suggestion') : '');
+  const location = idea.location
+    ?? (raw ? getIdeaField(raw, 'location') : '');
+
   return {
     headline,
     concept_title: idea.title ?? headline,
@@ -756,6 +788,11 @@ function artifactIdeaToRecord(idea: ArtifactIdea, raw?: Record<string, unknown>)
     visual_direction: idea.visualDirection ?? '',
     posting_time_suggestion: idea.postingTime ?? '',
     template_use_case: idea.templateUseCase ?? '',
+    asset_intent: assetIntent || undefined,
+    event_date: eventDate || undefined,
+    location: location || undefined,
+    // Emit under both casings so extractMissionIdeaFields and Canva autofill see it.
+    ...(canvaFieldCopy ? { canva_field_copy: canvaFieldCopy, canvaFieldCopy } : {}),
     visual_production_spec: vps ? {
       treatment: vps.treatment,
       selected_gallery_url: vps.selectedGalleryUrl,
@@ -948,7 +985,7 @@ function IdeaCard({
   const [isGeneratingReel, setIsGeneratingReel] = useState(false);
   const [reelError, setReelError] = useState<string | null>(null);
   const [isGeneratingMultiReel, setIsGeneratingMultiReel] = useState(false);
-  const [multiReelStrategy, setMultiReelStrategy] = useState<'multi_ref' | 'sequential'>('multi_ref');
+  const [multiReelStrategy, setMultiReelStrategy] = useState<'multi_ref' | 'sequential'>('sequential');
 
   // ── Event Card (Canvas) ────────────────────────────────────────────────────
   const [showEventModal, setShowEventModal] = useState(false);
@@ -1002,7 +1039,6 @@ function IdeaCard({
     enabled: Boolean(tenantId),
   });
 
-  const [showBrandCanvas, setShowBrandCanvas] = useState(false);
   const { data: brandTheme } = useQuery<BrandTheme | null>({
     queryKey: ['brandTheme', tenantId],
     queryFn: async () => {
@@ -1043,10 +1079,8 @@ function IdeaCard({
   }, [tenantId]);
 
   // Already-used images — artifacts saved to Outputs (pending_review or approved)
-  const { data: existingArtifacts = [] } = useQuery({
-    queryKey: ['artifacts'],
-    queryFn: () => apiClient.getArtifacts(),
-    staleTime: 30_000,
+  const { data: existingArtifacts = [] } = useMobileArtifacts({
+    subscribeOnly: true,
   });
   // Gallery usage per post type — same gallery URL must not repeat within a type
   const galleryUsage = buildGalleryUsageFromArtifacts(
@@ -1073,7 +1107,9 @@ function IdeaCard({
     staleTime: 10 * 60_000,
     enabled: Boolean(tenantId),
   });
-  const galleryAnalysis = galleryAnalysisRaw ?? {};
+  // Enrich gallery metadata: derive contentTags/bestFor/usageContext from descriptions
+  // when the stored analysis only has description + mood (missing structured tags).
+  const galleryAnalysis = enrichGalleryAnalysis((galleryAnalysisRaw ?? {}) as Record<string, GalleryPhotoMeta>);
 
   // Parse brand reference images — exclude non-product assets (maps, logos, footers, menus)
   const EXCLUDE_PATTERNS = [
@@ -1094,6 +1130,7 @@ function IdeaCard({
     return urls
       .filter((u: unknown): u is string => {
         if (typeof u !== 'string' || !u.startsWith('http')) return false;
+        if (!isUsableGalleryPhotoUrl(u)) return false;
         const lower = u.toLowerCase();
         return !EXCLUDE_PATTERNS.some(p => lower.includes(p));
       })
@@ -1607,18 +1644,100 @@ function IdeaCard({
     setIsGeneratingSeries(false);
   }
 
-  // ── "Reel Üret" — agent edit prompt + gallery photo → Runway video ──────────
+  // ── "Reel Üret" — auto montaj when 2+ gallery photos, else single Runway ──
+  async function produceMultiPhotoReel(explicitStrategy?: 'multi_ref' | 'sequential') {
+    const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
+    const nonCdnPhotos = brandRefImages.filter(
+      (u) => !CDN_HOSTS.some((h) => u.includes(h)) && u.startsWith('http'),
+    );
+    const promptImage =
+      (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) ||
+      agentGalleryUrl ||
+      nonCdnPhotos[0] ||
+      null;
+
+    if (!promptImage) {
+      throw new Error('Reel için önce bir görsel üretin veya marka fotoğrafı seçin');
+    }
+
+    const extraUrls = brandRefImages.filter(
+      (u) => isUsableReelPhotoUrl(u) && normalizeGalleryUrl(u) !== normalizeGalleryUrl(promptImage),
+    );
+    const montageUrls = [promptImage, ...extraUrls].filter(isUsableReelPhotoUrl).slice(0, 4);
+    const photoInputs = buildMultiReelPhotoInputs(montageUrls, galleryAnalysis, normalizeGalleryUrl);
+
+    if (photoInputs.length < 2) {
+      throw new Error('Montaj reel için en az 2 kullanılabilir marka fotoğrafı gerekiyor');
+    }
+
+    const resolved = explicitStrategy ?? resolveRunwayReelStrategy({
+      photoCount: photoInputs.length,
+      treatment: (vps?.treatment as string) ?? purpose,
+      templateUseCase: getIdeaField(idea, 'template_use_case'),
+      mood: getIdeaField(idea, 'mood', 'tone'),
+      contentType: fmtLower.includes('reel') ? 'reel' : fmt,
+    });
+    const montageStrategy = resolved === 'multi_ref' ? 'multi_ref' : 'sequential';
+    const limit = maxPhotosForStrategy(resolved === 'single' ? 'multi_ref' : resolved);
+    setMultiReelStrategy(montageStrategy);
+
+    const multi = await callGenerateMultiReel(window.location.origin, {
+      workspaceId: tenantId,
+      photos: photoInputs.slice(0, limit),
+      headline,
+      caption: caption.slice(0, 300),
+      brandName: brandName ?? (brandCtx?.business_name as string | undefined) ?? '',
+      brandLocation: brandCtx?.location ?? location ?? '',
+      vibeProfile: (brandCtx as Record<string, unknown> | undefined)?.brand_vibe_profile as
+        | Record<string, unknown>
+        | undefined,
+      brandThemeGrading: brandTheme?.grading
+        ? {
+            look: brandTheme.grading.look,
+            lut_directive: (brandTheme.grading as { lutDirective?: string }).lutDirective ?? brandTheme.grading.look,
+          }
+        : undefined,
+      strategy: montageStrategy,
+      ratio: '720:1280',
+      duration: 5,
+    });
+
+    if (!multi.videoUrl) {
+      throw new Error(multi.error || 'Çoklu fotoğraf reel üretilemedi');
+    }
+
+    setReelUrl(multi.videoUrl);
+    await apiClient.saveCreativeArtifact({
+      title: `${headline || brandName} — ${montageStrategy === 'sequential' ? 'Montaj Reel' : 'Reel'}`,
+      contentUrl: multi.videoUrl,
+      platform: 'instagram',
+      contentType: 'instagram_reel',
+      content: JSON.stringify({
+        videoUrl: multi.videoUrl,
+        strategy: multi.strategy,
+        photoCount: multi.photoCount,
+        caption,
+        kind: 'instagram_reel',
+      }),
+      metadata: {
+        videoUrl: multi.videoUrl,
+        strategy: multi.strategy,
+        photoCount: multi.photoCount,
+        caption,
+        source: 'runway_multi_photo',
+      },
+    });
+    queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+  }
+
   async function generateReelVideo() {
     setIsGeneratingReel(true);
     setReelError(null);
     try {
-      // promptImage priority:
-      // 1. generatedUrl — the image already displayed on screen (best: user confirmed it)
-      // 2. agentGalleryUrl — agent's recommended gallery photo
-      // 3. First non-CDN website photo (CDN instagram URLs expire, can't be fetched by Runway)
       const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
-      const nonCdnPhotos = brandRefImages.filter(u =>
-        !CDN_HOSTS.some(h => u.includes(h)) && u.startsWith('http'));
+      const nonCdnPhotos = brandRefImages.filter(
+        (u) => !CDN_HOSTS.some((h) => u.includes(h)) && u.startsWith('http'),
+      );
       const promptImage =
         (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) ||
         agentGalleryUrl ||
@@ -1629,34 +1748,47 @@ function IdeaCard({
         throw new Error('Reel için önce bir görsel üretin veya marka fotoğrafı seçin');
       }
 
-      // BrandTheme vibe enrichment — kept as secondary creative context
+      const extraUrls = brandRefImages.filter(
+        (u) => isUsableReelPhotoUrl(u) && normalizeGalleryUrl(u) !== normalizeGalleryUrl(promptImage),
+      );
+      const montageUrls = [promptImage, ...extraUrls].filter(isUsableReelPhotoUrl);
+      const photoInputs = buildMultiReelPhotoInputs(montageUrls, galleryAnalysis, normalizeGalleryUrl);
+
+      if (photoInputs.length >= 2) {
+        try {
+          await produceMultiPhotoReel();
+          return;
+        } catch (multiErr: unknown) {
+          const msg = multiErr instanceof Error ? multiErr.message : 'Montaj reel başarısız';
+          console.warn('[MissionContentFactory] Multi-reel failed, falling back to single:', msg);
+        }
+      }
+
       const vibeClause = brandTheme
         ? `Visual style: ${brandTheme.grading?.look ?? ''}. ${brandTheme.grading?.lutDirective ?? ''}. Color palette: ${brandTheme.palette?.description ?? ''}.`
         : '';
-      // concept carries vibe/style context; caption carries the actual story to visualize
       const concept = [agentEditPrompt || visualDir, vibeClause].filter(Boolean).join(' ') || caption;
 
       const res = await fetch('/api/generate-reel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title:          headline || `${brandName} Reel`,
-          // caption: the actual written content brief — director prompt will SHOW what this SAYS
+          title: headline || `${brandName} Reel`,
           caption,
           concept,
-          platform:       'instagram',
-          contentType:    'reel',
-          visualStyle:    brandTheme?.grading?.look || (brandCtx as any)?.visual_style || 'warm natural',
-          brandTone:      (brandCtx as any)?.brand_tone || 'friendly',
-          targetAudience: (brandCtx as any)?.target_audience || '',
-          duration:       5,
-          cameraMotion:   'dolly_in',
-          ratio:          '720:1280',
-          tags:           hashtags.slice(0, 5),
+          platform: 'instagram',
+          contentType: 'reel',
+          visualStyle: brandTheme?.grading?.look || (brandCtx as Record<string, unknown>)?.visual_style || 'warm natural',
+          brandTone: (brandCtx as Record<string, unknown>)?.brand_tone || 'friendly',
+          targetAudience: (brandCtx as Record<string, unknown>)?.target_audience || '',
+          duration: 5,
+          cameraMotion: 'dolly_in',
+          ratio: '720:1280',
+          tags: hashtags.slice(0, 5),
           promptImage,
           sceneMetadata: {
             brandName,
-            location: (brandCtx as any)?.location ?? '',
+            location: (brandCtx as Record<string, unknown>)?.location ?? '',
           },
         }),
       });
@@ -1669,18 +1801,18 @@ function IdeaCard({
       }
       setReelUrl(resolvedVideoUrl);
 
-      // Auto-save to outputs
       await apiClient.saveCreativeArtifact({
-        title:       `${headline || brandName} — Reel`,
-        contentUrl:  resolvedVideoUrl,
-        platform:    'instagram',
+        title: `${headline || brandName} — Reel`,
+        contentUrl: resolvedVideoUrl,
+        platform: 'instagram',
         contentType: 'instagram_reel',
-        content:     JSON.stringify({ videoUrl: resolvedVideoUrl, caption, kind: 'instagram_reel' }),
-        metadata:    { videoUrl: resolvedVideoUrl, caption, source: 'runway' },
+        content: JSON.stringify({ videoUrl: resolvedVideoUrl, caption, kind: 'instagram_reel' }),
+        metadata: { videoUrl: resolvedVideoUrl, caption, source: 'runway' },
       });
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-    } catch (e: any) {
-      setReelError(e?.message?.slice(0, 100) || 'Runway hatası');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Runway hatası';
+      setReelError(msg.slice(0, 100));
     } finally {
       setIsGeneratingReel(false);
     }
@@ -1812,69 +1944,13 @@ function IdeaCard({
   // ── Çoklu Fotoğraf Reel (multi-reference veya sequential) ─────────────────
   async function generateMultiPhotoReel(strategy: 'multi_ref' | 'sequential' = 'multi_ref') {
     if (isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel) return;
-    if (brandRefImages.length < 2) {
-      setReelError('En az 2 marka fotoğrafı gerekiyor. Brand Hub\'a fotoğraf ekleyin.');
-      return;
-    }
     setIsGeneratingMultiReel(true);
-    setMultiReelStrategy(strategy);
     setReelError(null);
-
     try {
-      // Pick 2-3 thematically diverse photos (exclude logos, maps, etc.)
-      const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
-      const photoPool = brandRefImages
-        .filter(u => !CDN_HOSTS.some(h => u.includes(h)) && u.startsWith('http'))
-        .slice(0, 6);
-      const selectedPhotos = photoPool.slice(0, strategy === 'sequential' ? 3 : 4);
-
-      // Build rich photo context — use findAnalysis for URL normalization
-      const photos = selectedPhotos.map(url => {
-        const analysis = (findAnalysis(url) ?? {}) as Record<string, unknown>;
-        return {
-          url,
-          description: ((analysis.description as string) ?? '').slice(0, 200),
-          tags: (analysis.contentTags as string[] ?? analysis.tags as string[] ?? []),
-        };
-      });
-
-      const res = await fetch('/api/generate-multi-reel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: tenantId,
-          photos,
-          headline,
-          caption: caption.slice(0, 300),
-          brandName: brandCtx?.business_name ?? '',
-          brandLocation: brandCtx?.location_city ?? brandCtx?.location_country ?? '',
-          vibeProfile: brandCtx?.vibe_profile ?? undefined,
-          brandThemeGrading: brandTheme?.grading ? {
-            look: brandTheme.grading.look,
-            lut_directive: (brandTheme.grading as any).lutDirective ?? brandTheme.grading.look,
-          } : undefined,
-          strategy,
-          ratio: '720:1280',
-          duration: 5,
-        }),
-      });
-
-      const data = await res.json();
-      const videoUrl: string | null = data.videoUrl ?? null;
-      if (!res.ok || !videoUrl) throw new Error(data.error || 'Çoklu fotoğraf reel üretilemedi');
-
-      setReelUrl(videoUrl);
-      await apiClient.saveCreativeArtifact({
-        title: `${headline || 'Multi-Photo Reel'} — ${strategy === 'sequential' ? 'Montaj' : 'Çoklu Ref'}`,
-        contentUrl: videoUrl,
-        platform: 'instagram',
-        contentType: 'instagram_reel',
-        content: JSON.stringify({ videoUrl, strategy, photoCount: photos.length, caption, kind: 'instagram_reel' }),
-        metadata: { videoUrl, strategy, photoCount: photos.length, source: 'runway_multi_photo' },
-      });
-      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-    } catch (e: any) {
-      setReelError(e?.message?.slice(0, 120) || 'Çoklu fotoğraf reel hatası');
+      await produceMultiPhotoReel(strategy);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Çoklu fotoğraf reel hatası';
+      setReelError(msg.slice(0, 120));
     } finally {
       setIsGeneratingMultiReel(false);
     }
@@ -1916,7 +1992,7 @@ function IdeaCard({
       photoUrl: resolvedPhotoUrl,
       contentType: eventForm.contentType,
       templateId: eventForm.templateId,
-      brandName: (b?.business_name as string | undefined) ?? brandName ?? '',
+      brandName: brandName ?? (b?.business_name as string | undefined) ?? '',
       location: (b?.location as string | undefined) ?? '',
       workspaceId: tenantId,
       artistName: eventForm.artistName || undefined,
@@ -2017,30 +2093,33 @@ function IdeaCard({
     setCanvaDesignResult(null);
 
     try {
-      // Map content type to Canva content kind
-      const kindMap: Record<string, string> = {
-        post: 'instagram_post', story: 'instagram_story',
-        reel: 'instagram_reel', event: 'instagram_story',
+      const ideaRecord: Record<string, unknown> = {
+        ...idea,
+        headline,
+        caption_draft: caption,
+        cta,
+        hashtags,
+        strategic_purpose: purpose,
+        content_type: contentTypeFmt,
       };
-      const kind = kindMap[contentTypeFmt ?? 'post'] ?? 'instagram_post';
+      const { title, signal } = buildCanvaMissionSignal({
+        idea: ideaRecord,
+        brandName,
+        location,
+        missionBrief,
+        imageUrl: generatedUrl ?? agentGalleryUrl ?? referenceImageUrls?.[0],
+      });
 
       const res = await fetch('/api/canva/autofill-design', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
-          title: headline.trim() || caption.trim().slice(0, 60),
-          signal: {
-            kind,
-            title:    headline.trim() || caption.trim().slice(0, 60),
-            headline: headline.trim(),
-            caption:  caption.trim(),
-            summary:  purpose.trim() || caption.trim().slice(0, 120),
-            cta:      cta.trim() || undefined,
-            hashtags: hashtags.slice(0, 5),
-          },
+          title,
+          signal,
+          lineage: { source: 'mission_advanced', ideaIndex: index },
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(90_000),
       });
 
       const data = await res.json();
@@ -2062,21 +2141,23 @@ function IdeaCard({
       const thumbnailUrl = design?.thumbnail?.url;
       const templateTitle = data.decision?.template?.title;
 
+      const contentKind = signal.kind;
       setCanvaDesignResult({ editUrl, thumbnailUrl, templateTitle, designId: design?.id });
 
       // Save to Outputs
       await apiClient.saveCreativeArtifact({
-        title:       `${headline || brandName} — Canva ${templateTitle ?? kind}`,
+        title:       `${headline || brandName} — Canva ${templateTitle ?? contentKind}`,
         contentUrl:  editUrl,
         platform:    'canva',
-        contentType: kind,
+        contentType: contentKind.replace('instagram_', ''),
         content: JSON.stringify({
           canvaEditUrl: editUrl,
           canvaThumbnail: thumbnailUrl,
           canvaDesignId: design?.id,
           templateTitle,
           caption,
-          kind,
+          kind: contentKind,
+          canvaFieldCopy: signal.canvaFieldCopy,
           source: 'canva_autofill',
         }),
         metadata: {
@@ -2084,7 +2165,7 @@ function IdeaCard({
           canvaEditUrl: editUrl,
           canvaDesignId: design?.id,
           templateTitle,
-          contentKind: kind,
+          contentKind,
         },
       });
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
@@ -2108,7 +2189,7 @@ function IdeaCard({
     const commonParams = {
       title:              headline || `${brandName} içerik`,
       caption,
-      brandName:          b?.business_name || brandName || '',
+      brandName:          brandName || (b?.business_name as string | undefined) || '',
       location:           b?.location || location || '',
       visualStyle:        b?.visual_style || b?.visual_dna || visualDir || '',
       campaignContext:    agentEditPrompt || visualDir || purpose,
@@ -2176,8 +2257,20 @@ function IdeaCard({
           title: `${headline || brandName} — Carousel (${carouselSlides.length} slide)`,
           contentUrl: carouselSlides[0],
           platform: 'instagram', contentType: 'instagram_carousel',
-          content: JSON.stringify({ imageUrl: carouselSlides[0], caption, kind: 'instagram_carousel', slides: carouselSlides }),
-          metadata: { imageUrl: carouselSlides[0], caption },
+          content: JSON.stringify({
+            imageUrl: carouselSlides[0],
+            caption,
+            kind: 'instagram_carousel',
+            slides: carouselSlides,
+            carousel_urls: carouselSlides.length >= 2 ? carouselSlides : undefined,
+            carousel_multi_photo: carouselSlides.length >= 2,
+          }),
+          metadata: {
+            imageUrl: carouselSlides[0],
+            caption,
+            carousel_urls: carouselSlides.length >= 2 ? carouselSlides : undefined,
+            carousel_multi_photo: carouselSlides.length >= 2,
+          },
         }),
       ].filter(Boolean);
 
@@ -2634,56 +2727,22 @@ function IdeaCard({
           )}
         </div>
 
-        {/* ── Marka Kiti (LayoutEngine) Önizleme ────────────────────────── */}
-        {brandTheme && (
-          <div style={{ marginTop: 12 }}>
-            <button
-              onClick={() => setShowBrandCanvas(v => !v)}
-              style={{
-                width: '100%', padding: '9px 14px', borderRadius: 12, cursor: 'pointer',
-                border: `1px solid ${showBrandCanvas ? t.accent : t.separator}`,
-                background: showBrandCanvas ? `${t.accent}12` : 'transparent',
-                color: showBrandCanvas ? t.accent : t.textMuted,
-                fontSize: 12, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}>
-              <span>✦</span>
-              <span>{showBrandCanvas ? 'Marka Kiti Önizlemesini Kapat' : 'Marka Kiti ile Önizle'}</span>
-            </button>
-
-            {showBrandCanvas && (
-              <div style={{ marginTop: 10, borderRadius: 16, overflow: 'hidden',
-                border: `1px solid ${t.separator}`,
-                ...(isPortrait ? { height: 300, width: Math.round(300 * 9 / 16), margin: '10px auto 0' }
-                  : { aspectRatio: '1/1', maxHeight: 320 }) }}>
-                <LayoutEngine
-                  content={{
-                    headline,
-                    subline: '',
-                    bullets: [],
-                    caption,
-                    cta: cta || '',
-                    hashtags: hashtags.join(' '),
-                    layoutId: (isPortrait ? 'story_full' : 'feed_square') as any,
-                    postingTimeSuggestion: '',
-                    contentType: fmt,
-                    format: isPortrait ? 'story' : isCarousel ? 'carousel' : 'feed',
-                    visualBrief: {
-                      treatment: 'photo',
-                      galleryUrl: generatedUrl ?? null,
-                      shotType: 'environmental',
-                      includePeople: false,
-                    },
-                    tokensHint: { primaryColor: null, overlayOpacity: null, typographyWeight: null },
-                    ideaTitle: headline,
-                    brandConfidence: 1,
-                    antiPatternFlags: [],
-                  } as any}
-                  theme={brandTheme}
-                  style={{ width: '100%', height: '100%' }}
-                />
-              </div>
-            )}
+        {/* ── Remotion Story Önizleme ─────────────────────────────────────── */}
+        {(fmtLower.includes('story') || fmtLower.includes('reel')) && (
+          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14,
+            background: 'rgba(124,58,237,0.07)', border: '0.5px solid rgba(124,58,237,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <span style={{ fontSize: 13 }}>▶</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>Remotion Story</span>
+              <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 'auto' }}>
+                Creative Director + Grafiker Review dahil
+              </span>
+            </div>
+            <p style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.5, margin: '0 0 0' }}>
+              Story ve Reel üretimi Remotion ile yapılıyor. Mission'ı onayladığında
+              otomatik olarak Creative Director agent devreye girer, template seçer
+              ve Grafiker Review ile kalite kontrolü yapar. Feed'de ★ skor ile görünür.
+            </p>
           </div>
         )}
 
@@ -2801,8 +2860,8 @@ function IdeaCard({
           </div>
         )}
 
-        {/* ── Canva Şablonu üretiliyor ────────────────────────────────── */}
-        {isGeneratingCanva && (
+        {/* ── Canva (disabled — Remotion production) ── */}
+        {CANVA_ACTIVE && isGeneratingCanva && (
           <div style={{ marginTop: 10, padding: '12px 14px', borderRadius: 14,
             background: 'rgba(124,58,237,0.06)', border: '0.5px solid rgba(124,58,237,0.25)',
             display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -2821,7 +2880,7 @@ function IdeaCard({
         )}
 
         {/* ── Canva tasarım sonucu ────────────────────────────────────── */}
-        {canvaDesignResult && (
+        {CANVA_ACTIVE && canvaDesignResult && (
           <div style={{ marginTop: 10, borderRadius: 14,
             background: 'rgba(124,58,237,0.06)', border: '0.5px solid rgba(124,58,237,0.3)',
             overflow: 'hidden' }}>
@@ -2853,7 +2912,7 @@ function IdeaCard({
         )}
 
         {/* ── Canva hatası ────────────────────────────────────────────── */}
-        {canvaError && (
+        {CANVA_ACTIVE && canvaError && (
           <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 12,
             background: 'rgba(239,68,68,0.06)', border: '0.5px solid rgba(239,68,68,0.2)',
             fontSize: 11, color: '#EF4444', fontWeight: 600 }}>
@@ -3069,168 +3128,6 @@ function IdeaCard({
                   : (!generatedUrl ? 'Çıktılara Ekle' : '✓ Çıktılara Ekle')
               }
             </button>
-          </div>
-        )}
-
-        {/* ── Canvas + Agency quick row — her zaman görünür ─────────────── */}
-        {!saved && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-            {/* Etkinlik Kartı — Canvas Story */}
-            <button
-              onClick={() => {
-                setEventForm(f => ({
-                  ...f,
-                  eventName: f.eventName || headline.slice(0, 50),
-                  tagline: f.tagline || caption.slice(0, 60),
-                }));
-                setShowEventModal(true);
-              }}
-              disabled={isGeneratingEventCard}
-              style={{
-                flex: 1, padding: '10px 6px', borderRadius: 14, border: 'none',
-                cursor: isGeneratingEventCard ? 'default' : 'pointer',
-                background: isGeneratingEventCard
-                  ? 'rgba(245,158,11,0.06)'
-                  : 'linear-gradient(135deg, rgba(245,158,11,0.15) 0%, rgba(239,68,68,0.09) 100%)',
-                color: '#F59E0B', fontSize: 11, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              }}>
-              {isGeneratingEventCard
-                ? <><div style={{ width: 9, height: 9, borderRadius: '50%',
-                    border: '1.5px solid rgba(245,158,11,0.3)', borderTop: '1.5px solid #F59E0B',
-                    animation: 'spinSlow 0.8s linear infinite' }} />Üretiliyor…</>
-                : '🎭 Etkinlik Story'}
-            </button>
-            {/* Tüm seçenekler */}
-            <button onClick={() => setShowOverflowSheet(true)} disabled={isAnyGenerating}
-              style={{
-                flex: 1, padding: '10px 6px', borderRadius: 14,
-                border: `0.5px solid ${t.separator}`, cursor: 'pointer',
-                background: 'transparent', color: t.textSecondary, fontSize: 11, fontWeight: 600,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              }}>
-              ⊞ Tüm Seçenekler
-            </button>
-          </div>
-        )}
-
-        {/* Reel butonları — görsel varken */}
-        {!saved && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
-            {/* Mevcut görsel → Runway */}
-            {generatedUrl && (
-              <button onClick={generateReelVideo} disabled={isGeneratingReel || isGeneratingAgencyReel}
-                style={{ width: '100%', padding: '11px', borderRadius: 14, border: 'none',
-                  cursor: (isGeneratingReel || isGeneratingAgencyReel) ? 'default' : 'pointer',
-                  background: isGeneratingReel ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.12)',
-                  color: '#10B981', fontSize: 12, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                {isGeneratingReel
-                  ? <><div style={{ width: 11, height: 11, borderRadius: '50%',
-                      border: '1.5px solid rgba(16,185,129,0.3)', borderTop: '1.5px solid #10B981',
-                      animation: 'spinSlow 0.8s linear infinite' }} />Runway ile video üretiliyor…</>
-                  : '▶ Bu Görseli Reel\'e Dönüştür · Runway'
-                }
-              </button>
-            )}
-
-            {/* Ajans Story + Reel — 2-adım pipeline (story/reel için) */}
-            {isPortrait && (
-              <button
-                onClick={generateAgencyReel}
-                disabled={isGeneratingAgencyReel || isGeneratingReel || isGeneratingMultiReel}
-                style={{ width: '100%', padding: '11px', borderRadius: 14, border: 'none',
-                  cursor: (isGeneratingAgencyReel || isGeneratingReel || isGeneratingMultiReel) ? 'default' : 'pointer',
-                  background: isGeneratingAgencyReel
-                    ? 'rgba(236,72,153,0.06)'
-                    : 'linear-gradient(135deg, rgba(236,72,153,0.14) 0%, rgba(245,158,11,0.10) 100%)',
-                  color: '#ec4899', fontSize: 12, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                {isGeneratingAgencyReel ? (
-                  <>
-                    <div style={{ width: 11, height: 11, borderRadius: '50%',
-                      border: '1.5px solid rgba(236,72,153,0.3)', borderTop: '1.5px solid #ec4899',
-                      animation: 'spinSlow 0.8s linear infinite' }} />
-                    {agencyReelStep === 'agency' ? 'Ajans tasarımı üretiliyor…' : 'Runway animasyona alınıyor…'}
-                  </>
-                ) : (
-                  '🎬 Ajans Hikaye + Reel Üret'
-                )}
-              </button>
-            )}
-
-            {/* Event Card (Canvas Story) */}
-            <button
-              onClick={() => {
-                setEventForm(f => ({
-                  ...f,
-                  eventName: f.eventName || headline.slice(0, 50),
-                  tagline: f.tagline || caption.slice(0, 60),
-                }));
-                setShowEventModal(true);
-              }}
-              disabled={isGeneratingEventCard}
-              style={{ width: '100%', padding: '11px', borderRadius: 14, border: 'none',
-                cursor: isGeneratingEventCard ? 'default' : 'pointer',
-                background: isGeneratingEventCard
-                  ? 'rgba(245,158,11,0.06)'
-                  : 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(239,68,68,0.08) 100%)',
-                color: '#F59E0B', fontSize: 12, fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              {isGeneratingEventCard ? (
-                <>
-                  <div style={{ width: 11, height: 11, borderRadius: '50%',
-                    border: '1.5px solid rgba(245,158,11,0.3)', borderTop: '1.5px solid #F59E0B',
-                    animation: 'spinSlow 0.8s linear infinite' }} />
-                  Etkinlik kartı üretiliyor…
-                </>
-              ) : '🎭 Etkinlik Story / Post Üret'}
-            </button>
-
-            {/* Çoklu Fotoğraf Reel — multi-reference veya sequential */}
-            {brandRefImages.length >= 2 && (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  onClick={() => generateMultiPhotoReel('multi_ref')}
-                  disabled={isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel}
-                  style={{ flex: 1, padding: '11px 8px', borderRadius: 14, border: 'none',
-                    cursor: (isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel) ? 'default' : 'pointer',
-                    background: isGeneratingMultiReel && multiReelStrategy === 'multi_ref'
-                      ? 'rgba(139,92,246,0.06)'
-                      : 'linear-gradient(135deg, rgba(139,92,246,0.14) 0%, rgba(59,130,246,0.10) 100%)',
-                    color: '#8b5cf6', fontSize: 11, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                  {isGeneratingMultiReel && multiReelStrategy === 'multi_ref' ? (
-                    <>
-                      <div style={{ width: 9, height: 9, borderRadius: '50%',
-                        border: '1.5px solid rgba(139,92,246,0.3)', borderTop: '1.5px solid #8b5cf6',
-                        animation: 'spinSlow 0.8s linear infinite' }} />
-                      Runway'e gönderiliyor…
-                    </>
-                  ) : `🖼 ${Math.min(brandRefImages.length, 4)} Fotoğraf · Reel`}
-                </button>
-                <button
-                  onClick={() => generateMultiPhotoReel('sequential')}
-                  disabled={isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel}
-                  title="Her fotoğraf için ayrı Runway klibi üretir ve birleştirir (FFmpeg gerektirir)"
-                  style={{ flex: 1, padding: '11px 8px', borderRadius: 14, border: 'none',
-                    cursor: (isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel) ? 'default' : 'pointer',
-                    background: isGeneratingMultiReel && multiReelStrategy === 'sequential'
-                      ? 'rgba(20,184,166,0.06)'
-                      : 'linear-gradient(135deg, rgba(20,184,166,0.14) 0%, rgba(59,130,246,0.10) 100%)',
-                    color: '#14b8a6', fontSize: 11, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                  {isGeneratingMultiReel && multiReelStrategy === 'sequential' ? (
-                    <>
-                      <div style={{ width: 9, height: 9, borderRadius: '50%',
-                        border: '1.5px solid rgba(20,184,166,0.3)', borderTop: '1.5px solid #14b8a6',
-                        animation: 'spinSlow 0.8s linear infinite' }} />
-                      Klip üretiliyor…
-                    </>
-                  ) : '🎞 Montaj Reel'}
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -3619,11 +3516,14 @@ function IdeaCard({
             background: t.isDark ? '#0d0d1a' : '#fff',
             border: `0.5px solid ${t.separator}`,
           }}>
-            <p style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, marginBottom: 14 }}>
-              Üretim Seçenekleri
+            <p style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, marginBottom: 4 }}>
+              Gelişmiş Üretim
+            </p>
+            <p style={{ fontSize: 11, color: t.textMuted, marginBottom: 14, lineHeight: 1.4 }}>
+              Otonom üretim dışında kalan manuel seçenekler. Günlük akış için &quot;Otonom&quot; modunu kullanın.
             </p>
 
-            {/* ── Canva Şablonu — öne çıkarılmış ── */}
+            {CANVA_ACTIVE && (
             <button
               onClick={isGeneratingCanva ? undefined : () => { generateCanvaDesign(); setShowOverflowSheet(false); }}
               disabled={isGeneratingCanva}
@@ -3655,6 +3555,7 @@ function IdeaCard({
                 </a>
               )}
             </button>
+            )}
 
             {/* ── Görsel seçenekler ── */}
             <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, paddingLeft: 4 }}>
@@ -3735,8 +3636,12 @@ function IdeaCard({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {([
                 {
-                  icon: '▶', label: 'Reel Üret', sub: 'Seçili fotoğraf → Runway video',
-                  disabled: isGeneratingReel,
+                  icon: '▶',
+                  label: brandRefImages.filter(isUsableReelPhotoUrl).length >= 2 ? 'Reel Üret (Montaj)' : 'Reel Üret',
+                  sub: brandRefImages.filter(isUsableReelPhotoUrl).length >= 2
+                    ? `${Math.min(brandRefImages.filter(isUsableReelPhotoUrl).length, 3)} foto → Runway montaj veya blend`
+                    : 'Seçili fotoğraf → Runway video',
+                  disabled: isGeneratingReel || isGeneratingMultiReel,
                   action: () => { generateReelVideo(); setShowOverflowSheet(false); },
                 },
                 ...(isPortrait ? [{
@@ -3744,10 +3649,10 @@ function IdeaCard({
                   disabled: isGeneratingAgencyReel || isGeneratingReel || isGeneratingMultiReel,
                   action: () => { generateAgencyReel(); setShowOverflowSheet(false); },
                 }] : []),
-                ...(brandRefImages.length >= 2 ? [{
-                  icon: '🖼', label: `${Math.min(brandRefImages.length, 4)} Fotoğraf → Reel`, sub: 'Tüm marka görselleri tek videoda · Runway',
+                ...(brandRefImages.filter(isUsableReelPhotoUrl).length >= 2 ? [{
+                  icon: '🎞', label: 'Sıralı Montaj Reel', sub: '3 ayrı klip → FFmpeg birleştir · Runway',
                   disabled: isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel,
-                  action: () => { generateMultiPhotoReel('multi_ref'); setShowOverflowSheet(false); },
+                  action: () => { generateMultiPhotoReel('sequential'); setShowOverflowSheet(false); },
                 }] : []),
               ] as { icon: string; label: string; sub: string; disabled: boolean; action: () => void }[]).map((item, i) => (
                 <button key={i} onClick={item.disabled ? undefined : item.action} disabled={item.disabled}
@@ -3779,8 +3684,10 @@ function IdeaCard({
 
 export function MissionContentFactory() {
   const { t } = useTheme();
+  const tenantBrand = useTenantBrandContext();
   const { goBack, navigate } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
+  const queryClient = useQueryClient();
 
   // Read mission + node data from store (set before navigating here)
   const missionId    = useMobileStore(s => (s as any).missionContentMissionId as string | null);
@@ -3788,7 +3695,7 @@ export function MissionContentFactory() {
 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [savedCount, setSavedCount] = useState(0);
-  const [autoFeedOpen, setAutoFeedOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'auto' | 'advanced'>('auto');
 
   const { data: prog } = useQuery({
     queryKey: ['mission-progress', missionId],
@@ -3872,6 +3779,40 @@ export function MissionContentFactory() {
     try { return (JSON.parse(profileRaw) as string[]).map(upscaleCdnUrl).slice(0, 3); } catch { return []; }
   })();
 
+  const canAutoProduce = ideas.length > 0 && (
+    allBrandImages.length > 0
+    || NON_VENUE_SECTORS.has((mainBrandCtx?.business_type ?? tenantBrand.businessType ?? 'general_business').toLowerCase())
+  );
+
+  const galleryProvisionedRef = useRef(false);
+  useEffect(() => {
+    if (!tenantId || galleryProvisionedRef.current) return;
+    const usable = allBrandImages.filter(isUsableGalleryPhotoUrl);
+    const sector = mainBrandCtx?.business_type ?? tenantBrand.businessType ?? 'general_business';
+    const target = resolveSyntheticGalleryTarget(sector, usable.length);
+    if (usable.length >= target) return;
+    galleryProvisionedRef.current = true;
+    fetch(`/api/brand-context/${tenantId}/provision-gallery`, { method: 'POST' })
+      .then((r) => r.json())
+      .then((d: { provisioned?: boolean }) => {
+        if (d.provisioned) {
+          queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+          queryClient.invalidateQueries({ queryKey: ['gallery-analysis', tenantId] });
+        }
+      })
+      .catch(() => { galleryProvisionedRef.current = false; });
+  }, [tenantId, allBrandImages.length, queryClient]);
+
+  useEffect(() => {
+    setCurrentIdx(0);
+    setSavedCount(0);
+    setViewMode('auto');
+  }, [missionId, nodeKey]);
+
+  useEffect(() => {
+    if (!canAutoProduce) setViewMode('advanced');
+  }, [canAutoProduce]);
+
   if (!missionId || !nodeKey) {
     return (
       <div style={{ minHeight: '100dvh', background: t.bg, display: 'flex',
@@ -3885,6 +3826,59 @@ export function MissionContentFactory() {
     );
   }
 
+  if (!prog) {
+    return (
+      <div style={{ minHeight: '100dvh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 28, height: 28, borderRadius: '50%',
+          border: `3px solid ${t.separator}`, borderTop: `3px solid ${t.accent}`,
+          animation: 'spinSlow 1s linear infinite' }} />
+      </div>
+    );
+  }
+
+  if (ideas.length === 0) {
+    return (
+      <div style={{ minHeight: '100dvh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexDirection: 'column', gap: 12, padding: '0 22px' }}>
+        <div style={{ fontSize: 32 }}>📭</div>
+        <div style={{ fontSize: 14, color: t.textMuted, textAlign: 'center' }}>
+          Bu node için içerik fikri bulunamadı.{'\n'}
+          Mission yeniden çalıştırılabilir.
+        </div>
+        <button onClick={goBack} style={{ padding: '10px 20px', borderRadius: 30,
+          background: t.accentDim, border: `0.5px solid ${t.accentBorder}`,
+          color: t.accent, cursor: 'pointer', fontSize: 13 }}>← Geri</button>
+      </div>
+    );
+  }
+
+  // ── Default: Otonom üretim ────────────────────────────────────────────────
+  if (viewMode === 'auto' && canAutoProduce) {
+    return (
+      <AutoProductionFeed
+        ideas={ideas}
+        brandRefImages={allBrandImages}
+        galleryAnalysis={mainGallery}
+        tenantId={tenantId}
+        brandName={tenantBrand.brandName || profile?.brandName || ''}
+        location={(mainBrandCtx as { location?: string } | undefined)?.location}
+        logoUrl={mainBrandCtx?.logo_url ?? profile?.logoUrl ?? undefined}
+        missionBrief={missionBrief}
+        onClose={goBack}
+        onAdvanced={() => setViewMode('advanced')}
+        onApproved={() => setSavedCount(c => c + 1)}
+        onViewOutputs={() => navigate('feed')}
+        sector={mainBrandCtx?.business_type ?? mainBrandCtx?.industry ?? tenantBrand.sector}
+        missionId={missionId}
+        nodeKey={nodeKey}
+        serverProductionOnly={
+          prog?.status === 'completed' || prog?.status === 'running'
+        }
+      />
+    );
+  }
+
+  // ── Gelişmiş: manuel fikir bazlı düzenleme ───────────────────────────────
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -3893,7 +3887,8 @@ export function MissionContentFactory() {
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <button onClick={goBack} style={{ ...t.backBtn, cursor: 'pointer',
+          <button onClick={canAutoProduce ? () => setViewMode('auto') : goBack}
+            style={{ ...t.backBtn, cursor: 'pointer',
             width: 34, height: 34, borderRadius: '50%', display: 'flex',
             alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
             ←
@@ -3901,21 +3896,20 @@ export function MissionContentFactory() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: t.textPrimary,
               letterSpacing: '-0.02em' }}>
-              İçerik Fabrikası
+              Gelişmiş Düzenleme
             </div>
             <div style={{ fontSize: 12, color: t.textMuted }}>
-              {ideas.length} fikir · {savedCount} eklendi
+              {ideas.length} fikir · {savedCount} eklendi · manuel üretim
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Auto-produce all button */}
-            {ideas.length > 0 && allBrandImages.length > 0 && (
-              <button onClick={() => setAutoFeedOpen(true)}
+            {canAutoProduce && (
+              <button onClick={() => setViewMode('auto')}
                 style={{ padding: '8px 14px', borderRadius: 20, cursor: 'pointer', border: 'none',
                   background: `linear-gradient(135deg, ${t.accent}dd, ${t.accent}99)`,
-                  color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5,
+                  color: '#fff', fontSize: 12, fontWeight: 700,
                   boxShadow: `0 2px 10px ${t.accent}40` }}>
-                ⚡ Tümünü Üret
+                ⚡ Otonom
               </button>
             )}
             {savedCount > 0 && (
@@ -3928,6 +3922,14 @@ export function MissionContentFactory() {
             )}
           </div>
         </div>
+
+        {!canAutoProduce && (
+          <div style={{ padding: '8px 12px', borderRadius: 10, marginBottom: 14,
+            background: 'rgba(245,158,11,0.08)', border: '0.5px solid rgba(245,158,11,0.25)',
+            fontSize: 12, color: '#F59E0B', lineHeight: 1.5 }}>
+            Marka galerisi boş — otonom üretim için Brand Hub&apos;dan fotoğraf ekleyin.
+          </div>
+        )}
 
         {/* Mission brief pill */}
         {missionBrief && (
@@ -3956,54 +3958,28 @@ export function MissionContentFactory() {
         )}
       </div>
 
-      {/* Loading */}
-      {!prog && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%',
-            border: `3px solid ${t.separator}`, borderTop: `3px solid ${t.accent}`,
-            animation: 'spinSlow 1s linear infinite' }} />
-        </div>
-      )}
+      {/* Content card */}
+      <div style={{
+        flex: 1,
+        padding: ideas.length > 1
+          ? '0 22px calc(56px + env(safe-area-inset-bottom, 0px) + 8px + 56px + 20px)'
+          : '0 22px calc(56px + env(safe-area-inset-bottom, 0px) + 24px)',
+        overflowY: 'auto',
+      }}>
+        <IdeaCard
+          key={currentIdx}
+          idea={ideas[currentIdx]!}
+          index={currentIdx}
+          total={ideas.length}
+          missionBrief={missionBrief}
+          brandName={profile?.brandName}
+          location={profile?.location}
+          referenceImageUrls={referenceImageUrls}
+          onSaved={() => setSavedCount(c => c + 1)}
+        />
+      </div>
 
-      {/* No ideas */}
-      {prog && ideas.length === 0 && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexDirection: 'column', gap: 12, padding: '0 22px' }}>
-          <div style={{ fontSize: 32 }}>📭</div>
-          <div style={{ fontSize: 14, color: t.textMuted, textAlign: 'center' }}>
-            Bu node için içerik fikri bulunamadı.{'\n'}
-            Mission yeniden çalıştırılabilir.
-          </div>
-          <button onClick={goBack} style={{ padding: '10px 20px', borderRadius: 30,
-            background: t.accentDim, border: `0.5px solid ${t.accentBorder}`,
-            color: t.accent, cursor: 'pointer', fontSize: 13 }}>← Geri</button>
-        </div>
-      )}
-
-      {/* Content card — alt padding: MobileNav (56px + safe-area) + sabit fikir gezinti şeridi */}
-      {ideas.length > 0 && (
-        <div style={{
-          flex: 1,
-          padding: ideas.length > 1
-            ? '0 22px calc(56px + env(safe-area-inset-bottom, 0px) + 8px + 56px + 20px)'
-            : '0 22px calc(56px + env(safe-area-inset-bottom, 0px) + 24px)',
-          overflowY: 'auto',
-        }}>
-          <IdeaCard
-            key={currentIdx}
-            idea={ideas[currentIdx]!}
-            index={currentIdx}
-            total={ideas.length}
-            missionBrief={missionBrief}
-            brandName={profile?.brandName}
-            location={profile?.location}
-            referenceImageUrls={referenceImageUrls}
-            onSaved={() => setSavedCount(c => c + 1)}
-          />
-        </div>
-      )}
-
-      {/* Önceki/Sonraki — tab barın hemen üstünde (MobileNav: 56px + safe-area, z-index 100) */}
+      {/* Önceki/Sonraki */}
       {ideas.length > 1 && (
         <div style={{
           position: 'fixed',
@@ -4034,23 +4010,6 @@ export function MissionContentFactory() {
               fontSize: 14, fontWeight: 700, backdropFilter: 'blur(20px)' }}>
             Sonraki →
           </button>
-        </div>
-      )}
-
-      {/* ⚡ Auto Production Feed — full-screen overlay */}
-      {autoFeedOpen && ideas.length > 0 && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: t.bg }}>
-          <AutoProductionFeed
-            ideas={ideas}
-            brandRefImages={allBrandImages}
-            galleryAnalysis={mainGallery}
-            tenantId={tenantId}
-            brandName={profile?.brandName ?? ''}
-            logoUrl={mainBrandCtx?.logo_url ?? profile?.logoUrl ?? undefined}
-            missionBrief={missionBrief}
-            onClose={() => setAutoFeedOpen(false)}
-            onApproved={() => setSavedCount(c => c + 1)}
-          />
         </div>
       )}
     </div>

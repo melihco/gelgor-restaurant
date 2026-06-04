@@ -8,18 +8,12 @@ import { useState } from 'react';
 import { signalFromArtifact } from '@/components/artifacts/artifact-preview';
 import type { ArtifactSignal, ArtifactIdea } from '@/components/artifacts/artifact-preview';
 import type { OutputArtifact } from '@/types';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 import { useTheme } from './theme-context';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 function resolveImageSrc(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith('http')) return url;
-  const path = url.startsWith('/') ? url : `/${url}`;
-  // /api/media is a Next.js route → serve directly
-  if (path.startsWith('/api/media') || path.startsWith('/api/generate-')) return path;
-  // Other /api/ paths → .NET proxy
-  if (path.startsWith('/api/')) return '/api/nexus-backend/' + path.slice(5);
-  return path;
+  return resolveClientMediaUrl(url);
 }
 
 function formatLabel(contentType: string | undefined): string {

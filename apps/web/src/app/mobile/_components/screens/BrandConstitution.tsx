@@ -16,13 +16,35 @@ const TONE_OPTIONS = [
 ];
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
+import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/types';
 import type { T } from '../theme-context';
-import { AnnouncementTemplateLibrarySection } from './AnnouncementTemplateLibrarySection';
-import { resolveAnnouncementBrandKit } from '@/lib/announcement-brand-kit';
 import { normalizeSectorId } from '@/lib/announcement-template-library';
+import {
+  MOTION_STYLE_OPTIONS,
+  applyMotionStylePreset,
+  parseMotionProfileFromTheme,
+  type MotionStyle,
+} from '@/lib/brand-motion-profile';
+import { MertcafeIntegrationsCard } from '../MertcafeIntegrationsCard';
+import {
+  deriveBrandTemplateLibrary,
+  ensureBrandTemplateLibrary,
+} from '@/lib/brand-template-library';
+import { TenantOperatingCapabilitiesEditor } from '@/components/brand/TenantOperatingCapabilitiesEditor';
+import { TenantGalleryPolicyBanner } from '@/components/brand/TenantGalleryPolicyBanner';
+import {
+  evaluateGalleryAssetPolicy,
+  resolveTenantOperatingProfile,
+} from '@/lib/tenant-operating-policy';
+import { resolveKitForSector } from '@/lib/remotion-template-registry';
+import { tenantKitSeed } from '@/lib/tenant-template-seed';
+import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
+import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
+import { isCanvaEnabledClient } from '@/lib/canva-config';
+import { themeFlag, themeString, themeStringArray } from '@/lib/brand-theme-ai-settings';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 function parseArr(raw: unknown): string[] {
@@ -131,7 +153,7 @@ function TagChip({ text, color, t }: { text: string; color: string; t: T }) {
   );
 }
 
-type Tab = 'identity' | 'brand' | 'content' | 'analysis' | 'gallery' | 'settings' | 'vibe' | 'brand_kit';
+type Tab = 'identity' | 'brand' | 'content' | 'analysis' | 'gallery' | 'settings' | 'vibe';
 
 // ─── Brand Kit Tab ───────────────────────────────────────────────────────────
 
@@ -210,6 +232,7 @@ const BRAND_SAFE_FONTS = [
   'Playfair Display', 'Montserrat', 'Lora', 'Raleway', 'Cormorant Garamond',
   'DM Sans', 'DM Serif Display', 'Libre Baskerville', 'Poppins', 'Fraunces',
   'Space Grotesk', 'Inter', 'Josefin Sans', 'Syne',
+  'Great Vibes', 'Allura', 'Anton', 'Bebas Neue',
 ] as const;
 
 function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
@@ -228,6 +251,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
   const [editHeadingFont, setEditHeadingFont] = React.useState('Playfair Display');
   const [editBodyFont, setEditBodyFont] = React.useState('DM Sans');
   const [editDensity, setEditDensity] = React.useState<'minimal' | 'medium' | 'dense'>('minimal');
+  const [editOverlayOpacity, setEditOverlayOpacity] = React.useState(0.28);
 
   const fetchTheme = React.useCallback(async () => {
     if (!tenantId) return;
@@ -250,9 +274,13 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
           const headingFont = ty?.headingFont ?? ty?.heading_font;
           const bodyFont = ty?.bodyFont ?? ty?.body_font;
           const density = ty?.textOverlayDensity ?? ty?.text_overlay_density;
+          const headlineColor = ty?.headlineColor ?? ty?.headline_color;
           if (headingFont) setEditHeadingFont(headingFont);
           if (bodyFont) setEditBodyFont(bodyFont);
           if (density) setEditDensity(density as 'minimal' | 'medium' | 'dense');
+          if (headlineColor) setEditHeadlineColor(headlineColor);
+          const ov = t2.overlay as Record<string, unknown> | undefined;
+          if (typeof ov?.opacity === 'number') setEditOverlayOpacity(ov.opacity);
         } else {
           // Tema yoksa marka renklerinden başlangıç değerlerini al
           try {
@@ -299,6 +327,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
           heading_font: editHeadingFont,
           body_font: editBodyFont,
           text_overlay_density: editDensity,
+          headline_color: normalizeHex(editHeadlineColor, '#ffffff'),
           personality: (existingTypography?.personality as string)
             ?? (existingTypography as Record<string, string> | undefined)?.personality
             ?? '',
@@ -307,9 +336,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
           primary_pattern: (existingComposition?.primaryPattern as string)
             ?? (existingComposition as Record<string, string> | undefined)?.primary_pattern
             ?? 'centered subject',
-          text_safe_area_fraction: (existingComposition?.textSafeAreaFraction as number)
-            ?? (existingComposition as Record<string, number> | undefined)?.text_safe_area_fraction
-            ?? 0.6,
+          text_safe_area_fraction: editDensity === 'minimal' ? 0.32 : editDensity === 'dense' ? 0.68 : 0.52,
           subject_focus: (existingComposition?.subjectFocus as string)
             ?? (existingComposition as Record<string, string> | undefined)?.subject_focus
             ?? 'main subject sharp, background softly blurred',
@@ -321,8 +348,12 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
             ?? 'natural colors, balanced exposure',
         },
         overlay: {
-          opacity: 0.25,
+          opacity: editOverlayOpacity,
           color: shadow,
+        },
+        motion_profile: {
+          ...((theme?.motion_profile ?? theme?.motionProfile) as Record<string, unknown> ?? {}),
+          text_density: editDensity,
         },
         layout: {
           border_radius: (existingLayout?.borderRadius as number)
@@ -449,6 +480,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
   const headingFontDisplay = (typography?.headingFont ?? typography?.heading_font ?? editHeadingFont) as string;
   const bodyFontDisplay = (typography?.bodyFont ?? typography?.body_font ?? editBodyFont) as string;
   const densityDisplay = (typography?.textOverlayDensity ?? typography?.text_overlay_density ?? editDensity) as string;
+  const headlineColorDisplay = (typography?.headlineColor ?? typography?.headline_color ?? editHeadlineColor) as string;
   const sourceLabel: Record<string, string> = {
     vibe_profile: 'Vibe DNA\'dan',
     visual_dna: 'Görsel Analiz\'den',
@@ -543,7 +575,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
           ) : (
             <>
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-                Ana ve vurgu renkleri duyuru şablonları, etkinlik kartları ve görsel üretimde kullanılır.
+                <strong>Vurgu</strong> rengi altın çizgiler, çerçeve ve CTA vurgusudur. <strong>Ana renk</strong> panel/arka plan tonları içindir.
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <PaletteColorEditor label="Ana Renk" value={editPrimary} fallback="#1a1a1a" onChange={setEditPrimary} t={t} />
@@ -615,6 +647,15 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
                 {densityDisplay === 'minimal' ? 'Minimal'
                   : densityDisplay === 'medium' ? 'Orta'
                   : 'Yoğun'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: t.textMuted }}>Başlık rengi</span>
+              <span style={{
+                fontSize: 13, fontWeight: 600, color: headlineColorDisplay,
+                fontFamily: `'${headingFontDisplay}', serif`,
+              }}>
+                {headlineColorDisplay}
               </span>
             </div>
             {(typography.personality as string) && (
@@ -698,24 +739,62 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
                     {BRAND_SAFE_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
                   </select>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: t.textMuted }}>Metin Yoğunluğu</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {(['minimal', 'medium', 'dense'] as const).map(d => (
-                      <button
-                        key={d}
-                        onClick={() => setEditDensity(d)}
-                        style={{
-                          padding: '4px 10px', borderRadius: 8, cursor: 'pointer', border: 'none',
-                          fontSize: 10, fontWeight: 600,
-                          background: editDensity === d ? t.accent : t.accentDim,
-                          color: editDensity === d ? '#fff' : t.accent,
-                        }}
-                      >
-                        {d === 'minimal' ? 'Min' : d === 'medium' ? 'Orta' : 'Yoğun'}
-                      </button>
-                    ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: t.textMuted }}>Metin Yoğunluğu</span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {(['minimal', 'medium', 'dense'] as const).map(d => (
+                        <button
+                          key={d}
+                          onClick={() => {
+                            setEditDensity(d);
+                            setEditOverlayOpacity(d === 'minimal' ? 0.28 : d === 'dense' ? 0.58 : 0.45);
+                          }}
+                          style={{
+                            padding: '4px 10px', borderRadius: 8, cursor: 'pointer', border: 'none',
+                            fontSize: 10, fontWeight: 600,
+                            background: editDensity === d ? t.accent : t.accentDim,
+                            color: editDensity === d ? '#fff' : t.accent,
+                          }}
+                        >
+                          {d === 'minimal' ? 'Min' : d === 'medium' ? 'Orta' : 'Yoğun'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  <div style={{ fontSize: 10, color: t.textTertiary, lineHeight: 1.45 }}>
+                    {editDensity === 'minimal'
+                      ? 'Ürün/fotoğraf önde kalır; başlık altta ince panelde.'
+                      : editDensity === 'dense'
+                        ? 'Büyük kampanya başlığı, güçlü overlay.'
+                        : 'Dengeli post/story görünümü.'}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: t.textMuted }}>Overlay koyuluğu</span>
+                    <span style={{ fontSize: 11, color: t.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                      {Math.round(editOverlayOpacity * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={18}
+                    max={65}
+                    value={Math.round(editOverlayOpacity * 100)}
+                    onChange={(e) => setEditOverlayOpacity(Number(e.target.value) / 100)}
+                    style={{ width: '100%', accentColor: t.accent }}
+                  />
+                </div>
+                <PaletteColorEditor
+                  label="Başlık metin rengi"
+                  value={editHeadlineColor}
+                  fallback="#ffffff"
+                  onChange={setEditHeadlineColor}
+                  t={t}
+                />
+                <div style={{ fontSize: 10, color: t.textTertiary, lineHeight: 1.45 }}>
+                  Vurgu rengi (yukarıdaki palet) dekoratif çizgileri belirler — örn. altın şeritler.
                 </div>
               </div>
 
@@ -767,27 +846,39 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
               width: '100%', aspectRatio: '1',
               background: displayPalette.primary,
               position: 'relative',
-              display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+              display: 'flex', flexDirection: 'column', justifyContent: 'center',
+              alignItems: 'center',
               padding: 16,
             }}>
               <div style={{
                 position: 'absolute', inset: 0,
                 background: `linear-gradient(to top, ${displayPalette.shadow ?? '#000000'}cc 0%, transparent 55%)`,
               }} />
+              <div style={{
+                position: 'absolute', left: '12%', right: '12%', top: '38%',
+                height: 2, background: displayPalette.accent, opacity: 0.75,
+              }} />
+              <div style={{
+                position: 'absolute', left: '12%', right: '12%', top: '58%',
+                height: 2, background: displayPalette.accent, opacity: 0.75,
+              }} />
+              <div style={{ position: 'relative', textAlign: 'center', marginBottom: 8 }}>
+                <div style={{
+                  fontFamily: `'${headingFontDisplay}', serif`,
+                  fontSize: 20, fontWeight: 600,
+                  color: headlineColorDisplay,
+                  lineHeight: 1.15,
+                  textShadow: '0 2px 12px rgba(0,0,0,0.45)',
+                }}>
+                  Marka Başlığı
+                </div>
+              </div>
               <div style={{ position: 'relative' }}>
                 <div style={{
                   fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase',
                   color: displayPalette.accent, fontWeight: 600, marginBottom: 4,
                 }}>
                   {typography ? (typography.personality as string)?.split(',')[0] ?? '' : ''}
-                </div>
-                <div style={{
-                  fontFamily: `'${headingFontDisplay}', serif`,
-                  fontSize: 18, fontWeight: 600,
-                  color: displayPalette.neutral,
-                  lineHeight: 1.2, marginBottom: 8,
-                }}>
-                  Marka Başlığı
                 </div>
                 <div style={{
                   display: 'inline-block',
@@ -812,11 +903,12 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
 const AUTO_EXCLUDE = ['harita', '-map', 'map-', '_map', 'footer', 'menu.', 'fran', 'franchise',
   'bayilik', 'banner', 'icon', '-150x', '-300x', '-100x', 'logo'];
 
-function GalleryTab({ t, tenantId, pyCtx, queryClient }: {
+function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
   t: T;
   tenantId: string;
   pyCtx: Record<string, unknown> | undefined;
   queryClient: ReturnType<typeof useQueryClient>;
+  companyProfile?: CompanyProfile | null;
 }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeStatus, setAnalyzeStatus] = useState<string>('');
@@ -824,7 +916,24 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient }: {
   const [page, setPage] = useState(0);
   const [deleteMode, setDeleteMode] = useState(false);
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
+  const [uploadAssetType, setUploadAssetType] = useState<'venue_photo' | 'client_photo' | 'before_after_image'>('venue_photo');
   const PAGE_SIZE = 18;
+
+  const operatingProfile = companyProfile
+    ? resolveTenantOperatingProfile({
+        tenantId,
+        industry: companyProfile.industry,
+        contentNeedsJson: companyProfile.contentNeeds,
+        operatingCapabilitiesJson: companyProfile.operatingCapabilities,
+        galleryPolicyJson: companyProfile.galleryPolicy,
+        riskRulesJson: companyProfile.riskRules,
+        customRules: companyProfile.customRules,
+      })
+    : null;
+
+  const uploadGate = operatingProfile
+    ? evaluateGalleryAssetPolicy(operatingProfile, uploadAssetType)
+    : null;
 
   // Reference images from Python brand context
   const refUrls: string[] = (() => {
@@ -941,6 +1050,10 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient }: {
 
   // Upload a new photo
   async function handleUpload(file: File) {
+    if (uploadGate?.decision === 'blocked') {
+      setAnalyzeStatus('Bu fotoğraf türü işletme politikanızda kapalı.');
+      return;
+    }
     setUploading(true);
     try {
       const formData = new FormData();
@@ -1028,8 +1141,55 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient }: {
         )}
       </SCard>
 
+      {operatingProfile && (
+        <SCard t={t} title="Galeri kuralları" accent={t.accent}>
+          <TenantGalleryPolicyBanner profile={operatingProfile} variant="mobile" theme={t} />
+        </SCard>
+      )}
+
       {/* Upload button */}
       <SCard t={t} title="Fotoğraf Yükle">
+        {operatingProfile && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            {(
+              [
+                { id: 'venue_photo' as const, label: 'Mekan' },
+                { id: 'client_photo' as const, label: 'Müşteri sonucu' },
+                { id: 'before_after_image' as const, label: 'Önce/sonra' },
+              ] as const
+            ).map((opt) => {
+              const gate = evaluateGalleryAssetPolicy(operatingProfile, opt.id);
+              const blocked = gate.decision === 'blocked';
+              const active = uploadAssetType === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={blocked}
+                  onClick={() => setUploadAssetType(opt.id)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 20,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: blocked ? 'not-allowed' : 'pointer',
+                    opacity: blocked ? 0.35 : 1,
+                    border: `0.5px solid ${active ? t.accentBorder : t.separator}`,
+                    background: active ? t.accentDim : 'transparent',
+                    color: active ? t.accent : t.textMuted,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {uploadGate?.decision === 'approval_required' && (
+          <p style={{ fontSize: 11, color: t.warning, marginBottom: 10 }}>
+            Bu tür görseller onay bekleyecek şekilde işlenir.
+          </p>
+        )}
         <label style={{
           width: '100%', padding: '13px 14px', borderRadius: 14, cursor: 'pointer',
           background: 'rgba(255,255,255,0.03)', border: `0.5px solid ${t.separator}`,
@@ -1412,10 +1572,20 @@ export function BrandConstitution() {
   const { t } = useTheme();
   const queryClient = useQueryClient();
   const { tenantId } = useWorkspaceStore();
+  const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
   const [tab, setTab] = useState<Tab>('identity');
   const [saved, setSaved] = useState(false);
   const [showMoreSheet, setShowMoreSheet] = useState(false);
   const [newCompetitor, setNewCompetitor] = useState('');
+  const [confirmingConstitution, setConfirmingConstitution] = useState(false);
+  const [constitutionConfirmError, setConstitutionConfirmError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!brandReadinessFix) return;
+    const nextTab = brandReadinessFixToBrandTab(brandReadinessFix);
+    if (nextTab) setTab(nextTab);
+    clearBrandReadinessFix();
+  }, [brandReadinessFix, clearBrandReadinessFix]);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['company-profile', tenantId],
@@ -1455,6 +1625,7 @@ export function BrandConstitution() {
     queryKey: ['canva-templates'],
     queryFn: async () => { try { return await apiClient.getCanvaTemplateAssignments({ includeDisabled: false }); } catch { return []; } },
     staleTime: 120_000,
+    enabled: isCanvaEnabledClient(),
   });
 
   const { data: metaCampaigns = [] } = useQuery({
@@ -1473,11 +1644,25 @@ export function BrandConstitution() {
     const p = profile as any;
     const b = pyCtx as any;
     const patch: Record<string, string> = {};
+    const profileName = String(p.brandName || '').trim();
+    const pyName = String(b.business_name || '').trim();
+    if (profileName && profileName !== pyName) patch.business_name = profileName;
     if (!b.location && p.location?.trim()) patch.location = p.location.trim();
     if (!b.description && p.description?.trim()) patch.description = p.description.trim();
     if (!b.target_audience && p.targetAudience?.trim()) patch.target_audience = p.targetAudience.trim();
     if (!b.brand_tone && p.brandTone?.trim()) {
       patch.brand_tone = TONE_TO_PYTHON[p.brandTone] || p.brandTone;
+    }
+    const nexusLang = String(p.languages || '').split(',')[0]?.trim().toLowerCase();
+    const pyLang = String(b.languages || '').split(',')[0]?.trim().toLowerCase();
+    if (nexusLang && nexusLang !== pyLang && (nexusLang === 'en' || nexusLang === 'tr' || nexusLang === 'de')) {
+      fetch(`/api/brand-context/${tenantId}/set-language`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: nexusLang }),
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+      }).catch(() => {/* non-fatal */});
     }
     if (Object.keys(patch).length === 0) { backfilledRef.current = true; return; }
     backfilledRef.current = true;
@@ -1494,12 +1679,66 @@ export function BrandConstitution() {
   const saveMutation = useMutation({
     mutationFn: (data: Partial<SaveCompanyProfileRequest>) =>
       apiClient.saveCompanyProfile({ ...(profile as any), ...data } as SaveCompanyProfileRequest),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
+      const name = String(variables.brandName || '').trim();
+      if (name && tenantId) {
+        fetch(`/api/brand-context-data/${tenantId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ business_name: name }),
+        }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+        }).catch(() => {/* non-fatal */});
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
   });
+
+  const brandKitEnrichedRef = useRef(false);
+  useEffect(() => {
+    if (brandKitEnrichedRef.current || !tenantId || !profile) return;
+    const p = profile as CompanyProfile & Record<string, unknown>;
+    const b = pyCtx as Record<string, unknown> | undefined;
+    const website = String(p.websiteUrl || b?.website_url || '').trim();
+    if (!website) return;
+
+    const themeTypo = (brandThemePayload?.theme as Record<string, unknown> | undefined)?.typography as Record<string, string> | undefined;
+    const hasPrimaryFont = Boolean(
+      String(p.primaryFont || b?.brand_font_family || themeTypo?.heading_font || '').trim(),
+    );
+    const hasSecondaryFont = Boolean(
+      String(p.secondaryFont || themeTypo?.body_font || '').trim(),
+    );
+    const hasColors = Boolean(b?.brand_primary_color && b?.brand_accent_color);
+    if (hasPrimaryFont && hasSecondaryFont && hasColors) return;
+
+    brandKitEnrichedRef.current = true;
+    fetch(`/api/brand-context/${tenantId}/enrich-brand-kit`, { method: 'POST' })
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((data: {
+        primary_font?: string;
+        secondary_font?: string;
+        brand_colors?: string;
+        accent_color?: string;
+      } | null) => {
+        if (!data) return;
+        const updates: Partial<SaveCompanyProfileRequest> = {};
+        if (!String(p.primaryFont || '').trim() && data.primary_font) updates.primaryFont = data.primary_font;
+        if (!String(p.secondaryFont || '').trim() && data.secondary_font) updates.secondaryFont = data.secondary_font;
+        if (!String(p.brandColors || '').trim() && data.brand_colors) updates.brandColors = data.brand_colors;
+        if (!String(p.accentColors || '').trim() && data.accent_color) updates.accentColors = data.accent_color;
+        if (Object.keys(updates).length === 0) return;
+        return saveMutation.mutateAsync(updates);
+      })
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+        queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+        queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
+      })
+      .catch(() => { brandKitEnrichedRef.current = false; });
+  }, [tenantId, profile, pyCtx, brandThemePayload, queryClient, saveMutation]);
 
   // Re-analyze mutation
   const analyzeMutation = useMutation({
@@ -1536,7 +1775,7 @@ export function BrandConstitution() {
               contentNeeds: Array.isArray(r.contentPillars) ? JSON.stringify(r.contentPillars) : (current?.contentNeeds || ''),
               riskRules: r.riskRules && Object.keys(r.riskRules).length ? JSON.stringify(r.riskRules) : (current?.riskRules || ''),
               customerVisibleSummary: summary,
-              languages: discovery?.inferredLanguage || current?.languages || 'tr',
+              languages: current?.languages || discovery?.inferredLanguage || 'tr',
             } as SaveCompanyProfileRequest);
           }
         } catch {
@@ -1575,11 +1814,29 @@ export function BrandConstitution() {
     };
   }, [showMoreSheet]);
 
-  if (isLoading || !profile) {
+  if (isLoading) {
     return (
       <div style={{ height: '100dvh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
         <div style={{ width: 32, height: 32, borderRadius: '50%', border: `2px solid ${t.separator}`, borderTop: `2px solid ${t.accent}`, animation: 'spinSlow 1s linear infinite' }} />
-        <div style={{ fontSize: 13, color: t.textMuted }}>Marka profili yükleniyor</div>
+        <div style={{ fontSize: 13, color: t.textMuted }}>Marka profili yükleniyor…</div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div style={{ height: '100dvh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, padding: '0 32px' }}>
+        <div style={{ fontSize: 36, opacity: 0.2 }}>!</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, textAlign: 'center' }}>Profil yüklenemedi</div>
+        <div style={{ fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 1.6 }}>
+          Bağlantı sorunu olabilir. Geri dönüp tekrar deneyin.
+        </div>
+        <button
+          onClick={goBack}
+          style={{ marginTop: 8, padding: '10px 24px', borderRadius: 30, border: 'none', cursor: 'pointer',
+            background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700 }}>
+          Geri Dön
+        </button>
       </div>
     );
   }
@@ -1599,26 +1856,7 @@ export function BrandConstitution() {
   const riskRules     = parseObj((p as any).riskRules);
   const brandImages   = parseArr((p as any).brandImageUrls).filter(u => u.startsWith('http'));
 
-  const announcementSamplePhoto =
-    brandImages[0]
-    ?? parseArr((pyCtx as { reference_image_urls?: unknown })?.reference_image_urls).find((u) => u.startsWith('http'))
-    ?? null;
-
-  const announcementBrandKit = resolveAnnouncementBrandKit({
-    brandContext: (pyCtx ?? {}) as Record<string, unknown>,
-    companyProfile: p as Record<string, unknown>,
-    brandTheme: brandThemePayload?.theme ?? null,
-  });
-
-  const announcementLibrarySection = (
-    <AnnouncementTemplateLibrarySection
-      t={t}
-      tenantId={tenantId}
-      brandKit={announcementBrandKit}
-      samplePhotoUrl={announcementSamplePhoto}
-      sectorId={normalizeSectorId(industryDisplay)}
-    />
-  );
+  const contentLanguage = String((pyCtx as any)?.languages ?? p.languages ?? 'tr').trim().toLowerCase();
 
   // Field save helper
   // Tone preset → Turkish writing rule label for Python
@@ -1653,17 +1891,54 @@ export function BrandConstitution() {
     }).catch(() => {/* non-fatal */});
   }
 
+  async function syncSecondaryFontToTheme(bodyFont: string) {
+    if (!tenantId || !bodyFont.trim()) return;
+    const existing = brandThemePayload?.theme as Record<string, unknown> | undefined;
+    const typo = { ...((existing?.typography as Record<string, unknown>) ?? {}) };
+    typo.body_font = bodyFont.trim();
+    const palette = (existing?.palette as Record<string, unknown>) ?? {};
+    const payload = {
+      theme: {
+        workspace_id: tenantId,
+        derived_at: new Date().toISOString(),
+        source: 'manual_colors',
+        typography: typo,
+        palette,
+        composition: existing?.composition ?? {},
+        grading: existing?.grading ?? {},
+        overlay: existing?.overlay ?? { opacity: 0.25, color: '#000000' },
+        layout: existing?.layout ?? { border_radius: 12, spacing_base: 8, default_layout_id: 'feed_square' },
+        caption_voice_rules: existing?.caption_voice_rules ?? [],
+        anti_patterns: existing?.anti_patterns ?? [],
+        contrast_valid: true,
+      },
+    };
+    await fetch(`/api/brand-context/${tenantId}/theme`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+      body: JSON.stringify(payload),
+    }).catch(() => {/* non-fatal */});
+    queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+  }
+
   function syncToPython(field: string, value: string) {
     if (!tenantId) return;
 
     if (field === 'brandColors') {
-      const hex = value.match(/#[0-9a-fA-F]{3,8}\b/)?.[0];
-      if (hex) patchPythonBrandFields({ brand_primary_color: hex });
+      const hexes = [...value.matchAll(/#[0-9a-fA-F]{3,8}\b/gi)].map((m) => m[0]);
+      const patch: Record<string, string> = {};
+      if (hexes[0]) patch.brand_primary_color = hexes[0];
+      if (hexes[1]) patch.brand_accent_color = hexes[1];
+      if (Object.keys(patch).length) patchPythonBrandFields(patch);
       return;
     }
     if (field === 'accentColors') {
       const hex = value.match(/#[0-9a-fA-F]{3,8}\b/)?.[0];
       if (hex) patchPythonBrandFields({ brand_accent_color: hex });
+      return;
+    }
+    if (field === 'secondaryFont') {
+      void syncSecondaryFontToTheme(value);
       return;
     }
 
@@ -1703,7 +1978,6 @@ export function BrandConstitution() {
     { id: 'brand',     label: 'Marka'     },
     { id: 'content',   label: 'İçerik'   },
     { id: 'vibe',      label: 'Vibe DNA'  },
-    { id: 'brand_kit', label: 'Marka Kiti' },
   ];
   const MORE_TABS: { id: Tab; label: string; icon: string; sub: string }[] = [
     { id: 'gallery',  label: 'Galeri',  icon: '🖼',  sub: 'Marka fotoğrafları & galeri yönetimi' },
@@ -1711,6 +1985,30 @@ export function BrandConstitution() {
     { id: 'settings', label: 'Ayarlar', icon: '⚙',  sub: 'Yapay zekâ ve gelişmiş tercihler' },
   ];
   const isMoreTab = MORE_TABS.some(m => m.id === tab);
+  const constitutionConfirmedAt = (pyCtx as { brand_constitution_confirmed_at?: string | null } | undefined)
+    ?.brand_constitution_confirmed_at;
+
+  const handleConfirmConstitution = async () => {
+    if (!tenantId || confirmingConstitution) return;
+    setConfirmingConstitution(true);
+    setConstitutionConfirmError(null);
+    try {
+      await apiClient.confirmBrandConstitution(tenantId);
+      queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Onay başarısız';
+      setConstitutionConfirmError(
+        msg.includes('503') || msg.toLowerCase().includes('reach')
+          ? 'Marka servisi kapalı — terminalde ./scripts/start-crew-backend.sh çalıştırın.'
+          : msg,
+      );
+    } finally {
+      setConfirmingConstitution(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 250ms' }}>
@@ -1876,27 +2174,53 @@ export function BrandConstitution() {
         {/* IDENTITY */}
         {tab === 'identity' && (
           <>
-            <button
-              type="button"
-              onClick={() => setTab('brand_kit')}
-              style={{
-                width: '100%',
+            {!constitutionConfirmedAt && (
+              <div style={{
                 marginBottom: 14,
                 padding: '14px 16px',
                 borderRadius: 14,
-                border: `0.5px solid ${t.accentBorder}`,
-                background: t.accentDim,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700, color: t.accent, marginBottom: 4 }}>
-                🎨 Duyuru Tasarım Kütüphanesi
+                background: 'rgba(245,158,11,0.08)',
+                border: '0.5px solid rgba(245,158,11,0.3)',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, marginBottom: 4 }}>
+                  Marka Anayasası onay bekliyor
+                </div>
+                <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.5, marginBottom: 10 }}>
+                  Kimlik bilgilerini gözden geçirip onaylayın — Mission Hub skoruna +20 puan ekler.
+                </div>
+                {constitutionConfirmError && (
+                  <div style={{
+                    fontSize: 11,
+                    color: '#EF4444',
+                    lineHeight: 1.45,
+                    marginBottom: 10,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    background: 'rgba(239,68,68,0.08)',
+                  }}>
+                    {constitutionConfirmError}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmConstitution()}
+                  disabled={confirmingConstitution}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: 'none',
+                    cursor: confirmingConstitution ? 'wait' : 'pointer',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: '#fff',
+                    background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                  }}
+                >
+                  {confirmingConstitution ? 'Onaylanıyor…' : 'Anayasayı Onayla →'}
+                </button>
               </div>
-              <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4 }}>
-                Etkinlik story, kampanya ve duyuru şablonlarını önizle → Marka Kiti sekmesinde
-              </div>
-            </button>
+            )}
 
             <SCard t={t} title="Temel Bilgiler">
               <Field t={t} label="Marka Adı"  value={brandNameDisplay} onSave={save('brandName')} />
@@ -1910,7 +2234,7 @@ export function BrandConstitution() {
                 <span style={{ fontSize: 12, color: t.textSecondary, fontWeight: 500 }}>İçerik Dili</span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {(['tr', 'en'] as const).map(lang => {
-                    const active = (p.languages ?? 'tr') === lang;
+                    const active = contentLanguage === lang;
                     return (
                       <button
                         key={lang}
@@ -2015,6 +2339,22 @@ export function BrandConstitution() {
             <SCard t={t} title="Görsel Dil">
               <Field t={t} label="Görsel Stil" value={p.visualStyle || (pyCtx as any)?.visual_style || ''} onSave={save('visualStyle')} multiline hint="örn: minimal, luxury, cinematic..." />
             </SCard>
+
+            <BrandTemplateLibraryPanel
+              workspaceId={tenantId}
+              sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
+              variant="mobile"
+              mobileTheme={{
+                accent: t.accent,
+                accentBorder: t.accentBorder,
+                accentDim: t.accentDim,
+                separator: t.separator,
+                textPrimary: t.textPrimary,
+                textMuted: t.textMuted,
+                textTertiary: t.textTertiary,
+                isDark: t.isDark,
+              }}
+            />
 
             <SCard t={t} title="Hedef Kitle">
               <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline hint="Kim için üretiyoruz?" />
@@ -2128,10 +2468,19 @@ export function BrandConstitution() {
 
             <SCard t={t} title="Tipografi">
               <Field t={t} label="Ana Font"
-                value={p.primaryFont || (pyCtx as any)?.brand_font_family || ''}
+                value={String(
+                  p.primaryFont
+                  || (pyCtx as any)?.brand_font_family
+                  || ((brandThemePayload?.theme as Record<string, unknown> | undefined)?.typography as Record<string, string> | undefined)?.heading_font
+                  || '',
+                )}
                 onSave={save('primaryFont')} hint="örn: Nunito, Playfair Display" />
               <Field t={t} label="İkincil Font"
-                value={p.secondaryFont || ''}
+                value={String(
+                  p.secondaryFont
+                  || ((brandThemePayload?.theme as Record<string, unknown> | undefined)?.typography as Record<string, string> | undefined)?.body_font
+                  || '',
+                )}
                 onSave={save('secondaryFont')} hint="örn: Lato, Inter" />
             </SCard>
 
@@ -2139,8 +2488,13 @@ export function BrandConstitution() {
               {/* Colour swatches from brand context */}
               {((pyCtx as any)?.brand_primary_color || (pyCtx as any)?.brand_accent_color) && (
                 <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                  {[(pyCtx as any)?.brand_primary_color, (pyCtx as any)?.brand_accent_color].filter(Boolean).map((hex: string) => (
-                    <div key={hex} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {([
+                    { id: 'primary', hex: (pyCtx as any)?.brand_primary_color as string | undefined },
+                    { id: 'accent', hex: (pyCtx as any)?.brand_accent_color as string | undefined },
+                  ] as const)
+                    .filter((swatch): swatch is { id: 'primary' | 'accent'; hex: string } => Boolean(swatch.hex))
+                    .map(({ id, hex }) => (
+                    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 8, background: hex,
                         border: `0.5px solid ${t.separator}`, flexShrink: 0 }} />
                       <span style={{ fontSize: 12, color: t.textSecondary, fontFamily: 'monospace' }}>{hex}</span>
@@ -2161,7 +2515,12 @@ export function BrandConstitution() {
         {/* CONTENT */}
         {tab === 'content' && (
           <>
-            {announcementLibrarySection}
+            <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
+                Post ve story görselleri Remotion ile otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
+                Hareket kütüphanesi için <strong>Marka</strong> sekmesine bakın.
+              </p>
+            </SCard>
 
             <SCard t={t} title="Özel Kurallar" accent={t.warning}>
               <Field t={t} label="Özel Kurallar & Kısıtlamalar" value={p.customRules ?? ''} onSave={save('customRules')} multiline hint="Yapılmaması gerekenler, özel talimatlar..." />
@@ -2189,8 +2548,26 @@ export function BrandConstitution() {
               </SCard>
             )}
 
+            <SCard t={t} title="İşletme yetenekleri" accent={t.accent}>
+              <TenantOperatingCapabilitiesEditor
+                variant="mobile"
+                theme={t}
+                tenantId={tenantId!}
+                industry={industryDisplay || String(p.industry || '')}
+                contentNeedsJson={String((p as any).contentNeeds ?? '[]')}
+                operatingCapabilitiesJson={String((p as any).operatingCapabilities ?? '[]')}
+                galleryPolicyJson={String((p as any).galleryPolicy ?? '{}')}
+                riskRulesJson={String((p as any).riskRules ?? '{}')}
+                customRules={String(p.customRules ?? '')}
+                saving={saveMutation.isPending}
+                onSave={(payload) => {
+                  saveMutation.mutate(payload as Partial<SaveCompanyProfileRequest>);
+                }}
+              />
+            </SCard>
+
             {contentNeeds.length > 0 && (
-              <SCard t={t} title="İçerik İhtiyaçları">
+              <SCard t={t} title="Kayıtlı içerik ihtiyaçları">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
                   {contentNeeds.map(cn => <TagChip key={cn} text={cn} color="#34D399" t={t} />)}
                 </div>
@@ -2403,20 +2780,12 @@ export function BrandConstitution() {
         {/* GALLERY */}
         {/* GALLERY */}
         {tab === 'gallery' && (
-          <GalleryTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
+          <GalleryTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} companyProfile={profile as CompanyProfile} />
         )}
 
         {/* VIBE DNA */}
         {tab === 'vibe' && (
           <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
-        )}
-
-        {/* BRAND KIT */}
-        {tab === 'brand_kit' && (
-          <>
-            {announcementLibrarySection}
-            <BrandKitTab t={t} tenantId={tenantId} />
-          </>
         )}
 
         {/* SETTINGS */}
@@ -2449,6 +2818,379 @@ export function BrandConstitution() {
                 })}
               </div>
             </SCard>
+
+            {tenantId && (
+              <MertcafeIntegrationsCard
+                t={t}
+                workspaceId={tenantId}
+                brandName={brandNameDisplay}
+                businessMenu={String((p as Record<string, unknown>).menu ?? (pyCtx as Record<string, unknown>)?.website_summary ?? '').slice(0, 500) || undefined}
+                businessHours={String((p as Record<string, unknown>).hours ?? '09:00 - 22:00')}
+                businessAddress={String(p.location ?? (pyCtx as Record<string, unknown>)?.location ?? '')}
+                businessPhone={String((p as Record<string, unknown>).phone ?? '')}
+                saveThemePatch={async (patch) => {
+                  const prev = brandThemePayload?.theme ?? null;
+                  const optimistic = { ...(prev ?? {}), ...patch };
+                  queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: optimistic });
+                  try {
+                    const res = await fetch(`/api/brand-context/${tenantId}/theme/ai-settings`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+                      body: JSON.stringify(patch),
+                    });
+                    if (!res.ok) {
+                      queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                      return;
+                    }
+                    const data = await res.json() as { theme?: Record<string, unknown> | null };
+                    if (data.theme) {
+                      queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: data.theme });
+                    }
+                  } catch {
+                    queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                  }
+                }}
+              />
+            )}
+
+            {/* ── AI Görsel Geliştirme ── */}
+            {(() => {
+              // Read from brand_theme JSON (Python-side) — auto-produce also reads from here
+              const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
+              const saveAiSetting = async (patch: Record<string, unknown>) => {
+                if (!tenantId) return;
+                const prev = brandThemePayload?.theme ?? null;
+                const optimistic = { ...(prev ?? {}), ...patch };
+                queryClient.setQueryData(
+                  ['brand-theme-kit', tenantId],
+                  (old: { theme?: Record<string, unknown> | null } | null | undefined) => ({
+                    ...(old ?? {}),
+                    theme: optimistic,
+                  }),
+                );
+                try {
+                  const res = await fetch(`/api/brand-context/${tenantId}/theme/ai-settings`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+                    body: JSON.stringify(patch),
+                  });
+                  if (!res.ok) {
+                    const err = await res.text().catch(() => '');
+                    console.warn('[BrandConstitution] AI settings save failed:', res.status, err);
+                    queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                    return;
+                  }
+                  const data = await res.json() as { theme?: Record<string, unknown> | null };
+                  if (data.theme) {
+                    queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: data.theme });
+                  }
+                } catch (e) {
+                  console.warn('[BrandConstitution] AI settings save error:', e);
+                  queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                }
+              };
+
+              const aiEnabled = themeFlag(currentTheme, 'ai_photo_enhance');
+              const aiLevel = themeString(currentTheme, 'ai_photo_enhance_level', 'moderate');
+              const themeBoolDefault = (key: string, defaultOn = true) => {
+                const camel = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+                if (key in currentTheme || camel in currentTheme) return themeFlag(currentTheme, key);
+                return defaultOn;
+              };
+              const aiUseIdentity = themeBoolDefault('ai_use_brand_identity');
+              const aiBriefDrives = themeBoolDefault('ai_brief_drives_scene');
+              const aiEmbedLogo = themeBoolDefault('ai_embed_logo');
+              const aiSubject = themeString(currentTheme, 'ai_visual_subject', 'auto');
+              const aiFormats = new Set(
+                themeStringArray(currentTheme, 'ai_enhance_formats', ['post', 'story', 'carousel', 'reel']),
+              );
+              const toggleFormat = (fmt: string) => {
+                const next = new Set(aiFormats);
+                if (next.has(fmt)) {
+                  if (next.size <= 1) return;
+                  next.delete(fmt);
+                } else {
+                  next.add(fmt);
+                }
+                void saveAiSetting({ ai_enhance_formats: [...next] });
+              };
+
+              return (
+                <SCard t={t} title="AI Görsel Geliştirme" accent={t.accent}>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
+                      Post, story, carousel ve reel üretimlerinde marka kimliği (logo, hikaye, işletme, vibe)
+                      sabit kalır; her gönderinin sahne detayı o postun brief ve caption&apos;ından gelir.
+                    </div>
+
+                    {/* Toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '12px 14px', borderRadius: 14, marginBottom: 12,
+                      background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                      border: `0.5px solid ${aiEnabled ? t.accentBorder : t.separator}`,
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>AI Fotoğraf İyileştirme</div>
+                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                          {aiEnabled ? 'Aktif — Mission Hub üretimleri bu standardı kullanır' : 'Kapalı — ham galeri / passthrough'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => saveAiSetting({ ai_photo_enhance: !aiEnabled })}
+                        style={{
+                          width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer',
+                          background: aiEnabled ? t.accent : t.separator,
+                          position: 'relative', transition: 'background 0.2s',
+                        }}>
+                        <div style={{
+                          position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%',
+                          background: '#fff',
+                          left: aiEnabled ? 25 : 3,
+                          transition: 'left 0.2s',
+                        }} />
+                      </button>
+                    </div>
+
+                    {/* Enhancement level */}
+                    {aiEnabled && (
+                      <div>
+                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
+                          textTransform: 'uppercase', marginBottom: 10 }}>Geliştirme Seviyesi</div>
+                        {[
+                          { level: 'subtle', label: 'Hafif', desc: 'Işık ve renk iyileştirmesi — arka plan korunur' },
+                          { level: 'moderate', label: 'Orta', desc: 'Bağlamsal arka plan + profesyonel ışık' },
+                          { level: 'full', label: 'Tam', desc: 'Tam sahne değişimi — ürün orijinal kalır' },
+                        ].map(({ level, label, desc }) => {
+                          const isActive = aiLevel === level;
+                          return (
+                            <button key={level}
+                              onClick={() => saveAiSetting({ ai_photo_enhance_level: level })}
+                              style={{
+                                width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
+                                textAlign: 'left', marginBottom: 6,
+                                background: isActive ? t.accentDim : 'transparent',
+                                border: `0.5px solid ${isActive ? t.accentBorder : t.separator}`,
+                              }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ width: 14, height: 14, borderRadius: '50%',
+                                  border: `2px solid ${isActive ? t.accent : t.textMuted}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  {isActive && <div style={{ width: 7, height: 7, borderRadius: '50%', background: t.accent }} />}
+                                </div>
+                                <div>
+                                  <span style={{ fontSize: 13, fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : t.textPrimary }}>
+                                    {label}
+                                  </span>
+                                  <span style={{ fontSize: 11, color: t.textMuted, marginLeft: 6 }}>{desc}</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+
+                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
+                          textTransform: 'uppercase', margin: '16px 0 10px' }}>Görsel standardı</div>
+
+                        {[
+                          { key: 'ai_use_brand_identity', on: aiUseIdentity, title: 'Marka kimliği', desc: 'Logo, hikaye, işletme, vibe — her üretimde' },
+                          { key: 'ai_brief_drives_scene', on: aiBriefDrives, title: 'Brief sahneyi yönetir', desc: 'Caption & headline ışık/mood/props karar verir' },
+                          { key: 'ai_embed_logo', on: aiEmbedLogo, title: 'Logo yerleştir', desc: 'Geliştirilmiş fotoğrafa marka logosu' },
+                        ].map(({ key, on, title, desc }) => (
+                          <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 12px', borderRadius: 12, marginBottom: 6,
+                            border: `0.5px solid ${t.separator}`,
+                          }}>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{title}</div>
+                              <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
+                            </div>
+                            <button
+                              onClick={() => saveAiSetting({ [key]: !on })}
+                              style={{
+                                width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+                                background: on ? t.accent : t.separator, position: 'relative',
+                              }}>
+                              <div style={{
+                                position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%',
+                                background: '#fff', left: on ? 21 : 3, transition: 'left 0.2s',
+                              }} />
+                            </button>
+                          </div>
+                        ))}
+
+                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
+                          textTransform: 'uppercase', margin: '12px 0 8px' }}>Görsel konu</div>
+                        {[
+                          { id: 'auto', label: 'Otomatik', desc: 'Sektöre göre mekan veya ürün' },
+                          { id: 'venue_ambiance', label: 'Mekan / ambiyans', desc: 'Berber, restoran, otel — mekan korunur' },
+                          { id: 'product_hero', label: 'Ürün hero', desc: 'Ambalaj ve ürün etiketi korunur' },
+                        ].map(({ id, label, desc }) => {
+                          const active = aiSubject === id;
+                          return (
+                            <button key={id}
+                              onClick={() => saveAiSetting({ ai_visual_subject: id })}
+                              style={{
+                                width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
+                                textAlign: 'left', marginBottom: 6,
+                                background: active ? t.accentDim : 'transparent',
+                                border: `0.5px solid ${active ? t.accentBorder : t.separator}`,
+                              }}>
+                              <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? t.accent : t.textPrimary }}>{label}</div>
+                              <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
+                            </button>
+                          );
+                        })}
+
+                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
+                          textTransform: 'uppercase', margin: '12px 0 8px' }}>AI formatları</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {(['post', 'story', 'carousel', 'reel'] as const).map((fmt) => {
+                            const on = aiFormats.has(fmt);
+                            const labels = { post: 'Post', story: 'Story', carousel: 'Carousel', reel: 'Reel' };
+                            return (
+                              <button key={fmt} onClick={() => toggleFormat(fmt)} style={{
+                                padding: '8px 12px', borderRadius: 20, border: `0.5px solid ${on ? t.accentBorder : t.separator}`,
+                                background: on ? t.accentDim : 'transparent', fontSize: 12,
+                                fontWeight: on ? 700 : 500, color: on ? t.accent : t.textMuted, cursor: 'pointer',
+                              }}>
+                                {labels[fmt]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Info banner */}
+                    <div style={{ padding: '10px 12px', borderRadius: 10, marginTop: 8,
+                      background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                      fontSize: 11, color: t.textMuted, lineHeight: 1.55 }}>
+                      Kimlik katmanı Anayasa + vibe; sahne katmanı Mission brief ve caption.
+                      Carousel metin overlay ayrıca Sharp ile uygulanır. Maliyet: ~$0.21/görsel (AI enhance).
+                    </div>
+
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `0.5px solid ${t.separator}` }}>
+                      <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
+                        textTransform: 'uppercase', marginBottom: 8 }}>Deneme — Visual Production Director</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '12px 14px', borderRadius: 14,
+                        background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                        border: `0.5px solid ${themeFlag(currentTheme, 'enable_visual_production_director') ? t.accentBorder : t.separator}`,
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Crew görsel direktör</div>
+                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.45 }}>
+                            {themeFlag(currentTheme, 'enable_visual_production_director')
+                              ? 'Açık — Mission üretiminde ek VPS zenginleştirme'
+                              : 'Kapalı — mevcut üretim (değişiklik yok)'}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => saveAiSetting({
+                            enable_visual_production_director: !themeFlag(currentTheme, 'enable_visual_production_director'),
+                          })}
+                          style={{
+                            width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer',
+                            background: themeFlag(currentTheme, 'enable_visual_production_director') ? t.accent : t.separator,
+                            position: 'relative',
+                          }}>
+                          <div style={{
+                            position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%',
+                            background: '#fff',
+                            left: themeFlag(currentTheme, 'enable_visual_production_director') ? 25 : 3,
+                            transition: 'left 0.2s',
+                          }} />
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8, lineHeight: 1.5 }}>
+                        İçerik ideasyonundaki görsel spec korunur; sadece boş alanlar doldurulur. Hata olursa üretim eskisi gibi devam eder.
+                      </div>
+                    </div>
+                  </div>
+                </SCard>
+              );
+            })()}
+
+            {(() => {
+              const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
+              const motionRaw = (currentTheme.motion_profile ?? currentTheme.motionProfile) as Record<string, unknown> | undefined;
+              const activeStyle = String(motionRaw?.motion_style ?? motionRaw?.motionStyle ?? 'editorial') as MotionStyle;
+              const purePhotoPct = Math.round(
+                Number(motionRaw?.prefer_pure_photo_stories ?? motionRaw?.preferPurePhotoStories ?? 0.72) * 100,
+              );
+              const sectorNorm = normalizeSectorId(String(p.industry ?? ''));
+
+              const saveMotionStyle = async (style: MotionStyle) => {
+                if (!tenantId) return;
+                const base = parseMotionProfileFromTheme(currentTheme, { sector: sectorNorm });
+                const next = applyMotionStylePreset(base, style);
+                const kitId = resolveKitForSector(sectorNorm, tenantKitSeed(tenantId ?? undefined));
+                const library = ensureBrandTemplateLibrary(currentTheme, { sector: sectorNorm, kitId, motionStyle: style, tenantId: tenantId ?? undefined });
+                const motion_profile = {
+                  motion_style: next.motionStyle,
+                  locale: next.locale,
+                  text_density: next.textDensity,
+                  text_transform: next.textTransform,
+                  prefer_pure_photo_stories: next.preferPurePhotoStories,
+                  composition_weights: next.compositionWeights,
+                  blocked_compositions: next.blockedCompositions,
+                  media_policy: {
+                    require_gallery: next.mediaPolicy.requireGallery,
+                    fallback: next.mediaPolicy.fallback,
+                    min_match_score: next.mediaPolicy.minMatchScore,
+                  },
+                  audio_mood_pool: next.audioMoodPool,
+                  operator_override: true,
+                };
+                await fetch(`/api/brand-context/${tenantId}/theme`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+                  body: JSON.stringify({
+                    theme: {
+                      ...currentTheme,
+                      motion_profile,
+                      template_library: library.locked ? library : deriveBrandTemplateLibrary({ kitId, sector: sectorNorm, motionStyle: style, tenantId: tenantId ?? undefined }),
+                    },
+                  }),
+                }).catch(() => {/* non-fatal */});
+                queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+              };
+
+              return (
+                <SCard t={t} title="Motion Stili (Remotion)" accent={t.accent}>
+                  <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
+                    Remotion story motion ve composition ağırlıkları. Hangi tasarımın kullanılacağı yukarıdaki Template Kütüphanesi (5) slotlarından seçilir — kayıt sonrası feed üretimi bu şablonları sabitler.
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    {MOTION_STYLE_OPTIONS.map(({ id, label, desc }) => {
+                      const isActive = activeStyle === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => saveMotionStyle(id)}
+                          style={{
+                            textAlign: 'left', padding: '12px 14px', borderRadius: 14, cursor: 'pointer',
+                            border: `0.5px solid ${isActive ? t.accentBorder : t.separator}`,
+                            background: isActive
+                              ? (t.isDark ? 'rgba(124,58,237,0.12)' : 'rgba(124,58,237,0.08)')
+                              : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                          }}
+                        >
+                          <div style={{ fontSize: 14, fontWeight: isActive ? 700 : 600, color: isActive ? t.accent : t.textPrimary }}>
+                            {label}
+                          </div>
+                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted }}>
+                    Saf fotoğraf story hedefi: ~{purePhotoPct}% · Aktif stil: <strong>{activeStyle}</strong>
+                  </div>
+                </SCard>
+              );
+            })()}
 
             <SCard t={t} title="Sosyal Medya Şablon Stili">
               <Field t={t} label="Şablon Stili" value={p.socialTemplateStyle ?? ''} onSave={save('socialTemplateStyle')} multiline />

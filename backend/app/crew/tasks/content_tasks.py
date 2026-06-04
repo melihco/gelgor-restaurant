@@ -78,19 +78,108 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
             base = url.split("?")[0]
             return [t for t, bases in used_by_type.items() if base in bases]
 
+        def _enrich_meta_tags(meta: dict) -> dict:
+            """
+            Generic, sector-agnostic tag extraction from photo description.
+            Works for ANY business type: gym, salon, restaurant, clinic, hotel, retail, etc.
+            No hardcoded sector rules — all enrichment comes from description text + universal
+            activity patterns. New tenants get correct enrichment automatically.
+            Mirrors gallery-photo-matcher.ts enrichTagsFromDescription() logic.
+            """
+            desc_raw = meta.get("description") or ""
+            if not desc_raw:
+                return meta
+            existing_tags = meta.get("contentTags") or []
+            if len(existing_tags) > 2 and (meta.get("bestFor") or meta.get("usageContext")):
+                return meta  # already well-enriched by GPT analysis
+
+            desc = desc_raw.lower()
+
+            # ── Step 1: Generic NLP — extract meaningful words as tags ──────────
+            STOP_WORDS = {
+                "the","a","an","of","in","on","at","with","and","or","to","is","are","was",
+                "be","by","as","that","this","from","for","it","its","has","have","been",
+                "being","can","next","into","various","several","multiple","some","there",
+                "their","they","which","where","while","also","very","quite","more","most",
+                "two","three","four","five","one","here","these","those","what","when","how",
+                "each","other","such","only","both","shows","show","features","featuring",
+                "appears","visible","seen","photo","image","picture","photograph","taken",
+                "captured","displayed","including","surrounded",
+                # Turkish
+                "bir","bu","ve","ile","için","da","de","mi","mı","mu","mü","var","çok",
+                "daha","en","şu","her","ne","ama","veya","olan","üç","dört","beş",
+            }
+            PURE_ADJ = {"beautiful","colorful","bright","dark","large","small","tall","wide",
+                        "narrow","clean","dirty","old","new","big","little","many","few",
+                        "various","different","same","similar","specific","particular","unique"}
+
+            import re as _re
+            raw_tokens = _re.sub(r"[,\.!?;:'\"()\-–—/|]", " ", desc).split()
+            content_words = [
+                w for w in raw_tokens
+                if len(w) > 2 and w not in STOP_WORDS and w not in PURE_ADJ
+            ]
+
+            all_tags = list(existing_tags)
+            seen_tags = set(all_tags)
+            for w in content_words[:20]:
+                if w not in seen_tags:
+                    all_tags.append(w)
+                    seen_tags.add(w)
+
+            # ── Step 2: Universal activity patterns → bestFor ───────────────────
+            new_best_for: list[str] = list(meta.get("bestFor") or [])
+            bf_set = set(new_best_for)
+
+            def _add_bf(*items: str) -> None:
+                for item in items:
+                    if item not in bf_set:
+                        new_best_for.append(item)
+                        bf_set.add(item)
+
+            if _re.search(r"person|people|customer|client|patient|student|member|visitor|guest|user|staff|team|employee|man|woman|child|couple|family|group|crowd", desc):
+                _add_bf("social_proof", "feed_post")
+            if _re.search(r"before|after|result|transformation|progress|improvement|change|difference|outcome", desc):
+                _add_bf("before_after", "customer_result")
+            if _re.search(r"product|item|packaging|display|collection|merchandise|retail|shelf", desc):
+                _add_bf("product_highlight", "feed_post")
+            if _re.search(r"treatment|procedure|session|therapy|application|service|care|consultation", desc):
+                _add_bf("service_showcase", "behind_the_scenes")
+            if _re.search(r"equipment|machine|device|tool|apparatus|instrument|gear|station|setup", desc):
+                _add_bf("equipment_showcase", "behind_the_scenes")
+            if _re.search(r"food|yemek|dish|meal|plate|cuisine|drink|beverage|içecek|coffee|kahve", desc):
+                _add_bf("food_showcase", "feed_post")
+            if _re.search(r"event|party|celebration|ceremony|opening|concert|show|performance|gathering|festival|workshop|class", desc):
+                _add_bf("event_announcement", "story_format")
+            if _re.search(r"logo|sign|brand|entrance|facade|label|signage", desc):
+                _add_bf("brand_background")
+            if _re.search(r"outdoor|exterior|garden|terrace|patio|rooftop|nature|park|view|landscape", desc):
+                _add_bf("venue_photo", "daily_story")
+            if _re.search(r"interior|indoor|room|studio|salon|office|clinic|store|shop|facility", desc):
+                _add_bf("venue_photo", "feed_post")
+            if not new_best_for:
+                _add_bf("feed_post", "daily_story")
+
+            new_usage = meta.get("usageContext") or desc_raw[:200]
+
+            return {**meta, "contentTags": all_tags, "bestFor": new_best_for, "usageContext": new_usage}
+
         scene_map: dict = _dd(list)
         unused_photos: list[dict] = []
-        for url, meta in gallery_data.items():
+        for url, meta_raw in gallery_data.items():
+            meta = _enrich_meta_tags(meta_raw)
             tags = meta.get("contentTags") or []
             mood = meta.get("mood") or ""
             usage = meta.get("usageContext") or ""
             best_for = meta.get("bestFor") or []
-            if not tags and not usage:
+            # Skip only if we have no description and no tags — don't skip photos with descriptions
+            desc_raw = meta.get("description") or ""
+            if not tags and not usage and not desc_raw:
                 continue
             used_types = _used_types_for_url(url)
             is_used = bool(used_types) or url.split("?")[0] in used_bases
-            label = tags[0] if tags else (meta.get("suggestedAssetType") or "venue")
-            desc = (meta.get("description") or "")[:120]
+            label = tags[0] if tags else (meta.get("suggestedAssetType") or desc_raw[:30] or "venue")
+            desc = desc_raw[:150]
             entry = {
                 "url": url,
                 "tags": tags[:5],
@@ -110,11 +199,30 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
         used_count = sum(1 for u in gallery_data if u.split("?")[0] in used_bases)
         unused_count = total - used_count
 
+        # Build gallery topic coverage summary for idea generation guidance
+        from collections import Counter as _Counter
+        all_tags: _Counter = _Counter()
+        for _meta in gallery_data.values():
+            _enriched = _enrich_meta_tags(_meta)
+            for _t in (_enriched.get("contentTags") or []):
+                all_tags[_t] += 1
+        top_gallery_topics = [t for t, _ in all_tags.most_common(12) if t not in ("logo", "marka", "brand", "interior", "mekan", "decor")]
+
         lines = [
             f"## 📸 BRAND GALLERY — {total} Photos ({unused_count} unused, {used_count} already published)",
-            "PURPOSE: Ideas are driven by brand strategy, timing, and market context — NOT by what photos exist.",
-            "Use this gallery ONLY at the final step: after forming an idea, pick the photo that best illustrates it.",
-            "If no photo fits perfectly, set selected_gallery_url to null and note 'needs new photo'.",
+            "",
+            "🎯 GALLERY COVERAGE — Topics this gallery can VISUALLY illustrate:",
+            "  " + ", ".join(top_gallery_topics) if top_gallery_topics else "  (general venue)",
+            "",
+            "⚠️ CONTENT-PHOTO ALIGNMENT RULE (CRITICAL):",
+            "  Ideas whose core topic is NOT in the coverage list above will get WRONG photos.",
+            "  Example: if the gallery has no 'food' or 'seafood' photos, do NOT write captions",
+            "  about specific dishes — the system will have to use an unrelated photo.",
+            "  PREFER ideas about: " + ", ".join(top_gallery_topics[:6]) if top_gallery_topics else "",
+            "",
+            "PURPOSE: Ideas first, then photos. But align idea TOPICS with what the gallery can show.",
+            "Use gallery ONLY at the final step: pick the photo that best illustrates the FORMED idea.",
+            "If no photo fits, set selected_gallery_url to null and note 'needs new photo: [description]'.",
             "",
             "🔒 REUSE RULE (mandatory): A gallery photo used for one post type CANNOT be selected again for the SAME post type.",
             "  Post types: feed (post), story, reel, carousel — each is independent.",
@@ -128,39 +236,36 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
             lines.append("Photos marked ✓ feed / ✓ story show which post types already consumed them.")
             lines.append("")
 
+        # Show each photo individually so the agent can pick the exact best match,
+        # not just the first sample of a group. Group header for context, then each URL.
         for scene_label, photos in sorted_scenes:
-            count_ph = len(photos)
-            sample = photos[0]
-            tags_str = ", ".join(sample["tags"])
-            mood_str = sample["mood"]
-            usage_str = (sample["usage"] or "")[:90]
-            desc_str = (sample.get("desc") or "")[:100]
-            used_types = sample.get("used_types") or []
-            if used_types:
-                status = "✓ " + ", ".join(used_types)
-            else:
-                status = "✨"
-            line = f"• {status} **{scene_label}** ({count_ph}x) | url: {sample['url']}"
-            if desc_str:
-                line += f"\n    📝 {desc_str}"
-            if tags_str:
-                line += f" | tags: {tags_str}"
-            if mood_str:
-                line += f" | {mood_str} mood"
-            if usage_str:
-                line += f" → {usage_str}"
-            lines.append(line)
+            tags_str = ", ".join(photos[0]["tags"]) if photos[0]["tags"] else scene_label
+            lines.append(f"\n### {scene_label.upper()} ({len(photos)} photos) | tags: {tags_str}")
+            for photo in photos:
+                used_types = photo.get("used_types") or []
+                status = "✓ " + ", ".join(used_types) if used_types else "✨"
+                desc_str = (photo.get("desc") or "")[:120]
+                mood_str = photo.get("mood") or ""
+                usage_str = (photo.get("usage") or "")[:80]
+                line = f"  {status} {photo['url']}"
+                if desc_str:
+                    line += f"\n      📝 {desc_str}"
+                if mood_str and not desc_str:
+                    line += f" | {mood_str} mood"
+                if usage_str:
+                    line += f"\n      → {usage_str}"
+                lines.append(line)
 
         if unused_photos and used_count > 0:
             lines += [
                 "",
-                "### UNUSED PHOTOS — prioritize these for new content:",
+                "### UNUSED PHOTOS (prioritize for new content):",
             ]
-            for p in unused_photos[:8]:
+            for p in unused_photos[:12]:
                 tags_str = ", ".join(p["tags"])
                 desc_short = (p.get("desc") or "")[:80]
                 desc_part = f" → {desc_short}" if desc_short else ""
-                lines.append(f"  ✨ {p['url']} — {tags_str} ({p['mood']}){desc_part}")
+                lines.append(f"  ✨ {p['url']} | {tags_str} ({p['mood']}){desc_part}")
 
         lines += [
             "",
@@ -185,30 +290,66 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
         return "No gallery images available — use generated_visual treatment."
 
 
+def _theme_dict(val) -> dict:
+    return val if isinstance(val, dict) else {}
+
+
+def _merge_theme_section(theme: dict, vibe: dict, key: str) -> dict:
+    """Operator-derived brand_theme wins on overlap; vibe fills gaps."""
+    t = _theme_dict(theme.get(key))
+    v = _theme_dict(vibe.get(key))
+    if not t:
+        return v
+    if not v:
+        return t
+    return {**v, **t}
+
+
+def _collect_anti_patterns(theme: dict, vibe: dict) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for source in (theme.get("anti_patterns"), vibe.get("anti_patterns")):
+        if not isinstance(source, list):
+            continue
+        for ap in source:
+            s = str(ap).strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+    return out
+
+
 def _build_brand_theme_block(brand: BrandInfo) -> str:
     """
-    Build a BrandTheme quality gate block from the brand's derived design tokens.
+    Brand Hub Ayarlar (brand_theme) + vibe extract — merged for ideation prompts.
 
-    Injected at the TOP of the content ideation description so the agent:
-    1. Uses correct palette hex codes in image_edit_prompt (not hallucinated colors)
-    2. Respects anti-pattern rules (no forbidden visual elements)
-    3. Applies correct grading look to every pure_photo treatment
-    4. Sets tokens_hint correctly for layouts that need seasonal/campaign overrides
+    Injected at the TOP of content ideation so agents use real LUT/anti-pattern/caption voice.
     """
-    vibe = brand.brand_vibe_profile
-    if not vibe or not isinstance(vibe, dict):
+    vibe = _theme_dict(brand.brand_vibe_profile)
+    theme = _theme_dict(brand.brand_theme)
+
+    if not vibe and not theme:
         return ""
 
-    palette = vibe.get("palette") or {}
-    grading = vibe.get("grading") or {}
-    composition = vibe.get("composition") or {}
-    anti_patterns = vibe.get("anti_patterns") or []
+    palette = _merge_theme_section(theme, vibe, "palette")
+    grading = _merge_theme_section(theme, vibe, "grading")
+    composition = _merge_theme_section(theme, vibe, "composition")
+    typography = _theme_dict(theme.get("typography"))
+    anti_patterns = _collect_anti_patterns(theme, vibe)
+    caption_voice = theme.get("caption_voice_rules")
+    if not isinstance(caption_voice, list):
+        caption_voice = []
 
-    if not palette:
+    has_palette = bool(palette.get("primary") or palette.get("accent"))
+    has_grading = bool(grading.get("look") or grading.get("lut_directive"))
+    if not has_palette and not has_grading and not anti_patterns and not caption_voice:
         return ""
 
     lines = ["## 🎨 BRAND THEME TOKENS — MANDATORY IMAGE GENERATION RULES"]
-    lines.append("Use these EXACT values in every image_edit_prompt and tokens_hint field.\n")
+    lines.append(
+        "Sources: Brand Hub Ayarlar (brand_theme) + vibe profile. "
+        "Use these EXACT values in every image_edit_prompt and tokens_hint.\n",
+    )
 
     if palette.get("primary"):
         lines.append(f"**Primary Color**: `{palette['primary']}`")
@@ -226,12 +367,25 @@ def _build_brand_theme_block(brand: BrandInfo) -> str:
 
     if composition.get("framing_rules"):
         lines.append(f"\n**Composition Rules**: {composition['framing_rules']}")
+    elif composition.get("primary_pattern"):
+        lines.append(f"\n**Composition Pattern**: {composition['primary_pattern']}")
+
+    if typography.get("personality"):
+        lines.append(f"**Typography personality**: {typography['personality']}")
+
+    if caption_voice:
+        lines.append("\n## ✍️ CAPTION VOICE (on-image text & hooks)")
+        for rule in caption_voice[:6]:
+            lines.append(f"  • {rule}")
 
     if anti_patterns:
         lines.append("\n## 🚫 VISUAL ANTI-PATTERNS — ABSOLUTE PROHIBITION")
         lines.append("Never produce or suggest any image that contains:")
-        for ap in anti_patterns[:8]:
+        for ap in anti_patterns[:10]:
             lines.append(f"  ✕ {ap}")
+
+    if brand.visual_dna and str(brand.visual_dna).strip():
+        lines.append(f"\n**Visual DNA (prose)**: {str(brand.visual_dna).strip()[:400]}")
 
     lines.append(
         "\n⚠️ IMAGE GEN RULE: Every `image_edit_prompt` for this brand MUST include the LUT directive above. "
@@ -343,7 +497,7 @@ def _build_recent_titles_block(brand: BrandInfo) -> str:
 def create_content_ideation_task(
     agent: Agent,
     brand: BrandInfo,
-    count: int = 5,
+    count: int = 7,
     time_period: str = "next week",
     brief: str = "",
     content_pillars: list[str] | None = None,
@@ -356,13 +510,18 @@ def create_content_ideation_task(
     lang_map = {"en": "English", "tr": "Turkish", "de": "German", "fr": "French", "es": "Spanish"}
     raw_lang = (brand.languages or "en").split(",")[0].strip().lower()
     output_language = lang_map.get(raw_lang, raw_lang.capitalize())
+    loc_default = "not specified" if output_language == "English" else "belirtilmemiş"
+    aud_default = "general audience" if output_language == "English" else "genel kitle"
+
+    resolved_pillars = content_pillars or brand.content_pillars or []
+    from app.services.pillar_coverage_service import build_pillar_coverage_prompt_block
 
     description = CONTENT_IDEATION_TASK.format(
         business_name=brand.business_name,
         business_type=brand.business_type or "general_business",
-        location=brand.location or "belirtilmemiş",
+        location=brand.location or loc_default,
         brand_tone=brand.brand_tone or "professional",
-        target_audience=brand.target_audience or "genel kitle",
+        target_audience=brand.target_audience or aud_default,
         count=count,
         time_period=time_period,
         campaign_goals=brand.campaign_goals or "increase engagement and brand awareness",
@@ -370,7 +529,8 @@ def create_content_ideation_task(
         keywords=brand.keywords or "No specific keywords set.",
         available_assets=", ".join(brand.asset_descriptions or ["No assets uploaded yet"]),
         brief=brief or "No extra user brief. Build the weekly plan from brand memory and content pillars.",
-        content_pillars=", ".join(content_pillars or brand.content_pillars or ["brand story", "product/service value", "social proof", "conversion CTA"]),
+        content_pillars=", ".join(resolved_pillars) or "derive from business_type only",
+        pillar_coverage_block=build_pillar_coverage_prompt_block(resolved_pillars, count),
         autonomy_mode="enabled" if autonomy_mode else "disabled",
         reference_image_urls_list=gallery_scene_block,
         output_language=output_language,
@@ -418,18 +578,41 @@ def create_content_calendar_task(
     duration_days: int = 7,
     frequency: str = "daily",
 ) -> Task:
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    current_date_str = now_utc.strftime("%A, %d %B %Y")
+
+    # Build active signals summary (context signals already in brand via learning_context)
+    signals_summary = (
+        getattr(brand, "learning_context", "") or ""
+    )
+    # Extract just the signals block if present
+    if "BAĞLAM SİNYALLERİ" in signals_summary:
+        start = signals_summary.find("=== BAĞLAM")
+        end = signals_summary.find("===", start + 4) + 3 if start > -1 else -1
+        signals_summary = signals_summary[start:end] if start > -1 and end > 3 else ""
+    else:
+        signals_summary = "Current season, weekly rhythm"
+
+    # Count: 3-5 announcement concepts per calendar run
+    count = max(3, min(5, duration_days))
+
     description = CONTENT_CALENDAR_TASK.format(
         business_name=brand.business_name,
-        duration=duration_days,
-        frequency=frequency,
-        campaign_goals=brand.campaign_goals or "increase engagement and brand awareness",
+        count=count,
+        current_date=current_date_str,
+        location=brand.location or "Turkey",
+        business_type=brand.business_type or "hospitality",
+        brief=brand.campaign_goals or "increase engagement and brand awareness",
+        signals=signals_summary,
     )
 
     return Task(
         description=description,
         expected_output=(
-            "A JSON array of daily content entries, each with day, date_suggestion, "
-            "content_type, theme, brief, and priority."
+            f"A JSON array of {count} announcement card concepts, each with: "
+            "announcement_type, event_name, tagline, date, time, venue_area, "
+            "template_use_case, format, content_brief, photo_mood, priority."
         ),
         agent=agent,
     )

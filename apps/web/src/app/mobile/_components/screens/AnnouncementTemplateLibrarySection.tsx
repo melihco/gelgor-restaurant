@@ -164,17 +164,17 @@ function PreviewMock({
 
   const lineupPreview = (template.previewHint === 'lineup' || template.previewHint === 'festival') ? (
     <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.55) 100%)' }}>
-      <div style={{ position: 'absolute', top: 6, left: 0, right: 0, height: 9, background: accent, opacity: 0.9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: 5, fontWeight: 700, color: '#fff', letterSpacing: 1 }}>VENUE</span>
+      <div style={{ position: 'absolute', top: 6, left: 0, right: 0, height: 7, background: `linear-gradient(180deg, ${accent} 0%, ${accent}cc 100%)`, opacity: 0.92, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: 5, fontWeight: 700, color: '#fff', letterSpacing: 1.5 }}>VENUE</span>
       </div>
       <div style={{ position: 'absolute', top: 20, left: 0, right: 0, textAlign: 'center' }}>
-        <div style={{ fontSize: 10, fontWeight: 900, color: '#fff', letterSpacing: 0.5 }}>HEADLINER</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', letterSpacing: 0.3, fontFamily: "'Playfair Display', Georgia, serif", textShadow: '0 2px 6px rgba(0,0,0,0.6)' }}>HEADLINER</div>
         <div style={{ width: '60%', height: 1, background: accent, opacity: 0.5, margin: '3px auto' }} />
         <div style={{ fontSize: 6, fontWeight: 600, color: '#fff', opacity: 0.82 }}>Artist 2 · Artist 3</div>
         <div style={{ fontSize: 5, fontWeight: 500, color: '#fff', opacity: 0.6, marginTop: 2 }}>Artist 4 · Artist 5</div>
       </div>
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 10, background: accent, opacity: 0.85, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: 4.5, fontWeight: 600, color: '#fff', letterSpacing: 0.5 }}>TARİH · MEKAN</span>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 8, background: `linear-gradient(180deg, ${accent}cc 0%, ${accent} 100%)`, opacity: 0.9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: 4.5, fontWeight: 600, color: '#fff', letterSpacing: 1 }}>TARİH · MEKAN</span>
       </div>
     </div>
   ) : null;
@@ -200,7 +200,7 @@ function PreviewMock({
   const djPreview = template.previewHint === 'dj_set' ? (
     <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${accent}99 0%, rgba(0,0,0,0.65) 100%)` }}>
       <div style={{ position: 'absolute', top: '20%', left: 0, right: 0, textAlign: 'center' }}>
-        <div style={{ fontSize: 12, fontWeight: 900, color: '#fff', letterSpacing: 1, textShadow: `0 0 12px ${accent}` }}>DJ NAME</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5, fontFamily: "'Playfair Display', Georgia, serif", textShadow: `0 0 14px ${accent}, 0 1px 4px rgba(0,0,0,0.6)` }}>DJ NAME</div>
         <div style={{ width: '55%', height: 1, background: accent, opacity: 0.5, margin: '3px auto' }} />
         <div style={{ fontSize: 5.5, fontWeight: 500, color: '#fff', opacity: 0.75, marginTop: 3 }}>SUPPORT · ACTS</div>
       </div>
@@ -231,7 +231,9 @@ function PreviewMock({
       borderRadius: 10,
       overflow: 'hidden',
       position: 'relative',
-      background: 'linear-gradient(160deg, #4a7c9e 0%, #87CEEB 45%, #2d5016 100%)',
+      // Neutral dark photo-like base so overlays read like the real rendered
+      // card (the old teal→green placeholder misrepresented the design).
+      background: 'linear-gradient(155deg, #4a4640 0%, #2a2620 50%, #14110d 100%)',
       border: active ? `2px solid ${t.accent}` : `1px solid ${t.separator}`,
       flexShrink: 0,
     }}>
@@ -280,13 +282,17 @@ function PreviewMock({
           top: template.previewHint === 'top_center' ? 42 : undefined,
           left: template.previewHint === 'bottom_left' || template.previewHint === 'magazine' ? 12 : '50%',
           transform: template.previewHint === 'bottom_left' || template.previewHint === 'magazine' ? 'none' : 'translateX(-50%)',
-          fontSize: template.previewHint === 'script' ? 9 : 8,
+          fontSize: template.previewHint === 'script' ? 10 : 9,
+          // Serif display hero to mirror the real engine typography (Playfair etc.)
+          fontFamily: template.previewHint === 'script'
+            ? "'Brush Script MT', cursive"
+            : "'Playfair Display', Georgia, 'Times New Roman', serif",
           fontWeight: 700,
           fontStyle: template.previewHint === 'script' ? 'italic' : 'normal',
           color: '#fff',
-          letterSpacing: 0.5,
+          letterSpacing: 0.3,
           textAlign: template.previewHint === 'bottom_left' || template.previewHint === 'magazine' ? 'left' : 'center',
-          textShadow: template.previewHint === 'neon' ? `0 0 8px ${accent}` : '0 1px 4px rgba(0,0,0,0.5)',
+          textShadow: template.previewHint === 'neon' ? `0 0 10px ${accent}, 0 1px 4px rgba(0,0,0,0.6)` : '0 2px 6px rgba(0,0,0,0.6)',
         }}>
           BAŞLIK
         </div>

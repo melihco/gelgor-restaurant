@@ -1,17 +1,35 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
-import { resolveArtifact, parseArtifactContent, findScheduledForArtifact } from '../artifact-utils';
+import { resolveArtifact, parseArtifactContent, findScheduledForArtifact, resolveCarouselUrls } from '../artifact-utils';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { OutputArtifact } from '@/types';
 import type { T } from '../theme-context';
 import { VisualReviewBadge } from '../VisualReviewSheet';
+import { resolveClientMediaUrl } from '@/lib/media-url';
+import { buildTenantBrandContext } from '@/lib/tenant-brand-context';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 
 type Platform = 'instagram' | 'x' | 'tiktok';
+type BrandProfile = { handle: string; name: string; logoUrl: string };
+
+function buildBrandProfileFromQueries(
+  profile: unknown,
+  brandCtx: unknown,
+  proxyLogo: (url: string) => string,
+): BrandProfile {
+  const brand = buildTenantBrandContext(profile as any, brandCtx as Record<string, unknown> | null);
+  return {
+    handle: brand.displayHandle,
+    name: brand.brandName || 'Brand',
+    logoUrl: brand.logoUrl ? proxyLogo(brand.logoUrl) : '',
+  };
+}
 
 // ── Platform configs ────────────────────────────────────────────────────────
 const PLATFORMS: { id: Platform; label: string; color: string; bg: string; svgPath: string }[] = [
@@ -69,19 +87,7 @@ function isDraftArtifact(artifact: OutputArtifact): boolean {
 }
 
 function resolveImg(url: string | null | undefined): string | null {
-  if (!url) return null;
-  // Local Next.js public paths (e.g. /generated/canva/...)
-  if (url.startsWith('/')) return url;
-  if (url.startsWith('http')) {
-    // Canva edit pages are web pages, not images
-    if (url.includes('canva.com/design')) return null;
-    // Known-safe CDN domains — embed directly (no proxy needed)
-    const SAFE = ['oaidalleapiprodscus.blob.core', 'fal-cdn', 'storage.googleapis', 'r2.dev', 'amazonaws.com', 'cloudfront.net', 'export-download.canva.com', 'cdninstagram.com', 'fbcdn.net'];
-    if (SAFE.some(d => url.includes(d))) return url;
-    // All other external URLs — route through media-proxy to avoid CORS/403
-    return `/api/media-proxy?url=${encodeURIComponent(url)}`;
-  }
-  return null;
+  return resolveClientMediaUrl(url);
 }
 
 /** Pick the best displayable image URL from an artifact's content JSON. */
@@ -107,11 +113,8 @@ function resolveArtifactImg(artifact: { contentUrl?: string | null; content?: st
   return null;
 }
 
-// Routes external logo/image URLs through the media proxy to avoid 403s from Instagram CDN
 function proxyUrl(url: string | null | undefined): string {
-  if (!url) return '';
-  if (url.startsWith('/')) return url;
-  return `/api/media-proxy?url=${encodeURIComponent(url)}`;
+  return resolveClientMediaUrl(url) ?? '';
 }
 
 // ── Instagram caption block — birebir IG feed görünümü ──────────────────────
@@ -1284,8 +1287,6 @@ function SmartGrid({ items, onOpen, scheduledIds = new Set() }: {
   );
 }
 
-type BrandProfile = { handle: string; name: string; logoUrl: string };
-
 // ── Instagram Story Viewer (full-screen overlay, multi-story navigation) ─────
 function IGStoryViewer({ stories, initialIndex = 0, brandProfile, onClose, onApprove, approving }: {
   stories: OutputArtifact[];
@@ -1463,6 +1464,17 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
   const [publishError, setPublishError] = useState<string | null>(null);
   const approveMutation = useMutation({
     mutationFn: async (artifact: OutputArtifact) => {
+      if (!workspaceId) {
+        throw new Error('Tenant seçili değil.');
+      }
+      const mcStatus = await apiClient.getMertcafeStatus(workspaceId);
+      if (!mcStatus.is_tenant_ready || !mcStatus.publish_account_id) {
+        throw new Error('Bu tenant için Instagram yayın hesabı yapılandırılmamış.');
+      }
+      if (!mcStatus.instagram_connected) {
+        throw new Error('Instagram OAuth bağlı değil.');
+      }
+
       const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
       const content = parseArtifactContent(artifact.content);
       const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
@@ -1498,27 +1510,25 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
         || resolved?.videoUrl
         || '',
       );
-      const mediaUrls = (
-        Array.isArray((content as any).mediaUrls) ? (content as any).mediaUrls
-        : Array.isArray((content as any).media_urls) ? (content as any).media_urls
-          : Array.isArray((meta as any).mediaUrls) ? (meta as any).mediaUrls
-            : Array.isArray((meta as any).media_urls) ? (meta as any).media_urls
-              : []
-      ) as string[];
-      const normalizedMediaUrls = mediaUrls.map(String).filter(Boolean);
+      const normalizedMediaUrls = resolveCarouselUrls(content, meta);
 
       const isStory = kindToken.includes('story');
       const isReel = kindToken.includes('reel');
-      const isCarousel = kindToken.includes('carousel') || normalizedMediaUrls.length >= 2;
+      const isCarousel = normalizedMediaUrls.length >= 2;
       const postType = isStory ? 'story' : isReel ? 'reels' : isCarousel ? 'carousel' : 'feed';
 
       const publishPayload: Record<string, unknown> = {
         post_type: postType,
         artifactId: artifact.id,
         workspaceId,
+        account_id: mcStatus.publish_account_id,
       };
       if (postType === 'story') {
-        publishPayload.image_url = imageUrl;
+        if (videoUrl) {
+          publishPayload.video_url = videoUrl;
+        } else {
+          publishPayload.image_url = imageUrl;
+        }
       } else if (postType === 'feed') {
         publishPayload.image_url = imageUrl;
         publishPayload.content = caption;
@@ -1558,7 +1568,7 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
     if (a.status === 'pending_review' && b.status !== 'pending_review') return -1;
     if (b.status === 'pending_review' && a.status !== 'pending_review') return 1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  }).slice(0, 20);
+  }).slice(0, 50);
 
   // Separate stories from posts (for Instagram)
   const isStoryArtifact = (a: OutputArtifact) => {
@@ -1716,10 +1726,8 @@ export function Outputs() {
   const [filter, setFilter] = useState<Filter>('all');
   const [activePlatform, setActivePlatform] = useState<Platform | 'all'>('instagram');
 
-  const { data: rawArtifacts = [], isLoading, error } = useQuery({
-    queryKey: ['artifacts'],
-    queryFn: () => apiClient.getArtifacts(),
-    refetchInterval: 30_000, staleTime: 15_000, retry: 1,
+  const { data: rawArtifacts = [], isLoading, error } = useMobileArtifacts({
+    subscribeOnly: true,
   });
 
   // Brand profile — instagram handle + name + logo for native post headers
@@ -1735,12 +1743,7 @@ export function Outputs() {
     staleTime: 60_000, // 1 min — logo_url artık doluyor, sık yenile
     enabled: !!tenantId,
   });
-  const rawLogoUrl = (profile as any)?.logoUrl || (brandCtx as any)?.logo_url || '';
-  const brandProfile = {
-    handle:  ((profile as any)?.instagramHandle ?? '').replace('@', '').trim() || 'marka',
-    name:    (profile as any)?.brandName ?? 'Marka',
-    logoUrl: proxyUrl(rawLogoUrl),
-  };
+  const brandProfile = buildBrandProfileFromQueries(profile, brandCtx, proxyUrl);
 
   // Scheduled posts — for "Zamanlandı" badge on cards
   const { data: scheduledPosts = [] } = useQuery({
@@ -1757,7 +1760,12 @@ export function Outputs() {
     return ids;
   })();
 
-  const all: ResolvedItem[] = (rawArtifacts as OutputArtifact[]).slice(0, 80).flatMap(a => {
+  const publishableArtifacts = useMemo(
+    () => filterFeedPublishableArtifacts(rawArtifacts as OutputArtifact[]),
+    [rawArtifacts],
+  );
+
+  const all: ResolvedItem[] = publishableArtifacts.slice(0, 120).flatMap(a => {
     try { return [{ raw: a, res: resolveArtifact(a) }]; } catch { return []; }
   });
 

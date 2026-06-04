@@ -26,6 +26,18 @@ function snakeToCamel(obj: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/** Shallow camelCase → snake_case converter for a plain object */
+function camelToSnake(obj: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const snakeKey = k.replace(/([A-Z])/g, (c) => `_${c.toLowerCase()}`);
+    out[snakeKey] = v && typeof v === 'object' && !Array.isArray(v)
+      ? camelToSnake(v as Record<string, unknown>)
+      : v;
+  }
+  return out;
+}
+
 export async function GET(
   _req: NextRequest,
   context: { params: Promise<{ workspaceId: string }> },
@@ -53,7 +65,13 @@ export async function PUT(
   context: { params: Promise<{ workspaceId: string }> },
 ): Promise<NextResponse> {
   const { workspaceId } = await context.params;
-  const body = await req.json();
+  const rawBody = await req.json() as { theme?: Record<string, unknown> };
+
+  // Convert camelCase theme keys → snake_case before sending to Python Pydantic schema
+  const body = rawBody.theme
+    ? { theme: camelToSnake(rawBody.theme) }
+    : rawBody;
+
   const upstream = await proxyToCrewBackend(
     `/api/v1/brand-context/${workspaceId}/theme`,
     { method: 'PUT', workspaceId, body },

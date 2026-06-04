@@ -292,7 +292,43 @@ def build_industry_context_prompt(calendar: dict[str, Any]) -> str:
         lines.append("")
 
     # Upcoming triggers — split verified (holidays/seasons) vs AI-inferred (local events)
-    triggers = calendar.get("upcoming_triggers", [])
+    # IMPORTANT: filter out triggers whose date has already passed.
+    triggers_raw = calendar.get("upcoming_triggers", [])
+    now_utc = datetime.now(timezone.utc)
+    current_year = now_utc.year
+
+    def _trigger_is_future(t: dict) -> bool:
+        """Return True if the trigger date is today or in the future."""
+        date_range = (t.get("date_range") or "").lower().strip()
+        if not date_range:
+            return True  # unknown date → keep, let Strategist decide
+        # Try to parse month+day from strings like "19 mayıs", "may 19", "1 mayis"
+        MONTH_TR = {
+            "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4, "mayıs": 5, "haziran": 6,
+            "temmuz": 7, "ağustos": 8, "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+            "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+            "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+        }
+        import re as _re
+        # Match patterns like "1 mayıs", "19 may", "may 19", "23 nisan"
+        for month_name, month_num in MONTH_TR.items():
+            if month_name in date_range:
+                day_match = _re.search(r"\b(\d{1,2})\b", date_range)
+                if day_match:
+                    day = int(day_match.group(1))
+                    try:
+                        from datetime import date as _date
+                        candidate = _date(current_year, month_num, day)
+                        # Allow up to 2 days in the past (for "starting soon" events)
+                        today = _date(now_utc.year, now_utc.month, now_utc.day)
+                        if candidate < today - __import__('datetime').timedelta(days=2):
+                            return False  # past — skip
+                    except ValueError:
+                        pass
+        return True
+
+    triggers = [t for t in triggers_raw if _trigger_is_future(t)]
+
     # Verified triggers: national/religious holidays and seasonal transitions only
     VERIFIED_KEYWORDS = [
         "ramazan", "bayram", "kurban", "yılbaşı", "new year", "eid",

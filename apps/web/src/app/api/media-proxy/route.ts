@@ -60,17 +60,11 @@ export async function GET(req: NextRequest) {
       // Still 403 after retry (Instagram expired URL, truly blocked) →
       // Return transparent 1×1 GIF so <img> tags and Canvas don't break
       if (upstream.status === 403 || upstream.status === 410) {
-        // Cache the "expired" pixel for 1 hour so we don't hammer the upstream CDN
-        // for every <img> reload. After 1h client will retry (URL may have been refreshed).
-        const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
-        return new NextResponse(pixel, {
-          status: 200,
-          headers: {
-            'Content-Type': 'image/gif',
-            'X-Proxy-Status': 'expired',
-            'Cache-Control': 'public, max-age=3600, immutable',
-          },
-        });
+        // 404 so <img>/Remotion fail visibly — 1×1 GIF caused "kırık" blank story frames.
+        return NextResponse.json(
+          { error: 'upstream expired or forbidden', status: upstream.status },
+          { status: 404, headers: { 'X-Proxy-Status': 'expired' } },
+        );
       }
       return NextResponse.json({ error: `upstream ${upstream.status}` }, { status: 502 });
     }

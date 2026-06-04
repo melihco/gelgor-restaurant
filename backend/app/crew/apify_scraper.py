@@ -719,6 +719,9 @@ async def fetch_website_apify(url: str, api_key: str, timeout: int = 90) -> dict
         homepage_html=homepage_html,
         crawled_pages=crawled_pages,
     )
+    if homepage_html:
+        from app.services.website_brand_kit_service import attach_brand_kit_to_website_result
+        attach_brand_kit_to_website_result(result, homepage_html)
     result["crawled_pages"] = crawled_pages
     return result
 

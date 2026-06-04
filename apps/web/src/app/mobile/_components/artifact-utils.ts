@@ -1,4 +1,5 @@
 import type { OutputArtifact } from '@/types';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 
 /**
  * Parse an OutputArtifact.content field safely.
@@ -81,47 +82,10 @@ export function findScheduledForArtifact<T extends {
 /**
  * Resolve a media URL for use in <img> / <video> src attributes.
  *
- * URL sources in the system:
- *   /api/media?key=...        → Next.js API route (R2 proxy) — leave as-is ✅
- *   /api/<anything-else>      → .NET backend route → proxy via /api/nexus-backend/
- *   http(s)://...             → absolute URL — leave as-is ✅
+ * Delegates to resolveClientMediaUrl — handles R2 keys, media-proxy, and .NET routes.
  */
-/** CDN domains that can be embedded directly without the media-proxy */
-const DIRECT_IMAGE_DOMAINS = [
-  'oaidalleapiprodscus.blob.core',  // OpenAI DALL-E
-  'fal-cdn',                         // Fal.ai Flux
-  'storage.googleapis.com',
-  'r2.dev',
-  'amazonaws.com',
-  'cloudfront.net',
-  'export-download.canva.com',       // Canva CDN thumbnails
-  'cdninstagram.com',
-  'fbcdn.net',
-];
-
 function resolveMediaUrl(url: string | null | undefined): string | null {
-  if (!url || typeof url !== 'string') return null;
-  const trimmed = url.trim();
-  if (!trimmed) return null;
-  // Absolute URLs
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    // Skip Canva edit pages entirely — not images
-    if (trimmed.includes('canva.com/design')) return null;
-    // Known-safe CDN domains: embed directly
-    if (DIRECT_IMAGE_DOMAINS.some(d => trimmed.includes(d))) return trimmed;
-    // All other external domains: route through media-proxy to avoid CORS/403
-    return `/api/media-proxy?url=${encodeURIComponent(trimmed)}`;
-  }
-  const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  // Next.js API routes — serve directly, do NOT proxy to .NET
-  if (path.startsWith('/api/media') || path.startsWith('/api/generate-') || path.startsWith('/api/canva')) {
-    return path;
-  }
-  // .NET backend routes — proxy through /api/nexus-backend/
-  if (path.startsWith('/api/')) {
-    return '/api/nexus-backend/' + path.slice(5);
-  }
-  return path;
+  return resolveClientMediaUrl(url);
 }
 
 /** All resolved media + content from a raw OutputArtifact */
@@ -178,16 +142,21 @@ function pickStr(...vals: (unknown)[]): string | null {
 
 function isImageUrl(u: unknown): boolean {
   if (typeof u !== 'string') return false;
-  // Exclude Canva edit-page URLs — these are web pages, not images
   if (u.includes('canva.com/design')) return false;
   return /\.(jpg|jpeg|png|gif|webp|svg|avif)(\?|$)/i.test(u)
-    || u.includes('export-download.canva.com')  // Canva CDN thumbnails
+    || u.includes('images.unsplash.com')
+    || u.includes('export-download.canva.com')
+    || u.includes('/generated/')
+    || u.includes('/api/media')
     || u.includes('cloudfront') || u.includes('amazonaws');
 }
 
 function isVideoUrl(u: unknown): boolean {
   if (typeof u !== 'string') return false;
-  return /\.(mp4|mov|webm|avi)(\?|$)/i.test(u) || u.includes('runway') || u.includes('video');
+  return /\.(mp4|mov|webm|avi)(\?|$)/i.test(u)
+    || u.includes('runway')
+    || u.includes('video')
+    || u.includes('/generated/');
 }
 
 function inferContentType(artifact: OutputArtifact, data: Record<string, unknown>): string {
@@ -252,6 +221,7 @@ export function resolveArtifact(artifact: OutputArtifact): ResolvedArtifact {
   }
 
   const rendered = (parsed?.renderedPreview ?? {}) as Record<string, unknown>;
+  const canvaDesign = (rendered.canvaDesign ?? parsed?.canvaDesign) as Record<string, unknown> | undefined;
   const ideas: Record<string, unknown>[] = [];
 
   // If content is a bare array → use it directly as ideas
@@ -273,15 +243,31 @@ export function resolveArtifact(artifact: OutputArtifact): ResolvedArtifact {
     }
   }
 
+  // Canva exported file (PNG post/story or MP4 reel)
+  const canvaDownload = pickStr(
+    parsed?.canvaDownloadUrl as string,
+    meta.permanentPreviewUrl as string,
+    canvaDesign?.permanentPreviewUrl as string,
+  );
+  const canvaExportFormat = pickStr(
+    meta.canvaExportFormat as string,
+    canvaDesign?.exportFormat as string,
+  );
+
   // Resolve image URL — all paths go through resolveMediaUrl to fix /api/... proxy paths
   const rawImageUrl = pickStr(
-    artifact.type === 'image' ? artifact.contentUrl : null, // image type → contentUrl is the image
+    artifact.type === 'image' ? artifact.contentUrl : null,
+    canvaExportFormat === 'mp4' ? null : canvaDownload,
     rendered.imageUrl,
     rendered.thumbnailUrl,
     rendered.image_url,
     meta.imageUrl,
     meta.image_url,
+    meta.posterUrl,
+    meta.poster_url,
     parsed?.imageUrl,
+    parsed?.posterUrl,
+    parsed?.poster_url,
     ideas[0]?.imageUrl,
     ideas[0]?.image_url,
     artifact.contentUrl && isImageUrl(artifact.contentUrl) ? artifact.contentUrl : null,
@@ -290,12 +276,13 @@ export function resolveArtifact(artifact: OutputArtifact): ResolvedArtifact {
 
   // Resolve video URL
   const rawVideoUrl = pickStr(
+    parsed?.videoUrl as string,
+    meta.videoUrl as string,
+    meta.video_url as string,
+    canvaExportFormat === 'mp4' ? canvaDownload : null,
     artifact.contentUrl && isVideoUrl(artifact.contentUrl) ? artifact.contentUrl : null,
     rendered.videoUrl,
     rendered.video_url,
-    meta.videoUrl,
-    meta.video_url,
-    parsed?.videoUrl,
   );
   const videoUrl = resolveMediaUrl(rawVideoUrl);
 
@@ -396,6 +383,125 @@ export function resolveArtifact(artifact: OutputArtifact): ResolvedArtifact {
     createdAt: artifact.createdAt,
     agentName: (artifact as any).agentName ?? null,
   };
+}
+
+/**
+ * Normalize hashtags from any stored format.
+ * Handles Python list-string serialization: "['#tag1', '#tag2']",
+ * plain arrays, arrays with or without # prefix, and comma-separated strings.
+ * Returns a clean string[] with each entry as "#tag".
+ */
+export function normalizeHashtags(raw: unknown, max = 15): string[] {
+  let arr: string[];
+  if (typeof raw === 'string' && raw.trim()) {
+    if (raw.trim().startsWith('[')) {
+      // Python list: "['#tag1', '#tag2']" or "['tag1', 'tag2']"
+      arr = raw.replace(/^\[|\]$/g, '').split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+    } else {
+      arr = raw.split(/[\s,]+/);
+    }
+  } else if (Array.isArray(raw)) {
+    arr = raw.map(String);
+  } else {
+    return [];
+  }
+  return arr
+    .map(h => {
+      const clean = String(h).replace(/^[#\s[\]'"]+/, '').replace(/['\]"]+$/, '').trim();
+      return clean ? `#${clean}` : '';
+    })
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+function dedupeMediaUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of urls) {
+    const u = String(raw).trim();
+    if (!u) continue;
+    const key = u.replace(/\?.*$/, '').slice(0, 160);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+  }
+  return out;
+}
+
+function collectCarouselUrlCandidates(
+  content: Record<string, unknown>,
+  meta: Record<string, unknown>,
+): string[] {
+  const candidates: unknown[] = [
+    content.carousel_urls,
+    (content as any).mediaUrls,
+    (content as any).media_urls,
+    (content as any).slides,
+    meta.carousel_urls,
+    (meta as any).media_urls,
+    (meta as any).slides,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length >= 2) {
+      return dedupeMediaUrls((c as string[]).map(String));
+    }
+  }
+  return [];
+}
+
+/**
+ * True when the artifact should render/publish as an Instagram swipe carousel
+ * (2+ distinct slides). Branded single-creative posts stay feed even if auto-produce
+ * generated multiple composited slides.
+ */
+export function shouldTreatAsInstagramCarousel(
+  content: Record<string, unknown>,
+  meta: Record<string, unknown>,
+): boolean {
+  const urls = collectCarouselUrlCandidates(content, meta);
+  if (urls.length < 2) return false;
+
+  if (meta.carousel_publish_as === 'feed' || content.carousel_publish_as === 'feed') {
+    return false;
+  }
+
+  if (meta.carousel_multi_photo === true || content.carousel_multi_photo === true) {
+    return true;
+  }
+
+  // Branded auto-produce: one designed feed asset, not a user multi-photo carousel
+  if (meta.agency_branded === true || content.agency_branded === true) {
+    return false;
+  }
+
+  const kind = String(content.kind ?? meta.kind ?? '').toLowerCase();
+  const ct = String(content.contentType ?? meta.contentType ?? '').toLowerCase();
+  if (!kind.includes('carousel') && !ct.includes('carousel')) return false;
+
+  const pipeline = String(meta.pipeline ?? content.pipeline ?? '').toLowerCase();
+  const role = String(meta.production_role ?? '').toLowerCase();
+  if (pipeline === 'carousel_gallery' || role === 'organic_carousel') {
+    const gallery = (
+      Array.isArray(meta.gallery_photo_urls) ? meta.gallery_photo_urls
+        : Array.isArray(content.gallery_photo_urls) ? content.gallery_photo_urls
+          : []
+    ) as string[];
+    if (dedupeMediaUrls(gallery.map(String)).length < 2) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Resolve carousel image URLs from an artifact content/metadata record.
+ * Returns 2+ URLs only when {@link shouldTreatAsInstagramCarousel} is true.
+ */
+export function resolveCarouselUrls(
+  content: Record<string, unknown>,
+  meta: Record<string, unknown>,
+): string[] {
+  if (!shouldTreatAsInstagramCarousel(content, meta)) return [];
+  return collectCarouselUrlCandidates(content, meta);
 }
 
 /** Short label for content type chip */

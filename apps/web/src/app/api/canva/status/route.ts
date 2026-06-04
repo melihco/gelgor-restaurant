@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isCanvaEnabled } from '@/lib/canva-config';
+import { CANVA_DISABLED_MESSAGE } from '@/lib/canva-route-guard';
 import { getCanvaAccessToken } from '@/lib/canva-oauth';
 import { loadCanvaTemplates } from '@/lib/canva-template-catalog';
 import { getCanvaTenantId } from '@/lib/canva-template-registry';
@@ -6,6 +8,16 @@ import { getCanvaTenantId } from '@/lib/canva-template-registry';
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
+  if (!isCanvaEnabled()) {
+    return NextResponse.json({
+      enabled: false,
+      connected: false,
+      templateCount: 0,
+      templates: [],
+      message: CANVA_DISABLED_MESSAGE,
+      productionEngine: 'remotion',
+    });
+  }
   try {
     const tenantId = getCanvaTenantId(request.nextUrl.searchParams.get('tenantId'));
     const officeId = request.nextUrl.searchParams.get('officeId');

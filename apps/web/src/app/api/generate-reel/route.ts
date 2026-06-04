@@ -40,6 +40,7 @@ import {
   buildDirectorPromptTemplate,
   inferContentKind,
 } from '@/lib/runway/builders/reel-prompt.builder';
+import { applyFidelityToDirectorPrompt } from '@/lib/runway-reel-fidelity';
 import { API_BASE_URL } from '@/lib/runtime-config';
 
 /** OpenAI image API max prompt length (leave margin below 4000). */
@@ -407,6 +408,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           contentType: input.contentType,
         });
 
+        const agentVisualDirection = String(
+          reelInput.agentVisualDirection
+            ?? input.sceneMetadata?.agentVisualDirection
+            ?? '',
+        ).trim().slice(0, 400) || undefined;
+
         const directorPrompt = await buildDirectorPromptWithAI(
           {
             headline: input.title ?? '',
@@ -419,6 +426,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             vibeProfile: reelInput.vibeProfile,
             brandThemeGrading: reelInput.brandThemeGrading,
             mood: input.visualStyle ?? input.brandTone ?? '',
+            agentVisualDirection,
           },
           openaiKey,
         );
@@ -427,9 +435,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           // Runway gen4_turbo promptText limit: 1000 UTF-16 code units
           // Truncate at sentence boundary to avoid mid-word cuts
           const RUNWAY_PROMPT_LIMIT = 950; // conservative margin
-          const safePrompt = directorPrompt.length > RUNWAY_PROMPT_LIMIT
-            ? directorPrompt.slice(0, RUNWAY_PROMPT_LIMIT).replace(/\. [^.]*$/, '.').slice(0, RUNWAY_PROMPT_LIMIT)
-            : directorPrompt;
+          const fidelityPrompt = applyFidelityToDirectorPrompt(directorPrompt);
+          const safePrompt = fidelityPrompt.length > RUNWAY_PROMPT_LIMIT
+            ? fidelityPrompt.slice(0, RUNWAY_PROMPT_LIMIT).replace(/\. [^.]*$/, '.').slice(0, RUNWAY_PROMPT_LIMIT)
+            : fidelityPrompt;
           // Director prompt is already English — skip translation step
           input.promptText = safePrompt;
           console.log('[generate-reel] AI director prompt (GPT-4o):', safePrompt.slice(0, 120) + '…');
@@ -446,8 +455,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             vibeProfile: reelInput.vibeProfile,
             brandThemeGrading: reelInput.brandThemeGrading,
             mood: input.visualStyle ?? input.brandTone ?? '',
+            agentVisualDirection: String(
+              reelInput.agentVisualDirection ?? input.sceneMetadata?.agentVisualDirection ?? '',
+            ).trim().slice(0, 400) || undefined,
           });
-          input.promptText = templatePrompt.slice(0, 950);
+          input.promptText = applyFidelityToDirectorPrompt(templatePrompt).slice(0, 950);
           console.log('[generate-reel] Template director prompt:', templatePrompt.slice(0, 120) + '…');
         }
       } catch (err) {

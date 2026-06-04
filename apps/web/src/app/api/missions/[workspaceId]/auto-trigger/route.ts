@@ -12,6 +12,11 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import {
+  assertPathTenantMatchesRequest,
+  buildTenantForwardHeaders,
+  fetchBrandAlignmentGate,
+} from '@/lib/tenant-production-guard';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120; // propose calls StrategistAgent (~60-90s)
@@ -23,6 +28,22 @@ export async function POST(
   const { workspaceId } = await params;
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
+  }
+
+  const tenantGuard = assertPathTenantMatchesRequest(req, workspaceId);
+  if (tenantGuard) return tenantGuard;
+
+  // 0. Autonomy gate (Sprint 10): only auto-trigger when the brand alignment
+  //    score allows it (BAS = 100 → canAutoProduce). Foundation-first: a tenant
+  //    with incomplete brand/gallery/context never auto-produces.
+  const basRes = await fetchBrandAlignmentGate(req, workspaceId);
+  if (!basRes || !basRes.canAutoProduce) {
+    return NextResponse.json({
+      skipped: true,
+      reason: 'quality_gate',
+      bas: basRes?.bas ?? null,
+      detail: 'Otonom üretim için BAS=100 gerekli (canAutoProduce).',
+    });
   }
 
   // 1. Check if there are already active/proposed missions — skip if so
@@ -69,7 +90,11 @@ export async function POST(
     return NextResponse.json({ skipped: true, reason: 'propose_failed' });
   }
 
-  const proposals: { id: string }[] = await proposeRes.json().catch(() => []);
+  // Propose returns { proposals_created, missions: [...] } — not a bare array.
+  const proposeData = await proposeRes.json().catch(() => null) as
+    | { missions?: { id: string }[] }
+    | null;
+  const proposals: { id: string }[] = proposeData?.missions ?? [];
   if (!proposals.length) {
     return NextResponse.json({ skipped: true, reason: 'no_proposals' });
   }

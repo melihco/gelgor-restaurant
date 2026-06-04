@@ -54,9 +54,11 @@ export function TokenWalletCard({ wallet, compact, t }: TokenWalletCardProps) {
           <div style={{ fontSize: 13, fontWeight: 700, color: t.accent, marginTop: 4 }}>
             %{wallet.effective_margin_percent} marj
           </div>
-          <div style={{ fontSize: 10, color: t.textTertiary, marginTop: 2 }}>
-            hedef %{wallet.target_margin_percent}
-          </div>
+          {wallet.cost_profit_ratio != null && (
+            <div style={{ fontSize: 10, color: t.textTertiary, marginTop: 2 }}>
+              maliyet/kar {wallet.cost_profit_ratio.toLocaleString('tr-TR')}
+            </div>
+          )}
         </div>
       </div>
 

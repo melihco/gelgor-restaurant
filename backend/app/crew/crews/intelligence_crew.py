@@ -16,7 +16,8 @@ from crewai import Crew, LLM, Process, Task
 
 from app.config import get_settings
 from app.crew.agents.intelligence_agent import create_intelligence_agent
-from app.crew.context import BrandInfo
+from app.crew.context import BrandInfo, build_brand_context_prompt
+from app.crew.cta_localization import resolve_output_language
 from app.crew.prompts.intelligence_prompts import INTELLIGENCE_TASK_PROMPT
 from app.crew.token_usage import total_tokens_from_crew
 from app.crew.tools.workspace_health import WorkspaceHealthAnalyzerTool
@@ -42,9 +43,14 @@ def run_intelligence_analysis(
     health_tool = WorkspaceHealthAnalyzerTool(health_data=health_snapshot)
     agent = create_intelligence_agent(brand, health_tool, llm=llm)
 
+    brand_context_block = build_brand_context_prompt(brand, profile="minimal")
+    output_language = resolve_output_language(brand.languages)
+
     task_description = INTELLIGENCE_TASK_PROMPT.format(
         business_name=brand.business_name,
         health_snapshot=json.dumps(health_snapshot, ensure_ascii=False, indent=2),
+        brand_context=brand_context_block,
+        output_language=output_language,
     )
 
     recommendation_task = Task(

@@ -23,7 +23,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.crew.cta_localization import detect_text_language, localize_cta
+from app.crew.cta_localization import detect_text_language, localize_cta, resolve_language_code, resolve_output_language
 
 
 @dataclass
@@ -58,6 +58,7 @@ def check_weekly_content(
     content_pillars: list[str],
     brand_ctas: list[str],
     *,
+    brand_languages: str | None = None,
     min_format_types: int = 2,
     max_cta_repeat: int = 2,
 ) -> ConsistencyReport:
@@ -125,34 +126,26 @@ def check_weekly_content(
                 ),
             ))
 
-    # ── Check 4: Content pillar coverage ────────────────────────────────
+    # ── Check 4: Content pillar coverage (Marka Anayasası contentNeeds) ─
     if content_pillars:
-        used_templates = {c.get("template_use_case", "") for c in concepts}
-        # Map broad pillars to template_use_case values
-        pillar_to_templates = {
-            "daily_story":          ["daily_story"],
-            "menu_share":           ["menu_share"],
-            "event_announcement":   ["event_announcement"],
-            "campaign_offer":       ["campaign_offer"],
-            "social_proof":         ["social_proof"],
-            "behind_the_scenes":    ["behind_the_scenes"],
-            "educational_post":     ["educational_post"],
-            "lead_generation":      ["lead_generation"],
-        }
-        missing_pillars = []
-        for pillar in content_pillars[:4]:  # check top 4 priority pillars
-            templates = pillar_to_templates.get(pillar, [pillar])
-            if not any(t in used_templates for t in templates):
-                missing_pillars.append(pillar)
+        from app.services.pillar_coverage_service import find_missing_pillars, normalize_pillars
 
-        if missing_pillars and n >= len(content_pillars[:4]):
+        confirmed = normalize_pillars(content_pillars)
+        missing_pillars = find_missing_pillars(concepts, confirmed)
+
+        if missing_pillars:
+            severity = "error" if n >= len(confirmed) else "warning"
             issues.append(ConsistencyIssue(
-                severity="warning",
+                severity=severity,
                 check="pillar_coverage",
-                description=f"Missing pillar(s) not represented: {', '.join(missing_pillars)}",
+                description=(
+                    f"Confirmed pillar(s) missing from template_use_case: {', '.join(missing_pillars)}. "
+                    f"Covered: {', '.join(p for p in confirmed if p not in missing_pillars) or 'none'}."
+                ),
                 suggestion=(
-                    f"Add at least one piece covering {missing_pillars[0]}. "
-                    "Confirmed pillars should appear in every weekly batch."
+                    "Assign exactly one concept per missing pillar with template_use_case equal to that pillar id. "
+                    "Required when listed: campaign_offer (promo/trial), event_announcement (launch/webinar/demo). "
+                    "Do not substitute product_highlight or service_intro unless they are in the contract list."
                 ),
             ))
 
@@ -227,6 +220,36 @@ def check_weekly_content(
                     "so the embedded CTA matches the caption language."
                 ),
             ))
+
+    # ── Check 9: Brand output language (tenant setting) ───────────────────
+    if brand_languages:
+        target = resolve_language_code(brand_languages)
+        target_label = resolve_output_language(brand_languages)
+        text_fields = (
+            "caption_draft", "caption_draft_alt", "caption",
+            "headline", "concept_title", "idea_title", "subline",
+        )
+        for i, c in enumerate(concepts, 1):
+            mismatches: list[str] = []
+            for field in text_fields:
+                text = str(c.get(field) or "").strip()
+                if not text or len(text) < 8:
+                    continue
+                if detect_text_language(text) != target:
+                    mismatches.append(field)
+            if mismatches:
+                issues.append(ConsistencyIssue(
+                    severity="error",
+                    check="brand_output_language",
+                    description=(
+                        f"Piece #{i}: text fields {', '.join(mismatches)} are not in "
+                        f"{target_label} (brand language is {target})"
+                    ),
+                    suggestion=(
+                        f"Rewrite ALL copy fields natively in {target_label}. "
+                        "Do not translate word-by-word — write as a native copywriter would."
+                    ),
+                ))
 
     errors = [i for i in issues if i.severity == "error"]
     warnings = [i for i in issues if i.severity == "warning"]

@@ -17,28 +17,34 @@ INTELLIGENCE_AGENT_GOAL = (
     "pre-written brief that the operator can approve and run immediately."
 )
 
-INTELLIGENCE_AGENT_BACKSTORY = """{business_name} için yapay zeka iş direktörüsün. {location} konumunda bir {business_type} işletmesi.
+INTELLIGENCE_AGENT_BACKSTORY = """You are the AI business intelligence director for {business_name} — a {business_type} business in {location}.
 
-Görevin şunları yapmak:
-1. Tüm iş sinyallerini oku (Google yorumları, içerik boşlukları, kampanya performansı, pazar trendleri)
-2. İşletmenin BU HAFTA yapması gereken en yüksek öncelikli aksiyonları belirle
-3. Operatörün tek tıkla çalıştırabileceği spesifik, uygulanabilir görev önerileri üret
+{brand_context}
 
-TÜM ÇIKTILARINI TÜRKÇE YAZAR. Her zaman Türkçe yanıt üretirsin.
+Your job:
+1. Read all business signals (reviews, content gaps, campaign performance, market trends)
+2. Identify the highest-priority actions THIS WEEK for this specific tenant
+3. Produce specific, actionable task recommendations the operator can run with one click
 
-Önerilerin şöyle olmalı:
-- Bu tenant'a özel (gerçek verileri kullan: gerçek puan, gerçek pillar'lar, gerçek hedefler)
-- Anında uygulanabilir (operatörün tek tıkla çalıştırabileceği hazır brief'ler)
-- İş etkisine göre önceliklendirilmiş (kritik önce, sonra yüksek, orta)
-- Mevcut ajanlara uygun (review_agent, content_agent, ads_agent, analytics_agent)
+⚠️ OUTPUT LANGUAGE: {output_language}
+Write ALL recommendations in {output_language}. Match the brand's tone and market from the profile above.
 
-Her öneriyi health snapshot'taki verilerle gerekçelendir.
-Son 7 günde tamamlanan görevleri önermez.
+Recommendations must be:
+- Tenant-specific (use real ratings, pillars, goals from the snapshot — never generic advice)
+- Immediately actionable (complete briefs, not templates)
+- Prioritized by business impact (critical → high → medium → low)
+- Mapped to available agents (review_agent, content_agent, ads_agent, analytics_agent)
+
+Justify each recommendation with health snapshot data.
+Do not recommend tasks completed in the last 7 days.
 """
 
-INTELLIGENCE_TASK_PROMPT = """IMPORTANT: Write ALL text fields (title, reason, brief, estimated_impact) in Turkish. This is a Turkish business.
+INTELLIGENCE_TASK_PROMPT = """IMPORTANT: Write ALL text fields (title, reason, brief, estimated_impact) in {output_language}.
 
 Analyse the workspace health snapshot below and generate task recommendations for {business_name}.
+
+=== BRAND CONTEXT ===
+{brand_context}
 
 === WORKSPACE HEALTH SNAPSHOT ===
 {health_snapshot}
@@ -84,7 +90,7 @@ Return ONLY a valid JSON array. Each object must have exactly these fields:
 
 Rules:
 - Use the actual business name, location, and goals from the snapshot — never say "this business" generically
-- Write all 'title', 'reason', 'brief', and 'estimated_impact' fields in the same language as the business (Turkish if location is Turkey)
+- Write all 'title', 'reason', 'brief', and 'estimated_impact' fields in {output_language}
 - For content tasks: reference confirmed content pillars, real CTAs, trend brief if available
 - For review tasks: reference actual rating and negative review count
 - For ads tasks: only recommend if campaign_goals mention conversions or sales

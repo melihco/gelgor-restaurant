@@ -9,6 +9,9 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
+  const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+  if (canvaBlocked) return canvaBlocked;
+
   const error = request.nextUrl.searchParams.get('error');
   if (error) {
     const description = request.nextUrl.searchParams.get('error_description') ?? error;

@@ -27,6 +27,8 @@ from app.schemas.brand_theme import (
     ThemeComposition,
     ThemeGrading,
     ThemeLayout,
+    ThemeMediaPolicy,
+    ThemeMotionProfile,
     ThemeOverlay,
     ThemePalette,
     ThemeTypography,
@@ -36,6 +38,42 @@ if TYPE_CHECKING:
     from app.models.brand_context import BrandContext
 
 logger = structlog.get_logger()
+
+AI_THEME_SETTING_KEYS = (
+    "ai_photo_enhance",
+    "ai_photo_enhance_level",
+    "ai_use_brand_identity",
+    "ai_brief_drives_scene",
+    "ai_embed_logo",
+    "ai_enhance_formats",
+    "ai_visual_subject",
+    "enable_visual_production_director",
+)
+
+
+_CAMEL_AI_KEYS: dict[str, str] = {
+    "aiPhotoEnhance": "ai_photo_enhance",
+    "aiPhotoEnhanceLevel": "ai_photo_enhance_level",
+    "aiUseBrandIdentity": "ai_use_brand_identity",
+    "aiBriefDrivesScene": "ai_brief_drives_scene",
+    "aiEmbedLogo": "ai_embed_logo",
+    "aiEnhanceFormats": "ai_enhance_formats",
+    "aiVisualSubject": "ai_visual_subject",
+    "enableVisualProductionDirector": "enable_visual_production_director",
+}
+
+
+def _ai_theme_settings_from_existing(existing_theme: dict | None) -> dict:
+    if not isinstance(existing_theme, dict):
+        return {}
+    out: dict = {}
+    for key in AI_THEME_SETTING_KEYS:
+        if key in existing_theme:
+            out[key] = existing_theme[key]
+    for camel, snake in _CAMEL_AI_KEYS.items():
+        if snake not in out and camel in existing_theme:
+            out[snake] = existing_theme[camel]
+    return out
 
 
 # ── Safe fonts (Google Fonts / OFL only) ─────────────────────────────────────
@@ -283,6 +321,80 @@ def _from_visual_dna(visual_dna: str, sector_data: dict) -> tuple[ThemePalette, 
     return palette, grading
 
 
+def _derive_motion_profile(
+    sector: str,
+    languages: str | None,
+    text_overlay_density: str,
+    existing: dict | None,
+) -> ThemeMotionProfile:
+    """Sector defaults + preserve operator overrides on re-derive."""
+    if existing and existing.get("operator_override"):
+        try:
+            return ThemeMotionProfile.model_validate(existing)
+        except Exception:
+            pass
+
+    sector_key = (sector or "").lower().replace("-", "_").replace(" ", "_")
+    style_map = {
+        "beach_club": "bold",
+        "restaurant_cafe": "editorial",
+        "beauty_wellness": "minimal",
+        "healthcare_clinic": "minimal",
+        "ecommerce_retail": "bold",
+        "local_products_shop": "editorial",
+        "real_estate": "luxury",
+        "agency_services": "minimal",
+        "hotel_resort": "luxury",
+    }
+    weights_by_style: dict[str, dict[str, float]] = {
+        "minimal": {
+            "EditorialStory": 0.4, "CinematicStory": 0.35, "MagazineCoverStory": 0.1,
+            "EventAnnouncementStory": 0.1, "CampaignHeroStory": 0.03, "LuxurySplitStory": 0.02,
+        },
+        "editorial": {
+            "EditorialStory": 0.35, "CinematicStory": 0.2, "MagazineCoverStory": 0.15,
+            "EventAnnouncementStory": 0.15, "CampaignHeroStory": 0.1, "LuxurySplitStory": 0.05,
+        },
+        "luxury": {
+            "LuxurySplitStory": 0.3, "MagazineCoverStory": 0.25, "EditorialStory": 0.2,
+            "CinematicStory": 0.15, "EventAnnouncementStory": 0.05, "CampaignHeroStory": 0.05,
+        },
+        "bold": {
+            "CampaignHeroStory": 0.25, "MagazineCoverStory": 0.2, "EditorialStory": 0.2,
+            "EventAnnouncementStory": 0.15, "CinematicStory": 0.1, "LuxurySplitStory": 0.1,
+        },
+    }
+    blocked_by_sector: dict[str, list[str]] = {
+        "healthcare_clinic": ["CampaignHeroStory"],
+        "agency_services": ["EventAnnouncementStory", "CampaignHeroStory"],
+    }
+    media_by_sector: dict[str, ThemeMediaPolicy] = {
+        "ecommerce_retail": ThemeMediaPolicy(require_gallery=False, fallback="brand_solid", min_match_score=45),
+        "agency_services": ThemeMediaPolicy(require_gallery=False, fallback="logo_hero", min_match_score=40),
+    }
+
+    motion_style = (existing or {}).get("motion_style") or style_map.get(sector_key, "editorial")
+    locale = (existing or {}).get("locale") or (languages or "tr").split(",")[0].strip().lower() or "tr"
+    text_transform = (existing or {}).get("text_transform") or (
+        "uppercase" if locale.startswith(("tr", "de")) else "sentence"
+    )
+
+    return ThemeMotionProfile(
+        motion_style=motion_style,
+        locale=locale,
+        text_density=(existing or {}).get("text_density") or text_overlay_density or "medium",
+        text_transform=text_transform,
+        prefer_pure_photo_stories=float((existing or {}).get("prefer_pure_photo_stories") or 0.72),
+        composition_weights=(existing or {}).get("composition_weights") or weights_by_style.get(motion_style, weights_by_style["editorial"]),
+        blocked_compositions=(existing or {}).get("blocked_compositions") or blocked_by_sector.get(sector_key, []),
+        media_policy=ThemeMediaPolicy.model_validate(
+            (existing or {}).get("media_policy") or media_by_sector.get(sector_key, ThemeMediaPolicy()).model_dump()
+        ),
+        audio_mood_pool=(existing or {}).get("audio_mood_pool") or ["ambient chill", "lounge jazz", "acoustic folk"],
+        operator_override=bool((existing or {}).get("operator_override")),
+    )
+
+
 # ── Main derivation function ──────────────────────────────────────────────────
 
 async def derive_brand_theme(ctx: "BrandContext") -> BrandTheme:
@@ -367,6 +479,20 @@ async def derive_brand_theme(ctx: "BrandContext") -> BrandTheme:
     # ── Contrast check ────────────────────────────────────────────────────────
     palette, contrast_valid = _ensure_contrast(palette)
 
+    existing_theme = ctx.brand_theme if isinstance(ctx.brand_theme, dict) else {}
+    existing_motion = existing_theme.get("motion_profile") if isinstance(existing_theme, dict) else None
+    density = typography.text_overlay_density if typography else "medium"
+    motion_profile = _derive_motion_profile(
+        sector,
+        getattr(ctx, "languages", None) or "",
+        density,
+        existing_motion if isinstance(existing_motion, dict) else None,
+    )
+
+    ai_settings = _ai_theme_settings_from_existing(
+        existing_theme if isinstance(existing_theme, dict) else None,
+    )
+
     # ── Assemble ──────────────────────────────────────────────────────────────
     theme = BrandTheme(
         workspace_id=workspace_id,
@@ -385,6 +511,19 @@ async def derive_brand_theme(ctx: "BrandContext") -> BrandTheme:
         caption_voice_rules=caption_voice_rules[:8],
         anti_patterns=anti_patterns[:10],
         contrast_valid=contrast_valid,
+        ai_photo_enhance=bool(ai_settings.get("ai_photo_enhance", False)),
+        ai_photo_enhance_level=str(ai_settings.get("ai_photo_enhance_level", "moderate")),
+        ai_use_brand_identity=bool(ai_settings.get("ai_use_brand_identity", True)),
+        ai_brief_drives_scene=bool(ai_settings.get("ai_brief_drives_scene", True)),
+        ai_embed_logo=bool(ai_settings.get("ai_embed_logo", True)),
+        ai_enhance_formats=ai_settings.get("ai_enhance_formats")
+        if isinstance(ai_settings.get("ai_enhance_formats"), list)
+        else ["post", "story", "carousel", "reel"],
+        ai_visual_subject=str(ai_settings.get("ai_visual_subject", "auto")),
+        enable_visual_production_director=bool(
+            ai_settings.get("enable_visual_production_director", False),
+        ),
+        motion_profile=motion_profile,
     )
 
     logger.info(

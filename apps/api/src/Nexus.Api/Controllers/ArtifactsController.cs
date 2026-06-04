@@ -208,9 +208,21 @@ public class ArtifactsController : ControllerBase
 
     // ── GET /api/artifacts ─────────────────────────────────────────────────
     [HttpGet]
-    public async Task<ActionResult<List<ArtifactDto>>> GetArtifacts([FromQuery] Guid? agentRunId, CancellationToken cancellationToken)
+    public async Task<ActionResult<List<ArtifactDto>>> GetArtifacts(
+        [FromQuery] Guid? agentRunId,
+        [FromQuery] int? limit,
+        [FromQuery] DateTime? since,
+        [FromQuery] string? missionId,
+        CancellationToken cancellationToken)
     {
-        var artifacts = await _artifactService.GetArtifactsAsync(_requestContext.TenantId, agentRunId, cancellationToken);
+        var cappedLimit = limit is > 0 ? Math.Min(limit.Value, 500) : (int?)null;
+        var artifacts = await _artifactService.GetArtifactsAsync(
+            _requestContext.TenantId,
+            agentRunId,
+            cappedLimit,
+            since,
+            missionId,
+            cancellationToken);
         return Ok(artifacts);
     }
 
@@ -356,12 +368,207 @@ public class ArtifactsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.ContentType))
             contentObj["kind"] = request.ContentType;
 
+        if (request.ProductionBundle == true)
+        {
+            contentObj["bundle_status"] = "ready";
+            contentObj["production_bundle"] = true;
+            contentObj["source"] = "remotion";
+            if (!string.IsNullOrWhiteSpace(request.CompositionId))
+                contentObj["compositionId"] = request.CompositionId;
+            if (!string.IsNullOrWhiteSpace(request.PosterTemplateId))
+                contentObj["posterTemplateId"] = request.PosterTemplateId;
+            if (!string.IsNullOrWhiteSpace(request.ReferencePhotoUrl))
+            {
+                contentObj["reference_photo_url"] = request.ReferencePhotoUrl;
+                contentObj["posterUrl"] = request.ReferencePhotoUrl;
+            }
+        }
+
         artifact.Content = contentObj.ToJsonString();
         artifact.UpdatedBy = _requestContext.UserId;
+
+        if (request.ProductionBundle == true)
+        {
+            var metaObj = new System.Text.Json.Nodes.JsonObject();
+            try
+            {
+                var parsedMeta = System.Text.Json.Nodes.JsonNode.Parse(artifact.Metadata ?? "{}");
+                if (parsedMeta is System.Text.Json.Nodes.JsonObject metaParsed)
+                    metaObj = metaParsed;
+            }
+            catch { /* fresh */ }
+
+            metaObj["imageUrl"] = request.ImageUrl;
+            metaObj["bundle_status"] = "ready";
+            metaObj["production_bundle"] = true;
+            metaObj["source"] = "remotion";
+            metaObj["remotion_render"] = true;
+            metaObj["agency_produced"] = true;
+            if (!string.IsNullOrWhiteSpace(request.CompositionId))
+                metaObj["compositionId"] = request.CompositionId;
+            if (!string.IsNullOrWhiteSpace(request.PosterTemplateId))
+                metaObj["posterTemplateId"] = request.PosterTemplateId;
+            if (!string.IsNullOrWhiteSpace(request.ReferencePhotoUrl))
+            {
+                metaObj["reference_photo_url"] = request.ReferencePhotoUrl;
+                metaObj["poster_url"] = request.ReferencePhotoUrl;
+                metaObj["posterUrl"] = request.ReferencePhotoUrl;
+            }
+            if (request.RenderMs.HasValue)
+                metaObj["render_ms"] = request.RenderMs.Value;
+
+            artifact.Metadata = metaObj.ToJsonString();
+        }
 
         await _db.SaveChangesAsync(ct);
 
         return Ok(new { id = artifact.Id, contentUrl = artifact.ContentUrl });
+    }
+
+    // ── PATCH /api/artifacts/{id}/attach-video ─────────────────────────────
+    /// <summary>
+    /// Attaches a Remotion MP4 to an existing production bundle artifact.
+    /// Keeps poster in Content JSON; updates ContentUrl to the video.
+    /// </summary>
+    [HttpPatch("{id}/attach-video")]
+    public async Task<IActionResult> AttachVideo(Guid id, [FromBody] AttachVideoRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.VideoUrl))
+            return BadRequest(new { error = "videoUrl is required" });
+
+        if (!await ArtifactBelongsToTenantAsync(id, ct))
+            return NotFound();
+
+        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (artifact == null) return NotFound();
+
+        artifact.ContentUrl = request.VideoUrl;
+        artifact.ArtifactType = ArtifactType.VideoEdit;
+
+        var contentObj = new System.Text.Json.Nodes.JsonObject();
+        try
+        {
+            var parsed = System.Text.Json.Nodes.JsonNode.Parse(artifact.Content ?? "{}");
+            if (parsed is System.Text.Json.Nodes.JsonObject obj)
+                contentObj = obj;
+        }
+        catch { /* start fresh */ }
+
+        if (!string.IsNullOrWhiteSpace(request.PosterUrl))
+        {
+            contentObj["posterUrl"] = request.PosterUrl;
+            contentObj["imageUrl"] = request.PosterUrl;
+        }
+
+        contentObj["videoUrl"] = request.VideoUrl;
+        contentObj["bundle_status"] = "ready";
+        contentObj["production_bundle"] = true;
+        contentObj["source"] = "remotion";
+
+        if (!string.IsNullOrWhiteSpace(request.CompositionId))
+            contentObj["compositionId"] = request.CompositionId;
+
+        artifact.Content = contentObj.ToJsonString();
+
+        var metaObj = new System.Text.Json.Nodes.JsonObject();
+        try
+        {
+            var parsedMeta = System.Text.Json.Nodes.JsonNode.Parse(artifact.Metadata ?? "{}");
+            if (parsedMeta is System.Text.Json.Nodes.JsonObject metaParsed)
+                metaObj = metaParsed;
+        }
+        catch { /* start fresh */ }
+
+        if (!string.IsNullOrWhiteSpace(request.PosterUrl))
+        {
+            metaObj["poster_url"] = request.PosterUrl;
+            metaObj["posterUrl"] = request.PosterUrl;
+            metaObj["imageUrl"] = request.PosterUrl;
+        }
+
+        metaObj["videoUrl"] = request.VideoUrl;
+        metaObj["bundle_status"] = "ready";
+        metaObj["production_bundle"] = true;
+        // Preserve mission / auto-produce flags for Feed (source becomes remotion after render).
+        if (metaObj["auto_produced"] == null)
+            metaObj["auto_produced"] = true;
+        var prevSource = metaObj["source"]?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(prevSource) || prevSource == "auto-produce")
+            metaObj["source"] = "remotion";
+        metaObj["remotion_render"] = true;
+        metaObj["agency_produced"] = true;
+
+        if (!string.IsNullOrWhiteSpace(request.CompositionId))
+            metaObj["compositionId"] = request.CompositionId;
+        if (request.GrafikerScore.HasValue)
+            metaObj["grafiker_score"] = request.GrafikerScore.Value;
+        if (request.GrafikerPass.HasValue)
+            metaObj["grafiker_pass"] = request.GrafikerPass.Value;
+        if (request.RenderMs.HasValue)
+            metaObj["render_ms"] = request.RenderMs.Value;
+
+        artifact.Metadata = metaObj.ToJsonString();
+        artifact.UpdatedBy = _requestContext.UserId;
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { id = artifact.Id, contentUrl = artifact.ContentUrl, bundleStatus = "ready" });
+    }
+
+    // ── PATCH /api/artifacts/{id}/bundle-status ────────────────────────────
+    /// <summary>Updates production bundle status (rendering → ready/failed).</summary>
+    [HttpPatch("{id}/bundle-status")]
+    public async Task<IActionResult> PatchBundleStatus(Guid id, [FromBody] BundleStatusRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Status))
+            return BadRequest(new { error = "status is required" });
+
+        var status = request.Status.Trim().ToLowerInvariant();
+        if (status is not ("rendering" or "ready" or "failed"))
+            return BadRequest(new { error = "status must be rendering, ready, or failed" });
+
+        if (!await ArtifactBelongsToTenantAsync(id, ct))
+            return NotFound();
+
+        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (artifact == null) return NotFound();
+
+        var contentObj = new System.Text.Json.Nodes.JsonObject();
+        try
+        {
+            var parsed = System.Text.Json.Nodes.JsonNode.Parse(artifact.Content ?? "{}");
+            if (parsed is System.Text.Json.Nodes.JsonObject obj)
+                contentObj = obj;
+        }
+        catch { /* fresh */ }
+
+        contentObj["bundle_status"] = status;
+        contentObj["production_bundle"] = true;
+        if (!string.IsNullOrWhiteSpace(request.Error))
+            contentObj["render_error"] = request.Error;
+
+        artifact.Content = contentObj.ToJsonString();
+
+        var metaObj = new System.Text.Json.Nodes.JsonObject();
+        try
+        {
+            var parsedMeta = System.Text.Json.Nodes.JsonNode.Parse(artifact.Metadata ?? "{}");
+            if (parsedMeta is System.Text.Json.Nodes.JsonObject metaParsed)
+                metaObj = metaParsed;
+        }
+        catch { /* fresh */ }
+
+        metaObj["bundle_status"] = status;
+        metaObj["production_bundle"] = true;
+        if (!string.IsNullOrWhiteSpace(request.Error))
+            metaObj["render_error"] = request.Error;
+
+        artifact.Metadata = metaObj.ToJsonString();
+        artifact.UpdatedBy = _requestContext.UserId;
+
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new { id = artifact.Id, bundleStatus = status });
     }
 
     private Task<bool> ArtifactBelongsToTenantAsync(Guid artifactId, CancellationToken cancellationToken)
@@ -375,7 +582,22 @@ public class ArtifactsController : ControllerBase
 public record ArtifactCommentRequest(string? Comments, string? FinalizedContent);
 public record ArtifactRejectRequest(string? Comments, string? ReasonCategory);
 public record ArtifactRevisionRequest(string RequestedChanges);
-public record AttachImageRequest(string ImageUrl, string? ContentType);
+public record AttachImageRequest(
+    string ImageUrl,
+    string? ContentType,
+    bool? ProductionBundle = null,
+    string? CompositionId = null,
+    string? PosterTemplateId = null,
+    string? ReferencePhotoUrl = null,
+    int? RenderMs = null);
+public record AttachVideoRequest(
+    string VideoUrl,
+    string? PosterUrl,
+    string? CompositionId,
+    int? GrafikerScore,
+    bool? GrafikerPass,
+    int? RenderMs);
+public record BundleStatusRequest(string Status, string? Error);
 
 public class VideoArtifactRequest
 {

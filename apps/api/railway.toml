@@ -1,0 +1,10 @@
+# Railway — Nexus .NET API. Dashboard: Root Directory = repo root (smart-agency)
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/api/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health/live"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

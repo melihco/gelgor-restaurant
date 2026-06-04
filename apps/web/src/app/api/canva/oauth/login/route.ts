@@ -9,6 +9,9 @@ export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
+    const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+    if (canvaBlocked) return canvaBlocked;
+
     const origin = request.nextUrl.origin;
     const config = getCanvaOAuthConfig(origin);
     const { codeVerifier, codeChallenge, state } = createCanvaOAuthState();

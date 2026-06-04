@@ -389,22 +389,38 @@ function AgentPanel({ agent, t, onAssign }: { agent: AgentData; t: T; onAssign: 
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────
+// Maps Nexus agentType string → Python agent_role used in task nodes
+const NEXUS_TYPE_TO_PYTHON_ROLE: Record<string, string> = {
+  'ContentStrategy': 'content_strategy_agent',
+  'InstagramContentGenerator': 'content_agent',
+  'CustomerReviewResponder': 'review_agent',
+  'AiStrategist': 'content_strategy_agent',
+  'SocialMediaDesigner': 'content_agent',
+};
+
 export function AgentsScreen() {
   const { t } = useTheme();
-  const { officeId } = useWorkspaceStore();
+  const { officeId, tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
   const [assignTarget, setAssignTarget] = useState<AgentData | null>(null);
 
   const { data: rawAgents = [], isLoading: agentsLoading } = useQuery({
     queryKey: ['agents', officeId],
     queryFn: async () => { try { return officeId ? await apiClient.getAgents(officeId) : []; } catch { return []; } },
-    refetchInterval: 20_000, staleTime: 15_000,
+    refetchInterval: 20_000, staleTime: 15_000, refetchIntervalInBackground: false,
   });
 
   const { data: opsSummary, isLoading: opsLoading } = useQuery({
     queryKey: ['operations-summary'],
     queryFn: () => apiClient.getOperationsSummary(),
-    refetchInterval: 15_000, staleTime: 10_000,
+    refetchInterval: 15_000, staleTime: 10_000, refetchIntervalInBackground: false,
+  });
+
+  const { data: missionAgentStats } = useQuery({
+    queryKey: ['mission-agent-stats', tenantId],
+    queryFn: () => tenantId ? apiClient.getMissionAgentStats(tenantId) : Promise.resolve({ workspace_id: '', agent_stats: [] }),
+    enabled: !!tenantId,
+    refetchInterval: 30_000, staleTime: 20_000, refetchIntervalInBackground: false,
   });
 
   const reconcileMutation = useMutation({
@@ -414,7 +430,26 @@ export function AgentsScreen() {
 
   const isLoading = agentsLoading || opsLoading;
   const runs: RunItem[] = (opsSummary?.recentAgentRuns ?? []) as RunItem[];
-  const agents = buildAgentData(rawAgents as any[], runs);
+
+  // Merge Python mission stats into agent data for agents with 0 Nexus runs
+  const pythonStatsByRole = Object.fromEntries(
+    (missionAgentStats?.agent_stats ?? []).map(s => [s.agent_role, s])
+  );
+  const agents = buildAgentData(rawAgents as any[], runs).map(agent => {
+    if (agent.totalRuns > 0) return agent; // already has Nexus data — keep it
+    const pyRole = NEXUS_TYPE_TO_PYTHON_ROLE[agent.agentType] ?? NEXUS_TYPE_TO_PYTHON_ROLE[agent.agentTypeString];
+    const pyStat = pyRole ? pythonStatsByRole[pyRole] : undefined;
+    if (!pyStat || pyStat.total === 0) return agent;
+    const successRate = pyStat.total > 0 ? Math.round((pyStat.completed / pyStat.total) * 100) : 0;
+    return {
+      ...agent,
+      totalRuns: pyStat.total,
+      completedRuns: pyStat.completed,
+      failedRuns: pyStat.failed,
+      successRate,
+      lastRunAt: pyStat.last_run_at ?? null,
+    };
+  });
 
   const totalActive   = agents.filter(a => a.runningRuns > 0).length;
   const totalFailed   = agents.reduce((s, a) => s + a.failedRuns, 0);

@@ -74,14 +74,32 @@ Write a Runway prompt (max 800 characters) that:
 5. Prohibition: "No new objects. No scene replacement. Same location."
 
 ### Step 3 — Camera Motion
-Calibrate to urgency:
-- HIGH urgency → prefer "slow_zoom_in" or "drift_left/right" (adds energy)
-- MEDIUM urgency → "slow_zoom_in" or "static" (balanced)
-- LOW urgency → "static" (peaceful, authentic)
-Options: "static" | "slow_zoom_in" | "drift_left" | "drift_right"
+Pick ONE from the unified camera motion vocabulary below. Calibrate to urgency:
+- HIGH urgency  → "dolly_in" or "tracking" (dynamic, forward energy)
+- MEDIUM urgency→ "slow_pan" or "dolly_in" (balanced)
+- LOW urgency   → "static" or "handheld" (peaceful, authentic)
 
-### Step 4 — Creatomate Format Recommendation
-Based on urgency and event signals, recommend which Creatomate video pack formats to prioritize.
+Unified camera motion enum (use EXACTLY one of these strings):
+  "static"    — no camera movement, scene breathes
+  "slow_pan"  — gentle horizontal pan left or right
+  "dolly_in"  — slow push toward subject (most versatile)
+  "dolly_out" — slow pull away from subject
+  "orbit"     — slow arc around the subject (great for products/spaces)
+  "tracking"  — follows subject motion laterally
+  "handheld"  — slight organic wobble, authentic feel
+  "tilt_up"   — vertical reveal upward
+  "tilt_down" — vertical reveal downward
+
+Selector guide by scene type:
+- Cocktail / bar       → "dolly_in" or "orbit"
+- Sunset / terrace     → "slow_pan" or "dolly_out"
+- Crowd / event        → "tracking" or "dolly_in"
+- Product close-up     → "orbit" or "dolly_in"
+- Calm / wellness      → "static" or "handheld"
+- Grand space reveal   → "tilt_up" or "slow_pan"
+
+### Step 4 — Recommended Formats
+Based on urgency and event signals, recommend which formats to prioritize.
 Choose from: "reel", "story", "feed", "event", "teaser"
 - If urgency HIGH or weekend events exist → lead with "event" and "reel"
 - If urgency MEDIUM → lead with "reel" and "story"
@@ -92,11 +110,11 @@ Return a JSON object with EXACTLY these fields:
   "selected_photo_url": "the exact URL of the chosen photo",
   "selected_photo_reason": "why this photo fits (1 sentence)",
   "runway_prompt": "the complete Runway prompt",
-  "camera_motion": "static | slow_zoom_in | drift_left | drift_right",
+  "camera_motion": "static | slow_pan | dolly_in | dolly_out | orbit | tracking | handheld | tilt_up | tilt_down",
   "duration": 5,
   "style_notes": "notes for the human reviewer including urgency rationale",
   "urgency_level": "HIGH | MEDIUM | LOW",
-  "recommended_creatomate_formats": ["format1", "format2", "format3"]
+  "recommended_formats": ["format1", "format2", "format3"]
 }}
 
 Return ONLY the JSON. No text before or after.

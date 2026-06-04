@@ -24,6 +24,9 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
+  const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+  if (canvaBlocked) return canvaBlocked;
+
   const { searchParams } = request.nextUrl;
   const templateId = searchParams.get('templateId');
   const kind = (searchParams.get('kind') ?? 'instagram_post') as CanvaContentKind;

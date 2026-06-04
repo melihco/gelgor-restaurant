@@ -30,7 +30,11 @@ export type LayoutFamily =
   | 'festival_poster'
   | 'gala_invite'
   | 'dj_night'
-  | 'promo_banner';
+  | 'promo_banner'
+  // Modern impact families (Pinterest/Dribbble reference tier)
+  | 'bold_caption'     // "VACATION IS CALLING" — large flush bold, photo dominant
+  | 'script_caption'   // "This and a really good playlist" — whisper italic centered
+  | 'flush_type';      // "Wanna know?" — editorial color block, text flush to panel
 
 export type PreviewHint =
   | 'bottom_center'
@@ -54,7 +58,10 @@ export type PreviewHint =
   | 'festival'
   | 'gala'
   | 'dj_set'
-  | 'promo';
+  | 'promo'
+  | 'bold_flush'
+  | 'script_centered'
+  | 'flush_panel';
 
 export type TemplateCollection =
   | 'Luxury'
@@ -67,7 +74,10 @@ export type TemplateCollection =
   | 'Modern'
   | 'Editorial Type'
   | 'Poster'
-  | 'Lineup';
+  | 'Lineup'
+  | 'Bold Impact'
+  | 'Script'
+  | 'Flush Panel';
 
 export type ColorBlockMode = 'none' | 'bottom_panel' | 'left_panel' | 'right_panel' | 'top_bar';
 export type HeroStyleMode = 'display' | 'script' | 'outline' | 'knockout';
@@ -130,6 +140,16 @@ export interface TemplateLayoutSpec {
   posterFooter: 'none' | 'solid_bar' | 'transparent_bar' | 'pill_row';
   /** Art deco corner decorations */
   cornerOrnament: boolean;
+  /**
+   * Text bleeds to photo edge (padX reduced from 8% → 2%). Used by bold_caption /
+   * flush_type for the "edge-to-edge display type" Pinterest/Dribbble aesthetic.
+   */
+  textBleed: boolean;
+  /**
+   * Photo-first mode — very light or no gradient overlay so the image dominates
+   * and text floats over a clean photo. script_caption / bold_caption use this.
+   */
+  photoFirst: boolean;
 }
 
 export interface AnnouncementTemplateDefinition {
@@ -183,4 +203,8 @@ export interface AnnouncementOverlayInput {
   lineupArtists?: string[];
   /** Ticket / CTA label */
   ticketLabel?: string;
+  /** Sector hint — premium poster layout routing */
+  sector?: string;
+  /** Marka Kiti — minimal | medium | dense (photo vs text balance) */
+  textOverlayDensity?: 'minimal' | 'medium' | 'dense';
 }

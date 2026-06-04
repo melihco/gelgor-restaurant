@@ -58,6 +58,12 @@ public class CompanyProfile : TenantEntity
     /// <summary>JSON array of confirmed content needs such as menu_share or event_announcement.</summary>
     public string ContentNeeds { get; set; } = "[]";
 
+    /// <summary>JSON array of enabled tenant capabilities (content intents + workflow IDs).</summary>
+    public string OperatingCapabilities { get; set; } = "[]";
+
+    /// <summary>JSON object: gallery asset intents, client/before-after policies, max photos.</summary>
+    public string GalleryPolicy { get; set; } = "{}";
+
     /// <summary>JSON array of enabled template family identifiers for this tenant.</summary>
     public string TemplateFamilies { get; set; } = "[]";
 

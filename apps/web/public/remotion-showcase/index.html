@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Remotion Showcase — Smart Agency</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #e2e8f0;
+      padding: 24px;
+    }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; }
+    p.sub { color: #94a3b8; margin: 0 0 24px; font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: #14141f;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .card h2 {
+      font-size: 14px;
+      margin: 0;
+      padding: 12px 14px 4px;
+      font-weight: 700;
+    }
+    .card .meta {
+      padding: 0 14px 10px;
+      font-size: 11px;
+      color: #64748b;
+    }
+    .preview {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 200px;
+    }
+    video, img {
+      max-width: 100%;
+      max-height: 420px;
+      display: block;
+    }
+    .err { color: #fb7185; padding: 14px; font-size: 13px; }
+    a.dl {
+      display: block;
+      text-align: center;
+      padding: 10px;
+      font-size: 12px;
+      color: #a78bfa;
+      text-decoration: none;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+  </style>
+</head>
+<body>
+  <h1>Remotion Showcase</h1>
+  <p class="sub">Tüm story + feed still şablonları — birer örnek render</p>
+  <div id="grid" class="grid"></div>
+  <script>
+    fetch('./manifest.json')
+      .then(r => r.json())
+      .then(({ items }) => {
+        const grid = document.getElementById('grid');
+        for (const item of items) {
+          const card = document.createElement('div');
+          card.className = 'card';
+          const title = document.createElement('h2');
+          title.textContent = item.id;
+          card.appendChild(title);
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.textContent = item.headline + (item.kind === 'still' ? ' · PNG' : ' · MP4');
+          card.appendChild(meta);
+          const preview = document.createElement('div');
+          preview.className = 'preview';
+          if (item.error) {
+            preview.innerHTML = '<div class="err">' + item.error + '</div>';
+          } else if (item.kind === 'still') {
+            const img = document.createElement('img');
+            img.src = item.url;
+            img.alt = item.id;
+            preview.appendChild(img);
+          } else {
+            const vid = document.createElement('video');
+            vid.src = item.url;
+            vid.controls = true;
+            vid.playsInline = true;
+            vid.loop = true;
+            preview.appendChild(vid);
+          }
+          card.appendChild(preview);
+          if (item.url && !item.error) {
+            const a = document.createElement('a');
+            a.className = 'dl';
+            a.href = item.url;
+            a.download = item.url.split('/').pop();
+            a.textContent = 'İndir';
+            card.appendChild(a);
+          }
+          grid.appendChild(card);
+        }
+      })
+      .catch(e => {
+        document.getElementById('grid').innerHTML =
+          '<p class="err">manifest.json yok — önce: node scripts/render-remotion-showcase.mjs</p>';
+      });
+  </script>
+</body>
+</html>

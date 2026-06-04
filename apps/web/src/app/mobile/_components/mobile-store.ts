@@ -1,5 +1,6 @@
 'use client';
 import { create } from 'zustand';
+import { resolveClientScreen, tabForMobileScreen } from './mobile-client-config';
 
 export type MobileScreen =
   | 'home'
@@ -31,7 +32,7 @@ export type MobileScreen =
   | 'reels-studio'
   | 'canva-templates';
 
-export type NavTab = 'home' | 'content' | 'ai' | 'reviews' | 'more';
+export type NavTab = 'home' | 'content' | 'missions' | 'reviews' | 'more';
 
 interface MobileStore {
   screen: MobileScreen;
@@ -43,8 +44,15 @@ interface MobileStore {
   // Mission Content Factory params
   missionContentMissionId: string | null;
   missionContentNodeKey: string | null;
+  /** Deep-link from Mission Hub BRS checklist → Brand Constitution tab. */
+  brandReadinessFix: string | null;
+  /** Mission Hub → Feed: pre-select mission filter chip */
+  feedMissionFilterId: string | null;
 
   navigate: (screen: MobileScreen) => void;
+  openBrand: (fix?: string) => void;
+  openStoryTemplates: () => void;
+  clearBrandReadinessFix: () => void;
   setTab: (tab: NavTab) => void;
   openCampaign: (id: string) => void;
   openCreative: (id: string) => void;
@@ -52,6 +60,8 @@ interface MobileStore {
   openReview: (id: string) => void;
   openMissionFactory: (missionId: string, nodeKey: string) => void;
   openPlatformPreview: (artifactId: string) => void;
+  openFeedForMission: (missionId: string | null) => void;
+  clearFeedMissionFilter: () => void;
   goBack: () => void;
 }
 
@@ -64,19 +74,62 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   history: ['home'],
   missionContentMissionId: null,
   missionContentNodeKey: null,
+  brandReadinessFix: null,
+  feedMissionFilterId: null,
 
-  navigate: (screen) =>
-    set((s) => ({ screen, history: [...s.history, screen] })),
+  navigate: (screen) => {
+    const resolved = resolveClientScreen(screen);
+    const tab = tabForMobileScreen(resolved);
+    set((s) => ({
+      screen: resolved,
+      history: [...s.history, resolved],
+      ...(tab ? { activeTab: tab } : {}),
+    }));
+  },
+
+  openBrand: (fix) => {
+    if (fix === 'story-templates') {
+      const resolved = resolveClientScreen('templates');
+      const tab = tabForMobileScreen(resolved);
+      set((s) => ({
+        screen: resolved,
+        brandReadinessFix: null,
+        history: [...s.history, resolved],
+        ...(tab ? { activeTab: tab } : {}),
+      }));
+      return;
+    }
+    const tab = tabForMobileScreen('brand');
+    set((s) => ({
+      screen: 'brand',
+      brandReadinessFix: fix ?? null,
+      history: [...s.history, 'brand'],
+      ...(tab ? { activeTab: tab } : {}),
+    }));
+  },
+
+  openStoryTemplates: () => {
+    const resolved = resolveClientScreen('templates');
+    const tab = tabForMobileScreen(resolved);
+    set((s) => ({
+      screen: resolved,
+      history: [...s.history, resolved],
+      ...(tab ? { activeTab: tab } : {}),
+    }));
+  },
+
+  clearBrandReadinessFix: () => set({ brandReadinessFix: null }),
 
   setTab: (tab) => {
     const map: Record<NavTab, MobileScreen> = {
       home: 'home',
       content: 'feed',
-      ai: 'ai-activity',
+      missions: 'missions',
       reviews: 'reviews',
       more: 'more',
     };
-    set({ activeTab: tab, screen: map[tab], history: [map[tab]] });
+    const screen = resolveClientScreen(map[tab]);
+    set({ activeTab: tab, screen, history: [screen] });
   },
 
   openCampaign: (id) =>
@@ -106,10 +159,21 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       history: [...s.history, 'platform-preview'],
     })),
 
+  openFeedForMission: (missionId) =>
+    set({
+      feedMissionFilterId: missionId,
+      activeTab: 'content',
+      screen: 'feed',
+      history: ['feed'],
+    }),
+
+  clearFeedMissionFilter: () => set({ feedMissionFilterId: null }),
+
   goBack: () => {
     const { history } = get();
     if (history.length <= 1) return;
     const next = history.slice(0, -1);
     set({ history: next, screen: next[next.length - 1]! });
   },
+
 }));

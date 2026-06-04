@@ -126,6 +126,36 @@ AGENT_ROLES = {
         "category": "intelligence",
         "task_types": ["mission_planning"],
     },
+    "feed_art_director": {
+        "display_name": "Feed Art Director",
+        "description": (
+            "Reviews the full weekly content batch for cohesion: format distribution, "
+            "visual variety, theme alignment, engagement arc, and publish schedule. "
+            "Ensures the Instagram feed looks agency-produced, not algorithmic."
+        ),
+        "category": "visual",
+        "task_types": ["feed_cohesion_review"],
+    },
+    "product_visual_studio": {
+        "display_name": "Product Visual Studio",
+        "description": (
+            "Generates creative scene briefs for product photo enhancement. "
+            "Reads brand DNA, sector, and caption to produce precise GPT image-2 "
+            "directives that enhance the background, lighting, and composition "
+            "while keeping the product, label, and logo pixel-perfect."
+        ),
+        "category": "visual",
+        "task_types": ["product_scene_brief"],
+    },
+    "visual_production_director": {
+        "display_name": "Visual Production Director (experimental)",
+        "description": (
+            "Opt-in: enriches each idea's visual_production_spec before auto-produce. "
+            "Brand identity stable; post brief drives scene. Does not replace ideation or Feed Art Director."
+        ),
+        "category": "visual",
+        "task_types": ["visual_production_enrich"],
+    },
 }
 
 
@@ -191,44 +221,36 @@ def get_llm(task_type: str | None = None, brand: "BrandInfo | None" = None) -> L
         provider = brand.preferred_llm_provider.lower()
         model = brand.preferred_llm_model
         if provider == "anthropic" and has_anthropic:
-            os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
             logger.debug("llm_tenant_override", tenant=brand.tenant_id, model=f"anthropic/{model}")
-            return LLM(model=f"anthropic/{model}")
+            return LLM(model=f"anthropic/{model}", api_key=settings.anthropic_api_key)
         if provider == "openai" and has_openai:
-            os.environ["OPENAI_API_KEY"] = settings.openai_api_key
             logger.debug("llm_tenant_override", tenant=brand.tenant_id, model=f"openai/{model}")
-            return LLM(model=f"openai/{model}")
+            return LLM(model=f"openai/{model}", api_key=settings.openai_api_key)
 
     # ── 2. Smart per-task routing ─────────────────────────────────────────
     if task_type and has_anthropic and task_type in _CLAUDE_PREFERRED_TASKS:
-        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
         model = settings.anthropic_model or "claude-3-5-sonnet-20241022"
-        return LLM(model=f"anthropic/{model}")
+        return LLM(model=f"anthropic/{model}", api_key=settings.anthropic_api_key)
 
     # Lite model for pure data/analytics tasks — 15x cheaper, no quality loss
     lite_model = getattr(settings, "openai_lite_model", "gpt-4o-mini")
     if task_type and has_openai and task_type in _LITE_MODEL_TASKS and lite_model:
-        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
         logger.debug("llm_lite_routing", task_type=task_type, model=f"openai/{lite_model}")
-        return LLM(model=f"openai/{lite_model}")
+        return LLM(model=f"openai/{lite_model}", api_key=settings.openai_api_key)
 
     if task_type and has_openai and task_type in _GPT_PREFERRED_TASKS:
-        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
         if settings.openai_content_model:
-            return LLM(model=f"openai/{settings.openai_content_model}")
-        return LLM(model=f"openai/{settings.openai_model}")
+            return LLM(model=f"openai/{settings.openai_content_model}", api_key=settings.openai_api_key)
+        return LLM(model=f"openai/{settings.openai_model}", api_key=settings.openai_api_key)
 
     # ── 3. Global provider fallback ───────────────────────────────────────
     if settings.crewai_llm_provider == "anthropic" and has_anthropic:
-        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
         model = settings.anthropic_model or "claude-3-5-sonnet-20241022"
-        return LLM(model=f"anthropic/{model}")
+        return LLM(model=f"anthropic/{model}", api_key=settings.anthropic_api_key)
 
-    if has_openai:
-        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
     if task_type and task_type.startswith("content") and settings.openai_content_model:
-        return LLM(model=f"openai/{settings.openai_content_model}")
-    return LLM(model=f"openai/{settings.openai_model}")
+        return LLM(model=f"openai/{settings.openai_content_model}", api_key=settings.openai_api_key)
+    return LLM(model=f"openai/{settings.openai_model}", api_key=settings.openai_api_key if has_openai else None)
 
 
 class CrewEngine:
@@ -334,7 +356,7 @@ class CrewEngine:
             agent_role, task_type = self.correct_execution(agent_role, task_type)
 
         try:
-            result = self._dispatch(agent_role, task_type, brand, input_data)
+            result = self._dispatch(agent_role, task_type, brand, input_data, llm=llm)
             logger.info("crew_execution_complete", agent_role=agent_role, task_type=task_type)
             return result
         except Exception as e:
@@ -358,13 +380,20 @@ class CrewEngine:
         task_type: str,
         brand: BrandInfo,
         input_data: dict[str, Any],
+        llm: "LLM | None" = None,
     ) -> dict[str, Any]:
-        """Route to the correct crew runner based on agent_role + task_type."""
+        """Route to the correct crew runner based on agent_role + task_type.
+
+        llm is resolved by execute() via get_llm_for_task(task_type, brand) so
+        per-tenant overrides and per-task smart routing are always respected.
+        Falls back to self.llm (default no-arg routing) when called without llm.
+        """
+        effective_llm = llm if llm is not None else self.llm
 
         # ── Review Agent ────────────────────────────────
         if agent_role == "review_agent":
             if task_type == "review_analysis":
-                return run_review_analysis(brand, llm=self.llm)
+                return run_review_analysis(brand, llm=effective_llm)
 
             if task_type == "single_review_response":
                 return run_single_review_response(
@@ -374,7 +403,7 @@ class CrewEngine:
                     review_text=input_data.get("review_text", ""),
                     review_date=input_data.get("review_date", ""),
                     language=input_data.get("language", brand.languages or "tr"),
-                    llm=self.llm,
+                    llm=effective_llm,
                 )
 
         # ── Content Agent ───────────────────────────────
@@ -388,13 +417,13 @@ class CrewEngine:
                 iterations = int(input_data.get("iterations", get_settings().crewai_content_iterations))
                 return run_content_ideation(
                     brand,
-                    count=input_data.get("count", 5),
+                    count=input_data.get("count", 7),
                     time_period=input_data.get("time_period", "next week"),
                     brief=input_data.get("brief", ""),
                     content_pillars=input_data.get("content_pillars") or input_data.get("contentPillars") or [],
                     autonomy_mode=bool(input_data.get("autonomy_mode") or input_data.get("autonomyMode")),
                     strategy_action_id=input_data.get("strategy_action_id", ""),
-                    llm=self.llm,
+                    llm=effective_llm,
                     iterations=iterations,
                 )
 
@@ -403,7 +432,7 @@ class CrewEngine:
                     brand,
                     duration_days=input_data.get("duration_days", 7),
                     frequency=input_data.get("frequency", "daily"),
-                    llm=self.llm,
+                    llm=effective_llm,
                 )
 
             if task_type == "visual_design_cards":
@@ -412,7 +441,7 @@ class CrewEngine:
                     count=input_data.get("count", 3),
                     brief=input_data.get("brief", ""),
                     content_pillars=input_data.get("content_pillars") or [],
-                    llm=self.get_llm_for_task(task_type),
+                    llm=effective_llm,
                 )
 
         # ── Content Strategy Agent ───────────────────────
@@ -423,7 +452,7 @@ class CrewEngine:
                     brief=input_data.get("brief", ""),
                     content_pillars=input_data.get("content_pillars") or input_data.get("contentPillars") or [],
                     time_period=input_data.get("time_period", "next week"),
-                    llm=self.llm,
+                    llm=effective_llm,
                 )
 
         # ── Ads Agent ───────────────────────────────────
@@ -432,7 +461,7 @@ class CrewEngine:
                 return run_campaign_analysis(
                     brand,
                     campaign_data=input_data.get("campaign_data", ""),
-                    llm=self.llm,
+                    llm=effective_llm,
                 )
 
             if task_type == "ad_creative_generation":
@@ -441,27 +470,27 @@ class CrewEngine:
                     platform=input_data.get("platform", "google_ads"),
                     objective=input_data.get("objective", "conversions"),
                     count=input_data.get("count", 3),
-                    llm=self.llm,
+                    llm=effective_llm,
                 )
 
             if task_type in {"auto_budget_optimize", "ads_budget_optimization"}:
-                return run_budget_optimization(brand, llm=self.llm)
+                return run_budget_optimization(brand, llm=effective_llm)
 
         # ── Analytics Agent ────────────────────────────────
         if agent_role == "analytics_agent":
             if task_type == "traffic_analysis":
-                return run_traffic_analysis(brand, llm=self.llm)
+                return run_traffic_analysis(brand, llm=effective_llm)
 
             if task_type == "conversion_report":
-                return run_conversion_report(brand, llm=self.llm)
+                return run_conversion_report(brand, llm=effective_llm)
 
             if task_type == "weekly_performance":
-                return run_weekly_performance(brand, llm=self.llm)
+                return run_weekly_performance(brand, llm=effective_llm)
 
         # ── Strategic Agent ──────────────────────────────────
         if agent_role == "strategic_agent":
             if task_type == "mission_planning":
-                return run_mission_planning(brand, llm=self.llm)
+                return run_mission_planning(brand, llm=effective_llm)
 
         raise ValueError(f"Unhandled dispatch: {agent_role}/{task_type}")
 

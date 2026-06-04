@@ -1067,8 +1067,68 @@ public class AgentService : IAgentService
             Competitors = profile?.Competitors ?? string.Empty,
             CustomRules = customRules,
             Keywords = BuildKeywords(tenant, profile),
-            AssetDescriptions = assetDescriptions
+            AssetDescriptions = assetDescriptions,
+            ContentPillars = ParseJsonStringList(profile?.ContentNeeds),
+            RiskRules = ParseJsonStringDictionary(profile?.RiskRules),
+            OperatingCapabilities = ParseJsonStringList(profile?.OperatingCapabilities),
+            GalleryPolicy = ParseJsonObjectDictionary(profile?.GalleryPolicy),
         };
+    }
+
+    private static List<string> ParseJsonStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json)?
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .ToList() ?? new();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private static Dictionary<string, string> ParseJsonStringDictionary(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json)
+                   ?? new Dictionary<string, string>();
+        }
+        catch
+        {
+            return new();
+        }
+    }
+
+    private static Dictionary<string, object?> ParseJsonObjectDictionary(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var dict = new Dictionary<string, object?>();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                dict[prop.Name] = prop.Value.ValueKind switch
+                {
+                    System.Text.Json.JsonValueKind.String => prop.Value.GetString(),
+                    System.Text.Json.JsonValueKind.Number => prop.Value.TryGetInt32(out var i) ? i : prop.Value.GetDouble(),
+                    System.Text.Json.JsonValueKind.True => true,
+                    System.Text.Json.JsonValueKind.False => false,
+                    _ => prop.Value.GetRawText(),
+                };
+            }
+            return dict;
+        }
+        catch
+        {
+            return new();
+        }
     }
 
     private static string BuildCampaignGoals(CompanyProfile? profile)

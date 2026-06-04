@@ -10,6 +10,9 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
+  const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+  if (canvaBlocked) return canvaBlocked;
+
   const tenantId = getCanvaTenantId(request.nextUrl.searchParams.get('tenantId'));
   const entries = await readCanvaTemplateRegistry(tenantId);
   return NextResponse.json({ tenantId, entries });

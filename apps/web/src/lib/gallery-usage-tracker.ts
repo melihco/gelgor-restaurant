@@ -67,6 +67,19 @@ function resolvePostType(meta: Record<string, unknown>, content: Record<string, 
   return contentTypeToPostType(ct);
 }
 
+/** Returns true for URLs that are clearly AI-generated/external — not a venue gallery photo. */
+function looksGenerated(url: string): boolean {
+  return (
+    url.includes('oaidalleapiprodscus') ||  // OpenAI DALL-E CDN
+    url.includes('r2.dev') ||               // Cloudflare R2 (enhanced outputs)
+    url.includes('cdn.creatomate') ||
+    url.includes('storage.googleapis.com') ||
+    url.includes('blob.core.windows.net') ||
+    url.includes('runway') ||
+    url.includes('fal.ai')
+  );
+}
+
 /** Extract source gallery URLs (not enhanced R2 outputs) from a Nexus artifact. */
 export function extractGalleryUrlsFromArtifact(
   artifact: Record<string, unknown>,
@@ -80,6 +93,8 @@ export function extractGalleryUrlsFromArtifact(
   const postType = resolvePostType(meta, content);
 
   const urls = new Set<string>();
+
+  // Primary: explicit gallery source fields (always safe to track)
   pushUrl(urls, meta.reference_photo_url);
   pushUrl(urls, content.reference_photo_url);
   pushUrl(urls, meta.selected_gallery_url);
@@ -96,6 +111,13 @@ export function extractGalleryUrlsFromArtifact(
   const carouselUrls = meta.carousel_urls ?? content.carousel_urls;
   if (Array.isArray(carouselUrls)) {
     for (const u of carouselUrls) pushUrl(urls, u);
+  }
+
+  // Secondary: imageUrl / contentUrl — only track if they look like real venue photos.
+  // Skip AI-generated / CDN URLs to avoid over-excluding the gallery.
+  const imageUrlCandidate = String(meta.imageUrl ?? content.imageUrl ?? artifact.contentUrl ?? '');
+  if (imageUrlCandidate && !looksGenerated(imageUrlCandidate)) {
+    pushUrl(urls, imageUrlCandidate);
   }
 
   if (urls.size === 0) return null;

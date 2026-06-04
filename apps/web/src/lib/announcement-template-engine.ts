@@ -4,6 +4,12 @@
 
 import type { AnnouncementOverlayInput, TemplateLayoutSpec } from './announcement-template-types';
 import {
+  resolveTextOverlayPrefs,
+  type TextOverlayDensity,
+} from './brand-text-overlay-prefs';
+import { brandHeadingUsesScriptStyle } from './announcement-brand-kit';
+import { textsAreDuplicate } from './poster-quality';
+import {
   buildSvgTextBlock,
   estimateTextWidth,
   fitTextToWidth,
@@ -20,41 +26,148 @@ function escapeXml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+const LINEUP_POSTER_MODES = new Set<TemplateLayoutSpec['posterMode']>([
+  'lineup_stack',
+  'lineup_tiered',
+  'festival_grid',
+  'gala_centered',
+  'dj_set',
+]);
+
+function isGenericGeoLabel(label: string): boolean {
+  const t = label.trim();
+  return !t || /^(türkiye|turkey|tüm türkiye|global|worldwide)$/i.test(t);
+}
+
+function buildFooterInfo(
+  opts: AnnouncementOverlayInput,
+  detailRaw: string,
+  spec: TemplateLayoutSpec,
+): string {
+  if (spec.posterFooter === 'pill_row') {
+    return opts.brandName ?? '';
+  }
+  const loc = (opts.venueArea ?? '').trim();
+  const parts: string[] = [];
+  if (loc && !isGenericGeoLabel(loc)) parts.push(loc);
+  if (detailRaw) parts.push(detailRaw);
+  if (opts.ticketLabel) parts.push(opts.ticketLabel);
+  if (parts.length === 0 && opts.brandName) parts.push(opts.brandName);
+  return parts.join('  ·  ');
+}
+
+/**
+ * Per-family typography personalities.
+ *
+ * The rendering engine uses the BRAND'S heading font by default, which is ideal
+ * for luxury/editorial families (Playfair etc.) but completely wrong for
+ * nightlife/festival/dj — those need punch, weight and energy (condensed display).
+ *
+ * Override rules:
+ *  - 'force_display' → always use the display stack regardless of brand kit
+ *  - 'brand_or_serif' → use brand heading if available, else elegant serif
+ *  - 'brand_or_sans' → use brand heading if available, else clean sans
+ *  - 'script' → cursive personality
+ */
+type FontPersonality = 'force_display' | 'brand_or_serif' | 'brand_or_sans' | 'script';
+
+const FAMILY_FONT_PERSONALITY: Partial<Record<string, FontPersonality>> = {
+  // Nightlife / energy families → always bold display regardless of brand kit.
+  neon_night:      'force_display',
+  dj_night:        'force_display',
+  concert_lineup:  'force_display',
+  festival_poster: 'force_display',
+  promo_banner:    'force_display',
+  impact_vignette: 'force_display',
+  // Elegant / luxury families → brand heading or fall back to serif.
+  luxury_bottom:      'brand_or_serif',
+  gala_invite:        'brand_or_serif',
+  script_luxe:        'script',
+  magazine_date:      'brand_or_serif',
+  corner_stamp:       'brand_or_serif',
+  frame_classic:      'brand_or_serif',
+  // Modern impact new families
+  bold_caption:    'force_display',
+  flush_type:      'force_display',
+  script_caption:  'script',
+  // Modern / clean families → brand heading or fall back to sans.
+  editorial_left:  'brand_or_sans',
+  campaign_badge:  'brand_or_sans',
+  minimal_whisper: 'brand_or_sans',
+  offer_band:      'brand_or_sans',
+  frosted_panel:   'brand_or_sans',
+  diagonal_split:  'brand_or_sans',
+  color_split:     'brand_or_sans',
+  top_masthead:    'brand_or_sans',
+};
+
+// Condensed display stack: Anton first (loaded via resvg), then system fallbacks.
+const DISPLAY_STACK = "'Anton', 'Archivo Black', 'Oswald', 'Arial Black', Impact, 'Helvetica Neue', sans-serif";
+const DISPLAY_DETAIL = "'Oswald', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif";
+
 function resolveOverlayFonts(
   opts: AnnouncementOverlayInput,
   heroStyle?: TemplateLayoutSpec['heroStyle'],
+  family?: string,
 ): { heroFont: string; detailFont: string; scriptFont: string } {
   const scriptFont = "'Brush Script MT', 'Segoe Script', 'Playfair Display', Georgia, serif";
-  if (opts.brandKit) {
-    const heading = heroStyle === 'script'
-      ? scriptFont
-      : opts.brandKit.headingFontStack;
+
+  if (heroStyle === 'script') {
+    if (opts.brandKit?.headingFontStack) {
+      return {
+        heroFont: opts.brandKit.headingFontStack,
+        detailFont: opts.brandKit.bodyFontStack || "Georgia, 'Times New Roman', serif",
+        scriptFont: opts.brandKit.headingFontStack,
+      };
+    }
+    return { heroFont: scriptFont, detailFont: "Georgia, 'Times New Roman', serif", scriptFont };
+  }
+
+  const personality = (family ? FAMILY_FONT_PERSONALITY[family] : undefined) ?? 'brand_or_serif';
+
+  // Force-display families ALWAYS get bold condensed type — brand kit is irrelevant here.
+  if (personality === 'force_display') {
+    return { heroFont: DISPLAY_STACK, detailFont: DISPLAY_DETAIL, scriptFont };
+  }
+
+  // Marka Kiti script/brush başlık fontu — promo & restaurant_feature hero'da kullan.
+  if (opts.brandKit?.headingFontStack && brandHeadingUsesScriptStyle(opts.brandKit.headingFontStack)) {
     return {
-      heroFont: heading,
+      heroFont: opts.brandKit.headingFontStack,
+      detailFont: opts.brandKit.bodyFontStack,
+      scriptFont: opts.brandKit.headingFontStack,
+    };
+  }
+
+  // For brand_or_* personalities, prefer the brand kit heading when available.
+  if (opts.brandKit?.headingFontStack) {
+    return {
+      heroFont: opts.brandKit.headingFontStack,
       detailFont: opts.brandKit.bodyFontStack,
       scriptFont,
     };
   }
+
+  // No brand kit — use vibeTypography hints or personality defaults.
   const raw = (
     opts.vibeTypography?.headline_font
     ?? opts.vibeTypography?.heading_personality
     ?? opts.vibeTypography?.headline_style
     ?? ''
   ).toLowerCase();
-  if (heroStyle === 'script') {
-    return { heroFont: scriptFont, detailFont: "Georgia, 'Times New Roman', serif", scriptFont };
-  }
-  if (raw.includes('sans') || raw.includes('condensed') || raw.includes('impact') || raw.includes('modern')) {
-    return {
-      heroFont: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-      detailFont: "'Helvetica Neue', Helvetica, sans-serif",
-      scriptFont,
-    };
+
+  if (raw.includes('sans') || raw.includes('condensed') || raw.includes('modern')) {
+    return { heroFont: "'Inter', 'Helvetica Neue', Arial, sans-serif", detailFont: "'Inter', 'Helvetica Neue', sans-serif", scriptFont };
   }
   if (raw.includes('script') || raw.includes('handwritten')) {
     return { heroFont: scriptFont, detailFont: 'Georgia, serif', scriptFont };
   }
-  return { heroFont: "Georgia, 'Times New Roman', serif", detailFont: "Georgia, 'Times New Roman', serif", scriptFont };
+
+  if (personality === 'brand_or_sans') {
+    return { heroFont: "'Inter', 'Helvetica Neue', Arial, sans-serif", detailFont: "'Inter', sans-serif", scriptFont };
+  }
+  // brand_or_serif fallback
+  return { heroFont: "'Playfair Display', Georgia, 'Times New Roman', serif", detailFont: "'Inter', 'Helvetica Neue', sans-serif", scriptFont };
 }
 
 function resolveOverlayColors(opts: AnnouncementOverlayInput): {
@@ -89,6 +202,46 @@ function formatAdjust(spec: TemplateLayoutSpec, contentType: AnnouncementOverlay
   };
 }
 
+/** Apply brand text_overlay_density — keep product visible, text in lower band. */
+export function applyTextOverlayDensityToSpec(
+  spec: TemplateLayoutSpec,
+  density?: TextOverlayDensity,
+): TemplateLayoutSpec {
+  if (!density || density === 'medium') return spec;
+
+  const prefs = resolveTextOverlayPrefs({ typography: { text_overlay_density: density } });
+
+  if (density === 'dense') {
+    return {
+      ...spec,
+      heroScale: spec.heroScale * prefs.heroScaleMultiplier,
+      gradientStart: Math.max(0.22, spec.gradientStart - 0.06),
+      photoFirst: false,
+    };
+  }
+
+  const centerHeavy = spec.textZone === 'center'
+    || spec.family === 'promo_banner'
+    || spec.posterMode === 'promo_split';
+
+  return {
+    ...spec,
+    heroScale: spec.heroScale * prefs.heroScaleMultiplier,
+    gradientStart: Math.max(spec.gradientStart, centerHeavy ? 0.55 : 0.48),
+    gradientEnd: Math.min(spec.gradientEnd, 0.9),
+    photoFirst: centerHeavy ? true : spec.photoFirst,
+    textZone: centerHeavy && spec.textZone === 'center' ? 'bottom_center' : spec.textZone,
+    align: centerHeavy ? 'center' : spec.align,
+    colorBlock: spec.colorBlock === 'none' && centerHeavy ? 'bottom_panel' : spec.colorBlock,
+    colorBlockSize: centerHeavy
+      ? Math.min(spec.colorBlockSize || 0.42, 0.34)
+      : spec.colorBlockSize,
+    colorBlockOpacity: centerHeavy ? Math.max(spec.colorBlockOpacity, 0.88) : spec.colorBlockOpacity,
+    vignetteDeep: false,
+    duotoneOpacity: Math.min(spec.duotoneOpacity, 0.18),
+  };
+}
+
 function buildGradientLayer(
   spec: TemplateLayoutSpec,
   width: number,
@@ -114,8 +267,10 @@ function buildGradientLayer(
   }
 
   const gradStartPx = Math.round(height * spec.gradientStart);
-  const peakOpacity = spec.vignetteDeep ? 0.62 : 0.55;
-  const endOpacity = spec.vignetteDeep ? 0.88 : 0.82;
+  // photoFirst = ultra-light gradient; the image is the design, text floats.
+  const isPhotoFirst = (spec as { photoFirst?: boolean }).photoFirst;
+  const peakOpacity = isPhotoFirst ? 0.18 : spec.vignetteDeep ? 0.55 : 0.46;
+  const endOpacity  = isPhotoFirst ? 0.36 : spec.vignetteDeep ? 0.84 : 0.76;
 
   if (spec.diagonal) {
     return `
@@ -133,8 +288,9 @@ function buildGradientLayer(
   <defs>
     <linearGradient id="grad" x1="0" y1="${gradStartPx}" x2="0" y2="${height}" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="${shadow}" stop-opacity="0"/>
-      <stop offset="35%" stop-color="${shadow}" stop-opacity="${peakOpacity}"/>
-      <stop offset="100%" stop-color="${shadow}" stop-opacity="${endOpacity}"/>
+      <stop offset="30%" stop-color="${shadow}" stop-opacity="${(peakOpacity * 0.42).toFixed(3)}"/>
+      <stop offset="62%" stop-color="${shadow}" stop-opacity="${peakOpacity.toFixed(3)}"/>
+      <stop offset="100%" stop-color="${shadow}" stop-opacity="${endOpacity.toFixed(3)}"/>
     </linearGradient>
   </defs>
   <rect x="0" y="0" width="${width}" height="${height}" fill="url(#grad)"/>`;
@@ -275,7 +431,20 @@ function buildDuotoneWash(
 ): string {
   if (spec.duotoneWash === 'none') return '';
   const fill = spec.duotoneWash === 'primary' ? primary : accent;
-  return `<rect x="0" y="0" width="${width}" height="${height}" fill="${fill}" opacity="${spec.duotoneOpacity}"/>`;
+  // Modern: a vertical gradient wash (light at top → fuller at bottom) so the
+  // photo stays vibrant and the mood color reads as a graded tint, not a flat
+  // dead overlay. Keeps the "neon/duotone" vibe without muddying the image.
+  const topOpacity = Math.max(0.08, spec.duotoneOpacity * 0.35);
+  const botOpacity = Math.min(0.92, spec.duotoneOpacity * 1.05);
+  return `
+  <defs>
+    <linearGradient id="duotoneWash" x1="0" y1="0" x2="0" y2="${height}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="${fill}" stop-opacity="${topOpacity.toFixed(3)}"/>
+      <stop offset="55%" stop-color="${fill}" stop-opacity="${(spec.duotoneOpacity * 0.7).toFixed(3)}"/>
+      <stop offset="100%" stop-color="${fill}" stop-opacity="${botOpacity.toFixed(3)}"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="${width}" height="${height}" fill="url(#duotoneWash)"/>`;
 }
 
 function buildColorBlockPanel(
@@ -296,31 +465,49 @@ function buildColorBlockPanel(
 
   if (spec.colorBlock === 'bottom_panel') {
     const panelTop = Math.round(height * (1 - size));
+    const innerT = panelTop + Math.round(pad * 0.6);
+    const innerB = height - Math.round(pad * 0.6);
+    const blendH = Math.round((height - panelTop) * 0.22);
     return {
-      markup: `<rect x="0" y="${panelTop}" width="${width}" height="${height - panelTop}" fill="${fill}" opacity="${opacity}"/>`,
+      markup: `<defs>
+    <linearGradient id="panelTopBlend" x1="0" y1="${panelTop - blendH}" x2="0" y2="${panelTop + 4}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="${fill}" stop-opacity="0"/>
+      <stop offset="100%" stop-color="${fill}" stop-opacity="${(opacity * 0.55).toFixed(3)}"/>
+    </linearGradient>
+    <linearGradient id="panelBody" x1="0" y1="${panelTop}" x2="0" y2="${height}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="${fill}" stop-opacity="${(opacity * 0.88).toFixed(3)}"/>
+      <stop offset="100%" stop-color="${fill}" stop-opacity="${opacity.toFixed(3)}"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="${panelTop - blendH}" width="${width}" height="${blendH + 4}" fill="url(#panelTopBlend)"/>
+  <rect x="0" y="${panelTop}" width="${width}" height="${height - panelTop}" fill="url(#panelBody)"/>`,
       boundsPatch: {
-        top: panelTop + pad,
-        bottom: height - pad,
+        top: innerT,
+        bottom: innerB,
         left: pad,
         right: width - pad,
         maxWidth: width - pad * 2,
         anchorX: width / 2,
         textAnchor: 'middle',
       },
-    };
+      centerAnchor: true,
+    } as { markup: string; boundsPatch: Partial<ContentBounds> | null; centerAnchor?: boolean };
   }
 
   if (spec.colorBlock === 'left_panel') {
     const panelW = Math.round(width * size);
+    const innerPadL = Math.round(panelW * 0.08);
     return {
       markup: `<rect x="0" y="0" width="${panelW}" height="${height}" fill="${fill}" opacity="${opacity}"/>`,
       boundsPatch: {
-        top: Math.round(height * 0.42),
-        bottom: height - pad,
-        left: pad,
-        right: panelW - pad,
-        maxWidth: panelW - pad * 2,
-        anchorX: pad + 8,
+        // Start at 30% so the text stack (hero + detail + tagline + brand) fits
+        // without overflowing below the bottom of the panel.
+        top: Math.round(height * 0.30),
+        bottom: height - Math.round(height * 0.06),
+        left: innerPadL,
+        right: panelW - innerPadL,
+        maxWidth: panelW - innerPadL * 2,
+        anchorX: innerPadL,
         textAnchor: 'start',
       },
     };
@@ -329,15 +516,16 @@ function buildColorBlockPanel(
   if (spec.colorBlock === 'right_panel') {
     const panelW = Math.round(width * size);
     const left = width - panelW;
+    const innerPadR = Math.round(panelW * 0.08);
     return {
       markup: `<rect x="${left}" y="0" width="${panelW}" height="${height}" fill="${fill}" opacity="${opacity}"/>`,
       boundsPatch: {
-        top: Math.round(height * 0.42),
-        bottom: height - pad,
-        left: left + pad,
-        right: width - pad,
-        maxWidth: panelW - pad * 2,
-        anchorX: width - pad - 8,
+        top: Math.round(height * 0.30),
+        bottom: height - Math.round(height * 0.06),
+        left: left + innerPadR,
+        right: width - innerPadR,
+        maxWidth: panelW - innerPadR * 2,
+        anchorX: width - innerPadR,
         textAnchor: 'end',
       },
     };
@@ -347,15 +535,20 @@ function buildColorBlockPanel(
   return {
     markup: `<rect x="0" y="0" width="${width}" height="${barH}" fill="${fill}" opacity="${opacity}"/>`,
     boundsPatch: {
-      top: pad,
-      bottom: barH - pad,
+      // Center the text stack vertically inside the bar (not bottom-anchored).
+      // Using the full bar as a centered zone removes the dead-whitespace gap
+      // that appears when heroScale is small relative to barH.
+      top: Math.round(barH * 0.12),
+      bottom: Math.round(barH * 0.92),
       left: pad,
       right: width - pad,
       maxWidth: width - pad * 2,
       anchorX: width / 2,
       textAnchor: 'middle',
     },
-  };
+    // Signal layoutTextStack to use center anchor for this panel
+    centerAnchor: true,
+  } as { markup: string; boundsPatch: Partial<ContentBounds> | null; centerAnchor?: boolean };
 }
 
 function buildCornerStamp(
@@ -418,17 +611,30 @@ function buildSideVerticalLabel(
   return `<text x="${x}" y="${y}" font-family="${detailFont}" font-size="${size}" font-weight="600" letter-spacing="5" fill="${accent}" text-anchor="middle" dominant-baseline="middle" opacity="0.75" transform="rotate(-90 ${x} ${y})">${escapeXml(brand.slice(0, 24))}</text>`;
 }
 
-function buildSvgFilters(spec: TemplateLayoutSpec): string {
-  if (!spec.neonGlow) return '';
-  return `
-  <defs>
-    <filter id="neonGlow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+function buildSvgFilters(spec: TemplateLayoutSpec, accent: string): string {
+  // Soft text shadow — modern legibility lift so copy reads cleanly over any
+  // photo (not just where the gradient is dark). Applied to all text layers.
+  const textShadow = `
+    <filter id="softTextShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="7" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>`;
+  // True neon: an ACCENT-coloured halo behind bright text (feFlood→composite),
+  // not just a same-colour blur. Reads as a glowing sign, not flat text.
+  const neon = spec.neonGlow
+    ? `
+    <filter id="neonGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="9" result="blur"/>
+      <feFlood flood-color="${accent}" flood-opacity="0.95" result="glowColor"/>
+      <feComposite in="glowColor" in2="blur" operator="in" result="glow"/>
       <feMerge>
-        <feMergeNode in="blur"/>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="glow"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
-    </filter>
+    </filter>`
+    : '';
+  return `
+  <defs>${textShadow}${neon}
   </defs>`;
 }
 
@@ -447,7 +653,9 @@ function buildHeroTextBlock(
   shadow: string,
 ): string {
   const filterAttr = spec.neonGlow ? ' filter="url(#neonGlow)"' : '';
-  const fill = spec.neonGlow ? accent : layer.fill;
+  // Neon: keep the hero BRIGHT (light fill) and let the colored glow filter
+  // produce the accent halo — avoids the old accent-on-accent low-contrast hero.
+  const fill = layer.fill;
 
   if (spec.heroStyle === 'outline') {
     const lines = layer.fit.lines.map((line, i) => {
@@ -716,21 +924,23 @@ function buildPosterHeader(
   detailFont: string,
 ): { markup: string; bottomY: number } {
   if (header === 'none' || !label) return { markup: '', bottomY: 0 };
-  const barH = Math.round(width * 0.09);
-  const fontSize = Math.round(barH * 0.42);
+  const barH = Math.round(width * 0.072);
+  const fontSize = Math.round(barH * 0.44);
   const cy = Math.round(barH / 2);
   if (header === 'accent_bar') {
-    // Gradient fade at bottom edge prevents harsh line artifact
+    // Thinner masthead with subtle dark-to-light depth + soft bottom fade so the
+    // accent bar reads as a refined band, not a flat solid block.
     return {
       markup: `<defs>
     <linearGradient id="headerBarGrad" x1="0" y1="0" x2="0" y2="${barH}" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="${accent}" stop-opacity="0.94"/>
-      <stop offset="85%" stop-color="${accent}" stop-opacity="0.88"/>
+      <stop offset="0%" stop-color="${accent}" stop-opacity="0.96"/>
+      <stop offset="70%" stop-color="${accent}" stop-opacity="0.82"/>
       <stop offset="100%" stop-color="${accent}" stop-opacity="0"/>
     </linearGradient>
   </defs>
   <rect x="0" y="0" width="${width}" height="${barH}" fill="url(#headerBarGrad)"/>
-  <text x="${Math.round(width / 2)}" y="${cy}" font-family="${detailFont}" font-size="${fontSize}" font-weight="700" letter-spacing="4" fill="${textColor}" text-anchor="middle" dominant-baseline="middle">${escapeXml(label.toUpperCase())}</text>`,
+  <rect x="0" y="0" width="${width}" height="2" fill="#FFFFFF" opacity="0.14"/>
+  <text x="${Math.round(width / 2)}" y="${cy}" font-family="${detailFont}" font-size="${fontSize}" font-weight="700" letter-spacing="5" fill="${textColor}" text-anchor="middle" dominant-baseline="middle">${escapeXml(label.toUpperCase())}</text>`,
       bottomY: barH,
     };
   }
@@ -768,22 +978,28 @@ function buildPosterFooter(
   ticketLabel?: string,
 ): string {
   if (footer === 'none' || !info) return '';
-  const barH = Math.round(width * 0.085);
-  const fontSize = Math.round(barH * 0.36);
+  const barH = Math.round(width * 0.072);
+  const fontSize = Math.round(barH * 0.38);
   const barTop = height - barH;
   const cy = barTop + Math.round(barH / 2);
   if (footer === 'solid_bar') {
-    // Gradient top edge blends footer into background — no sharp line artifact
-    const gradH = Math.round(barH * 0.4);
+    // Vertical gradient band (lighter top → fuller bottom) + soft blend above +
+    // thin top highlight — depth instead of a flat solid bar.
+    const gradH = Math.round(barH * 0.5);
     return `<defs>
-    <linearGradient id="footerBarGrad" x1="0" y1="${barTop - gradH}" x2="0" y2="${barTop}" gradientUnits="userSpaceOnUse">
+    <linearGradient id="footerBlend" x1="0" y1="${barTop - gradH}" x2="0" y2="${barTop}" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="${accent}" stop-opacity="0"/>
-      <stop offset="100%" stop-color="${accent}" stop-opacity="0.90"/>
+      <stop offset="100%" stop-color="${accent}" stop-opacity="0.82"/>
+    </linearGradient>
+    <linearGradient id="footerBarGrad" x1="0" y1="${barTop}" x2="0" y2="${height}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="${accent}" stop-opacity="0.80"/>
+      <stop offset="100%" stop-color="${accent}" stop-opacity="0.95"/>
     </linearGradient>
   </defs>
-  <rect x="0" y="${barTop - gradH}" width="${width}" height="${gradH}" fill="url(#footerBarGrad)"/>
-  <rect x="0" y="${barTop}" width="${width}" height="${barH}" fill="${accent}" opacity="0.90"/>
-  <text x="${Math.round(width / 2)}" y="${cy}" font-family="${detailFont}" font-size="${fontSize}" font-weight="600" letter-spacing="2" fill="${textColor}" text-anchor="middle" dominant-baseline="middle">${escapeXml(info.toUpperCase())}</text>`;
+  <rect x="0" y="${barTop - gradH}" width="${width}" height="${gradH}" fill="url(#footerBlend)"/>
+  <rect x="0" y="${barTop}" width="${width}" height="${barH}" fill="url(#footerBarGrad)"/>
+  <rect x="0" y="${barTop}" width="${width}" height="2" fill="#FFFFFF" opacity="0.12"/>
+  <text x="${Math.round(width / 2)}" y="${cy}" font-family="${detailFont}" font-size="${fontSize}" font-weight="600" letter-spacing="3" fill="${textColor}" text-anchor="middle" dominant-baseline="middle">${escapeXml(info.toUpperCase())}</text>`;
   }
   if (footer === 'transparent_bar') {
     const gradH = Math.round(barH * 0.6);
@@ -948,24 +1164,46 @@ function buildLineupStack(
 
 export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateLayoutSpec): string {
   const { width, height, contentType } = opts;
-  const spec = formatAdjust(layout, contentType);
+  const spec = applyTextOverlayDensityToSpec(
+    formatAdjust(layout, contentType),
+    opts.textOverlayDensity,
+  );
   const colors = resolveOverlayColors(opts);
-  const { heroFont, detailFont } = resolveOverlayFonts(opts, spec.heroStyle);
+  const { heroFont, detailFont } = resolveOverlayFonts(opts, spec.heroStyle, spec.family);
+  const scriptBrandHero = brandHeadingUsesScriptStyle(heroFont);
   const heroRaw = heroText(opts);
-  const heroDisplay = spec.heroUppercase ? heroRaw.toUpperCase() : heroRaw;
+  const heroDisplay = (spec.heroUppercase && !scriptBrandHero) ? heroRaw.toUpperCase() : heroRaw;
   const detailRaw = detailText(opts);
-  const taglineRaw = opts.tagline && spec.showTagline ? opts.tagline : '';
-  const brandRaw = spec.showBrand ? (opts.brandName ?? 'BRAND').toUpperCase() : '';
   const venueRaw = spec.showVenueBadge && opts.venueArea ? opts.venueArea.toUpperCase() : '';
 
-  const baseHero = contentType === 'story' ? 0.115 : 0.105;
-  const heroBaseSize = Math.round(width * baseHero * spec.heroScale);
+  // Display/impact families: larger hero (condensed fonts fit more text at bigger sizes)
+  const isDisplayFamily = (spec.family && FAMILY_FONT_PERSONALITY[spec.family]) === 'force_display';
+  const baseHero = contentType === 'story'
+    ? (isDisplayFamily ? 0.148 : 0.115)
+    : (isDisplayFamily ? 0.135 : 0.105);
+
+  // When text lives inside a left/right color-block panel, scale the hero
+  // against the PANEL width so text cannot overflow outside the panel.
+  // Using full `width` (1080px) with heroScale 1.4+ will always overflow
+  // a 44% panel that is only ~475px wide.
+  const panelReferenceWidth =
+    (spec.colorBlock === 'left_panel' || spec.colorBlock === 'right_panel')
+      ? Math.round(width * spec.colorBlockSize)
+      : width;
+
+  const heroBaseSize = Math.round(panelReferenceWidth * baseHero * spec.heroScale);
   const detailBaseSize = Math.round(heroBaseSize * (spec.stripOnly ? 0.85 : 0.38));
   const badgeBaseSize = Math.round(heroBaseSize * 0.28);
   const brandBaseSize = Math.round(heroBaseSize * 0.30);
   const taglineBaseSize = Math.round(heroBaseSize * 0.26);
   const bottomPad = Math.round(height * 0.055);
-  const padX = Math.round(width * 0.08);
+  // textBleed: text hugs the photo edge (like "VACATION IS CALLING" / "GET YOUR TAN").
+  // photoFirst: wide safe zone so script/minimal text floats in open photo space.
+  const padX = spec.textBleed
+    ? Math.round(width * 0.025)
+    : spec.photoFirst
+      ? Math.round(width * 0.07)
+      : Math.round(width * 0.08);
   const cx = width / 2;
 
   const band = buildOfferBand(spec, width, height, colors.accent, colors.primary, colors.shadow);
@@ -1022,28 +1260,57 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
   const stackAnchor: 'bottom' | 'center' = (
     spec.frostedCard && spec.textZone === 'center'
   ) || spec.textZone === 'center'
+    || (colorBlock as { centerAnchor?: boolean }).centerAnchor
     ? 'center'
     : 'bottom';
 
+  const taglineCandidate = opts.tagline && spec.showTagline ? opts.tagline.trim() : '';
   const detailContent = spec.bandMode !== 'none' && opts.tagline ? opts.tagline : detailRaw;
+  const taglineRaw = taglineCandidate
+    && !textsAreDuplicate(taglineCandidate, detailContent)
+    && !textsAreDuplicate(taglineCandidate, heroDisplay)
+    ? taglineCandidate
+    : '';
+  const brandInFooter = spec.posterFooter !== 'none';
+  const brandRaw = spec.showBrand && opts.brandName && !brandInFooter
+    ? (opts.brandName ?? 'BRAND').toUpperCase()
+    : '';
+
+  // Stack height guard: estimate total stack height and scale all font sizes
+  // down proportionally if the stack would overflow the available bounds.
+  // This prevents text from spilling outside panels, frosted cards, or bands.
+  const availableH = bounds.bottom - bounds.top;
+  const gapEst = Math.round(height * 0.014);
+  const layerCount = [heroDisplay, detailContent, taglineRaw, brandRaw].filter(Boolean).length;
+  const estimatedStackH =
+    heroBaseSize * 1.25 * Math.min(3, Math.ceil(heroDisplay.length / 12 || 1))
+    + (layerCount - 1) * detailBaseSize * 1.25
+    + layerCount * gapEst;
+  const overflowRatio = availableH > 0 ? estimatedStackH / availableH : 1;
+  const safeFactor = overflowRatio > 0.92 ? Math.min(1, 0.88 / overflowRatio) : 1;
+
+  const heroBaseSizeSafe = Math.round(heroBaseSize * safeFactor);
+  const detailBaseSizeSafe = Math.round(detailBaseSize * safeFactor);
+  const brandBaseSizeSafe = Math.round(brandBaseSize * safeFactor);
+  const taglineBaseSizeSafe = Math.round(taglineBaseSize * safeFactor);
 
   const stackLayers = layoutTextStack(
     [
       {
         key: 'hero',
         text: heroDisplay,
-        baseSize: heroBaseSize,
+        baseSize: heroBaseSizeSafe,
         trackingRatio: spec.heroTracking,
         fontFamily: heroFont,
-        fontWeight: spec.heroWeight,
-        fill: colors.text,
+        fontWeight: scriptBrandHero ? 400 : spec.heroWeight,
+        fill: colors.headline,
         opacity: 0.97,
         maxLines: 3,
       },
       {
         key: 'detail',
         text: detailContent,
-        baseSize: detailBaseSize,
+        baseSize: detailBaseSizeSafe,
         trackingRatio: 0.18,
         fontFamily: detailFont,
         fontWeight: 500,
@@ -1053,20 +1320,20 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
       },
       {
         key: 'tagline',
-        text: taglineRaw,
-        baseSize: taglineBaseSize,
-        trackingRatio: 0.08,
+        text: spec.heroStyle === 'script' ? taglineRaw : taglineRaw.toUpperCase(),
+        baseSize: taglineBaseSizeSafe,
+        trackingRatio: spec.heroStyle === 'script' ? 0.08 : 0.24,
         fontFamily: detailFont,
         fontWeight: 500,
-        fill: colors.accent,
-        opacity: 0.8,
-        fontStyle: spec.taglineItalic ? 'italic' : undefined,
+        fill: spec.heroStyle === 'script' ? colors.accent : colors.text,
+        opacity: spec.heroStyle === 'script' ? 0.85 : 0.74,
+        fontStyle: spec.heroStyle === 'script' && spec.taglineItalic ? 'italic' : undefined,
         maxLines: 2,
       },
       {
         key: 'brand',
         text: brandRaw,
-        baseSize: brandBaseSize,
+        baseSize: brandBaseSizeSafe,
         trackingRatio: 0.32,
         fontFamily: detailFont,
         fontWeight: 600,
@@ -1101,9 +1368,10 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
   const lineBelowY = accentHeroY + Math.round(accentBlockH / 2) + accentPad;
 
   const isPosterMode = spec.posterMode !== 'none';
-  const posterHeaderLabel = isPosterMode ? (opts.venueArea ?? opts.brandName ?? '') : '';
+  const headerVenue = opts.venueArea && !isGenericGeoLabel(opts.venueArea) ? opts.venueArea : '';
+  const posterHeaderLabel = isPosterMode ? (headerVenue || opts.brandName || '') : '';
   const posterHeaderBlock = buildPosterHeader(spec.posterHeader, width, colors.accent, colors.text, posterHeaderLabel, detailFont);
-  const footerInfo = [opts.venueArea, detailRaw].filter(Boolean).join('  ·  ');
+  const footerInfo = buildFooterInfo(opts, detailRaw, spec);
   const posterFooterBlock = buildPosterFooter(spec.posterFooter, width, height, colors.accent, colors.text, footerInfo, detailFont, opts.ticketLabel);
   const cornerOrnaments = spec.cornerOrnament ? buildCornerOrnaments(width, height, colors.accent) : '';
 
@@ -1130,12 +1398,12 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
   const cornerStamp = buildCornerStamp(spec, opts, width, height, colors.accent, colors.text, detailFont);
   const magazineDate = buildMagazineDate(spec, opts, width, height, colors.accent, detailFont);
   const sideLabel = buildSideVerticalLabel(spec, brandRaw, width, height, colors.accent, detailFont);
-  const svgFilters = buildSvgFilters(spec);
+  const svgFilters = buildSvgFilters(spec, colors.accent);
 
   let aboveHeroDate = '';
   if (spec.dateBadge === 'above_hero' && heroLayer) {
     const dateLabel = escapeXml((opts.date ?? opts.time ?? 'SOON').toUpperCase());
-    const dateFit = fitTextToWidth(dateLabel, bounds.maxWidth, Math.round(heroBaseSize * 0.32), 0.12, 0.6, 1);
+    const dateFit = fitTextToWidth(dateLabel, bounds.maxWidth, Math.round(heroBaseSizeSafe * 0.32), 0.12, 0.6, 1);
     aboveHeroDate = buildSvgTextBlock({
       x: bounds.anchorX,
       y: heroLayer.y - Math.round(heroLayer.fit.blockHeight * 0.65),
@@ -1158,10 +1426,12 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
       textAnchor: bounds.textAnchor,
       opacity: 0.92,
       fit: venueFit,
+      filter: 'softTextShadow',
     })
     : '';
 
-  const textBlocks = isPosterMode ? '' : stackLayers.map((layer) => {
+  const suppressStackForLineup = isPosterMode && LINEUP_POSTER_MODES.has(spec.posterMode);
+  const textBlocks = suppressStackForLineup ? '' : stackLayers.map((layer) => {
     if (layer.key === 'hero') {
       return buildHeroTextBlock(layer, bounds, spec, colors.accent, colors.shadow);
     }
@@ -1175,6 +1445,7 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
       opacity: layer.opacity,
       fontStyle: layer.fontStyle,
       fit: layer.fit,
+      filter: 'softTextShadow',
     });
   }).join('\n  ');
 

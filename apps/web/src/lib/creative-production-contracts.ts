@@ -34,7 +34,8 @@ export type CreativeIntent =
   | 'lead_generation'
   | 'seasonal_content'
   | 'ad_creative'
-  | 'google_business_update';
+  | 'google_business_update'
+  | 'post_service_client_result';
 
 export type CreativeRiskTier = 'low' | 'medium' | 'high' | 'blocked';
 
@@ -97,6 +98,14 @@ export interface TemplateFamilyContract {
   status: TemplateFamilyStatus;
 }
 
+export interface TenantGalleryPolicy {
+  allowedAssetIntents: CreativeAssetIntent[];
+  clientPhotoPolicy: 'allow' | 'approval_required' | 'blocked';
+  beforeAfterPolicy: 'allow' | 'approval_required' | 'blocked';
+  maxGalleryPhotos: number;
+  requireConsentMetadata: boolean;
+}
+
 export interface TenantCreativeProfile {
   tenantId: string;
   officeId?: string | null;
@@ -104,6 +113,9 @@ export interface TenantCreativeProfile {
   businessType?: string;
   platforms: CreativePlatform[];
   selectedContentNeeds: CreativeIntent[];
+  /** Explicit capability IDs (content + workflow). Empty → derived from contentNeeds + playbook. */
+  operatingCapabilities?: string[];
+  galleryPolicy?: TenantGalleryPolicy;
   selectedTemplateFamilies: string[];
   brandTone: string[];
   keywords: string[];

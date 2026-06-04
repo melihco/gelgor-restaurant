@@ -1,0 +1,150 @@
+/**
+ * Multi-photo Runway reel — strategy selection + payload helpers.
+ * Used by auto-produce, MissionContentFactory, AutoProductionFeed.
+ */
+
+export type RunwayReelStrategy = 'single' | 'multi_ref' | 'sequential';
+
+export interface MultiReelPhotoInput {
+  url: string;
+  description?: string;
+  tags?: string[];
+}
+
+const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
+
+export const RUNWAY_CLIP_COST_USD = 0.25;
+
+export function isUsableReelPhotoUrl(url: string): boolean {
+  const u = url.trim();
+  if (!u.startsWith('http')) return false;
+  return !CDN_HOSTS.some((h) => u.includes(h));
+}
+
+/** Pick montage vs blend vs single photo Runway path. */
+export function resolveRunwayReelStrategy(input: {
+  photoCount: number;
+  transitionStyle?: string;
+  treatment?: string;
+  templateUseCase?: string;
+  mood?: string;
+  contentType?: string;
+}): RunwayReelStrategy {
+  if (input.photoCount < 2) return 'single';
+
+  const trans = (input.transitionStyle ?? '').toLowerCase();
+  const ctx = [
+    input.treatment ?? '',
+    input.templateUseCase ?? '',
+    input.mood ?? '',
+    input.contentType ?? '',
+  ].join(' ').toLowerCase();
+
+  // Explicit opt-in to legacy multi_ref (gen4_turbo only uses the first image anyway).
+  if (/multi_ref|blend_only|single_frame_blend/.test(trans)) {
+    return 'multi_ref';
+  }
+
+  if (/montage|sequential|hard.?cut|wipe|slide|story.?beat|multi.?clip/.test(trans)) {
+    return 'sequential';
+  }
+
+  if (
+    input.photoCount >= 2
+    && /behind|menu|gallery|recap|tour|service|product|spotlight|ugc|social.?proof|carousel|multi/.test(ctx)
+  ) {
+    return 'sequential';
+  }
+
+  if (input.photoCount >= 2 && /energetic|dynamic|night|event|dj|party/.test(ctx)) {
+    return 'sequential';
+  }
+
+  // Default: 2+ gallery photos → one Runway clip per frame (true multi-photo reel).
+  return 'sequential';
+}
+
+export function estimateRunwayReelCostUsd(
+  strategy: RunwayReelStrategy,
+  photoCount: number,
+): number {
+  if (strategy === 'single') return RUNWAY_CLIP_COST_USD;
+  if (strategy === 'multi_ref') return RUNWAY_CLIP_COST_USD;
+  return RUNWAY_CLIP_COST_USD * Math.min(Math.max(photoCount, 2), 3);
+}
+
+export function maxPhotosForStrategy(strategy: RunwayReelStrategy): number {
+  if (strategy === 'sequential') return 3;
+  if (strategy === 'multi_ref') return 4;
+  return 1;
+}
+
+export function buildMultiReelPhotoInputs(
+  urls: string[],
+  galleryMeta: Record<string, { description?: string; contentTags?: string[]; tags?: string[] }>,
+  normalizeUrl: (u: string) => string,
+): MultiReelPhotoInput[] {
+  const out: MultiReelPhotoInput[] = [];
+  for (const raw of urls) {
+    if (!isUsableReelPhotoUrl(raw)) continue;
+    const entry = galleryMeta[raw]
+      ?? Object.entries(galleryMeta).find(([k]) => normalizeUrl(k) === normalizeUrl(raw))?.[1];
+    const tags = Array.isArray(entry?.contentTags)
+      ? entry!.contentTags!
+      : Array.isArray(entry?.tags)
+        ? entry!.tags!
+        : [];
+    out.push({
+      url: raw,
+      description: (entry?.description ?? '').slice(0, 200) || undefined,
+      tags: tags.slice(0, 12),
+    });
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
+export interface GenerateMultiReelRequest {
+  workspaceId: string;
+  photos: MultiReelPhotoInput[];
+  headline: string;
+  caption: string;
+  brandName: string;
+  brandLocation?: string;
+  vibeProfile?: Record<string, unknown>;
+  brandThemeGrading?: { look?: string; lut_directive?: string };
+  strategy: 'multi_ref' | 'sequential';
+  ratio?: string;
+  duration?: number;
+  /** VPS / scene brief visual direction (English-safe slice fed to director). */
+  agentVisualDirection?: string;
+  cameraMotion?: string;
+}
+
+export async function callGenerateMultiReel(
+  baseUrl: string,
+  body: GenerateMultiReelRequest,
+  timeoutMs = 280_000,
+): Promise<{ videoUrl: string | null; strategy: string; photoCount: number; error?: string }> {
+  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/generate-multi-reel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      videoUrl: null,
+      strategy: body.strategy,
+      photoCount: body.photos.length,
+      error: (data as { error?: string }).error ?? `HTTP ${res.status}`,
+    };
+  }
+  return {
+    videoUrl: ((data as { videoUrl?: string }).videoUrl ?? null) as string | null,
+    strategy: String((data as { strategy?: string }).strategy ?? body.strategy),
+    photoCount: Number((data as { photoCount?: number }).photoCount ?? body.photos.length),
+    error: (data as { error?: string }).error,
+  };
+}

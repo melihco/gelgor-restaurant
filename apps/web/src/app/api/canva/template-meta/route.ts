@@ -10,6 +10,9 @@ export const runtime = 'nodejs';
  */
 export async function PATCH(request: NextRequest) {
   try {
+    const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+    if (canvaBlocked) return canvaBlocked;
+
     const body = await request.json() as {
       tenantId?: string;
       templateId?: string;

@@ -55,6 +55,12 @@ import {
   SectionHeader,
   StatusPill,
 } from '@/tailadmin/components/application/PageElements';
+import { TenantOperatingCapabilitiesEditor } from '@/components/brand/TenantOperatingCapabilitiesEditor';
+import {
+  evaluateGalleryAssetPolicy,
+  resolveTenantOperatingProfile,
+} from '@/lib/tenant-operating-policy';
+import type { SaveCompanyProfileRequest } from '@/types';
 
 interface CanvaStatus {
   tenantId?: string;
@@ -281,6 +287,8 @@ function assignmentRequestFromTemplate(
 // ── Gallery Analysis Panel ────────────────────────────────────────────────────
 
 import type { GalleryPhotoAnalysis } from '@/app/api/analyze-gallery/route';
+import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
+import { normalizeSectorId } from '@/lib/announcement-template-library';
 
 function GalleryAnalysisPanel({
   urls,
@@ -625,6 +633,17 @@ export default function BrandHubPage() {
     mutationFn: (payload: UpsertTenantMediaAssetRequest) => apiClient.createTenantMediaAsset(payload),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['brand-context-assets', tenantId, officeId] }),
   });
+  const capabilitiesMutation = useMutation({
+    mutationFn: (payload: { operatingCapabilities: string; contentNeeds: string }) => {
+      if (!companyProfile) throw new Error('Company profile not loaded');
+      return apiClient.saveCompanyProfile({
+        ...companyProfile,
+        operatingCapabilities: payload.operatingCapabilities,
+        contentNeeds: payload.contentNeeds,
+      } as SaveCompanyProfileRequest);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['company-profile'] }),
+  });
   const officeProfileMutation = useMutation({
     mutationFn: (payload: UpsertOfficeBrandProfileRequest) => apiClient.upsertOfficeBrandProfile(payload),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['brand-context-office-profiles', tenantId] }),
@@ -848,6 +867,11 @@ export default function BrandHubPage() {
       )}
       {activeTab === 'templates' && (
         <div className="space-y-4">
+          <BrandTemplateLibraryPanel
+            workspaceId={tenantId}
+            sector={normalizeSectorId(companyProfile?.industry ?? '')}
+            variant="desktop"
+          />
           <ShotstackTemplateGallery workspaceId={tenantId} />
           <CreatomateTemplateSelectorPanel workspaceId={tenantId} />
           <BrandTemplateConfigPanel workspaceId={tenantId} />
@@ -1045,6 +1069,26 @@ export default function BrandHubPage() {
         </div>
       </GlassPanel>
 
+      {companyProfile && tenantId && (
+        <GlassPanel tone="indigo">
+          <SectionHeader
+            title="İşletme yetenekleri & galeri politikası"
+            subtitle="Sektöre göre içerik niyetleri ve galeri upload kuralları — berber vs cafe ayrımı burada yapılır."
+          />
+          <TenantOperatingCapabilitiesEditor
+            tenantId={tenantId}
+            industry={companyProfile.industry}
+            contentNeedsJson={companyProfile.contentNeeds}
+            operatingCapabilitiesJson={companyProfile.operatingCapabilities}
+            galleryPolicyJson={companyProfile.galleryPolicy}
+            riskRulesJson={companyProfile.riskRules}
+            customRules={companyProfile.customRules}
+            saving={capabilitiesMutation.isPending}
+            onSave={(payload) => capabilitiesMutation.mutate(payload)}
+          />
+        </GlassPanel>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <OfficeBrandProfilePanel
           officeId={officeId}
@@ -1055,7 +1099,9 @@ export default function BrandHubPage() {
           onSave={(payload) => officeProfileMutation.mutate(payload)}
         />
         <TenantAssetsPanel
+          tenantId={tenantId}
           officeId={officeId}
+          companyProfile={companyProfile}
           assets={mediaAssets}
           saving={assetMutation.isPending}
           error={assetMutation.error?.message}
@@ -1359,19 +1405,44 @@ function OfficeBrandProfilePanel({
   );
 }
 
+const EXTENDED_ASSET_TYPES = [
+  ...ASSET_TYPE_OPTIONS,
+  'client_photo',
+  'service_result',
+  'before_after_image',
+  'venue_reference',
+];
+
 function TenantAssetsPanel({
+  tenantId,
   officeId,
+  companyProfile,
   assets,
   saving,
   error,
   onCreate,
 }: {
+  tenantId: string;
   officeId: string;
+  companyProfile?: CompanyProfile;
   assets: TenantMediaAsset[];
   saving: boolean;
   error?: string;
   onCreate: (payload: UpsertTenantMediaAssetRequest) => void;
 }) {
+  const operatingProfile = useMemo(() => {
+    if (!companyProfile) return null;
+    return resolveTenantOperatingProfile({
+      tenantId,
+      industry: companyProfile.industry,
+      contentNeedsJson: companyProfile.contentNeeds,
+      operatingCapabilitiesJson: companyProfile.operatingCapabilities,
+      galleryPolicyJson: companyProfile.galleryPolicy,
+      riskRulesJson: companyProfile.riskRules,
+      customRules: companyProfile.customRules,
+    });
+  }, [companyProfile, tenantId]);
+
   const [draft, setDraft] = useState({
     assetType: 'hero_image',
     url: '',
@@ -1382,6 +1453,18 @@ function TenantAssetsPanel({
     priority: 0,
     isApproved: true,
   });
+
+  const allowedAssetTypes = useMemo(() => {
+    if (!operatingProfile) return EXTENDED_ASSET_TYPES;
+    return EXTENDED_ASSET_TYPES.filter(
+      (type) => evaluateGalleryAssetPolicy(operatingProfile, type).decision !== 'blocked',
+    );
+  }, [operatingProfile]);
+
+  const assetGate = operatingProfile
+    ? evaluateGalleryAssetPolicy(operatingProfile, draft.assetType)
+    : null;
+
   const approvedCount = assets.filter((asset) => asset.isApproved).length;
 
   return (
@@ -1392,7 +1475,17 @@ function TenantAssetsPanel({
         count={assets.length}
       />
       <div className="grid gap-3">
-        <SelectField label="Asset type" value={draft.assetType} options={ASSET_TYPE_OPTIONS} onChange={(assetType) => setDraft((cur) => ({ ...cur, assetType }))} />
+        <SelectField label="Asset type" value={draft.assetType} options={allowedAssetTypes} onChange={(assetType) => setDraft((cur) => ({ ...cur, assetType }))} />
+        {assetGate?.decision === 'approval_required' && (
+          <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            Bu asset türü tenant politikanızda onay gerektirir — kayıt otomatik olarak onaysız oluşturulur.
+          </p>
+        )}
+        {assetGate?.decision === 'blocked' && (
+          <p className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            Bu asset türü bu işletme için kapalı.
+          </p>
+        )}
         <TextField label="Canva asset id / storage key" value={draft.storageKey} onChange={(storageKey) => setDraft((cur) => ({ ...cur, storageKey }))} placeholder="Canva image asset id" />
         <TextField label="Preview URL" value={draft.url} onChange={(url) => setDraft((cur) => ({ ...cur, url }))} placeholder="https://..." />
         <TextField label="Display name" value={draft.displayName} onChange={(displayName) => setDraft((cur) => ({ ...cur, displayName }))} />
@@ -1413,7 +1506,7 @@ function TenantAssetsPanel({
       {error && <p className="mt-3 rounded-lg border border-error-200 bg-error-50 px-3 py-2 text-xs text-error-600 dark:border-error-500/20 dark:bg-error-500/15 dark:text-error-500">{error}</p>}
       <Button
         type="button"
-        disabled={saving || !draft.url || !draft.storageKey}
+        disabled={saving || !draft.url || !draft.storageKey || assetGate?.decision === 'blocked'}
         onClick={() => onCreate({
           officeId: officeId || null,
           assetType: draft.assetType,
@@ -1422,7 +1515,7 @@ function TenantAssetsPanel({
           displayName: draft.displayName,
           tags: JSON.stringify(splitCsv(draft.tags)),
           usageContext: draft.usageContext,
-          isApproved: draft.isApproved,
+          isApproved: assetGate?.forceUnapproved ? false : draft.isApproved,
           priority: draft.priority,
         })}
         className="mt-4 w-full"

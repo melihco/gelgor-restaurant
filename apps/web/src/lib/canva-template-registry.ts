@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeCanvaFieldName } from '@/lib/canva-field-dictionary';
 import { DEFAULT_TENANT_ID } from '@/lib/runtime-config';
 import type {
   CanvaAspectRatio,
@@ -136,7 +137,7 @@ export async function syncTemplateFieldContracts(
 
     contracts.push({
       fieldName,
-      standardName: null, // normalized by consumers using canva-field-dictionary
+      standardName: normalizeCanvaFieldName(fieldName),
       type: field.type === 'image' ? 'image' : 'text',
       maxLength,
       limitSource,

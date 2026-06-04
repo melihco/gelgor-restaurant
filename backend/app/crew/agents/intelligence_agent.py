@@ -9,6 +9,7 @@ from crewai import Agent, LLM
 
 from app.config import get_settings
 from app.crew.context import BrandInfo, build_brand_context_prompt
+from app.crew.cta_localization import resolve_output_language
 from app.crew.prompts.intelligence_prompts import (
     INTELLIGENCE_AGENT_BACKSTORY,
     INTELLIGENCE_AGENT_GOAL,
@@ -28,11 +29,15 @@ def create_intelligence_agent(
     Claude's reasoning and contextual synthesis.
     """
     settings = get_settings()
+    brand_context_block = build_brand_context_prompt(brand, profile="minimal")
+    output_language = resolve_output_language(brand.languages)
 
     backstory = INTELLIGENCE_AGENT_BACKSTORY.format(
         business_name=brand.business_name,
         business_type=brand.business_type,
-        location=brand.location or "Turkey",
+        location=brand.location or "not specified",
+        output_language=output_language,
+        brand_context=brand_context_block,
     )
     goal = INTELLIGENCE_AGENT_GOAL.format(business_name=brand.business_name)
 

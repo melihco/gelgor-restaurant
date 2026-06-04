@@ -10,10 +10,12 @@ import {
   type CanvaTemplateMetadata,
 } from '@/lib/canva-template-selection';
 import { getCanvaTenantId } from '@/lib/canva-template-registry';
+import { canvaExportFormatForKind, persistCanvaExportFile } from '@/lib/canva-export-helper';
 import { resolveNexusCanvaAssetIds } from '@/lib/nexus-brand-context';
 import { API_BASE_URL } from '@/lib/runtime-config';
-import { getRendererAdapter, RendererAuthError, type RendererProvider } from '@/lib/renderer-adapters';
+import { getRendererAdapter, RendererAuthError, type RendererExportFormat, type RendererProvider } from '@/lib/renderer-adapters';
 import { auditTemplateDecision, categorizeRendererFailure, recordRendererMetric } from '@/lib/renderer-observability';
+import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +35,9 @@ interface CanvaArtifactLineage {
 
 export async function GET(request: NextRequest) {
   try {
+    const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+    if (canvaBlocked) return canvaBlocked;
+
     const jobId = request.nextUrl.searchParams.get('jobId');
     if (!jobId) {
       return NextResponse.json({ error: 'Missing renderer jobId.' }, { status: 400 });
@@ -62,6 +67,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+    if (canvaBlocked) return canvaBlocked;
+
     const body = await request.json() as {
       tenantId?: string;
       officeId?: string;
@@ -82,9 +90,11 @@ export async function POST(request: NextRequest) {
     }
 
     const resolvedAssets = await resolveNexusCanvaAssetIds(body.signal, tenantId, officeId);
-    const signal: CanvaTemplateDecisionInput = {
+    const recentTemplateIds = await fetchRecentTemplateIds(tenantId);
+    let signal: CanvaTemplateDecisionInput = {
       ...resolvedAssets,
       ...body.signal,
+      recentlyUsedTemplateIds: recentTemplateIds,
     };
 
     const templates = await renderer.listTemplates({ templateCatalog: body.templateCatalog, tenantId, officeId });
@@ -142,6 +152,8 @@ export async function POST(request: NextRequest) {
     if (templateKind && templateKind !== signal.kind) {
       signal = { ...signal, kind: templateKind };
     }
+
+    const fieldContracts = extractTemplateFieldContracts(decision.template, signal.kind);
 
     const auditEvent = auditTemplateDecision({
       tenantId,
@@ -257,7 +269,30 @@ export async function POST(request: NextRequest) {
     }
 
     const design = renderResult.design ?? renderResult.job?.result?.design;
-    if (design) {
+    const editUrl = design?.url ?? design?.urls?.edit_url;
+    const thumbnailUrl = design?.thumbnail?.url;
+
+    // Export downloadable file (PNG for post/story, MP4 for reel) — required for Instagram publish
+    let exportMeta: { format: RendererExportFormat; permanentPreviewUrl?: string; exportUrl?: string } | undefined;
+    if (design?.id) {
+      const exportFormat = canvaExportFormatForKind(signal.kind);
+      try {
+        const exportResponse = await renderer.export({ designId: design.id, format: exportFormat });
+        const exportedUrl = exportResponse.exportUrl;
+        if (exportedUrl) {
+          const permanentPreviewUrl = await persistCanvaExportFile(
+            exportedUrl,
+            design.id,
+            body.title ?? `SmartAgency - ${signal.title}`,
+            exportFormat,
+            renderer.provider,
+          );
+          exportMeta = { format: exportFormat, permanentPreviewUrl, exportUrl: exportedUrl };
+        }
+      } catch {
+        // Autofill succeeds even if export fails — client can retry via /api/canva/export-design
+      }
+
       void persistCanvaArtifact({
         title: body.title ?? `SmartAgency - ${signal.title}`,
         signal,
@@ -275,9 +310,10 @@ export async function POST(request: NextRequest) {
         score: decision.score,
         decision,
         designId: design.id,
-        editUrl: design.url ?? design.urls?.edit_url,
-        thumbnailUrl: design.thumbnail?.url,
+        editUrl,
+        thumbnailUrl,
         jobId: renderResult.job?.id,
+        exportMeta,
       });
     }
 
@@ -334,6 +370,14 @@ export async function POST(request: NextRequest) {
       auditId: auditEvent.id,
       job: renderResult.job,
       design,
+      export: exportMeta ?? null,
+      fieldContracts: fieldContracts.map((c) => ({
+        field: c.fieldName,
+        std: c.standardName,
+        maxChars: c.maxLength,
+        source: c.limitSource,
+        required: c.required,
+      })),
     });
   } catch (error) {
     if (error instanceof RendererAuthError) {
@@ -438,8 +482,13 @@ async function persistCanvaArtifact(data: {
   editUrl?: string;
   thumbnailUrl?: string;
   jobId?: string;
+  exportMeta?: { format: RendererExportFormat; permanentPreviewUrl?: string; exportUrl?: string };
 }) {
-  if (!data.editUrl && !data.thumbnailUrl) return;
+  if (!data.editUrl && !data.thumbnailUrl && !data.exportMeta?.permanentPreviewUrl) return;
+
+  const isReel = data.signal.kind.includes('reel');
+  const downloadUrl = data.exportMeta?.permanentPreviewUrl;
+  const publishUrl = downloadUrl ?? data.thumbnailUrl ?? data.editUrl;
 
   try {
     await fetch(`${API_BASE_URL}/api/artifacts/creative`, {
@@ -447,14 +496,15 @@ async function persistCanvaArtifact(data: {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: data.title,
-        contentUrl: data.editUrl ?? data.thumbnailUrl,
+        contentUrl: publishUrl,
         content: JSON.stringify({
           renderedPreview: {
             kind: data.signal.kind,
             title: data.signal.title,
             summary: data.signal.summary ?? data.signal.caption,
             caption: data.signal.caption,
-            imageUrl: data.thumbnailUrl,
+            imageUrl: isReel ? undefined : (downloadUrl ?? data.thumbnailUrl),
+            videoUrl: isReel ? downloadUrl : undefined,
             cta: data.signal.cta,
             hashtags: data.signal.hashtags,
             canvaDesign: {
@@ -462,6 +512,9 @@ async function persistCanvaArtifact(data: {
               designId: data.designId,
               editUrl: data.editUrl,
               thumbnailUrl: data.thumbnailUrl,
+              exportUrl: data.exportMeta?.exportUrl,
+              permanentPreviewUrl: data.exportMeta?.permanentPreviewUrl,
+              exportFormat: data.exportMeta?.format,
               templateId: data.templateId,
               templateTitle: data.templateTitle,
               score: data.score,
@@ -474,6 +527,10 @@ async function persistCanvaArtifact(data: {
               lineage: data.lineage,
             },
           },
+          imageUrl: isReel ? undefined : (downloadUrl ?? data.thumbnailUrl),
+          videoUrl: isReel ? downloadUrl : undefined,
+          canvaDownloadUrl: downloadUrl,
+          canvaEditUrl: data.editUrl,
         }),
         platform: 'canva',
         contentType: data.signal.kind,
@@ -488,6 +545,12 @@ async function persistCanvaArtifact(data: {
           canvaTemplateTitle: data.templateTitle,
           canvaScore: data.score,
           canvaJobId: data.jobId,
+          canvaEditUrl: data.editUrl,
+          canvaExportUrl: data.exportMeta?.exportUrl,
+          permanentPreviewUrl: data.exportMeta?.permanentPreviewUrl,
+          canvaExportFormat: data.exportMeta?.format,
+          imageUrl: isReel ? undefined : (downloadUrl ?? data.thumbnailUrl),
+          videoUrl: isReel ? downloadUrl : undefined,
           canvaEligibility: data.decision.eligibility,
           canvaRiskTier: data.decision.riskTier,
           canvaApprovalRequired: data.decision.approvalRequired,

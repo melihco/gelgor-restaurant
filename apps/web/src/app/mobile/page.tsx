@@ -11,34 +11,40 @@ import { OnboardingFlow } from './_components/screens/OnboardingFlow';
 import { apiClient } from '@/lib/api-client';
 import { getSessionToken } from '@/lib/session-token';
 import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
-import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
+import { BrandLoadingScreen } from './_components/BrandLoadingScreen';
 
-import { AICommandCenter }    from './_components/screens/AICommandCenter';
-import { CampaignDetail }     from './_components/screens/CampaignDetail';
-import { CreativePreview }    from './_components/screens/CreativePreview';
-import { ApprovalFeedback }   from './_components/screens/ApprovalFeedback';
-import { AIActivity }         from './_components/screens/AIActivity';
-import { BrandConstitution }  from './_components/screens/BrandConstitution';
-import { Templates }          from './_components/screens/Templates';
-import { Insights }           from './_components/screens/Insights';
-import { Campaigns }          from './_components/screens/Campaigns';
-import { Outputs }            from './_components/screens/Outputs';
-import { Reviews, ReviewDetail } from './_components/screens/Reviews';
-import { AgentsScreen }       from './_components/screens/AgentsScreen';
-import { NewBrief }           from './_components/screens/NewBrief';
-import { AdsOverview }        from './_components/screens/AdsOverview';
-import { MoreMenu }           from './_components/screens/MoreMenu';
-import { NotificationsScreen }from './_components/screens/NotificationsScreen';
-import { SettingsScreen }     from './_components/screens/SettingsScreen';
-import { VisitorsScreen }     from './_components/screens/VisitorsScreen';
-import { BillingScreen }      from './_components/screens/BillingScreen';
-import { MissionHub }            from './_components/screens/MissionHub';
-import { BrandRulesScreen }      from './_components/screens/BrandRulesScreen';
-import { MissionContentFactory } from './_components/screens/MissionContentFactory';
-import { PlatformFeed }          from './_components/screens/PlatformFeed';
-import { PlatformPreviewStudio } from './_components/screens/PlatformPreviewStudio';
-import { ReelsStudio }           from './_components/screens/ReelsStudio';
-import CanvaTemplatesScreen      from './_components/screens/CanvaTemplatesScreen';
+import {
+  AICommandCenter,
+  CampaignDetail,
+  CreativePreview,
+  ApprovalFeedback,
+  AIActivity,
+  BrandConstitution,
+  Templates,
+  Insights,
+  Campaigns,
+  Outputs,
+  Reviews,
+  ReviewDetail,
+  AgentsScreen,
+  NewBrief,
+  AdsOverview,
+  MoreMenu,
+  NotificationsScreen,
+  SettingsScreen,
+  VisitorsScreen,
+  BillingScreen,
+  MissionHub,
+  BrandRulesScreen,
+  MissionContentFactory,
+  PlatformFeed,
+  PlatformPreviewStudio,
+  ReelsStudio,
+  CanvaTemplatesScreen,
+} from './_components/mobile-screen-loaders';
+import { MobileArtifactsPoller } from './_components/MobileArtifactsPoller';
+import { TenantBrandProvider } from './_components/TenantBrandProvider';
+import { resolveClientScreen } from './_components/mobile-client-config';
 
 /* ─── Mobile-scoped CSS ──────────────────────────────────────────────
  * IMPORTANT: All rules MUST be scoped to .sa-mobile to avoid leaking
@@ -75,32 +81,40 @@ const CSS = `
 
   /* ── Keyframes ── */
   @keyframes liveGlow {
-    0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.55); }
-    50%      { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+    0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.50); }
+    50%      { box-shadow: 0 0 0 7px rgba(16,185,129,0); }
   }
   @keyframes violetGlow {
-    0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.45); }
-    50%      { box-shadow: 0 0 0 8px rgba(124,58,237,0); }
+    0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,0.45); }
+    50%      { box-shadow: 0 0 0 9px rgba(139,92,246,0); }
+  }
+  @keyframes goldGlow {
+    0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
+    50%      { box-shadow: 0 0 0 8px rgba(245,158,11,0); }
   }
   @keyframes shimmer {
-    0%,100% { opacity: 0.35; } 50% { opacity: 1; }
+    0%,100% { opacity: 0.30; } 50% { opacity: 1; }
   }
   @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(16px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(20px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
   }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes scaleUp {
-    from { opacity: 0; transform: scale(0.95); }
+    from { opacity: 0; transform: scale(0.94); }
     to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(32px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
   @keyframes spinSlow {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
   }
   @keyframes breathe {
-    0%,100% { transform: scale(1);    opacity: 0.6; }
-    50%      { transform: scale(1.06); opacity: 1;   }
+    0%,100% { transform: scale(1);    opacity: 0.55; }
+    50%      { transform: scale(1.07); opacity: 1;   }
   }
   @keyframes storyProgress {
     from { width: 0%; }
@@ -110,6 +124,15 @@ const CSS = `
     0%   { transform: translateX(0); }
     100% { transform: translateX(-50%); }
   }
+  @keyframes navPop {
+    0%   { opacity: 0; transform: translateY(12px) scale(0.95); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes splashLogoIn {
+    from { opacity: 0; transform: scale(0.9) translateY(10px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .sa-mobile .splash-logo { animation: splashLogoIn 520ms cubic-bezier(0.34,1.2,0.64,1) both; }
   @keyframes shimmerSlide {
     0%   { background-position: 200% 0; }
     100% { background-position: -200% 0; }
@@ -119,13 +142,14 @@ const CSS = `
     100% { opacity: 1; transform: scale(1) translateY(0); }
   }
 
-  .sa-mobile .screen-enter { animation: fadeUp 280ms cubic-bezier(0.34,1.2,0.64,1) both; }
+  .sa-mobile .screen-enter { animation: fadeUp 300ms cubic-bezier(0.22,1,0.36,1) both; }
+  .sa-mobile .nav-enter   { animation: navPop 360ms cubic-bezier(0.34,1.2,0.64,1) both; }
 `;
 
 const NO_NAV = new Set(['creative-preview', 'approval', 'new-brief', 'platform-preview']);
 
 function ScreenRouter() {
-  const screen = useMobileStore(s => s.screen);
+  const screen = resolveClientScreen(useMobileStore(s => s.screen));
   const node = (() => {
     switch (screen) {
       case 'home':             return <AICommandCenter />;
@@ -162,19 +186,7 @@ function ScreenRouter() {
 }
 
 function Splash() {
-  const { t } = useTheme();
-  return (
-    <div style={{ height: '100dvh', background: t.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
-      <div style={{ width: 64, height: 64, borderRadius: 20, overflow: 'hidden', boxShadow: '0 0 40px rgba(124,58,237,0.4)' }}>
-        <SmartAgencyLogo variant="markOnly" priority className="!h-16 !w-16 !rounded-[20px]" />
-      </div>
-      <div style={{ display: 'flex', gap: 6 }}>
-        {[0,1,2].map(i => (
-          <div key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: 'rgba(167,139,250,0.5)', animation: `shimmer 1.4s ease-in-out ${i*0.18}s infinite` }} />
-        ))}
-      </div>
-    </div>
-  );
+  return <BrandLoadingScreen />;
 }
 
 function AppShell() {
@@ -283,10 +295,15 @@ function AppShell() {
 
   return (
     <>
-      <div style={{ ...base, overflowY: noNav ? 'hidden' : 'auto' }}>
+      <div style={{
+        ...base,
+        overflowY: noNav ? 'hidden' : 'auto',
+        // Extra padding for floating pill nav (58px pill + 18px gap + safe area)
+        paddingBottom: noNav ? 0 : 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
+      }}>
         <ScreenRouter />
-        {!noNav && <MobileNav />}
       </div>
+      {!noNav && <MobileNav />}
       {showProfile && <ProfileSheet onClose={closeProfile} />}
     </>
   );
@@ -298,7 +315,10 @@ export default function MobilePage() {
       <style>{CSS}</style>
       {/* sa-mobile scopes all CSS rules — prevents leaking into admin panel */}
       <div className="sa-mobile" style={{ display: 'contents' }}>
-        <AppShell />
+        <TenantBrandProvider>
+          <MobileArtifactsPoller />
+          <AppShell />
+        </TenantBrandProvider>
       </div>
     </MobileThemeProvider>
   );

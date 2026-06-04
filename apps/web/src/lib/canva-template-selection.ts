@@ -127,6 +127,8 @@ export interface CanvaTemplateDecisionInput {
    * Anahtarlar Canva dataset adı veya sözlükteki standart ad (headline, body, …) olabilir.
    */
   canvaFieldCopy?: Partial<Record<string, string>>;
+  /** Son üretimlerde kullanılan Canva template ID'leri — çeşitlilik cezası */
+  recentlyUsedTemplateIds?: string[];
 }
 
 export type CanvaTemplateEligibility = 'eligible' | 'needs_setup' | 'blocked';
@@ -309,6 +311,11 @@ export function selectCanvaTemplate(
     score += Math.min(20, filledCount * 5);
     score += template.brandFit ?? 0;
     score += template.priority ?? 0;
+
+    if (input.recentlyUsedTemplateIds?.includes(template.id)) {
+      score -= 35;
+      reasons.push('recently used template — diversity penalty');
+    }
 
     if (missingFields.length > 0) {
       score -= Math.min(40, missingFields.length * 10);

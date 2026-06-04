@@ -28,14 +28,18 @@ The API now checks quota before:
 Agent runs are metered into `TenantSubscription.TasksUsedThisPeriod`.
 Provider action usage is calculated from `ExecutionJob` records in the active subscription period.
 
-## Package-Derived Provider Quotas
+## Package-Derived Quotas (PackagePlanCatalog)
 
-- `starter`: 10 provider actions, 0 live actions
-- `growth`: 50 provider actions, 10 live actions
-- `performance`: 150 provider actions, 50 live actions
-- `executive`: unlimited provider and live actions
+| Plan | Agent runs | Provider | Live | LLM tokens | SA Kredi/ay |
+|------|------------|----------|------|------------|-------------|
+| starter | 12 | 15 | 0 | 200k | 5.000 |
+| growth | 28 | 45 | 8 | 500k | 15.000 |
+| performance | 65 | 140 | 40 | 1M | 40.000 |
+| executive | ∞ | ∞ | ∞ | ∞ | 150.000 |
 
-Token limits are also exposed for metering visibility.
+Monthly output promises (missions × ~7 posts): Starter 12/84, Growth 28/196, Performance 65/455.
+
+Token wallet exposes `cost_profit_ratio` (maliyet/kar) and `effective_margin_percent` on Usage & Plan screens.
 
 ## Frontend
 

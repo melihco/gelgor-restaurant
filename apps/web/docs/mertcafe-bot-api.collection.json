@@ -1,0 +1,302 @@
+{
+  "info": {
+    "name": "Mertcafe Bot API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://web-production-02d278.up.railway.app"
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Kayıt Oluştur",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/register",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "register"
+          ]
+        },
+        "description": "Yeni bir işletme kaydı oluşturur ve api_key döner. Dönen api_key'i collection variable olarak kaydedin."
+      }
+    },
+    {
+      "name": "2. İşletme Bilgilerini Kaydet",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"business_name\": \"Miş Güzellik Salonu\",\n  \"menu\": \"Saç kesimi: 150₺\\nBoya: 250₺\\nManikür: 100₺\",\n  \"hours\": \"Hafta içi 09:00-19:00, Cumartesi 10:00-17:00\",\n  \"address\": \"Bağcılar, İstanbul\",\n  \"phone\": \"+90 555 123 4567\",\n  \"price_range\": \"100₺ - 500₺\",\n  \"notes\": \"Randevu için DM atabilirsiniz\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/setup",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "setup"
+          ]
+        },
+        "description": "İşletme bilgilerini kaydeder. Chatbot bu bilgileri kullanarak müşterilere cevap verir. business_name, menu ve hours zorunlu. Bağlantı kurulmadan önce veya sonra çağrılabilir."
+      }
+    },
+    {
+      "name": "3. Instagram Bağlama URL'i Al",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/connect/instagram?api_key={{api_key}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "connect",
+            "instagram"
+          ],
+          "query": [
+            {
+              "key": "api_key",
+              "value": "{{api_key}}"
+            }
+          ]
+        },
+        "description": "Zernio üzerinden Instagram OAuth bağlama URL'ini döner. Dönen auth_url'e kullanıcıyı yönlendirin. Bağlantı tamamlandığında /api/callback otomatik çağrılır."
+      }
+    },
+    {
+      "name": "4. Bağlantı Durumu",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/status?api_key={{api_key}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "status"
+          ],
+          "query": [
+            {
+              "key": "api_key",
+              "value": "{{api_key}}"
+            }
+          ]
+        },
+        "description": "Instagram ve Meta Ads bağlantısının aktif olup olmadığını döner."
+      }
+    },
+    {
+      "name": "4b. Meta Ads Hesabı Bağla",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"ads_account_id\": \"act_1234567890\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/connect/meta-ads",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "connect",
+            "meta-ads"
+          ]
+        },
+        "description": "Meta Business Manager reklam hesap ID'sini kaydeder. act_... formatında olmalı. Reklam oluşturmak ve boost etmek için gerekli. ÖNEMLİ: Instagram OAuth sırasında Meta Ads izinleri de verilmiş olmalı."
+      }
+    },
+    {
+      "name": "5a. Feed Post At",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"content\": \"Post açıklaması\",\n  \"image_url\": \"https://örnek-görsel.jpg\",\n  \"hashtags\": [\"tag1\", \"tag2\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/post",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "post"
+          ]
+        },
+        "description": "Standart feed post atar. image_url zorunlu. post_type belirtilmezse varsayılan feed'dir."
+      }
+    },
+    {
+      "name": "5b. Story At",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"content\": \"\",\n  \"image_url\": \"https://örnek-görsel.jpg\",\n  \"post_type\": \"story\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/post",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "post"
+          ]
+        },
+        "description": "Instagram Story atar. Görsel 1080x1920 (9:16) olmalı. Story'de metin gösterilmez."
+      }
+    },
+    {
+      "name": "5c. Reels At",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"content\": \"Reel açıklaması\",\n  \"video_url\": \"https://örnek-video.mp4\",\n  \"post_type\": \"reels\",\n  \"share_to_feed\": true,\n  \"hashtags\": [\"tag1\", \"tag2\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/post",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "post"
+          ]
+        },
+        "description": "Instagram Reels atar. video_url zorunlu. Video dikey (9:16), max 90 saniye, H.264 codec. share_to_feed true ise feed'de de görünür."
+      }
+    },
+    {
+      "name": "5d. Carousel At",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"content\": \"Carousel açıklaması\",\n  \"post_type\": \"carousel\",\n  \"media_urls\": [\n    \"https://görsel-1.jpg\",\n    \"https://görsel-2.jpg\",\n    \"https://görsel-3.jpg\"\n  ],\n  \"hashtags\": [\"tag1\", \"tag2\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/post",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "post"
+          ]
+        },
+        "description": "Çoklu görsel/video carousel atar. media_urls zorunlu, en az 2 eleman gerekli. URL .mp4/.mov ile bitiyorsa video, aksi halde görsel sayılır. Maksimum 10 medya."
+      }
+    },
+    {
+      "name": "6a. Yeni Reklam Oluştur",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"image_url\": \"https://örnek-görsel.jpg\",\n  \"headline\": \"Yeni Sezonun Lezzetleri\",\n  \"body\": \"Sizi bekliyoruz. Rezervasyon için DM atın.\",\n  \"link_url\": \"https://işletme-sitesi.com\",\n  \"goal\": \"engagement\",\n  \"budget\": 100,\n  \"budget_type\": \"daily\",\n  \"start_date\": \"\",\n  \"end_date\": \"\",\n  \"placement\": \"all\",\n  \"countries\": [\"TR\"],\n  \"gender\": \"all\",\n  \"age_min\": 18,\n  \"age_max\": 65,\n  \"interests\": [\"yemek\", \"restoran\"],\n  \"call_to_action\": \"LEARN_MORE\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/ad",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "ad"
+          ]
+        },
+        "description": "Sıfırdan yeni Instagram/Meta reklamı oluşturur. Instagram + Meta Ads hesabı bağlı olmalı.\n\nZorunlu: image_url, headline, body, budget\n\ngoal: engagement | reach | traffic | messages\nbudget_type: daily | lifetime\nplacement: all | instagram_feed | instagram_story | instagram_reels | facebook_feed\ngender: all | male | female\nage_min/age_max: 13-65 arası\ninterests: dizi veya virgülle ayrılmış string (opsiyonel)\ncall_to_action: LEARN_MORE | SHOP_NOW | CONTACT_US | BOOK_TRAVEL | MESSAGE_PAGE\nstart_date / end_date: YYYY-MM-DD formatında, boş bırakılırsa hemen başlar / süresiz çalışır\nlink_url: Tıklandığında gidilecek URL (opsiyonel)"
+      }
+    },
+    {
+      "name": "6b. Gönderiyi Boost Et",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"api_key\": \"{{api_key}}\",\n  \"post_id\": \"ZERNIO_POST_ID\",\n  \"goal\": \"engagement\",\n  \"budget\": 50,\n  \"duration_days\": 7\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/boost",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "boost"
+          ]
+        },
+        "description": "Daha önce /api/post ile atılmış bir gönderiyi reklama dönüştürür. Instagram + Meta Ads hesabı bağlı olmalı.\n\nZorunlu: api_key, post_id\npost_id: /api/post yanıtındaki post_id alanından alınır\ngoal: engagement | reach | traffic | messages\nbudget: Günlük bütçe (TL), tam sayı\nduration_days: Kaç gün süreceği"
+      }
+    }
+  ]
+}

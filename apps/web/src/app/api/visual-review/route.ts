@@ -40,6 +40,8 @@ export interface VisualReviewResult {
 
 interface ReviewContext {
   brandName?: string;
+  brandTone?: string;
+  outputLanguage?: string;
   contentType?: string;
   platform?: string;
   templateTitle?: string;
@@ -56,24 +58,28 @@ function verdictFromScore(score: number): VisualReviewResult['verdict'] {
 function buildSystemPrompt(ctx: ReviewContext): string {
   const platform = ctx.platform ?? 'Instagram';
   const contentType = ctx.contentType ?? 'post';
-  const brandName = ctx.brandName ? `Marka: ${ctx.brandName}. ` : '';
-  const templateHint = ctx.templateTitle ? `Şablon: "${ctx.templateTitle}". ` : '';
-  const captionHint = ctx.caption ? `İçerik özeti: "${ctx.caption.slice(0, 150)}". ` : '';
+  const outputLanguage = ctx.outputLanguage ?? 'English';
+  const brandName = ctx.brandName ? `Brand: ${ctx.brandName}. ` : '';
+  const brandTone = ctx.brandTone ? `Brand tone: ${ctx.brandTone}. ` : '';
+  const templateHint = ctx.templateTitle ? `Template: "${ctx.templateTitle}". ` : '';
+  const captionHint = ctx.caption ? `Content summary: "${ctx.caption.slice(0, 150)}". ` : '';
 
-  return `Sen deneyimli bir kreatif direktörsün. ${platform} için üretilmiş bir ${contentType} tasarımını inceleyeceksin.
-${brandName}${templateHint}${captionHint}
+  return `You are an experienced creative director. You will review a ${contentType} design produced for ${platform}.
+${brandName}${brandTone}${templateHint}${captionHint}
 
-Tasarımı bir insan gözü gibi değerlendir:
+Write summary, issues, and suggestions in ${outputLanguage}.
 
-1. **Metin Okunabilirliği (textLegibility)** — Tüm metinler yeterince büyük ve kontrastlı mı? Font seçimi okunabilir mi? Taşma veya çakışma var mı?
-2. **Görsel Hiyerarşi (visualHierarchy)** — Göz nereye ilk gidiyor? Ana mesaj öne çıkıyor mu? Dikkat dağılıyor mu?
-3. **Kompozisyon (composition)** — Denge, beyaz alan kullanımı, görsellerin yerleşimi, genel düzen profesyonel mi?
-4. **Marka Uyumu (brandFit)** — Tasarım premium bir marka için uygun görünüyor mu? Renkler, ton, üslup tutarlı mı?
-5. **CTA Netliği (ctaClarity)** — Çağrı metni (rezervasyon yap, keşfet vb.) varsa net mi ve görünür mü?
+Evaluate like a human eye:
 
-JSON formatında şu yapıyla yanıt ver:
+1. **Text Legibility (textLegibility)** — Are all texts large and contrasty enough? Readable fonts? Overflow or overlap?
+2. **Visual Hierarchy (visualHierarchy)** — Where does the eye go first? Is the main message prominent?
+3. **Composition (composition)** — Balance, whitespace, image placement, professional layout?
+4. **Brand Fit (brandFit)** — Does the design fit this brand's tone and sector? Consistent colors and style?
+5. **CTA Clarity (ctaClarity)** — If a call-to-action exists, is it clear and visible?
+
+Respond in JSON:
 {
-  "score": <1-10 genel skor>,
+  "score": <1-10 overall>,
   "categories": {
     "textLegibility": <1-10>,
     "visualHierarchy": <1-10>,
@@ -81,12 +87,12 @@ JSON formatında şu yapıyla yanıt ver:
     "brandFit": <1-10>,
     "ctaClarity": <1-10>
   },
-  "issues": ["<sorun 1>", "<sorun 2>"],
-  "suggestions": ["<öneri 1>", "<öneri 2>"],
-  "summary": "<Tek cümlelik kreatif direktör yorumu>"
+  "issues": ["<issue 1>", "<issue 2>"],
+  "suggestions": ["<suggestion 1>", "<suggestion 2>"],
+  "summary": "<One-sentence creative director verdict in ${outputLanguage}>"
 }
 
-Yalnızca JSON döndür. Açıklama ekleme.`;
+Return JSON only. No markdown.`;
 }
 
 export async function POST(req: NextRequest) {

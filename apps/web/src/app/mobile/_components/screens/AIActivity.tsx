@@ -174,6 +174,7 @@ export function AIActivity() {
     queryFn: () => apiClient.getOperationsSummary(),
     refetchInterval: 12_000,
     staleTime: 8_000,
+    refetchIntervalInBackground: false,
     retry: 2,
   });
 

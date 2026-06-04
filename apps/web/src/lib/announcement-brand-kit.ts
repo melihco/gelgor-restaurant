@@ -12,6 +12,8 @@ export interface AnnouncementBrandKit {
   primaryColor: string;
   accentColor: string;
   textColor: string;
+  /** Hero başlık rengi — Marka Kiti typography.headline_color */
+  headlineColor: string;
   shadowColor: string;
   headingFontStack: string;
   bodyFontStack: string;
@@ -23,10 +25,10 @@ export interface AnnouncementBrandKit {
 const DEFAULT_KIT: AnnouncementBrandKit = {
   primaryColor: '#1a1a2e',
   accentColor: '#E8C87A',
-  textColor: '#F5F0E8',
+  textColor: '#FFFFFF',        // crisp white — poster standard
   shadowColor: '#0d0d1a',
-  headingFontStack: "'Playfair Display', Georgia, 'Times New Roman', serif",
-  bodyFontStack: "'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif",
+  headingFontStack: "'Bodoni Moda', 'Playfair Display', Georgia, 'Times New Roman', serif",
+  bodyFontStack: "'Barlow Condensed', 'DM Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif",
   logoUrl: null,
   brandName: '',
   themeSource: 'default',
@@ -62,10 +64,11 @@ function hexLuminance(hex: string): number {
 }
 
 function pickTextColor(neutral: string | null, shadow: string | null): string {
-  for (const c of [neutral, '#F5F0E8', '#FFFFFF']) {
-    if (c && hexLuminance(c) > 0.55) return c;
-  }
-  return shadow && hexLuminance(shadow) > 0.4 ? shadow : '#F5F0E8';
+  // Prefer explicit neutral when it's light enough (readable on dark overlay).
+  // Fall back to pure white — maximum poster contrast.
+  if (neutral && hexLuminance(neutral) > 0.55) return neutral;
+  if (shadow && hexLuminance(shadow) > 0.55) return shadow;
+  return '#FFFFFF'; // poster default: crisp white
 }
 
 function sanitizeFontName(name: unknown): string | null {
@@ -107,8 +110,16 @@ function readTypography(obj: Record<string, unknown> | undefined) {
   const heading =
     typo.heading_font ?? typo.headingFont ?? typo.headline_font ?? typo.headlineFont;
   const body = typo.body_font ?? typo.bodyFont ?? typo.body_personality;
-  if (!heading && !body) return null;
-  return { heading, body };
+  const headlineColor = parseFirstHex(typo.headline_color ?? typo.headlineColor);
+  if (!heading && !body && !headlineColor) return null;
+  return { heading, body, headlineColor };
+}
+
+/** Script / brush başlık fontları — Marka Kiti seçiminde hero'ya uygulanır. */
+export function brandHeadingUsesScriptStyle(headingFontStack: string): boolean {
+  return /great vibes|allura|brush script|segoe script|pacifico|dancing script|sacramento|lobster/i.test(
+    headingFontStack,
+  );
 }
 
 export function resolveAnnouncementBrandKit(sources: {
@@ -157,9 +168,11 @@ export function resolveAnnouncementBrandKit(sources: {
   if (themeTypo) {
     headingFont = sanitizeFontName(themeTypo.heading);
     bodyFont = sanitizeFontName(themeTypo.body);
+    headlineColor = themeTypo.headlineColor ?? null;
   } else if (vibeTypo) {
     headingFont = sanitizeFontName(vibeTypo.heading);
     bodyFont = sanitizeFontName(vibeTypo.body);
+    headlineColor = vibeTypo.headlineColor ?? null;
   }
 
   primary = primary
@@ -196,10 +209,12 @@ export function resolveAnnouncementBrandKit(sources: {
     ?? '',
   ).trim();
 
+  const baseText = pickTextColor(neutral, shadow);
   const kit: AnnouncementBrandKit = {
     primaryColor: primary,
     accentColor: accent,
-    textColor: pickTextColor(neutral, shadow),
+    textColor: baseText,
+    headlineColor: headlineColor ?? baseText,
     shadowColor: shadow ?? DEFAULT_KIT.shadowColor,
     headingFontStack: fontNameToStack(headingFont, true),
     bodyFontStack: fontNameToStack(bodyFont, false),

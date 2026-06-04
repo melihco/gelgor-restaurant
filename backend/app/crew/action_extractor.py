@@ -153,6 +153,28 @@ def _normalize_canva_field_copy(item: dict) -> dict[str, str] | None:
     return out or None
 
 
+def _normalize_visual_production_spec(item: dict) -> dict | None:
+    """Pass through the Media Specialist visual_production_spec (treatment +
+    gallery selection + edit prompt) so renderers downstream are not starved."""
+    raw = item.get("visual_production_spec") or item.get("visualProductionSpec")
+    if not isinstance(raw, dict):
+        return None
+    treatment = raw.get("treatment")
+    valid = {"pure_photo", "story_event", "feed_text_overlay", "event_announcement"}
+    spec: dict = {
+        "treatment": treatment if treatment in valid else "pure_photo",
+        "selected_gallery_url": raw.get("selected_gallery_url") or raw.get("selectedGalleryUrl") or "",
+        "image_edit_prompt": raw.get("image_edit_prompt") or raw.get("imageEditPrompt") or "",
+    }
+    text_layers = raw.get("text_layers") or raw.get("textLayers")
+    if isinstance(text_layers, dict):
+        spec["text_layers"] = text_layers
+    reel_motion = raw.get("reel_motion_spec") or raw.get("reelMotionSpec")
+    if isinstance(reel_motion, dict):
+        spec["reel_motion_spec"] = reel_motion
+    return spec
+
+
 def _normalize_idea(item: dict) -> dict:
     """
     Normalize a single content idea to a consistent field schema.
@@ -215,6 +237,7 @@ def _normalize_idea(item: dict) -> dict:
         "production_notes": item.get("production_notes") or "",
         "missing_questions": _normalize_missing_questions(item.get("missing_questions") or item.get("missing_question")),
         "canva_field_copy": _normalize_canva_field_copy(item),
+        "visual_production_spec": _normalize_visual_production_spec(item),
     }
 
 

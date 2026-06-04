@@ -18,47 +18,73 @@ export interface FitTextResult {
   blockHeight: number;
 }
 
-/** Approximate rendered width (uppercase display type). */
+/** Horizontal inset for center-anchored SVG text (avoids first/last glyph clipping). */
+export const FIT_WIDTH_SAFETY = 0.9;
+
+/** Approximate rendered width (uppercase display / serif headlines). */
 export function estimateTextWidth(
   text: string,
   fontSize: number,
   letterSpacing: number,
 ): number {
   if (!text) return 0;
-  const charWidth = fontSize * 0.56;
+  const upper = text === text.toUpperCase() && /[A-ZİĞÜŞÖÇ]/.test(text);
+  const charWidth = fontSize * (upper ? 0.64 : 0.56);
   return text.length * charWidth + Math.max(0, text.length - 1) * letterSpacing;
 }
 
-function splitIntoLines(text: string, maxLines: number): string[] {
+/** Word-wrap into lines that fit maxWidth at the given size. */
+function wrapWordsToLines(
+  text: string,
+  maxLines: number,
+  maxWidth: number,
+  fontSize: number,
+  letterSpacing: number,
+): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
-
   const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [trimmed];
+
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word;
+    if (estimateTextWidth(test, fontSize, letterSpacing) <= maxWidth) {
+      current = test;
+      continue;
+    }
+    if (current) {
+      lines.push(current);
+      current = word;
+      if (lines.length >= maxLines) break;
+    } else {
+      lines.push(word);
+      current = '';
+      if (lines.length >= maxLines) break;
+    }
+  }
+
+  if (current && lines.length < maxLines) lines.push(current);
+
+  if (lines.length === 0) return [trimmed];
+  if (lines.length === 1 && estimateTextWidth(lines[0]!, fontSize, letterSpacing) > maxWidth) {
+    return splitBalancedLines(trimmed, maxLines);
+  }
+  return lines.slice(0, maxLines);
+}
+
+function splitBalancedLines(text: string, maxLines: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
   if (words.length >= 2 && maxLines >= 2) {
     const mid = Math.ceil(words.length / 2);
-    return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+    const out = [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+    return out.slice(0, maxLines);
   }
-
-  if (trimmed.length <= 1 || maxLines < 2) return [trimmed];
-
-  const mid = Math.ceil(trimmed.length / 2);
-  let splitAt = mid;
-  for (let i = mid; i < trimmed.length; i += 1) {
-    if (trimmed[i] === ' ') {
-      splitAt = i;
-      break;
-    }
-  }
-  for (let i = mid; i >= 0; i -= 1) {
-    if (trimmed[i] === ' ') {
-      splitAt = i;
-      break;
-    }
-  }
-  const a = trimmed.slice(0, splitAt).trim();
-  const b = trimmed.slice(splitAt).trim();
-  if (a && b) return [a, b];
-  return [trimmed.slice(0, mid), trimmed.slice(mid)];
+  if (text.length <= 1 || maxLines < 2) return [text];
+  const mid = Math.ceil(text.length / 2);
+  return [text.slice(0, mid).trim(), text.slice(mid).trim()].filter(Boolean).slice(0, maxLines);
 }
 
 export function fitTextToWidth(
@@ -69,14 +95,15 @@ export function fitTextToWidth(
   minFontSizeRatio = 0.52,
   maxLines = 2,
 ): FitTextResult {
+  const safeWidth = Math.round(maxWidth * FIT_WIDTH_SAFETY);
   const minFontSize = Math.max(12, Math.round(baseFontSize * minFontSizeRatio));
   let fontSize = baseFontSize;
 
   const tryLines = (lines: string[], size: number): FitTextResult | null => {
     const letterSpacing = Math.round(size * trackingRatio);
     const lineHeight = Math.round(size * 1.15);
-    const widest = Math.max(...lines.map((l) => estimateTextWidth(l, size, letterSpacing)));
-    if (widest <= maxWidth) {
+    const widest = Math.max(...lines.map((l) => estimateTextWidth(l, size, letterSpacing)), 0);
+    if (widest <= safeWidth) {
       return {
         fontSize: size,
         letterSpacing,
@@ -94,16 +121,17 @@ export function fitTextToWidth(
     fontSize = Math.round(fontSize * 0.94);
   }
 
-  const lines = splitIntoLines(text, maxLines);
   fontSize = baseFontSize;
   while (fontSize >= minFontSize) {
-    const multi = tryLines(lines, fontSize);
+    const wrapped = wrapWordsToLines(text, maxLines, safeWidth, fontSize, Math.round(fontSize * trackingRatio));
+    const multi = tryLines(wrapped, fontSize);
     if (multi) return multi;
     fontSize = Math.round(fontSize * 0.94);
   }
 
-  const letterSpacing = Math.max(0, Math.round(minFontSize * trackingRatio * 0.6));
+  const letterSpacing = Math.max(0, Math.round(minFontSize * trackingRatio * 0.5));
   const lineHeight = Math.round(minFontSize * 1.12);
+  const lines = wrapWordsToLines(text, maxLines, safeWidth, minFontSize, letterSpacing);
   return {
     fontSize: minFontSize,
     letterSpacing,

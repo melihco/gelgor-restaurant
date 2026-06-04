@@ -40,14 +40,13 @@ export type VisualStyle =
  * Camera motion presets mapped to Runway-compatible descriptors.
  */
 export type CameraMotion =
+  | 'static'
   | 'slow_pan'
   | 'dolly_in'
   | 'dolly_out'
-  | 'static'
-  | 'handheld'
-  | 'aerial'
-  | 'tracking'
   | 'orbit'
+  | 'tracking'
+  | 'handheld'
   | 'tilt_up'
   | 'tilt_down';
 
@@ -140,6 +139,8 @@ export interface ReelGenerationInput {
    * Separate from `concept` which carries vibe/style context.
    */
   caption?: string;
+  /** VPS image_edit_prompt / scene brief slice for director grounding */
+  agentVisualDirection?: string;
 }
 
 // ── Output ─────────────────────────────────────────────────────────────────

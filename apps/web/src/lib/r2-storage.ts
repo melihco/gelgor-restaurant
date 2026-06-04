@@ -11,6 +11,7 @@
 
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { mediaUrlForKey } from './media-url';
 
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID!;
 const BUCKET = process.env.R2_BUCKET_NAME ?? 'smartagency-media';
@@ -73,9 +74,7 @@ export async function uploadToR2(
 
   // Serve through Next.js proxy — avoids browser auth/CORS issues with R2
   // Falls back to public URL if configured (production with custom domain)
-  const url = PUBLIC_URL
-    ? `${PUBLIC_URL}/${key}`
-    : `/api/media?key=${encodeURIComponent(key)}`;
+  const url = mediaUrlForKey(key, PUBLIC_URL);
 
   return {
     key,

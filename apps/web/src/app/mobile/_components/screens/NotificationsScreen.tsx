@@ -41,7 +41,7 @@ function timeAgo(iso: string): string {
 
 export function NotificationsScreen() {
   const { t } = useTheme();
-  const { goBack, navigate } = useMobileStore();
+  const { goBack, navigate, openApproval } = useMobileStore();
   const queryClient = useQueryClient();
 
   const { data: rawNotifs = [], isLoading } = useQuery({
@@ -49,6 +49,7 @@ export function NotificationsScreen() {
     queryFn: async () => { try { return await apiClient.getNotifications(); } catch { return []; } },
     refetchInterval: 30_000,
     staleTime: 15_000,
+    refetchIntervalInBackground: false,
   });
 
   const markReadMutation = useMutation({
@@ -69,10 +70,17 @@ export function NotificationsScreen() {
 
   const handleTap = (n: any) => {
     if (!n.read) markReadMutation.mutate(n.id);
-    // Route based on entity type
-    if (n.type?.includes('action') || n.type?.includes('approval')) navigate('approval');
-    else if (n.type?.includes('review')) navigate('reviews');
-    else navigate('ai-activity');
+    // Route based on entity type, passing relatedEntityId so the target screen opens the right item
+    if (n.type?.includes('action') || n.type?.includes('approval') || n.type?.includes('artifact')) {
+      if (n.relatedEntityId) openApproval(n.relatedEntityId);
+      else navigate('feed');
+    } else if (n.type?.includes('review')) {
+      navigate('reviews');
+    } else if (n.type?.includes('mission')) {
+      navigate('missions');
+    } else {
+      navigate('home');
+    }
   };
 
   const grouped = {

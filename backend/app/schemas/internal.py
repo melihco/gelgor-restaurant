@@ -41,6 +41,9 @@ class InternalBrandContext(BaseModel):
     location_posts: str = ""
     google_trends: str = ""
     gallery_analysis: str = ""
+    # Tenant operating policy (CompanyProfile — optional)
+    operating_capabilities: list[str] = Field(default_factory=list)
+    gallery_policy: dict = Field(default_factory=dict)
 
 
 class InternalAgentExecutionRequest(BaseModel):

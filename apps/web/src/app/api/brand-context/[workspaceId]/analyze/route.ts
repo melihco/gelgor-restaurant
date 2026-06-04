@@ -34,10 +34,16 @@ export async function POST(
   { params }: { params: Promise<{ workspaceId: string }> },
 ) {
   const { workspaceId } = await params;
-  const body = await request.json().catch(() => null);
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+
+  const normalized = {
+    website_url: String(body.website_url ?? body.websiteUrl ?? '').trim(),
+    instagram_handle: String(body.instagram_handle ?? body.instagramHandle ?? '').trim(),
+    google_business_url: String(body.google_business_url ?? body.googleBusinessUrl ?? '').trim(),
+  };
 
   const pyRes = await proxyToCrewBackend(`/api/v1/brand-context/${workspaceId}/analyze`, {
-    body,
+    body: normalized,
     timeoutMs: 170_000,
   });
 
@@ -72,6 +78,26 @@ export async function POST(
       }
     }
   } catch { /* non-fatal — return original response */ }
+
+  // SaaS / dijital markalar: crawl'dan foto gelmezse sektör galerisi oluştur
+  try {
+    const provisionRes = await fetch(`${request.nextUrl.origin}/api/brand-context/${workspaceId}/provision-gallery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (provisionRes.ok) {
+      const prov = await provisionRes.json() as { provisioned?: boolean; usableCount?: number };
+      if (prov.provisioned) {
+        const refreshed = await fetch(
+          `${process.env.CREW_BACKEND_URL || 'http://localhost:8000'}/api/v1/brand-context/${workspaceId}`,
+          { headers: { 'X-Internal-Api-Key': process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key' } },
+        );
+        if (refreshed.ok) {
+          return NextResponse.json(await refreshed.json(), { status: pyRes.status });
+        }
+      }
+    }
+  } catch { /* non-fatal */ }
 
   return pyRes;
 }

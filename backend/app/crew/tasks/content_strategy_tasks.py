@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from crewai import Agent, Task
 
+from datetime import datetime, timezone
 from app.crew.context import BrandInfo, build_urgency_directive
 from app.crew.prompts.content_strategy_prompts import CONTENT_STRATEGY_TASK
 
@@ -21,6 +22,9 @@ def create_content_strategy_task(
     competitor_brief = getattr(brand, "competitor_brief", "") or "No competitor data available."
     trend_brief = getattr(brand, "trend_brief", "") or "No trend data available for this week."
 
+    now_utc = datetime.now(timezone.utc)
+    current_date_str = now_utc.strftime("%A, %d %B %Y")  # e.g. "Saturday, 30 May 2026"
+
     description = CONTENT_STRATEGY_TASK.format(
         business_name=brand.business_name,
         content_pillars=", ".join(content_pillars or ["brand story", "product/service value", "social proof", "conversion CTA"]),
@@ -30,6 +34,8 @@ def create_content_strategy_task(
         competitor_brief=competitor_brief,
         trend_brief=trend_brief,
     )
+    # Prepend current date so the agent knows which events are past vs future
+    description = f"📅 TODAY'S DATE: {current_date_str}\n\n" + description
 
     urgency_block = build_urgency_directive(brand)
     if urgency_block:

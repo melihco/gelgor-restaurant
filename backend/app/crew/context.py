@@ -42,6 +42,7 @@ class BrandInfo:
     risk_rules: dict[str, str] = field(default_factory=dict)
     # Top hashtags extracted from Instagram account
     instagram_top_hashtags: list[str] = field(default_factory=list)
+    instagram_handle: str = ""
     website_summary: str = ""
     instagram_bio: str = ""
     discovery_confidence: int | None = None
@@ -76,6 +77,9 @@ class BrandInfo:
     # Used by auto-produce for image/video generation; injected here for CrewAI agents
     brand_vibe_profile: dict | None = None
 
+    # Derived design tokens (Brand Hub → Ayarlar): LUT, anti_patterns, caption_voice_rules, AI enhance flags
+    brand_theme: dict | None = None
+
     # ── Website Intelligence — menu catalog, venue/product photos from onboarding crawl ─
     website_intelligence: dict | None = None
 
@@ -92,6 +96,11 @@ class BrandInfo:
 
     # ── Tenant learning context (injected by tenant_learning_service) ─────
     learning_context: str = ""
+
+    # ── Operating policy (capabilities + gallery rules from CompanyProfile) ─
+    operating_capabilities: list[str] = field(default_factory=list)
+    gallery_policy: dict = field(default_factory=dict)
+    operating_policy_prompt: str = ""
 
     # ── Per-tenant LLM override (optional) ────────────────────────────────
     # If set, overrides global CREWAI_LLM_PROVIDER / model for this tenant.
@@ -252,21 +261,71 @@ def _build_vibe_profile_block(vibe: dict | None) -> list[str]:
 
     caption_voice = vibe.get("caption_voice") or {}
     if caption_voice:
-        tone = caption_voice.get("tone", "")
-        emoji_density = caption_voice.get("emoji_density", "")
-        cta_style = caption_voice.get("cta_style", "")
-        lines.append(f"**Caption voice**: {tone} tone, {emoji_density} emoji, CTA style: {cta_style}")
+        # Support both schema variants (tone/emoji_density AND style/tonal_anchors/writing_rules)
+        tone = caption_voice.get("tone") or caption_voice.get("style") or ""
+        emoji_density = caption_voice.get("emoji_density") or ("yes" if caption_voice.get("uses_emojis") else "no")
+        cta_style = caption_voice.get("cta_style") or ""
+        avg_words = caption_voice.get("avg_word_count") or ""
+        lines.append(f"**Caption voice**: {tone} tone, emojis={emoji_density}{', ' + str(avg_words) + ' avg words' if avg_words else ''}{', CTA: ' + cta_style if cta_style else ''}")
+
+        tonal_anchors = caption_voice.get("tonal_anchors") or []
+        if tonal_anchors:
+            lines.append(f"  → Tone anchors: {', '.join(str(a) for a in tonal_anchors[:5])}")
+
+        writing_rules = caption_voice.get("writing_rules") or []
+        if writing_rules:
+            lines.append("  → Writing rules:")
+            for rule in writing_rules[:5]:
+                lines.append(f"    • {rule}")
+
+        example = caption_voice.get("example_template") or ""
+        if example:
+            lines.append(f"  → Example template: {example[:120]}")
+
+        punct = caption_voice.get("punctuation_style") or ""
+        no_hashtags = caption_voice.get("uses_hashtags_in_caption_body")
+        if punct or no_hashtags is not None:
+            extras = []
+            if punct: extras.append(f"punctuation: {punct}")
+            if no_hashtags is False: extras.append("NO hashtags in caption body")
+            if extras:
+                lines.append(f"  → Style: {', '.join(extras)}")
 
     source_accounts = vibe.get("source_accounts") or []
     if source_accounts:
         lines.append(f"**Reference accounts**: {', '.join('@' + a for a in source_accounts[:5])}")
 
-    lines += [
-        "",
-        "USE THIS VIBE DNA in every visual decision: image_edit_prompt colors must reference the palette,",
-        "text overlays must follow the typography rules, Reels must match the motion/audio specs,",
-        "and caption voice must align with the tone described above.",
-    ]
+    # Build a mandatory enforcement summary using the actual field values
+    palette = vibe.get("palette") or {}
+    typo = vibe.get("typography") or {}
+    grading = vibe.get("grading") or {}
+    cap_v = vibe.get("caption_voice") or {}
+    heading_personality = typo.get("heading_personality") or ""
+    overlay_density = typo.get("text_overlay_density") or ""
+    grading_look = grading.get("look") or ""
+    lut = grading.get("lut_directive") or ""
+    primary_color = palette.get("primary") or ""
+    accent_color = palette.get("accent") or ""
+
+    lines += ["", "🔴 VIBE DNA ENFORCEMENT — NON-NEGOTIABLE:"]
+    if heading_personality:
+        lines.append(f"  • Headlines MUST be {heading_personality} — no exceptions")
+    if overlay_density:
+        lines.append(f"  • Text overlay density: {overlay_density} — respect this")
+    if grading_look:
+        lines.append(f"  • All visuals: {grading_look} color grade ({lut})")
+    if primary_color or accent_color:
+        lines.append(f"  • Colors: primary {primary_color}, accent {accent_color} — use these exact values in image prompts")
+    writing_rules = cap_v.get("writing_rules") or []
+    if writing_rules:
+        lines.append(f"  • Caption MUST follow: {'; '.join(str(r) for r in writing_rules[:3])}")
+    no_hashtags = cap_v.get("uses_hashtags_in_caption_body")
+    if no_hashtags is False:
+        lines.append("  • DO NOT put hashtags inside the caption body — hashtags in separate field only")
+    avg_words = cap_v.get("avg_word_count")
+    if avg_words:
+        lines.append(f"  • Caption length: ~{avg_words} words average")
+
     return lines
 
 
@@ -285,6 +344,18 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
       "minimal"  — brand identity only (analytics, lightweight tasks)
     """
     sections: list[str] = []
+
+    # ── Output language — highest priority for all copy-generating agents ───
+    if brand.languages:
+        lang_code = resolve_language_code(brand.languages)
+        lang_label = resolve_output_language(brand.languages)
+        sections += [
+            "## OUTPUT LANGUAGE — NON-NEGOTIABLE",
+            f"Brand content language: **{lang_label}** (`{lang_code}`).",
+            f"Write EVERY headline, caption, CTA, and on-screen text natively in {lang_label}.",
+            "Source brand data may be in another language — translate the idea, do not copy Turkish phrasing when English is configured.",
+            "",
+        ]
 
     # ── Profile-based filtering ───────────────────────────────────────────
     include_market_intel = profile in ("full", "ads", "video")
@@ -382,6 +453,9 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
             brand.custom_rules,
             "",
         ]
+
+    if brand.operating_policy_prompt:
+        sections += [brand.operating_policy_prompt, ""]
 
     if brand.asset_descriptions:
         sections += [

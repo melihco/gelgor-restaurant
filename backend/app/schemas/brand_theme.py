@@ -57,6 +57,28 @@ class ThemeLayout(BaseModel):
     default_layout_id: str = "feed_square"
 
 
+class ThemeMediaPolicy(BaseModel):
+    require_gallery: bool = True
+    fallback: str = "brand_solid"
+    min_match_score: int = Field(55, ge=0, le=100)
+
+
+class ThemeMotionProfile(BaseModel):
+    """Per-tenant Remotion routing — mirrors apps/web/src/lib/brand-motion-profile.ts"""
+
+    motion_style: str = "editorial"
+    locale: str = "tr"
+    text_density: str = "medium"
+    text_transform: str = "sentence"
+    prefer_pure_photo_stories: float = Field(0.72, ge=0.4, le=0.95)
+    composition_weights: dict[str, float] = Field(default_factory=dict)
+    blocked_compositions: list[str] = Field(default_factory=list)
+    allowed_intents: list[str] = Field(default_factory=list)
+    media_policy: ThemeMediaPolicy = Field(default_factory=ThemeMediaPolicy)
+    audio_mood_pool: list[str] = Field(default_factory=list)
+    operator_override: bool = False
+
+
 class BrandTheme(BaseModel):
     """Persisted on brand_contexts.brand_theme (JSONB)."""
 
@@ -75,6 +97,25 @@ class BrandTheme(BaseModel):
     anti_patterns: list[str] = Field(default_factory=list)
     contrast_valid: bool = True
 
+    # ── AI Photo Enhancement settings (set from Brand Hub → Ayarlar) ───────────
+    ai_photo_enhance: bool = False
+    ai_photo_enhance_level: str = "moderate"  # subtle | moderate | full
+    # Identity vs post brief split (Mission Hub / feed production standard)
+    ai_use_brand_identity: bool = True
+    ai_brief_drives_scene: bool = True
+    ai_embed_logo: bool = True
+    ai_enhance_formats: list[str] = Field(
+        default_factory=lambda: ["post", "story", "carousel", "reel"],
+    )
+    ai_visual_subject: str = "auto"  # auto | venue_ambiance | product_hero
+    # Experimental: Crew Visual Production Director enriches VPS before auto-produce
+    enable_visual_production_director: bool = False
+
+    motion_profile: ThemeMotionProfile | None = None
+
+    # 5-slot brand template library (Mission Hub / feed production)
+    template_library: dict | None = None
+
 
 # ── Request / Response wrappers ───────────────────────────────────────────────
 
@@ -86,3 +127,21 @@ class BrandThemeRead(BaseModel):
 class BrandThemeSaveRequest(BaseModel):
     """Manual override — operator patches specific token fields."""
     theme: BrandTheme
+
+
+class AiThemeSettingsPatch(BaseModel):
+    """Partial AI visual settings — merged into existing brand_theme JSON."""
+
+    ai_photo_enhance: bool | None = None
+    ai_photo_enhance_level: str | None = None
+    ai_use_brand_identity: bool | None = None
+    ai_brief_drives_scene: bool | None = None
+    ai_embed_logo: bool | None = None
+    ai_enhance_formats: list[str] | None = None
+    ai_visual_subject: str | None = None
+    enable_visual_production_director: bool | None = None  # experimental VPD crew
+    # Mertcafe / Zernio Instagram publish (per-tenant overrides)
+    mertcafe_api_key: str | None = None
+    mertcafe_instagram_account_id: str | None = None
+    mertcafe_instagram_accounts: list[dict[str, str]] | None = None
+    mertcafe_use_oauth_account: bool | None = None

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { computeAnalysisQuality } from '@/lib/gallery-intelligence';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -16,7 +17,14 @@ export interface GalleryPhotoAnalysis {
   isLogo: boolean;
   suggestedAssetType: string;
   usageContext: string;
+  /** Deterministic 0..100 quality of this analysis (Sprint 2 GIS). */
+  qualityScore?: number;
+  /** ISO timestamp when this analysis was produced (Sprint 2 GIS recency). */
+  analyzedAt?: string;
 }
+
+/** Analysis tier. `hero` uses gpt-4o + detail:high for the most important photos. */
+export type AnalysisTier = 'standard' | 'hero';
 
 const ANALYSIS_SYSTEM_PROMPT = `You are a senior creative director and visual analyst at a top social media agency.
 Your job: deeply analyze every brand photo so AI content agents can automatically select the perfect image for any caption.
@@ -62,11 +70,17 @@ function normalizeUrlKey(url: string): string {
   return url.split('?')[0] ?? url;
 }
 
-async function analyzePhoto(url: string, openai: OpenAI): Promise<GalleryPhotoAnalysis> {
-  // gpt-4o-mini + detail:low is sufficient for structured tagging; ~15x cheaper than gpt-4o
+async function analyzePhoto(
+  url: string,
+  openai: OpenAI,
+  tier: AnalysisTier = 'standard',
+): Promise<GalleryPhotoAnalysis> {
+  // standard: gpt-4o-mini + detail:low — ~15x cheaper, fine for bulk tagging.
+  // hero:     gpt-4o + detail:high — richer tags for the most important photos.
+  const isHero = tier === 'hero';
   const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    max_tokens: 500,
+    model: isHero ? 'gpt-4o' : 'gpt-4o-mini',
+    max_tokens: isHero ? 700 : 500,
     temperature: 0.15,
     response_format: { type: 'json_object' },
     messages: [
@@ -75,7 +89,7 @@ async function analyzePhoto(url: string, openai: OpenAI): Promise<GalleryPhotoAn
         role: 'user',
         content: [
           { type: 'text', text: 'Analyze this brand photo:' },
-          { type: 'image_url', image_url: { url, detail: 'low' } },
+          { type: 'image_url', image_url: { url, detail: isHero ? 'high' : 'low' } },
         ],
       },
     ],
@@ -90,7 +104,7 @@ async function analyzePhoto(url: string, openai: OpenAI): Promise<GalleryPhotoAn
     parsed = {};
   }
 
-  return {
+  const analysis: GalleryPhotoAnalysis = {
     url,
     description: String(parsed.description ?? ''),
     contentTags: Array.isArray(parsed.contentTags) ? parsed.contentTags.map(String) : [],
@@ -102,7 +116,10 @@ async function analyzePhoto(url: string, openai: OpenAI): Promise<GalleryPhotoAn
     isLogo: Boolean(parsed.isLogo),
     suggestedAssetType: String(parsed.suggestedAssetType ?? 'venue_reference'),
     usageContext: String(parsed.usageContext ?? ''),
+    analyzedAt: new Date().toISOString(),
   };
+  analysis.qualityScore = computeAnalysisQuality(analysis);
+  return analysis;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -117,6 +134,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     /** Already-analyzed entries keyed by URL — these are skipped (incremental mode) */
     existingAnalysis?: Record<string, Partial<GalleryPhotoAnalysis>>;
     forceReanalyze?: boolean;
+    /** Analysis tier for this batch — 'hero' uses gpt-4o + detail:high. */
+    tier?: AnalysisTier;
   };
   try {
     body = await req.json();
@@ -165,7 +184,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // Check accessibility in parallel before spending tokens on analysis
-  const accessible = await Promise.all(urls.slice(0, 80).map(async (url) => ({
+  const accessible = await Promise.all(urls.slice(0, 100).map(async (url) => ({
     url,
     ok: await isAccessible(url),
   })));
@@ -174,7 +193,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const inaccessibleUrls = accessible.filter((a) => !a.ok).map((a) => a.url);
 
   const requestedMax = Number.isFinite(body.maxImages)
-    ? Math.max(1, Math.min(Number(body.maxImages), 80))
+    ? Math.max(1, Math.min(Number(body.maxImages), 100))
     : 80;
 
   const existing = body.existingAnalysis ?? {};
@@ -217,7 +236,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     error: 'Photo inaccessible — could not be fetched (broken URL, expired link, or server blocked)',
   }));
 
-  const CONCURRENCY = 3;
+  const tier: AnalysisTier = body.tier === 'hero' ? 'hero' : 'standard';
+  // Hero tier runs gpt-4o serially-ish to respect rate limits; standard stays at 3.
+  const CONCURRENCY = tier === 'hero' ? 2 : 3;
   let cursor = 0;
 
   async function worker() {
@@ -225,7 +246,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const url = urlsToAnalyze[cursor++];
       if (!url) continue;
       try {
-        const analysis = await analyzePhoto(url, openai);
+        const analysis = await analyzePhoto(url, openai, tier);
         results.push(analysis);
       } catch (err) {
         errors.push({ url, error: err instanceof Error ? err.message : 'Analysis failed' });

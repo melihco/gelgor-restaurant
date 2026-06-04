@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-EXPOSE 8000
+COPY scripts/railway-start.sh scripts/railway-start.sh
+RUN chmod +x scripts/railway-start.sh
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "scripts/railway-start.sh"]

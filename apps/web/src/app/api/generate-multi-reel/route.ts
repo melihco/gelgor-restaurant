@@ -22,7 +22,7 @@
  *   brandLocation?: string
  *   vibeProfile?: object
  *   brandThemeGrading?: { look?: string; lut_directive?: string }
- *   strategy?: 'multi_ref' | 'sequential'  // default: 'multi_ref'
+ *   strategy?: 'multi_ref' | 'sequential'  // default: 'sequential' (one clip per photo)
  *   ratio?: string
  *   duration?: number
  * }
@@ -35,6 +35,10 @@ import {
   buildDirectorPromptTemplate,
   inferContentKind,
 } from '@/lib/runway/builders/reel-prompt.builder';
+import {
+  applyFidelityToDirectorPrompt,
+  buildSequentialClipDirectorPrompt,
+} from '@/lib/runway-reel-fidelity';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -57,6 +61,8 @@ interface MultiReelRequest {
   strategy?: 'multi_ref' | 'sequential';
   ratio?: string;
   duration?: number;
+  agentVisualDirection?: string;
+  cameraMotion?: string;
 }
 
 const RUNWAY_MAX_BYTES = 7 * 1024 * 1024;
@@ -132,11 +138,17 @@ async function generateSequential(
   // Generate one Runway clip per photo
   for (let i = 0; i < photos.length; i++) {
     const photo = photos[i]!;
-    // Build a photo-specific sub-prompt for this clip
-    const subPrompt = [
-      `Clip ${i + 1}/${photos.length}.`,
-      directorPrompt.slice(0, 700),
-    ].join(' ').slice(0, 960);
+    const subPrompt = buildSequentialClipDirectorPrompt({
+      basePrompt: directorPrompt,
+      clipIndex: i,
+      totalClips: photos.length,
+      photo: {
+        url: photo.url,
+        description: photo.description,
+        tags: photo.tags,
+      },
+      caption: body.caption,
+    });
 
     const base64 = await fetchAsBase64(photo.url);
     if (!base64) {
@@ -299,7 +311,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'headline and caption required' }, { status: 400 });
   }
 
-  const strategy = body.strategy ?? 'multi_ref';
+  const strategy = body.strategy ?? 'sequential';
 
   // Build AI director prompt from the combined photo context
   const combinedDesc = photos.map(p => p.description).filter(Boolean).join(' | ');
@@ -320,7 +332,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         photoTags: combinedTags,
         vibeProfile: vibeProfile as Parameters<typeof buildDirectorPromptWithAI>[0]['vibeProfile'],
         brandThemeGrading,
-        mood: '',
+        mood: body.cameraMotion ?? '',
+        agentVisualDirection: body.agentVisualDirection?.slice(0, 400),
       },
       openaiKey,
     );
@@ -342,6 +355,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       brandThemeGrading,
     });
   }
+
+  directorPrompt = applyFidelityToDirectorPrompt(directorPrompt);
 
   console.log(`[multi-reel] strategy=${strategy}, photos=${photos.length}, kind=${contentKind}`);
   console.log(`[multi-reel] prompt: ${directorPrompt.slice(0, 120)}…`);

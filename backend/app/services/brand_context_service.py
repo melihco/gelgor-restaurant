@@ -68,14 +68,40 @@ async def create_brand_context(
     return ctx
 
 
+async def ensure_brand_context(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    business_name: str | None = None,
+    business_type: str | None = None,
+) -> BrandContext:
+    """
+    Return existing brand context or create a minimal stub for Nexus tenants
+    that completed signup before Python /analyze ran.
+    """
+    ctx = await get_brand_context(db, workspace_id)
+    if ctx:
+        return ctx
+
+    await ensure_nexus_mirror_workspace(db, workspace_id)
+    ctx = BrandContext(
+        workspace_id=workspace_id,
+        business_name=(business_name or "Brand").strip() or "Brand",
+        business_type=(business_type or "general_business").strip() or "general_business",
+        languages="tr",
+    )
+    db.add(ctx)
+    await db.flush()
+    logger.info("brand_context_auto_provisioned", workspace_id=str(workspace_id))
+    return ctx
+
+
 async def update_brand_context(
     db: AsyncSession,
     workspace_id: uuid.UUID,
     data: BrandContextUpdate,
 ) -> BrandContext | None:
-    ctx = await get_brand_context(db, workspace_id)
-    if not ctx:
-        return None
+    ctx = await ensure_brand_context(db, workspace_id)
     updates = data.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(ctx, field, value)
@@ -198,9 +224,132 @@ def _parse_reference_image_urls(value: str | None) -> list[str]:
         return []
 
 
+def _is_usable_gallery_url(url: str) -> bool:
+    s = (url or "").strip()
+    if not s.startswith("http"):
+        return False
+    lower = s.lower()
+    if "/_next/static/" in lower:
+        return False
+    if "/_next/image" in lower:
+        from urllib.parse import parse_qs, urlparse
+        if not parse_qs(urlparse(s).query).get("url"):
+            return False
+    return True
+
+
+_NON_VENUE_SECTORS = frozenset({
+    "agency_services", "ecommerce_retail", "production_company", "mental_health_clinic",
+})
+_SYNTHETIC_GALLERY_MIN = 8
+_SYNTHETIC_GALLERY_FULL = 100
+_SECTOR_GALLERY_SEEDS: dict[str, list[str]] | None = None
+
+
+def _sector_gallery_seed_path() -> "Path":
+    from pathlib import Path
+    return Path(__file__).resolve().parents[3] / "data" / "sector-gallery-seeds.json"
+
+
+def _load_sector_gallery_seeds() -> dict[str, list[str]]:
+    global _SECTOR_GALLERY_SEEDS
+    path = _sector_gallery_seed_path()
+    fallback: dict[str, list[str]] = {"general_business": []}
+    try:
+        if path.is_file():
+            mtime = path.stat().st_mtime
+            if (
+                _SECTOR_GALLERY_SEEDS is not None
+                and getattr(_load_sector_gallery_seeds, "_cache_mtime", None) == mtime
+            ):
+                return _SECTOR_GALLERY_SEEDS
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            _SECTOR_GALLERY_SEEDS = {
+                k: list(v) for k, v in raw.items()
+                if isinstance(v, list) and k not in ("full_target", "min_target")
+            }
+            _load_sector_gallery_seeds._cache_mtime = mtime  # type: ignore[attr-defined]
+            return _SECTOR_GALLERY_SEEDS
+    except Exception as exc:
+        logger.warning("sector_gallery_seed_load_failed", path=str(path), error=str(exc))
+    _SECTOR_GALLERY_SEEDS = fallback
+    return _SECTOR_GALLERY_SEEDS
+
+
+def _resolve_synthetic_gallery_target(sector: str, usable_count: int) -> int:
+    if usable_count == 0:
+        return _SYNTHETIC_GALLERY_FULL
+    if sector in _NON_VENUE_SECTORS and usable_count < _SYNTHETIC_GALLERY_FULL:
+        return _SYNTHETIC_GALLERY_FULL
+    if usable_count < _SYNTHETIC_GALLERY_MIN:
+        return _SYNTHETIC_GALLERY_MIN
+    return usable_count
+
+
+def provision_synthetic_gallery(ctx: BrandContext, min_count: int | None = None) -> bool:
+    """Fill reference_image_urls with sector stock photos when gallery is too small."""
+    from app.crew.industry_playbooks import normalize_industry_id
+
+    existing = [u for u in _parse_reference_image_urls(ctx.reference_image_urls) if _is_usable_gallery_url(u)]
+    sector = normalize_industry_id(ctx.business_type or "general_business")
+    target = min_count if min_count is not None else _resolve_synthetic_gallery_target(sector, len(existing))
+
+    if len(existing) >= target:
+        return False
+
+    if len(existing) > 0 and sector not in _NON_VENUE_SECTORS:
+        return False
+
+    seeds_map = _load_sector_gallery_seeds()
+    seeds = seeds_map.get(sector) or seeds_map.get("general_business") or []
+    seen = {_normalize_gallery_url_key(u) for u in existing}
+    merged = list(existing)
+    for url in seeds:
+        key = _normalize_gallery_url_key(url)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(url)
+        if len(merged) >= target:
+            break
+
+    if len(merged) <= len(existing):
+        return False
+
+    ctx.reference_image_urls = json.dumps(merged, ensure_ascii=False)
+    logger.info(
+        "synthetic_gallery_provisioned",
+        workspace_id=str(ctx.workspace_id),
+        sector=sector,
+        added=len(merged) - len(existing),
+        total=len(merged),
+        target=target,
+    )
+    return True
+
+
 def _normalize_gallery_url_key(url: str) -> str:
     """Stable key for pruning stale gallery analysis after gallery edits."""
     return str(url).split("?")[0].strip()
+
+
+def _sanitize_text_for_db(value: str | None, *, max_len: int = 4000) -> str:
+    """Strip null bytes and other chars PostgreSQL UTF-8 text columns reject."""
+    if not value:
+        return ""
+    cleaned = value.replace("\x00", "").replace("\u0000", "")
+    cleaned = "".join(ch for ch in cleaned if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+    return cleaned.strip()[:max_len]
+
+
+def _sanitize_json_value(value):
+    if isinstance(value, str):
+        return _sanitize_text_for_db(value, max_len=8000)
+    if isinstance(value, dict):
+        return {k: _sanitize_json_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_json_value(v) for v in value]
+    return value
 
 
 # ── BrandInfo builders ─────────────────────────────────────────────────────
@@ -430,6 +579,11 @@ async def seed_missing_brand_fields(db: AsyncSession, ctx: BrandContext) -> Bran
         updates["campaign_goals"] = derived_goals
         ctx.campaign_goals = derived_goals
 
+    # ── Synthetic gallery: only when empty (never expand on every GET) ──
+    existing_gallery = _parse_reference_image_urls(ctx.reference_image_urls)
+    if len(existing_gallery) == 0 and provision_synthetic_gallery(ctx):
+        updates["reference_image_urls"] = ctx.reference_image_urls
+
     # ── Persist all updates in one write ─────────────────────────────────
     if updates:
         from sqlalchemy import update
@@ -453,7 +607,7 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
     """
     ctx = await get_brand_context(db, workspace_id)
     if not ctx:
-        return None
+        ctx = await ensure_brand_context(db, workspace_id)
 
     # Ensure critical fields are populated before building BrandInfo
     ctx = await seed_missing_brand_fields(db, ctx)
@@ -463,8 +617,42 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
         for a in (ctx.assets or [])
     ]
 
+    # Clean website-scraped business names (e.g. "Anasayfa - Sarnıç Beach" → "Sarnıç Beach")
+    import re as _re
+    def _clean_brand_name(name: str) -> str:
+        name = _re.sub(r'^Anasayfa\s*[-\u2013|]\s*', '', name, flags=_re.IGNORECASE)
+        name = _re.sub(r'\s*[-\u2013|]\s*Anasayfa$', '', name, flags=_re.IGNORECASE)
+        name = _re.sub(r'\s*\|\s*.+$', '', name)
+        return name.strip() or name
+
+    def _looks_like_product_label(name: str) -> bool:
+        n = (name or "").strip()
+        if not n or " " in n:
+            return False
+        return bool(_re.match(r"^[A-Z][a-z]+[A-Z]", n))
+
+    def _resolve_canonical_business_name(ctx: BrandContext) -> str:
+        """Prefer operator-quality names over scraped nav labels (e.g. BerberRandevu → kacta.info)."""
+        name = _clean_brand_name(ctx.business_name or "")
+        wi = getattr(ctx, "website_intelligence", None)
+        if isinstance(wi, str):
+            try:
+                wi = json.loads(wi)
+            except Exception:
+                wi = None
+        display = ""
+        if isinstance(wi, dict):
+            display = _clean_brand_name(str(wi.get("brand_display_name") or ""))
+        if name and not _looks_like_product_label(name):
+            return name
+        if display:
+            return display
+        return name or display or "Brand"
+
+    canonical_name = _resolve_canonical_business_name(ctx)
+
     return BrandInfo(
-        business_name=ctx.business_name,
+        business_name=canonical_name,
         business_type=ctx.business_type,
         description=ctx.description or "",
         brand_tone=ctx.brand_tone or "professional",
@@ -481,6 +669,7 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
         default_ctas=_parse_json_list(ctx.default_ctas),
         risk_rules=_parse_json_dict(ctx.risk_rules),
         instagram_top_hashtags=_parse_json_list(ctx.instagram_top_hashtags),
+        instagram_handle=(getattr(ctx, "instagram_handle", None) or "").lstrip("@"),
         website_summary=ctx.website_summary or "",
         instagram_bio=ctx.instagram_bio or "",
         discovery_confidence=ctx.discovery_confidence,
@@ -502,6 +691,7 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
         google_trends=getattr(ctx, "google_trends", None) or "",
         gallery_analysis=getattr(ctx, "gallery_analysis", None) or "",
         brand_vibe_profile=getattr(ctx, "brand_vibe_profile", None) or None,
+        brand_theme=ctx.brand_theme if isinstance(getattr(ctx, "brand_theme", None), dict) else None,
         website_intelligence=getattr(ctx, "website_intelligence", None) or None,
         preferred_llm_provider=getattr(ctx, "llm_provider", None) or None,
         preferred_llm_model=getattr(ctx, "llm_model", None) or None,
@@ -535,6 +725,7 @@ def build_brand_info_from_internal(ctx: InternalBrandContext) -> BrandInfo:
         default_ctas=ctx.default_ctas,
         risk_rules=ctx.risk_rules,
         instagram_top_hashtags=ctx.instagram_top_hashtags,
+        instagram_handle=(getattr(ctx, "instagram_handle", None) or "").lstrip("@"),
         website_summary=ctx.website_summary,
         instagram_bio=ctx.instagram_bio,
         discovery_confidence=ctx.discovery_confidence,
@@ -555,10 +746,151 @@ def build_brand_info_from_internal(ctx: InternalBrandContext) -> BrandInfo:
         location_posts=getattr(ctx, "location_posts", None) or "",
         google_trends=getattr(ctx, "google_trends", None) or "",
         gallery_analysis=getattr(ctx, "gallery_analysis", None) or "",
+        operating_capabilities=list(getattr(ctx, "operating_capabilities", None) or []),
+        gallery_policy=dict(getattr(ctx, "gallery_policy", None) or {}),
     )
 
 
+def enrich_brand_operating_policy(brand: BrandInfo) -> BrandInfo:
+    """Attach resolved operating policy prompt block from capabilities / pillars."""
+    from app.services.tenant_policy_service import (
+        build_operating_policy_prompt_block,
+        resolve_tenant_operating_profile,
+    )
+
+    import json as _json
+
+    caps = brand.operating_capabilities or list(brand.content_pillars or [])
+    gallery_json = _json.dumps(brand.gallery_policy) if brand.gallery_policy else None
+    profile = resolve_tenant_operating_profile(
+        tenant_id=brand.tenant_id or "unknown",
+        industry=brand.business_type,
+        content_needs_json=_json.dumps(brand.content_pillars or []),
+        operating_capabilities_json=_json.dumps(caps) if caps else None,
+        gallery_policy_json=gallery_json,
+        risk_rules_json=_json.dumps(brand.risk_rules) if brand.risk_rules else None,
+        custom_rules=brand.custom_rules,
+    )
+    brand.operating_capabilities = profile.enabled_capabilities
+    brand.gallery_policy = profile.gallery_policy
+    brand.operating_policy_prompt = build_operating_policy_prompt_block(profile)
+    return brand
+
+
 # ── Discovery persistence ──────────────────────────────────────────────────
+
+def apply_website_brand_kit(
+    ctx: BrandContext,
+    kit: dict,
+    *,
+    fill_empty_only: bool = True,
+) -> list[str]:
+    """
+    Apply extracted website typography/colors to brand_context + brand_theme JSON.
+    Returns list of field names that were updated.
+    """
+    if not kit or not isinstance(kit, dict):
+        return []
+
+    applied: list[str] = []
+    heading = (kit.get("heading_font") or "").strip()
+    body = (kit.get("body_font") or "").strip()
+    primary = (kit.get("primary_color") or "").strip()
+    accent = (kit.get("accent_color") or "").strip()
+
+    def _empty(val: str | None) -> bool:
+        return not val or not str(val).strip()
+
+    if heading:
+        if not fill_empty_only or _empty(ctx.brand_font_family):
+            ctx.brand_font_family = heading[:64]
+            applied.append("brand_font_family")
+
+    if primary:
+        if not fill_empty_only or _empty(ctx.brand_primary_color):
+            ctx.brand_primary_color = primary[:16]
+            applied.append("brand_primary_color")
+
+    if accent:
+        if not fill_empty_only or _empty(ctx.brand_accent_color):
+            ctx.brand_accent_color = accent[:16]
+            applied.append("brand_accent_color")
+
+    theme = dict(ctx.brand_theme) if isinstance(ctx.brand_theme, dict) else {}
+    typo = dict(theme.get("typography") or {})
+    palette = dict(theme.get("palette") or {})
+
+    if heading and (not fill_empty_only or _empty(typo.get("heading_font"))):
+        typo["heading_font"] = heading
+        applied.append("theme.typography.heading_font")
+    if body and (not fill_empty_only or _empty(typo.get("body_font"))):
+        typo["body_font"] = body
+        applied.append("theme.typography.body_font")
+    if primary and (not fill_empty_only or _empty(palette.get("primary"))):
+        palette["primary"] = primary
+        applied.append("theme.palette.primary")
+    if accent and (not fill_empty_only or _empty(palette.get("accent"))):
+        palette["accent"] = accent
+        applied.append("theme.palette.accent")
+
+    if applied and (typo or palette):
+        if typo:
+            theme["typography"] = typo
+        if palette:
+            theme["palette"] = palette
+        ctx.brand_theme = theme
+
+    return applied
+
+
+async def enrich_brand_kit_from_website(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    fill_empty_only: bool = True,
+) -> dict:
+    """Fetch homepage and apply typography/color kit. Re-derives BrandTheme when applied."""
+    from app.crew.brand_analyzer import fetch_website_deep
+    from app.services.brand_theme_service import derive_brand_theme, save_brand_theme
+
+    ctx = await ensure_brand_context(db, workspace_id)
+    url = (ctx.website_url or "").strip()
+    if not url:
+        return {"ok": False, "error": "no_website_url", "applied": []}
+
+    from app.services.website_brand_kit_service import fetch_brand_kit_from_website
+
+    kit = await fetch_brand_kit_from_website(url)
+    if not kit or kit.get("confidence", 0) < 25:
+        website = await fetch_website_deep(url)
+        kit = website.get("brand_kit") if isinstance(website.get("brand_kit"), dict) else {}
+    if not kit or kit.get("confidence", 0) < 25:
+        return {
+            "ok": False,
+            "error": "no_kit_detected",
+            "applied": [],
+            "website_ok": bool(website.get("raw_fetch_ok")),
+        }
+
+    applied = apply_website_brand_kit(ctx, kit, fill_empty_only=fill_empty_only)
+    if applied:
+        theme = await derive_brand_theme(ctx)
+        await save_brand_theme(ctx, theme, db)
+    else:
+        await db.flush()
+
+    await db.commit()
+
+    return {
+        "ok": bool(applied),
+        "applied": applied,
+        "kit": kit,
+        "brand_font_family": ctx.brand_font_family,
+        "brand_primary_color": ctx.brand_primary_color,
+        "brand_accent_color": ctx.brand_accent_color,
+        "theme": ctx.brand_theme,
+    }
+
 
 async def persist_discovery_result(
     db: AsyncSession,
@@ -582,11 +914,43 @@ async def persist_discovery_result(
     instagram = analysis_result.get("instagram", {})
     google = analysis_result.get("google_business", {})
 
-    sources_ok = (
-        website.get("raw_fetch_ok", False)
-        + instagram.get("raw_fetch_ok", False)
-        + google.get("raw_fetch_ok", False)
+    def _source_ready(
+        source_data: dict,
+        *,
+        configured: bool,
+        cached_signal: bool,
+    ) -> bool:
+        if source_data.get("raw_fetch_ok"):
+            return True
+        if not configured:
+            return False
+        return cached_signal
+
+    website_ready = _source_ready(
+        website,
+        configured=bool(website_url),
+        cached_signal=bool(
+            website.get("title")
+            or website.get("text_snippet")
+            or (ctx and ctx.website_summary)
+        ),
     )
+    instagram_ready = _source_ready(
+        instagram,
+        configured=bool(instagram_handle),
+        cached_signal=bool(
+            instagram.get("bio")
+            or instagram.get("full_name")
+            or (ctx and ctx.instagram_bio)
+        ),
+    )
+    google_ready = _source_ready(
+        google,
+        configured=bool(google_business_url),
+        cached_signal=bool(google.get("name") or google.get("category")),
+    )
+
+    sources_ok = int(website_ready) + int(instagram_ready) + int(google_ready)
     confidence = min(90, 30 + sources_ok * 20)
 
     if ctx is None:
@@ -613,8 +977,10 @@ async def persist_discovery_result(
         ctx.google_business_url = google_business_url
 
     # ── Scalar fields ──────────────────────────────────────────────────────
+    custom_rules_lower = (ctx.custom_rules or "").lower()
+    is_saas_brand = "b2b saas" in custom_rules_lower or "saas" in (ctx.description or "").lower()
+
     # business_type: re-infer with ALL available text for maximum accuracy.
-    # Keep specific values (local_products_shop etc.) even if new analysis says restaurant_cafe.
     new_industry = report.get("industry", "")
     if new_industry:
         from app.crew.brand_analyzer import infer_industry
@@ -624,17 +990,19 @@ async def persist_discovery_result(
             ctx.instagram_bio or "", ctx.description or "", new_industry,
         ]))
         better = normalize_industry_id(infer_industry(all_text))
+        if is_saas_brand and better not in ("agency_services", "ecommerce_retail"):
+            better = "agency_services"
         current = ctx.business_type or ""
         GENERIC = {"general_business", "local_service_business", "business", ""}
         SPECIFIC = {"local_products_shop", "beach_club", "healthcare_clinic",
                     "beauty_wellness", "real_estate", "ecommerce_retail",
                     "agency_services", "mental_health_clinic", "production_company"}
-        # Allow corrective jumps when old value is a common false positive.
-        # Example: production agencies wrongly tagged as restaurant/cafe due "coffee" keyword.
         ALLOW_CORRECTIVE_REMAPS = {
             ("restaurant_cafe", "agency_services"),
             ("coffee_shop", "agency_services"),
             ("hospitality_entertainment", "agency_services"),
+            ("local_service_business", "agency_services"),
+            ("beach_club", "agency_services"),
         }
         should_update = (
             current in GENERIC
@@ -647,14 +1015,18 @@ async def persist_discovery_result(
                 logger.info("updated_business_type_on_reanalysis",
                             workspace_id=str(ctx.workspace_id), old=current, new=better)
 
-    # brand_tone — always overwrite from analysis (analysis knows best)
+    # brand_tone — overwrite from analysis unless SaaS brand has explicit tone
     if report.get("brand_tone"):
-        ctx.brand_tone = report["brand_tone"]
+        if not is_saas_brand or not (ctx.brand_tone or "").strip():
+            ctx.brand_tone = _sanitize_text_for_db(str(report["brand_tone"]), max_len=500)
     if report.get("visual_style"):
-        ctx.visual_style = report["visual_style"]
-    if report.get("target_audience"):
+        ctx.visual_style = _sanitize_text_for_db(str(report["visual_style"]), max_len=500)
+    if report.get("target_audience") and not is_saas_brand:
         audience = report["target_audience"]
-        ctx.target_audience = ", ".join(audience) if isinstance(audience, list) else str(audience)
+        ctx.target_audience = _sanitize_text_for_db(
+            ", ".join(audience) if isinstance(audience, list) else str(audience),
+            max_len=500,
+        )
 
     # location — extract from Instagram bio (📍 pattern) or Google Business address
     if not ctx.location or ctx.location in ("Türkiye", "Turkey", ""):
@@ -676,13 +1048,22 @@ async def persist_discovery_result(
             if len(ln.strip()) > 5 and len(ln.strip()) < 2000 and not _JS_NOISE.search(ln)
         ]
         new_summary = "\n".join(clean_lines).strip()
+    new_summary = _sanitize_text_for_db(new_summary, max_len=4000)
     # Only overwrite if new summary has meaningful content
     if new_summary and len(new_summary.strip()) > 50:
-        ctx.website_summary = new_summary[:4000]
+        ctx.website_summary = new_summary
     if instagram.get("bio"):
         ctx.instagram_bio = instagram["bio"][:500]
-    if analysis_result.get("inferred_language"):
-        ctx.languages = analysis_result["inferred_language"]
+    # Only update languages from analysis if the user has NOT explicitly set it
+    # via the language selector (set-language endpoint). We detect "explicitly set"
+    # by checking if languages is already non-default (i.e. not 'tr' from a previous
+    # inference). Actually, we should NEVER override a user-set language with inference.
+    # The safest rule: only set languages if it's currently unset or still the same
+    # as the newly inferred value (i.e. don't override a deliberate user choice).
+    inferred = analysis_result.get("inferred_language")
+    if inferred and not ctx.languages:
+        # No language set yet — use inferred
+        ctx.languages = inferred
 
     # Google Business signals — always refresh
     gb_rating = google.get("rating") or google.get("totalScore")
@@ -701,8 +1082,10 @@ async def persist_discovery_result(
         ctx.google_review_signals = json.dumps(signals)
 
     # JSON discovery output — always refresh from latest analysis
-    ctx.content_pillars = json.dumps(report.get("content_pillars", []))
-    ctx.default_ctas = json.dumps(report.get("default_ctas", []))
+    if not is_saas_brand or not (ctx.content_pillars or "").strip() or ctx.content_pillars == "[]":
+        ctx.content_pillars = json.dumps(report.get("content_pillars", []))
+    if not is_saas_brand or not (ctx.default_ctas or "").strip() or ctx.default_ctas == "[]":
+        ctx.default_ctas = json.dumps(report.get("default_ctas", []))
     ctx.risk_rules = json.dumps(report.get("risk_rules", {}))
     # top_hashtags is surfaced at the top-level of analysis_result as the canonical value
     ctx.instagram_top_hashtags = json.dumps(analysis_result.get("top_hashtags", []))
@@ -717,6 +1100,8 @@ async def persist_discovery_result(
             s = u.strip()
             if not (s.startswith("http://") or s.startswith("https://")):
                 continue
+            if not _is_usable_gallery_url(s):
+                continue
             if s in seen:
                 continue
             seen.add(s)
@@ -729,7 +1114,7 @@ async def persist_discovery_result(
     # Website intelligence — menu catalog + photo inventory from crawl
     wi = analysis_result.get("website_intelligence")
     if isinstance(wi, dict) and wi:
-        ctx.website_intelligence = wi
+        ctx.website_intelligence = _sanitize_json_value(wi)
 
     # Tripadvisor reviews
     ta_reviews = analysis_result.get("tripadvisor_reviews")
@@ -743,6 +1128,13 @@ async def persist_discovery_result(
 
     ctx.discovery_confidence = confidence
     ctx.last_brand_analysis_at = datetime.now(timezone.utc)
+
+    # Website typography / colors → Marka Detayı + brand_theme
+    wi_kit = website.get("brand_kit") if isinstance(website.get("brand_kit"), dict) else {}
+    if wi_kit.get("confidence", 0) >= 25:
+        apply_website_brand_kit(ctx, wi_kit, fill_empty_only=True)
+
+    provision_synthetic_gallery(ctx)
 
     await db.flush()
     return ctx

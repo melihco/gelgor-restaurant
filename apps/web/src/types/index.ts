@@ -303,6 +303,8 @@ export interface CompanyProfile {
   brandAnalyzedAt?: string;
   platformProfiles: string;
   contentNeeds: string;
+  operatingCapabilities: string;
+  galleryPolicy: string;
   templateFamilies: string;
   riskRules: string;
   customerVisibleSummary: string;
@@ -385,6 +387,8 @@ export interface SaveCompanyProfileRequest {
   brandImageUrls?: string;
   platformProfiles?: string;
   contentNeeds?: string;
+  operatingCapabilities?: string;
+  galleryPolicy?: string;
   templateFamilies?: string;
   riskRules?: string;
   customerVisibleSummary?: string;
@@ -592,6 +596,10 @@ export interface MissionProgress {
   approved_at: string | null;
   started_at: string | null;
   completed_at: string | null;
+  performance_summary?: {
+    production_error?: { message?: string; status_code?: number; at?: string };
+    [key: string]: unknown;
+  } | null;
 }
 
 export interface ProposeMissionsResponse {
@@ -618,6 +626,36 @@ export interface IndustryPlaybookDto {
   riskySignals: string[];
   approvalRequiredFor: string[];
   preferredChannels: string[];
+}
+
+export interface TenantGalleryPolicyDto {
+  allowedAssetIntents: string[];
+  clientPhotoPolicy: string;
+  beforeAfterPolicy: string;
+  maxGalleryPhotos: number;
+  requireConsentMetadata: boolean;
+}
+
+export interface TenantOperatingProfileDto {
+  tenantId: string;
+  industry: string;
+  playbookId: string;
+  enabledCapabilities: string[];
+  galleryPolicy: TenantGalleryPolicyDto;
+  riskRules: Record<string, string>;
+  customRules: string;
+}
+
+export interface TenantCapabilityDefinitionDto {
+  id: string;
+  kind: string;
+  label: string;
+  description: string;
+  industries: string[];
+  defaultEnabled: boolean;
+  riskSignals: string[];
+  requiredAssetIntents: string[];
+  requires: string[];
 }
 
 export interface TenantMediaAsset {
@@ -763,6 +801,23 @@ export interface UsageQuotaMetric {
   isUnlimited: boolean;
 }
 
+export interface PlanMonthlyOutputs {
+  missions: number;
+  socialContent: number;
+  galleryAnalysis: number;
+  reels: number;
+}
+
+export interface PlanUnitEconomics {
+  monthlyPriceTry: number;
+  revenueUsdEstimate: number;
+  monthCostUsd: number;
+  monthBilledUsd: number;
+  costProfitRatio: number | null;
+  effectiveTokenMarginPercent: number;
+  targetTokenMarginPercent: number;
+}
+
 export interface UsageQuotaSummary {
   subscriptionId?: string | null;
   packageName: string;
@@ -774,6 +829,8 @@ export interface UsageQuotaSummary {
   providerActions: UsageQuotaMetric;
   liveProviderActions: UsageQuotaMetric;
   tokens: UsageQuotaMetric;
+  monthlyOutputs?: PlanMonthlyOutputs | null;
+  unitEconomics?: PlanUnitEconomics | null;
 }
 
 export interface SubscriptionAgent {

@@ -9,6 +9,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { IcoLogout, IcoChevronRight, IcoNotification } from './Icons';
 import { apiClient } from '@/lib/api-client';
 import { TokenWalletCard } from './TokenWalletCard';
+import { useTenantBrandContext } from './TenantBrandProvider';
 
 interface ProfileSheetProps {
   onClose: () => void;
@@ -16,6 +17,7 @@ interface ProfileSheetProps {
 
 export function ProfileSheet({ onClose }: ProfileSheetProps) {
   const { t, toggle } = useTheme();
+  const tenantBrand = useTenantBrandContext();
   const { user, setUser } = useAuthStore();
   const { navigate } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
@@ -58,7 +60,7 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
       onTap: () => { navigate('settings'); onClose(); },
     },
     {
-      label: 'Plan & Kullanım',
+      label: 'Kredi & Kullanım',
       sub: 'Premium Plan',
       icon: '◇',
       color: '#a78bfa',
@@ -114,7 +116,7 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary, marginBottom: 2 }}>
-                {user?.displayName ?? 'Lokum Bodrum'}
+                {user?.displayName ?? tenantBrand.brandName ?? 'Workspace'}
               </div>
               <div style={{ fontSize: 13, color: t.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user?.email ?? 'lokumbodrum@example.com'}

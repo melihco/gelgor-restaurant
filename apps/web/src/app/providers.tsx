@@ -6,6 +6,7 @@ import { registerQueryClient } from '@/lib/query-client-bridge';
 import { useNotificationStore } from '@/stores/notification-store';
 import { apiClient, ApiRequestError } from '@/lib/api-client';
 import { hasBrowserApiAuthContext } from '@/lib/runtime-config';
+import { isNexusBackendReachable } from '@/lib/nexus-health';
 import { initializeSignalR } from '@/lib/signalr';
 import { SidebarProvider } from '@/tailadmin/context/SidebarContext';
 import { ThemeProvider } from '@/tailadmin/context/ThemeContext';
@@ -33,15 +34,33 @@ function NotificationHydration() {
           );
         } else if (error instanceof ApiRequestError && error.status === 401) {
           console.debug('[notifications] Oturum yok veya süresi doldu; giriş sonrası yenilenecek.');
+        } else if (error instanceof ApiRequestError && error.status >= 500) {
+          console.debug('[notifications] Sunucu hatası — boş liste kullanılıyor.', error.responseBody?.slice(0, 120));
+          if (!disposed) setNotifications([]);
         } else {
           console.error('Failed to hydrate notifications from API', error);
         }
       }
 
       try {
+        if (!(await isNexusBackendReachable())) {
+          console.debug(
+            '[signalr] Nexus API ulaşılamıyor — canlı bildirimler atlandı. ' +
+              'PostgreSQL + `cd apps/api/src/Nexus.Api && dotnet run` (port 5050).',
+          );
+          return;
+        }
         await initializeSignalR();
       } catch (error) {
-        console.error('Failed to initialize SignalR', error);
+        const msg = error instanceof Error ? error.message : String(error);
+        if (/500|Internal Server Error|Failed to fetch|negotiation/i.test(msg)) {
+          console.debug(
+            '[signalr] Hub bağlantısı kurulamadı (Nexus kapalı veya proxy hatası).',
+            msg.slice(0, 120),
+          );
+        } else {
+          console.warn('Failed to initialize SignalR', error);
+        }
       }
     };
 

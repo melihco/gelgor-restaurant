@@ -62,7 +62,7 @@ from app.services.tenant_learning_service import (
 
 logger = structlog.get_logger()
 
-MAX_NODE_RETRIES = 2
+MAX_NODE_RETRIES = 3  # 4 total attempts (0 + 3 retries) — LLM calls can be flaky
 
 # Task types that require per-tenant serialization (content_agent crews)
 _SERIALIZED_TASK_TYPES = frozenset({
@@ -137,6 +137,12 @@ async def _check_and_complete_mission(
     failed    = sum(1 for row in rows if row.status == TaskNodeStatus.FAILED.value)
     skipped   = sum(1 for row in rows if row.status == TaskNodeStatus.SKIPPED.value)
 
+    r = await db.execute(
+        select(Mission.performance_summary).where(Mission.id == mission_id)
+    )
+    prev_row = r.one_or_none()
+    prev = dict(prev_row[0] or {}) if prev_row else {}
+
     summary = {
         "total_nodes":     total,
         "completed_nodes": completed,
@@ -144,6 +150,8 @@ async def _check_and_complete_mission(
         "skipped_nodes":   skipped,
         "completion_rate": round(completed / total, 2) if total else 0,
     }
+    if prev.get("production_error"):
+        summary["production_error"] = prev["production_error"]
 
     await db.execute(
         update(Mission)
@@ -289,6 +297,33 @@ async def _execute_node(
         agent_role=agent_role,
     )
 
+    # Feed Art Director runs inline after content_ideation (production stack).
+    # Graph nodes exist for Mission Hub visibility only — never invoke crew here.
+    if task_type == "feed_cohesion_review":
+        async with factory() as db:
+            r = await db.execute(
+                select(MissionTaskNode.output_summary).where(MissionTaskNode.id == node_id)
+            )
+            row = r.first()
+            summary = (row[0] if row else None) or ""
+            terminal = (
+                TaskNodeStatus.COMPLETED.value
+                if summary.strip()
+                else TaskNodeStatus.SKIPPED.value
+            )
+            await db.execute(
+                update(MissionTaskNode)
+                .where(MissionTaskNode.id == node_id)
+                .execution_options(synchronize_session=False)
+                .values(
+                    status=terminal,
+                    completed_at=datetime.now(timezone.utc),
+                )
+            )
+            await db.commit()
+        await _advance_after_node(mission_id, workspace_id)
+        return
+
     # ── Step 2: Load brand + inject learning context ───────────────────────────
     async with factory() as db:
         brand = await build_brand_info(db, workspace_id)
@@ -370,10 +405,35 @@ async def _execute_node(
         logger.warning("mission_memory_build_failed", node_key=node_key,
                        error=str(mm_exc)[:200])
 
-    # ── Step 3: Build effective input (inject mission brief) ───────────────────
+    # ── Step 3: Build effective input (inject mission brief + strategy output) ──
     effective_input = dict(input_data or {})
     if mission_brief and not effective_input.get("brief"):
         effective_input["brief"] = mission_brief
+
+    # Wire strategy → ideation/calendar: inject content_strategy output into brief
+    # so the ideation agent sees the weekly theme, pillar_mix and format targets.
+    if task_type in ("content_ideation", "content_calendar"):
+        mm = getattr(brand, "mission_memory", None)
+        if mm:
+            strategy_outputs = [
+                o for o in (mm.completed_outputs or [])
+                if o.get("task_type") == "content_strategy" and o.get("output_summary")
+            ]
+            if strategy_outputs:
+                strategy_brief = strategy_outputs[-1]["output_summary"][:2500]
+                existing_brief = effective_input.get("brief", "")
+                effective_input["brief"] = (
+                    "=== CONTENT STRATEGY (read first — weekly theme, pillar mix, format targets) ===\n"
+                    f"{strategy_brief}\n\n"
+                    "=== MISSION BRIEF ===\n"
+                    f"{existing_brief}"
+                ).strip()
+                logger.info(
+                    "strategy_brief_injected",
+                    node_key=node_key,
+                    task_type=task_type,
+                    strategy_chars=len(strategy_brief),
+                )
 
     # ── Step 4: Execute (with per-tenant lock for content_agent) ──────────────
     timeout = float(settings.crew_execution_timeout_seconds)
@@ -449,13 +509,28 @@ async def _execute_node(
             has_artifact=bool(output_artifact_id),
         )
 
-        # ── Auto-produce: push content_ideation ideas to Feed ─────────────
+        # ── Production Stack: Feed Art Director → auto-produce ───────────────
         if task_type == "content_ideation" and output_summary:
+            asyncio.create_task(
+                _trigger_content_production_pipeline(
+                    workspace_id=workspace_id,
+                    mission_id=mission_id,
+                    node_key=node_key,
+                    output_summary=output_summary,
+                    brand=brand,
+                )
+            )
+
+        # ── content_calendar: announcement cards moved to auto-produce (Remotion) ──
+        # Old SVG/generate-event-card pipeline is disabled.
+        # Remotion EventAnnouncementStory handles all event/announcement stories.
+        # content_calendar ideas flow through auto-produce which fires Remotion renders.
+        if task_type == "content_calendar" and output_summary:
             asyncio.create_task(
                 _trigger_auto_produce(
                     workspace_id=workspace_id,
                     mission_id=mission_id,
-                    node_key=node_key,
+                    node_key=node_key + "_calendar",
                     output_summary=output_summary,
                     brand=brand,
                 )
@@ -660,7 +735,8 @@ async def _recover_stale_running_nodes() -> int:
     """
     factory = _get_session_factory()
     settings = get_settings()
-    stale_threshold_seconds = settings.crew_execution_timeout_seconds * 2
+    # Recover stale nodes after 1.5× timeout (not 2×) for faster recovery.
+    stale_threshold_seconds = settings.crew_execution_timeout_seconds * 1.5
 
     recovered = 0
     async with factory() as db:
@@ -719,7 +795,7 @@ async def _recover_stale_running_nodes() -> int:
                         status=TaskNodeStatus.PENDING.value,
                         started_at=None,
                         retry_count=retry_count + 1,
-                        error_message=f"[Auto-recovery] Stale running state ({int(elapsed)}s). Retry {retry_count + 1}/{MAX_NODE_RETRIES}",
+                        error_message=f"[Auto-recovery] LLM call exceeded {int(stale_threshold_seconds)}s. Retry {retry_count + 1}/{MAX_NODE_RETRIES}",
                     )
                 )
                 logger.warning("stale_node_auto_retry", node_key=row.node_key, elapsed_s=int(elapsed), attempt=retry_count + 1)
@@ -812,13 +888,372 @@ async def advance_all_active_missions() -> dict[str, int]:
 
 # ── Auto-produce: fire-and-forget notification to Next.js BFF ──────────────
 
-async def _trigger_auto_produce(
+async def _trigger_announcement_cards(
     workspace_id: uuid.UUID,
     mission_id: uuid.UUID,
     node_key: str,
     output_summary: str,
     brand: Any,
 ) -> None:
+    """
+    After content_calendar completes, parse announcement card concepts and generate
+    event cards via Next.js /api/generate-event-card for each slot.
+    Each card goes to Nexus as a pending_review artifact (story or post format).
+    """
+    import json as _json
+    import re as _re
+    import httpx
+
+    settings = get_settings()
+    nextjs_url = settings.nextjs_internal_url
+
+    try:
+        # Parse JSON array from output
+        m = _re.search(r"\[.*\]", output_summary, _re.S)
+        if not m:
+            return
+        slots = _json.loads(m.group(0))
+        if not isinstance(slots, list) or not slots:
+            return
+
+        # Pick best gallery photo (non-logo)
+        gallery_urls: list[str] = []
+        if brand and brand.reference_image_urls:
+            raw = brand.reference_image_urls
+            urls = _json.loads(raw) if isinstance(raw, str) else raw
+            gallery_urls = [u for u in (urls or []) if u and "logo" not in u.lower()][:10]
+
+        brand_name = brand.business_name if brand else ""
+        location = brand.location if brand else ""
+
+        # Resolve brand theme / vibe profile for colors
+        vibe_profile: dict | None = None
+        if brand and brand.brand_vibe_profile:
+            vp = brand.brand_vibe_profile
+            vibe_profile = (_json.loads(vp) if isinstance(vp, str) else vp)
+
+        nexus_api = (settings.nexus_api_url if hasattr(settings, "nexus_api_url") else "http://127.0.0.1:5050")
+        internal_key = settings.internal_api_key if hasattr(settings, "internal_api_key") else "smartagency-internal-dev-key"
+
+        produced = 0
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            for i, slot in enumerate(slots[:5]):  # max 5 cards per calendar run
+                if not isinstance(slot, dict):
+                    continue
+                event_name = slot.get("event_name") or slot.get("theme") or ""
+                if not event_name:
+                    continue
+                tagline = slot.get("tagline") or slot.get("content_brief", "")[:80]
+                fmt = slot.get("format", "story")
+                content_type = "story" if "story" in fmt.lower() else "post"
+                photo_url = gallery_urls[i % len(gallery_urls)] if gallery_urls else None
+                if not photo_url:
+                    continue
+
+                # Call generate-event-card
+                body: dict = {
+                    "photoUrl": photo_url,
+                    "contentType": content_type,
+                    "brandName": brand_name,
+                    "location": location,
+                    "workspaceId": str(workspace_id),
+                    "eventName": event_name,
+                    "tagline": tagline,
+                    "date": slot.get("date") or "",
+                    "time": slot.get("time") or "",
+                    "venueArea": slot.get("venue_area") or "",
+                    "enhancePhoto": False,
+                    "vibeProfile": {
+                        "grading": (vibe_profile or {}).get("grading"),
+                        "palette": (vibe_profile or {}).get("palette"),
+                    } if vibe_profile else None,
+                }
+                try:
+                    r = await client.post(f"{nextjs_url}/api/generate-event-card",
+                        headers={"Content-Type": "application/json"}, json=body)
+                    if not r.is_success:
+                        continue
+                    data = r.json()
+                    image_url = data.get("imageUrl")
+                    if not image_url:
+                        continue
+
+                    # Save to Nexus
+                    artifact = {
+                        "title": f"{event_name} — {brand_name}",
+                        "contentUrl": image_url,
+                        "content": _json.dumps({
+                            "kind": f"instagram_{content_type}",
+                            "imageUrl": image_url,
+                            "headline": event_name,
+                            "caption": tagline,
+                            "source": "announcement_calendar",
+                            "announcement_type": slot.get("announcement_type", ""),
+                            "mission_id": str(mission_id),
+                            "node_key": node_key,
+                        }),
+                        "platform": "instagram",
+                        "contentType": f"instagram_{content_type}",
+                        "metadata": {
+                            "auto_produced": True,
+                            "source": "announcement_calendar",
+                            "announcement_type": slot.get("announcement_type", ""),
+                            "headline": event_name,
+                            "mission_id": str(mission_id),
+                        },
+                    }
+                    save_r = await client.post(f"{nexus_api}/api/artifacts/creative",
+                        headers={"Content-Type": "application/json",
+                                 "X-Tenant-Id": str(workspace_id),
+                                 "X-Internal-Api-Key": internal_key},
+                        json=artifact)
+                    if save_r.is_success:
+                        produced += 1
+                except Exception:
+                    continue
+
+        logger.info("announcement_cards_produced",
+                    mission_id=str(mission_id), node_key=node_key, produced=produced)
+
+    except Exception as exc:
+        logger.warning("announcement_cards_error",
+                        mission_id=str(mission_id), error=str(exc)[:300])
+
+
+async def _load_mission_production_context(
+    mission_id: uuid.UUID,
+) -> dict[str, str]:
+    """Title, brief, strategist type for manifest + Feed Art Director."""
+    factory = _get_session_factory()
+    try:
+        from sqlalchemy import select as _select
+        from app.models.mission import Mission as _Mission
+
+        async with factory() as db:
+            r = await db.execute(_select(_Mission).where(_Mission.id == mission_id))
+            m = r.scalar_one_or_none()
+            if not m:
+                return {}
+            return {
+                "mission_type": str(getattr(m, "type", "") or ""),
+                "mission_title": str(getattr(m, "title", "") or "")[:200],
+                "creative_brief": str(getattr(m, "creative_brief", "") or "")[:800],
+            }
+    except Exception:
+        return {}
+
+
+async def _trigger_content_production_pipeline(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    node_key: str,
+    output_summary: str,
+    brand: Any,
+) -> None:
+    """
+    Production Stack entry point: Feed Art Director review FIRST, then auto-produce
+    with the report so layout rotation, hero reel, and flagged ideas apply.
+    """
+    mission_ctx = await _load_mission_production_context(mission_id)
+    report: dict = {}
+    try:
+        report = await _run_feed_art_director_report(
+            workspace_id=workspace_id,
+            mission_id=mission_id,
+            output_summary=output_summary,
+            brand=brand,
+            mission_ctx=mission_ctx,
+        )
+    except Exception as exc:
+        logger.warning(
+            "production_stack_feed_director_failed",
+            mission_id=str(mission_id),
+            error=str(exc)[:200],
+        )
+
+    produce_data = await _trigger_auto_produce(
+        workspace_id=workspace_id,
+        mission_id=mission_id,
+        node_key=node_key,
+        output_summary=output_summary,
+        brand=brand,
+        feed_director_report=report or None,
+        mission_ctx=mission_ctx,
+    )
+    if produce_data and report:
+        pis = produce_data.get("pis")
+        if pis:
+            report["production_pis"] = pis
+            await _persist_feed_cohesion_report(mission_id, workspace_id, report)
+
+
+async def _ideation_dep_keys_for_mission(db: AsyncSession, mission_id: uuid.UUID) -> list[str]:
+    r = await db.execute(
+        select(MissionTaskNode.node_key).where(
+            MissionTaskNode.mission_id == mission_id,
+            MissionTaskNode.task_type == "content_ideation",
+        )
+    )
+    keys = [row[0] for row in r.all()]
+    return keys or ["content_ideation"]
+
+
+async def _upsert_feed_cohesion_review_output(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    report_json: str,
+) -> None:
+    """
+    Persist Feed Art Director report on a mission node for Mission Hub.
+    Creates a completed node when strategist graphs omit feed_cohesion_review.
+    """
+    factory = _get_session_factory()
+    async with factory() as db:
+        existing = await db.execute(
+            select(MissionTaskNode).where(
+                MissionTaskNode.mission_id == mission_id,
+                MissionTaskNode.task_type == "feed_cohesion_review",
+            )
+        )
+        existing_node = existing.scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+
+        if existing_node:
+            await db.execute(
+                update(MissionTaskNode)
+                .where(MissionTaskNode.id == existing_node.id)
+                .execution_options(synchronize_session=False)
+                .values(
+                    status=TaskNodeStatus.COMPLETED.value,
+                    completed_at=now,
+                    output_summary=report_json,
+                )
+            )
+        else:
+            dep_keys = await _ideation_dep_keys_for_mission(db, mission_id)
+            db.add(
+                MissionTaskNode(
+                    id=uuid.uuid4(),
+                    mission_id=mission_id,
+                    workspace_id=workspace_id,
+                    node_key="feed_cohesion_review",
+                    phase_index=2,
+                    title="Feed uyumu ve slot planı",
+                    task_type="feed_cohesion_review",
+                    agent_role="feed_art_director_agent",
+                    input_data={},
+                    depends_on=dep_keys,
+                    status=TaskNodeStatus.COMPLETED.value,
+                    completed_at=now,
+                    output_summary=report_json,
+                    retry_count=0,
+                )
+            )
+        await db.commit()
+
+
+async def _run_feed_art_director_report(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    output_summary: str,
+    brand: Any,
+    mission_ctx: dict[str, str] | None = None,
+) -> dict:
+    """Run Feed Art Director crew and persist report node. Returns report dict."""
+    import json as _json
+
+    from app.crew.crews.feed_art_director_crew import run_feed_art_director
+
+    ctx = mission_ctx or {}
+    weekly_theme = ""
+    try:
+        clean = output_summary.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+        ideas = _json.loads(clean) if clean.startswith("[") else []
+        if ideas:
+            weekly_theme = str(ideas[0].get("strategic_purpose", "") or "")[:100]
+    except Exception:
+        pass
+    brief = (ctx.get("creative_brief") or "").strip()
+    title = (ctx.get("mission_title") or "").strip()
+    if brief and brief not in weekly_theme:
+        weekly_theme = f"{weekly_theme} | {brief[:120]}".strip(" |")
+
+    report = run_feed_art_director(
+        brand=brand,
+        content_ideas_json=output_summary[:6000],
+        weekly_theme=weekly_theme,
+        mission_type=ctx.get("mission_type") or "",
+        mission_title=title,
+        creative_brief=brief,
+    )
+
+    report_json = _json.dumps(report, ensure_ascii=False, indent=2)
+
+    logger.info(
+        "feed_art_director_complete",
+        mission_id=str(mission_id),
+        feed_score=report.get("feed_score"),
+        hero_reel=report.get("hero_reel_index"),
+        verdict=str(report.get("art_director_verdict", ""))[:80],
+    )
+
+    await _upsert_feed_cohesion_review_output(mission_id, workspace_id, report_json)
+
+    return report
+
+
+async def _persist_feed_cohesion_report(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    report: dict,
+) -> None:
+    """Merge production_pis (and FD fields) into feed_cohesion_review node output."""
+    import json as _json
+
+    await _upsert_feed_cohesion_review_output(
+        mission_id,
+        workspace_id,
+        _json.dumps(report, ensure_ascii=False, indent=2),
+    )
+
+
+async def _record_mission_production_failure(
+    mission_id: uuid.UUID,
+    *,
+    status_code: int,
+    error: str,
+) -> None:
+    """Surface auto-produce blocks (budget 429, etc.) on the mission for Mission Hub."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.performance_summary).where(Mission.id == mission_id)
+        )
+        row = r.one_or_none()
+        summary = dict(row[0] or {}) if row else {}
+        summary["production_error"] = {
+            "message": error,
+            "status_code": status_code,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(performance_summary=summary),
+        )
+        await db.commit()
+
+
+async def _trigger_auto_produce(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    node_key: str,
+    output_summary: str,
+    brand: Any,
+    feed_director_report: dict | None = None,
+    mission_ctx: dict[str, str] | None = None,
+) -> dict | None:
     """
     Non-blocking call to Next.js /api/auto-produce after content_ideation completes.
     Parses the raw_output into ideas, attaches gallery analysis, and lets the BFF
@@ -831,48 +1266,79 @@ async def _trigger_auto_produce(
     settings = get_settings()
     nextjs_url = settings.nextjs_internal_url
 
+    if not mission_ctx:
+        mission_ctx = await _load_mission_production_context(mission_id)
+
     try:
         # ── Use canvas_output_parser for robust, schema-validated parsing ─────
         from app.crew.canvas_output_parser import parse_ideation_output
-        canvas_ideas = parse_ideation_output(output_summary)
+        # Priority 1: raw JSON parse — preserves full visual_production_spec,
+        # image_edit_prompt, reel_motion_spec from _enforce_idea_completeness.
+        # Canvas parser strips VPS and hardcodes "pure_photo" / empty reel spec.
+        ideas: list = []
+        json_match = _re.search(r"\[.*\]", output_summary, _re.DOTALL)
+        if json_match:
+            try:
+                raw_list = _json.loads(json_match.group())
+                ideas = raw_list if isinstance(raw_list, list) else []
+            except Exception:
+                ideas = []
 
-        # Fallback: old raw regex parse if parser returns nothing
-        if not canvas_ideas:
-            json_match = _re.search(r"\[.*\]", output_summary, _re.DOTALL)
-            if not json_match:
+        # Priority 2: canvas parser — only if raw parse failed or returned nothing
+        if not ideas:
+            canvas_ideas = parse_ideation_output(output_summary)
+            if canvas_ideas:
+                for c in canvas_ideas:
+                    vb = c.get("visualBrief") or {}
+                    ideas.append({
+                        **c,
+                        "concept_title":        c.get("ideaTitle") or c.get("headline", ""),
+                        "caption_draft":        c.get("caption", ""),
+                        "content_kind":         "instagram_" + c.get("format", "post").replace("feed", "post"),
+                        "selected_gallery_url": vb.get("galleryUrl"),
+                        # Preserve as much VPS as canvas output carries
+                        "visual_production_spec": {
+                            "treatment":            vb.get("treatment") or "pure_photo",
+                            "selected_gallery_url": vb.get("galleryUrl"),
+                            "image_edit_prompt":    vb.get("imageEditPrompt") or vb.get("editPrompt", ""),
+                            "text_layers":          vb.get("textLayers") or {},
+                            "reel_motion_spec":     vb.get("reelMotionSpec") or {},
+                        },
+                    })
+                logger.info(
+                    "canvas_output_parsed_for_auto_produce",
+                    mission_id=str(mission_id),
+                    idea_count=len(ideas),
+                )
+            else:
                 logger.warning("auto_produce_skip_no_json", mission_id=str(mission_id), node_key=node_key)
                 return
-            raw_list = _json.loads(json_match.group())
-            ideas = raw_list if isinstance(raw_list, list) else []
-        else:
-            # canvas_ideas are already normalized CanvasOutput dicts
-            # Convert to the ParsedIdea shape auto-produce expects
-            ideas = []
-            for c in canvas_ideas:
-                ideas.append({
-                    **c,
-                    # Map CanvasOutput fields to ParsedIdea fields auto-produce reads
-                    "concept_title":  c.get("ideaTitle") or c.get("headline", ""),
-                    "caption_draft":  c.get("caption", ""),
-                    "content_kind":   "instagram_" + c.get("format", "post").replace("feed", "post"),
-                    "selected_gallery_url": c.get("visualBrief", {}).get("galleryUrl"),
-                    "visual_production_spec": {
-                        "treatment":            "pure_photo",
-                        "selected_gallery_url": c.get("visualBrief", {}).get("galleryUrl"),
-                        "image_edit_prompt":    c.get("visualBrief", {}).get("treatment", ""),
-                        "text_layers":          {},
-                        "reel_motion_spec":     {},
-                    },
-                })
-            logger.info(
-                "canvas_output_parsed_for_auto_produce",
-                mission_id=str(mission_id),
-                idea_count=len(ideas),
-                layouts=[i.get("layoutId") for i in canvas_ideas[:5]],
-            )
 
         if not ideas:
             return
+
+        # Experimental Visual Production Director (opt-in — failures are non-fatal)
+        try:
+            from app.services.visual_production_director_service import (
+                maybe_enrich_ideas_with_visual_director,
+            )
+
+            factory = _get_session_factory()
+            async with factory() as _vpd_db:
+                ideas = await maybe_enrich_ideas_with_visual_director(
+                    _vpd_db,
+                    workspace_id,
+                    brand,
+                    ideas,
+                    mission_ctx=mission_ctx,
+                    feed_director_report=feed_director_report,
+                )
+        except Exception as _vpd_exc:
+            logger.warning(
+                "visual_production_director.hook_failed",
+                mission_id=str(mission_id),
+                error=str(_vpd_exc)[:200],
+            )
 
         gallery = {}
         if brand and brand.gallery_analysis:
@@ -881,6 +1347,34 @@ async def _trigger_auto_produce(
             except Exception:
                 pass
 
+        # Auto-analyze gallery for new tenants: if reference photos exist but gallery
+        # has never been analyzed, trigger background analysis so matching works correctly.
+        # Fire-and-forget — doesn't block production.
+        ref_urls_raw = brand.reference_image_urls if brand else None
+        ref_count = 0
+        if ref_urls_raw:
+            try:
+                ref_urls = _json.loads(ref_urls_raw) if isinstance(ref_urls_raw, str) else ref_urls_raw
+                ref_count = len(ref_urls) if isinstance(ref_urls, list) else 0
+            except Exception:
+                pass
+        if ref_count > 0 and not gallery:
+            try:
+                nextjs_url_for_analyze = (
+                    getattr(settings, "nextjs_url", "http://localhost:3000").rstrip("/")
+                    if hasattr(settings, "nextjs_url") else "http://localhost:3000"
+                )
+                async with httpx.AsyncClient(timeout=5.0) as _ac:
+                    await _ac.post(
+                        f"{nextjs_url_for_analyze}/api/gallery-intelligence/{workspace_id}/analyze-coverage",
+                        json={"tier": "standard", "maxPhotos": 20},
+                    )
+                logger.info("auto_gallery_analysis_triggered", workspace_id=str(workspace_id))
+            except Exception as _age:
+                logger.warning("auto_gallery_analysis_trigger_failed",
+                               workspace_id=str(workspace_id), error=str(_age)[:100])
+
+        ctx = mission_ctx or {}
         payload = {
             "workspaceId": str(workspace_id),
             "missionId": str(mission_id),
@@ -888,13 +1382,37 @@ async def _trigger_auto_produce(
             "ideas": ideas,
             "galleryAnalysis": gallery,
             "brandName": brand.business_name if brand else "",
+            "bundleCards": True,
+            "missionType": ctx.get("mission_type") or None,
+            "missionTitle": ctx.get("mission_title") or None,
+            "creativeBrief": ctx.get("creative_brief") or None,
         }
+        if feed_director_report:
+            payload["feedDirectorReport"] = feed_director_report
+        pkg = feed_director_report.get("production_package") if feed_director_report else None
+        if isinstance(pkg, str) and pkg:
+            payload["productionPackage"] = pkg
 
         # 320s matches Next.js route maxDuration=300s plus startup buffer.
         # Runway reels can take 3+ minutes, so 30s was timing out before artifacts
         # were created. Fire-and-forget: caller ignores the timeout warning.
-        async with httpx.AsyncClient(timeout=320.0) as client:
-            resp = await client.post(f"{nextjs_url}/api/auto-produce", json=payload)
+        internal_key = getattr(settings, "internal_api_key", None) or ""
+        # X-Tenant-Id is always required — Nexus saves artifact under this tenant.
+        headers: dict[str, str] = {"X-Tenant-Id": str(workspace_id)}
+        if internal_key:
+            headers["X-Internal-Api-Key"] = internal_key
+
+        # connect_timeout: fast (local) — just confirm the POST is accepted.
+        # read_timeout: generous (360s) — Runway reels + Remotion stories take 3-5 min.
+        # RemoteProtocolError / ReadTimeout are treated as fire-and-forget below:
+        # the Next.js route keeps running in background even if Python disconnects.
+        _timeout = httpx.Timeout(connect=15.0, read=360.0, write=30.0, pool=5.0)
+        async with httpx.AsyncClient(timeout=_timeout) as client:
+            resp = await client.post(
+                f"{nextjs_url}/api/auto-produce",
+                json=payload,
+                headers=headers or None,
+            )
 
         if resp.status_code < 300:
             data = resp.json()
@@ -903,17 +1421,104 @@ async def _trigger_auto_produce(
                 mission_id=str(mission_id),
                 node_key=node_key,
                 produced=data.get("produced", 0),
+                pis_avg=(data.get("pis") or {}).get("avg"),
+                pis_skipped=(data.get("pis") or {}).get("skipped"),
             )
+            return data
         else:
+            err_body = resp.text[:500]
             logger.warning(
                 "auto_produce_failed",
                 mission_id=str(mission_id),
                 status=resp.status_code,
-                body=resp.text[:300],
+                body=err_body,
+            )
+            try:
+                err_json = resp.json()
+                err_msg = str(err_json.get("error") or err_body)[:400]
+            except Exception:
+                err_msg = err_body[:400]
+            await _record_mission_production_failure(
+                mission_id,
+                status_code=resp.status_code,
+                error=err_msg,
             )
     except Exception as exc:
+        import httpx as _httpx
+        # ReadTimeout / RemoteProtocolError = route is still running in the background
+        # (fire-and-forget scenario: connection dropped but Next.js continues producing).
+        # Do NOT record these as production failures — artifacts will appear later.
+        _is_timeout = isinstance(exc, (_httpx.ReadTimeout, _httpx.ConnectTimeout))
+        _is_disconnect = isinstance(exc, _httpx.RemoteProtocolError)
+        if _is_timeout or _is_disconnect:
+            logger.info(
+                "auto_produce_fire_and_forget",
+                mission_id=str(mission_id),
+                reason="route_still_running",
+                exc=str(exc)[:120],
+            )
+        else:
+            logger.warning(
+                "auto_produce_error",
+                mission_id=str(mission_id),
+                error=str(exc)[:300],
+            )
+            await _record_mission_production_failure(
+                mission_id,
+                status_code=0,
+                error=str(exc)[:400],
+            )
+    return None
+
+
+async def _trigger_feed_art_director(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    node_key: str,
+    output_summary: str,
+    brand: Any,
+) -> None:
+    """
+    Non-blocking call to Feed Art Director crew after content_ideation completes.
+    Saves the cohesion report as a new completed node in the mission graph
+    so it appears in Mission Detail Sheet.
+    """
+    import json as _json
+
+    try:
+        from app.crew.crews.feed_art_director_crew import run_feed_art_director
+
+        # Extract weekly theme from the ideation output if available
+        weekly_theme = ""
+        try:
+            clean = output_summary.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+            ideas = _json.loads(clean) if clean.startswith("[") else []
+            if ideas:
+                weekly_theme = str(ideas[0].get("strategic_purpose", "") or "")[:100]
+        except Exception:
+            pass
+
+        report = run_feed_art_director(
+            brand=brand,
+            content_ideas_json=output_summary[:6000],
+            weekly_theme=weekly_theme,
+        )
+
+        report_json = _json.dumps(report, ensure_ascii=False, indent=2)
+
+        logger.info(
+            "feed_art_director_complete",
+            mission_id=str(mission_id),
+            node_key=node_key,
+            feed_score=report.get("feed_score"),
+            verdict=str(report.get("art_director_verdict", ""))[:80],
+        )
+
+        await _upsert_feed_cohesion_review_output(mission_id, workspace_id, report_json)
+
+    except Exception as exc:
         logger.warning(
-            "auto_produce_error",
+            "feed_art_director_error",
             mission_id=str(mission_id),
             error=str(exc)[:300],
         )

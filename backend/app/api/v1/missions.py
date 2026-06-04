@@ -84,6 +84,7 @@ class MissionProgressResponse(BaseModel):
     approved_at: datetime | None
     started_at: datetime | None
     completed_at: datetime | None
+    performance_summary: dict[str, Any] | None = None
 
 
 class MissionSummaryItem(BaseModel):
@@ -123,6 +124,13 @@ class ProposeMissionsResponse(BaseModel):
     proposals_created: int
     missions: list[dict[str, Any]]
     message: str
+
+
+class ProposeMissionsRequest(BaseModel):
+    """Optional propose-time context. `context_signals` is a deterministic
+    markdown block (season, full moon, holidays, weekly rhythm, sector triggers)
+    produced by the TS Context Signal Engine and injected into the Strategist."""
+    context_signals: str | None = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,6 +192,7 @@ def _build_progress(
         approved_at=mission.approved_at,
         started_at=mission.started_at,
         completed_at=mission.completed_at,
+        performance_summary=mission.performance_summary,
     )
 
 
@@ -270,6 +279,7 @@ async def list_workspace_missions(
 @router.post("/{workspace_id}/propose", response_model=ProposeMissionsResponse)
 async def propose_missions(
     workspace_id: uuid.UUID,
+    body: ProposeMissionsRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -287,8 +297,11 @@ async def propose_missions(
     The frontend should show a loading/progress indicator.
     """
     logger.info("propose_missions_requested", workspace_id=str(workspace_id))
+    context_signals = (body.context_signals if body else None) or None
     try:
-        created = await propose_missions_for_workspace(db, workspace_id)
+        created = await propose_missions_for_workspace(
+            db, workspace_id, context_signals=context_signals,
+        )
     except RuntimeError as exc:
         # Human-readable LLM/quota errors — return 402 so frontend can display them
         err_msg = str(exc)
@@ -311,6 +324,63 @@ async def propose_missions(
             "Misyon önerisi üretilemedi. Marka bağlamı ve sinyal verilerini kontrol edin."
         ),
     )
+
+
+@router.get("/{workspace_id}/agent-stats")
+async def get_workspace_agent_stats(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns per-agent-role execution statistics derived from task nodes.
+    Used by the Agents (Keşfet) screen to populate stats for agents that
+    run via the Python mission pipeline (content_strategy_agent, content_agent,
+    review_agent) which are not tracked in the Nexus AgentRuns table.
+    Must be declared BEFORE /{workspace_id}/{mission_id} to avoid UUID parse clash.
+    """
+    from sqlalchemy import func, case
+
+    rows = await db.execute(
+        select(
+            MissionTaskNode.agent_role,
+            MissionTaskNode.task_type,
+            func.count(MissionTaskNode.id).label("total"),
+            func.sum(
+                case((MissionTaskNode.status == TaskNodeStatus.COMPLETED.value, 1), else_=0)
+            ).label("completed"),
+            func.sum(
+                case((MissionTaskNode.status == TaskNodeStatus.FAILED.value, 1), else_=0)
+            ).label("failed"),
+            func.max(MissionTaskNode.completed_at).label("last_run_at"),
+        )
+        .join(Mission, MissionTaskNode.mission_id == Mission.id)
+        .where(Mission.workspace_id == workspace_id)
+        .group_by(MissionTaskNode.agent_role, MissionTaskNode.task_type)
+    )
+
+    stats: dict[str, dict] = {}
+    for row in rows.all():
+        role = row.agent_role or "unknown"
+        if role not in stats:
+            stats[role] = {
+                "agent_role": role,
+                "total": 0,
+                "completed": 0,
+                "failed": 0,
+                "last_run_at": None,
+                "task_types": [],
+            }
+        stats[role]["total"] += row.total or 0
+        stats[role]["completed"] += row.completed or 0
+        stats[role]["failed"] += row.failed or 0
+        stats[role]["task_types"].append(row.task_type)
+        if row.last_run_at:
+            new_val = row.last_run_at.isoformat() if hasattr(row.last_run_at, "isoformat") else str(row.last_run_at)
+            existing = stats[role]["last_run_at"]
+            if existing is None or new_val > existing:
+                stats[role]["last_run_at"] = new_val
+
+    return {"workspace_id": str(workspace_id), "agent_stats": list(stats.values())}
 
 
 @router.get("/{workspace_id}/{mission_id}", response_model=MissionDetailResponse)

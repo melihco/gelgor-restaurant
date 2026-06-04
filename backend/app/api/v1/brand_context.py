@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -19,7 +19,7 @@ from app.schemas.brand_context import (
     BrandContextUpdate,
     SourceStatus,
 )
-from app.schemas.brand_theme import BrandThemeSaveRequest
+from app.schemas.brand_theme import AiThemeSettingsPatch, BrandThemeSaveRequest
 from app.schemas.brand_vibe import (
     BrandVibeSaveRequest,
     ScrapeRefAccountsRequest,
@@ -127,19 +127,7 @@ async def get_brand_context(
     workspace_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    ctx = await brand_context_service.get_brand_context(db, workspace_id)
-    if not ctx:
-        # Auto-provision workspace + brand_context for new tenants
-        try:
-            from app.services.workspace_service import ensure_nexus_mirror_workspace
-            await ensure_nexus_mirror_workspace(db, workspace_id)
-            await db.commit()
-            ctx = await brand_context_service.get_brand_context(db, workspace_id)
-        except Exception:
-            pass
-    if not ctx:
-        raise HTTPException(404, "Brand context not configured for this workspace")
-    # Auto-fill any empty critical fields so the UI never shows blanks
+    ctx = await brand_context_service.ensure_brand_context(db, workspace_id)
     ctx = await brand_context_service.seed_missing_brand_fields(db, ctx)
     return ctx
 
@@ -176,9 +164,8 @@ async def confirm_brand_constitution(
     """Sets brand_constitution_confirmed_at; agents receive confirmed=True after this.
     Also auto-bootstraps BrandTheme so the brand kit is ready immediately.
     """
-    ctx = await brand_context_service.get_brand_context(db, workspace_id)
-    if not ctx:
-        raise HTTPException(404, "Brand context not found")
+    ctx = await brand_context_service.ensure_brand_context(db, workspace_id)
+    ctx = await brand_context_service.seed_missing_brand_fields(db, ctx)
     ctx.brand_constitution_confirmed_at = datetime.now(timezone.utc)
     await db.flush()
     logger.info("brand_constitution_confirmed", workspace_id=str(workspace_id))
@@ -206,6 +193,48 @@ async def confirm_brand_constitution(
     _asyncio.create_task(_bootstrap_theme())
 
     return ctx
+
+
+@router.post("/{workspace_id}/enrich-brand-kit-from-website")
+async def enrich_brand_kit_from_website(
+    workspace_id: uuid.UUID,
+    fill_empty_only: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Crawl the brand website homepage and fill Tipografi / Renkler when empty.
+    Used by Marka Detayı and batch backfill scripts.
+    """
+    try:
+        result = await brand_context_service.enrich_brand_kit_from_website(
+            db, workspace_id, fill_empty_only=fill_empty_only,
+        )
+    except Exception as exc:
+        logger.error("enrich_brand_kit_failed", workspace_id=str(workspace_id), error=str(exc))
+        raise HTTPException(500, f"Brand kit enrichment failed: {exc}") from exc
+
+    if not result.get("ok"):
+        raise HTTPException(
+            422,
+            result.get("error") or "Could not detect fonts or colors from website",
+        )
+
+    kit = result.get("kit") or {}
+    return {
+        "ok": True,
+        "applied": result.get("applied", []),
+        "primary_font": result.get("brand_font_family") or kit.get("heading_font"),
+        "secondary_font": (kit.get("body_font") or ""),
+        "brand_colors": ", ".join(
+            x for x in [
+                result.get("brand_primary_color") or kit.get("primary_color"),
+                result.get("brand_accent_color") or kit.get("accent_color"),
+            ] if x
+        ),
+        "accent_color": result.get("brand_accent_color") or kit.get("accent_color"),
+        "kit": kit,
+        "theme": result.get("theme"),
+    }
 
 
 @router.post("/{workspace_id}/analyze", response_model=BrandAnalyzeResponse)
@@ -288,6 +317,26 @@ async def analyze_brand_context(
     except Exception as exc:
         logger.error("brand_context_persist_failed", workspace_id=str(workspace_id), error=str(exc))
         raise HTTPException(500, f"Failed to save analysis results: {exc}") from exc
+
+    # Re-derive theme when website kit filled typography / colors
+    wi_kit = website_data.get("brand_kit") if isinstance(website_data.get("brand_kit"), dict) else {}
+    if wi_kit.get("confidence", 0) >= 25:
+        try:
+            from app.services.brand_theme_service import derive_brand_theme, save_brand_theme
+            theme = await derive_brand_theme(ctx)
+            await save_brand_theme(ctx, theme, db)
+            logger.info(
+                "brand_theme_updated_from_website_kit",
+                workspace_id=str(workspace_id),
+                heading=wi_kit.get("heading_font"),
+                primary=wi_kit.get("primary_color"),
+            )
+        except Exception as exc:
+            logger.warning(
+                "brand_theme_website_kit_derive_failed",
+                workspace_id=str(workspace_id),
+                error=str(exc)[:200],
+            )
 
     import asyncio as _asyncio
 
@@ -650,6 +699,9 @@ class GalleryAnalysisEntry(_BaseModel):
     is_logo: bool = _Field(default=False, alias="isLogo")
     suggested_asset_type: str = _Field(default="venue_reference", alias="suggestedAssetType")
     usage_context: str = _Field(default="", alias="usageContext")
+    # Sprint 2 (GIS): deterministic analysis quality (0..100) + freshness timestamp
+    quality_score: int | None = _Field(default=None, alias="qualityScore")
+    analyzed_at: str | None = _Field(default=None, alias="analyzedAt")
 
 class GalleryAnalysisSaveRequest(_BaseModel):
     results: list[GalleryAnalysisEntry]
@@ -697,6 +749,132 @@ async def get_gallery_analysis(
         data = {}
     # Return the flat {url: analysis} dict directly — frontend uses it as-is
     return data
+
+
+# ── ICS — Idea Contract Score from recent content_ideation nodes ───────────────
+
+@router.get("/{workspace_id}/ics-score")
+async def get_ics_score(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Average Idea Contract Score (ICS) computed from the last 5 content_ideation
+    nodes for this workspace. Each idea is scored on 9 required fields (0..100).
+    """
+    import json as _json
+    import re as _re
+    from sqlalchemy import select as _select, and_ as _and
+    from app.models.mission import Mission, MissionTaskNode as _MissionTaskNode
+
+    try:
+        result = await db.execute(
+            _select(_MissionTaskNode)
+            .join(Mission, Mission.id == _MissionTaskNode.mission_id)
+            .where(_and(
+                Mission.workspace_id == workspace_id,
+                _MissionTaskNode.task_type == "content_ideation",
+                _MissionTaskNode.status == "completed",
+                _MissionTaskNode.output_summary.isnot(None),
+            ))
+            .order_by(_MissionTaskNode.completed_at.desc())
+            .limit(5)
+        )
+        nodes = result.scalars().all()
+    except Exception:
+        return {"ics": None, "sample_size": 0}
+
+    all_scores: list[int] = []
+    for node in nodes:
+        raw = node.output_summary or ""
+        m = _re.search(r"\[.*\]", raw, _re.S)
+        try:
+            ideas = _json.loads(m.group(0)) if m else []
+        except Exception:
+            ideas = []
+        for idea in ideas:
+            if not isinstance(idea, dict):
+                continue
+            vps = idea.get("visual_production_spec") or {}
+            cfc = idea.get("canva_field_copy")
+            has_cfc_headline = isinstance(cfc, dict) and bool(cfc.get("headline"))
+            present = sum([
+                bool(idea.get("headline") or idea.get("concept_title")),
+                bool(idea.get("caption_draft") or idea.get("caption")),
+                bool(idea.get("content_type")),
+                bool(idea.get("cta")),
+                bool(idea.get("template_use_case")),
+                bool(isinstance(vps, dict) and vps.get("selected_gallery_url")),
+                bool(isinstance(vps, dict) and vps.get("image_edit_prompt")),
+                bool(has_cfc_headline),
+                bool(idea.get("hashtags")),
+            ])
+            all_scores.append(round(present / 9 * 100))
+
+    if not all_scores:
+        return {"ics": None, "sample_size": 0}
+    ics = round(sum(all_scores) / len(all_scores))
+    return {"ics": ics, "sample_size": len(all_scores), "min": min(all_scores), "max": max(all_scores)}
+
+
+# ── Gallery match-score instrumentation (Sprint 2 / S2.9) ─────────────────────
+
+class GalleryMatchStatsRequest(_BaseModel):
+    """Append a batch of caption↔photo match scores to the rolling log."""
+    scores: list[float] = _Field(default_factory=list)
+
+
+_MATCH_LOG_LIMIT = 40
+
+
+@router.post("/{workspace_id}/gallery-match-stats")
+async def append_gallery_match_stats(
+    workspace_id: uuid.UUID,
+    req: GalleryMatchStatsRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Append match scores, keeping only the most recent ~40 (rolling window)."""
+    import json as _json
+    from datetime import datetime, timezone
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Brand context not found")
+    prev: list[float] = []
+    try:
+        parsed = _json.loads(ctx.gallery_match_stats or "{}")
+        if isinstance(parsed, dict) and isinstance(parsed.get("scores"), list):
+            prev = [float(s) for s in parsed["scores"] if isinstance(s, (int, float))]
+    except Exception:
+        prev = []
+    incoming = [float(s) for s in req.scores if isinstance(s, (int, float))]
+    merged = (prev + incoming)[-_MATCH_LOG_LIMIT:]
+    ctx.gallery_match_stats = _json.dumps(
+        {"scores": merged, "updatedAt": datetime.now(timezone.utc).isoformat()},
+        ensure_ascii=False,
+    )
+    db.add(ctx)
+    await db.commit()
+    return {"count": len(merged), "added": len(incoming)}
+
+
+@router.get("/{workspace_id}/gallery-match-stats")
+async def get_gallery_match_stats(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Load the rolling match-score log."""
+    import json as _json
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Brand context not found")
+    try:
+        data = _json.loads(ctx.gallery_match_stats or "{}")
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    scores = data.get("scores") if isinstance(data.get("scores"), list) else []
+    return {"scores": scores, "updatedAt": data.get("updatedAt")}
 
 
 # ── Industry Intelligence ──────────────────────────────────────────────────────
@@ -1548,6 +1726,58 @@ async def assign_template_to_brand(
     return {"success": True, "template_id": ctx.creatomate_template_id}
 
 
+@router.post("/{workspace_id}/creatomate-bundle")
+async def generate_creatomate_bundle(
+    workspace_id: uuid.UUID,
+    req: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Generate Creatomate brand bundle (2 story + 1 post) using real vibe profile from DB.
+    Called from Next.js /api/creatomate/bundle → fire-and-forget from auto-produce.
+    """
+    from app.services.creatomate_brand_bundle import (
+        resolve_tokens_from_brand, generate_brand_bundle
+    )
+    from app.services.brand_context_service import build_brand_info
+    from app.config import get_settings
+
+    settings = get_settings()
+    api_key = req.get("api_key") or settings.creatomate_api_key
+    if not api_key:
+        raise HTTPException(status_code=503, detail="CREATOMATE_API_KEY not configured")
+
+    brand = await build_brand_info(db, workspace_id)
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand context not found")
+
+    tokens = resolve_tokens_from_brand(brand)
+    results = await generate_brand_bundle(
+        api_key=api_key,
+        workspace_id=workspace_id,
+        photo_url=req.get("photo_url", ""),
+        title=req.get("title", ""),
+        subtitle=req.get("subtitle", ""),
+        date_badge=req.get("date_badge", ""),
+        brand_name=req.get("brand_name") or brand.business_name or "",
+        tokens=tokens,
+        nexus_api=settings.nexus_api_url if hasattr(settings, "nexus_api_url") else "http://127.0.0.1:5050",
+        internal_key=settings.internal_api_key if hasattr(settings, "internal_api_key") else "smartagency-internal-dev-key",
+    )
+
+    saved   = sum(1 for r in results if r.status == "succeeded")
+    failed  = sum(1 for r in results if r.status != "succeeded")
+    return {
+        "bundle_id": req.get("bundle_id"),
+        "saved": saved, "failed": failed,
+        "results": [
+            {"slot": r.slot, "status": r.status, "template": r.template_key,
+             "artifact_id": r.artifact_id, "error": r.error}
+            for r in results
+        ],
+    }
+
+
 @router.post("/{workspace_id}/template-video-pack")
 async def render_template_video_pack(
     workspace_id: uuid.UUID,
@@ -1827,6 +2057,37 @@ async def generate_design_cards(
         "cards": cards,
         "raw_output": raw[:500] if not cards else "",
         "count": len(cards),
+    }
+
+
+@router.get("/{workspace_id}/tenant-learning")
+async def get_tenant_learning_prompt(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Approved/rejected history as markdown for production prompts (MT-10)."""
+    from app.services.tenant_learning_service import (
+        build_tenant_learning_snapshot,
+        build_learning_context_prompt,
+    )
+
+    await brand_context_service.ensure_brand_context(db, workspace_id)
+    try:
+        snap = await build_tenant_learning_snapshot(db, str(workspace_id))
+        prompt = build_learning_context_prompt(snap)
+    except Exception as exc:
+        logger.warning(
+            "tenant_learning_fetch_failed",
+            workspace_id=str(workspace_id),
+            error=str(exc)[:120],
+        )
+        return {"prompt": "", "has_learning": False, "approved_count": 0, "rejected_count": 0}
+
+    return {
+        "prompt": prompt or "",
+        "has_learning": bool(prompt),
+        "approved_count": len(snap.approved_examples),
+        "rejected_count": len(snap.rejected_patterns),
     }
 
 
@@ -2239,11 +2500,8 @@ async def get_brand_theme(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.brand_theme_service import derive_brand_theme, save_brand_theme
-    ctx = await brand_context_service.get_brand_context(db, workspace_id)
-    if not ctx:
-        raise HTTPException(404, "brand context not found")
-
-    # If no theme yet, derive on-demand
+    ctx = await brand_context_service.ensure_brand_context(db, workspace_id)
+    ctx = await brand_context_service.seed_missing_brand_fields(db, ctx)
     if not ctx.brand_theme:
         theme = await derive_brand_theme(ctx)
         await save_brand_theme(ctx, theme, db)
@@ -2274,6 +2532,116 @@ async def rederive_brand_theme(
         "source": theme.source,
         "theme": theme.model_dump(mode="json"),
         "updated_at": theme.derived_at.isoformat(),
+    }
+
+
+@router.patch("/{workspace_id}/theme/ai-settings", summary="Patch AI photo/visual production settings")
+async def patch_ai_theme_settings(
+    workspace_id: uuid.UUID,
+    payload: AiThemeSettingsPatch,
+    db: AsyncSession = Depends(get_db),
+):
+    """Merge AI toggles into brand_theme without requiring a full BrandTheme body."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import update
+
+    from app.models.brand_context import BrandContext
+    from app.services.brand_theme_service import derive_brand_theme
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(404, "brand context not found")
+
+    theme: dict = dict(ctx.brand_theme) if isinstance(ctx.brand_theme, dict) else {}
+    if not theme:
+        derived = await derive_brand_theme(ctx)
+        theme = derived.model_dump(mode="json")
+
+    patch = payload.model_dump(exclude_none=True)
+    theme.update(patch)
+
+    await db.execute(
+        update(BrandContext)
+        .where(BrandContext.workspace_id == workspace_id)
+        .execution_options(synchronize_session=False)
+        .values(
+            brand_theme=theme,
+            brand_theme_updated_at=datetime.now(timezone.utc),
+        )
+    )
+    await db.commit()
+
+    logger.info(
+        "brand_theme_ai_settings_patched",
+        workspace_id=str(workspace_id),
+        keys=list(patch.keys()),
+    )
+    return {
+        "ok": True,
+        "theme": theme,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+class VisualProductionEnrichRequest(_VideoPackModel):
+    ideas: list[dict] = []
+    feed_director_report: dict | None = None
+    mission_title: str = ""
+    creative_brief: str = ""
+    production_package: str = "weekly_content"
+
+
+@router.post(
+    "/{workspace_id}/visual-production-enrich",
+    summary="Opt-in VPD: enrich ideas with visual_production_spec (internal)",
+)
+async def visual_production_enrich(
+    workspace_id: uuid.UUID,
+    body: VisualProductionEnrichRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.brand_context_service import build_brand_info
+    from app.services.visual_production_director_service import (
+        is_visual_production_director_enabled,
+        maybe_enrich_ideas_with_visual_director,
+    )
+
+    brand = await build_brand_info(db, workspace_id)
+    if not brand:
+        raise HTTPException(404, "brand context not found")
+
+    enabled = await is_visual_production_director_enabled(db, workspace_id)
+    ideas = body.ideas or []
+    if not enabled or not ideas:
+        return {
+            "ok": True,
+            "vpd_enabled": enabled,
+            "ideas": ideas,
+            "enriched_count": 0,
+        }
+
+    mission_ctx = {
+        "mission_title": body.mission_title,
+        "creative_brief": body.creative_brief,
+        "production_package": body.production_package,
+    }
+    enriched = await maybe_enrich_ideas_with_visual_director(
+        db,
+        workspace_id,
+        brand,
+        ideas,
+        mission_ctx=mission_ctx,
+        feed_director_report=body.feed_director_report,
+    )
+    enriched_count = sum(
+        1 for i in enriched if isinstance(i, dict) and i.get("_vpd_meta", {}).get("enriched")
+    )
+    return {
+        "ok": True,
+        "vpd_enabled": True,
+        "ideas": enriched,
+        "enriched_count": enriched_count,
     }
 
 

@@ -6,6 +6,28 @@ import { canvaFetch, listCanvaBrandTemplates } from '@/lib/canva-connect-api';
 import { getCanvaTenantId, mergeTemplateRegistry, syncTemplateFieldContracts } from '@/lib/canva-template-registry';
 import { mergeNexusTemplateAssignments } from '@/lib/nexus-brand-context';
 
+// ── In-process template list cache (5-minute TTL) ────────────────────────────
+// Prevents repeated /rest/v1/brand-templates hits during preview/autofill bursts.
+interface CacheEntry { templates: CanvaTemplateMetadata[]; expiresAt: number }
+const templateCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCached(key: string): CanvaTemplateMetadata[] | null {
+  const entry = templateCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { templateCache.delete(key); return null; }
+  return entry.templates;
+}
+
+function setCached(key: string, templates: CanvaTemplateMetadata[]) {
+  templateCache.set(key, { templates, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+export function invalidateTemplateCache(tenantId?: string) {
+  if (tenantId) templateCache.delete(tenantId);
+  else templateCache.clear();
+}
+
 export async function loadCanvaTemplates(
   token: string,
   requestCatalog?: CanvaTemplateMetadata[],
@@ -18,6 +40,11 @@ export async function loadCanvaTemplates(
     return mergeNexusTemplateAssignments(await mergeTemplateRegistry(hydrated, tenantId), tenantId, officeId);
   }
 
+  // Return cached result if still fresh (avoids hammering /rest/v1/brand-templates)
+  const cacheKey = tenantId ?? 'default';
+  const cached = getCached(cacheKey);
+  if (cached) return cached;
+
   const items = await listCanvaBrandTemplates(token);
   const hydrated = await Promise.all(
     items.map((item) => hydrateTemplateDataset(token, {
@@ -26,7 +53,9 @@ export async function loadCanvaTemplates(
       ...inferTemplateMetadataFromTitle(item.title),
     }, tenantId)),
   );
-  return mergeNexusTemplateAssignments(await mergeTemplateRegistry(hydrated, tenantId), tenantId, officeId);
+  const result = await mergeNexusTemplateAssignments(await mergeTemplateRegistry(hydrated, tenantId), tenantId, officeId);
+  setCached(cacheKey, result);
+  return result;
 }
 
 async function hydrateTemplateDataset(

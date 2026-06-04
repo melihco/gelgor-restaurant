@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Nexus.Api.Services;
+using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
 using Nexus.Infrastructure.Data;
@@ -14,15 +15,18 @@ public class BrandContextController : ControllerBase
     private readonly NexusDbContext _db;
     private readonly IRequestContext _requestContext;
     private readonly IPermissionService _permissionService;
+    private readonly ITenantOperatingPolicyService _operatingPolicyService;
 
     public BrandContextController(
         NexusDbContext db,
         IRequestContext requestContext,
-        IPermissionService permissionService)
+        IPermissionService permissionService,
+        ITenantOperatingPolicyService operatingPolicyService)
     {
         _db = db;
         _requestContext = requestContext;
         _permissionService = permissionService;
+        _operatingPolicyService = operatingPolicyService;
     }
 
     [HttpGet("assets")]
@@ -60,6 +64,20 @@ public class BrandContextController : ControllerBase
         if (request.OfficeId.HasValue && !await OfficeBelongsToTenantAsync(request.OfficeId.Value, cancellationToken))
             return BadRequest(new { error = "Office does not belong to current tenant." });
 
+        var companyProfile = await _db.CompanyProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == _requestContext.TenantId, cancellationToken);
+        if (companyProfile == null)
+            return BadRequest(new { error = "Company profile required before uploading gallery assets." });
+
+        var galleryPolicy = _operatingPolicyService.EvaluateGalleryAsset(companyProfile, request.AssetType);
+        if (galleryPolicy.Decision == "blocked")
+            return StatusCode(403, new { error = "Asset type not allowed for this tenant.", policy = galleryPolicy });
+
+        var isApproved = request.IsApproved;
+        if (galleryPolicy.ForceUnapproved)
+            isApproved = false;
+
         var asset = new TenantMediaAsset
         {
             TenantId = _requestContext.TenantId,
@@ -71,7 +89,7 @@ public class BrandContextController : ControllerBase
             Description = request.Description.Trim(),
             Tags = NormalizeJson(request.Tags, "[]"),
             UsageContext = request.UsageContext.Trim(),
-            IsApproved = request.IsApproved,
+            IsApproved = isApproved,
             Priority = request.Priority,
             CreatedBy = _requestContext.UserId,
             UpdatedBy = _requestContext.UserId
@@ -98,6 +116,16 @@ public class BrandContextController : ControllerBase
         if (request.OfficeId.HasValue && !await OfficeBelongsToTenantAsync(request.OfficeId.Value, cancellationToken))
             return BadRequest(new { error = "Office does not belong to current tenant." });
 
+        var companyProfile = await _db.CompanyProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == _requestContext.TenantId, cancellationToken);
+        if (companyProfile == null)
+            return BadRequest(new { error = "Company profile required before updating gallery assets." });
+
+        var galleryPolicy = _operatingPolicyService.EvaluateGalleryAsset(companyProfile, request.AssetType);
+        if (galleryPolicy.Decision == "blocked")
+            return StatusCode(403, new { error = "Asset type not allowed for this tenant.", policy = galleryPolicy });
+
         asset.OfficeId = request.OfficeId;
         asset.AssetType = request.AssetType.Trim();
         asset.Url = request.Url.Trim();
@@ -106,7 +134,7 @@ public class BrandContextController : ControllerBase
         asset.Description = request.Description.Trim();
         asset.Tags = NormalizeJson(request.Tags, "[]");
         asset.UsageContext = request.UsageContext.Trim();
-        asset.IsApproved = request.IsApproved;
+        asset.IsApproved = galleryPolicy.ForceUnapproved ? false : request.IsApproved;
         asset.Priority = request.Priority;
         asset.UpdatedBy = _requestContext.UserId;
 

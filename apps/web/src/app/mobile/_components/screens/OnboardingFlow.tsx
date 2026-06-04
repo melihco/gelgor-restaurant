@@ -19,7 +19,7 @@ import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 
 // ─── Types ────────────────────────────────────────────────────────────
-type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'plans' | 'welcome';
+type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'welcome';
 
 interface AnalysisStep {
   id: string;
@@ -737,10 +737,32 @@ function SignupStep({ brandName, websiteUrl, igHandle, discoveryResult, onDone }
           await fetch(`/api/brand-context/${session.tenantId}/analyze-visuals`, {
             method: 'POST',
           }).catch(() => {/* non-fatal */});
+
+          // Auto-confirm constitution: if visual_dna was produced during analysis,
+          // silently set brand_constitution_confirmed_at so BRS clears the proposal gate
+          // without requiring a manual Brand Hub step. Tenants can refine later.
+          setStatus('Marka anayasası kaydediliyor...');
+          await fetch(`/api/brand-context/${session.tenantId}/confirm-constitution`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ auto_confirmed: true }),
+          }).catch(() => {/* non-fatal — gate will degrade gracefully */});
+
         } catch (err) {
           console.warn('[onboarding] visual intelligence failed:', err);
         }
       }
+
+      // Auto-propose first welcome mission (fire-and-forget): after onboarding
+      // the brand has enough data to generate useful content immediately.
+      try {
+        await fetch(`/api/missions/${session.tenantId}/auto-trigger`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: 'onboarding_welcome' }),
+          signal: AbortSignal.timeout(10_000),
+        });
+      } catch {/* non-fatal */}
 
       // Continue to next step — auth store update happens in onComplete
       setStatus('Marka kurulumu tamamlandı.');
@@ -778,93 +800,6 @@ function SignupStep({ brandName, websiteUrl, igHandle, discoveryResult, onDone }
             {status}
           </p>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Plans Step ────────────────────────────────────────────────────────
-function PlansStep({ onNext }: { onNext: () => void }) {
-  const { t } = useTheme();
-  const [loading, setLoading] = useState(false);
-  const [packages, setPackages] = useState<any[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiClient.getPackages().then(pkgs => {
-      const list = Array.isArray(pkgs) ? pkgs : [];
-      setPackages(list.slice(0, 3));
-      if (list.length > 0) setSelected(list[1]?.id ?? list[0]?.id ?? null);
-    }).catch((err) => console.warn('[onboarding] getPackages failed, using mock:', err));
-  }, []);
-
-  const MOCK_PLANS = [
-    { id: 'starter', name: 'Starter',  price: '₺299',  agents: 2, features: ['2 AI Ajan', '50 görev/ay', 'Temel analitik'] },
-    { id: 'growth',  name: 'Growth',   price: '₺699',  agents: 4, features: ['4 AI Ajan', '200 görev/ay', 'Tüm analitikler', 'Öncelikli destek'] },
-    { id: 'premium', name: 'Premium',  price: '₺1.299', agents: 8, features: ['8 AI Ajan', 'Sınırsız görev', 'Özel şablonlar', '7/24 Destek'] },
-  ];
-
-  const plans = packages.length > 0 ? packages : MOCK_PLANS;
-  const defaultSelected = selected ?? plans[1]?.id;
-
-  return (
-    <div style={{ height: '100dvh', background: '#04040A', display: 'flex', flexDirection: 'column', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif', overflow: 'hidden' }}>
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 24px) 24px 16px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: '#F4F4F8', letterSpacing: '-0.03em', marginBottom: 6 }}>Plan Seçin</h1>
-        <p style={{ fontSize: 14, color: 'rgba(148,163,184,0.5)' }}>İstediğiniz zaman yükseltin veya iptal edin.</p>
-      </div>
-
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px', paddingBottom: 120 }}>
-        {plans.map((plan: any) => {
-          const isSel = (selected ?? defaultSelected) === plan.id;
-          const price = plan.priceMonthly ?? plan.monthlyPrice ?? plan.price ?? '—';
-          // features may be an array, a JSON string, or undefined
-          const features: string[] = (() => {
-            if (Array.isArray(plan.features)) return plan.features.slice(0, 4).map(String);
-            if (typeof plan.features === 'string') {
-              try { const p = JSON.parse(plan.features); return Array.isArray(p) ? p.slice(0, 4).map(String) : []; } catch { return []; }
-            }
-            return [];
-          })();
-          return (
-            <button key={plan.id} onClick={() => setSelected(plan.id)} style={{
-              width: '100%', padding: '18px', borderRadius: 20, textAlign: 'left', cursor: 'pointer', marginBottom: 10,
-              background: isSel ? 'rgba(124,58,237,0.10)' : 'rgba(255,255,255,0.04)',
-              border: `${isSel ? '1.5px' : '0.5px'} solid ${isSel ? 'rgba(124,58,237,0.45)' : 'rgba(255,255,255,0.09)'}`,
-              boxShadow: isSel ? '0 4px 20px rgba(124,58,237,0.2)' : 'none',
-              position: 'relative',
-            }}>
-              {isSel && <div style={{ position: 'absolute', top: 0, left: '10%', right: '10%', height: '1px', background: 'linear-gradient(90deg,transparent,rgba(124,58,237,0.6),transparent)' }} />}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#F4F4F8' }}>{plan.name}</div>
-                  {plan.agents > 0 && <div style={{ fontSize: 12, color: '#A78BFA', marginTop: 2 }}>{plan.agents} AI Ajan</div>}
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: isSel ? '#A78BFA' : '#F4F4F8', fontVariantNumeric: 'tabular-nums' }}>{price}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(148,163,184,0.45)' }}>/ay</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {features.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                    <span style={{ color: isSel ? '#34D399' : 'rgba(52,211,153,0.5)', fontSize: 11 }}>✓</span>
-                    <span style={{ fontSize: 13, color: 'rgba(226,232,240,0.65)' }}>{f}</span>
-                  </div>
-                ))}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 24px', paddingBottom: 'max(20px,env(safe-area-inset-bottom))', background: 'rgba(4,4,10,0.95)', backdropFilter: 'blur(20px)', borderTop: '0.5px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <button onClick={() => { setLoading(true); setTimeout(onNext, 800); }} disabled={loading} style={{ width: '100%', padding: '17px', borderRadius: 18, background: 'linear-gradient(135deg,#7C3AED,#6366F1)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer', boxShadow: '0 6px 32px rgba(124,58,237,0.45)' }}>
-          {loading ? 'Aktive ediliyor...' : 'Planı Başlat →'}
-        </button>
-        <button onClick={onNext} style={{ fontSize: 13, color: 'rgba(148,163,184,0.4)', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Şimdilik atla, ücretsiz dene
-        </button>
       </div>
     </div>
   );
@@ -1009,12 +944,9 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
           discoveryResult={result}
           onDone={(companyName) => {
             setSignupBrandName(companyName);
-            setStep('plans');
+            setStep('welcome');
           }}
         />
-      )}
-      {step === 'plans' && (
-        <PlansStep onNext={() => setStep('welcome')} />
       )}
       {step === 'welcome' && (
         <WelcomeStep

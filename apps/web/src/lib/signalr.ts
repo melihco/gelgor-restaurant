@@ -200,10 +200,13 @@ export async function initializeSignalR(): Promise<HubConnection> {
     } catch (error) {
       connectionPromise = null;
       connection = null;
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const backendDown = isBackendUnavailableError(error);
+      if (!backendDown && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         setTimeout(() => {
           void initializeSignalR().catch((initError) => {
-            console.warn('SignalR connection retry failed', initError);
+            if (!isBackendUnavailableError(initError)) {
+              console.warn('SignalR connection retry failed', initError);
+            }
           });
         }, RECONNECT_DELAY);
       }
@@ -212,6 +215,11 @@ export async function initializeSignalR(): Promise<HubConnection> {
   })();
 
   return connectionPromise;
+}
+
+function isBackendUnavailableError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /500|Internal Server Error|Failed to fetch|ECONNREFUSED|negotiation/i.test(msg);
 }
 
 export function getSignalRConnection(): HubConnection | null {

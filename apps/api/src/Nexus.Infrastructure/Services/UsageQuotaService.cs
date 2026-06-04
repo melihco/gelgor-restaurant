@@ -48,20 +48,34 @@ public class UsageQuotaService : IUsageQuotaService
                           run.StartedAt < periodEnd)
             .SumAsync(run => run.TokensUsed, cancellationToken);
 
-        var agentRunLimit = subscription?.Package?.TaskLimitPerMonth ?? 0;
+        var packageSlug = subscription?.Package?.Slug;
+        var agentRunLimit = PackagePlanCatalog.ResolveAgentRunLimit(packageSlug);
+        if (agentRunLimit == 0)
+            agentRunLimit = subscription?.Package?.TaskLimitPerMonth ?? 0;
         var agentRunsUsed = subscription?.TasksUsedThisPeriod ?? 0;
+
+        var plan = PackagePlanCatalog.TryGet(packageSlug);
+        PlanMonthlyOutputsDto? outputs = plan == null
+            ? null
+            : new PlanMonthlyOutputsDto(
+                plan.MonthlyMissions,
+                plan.MonthlySocialContent,
+                plan.MonthlyGalleryAnalysis,
+                plan.MonthlyReels);
 
         return new UsageQuotaSummaryDto(
             subscription?.Id,
             subscription?.Package?.Name ?? "No active package",
-            subscription?.Package?.Slug ?? "none",
+            packageSlug ?? "none",
             subscription?.Status.ToString() ?? "Missing",
             subscription?.CurrentPeriodStart,
             subscription?.CurrentPeriodEnd,
             ToMetric(agentRunsUsed, agentRunLimit),
             ToMetric(providerActionsUsed, providerActionLimit),
             ToMetric(liveProviderActionsUsed, liveProviderActionLimit),
-            ToMetric(tokensUsed, tokenLimit));
+            ToMetric(tokensUsed, tokenLimit),
+            outputs,
+            null);
     }
 
     public async Task<QuotaCheckResult> EnsureAgentRunAllowedAsync(
@@ -75,7 +89,9 @@ public class UsageQuotaService : IUsageQuotaService
             return new QuotaCheckResult(false, "subscription_required", "Active subscription is required before running agents.", 0, 0);
         }
 
-        var limit = subscription.Package?.TaskLimitPerMonth ?? 0;
+        var limit = PackagePlanCatalog.ResolveAgentRunLimit(subscription.Package?.Slug);
+        if (limit == 0)
+            limit = subscription.Package?.TaskLimitPerMonth ?? 0;
         if (limit < 0)
         {
             return new QuotaCheckResult(true, "allowed", "Agent run quota is unlimited.", subscription.TasksUsedThisPeriod, limit);

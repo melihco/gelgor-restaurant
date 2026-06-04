@@ -70,6 +70,8 @@ public class SetupService : ISetupService
         profile.BrandImageUrls = request.BrandImageUrls ?? "";
         profile.PlatformProfiles = NormalizeJson(request.PlatformProfiles, "[]");
         profile.ContentNeeds = NormalizeJson(request.ContentNeeds, "[]");
+        profile.OperatingCapabilities = NormalizeJson(request.OperatingCapabilities, "[]");
+        profile.GalleryPolicy = NormalizeJson(request.GalleryPolicy, "{}");
         profile.TemplateFamilies = NormalizeJson(request.TemplateFamilies, "[]");
         profile.RiskRules = NormalizeJson(request.RiskRules, "{}");
         profile.CustomerVisibleSummary = request.CustomerVisibleSummary ?? "";
@@ -127,6 +129,8 @@ public class SetupService : ISetupService
         p.BrandAnalyzedAt,
         p.PlatformProfiles,
         p.ContentNeeds,
+        p.OperatingCapabilities,
+        p.GalleryPolicy,
         p.TemplateFamilies,
         p.RiskRules,
         p.CustomerVisibleSummary,

@@ -22,6 +22,7 @@ import type {
   AnnouncementTemplateId,
   AnnouncementUseCase,
 } from './announcement-template-types';
+import { applyPremiumPosterLayoutPatch } from './poster-quality';
 
 import {
   getSectorCollection,
@@ -84,6 +85,7 @@ import {
   normalizeTemplateId,
   resolveTemplateLayout,
 } from './announcement-template-catalog';
+import { pickFromPool } from './tenant-template-seed';
 
 export {
   AGENCY_TEMPLATE_CATALOG,
@@ -118,7 +120,8 @@ export function resolveFormatDimensions(format: AnnouncementContentFormat): { wi
 
 export function buildAnnouncementOverlaySvg(opts: AnnouncementOverlayInput): Buffer {
   const templateId = normalizeTemplateId(opts.templateId);
-  const layout = opts.layout ?? resolveTemplateLayout(templateId);
+  const rawLayout = opts.layout ?? resolveTemplateLayout(templateId);
+  const layout = applyPremiumPosterLayoutPatch(rawLayout, opts.sector);
   const svg = buildLayoutSvg(opts, layout);
   return Buffer.from(svg);
 }
@@ -129,6 +132,60 @@ export function getTemplateById(id: AnnouncementTemplateId): AnnouncementTemplat
 
 export function templatesForUseCase(useCase: AnnouncementUseCase): AnnouncementTemplateDefinition[] {
   return AGENCY_TEMPLATE_CATALOG.filter((t) => t.useCases.includes(useCase));
+}
+
+/**
+ * Returns the fixed template bundle used for auto-card production
+ * (3 stories + 1 post per idea). Templates are varied to produce a diverse set
+ * that covers different aesthetics from the same gallery photo.
+ *
+ * Bundle rules per use_case / template_use_case:
+ *  - event / announcement → elegant story (luxury) + bold story (bold_caption) + minimal story (script) + editorial post
+ *  - campaign / promo      → bold story + flush panel story + minimal story + campaign post
+ *  - default               → same as announcement
+ */
+export interface AutoCardBundleSlot {
+  format: 'story' | 'post';
+  templateId: AnnouncementTemplateId;
+  label: string;
+}
+
+const BUNDLE_EVENT_POOLS: Array<{ format: 'story' | 'post'; label: string; pool: AnnouncementTemplateId[] }> = [
+  { format: 'story', label: 'Story — Lüks', pool: ['agency_luxury_bottom_01', 'agency_luxury_bottom_03', 'agency_luxury_bottom_05', 'agency_luxury_bottom_07'] },
+  { format: 'story', label: 'Story — Bold', pool: ['agency_bold_caption_01', 'agency_bold_caption_02', 'agency_bold_caption_04', 'agency_bold_caption_06'] },
+  { format: 'story', label: 'Story — Minimal', pool: ['agency_script_caption_01', 'agency_script_caption_03', 'agency_minimal_whisper_02', 'agency_minimal_whisper_05'] },
+  { format: 'post', label: 'Post — Editoryal', pool: ['agency_editorial_left_01', 'agency_editorial_left_04', 'agency_editorial_left_07', 'agency_editorial_left_09'] },
+];
+
+const BUNDLE_CAMPAIGN_POOLS: Array<{ format: 'story' | 'post'; label: string; pool: AnnouncementTemplateId[] }> = [
+  { format: 'story', label: 'Story — Bold', pool: ['agency_bold_caption_02', 'agency_bold_caption_05', 'agency_impact_vignette_01', 'agency_impact_vignette_04'] },
+  { format: 'story', label: 'Story — Panel', pool: ['agency_flush_type_01', 'agency_flush_type_03', 'agency_offer_band_02', 'agency_offer_band_05'] },
+  { format: 'story', label: 'Story — Lüks Alt', pool: ['agency_luxury_bottom_02', 'agency_luxury_bottom_04', 'agency_luxury_bottom_06', 'agency_luxury_bottom_08'] },
+  { format: 'post', label: 'Post — Kampanya', pool: ['agency_campaign_badge_01', 'agency_campaign_badge_03', 'agency_campaign_badge_05', 'agency_offer_band_04'] },
+];
+
+/** @deprecated use pools — kept for reference */
+const BUNDLE_EVENT: AutoCardBundleSlot[] = [
+  { format: 'story', templateId: 'agency_luxury_bottom_01',   label: 'Story — Lüks' },
+  { format: 'story', templateId: 'agency_bold_caption_01',    label: 'Story — Bold' },
+  { format: 'story', templateId: 'agency_script_caption_01',  label: 'Story — Minimal' },
+  { format: 'post',  templateId: 'agency_editorial_left_01',  label: 'Post — Editoryal' },
+];
+
+const BUNDLE_CAMPAIGN: AutoCardBundleSlot[] = [
+  { format: 'story', templateId: 'agency_bold_caption_01',    label: 'Story — Bold' },
+  { format: 'story', templateId: 'agency_flush_type_01',      label: 'Story — Panel' },
+  { format: 'story', templateId: 'agency_luxury_bottom_04',   label: 'Story — Lüks Alt' },
+  { format: 'post',  templateId: 'agency_campaign_badge_01',  label: 'Post — Kampanya' },
+];
+
+export function getAutoCardsBundle(useCase: AnnouncementUseCase, tenantId?: string): AutoCardBundleSlot[] {
+  const pools = useCase === 'campaign' ? BUNDLE_CAMPAIGN_POOLS : BUNDLE_EVENT_POOLS;
+  return pools.map((slot, index) => ({
+    format: slot.format,
+    label: slot.label,
+    templateId: pickFromPool(slot.pool, tenantId, `announcement_bundle_${useCase}_${index}`, index),
+  }));
 }
 
 export function featuredTemplatesForUseCase(useCase: AnnouncementUseCase): AnnouncementTemplateDefinition[] {

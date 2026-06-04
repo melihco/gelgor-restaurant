@@ -8,8 +8,9 @@
  */
 
 import { NextResponse } from 'next/server';
+import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
 
-const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
+const CREW_BACKEND = getCrewBackendBaseUrl();
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
 // Matches a workspace UUID in the path, e.g.
@@ -29,6 +30,52 @@ export interface ProxyOptions {
   headers?: Record<string, string>;
   /** Explicit workspaceId (skips auto-extraction). Useful when path has no UUID. */
   workspaceId?: string;
+}
+
+export interface CrewBackendResult<T = unknown> {
+  ok: boolean;
+  status: number;
+  data: T | null;
+  error?: string;
+}
+
+/**
+ * Like {@link proxyToCrewBackend} but returns parsed JSON instead of a NextResponse.
+ * Use this when a BFF route needs to compose several Python responses
+ * (e.g. brand readiness aggregates brand-context + gallery-analysis + theme).
+ * Never throws — failures resolve to `{ ok: false, data: null }`.
+ */
+export async function fetchCrewBackendJson<T = unknown>(
+  path: string,
+  options: ProxyOptions = {},
+): Promise<CrewBackendResult<T>> {
+  const { body, timeoutMs = 15_000, method, headers: extraHeaders, workspaceId } = options;
+  const url = `${CREW_BACKEND}${path}`;
+
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  headers['X-Internal-Api-Key'] = INTERNAL_KEY;
+
+  const tenantId = workspaceId ?? extractWorkspaceId(path);
+  if (tenantId) headers['X-Tenant-Id'] = tenantId;
+  if (extraHeaders) Object.assign(headers, extraHeaders);
+
+  try {
+    const upstream = await fetch(url, {
+      method: method ?? (body !== undefined ? 'POST' : 'GET'),
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const data = (await upstream.json().catch(() => null)) as T | null;
+    if (!upstream.ok) {
+      return { ok: false, status: upstream.status, data, error: 'upstream_error' };
+    }
+    return { ok: true, status: upstream.status, data };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, status: 503, data: null, error: message };
+  }
 }
 
 export async function proxyToCrewBackend(

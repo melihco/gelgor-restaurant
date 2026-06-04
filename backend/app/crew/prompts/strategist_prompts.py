@@ -64,11 +64,14 @@ IMPORTANT: Write ALL text fields in Turkish (title, objective, creative_brief, p
 
 ## 📅 BUGÜNÜN TARİHİ: {current_date}
 
-⚠️ TARİH KURALI — KESİNLİKLE UYULACAK:
-- Bugünden ÖNCE kalan özel günler için kampanya ÖNERİLMEZ (Anneler Günü, Babalar Günü, geçmiş bayramlar vs.)
-- Sadece bugünden sonraki etkinlikler ve sezonsal fırsatlar için misyon öner.
-- Her misyonun "trigger_evidence" alanı, etkinlik tarihinin henüz gelmediğini doğrulamalıdır.
-- Eğer özel bir günü kapsayan misyon öneriyorsan, o günün bu yılki tarihini hesapla. Geçmişte kaldıysa ÖNERME.
+🚫 TARİH KURALI — KESİNLİKLE UYULACAK (en kritik kural):
+- Bugünün tarihi: {current_date}
+- Bu tarihten ÖNCE olan HER özel gün, etkinlik veya bayram için kampanya KESİNLİKLE ÖNERİLMEZ.
+- 1 Mayıs, 19 Mayıs, 23 Nisan ve benzeri günler EĞER bugünden önceyse → ASLA önerme.
+- Bir etkinlik bu yıl geçtiyse → Önce gelecek yılı bekle, şimdiki misyona DAHIL ETME.
+- Sadece BUGÜN veya bugünden SONRA gelecek etkinlikler için içerik üret.
+- trigger_evidence alanında MUTLAKA "Tarih henüz gelmedi: [tarih]" şeklinde doğrulama yaz.
+- Şüphe durumunda: tarihi atlayıp güncel/sezonsal bir açı seç.
 
 {business_name} için mevcut tüm sinyalleri analiz et ve 2-3 adet koordineli misyon öner.
 
@@ -102,6 +105,7 @@ Her öneride hangi açıyı kullandığını "trigger_signal" alanında belirt (
 | review_agent            | review_analysis  |  single_review_response             |
 | content_agent           | content_ideation  |  content_calendar                  |
 | content_strategy_agent  | content_strategy                                        |
+| feed_art_director_agent | feed_cohesion_review (content_ideation sonrası; rapor Hub'da) |
 | ads_agent               | campaign_analysis  |  ad_creative_generation           |
 | analytics_agent         | traffic_analysis  |  weekly_performance                |
 
@@ -184,6 +188,15 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
       "agent_role": "content_agent",
       "input_data": {{"count": 5, "time_period": "önümüzdeki 2 hafta", "brief": "[content_pillars'a uygun brief]"}},
       "depends_on": ["strategy"]
+    }},
+    {{
+      "node_key": "feed_cohesion_review",
+      "phase_index": 2,
+      "title": "Feed uyumu ve slot planı",
+      "task_type": "feed_cohesion_review",
+      "agent_role": "feed_art_director_agent",
+      "input_data": {{}},
+      "depends_on": ["ideas"]
     }},
     {{
       "node_key": "calendar",

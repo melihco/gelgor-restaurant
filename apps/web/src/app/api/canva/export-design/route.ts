@@ -1,8 +1,6 @@
-import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { API_BASE_URL, getRequestContextHeaders } from '@/lib/runtime-config';
+import { persistCanvaExportFile } from '@/lib/canva-export-helper';
 import { getRendererAdapter, RendererAuthError, type RendererExportFormat, type RendererProvider } from '@/lib/renderer-adapters';
 import { categorizeRendererFailure, recordRendererMetric } from '@/lib/renderer-observability';
 
@@ -10,6 +8,9 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+    if (canvaBlocked) return canvaBlocked;
+
     const body = await request.json() as {
       tenantId?: string;
       officeId?: string;
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Renderer export did not return a download URL yet.', rendererProvider: renderer.provider, job: exportResponse.job }, { status: 202 });
     }
 
-    const permanentPreviewUrl = await persistExportedPreview(exportUrl, body.designId, body.title, format, renderer.provider);
+    const permanentPreviewUrl = await persistCanvaExportFile(exportUrl, body.designId, body.title, format, renderer.provider);
     recordRendererMetric({
       operation: 'export',
       tenantId,
@@ -140,27 +141,4 @@ async function checkCanvaExportEntitlement(): Promise<{ allowed: boolean; reason
   } catch {
     return { allowed: true, reason: 'entitlement_service_unavailable' };
   }
-}
-
-async function persistExportedPreview(exportUrl: string, designId: string, title = 'renderer-preview', format: string, provider: RendererProvider) {
-  const response = await fetch(exportUrl);
-  if (!response.ok) throw new Error(`Renderer export download failed ${response.status}.`);
-
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const hash = createHash('sha256').update(`${designId}:${title}:${Date.now()}`).digest('hex').slice(0, 12);
-  const extension = format === 'jpg' ? 'jpg' : format === 'pdf' ? 'pdf' : format === 'mp4' ? 'mp4' : 'png';
-  const directory = path.join(process.cwd(), 'public', 'generated', provider);
-  await mkdir(directory, { recursive: true });
-
-  const fileName = `${sanitizeFileName(title)}-${hash}.${extension}`;
-  await writeFile(path.join(directory, fileName), bytes);
-  return `/generated/${provider}/${fileName}`;
-}
-
-function sanitizeFileName(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 70) || 'canva-preview';
 }

@@ -531,6 +531,10 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
     except Exception:
         pass
 
+    if homepage_html:
+        from app.services.website_brand_kit_service import attach_brand_kit_to_website_result
+        attach_brand_kit_to_website_result(result, homepage_html)
+
     logger.info("website_deep_crawl_start", domain=base_domain, urls=len(crawl_urls))
 
     scored_pages: list[tuple[int, str, str]] = []
@@ -621,6 +625,9 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
                 logger.info("website_images_only_no_text", domain=base_domain, images=len(clean_imgs))
         from app.services.website_intelligence_service import build_website_intelligence
         build_website_intelligence(url, result, homepage_html=homepage_html, crawled_pages=crawled_pages)
+        if homepage_html and not result.get("brand_kit"):
+            from app.services.website_brand_kit_service import attach_brand_kit_to_website_result
+            attach_brand_kit_to_website_result(result, homepage_html)
         return result
 
     scored_pages.sort(key=lambda x: x[0], reverse=True)
@@ -662,6 +669,9 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
                 images=len(clean_imgs), top_keywords=result["keywords"][:5])
     from app.services.website_intelligence_service import build_website_intelligence
     build_website_intelligence(url, result, homepage_html=homepage_html, crawled_pages=crawled_pages)
+    if homepage_html and not result.get("brand_kit"):
+        from app.services.website_brand_kit_service import attach_brand_kit_to_website_result
+        attach_brand_kit_to_website_result(result, homepage_html)
     return result
 
 

@@ -4,7 +4,7 @@
  *
  * Takes content ideation output and automatically:
  *   1. Picks the best matching gallery photo for each idea
- *   2. For stories/reels: applies canvas text overlay
+ *   2. Applies canvas overlay; auto Canva autofill (post/story/reel) as ek çıktı
  *   3. Shows produced cards in a swipeable vertical feed
  *   4. User taps ✓ to approve → saved as artifact → appears in Outputs
  *
@@ -13,25 +13,61 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useTheme } from '../theme-context';
+import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { apiClient } from '@/lib/api-client';
+import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import type { OutputArtifact } from '@/types';
+import { isCanvaEnabledClient } from '@/lib/canva-config';
+import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+
+const CANVA_ACTIVE = isCanvaEnabledClient();
 import {
   assignPhotosToContents,
   buildGalleryLookup,
   matchPhotoToContent,
   rankPhotosForContent,
   resolveBestGalleryUrl,
+  enrichGalleryAnalysis,
   MIN_ACCEPT_SCORE,
+  classifyMatch,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import {
+  mergeSectorGallerySeed,
+  SYNTHETIC_GALLERY_MIN,
+} from '@/lib/sector-gallery-seed';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
-import { composeBrandPhotoCard, composeAgencyDesignCard, hexToRgb, CANVAS_STYLES, upscaleCdnUrl } from './MissionContentFactory';
-import dynamic from 'next/dynamic';
+import { productionIdeaFromRecord } from '@/lib/production-idea-parse';
+import { buildReelPayload, auditRendererPayload, type RendererBrandContext } from '@/lib/renderer-payload';
+import {
+  buildMultiReelPhotoInputs,
+  callGenerateMultiReel,
+  isUsableReelPhotoUrl,
+  maxPhotosForStrategy,
+  resolveRunwayReelStrategy,
+} from '@/lib/reel-multi-production';
+import { fetchAnnouncementBrandKitPreview } from '@/lib/brand-kit-preview';
+import { resolveContentIntent } from '@/lib/brand-motion-profile';
+import { ensureBrandTemplateLibrary, resolveProductionTemplate } from '@/lib/brand-template-library';
+import { buildCanvaMissionSignal } from '@/lib/canva-mission-signal';
+import { upscaleCdnUrl } from './MissionContentFactory';
+// composeBrandPhotoCard, composeAgencyDesignCard, CANVAS_STYLES removed — Remotion handles story/reel designs
 import type { BrandTheme } from '@/types/brand-theme';
-
-const LayoutEngine = dynamic(() => import('@/components/canvas/LayoutEngine').then(m => m.LayoutEngine), { ssr: false });
+import { useBrandStoryTemplates } from '@/hooks/useBrandStoryTemplates';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { parseArtifactMissionId } from '@/lib/mission-feed-package';
+import { MissionFeedPreviewGrid } from '../MissionFeedPreviewGrid';
+import {
+  buildStoryRemotionRenderRequest,
+  ideaFieldsForStoryTemplate,
+  resolveMissionStoryTemplate,
+  resolveStoryTemplateForSlot,
+} from '@/lib/mission-story-template';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,41 +81,125 @@ interface ProducedItem {
   hashtags: string[];
   cta: string;
   contentType: string;
-  imageUrl: string | null;       // raw brand photo
-  canvasUrl: string | null;      // canvas overlay version
-  canvasBuilding: boolean;       // canvas is still being generated
-  agencyUrl: string | null;      // agency design version
-  agencyBuilding: boolean;
-  reelUrl: string | null;        // runway video
+  imageUrl: string | null;       // raw gallery photo (reference — preserved for reel/story video)
+  referencePhotoUrl: string | null;
+  reelUrl: string | null;        // Remotion MP4 (stories) or Runway MP4 (reels)
   reelBuilding: boolean;
   reelError: string | null;
-  // ── Canva brand template autofill ──────────────────
-  canvaEditUrl: string | null;   // Canva design edit URL
-  canvaThumb: string | null;     // Canva thumbnail
-  canvaTemplate: string | null;  // selected template title
-  canvaBuilding: boolean;        // Canva autofill in progress
+  // ── Canva autofill (optional, disabled by default) ─────────
+  canvaEditUrl: string | null;
+  canvaThumb: string | null;
+  canvaDownloadUrl: string | null;
+  canvaExportFormat: 'png' | 'mp4' | null;
+  canvaTemplate: string | null;
+  canvaBuilding: boolean;
   canvaError: string | null;
+  canvaSavedToOutputs: boolean;
+  // ── Deprecated (kept for type compat, always null) ──────────
+  canvasUrl: string | null;
+  canvasBuilding: boolean;
+  agencyUrl: string | null;
+  agencyBuilding: boolean;
+  brandKitUrl: string | null;
+  brandKitBuilding: boolean;
+  storySlotKey?: string | null;
+  storyTemplateName?: string | null;
+  // ────────────────────────────────────────────────────────────
   strategicPurpose: string;
   postingTime: string;
+  matchScore: number | null;
   status: 'producing' | 'ready' | 'approved' | 'skipped' | 'error';
   error?: string;
 }
 
-type VisualMode = 'photo' | 'canvas' | 'agency' | 'reel' | 'brand_canvas' | 'canva';
+// Simplified: canvas/agency/brand_canvas removed — Remotion handles all animated story designs
+type VisualMode = 'photo' | 'reel' | 'canva';
+
+function findMissionProductionArtifact(
+  artifacts: OutputArtifact[],
+  missionId: string | undefined,
+  ideaIndex: number,
+): OutputArtifact | undefined {
+  if (!missionId) return undefined;
+  return artifacts.find((a) => {
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    const content = parseArtifactContent(a.content);
+    const mid = String(meta.mission_id ?? meta.missionId ?? content.mission_id ?? '').trim();
+    if (mid !== missionId) return false;
+    const rawIdx = meta.idea_index ?? meta.ideaIndex ?? content.idea_index;
+    if (Number(rawIdx) !== ideaIndex) return false;
+    return Boolean(
+      meta.production_bundle
+      || meta.auto_produced
+      || content.production_bundle
+      || meta.source === 'auto-produce'
+      || meta.source === 'remotion',
+    );
+  });
+}
 
 interface AutoProductionFeedProps {
   ideas: Record<string, unknown>[];
   brandRefImages: string[];
   galleryAnalysis: Record<string, GalleryMeta>;
+  /** Navigate to the Outputs/Feed screen to see approved artifacts. */
+  onViewOutputs?: () => void;
   tenantId: string;
   brandName: string;
+  location?: string;
   logoUrl?: string;
   missionBrief: string;
   onClose: () => void;
   onApproved: () => void;
+  /** Opens manual İçerik Fabrikası (advanced mode) */
+  onAdvanced?: () => void;
+  /** Sector for template library resolution (beach_club, restaurant, …) */
+  sector?: string;
+  /** Links saved artifacts to Mission Hub weekly feed package selection */
+  missionId?: string | null;
+  nodeKey?: string | null;
+  /**
+   * APO-3.7 — Mission already produced on server (auto-produce after ideation).
+   * Skips client-side duplicate production (incl. Canva).
+   */
+  serverProductionOnly?: boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function triggerFileDownload(url: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function exportCanvaDesignFile(input: {
+  tenantId: string;
+  designId: string;
+  title: string;
+  kind: string;
+}): Promise<{ permanentPreviewUrl?: string; format?: 'png' | 'mp4' }> {
+  const format = input.kind.includes('reel') ? 'mp4' : 'png';
+  const res = await fetch('/api/canva/export-design', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tenantId: input.tenantId,
+      designId: input.designId,
+      title: input.title,
+      format,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok && res.status !== 202) {
+    throw new Error(data.error ?? 'Canva export başarısız.');
+  }
+  return { permanentPreviewUrl: data.permanentPreviewUrl, format };
+}
 
 function getField(idea: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
@@ -87,6 +207,25 @@ function getField(idea: Record<string, unknown>, ...keys: string[]): string {
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
   return '';
+}
+
+/** Campaign/event/canvas ideas → story; keeps post / carousel / reel distinct. */
+function normalizeContentFormat(raw: string): 'post' | 'story' | 'reel' | 'carousel' {
+  const ct = raw.replace(/^instagram_/, '').toLowerCase();
+  if (
+    ct.includes('story') || ct.includes('canvas') || ct.includes('event')
+    || ct.includes('announcement') || ct.includes('campaign')
+  ) return 'story';
+  if (ct.includes('reel')) return 'reel';
+  if (ct.includes('carousel')) return 'carousel';
+  return 'post';
+}
+
+function kindFromFormat(fmt: 'post' | 'story' | 'reel' | 'carousel'): string {
+  if (fmt === 'story') return 'instagram_story';
+  if (fmt === 'reel') return 'instagram_reel';
+  if (fmt === 'carousel') return 'instagram_carousel';
+  return 'instagram_post';
 }
 
 function normalizeHashtags(raw: unknown): string[] {
@@ -117,7 +256,8 @@ function buildIdeaMatchInput(idea: Record<string, unknown>, item?: {
 function extractAgentGalleryUrl(idea: Record<string, unknown>): string | null {
   const vps = idea.visual_production_spec as Record<string, unknown> | undefined;
   const url = vps?.selected_gallery_url;
-  return typeof url === 'string' && url.startsWith('http') ? url : null;
+  if (typeof url !== 'string' || !url.startsWith('http')) return null;
+  return isUsableGalleryPhotoUrl(url) ? url : null;
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -128,12 +268,25 @@ export function AutoProductionFeed({
   galleryAnalysis,
   tenantId,
   brandName,
+  location,
   missionBrief,
   logoUrl,
   onClose,
   onApproved,
+  onAdvanced,
+  onViewOutputs,
+  sector,
+  missionId = null,
+  nodeKey = null,
+  serverProductionOnly = false,
 }: AutoProductionFeedProps) {
+  const tenantBrand = useTenantBrandContext();
+  const resolvedSector = sector || tenantBrand.sector || tenantBrand.businessType || 'general_business';
+  const effectiveBrandName = brandName || tenantBrand.brandName;
+  const effectiveLocation = location || tenantBrand.location;
+  const effectiveLogoUrl = logoUrl || tenantBrand.logoUrl;
   const { t } = useTheme();
+  const { openPlatformPreview, openStoryTemplates } = useMobileStore();
   const queryClient = useQueryClient();
 
   const [items, setItems] = useState<ProducedItem[]>([]);
@@ -146,10 +299,31 @@ export function AutoProductionFeed({
   const [itemPhotoIdx, setItemPhotoIdx] = useState<Record<number, number>>({});
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   const producedRef = useRef(false);
+  const reelAttemptedRef = useRef(new Set<number>());
+  const feedSavedRef = useRef(new Set<number>());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetIdx = useRef<number | null>(null);
   // Stable ref to generateCanva so produceAll closure can call it without stale capture
   const generateCanvaRef = useRef<((item: ProducedItem, silent?: boolean) => Promise<void>) | null>(null);
+  const generateReelRef = useRef<(item: ProducedItem) => Promise<void>>(async () => {});
+
+  // Registry-backed field limits (for mission → Canva copy trimming)
+  const { data: canvaLimitsByKind } = useQuery({
+    queryKey: ['canva-field-limits', tenantId],
+    queryFn: async () => {
+      const kinds = ['instagram_post', 'instagram_story', 'instagram_reel'] as const;
+      const out: Record<string, { registryMin?: Record<string, number> }> = {};
+      await Promise.all(kinds.map(async (kind) => {
+        try {
+          const res = await fetch(`/api/canva/field-limits?tenantId=${encodeURIComponent(tenantId)}&kind=${kind}`);
+          if (res.ok) out[kind] = await res.json();
+        } catch { /* dictionary-only fallback */ }
+      }));
+      return out;
+    },
+    staleTime: 10 * 60_000,
+    enabled: !!tenantId,
+  });
 
   // BrandTheme — lazy-fetched once per session
   const { data: brandTheme } = useQuery<BrandTheme | null>({
@@ -170,10 +344,8 @@ export function AutoProductionFeed({
   });
 
   // Fetch previously approved artifacts to exclude their images from the pool
-  const { data: existingArtifacts = [] } = useQuery({
-    queryKey: ['artifacts'],
-    queryFn: () => apiClient.getArtifacts(),
-    staleTime: 60_000,
+  const { data: existingArtifacts = [] } = useMobileArtifacts({
+    subscribeOnly: true,
   });
 
   // Build set of base URLs already used in approved/saved artifacts
@@ -195,15 +367,136 @@ export function AutoProductionFeed({
 
   // Filter usable images: no logos/icons AND not already used in a saved artifact.
   // Upscale CDN thumbnails so they render sharp at full mobile width.
-  const photoPool = brandRefImages
-    .filter(u => {
-      const l = u.toLowerCase();
-      if (['logo','icon','banner','footer','-150x','-300x'].some(p => l.includes(p))) return false;
-      return !usedPreviouslyBases.has(u.split('?')[0] as string);
-    })
-    .map(upscaleCdnUrl);
+  const photoPool = (() => {
+    const filtered = brandRefImages
+      .filter(u => isUsableGalleryPhotoUrl(u))
+      .filter(u => {
+        const l = u.toLowerCase();
+        if (['logo','icon','banner','footer','-150x','-300x'].some(p => l.includes(p))) return false;
+        return !usedPreviouslyBases.has(u.split('?')[0] as string);
+      })
+      .map(upscaleCdnUrl);
+    if (filtered.length >= SYNTHETIC_GALLERY_MIN) return filtered;
+    const { urls } = mergeSectorGallerySeed(filtered, resolvedSector, SYNTHETIC_GALLERY_MIN);
+    return urls.map(upscaleCdnUrl);
+  })();
 
-  // Produce all ideas sequentially
+  const { library: storyTemplateLibrary, isLocked: storyLibraryLocked } = useBrandStoryTemplates(tenantId, resolvedSector);
+
+  const renderStoryForItem = useCallback(async (
+    item: ProducedItem,
+    pick: ReturnType<typeof resolveMissionStoryTemplate>,
+    photoUrl: string,
+  ) => {
+    const idea = ideas[item.ideaIndex] as Record<string, unknown> | undefined;
+    const mood = String(idea?.mood ?? '').toLowerCase();
+    const body = buildStoryRemotionRenderRequest({
+      pick,
+      workspaceId: tenantId,
+      photoUrl,
+      headline: item.headline,
+      caption: item.caption,
+      brandName: brandName || 'BRAND',
+      location,
+      mood,
+      logoUrl,
+      primaryColor: brandTheme?.palette?.primary,
+      accentColor: brandTheme?.palette?.accent,
+      fontFamily: brandTheme?.typography?.headingFont,
+      bodyFont: brandTheme?.typography?.bodyFont,
+      brandTheme: brandTheme as Record<string, unknown> | null | undefined,
+      sector: resolvedSector,
+    });
+    const res = await fetch('/api/remotion/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const videoUrl: string | null = data.videoUrl || null;
+    if (!videoUrl) return;
+    const compositionId = typeof data.compositionId === 'string' ? data.compositionId : undefined;
+    const grafikerScore = typeof data.grafikerScore === 'number' ? data.grafikerScore : undefined;
+    const grafikerPass = typeof data.grafikerPass === 'boolean' ? data.grafikerPass : undefined;
+    const renderMs = typeof data.durationMs === 'number' ? data.durationMs : undefined;
+    setItems(prev => prev.map(it =>
+      it.ideaIndex === item.ideaIndex ? { ...it, reelUrl: videoUrl, canvasBuilding: false } : it,
+    ));
+    setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'reel' }));
+
+    // Patch existing auto-produce artifact, or create poster-first bundle then attach MP4
+    const fmt = normalizeContentFormat(item.contentType);
+    const kind = kindFromFormat(fmt);
+    try {
+      const existing = findMissionProductionArtifact(existingArtifacts, missionId ?? undefined, item.ideaIndex);
+      if (existing?.id) {
+        await apiClient.attachVideoToArtifact(existing.id, videoUrl, photoUrl, {
+          compositionId,
+          grafikerScore,
+          grafikerPass,
+          renderMs,
+        });
+      } else {
+        const saved = await apiClient.saveCreativeArtifact({
+          title: item.headline || `${brandName} — ${fmt}`,
+          contentUrl: photoUrl,
+          content: JSON.stringify({
+            kind,
+            contentType: fmt,
+            caption: item.caption,
+            hashtags: item.hashtags,
+            cta: item.cta,
+            headline: item.headline,
+            imageUrl: photoUrl,
+            posterUrl: photoUrl,
+            videoUrl: null,
+            source: 'remotion',
+            idea_index: item.ideaIndex,
+            production_bundle: true,
+            bundle_status: 'rendering',
+          }),
+          platform: 'instagram',
+          contentType: fmt,
+          metadata: {
+            contentType: fmt,
+            kind,
+            platform: 'instagram',
+            headline: item.headline,
+            caption: item.caption?.slice(0, 300),
+            cta: item.cta,
+            hashtags: item.hashtags?.slice(0, 10),
+            strategic_purpose: item.strategicPurpose?.slice(0, 200),
+            mission_brief: missionBrief?.slice(0, 200),
+            mission_id: missionId,
+            node_key: nodeKey,
+            idea_index: item.ideaIndex,
+            imageUrl: photoUrl,
+            poster_url: photoUrl,
+            posterUrl: photoUrl,
+            source: 'remotion',
+            production_bundle: true,
+            bundle_status: 'rendering',
+            publish_package: 'primary',
+          },
+        });
+        await apiClient.attachVideoToArtifact(saved.id, videoUrl, photoUrl, {
+          compositionId,
+          grafikerScore,
+          grafikerPass,
+          renderMs,
+        });
+      }
+      feedSavedRef.current.add(item.ideaIndex);
+      setItems(prev => prev.map(it =>
+        it.ideaIndex === item.ideaIndex ? { ...it, status: 'approved' } : it,
+      ));
+      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      onApproved();
+    } catch { /* non-blocking — user can still manual approve */ }
+  }, [ideas, tenantId, brandName, location, logoUrl, brandTheme, missionId, nodeKey, missionBrief, queryClient, onApproved, existingArtifacts]);
+
   const produceAll = useCallback(async () => {
     if (producedRef.current) return;
     producedRef.current = true;
@@ -219,6 +512,7 @@ export function AutoProductionFeed({
       cta:              getField(idea, 'cta', 'call_to_action'),
       contentType:      getField(idea, 'content_type', 'content_kind') || 'post',
       imageUrl:         null,
+      referencePhotoUrl: null,
       canvasUrl:        null,
       canvasBuilding:   false,
       agencyUrl:        null,
@@ -228,16 +522,24 @@ export function AutoProductionFeed({
       reelError:        null,
       canvaEditUrl:     null,
       canvaThumb:       null,
+      canvaDownloadUrl: null,
+      canvaExportFormat: null,
       canvaTemplate:    null,
       canvaBuilding:    false,
       canvaError:       null,
+      canvaSavedToOutputs: false,
+      brandKitUrl:        null,
+      brandKitBuilding:   false,
       strategicPurpose: getField(idea, 'strategic_purpose', 'hook'),
       postingTime:      getField(idea, 'posting_time_suggestion'),
+      matchScore:       null,
       status:           'producing',
     }));
     setItems(initial);
 
-    const meta = galleryAnalysis as Record<string, GalleryPhotoMeta>;
+    // Enrich gallery metadata: derive tags/bestFor/usageContext from descriptions
+    // when the stored analysis only has description + mood (missing structured tags).
+    const meta = enrichGalleryAnalysis(galleryAnalysis as Record<string, GalleryPhotoMeta>);
     const batchItems = ideas.map((idea, i) => ({
       key: String(i),
       input: buildIdeaMatchInput(idea, initial[i]),
@@ -253,6 +555,9 @@ export function AutoProductionFeed({
 
   // Track used photos across all ideas in this session
     const usedInSession = new Set<string>();
+    // Sprint 2 (S2.9): collect match scores to feed the GIS matcher-avg log
+    const sessionMatchScores: number[] = [];
+    const usedTemplateIds: string[] = [];
 
     for (let i = 0; i < initial.length; i++) {
       const item = initial[i]!;
@@ -260,6 +565,7 @@ export function AutoProductionFeed({
       const available = photoPool.filter(u => !usedInSession.has(normalizeGalleryUrl(u)));
 
       let imageUrl: string | null = null;
+      let matchScore: number | null = null;
       const assigned = assignments.get(String(i));
       const agentBase = agentUrlRaw ? normalizeGalleryUrl(agentUrlRaw) : null;
       const agentInPool = agentBase
@@ -276,10 +582,12 @@ export function AutoProductionFeed({
           { displayUrls: photoPool },
         );
         imageUrl = resolved?.url ?? null;
+        matchScore = resolved?.score ?? null;
       }
 
       if (!imageUrl && assigned && !usedInSession.has(normalizeGalleryUrl(assigned.url))) {
         imageUrl = assigned.url;
+        matchScore = assigned.score ?? null;
       }
 
       if (!imageUrl && available.length > 0) {
@@ -294,60 +602,150 @@ export function AutoProductionFeed({
           bestEffort: true,
         });
         imageUrl = fallback?.url ?? null;
+        matchScore = fallback?.score ?? null;
       }
 
       if (imageUrl) usedInSession.add(normalizeGalleryUrl(imageUrl));
+      if (imageUrl && typeof matchScore === 'number') sessionMatchScores.push(matchScore);
 
       await new Promise(r => setTimeout(r, 80));
 
-      // Show raw photo immediately as ready
-      setItems(prev => prev.map((it, idx) =>
-        idx === i ? { ...it, imageUrl, canvasBuilding: Boolean(imageUrl), status: 'ready' } : it
-      ));
-      setDoneCount(i + 1);
-
-      // Generate canvas overlay in background (non-blocking)
-      if (imageUrl) {
-        const itemRef = initial[i]!;
-        const fmt = itemRef.contentType.replace('instagram_', '');
-        const contentTypeFmt: 'post' | 'story' | 'reel' =
-          fmt.includes('story') ? 'story' : fmt.includes('reel') ? 'reel' : 'post';
-        const styleIdx = i % CANVAS_STYLES.length;
-        composeBrandPhotoCard({
-          photoUrl: imageUrl,
-          headline: itemRef.headline,
-          cta: itemRef.cta || 'Keşfet',
-          contentType: contentTypeFmt,
-          styleIdx,
-        }).then(canvasUrl => {
-          setItems(prev => prev.map((it, idx) =>
-            idx === i ? { ...it, canvasUrl, canvasBuilding: false } : it
-          ));
-        }).catch(() => {
-          setItems(prev => prev.map((it, idx) =>
-            idx === i ? { ...it, canvasBuilding: false } : it
-          ));
-        });
-
-        // Auto-trigger Canva autofill for Story/Reel in the background (silent — no error toast)
-        const isStoryOrReel = contentTypeFmt === 'story' || contentTypeFmt === 'reel';
-        if (isStoryOrReel) {
-          const canvaTriggerItem: ProducedItem = {
-            ...itemRef, imageUrl, canvaEditUrl: null, canvaThumb: null,
-            canvaTemplate: null, canvaBuilding: false, canvaError: null,
-          };
-          // Small stagger per item so we don't flood the Canva API
-          setTimeout(() => {
-            generateCanvaRef.current?.(canvaTriggerItem, true);
-          }, 2000 + i * 800);
-        }
+      if (!imageUrl) {
+        setItems(prev => prev.map((it, idx) =>
+          idx === i ? { ...it, matchScore, status: 'ready' } : it
+        ));
+        setDoneCount(i + 1);
+        continue;
       }
+
+      const itemRef = initial[i]!;
+      const fmt = normalizeContentFormat(itemRef.contentType);
+      const contentTypeFmt: 'post' | 'story' | 'reel' =
+        fmt === 'story' ? 'story' : fmt === 'reel' ? 'reel' : 'post';
+
+      // Marky layer: sync branded template — never show raw gallery as "ready"
+      setItems(prev => prev.map((it, idx) =>
+        idx === i ? {
+          ...it,
+          imageUrl,
+          referencePhotoUrl: imageUrl,
+          matchScore,
+          brandKitBuilding: fmt !== 'reel',
+          reelBuilding: fmt === 'reel',
+          status: fmt === 'reel' ? 'ready' : 'producing',
+        } : it
+      ));
+
+      if (fmt === 'reel') {
+        setDoneCount(i + 1);
+        const reelSnapshot: ProducedItem = {
+          ...initial[i]!,
+          imageUrl,
+          referencePhotoUrl: imageUrl,
+          matchScore,
+          brandKitUrl: null,
+          brandKitBuilding: false,
+          reelBuilding: true,
+          reelUrl: null,
+          reelError: null,
+          status: 'ready',
+        };
+        queueMicrotask(() => { void generateReelRef.current(reelSnapshot); });
+        continue;
+      }
+
+      try {
+          const ideaRecord = ideas[i] as Record<string, unknown>;
+          const storyPick = fmt === 'story'
+            ? resolveMissionStoryTemplate({
+              theme: brandTheme as Record<string, unknown> | null,
+              sector: resolvedSector,
+              tenantId,
+              idea: ideaRecord,
+              ideaIndex: i,
+              usedTemplateIds,
+            })
+            : null;
+          if (storyPick?.storyTemplateId) usedTemplateIds.push(storyPick.storyTemplateId);
+
+          let posterTemplateId: string | undefined;
+          if (fmt === 'post' || fmt === 'carousel') {
+            const { treatment, templateUseCase, mood, headline } = ideaFieldsForStoryTemplate(ideaRecord);
+            const intent = resolveContentIntent({ treatment, templateUseCase, mood, headline });
+            const library = ensureBrandTemplateLibrary(brandTheme as unknown as Record<string, unknown>, {
+              sector: resolvedSector,
+              tenantId,
+            });
+            const production = resolveProductionTemplate({
+              library,
+              sector: resolvedSector,
+              intent,
+              treatment,
+              ideaIndex: i,
+              format: 'post',
+              usedTemplateIds,
+              brandTheme: brandTheme as Record<string, unknown> | null | undefined,
+            });
+            posterTemplateId = production.posterTemplateId;
+          }
+
+          const brandedUrl = await fetchAnnouncementBrandKitPreview({
+            photoUrl: imageUrl,
+            headline: itemRef.headline,
+            cta: itemRef.cta,
+            tagline: itemRef.caption.slice(0, 80),
+            contentType: fmt === 'story' ? 'story' : 'post',
+            tenantId,
+            brandName: effectiveBrandName,
+            location: effectiveLocation,
+            brandTheme,
+            templateId: posterTemplateId ?? storyPick?.storyTemplateId,
+          });
+
+          setItems(prev => prev.map((it, idx) =>
+            idx === i ? {
+              ...it,
+              brandKitUrl: brandedUrl,
+              brandKitBuilding: false,
+              storySlotKey: storyPick?.slot.key ?? null,
+              storyTemplateName: storyPick?.templateName ?? null,
+              status: 'ready',
+            } : it
+          ));
+
+          // Premium: Remotion MP4 upgrades story (static Marky poster shown until video ready)
+          if (contentTypeFmt === 'story' && storyPick) {
+            renderStoryForItem(itemRef, storyPick, imageUrl).catch(() => { /* non-blocking */ });
+          }
+        } catch (brandErr) {
+          console.warn('[AutoProductionFeed] brand kit overlay failed:', brandErr);
+          setItems(prev => prev.map((it, idx) =>
+            idx === i ? { ...it, brandKitBuilding: false, status: 'ready' } : it
+          ));
+        }
+
+      setDoneCount(i + 1);
+    }
+
+    // Log match scores so GIS can evaluate matcher-avg (fire-and-forget).
+    // Only log scores that represent a real match (>= MIN_ACCEPT_SCORE) to avoid
+    // polluting the rolling average with zero/null values from skipped ideas.
+    const meaningfulScores = sessionMatchScores.filter(s => s >= MIN_ACCEPT_SCORE);
+    if (meaningfulScores.length > 0 && tenantId) {
+      fetch(`/api/brand-context/${tenantId}/gallery-match-stats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scores: meaningfulScores }),
+      }).catch(() => { /* non-critical telemetry */ });
     }
 
     setProducing(false);
-  }, [ideas, photoPool, galleryAnalysis, usedPreviouslyBases]);
+  }, [ideas, photoPool, galleryAnalysis, usedPreviouslyBases, tenantId, brandName, location, sector, brandTheme, renderStoryForItem, effectiveBrandName, effectiveLocation, resolvedSector]);
 
-  useEffect(() => { produceAll(); }, [produceAll]);
+  useEffect(() => {
+    if (serverProductionOnly) return;
+    produceAll();
+  }, [produceAll, serverProductionOnly]);
 
   // Cycle to the next semantically compatible photo for this caption
   function cyclePhoto(item: ProducedItem) {
@@ -379,7 +777,7 @@ export function AutoProductionFeed({
     setItemPhotoIdx(prev => ({ ...prev, [item.ideaIndex]: nextIdx }));
     setItems(prev => prev.map(it =>
       it.ideaIndex === item.ideaIndex
-        ? { ...it, imageUrl: next.url, canvasUrl: null, agencyUrl: null, reelUrl: null }
+        ? { ...it, imageUrl: next.url, matchScore: next.score ?? null, canvasUrl: null, agencyUrl: null, reelUrl: null }
         : it
     ));
     setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'photo' }));
@@ -461,15 +859,16 @@ export function AutoProductionFeed({
   const saveMutation = useMutation({
     mutationFn: async ({ item, useAlt, useCanvas }: { item: ProducedItem; useAlt: boolean; useCanvas: boolean }) => {
       const vm = (activeVisual[item.ideaIndex] ?? 'photo') as VisualMode;
+      const brandedStill = item.brandKitUrl ?? item.imageUrl;
       const rawUrl =
-        vm === 'canvas' && item.canvasUrl ? item.canvasUrl :
-        vm === 'agency' && item.agencyUrl ? item.agencyUrl :
-        vm === 'reel'   && item.reelUrl   ? item.reelUrl   :
-        item.imageUrl;
+        vm === 'canva' && item.canvaDownloadUrl ? item.canvaDownloadUrl :
+        vm === 'canva' && item.canvaThumb       ? item.canvaThumb :
+        vm === 'reel'  && item.reelUrl          ? item.reelUrl   :
+        brandedStill;
       if (!rawUrl) throw new Error('Görsel yok');
       const caption = useAlt && item.captionAlt ? item.captionAlt : item.caption;
-      const fmt = item.contentType.replace('instagram_', '');
-      const kind = fmt.includes('story') ? 'instagram_story' : fmt.includes('reel') ? 'instagram_reel' : 'instagram_post';
+      const fmt = normalizeContentFormat(item.contentType);
+      const kind = kindFromFormat(fmt);
 
       // Canvas data URIs need to be uploaded to R2 first
       let finalUrl = rawUrl;
@@ -484,23 +883,58 @@ export function AutoProductionFeed({
         finalUrl = uploaded;
       }
 
+      const isReel = kind.includes('reel');
+      // Story with Remotion video: finalUrl is the MP4.
+      // imageUrl must be the ORIGINAL gallery photo, videoUrl must be the MP4.
+      const hasRemotionVideo = kind === 'instagram_story' && item.reelUrl && vm === 'reel';
+      const videoUrlToSave = (isReel || hasRemotionVideo) ? finalUrl : undefined;
+      const imageUrlToSave = hasRemotionVideo
+        ? (item.referencePhotoUrl || item.imageUrl || undefined)
+        : isReel ? undefined
+        : finalUrl;
+      const referencePhoto = item.referencePhotoUrl || item.imageUrl || undefined;
+      const markyBranded = Boolean(item.brandKitUrl && referencePhoto && item.brandKitUrl !== referencePhoto);
+      const bundleReady = Boolean(hasRemotionVideo || (isReel && finalUrl) || markyBranded);
+
       return apiClient.saveCreativeArtifact({
         title: item.headline || `${brandName} — ${fmt}`,
         contentUrl: finalUrl,
-        content: JSON.stringify({ kind, contentType: fmt, caption, hashtags: item.hashtags, cta: item.cta, imageUrl: finalUrl, headline: item.headline }),
-        platform: 'instagram',
+        content: JSON.stringify({
+          kind, contentType: fmt, caption, hashtags: item.hashtags, cta: item.cta,
+          headline: item.headline,
+          imageUrl: imageUrlToSave,
+          posterUrl: referencePhoto,
+          reference_photo_url: referencePhoto,
+          videoUrl: videoUrlToSave,
+          agency_branded: markyBranded,
+          source: hasRemotionVideo ? 'remotion' : isReel ? 'runway' : undefined,
+          canvaDownloadUrl: vm === 'canva' ? finalUrl : undefined,
+          idea_index: item.ideaIndex,
+          ...(bundleReady ? { production_bundle: true, bundle_status: 'ready' } : {}),
+        }),
+        platform: vm === 'canva' ? 'canva' : 'instagram',
         contentType: fmt,
         metadata: {
-          contentType: fmt, kind, platform: 'instagram',
+          contentType: fmt, kind, platform: vm === 'canva' ? 'canva' : 'instagram',
           headline: item.headline,
           caption: caption?.slice(0, 300),
           cta: item.cta,
           hashtags: item.hashtags?.slice(0, 10),
           strategic_purpose: item.strategicPurpose?.slice(0, 200),
           mission_brief: missionBrief?.slice(0, 200),
+          mission_id: missionId,
+          node_key: nodeKey,
           idea_index: item.ideaIndex,
-          imageUrl: finalUrl,
-          visual_mode: useCanvas ? 'canvas' : 'photo',
+          imageUrl: isReel ? undefined : (imageUrlToSave ?? finalUrl),
+          poster_url: referencePhoto,
+          posterUrl: referencePhoto,
+          reference_photo_url: referencePhoto,
+          agency_branded: markyBranded,
+          videoUrl: isReel ? finalUrl : videoUrlToSave,
+          permanentPreviewUrl: vm === 'canva' ? finalUrl : undefined,
+          visual_mode: vm,
+          publish_package: 'primary',
+          ...(bundleReady ? { production_bundle: true, bundle_status: 'ready' } : {}),
         },
       });
     },
@@ -513,7 +947,7 @@ export function AutoProductionFeed({
 
   const approve = (item: ProducedItem) => {
     const useAlt    = (activeCaption[item.ideaIndex] ?? 'primary') === 'alt';
-    const useCanvas = (activeVisual[item.ideaIndex] ?? 'photo') === 'canvas';
+    const useCanvas = false; // canvas removed — Remotion used instead
     saveMutation.mutate({ item, useAlt, useCanvas });
   };
 
@@ -521,232 +955,190 @@ export function AutoProductionFeed({
     setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, status: 'skipped' } : it));
   };
 
-  // Canvas style değiştir (4 style arasında rotate)
-  const changeCanvasStyle = async (item: ProducedItem) => {
-    if (!item.imageUrl) return;
-    const idx = ((canvasStyleIdx[item.ideaIndex] ?? item.ideaIndex) + 1) % CANVAS_STYLES.length;
-    setCanvasStyleIdx(prev => ({ ...prev, [item.ideaIndex]: idx }));
-    setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, canvasBuilding: true } : it));
-    const fmt = item.contentType.replace('instagram_', '');
-    const ct: 'post' | 'story' | 'reel' = fmt.includes('story') ? 'story' : fmt.includes('reel') ? 'reel' : 'post';
-    try {
-      const canvasUrl = await composeBrandPhotoCard({ photoUrl: item.imageUrl, headline: item.headline, cta: item.cta || 'Keşfet', contentType: ct, styleIdx: idx });
-      setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, canvasUrl, canvasBuilding: false } : it));
-      setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'canvas' }));
-    } catch {
-      setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, canvasBuilding: false } : it));
-    }
-  };
+  // Canvas style removed — no-op kept for type compat
+  const changeCanvasStyle = (_item: ProducedItem) => { /* canvas removed, use Remotion */ };
 
-  // Ajans tasarımı üret — Design Director → GPT-image-1 edit veya canvas fallback
-  const generateAgency = async (item: ProducedItem) => {
-    if (!item.imageUrl) return;
-    setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, agencyBuilding: true } : it));
-    setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'agency' }));
-
-    const fmt = item.contentType.replace('instagram_', '');
-    const ct: 'post' | 'story' | 'reel' = fmt.includes('story') ? 'story' : fmt.includes('reel') ? 'reel' : 'post';
-
-    const runCanvasFallback = async (
-      design?: Record<string, unknown>,
-      templateName?: string,
-    ) => {
-      // Use canvas_spec from design or sensible defaults
-      const cs = (design?.canvas_spec as Record<string, unknown>) ?? {};
-      const accentHex = (cs.headline_color as string) || '#c9a96e';
-      const primaryHex = '#1a1a2e';
-      const overlayRgba = (cs.overlay_rgba as string) || `rgba(${hexToRgb(primaryHex)},0.55)`;
-      const logoUrl = (cs.logo_url as string) || '';
-      const logoPos = ((cs.logo_position as string) || 'top_left') as 'top_left' | 'top_center' | 'top_right';
-      const typoMap: Record<string, string> = { impact: 'condensed_impact', editorial: 'elegant_serif', minimal: 'clean_sans' };
-      const tn = templateName || 'impact';
-      return composeAgencyDesignCard({
-        photoUrl:       item.imageUrl!,
-        headline:       (design?.headline as string || item.headline).split(/\s+/).slice(0, 3).join(' '),
-        subline:        '',
-        cta:            '',
-        contentType:    ct,
-        overlayColor:   overlayRgba,
-        overlayOpacity: tn === 'minimal' ? 0.0 : 0.5,
-        bgIntent:       'venue_full_bleed',
-        textColor:      accentHex,
-        ctaColor:       'transparent',
-        typoStyle:      typoMap[tn] ?? 'bold_display',
-        ctaStyle:       'none',
-        logoUrl,
-        logoPosition:   logoPos,
-      });
-    };
-
-    try {
-      // Step 1: Call Design Director (backend handles 429 + mini fallback)
-      const directorRes = await fetch(`/api/design-director/${tenantId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          headline:          item.headline.slice(0, 50),
-          cta:               item.cta.slice(0, 30),
-          caption_context:   item.caption.slice(0, 300),
-          format:            ct,
-          mission_brief:     missionBrief.slice(0, 300),
-          strategic_purpose: item.strategicPurpose.slice(0, 200),
-        }),
-      });
-
-      const directorData = directorRes.ok ? await directorRes.json() : null;
-      const designs: Record<string, unknown>[] = directorData?.designs ?? [];
-      const design = designs[0] ?? {};
-      const templateName = (design.template as string) || 'impact';
-      const imageEditPrompt = (design.image_edit_prompt as string) || '';
-
-      // Step 2: GPT-image-1 edit if prompt available
-      if (imageEditPrompt) {
-        try {
-          const result = await apiClient.generateInstagramImage({
-            title:             item.headline,
-            caption:           item.caption,
-            concept:           imageEditPrompt,
-            brandName,
-            contentType:       ct,
-            referenceImageUrls: [item.imageUrl!],
-            designCardPrompt:  imageEditPrompt,
-          });
-          setItems(prev => prev.map(it =>
-            it.ideaIndex === item.ideaIndex ? { ...it, agencyUrl: result.imageUrl, agencyBuilding: false } : it
-          ));
-          return;
-        } catch {
-          // GPT-image-1 failed → fall through to canvas
-        }
-      }
-
-      // Step 3: Canvas fallback with design spec
-      const agencyUrl = await runCanvasFallback(design, templateName);
-      setItems(prev => prev.map(it =>
-        it.ideaIndex === item.ideaIndex ? { ...it, agencyUrl, agencyBuilding: false } : it
-      ));
-
-    } catch {
-      // Final fallback — impact canvas with defaults
-      try {
-        const agencyUrl = await runCanvasFallback();
-        setItems(prev => prev.map(it =>
-          it.ideaIndex === item.ideaIndex ? { ...it, agencyUrl, agencyBuilding: false } : it
-        ));
-      } catch {
-        setItems(prev => prev.map(it =>
-          it.ideaIndex === item.ideaIndex ? { ...it, agencyBuilding: false } : it
-        ));
-        setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'photo' }));
-      }
-    }
-  };
+  // generateAgency removed — Remotion handles all story/reel design
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const generateAgency = async (_item: ProducedItem) => { /* stub */ };
+  // _generateAgencyFull body removed
 
   // ── Runway reel builder — shared core ─────────────────────────────────────
+  type RunwayAnimateResult = {
+    videoUrl: string;
+    source: 'runway' | 'runway_multi_photo';
+    strategy?: string;
+    photoCount?: number;
+  };
+
   const _runwayAnimate = async (
     item: ProducedItem,
     promptImage: string,
     source: 'photo' | 'agency' | 'canvas',
-  ) => {
-    // Build a vibe-enriched concept from BrandTheme + item data
-    const vibeClause = brandTheme
-      ? `Visual style: ${brandTheme.grading?.look ?? ''}. Color palette: ${brandTheme.palette?.description ?? ''}. ${brandTheme.grading?.lutDirective ?? ''}.`
-      : '';
-    const cameraMotion = source === 'agency' ? 'arc_right' : 'dolly_in';
+  ): Promise<RunwayAnimateResult> => {
+    const baseIdea = (ideas[item.ideaIndex] as Record<string, unknown> | undefined) ?? {};
+    const isReelItem = item.contentType.toLowerCase().includes('reel');
+    const extraUrls = brandRefImages.filter(
+      (u) => isUsableReelPhotoUrl(u) && normalizeGalleryUrl(u) !== normalizeGalleryUrl(promptImage),
+    );
+    const montageUrls = [promptImage, ...extraUrls].filter(isUsableReelPhotoUrl).slice(0, 4);
+    const photoInputs = buildMultiReelPhotoInputs(montageUrls, galleryAnalysis, normalizeGalleryUrl);
+
+    if (isReelItem && photoInputs.length >= 2) {
+      const strategy = resolveRunwayReelStrategy({
+        photoCount: photoInputs.length,
+        treatment: getField(baseIdea, 'treatment', 'strategic_purpose'),
+        templateUseCase: getField(baseIdea, 'template_use_case'),
+        mood: getField(baseIdea, 'mood', 'tone'),
+        contentType: 'reel',
+      });
+      const montageStrategy = strategy === 'multi_ref' ? 'multi_ref' : 'sequential';
+      const limit = maxPhotosForStrategy(strategy === 'single' ? 'multi_ref' : strategy);
+      const multi = await callGenerateMultiReel(window.location.origin, {
+        workspaceId: tenantId,
+        photos: photoInputs.slice(0, limit),
+        headline: item.headline || `${brandName} Reel`,
+        caption: item.caption.slice(0, 300),
+        brandName,
+        brandLocation: location,
+        strategy: montageStrategy,
+        ratio: '720:1280',
+        duration: 5,
+      });
+      if (multi.videoUrl) {
+        return {
+          videoUrl: multi.videoUrl,
+          source: 'runway_multi_photo' as const,
+          strategy: multi.strategy,
+          photoCount: multi.photoCount,
+        };
+      }
+    }
+
+    const cameraMotion = source === 'agency'
+      ? 'arc_right'
+      : String(
+          (baseIdea.reel_motion_spec as Record<string, unknown> | undefined)?.camera_movement
+          || ((baseIdea.visual_production_spec as Record<string, unknown> | undefined)?.reel_motion_spec as Record<string, unknown> | undefined)?.camera_movement
+          || 'dolly_in',
+        );
+    const pIdea = productionIdeaFromRecord({
+      ...baseIdea,
+      headline: item.headline,
+      caption_draft: item.caption,
+      cta: item.cta,
+      hashtags: item.hashtags,
+      content_type: item.contentType,
+      strategic_purpose: item.strategicPurpose,
+    }, item.ideaIndex);
+
+    const brandCtx: RendererBrandContext = {
+      brandName,
+      location,
+      logoUrl,
+      missionBrief,
+      brandTone: item.strategicPurpose?.slice(0, 80),
+      themeGrading: brandTheme
+        ? {
+            look: brandTheme.grading?.look,
+            lutDirective: brandTheme.grading?.lutDirective,
+            paletteDescription: brandTheme.palette?.description,
+          }
+        : undefined,
+    };
+    const photoMeta = galleryAnalysis[normalizeGalleryUrl(promptImage)] as GalleryMeta | undefined;
+    const reelBody = buildReelPayload(
+      pIdea,
+      brandCtx,
+      { photoUrl: promptImage, description: photoMeta?.description, tags: photoMeta?.contentTags },
+      { cameraMotion },
+    );
+    auditRendererPayload('runway', reelBody as unknown as Record<string, unknown>);
 
     const res = await fetch('/api/generate-reel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title:          item.headline || `${brandName} Reel`,
-        concept:        [item.strategicPurpose || item.caption, vibeClause].filter(Boolean).join(' '),
-        platform:       'instagram',
-        contentType:    'reel',
-        duration:       5,
-        cameraMotion,
-        ratio:          '720:1280',
-        visualStyle:    brandTheme?.grading?.look ?? 'cinematic editorial',
-        brandTone:      item.strategicPurpose?.slice(0, 80) ?? '',
-        tags:           item.hashtags.slice(0, 5),
-        promptImage,
-      }),
+      body: JSON.stringify(reelBody),
     });
     const data = await res.json();
     const videoUrl: string | null = data.videoUrl ?? data.outputUrls?.[0] ?? null;
     if (!res.ok || !videoUrl) throw new Error(data.error || 'Reel üretilemedi');
-    return videoUrl;
+    return { videoUrl, source: 'runway' as const };
   };
 
   // Reel üret — raw brand photo → Runway
-  const generateReel = async (item: ProducedItem) => {
+  const generateReel = useCallback(async (item: ProducedItem) => {
     if (!item.imageUrl) return;
+    if (reelAttemptedRef.current.has(item.ideaIndex) && item.reelUrl) return;
+    reelAttemptedRef.current.add(item.ideaIndex);
     setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: true, reelError: null } : it));
     try {
-      const videoUrl = await _runwayAnimate(item, item.imageUrl, 'photo');
-      setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelUrl: videoUrl, reelBuilding: false } : it));
+      const reelResult = await _runwayAnimate(item, item.imageUrl, 'photo');
+      setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelUrl: reelResult.videoUrl, reelBuilding: false } : it));
       setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'reel' }));
       await apiClient.saveCreativeArtifact({
-        title: `${item.headline || brandName} — Reel`,
-        contentUrl: videoUrl, platform: 'instagram', contentType: 'instagram_reel',
-        content: JSON.stringify({ videoUrl, caption: item.caption, kind: 'instagram_reel' }),
-        metadata: { videoUrl, caption: item.caption, source: 'runway' },
+        title: `${item.headline || brandName} — ${reelResult.source === 'runway_multi_photo' ? 'Montaj Reel' : 'Reel'}`,
+        contentUrl: reelResult.videoUrl,
+        platform: 'instagram',
+        contentType: 'reel',
+        content: JSON.stringify({
+          kind: 'instagram_reel',
+          contentType: 'reel',
+          videoUrl: reelResult.videoUrl,
+          caption: item.caption,
+          hashtags: item.hashtags,
+          headline: item.headline,
+          strategy: reelResult.strategy,
+          photoCount: reelResult.photoCount,
+          idea_index: item.ideaIndex,
+        }),
+        metadata: {
+          kind: 'instagram_reel',
+          contentType: 'reel',
+          videoUrl: reelResult.videoUrl,
+          caption: item.caption?.slice(0, 300),
+          headline: item.headline,
+          source: reelResult.source,
+          runway_produced: true,
+          mission_id: missionId,
+          node_key: nodeKey,
+          idea_index: item.ideaIndex,
+          publish_package: 'primary',
+          ...(reelResult.strategy ? { runway_strategy: reelResult.strategy, strategy: reelResult.strategy } : {}),
+          ...(reelResult.photoCount ? { runway_photo_count: reelResult.photoCount, photoCount: reelResult.photoCount } : {}),
+        },
       });
+      feedSavedRef.current.add(item.ideaIndex);
+      setItems(prev => prev.map(it =>
+        it.ideaIndex === item.ideaIndex ? { ...it, status: 'approved' } : it,
+      ));
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
       onApproved();
     } catch (e: any) {
-      setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: false, reelError: e?.message?.slice(0, 80) || 'Hata' } : it));
+      reelAttemptedRef.current.delete(item.ideaIndex);
+      setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: false, reelError: e?.message?.slice(0, 120) || 'Reel üretilemedi' } : it));
     }
-  };
+  }, [ideas, brandRefImages, galleryAnalysis, tenantId, brandName, location, logoUrl, brandTheme, missionBrief, missionId, nodeKey, queryClient, onApproved]);
+
+  generateReelRef.current = generateReel;
+
+  // Auto-push post/carousel items to Feed (pending_review) when production finishes
+  useEffect(() => {
+    if (producing) return;
+    for (const item of items) {
+      const fmt = normalizeContentFormat(item.contentType);
+      if (fmt === 'reel' || fmt === 'story') continue;
+      if (item.status !== 'ready' || !item.imageUrl) continue;
+      if (feedSavedRef.current.has(item.ideaIndex)) continue;
+      feedSavedRef.current.add(item.ideaIndex);
+      saveMutation.mutate({ item, useAlt: false, useCanvas: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [producing, items]);
 
   // Ajans Still → Runway: generate 9:16 agency design then animate it
-  const generateAgencyReel = async (item: ProducedItem) => {
-    if (!item.imageUrl) return;
-    setItems(prev => prev.map(it =>
-      it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: true, reelError: null, agencyBuilding: true } : it
-    ));
-    setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'agency' }));
-
-    try {
-      // Step 1 — produce 9:16 agency still
-      await generateAgency(item);
-      // Wait briefly for state to settle then read from items ref
-      await new Promise(r => setTimeout(r, 600));
-
-      // Read the agencyUrl that generateAgency stored
-      let agencyUrl: string | null = null;
-      setItems(prev => {
-        const found = prev.find(it => it.ideaIndex === item.ideaIndex);
-        agencyUrl = found?.agencyUrl ?? null;
-        return prev.map(it =>
-          it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: true, agencyBuilding: false } : it
-        );
-      });
-
-      // Fallback to brand photo if agency generation failed
-      const promptImg = agencyUrl ?? item.imageUrl;
-      if (!promptImg) throw new Error('Görsel yok');
-
-      // Step 2 — animate with Runway
-      const videoUrl = await _runwayAnimate(item, promptImg, 'agency');
-      setItems(prev => prev.map(it =>
-        it.ideaIndex === item.ideaIndex ? { ...it, reelUrl: videoUrl, reelBuilding: false } : it
-      ));
-      setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'reel' }));
-
-      await apiClient.saveCreativeArtifact({
-        title: `${item.headline || brandName} — Ajans Reel`,
-        contentUrl: videoUrl, platform: 'instagram', contentType: 'instagram_reel',
-        content: JSON.stringify({ videoUrl, caption: item.caption, kind: 'instagram_reel', agencyUrl }),
-        metadata: { videoUrl, agencyUrl, caption: item.caption, source: 'runway_agency' },
-      });
-      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-      onApproved();
-    } catch (e: any) {
-      setItems(prev => prev.map(it =>
-        it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: false, agencyBuilding: false, reelError: e?.message?.slice(0, 80) || 'Hata' } : it
-      ));
-    }
-  };
+  const generateAgencyReel = async (_item: ProducedItem) => { /* stub — removed */ };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
 
   // ── Canva brand template autofill (background, non-blocking) ──────────────
   const generateCanva = async (item: ProducedItem, silent = false) => {
@@ -758,31 +1150,59 @@ export function AutoProductionFeed({
     ));
 
     try {
-      const kindMap: Record<string, string> = {
-        post: 'instagram_post', story: 'instagram_story',
-        reel: 'instagram_reel', canvas: 'instagram_story',
+      // Sprint 4 (PIS): start from the FULL original idea so canva_field_copy,
+      // template_use_case, asset_intent and visual_production_spec survive — the
+      // previous thin reconstruction dropped them and starved the Canva renderer.
+      const baseIdea = (ideas[item.ideaIndex] as Record<string, unknown> | undefined) ?? {};
+      const ideaRecord: Record<string, unknown> = {
+        ...baseIdea,
+        headline: item.headline,
+        caption_draft: item.caption,
+        caption_draft_alt: item.captionAlt,
+        cta: item.cta,
+        hashtags: item.hashtags,
+        strategic_purpose: item.strategicPurpose,
+        content_type: item.contentType,
+        idea_index: item.ideaIndex,
       };
-      const fmt = item.contentType.replace('instagram_', '').replace(/_/g, '');
-      const kind = kindMap[fmt] ?? 'instagram_post';
-      const summary = item.strategicPurpose || item.caption.slice(0, 120);
+      const kindKey = item.contentType.includes('reel')
+        ? 'instagram_reel'
+        : item.contentType.includes('story')
+          ? 'instagram_story'
+          : 'instagram_post';
+      const registryMin = canvaLimitsByKind?.[kindKey]?.registryMin as
+        | Partial<Record<string, number>>
+        | undefined;
+
+      const { title, signal } = buildCanvaMissionSignal({
+        idea: ideaRecord,
+        brandName,
+        location,
+        missionBrief,
+        imageUrl: item.imageUrl ?? undefined,
+        registryMin,
+      });
+      const kind = signal.kind;
+      auditRendererPayload('canva', {
+        title,
+        kind,
+        canvaFieldCopy: signal.canvaFieldCopy,
+      });
 
       const res = await fetch('/api/canva/autofill-design', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
-          title: item.headline.trim() || item.caption.trim().slice(0, 60),
-          signal: {
-            kind,
-            title:    item.headline.trim() || item.caption.trim().slice(0, 60),
-            headline: item.headline.trim(),
-            caption:  item.caption.trim(),
-            summary,
-            cta:      item.cta.trim() || undefined,
-            hashtags: item.hashtags.slice(0, 5),
+          title,
+          signal,
+          lineage: {
+            source: 'mission_autonomous',
+            ideaIndex: item.ideaIndex,
+            selectedBy: 'ai_match',
           },
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(90_000),
       });
 
       const data = await res.json();
@@ -803,32 +1223,86 @@ export function AutoProductionFeed({
       }
 
       const design = data.design;
+      const designId: string | undefined = design?.id;
       const editUrl: string | null = design?.url ?? design?.urls?.edit_url ?? null;
       const thumbUrl: string | null = design?.thumbnail?.url ?? null;
       const templateTitle: string | null = data.decision?.template?.title ?? null;
 
-      if (!editUrl) throw new Error('Canva tasarım URL\'si alınamadı.');
+      if (!editUrl && !designId) throw new Error('Canva tasarım URL\'si alınamadı.');
+
+      let downloadUrl: string | null = data.export?.permanentPreviewUrl ?? null;
+      let exportFormat: 'png' | 'mp4' | null = data.export?.format ?? null;
+
+      if (!downloadUrl && designId) {
+        try {
+          const exported = await exportCanvaDesignFile({
+            tenantId,
+            designId,
+            title: item.headline.trim() || item.caption.trim().slice(0, 60),
+            kind,
+          });
+          downloadUrl = exported.permanentPreviewUrl ?? null;
+          exportFormat = exported.format ?? (kind.includes('reel') ? 'mp4' : 'png');
+        } catch {
+          if (!silent) throw new Error('Canva tasarımı oluştu ama indirilebilir dosya alınamadı.');
+        }
+      }
+
+      const isReel = kind.includes('reel');
 
       setItems(prev => prev.map(it =>
         it.ideaIndex === item.ideaIndex
-          ? { ...it, canvaEditUrl: editUrl, canvaThumb: thumbUrl, canvaTemplate: templateTitle, canvaBuilding: false, canvaError: null }
+          ? {
+              ...it,
+              canvaEditUrl: editUrl,
+              canvaThumb: thumbUrl,
+              canvaDownloadUrl: downloadUrl,
+              canvaExportFormat: exportFormat,
+              canvaTemplate: templateTitle,
+              canvaBuilding: false,
+              canvaError: null,
+            }
           : it
       ));
-      if (!silent) {
-        setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'canva' }));
-      }
+      // Otonom: varsayılan görsel fotoğraf/canvas kalır; Canva ek çıktı olarak Feed'e eklenir
 
+      const publishUrl = downloadUrl ?? thumbUrl ?? editUrl;
+      if (!publishUrl) {
+        if (!silent) throw new Error('Canva çıktı URL\'si alınamadı.');
+        return;
+      }
       await apiClient.saveCreativeArtifact({
-        title:       `${item.headline || brandName} — Canva ${templateTitle ?? fmt}`,
-        contentUrl:  editUrl,
+        title:       `${item.headline || brandName} — Canva ${templateTitle ?? kind}`,
+        contentUrl:  publishUrl,
         platform:    'canva',
-        contentType: kind,
+        contentType: kind.replace('instagram_', ''),
         content: JSON.stringify({
-          canvaEditUrl: editUrl, canvaThumbnail: thumbUrl,
-          canvaDesignId: design?.id, templateTitle, caption: item.caption, kind, source: 'canva_autofill',
+          canvaEditUrl: editUrl,
+          canvaThumbnail: thumbUrl,
+          canvaDownloadUrl: downloadUrl,
+          canvaDesignId: designId,
+          templateTitle,
+          caption: item.caption,
+          kind,
+          source: 'canva_autofill',
+          imageUrl: isReel ? undefined : downloadUrl ?? thumbUrl,
+          videoUrl: isReel ? downloadUrl : undefined,
         }),
-        metadata: { source: 'canva_autofill', canvaEditUrl: editUrl, canvaDesignId: design?.id, templateTitle, contentKind: kind },
+        metadata: {
+          source: 'canva_autofill',
+          canvaEditUrl: editUrl,
+          canvaDesignId: designId,
+          templateTitle,
+          contentKind: kind,
+          permanentPreviewUrl: downloadUrl,
+          canvaExportFormat: exportFormat,
+          imageUrl: isReel ? undefined : downloadUrl ?? thumbUrl,
+          videoUrl: isReel ? downloadUrl : undefined,
+        },
       });
+      setItems(prev => prev.map(it =>
+        it.ideaIndex === item.ideaIndex ? { ...it, canvaSavedToOutputs: true } : it
+      ));
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     } catch (e: any) {
       setItems(prev => prev.map(it =>
@@ -842,9 +1316,100 @@ export function AutoProductionFeed({
   // Keep ref stable for useCallback closures
   generateCanvaRef.current = generateCanva;
 
+  const generateBrandKit = async (_item: ProducedItem) => { /* inline in produceAll */ };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   const approvedCount = items.filter(i => i.status === 'approved').length;
   const readyCount    = items.filter(i => i.status === 'ready').length;
   const FORMAT_COLOR: Record<string, string> = { post: '#8B5CF6', story: '#F472B6', reel: '#F59E0B', carousel: '#60A5FA' };
+
+  const { data: serverArtifacts = [], refetch: refetchServerArtifacts } = useMobileArtifacts({
+    params: missionId ? { missionId, limit: 80 } : { limit: 120 },
+    subscribeOnly: true,
+    enabled: Boolean(serverProductionOnly && missionId),
+  });
+
+  useEffect(() => {
+    if (!serverProductionOnly || !missionId) return;
+    const id = setInterval(() => { void refetchServerArtifacts(); }, 12_000);
+    return () => clearInterval(id);
+  }, [serverProductionOnly, missionId, refetchServerArtifacts]);
+
+  const serverMissionArtifacts = useMemo(() => {
+    if (!missionId) return [];
+    return filterFeedPublishableArtifacts(
+      (serverArtifacts as OutputArtifact[]).filter(
+        (a) => parseArtifactMissionId(a) === missionId,
+      ),
+    );
+  }, [serverArtifacts, missionId]);
+
+  const serverFeedStats = useMemo(() => {
+    if (!missionId) return { pending: 0, publishable: 0, total: 0 };
+    const forMission = (serverArtifacts as OutputArtifact[]).filter(
+      (a) => parseArtifactMissionId(a) === missionId,
+    );
+    return {
+      total: forMission.length,
+      pending: forMission.filter((a) => a.status === 'pending_review').length,
+      publishable: serverMissionArtifacts.filter((a) => a.status === 'pending_review').length,
+    };
+  }, [serverArtifacts, missionId, serverMissionArtifacts]);
+
+  useEffect(() => {
+    if (!serverProductionOnly) return;
+    void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+  }, [serverProductionOnly, missionId, queryClient]);
+
+  if (serverProductionOnly) {
+    return (
+      <div style={{ minHeight: '100dvh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 14px) 22px 24px', flex: 1 }}>
+          <button onClick={onClose} style={{ ...t.backBtn, cursor: 'pointer', width: 34, height: 34,
+            borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, border: 'none', marginBottom: 16 }}>←</button>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, marginBottom: 10 }}>
+            Sunucu üretimi aktif
+          </div>
+          <p style={{ fontSize: 14, color: t.textSecondary, lineHeight: 1.55, marginBottom: 12 }}>
+            Bu mission için görseller <strong>auto-produce</strong> (Remotion + galeri + Runway) ile sunucuda üretilir.
+            İstemci tarafı otonom üretim ve Canva devre dışı — çift kart oluşmaz.
+          </p>
+          <div style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 16,
+            background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+            border: `0.5px solid ${t.separator}`, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>
+            {serverFeedStats.publishable > 0
+              ? <>Feed&apos;de <strong style={{ color: t.textPrimary }}>{serverFeedStats.publishable}</strong> içerik onay bekliyor.</>
+              : serverFeedStats.total > 0
+                ? <>{serverFeedStats.total} artifact kayıtlı — render tamamlanınca Feed&apos;de görünür. Liste yenileniyor…</>
+                : <>Üretim devam ediyor veya henüz başlamadı. Mission tamamlandıysa birkaç dakika bekleyin.</>}
+          </div>
+          {serverMissionArtifacts.length > 0 && (
+            <MissionFeedPreviewGrid
+              artifacts={serverMissionArtifacts}
+              onPreview={openPlatformPreview}
+              t={t}
+              title="Mission üretim önizlemesi"
+            />
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {onViewOutputs && (
+              <button onClick={() => { void refetchServerArtifacts(); onViewOutputs(); }}
+                style={{ padding: '12px 20px', borderRadius: 24, border: 'none', cursor: 'pointer',
+                  background: t.accent, color: '#fff', fontSize: 14, fontWeight: 700 }}>
+                Platform Feed →
+              </button>
+            )}
+            <button type="button" onClick={() => void refetchServerArtifacts()}
+              style={{ padding: '12px 16px', borderRadius: 24, cursor: 'pointer',
+                background: 'transparent', border: `0.5px solid ${t.separator}`,
+                color: t.textSecondary, fontSize: 13, fontWeight: 600 }}>
+              Yenile
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, display: 'flex', flexDirection: 'column' }}>
@@ -871,7 +1436,7 @@ export function AutoProductionFeed({
             borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, border: 'none' }}>←</button>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.02em' }}>
-              İçerik Feed'i
+              Otonom Üretim
             </div>
             <div style={{ fontSize: 12, color: t.textMuted }}>
               {producing
@@ -879,8 +1444,17 @@ export function AutoProductionFeed({
                 : `${readyCount + approvedCount} içerik hazır · ${approvedCount} onaylandı`}
             </div>
           </div>
-          {approvedCount > 0 && (
-            <button onClick={() => (window as any).__navigateToOutputs?.() }
+          {onAdvanced && (
+            <button onClick={onAdvanced}
+              style={{ padding: '7px 12px', borderRadius: 20, cursor: 'pointer',
+                background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                border: `0.5px solid ${t.separator}`, color: t.textSecondary,
+                fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+              Gelişmiş
+            </button>
+          )}
+          {approvedCount > 0 && onViewOutputs && (
+            <button onClick={onViewOutputs}
               style={{ padding: '7px 14px', borderRadius: 20, cursor: 'pointer', border: 'none',
                 background: 'rgba(16,185,129,0.12)', color: '#10B981', fontSize: 12, fontWeight: 700 }}>
               Outputs ({approvedCount}) →
@@ -895,6 +1469,28 @@ export function AutoProductionFeed({
               width: `${(doneCount / ideas.length) * 100}%`, transition: 'width 0.3s ease' }} />
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={openStoryTemplates}
+          style={{
+            width: '100%',
+            marginBottom: 10,
+            padding: '10px 12px',
+            borderRadius: 12,
+            cursor: 'pointer',
+            textAlign: 'left',
+            border: `0.5px solid ${storyLibraryLocked ? `${t.success}40` : t.accentBorder}`,
+            background: storyLibraryLocked ? `${t.success}10` : t.accentDim,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700, color: storyLibraryLocked ? t.success : t.accent }}>
+            {storyLibraryLocked ? '✓ Marka story şablonları aktif' : 'Story şablonlarını özelleştir'}
+          </div>
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+            Mission üretimi {storyTemplateLibrary?.slots.filter((s) => s.format === 'story' && s.enabled).length ?? 0} story slot kullanıyor
+          </div>
+        </button>
       </div>
 
       {/* Feed */}
@@ -905,13 +1501,14 @@ export function AutoProductionFeed({
           const isPortrait = item.contentType.includes('story') || item.contentType.includes('reel');
           const captionMode = activeCaption[item.ideaIndex] ?? 'primary';
           const shownCaption = captionMode === 'alt' && item.captionAlt ? item.captionAlt : item.caption;
-          const visualMode = activeVisual[item.ideaIndex] ?? 'photo';
+          const visualMode = activeVisual[item.ideaIndex] ?? (normalizeContentFormat(item.contentType) === 'reel' ? 'reel' : 'photo');
+          const isReelFmt = normalizeContentFormat(item.contentType) === 'reel';
+          // Simplified: photo | reel (Remotion/Runway) | canva
           const shownImage =
-            visualMode === 'canvas'  && item.canvasUrl  ? item.canvasUrl  :
-            visualMode === 'agency'  && item.agencyUrl  ? item.agencyUrl  :
-            visualMode === 'reel'    && item.reelUrl    ? item.reelUrl    :
-            visualMode === 'canva'   && item.canvaThumb ? item.canvaThumb :
-            item.imageUrl;
+            visualMode === 'reel'  && item.reelUrl            ? item.reelUrl    :
+            visualMode === 'canva' && item.canvaDownloadUrl && item.canvaExportFormat !== 'mp4' ? item.canvaDownloadUrl :
+            visualMode === 'canva' && item.canvaThumb          ? item.canvaThumb :
+            item.brandKitUrl ?? item.imageUrl;
           const isApproved = item.status === 'approved';
           const isSkipped  = item.status === 'skipped';
 
@@ -928,43 +1525,24 @@ export function AutoProductionFeed({
 
               {/* Visual */}
               <div style={{ position: 'relative', width: '100%', aspectRatio: isPortrait ? '9/16' : '1/1', maxHeight: isPortrait ? 480 : 360, background: t.elevated, overflow: 'hidden' }}>
-                {item.status === 'producing' ? (
+                {item.status === 'producing' || item.brandKitBuilding ? (
                   <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', border: `3px solid ${t.separator}`, borderTop: `3px solid ${fmtColor}`, animation: 'spinSlow 0.9s linear infinite' }} />
-                    <span style={{ fontSize: 12, color: t.textMuted }}>İçeriğe uygun görsel aranıyor…</span>
+                    <span style={{ fontSize: 12, color: t.textMuted }}>
+                      {item.brandKitBuilding ? 'Marka şablonu uygulanıyor…' : 'İçeriğe uygun görsel aranıyor…'}
+                    </span>
                   </div>
-                ) : visualMode === 'brand_canvas' && brandTheme ? (
-                  /* ── Brand Canvas (LayoutEngine) ── */
-                  <LayoutEngine
-                    content={{
-                      headline: item.headline,
-                      subline: '',
-                      bullets: [],
-                      caption: item.caption,
-                      cta: item.cta || '',
-                      hashtags: item.hashtags.join(' '),
-                      layoutId: (isPortrait ? 'story_full' : 'feed_square') as any,
-                      postingTimeSuggestion: item.postingTime,
-                      contentType: item.contentType,
-                      format: isPortrait ? 'story' : 'feed',
-                      visualBrief: {
-                        treatment: 'photo',
-                        galleryUrl: item.imageUrl ?? null,
-                        shotType: 'environmental',
-                        includePeople: false,
-                      },
-                      tokensHint: { primaryColor: null, overlayOpacity: null, typographyWeight: null },
-                      ideaTitle: item.headline,
-                      brandConfidence: 1,
-                      antiPatternFlags: [],
-                    } as any}
-                    theme={brandTheme}
-                    style={{ width: '100%', height: '100%' }}
-                  />
                 ) : visualMode === 'canva' && item.canvaEditUrl ? (
                   /* ── Canva design full view ── */
                   <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0, background: 'rgba(124,58,237,0.06)', position: 'relative' }}>
-                    {item.canvaThumb ? (
+                    {item.canvaExportFormat === 'mp4' && item.canvaDownloadUrl ? (
+                      <video src={item.canvaDownloadUrl} autoPlay loop muted playsInline
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    ) : item.canvaDownloadUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={item.canvaDownloadUrl} alt="Canva export"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    ) : item.canvaThumb ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={item.canvaThumb} alt="Canva şablon önizleme"
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -976,13 +1554,25 @@ export function AutoProductionFeed({
                         </div>
                       </div>
                     )}
-                    {/* Edit overlay */}
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap', padding: 16 }}>
+                      {item.canvaDownloadUrl && (
+                        <button
+                          type="button"
+                          onClick={() => triggerFileDownload(
+                            item.canvaDownloadUrl!,
+                            `${(item.headline || 'canva').slice(0, 40)}.${item.canvaExportFormat ?? 'png'}`,
+                          )}
+                          style={{
+                            padding: '12px 20px', borderRadius: 16, border: 'none', cursor: 'pointer',
+                            background: '#10B981', color: '#fff', fontWeight: 800, fontSize: 14,
+                          }}>
+                          ⬇ İndir
+                        </button>
+                      )}
                       <a href={item.canvaEditUrl} target="_blank" rel="noopener noreferrer"
                         style={{
-                          padding: '14px 28px', borderRadius: 18, textDecoration: 'none',
-                          background: '#7C3AED', color: '#fff', fontWeight: 800, fontSize: 15,
-                          display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 4px 24px rgba(124,58,237,0.5)',
+                          padding: '12px 20px', borderRadius: 16, textDecoration: 'none',
+                          background: '#7C3AED', color: '#fff', fontWeight: 800, fontSize: 14,
                         }}>
                         ◧ Canva&apos;da Düzenle
                       </a>
@@ -994,6 +1584,30 @@ export function AutoProductionFeed({
                           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, color: '#fff' }}>✓</div>
                       </div>
                     )}
+                  </div>
+                ) : isReelFmt && item.reelBuilding && !item.reelUrl ? (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, position: 'relative' }}>
+                    {item.imageUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={item.imageUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.35, filter: 'blur(2px)' }} />
+                    )}
+                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.separator}`, borderTop: '3px solid #F59E0B', animation: 'spinSlow 0.9s linear infinite' }} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>Runway reel üretiliyor…</span>
+                      <span style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', maxWidth: 220 }}>~1–2 dk sürebilir</span>
+                    </div>
+                  </div>
+                ) : isReelFmt && item.reelError && !item.reelUrl ? (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 }}>
+                    {item.imageUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={item.imageUrl} alt="" style={{ width: '100%', height: '55%', objectFit: 'cover', borderRadius: 12, opacity: 0.7 }} />
+                    )}
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#F87171', textAlign: 'center' }}>{item.reelError}</div>
+                    <button type="button" onClick={() => generateReel(item)}
+                      style={{ padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer', background: '#F59E0B', color: '#fff', fontWeight: 700, fontSize: 13 }}>
+                      Tekrar dene
+                    </button>
                   </div>
                 ) : shownImage ? (
                   <>
@@ -1049,8 +1663,8 @@ export function AutoProductionFeed({
                   {fmt}
                 </div>
 
-                {/* Canva ready badge — appears when background autofill completes */}
-                {item.canvaEditUrl && visualMode !== 'canva' && (
+                {/* Canva ready badge — only shown when Canva is enabled */}
+                {CANVA_ACTIVE && item.canvaEditUrl && visualMode !== 'canva' && (
                   <button
                     onClick={() => setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'canva' }))}
                     style={{
@@ -1065,8 +1679,8 @@ export function AutoProductionFeed({
                   </button>
                 )}
 
-                {/* Canva loading indicator (background silent auto-trigger) */}
-                {item.canvaBuilding && visualMode !== 'canva' && (
+                {/* Canva loading indicator */}
+                {CANVA_ACTIVE && item.canvaBuilding && visualMode !== 'canva' && (
                   <div style={{
                     position: 'absolute', top: 10, right: 10,
                     padding: '4px 10px', borderRadius: 14,
@@ -1080,15 +1694,53 @@ export function AutoProductionFeed({
                     Canva
                   </div>
                 )}
+                {CANVA_ACTIVE && item.canvaSavedToOutputs && !item.canvaBuilding && (
+                  <div style={{
+                    position: 'absolute', top: 10, right: 10,
+                    padding: '4px 10px', borderRadius: 14,
+                    background: 'rgba(16,185,129,0.75)', backdropFilter: 'blur(8px)',
+                    color: '#fff', fontSize: 10, fontWeight: 700,
+                  }}>
+                    ◧ Canva → Feed
+                  </div>
+                )}
+
+                {/* Gallery match quality badge (Sprint 2 GIS) — only on raw photo */}
+                {item.status === 'ready' && item.matchScore != null && visualMode === 'photo' && (() => {
+                  const cls = classifyMatch(item.matchScore);
+                  const bg = cls.quality === 'strong' ? 'rgba(16,185,129,0.78)'
+                    : cls.quality === 'acceptable' ? 'rgba(59,130,246,0.78)'
+                    : cls.quality === 'weak' ? 'rgba(245,158,11,0.82)'
+                    : 'rgba(239,68,68,0.82)';
+                  const isRejected = cls.quality === 'rejected';
+                  return (
+                    <>
+                      <div style={{
+                        position: 'absolute', bottom: isRejected ? 36 : 10, left: 10, padding: '4px 10px', borderRadius: 14,
+                        background: bg, color: '#fff', fontSize: 10, fontWeight: 700, backdropFilter: 'blur(6px)',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}>
+                        ◎ {Math.round(item.matchScore)} · {cls.label}
+                      </div>
+                      {isRejected && (
+                        <div style={{
+                          position: 'absolute', bottom: 10, left: 10, right: 10, padding: '4px 10px', borderRadius: 10,
+                          background: 'rgba(0,0,0,0.72)', color: '#FCA5A5', fontSize: 10, fontWeight: 600,
+                          backdropFilter: 'blur(6px)',
+                        }}>
+                          Galeri bu konuyu kapsamamakta — galeriye uygun fotoğraf ekleyin
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* Active visual mode badge on image */}
                 {item.status === 'ready' && visualMode !== 'photo' && (
                   <div style={{ position: 'absolute', bottom: 10, left: 10, padding: '4px 10px', borderRadius: 14,
                     background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 11, fontWeight: 600, backdropFilter: 'blur(6px)' }}>
-                    {visualMode === 'canvas' ? `🎨 ${CANVAS_STYLES[(canvasStyleIdx[item.ideaIndex] ?? item.ideaIndex) % CANVAS_STYLES.length]?.name}` :
-                     visualMode === 'agency' ? '✦ Ajans' :
+                    {visualMode === 'reel' && item.reelUrl && item.contentType.includes('story') ? '🎬 Remotion' :
                      visualMode === 'reel'   ? '▶ Reel' :
-                     visualMode === 'brand_canvas' ? '✦ Marka Kiti' :
                      visualMode === 'canva'  ? `◧ ${item.canvaTemplate?.slice(0, 20) ?? 'Canva'}` : ''}
                   </div>
                 )}
@@ -1129,6 +1781,33 @@ export function AutoProductionFeed({
 
                       {/* Active visual mode badge */}
                       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+
+                        {item.storyTemplateName && item.contentType.includes('story') && (
+                          <span style={{
+                            padding: '4px 8px', borderRadius: 10, fontSize: 10, fontWeight: 600,
+                            background: `${t.accent}14`, color: t.accent, maxWidth: 140,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {item.storyTemplateName}
+                          </span>
+                        )}
+
+                        {/* Remotion Story badge — story tipinde video hazırsa göster */}
+                        {item.reelUrl && item.contentType.includes('story') && (
+                          <button
+                            onClick={() => setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: visualMode === 'reel' ? 'photo' : 'reel' }))}
+                            style={{
+                              padding: '4px 10px', borderRadius: 12, cursor: 'pointer',
+                              border: `1px solid ${visualMode === 'reel' ? '#7C3AED' : t.separator}`,
+                              background: visualMode === 'reel' ? 'rgba(124,58,237,0.12)' : 'transparent',
+                              color: visualMode === 'reel' ? '#A78BFA' : t.textMuted,
+                              fontSize: 11, fontWeight: 700,
+                              display: 'flex', alignItems: 'center', gap: 4,
+                            }}>
+                            🎬 Remotion
+                          </button>
+                        )}
+
                         {visualMode !== 'photo' && (
                           <button onClick={() => setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'photo' }))}
                             style={{ padding: '3px 8px', borderRadius: 10, border: `1px solid ${t.separator}`,
@@ -1163,55 +1842,61 @@ export function AutoProductionFeed({
                       </div>
                     </div>
 
-                    {/* Expanded production panel */}
+                    {/* Expanded production panel — Remotion + Reel only */}
                     {expandedPanel[item.ideaIndex] && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 0' }}>
 
-                        {/* Canvas styles */}
-                        {CANVAS_STYLES.map((style, si) => {
-                          const styleActive = visualMode === 'canvas' && (canvasStyleIdx[item.ideaIndex] ?? item.ideaIndex) % CANVAS_STYLES.length === si;
-                          return (
-                            <button key={si}
-                              onClick={async () => {
-                                setCanvasStyleIdx(prev => ({ ...prev, [item.ideaIndex]: si }));
-                                setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, canvasBuilding: true } : it));
-                                setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'canvas' }));
-                                const fmt = item.contentType.replace('instagram_', '');
-                                const ct: 'post' | 'story' | 'reel' = fmt.includes('story') ? 'story' : fmt.includes('reel') ? 'reel' : 'post';
-                                try {
-                                  const url = await composeBrandPhotoCard({ photoUrl: item.imageUrl!, headline: item.headline, cta: item.cta || 'Keşfet', contentType: ct, styleIdx: si });
-                                  setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, canvasUrl: url, canvasBuilding: false } : it));
-                                } catch {
-                                  setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, canvasBuilding: false } : it));
-                                }
-                              }}
-                              disabled={!item.imageUrl || item.canvasBuilding}
-                              style={{ padding: '10px 8px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 600, textAlign: 'left',
-                                border: `1.5px solid ${styleActive ? t.accent : t.separator}`,
-                                background: styleActive ? `${t.accent}14` : t.elevated,
-                                color: styleActive ? t.accent : t.textSecondary }}>
-                              <span style={{ fontSize: 15 }}>{style.icon}</span>
-                              <span style={{ marginLeft: 6 }}>{style.name}</span>
-                              <span style={{ display: 'block', fontSize: 10, color: t.textMuted, marginTop: 2 }}>Canvas</span>
-                            </button>
-                          );
-                        })}
+                        {/* Marka story şablonları (5 slot kütüphanesi) */}
+                        {item.contentType.includes('story') && storyTemplateLibrary && (
+                          storyTemplateLibrary.slots
+                            .filter((s) => s.format === 'story' && s.enabled)
+                            .map((slot) => {
+                              const pick = resolveStoryTemplateForSlot(storyTemplateLibrary, slot.key, resolvedSector);
+                              if (!pick) return null;
+                              const isActive = item.storySlotKey === slot.key;
+                              return (
+                                <button
+                                  key={slot.key}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!item.imageUrl) return;
+                                    setItems(prev => prev.map(it =>
+                                      it.ideaIndex === item.ideaIndex
+                                        ? { ...it, storySlotKey: slot.key, storyTemplateName: pick.templateName }
+                                        : it,
+                                    ));
+                                    renderStoryForItem(item, pick, item.imageUrl).catch(() => {});
+                                  }}
+                                  disabled={!item.imageUrl}
+                                  style={{
+                                    padding: '10px 8px',
+                                    borderRadius: 12,
+                                    cursor: item.imageUrl ? 'pointer' : 'default',
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    textAlign: 'left',
+                                    border: `1.5px solid ${isActive ? t.accent : t.separator}`,
+                                    background: isActive ? `${t.accent}18` : t.elevated,
+                                    color: isActive ? t.accent : t.textSecondary,
+                                  }}
+                                >
+                                  <span style={{ fontSize: 15 }}>▶</span>
+                                  <span style={{ marginLeft: 6 }}>{slot.labelTr}</span>
+                                  <span style={{ display: 'block', fontSize: 10, color: t.textMuted, marginTop: 2 }}>
+                                    {pick.templateName}
+                                  </span>
+                                </button>
+                              );
+                            })
+                        )}
 
-                        {/* Ajans Tasarımı */}
-                        <button onClick={() => generateAgency(item)}
-                          disabled={!item.imageUrl || item.agencyBuilding}
-                          style={{ padding: '10px 8px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 600, textAlign: 'left',
-                            border: `1.5px solid ${visualMode === 'agency' ? '#8B5CF6' : t.separator}`,
-                            background: visualMode === 'agency' ? 'rgba(139,92,246,0.12)' : t.elevated,
-                            color: visualMode === 'agency' ? '#8B5CF6' : t.textSecondary,
-                            gridColumn: 'span 1' }}>
-                          <span style={{ fontSize: 15 }}>{item.agencyBuilding ? '⏳' : '✦'}</span>
-                          <span style={{ marginLeft: 6 }}>{item.agencyBuilding ? 'Üretiliyor…' : 'Ajans Tasarımı'}</span>
-                          <span style={{ display: 'block', fontSize: 10, color: t.textMuted, marginTop: 2 }}>GPT-image-1</span>
-                        </button>
+                        {/* Canvas overlay kaldırıldı — Remotion kullanılıyor */}
 
                         {/* Reel (raw photo → Runway) */}
-                        <button onClick={() => generateReel(item)}
+                        <button onClick={() => {
+                          reelAttemptedRef.current.delete(item.ideaIndex);
+                          void generateReel(item);
+                        }}
                           disabled={!item.imageUrl || item.reelBuilding}
                           style={{ padding: '10px 8px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 600, textAlign: 'left',
                             border: `1.5px solid ${visualMode === 'reel' ? '#10B981' : t.separator}`,
@@ -1224,48 +1909,12 @@ export function AutoProductionFeed({
                           </span>
                         </button>
 
-                        {/* Ajans Still → Reel (portrait only) */}
-                        {isPortrait && (
-                          <button onClick={() => generateAgencyReel(item)}
-                            disabled={!item.imageUrl || item.reelBuilding || item.agencyBuilding}
-                            style={{ padding: '10px 8px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 600, textAlign: 'left',
-                              border: `1.5px solid ${item.agencyBuilding || item.reelBuilding ? '#F59E0B' : '#ec4899'}`,
-                              background: item.agencyBuilding || item.reelBuilding ? 'rgba(245,158,11,0.1)' : 'rgba(236,72,153,0.08)',
-                              color: item.agencyBuilding || item.reelBuilding ? '#F59E0B' : '#ec4899',
-                              gridColumn: 'span 2' }}>
-                            <span style={{ fontSize: 15 }}>
-                              {item.agencyBuilding ? '🎨' : item.reelBuilding ? '⏳' : '🎬'}
-                            </span>
-                            <span style={{ marginLeft: 6 }}>
-                              {item.agencyBuilding ? 'Ajans tasarımı üretiliyor…'
-                                : item.reelBuilding ? 'Runway ile animasyona alınıyor…'
-                                : 'Ajans Story → Reel'}
-                            </span>
-                            <span style={{ display: 'block', fontSize: 10, color: t.textMuted, marginTop: 2 }}>
-                              GPT-image-1 (9:16) → Runway gen4
-                            </span>
-                          </button>
-                        )}
+                        {/* Ajans Story → Reel kaldırıldı — Remotion ile değiştirildi */}
 
-                        {/* Marka Kiti (LayoutEngine brand canvas) */}
-                        {brandTheme && (
-                          <button
-                            onClick={() => setActiveVisual(prev => ({
-                              ...prev,
-                              [item.ideaIndex]: visualMode === 'brand_canvas' ? 'photo' : 'brand_canvas',
-                            }))}
-                            style={{ padding: '10px 8px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 600, textAlign: 'left',
-                              border: `1.5px solid ${visualMode === 'brand_canvas' ? '#a78bfa' : t.separator}`,
-                              background: visualMode === 'brand_canvas' ? 'rgba(167,139,250,0.14)' : t.elevated,
-                              color: visualMode === 'brand_canvas' ? '#a78bfa' : t.textSecondary }}>
-                            <span style={{ fontSize: 15 }}>✦</span>
-                            <span style={{ marginLeft: 6 }}>{visualMode === 'brand_canvas' ? 'Kapat' : 'Marka Kiti'}</span>
-                            <span style={{ display: 'block', fontSize: 10, color: t.textMuted, marginTop: 2 }}>LayoutEngine</span>
-                          </button>
-                        )}
+                        {/* Marka Kiti kaldırıldı — Remotion story şablonları kullanılıyor */}
 
-                        {/* ── Canva Şablonu ile Üret ── */}
-                        <button
+                        {/* ── Canva Şablonu ile Üret — hidden when Canva is disabled ── */}
+                        {CANVA_ACTIVE && <button
                           onClick={() => {
                             if (item.canvaEditUrl) {
                               setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: visualMode === 'canva' ? 'photo' : 'canva' }));
@@ -1306,10 +1955,10 @@ export function AutoProductionFeed({
                               </div>
                             </div>
                           </div>
-                        </button>
+                        </button>}
 
                         {/* Canva result: thumbnail + edit link */}
-                        {item.canvaEditUrl && (
+                        {CANVA_ACTIVE && item.canvaEditUrl && (
                           <div style={{
                             gridColumn: 'span 2', borderRadius: 14, overflow: 'hidden',
                             border: '0.5px solid rgba(124,58,237,0.3)',
@@ -1375,13 +2024,18 @@ export function AutoProductionFeed({
                 )}
 
                 {/* Actions */}
-                {item.status === 'ready' && (
+                {item.status === 'ready' && (() => {
+                  const fmtNorm = normalizeContentFormat(item.contentType);
+                  const canApprove = fmtNorm === 'reel'
+                    ? Boolean(item.reelUrl) && !item.reelBuilding
+                    : Boolean(item.brandKitUrl || item.imageUrl) && !item.brandKitBuilding;
+                  return (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => approve(item)}
-                      disabled={saveMutation.isPending || !item.imageUrl}
-                      style={{ flex: 2, padding: '12px 0', borderRadius: 14, border: 'none', cursor: item.imageUrl ? 'pointer' : 'not-allowed',
-                        background: item.imageUrl ? 'linear-gradient(135deg, #10B981cc, #10B98188)' : t.elevated,
-                        color: item.imageUrl ? '#fff' : t.textMuted,
+                      disabled={saveMutation.isPending || !canApprove}
+                      style={{ flex: 2, padding: '12px 0', borderRadius: 14, border: 'none', cursor: canApprove ? 'pointer' : 'not-allowed',
+                        background: canApprove ? 'linear-gradient(135deg, #10B981cc, #10B98188)' : t.elevated,
+                        color: canApprove ? '#fff' : t.textMuted,
                         fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                       {saveMutation.isPending ? <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Kaydediliyor</> : '✓ Onayla'}
                     </button>
@@ -1401,7 +2055,8 @@ export function AutoProductionFeed({
                       Geç
                     </button>
                   </div>
-                )}
+                  );
+                })()}
 
                 {isApproved && (
                   <div style={{ padding: '10px 0', textAlign: 'center', fontSize: 13, color: '#10B981', fontWeight: 600 }}>

@@ -137,12 +137,9 @@ export function harmonizeCaptionAndCta(
   const rawCta = cta.trim();
   if (!cap || !rawCta) return { caption: cap, cta: rawCta };
 
-  const capLang = detectTextLanguage(cap);
-  const ctaLang = detectTextLanguage(rawCta);
   const brandLang = (brandLanguages ?? 'tr').split(',')[0]?.trim().toLowerCase() === 'en' ? 'en' : 'tr';
-  const effectiveLang =
-    capLang !== ctaLang ? capLang : cap.length > 40 ? capLang : brandLang;
-
+  // Brand language setting wins — tenant choice overrides detected caption language
+  const effectiveLang = brandLang;
   const newCta = localizeCta(rawCta, effectiveLang);
   if (!newCta || normalizeCtaKey(newCta) === normalizeCtaKey(rawCta)) {
     return { caption: cap, cta: rawCta };

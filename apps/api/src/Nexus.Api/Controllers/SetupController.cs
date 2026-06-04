@@ -67,9 +67,17 @@ public class SetupController : ControllerBase
             new[] { "price", "location", "personal_data" },
             new[] { "price", "personal_data" },
             new[] { "google_business_update", "instagram_post", "meta_ad_creative" }),
+        new IndustryPlaybookDto(
+            "barber_salon",
+            "Berber / Kuaför",
+            new[] { "service_intro", "social_proof", "post_service_client_result", "lead_generation", "behind_the_scenes" },
+            new[] { "personal_data", "before_after", "price" },
+            new[] { "personal_data", "before_after" },
+            new[] { "instagram_story", "instagram_reel", "instagram_post" }),
     };
 
     private readonly ISetupService _setupService;
+    private readonly ITenantOperatingPolicyService _operatingPolicyService;
     private readonly IBrandLearningService _brandLearningService;
     private readonly IVectorMemoryService _vectorMemoryService;
     private readonly NexusDbContext _db;
@@ -78,6 +86,7 @@ public class SetupController : ControllerBase
 
     public SetupController(
         ISetupService setupService,
+        ITenantOperatingPolicyService operatingPolicyService,
         IBrandLearningService brandLearningService,
         IVectorMemoryService vectorMemoryService,
         NexusDbContext db,
@@ -85,6 +94,7 @@ public class SetupController : ControllerBase
         IRequestContext requestContext)
     {
         _setupService = setupService;
+        _operatingPolicyService = operatingPolicyService;
         _brandLearningService = brandLearningService;
         _vectorMemoryService = vectorMemoryService;
         _db = db;
@@ -275,6 +285,50 @@ public class SetupController : ControllerBase
         return Ok(StarterIndustryPlaybooks);
     }
 
+    [HttpGet("tenant-capabilities")]
+    public ActionResult<IReadOnlyList<TenantCapabilityDefinitionDto>> GetTenantCapabilities(
+        [FromQuery] string? industry = null)
+    {
+        return Ok(_operatingPolicyService.GetCapabilityCatalog(industry));
+    }
+
+    [HttpGet("operating-profile")]
+    public async Task<ActionResult<TenantOperatingProfileDto>> GetOperatingProfile(CancellationToken cancellationToken)
+    {
+        var profile = await _db.CompanyProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == _requestContext.TenantId, cancellationToken);
+        if (profile == null)
+            return NotFound(new { error = "Company profile not found." });
+        return Ok(_operatingPolicyService.ResolveProfile(profile));
+    }
+
+    [HttpPost("evaluate-capability")]
+    public async Task<ActionResult<PolicyEvaluationResultDto>> EvaluateCapability(
+        [FromBody] EvaluateCapabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        var profile = await _db.CompanyProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == _requestContext.TenantId, cancellationToken);
+        if (profile == null)
+            return NotFound(new { error = "Company profile not found." });
+        return Ok(_operatingPolicyService.EvaluateCapability(profile, request.CapabilityId));
+    }
+
+    [HttpPost("evaluate-gallery-asset")]
+    public async Task<ActionResult<GalleryAssetPolicyResultDto>> EvaluateGalleryAsset(
+        [FromBody] EvaluateGalleryAssetRequest request,
+        CancellationToken cancellationToken)
+    {
+        var profile = await _db.CompanyProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == _requestContext.TenantId, cancellationToken);
+        if (profile == null)
+            return NotFound(new { error = "Company profile not found." });
+        return Ok(_operatingPolicyService.EvaluateGalleryAsset(profile, request.AssetType));
+    }
+
     [HttpPost("vector-memory/reindex")]
     public async Task<ActionResult<BrandMemoryReindexResult>> ReindexVectorMemory(CancellationToken cancellationToken)
     {
@@ -352,6 +406,7 @@ public class SetupController : ControllerBase
             if (request.ApplyToProfile)
             {
                 ApplyDiscoveryToProfile(profile, request, report, analysisText, inferredLanguage);
+                SeedOperatingPolicyFromProfile(profile);
                 profile.BrandAnalyzedAt = DateTime.UtcNow;
                 profile.UpdatedBy = _requestContext.UserId;
 
@@ -450,6 +505,20 @@ public class SetupController : ControllerBase
             GetStringArray(report, "preferred_channels"),
             GetStringDictionary(report, "risk_rules"),
             GetStringArray(report, "approval_required_for"));
+    }
+
+    private void SeedOperatingPolicyFromProfile(CompanyProfile profile)
+    {
+        var resolved = _operatingPolicyService.ResolveProfile(profile);
+        profile.OperatingCapabilities = JsonSerializer.Serialize(resolved.EnabledCapabilities);
+        profile.GalleryPolicy = JsonSerializer.Serialize(new
+        {
+            allowedAssetIntents = resolved.GalleryPolicy.AllowedAssetIntents,
+            clientPhotoPolicy = resolved.GalleryPolicy.ClientPhotoPolicy,
+            beforeAfterPolicy = resolved.GalleryPolicy.BeforeAfterPolicy,
+            maxGalleryPhotos = resolved.GalleryPolicy.MaxGalleryPhotos,
+            requireConsentMetadata = resolved.GalleryPolicy.RequireConsentMetadata,
+        });
     }
 
     private static void ApplyDiscoveryToProfile(

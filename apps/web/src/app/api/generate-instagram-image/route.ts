@@ -10,6 +10,8 @@ export const maxDuration = 120;
 type InstagramImageInput = {
   title: string;
   caption?: string;
+  /** Carousel last-slide CTA (e.g. "Rezervasyon için DM") */
+  cta?: string;
   concept?: string;
   campaignContext?: string;
   platform?: 'instagram';
@@ -44,6 +46,8 @@ type InstagramImageInput = {
    * The original photo structure is preserved — only lighting, color, and atmosphere are improved.
    */
   enhanceMode?: boolean;
+  /** When true with 2+ referenceImageUrls, enhance up to 4 photos (carousel / story / reel). */
+  multiPhotoEnhance?: boolean;
   /** Context hint for the enhancement (content type, mood) */
   enhanceContext?: string;
   /**
@@ -230,6 +234,12 @@ async function passthroughVenuePhoto(
       ? r2Url
       : await materializeImageUrl(photoUrl);
   return { imageUrl: persistedImageUrl, persistedImageUrl };
+}
+
+async function persistJpegBuffer(buffer: Buffer, brandName?: string): Promise<string> {
+  const dataUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+  const r2Url = await uploadToR2IfConfigured(dataUrl, brandName);
+  return r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : dataUrl;
 }
 
 const FETCH_HEADERS = {
@@ -707,8 +717,8 @@ async function enhanceWithOpenAI(
   if (!apiKey) throw new Error('OpenAI API key not configured.');
 
   const model = process.env.SMART_AGENCY_IMAGE_MODEL ?? process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
-  // Default: medium ($0.04/image) — use SMART_AGENCY_IMAGE_QUALITY=high for hero content
-  const quality = process.env.SMART_AGENCY_IMAGE_QUALITY ?? 'medium';
+  // Default: high — full quality production
+  const quality = process.env.SMART_AGENCY_IMAGE_QUALITY ?? 'high';
   const openai = new OpenAI({ apiKey });
 
   const file = await fetchUrlAsOpenAIUpload(referenceImageUrl);
@@ -745,8 +755,8 @@ async function generateWithOpenAI(
   }
 
   const model = process.env.SMART_AGENCY_IMAGE_MODEL ?? process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
-  // Default: medium ($0.04/image) — use SMART_AGENCY_IMAGE_QUALITY=high for hero content
-  const quality = process.env.SMART_AGENCY_IMAGE_QUALITY ?? 'medium';
+  // Default: high — full quality production
+  const quality = process.env.SMART_AGENCY_IMAGE_QUALITY ?? 'high';
   const openai = new OpenAI({ apiKey });
 
   const validUrls = (referenceImageUrls ?? [])
@@ -1084,58 +1094,116 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'enhanceMode requires at least one referenceImageUrl' }, { status: 400 });
     }
 
-    // Product photos + all venue/gallery photos: NEVER run through generative AI editing.
     const isProduct = isProductContent(input.assetIntent, input.enhanceContext);
     const openaiForSelect = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
     const contentBrief = [input.enhanceContext, input.title, input.caption].filter(Boolean).join('. ');
+    const useMultiEnhance = validEnhanceUrls.length >= 2
+      && (contentType === 'carousel' || Boolean(input.multiPhotoEnhance));
+
+    const selectUrlsForEnhance = async (): Promise<string[]> => {
+      if (!useMultiEnhance) {
+        const one = validEnhanceUrls.length > 1
+          ? await pickBestGalleryPhoto(validEnhanceUrls, contentBrief, openaiForSelect, input.photoMetadata)
+          : validEnhanceUrls[0]!;
+        return [one];
+      }
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const u of validEnhanceUrls) {
+        if (seen.has(u)) continue;
+        seen.add(u);
+        out.push(u);
+        if (out.length >= 4) break;
+      }
+      return out;
+    };
 
     if (isProduct || shouldPreserveVenuePhotos()) {
-      const photoUrl = validEnhanceUrls.length > 1
-        ? await pickBestGalleryPhoto(validEnhanceUrls, contentBrief, openaiForSelect, input.photoMetadata)
-        : validEnhanceUrls[0]!;
-      const { persistedImageUrl } = await passthroughVenuePhoto(photoUrl, contentType, input.brandName);
+      const urls = await selectUrlsForEnhance();
+      let imageUrls = await Promise.all(
+        urls.map(async (photoUrl) => {
+          const { persistedImageUrl } = await passthroughVenuePhoto(photoUrl, contentType, input.brandName);
+          return persistedImageUrl;
+        }),
+      );
+
+      let carouselOverlays = false;
+      if (contentType === 'carousel' && urls.length >= 2) {
+        try {
+          const { compositeCarouselFromPhotoUrls } = await import('@/lib/carousel-compositor');
+          const headline = (input.title || input.brandName || 'Discover').trim();
+          const overlayCaption = [input.caption, input.enhanceContext, input.concept].filter(Boolean).join(' ').trim();
+          const { buffers, overlaysApplied } = await compositeCarouselFromPhotoUrls({
+            photoUrls: urls,
+            brandName: input.brandName || 'Brand',
+            headline,
+            caption: overlayCaption || undefined,
+            cta: input.cta,
+          });
+          if (overlaysApplied && buffers.length >= 2) {
+            imageUrls = await Promise.all(buffers.map((b) => persistJpegBuffer(b, input.brandName)));
+            carouselOverlays = true;
+            console.log(`[generate-instagram-image] Carousel passthrough overlays: ${buffers.length} slides`);
+          }
+        } catch (overlayErr) {
+          console.warn('[generate-instagram-image] Carousel overlay failed, raw passthrough:', overlayErr);
+        }
+      }
+
       return NextResponse.json({
         success: true,
-        imageUrl: persistedImageUrl,
+        imageUrl: imageUrls[0],
+        imageUrls: useMultiEnhance || imageUrls.length > 1 ? imageUrls : undefined,
+        photoCount: imageUrls.length,
         contentType,
         provider: 'original',
-        model: 'passthrough',
+        model: carouselOverlays ? 'passthrough+carousel-overlay' : 'passthrough',
         quality: 'original',
         venue_preserved: true,
+        carousel_overlays: carouselOverlays || undefined,
       });
     }
 
     try {
       const enhancePrompt = buildEnhancePrompt(input.brandName, input.enhanceContext, input.assetIntent, input.logoUrl, input.brandVibeProfile);
-      const photoUrl = validEnhanceUrls.length > 1
-        ? await pickBestGalleryPhoto(validEnhanceUrls, contentBrief, openaiForSelect, input.photoMetadata)
-        : validEnhanceUrls[0]!;
-      const generated = await enhanceWithOpenAI(photoUrl, contentType, enhancePrompt);
-      const r2Url = await uploadToR2IfConfigured(generated.imageUrl, input.brandName);
-      const persistedImageUrl = r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : await materializeImageUrl(generated.imageUrl);
+      const urls = await selectUrlsForEnhance();
+      const enhanced = await Promise.all(
+        urls.map((photoUrl) => enhanceWithOpenAI(photoUrl, contentType, enhancePrompt)),
+      );
+      const imageUrls = await Promise.all(
+        enhanced.map(async (generated) => {
+          const r2Url = await uploadToR2IfConfigured(generated.imageUrl, input.brandName);
+          return r2Url.startsWith('http') || r2Url.startsWith('/api/media')
+            ? r2Url
+            : await materializeImageUrl(generated.imageUrl);
+        }),
+      );
+      const persistedImageUrl = imageUrls[0]!;
       persistCreativeArtifact({
         title: input.title,
         imageUrl: persistedImageUrl,
-        contentUrl: r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : contentUrlForPersistence(generated.imageUrl),
+        contentUrl: persistedImageUrl,
         prompt: enhancePrompt,
         caption: input.caption,
         contentType,
         brandName: input.brandName,
         industry: input.industry,
         location: input.location,
-        provider: generated.provider,
-        model: generated.model,
-        quality: generated.quality,
+        provider: enhanced[0]!.provider,
+        model: enhanced[0]!.model,
+        quality: enhanced[0]!.quality,
       }).catch((err) => console.warn('[generate-instagram-image] enhance artifact persist failed:', err));
       return NextResponse.json({
         success: true,
         imageUrl: persistedImageUrl,
+        imageUrls: useMultiEnhance ? imageUrls : undefined,
+        photoCount: imageUrls.length,
         prompt: enhancePrompt,
         contentType,
         platform: 'instagram',
-        provider: generated.provider,
-        model: generated.model,
-        quality: generated.quality,
+        provider: enhanced[0]!.provider,
+        model: enhanced[0]!.model,
+        quality: enhanced[0]!.quality,
         enhanced: true,
       });
     } catch (error) {
@@ -1294,6 +1362,6 @@ export async function GET(): Promise<NextResponse> {
     endpoint: 'POST /api/generate-instagram-image',
     description: 'Generate Instagram post/story image and persist it as an artifact.',
     requiredFields: ['title'],
-    optionalFields: ['caption', 'concept', 'campaignContext', 'contentType: post|story|carousel', 'brandName', 'industry', 'location', 'visualStyle', 'brandTone', 'targetAudience', 'campaignGoals', 'customRules', 'instagramHandle', 'tags', 'referenceImageUrls (https URLs from brand discovery / TenantMediaAsset)'],
+    optionalFields: ['caption', 'concept', 'campaignContext', 'contentType: post|story|carousel', 'enhanceMode', 'multiPhotoEnhance (2–4 URLs with enhanceMode)', 'brandName', 'industry', 'location', 'visualStyle', 'brandTone', 'targetAudience', 'campaignGoals', 'customRules', 'instagramHandle', 'tags', 'referenceImageUrls (https URLs — array; carousel/multiPhotoEnhance returns imageUrls[])'],
   });
 }

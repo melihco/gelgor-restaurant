@@ -143,6 +143,17 @@ async def check_budget(
     allowed = projected <= daily_cap + 1e-6
     reason: str | None = None
 
+    if settings.auto_produce_bypass_limits:
+        return {
+            "allowed": True,
+            "spent_today_usd": round(spent, 4),
+            "remaining_usd": round(daily_cap, 4),
+            "daily_budget_usd": daily_cap,
+            "projected_usd": round(projected, 4),
+            "reason": None,
+            "token_wallet": None,
+        }
+
     if not allowed:
         reason = f"Günlük API bütçesi doldu (${spent:.2f} / ${daily_cap:.2f})"
 

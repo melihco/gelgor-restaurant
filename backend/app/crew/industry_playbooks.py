@@ -111,6 +111,20 @@ INDUSTRY_PLAYBOOKS: dict[str, IndustryPlaybook] = {
         approval_required_for=["price", "health_claim"],
         preferred_channels=["instagram_post", "instagram_story", "instagram_reel"],
     ),
+    "barber_salon": IndustryPlaybook(
+        id="barber_salon",
+        label="Berber / Kuaför",
+        default_content_needs=[
+            "service_intro",
+            "social_proof",
+            "post_service_client_result",
+            "lead_generation",
+            "behind_the_scenes",
+        ],
+        risky_signals=["personal_data", "before_after", "price"],
+        approval_required_for=["personal_data", "before_after"],
+        preferred_channels=["instagram_story", "instagram_reel", "instagram_post"],
+    ),
     "beach_club": IndustryPlaybook(
         id="beach_club",
         label="Beach Club / Bar",
@@ -159,6 +173,12 @@ INDUSTRY_ALIASES = {
     "local_food_shop": "local_products_shop",
     "grocery": "local_products_shop",
     # Beach / bar
+    "barber": "barber_salon",
+    "barbershop": "barber_salon",
+    "hairdresser": "barber_salon",
+    "kuaför": "barber_salon",
+    "kuafor": "barber_salon",
+    "berber": "barber_salon",
     "bar": "beach_club",
     "nightclub": "beach_club",
     "club": "beach_club",

@@ -33,6 +33,10 @@ public class CrewBrandContext
     public string CustomRules { get; set; } = string.Empty;
     public string Keywords { get; set; } = string.Empty;
     public List<string> AssetDescriptions { get; set; } = new();
+    public List<string> ContentPillars { get; set; } = new();
+    public Dictionary<string, string> RiskRules { get; set; } = new();
+    public List<string> OperatingCapabilities { get; set; } = new();
+    public Dictionary<string, object?> GalleryPolicy { get; set; } = new();
 }
 
 public class CrewExecutionResponse

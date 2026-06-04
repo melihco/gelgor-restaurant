@@ -19,6 +19,10 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useTheme } from '../theme-context';
 import type { T } from '../theme-context';
 import { apiClient } from '@/lib/api-client';
+import { buildCanvaMissionSignal } from '@/lib/canva-mission-signal';
+import type { CanvaContentKind } from '@/lib/canva-template-selection';
+import { isCanvaEnabledClient } from '@/lib/canva-config';
+import { CANVA_DISABLED_MESSAGE } from '@/lib/canva-route-guard';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +62,30 @@ const KIND_LABEL: Record<string, string> = {
 // ── Main Screen ────────────────────────────────────────────────────────────
 
 export default function CanvaTemplatesScreen() {
+  if (!isCanvaEnabledClient()) return <CanvaDisabledPlaceholder />;
+  return <CanvaTemplatesScreenInner />;
+}
+
+function CanvaDisabledPlaceholder() {
+  const { goBack, navigate } = useMobileStore();
+  const { t } = useTheme();
+  return (
+    <div style={{ minHeight: '100dvh', background: t.bg, padding: '72px 24px 40px' }}>
+      <button type="button" onClick={goBack} style={{ background: 'none', border: 'none', color: t.textMuted, fontSize: 14, marginBottom: 24, cursor: 'pointer' }}>← Geri</button>
+      <div style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary, marginBottom: 12 }}>Canva kullanılmıyor</div>
+      <p style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.55, marginBottom: 28 }}>{CANVA_DISABLED_MESSAGE}</p>
+      <button
+        type="button"
+        onClick={() => navigate('brand')}
+        style={{ padding: '14px 20px', borderRadius: 14, border: 'none', background: '#7c3aed', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+      >
+        Remotion şablon kütüphanesi →
+      </button>
+    </div>
+  );
+}
+
+function CanvaTemplatesScreenInner() {
   const { goBack }   = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const { t }        = useTheme();
@@ -119,7 +147,7 @@ export default function CanvaTemplatesScreen() {
     const ctrl = new AbortController();
     previewAbortRef.current = ctrl;
 
-    const CONCURRENCY = 3;
+    const CONCURRENCY = 1;
     let idx = 0;
 
     async function generateOne(tmpl: CanvaTemplate) {
@@ -152,9 +180,10 @@ export default function CanvaTemplatesScreen() {
         }
       } catch { /* ignore — failed previews stay as placeholder */ } finally {
         setGenerating(prev => { const s = new Set(prev); s.delete(tmpl.id); return s; });
-        // Pick next item
+        // Pick next item — wait 2 s between requests to avoid Canva 429
         if (!ctrl.signal.aborted && idx < needsPreview.length) {
-          void generateOne(needsPreview[idx++]!);
+          const next = needsPreview[idx++]!;
+          setTimeout(() => { if (!ctrl.signal.aborted) void generateOne(next); }, 2000);
         }
       }
     }
@@ -475,6 +504,7 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
   const [isAutofilling, setIsAutofilling] = useState(false);
   const [autofillResult, setAutofillResult] = useState<{
     editUrl?: string; thumbnailUrl?: string; designId?: string; templateTitle?: string;
+    downloadUrl?: string; exportFormat?: 'png' | 'mp4';
     debug?: {
       signalKind: string; signalHasImageUrl: boolean;
       templateDatasetFields: string[]; filledFields: Array<{ field: string; type: string; filled: boolean; preview: string }>;
@@ -523,8 +553,16 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
     setIsAutofilling(true); setAutofillError(null); setAutofillResult(null); setSavedToOutputs(false);
 
     try {
-      const kind = template.contentKinds?.[0] ?? 'instagram_post';
-      const signalTitle = title.trim() || caption.trim().slice(0, 60);
+      const kind = (template.contentKinds?.[0] ?? 'instagram_post') as CanvaContentKind;
+      const { title: signalTitle, signal } = buildCanvaMissionSignal({
+        idea: {
+          headline: title.trim(),
+          caption_draft: caption.trim(),
+          cta: cta.trim(),
+          content_type: kind.replace('instagram_', ''),
+        },
+        overrides: { kind },
+      });
       const res = await fetch('/api/canva/autofill-design', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -532,14 +570,8 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
           tenantId,
           templateId: template.id,
           title: signalTitle,
-          signal: {
-            kind,
-            title: signalTitle,
-            headline: title.trim(),
-            caption: caption.trim(),
-            summary: caption.trim().slice(0, 120),
-            cta: cta.trim() || undefined,
-          },
+          signal,
+          lineage: { source: 'canva_templates_screen', selectedBy: 'manual_override' },
         }),
       });
       const data = await res.json();
@@ -548,26 +580,34 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
       const editUrl: string | undefined = design?.url ?? design?.urls?.edit_url;
       const thumbnailUrl: string | undefined = design?.thumbnail?.url;
       const templateTitle: string | undefined = data.decision?.template?.title ?? template.title;
+      const downloadUrl: string | undefined = data.export?.permanentPreviewUrl;
+      const exportFormat: 'png' | 'mp4' | undefined = data.export?.format;
 
-      const result = { editUrl, thumbnailUrl, designId: design?.id, templateTitle, debug: data.debug };
+      const result = { editUrl, thumbnailUrl, designId: design?.id, templateTitle, downloadUrl, exportFormat, debug: data.debug };
       setAutofillResult(result);
 
+      const isReel = kind.includes('reel');
+      const publishUrl = downloadUrl ?? thumbnailUrl ?? editUrl;
+
       // Otomatik olarak Outputs'a kaydet
-      if (editUrl) {
+      if (publishUrl) {
         try {
           await apiClient.saveCreativeArtifact({
             title:       `${signalTitle} — ${templateTitle ?? 'Canva'}`,
-            contentUrl:  editUrl,
+            contentUrl:  publishUrl,
             platform:    'canva',
             contentType: kind,
             content: JSON.stringify({
               canvaEditUrl: editUrl,
               canvaThumbnail: thumbnailUrl,
+              canvaDownloadUrl: downloadUrl,
               canvaDesignId: design?.id,
               templateTitle,
               caption: caption.trim(),
               kind,
               source: 'canva_templates_screen',
+              imageUrl: isReel ? undefined : downloadUrl ?? thumbnailUrl,
+              videoUrl: isReel ? downloadUrl : undefined,
             }),
             metadata: {
               source: 'canva_templates_screen',
@@ -576,6 +616,10 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
               templateId: template.id,
               templateTitle,
               contentKind: kind,
+              permanentPreviewUrl: downloadUrl,
+              canvaExportFormat: exportFormat,
+              imageUrl: isReel ? undefined : downloadUrl ?? thumbnailUrl,
+              videoUrl: isReel ? downloadUrl : undefined,
             },
           });
           setSavedToOutputs(true);
@@ -709,12 +753,21 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
         {autofillResult && (
           <div style={{ borderRadius: 16, overflow: 'hidden', border: `1px solid ${isReelTemplate ? 'rgba(239,68,68,0.35)' : 'rgba(124,58,237,0.3)'}`, marginBottom: 14 }}>
             {/* Thumbnail — Reel gets 9:16 portrait treatment with play overlay */}
-            {autofillResult.thumbnailUrl && (
+            {(autofillResult.thumbnailUrl || autofillResult.downloadUrl) && (
               <div style={{ position: 'relative' as const, width: '100%', aspectRatio: isReelTemplate || isStoryTemplate ? '9/16' : '1/1', maxHeight: isReelTemplate ? 380 : 260, overflow: 'hidden', background: '#000' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={autofillResult.thumbnailUrl} alt="Önizleme"
-                  style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' as const }}
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                {autofillResult.exportFormat === 'mp4' && autofillResult.downloadUrl ? (
+                  <video src={autofillResult.downloadUrl} autoPlay muted loop playsInline
+                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' as const }} />
+                ) : autofillResult.downloadUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={autofillResult.downloadUrl} alt="Canva export"
+                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' as const }} />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={autofillResult.thumbnailUrl!} alt="Önizleme"
+                    style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' as const }}
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                )}
                 {/* Play overlay for Reels */}
                 {isReelTemplate && (
                   <div style={{ position: 'absolute' as const, inset: 0, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 8, background: 'rgba(0,0,0,0.35)' }}>
@@ -754,6 +807,12 @@ function TemplateDetailView({ template, tenantId, t, S, onBack, onTemplateUpdate
               </div>
               {/* Action buttons */}
               <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+                {autofillResult.downloadUrl && (
+                  <a href={autofillResult.downloadUrl} download
+                    style={{ display: 'block', textAlign: 'center' as const, padding: '13px', background: '#10B981', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                    ⬇ Instagram&apos;a Hazır Dosyayı İndir ({autofillResult.exportFormat === 'mp4' ? 'MP4 Reel' : 'PNG'})
+                  </a>
+                )}
                 {autofillResult.editUrl && (
                   <a href={autofillResult.editUrl} target="_blank" rel="noopener noreferrer"
                     style={{ display: 'block', textAlign: 'center' as const, padding: '13px', background: isReelTemplate ? '#dc2626' : '#7c3aed', borderRadius: 12, color: '#fff', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>

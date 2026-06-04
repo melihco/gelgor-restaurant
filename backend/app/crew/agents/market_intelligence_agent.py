@@ -7,7 +7,8 @@ from __future__ import annotations
 from crewai import Agent, LLM
 
 from app.config import get_settings
-from app.crew.context import BrandInfo
+from app.crew.context import BrandInfo, build_brand_context_prompt
+from app.crew.cta_localization import resolve_output_language
 from app.crew.prompts.market_intelligence_prompts import (
     MARKET_AGENT_BACKSTORY,
     MARKET_AGENT_GOAL,
@@ -19,11 +20,15 @@ from app.crew.tools.perplexity_search import PerplexitySearchTool
 
 def create_market_intelligence_agent(brand: BrandInfo, llm: LLM | None = None) -> Agent:
     settings = get_settings()
+    brand_context_block = build_brand_context_prompt(brand, profile="minimal")
+    output_language = resolve_output_language(brand.languages)
 
     backstory = MARKET_AGENT_BACKSTORY.format(
         business_name=brand.business_name,
         business_type=brand.business_type,
-        location=brand.location or "Turkey",
+        location=brand.location or "not specified",
+        output_language=output_language,
+        brand_context=brand_context_block,
     )
     goal = MARKET_AGENT_GOAL.format(business_name=brand.business_name)
 

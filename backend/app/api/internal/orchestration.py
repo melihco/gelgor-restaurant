@@ -21,7 +21,11 @@ from app.crew.brand_analyzer import analyze_brand
 from app.crew.context import BrandInfo
 from app.crew.engine import get_crew_engine
 from app.api.deps import get_db
-from app.services.brand_context_service import build_brand_info_from_internal, build_brand_info
+from app.services.brand_context_service import (
+    build_brand_info_from_internal,
+    build_brand_info,
+    enrich_brand_operating_policy,
+)
 from app.services.tenant_learning_service import build_tenant_learning_snapshot, build_learning_context_prompt
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.internal import (
@@ -113,6 +117,11 @@ async def execute_internal_agent(
 
     # Build BrandInfo from .NET's brand_context payload.
     brand = build_brand_info_from_internal(request.brand_context)
+    brand.tenant_id = request.tenant_id
+    if request.brand_context.operating_capabilities:
+        brand.operating_capabilities = list(request.brand_context.operating_capabilities)
+    if request.brand_context.gallery_policy:
+        brand.gallery_policy = dict(request.brand_context.gallery_policy)
 
     # ── Enrich from Python DB (Sprint 1-3 intelligence data) ─────────────
     # .NET only knows about CompanyProfile fields. All Sprint enrichment
@@ -132,7 +141,10 @@ async def execute_internal_agent(
                 brand.competitor_brief = py_brand.competitor_brief
             if py_brand.trend_brief:
                 brand.trend_brief = py_brand.trend_brief
-            if py_brand.content_pillars:
+            # Marka Anayasası contentNeeds (.NET CompanyProfile) wins over stale Python mirror
+            if request.brand_context.content_pillars:
+                brand.content_pillars = list(request.brand_context.content_pillars)
+            elif py_brand.content_pillars:
                 brand.content_pillars = py_brand.content_pillars
             if py_brand.default_ctas:
                 brand.default_ctas = py_brand.default_ctas
@@ -174,6 +186,8 @@ async def execute_internal_agent(
             # Brand Vibe Profile — agency-grade visual DNA from reference accounts
             if py_brand.brand_vibe_profile:
                 brand.brand_vibe_profile = py_brand.brand_vibe_profile
+            if py_brand.brand_theme:
+                brand.brand_theme = py_brand.brand_theme
             if py_brand.website_intelligence:
                 brand.website_intelligence = py_brand.website_intelligence
             # Per-tenant LLM override — e.g. B2B event agency uses Claude Opus,
@@ -199,6 +213,7 @@ async def execute_internal_agent(
 
     # Stamp tenant_id on brand for isolation audit logging
     brand.tenant_id = request.tenant_id
+    enrich_brand_operating_policy(brand)
 
     # ── Learning context ──────────────────────────────────────────────────
     content_tasks = {

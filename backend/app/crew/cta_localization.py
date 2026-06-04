@@ -216,16 +216,8 @@ def harmonize_concept_copy(concept: dict[str, Any], languages: str | None) -> di
     alt = str(concept.get("caption_draft_alt") or "")
     raw_cta = str(concept.get("cta") or concept.get("call_to_action") or "")
 
-    caption_lang = detect_text_language(caption) if caption else target
-    cta_lang = detect_text_language(raw_cta) if raw_cta else target
-
-    # Caption language wins when it clearly differs from the standalone CTA field
-    if caption and raw_cta and caption_lang != cta_lang:
-        effective_lang = caption_lang
-    elif caption and len(caption) > 40:
-        effective_lang = caption_lang
-    else:
-        effective_lang = target
+    # Brand language setting wins — never let detected caption language override tenant choice
+    effective_lang = target
 
     old_cta = raw_cta
     new_cta = localize_cta(raw_cta, effective_lang) if raw_cta else raw_cta

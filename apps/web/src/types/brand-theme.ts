@@ -43,6 +43,9 @@ export interface BrandThemeTypography {
   textOverlayDensity: 'minimal' | 'medium' | 'dense';
   /** Caption/body personality in 3-5 words */
   personality: string;
+  /** Başlık / hero overlay rengi (hex) — feed & poster SVG */
+  headlineColor?: string;
+  headline_color?: string;
 }
 
 export interface BrandThemeComposition {
@@ -102,6 +105,9 @@ export type LayoutId =
   | 'review_showcase'
   | 'ad_banner_horizontal';
 
+/** Per-tenant Remotion routing — see brand-motion-profile.ts */
+export type { BrandMotionProfile, MotionStyle } from '@/lib/brand-motion-profile';
+
 export interface BrandTheme {
   /** Workspace / tenant this theme belongs to */
   workspaceId: string;
@@ -126,6 +132,26 @@ export interface BrandTheme {
   antiPatterns: string[];
   /** Validated WCAG AA contrast check result */
   contrastValid: boolean;
+
+  /** AI visual production (Brand Hub → Ayarlar) */
+  ai_photo_enhance?: boolean;
+  ai_photo_enhance_level?: 'subtle' | 'moderate' | 'full';
+  ai_use_brand_identity?: boolean;
+  ai_brief_drives_scene?: boolean;
+  ai_embed_logo?: boolean;
+  ai_enhance_formats?: Array<'post' | 'story' | 'carousel' | 'reel'>;
+  ai_visual_subject?: 'auto' | 'venue_ambiance' | 'product_hero';
+  /** Experimental Crew VPD — default false; existing VPS from ideation wins on merge */
+  enable_visual_production_director?: boolean;
+  enableVisualProductionDirector?: boolean;
+
+  /** Remotion composition pool, media policy, motion style (snake_case in JSONB) */
+  motionProfile?: import('@/lib/brand-motion-profile').BrandMotionProfile;
+  motion_profile?: import('@/lib/brand-motion-profile').BrandMotionProfile;
+
+  /** 5-slot brand template library — Mission Hub production source */
+  templateLibrary?: import('@/lib/brand-template-library').BrandTemplateLibrary;
+  template_library?: import('@/lib/brand-template-library').BrandTemplateLibrary;
 }
 
 // ── Safe fonts list — must be Google Fonts or OFL licensed ───────────────────
@@ -147,6 +173,10 @@ export const SAFE_FONTS: readonly string[] = [
   'Space Grotesk',
   'Syne',
   'Cabinet Grotesk',
+  'Great Vibes',
+  'Allura',
+  'Anton',
+  'Bebas Neue',
 ] as const;
 
 // ── Sector default palettes (cold-start fallback) ─────────────────────────────

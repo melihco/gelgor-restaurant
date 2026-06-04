@@ -1,17 +1,82 @@
 /**
  * Auto-produce budget — persisted via Python usage-cost API.
- * Daily cap: AUTO_PRODUCE_DAILY_BUDGET_USD (default $1.00) + piece count limit.
+ * Daily cap: AUTO_PRODUCE_DAILY_BUDGET_USD (default $10.00) — raised to cover
+ * full-quality production (Runway reel + Creatomate stories + GPT enhance).
+ * Override: AUTO_PRODUCE_DAILY_BUDGET_USD env var.
+ *
+ * Package-aware limits: fetched from Nexus /api/packages/usage and cached 1h.
+ * Starter=350/mo (~11/day), Growth=800/mo (~26/day), Performance=1820/mo (~60/day),
+ * Executive=unlimited. Env var overrides act as operator ceilings on top.
  */
 
 const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
+const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
-const AUTO_PRODUCE_MAX_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_DAILY || '7', 10);
-const DAILY_BUDGET_USD = parseFloat(process.env.AUTO_PRODUCE_DAILY_BUDGET_USD || '1');
-/** Runway cost per 5s clip (gen4_turbo) */
-const RUNWAY_COST_USD = 0.10;
-/** Auto-produce Runway is OFF by default — reels get still cover; manual Runway after review */
-const AUTO_PRODUCE_RUNWAY = process.env.AUTO_PRODUCE_RUNWAY === 'true';
-const AUTO_PRODUCE_MAX_REELS_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_REELS_DAILY || '2', 10);
+/** Operator ceiling for daily artifact count — package limits apply first. */
+const AUTO_PRODUCE_MAX_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_DAILY || '200', 10);
+/** Mission → Feed may produce 5–7 slots in one run; must not share the manual daily cap. */
+const MISSION_AUTO_PRODUCE_MAX_PER_RUN = parseInt(
+  process.env.MISSION_AUTO_PRODUCE_MAX_PER_RUN || '24',
+  10,
+);
+const DAILY_BUDGET_USD = parseFloat(process.env.AUTO_PRODUCE_DAILY_BUDGET_USD || '50');
+/** Runway cost per 5s clip (gen4_turbo API) */
+const RUNWAY_COST_USD = 0.25;
+/**
+ * Runway reels are ON by default — full quality production includes video.
+ * Disable with AUTO_PRODUCE_RUNWAY=false if Runway API key is not configured.
+ */
+const AUTO_PRODUCE_RUNWAY = process.env.AUTO_PRODUCE_RUNWAY !== 'false';
+/** Operator ceiling for daily reels — package monthly reel limit applies first. */
+const AUTO_PRODUCE_MAX_REELS_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_REELS_DAILY || '15', 10);
+
+// ── Package-aware limit resolution ────────────────────────────────────────────
+
+interface PackageLimits {
+  /** MonthlySocialContent / 30, rounded up. -1 = unlimited (Executive). */
+  dailySocialContent: number;
+  /** MonthlyReels. -1 = unlimited. */
+  monthlyReels: number;
+  isUnlimited: boolean;
+}
+
+const _limitsCache: Record<string, { limits: PackageLimits; expiresAt: number }> = {};
+
+async function fetchPackageLimits(workspaceId: string): Promise<PackageLimits> {
+  const now = Date.now();
+  const cached = _limitsCache[workspaceId];
+  if (cached && cached.expiresAt > now) return cached.limits;
+
+  try {
+    const res = await fetch(`${NEXUS_API}/api/packages/usage`, {
+      headers: { 'X-Tenant-Id': workspaceId },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data: { monthlyOutputs?: { socialContent: number; reels: number } | null } =
+      await res.json();
+    const socialContent = data.monthlyOutputs?.socialContent ?? -1;
+    const reels = data.monthlyOutputs?.reels ?? -1;
+    const limits: PackageLimits = {
+      dailySocialContent: socialContent === -1 ? -1 : Math.max(5, Math.ceil(socialContent / 30)),
+      monthlyReels: reels,
+      isUnlimited: socialContent === -1,
+    };
+    _limitsCache[workspaceId] = { limits, expiresAt: now + 60 * 60 * 1_000 };
+    return limits;
+  } catch {
+    // Non-fatal: if Nexus is unreachable, fall through to env-var ceilings only.
+    return { dailySocialContent: -1, monthlyReels: -1, isUnlimited: true };
+  }
+}
+
+/**
+ * Dev / pilot: skip daily USD cap, artifact count cap, and Runway reel cap.
+ * Set AUTO_PRODUCE_BYPASS_LIMITS=false when billing limits go live.
+ */
+export function isProductionLimitsBypassed(): boolean {
+  return process.env.AUTO_PRODUCE_BYPASS_LIMITS === 'true';
+}
 
 /** In-process reel counter (resets on server restart; budget check is authoritative) */
 const _reelCountByWorkspace: Record<string, { date: string; count: number }> = {};
@@ -35,32 +100,52 @@ function incrementReelCount(workspaceId: string): void {
 
 /**
  * Check whether auto-produce may call Runway for this workspace today.
- * Default: disabled — operator triggers Runway manually from Mission Content Factory.
+ * Default: enabled — full quality production includes Runway reels.
+ * Disable with AUTO_PRODUCE_RUNWAY=false (e.g. if RUNWAY_API_SECRET not set).
  */
-export async function canAffordRunway(workspaceId: string): Promise<BudgetCheckResult> {
+export async function canAffordRunway(
+  workspaceId: string,
+  estimatedCostUsd = RUNWAY_COST_USD,
+): Promise<BudgetCheckResult> {
+  if (isProductionLimitsBypassed()) {
+    return {
+      allowed: true,
+      remaining: AUTO_PRODUCE_MAX_REELS_DAILY,
+      spentTodayUsd: 0,
+      dailyBudgetUsd: DAILY_BUDGET_USD,
+      remainingUsd: DAILY_BUDGET_USD,
+    };
+  }
+
   if (!AUTO_PRODUCE_RUNWAY) {
     return {
       allowed: false,
       remaining: 0,
-      reason: 'Otomatik reel kapalı — onay sonrası Mission Factory\'den manuel Runway kullanın',
+      reason: 'Runway devre dışı — RUNWAY_API_SECRET veya AUTO_PRODUCE_RUNWAY=false',
     };
   }
+
+  // Derive daily reel cap from package monthly quota (Starter=4/mo → ~4 total, not daily)
+  const pkgLimits = await fetchPackageLimits(workspaceId);
+  const effectiveMaxReels = pkgLimits.monthlyReels === -1
+    ? AUTO_PRODUCE_MAX_REELS_DAILY
+    : Math.min(AUTO_PRODUCE_MAX_REELS_DAILY, pkgLimits.monthlyReels);
 
   const reelsToday = getReelsProducedToday(workspaceId);
-  if (reelsToday >= AUTO_PRODUCE_MAX_REELS_DAILY) {
+  if (reelsToday >= effectiveMaxReels) {
     return {
       allowed: false,
       remaining: 0,
-      reason: `Günlük otomatik reel limiti (${AUTO_PRODUCE_MAX_REELS_DAILY})`,
+      reason: `Paket reel limiti doldu (${effectiveMaxReels} reel/ay — ${pkgLimits.monthlyReels === -1 ? 'günlük' : 'aylık'})`,
     };
   }
 
-  const budget = await fetchBudgetCheck(workspaceId, RUNWAY_COST_USD);
-  if (!budget.allowed || budget.remaining_usd < RUNWAY_COST_USD) {
+  const budget = await fetchBudgetCheck(workspaceId, estimatedCostUsd);
+  if (!budget.allowed || budget.remaining_usd < estimatedCostUsd) {
     return {
       allowed: false,
       remaining: 0,
-      reason: `Runway için yeterli bütçe yok ($${budget.remaining_usd.toFixed(2)} kaldı, $${RUNWAY_COST_USD} gerekli)`,
+      reason: `Runway için yeterli bütçe yok ($${budget.remaining_usd.toFixed(2)} kaldı, $${estimatedCostUsd.toFixed(2)} gerekli)`,
       spentTodayUsd: budget.spent_today_usd,
       dailyBudgetUsd: budget.daily_budget_usd,
       remainingUsd: budget.remaining_usd,
@@ -69,7 +154,7 @@ export async function canAffordRunway(workspaceId: string): Promise<BudgetCheckR
 
   return {
     allowed: true,
-    remaining: AUTO_PRODUCE_MAX_REELS_DAILY - reelsToday,
+    remaining: effectiveMaxReels - reelsToday,
     spentTodayUsd: budget.spent_today_usd,
     dailyBudgetUsd: budget.daily_budget_usd,
     remainingUsd: budget.remaining_usd,
@@ -119,13 +204,39 @@ async function fetchBudgetCheck(
   return res.json();
 }
 
+export type CanProduceOptions = {
+  /** Mission Hub pipeline — skip the low manual daily artifact cap. */
+  missionProduction?: boolean;
+};
+
 export async function canProduce(
   workspaceId: string,
   batchSize: number,
   estimatedBatchCostUsd = 0,
+  options?: CanProduceOptions,
 ): Promise<BudgetCheckResult> {
   if (process.env.AUTO_PRODUCE_ENABLE === 'false') {
     return { allowed: false, remaining: 0, reason: 'Auto-produce disabled' };
+  }
+
+  const missionProduction = options?.missionProduction === true;
+
+  // Resolve effective daily cap: min(operator ceiling, package daily quota)
+  const pkgLimits = await fetchPackageLimits(workspaceId);
+  const packageDailyMax = pkgLimits.isUnlimited || pkgLimits.dailySocialContent === -1
+    ? AUTO_PRODUCE_MAX_DAILY
+    : pkgLimits.dailySocialContent;
+  const effectiveDailyMax = Math.min(AUTO_PRODUCE_MAX_DAILY, packageDailyMax);
+  const maxBatch = missionProduction ? MISSION_AUTO_PRODUCE_MAX_PER_RUN : effectiveDailyMax;
+
+  if (isProductionLimitsBypassed()) {
+    return {
+      allowed: true,
+      remaining: Math.min(batchSize, maxBatch),
+      spentTodayUsd: 0,
+      dailyBudgetUsd: DAILY_BUDGET_USD,
+      remainingUsd: DAILY_BUDGET_USD,
+    };
   }
 
   const budget = await fetchBudgetCheck(workspaceId, estimatedBatchCostUsd);
@@ -140,20 +251,27 @@ export async function canProduce(
     };
   }
 
-  const summary = await getUsageStats(workspaceId);
-  const todayArtifacts = summary?.daily_series?.find((d) => d.date === new Date().toISOString().slice(0, 10));
-  const artifactCountToday = todayArtifacts?.artifact_count ?? 0;
-  const remainingCount = AUTO_PRODUCE_MAX_DAILY - artifactCountToday;
-
-  if (remainingCount <= 0) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: `Günlük içerik limiti (${AUTO_PRODUCE_MAX_DAILY} parça)`,
-      spentTodayUsd: budget.spent_today_usd,
-      dailyBudgetUsd: budget.daily_budget_usd,
-      remainingUsd: budget.remaining_usd,
-    };
+  let remainingCount: number;
+  if (missionProduction) {
+    // Mission runs are the primary product — only USD wallet gates them.
+    remainingCount = MISSION_AUTO_PRODUCE_MAX_PER_RUN;
+  } else {
+    const summary = await getUsageStats(workspaceId);
+    const todayArtifacts = summary?.daily_series?.find(
+      (d) => d.date === new Date().toISOString().slice(0, 10),
+    );
+    const artifactCountToday = todayArtifacts?.artifact_count ?? 0;
+    remainingCount = effectiveDailyMax - artifactCountToday;
+    if (remainingCount <= 0) {
+      return {
+        allowed: false,
+        remaining: 0,
+        reason: `Günlük içerik limiti doldu (${effectiveDailyMax} parça — ${pkgLimits.isUnlimited ? 'operatör limiti' : 'paket limiti'})`,
+        spentTodayUsd: budget.spent_today_usd,
+        dailyBudgetUsd: budget.daily_budget_usd,
+        remainingUsd: budget.remaining_usd,
+      };
+    }
   }
 
   const maxByBudget = estimatedBatchCostUsd > 0

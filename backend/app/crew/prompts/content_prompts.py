@@ -127,7 +127,7 @@ Scope examples by business type (find the closest match — if your type is not 
 - clinic / doktor / sağlık merkezi → hizmet tanıtımı, uzman görüşleri, hasta hikayeleri, bilgilendirme, randevu. YASAK: yemek, eğlence, moda.
 - auto_service / oto yıkama / oto tamir → hizmet vitrinleri, öncesi-sonrası, bakım ipuçları, kampanya. YASAK: yemek, konaklama, moda.
 - e_commerce / online mağaza → ürün tanıtımı, kargo kampanyası, müşteri yorumları, unboxing, mevsimlik indirim. YASAK: mekan atmosferi, lokasyon bazlı etkinlik.
-- tech_company / SaaS / dijital ajans → ürün demo, müşteri başarı hikayesi, sektör insight, webinar. YASAK: fiziksel mekan atmosferi, yemek.
+- tech_company / SaaS / rezervasyon yazılımı / berber-kuaför paneli → ürün özelliği, demo/ücretsiz deneme (lead_generation), müşteri başarısı (social_proof), nasıl kullanılır (educational_post), kampanya/indirim (campaign_offer), webinar/lansman (event_announcement). YASAK: fiziksel mekan atmosferi, yemek, DJ gecesi.
 - bakery / pastane / fırın → taze ürün vitrinleri, yapım süreci, mevsimsel lezzetler, sipariş. YASAK: canlı müzik, konaklama.
 - pet_shop / veteriner → hayvan bakımı, ürün, sağlık ipucu, müşteri & hayvan hikayeleri. YASAK: yemek servisi, moda.
 - education / kurs / eğitim merkezi → ders programı, öğrenci başarıları, uzman hocalar, kayıt. YASAK: yemek, konaklama, moda.
@@ -141,6 +141,12 @@ When in doubt, check: "Does {business_name} actually provide this service?" If y
 
 If custom_rules below explicitly forbid certain content types, those are ABSOLUTE — never override them.
 If content_pillars is empty, derive scope STRICTLY from business_type and brand description — do NOT fill gaps with generic hospitality content.
+
+🚫 DATE RULE — MANDATORY: Today is included in the brief context below.
+NEVER generate content for a holiday, special day, or event that has ALREADY PASSED.
+If "strategic_purpose" mentions a specific date (e.g. "19 Mayıs", "1 Mayıs", "Mother's Day"), 
+verify it is UPCOMING. If it has passed → replace with a current seasonal angle instead.
+posting_time_suggestion MUST be a future date/time — never a past one.
 
 ⚠️ NATIVE LANGUAGE: {output_language}
 You are a native {output_language} copywriter. Think in {output_language}.
@@ -191,6 +197,8 @@ User/autonomy brief: {brief}
 
 Tenant content pillars to cover this week: {content_pillars}
 
+{pillar_coverage_block}
+
 Available brand assets: {available_assets}
 
 Autonomy mode: {autonomy_mode}
@@ -202,8 +210,8 @@ Autonomy mode: {autonomy_mode}
 From {count} concepts, aim for this distribution:
 - ~40%% posts (feed_text_overlay or pure_photo treatment)
 - ~30%% stories (pure_photo dominant — see STORY RULE below)
-- ~20%% reels (1 reel per 5 concepts minimum, with reel_motion_spec)
-- ~10%% carousels (multi-photo story arcs)
+- When count ≥ 7 (standard weekly mission): deliver EXACTLY — 3 story + 2 post + 1 carousel + 1 reel (7 total).
+- Otherwise: ~40%% post / ~30%% story / ~20%% reel / ~10%% carousel; minimum 1 reel with reel_motion_spec.
 
 ⚠️ STORY TEXT OVERLAY RULE:
 Stories are FULL-SCREEN 9:16 visual experiences — the photo IS the content.
@@ -256,12 +264,40 @@ For each concept, return a JSON object with:
   This tells the image generation service EXACTLY how to treat the venue gallery photo.
 
   Required fields:
-  - "treatment": choose the right treatment for this specific concept:
-      "pure_photo"         → product/venue/ambiance close-up — NO text overlay, pure editorial edit
-                             (color grade, light enhancement, slight crop — the photo speaks for itself)
-      "story_event"        → event/campaign announcement — story 9:16 with title + CTA + date
-      "feed_text_overlay"  → feed post with short headline + CTA over a darkened/blurred photo
-      "event_announcement" → big visual, key message prominent, strong CTA
+  - "treatment": THE MOST CRITICAL DECISION — determines if a Remotion template is used.
+      Read the content type and decide:
+
+      "pure_photo"         → DEFAULT for most stories. Raw authentic brand photo, no text template.
+                             Use when: lifestyle, ambiance, product shots, regular engagement posts,
+                             behind-the-scenes, seasonal mood, any content where the photo speaks alone.
+                             The platform will show the photo + caption + hashtags. NO graphic design.
+                             ⚡ TARGET: 70-80% of all story ideas should be pure_photo.
+
+      "story_event"        → ONLY for real events with specific dates/times.
+                             Use when: DJ night, live music event, workshop, grand opening, market day.
+                             A Remotion branded template will be generated with title + date + CTA.
+                             ⚡ TARGET: 15-20% of story ideas (actual event announcements).
+
+      "event_announcement" → ONLY for major campaign launches or seasonal announcements.
+                             Use when: season opening, major product launch, holiday campaign.
+                             A Remotion Luxury Split template with brand panel + headline.
+                             ⚡ TARGET: 5-10% of story ideas (big campaigns only).
+
+      "campaign_offer"     → ONLY for specific promotional offers with clear discount/price.
+                             Use when: weekend promo, limited offer, flash sale.
+                             A Remotion Luxury Split template ideal for promo text.
+                             ⚡ TARGET: 5% max (avoid overuse — cheapens brand perception).
+
+      "feed_text_overlay"  → For POSTS (not stories) with headline text overlaid on photo.
+
+      ⚠️ SECTOR CALIBRATION — adjust treatment frequency by business type:
+         Beach club / Restaurant: 75% pure_photo, 20% story_event, 5% event_announcement
+         Local artisan / Retail: 80% pure_photo, 15% story_event, 5% campaign_offer
+         Wellness / Clinic: 85% pure_photo, 10% story_event, 5% event_announcement
+         Hotel: 70% pure_photo, 25% story_event (events/packages), 5% campaign_offer
+
+      ✅ Use pure_photo for: seasonal vibes, product shots, behind-scenes, guest moments, food/drink
+      ❌ Avoid templates for: ambiance posts, lifestyle, regular weekly content
 
   - "selected_gallery_url": pick the BEST url from the gallery list below that matches this concept's subject.
       Match the photo to the content topic: product content → product photo, ambiance → environment photo.
@@ -288,11 +324,39 @@ For each concept, return a JSON object with:
       Fields: "title" (max 4 words), "subtitle" (max 8 words), "cta" (max 3 words),
               "event_date" (if applicable), "artist_name" (if event)
 
+  - "event_details": object — REQUIRED when treatment is "story_event" or "event_announcement".
+      This drives the EventAnnouncementStory Remotion template. Every field matters.
+      Fields:
+        "date":        Event date in local format — e.g. "14 Haziran", "Cumartesi 14.06"
+        "time":        Event start time — e.g. "21:00", "20:30"
+        "artist_name": Performer / artist name if relevant — e.g. "DJ Max", "Live Band"
+        "venue_name":  Brand / venue name (same as business_name usually)
+        "venue_area":  City or area — e.g. "Bodrum", "Karaköy"
+        "tagline":     Short event tagline / subtitle — max 4 words — e.g. "DJ & Kokteyl", "Sınırlı Yer"
+        "cta_text":    Call to action — max 3 words — e.g. "Rezervasyon Al", "Bilet Al", "Katıl"
+        "cta_url":     URL for the CTA. REQUIRED when cta_text contains reservation/booking/ticket language.
+                       Use the brand's website URL from brand profile. Examples:
+                       - "Rezervasyon Al" → brand website URL (e.g. "https://sarnicbeach.com")
+                       - "Bilet Al" → ticketing URL from brand profile if available
+                       - "Linkte" → brand website URL
+                       If no specific URL is known, use the brand's main website URL.
+                       Empty string "" only if CTA is generic like "Takip Et" or "Beğen".
+        "audio_mood":  Music style for background audio — e.g. "deep house", "lounge jazz", "beach pop"
+                       Choose: "deep house" | "lounge jazz" | "beach pop" | "ambient chill" |
+                               "acoustic folk" | "latin tropical" | "upbeat commercial"
+        "category_label": 1-2 English words ALL CAPS for the category chip — e.g. "EVENT", "LIVE MUSIC",
+                          "SUMMER PARTY", "GRAND OPENING", "WEEKEND SPECIAL", "DJ NIGHT"
+
+      For pure_photo treatment: omit entirely or use {{}}
+
   - "reel_motion_spec": object — ONLY fill when content_type is "reel". Empty object {{}} otherwise.
       Fields:
-        "camera_movement": describe cinematic camera move (e.g. "slow dolly-in", "aerial pan left-to-right")
+        "camera_movement": MUST be EXACTLY one of this unified enum (used by Runway AI):
+            "static" | "slow_pan" | "dolly_in" | "dolly_out" | "orbit" | "tracking" | "handheld" | "tilt_up" | "tilt_down"
+          Guide: luxury/hotel → "dolly_in"; beach/sunset → "slow_pan" or "dolly_out";
+                 event/crowd → "tracking"; product closeup → "orbit"; wellness/calm → "static" or "handheld"
         "pace": "slow" | "medium" | "dynamic" — match Brand Vibe DNA motion specs if available
-        "transition_style": describe edit transitions (e.g. "smooth dissolve", "whip pan", "light leak")
+        "transition_style": "smooth_dissolve" | "whip_pan" | "light_leak" | "cut" | "fade"
         "audio_mood": genre/BPM that fits the brand (e.g. "deep house 120bpm", "acoustic chill 90bpm")
 
 Available venue gallery photos for selection:
@@ -315,22 +379,51 @@ Selection rules:
 Keep the field names stable. The app maps these fields into Canva template contracts and tenant asset selection.
 """
 
-CONTENT_CALENDAR_TASK = """Create a {duration}-day content calendar for {business_name}.
+CONTENT_CALENDAR_TASK = """Create {count} announcement card concepts for {business_name}.
 
-Requirements:
-- Mix content types (posts, stories, reels, carousels)
-- Maintain consistent posting frequency: {frequency}
-- Align with campaign goals: {campaign_goals}
-- Consider seasonal relevance and local events
-- Balance promotional content with value-add content (80/20 rule)
+PURPOSE: These are branded announcement / event cards to be produced via the brand kit
+template library (SVG motor or Creatomate). Each card will be rendered as a story or reel
+format — NOT raw photo posts. They serve customer acquisition, product/venue reveals,
+promotions, and event highlights.
 
-Return as a JSON array of daily entries with:
-- "day": day number
-- "date_suggestion": relative date
-- "content_type": type of content
-- "theme": content theme
-- "brief": 2-3 sentence content brief
-- "priority": "must_post" | "recommended" | "optional"
+TODAY'S DATE: {current_date}
+Business: {business_name} | Location: {location} | Type: {business_type}
+Campaign brief: {brief}
+Active seasonal signals: {signals}
+
+ANNOUNCEMENT TYPES to consider (pick the most relevant for this brand right now):
+- venue_showcase   → outdoor terrace, pool area, sea view — "This is where magic happens"
+- product_reveal   → new cocktail, dish of the week, seasonal menu
+- event_teaser     → upcoming live music, DJ night, pop-up dinner
+- offer_campaign   → happy hour, weekend special, package deal
+- social_proof     → guest testimonial framing, milestone, award
+- behind_the_scenes → chef prep, sunset setup, team moment
+
+RULES:
+- NEVER reference a past holiday or event. Today is {current_date}.
+- Each card must work as a self-contained story (9:16) or short reel teaser.
+- Keep event_name short (≤6 words) — this goes on the card as the headline.
+- tagline is the visual sub-line (≤10 words).
+- Choose template_use_case from: event, campaign, announcement.
+- Choose format from: story, post.
+
+Return a JSON array of {count} announcement card concepts:
+[
+  {{
+    "announcement_type": "one of the types above",
+    "event_name": "short headline for the card (≤6 words)",
+    "tagline": "visual sub-line (≤10 words)",
+    "date": "date string if applicable, else ''",
+    "time": "time string if applicable, else ''",
+    "venue_area": "specific area name (e.g. 'Rooftop Terrace') if applicable, else ''",
+    "template_use_case": "event | campaign | announcement",
+    "format": "story | post",
+    "content_brief": "1-2 sentences describing the card's visual concept and message",
+    "photo_mood": "brief description of ideal background photo mood/scene",
+    "priority": "must_post | recommended | optional"
+  }}
+]
+Output ONLY the JSON array — no markdown, no explanation.
 """
 
 

@@ -214,6 +214,9 @@ def create_seasonal_mission_from_phase_change(
 
     transition_text = f"{old_phase or '—'} → {new_phase}"
 
+    # Build task_nodes first — node_keys_set depends on it
+    task_nodes = _seasonal_task_graph(new_phase, business_name, content_posture, business_type)
+
     node_keys_set = {n.node_key for n in task_nodes}
 
     phase0_keys = [k for k in ["content_strategy", "review_analysis"] if k in node_keys_set]
@@ -231,8 +234,6 @@ def create_seasonal_mission_from_phase_change(
                      description="İçerik takvimi",
                      node_keys=phase2_keys),
     ]
-
-    task_nodes = _seasonal_task_graph(new_phase, business_name, content_posture, business_type)
 
     return MissionCreate(
         title=f"{new_phase} Kampanya Lansmanı — {business_name}",
@@ -253,6 +254,38 @@ def create_seasonal_mission_from_phase_change(
         confidence=confidence,
         task_nodes=task_nodes,
     )
+
+
+# ── Feed Art Director node (Mission Hub visibility) ───────────────────────────
+
+def ensure_feed_cohesion_review_node(
+    task_nodes: list[TaskNodeCreate],
+) -> list[TaskNodeCreate]:
+    """
+    Strategist graphs often omit feed_cohesion_review. The production stack runs
+    Feed Art Director inline after content_ideation; this placeholder node stores
+    the report for Mission Hub (executor skips crew execution for this task_type).
+    """
+    if any(n.task_type == "feed_cohesion_review" for n in task_nodes):
+        return task_nodes
+
+    ideation_keys = [n.node_key for n in task_nodes if n.task_type == "content_ideation"]
+    if not ideation_keys:
+        return task_nodes
+
+    max_phase = max(n.phase_index for n in task_nodes)
+    return [
+        *task_nodes,
+        TaskNodeCreate(
+            node_key="feed_cohesion_review",
+            phase_index=max_phase + 1,
+            title="Feed uyumu ve slot planı",
+            task_type="feed_cohesion_review",
+            agent_role="feed_art_director_agent",
+            input_data={},
+            depends_on=ideation_keys,
+        ),
+    ]
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -287,7 +320,9 @@ async def create_mission(
     db.add(mission)
     await db.flush()  # get mission.id before inserting nodes
 
-    for node_data in sorted(data.task_nodes, key=lambda n: n.phase_index):
+    normalized_nodes = ensure_feed_cohesion_review_node(list(data.task_nodes))
+
+    for node_data in sorted(normalized_nodes, key=lambda n: n.phase_index):
         node = MissionTaskNode(
             id=uuid.uuid4(),
             mission_id=mission.id,
@@ -314,7 +349,7 @@ async def create_mission(
         workspace_id=str(workspace_id),
         type=mission.type,
         status=mission.status,
-        nodes=len(data.task_nodes),
+        nodes=len(normalized_nodes),
     )
     return mission
 

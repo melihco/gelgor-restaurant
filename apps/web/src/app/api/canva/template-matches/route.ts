@@ -11,6 +11,9 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+    if (canvaBlocked) return canvaBlocked;
+
     const body = await request.json() as {
       tenantId?: string;
       officeId?: string;

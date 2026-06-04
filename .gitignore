@@ -25,6 +25,9 @@ out/
 
 # ── Generated assets (large / temporary) ──────────────────────────────────────
 apps/web/public/generated/
+# Local showcase renders — regenerate via scripts/render-remotion-showcase.mjs
+apps/web/public/remotion-showcase/*.mp4
+apps/web/public/remotion-showcase/*.MP4
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store

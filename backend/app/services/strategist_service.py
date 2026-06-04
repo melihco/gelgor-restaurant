@@ -39,13 +39,40 @@ from app.schemas.mission import (
     TaskNodeCreate,
 )
 from app.services.brand_context_service import build_brand_info
-from app.services.mission_service import create_mission, list_missions
+from app.services.mission_service import create_mission, ensure_feed_cohesion_review_node, list_missions
 from app.services.tenant_learning_service import (
     build_tenant_learning_snapshot,
     build_learning_context_prompt,
 )
 
 logger = structlog.get_logger()
+
+
+def _raise_on_crew_failure(result: dict[str, Any]) -> None:
+    """engine.execute() swallows exceptions and returns status=failed — surface that here."""
+    status = str(result.get("status") or "").lower()
+    err_str = str(result.get("error") or "").strip()
+    if status != "failed" and not err_str:
+        return
+    logger.error(
+        "propose_missions_crew_failed",
+        status=status,
+        error=err_str[:400],
+    )
+    low = err_str.lower()
+    if "insufficient_quota" in low or "429" in err_str or "quota" in low:
+        raise RuntimeError(
+            "OpenAI API kotası tükenmiş (429). Lütfen OpenAI hesabınıza kredi ekleyin."
+        )
+    if "401" in err_str or "unauthorized" in low or "invalid_api_key" in low:
+        raise RuntimeError("OpenAI API key geçersiz (401). Lütfen key'i kontrol edin.")
+    if "rate limit" in low or "rate_limit" in low:
+        raise RuntimeError(
+            "OpenAI istek limiti aşıldı. Birkaç dakika bekleyip tekrar deneyin."
+        )
+    raise RuntimeError(
+        err_str[:300] if err_str else "StrategistAgent çalıştırılamadı."
+    )
 
 
 def _proposal_dict_to_mission_create(proposal: dict[str, Any]) -> MissionCreate | None:
@@ -84,6 +111,8 @@ def _proposal_dict_to_mission_create(proposal: dict[str, Any]) -> MissionCreate 
 
         if not task_nodes:
             return None
+
+        task_nodes = ensure_feed_cohesion_review_node(task_nodes)
 
         mission_type = proposal.get("type", "manual")
         priority_str = proposal.get("priority", "high")
@@ -177,6 +206,7 @@ async def propose_missions_for_workspace(
     workspace_id: uuid.UUID,
     *,
     force: bool = False,
+    context_signals: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Run the StrategistAgent for a workspace and persist resulting proposals.
@@ -221,6 +251,16 @@ async def propose_missions_for_workspace(
     except Exception as exc:
         logger.warning("recent_mission_context_failed", error=str(exc)[:200])
 
+    # ── Inject deterministic context signals (season, full moon, holidays,
+    #    weekly rhythm, sector triggers) from the TS Context Signal Engine ──
+    if context_signals and context_signals.strip():
+        brand.learning_context = (brand.learning_context or "") + "\n\n" + context_signals.strip()
+        logger.info(
+            "propose_missions_context_signals_injected",
+            workspace_id=str(workspace_id),
+            length=len(context_signals),
+        )
+
     # ── Performance feedback: inject real engagement patterns ────────────
     try:
         from app.services.performance_feedback_service import refresh_learning_context_with_performance
@@ -262,6 +302,8 @@ async def propose_missions_for_workspace(
             raise RuntimeError("OpenAI API key geçersiz (401). Lütfen key'i kontrol edin.") from exc
         raise
 
+    _raise_on_crew_failure(result)
+
     proposals: list[dict] = result.get("proposals") or []
     if not proposals:
         logger.warning("propose_missions_no_proposals",
@@ -270,9 +312,77 @@ async def propose_missions_for_workspace(
         await _record_propose_mission_cost(db, workspace_id, created_count=0)
         return []
 
+    # ── Post-propose: filter out missions about PAST holidays / events ────
+    # LLM often ignores the date rule in the prompt, so we enforce it here
+    # deterministically by scanning the title + rationale for known past events.
+    def _is_past_event_proposal(proposal: dict) -> bool:
+        """Return True if the proposal is about a holiday/event that has already passed."""
+        from datetime import datetime, timezone, date, timedelta
+        import re as _re
+
+        now = datetime.now(timezone.utc)
+        today = date(now.year, now.month, now.day)
+        year = now.year
+        title_and_rationale = (
+            (proposal.get("title") or "")
+            + " "
+            + (proposal.get("rationale") or "")
+            + " "
+            + (proposal.get("trigger_evidence") or "")
+            + " "
+            + (proposal.get("objective") or "")
+        ).lower()
+
+        # Fixed annual past events (check if they've passed this year)
+        PAST_EVENTS: list[tuple[str, int, int]] = [
+            ("anneler günü", 5, 11),   # 2nd Sunday of May ≈ May 11-12
+            ("mothers day", 5, 12),
+            ("1 mayıs", 5, 1),
+            ("labour day", 5, 1),
+            ("23 nisan", 4, 23),
+            ("children's day", 4, 23),
+            ("19 mayıs", 5, 19),
+            ("atatürk", 5, 19),
+        ]
+        for keyword, month, day in PAST_EVENTS:
+            if keyword in title_and_rationale:
+                try:
+                    event_date = date(year, month, day)
+                    if event_date < today - timedelta(days=2):
+                        return True
+                except ValueError:
+                    pass
+        return False
+
+    filtered_proposals = []
+    for p in proposals:
+        if _is_past_event_proposal(p):
+            logger.warning(
+                "strategist_proposal_past_event_rejected",
+                workspace_id=str(workspace_id),
+                title=str(p.get("title") or "")[:80],
+            )
+        else:
+            filtered_proposals.append(p)
+    proposals = filtered_proposals
+
     # ── Persist each valid proposal ───────────────────────────────────────
     created: list[dict[str, Any]] = []
     for proposal in proposals:
+        # Sprint 7 (S7.3): output quality validation — log gaps so weak briefs
+        # are observable. Required for a complete, trigger-grounded proposal.
+        missing = [
+            f for f in ("trigger_signal", "trigger_evidence", "objective", "rationale")
+            if not str(proposal.get(f) or "").strip()
+        ]
+        if missing:
+            logger.warning(
+                "strategist_proposal_incomplete",
+                workspace_id=str(workspace_id),
+                title=str(proposal.get("title") or "")[:80],
+                missing_fields=missing,
+            )
+
         mission_create = _proposal_dict_to_mission_create(proposal)
         if not mission_create:
             continue

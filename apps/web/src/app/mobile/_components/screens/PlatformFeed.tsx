@@ -11,67 +11,473 @@
  *   - Each card is full-platform preview with approve/revision actions
  *   - Tab bar to filter by platform/format
  */
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
-import { resolveArtifact, parseArtifactContent } from '../artifact-utils';
+import { resolveArtifact, parseArtifactContent, normalizeHashtags as normalizeHashtagsUtil, resolveCarouselUrls } from '../artifact-utils';
+import { SafeCoverImage } from '../SafeCoverImage';
+import {
+  dedupeProductionBundles,
+  isBundleRendering,
+  isBundleFailed,
+  canRetryStoryRender,
+  storyRetryLabel,
+  storyRetryIsBusy,
+  isProductionBundleStory,
+  isRemotionVideoStoryArtifact,
+  parseArtifactMissionId,
+  resolvePosterUrl,
+  resolveBrandedPostUrl,
+  isAwaitingStoryVideo,
+  isPostKind,
+  resolveStoryVideoUrl as resolveStoryVideoUrlShared,
+} from '@/lib/mission-feed-package';
+import {
+  filterFeedPublishableArtifacts,
+} from '@/lib/weekly-publish-package';
+import {
+  artifactMatchesSlotFilter,
+  type FeedSlotFilter,
+} from '@/lib/feed-slot-filter';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { getRequestContextHeaders } from '@/lib/runtime-config';
+import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import { mobileQueryDefaults } from '../../_lib/mobile-query';
 import { VisualReviewBadge } from '../VisualReviewSheet';
+import { useTenantBrandContext } from '../TenantBrandProvider';
+import { isMobileOperatorMode } from '../mobile-client-config';
+import { BrandLoadingScreen } from '../BrandLoadingScreen';
+import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
+import { resolveClientMediaUrl } from '@/lib/media-url';
+import {
+  artifactToNativeContent,
+  detectPreviewMode,
+  PlatformNativePreview,
+  PLATFORM_TABS,
+  type PreviewPlatform,
+} from '../platform-native-previews';
 
 function detectKind(artifact: OutputArtifact): string {
-  const ct = (artifact as any).artifactType ?? '';
-  const content = (() => { try { return JSON.parse((artifact as any).content || '{}'); } catch { return {}; } })();
-  const kind = (content.kind as string) ?? '';
-  if (kind.includes('reel') || ct.includes('reel')) return 'reel';
-  if (kind.includes('story') || ct.includes('story')) return 'story';
-  if (ct.includes('ad') || kind.includes('ad')) return 'ad';
+  const ct = ((artifact as any).artifactType ?? '').toLowerCase();
+  const contentRaw = (artifact as any).content || '{}';
+  const content = (() => { try { return JSON.parse(contentRaw); } catch { return {}; } })() as Record<string, unknown>;
+  const meta = ((artifact as any).metadata ?? {}) as Record<string, unknown>;
+
+  // 1. Top-level kind (auto-produce, Creatomate)
+  const kind = ((content.kind as string) ?? '').toLowerCase();
+  // 2. Canva autofill: nested in renderedPreview
+  const rpKind = ((content.renderedPreview as Record<string, unknown>)?.kind as string ?? '').toLowerCase();
+  // 3. video URL fields
+  const videoUrl = (content.videoUrl || meta.videoUrl
+    || (content as any).renderedPreview?.videoUrl) as string | undefined;
+  const contentUrl = ((artifact as any).contentUrl as string) ?? '';
+  // 4. export format stored in metadata
+  const exportFmt = ((meta.canvaExportFormat as string)
+    ?? (content as any).renderedPreview?.exportFormat
+    ?? '').toLowerCase();
+  // 5. contentType field (if Nexus exposes it)
+  const contentType = ((artifact as any).contentType ?? '').toLowerCase();
+  // 6. title hint (fallback for Canva artifacts with generic artifactType)
+  const title = ((artifact as any).title ?? '').toLowerCase();
+
+  const signals = [kind, rpKind, ct, contentType, exportFmt, title].join(' ');
+
+  // Story check FIRST — Remotion stories have videoUrl + .mp4 contentUrl
+  // but their kind/contentType explicitly says 'story'.
+  if (signals.includes('story') || signals.includes('canvas')) return 'story';
+
+  // Reel: explicit reel signal, or video without story signal
+  if (signals.includes('reel')
+    || exportFmt === 'mp4'
+    || (videoUrl && !contentUrl.includes('.mp4'))   // Runway reel: video URL, no .mp4 in contentUrl
+    || (videoUrl && !signals.includes('story'))) return 'reel';
+
+  if (signals.includes('ad')) return 'ad';
   return 'post';
 }
 import type { OutputArtifact } from '@/types';
 
 type FeedFilter = 'all' | 'post' | 'story' | 'reel' | 'ad';
 
-function resolveImg(url: string | null | undefined): string | null {
-  if (!url) return null;
-  // Local Next.js public paths (e.g. /generated/canva/...)
-  if (url.startsWith('/')) return url;
-  // External URLs — route venue/CDN images through media-proxy to avoid CORS/403
-  if (url.startsWith('http')) {
-    // Canva edit pages are web pages, not images
-    if (url.includes('canva.com/design')) return null;
-    // Known-safe CDN domains — embed directly
-    const SAFE = ['oaidalleapiprodscus.blob.core', 'fal-cdn', 'storage.googleapis', 'r2.dev', 'amazonaws.com', 'cloudfront.net', 'export-download.canva.com', 'cdninstagram.com', 'fbcdn.net'];
-    if (SAFE.some(d => url.includes(d))) return url;
-    return `/api/media-proxy?url=${encodeURIComponent(url)}`;
-  }
+interface BrandAlignmentData {
+  bas: number;
+  canProposeMissions: boolean;
+  canAutoProduce: boolean;
+  weakest: { id: string; label: string; score: number | null; fix: string } | null;
+}
+
+/** Story bar: all story kinds (Remotion, poster still, legacy). */
+function isFeedStoryItem(artifact: OutputArtifact): boolean {
+  return detectKind(artifact) === 'story';
+}
+
+/** APO-5 v0 — production slot badge from auto-produce metadata */
+function productionRoleBadge(meta: Record<string, unknown>): string | null {
+  const role = String(meta.production_role ?? '').trim();
+  const pipeline = String(meta.pipeline ?? '').trim();
+  if (role === 'organic_post' || pipeline === 'gallery_photo') return 'Galeri';
+  if (role === 'designed_post' || pipeline === 'remotion_poster') return 'Tasarım';
+  if (role === 'organic_story_still' || pipeline === 'story_still') return 'Story';
+  if (pipeline === 'remotion_story' || meta.remotion_mission_story) return 'Remotion';
+  if (role.includes('campaign') || pipeline.includes('remotion')) return 'Kampanya';
+  if (role.includes('reel') || pipeline === 'runway_reel') return 'Reel';
+  if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'Carousel';
   return null;
 }
 
-/** Pick the best displayable image URL from an artifact's content JSON. */
+function InstagramProfileBar({ handle, logoUrl, postCount, storyCount }: {
+  handle: string; logoUrl?: string; postCount: number; storyCount: number;
+}) {
+  const h = handle.startsWith('@') ? handle : `@${handle}`;
+  return (
+    <div style={{
+      padding: '14px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 14,
+      background: '#000',
+      borderBottom: '0.5px solid rgba(255,255,255,0.08)',
+    }}>
+      <div style={{ width: 72, height: 72, borderRadius: '50%', padding: 2.5,
+        background: 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)', flexShrink: 0 }}>
+        <div style={{ width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden',
+          border: '2px solid #000', background: '#222',
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>{h.replace('@', '')[0]?.toUpperCase()}</span>
+          )}
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginBottom: 6 }}>{h}</div>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{postCount}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>gönderi</div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{storyCount}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>story</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Instagram home top bar — logo + heart / DM (pending vs published). */
+function InstagramHomeHeader({
+  showApproved,
+  pendingCount,
+  approvedCount,
+  onShowPending,
+  onShowPublished,
+}: {
+  showApproved: boolean;
+  pendingCount: number;
+  approvedCount: number;
+  onShowPending: () => void;
+  onShowPublished: () => void;
+}) {
+  const iconBtn = (active: boolean): React.CSSProperties => ({
+    background: 'none',
+    border: 'none',
+    padding: 4,
+    cursor: 'pointer',
+    position: 'relative',
+    opacity: active ? 1 : 0.55,
+  });
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '2px 12px 10px',
+      minHeight: 44,
+    }}>
+      <div style={{ width: 52 }} aria-hidden />
+      <div style={{
+        fontFamily: "'Billabong', 'Brush Script MT', 'Segoe Script', cursive",
+        fontSize: 36,
+        lineHeight: 1,
+        color: '#fff',
+        letterSpacing: '0.01em',
+        userSelect: 'none',
+      }}>
+        Instagram
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, width: 52, justifyContent: 'flex-end' }}>
+        <button type="button" aria-label="Onay bekleyen içerikler" onClick={onShowPending} style={iconBtn(!showApproved)}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill={!showApproved ? '#fff' : 'none'}
+            stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+          {pendingCount > 0 && !showApproved && (
+            <span style={{
+              position: 'absolute', top: 2, right: 2, width: 7, height: 7, borderRadius: '50%',
+              background: '#E1306C', border: '1.5px solid #000',
+            }} />
+          )}
+        </button>
+        <button
+          type="button"
+          aria-label="Yayındaki içerikler"
+          onClick={onShowPublished}
+          disabled={approvedCount === 0}
+          style={{ ...iconBtn(showApproved), opacity: approvedCount === 0 ? 0.25 : showApproved ? 1 : 0.55 }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NativeFeedCard({ artifact, platform, onApprove, onRevision, onRetryRender, retryingRender, approving, revisioning, t }: {
+  artifact: OutputArtifact;
+  platform: PreviewPlatform;
+  onApprove: () => void;
+  onRevision: () => void;
+  onRetryRender?: () => void;
+  retryingRender?: boolean;
+  approving: boolean;
+  revisioning: boolean;
+  t: ReturnType<typeof useTheme>['t'];
+}) {
+  const tenantBrand = useTenantBrandContext();
+  const { openApproval } = useMobileStore();
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const handle = resolveFeedHandle(meta, tenantBrand);
+  const logoUrl = tenantBrand.logoUrl ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl) : undefined;
+  const kind = detectKind(artifact);
+  const mode = detectPreviewMode(artifact, kind);
+  const content = artifactToNativeContent(artifact);
+  const isPending = artifact.status === 'pending_review';
+  const isApproved = artifact.status === 'approved';
+  const isRendering = isBundleRendering(artifact) && !resolveStoryVideoUrlShared(artifact);
+  const canRetry = canRetryStoryRender(artifact);
+
+  const cardBg = platform === 'instagram' ? '#000' : (t.isDark ? '#0F0F1C' : '#fff');
+  const igHome = !isMobileOperatorMode() && platform === 'instagram';
+
+  return (
+    <div style={{
+      marginBottom: igHome ? 0 : 10,
+      borderRadius: igHome ? 0 : 18,
+      overflow: 'hidden',
+      background: cardBg,
+      border: igHome ? 'none' : `0.5px solid ${t.separator}`,
+      borderBottom: igHome ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
+    }}>
+      <div style={{ position: 'relative' }}>
+        <PlatformNativePreview
+          platform={platform}
+          mode={mode}
+          content={content}
+          handle={handle}
+          logoUrl={logoUrl}
+          isPending={isPending}
+          timeLabel={timeAgo(artifact.createdAt)}
+        />
+
+        {/* Rendering overlay — minimal */}
+        {isRendering && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'rgba(0,0,0,0.60)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              border: '2px solid rgba(255,255,255,0.12)',
+              borderTop: `2px solid ${t.accent}`,
+              animation: 'spinSlow 0.9s linear infinite',
+            }} />
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>
+              Hazırlanıyor
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Approval actions — IG home: slim bar under post; operator: full strip */}
+      {igHome ? (
+        isPending && (
+          <div style={{
+            display: 'flex', gap: 8, padding: '0 14px 14px', background: '#000',
+            borderTop: '0.5px solid rgba(255,255,255,0.06)',
+          }}>
+            <button type="button" onClick={onApprove} disabled={approving || isRendering}
+              style={{
+                flex: 1, padding: '10px 0', border: 'none', background: 'none',
+                color: approving ? 'rgba(255,255,255,0.4)' : '#60A5FA',
+                fontSize: 14, fontWeight: 700, cursor: approving || isRendering ? 'not-allowed' : 'pointer',
+              }}>
+              {approving ? 'Onaylanıyor…' : 'Onayla ve yayınla'}
+            </button>
+            <button type="button" onClick={() => openApproval(artifact.id)}
+              style={{
+                padding: '10px 0', border: 'none', background: 'none',
+                color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              }}>
+              Düzenle
+            </button>
+          </div>
+        )
+      ) : (
+        <div style={{ padding: '10px 12px 12px', background: cardBg }}>
+          {(content.grafikerScore != null || isApproved) && (
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
+              {isApproved && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: t.success }}>✓ Onaylı</span>
+              )}
+              {content.grafikerScore != null && (
+                <span style={{ fontSize: 10, color: t.textMuted }}>
+                  {content.grafikerScore}/10
+                </span>
+              )}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 7 }}>
+            {isPending && (
+              <button type="button" onClick={onApprove} disabled={approving || isRendering}
+                style={{
+                  flex: 1, padding: '12px 16px', borderRadius: 12, border: 'none',
+                  background: isRendering ? t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' : t.success,
+                  color: isRendering ? t.textMuted : '#fff',
+                  fontSize: 13, fontWeight: 700,
+                  cursor: approving || isRendering ? 'not-allowed' : 'pointer',
+                }}>
+                {approving ? 'Paylaşılıyor…' : '✓ Onayla'}
+              </button>
+            )}
+            {canRetry && onRetryRender && (
+              <StoryRetryButton artifact={artifact} retrying={Boolean(retryingRender)} onRetry={onRetryRender} variant="card" />
+            )}
+            <button type="button" onClick={() => openApproval(artifact.id)}
+              style={{
+                flex: isPending ? 0 : 1,
+                minWidth: isPending ? 48 : undefined,
+                padding: '12px 14px', borderRadius: 12,
+                border: `0.5px solid ${t.separator}`,
+                background: 'transparent',
+                color: t.textSecondary,
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              }}>
+              {isPending ? 'Düzenle' : 'Detay'}
+            </button>
+            {isPending && (
+              <button type="button" onClick={onRevision} disabled={revisioning}
+                style={{
+                  width: 46, flexShrink: 0,
+                  padding: '13px 0', borderRadius: 14,
+                  border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                  background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                  color: t.textMuted,
+                  fontSize: 16, cursor: revisioning ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                ↩
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isRemotionVideoStory(artifact: OutputArtifact): boolean {
+  return isRemotionVideoStoryArtifact(artifact);
+}
+
+/**
+ * Foundation-first autonomy gate (Sprint 1). Mission auto-trigger on Feed mount is
+ * DISABLED by default and only enabled by an explicit opt-in env flag. Quality gates
+ * (brand readiness, gallery, idea contract) must pass before autonomy is turned on.
+ */
+const AUTO_MISSION_TRIGGER_ENABLED =
+  process.env.NEXT_PUBLIC_AUTO_MISSION_TRIGGER === 'true';
+
+const TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+
+function formatPublishFeedback(kind: string): string {
+  const now = new Date();
+  const day = TR_DAYS[now.getDay()] ?? '';
+  const time = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const label = kind === 'story' ? 'Story' : kind === 'reel' ? 'Reel' : 'Post';
+  return `✓ ${label} yayınlandı — ${day} ${time}`;
+}
+
+function resolveImg(url: string | null | undefined): string | null {
+  return resolveClientMediaUrl(url);
+}
+
+/** Normalize hashtags from any stored format — delegates to shared artifact-utils helper */
+const normalizeDisplayHashtags = (raw: unknown) => normalizeHashtagsUtil(raw, 10);
+
 function resolveArtifactImg(artifact: { contentUrl?: string | null; content?: string | null; metadata?: unknown }): string | null {
   const content = (() => { try { return JSON.parse(artifact.content ?? '{}'); } catch { return {}; } })() as Record<string, unknown>;
   const rendered = (content.renderedPreview ?? {}) as Record<string, unknown>;
+  const canvaDesign = (rendered.canvaDesign ?? {}) as Record<string, unknown>;
   const meta    = (artifact.metadata ?? {}) as Record<string, unknown>;
-  // Priority order: explicit thumbnail fields, renderedPreview.imageUrl, top-level imageUrl, contentUrl
+  // Sprint 8 (S8.4): prefer the EXPORTED / PERMANENT Instagram-ready asset so the
+  // Feed preview is exactly what gets published. Thumbnails are only a fallback.
   const candidates: Array<unknown> = [
+    // 1. Exported / permanent high-res asset (publishable)
+    content.canvaDownloadUrl, content.exportUrl, content.permanentPreviewUrl,
+    rendered.exportUrl, rendered.permanentPreviewUrl,
+    canvaDesign.exportUrl, canvaDesign.permanentPreviewUrl, canvaDesign.canvaDownloadUrl,
+    meta.canvaDownloadUrl, meta.exportUrl, meta.permanentPreviewUrl,
+    // 2. Thumbnails / preview fields (fallback)
     content.canvaThumbnail, content.canvaThumb,
     rendered.imageUrl, rendered.thumbnailUrl,
-    (rendered.canvaDesign as Record<string, unknown> | undefined)?.thumbnailUrl,
+    canvaDesign.thumbnailUrl,
     content.imageUrl,
     meta.imageUrl, meta.canvaThumbnail,
   ];
+  // Helper: skip video files — they can't be displayed as images
+  const isVideoUrl = (u: unknown) => typeof u === 'string' && (
+    u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') ||
+    u.includes('/api/remotion/video/') || u.includes('remotion-serve')
+  );
+
   for (const c of candidates) {
-    if (typeof c === 'string' && c.trim()) {
+    if (typeof c === 'string' && c.trim() && !isVideoUrl(c)) {
       const resolved = resolveImg(c.trim());
       if (resolved) return resolved;
     }
   }
-  // contentUrl: only use if it looks like an image (skip Canva edit pages)
+  // contentUrl: only use if it looks like an image (skip video files and Canva edit pages)
   const cu = artifact.contentUrl;
-  if (cu && !cu.includes('canva.com/design')) return resolveImg(cu);
+  if (cu && !cu.includes('canva.com/design') && !isVideoUrl(cu)) return resolveImg(cu);
   return null;
+}
+
+function isCanvaEditUrl(u: string): boolean {
+  if (!u.trim()) return false;
+  return /canva\.com\/design\//i.test(u) && /\/edit(?:[/?#]|$)/i.test(u);
+}
+
+function isPublishableMediaUrl(u: string): boolean {
+  if (!u.trim()) return false;
+  if (isCanvaEditUrl(u)) return false;
+  if (u.includes('/api/remotion/') || u.includes('/api/media')) return true;
+  if (/^\/[0-9a-f-]{36}\/(stories|video|reel|posts|image)\//i.test(u)) return true;
+  if (/^[0-9a-f-]{36}\/(stories|video|reel|posts|image)\//i.test(u.replace(/^\//, ''))) return true;
+  if (u.startsWith('http') || u.startsWith('data:')) return !isCanvaEditUrl(u);
+  return Boolean(u.trim());
 }
 
 function timeAgo(iso: string): string {
@@ -80,6 +486,179 @@ function timeAgo(iso: string): string {
   if (m < 60) return `${m} dakika`;
   if (m < 1440) return `${Math.floor(m / 60)} saat`;
   return `${Math.floor(m / 1440)} gün`;
+}
+
+// ── Instagram Carousel Card ──────────────────────────────────────────────────
+// Shows 3-4 matched gallery photos with swipe dots, caption and hashtags.
+function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisioning, t }: {
+  artifact: OutputArtifact;
+  onApprove: () => void;
+  onRevision: () => void;
+  approving: boolean;
+  revisioning: boolean;
+  t: ReturnType<typeof useTheme>['t'];
+}) {
+  const tenantBrand = useTenantBrandContext();
+  const [slide, setSlide] = React.useState(0);
+  const { openApproval } = useMobileStore();
+  const content = parseArtifactContent(artifact.content);
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+
+  const rawUrls: string[] = resolveCarouselUrls(content, meta);
+
+  // If no carousel_urls, fall back to single image
+  const fallback = resolveArtifactImg(artifact);
+  const images: string[] = rawUrls.length >= 2
+    ? rawUrls.map((u) => resolveImg(u) ?? u).filter(Boolean)
+    : fallback ? [fallback] : [];
+
+  const headline  = (content.headline as string) || (meta.headline as string) || artifact.title || '';
+  const caption   = (content.caption  as string) || (meta.caption  as string) || '';
+  const hashtags  = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? []);
+  const handle    = resolveFeedHandle(meta, tenantBrand);
+  const isApproved     = artifact.status === 'approved';
+  const isAutoProduced = (meta as any)?.auto_produced === true;
+  const slotBadge = productionRoleBadge(meta);
+
+  const currentImg = images[slide] ?? null;
+  const total      = images.length;
+
+  return (
+    <div style={{ background: t.isDark ? '#0a0a0f' : '#fff', borderBottom: `0.5px solid ${t.separator}`, marginBottom: 2 }}>
+      {/* Header */}
+      <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+          background: 'linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)',
+          padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '100%', height: '100%', borderRadius: '50%',
+            background: t.isDark ? '#0a0a0f' : '#fff', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 14, fontWeight: 800, color: t.textPrimary }}>
+            {handle[0]?.toUpperCase()}
+          </div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>{handle}</div>
+          <div style={{ fontSize: 11, color: t.textMuted }}>{timeAgo(artifact.createdAt)}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+          {total > 1 && (
+            <span style={{ fontSize: 10, color: t.textMuted }}>{slide + 1}/{total}</span>
+          )}
+          {isApproved && <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10,
+            fontWeight: 700, background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>✓ Onaylı</span>}
+          {artifact.status === 'pending_review' && <span style={{ fontSize: 10, padding: '3px 8px',
+            borderRadius: 10, fontWeight: 700, background: 'rgba(245,158,11,0.12)', color: '#F59E0B' }}>İncelenecek</span>}
+          <button onClick={() => openApproval(artifact.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: t.textMuted, fontSize: 16 }}>···</button>
+        </div>
+      </div>
+
+      {/* Carousel image frame — tam görünüm, kırpma yok */}
+      <div style={{ width: '100%', position: 'relative', background: t.isDark ? '#0a0a12' : '#f4f4f4',
+        overflow: 'hidden', minHeight: 80 }}>
+        {currentImg ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={currentImg} alt="" referrerPolicy="no-referrer" aria-hidden="true"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
+                objectFit: 'cover', filter: 'blur(18px) brightness(0.55)', transform: 'scale(1.1)',
+                pointerEvents: 'none' }} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={currentImg} alt="" referrerPolicy="no-referrer"
+              style={{ display: 'block', position: 'relative', width: '100%', height: 'auto',
+                maxHeight: '80vw', objectFit: 'contain',
+                imageRendering: '-webkit-optimize-contrast' as const }}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+          </>
+        ) : (
+          <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 48, opacity: 0.08 }}>❑</div>
+        )}
+        {/* Swipe overlay areas — absolute over the image */}
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {slide > 0 && (
+            <button onClick={() => setSlide(s => s - 1)}
+              style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '40%',
+                background: 'transparent', border: 'none', cursor: 'pointer', pointerEvents: 'auto' }} />
+          )}
+          {slide < total - 1 && (
+            <button onClick={() => setSlide(s => s + 1)}
+              style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '40%',
+                background: 'transparent', border: 'none', cursor: 'pointer', pointerEvents: 'auto' }} />
+          )}
+          {total > 1 && (
+            <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0,
+              display: 'flex', justifyContent: 'center', gap: 5, pointerEvents: 'auto' }}>
+              {images.map((_, i) => (
+                <div key={i} onClick={() => setSlide(i)}
+                  style={{ width: i === slide ? 16 : 6, height: 6, borderRadius: 3,
+                    background: i === slide ? '#fff' : 'rgba(255,255,255,0.45)',
+                    cursor: 'pointer', transition: 'all 0.2s' }} />
+              ))}
+            </div>
+          )}
+          {slide < total - 1 && (
+            <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              background: 'rgba(255,255,255,0.22)', borderRadius: '50%', width: 28, height: 28,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>›</div>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+          stroke={t.textSecondary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+        </svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+          stroke={t.textSecondary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <svg style={{ marginLeft: 'auto' }} width="22" height="22" viewBox="0 0 24 24" fill="none"
+          stroke={t.textSecondary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="19 21 12 16 5 21 5 3 19 3 19 21"/>
+        </svg>
+      </div>
+      {headline && (
+        <div style={{ padding: '2px 14px 6px', fontSize: 14, fontWeight: 800,
+          color: t.textPrimary, letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+          {headline}
+        </div>
+      )}
+      {caption && (
+        <div style={{ padding: '0 14px 6px', fontSize: 13, color: t.textPrimary, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700 }}>{handle}</span>{' '}
+          <span style={{ color: t.textSecondary }}>{caption.slice(0, 140)}{caption.length > 140 ? '…' : ''}</span>
+        </div>
+      )}
+      {hashtags.length > 0 && (
+        <div style={{ padding: '0 14px 10px', fontSize: 11, color: '#3B82F6', lineHeight: 1.7 }}>
+          {hashtags.join(' ')}
+        </div>
+      )}
+      {/* Approve/revision */}
+      {artifact.status === 'pending_review' && (
+        <div style={{ padding: '8px 14px 14px', display: 'flex', gap: 8 }}>
+          <button onClick={onApprove} disabled={approving} style={{
+            flex: 3, padding: '11px', borderRadius: 12, border: 'none',
+            cursor: approving ? 'default' : 'pointer',
+            background: approving ? t.separator : '#10B981',
+            color: '#fff', fontWeight: 700, fontSize: 14,
+          }}>
+            {approving ? '⏳ Onaylanıyor…' : '✓ Onayla'}
+          </button>
+          <button onClick={onRevision} disabled={revisioning} style={{
+            flex: 1, padding: '11px', borderRadius: 12,
+            border: `1px solid ${t.separator}`, background: 'transparent',
+            cursor: 'pointer', color: t.textMuted, fontSize: 12,
+          }}>
+            Geç
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Instagram Post Card ──────────────────────────────────────────────────────
@@ -91,19 +670,31 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
   revisioning: boolean;
   t: ReturnType<typeof useTheme>['t'];
 }) {
+  const tenantBrand = useTenantBrandContext();
   const { openApproval } = useMobileStore();
   const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const content = parseArtifactContent(artifact.content);
 
-  const img = resolveArtifactImg(artifact) ?? resolveImg(resolved?.imageUrl ?? undefined);
+  const brandedUrl = resolveBrandedPostUrl(artifact);
+  const posterUrl = resolvePosterUrl(artifact);
+  const awaitingBrandedPoster = isPostKind(artifact) && isAwaitingStoryVideo(artifact);
+  const displayImg = awaitingBrandedPoster
+    ? null
+    : (brandedUrl && posterUrl && brandedUrl !== posterUrl ? brandedUrl : null)
+      ?? resolveArtifactImg(artifact)
+      ?? resolveImg(resolved?.imageUrl ?? undefined);
+  const img = displayImg;
+  const headline = (content.headline as string) || (meta.headline as string) || artifact.title || '';
   const caption = (content.caption as string) || (meta.caption as string) || resolved?.caption || '';
-  const hashtags = ((content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []) as string[]).slice(0, 8);
-  const handle   = ((meta as any)?.brandName ?? 'marka').toLowerCase().replace(/\s+/g, '_').slice(0, 20);
-  const likes    = Math.floor(100 + Math.random() * 400);  // realistic preview number
+  const hashtags = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []);
+  const handle   = resolveFeedHandle(meta, tenantBrand);
   const isApproved = artifact.status === 'approved';
   const isAutoProduced = (meta as any)?.auto_produced === true || (meta as any)?.source === 'auto-produce';
   const isGallerySourced = (meta as any)?.gallery_sourced === true || Boolean((meta as any)?.reference_photo_url);
+  const isAgencyBranded = (meta as any)?.agency_branded === true
+    || Boolean(brandedUrl && posterUrl && brandedUrl !== posterUrl);
+  const slotBadge = productionRoleBadge(meta);
 
   return (
     <div style={{
@@ -127,11 +718,19 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
           <div style={{ fontSize: 11, color: t.textMuted }}>{timeAgo(artifact.createdAt)}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {slotBadge && (
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
+              background: 'rgba(59,130,246,0.12)', color: '#3B82F6' }}>{slotBadge}</span>
+          )}
           {isGallerySourced && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
               background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>Galeri</span>
           )}
-          {isAutoProduced && !isGallerySourced && (
+          {isAgencyBranded && (
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
+              background: 'rgba(139,92,246,0.12)', color: '#8B5CF6' }}>Ajans</span>
+          )}
+          {isAutoProduced && !isGallerySourced && !isAgencyBranded && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
               background: 'rgba(139,92,246,0.12)', color: '#8B5CF6' }}>AI</span>
           )}
@@ -148,16 +747,51 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
         </div>
       </div>
 
-      {/* Image */}
-      <div style={{ width: '100%', aspectRatio: '1/1', background: t.isDark ? '#111120' : '#f0f0f0',
-        overflow: 'hidden' }}>
-        {img ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={img} alt="" referrerPolicy="no-referrer"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      {/* Image — tam görünüm, kırpma yok */}
+      {/* Instagram standart: 4:5 portrait → 1.91:1 landscape arası desteklenir */}
+      <div style={{
+        width: '100%',
+        position: 'relative',
+        background: t.isDark ? '#0a0a12' : '#f4f4f4',
+        overflow: 'hidden',
+        minHeight: 80,
+      }}>
+        {awaitingBrandedPoster ? (
+          <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 10, background: t.isDark ? '#12121a' : '#f0f0f0' }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.separator}`,
+              borderTop: '3px solid #8B5CF6', animation: 'spinSlow 0.9s linear infinite' }} />
+            <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Marka şablonu uygulanıyor…</span>
+          </div>
+        ) : img ? (
+          <>
+            {/* Blurred backdrop — letterbox alanlarını doldurmak için */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={img} alt="" referrerPolicy="no-referrer" aria-hidden="true"
+              style={{
+                position: 'absolute', inset: 0,
+                width: '100%', height: '100%',
+                objectFit: 'cover', display: 'block',
+                filter: 'blur(18px) brightness(0.55)',
+                transform: 'scale(1.1)',
+                pointerEvents: 'none',
+              }} />
+            {/* Asıl görsel — tam boyut, kırpma yok */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={img} alt="" referrerPolicy="no-referrer"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              style={{
+                display: 'block',
+                position: 'relative',
+                width: '100%',
+                height: 'auto',
+                maxHeight: '80vw',  // Instagram max 1:1 eşdeğeri
+                objectFit: 'contain',
+                imageRendering: '-webkit-optimize-contrast' as const,
+              }} />
+          </>
         ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+          <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center',
             justifyContent: 'center', fontSize: 48, opacity: 0.08 }}>✦</div>
         )}
       </div>
@@ -182,11 +816,6 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
         </svg>
       </div>
 
-      {/* Likes */}
-      <div style={{ padding: '0 14px 6px', fontSize: 13, fontWeight: 700, color: t.textPrimary }}>
-        {likes.toLocaleString('tr-TR')} beğeni
-      </div>
-
       {/* Caption */}
       {caption && (
         <div style={{ padding: '0 14px 6px', fontSize: 13, color: t.textPrimary, lineHeight: 1.5 }}>
@@ -198,7 +827,7 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
       {/* Hashtags */}
       {hashtags.length > 0 && (
         <div style={{ padding: '0 14px 10px', fontSize: 13, color: '#60A5FA' }}>
-          {hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ')}
+          {hashtags.join(' ')}
         </div>
       )}
 
@@ -221,12 +850,13 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
       {/* Agency action bar — same position as IG actions, different meaning */}
       {artifact.status === 'pending_review' && (
         <div style={{ margin: '0 14px 14px', display: 'flex', gap: 8 }}>
-          <button onClick={onApprove} disabled={approving || revisioning}
-            style={{ flex: 1, padding: '11px', borderRadius: 14, cursor: 'pointer', border: 'none',
-              background: approving ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)',
-              color: '#10B981', fontSize: 13, fontWeight: 700,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            {approving ? <><div style={{ width: 12, height: 12, borderRadius: '50%',
+          <button onClick={onApprove} disabled={approving || revisioning || awaitingBrandedPoster}
+            style={{ flex: 1, padding: '11px', borderRadius: 14, cursor: awaitingBrandedPoster ? 'not-allowed' : 'pointer', border: 'none',
+              background: awaitingBrandedPoster ? t.elevated : approving ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.15)',
+              color: awaitingBrandedPoster ? t.textMuted : '#10B981', fontSize: 13, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: awaitingBrandedPoster ? 0.6 : 1 }}>
+            {awaitingBrandedPoster ? 'Şablon hazırlanıyor…'
+              : approving ? <><div style={{ width: 12, height: 12, borderRadius: '50%',
               border: '2px solid rgba(16,185,129,0.3)', borderTop: '2px solid #10B981',
               animation: 'spinSlow 0.8s linear infinite' }} />Onaylanıyor…</> : '✓ Onayla'}
           </button>
@@ -248,21 +878,275 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
   );
 }
 
-// ── Story Preview Card ───────────────────────────────────────────────────────
-function StoryCard({ artifact, onApprove, approving, t }: {
+// ── Reel Preview Card ────────────────────────────────────────────────────────
+function IGReelCard({ artifact, onApprove, approving, t }: {
   artifact: OutputArtifact;
   onApprove: () => void;
   approving: boolean;
   t: ReturnType<typeof useTheme>['t'];
 }) {
+  const tenantBrand = useTenantBrandContext();
+  const { openApproval } = useMobileStore();
+  const content = parseArtifactContent(artifact.content);
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+
+  // Reel: prefer videoUrl; resolve path-format URLs via media proxy
+  const rawReelVideo = String((content.videoUrl as string)
+    || (meta.videoUrl as string)
+    || ((content as any).renderedPreview?.videoUrl as string)
+    || '').trim();
+  const videoUrl = (() => {
+    if (!rawReelVideo) return null;
+    if (rawReelVideo.startsWith('http') || rawReelVideo.startsWith('/api/') || rawReelVideo.startsWith('data:')) return rawReelVideo;
+    if (rawReelVideo.startsWith('/')) return `/api/media?key=${encodeURIComponent(rawReelVideo.replace(/^\//, ''))}`;
+    return rawReelVideo;
+  })();
+  const thumbUrl = resolveArtifactImg(artifact);
+  const headline = (content.headline as string) || (meta.headline as string) || artifact.title || '';
+  const caption = (content.caption as string) || (meta.caption as string) || '';
+  const hashtags = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? []);
+  const handle = '@' + resolveFeedHandle(meta, tenantBrand);
+  const isApproved = artifact.status === 'approved';
+  const isAutoProduced = (meta as any)?.auto_produced === true;
+  const slotBadge = productionRoleBadge(meta);
+
+  return (
+    <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}` }}>
+      {/* 9:16 Reel frame */}
+      <div style={{ width: '100%', aspectRatio: '9/16', maxHeight: '85vh',
+        background: '#000', position: 'relative', overflow: 'hidden' }}>
+        {/* Video or thumbnail */}
+        {videoUrl ? (
+          <video src={videoUrl} poster={thumbUrl ?? undefined}
+            controls playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }} />
+        ) : thumbUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbUrl} alt="" referrerPolicy="no-referrer"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', background: 'linear-gradient(135deg,#1a1a2e,#16213e)',
+            fontSize: 48, opacity: 0.3 }}>▶</div>
+        )}
+        {/* Play icon overlay (when thumbnail only) */}
+        {!videoUrl && thumbUrl && (
+          <div style={{ position: 'absolute', top: '50%', left: '50%',
+            transform: 'translate(-50%,-50%)',
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', pointerEvents: 'none' }}>
+            <span style={{ fontSize: 22, color: '#fff', marginLeft: 3 }}>▶</span>
+          </div>
+        )}
+        {/* Top bar */}
+        <div style={{ position: 'absolute', top: 14, left: 14, right: 14,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#fff',
+              background: 'rgba(0,0,0,0.45)', padding: '2px 8px', borderRadius: 8 }}>
+              ▶ Reel
+            </span>
+            {isAutoProduced && (
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
+                background: 'rgba(139,92,246,0.85)', color: '#fff', fontWeight: 700 }}>AI</span>
+            )}
+            {slotBadge && (
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
+                background: 'rgba(59,130,246,0.85)', color: '#fff', fontWeight: 700 }}>{slotBadge}</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {isApproved && (
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
+                background: 'rgba(16,185,129,0.85)', color: '#fff', fontWeight: 700 }}>✓ Onaylı</span>
+            )}
+            {artifact.status === 'pending_review' && (
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
+                background: 'rgba(245,158,11,0.9)', color: '#000', fontWeight: 700 }}>Bekliyor</span>
+            )}
+            <button onClick={() => openApproval(artifact.id)}
+              style={{ background: 'rgba(0,0,0,0.35)', border: 'none', borderRadius: '50%',
+                width: 24, height: 24, cursor: 'pointer', color: '#fff', fontSize: 13,
+                display: 'flex', alignItems: 'center', justifyContent: 'center' }}>···</button>
+          </div>
+        </div>
+        {/* Bottom: approve */}
+        {artifact.status === 'pending_review' && (
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+            background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.7) 100%)',
+            padding: '32px 16px 20px', display: 'flex', gap: 8 }}>
+            <button onClick={onApprove} disabled={approving}
+              style={{ flex: 1, padding: '11px', borderRadius: 12, border: 'none',
+                cursor: approving ? 'default' : 'pointer',
+                background: approving ? 'rgba(255,255,255,0.15)' : 'rgba(16,185,129,0.9)',
+                color: '#fff', fontWeight: 700, fontSize: 14 }}>
+              {approving ? '⏳ Onaylanıyor…' : '✓ Onayla'}
+            </button>
+          </div>
+        )}
+      </div>
+      {/* Headline + Caption row */}
+      {(headline || caption || hashtags.length > 0) && (
+        <div style={{ padding: '12px 16px 16px', background: t.isDark ? 'rgba(255,255,255,0.02)' : '#fff' }}>
+          {headline && (
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.textPrimary,
+              letterSpacing: '-0.01em', lineHeight: 1.3, marginBottom: 4 }}>
+              {headline}
+            </div>
+          )}
+          {caption && (
+            <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 700, color: t.textPrimary }}>{handle} </span>
+              {caption.slice(0, 160)}
+            </div>
+          )}
+          {hashtags.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 11, color: t.accent, opacity: 0.7 }}>
+              {hashtags.slice(0, 5).join(' ')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Story Preview Card ───────────────────────────────────────────────────────
+function StoryRetryButton({
+  artifact,
+  retrying,
+  onRetry,
+  variant = 'bubble',
+}: {
+  artifact: OutputArtifact;
+  retrying: boolean;
+  onRetry: () => void;
+  variant?: 'bubble' | 'card' | 'viewer';
+}) {
+  if (!isMobileOperatorMode() || !canRetryStoryRender(artifact)) return null;
+  const label = retrying ? 'Başlatılıyor…' : storyRetryLabel(artifact);
+  const failed = isBundleFailed(artifact);
+  const accent = failed ? '#EF4444' : '#F59E0B';
+  const bg = failed ? 'rgba(239,68,68,0.22)' : 'rgba(245,158,11,0.22)';
+
+  if (variant === 'bubble') {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onRetry(); }}
+        disabled={retrying}
+        style={{
+          marginTop: 3,
+          padding: '4px 10px',
+          borderRadius: 999,
+          border: `1px solid ${accent}66`,
+          background: bg,
+          color: accent,
+          fontSize: 10,
+          fontWeight: 700,
+          cursor: retrying ? 'wait' : 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        ↻ {label}
+      </button>
+    );
+  }
+
+  if (variant === 'card') {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onRetry(); }}
+        disabled={retrying}
+        style={{
+          padding: '10px 14px',
+          borderRadius: 12,
+          border: `1px solid ${accent}77`,
+          background: 'rgba(0,0,0,0.62)',
+          color: '#fff',
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: retrying ? 'wait' : 'pointer',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        ↻ {label}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onRetry}
+      disabled={retrying}
+      style={{
+        flex: 1,
+        padding: '13px',
+        borderRadius: 12,
+        border: `1px solid ${accent}66`,
+        background: bg,
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: retrying ? 'wait' : 'pointer',
+      }}
+    >
+      {retrying ? 'Render başlatılıyor…' : `↻ ${label}`}
+    </button>
+  );
+}
+
+function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approving, t }: {
+  artifact: OutputArtifact;
+  onApprove: () => void;
+  onRetryRender?: () => void;
+  retryingRender?: boolean;
+  approving: boolean;
+  t: ReturnType<typeof useTheme>['t'];
+}) {
+  const tenantBrand = useTenantBrandContext();
   const { openApproval } = useMobileStore();
   const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
   const content = parseArtifactContent(artifact.content);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const img = resolveArtifactImg(artifact) ?? resolveImg(resolved?.imageUrl ?? undefined);
-  const brandRaw = String((meta as any)?.brandName ?? (content as any)?.brandName ?? 'yulabodrum');
-  const handle = '@' + brandRaw.toLowerCase().replace(/\s+/g, '').slice(0, 20);
+
+  // For Remotion stories: use content.imageUrl (original gallery photo) as poster/fallback
+  // This is the photo before the Remotion template was applied
+  const originalPhotoUrl = String(
+    (meta as any)?.reference_photo_url || (content as any)?.reference_photo_url
+    || (content as any)?.posterUrl || (content as any)?.imageUrl || '',
+  ).trim();
+  const storyPosterImg = (originalPhotoUrl && !originalPhotoUrl.endsWith('.mp4'))
+    ? resolveImg(originalPhotoUrl)
+    : img;
+
+  // Resolve any Remotion MP4 video URL to a playable endpoint
+  const rawVideoUrl = String(
+    (content as any)?.videoUrl || (meta as any)?.videoUrl || (meta as any)?.video_url
+    || (artifact.contentUrl && /\.(mp4|mov|webm)/i.test(artifact.contentUrl) ? artifact.contentUrl : '')
+    || '',
+  ).trim();
+  const resolveVideoUrl = (url: string): string | null => {
+    if (!url || !/\.(mp4|mov|webm)/i.test(url)) return null;
+    if (url.startsWith('/api/')) return url;
+    if (url.startsWith('http')) return url;
+    if (url.startsWith('data:')) return url;
+    if (url.startsWith('/') && url.includes('.mp4')) {
+      return `/api/media?key=${encodeURIComponent(url.replace(/^\//, ''))}`;
+    }
+    return url;
+  };
+  const storyVideoUrl = resolveVideoUrl(rawVideoUrl);
+  // Consider any story with a valid video URL as a Remotion story (play as video)
+  const isRemotionStory = Boolean(storyVideoUrl);
+  const handle = '@' + resolveFeedHandle(meta, tenantBrand);
+  const brandLabel = resolveFeedBrandName(meta, tenantBrand);
   const isApproved = artifact.status === 'approved';
+  const slotBadge = productionRoleBadge(meta);
 
   return (
     <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}`, paddingBottom: 0 }}>
@@ -275,16 +1159,74 @@ function StoryCard({ artifact, onApprove, approving, t }: {
         position: 'relative',
         overflow: 'hidden',
       }}>
-        {/* Story image — covers full frame */}
-        {img ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={img} alt="" referrerPolicy="no-referrer"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        {/* Remotion MP4 story — plays inline; poster = original gallery photo */}
+        {isRemotionStory && storyVideoUrl ? (
+          <>
+            <video
+              src={storyVideoUrl}
+              poster={storyPosterImg ?? img ?? undefined}
+              autoPlay muted playsInline
+              onEnded={(e) => {
+                const v = e.currentTarget;
+                if (!Number.isFinite(v.duration)) return;
+                v.pause();
+                v.currentTime = Math.max(0, v.duration - 0.04);
+              }}
+              onError={(e) => {
+                // If video fails to load, hide it and show original photo
+                const vid = e.currentTarget;
+                vid.style.display = 'none';
+                const next = vid.nextElementSibling as HTMLElement | null;
+                if (next) next.style.display = 'block';
+              }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+            {/* Fallback: original gallery photo when video fails */}
+            {storyPosterImg && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={storyPosterImg} alt="" referrerPolicy="no-referrer"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'none' }} />
+            )}
+          </>
+        ) : img ? (
+          <SafeCoverImage
+            src={img}
+            fallbacks={[storyPosterImg, resolveImg(resolvePosterUrl(artifact) ?? undefined)]}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }}
+          />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
             justifyContent: 'center', background: 'linear-gradient(135deg,#1a1a2e,#16213e)',
             fontSize: 48, opacity: 0.3 }}>↕</div>
+        )}
+        {/* Remotion badge + Grafiker quality score */}
+        {isRemotionStory && (
+          <div style={{ position: 'absolute', top: 48, right: 14, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            {/* Composition ID chip */}
+            <div style={{ padding: '3px 8px', borderRadius: 8,
+              background: 'rgba(124,58,237,0.75)', color: '#fff', fontSize: 9, fontWeight: 700,
+              backdropFilter: 'blur(4px)', letterSpacing: 1 }}>
+              {(() => {
+                const compId = String((content as any)?.compositionId || meta?.compositionId || '');
+                if (compId.includes('Luxury')) return '✦ Remotion';
+                if (compId.includes('Cinematic')) return '◉ Remotion';
+                return '⬛ Remotion';
+              })()}
+            </div>
+            {/* Grafiker score chip (when available) */}
+            {typeof meta?.grafiker_score === 'number' && (
+              <div style={{ padding: '2px 7px', borderRadius: 8,
+                background: (meta.grafiker_score as number) >= 8
+                  ? 'rgba(16,185,129,0.75)'
+                  : (meta.grafiker_score as number) >= 6
+                  ? 'rgba(245,158,11,0.75)'
+                  : 'rgba(239,68,68,0.75)',
+                color: '#fff', fontSize: 9, fontWeight: 800,
+                backdropFilter: 'blur(4px)' }}>
+                ★ {meta.grafiker_score}/10
+              </div>
+            )}
+          </div>
         )}
 
         {/* Top chrome: progress bar + handle */}
@@ -310,7 +1252,7 @@ function StoryCard({ artifact, onApprove, approving, t }: {
               <div style={{ width: '100%', height: '100%', borderRadius: '50%',
                 background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, fontWeight: 800, color: '#fff' }}>
-                {brandRaw[0]?.toUpperCase()}
+                {brandLabel[0]?.toUpperCase()}
               </div>
             </div>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: '0.01em' }}>{handle}</span>
@@ -323,6 +1265,12 @@ function StoryCard({ artifact, onApprove, approving, t }: {
           {(meta as any)?.auto_produced && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
               background: 'rgba(139,92,246,0.85)', color: '#fff', fontWeight: 700, letterSpacing: '0.04em' }}>AI</span>
+          )}
+          {slotBadge && (
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
+              background: 'rgba(59,130,246,0.85)', color: '#fff', fontWeight: 700, letterSpacing: '0.04em' }}>
+              {slotBadge}
+            </span>
           )}
           {isApproved && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
@@ -339,6 +1287,22 @@ function StoryCard({ artifact, onApprove, approving, t }: {
             ···
           </button>
         </div>
+
+        {onRetryRender && canRetryStoryRender(artifact) && (
+          <div style={{
+            position: 'absolute',
+            bottom: artifact.status === 'pending_review' ? 78 : 16,
+            left: 16,
+            zIndex: 6,
+          }}>
+            <StoryRetryButton
+              artifact={artifact}
+              retrying={!!retryingRender}
+              onRetry={onRetryRender}
+              variant="card"
+            />
+          </div>
+        )}
 
         {/* Bottom chrome: approve action inside the frame */}
         {artifact.status === 'pending_review' && (
@@ -374,25 +1338,76 @@ function StoryCard({ artifact, onApprove, approving, t }: {
 // ── Main Feed ────────────────────────────────────────────────────────────────
 export function PlatformFeed() {
   const { t } = useTheme();
-  const { navigate } = useMobileStore();
+  const operatorMode = isMobileOperatorMode();
+  // navigate and openApproval already destructured above
   const queryClient = useQueryClient();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const { data: brandAlignment } = useQuery<BrandAlignmentData>({
+    queryKey: ['brand-alignment', tenantId],
+    queryFn: async () => {
+      const res = await fetch(`/api/brand-alignment/${tenantId}`, {
+        headers: getRequestContextHeaders(),
+      });
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    },
+    staleTime: 60_000,
+    enabled: Boolean(tenantId),
+  });
+  const { navigate, openApproval } = useMobileStore();
   const [filter, setFilter] = useState<FeedFilter>('all');
-  const [showApproved, setShowApproved] = useState(true);
+  const [slotFilter, setSlotFilter] = useState<FeedSlotFilter>('all');
+  const feedMissionFromStore = useMobileStore((s) => s.feedMissionFilterId);
+  const clearFeedMissionFilter = useMobileStore((s) => s.clearFeedMissionFilter);
+  const [missionFilterId, setMissionFilterId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (feedMissionFromStore) {
+      setMissionFilterId(feedMissionFromStore);
+      setShowApproved(false);
+      clearFeedMissionFilter();
+    }
+  }, [feedMissionFromStore, clearFeedMissionFilter]);
+  const [platformView, setPlatformView] = useState<PreviewPlatform>('instagram');
+  // Default: show pending_review (new mission content) — users switch to approved (galeri) manually.
+  const [showApproved, setShowApproved] = useState(false);
   const [publishErrors, setPublishErrors] = useState<Record<string, string>>({});
+  const [publishSuccess, setPublishSuccess] = useState<Array<{ id: string; message: string }>>([]);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const [autoTriggerReason, setAutoTriggerReason] = useState<string | null>(null);
+  const prevPendingRef = React.useRef(0);
+  // Story bubble viewer state
+  const [storyViewIdx, setStoryViewIdx] = useState<number | null>(null);
+  const [storyProgress, setStoryProgress] = useState(0);
+  const storyVideoRef = React.useRef<HTMLVideoElement | null>(null);
 
   // Auto-trigger the mission pipeline on mount (fire-and-forget).
   // Kicks off propose → approve → task_graph_executor → content_ideation
   // → auto-produce → Feed artifacts without any manual interaction.
   // Skips silently if a mission is already active or daily cap reached.
+  //
+  // Foundation-first gate (Sprint 1, S1.4): autonomy is OFF by default. The pipeline
+  // only auto-triggers when NEXT_PUBLIC_AUTO_MISSION_TRIGGER === 'true' AND the
+  // brand readiness gate passes (enforced server-side later). Until quality gates
+  // are met we never silently produce content. See docs/foundation-sprint-program.md.
   useEffect(() => {
     if (!tenantId) return;
+    if (!AUTO_MISSION_TRIGGER_ENABLED) {
+      setPipelineStatus('idle');
+      return;
+    }
     setPipelineStatus('running');
-    fetch(`/api/missions/${tenantId}/auto-trigger`, { method: 'POST' })
+    setAutoTriggerReason(null);
+    fetch(`/api/missions/${tenantId}/auto-trigger`, {
+      method: 'POST',
+      headers: getRequestContextHeaders(),
+    })
       .then(r => r.json())
-      .then((data: { triggered?: boolean; skipped?: boolean }) => {
+      .then((data: { triggered?: boolean; skipped?: boolean; reason?: string; detail?: string }) => {
         setPipelineStatus(data.triggered ? 'running' : 'done');
+        if (data.skipped) {
+          setAutoTriggerReason(data.reason ?? 'skipped');
+        }
         if (data.triggered) {
           // Poll artifacts every 20s while pipeline may be producing
           setTimeout(() => {
@@ -405,15 +1420,153 @@ export function PlatformFeed() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
-  const { data: rawArtifacts = [], isLoading } = useQuery({
-    queryKey: ['artifacts'],
-    queryFn: () => apiClient.getArtifacts(),
-    refetchInterval: pipelineStatus === 'running' ? 20_000 : 30_000,
-    staleTime: 15_000,
+  const { data: rawArtifacts = [], isLoading, refetch: refetchArtifacts } = useMobileArtifacts({
+    subscribeOnly: true,
   });
+
+  const { data: usageCost } = useQuery({
+    queryKey: ['usage-cost', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const res = await fetch(`/api/usage-cost/${tenantId}?days=1`, {
+        headers: getRequestContextHeaders(),
+      });
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        remaining_today_usd?: number;
+        daily_budget_usd?: number;
+        spent_today_usd?: number;
+        token_wallet?: { enabled?: boolean; remaining_tokens?: number };
+      }>;
+    },
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+    ...mobileQueryDefaults,
+  });
+
+  const productionBudgetBlocked = usageCost != null && (
+    (usageCost.remaining_today_usd ?? 1) <= 0.001
+    || (usageCost.token_wallet?.enabled === true
+      && (usageCost.token_wallet.remaining_tokens ?? 0) <= 0)
+  );
+
+  React.useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+  }, [queryClient, tenantId]);
+
+  const dedupedRaw = React.useMemo(
+    () => dedupeProductionBundles(rawArtifacts as OutputArtifact[]),
+    [rawArtifacts],
+  );
+
+  const hasRenderingBundles = React.useMemo(
+    () => dedupedRaw.some((a) => isBundleRendering(a) && !resolveStoryVideoUrlShared(a)),
+    [dedupedRaw],
+  );
+
+  React.useEffect(() => {
+    if (!hasRenderingBundles) return;
+    const id = setInterval(() => { void refetchArtifacts(); }, 5_000);
+    return () => clearInterval(id);
+  }, [hasRenderingBundles, refetchArtifacts]);
+
+  React.useEffect(() => {
+    if (pipelineStatus !== 'running') return;
+    const id = setInterval(() => { void refetchArtifacts(); }, 20_000);
+    return () => clearInterval(id);
+  }, [pipelineStatus, refetchArtifacts]);
+
+  React.useEffect(() => {
+    if (!tenantId || !hasRenderingBundles) return;
+    fetch('/api/production-bundle/reconcile-stale', {
+      method: 'POST',
+      headers: { ...getRequestContextHeaders(), 'X-Tenant-Id': tenantId },
+    })
+      .then(() => refetchArtifacts())
+      .catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, hasRenderingBundles]);
+
+  const [retryingStoryId, setRetryingStoryId] = React.useState<string | null>(null);
+  const retryStoryRender = React.useCallback(async (artifactId: string) => {
+    if (!tenantId || retryingStoryId) return;
+    setRetryingStoryId(artifactId);
+    try {
+      const res = await fetch(`/api/production-bundle/${artifactId}/retry-render`, {
+        method: 'POST',
+        headers: { 'X-Tenant-Id': tenantId },
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; status?: string };
+      if (!res.ok && res.status !== 202) {
+        throw new Error(data.error || `Render başlatılamadı (${res.status})`);
+      }
+      await refetchArtifacts();
+    } catch (err) {
+      console.warn('[PlatformFeed] retry render:', err);
+    } finally {
+      setRetryingStoryId(null);
+    }
+  }, [tenantId, retryingStoryId, refetchArtifacts]);
+
+  const missionIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const artifact of dedupedRaw) {
+      const missionId = parseArtifactMissionId(artifact);
+      if (missionId) ids.add(missionId);
+    }
+    return [...ids];
+  }, [dedupedRaw]);
+
+  const { data: missionList = [] } = useQuery({
+    queryKey: ['missions-list-feed', tenantId],
+    queryFn: () => apiClient.listMissions(tenantId!, 'completed'),
+    enabled: Boolean(tenantId) && missionIds.length > 0,
+    staleTime: 120_000,
+  });
+
+  const missionTitleById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of missionList) map.set(m.id, m.title);
+    return map;
+  }, [missionList]);
+
+  const allArtifacts = React.useMemo(
+    () => filterFeedPublishableArtifacts(dedupedRaw),
+    [dedupedRaw],
+  );
+
+  const rawPendingCount = React.useMemo(
+    () => dedupedRaw.filter((a) => a.status === 'pending_review').length,
+    [dedupedRaw],
+  );
+  const pendingPublishableCount = React.useMemo(
+    () => allArtifacts.filter((a) => a.status === 'pending_review').length,
+    [allArtifacts],
+  );
 
   const approveMutation = useMutation({
     mutationFn: async (artifact: OutputArtifact) => {
+      if (!tenantId) {
+        throw new Error('Tenant seçili değil. Çıkış yapıp tekrar giriş yapın.');
+      }
+      const mcStatus = await apiClient.getMertcafeStatus(tenantId);
+      if (!mcStatus.has_tenant_api_key) {
+        throw new Error(
+          'Bu tenant için Mertcafe API anahtarı yok. Marka → Ayarlar → Mertcafe → Tenant kaydı oluşturun.',
+        );
+      }
+      if (!mcStatus.instagram_connected) {
+        throw new Error(
+          'Instagram OAuth bağlı değil. Ayarlar → Farklı hesaba geç (OAuth) ile tamamlayın, sonra OAuth senkronu.',
+        );
+      }
+      const useOAuth = Boolean(mcStatus.use_oauth_account) || !mcStatus.publish_account_id;
+      if (!useOAuth && !mcStatus.publish_account_id) {
+        throw new Error(
+          'Yayın hesabı seçilmemiş. Ayarlar → OAuth senkronu veya kayıtlı hesaptan seçin.',
+        );
+      }
+
       const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
       const content = parseArtifactContent(artifact.content);
       const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
@@ -425,28 +1578,82 @@ export function PlatformFeed() {
         : String((content.caption as string) || (meta.caption as string) || resolved?.caption || '');
       const hashtags = kind === 'story'
         ? []
-        : ((content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []) as string[])
-            .map(String)
-            .filter(Boolean);
-      const imageUrl = String((content.imageUrl as string) || (meta.imageUrl as string) || resolved?.imageUrl || artifact.contentUrl || '');
-      const videoUrl = String((content.videoUrl as string) || (meta.videoUrl as string) || resolved?.videoUrl || '');
-      const mediaUrls = (Array.isArray((content as any).mediaUrls) ? (content as any).mediaUrls : Array.isArray((meta as any).media_urls) ? (meta as any).media_urls : []) as string[];
+        : normalizeHashtagsUtil(content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []);
+      // Sprint 8 (S8.4): publish the SAME asset the preview shows (export-first).
+      const imageUrl = String(
+        resolveArtifactImg(artifact)
+        || (content.imageUrl as string) || (meta.imageUrl as string)
+        || resolved?.imageUrl || artifact.contentUrl || '',
+      );
+      const videoUrl = String(
+        resolveStoryVideoUrlShared(artifact)
+        || (content.videoUrl as string) || (meta.videoUrl as string) || (meta.video_url as string)
+        || resolved?.videoUrl || '',
+      );
+      // Carousel URLs — check all known field names (snake and camelCase)
+      const mediaUrls = resolveCarouselUrls(content, meta);
 
-      const postType = kind === 'story' ? 'story' : kind === 'reel' ? 'reels' : (mediaUrls.length >= 2 ? 'carousel' : 'feed');
+      // postType: only use carousel when we actually have 2+ media URLs.
+      // If kind=carousel but no carousel_urls → degrade to feed (single photo post).
+      const postType = kind === 'story' ? 'story'
+        : kind === 'reel' ? 'reels'
+        : (mediaUrls.length >= 2 ? 'carousel' : 'feed');
+
+      // Sprint 10 (S10.5): publish export gate — block Canva edit pages only (not Remotion editorial URLs)
+      if (postType === 'reels') {
+        if (!isPublishableMediaUrl(videoUrl)) {
+          throw new Error('Reel videosu dışa aktarılmamış. Önce videoyu üretin/dışa aktarın.');
+        }
+      } else if (postType === 'carousel') {
+        if (mediaUrls.length < 2 || mediaUrls.some((u) => !isPublishableMediaUrl(String(u)))) {
+          throw new Error('Carousel için en az 2 görsel gerekli. Bu içerik henüz üretilmemiş veya tek fotoğraf içeriyor.');
+        }
+      } else if (postType === 'story') {
+        const hasVideo = isPublishableMediaUrl(videoUrl);
+        const hasImage = isPublishableMediaUrl(imageUrl);
+        if (!hasVideo && !hasImage) {
+          throw new Error('Story videosu veya görseli hazır değil.');
+        }
+      } else if (!isPublishableMediaUrl(imageUrl)) {
+        throw new Error('Görsel dışa aktarılmamış (Canva tasarımını export edin).');
+      }
+
+      // Resolve absolute video URL for publish
+      const resolvePublicVideoUrl = (url: string): string => {
+        if (!url) return '';
+        if (url.startsWith('http')) return url;
+        if (url.startsWith('/api/')) return `${window.location.origin}${url}`;
+        // R2 key path — pass as-is; server presigns in mertcafe/post
+        if (/^\/[0-9a-f-]{36}\/(stories|video|reel|image)\//i.test(url)) return url;
+        if (url.startsWith('/')) return `${window.location.origin}${url}`;
+        return `${window.location.origin}/${url}`;
+      };
+      const publicVideoUrl = resolvePublicVideoUrl(videoUrl);
+
       const publishPayload: Record<string, unknown> = {
         post_type: postType,
         workspaceId: tenantId,
         artifactId: artifact.id,
       };
+      if (useOAuth) {
+        publishPayload.use_oauth_account = true;
+      } else if (mcStatus.publish_account_id) {
+        publishPayload.account_id = mcStatus.publish_account_id;
+      }
       if (postType === 'story') {
-        publishPayload.image_url = imageUrl;
+        if (publicVideoUrl) {
+          // Video story — send video only; image is preview-only in feed
+          publishPayload.video_url = publicVideoUrl;
+        } else {
+          publishPayload.image_url = imageUrl;
+        }
       } else if (postType === 'feed') {
         publishPayload.image_url = imageUrl;
         publishPayload.content = caption;
         publishPayload.hashtags = hashtags;
       }
       if (postType === 'reels') {
-        publishPayload.video_url = videoUrl;
+        publishPayload.video_url = publicVideoUrl || videoUrl;
         publishPayload.share_to_feed = true;
         publishPayload.content = caption;
         publishPayload.hashtags = hashtags;
@@ -476,6 +1683,11 @@ export function PlatformFeed() {
         delete next[artifact.id];
         return next;
       });
+      const message = formatPublishFeedback(detectKind(artifact));
+      setPublishSuccess((prev) => [...prev.slice(-2), { id: artifact.id, message }]);
+      window.setTimeout(() => {
+        setPublishSuccess((prev) => prev.filter((entry) => entry.id !== artifact.id));
+      }, 6000);
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     },
     onError: (err, artifact) => {
@@ -487,139 +1699,808 @@ export function PlatformFeed() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['artifacts'] }),
   });
 
-  const allArtifacts = rawArtifacts as OutputArtifact[];
   const pendingCount = allArtifacts.filter(a => a.status === 'pending_review').length;
   const approvedCount = allArtifacts.filter(a => a.status === 'approved').length;
 
+  const tenantBrand = useTenantBrandContext();
+  const feedHandle = resolveFeedHandle({}, tenantBrand);
+  const feedLogoUrl = tenantBrand.logoUrl
+    ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl)
+    : undefined;
+
+  // Story bubble bar — ALL story types (Remotion video, poster still, event, canvas)
+  const storyArtifacts = React.useMemo(() => {
+    return [
+      ...allArtifacts.filter(a => a.status === 'pending_review' && isFeedStoryItem(a)),
+      ...allArtifacts.filter(a => a.status === 'approved'       && isFeedStoryItem(a)),
+    ].sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'pending_review' ? -1 : 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [allArtifacts]);
+
+  // Story viewer helpers
+  const resolveStoryVideo = (artifact: OutputArtifact): string | null => resolveStoryVideoUrlShared(artifact);
+  const resolveStoryPoster = (artifact: OutputArtifact): string | null => {
+    const poster = resolvePosterUrl(artifact);
+    if (poster) return resolveImg(poster);
+    const c = parseArtifactContent(artifact.content);
+    const m = (artifact.metadata ?? {}) as Record<string, unknown>;
+    const img = String((c as any)?.imageUrl || m?.reference_photo_url || '').trim();
+    if (img && !img.endsWith('.mp4')) return resolveImg(img);
+    return resolveArtifactImg(artifact);
+  };
+  const openStory = (idx: number) => {
+    setStoryViewIdx(idx);
+    setStoryProgress(0);
+  };
+  const closeStory = () => { setStoryViewIdx(null); setStoryProgress(0); };
+  const nextStory = () => {
+    if (storyViewIdx === null) return;
+    if (storyViewIdx < storyArtifacts.length - 1) { setStoryViewIdx(storyViewIdx + 1); setStoryProgress(0); }
+    else closeStory();
+  };
+  const prevStory = () => {
+    if (storyViewIdx !== null && storyViewIdx > 0) { setStoryViewIdx(storyViewIdx - 1); setStoryProgress(0); }
+  };
+
+  // Story progress auto-advance (8s for video, 5s for photo)
+  React.useEffect(() => {
+    if (storyViewIdx === null) return;
+    const art = storyArtifacts[storyViewIdx];
+    if (!art) return;
+    const dur = resolveStoryVideo(art) ? 8000 : 5000;
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      elapsed += 100;
+      setStoryProgress(Math.min(100, (elapsed / dur) * 100));
+      if (elapsed >= dur) { clearInterval(interval); nextStory(); }
+    }, 100);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storyViewIdx]);
+
+  // Auto-switch to pending view when new items arrive while user is in galeri view
+  React.useEffect(() => {
+    const prev = prevPendingRef.current;
+    if (pendingCount > prev && showApproved) {
+      setShowApproved(false);
+    }
+    prevPendingRef.current = pendingCount;
+  }, [pendingCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const artifacts = allArtifacts
     .filter(a => {
-      // Galeri (approved) mode: only approved items
       if (showApproved) return a.status === 'approved';
-      // Bekleyen mode: only pending_review items
       return a.status === 'pending_review';
     })
+    .filter(a => {
+      // Exclude old SVG announcement_calendar stories — replaced by Remotion
+      try {
+        const c = parseArtifactContent(a.content);
+        const m = (a.metadata ?? {}) as Record<string, unknown>;
+        const src = String((c as any)?.source || m?.source || '');
+        if (src === 'announcement_calendar') return false;
+      } catch { /* ok */ }
+      return true;
+    })
+    // Stories live in the bubble bar — never in the main feed scroll
+    .filter(a => !isFeedStoryItem(a as any))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .filter(a => {
+      if (missionFilterId) return parseArtifactMissionId(a) === missionFilterId;
+      return true;
+    })
     .filter(a => {
       if (filter === 'all') return true;
       const k = detectKind(a as any);
       if (filter === 'post') return k === 'post' || k === 'image';
-      if (filter === 'story') return k === 'story';
       if (filter === 'reel') return k === 'reel' || k === 'video';
       if (filter === 'ad') return k === 'ad' || k === 'ad_creative';
       return true;
     })
-    .slice(0, 30);
+    .filter(a => artifactMatchesSlotFilter(a, slotFilter, detectKind))
+    .slice(0, 100);
 
-  const TABS: { id: FeedFilter; label: string; icon: string }[] = [
-    { id: 'all',   label: 'Tümü',    icon: '⊞' },
-    { id: 'post',  label: 'Post',    icon: '□' },
-    { id: 'story', label: 'Story',   icon: '○' },
-    { id: 'reel',  label: 'Reel',    icon: '▶' },
-    { id: 'ad',    label: 'Reklam',  icon: '📊' },
-  ];
+  const feedPostCount = allArtifacts.filter((a) => {
+    const k = detectKind(a);
+    return k === 'post' || k === 'reel' || detectPreviewMode(a, k) === 'carousel';
+  }).length;
+
+  const feedBg = !operatorMode || platformView === 'instagram' ? '#000' : (t.isDark ? '#0a0a0f' : '#f7f7f7');
+
+  // Stories are in the bubble bar — excluded from these tabs
+  const TABS: { id: FeedFilter; label: string; icon?: string }[] = operatorMode
+    ? [
+        { id: 'all', label: 'Tümü', icon: '⊞' },
+        { id: 'post', label: 'Post', icon: '□' },
+        { id: 'story', label: 'Story', icon: '○' },
+        { id: 'reel', label: 'Reel', icon: '▶' },
+        { id: 'ad', label: 'Reklam', icon: '📊' },
+      ]
+    : [
+        { id: 'all', label: 'Tümü' },
+        { id: 'post', label: 'Gönderi' },
+        { id: 'story', label: 'Story' },
+        { id: 'reel', label: 'Reel' },
+      ];
+
+  const SLOT_TABS: { id: FeedSlotFilter; label: string }[] =
+    filter === 'post'
+      ? [
+          { id: 'all', label: 'Tüm post' },
+          { id: 'organic', label: 'Galeri' },
+          { id: 'designed', label: 'Tasarım' },
+        ]
+      : [];
+
+  React.useEffect(() => {
+    setSlotFilter('all');
+  }, [filter]);
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.isDark ? '#0a0a0f' : '#f7f7f7',
-      paddingBottom: 88 }}>
+    <div style={{ minHeight: '100dvh', background: feedBg, paddingBottom: 104 }}>
 
-      {/* Header */}
+      {/* ─── Sticky Header ─────────────────────────────────────────── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 30,
-        background: t.isDark ? 'rgba(10,10,15,0.95)' : 'rgba(247,247,247,0.95)',
-        backdropFilter: 'blur(20px)',
-        borderBottom: `0.5px solid ${t.separator}`,
-        paddingTop: 'calc(env(safe-area-inset-top,0px) + 10px)',
+        background: platformView === 'instagram'
+          ? 'rgba(0,0,0,0.96)'
+          : (t.isDark ? 'rgba(6,6,14,0.96)' : 'rgba(244,244,248,0.96)'),
+        backdropFilter: 'blur(32px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(32px) saturate(200%)',
+        borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
+        paddingTop: 'calc(env(safe-area-inset-top,0px) + 8px)',
+        borderBottom: !operatorMode ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
       }}>
-        <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between' }}>
+        {operatorMode ? (
+          <>
+        {/* Title row — agency */}
+        <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: t.textPrimary,
-              letterSpacing: '-0.02em' }}>Feed</span>
+            <span style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em' }}>
+              İçerik
+            </span>
             {pendingCount > 0 && (
-              <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10,
-                background: 'rgba(245,158,11,0.15)', color: '#F59E0B', fontWeight: 700 }}>
-                {pendingCount}
-              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: t.warning }}>{pendingCount}</span>
             )}
             {pipelineStatus === 'running' && (
-              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 700,
-                background: 'rgba(16,185,129,0.12)', color: '#10B981',
-                display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10B981',
-                  animation: 'liveGlow 1.4s ease-in-out infinite' }} />
-                Üretiyor
-              </span>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.live,
+                animation: 'liveGlow 2s infinite', flexShrink: 0 }} />
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={() => setShowApproved(s => !s)}
-              style={{
-                padding: '5px 10px', borderRadius: 14, border: `0.5px solid ${t.separator}`,
-                background: showApproved ? (t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : 'transparent',
-                cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                color: showApproved ? t.textPrimary : t.textMuted,
-              }}
-            >
-              {showApproved ? `Bekleyen (${pendingCount})` : `Galeri (${approvedCount})`}
-            </button>
-            <button
-              onClick={() => navigate('outputs')}
-              style={{
-                padding: '5px 10px', borderRadius: 14, border: `0.5px solid ${t.separator}`,
-                background: 'transparent', cursor: 'pointer',
-                fontSize: 11, fontWeight: 600, color: t.accent,
-              }}
-            >
-              Galeri
-            </button>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 2,
+            background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+            borderRadius: 10, padding: 3,
+          }}>
+            {[
+              { id: false, label: pendingCount > 0 ? `Bekleyen ${pendingCount}` : 'Bekleyen' },
+              { id: true, label: approvedCount > 0 ? `Galeri ${approvedCount}` : 'Galeri' },
+            ].map(({ id, label }) => (
+              <button
+                key={String(id)}
+                onClick={() => setShowApproved(id)}
+                style={{
+                  padding: '5px 10px', borderRadius: 8, cursor: 'pointer', border: 'none',
+                  background: showApproved === id
+                    ? (t.isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.07)')
+                    : 'transparent',
+                  color: showApproved === id ? t.textPrimary : t.textMuted,
+                  fontSize: 11, fontWeight: showApproved === id ? 700 : 500,
+                  transition: 'all 150ms ease',
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Filter tabs — Instagram Explore style */}
-        <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
-          paddingLeft: 16, gap: 6, paddingBottom: 12 }}>
+        {productionBudgetBlocked && (
+          <div style={{
+            margin: '0 16px 10px', padding: '10px 12px', borderRadius: 12,
+            background: 'rgba(239,68,68,0.08)', border: '0.5px solid rgba(239,68,68,0.2)',
+            fontSize: 12, lineHeight: 1.5, color: t.danger,
+          }}>
+            Bugünkü içerik üretimi tamamlandı — yarın devam edecek.
+          </div>
+        )}
+
+        {tenantId && brandAlignment && !brandAlignment.canAutoProduce && (
+          <div style={{
+            margin: '0 16px 10px',
+            padding: '10px 12px',
+            borderRadius: 12,
+            background: t.isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)',
+            border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.25)' : 'rgba(245,158,11,0.30)'}`,
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: t.warning, marginBottom: 4 }}>
+              Marka kurulumu eksik
+            </div>
+            <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
+              Tam otomatik içerik üretimi için marka profilinizi tamamlayın.
+              {brandAlignment.weakest?.label && (
+                <span style={{ display: 'block', marginTop: 3, color: t.textMuted }}>
+                  Eksik: {brandAlignment.weakest.label}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('brand')}
+              style={{
+                marginTop: 8, padding: '6px 12px', borderRadius: 8,
+                border: 'none', cursor: 'pointer',
+                fontSize: 11, fontWeight: 700, color: '#fff',
+                background: t.warning,
+              }}
+            >
+              Markayı tamamla →
+            </button>
+          </div>
+        )}
+
+        {/* Platform preview tabs — Instagram / TikTok / X */}
+        <div style={{ display: 'flex', gap: 8, padding: '0 16px 10px' }}>
+          {PLATFORM_TABS.map((pt) => {
+            const active = platformView === pt.id;
+            return (
+              <button key={pt.id} type="button" onClick={() => setPlatformView(pt.id)}
+                style={{
+                  flex: 1, padding: '9px 4px', borderRadius: 12, cursor: 'pointer',
+                  border: active ? 'none' : `0.5px solid ${platformView === 'instagram' ? 'rgba(255,255,255,0.12)' : t.separator}`,
+                  background: active ? pt.activeBg : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill={active ? '#fff' : (platformView === 'instagram' ? 'rgba(255,255,255,0.35)' : t.textMuted)}>
+                  <path d={pt.svgPath} />
+                </svg>
+                <span style={{
+                  fontSize: 11, fontWeight: active ? 700 : 500,
+                  color: active ? '#fff' : (platformView === 'instagram' ? 'rgba(255,255,255,0.45)' : t.textMuted),
+                }}>
+                  {pt.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {missionIds.length > 0 && (
+          <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
+            paddingLeft: 16, gap: 6, paddingBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => setMissionFilterId(null)}
+              style={{
+                flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                background: !missionFilterId
+                  ? (platformView === 'instagram' ? 'rgba(255,255,255,0.12)' : (t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'))
+                  : 'transparent',
+                border: `0.5px solid ${!missionFilterId ? 'rgba(59,130,246,0.5)' : (platformView === 'instagram' ? 'rgba(255,255,255,0.12)' : t.separator)}`,
+                color: !missionFilterId ? '#3B82F6' : (platformView === 'instagram' ? 'rgba(255,255,255,0.5)' : t.textMuted),
+                fontSize: 11, fontWeight: 700,
+              }}>
+              Tüm missionlar
+            </button>
+            {missionIds.slice(0, 8).map((mid) => {
+              const active = missionFilterId === mid;
+              const title = missionTitleById.get(mid) ?? `Misyon ${mid.slice(0, 8)}…`;
+              return (
+                <button
+                  key={mid}
+                  type="button"
+                  onClick={() => setMissionFilterId(active ? null : mid)}
+                  style={{
+                    flexShrink: 0, maxWidth: 160, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                    background: active
+                      ? (platformView === 'instagram' ? 'rgba(255,255,255,0.12)' : (t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'))
+                      : 'transparent',
+                    border: `0.5px solid ${active ? 'rgba(59,130,246,0.5)' : (platformView === 'instagram' ? 'rgba(255,255,255,0.12)' : t.separator)}`,
+                    color: active ? '#3B82F6' : (platformView === 'instagram' ? 'rgba(255,255,255,0.5)' : t.textMuted),
+                    fontSize: 11, fontWeight: 600,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                  {title.slice(0, 32)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{
+          display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
+          paddingLeft: 16, paddingRight: 8, gap: 6, paddingBottom: 12,
+        }}>
           {TABS.map(tab => {
             const active = filter === tab.id;
+            const tabColor = tab.id === 'reel' ? '#F43F5E'
+              : tab.id === 'story' ? '#8B5CF6'
+              : tab.id === 'ad' ? '#F59E0B'
+              : tab.id === 'post' ? '#60A5FA'
+              : t.textPrimary;
             return (
               <button key={tab.id} onClick={() => setFilter(tab.id)} style={{
                 flexShrink: 0, padding: '7px 14px', borderRadius: 20, cursor: 'pointer',
-                background: active
-                  ? (t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.09)')
-                  : 'transparent',
-                border: `0.5px solid ${active ? t.textSecondary : t.separator}`,
-                color: active ? t.textPrimary : t.textMuted,
-                fontSize: 13, fontWeight: active ? 700 : 500,
-                display: 'flex', alignItems: 'center', gap: 5,
+                background: active ? `${tabColor}18` : 'transparent',
+                border: `0.5px solid ${active ? `${tabColor}40` : t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'}`,
+                color: active ? tabColor : t.textMuted,
+                fontSize: 12, fontWeight: active ? 800 : 500,
+                letterSpacing: active ? '0.01em' : '0',
+                transition: 'all 160ms ease',
+                display: 'flex', alignItems: 'center', gap: tab.icon ? 5 : 0,
               }}>
-                <span style={{ fontSize: 11 }}>{tab.icon}</span>
+                {tab.icon && <span style={{ fontSize: 11 }}>{tab.icon}</span>}
                 {tab.label}
               </button>
             );
           })}
         </div>
+
+        {SLOT_TABS.length > 0 && (
+          <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
+            paddingLeft: 16, gap: 6, paddingBottom: 10 }}>
+            {SLOT_TABS.map((tab) => {
+              const active = slotFilter === tab.id;
+              const ig = platformView === 'instagram';
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSlotFilter(tab.id)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '5px 12px',
+                    borderRadius: 16,
+                    cursor: 'pointer',
+                    background: active
+                      ? (ig ? 'rgba(139,92,246,0.25)' : (t.isDark ? 'rgba(139,92,246,0.2)' : 'rgba(139,92,246,0.12)'))
+                      : 'transparent',
+                    border: `0.5px solid ${active ? 'rgba(139,92,246,0.45)' : (ig ? 'rgba(255,255,255,0.1)' : t.separator)}`,
+                    color: active ? (ig ? '#E9D5FF' : t.textPrimary) : (ig ? 'rgba(255,255,255,0.4)' : t.textMuted),
+                    fontSize: 11,
+                    fontWeight: active ? 700 : 500,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+          </>
+        ) : (
+          <InstagramHomeHeader
+            showApproved={showApproved}
+            pendingCount={pendingCount}
+            approvedCount={approvedCount}
+            onShowPending={() => setShowApproved(false)}
+            onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
+          />
+        )}
       </div>
+
+      {publishSuccess.length > 0 && (
+        <div style={{ padding: '10px 16px 0' }}>
+          {publishSuccess.map(({ id, message }) => (
+            <div key={id} style={{
+              fontSize: 13, fontWeight: 700, color: '#10B981',
+              padding: '10px 14px', borderRadius: 12,
+              background: t.isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)',
+              border: '0.5px solid rgba(16,185,129,0.25)',
+              marginBottom: 6,
+            }}>
+              {message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Profile stats bar — agency only; IG home has no profile block in feed */}
+      {operatorMode && platformView === 'instagram' && artifacts.length + storyArtifacts.length > 0 && (
+        <InstagramProfileBar
+          handle={feedHandle}
+          logoUrl={feedLogoUrl}
+          postCount={feedPostCount}
+          storyCount={storyArtifacts.length}
+        />
+      )}
+
+      {/* ── Story Bubble Bar — always visible, all platform views ── */}
+      {storyArtifacts.length > 0 && (
+        <div style={{
+          display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
+          padding: '12px 16px 14px',
+          gap: 14,
+          borderBottom: `0.5px solid ${t.separator}`,
+          background: platformView === 'instagram' ? '#000' : feedBg,
+        }}>
+          {storyArtifacts.map((art, idx) => {
+            const poster = resolveStoryPoster(art);
+            const vid = resolveStoryVideo(art);
+            const meta = (art.metadata ?? {}) as Record<string, unknown>;
+            const brandName = String(meta.brandName || '').trim();
+            const isPending = art.status === 'pending_review';
+            const isViewed = storyViewIdx !== null && storyViewIdx > idx;
+            const isRendering = isBundleRendering(art);
+            const initials = brandName ? brandName.slice(0, 2).toUpperCase() : 'S';
+            const grafikerScore = typeof meta.grafiker_score === 'number' ? meta.grafiker_score : null;
+            const isRemotionVid = Boolean(vid);
+            // Remotion stories: purple-to-gold gradient | Rendering: amber pulse | Viewed: grey
+            const ringBg = isViewed || !isPending
+              ? t.separator
+              : isRendering && !isRemotionVid
+              ? 'linear-gradient(135deg, #f59e0b, #fbbf24, #fcd34d)'
+              : isRemotionVid
+              ? 'linear-gradient(135deg, #7c3aed, #8B5CF6, #c9a96e, #f59e0b)'
+              : 'linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)';
+
+            return (
+              <div
+                key={art.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openStory(idx)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openStory(idx);
+                  }
+                }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  gap: 5, background: 'none', border: 'none', cursor: 'pointer',
+                  flexShrink: 0, padding: 0 }}
+              >
+                {/* Gradient ring — purple-gold for Remotion, Instagram for regular */}
+                <div style={{
+                  width: 68, height: 68, borderRadius: '50%', padding: 2.5,
+                  background: ringBg,
+                  flexShrink: 0,
+                }}>
+                  <div style={{
+                    width: '100%', height: '100%', borderRadius: '50%',
+                    overflow: 'hidden',
+                    border: `2px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                    background: t.isDark ? '#1a1a2e' : '#e5e5e5',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'relative',
+                  }}>
+                    {poster ? (
+                      <SafeCoverImage
+                        src={poster}
+                        fallbacks={[resolveImg(art.contentUrl ?? undefined)]}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 16, fontWeight: 800, color: t.textPrimary }}>{initials}</span>
+                    )}
+                    {/* Remotion video badge */}
+                    {vid && (
+                      <div style={{
+                        position: 'absolute', bottom: 0, right: 0,
+                        width: 18, height: 18, borderRadius: '50%',
+                        background: '#8B5CF6', border: `1.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 8, color: '#fff',
+                      }}>▶</div>
+                    )}
+                    {/* Grafiker score badge */}
+                    {operatorMode && grafikerScore !== null && grafikerScore >= 8 && (
+                      <div style={{
+                        position: 'absolute', top: 0, right: 0,
+                        width: 16, height: 16, borderRadius: '50%',
+                        background: '#10B981', border: `1.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 7, color: '#fff', fontWeight: 800,
+                      }}>★</div>
+                    )}
+                  </div>
+                </div>
+                {/* Label */}
+                <div style={{ textAlign: 'center', maxWidth: 88 }}>
+                  <div style={{
+                    fontSize: 10, color: isViewed ? t.textMuted : t.textPrimary,
+                    fontWeight: isPending ? 700 : 400,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {brandName || 'Story'}
+                  </div>
+                  {operatorMode && storyRetryIsBusy(art) && !isRemotionVid && !isViewed && (
+                    <div style={{ fontSize: 9, color: '#F59E0B', fontWeight: 700, marginTop: 1 }}>
+                      Render…
+                    </div>
+                  )}
+                  <StoryRetryButton
+                    artifact={art}
+                    retrying={retryingStoryId === art.id}
+                    onRetry={() => { void retryStoryRender(art.id); }}
+                    variant="bubble"
+                  />
+                  {operatorMode && isRemotionVid && !isViewed && (
+                    <div style={{ fontSize: 9, color: '#a78bfa', fontWeight: 700, marginTop: 1 }}>
+                      ▶ Video
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Story Viewer (fullscreen portal) ── */}
+      {storyViewIdx !== null && storyArtifacts[storyViewIdx] && typeof window !== 'undefined' && (
+        createPortal(
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 800,
+            background: '#000',
+            display: 'flex', flexDirection: 'column',
+            animation: 'fadeIn 120ms ease both',
+          }}>
+            {/* Progress bars */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+              display: 'flex', gap: 3, padding: '12px 10px 0',
+            }}>
+              {storyArtifacts.map((_, si) => (
+                <div key={si} style={{
+                  flex: 1, height: 2.5, borderRadius: 2,
+                  background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
+                }}>
+                  <div style={{
+                    height: '100%', borderRadius: 2, background: '#fff',
+                    width: si < storyViewIdx! ? '100%'
+                      : si === storyViewIdx ? `${storyProgress}%` : '0%',
+                    transition: si === storyViewIdx ? 'none' : undefined,
+                  }} />
+                </div>
+              ))}
+            </div>
+
+            {/* Header */}
+            <div style={{
+              position: 'absolute', top: 22, left: 0, right: 0, zIndex: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '8px 14px',
+            }}>
+              {(() => {
+                const art = storyArtifacts[storyViewIdx!]!;
+                const poster = resolveStoryPoster(art);
+                const meta = (art.metadata ?? {}) as Record<string, unknown>;
+                const brandName = String(meta.brandName || 'Story');
+                const ago = timeAgo(art.createdAt);
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
+                      border: '1.5px solid rgba(255,255,255,0.6)' }}>
+                      {poster
+                        ? <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <div style={{ width: '100%', height: '100%', background: '#333',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 12, fontWeight: 800, color: '#fff' }}>
+                            {brandName.slice(0, 2).toUpperCase()}
+                          </div>
+                      }
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{brandName}</div>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)' }}>{ago}</div>
+                    </div>
+                  </div>
+                );
+              })()}
+              <button onClick={closeStory} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#fff', fontSize: 22, padding: 6, lineHeight: 1,
+              }}>✕</button>
+            </div>
+
+            {/* Story content — video or image */}
+            {(() => {
+              const art = storyArtifacts[storyViewIdx!]!;
+              const vid = resolveStoryVideo(art);
+              const poster = resolveStoryPoster(art);
+              return (
+                <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                  {vid ? (
+                    <video
+                      ref={storyVideoRef}
+                      key={vid}
+                      src={vid}
+                      poster={poster ?? undefined}
+                      autoPlay muted playsInline
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      onEnded={nextStory}
+                    />
+                  ) : poster ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', background: '#111',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: 40, opacity: 0.2 }}>◉</span>
+                    </div>
+                  )}
+
+                  {/* Tap zones: left = prev, right = next */}
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5 }}>
+                    <div style={{ flex: 1 }} onClick={prevStory} />
+                    <div style={{ flex: 1 }} onClick={nextStory} />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Bottom bar */}
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10,
+              padding: '12px 16px max(20px, env(safe-area-inset-bottom))',
+              background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)',
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              {(() => {
+                const art = storyArtifacts[storyViewIdx!]!;
+                const isPending = art.status === 'pending_review';
+                const c = parseArtifactContent(art.content);
+                const m = (art.metadata ?? {}) as Record<string, unknown>;
+                const vid = resolveStoryVideo(art);
+                const isRemotionVideo = Boolean(vid);
+                const isRendering = isBundleRendering(art);
+                const canApprove = isPending && !isRendering && (isRemotionVideo || !isProductionBundleStory(art));
+                const grafiker = typeof m.grafiker_score === 'number' ? m.grafiker_score : null;
+                const compositionId = String((c as any)?.compositionId || m?.compositionId || '');
+                const isLocalVideo = vid?.startsWith('/api/remotion/video/');
+
+                return (
+                  <>
+                    {/* Remotion info bar */}
+                    {isRemotionVideo && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '6px 10px', borderRadius: 10,
+                        background: 'rgba(139,92,246,0.20)', border: '0.5px solid rgba(139,92,246,0.4)',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>
+                            ▶ Remotion {compositionId.replace('Story', '')}
+                          </span>
+                          {grafiker !== null && (
+                            <span style={{
+                              fontSize: 10, padding: '2px 7px', borderRadius: 10,
+                              background: grafiker >= 8 ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
+                              color: grafiker >= 8 ? '#10B981' : '#F59E0B', fontWeight: 700,
+                            }}>
+                              ★ {grafiker}/10
+                            </span>
+                          )}
+                        </div>
+                        {/* Download button for Instagram */}
+                        {vid && (
+                          <a href={vid} download={`remotion-story-${art.id?.slice(0,8)}.mp4`}
+                            style={{
+                              fontSize: 10, padding: '4px 10px', borderRadius: 8,
+                              background: 'rgba(255,255,255,0.15)', color: '#fff',
+                              fontWeight: 700, textDecoration: 'none',
+                              display: 'flex', alignItems: 'center', gap: 4,
+                            }}>
+                            ↓ İndir
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Local video warning */}
+                    {isLocalVideo && (
+                      <div style={{
+                        fontSize: 10, color: 'rgba(255,255,255,0.55)', textAlign: 'center',
+                        fontStyle: 'italic',
+                      }}>
+                        Dev ortamı: R2 olmadan doğrudan Instagram yayını yapılamaz
+                      </div>
+                    )}
+
+                    {isRendering && (
+                      <div style={{
+                        fontSize: 11, color: 'rgba(255,255,255,0.75)', textAlign: 'center',
+                        padding: '8px 12px', borderRadius: 10,
+                        background: 'rgba(245,158,11,0.18)', border: '0.5px solid rgba(245,158,11,0.35)',
+                      }}>
+                        Video render ediliyor… (~1 dk)
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 10 }}>
+                    {canRetryStoryRender(art) && (
+                      <StoryRetryButton
+                        artifact={art}
+                        retrying={retryingStoryId === art.id}
+                        onRetry={() => { void retryStoryRender(art.id); }}
+                        variant="viewer"
+                      />
+                    )}
+                    {canApprove && (
+                      <button onClick={() => { approveMutation.mutate(art); nextStory(); }}
+                        style={{
+                          flex: 1, padding: '13px', borderRadius: 12, border: 'none',
+                          background: '#10B981', color: '#fff', fontSize: 14, fontWeight: 700,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', gap: 6,
+                        }}>
+                        {approveMutation.isPending ? (
+                          <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Onaylanıyor…</>
+                        ) : (
+                          <>✓ Onayla {isRemotionVideo ? '& Paylaş' : ''}</>
+                        )}
+                      </button>
+                    )}
+                    <button onClick={() => { closeStory(); openApproval(art.id); }}
+                      style={{
+                        flex: canApprove ? 0.5 : 1, padding: '13px', borderRadius: 12,
+                        border: 'none',
+                        background: 'rgba(255,255,255,0.12)', color: '#fff',
+                        fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                      }}>
+                      {canApprove ? 'Düzenle' : isPending ? 'İncele' : '···'}
+                    </button>
+                    {!isPending && (
+                      <button onClick={nextStory}
+                        style={{
+                          padding: '13px 20px', borderRadius: 12, border: 'none',
+                          background: 'rgba(255,255,255,0.12)', color: '#fff',
+                          fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                        }}>
+                        Sonraki →
+                      </button>
+                    )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>,
+          document.body
+        )
+      )}
 
       {/* Feed */}
       {isLoading ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: 200, flexDirection: 'column', gap: 12 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%',
-            border: `2px solid ${t.separator}`, borderTop: `2px solid ${t.accent}`,
-            animation: 'spinSlow 1s linear infinite' }} />
-          <span style={{ fontSize: 13, color: t.textMuted }}>Yükleniyor…</span>
-        </div>
+        operatorMode ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: 200, flexDirection: 'column', gap: 12 }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%',
+              border: `2px solid ${t.separator}`, borderTop: `2px solid ${t.accent}`,
+              animation: 'spinSlow 1s linear infinite' }} />
+            <span style={{ fontSize: 13, color: t.textMuted }}>Yükleniyor…</span>
+          </div>
+        ) : (
+          <BrandLoadingScreen fillViewport={false} />
+        )
       ) : artifacts.length === 0 ? (
         <div style={{ padding: '60px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.15 }}>📸</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
-            {showApproved ? 'Galeri boş' : 'Bekleyen içerik yok'}
+            {showApproved ? 'Galeri boş' : 'Yeni içerik yok'}
           </div>
           <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
             {showApproved
-              ? 'Onaylanan içerikler burada görünür. Feed\'den bir içeriği onaylayarak başlayın.'
-              : 'Bekleyen içerik yok. Galeriye geç veya Mission Hub\'dan yeni içerik üret.'}
+              ? 'Onaylanan içerikler burada görünür.'
+              : rawPendingCount > pendingPublishableCount
+                ? `${rawPendingCount} üretim var; ${rawPendingCount - pendingPublishableCount} tanesi medya hazır olana kadar gizli. Render bitince otomatik görünür.`
+                : 'Mission Hub\'dan bir misyon başlatın — içerikler üretilince burada görünür.'}
           </div>
+          {!showApproved && missionFilterId && rawPendingCount > 0 && artifacts.length === 0 && (
+            <button
+              onClick={() => setMissionFilterId(null)}
+              style={{
+                marginBottom: 12, padding: '8px 16px', borderRadius: 20, border: 'none',
+                background: 'rgba(59,130,246,0.15)', color: '#3B82F6', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Tüm mission içeriklerini göster
+            </button>
+          )}
           {showApproved && pendingCount > 0 && (
             <button
               onClick={() => setShowApproved(false)}
@@ -629,10 +2510,22 @@ export function PlatformFeed() {
                 color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
               }}
             >
-              Bekleyenleri Gör ({pendingCount})
+              ✨ Yeni Üretimler ({pendingCount})
             </button>
           )}
-          {showApproved && (
+          {!showApproved && approvedCount > 0 && (
+            <button
+              onClick={() => setShowApproved(true)}
+              style={{
+                padding: '10px 20px', borderRadius: 20, border: 'none',
+                background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                color: t.textPrimary, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              Galeriyi Gör ({approvedCount})
+            </button>
+          )}
+          {!showApproved && (
             <button
               onClick={() => navigate('missions')}
               style={{
@@ -646,26 +2539,24 @@ export function PlatformFeed() {
           )}
         </div>
       ) : (
-        <div>
+        <div style={{ background: feedBg }}>
           {artifacts.map(artifact => {
-            const k = detectKind(artifact as any);
-            const isStory = k === 'story';
-            const isApproving = approveMutation.isPending && approveMutation.variables?.id === artifact.id;
-            const isRevisioning = revisionMutation.isPending && revisionMutation.variables === artifact.id;
+            const isApproving   = approveMutation.isPending   && approveMutation.variables?.id === artifact.id;
+            const isRevisioning = revisionMutation.isPending  && revisionMutation.variables  === artifact.id;
 
-            if (isStory) {
-              return (
-                <StoryCard key={artifact.id} artifact={artifact} t={t}
-                  approving={isApproving}
-                  onApprove={() => approveMutation.mutate(artifact)} />
-              );
-            }
             return (
-              <IGPostCard key={artifact.id} artifact={artifact} t={t}
+              <NativeFeedCard
+                key={artifact.id}
+                artifact={artifact}
+                platform={operatorMode ? platformView : 'instagram'}
+                t={t}
                 approving={isApproving}
                 revisioning={isRevisioning}
+                retryingRender={retryingStoryId === artifact.id}
                 onApprove={() => approveMutation.mutate(artifact)}
-                onRevision={() => revisionMutation.mutate(artifact.id)} />
+                onRevision={() => revisionMutation.mutate(artifact.id)}
+                onRetryRender={() => { void retryStoryRender(artifact.id); }}
+              />
             );
           })}
         </div>

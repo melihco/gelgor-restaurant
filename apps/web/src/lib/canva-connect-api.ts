@@ -30,7 +30,7 @@ interface CanvaBrandTemplateResponse {
   }>;
 }
 
-export async function canvaFetch<T>(token: string, path: string, init?: RequestInit): Promise<T> {
+export async function canvaFetch<T>(token: string, path: string, init?: RequestInit, _attempt = 0): Promise<T> {
   const response = await fetch(`${CANVA_API_BASE}${path}`, {
     ...init,
     headers: {
@@ -41,6 +41,13 @@ export async function canvaFetch<T>(token: string, path: string, init?: RequestI
   });
 
   if (!response.ok) {
+    // Auto-retry once on 429 rate-limit with Retry-After or 3 s back-off
+    if (response.status === 429 && _attempt === 0) {
+      const retryAfter = Number(response.headers.get('Retry-After') ?? '3');
+      const waitMs = Math.min(retryAfter * 1000, 10_000);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      return canvaFetch<T>(token, path, init, 1);
+    }
     const detail = await response.text().catch(() => '');
     throw new CanvaApiError(response.status, detail);
   }

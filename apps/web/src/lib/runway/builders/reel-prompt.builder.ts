@@ -12,6 +12,8 @@
  * - No negative prompts needed (Runway handles these internally)
  */
 
+import { normalizeCameraMotion } from '@/lib/camera-motion';
+import { applyFidelityToDirectorPrompt } from '@/lib/runway-reel-fidelity';
 import type {
   CameraMotion,
   PromptBuilderContext,
@@ -26,7 +28,6 @@ const CAMERA_MOTION_DESCRIPTORS: Record<CameraMotion, string> = {
   dolly_out: 'cinematic dolly-out pull away from subject',
   static: 'locked-off static camera, perfectly still',
   handheld: 'subtle handheld movement, intimate and organic feel',
-  aerial: 'aerial overhead perspective with slow descend',
   tracking: 'smooth tracking shot following the subject',
   orbit: 'slow orbital rotation around the subject',
   tilt_up: 'elegant upward tilt reveal from ground to sky',
@@ -35,7 +36,8 @@ const CAMERA_MOTION_DESCRIPTORS: Record<CameraMotion, string> = {
 
 function resolveCameraMotion(motion?: string): string {
   if (!motion) return 'smooth cinematic camera movement';
-  const known = CAMERA_MOTION_DESCRIPTORS[motion as CameraMotion];
+  const normalized = normalizeCameraMotion(motion);
+  const known = CAMERA_MOTION_DESCRIPTORS[normalized];
   return known ?? motion;
 }
 
@@ -283,6 +285,12 @@ CAPTION → VISUAL TRANSLATION:
 - "sunset views" → atmospheric terrace with golden sky and ambient warmth
 - "handcrafted cocktails" → bartender hands in motion, glass detail, garnish reveal
 
+REFERENCE FIDELITY (mandatory):
+- Animate ONLY what is visible in the reference photo. Do not invent objects, people, logos, or scenery.
+- Preserve exact composition, subjects, and layout. No morphing, no scene change, no style drift.
+- Motion: subtle only — shimmer, steam, ripple, soft parallax, gentle focus breathing.
+- Camera: locked-off or very slow drift unless the brief explicitly requests otherwise.
+
 STRICT RULES:
 - English only — no Turkish or any non-ASCII characters
 - ONE paragraph, 100–180 words maximum
@@ -312,6 +320,8 @@ export interface DirectorPromptContext {
   /** BrandTheme grading */
   brandThemeGrading?: { look?: string; lut_directive?: string };
   mood?: string;
+  /** VPS image_edit_prompt / scene brief — visual direction for this clip */
+  agentVisualDirection?: string;
 }
 
 // ── Content-kind cinematic templates ─────────────────────────────────────
@@ -404,7 +414,8 @@ export function buildDirectorPromptTemplate(ctx: DirectorPromptContext): string 
     .replace(/[^\x00-\x7F]/g, (ch) => CHAR_MAP[ch] ?? ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
-  return safe.length > 950 ? `${safe.slice(0, 947).trimEnd()}.` : safe;
+  const withFidelity = applyFidelityToDirectorPrompt(safe);
+  return withFidelity.length > 950 ? `${withFidelity.slice(0, 947).trimEnd()}.` : withFidelity;
 }
 
 // In-process prompt cache: same photo+caption → skip redundant API call.
@@ -475,6 +486,9 @@ export async function buildDirectorPromptWithAI(
       ctx.photoTags?.length
         ? `- Tags: ${ctx.photoTags.slice(0, 12).join(', ')}`
         : '',
+      ctx.agentVisualDirection
+        ? `- Agent visual direction: ${ctx.agentVisualDirection.slice(0, 280)}`
+        : '',
       ``,
       `VISUAL STYLE`,
       `Brand grading: ${gradingLook}${lutDirective ? `. LUT: ${lutDirective}` : ''}`,
@@ -516,8 +530,8 @@ export async function buildDirectorPromptWithAI(
       .replace(/\s{2,}/g, ' ')
       .trim();
 
-    // Enforce Runway's 1000-char limit
-    const finalPrompt = prompt.length > 960 ? `${prompt.slice(0, 957).trimEnd()}…` : prompt;
+    const withFidelity = applyFidelityToDirectorPrompt(prompt);
+    const finalPrompt = withFidelity.length > 960 ? `${withFidelity.slice(0, 957).trimEnd()}…` : withFidelity;
 
     // Store in cache (FIFO eviction when full)
     if (_promptCache.size >= _CACHE_MAX) {

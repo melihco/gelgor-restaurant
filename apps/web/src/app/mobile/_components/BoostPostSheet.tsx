@@ -25,6 +25,7 @@ function estimateReach(budgetTl: number): [number, number] {
 
 interface Props {
   artifactId: string;
+  workspaceId?: string;
   igMediaId?: string;
   caption?: string;
   imageUrl?: string;
@@ -32,7 +33,7 @@ interface Props {
   onClose: () => void;
 }
 
-function BoostSheetInner({ artifactId: _artifactId, igMediaId, caption, imageUrl, onClose }: Omit<Props, 'isOpen'>) {
+function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, caption, imageUrl, onClose }: Omit<Props, 'isOpen'>) {
   const { t } = useTheme();
   const queryClient = useQueryClient();
 
@@ -45,8 +46,8 @@ function BoostSheetInner({ artifactId: _artifactId, igMediaId, caption, imageUrl
   const [adsAccountId, setAdsAccountId] = useState('');
 
   const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
-    queryKey: ['mertcafe-status'],
-    queryFn: () => apiClient.getMertcafeStatus(),
+    queryKey: ['mertcafe-status', workspaceId],
+    queryFn: () => apiClient.getMertcafeStatus(workspaceId),
     staleTime: 20_000,
   });
   const { data: mediaCheck, isLoading: mediaCheckLoading } = useQuery({
@@ -66,7 +67,7 @@ function BoostSheetInner({ artifactId: _artifactId, igMediaId, caption, imageUrl
   const mappedGoal: MertcafeGoal = objective;
 
   const connectAdsMutation = useMutation({
-    mutationFn: () => apiClient.connectMertcafeMetaAds({ adsAccountId: adsAccountId.trim() }),
+    mutationFn: () => apiClient.connectMertcafeMetaAds({ adsAccountId: adsAccountId.trim(), workspaceId }),
     onSuccess: async () => {
       setSuccess('Meta Ads hesabı bağlandı');
       await refetchStatus();
@@ -79,6 +80,7 @@ function BoostSheetInner({ artifactId: _artifactId, igMediaId, caption, imageUrl
       goal: mappedGoal,
       budget: effectiveBudget,
       durationDays,
+      workspaceId,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
@@ -89,6 +91,7 @@ function BoostSheetInner({ artifactId: _artifactId, igMediaId, caption, imageUrl
 
   const createAdMutation = useMutation({
     mutationFn: () => apiClient.createMertcafeAd({
+      workspaceId,
       imageUrl: imageUrl ?? '',
       headline: ((caption ?? '').trim().split('\n')[0] || 'Instagram kampanya duyurusu').slice(0, 70),
       body: (caption ?? 'Hemen incele, detaylar için DM atabilirsiniz.').slice(0, 220),

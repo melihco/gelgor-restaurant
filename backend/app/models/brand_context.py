@@ -94,6 +94,9 @@ class BrandContext(BaseModel):
     industry_intelligence_updated_at: Mapped[str | None] = mapped_column(String(50))
     # Gallery analysis cache — JSON map of URL → {tags, description, assetType, usageContext}
     gallery_analysis: Mapped[str | None] = mapped_column(Text)
+    # Sprint 2 (S2.9) — rolling match-score log for GIS matcher-avg check.
+    # JSON: {"scores": [..last ~40..], "updatedAt": ISO}
+    gallery_match_stats: Mapped[str | None] = mapped_column(Text)
     # Structured website crawl: menu categories, product/venue photos, brand display name
     website_intelligence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Daily competitor activity digest — refreshed by Market Intelligence Agent

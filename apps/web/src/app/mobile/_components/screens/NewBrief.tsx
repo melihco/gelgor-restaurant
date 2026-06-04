@@ -117,8 +117,8 @@ export function NewBrief() {
           <button onClick={goBack} style={{ flex: 1, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.09)', color: 'rgba(226,232,240,0.65)', fontSize: 13, fontWeight: 500 }}>
             Kapat
           </button>
-          <button onClick={() => navigate('ai-activity')} style={{ flex: 2, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(167,139,250,0.12)', border: '0.5px solid rgba(167,139,250,0.25)', color: '#a78bfa', fontSize: 13, fontWeight: 700 }}>
-            AI Aktivitesini İzle →
+          <button onClick={() => navigate('missions')} style={{ flex: 2, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(167,139,250,0.12)', border: '0.5px solid rgba(167,139,250,0.25)', color: '#a78bfa', fontSize: 13, fontWeight: 700 }}>
+            İçerik planına git →
           </button>
         </div>
       </div>

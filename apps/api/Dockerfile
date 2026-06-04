@@ -23,8 +23,7 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
-EXPOSE 5000
-
-ENV ASPNETCORE_URLS=http://+:5000
+# Railway injects PORT at runtime; ASP.NET Core 8 binds to PORT when ASPNETCORE_URLS is unset.
+ENV ASPNETCORE_ENVIRONMENT=Production
 
 ENTRYPOINT ["dotnet", "Nexus.Api.dll"]

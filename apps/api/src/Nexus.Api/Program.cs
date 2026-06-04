@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Nexus.Api.Hubs;
 using Nexus.Application.Interfaces;
 using Nexus.Application.Providers;
@@ -17,6 +18,52 @@ using System.Security.Claims;
 var builder = WebApplication.CreateBuilder(args);
 
 var configuration = builder.Configuration;
+
+static string OrchestrationApiKey(IConfiguration config) =>
+    config["OrchestrationService:ApiKey"]
+    ?? Environment.GetEnvironmentVariable("INTERNAL_API_KEY")
+    ?? "smartagency-internal-dev-key";
+
+static string? ResolvePostgresConnection(IConfiguration config)
+{
+    var fromConfig = config.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrWhiteSpace(fromConfig)
+        && !fromConfig.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
+        && !fromConfig.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        return fromConfig;
+    }
+
+    var url = Environment.GetEnvironmentVariable("DATABASE_URL")
+        ?? config["DATABASE_URL"]
+        ?? fromConfig;
+    if (string.IsNullOrWhiteSpace(url)) return null;
+    if (!url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
+        && !url.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        return url;
+    }
+
+    try
+    {
+        var uri = new Uri(url);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        return new NpgsqlConnectionStringBuilder
+        {
+            Host = uri.Host,
+            Port = uri.Port > 0 ? uri.Port : 5432,
+            Database = uri.AbsolutePath.TrimStart('/').Split('?')[0],
+            Username = Uri.UnescapeDataString(userInfo[0]),
+            Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
+            SslMode = SslMode.Require,
+        }.ConnectionString;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
 static int ClampOrchestrationTimeoutSeconds(IConfiguration config, int fallback = 120)
 {
     var t = config.GetValue<int?>("OrchestrationService:TimeoutSeconds") ?? fallback;
@@ -29,7 +76,7 @@ static int ClampActionExecutionTimeoutSeconds(IConfiguration config, int fallbac
     return Math.Clamp(t, 15, 3600);
 }
 
-var connectionString = configuration.GetConnectionString("DefaultConnection");
+var connectionString = ResolvePostgresConnection(configuration);
 
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -58,9 +105,10 @@ builder.Services.AddHttpClient<IActionProviderExecutor, ActionProviderExecutor>(
     var timeoutSeconds = ClampActionExecutionTimeoutSeconds(configuration);
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-    client.DefaultRequestHeaders.Add("X-API-Key", configuration["OrchestrationService:ApiKey"] ?? "smartagency-internal-dev-key");
+    client.DefaultRequestHeaders.Add("X-API-Key", OrchestrationApiKey(configuration));
 });
 builder.Services.AddScoped<ISetupService, SetupService>();
+builder.Services.AddScoped<ITenantOperatingPolicyService, TenantOperatingPolicyService>();
 builder.Services.AddScoped<IPackageService, PackageService>();
 builder.Services.AddScoped<IIntegrationService, IntegrationService>();
 builder.Services.AddHttpContextAccessor();
@@ -75,7 +123,7 @@ builder.Services.AddHttpClient("CrewService", client =>
 {
     var baseUrl = configuration["OrchestrationService:BaseUrl"] ?? "http://localhost:8000";
     var timeoutSeconds = ClampOrchestrationTimeoutSeconds(configuration);
-    var apiKey = configuration["OrchestrationService:ApiKey"] ?? "smartagency-internal-dev-key";
+    var apiKey = OrchestrationApiKey(configuration);
 
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
@@ -96,7 +144,7 @@ else
     {
         var baseUrl = configuration["OrchestrationService:BaseUrl"] ?? "http://localhost:8000";
         var timeoutSeconds = ClampOrchestrationTimeoutSeconds(configuration);
-        var apiKey = configuration["OrchestrationService:ApiKey"] ?? "smartagency-internal-dev-key";
+        var apiKey = OrchestrationApiKey(configuration);
 
         client.BaseAddress = new Uri(baseUrl);
         client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
@@ -129,6 +177,13 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };
+var frontendBaseUrl = configuration["Frontend:BaseUrl"] ?? Environment.GetEnvironmentVariable("FRONTEND_BASE_URL");
+if (!string.IsNullOrWhiteSpace(frontendBaseUrl))
+{
+    var extraOrigins = frontendBaseUrl
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    allowedOrigins = allowedOrigins.Concat(extraOrigins).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+}
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -397,6 +452,8 @@ static async Task ApplySchemaPatches(NexusDbContext ctx)
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"LogoUsageRules\" varchar(1000) NOT NULL DEFAULT '';",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"PlatformProfiles\" jsonb NOT NULL DEFAULT '[]'::jsonb;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"ContentNeeds\" jsonb NOT NULL DEFAULT '[]'::jsonb;",
+        "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"OperatingCapabilities\" jsonb NOT NULL DEFAULT '[]'::jsonb;",
+        "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"GalleryPolicy\" jsonb NOT NULL DEFAULT '{{}}'::jsonb;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"TemplateFamilies\" jsonb NOT NULL DEFAULT '[]'::jsonb;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"RiskRules\" jsonb NOT NULL DEFAULT '{{}}'::jsonb;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"CustomerVisibleSummary\" varchar(2000) NOT NULL DEFAULT '';",
@@ -494,6 +551,24 @@ static async Task ApplySchemaPatches(NexusDbContext ctx)
         "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_CanvaTemplateAssignments_TenantId_OfficeId_CanvaTemplateId\" ON \"CanvaTemplateAssignments\" (\"TenantId\", \"OfficeId\", \"CanvaTemplateId\") WHERE \"IsDeleted\" = false;",
         "CREATE INDEX IF NOT EXISTS \"IX_CanvaTemplateAssignments_TenantId_OfficeId_Enabled_Priority\" ON \"CanvaTemplateAssignments\" (\"TenantId\", \"OfficeId\", \"Enabled\", \"Priority\");",
         "CREATE INDEX IF NOT EXISTS \"IX_CanvaTemplateAssignments_TenantId_OfficeId_Status_RiskTier\" ON \"CanvaTemplateAssignments\" (\"TenantId\", \"OfficeId\", \"Status\", \"RiskTier\");",
+        @"CREATE TABLE IF NOT EXISTS ""Notifications"" (
+            ""Id"" uuid PRIMARY KEY,
+            ""TenantId"" uuid NOT NULL,
+            ""UserId"" uuid NOT NULL REFERENCES ""Users""(""Id"") ON DELETE CASCADE,
+            ""Type"" integer NOT NULL,
+            ""Title"" varchar(255) NOT NULL DEFAULT '',
+            ""Message"" varchar(1000) NOT NULL DEFAULT '',
+            ""IsRead"" boolean NOT NULL DEFAULT false,
+            ""RelatedEntityId"" uuid NULL,
+            ""RelatedEntityType"" varchar(100) NOT NULL DEFAULT '',
+            ""IsDeleted"" boolean NOT NULL DEFAULT false,
+            ""DeletedAt"" timestamp with time zone NULL,
+            ""CreatedAt"" timestamp with time zone NOT NULL DEFAULT NOW(),
+            ""UpdatedAt"" timestamp with time zone NOT NULL DEFAULT NOW(),
+            ""CreatedBy"" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+            ""UpdatedBy"" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'
+        );",
+        "CREATE INDEX IF NOT EXISTS \"IX_Notifications_TenantId_UserId_IsRead\" ON \"Notifications\" (\"TenantId\", \"UserId\", \"IsRead\");",
     };
 
     foreach (var sql in patches)
@@ -508,10 +583,10 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
 
     var packagePricePatches = new[]
     {
-        new { Slug = "starter", MonthlyPrice = 4900m, YearlyPrice = 49000m },
-        new { Slug = "growth", MonthlyPrice = 9900m, YearlyPrice = 99000m },
-        new { Slug = "performance", MonthlyPrice = 19900m, YearlyPrice = 199000m },
-        new { Slug = "executive", MonthlyPrice = 39900m, YearlyPrice = 399000m }
+        new { Slug = "starter", MonthlyPrice = 2528m, YearlyPrice = 25280m },
+        new { Slug = "growth", MonthlyPrice = 4768m, YearlyPrice = 47680m },
+        new { Slug = "performance", MonthlyPrice = 7968m, YearlyPrice = 79680m },
+        new { Slug = "executive", MonthlyPrice = 15968m, YearlyPrice = 159680m }
     };
 
     foreach (var patch in packagePricePatches)

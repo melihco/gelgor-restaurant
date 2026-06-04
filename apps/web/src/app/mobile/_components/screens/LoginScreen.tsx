@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useTheme } from '../theme-context';
 import { useAuthStore } from '../auth-store';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, toUserFriendlyApiError } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
@@ -37,10 +37,15 @@ export function LoginScreen() {
         invalidateTenantBrandQueries(tenantId);
       }
       setUser(me);
-    } catch (e: any) {
-      setError(e?.message?.includes('401') || e?.message?.includes('403')
-        ? 'E-posta veya şifre hatalı.'
-        : 'Giriş yapılamadı. Lütfen tekrar deneyin.');
+    } catch (e: unknown) {
+      const friendly = toUserFriendlyApiError(e, 'Giriş yapılamadı.');
+      if (friendly.status === 401 || friendly.status === 403) {
+        setError('E-posta veya şifre hatalı.');
+      } else if (friendly.status === 0) {
+        setError('Sunucuya bağlanılamıyor. Nexus API (5050) çalışıyor mu?');
+      } else {
+        setError(friendly.detail || friendly.title);
+      }
     } finally {
       setLoading(false);
     }
@@ -166,7 +171,7 @@ export function LoginScreen() {
 
         {/* Demo fill */}
         <button
-          onClick={() => { setEmail('demo@smartagency.ai'); setPassword('demo2024'); }}
+          onClick={() => { setEmail('info@sunuevent.com'); setPassword('SmartAgency2026!'); }}
           style={{
             width: '100%', padding: '14px', borderRadius: 14,
             fontSize: 13, fontWeight: 500, cursor: 'pointer',

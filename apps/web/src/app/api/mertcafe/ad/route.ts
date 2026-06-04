@@ -5,10 +5,11 @@ import { generateStorageKey, getPresignedUrl, uploadToR2 } from '@/lib/r2-storag
 export const runtime = 'nodejs';
 export const maxDuration = 90;
 
-const BASE_URL = process.env.MERTCAFE_BASE_URL ?? 'https://web-production-02d278.up.railway.app';
-const API_KEY = process.env.MERTCAFE_API_KEY ?? '';
+import { loadMertcafeWorkspaceConfig, MERTCAFE_BASE_URL, parseMertcafeErrorBody } from '@/lib/mertcafe-api';
+import { assertTenantHasApiKey, requireMertcafeWorkspaceId } from '@/lib/mertcafe-tenant';
 
 type AdBody = {
+  workspaceId?: string;
   image_url?: string;
   headline?: string;
   body?: string;
@@ -60,7 +61,7 @@ async function normalizeImageForAd(url: string): Promise<string> {
 
 async function callAdWithRetry(payload: Record<string, unknown>): Promise<Response> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const res = await fetch(`${BASE_URL}/api/ad`, {
+    const res = await fetch(`${MERTCAFE_BASE_URL}/api/ad`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -69,12 +70,10 @@ async function callAdWithRetry(payload: Record<string, unknown>): Promise<Respon
     if (res.ok || ![502, 503, 504].includes(res.status) || attempt === 2) return res;
     await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
   }
-  return fetch(`${BASE_URL}/api/ad`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  return fetch(`${MERTCAFE_BASE_URL}/api/ad`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!API_KEY) return NextResponse.json({ error: 'MERTCAFE_API_KEY is not configured' }, { status: 500 });
-
   const body = (await request.json().catch(() => null)) as AdBody | null;
   if (!body?.image_url) return NextResponse.json({ error: 'image_url is required' }, { status: 400 });
   if (!body?.headline?.trim()) return NextResponse.json({ error: 'headline is required' }, { status: 400 });
@@ -86,8 +85,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   imageUrl = toPublicUrl(await normalizeImageForAd(imageUrl), origin);
   if (!imageUrl) return NextResponse.json({ error: 'Image normalization failed' }, { status: 400 });
 
+  const wsCheck = requireMertcafeWorkspaceId(body.workspaceId);
+  if (!wsCheck.ok) {
+    return NextResponse.json({ error: wsCheck.error, code: wsCheck.code }, { status: 400 });
+  }
+  const tenant = await loadMertcafeWorkspaceConfig(wsCheck.workspaceId);
+  const apiReady = assertTenantHasApiKey(tenant);
+  if (!apiReady.ok) {
+    return NextResponse.json({ error: apiReady.error, code: apiReady.code }, { status: 422 });
+  }
+
   const payload = {
-    api_key: API_KEY,
+    api_key: tenant.apiKey,
     image_url: imageUrl,
     headline: body.headline.trim(),
     body: body.body.trim(),

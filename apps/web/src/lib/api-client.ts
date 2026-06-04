@@ -19,6 +19,8 @@ import {
   PythonBrandAnalyzeResponse,
   TaskRecommendationsResponse,
   IndustryPlaybookDto,
+  TenantCapabilityDefinitionDto,
+  TenantOperatingProfileDto,
   TenantMediaAsset,
   UpsertTenantMediaAssetRequest,
   OfficeBrandProfile,
@@ -67,6 +69,18 @@ export interface UserFriendlyApiError {
   detail: string;
   hint?: string;
   status?: number;
+}
+
+export interface GetArtifactsParams {
+  agentRunId?: string;
+  status?: string;
+  contentType?: string;
+  /** Max rows (newest first). Omit for full tenant list (admin). */
+  limit?: number;
+  /** ISO-8601 — only artifacts created at or after this instant. */
+  since?: string;
+  /** Filter metadata JSON containing this mission UUID. */
+  missionId?: string;
 }
 
 export function toUserFriendlyApiError(error: unknown, fallback = 'İşlem tamamlanamadı.'): UserFriendlyApiError {
@@ -145,27 +159,42 @@ function normalizeApprovalModeForApi(
   return 1;
 }
 
+type ApiRequestOptions = RequestInit & { timeoutMs?: number };
+
 class ApiClient {
   private async request<T>(
     endpoint: string,
-    options?: RequestInit
+    options?: ApiRequestOptions
   ): Promise<T> {
     const url = getApiFetchUrl(endpoint);
+    const { timeoutMs, ...fetchOptions } = options ?? {};
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
 
     let response: Response;
     try {
       response = await fetch(url, {
       credentials: 'include',
-      ...options,
+      ...fetchOptions,
+      signal: controller?.signal ?? fetchOptions.signal,
       headers: {
         'Content-Type': 'application/json',
         ...getRequestContextHeaders(),
-        ...options?.headers,
+        ...fetchOptions.headers,
       },
     });
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Failed to fetch';
+      const aborted = cause instanceof DOMException && cause.name === 'AbortError';
+      const message = aborted
+        ? 'Request timed out'
+        : cause instanceof Error
+          ? cause.message
+          : 'Failed to fetch';
       throw new ApiRequestError(0, 'Network Error', JSON.stringify({ error: message }));
+    } finally {
+      if (timer) clearTimeout(timer);
     }
 
     if (!response.ok) {
@@ -294,11 +323,14 @@ class ApiClient {
   }
 
   // Artifacts & Review
-  async getArtifacts(params?: { agentRunId?: string; status?: string; contentType?: string }): Promise<OutputArtifact[]> {
+  async getArtifacts(params?: GetArtifactsParams): Promise<OutputArtifact[]> {
     const qs = new URLSearchParams();
     if (params?.agentRunId) qs.set('agentRunId', params.agentRunId);
     if (params?.status) qs.set('status', params.status);
     if (params?.contentType) qs.set('contentType', params.contentType);
+    if (params?.limit != null && params.limit > 0) qs.set('limit', String(params.limit));
+    if (params?.since) qs.set('since', params.since);
+    if (params?.missionId) qs.set('missionId', params.missionId);
     const endpoint = `/api/artifacts${qs.toString() ? `?${qs.toString()}` : ''}`;
     try {
       const artifacts = await this.request<any[]>(endpoint);
@@ -438,6 +470,31 @@ class ApiClient {
     });
   }
 
+  /** PATCH Remotion MP4 onto an existing production bundle artifact (no duplicate card). */
+  async attachVideoToArtifact(
+    artifactId: string,
+    videoUrl: string,
+    posterUrl?: string,
+    extras?: {
+      compositionId?: string;
+      grafikerScore?: number;
+      grafikerPass?: boolean;
+      renderMs?: number;
+    },
+  ): Promise<{ id: string; contentUrl: string; bundleStatus?: string }> {
+    return this.request(`/api/artifacts/${artifactId}/attach-video`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        videoUrl,
+        posterUrl: posterUrl ?? undefined,
+        compositionId: extras?.compositionId,
+        grafikerScore: extras?.grafikerScore,
+        grafikerPass: extras?.grafikerPass,
+        renderMs: extras?.renderMs,
+      }),
+    });
+  }
+
   // ── Meta Ads ───────────────────────────────────────────────────────────
   async getMetaAdAccounts(workspaceId: string): Promise<import('@/types/meta-ads.types').MetaAdAccount[]> {
     const res = await fetch(`/api/meta/ad-accounts?workspaceId=${encodeURIComponent(workspaceId)}`);
@@ -472,25 +529,111 @@ class ApiClient {
   }
 
   // ── Mertcafe Ads ───────────────────────────────────────────────────────
-  async getMertcafeStatus(): Promise<import('@/types/mertcafe-ads.types').MertcafeStatus> {
-    const res = await fetch('/api/mertcafe/status');
+  async getMertcafeStatus(workspaceId: string): Promise<import('@/types/mertcafe-ads.types').MertcafeStatus> {
+    const res = await fetch(`/api/mertcafe/status?workspaceId=${encodeURIComponent(workspaceId)}`);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || `Mertcafe status failed (${res.status})`);
     return data as import('@/types/mertcafe-ads.types').MertcafeStatus;
+  }
+
+  async getMertcafeInstagramConnectUrl(
+    workspaceId: string,
+  ): Promise<import('@/types/mertcafe-ads.types').MertcafeInstagramConnect> {
+    const res = await fetch(`/api/mertcafe/connect-instagram?workspaceId=${encodeURIComponent(workspaceId)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Instagram connect failed (${res.status})`);
+    return data as import('@/types/mertcafe-ads.types').MertcafeInstagramConnect;
+  }
+
+  async syncMertcafeInstagram(workspaceId: string): Promise<{
+    ok: boolean;
+    instagram_connected?: boolean;
+    oauth_account_id?: string | null;
+    instagram_username?: string | null;
+    message?: string;
+    error?: string;
+  }> {
+    const res = await fetch('/api/mertcafe/sync-instagram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || data?.message || `Sync failed (${res.status})`);
+    return data;
+  }
+
+  async provisionMertcafeTenant(
+    workspaceId: string,
+    options?: { force?: boolean },
+  ): Promise<import('@/types/mertcafe-ads.types').MertcafeProvisionResult> {
+    const res = await fetch('/api/mertcafe/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, force: options?.force === true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Mertcafe provision failed (${res.status})`);
+    return data as import('@/types/mertcafe-ads.types').MertcafeProvisionResult;
+  }
+
+  async setMertcafeActiveAccount(
+    params: import('@/types/mertcafe-ads.types').MertcafeSetActiveAccountParams,
+  ): Promise<{ ok: boolean; instagram_account_id: string; theme?: Record<string, unknown> | null }> {
+    const res = await fetch('/api/mertcafe/set-active-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspaceId: params.workspaceId,
+        accountId: params.accountId,
+        label: params.label,
+        remember: params.remember,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Account switch failed (${res.status})`);
+    return data as { ok: boolean; instagram_account_id: string; theme?: Record<string, unknown> | null };
+  }
+
+  async syncMertcafeBusinessSetup(
+    params: import('@/types/mertcafe-ads.types').MertcafeBusinessSetupParams,
+  ): Promise<unknown> {
+    const res = await fetch('/api/mertcafe/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspaceId: params.workspaceId,
+        business_name: params.businessName,
+        menu: params.menu,
+        hours: params.hours,
+        address: params.address,
+        phone: params.phone,
+        price_range: params.priceRange,
+        notes: params.notes,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Mertcafe setup failed (${res.status})`);
+    return data;
   }
 
   async connectMertcafeMetaAds(params: import('@/types/mertcafe-ads.types').MertcafeConnectMetaAdsParams): Promise<unknown> {
     const res = await fetch('/api/mertcafe/connect-meta-ads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ads_account_id: params.adsAccountId }),
+      body: JSON.stringify({
+        ads_account_id: params.adsAccountId,
+        workspaceId: params.workspaceId,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || `Meta Ads connect failed (${res.status})`);
     return data;
   }
 
-  async boostMertcafePost(params: import('@/types/mertcafe-ads.types').MertcafeBoostParams): Promise<unknown> {
+  async boostMertcafePost(
+    params: import('@/types/mertcafe-ads.types').MertcafeBoostParams & { workspaceId?: string },
+  ): Promise<unknown> {
     const res = await fetch('/api/mertcafe/boost', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -499,6 +642,7 @@ class ApiClient {
         goal: params.goal,
         budget: params.budget,
         duration_days: params.durationDays,
+        workspaceId: params.workspaceId,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -506,11 +650,14 @@ class ApiClient {
     return data;
   }
 
-  async createMertcafeAd(params: import('@/types/mertcafe-ads.types').MertcafeAdCreateParams): Promise<unknown> {
+  async createMertcafeAd(
+    params: import('@/types/mertcafe-ads.types').MertcafeAdCreateParams & { workspaceId?: string },
+  ): Promise<unknown> {
     const res = await fetch('/api/mertcafe/ad', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        workspaceId: params.workspaceId,
         image_url: params.imageUrl,
         headline: params.headline,
         body: params.body,
@@ -745,10 +892,14 @@ class ApiClient {
   async confirmBrandConstitution(workspaceId: string): Promise<{ brand_constitution_confirmed_at: string }> {
     const res = await fetch(`/api/brand-context/${workspaceId}/confirm-constitution`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': workspaceId },
+      body: '{}',
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || `Confirmation failed (${res.status})`);
+      throw new Error(
+        err?.message || err?.error || err?.detail || `Confirmation failed (${res.status})`,
+      );
     }
     return res.json();
   }
@@ -777,6 +928,34 @@ class ApiClient {
 
   async getIndustryPlaybooks(): Promise<IndustryPlaybookDto[]> {
     return this.request('/api/setup/industry-playbooks');
+  }
+
+  async getTenantCapabilities(industry?: string): Promise<TenantCapabilityDefinitionDto[]> {
+    const qs = industry ? `?industry=${encodeURIComponent(industry)}` : '';
+    return this.request(`/api/setup/tenant-capabilities${qs}`);
+  }
+
+  async getOperatingProfile(): Promise<TenantOperatingProfileDto> {
+    return this.request('/api/setup/operating-profile');
+  }
+
+  async evaluateCapability(capabilityId: string): Promise<{ decision: string; capabilityId: string; reasons: string[] }> {
+    return this.request('/api/setup/evaluate-capability', {
+      method: 'POST',
+      body: JSON.stringify({ capabilityId }),
+    });
+  }
+
+  async evaluateGalleryAsset(assetType: string): Promise<{
+    decision: string;
+    assetType: string;
+    reasons: string[];
+    forceUnapproved: boolean;
+  }> {
+    return this.request('/api/setup/evaluate-gallery-asset', {
+      method: 'POST',
+      body: JSON.stringify({ assetType }),
+    });
   }
 
   async getBrandStyleScore(): Promise<{ tenantId: string; score: number; label: string }> {
@@ -840,11 +1019,13 @@ class ApiClient {
     });
   }
 
-  // ── Packages ──
+  // ── Packages (legacy — desktop SetupWizard/BillingPage only; mobile uses token_wallet) ──
+  /** @deprecated Mobile billing uses token_wallet. Only used by desktop BillingPage / SetupWizard. */
   async getPackages(): Promise<PackageDefinition[]> {
     return this.request('/api/packages');
   }
 
+  /** @deprecated Mobile billing uses token_wallet. */
   async getSubscription(): Promise<TenantSubscription | null> {
     try {
       return await this.request('/api/packages/subscription');
@@ -853,10 +1034,12 @@ class ApiClient {
     }
   }
 
+  /** @deprecated Mobile billing uses token_wallet. */
   async getUsageQuota(): Promise<UsageQuotaSummary> {
     return this.request('/api/packages/usage');
   }
 
+  /** @deprecated Mobile billing uses token_wallet. Only used by desktop PackageSelector. */
   async selectPackage(packageId: string): Promise<TenantSubscription> {
     return this.request('/api/packages/subscribe', {
       method: 'POST',
@@ -1013,13 +1196,14 @@ class ApiClient {
   }
 
   async getCurrentUserSecurity(): Promise<CurrentUserSecurity> {
-    return this.request('/api/security/me');
+    return this.request('/api/security/me', { timeoutMs: 20_000 });
   }
 
   async login(data: { email: string; password: string }): Promise<AuthSession> {
     return this.request('/api/security/login', {
       method: 'POST',
       body: JSON.stringify(data),
+      timeoutMs: 20_000,
     });
   }
 
@@ -1027,12 +1211,13 @@ class ApiClient {
     return this.request('/api/security/register', {
       method: 'POST',
       body: JSON.stringify(data),
+      timeoutMs: 20_000,
     });
   }
 
   async logout(): Promise<{ status: string }> {
     try {
-      return await this.request('/api/security/logout', { method: 'POST' });
+      return await this.request('/api/security/logout', { method: 'POST', timeoutMs: 20_000 });
     } finally {
       setSessionToken(null);
     }
@@ -1065,6 +1250,21 @@ class ApiClient {
 
   async getOperationsSummary(): Promise<OperationsSummary> {
     return this.request('/api/operations/summary');
+  }
+
+  /** Agent stats derived from Python mission task nodes (for agents run via the mission pipeline). */
+  async getMissionAgentStats(workspaceId: string): Promise<{
+    workspace_id: string;
+    agent_stats: Array<{
+      agent_role: string;
+      total: number;
+      completed: number;
+      failed: number;
+      last_run_at: string | null;
+      task_types: string[];
+    }>;
+  }> {
+    return this.request(`/api/missions-proxy/${workspaceId}/agent-stats`);
   }
 
   /** Takılı (InProgress) ajan çalıştırmalarını toplu iptal — API/Crew kesintisi sonrası zombi kayıtlar. */
@@ -1171,8 +1371,15 @@ class ApiClient {
     return res.json();
   }
 
-  async proposeMissions(workspaceId: string): Promise<ProposeMissionsResponse> {
-    const res = await fetch(`/api/missions/${workspaceId}/propose`, { method: 'POST' });
+  async proposeMissions(
+    workspaceId: string,
+    contextSignals?: string,
+  ): Promise<ProposeMissionsResponse> {
+    const res = await fetch(`/api/missions/${workspaceId}/propose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(contextSignals ? { context_signals: contextSignals } : {}),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       const msg = err?.detail ?? err?.error ?? `Propose failed (${res.status})`;
@@ -1235,8 +1442,17 @@ class ApiClient {
     return res.json();
   }
 
-  async getWorkspaceUsageCost(workspaceId: string, days = 7): Promise<WorkspaceUsageSummary> {
-    const res = await fetch(`/api/usage-cost/${workspaceId}?days=${days}`);
+  async getWorkspaceUsageCost(
+    workspaceId: string,
+    days = 7,
+    packageSlug?: string | null,
+  ): Promise<WorkspaceUsageSummary> {
+    const qs = new URLSearchParams({ days: String(days) });
+    if (packageSlug) qs.set('package_slug', packageSlug);
+    const res = await fetch(`/api/usage-cost/${workspaceId}?${qs.toString()}`);
+    if (res.status === 503) {
+      return emptyWorkspaceUsageSummary(workspaceId, days, true);
+    }
     if (!res.ok) throw new Error(`Usage cost failed (${res.status})`);
     return res.json();
   }
@@ -1297,6 +1513,8 @@ export interface TokenWalletSummary {
   profit_margin_percent: number;
   target_margin_percent: number;
   effective_margin_percent: number;
+  cost_profit_ratio?: number | null;
+  period_cost_profit_ratio?: number | null;
   token_usd_value: number;
   try_per_token: number;
   monthly_grant_tokens: number;
@@ -1315,6 +1533,12 @@ export interface TokenWalletSummary {
   category_labels: Record<string, string>;
   period_days: number;
   note_tr: string;
+  plan_monthly_outputs?: {
+    missions: number;
+    social_content: number;
+    gallery_analysis: number;
+    reels: number;
+  } | null;
 }
 
 export interface WorkspaceUsageSummary {
@@ -1336,6 +1560,29 @@ export interface WorkspaceUsageSummary {
   }[];
   currency_note?: string;
   token_wallet?: TokenWalletSummary;
+}
+
+export function emptyWorkspaceUsageSummary(
+  workspaceId: string,
+  days = 7,
+  crewUnavailable = false,
+): WorkspaceUsageSummary {
+  return {
+    workspace_id: workspaceId,
+    daily_budget_usd: 5,
+    spent_today_usd: 0,
+    remaining_today_usd: 5,
+    week_cost_usd: 0,
+    week_artifact_count: 0,
+    week_mission_count: 0,
+    week_days: days,
+    category_totals: {},
+    daily_series: [],
+    currency_note: crewUnavailable
+      ? 'Maliyet servisi geçici olarak kapalı. Python crew backend çalışıyor mu? (./scripts/start-crew-backend.sh)'
+      : undefined,
+    ...(crewUnavailable ? { crew_backend_unavailable: true as const } : {}),
+  };
 }
 
 export const apiClient = new ApiClient();

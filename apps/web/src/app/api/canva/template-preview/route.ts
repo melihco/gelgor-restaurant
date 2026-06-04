@@ -10,6 +10,9 @@ import { categorizeRendererFailure, recordRendererMetric } from '@/lib/renderer-
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
+  const canvaBlocked = (await import('@/lib/canva-route-guard')).assertCanvaRouteEnabled();
+  if (canvaBlocked) return canvaBlocked;
+
   const startedAt = Date.now();
 
   try {

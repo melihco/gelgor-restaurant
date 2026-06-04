@@ -38,6 +38,8 @@ public class CompanyProfileConfiguration : IEntityTypeConfiguration<CompanyProfi
         builder.Property(e => e.BrandAnalyzedAt);
         builder.Property(e => e.PlatformProfiles).HasColumnType("jsonb");
         builder.Property(e => e.ContentNeeds).HasColumnType("jsonb");
+        builder.Property(e => e.OperatingCapabilities).HasColumnType("jsonb");
+        builder.Property(e => e.GalleryPolicy).HasColumnType("jsonb");
         builder.Property(e => e.TemplateFamilies).HasColumnType("jsonb");
         builder.Property(e => e.RiskRules).HasColumnType("jsonb");
         builder.Property(e => e.CustomerVisibleSummary).HasMaxLength(2000);

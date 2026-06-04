@@ -35,6 +35,21 @@ public record SubscriptionAgentDto(
 
 public record SelectPackageRequest(Guid PackageId);
 
+public record PlanMonthlyOutputsDto(
+    int Missions,
+    int SocialContent,
+    int GalleryAnalysis,
+    int Reels);
+
+public record PlanUnitEconomicsDto(
+    decimal MonthlyPriceTry,
+    decimal RevenueUsdEstimate,
+    decimal MonthCostUsd,
+    decimal MonthBilledUsd,
+    decimal? CostProfitRatio,
+    decimal EffectiveTokenMarginPercent,
+    decimal TargetTokenMarginPercent);
+
 public record UsageQuotaSummaryDto(
     Guid? SubscriptionId,
     string PackageName,
@@ -45,7 +60,9 @@ public record UsageQuotaSummaryDto(
     UsageQuotaMetricDto AgentRuns,
     UsageQuotaMetricDto ProviderActions,
     UsageQuotaMetricDto LiveProviderActions,
-    UsageQuotaMetricDto Tokens);
+    UsageQuotaMetricDto Tokens,
+    PlanMonthlyOutputsDto? MonthlyOutputs,
+    PlanUnitEconomicsDto? UnitEconomics);
 
 public record UsageQuotaMetricDto(
     int Used,

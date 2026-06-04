@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     # CrewAI konsol çıktısı; sıralı görevlerde ara adımlar "In Progress" gibi görünür — prod’da false önerilir.
     crew_verbose: bool = False
     # Hard cap for a single internal orchestration call (Python side); keep slightly below .NET HttpClient timeout.
-    crew_execution_timeout_seconds: int = 270
+    crew_execution_timeout_seconds: int = 420  # 7 min — content_ideation with quality iterations can take 5-6 min
     # Content crew: lower max_iter + fewer tools on ideation reduces LLM round-trips (faster, more predictable).
     # Quality iterations: 1 = standard (Starter/Pro), 2 = high-quality (Business/Enterprise)
     # 2 iterations = ~40% better output, ~2x LLM cost for content_ideation
@@ -164,8 +164,10 @@ class Settings(BaseSettings):
     # ── Auto-content (fully autonomous daily content loop) ─
     auto_content_enabled: bool = True
     auto_content_hour: int = 9       # UTC (TR 12:00) — kept for env override; scheduler now runs every 6h
-    auto_content_max_daily: int = 3  # max auto-missions per workspace per day
-    workspace_daily_budget_usd: float = 1.0  # max estimated API spend per workspace per day
+    auto_content_max_daily: int = 12  # max auto-missions per workspace per day (pilot testing)
+    workspace_daily_budget_usd: float = 50.0  # full-quality runs (Runway + Remotion + GPT enhance)
+    # Pilot: AUTO_PRODUCE_BYPASS_LIMITS=true skips daily USD cap in usage_cost_service
+    auto_produce_bypass_limits: bool = False
 
     # ── Token billing (SA Kredi) ─────────────────────────
     # Customer price = API cost × TOKEN_MARKUP_MULTIPLIER (default 10×)
@@ -185,6 +187,17 @@ class Settings(BaseSettings):
 
     # ── CORS ─────────────────────────────────────────────
     cors_origins: str = "http://localhost:3000"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: object) -> str:
+        """Railway Postgres uses postgres:// — SQLAlchemy async needs postgresql+asyncpg://."""
+        url = str(v or "").strip()
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        if url.startswith("postgresql://") and "+asyncpg" not in url:
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
 
     @field_validator("cors_origins", mode="before")
     @classmethod

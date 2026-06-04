@@ -25,8 +25,15 @@ const nextConfig: NextConfig = {
      */
     proxyTimeout: 360_000,
   },
-  // Satori (canvas export) WASM + native binaries must not be bundled
-  serverExternalPackages: ['@resvg/resvg-js', 'satori'],
+  // WASM, native binaries and Remotion renderer must not be bundled by webpack
+  serverExternalPackages: [
+    '@resvg/resvg-js',
+    'satori',
+    // Remotion server-side renderer: uses native Chrome/Puppeteer binaries
+    '@remotion/bundler',
+    '@remotion/renderer',
+    'remotion',
+  ],
   webpack: (config) => {
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
     config.module.rules.push({
@@ -58,6 +65,10 @@ const nextConfig: NextConfig = {
         {
           source: '/nexus-signalr/:path*',
           destination: `${normalizedBackend}/:path*`,
+        },
+        {
+          source: '/nexus-health/:path*',
+          destination: `${normalizedBackend}/health/:path*`,
         },
       ],
     };

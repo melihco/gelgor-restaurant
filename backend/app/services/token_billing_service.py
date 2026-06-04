@@ -37,6 +37,14 @@ GRANT_BY_PACKAGE: dict[str, int] = {
     "collective": 150_000,
 }
 
+# Mirrors PackagePlanCatalog.cs — monthly output promises for docs/UI cross-check
+OUTPUTS_BY_PACKAGE: dict[str, dict[str, int]] = {
+    "starter": {"missions": 12, "social_content": 84, "gallery_analysis": 40, "reels": 0},
+    "growth": {"missions": 28, "social_content": 196, "gallery_analysis": 120, "reels": 4},
+    "performance": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
+    "executive": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1},
+}
+
 CATEGORY_LABELS_TR: dict[str, str] = {
     "auto_produce": "İçerik üretimi",
     "mission_propose": "Mission önerisi",
@@ -83,6 +91,14 @@ def effective_margin_percent(cost_usd: float, billed_usd: float) -> float:
     if billed_usd <= 0:
         return 0.0
     return round((billed_usd - cost_usd) / billed_usd * 100, 1)
+
+
+def cost_profit_ratio(cost_usd: float, billed_usd: float) -> float | None:
+    """Maliyet / kar (USD). Kar = faturalanan − API maliyeti."""
+    profit = billed_usd - cost_usd
+    if profit <= 0.001:
+        return None
+    return round(cost_usd / profit, 2)
 
 
 def resolve_monthly_grant(package_slug: str | None = None) -> int:
@@ -153,8 +169,12 @@ async def build_token_wallet_summary(
             cat_tokens[cat] = cost_usd_to_tokens(usd)
 
     eff_margin = effective_margin_percent(month_cost, month_billed)
+    cp_ratio = cost_profit_ratio(month_cost, month_billed)
+    period_cp_ratio = cost_profit_ratio(period_cost_usd, period_billed) if period_cost_usd > 0 else None
 
     period_tokens = sum(cost_usd_to_tokens(float(v)) for v in (category_totals or {}).values()) if category_totals else cost_usd_to_tokens(period_cost_usd)
+
+    plan_outputs = OUTPUTS_BY_PACKAGE.get((package_slug or "").strip().lower())
 
     return {
         **settings,
@@ -171,6 +191,9 @@ async def build_token_wallet_summary(
         "period_billed_try": tokens_to_try(period_tokens),
         "effective_margin_percent": eff_margin,
         "target_margin_percent": s.token_profit_margin_percent,
+        "cost_profit_ratio": cp_ratio,
+        "period_cost_profit_ratio": period_cp_ratio,
+        "plan_monthly_outputs": plan_outputs,
         "category_tokens": cat_tokens,
         "category_labels": CATEGORY_LABELS_TR,
         "period_days": period_days,
