@@ -24,31 +24,19 @@ static string OrchestrationApiKey(IConfiguration config) =>
     ?? Environment.GetEnvironmentVariable("INTERNAL_API_KEY")
     ?? "smartagency-internal-dev-key";
 
-static string? ResolvePostgresConnection(IConfiguration config)
+static string? TryParsePostgresUri(string url)
 {
-    var fromConfig = config.GetConnectionString("DefaultConnection");
-    if (!string.IsNullOrWhiteSpace(fromConfig)
-        && !fromConfig.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
-        && !fromConfig.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
-    {
-        return fromConfig;
-    }
-
-    var url = Environment.GetEnvironmentVariable("DATABASE_URL")
-        ?? config["DATABASE_URL"]
-        ?? fromConfig;
-    if (string.IsNullOrWhiteSpace(url)) return null;
     if (!url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
         && !url.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
     {
-        return url;
+        return null;
     }
 
     try
     {
         var uri = new Uri(url);
         var userInfo = uri.UserInfo.Split(':', 2);
-        return new NpgsqlConnectionStringBuilder
+        var builder = new NpgsqlConnectionStringBuilder
         {
             Host = uri.Host,
             Port = uri.Port > 0 ? uri.Port : 5432,
@@ -56,12 +44,67 @@ static string? ResolvePostgresConnection(IConfiguration config)
             Username = Uri.UnescapeDataString(userInfo[0]),
             Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
             SslMode = SslMode.Require,
-        }.ConnectionString;
+        };
+        var query = uri.Query.TrimStart('?');
+        if (!string.IsNullOrEmpty(query))
+        {
+            foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = part.Split('=', 2);
+                if (kv.Length != 2) continue;
+                if (kv[0].Equals("sslmode", StringComparison.OrdinalIgnoreCase)
+                    && Enum.TryParse<SslMode>(kv[1], true, out var mode))
+                {
+                    builder.SslMode = mode;
+                }
+            }
+        }
+        return builder.ConnectionString;
     }
     catch
     {
         return null;
     }
+}
+
+static bool IsLocalDevConnectionString(string? cs) =>
+    !string.IsNullOrWhiteSpace(cs)
+    && (cs.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+        || cs.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase));
+
+static string? ResolvePostgresConnection(IConfiguration config)
+{
+    // Render/Railway: DATABASE_URL must win over appsettings.json localhost default.
+    var candidates = new[]
+    {
+        Environment.GetEnvironmentVariable("DATABASE_URL"),
+        config["DATABASE_URL"],
+        config.GetConnectionString("DefaultConnection"),
+    };
+
+    foreach (var raw in candidates)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) continue;
+
+        var fromUri = TryParsePostgresUri(raw);
+        if (!string.IsNullOrWhiteSpace(fromUri)) return fromUri;
+
+        if (!raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
+            && !raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsLocalDevConnectionString(raw)
+                && string.Equals(
+                    Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+                    "Production",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            return raw;
+        }
+    }
+
+    return null;
 }
 
 static int ClampOrchestrationTimeoutSeconds(IConfiguration config, int fallback = 120)
@@ -77,6 +120,16 @@ static int ClampActionExecutionTimeoutSeconds(IConfiguration config, int fallbac
 }
 
 var connectionString = ResolvePostgresConnection(configuration);
+
+if (string.IsNullOrEmpty(connectionString)
+    && string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+        "Production",
+        StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        "DATABASE_URL is missing or invalid in Production. Link nexus-db to smartagency-api in Render (Blueprint env DATABASE_URL).");
+}
 
 if (!string.IsNullOrEmpty(connectionString))
 {
@@ -216,6 +269,21 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+
+if (!string.IsNullOrEmpty(connectionString))
+{
+    try
+    {
+        var csb = new NpgsqlConnectionStringBuilder(connectionString);
+        app.Logger.LogInformation(
+            "Postgres: Host={Host} Port={Port} Database={Database} (DATABASE_URL öncelikli)",
+            csb.Host, csb.Port, csb.Database);
+    }
+    catch
+    {
+        app.Logger.LogInformation("Postgres: connection string configured (host parse skipped).");
+    }
+}
 
 app.Logger.LogInformation(
     "Orchestration: UseDevMock={UseDevMock} (Development={IsDev}). {Detail}",

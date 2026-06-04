@@ -30,10 +30,12 @@
    ```
    Zorunlu publish alanları: `META_APP_*`, `MERTCAFE_*`, `R2_*`, `OPENAI_API_KEY`, `FAL_API_KEY`, `RUNWAY_API_SECRET`
 6. Public URL'ler `RENDER_EXTERNAL_URL` ile otomatik bağlanır (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, CORS).
-7. İlk deploy bitince:
+7. **smartagency-api** → Environment’da `DATABASE_URL` olduğunu doğrula (nexus-db bağlantısı). Yoksa Blueprint Sync veya manuel ekle.
+8. İlk deploy bitince:
    ```bash
    curl https://<api-host>/health/ready
    ```
+   Log’da `Postgres: Host=dpg-...` görünmeli — `127.0.0.1` ise `DATABASE_URL` eksik/yanlış.
 
 ## Python migration (ilk sefer)
 
