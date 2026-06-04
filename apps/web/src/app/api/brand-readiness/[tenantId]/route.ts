@@ -93,8 +93,11 @@ export async function GET(
 
   const themeData = themeRes.ok ? themeRes.data : null;
   const themeObj = themeData?.theme as Record<string, unknown> | undefined;
-  const hasBrandTheme = isNonEmptyObject(themeObj)
-    && (isNonEmptyObject(themeObj.palette) || isNonEmptyObject(themeObj.typography));
+  const hasBrandTheme = Boolean(
+    themeObj
+      && isNonEmptyObject(themeObj)
+      && (isNonEmptyObject(themeObj.palette) || isNonEmptyObject(themeObj.typography)),
+  );
   const library = parseBrandTemplateLibraryFromTheme(themeObj);
   const hasTemplateLibrary = Boolean(library?.locked && library.slots.length === 5);
 

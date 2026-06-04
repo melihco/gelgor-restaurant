@@ -268,11 +268,6 @@ async function stitchClipsWithFFmpeg(
 
     const key = generateStorageKey(brandName, 'reel-multi', 'mp4');
     // Read file and upload via buffer
-    const { readFile } = await import('fs/promises');
-    const videoBuf = await readFile(outputPath);
-    const { default: FormData } = await import('form-data');
-    void FormData; // unused — use uploadImageFromUrl pattern
-
     // Use uploadImageFromUrl with a file:// protocol doesn't work — write temp workaround
     const r2Result = await uploadImageFromUrl(
       `file://${outputPath}`, // local file protocol
