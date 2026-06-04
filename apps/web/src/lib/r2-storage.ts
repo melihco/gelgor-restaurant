@@ -109,7 +109,7 @@ export async function uploadImageFromUrl(
  */
 export function generateStorageKey(
   tenantId: string,
-  type: 'image' | 'video' | 'reel',
+  type: 'image' | 'video' | 'reel' | 'event' | 'reel-multi',
   ext: string = 'jpg',
 ): string {
   const date = new Date().toISOString().slice(0, 10);
