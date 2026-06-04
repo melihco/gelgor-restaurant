@@ -1057,7 +1057,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         quality: 'high',
       } as Parameters<typeof openaiForOverlay.images.edit>[0]);
 
-      const b64 = editResponse.data?.[0]?.b64_json;
+      const editedOverlay = editResponse as { data?: Array<{ b64_json?: string }> };
+      const b64 = editedOverlay.data?.[0]?.b64_json;
       if (!b64) throw new Error('No image data returned from GPT-image-1');
 
       const outBuffer = Buffer.from(b64, 'base64');
