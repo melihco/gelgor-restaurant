@@ -55,8 +55,9 @@ async function resolveToPublicR2Url(url: string): Promise<string> {
     const { getPresignedUrl } = await import('@/lib/r2-storage');
     // Extract the key from ?key=... or /api/media?key=...
     const keyMatch = url.match(/[?&]key=([^&]+)/);
-    if (!keyMatch) return url;
-    const key = decodeURIComponent(keyMatch[1]);
+    const rawKey = keyMatch?.[1];
+    if (!rawKey) return url;
+    const key = decodeURIComponent(rawKey);
     const presigned = await getPresignedUrl(key, 3 * 3600); // 3 hours
     console.log('[mertcafe/post] Resolved R2 key to presigned URL:', key.slice(0, 60));
     return presigned;
@@ -106,11 +107,12 @@ async function resolveVideoUrlForPublish(
 
   // Bare R2 storage key — presign before adding origin (Instagram needs public HTTPS)
   const keyMatch = trimmed.match(R2_KEY_BARE) ?? trimmed.match(R2_KEY_NO_SLASH);
-  if (keyMatch) {
+  const storageKey = keyMatch?.[1];
+  if (storageKey) {
     try {
       const { getPresignedUrl } = await import('@/lib/r2-storage');
-      const presigned = await getPresignedUrl(keyMatch[1], 3 * 3600);
-      console.log('[mertcafe/post] Presigned R2 key path:', keyMatch[1].slice(0, 60));
+      const presigned = await getPresignedUrl(storageKey, 3 * 3600);
+      console.log('[mertcafe/post] Presigned R2 key path:', storageKey.slice(0, 60));
       return presigned;
     } catch (err) {
       console.warn('[mertcafe/post] R2 key path presign failed:', err);

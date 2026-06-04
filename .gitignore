@@ -15,6 +15,7 @@ build/
 .env.local
 .env.*.local
 render.env.publish.*.local
+render-blueprint-fill.txt
 .env.development
 .env.production
 *.pem
