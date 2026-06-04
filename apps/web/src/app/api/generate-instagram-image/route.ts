@@ -124,7 +124,7 @@ type InstagramImageInput = {
   };
 };
 
-type ImageProvider = 'flux' | 'openai';
+type ImageProvider = 'flux' | 'openai' | 'original';
 
 // Instagram/Facebook CDN URLs expire in ~24h — never send these to image APIs
 const EXPIRING_CDN = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
