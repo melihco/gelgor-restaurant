@@ -54,6 +54,17 @@ const nextConfig: NextConfig = {
     },
   },
 
+  /** Ana sayfa → /mobile (query string korunur). Masaüstü ofis SPA: /desk */
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: '/mobile',
+        permanent: false,
+      },
+    ];
+  },
+
   /** `beforeFiles` — yoksa App Router `/api/nexus-backend/*` için sayfa arayıp HTML 404 üretiyor */
   async rewrites() {
     return {
