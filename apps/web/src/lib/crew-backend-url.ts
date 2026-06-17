@@ -4,5 +4,6 @@
  */
 export function getCrewBackendBaseUrl(): string {
   const raw = process.env.CREW_BACKEND_URL?.trim() || 'http://127.0.0.1:8000';
-  return raw.replace(/\/$/, '').replace('://localhost', '://127.0.0.1');
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  return withScheme.replace(/\/$/, '').replace('://localhost', '://127.0.0.1');
 }

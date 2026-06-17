@@ -65,7 +65,7 @@ jobs:
       - name: Build API image
         run: docker build -f apps/api/Dockerfile .
       - name: Build web image
-        run: docker build -f apps/web/Dockerfile apps/web
+        run: docker build -f apps/web/Dockerfile .
       - name: Build backend image
         working-directory: backend
         run: docker build .

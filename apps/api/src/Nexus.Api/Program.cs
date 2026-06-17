@@ -119,6 +119,17 @@ static int ClampActionExecutionTimeoutSeconds(IConfiguration config, int fallbac
     return Math.Clamp(t, 15, 3600);
 }
 
+static string NormalizeHttpBaseUrl(string? raw, string fallback = "http://localhost:8000")
+{
+    var value = string.IsNullOrWhiteSpace(raw) ? fallback : raw.Trim();
+    if (!value.Contains("://", StringComparison.Ordinal))
+    {
+        value = $"http://{value}";
+    }
+
+    return value.TrimEnd('/');
+}
+
 var connectionString = ResolvePostgresConnection(configuration);
 
 if (string.IsNullOrEmpty(connectionString)
@@ -154,7 +165,7 @@ builder.Services.AddScoped<IBrandLearningService, BrandLearningService>();
 builder.Services.AddHttpClient<IVectorMemoryService, QdrantVectorMemoryService>();
 builder.Services.AddHttpClient<IActionProviderExecutor, ActionProviderExecutor>(client =>
 {
-    var baseUrl = configuration["OrchestrationService:BaseUrl"] ?? "http://localhost:8000";
+    var baseUrl = NormalizeHttpBaseUrl(configuration["OrchestrationService:BaseUrl"]);
     var timeoutSeconds = ClampActionExecutionTimeoutSeconds(configuration);
     client.BaseAddress = new Uri(baseUrl);
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
@@ -174,7 +185,7 @@ builder.Services.AddDataProtection();
 builder.Services.AddHttpClient<IImageGenerationService, OpenAiImageGenerationService>();
 builder.Services.AddHttpClient("CrewService", client =>
 {
-    var baseUrl = configuration["OrchestrationService:BaseUrl"] ?? "http://localhost:8000";
+    var baseUrl = NormalizeHttpBaseUrl(configuration["OrchestrationService:BaseUrl"]);
     var timeoutSeconds = ClampOrchestrationTimeoutSeconds(configuration);
     var apiKey = OrchestrationApiKey(configuration);
 
@@ -195,7 +206,7 @@ else
 {
     builder.Services.AddHttpClient<ICrewOrchestrationService, CrewOrchestrationService>(client =>
     {
-        var baseUrl = configuration["OrchestrationService:BaseUrl"] ?? "http://localhost:8000";
+        var baseUrl = NormalizeHttpBaseUrl(configuration["OrchestrationService:BaseUrl"]);
         var timeoutSeconds = ClampOrchestrationTimeoutSeconds(configuration);
         var apiKey = OrchestrationApiKey(configuration);
 
@@ -452,6 +463,7 @@ app.MapGet("/health/ready", async (
         environment = app.Environment.EnvironmentName,
         actionExecutionMode = config["ActionExecution:Mode"] ?? "dry-run",
         frontendConfigured = !string.IsNullOrWhiteSpace(config["Frontend:BaseUrl"])
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FRONTEND_BASE_URL"))
     };
 
     return Results.Json(new
