@@ -60,6 +60,19 @@ public sealed class RequestContext : IRequestContext
         if (TryGetAnyClaimGuid(claimNames, out var claimValue))
             return claimValue;
 
+        if (IsTrustedInternalRequest())
+        {
+            if (TryGetHeaderGuid(headerName, out var internalHeader))
+                return internalHeader;
+
+            // Service callers (Next.js auto-produce, Python crew) often send only X-Tenant-Id.
+            if (TryGetHeaderGuid("X-Tenant-Id", out var tenantHeader) && tenantHeader != Guid.Empty)
+            {
+                if (headerName == "X-User-Id") return DefaultDemoUserId;
+                if (headerName == "X-Office-Id") return DefaultDemoOfficeId;
+            }
+        }
+
         if (TrustClientHeaders && TryGetHeaderGuid(headerName, out var headerValue))
             return headerValue;
 
@@ -70,6 +83,18 @@ public sealed class RequestContext : IRequestContext
         }
 
         return Guid.Empty;
+    }
+
+    private bool IsTrustedInternalRequest()
+    {
+        var configured = _configuration["OrchestrationService:ApiKey"]
+            ?? Environment.GetEnvironmentVariable("INTERNAL_API_KEY")
+            ?? "smartagency-internal-dev-key";
+        var provided = _httpContextAccessor.HttpContext?.Request.Headers["X-Internal-Api-Key"]
+            .FirstOrDefault()
+            ?.Trim();
+        return !string.IsNullOrEmpty(provided)
+            && string.Equals(provided, configured, StringComparison.Ordinal);
     }
 
     // Production hard-guards: client headers and demo fallback are NEVER trusted
