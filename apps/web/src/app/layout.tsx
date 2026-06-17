@@ -1,12 +1,10 @@
 import type { Metadata } from 'next';
 import { QueryProviders } from './providers';
 import { RuntimePublicConfigScript } from '@/components/RuntimePublicConfigScript';
+import { buildSiteMetadata } from '@/lib/site-metadata';
 import './globals.css';
 
-export const metadata: Metadata = {
-  title: 'Sunu Event — AI Agency OS',
-  description: 'AI-powered digital agency operating system',
-};
+export const metadata: Metadata = buildSiteMetadata();
 
 export default function RootLayout({
   children,

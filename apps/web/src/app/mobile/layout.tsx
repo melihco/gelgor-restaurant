@@ -1,8 +1,12 @@
 import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
-  title: 'SmartAgency — Mobile',
-  description: 'AI Creative Operations Platform',
+  title: 'Mobile',
+  description: 'SmartAgency mobil creative hub — feed onayı, mission üretimi ve marka operasyonları.',
+  openGraph: {
+    title: 'SmartAgency Mobile',
+    description: 'AI destekli içerik üretimi ve publish — cebinizde.',
+  },
 };
 
 export const viewport: Viewport = {
