@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
 import { mergeBrandProfileSnapshot } from '@/lib/brand-profile-snapshot';
+import { resolveServerApiBaseUrl } from '@/lib/backend-origin';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
+const NEXUS_API = resolveServerApiBaseUrl();
 
 function forwardHeaders(req: NextRequest, workspaceId: string): HeadersInit {
   const headers: Record<string, string> = {

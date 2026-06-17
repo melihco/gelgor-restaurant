@@ -14,6 +14,7 @@ BACKEND_ENV="${ROOT}/backend/.env"
 OUT_WEB="${ROOT}/render.env.publish.web.local"
 OUT_CREW="${ROOT}/render.env.publish.crew.local"
 OUT_SHARED="${ROOT}/render.env.publish.shared.local"
+OUT_API="${ROOT}/render.env.publish.api.local"
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
@@ -80,14 +81,29 @@ CREW_KEYS=(
   BRAVE_SEARCH_API_KEY
 )
 
+API_KEYS=(
+  Auth__JwtSecret
+  Auth__EnsureSeedAdminLogin
+)
+
+# Default JWT secret matches local dev fallback when Auth:JwtSecret is unset in .env
+if [[ -z "${Auth__JwtSecret:-}" ]]; then
+  Auth__JwtSecret="${AUTH_JWT_SECRET:-smartagency-local-dev-jwt-secret-change-before-production}"
+fi
+if [[ -z "${Auth__EnsureSeedAdminLogin:-}" ]]; then
+  Auth__EnsureSeedAdminLogin="true"
+fi
+
 write_kv_file "$OUT_SHARED" "${SHARED_KEYS[@]}"
 write_kv_file "$OUT_WEB" "${WEB_KEYS[@]}"
 write_kv_file "$OUT_CREW" "${CREW_KEYS[@]}"
+write_kv_file "$OUT_API" "${API_KEYS[@]}"
 
 echo "==> Publish env dosyaları (gitignore — commit ETME)"
 echo "    shared: $(wc -l <"$OUT_SHARED" | tr -d ' ') keys → $OUT_SHARED"
 echo "    web:    $(wc -l <"$OUT_WEB" | tr -d ' ') keys → $OUT_WEB"
 echo "    crew:   $(wc -l <"$OUT_CREW" | tr -d ' ') keys → $OUT_CREW"
+echo "    api:    $(wc -l <"$OUT_API" | tr -d ' ') keys → $OUT_API"
 echo ""
 echo "Dokunulmayan Render wiring: DATABASE_URL, NEXT_PUBLIC_* URL, BACKEND_ORIGIN, CREW_BACKEND_URL, OrchestrationService__BaseUrl"
 echo ""
@@ -161,9 +177,10 @@ put_env_from_file() {
 SHARED_ID="$(find_env_group_id smartagency-shared)"
 WEB_ID="$(find_service_id smartagency-web)"
 CREW_ID="$(find_service_id smartagency-crew)"
+API_ID="$(find_service_id smartagency-api)"
 
-if [[ -z "$SHARED_ID" || -z "$WEB_ID" || -z "$CREW_ID" ]]; then
-  echo "Servis/grup bulunamadı. SHARED=${SHARED_ID:-} WEB=${WEB_ID:-} CREW=${CREW_ID:-}"
+if [[ -z "$SHARED_ID" || -z "$WEB_ID" || -z "$CREW_ID" || -z "$API_ID" ]]; then
+  echo "Servis/grup bulunamadı. SHARED=${SHARED_ID:-} WEB=${WEB_ID:-} CREW=${CREW_ID:-} API=${API_ID:-}"
   exit 1
 fi
 
@@ -173,4 +190,6 @@ echo "==> smartagency-web (${WEB_ID})"
 put_env_from_file service "$WEB_ID" "$OUT_WEB"
 echo "==> smartagency-crew (${CREW_ID})"
 put_env_from_file service "$CREW_ID" "$OUT_CREW"
-echo "==> Tamam. Servisler otomatik redeploy olabilir; web build bitene kadar bekleyin."
+echo "==> smartagency-api (${API_ID})"
+put_env_from_file service "$API_ID" "$OUT_API"
+echo "==> Tamam. API redeploy sonrası login çalışmalı (Auth__JwtSecret)."

@@ -193,10 +193,12 @@ export function createNexusClient(config: NexusClientConfig) {
   return { saveArtifact, attachPoster, attachVideo, markBundleFailed };
 }
 
+import { resolveServerApiBaseUrl } from '@/lib/backend-origin';
+
 export type NexusClient = ReturnType<typeof createNexusClient>;
 
-// Module-level singleton built from env — used by route.ts directly.
-export const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
+// Runtime Nexus base URL (Render: NEXUS_API_URL / BACKEND_ORIGIN — not build-time NEXT_PUBLIC).
+export const NEXUS_API = resolveServerApiBaseUrl();
 export const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
 export function createDefaultNexusClient(): NexusClient {

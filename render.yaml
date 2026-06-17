@@ -91,6 +91,10 @@ services:
           name: smartagency-web
           type: web
           envVarKey: RENDER_EXTERNAL_URL
+      - key: Auth__JwtSecret
+        sync: false
+      - key: Auth__EnsureSeedAdminLogin
+        value: "true"
 
   - type: web
     name: smartagency-web
