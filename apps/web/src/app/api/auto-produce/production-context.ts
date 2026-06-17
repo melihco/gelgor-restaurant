@@ -262,7 +262,7 @@ export async function fetchProductionContext(
           ? snapshotGalleryUrls
           : rawBase.reference_image_urls,
         logo_url:
-          brandSnapshot.gallery.find((item) => item.kind === 'logo')?.url
+          brandSnapshot.gallery?.find((item) => item.kind === 'logo')?.url
           ?? rawBase.logo_url
           ?? '',
       }
@@ -273,7 +273,7 @@ export async function fetchProductionContext(
   const brandLocation = String(brandSnapshot?.location ?? raw.location ?? '');
   const brandTone = String(brandSnapshot?.brandTone ?? raw.brand_tone ?? '');
   const brandLogoUrl = resolveProductionLogoUrl([
-    brandSnapshot?.gallery.find((item) => item.kind === 'logo')?.url,
+    brandSnapshot?.gallery?.find((item) => item.kind === 'logo')?.url,
     typeof raw.logo_url === 'string' ? raw.logo_url : String(raw.logo_url ?? ''),
   ]);
   const rawBrandName = String(

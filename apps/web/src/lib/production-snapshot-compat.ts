@@ -30,29 +30,31 @@ export function productionSnapshotToLegacyBrandContext(
   snapshot: ProductionBrandContextSnapshot | null | undefined,
 ): LegacyBrandContextLike | undefined {
   if (!snapshot) return undefined;
-  const visual = snapshot.visualContext;
-  const logoUrl = visual.logoUrl ?? snapshot.brand.gallery.find((item) => item.kind === 'logo')?.url ?? '';
+  const visual = snapshot.visualContext ?? ({} as ProductionBrandContextSnapshot['visualContext']);
+  const brand = snapshot.brand ?? ({} as ProductionBrandContextSnapshot['brand']);
+  const gallery = Array.isArray(brand.gallery) ? brand.gallery : [];
+  const logoUrl = visual.logoUrl ?? gallery.find((item) => item.kind === 'logo')?.url ?? '';
   return {
-    business_name: visual.businessName || snapshot.brand.brandName || '',
-    business_type: visual.businessType || snapshot.brand.businessType || '',
-    industry: visual.businessType || snapshot.brand.businessType || '',
-    description: visual.description || snapshot.brand.description || '',
-    brand_tone: visual.brandTone || snapshot.brand.brandTone || '',
+    business_name: visual.businessName || brand.brandName || '',
+    business_type: visual.businessType || brand.businessType || '',
+    industry: visual.businessType || brand.businessType || '',
+    description: visual.description || brand.description || '',
+    brand_tone: visual.brandTone || brand.brandTone || '',
     visual_style: visual.visualStyle || '',
-    target_audience: visual.targetAudience || snapshot.brand.targetAudience || '',
-    location: visual.location || snapshot.brand.location || '',
-    website_summary: visual.websiteSummary || snapshot.brand.websiteSummary || '',
-    instagram_bio: visual.instagramBio || snapshot.brand.instagramBio || '',
-    brand_dna: visual.brandDna ?? snapshot.brand.brandDna ?? '',
-    visual_dna: visual.visualDna || snapshot.brand.visualDna || '',
+    target_audience: visual.targetAudience || brand.targetAudience || '',
+    location: visual.location || brand.location || '',
+    website_summary: visual.websiteSummary || brand.websiteSummary || '',
+    instagram_bio: visual.instagramBio || brand.instagramBio || '',
+    brand_dna: visual.brandDna ?? brand.brandDna ?? '',
+    visual_dna: visual.visualDna || brand.visualDna || '',
     logo_url: logoUrl,
     brand_vibe_profile: visual.brandVibeProfile,
     website_intelligence: visual.websiteIntelligence,
-    content_pillars: visual.contentPillars,
-    default_ctas: visual.defaultCtas,
-    custom_rules: visual.customRules,
-    reference_image_urls: visual.referenceImageUrls,
-    languages: snapshot.brand.languages ?? [],
+    content_pillars: visual.contentPillars ?? [],
+    default_ctas: visual.defaultCtas ?? [],
+    custom_rules: visual.customRules ?? '',
+    reference_image_urls: visual.referenceImageUrls ?? [],
+    languages: brand.languages ?? [],
     instagram_handle: '',
     brand_primary_color: '',
     brand_accent_color: '',

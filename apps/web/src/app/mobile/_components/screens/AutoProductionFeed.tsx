@@ -327,7 +327,7 @@ export function AutoProductionFeed({
   const effectiveLogoUrl =
     logoUrl
     || snapshotVisual?.logoUrl
-    || snapshotBrand?.gallery.find((item) => item.kind === 'logo')?.url
+    || snapshotBrand?.gallery?.find((item) => item.kind === 'logo')?.url
     || tenantBrand.logoUrl;
 
   const [items, setItems] = useState<ProducedItem[]>([]);

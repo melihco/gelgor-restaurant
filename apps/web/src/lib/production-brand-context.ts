@@ -61,6 +61,7 @@ export function mergeProductionBrandContextSnapshot(input: {
 }): ProductionBrandContextSnapshot {
   const brand = (input.brand ?? {}) as BrandProfileSnapshot;
   const brandContext = input.brandContext ?? {};
+  const gallery = Array.isArray(brand.gallery) ? brand.gallery : [];
   const generatedAt = new Date().toISOString();
   const visualContext: ProductionVisualContext = {
     businessName: String(brandContext.business_name ?? brand.brandName ?? ''),
@@ -76,7 +77,7 @@ export function mergeProductionBrandContextSnapshot(input: {
     visualDna: String(brandContext.visual_dna ?? brand.visualDna ?? ''),
     logoUrl: String(
       brandContext.logo_url
-      ?? brand.gallery?.find((item) => item.kind === 'logo')?.url
+      ?? gallery.find((item) => item.kind === 'logo')?.url
       ?? '',
     ) || undefined,
     brandVibeProfile: brandContext.brand_vibe_profile as Record<string, unknown> | undefined,
@@ -91,7 +92,7 @@ export function mergeProductionBrandContextSnapshot(input: {
   return {
     workspaceId: input.workspaceId,
     tenantId: brand.tenantId ?? input.workspaceId,
-    brand,
+    brand: { ...brand, gallery },
     visualContext,
     galleryAnalysis: normalizeGalleryAnalysis(brandContext.gallery_analysis),
     source: 'brand_profile_snapshot+brand_context',
