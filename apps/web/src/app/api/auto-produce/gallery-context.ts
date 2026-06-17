@@ -23,6 +23,7 @@ import {
   isStockGalleryPhotoUrl,
   isUsableGalleryPhotoUrl,
 } from '@/lib/media-url';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { mergeSectorGallerySeed, SYNTHETIC_GALLERY_MIN } from '@/lib/sector-gallery-seed';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
 import { GIS_PROPOSE_THRESHOLD } from '@/lib/gallery-intelligence';
@@ -187,7 +188,7 @@ export async function ensureGalleryAnalysisForProduction(
     return { meta: enriched };
   }
 
-  const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const baseUrl = getNextjsInternalOrigin();
   const internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
   try {
@@ -244,7 +245,7 @@ export function triggerGalleryAnalysisIfNeeded(
   const analysisCount = Object.keys(galleryAnalysisInput ?? {}).length;
   if (galleryContext.photos.length === 0 || analysisCount > 0) return;
 
-  const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const baseUrl = getNextjsInternalOrigin();
   const internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
   fetch(`${baseUrl}/api/gallery-intelligence/${workspaceId}/analyze-coverage`, {
     method: 'POST',

@@ -9,6 +9,7 @@
  * toward 100%. Idempotent: re-running only analyzes what's still missing.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import { parseStringOrArray, filterUsablePhotos } from '@/lib/brand-readiness';
@@ -90,7 +91,7 @@ export async function POST(
   const batch = missing.slice(0, maxImages);
 
   // 3. Run the vision analyzer (same-origin local route).
-  const origin = req.nextUrl.origin;
+  const origin = getNextjsInternalOrigin();
   const analyzeRes = await fetch(`${origin}/api/analyze-gallery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

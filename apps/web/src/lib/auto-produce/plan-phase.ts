@@ -2,6 +2,7 @@
  * Sprint 3 — auto-produce planning phase.
  * Budget, ICS parse, production profile, Feed Director assignments, stack context.
  */
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { canProduce } from '@/app/api/auto-produce/budget';
 import { fetchPackageLimits } from '@/app/api/auto-produce/budget';
 import {
@@ -176,7 +177,7 @@ export async function runAutoProducePlanPhase(
   });
 
   const pkgLimits = await fetchPackageLimits(workspaceId);
-  const routeBaseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const routeBaseUrl = getNextjsInternalOrigin();
   const gisScore = await fetchGisScoreForWorkspace(workspaceId, routeBaseUrl);
   const productionProfile = resolveProductionProfile({
     packageSlug: pkgLimits.packageSlug,

@@ -12,6 +12,7 @@
  * degrades gracefully — the context is always valid, just less complete.
  */
 
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import { ensureBrandTemplateLibrary } from '@/lib/brand-template-library';
 import { applyAgencyProductionThemeDefaults } from '@/lib/agency-production-defaults';
@@ -156,7 +157,7 @@ async function fetchProductionSnapshot(
   workspaceId: string,
   baseUrl?: string,
 ): Promise<ProductionBrandContextSnapshot | null> {
-  const origin = (baseUrl || process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const origin = baseUrl || getNextjsInternalOrigin();
   try {
     const r = await fetch(`${origin}/api/production-context/${workspaceId}/snapshot`, {
       headers: {

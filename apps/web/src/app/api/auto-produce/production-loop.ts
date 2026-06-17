@@ -43,6 +43,7 @@ import {
   probeMediaUrl,
   probeMediaUrlReliable,
 } from '@/lib/media-url';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
 import {
   isCaptionDrivenDefault,
@@ -326,7 +327,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     () => fetchProductionContext(workspaceId, {
       brandName: brandName ?? undefined,
       creativeBrief: creativeBrief ?? undefined,
-      baseUrl: process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000',
+      baseUrl: getNextjsInternalOrigin(),
       productionSnapshot,
     }),
   );
@@ -456,7 +457,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     hasOrganicReelAssignment,
   } = planOutcome.plan;
 
-  const routeBaseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const routeBaseUrl = getNextjsInternalOrigin();
 
   let runwayReelsProducedInMission = 0;
   let designedPostSnapshot: DesignedPostSnapshot | null = null;
@@ -1146,7 +1147,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         console.log(`[auto-produce] no gallery photo → AI image generation for: "${headline.slice(0, 50)}"`);
       }
-      const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+      const baseUrl = getNextjsInternalOrigin();
       const aiGenerated = await generateVibeImage({
         workspaceId,
         headline,
@@ -1558,7 +1559,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         } else if (!hasRealBrandPhotos && !productionProfile.skipAggressiveEnhance && !isNonVenueSector(brandBusinessType)) {
           // Stock-only gallery → fresh AI from brand + caption (physical venues only).
           console.log(`[auto-produce] GPT enhance failed on seed photo → fresh AI generation for: "${headline.slice(0, 40)}"`);
-          const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+          const baseUrl = getNextjsInternalOrigin();
           const freshImage = await generateVibeImage({
             workspaceId,
             headline,
