@@ -19,10 +19,15 @@ var builder = WebApplication.CreateBuilder(args);
 
 var configuration = builder.Configuration;
 
-static string OrchestrationApiKey(IConfiguration config) =>
-    config["OrchestrationService:ApiKey"]
-    ?? Environment.GetEnvironmentVariable("INTERNAL_API_KEY")
-    ?? "smartagency-internal-dev-key";
+static string OrchestrationApiKey(IConfiguration config)
+{
+    var fromEnv = Environment.GetEnvironmentVariable("INTERNAL_API_KEY");
+    if (!string.IsNullOrWhiteSpace(fromEnv))
+        return fromEnv.Trim();
+
+    return config["OrchestrationService:ApiKey"]
+        ?? "smartagency-internal-dev-key";
+}
 
 static string? TryParsePostgresUri(string url)
 {

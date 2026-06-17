@@ -87,14 +87,25 @@ public sealed class RequestContext : IRequestContext
 
     private bool IsTrustedInternalRequest()
     {
-        var configured = _configuration["OrchestrationService:ApiKey"]
-            ?? Environment.GetEnvironmentVariable("INTERNAL_API_KEY")
-            ?? "smartagency-internal-dev-key";
+        var configured = GetConfiguredInternalApiKey();
         var provided = _httpContextAccessor.HttpContext?.Request.Headers["X-Internal-Api-Key"]
             .FirstOrDefault()
             ?.Trim();
         return !string.IsNullOrEmpty(provided)
             && string.Equals(provided, configured, StringComparison.Ordinal);
+    }
+
+    private string GetConfiguredInternalApiKey()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("INTERNAL_API_KEY");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return fromEnv.Trim();
+
+        var fromConfig = _configuration["OrchestrationService:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(fromConfig))
+            return fromConfig.Trim();
+
+        return "smartagency-internal-dev-key";
     }
 
     // Production hard-guards: client headers and demo fallback are NEVER trusted
