@@ -35,18 +35,19 @@ export async function POST(
   const tenantGuard = assertPathTenantMatchesRequest(req, workspaceId);
   if (tenantGuard) return tenantGuard;
 
+  let requestBody: { productionPackage?: string; force?: boolean } = {};
+  try {
+    requestBody = (await req.json()) as { productionPackage?: string; force?: boolean };
+  } catch {
+    /* PUT/empty body */
+  }
+
   const force = req.nextUrl.searchParams.get('force') === '1'
-    || req.nextUrl.searchParams.get('force') === 'true';
+    || req.nextUrl.searchParams.get('force') === 'true'
+    || requestBody.force === true;
 
   if (force) {
     releaseAllProductionLocks(workspaceId, missionId);
-  }
-
-  let requestBody: { productionPackage?: string } = {};
-  try {
-    requestBody = (await req.json()) as { productionPackage?: string };
-  } catch {
-    /* PUT/empty body */
   }
 
   const productionPackage =
