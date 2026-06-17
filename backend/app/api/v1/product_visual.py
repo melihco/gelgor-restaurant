@@ -27,6 +27,7 @@ router = APIRouter()
 
 class SceneBriefRequest(BaseModel):
     workspace_id: uuid.UUID
+    mission_id: uuid.UUID | None = None
     caption: str = Field(default="", max_length=1000)
     product_type: str = Field(default="", max_length=200)
     enhance_level: str = Field(default="moderate", pattern="^(subtle|moderate|full)$")
@@ -75,5 +76,23 @@ async def generate_scene_brief(
         mood=body.mood,
         visual_subject=body.visual_subject,
     )
+
+    try:
+        from app.services.ai_cost_service import (
+            ESTIMATED_COST_USD,
+            append_mission_ai_cost,
+            record_workspace_ai_cost,
+        )
+
+        amt = ESTIMATED_COST_USD["scene_brief"]
+        await record_workspace_ai_cost(db, body.workspace_id, "scene_brief", amt)
+        if body.mission_id:
+            await append_mission_ai_cost(db, body.mission_id, "scene_brief", amt)
+    except Exception as cost_exc:
+        logger.warning(
+            "scene_brief_cost_record_failed",
+            workspace_id=str(body.workspace_id),
+            error=str(cost_exc)[:200],
+        )
 
     return {"ok": True, "scene_brief": scene_brief}

@@ -20,10 +20,12 @@ import {
 import {
   filterReachableGalleryUrls,
   filterUsableGalleryPhotoUrls,
+  isStockGalleryPhotoUrl,
   isUsableGalleryPhotoUrl,
 } from '@/lib/media-url';
 import { mergeSectorGallerySeed, SYNTHETIC_GALLERY_MIN } from '@/lib/sector-gallery-seed';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
+import { GIS_PROPOSE_THRESHOLD } from '@/lib/gallery-intelligence';
 
 const GALLERY_EXCLUDE_PATTERNS = [
   'logo', 'icon', 'banner', 'footer', 'menu.', 'harita', 'map', 'franchise',
@@ -63,26 +65,35 @@ export interface GalleryContext {
  * - Enriches metadata with NLP tags
  * - Fills with sector seeds when real gallery is small
  */
+function parseBrandReferenceUrls(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((u) => String(u).trim())
+      .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((u) => String(u).trim())
+          .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
+      }
+    } catch { /* ignore */ }
+  }
+  return [];
+}
+
 export async function fetchGalleryContext(
   workspaceId: string,
   brandCtxRaw: Record<string, unknown>,
   galleryAnalysisInput: Record<string, unknown> | null | undefined,
   brandBusinessType: string,
+  opts?: { gisScore?: number | null },
 ): Promise<GalleryContext> {
   // ── Parse brand gallery photos ─────────────────────────────────────────
   const metaRaw = (galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>;
-  let refs: string[] = [];
-  const raw = brandCtxRaw.reference_image_urls;
-  if (Array.isArray(raw)) {
-    refs = raw.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
-  } else if (typeof raw === 'string' && raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        refs = parsed.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
-      }
-    } catch { /* ignore */ }
-  }
+  let refs: string[] = parseBrandReferenceUrls(brandCtxRaw.reference_image_urls);
 
   const analysisKeys = Object.keys(metaRaw).filter(
     (u) => u.startsWith('http') && isUsableGalleryPhotoUrl(u),
@@ -96,14 +107,19 @@ export async function fetchGalleryContext(
     ),
   );
 
-  // Track whether brand has REAL uploaded photos
+  const refsBeforeSeed = [...refs];
+  const analysisBeforeSeed = [...analysisKeys];
+  const brandCrawlPhotos = candidates.filter((u) => !isStockGalleryPhotoUrl(u));
   const hasRealPhotos =
-    (Array.isArray(brandCtxRaw.reference_image_urls) &&
-      (brandCtxRaw.reference_image_urls as string[]).length > 0) ||
-    Object.keys(metaRaw).length > 0;
+    refsBeforeSeed.some((u) => !isStockGalleryPhotoUrl(u))
+    || analysisBeforeSeed.some((u) => !isStockGalleryPhotoUrl(u));
+  const gisHigh =
+    opts?.gisScore != null && opts.gisScore >= GIS_PROPOSE_THRESHOLD;
 
-  // Fill with sector seeds when gallery is small
-  if (candidates.length < SYNTHETIC_GALLERY_MIN) {
+  // GIS ≥ 70 + brand crawl photos → never pad with Unsplash sector seeds.
+  if (gisHigh && brandCrawlPhotos.length > 0) {
+    candidates = brandCrawlPhotos;
+  } else if (candidates.length < SYNTHETIC_GALLERY_MIN) {
     const { urls } = mergeSectorGallerySeed(candidates, brandBusinessType, SYNTHETIC_GALLERY_MIN);
     candidates = urls;
   }
@@ -124,7 +140,13 @@ export async function fetchGalleryContext(
     );
   }
 
-  const photos = health.urls;
+  let photos = health.urls;
+
+  // Real venue uploads win — never mix Unsplash seeds when brand has own gallery.
+  if (hasRealPhotos) {
+    const realOnly = photos.filter((u) => !isStockGalleryPhotoUrl(u));
+    if (realOnly.length) photos = realOnly;
+  }
 
   // ── Enrich metadata (sector-agnostic NLP tag derivation) ──────────────
   const meta = enrichGalleryAnalysis(metaRaw);
@@ -139,6 +161,78 @@ export async function fetchGalleryContext(
     recentTemplateIds,
     batchUsedByType: { feed: [], story: [], reel: [], carousel: [] },
   };
+}
+
+/**
+ * Mission production gate — require vision tags/descriptions before semantic matching.
+ * Runs analyze-coverage synchronously when coverage is insufficient.
+ */
+export async function ensureGalleryAnalysisForProduction(
+  workspaceId: string,
+  photos: string[],
+  meta: Record<string, GalleryPhotoMeta>,
+  hasRealPhotos: boolean,
+  galleryAnalysisInput: Record<string, unknown> | null | undefined,
+): Promise<{ meta: Record<string, GalleryPhotoMeta>; blocked?: string }> {
+  if (!hasRealPhotos || photos.length === 0) {
+    return { meta };
+  }
+
+  const { galleryAnalysisCoverageStats, enrichGalleryAnalysis } = await import(
+    '@/lib/gallery-photo-matcher'
+  );
+  let enriched = meta;
+  let stats = galleryAnalysisCoverageStats(photos, enriched);
+  if (stats.sufficient) {
+    return { meta: enriched };
+  }
+
+  const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+
+  try {
+    console.log(
+      `[gallery-context:${workspaceId}] analysis coverage ${stats.analyzed}/${stats.total} — running analyze-coverage`,
+    );
+    const res = await fetch(`${baseUrl}/api/gallery-intelligence/${workspaceId}/analyze-coverage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Api-Key': internalKey,
+        'X-Tenant-Id': workspaceId,
+      },
+      body: JSON.stringify({ tier: 'standard', maxImages: 30 }),
+      signal: AbortSignal.timeout(240_000),
+    });
+    if (!res.ok) {
+      return {
+        meta: enriched,
+        blocked: 'Galeri analizi tamamlanamadı — caption eşleşmesi için önce galeriyi analiz edin',
+      };
+    }
+    const data = (await res.json()) as { analysis?: Record<string, GalleryPhotoMeta> };
+    const merged = {
+      ...((galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>),
+      ...(data.analysis ?? {}),
+    };
+    enriched = enrichGalleryAnalysis(merged);
+    stats = galleryAnalysisCoverageStats(photos, enriched);
+    if (!stats.sufficient) {
+      return {
+        meta: enriched,
+        blocked:
+          `Galeri analizi yetersiz (${stats.analyzed}/${stats.total} foto etiketli). ` +
+          'Marka → Galeri Analizi çalıştırın, sonra tekrar üretin.',
+      };
+    }
+    return { meta: enriched };
+  } catch (err) {
+    console.warn(`[gallery-context:${workspaceId}] analyze-coverage failed`, err);
+    return {
+      meta: enriched,
+      blocked: 'Galeri analizi zaman aşımı — caption eşleşmesi için analiz gerekli',
+    };
+  }
 }
 
 /** Trigger background gallery analysis (fire-and-forget, non-blocking). */

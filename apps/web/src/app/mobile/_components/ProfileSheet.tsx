@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from './theme-context';
@@ -9,7 +9,12 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { IcoLogout, IcoChevronRight, IcoNotification } from './Icons';
 import { apiClient } from '@/lib/api-client';
 import { TokenWalletCard } from './TokenWalletCard';
+import { ClientCreditSummary } from './ClientCreditSummary';
+import { isDebugUiMode } from './mobile-client-config';
+import { clearSessionScopedQueries } from '@/lib/query-client-bridge';
 import { useTenantBrandContext } from './TenantBrandProvider';
+import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 
 interface ProfileSheetProps {
   onClose: () => void;
@@ -22,32 +27,38 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
   const { navigate } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const [loggingOut, setLoggingOut] = useState(false);
+  const debugMode = isDebugUiMode();
 
   const { data: usageCost } = useQuery({
     queryKey: ['usage-cost', tenantId],
     queryFn: () => apiClient.getWorkspaceUsageCost(tenantId!, 30),
     enabled: Boolean(tenantId),
-    staleTime: 60_000,
+    staleTime: debugMode ? 60_000 : 120_000,
   });
 
-  const initials = user?.displayName
-    ? user.displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-    : 'LB';
+  const { data: rawNotifs = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => { try { return await apiClient.getNotifications(); } catch { return []; } },
+    staleTime: 30_000,
+  });
 
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    try {
-      await apiClient.logout();
-    } finally {
-      setUser(null);
-      onClose();
+  const { data: artifacts = [] } = useMobileArtifacts({
+    params: { limit: 40 },
+    enabled: Boolean(tenantId),
+    subscribeOnly: true,
+  });
+
+  const unreadNotifications = useMemo(() => {
+    if (rawNotifs.length > 0) {
+      return rawNotifs.filter((n: { read?: boolean }) => !n.read).length;
     }
-  };
+    return filterFeedPublishableArtifacts(artifacts).filter((a) => a.status === 'pending_review').length;
+  }, [rawNotifs, artifacts]);
 
   const menuItems = [
     {
       label: 'Bildirimler',
-      sub: '3 okunmamış',
+      sub: unreadNotifications > 0 ? `${unreadNotifications} okunmamış` : 'Güncel',
       icon: '◍',
       color: '#60a5fa',
       onTap: () => { navigate('notifications'); onClose(); },
@@ -63,10 +74,25 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
       label: 'Kredi & Kullanım',
       sub: 'Premium Plan',
       icon: '◇',
-      color: '#a78bfa',
+      color: '#9DBECE',
       onTap: () => { navigate('billing'); onClose(); },
     },
   ];
+
+  const initials = user?.displayName
+    ? user.displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+    : 'LB';
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await apiClient.logout();
+    } finally {
+      clearSessionScopedQueries();
+      setUser(null);
+      onClose();
+    }
+  };
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -106,11 +132,11 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
             <div style={{
               width: 52, height: 52, borderRadius: 16, flexShrink: 0,
               background: t.isDark
-                ? 'linear-gradient(135deg, #7c3aed, #6366f1)'
-                : 'linear-gradient(135deg, #7c3aed, #a78bfa)',
+                ? 'linear-gradient(135deg, #4D7088, #5A82A0)'
+                : 'linear-gradient(135deg, #4D7088, #2D5068)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 18, fontWeight: 800, color: '#fff',
-              boxShadow: '0 4px 12px rgba(124,58,237,0.3)',
+              boxShadow: '0 4px 12px rgba(77,112,136,0.3)',
             }}>
               {initials}
             </div>
@@ -139,7 +165,11 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
 
         {usageCost?.token_wallet && (
           <div style={{ padding: '0 24px 16px' }}>
-            <TokenWalletCard wallet={usageCost.token_wallet} compact t={t} />
+            {debugMode ? (
+              <TokenWalletCard wallet={usageCost.token_wallet} compact t={t} />
+            ) : (
+              <ClientCreditSummary wallet={usageCost.token_wallet} compact t={t} />
+            )}
           </div>
         )}
 

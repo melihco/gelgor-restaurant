@@ -1,5 +1,7 @@
-/**
- * Alias for Canva OAuth callback. Some Canva app configs use `/api/auth/callback`.
- * Keep `CANVA_REDIRECT_URI` identical to the URL registered in the Canva developer portal.
- */
-export { GET, runtime } from '../../canva/oauth/callback/route';
+import { NextResponse } from 'next/server';
+
+/** Canva OAuth callback endpoint removed — return 410 Gone. */
+export const runtime = 'edge';
+export function GET() {
+  return NextResponse.json({ error: 'Canva integration removed' }, { status: 410 });
+}

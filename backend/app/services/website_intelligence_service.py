@@ -41,6 +41,16 @@ _MENU_PATH_HINTS = re.compile(
     re.IGNORECASE,
 )
 
+# Beauty / nail / personal care — these service pages look like menu pages
+# but must be classified as SERVICE categories, not food menus.
+_BEAUTY_PATH_HINTS = re.compile(
+    r"(tirnak|tırnak|nail|manikür|manikyur|manicure|pedikyur|pedikür|pedicure|"
+    r"kalici.oje|nail.art|protez|jel.tirnak|cilt.bakim|cilt|epilasyon|lazer|"
+    r"masaj|masage|massage|wax|agda|kirpik|lash|kas.tasarim|kás|brow|threading|"
+    r"berber|kuafor|kuaför|sac.boya|sac.bakim|hizmetlerimiz|hizmet|fiyat.list)",
+    re.IGNORECASE,
+)
+
 _VENUE_PATH_HINTS = re.compile(
     r"(galeri|gallery|photo|foto|venue|mekan|ambiance|about|hakkimizda|"
     r"etkinlik|event|team|ekip|slider|hero)",
@@ -82,12 +92,15 @@ def discover_internal_urls(html: str, page_url: str, base: str) -> list[str]:
 
 
 def classify_image_url(url: str) -> str:
-    """Classify image as venue, menu_product, or other."""
+    """Classify image as venue, service_product, menu_product, or other."""
     low = url.lower()
     if any(x in low for x in ("logo", "icon", "favicon", "avatar", "sprite")):
         return "logo"
     if _VENUE_PATH_HINTS.search(low):
         return "venue"
+    # Beauty/nail service images — classified as service visuals, not menu_product
+    if _BEAUTY_PATH_HINTS.search(low):
+        return "service_product"
     if _MENU_PATH_HINTS.search(low):
         return "menu_product"
     if any(ext in low for ext in (".webp", ".jpg", ".jpeg", ".png")):
@@ -354,15 +367,27 @@ def format_website_intelligence_for_prompt(intel: dict[str, Any] | None) -> list
     if not intel:
         return []
 
-    lines = ["## 🌐 Website Intelligence — Product / Service Catalog"]
+    # Determine if this is a beauty/service business so we use correct terminology
+    brand = intel.get("brand_display_name") or ""
+    cats = intel.get("menu_categories") or []
+    beauty_signals = ["tırnak", "nail", "manikür", "pedikyur", "güzellik", "kuaför",
+                      "berber", "spa", "epilasyon", "cilt", "estetik", "lash"]
+    all_text = " ".join([brand.lower()] + [c.lower() for c in cats])
+    is_beauty_business = any(s in all_text for s in beauty_signals)
 
-    brand = intel.get("brand_display_name")
+    section_label = (
+        "## 🌐 Website Intelligence — Services & Treatments"
+        if is_beauty_business
+        else "## 🌐 Website Intelligence — Product / Service Catalog"
+    )
+    lines = [section_label]
+
     if brand:
         lines.append(f"- **Brand (from website)**: {brand}")
 
-    cats = intel.get("menu_categories") or []
     if cats:
-        lines.append(f"- **Product/service categories** ({len(cats)}): {', '.join(cats[:12])}")
+        category_label = "Service/treatment categories" if is_beauty_business else "Product/service categories"
+        lines.append(f"- **{category_label}** ({len(cats)}): {', '.join(cats[:12])}")
 
     catalog = intel.get("menu_catalog") or {}
     for cat in (catalog.get("categories") or [])[:8]:

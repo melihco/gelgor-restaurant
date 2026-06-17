@@ -3,6 +3,8 @@
  * Used by auto-produce, MissionContentFactory, AutoProductionFeed.
  */
 
+import { sanitizePhotoDescriptionForRunway } from '@/lib/runway-scene-from-gallery';
+
 export type RunwayReelStrategy = 'single' | 'multi_ref' | 'sequential';
 
 export interface MultiReelPhotoInput {
@@ -79,6 +81,39 @@ export function maxPhotosForStrategy(strategy: RunwayReelStrategy): number {
   return 1;
 }
 
+/**
+ * Classify a photo into a montage depth level based on its description + tags.
+ *
+ * Returns:
+ *  1 — close / detail (product close-up, food, texture, ingredient)
+ *  2 — medium / process (service, behind-the-scenes, action, preparation)
+ *  3 — wide / establishing (interior, exterior, venue, landscape, atmosphere)
+ *
+ * Default 2 (medium) when unclassifiable.
+ */
+function montageDepthlevel(desc: string, tags: string[]): 1 | 2 | 3 {
+  const text = `${desc} ${tags.join(' ')}`.toLowerCase();
+  const isClose = /\b(close.?up|detail|texture|ingredient|dish|plate|product|macro|item|cup|glass|hand|skin|surface|label|packaging)\b/.test(text);
+  const isWide = /\b(interior|exterior|venue|room|space|hall|lobby|terrace|garden|view|landscape|street|facade|rooftop|pool|bar.?area|dining.?area|atmosphere)\b/.test(text);
+  if (isClose) return 1;
+  if (isWide) return 3;
+  return 2;
+}
+
+/**
+ * Sort photos for a cinematic montage progression:
+ *   detail/close → process/medium → wide/establishing
+ * This creates natural visual storytelling flow.
+ */
+function sortMontagePhotos(inputs: MultiReelPhotoInput[]): MultiReelPhotoInput[] {
+  if (inputs.length <= 1) return inputs;
+  return [...inputs].sort((a, b) => {
+    const da = montageDepthlevel(a.description ?? '', a.tags ?? []);
+    const db = montageDepthlevel(b.description ?? '', b.tags ?? []);
+    return da - db;
+  });
+}
+
 export function buildMultiReelPhotoInputs(
   urls: string[],
   galleryMeta: Record<string, { description?: string; contentTags?: string[]; tags?: string[] }>,
@@ -94,14 +129,18 @@ export function buildMultiReelPhotoInputs(
       : Array.isArray(entry?.tags)
         ? entry!.tags!
         : [];
+    const desc = entry?.description
+      ? sanitizePhotoDescriptionForRunway(entry.description)
+      : '';
     out.push({
       url: raw,
-      description: (entry?.description ?? '').slice(0, 200) || undefined,
+      description: desc || undefined,
       tags: tags.slice(0, 12),
     });
     if (out.length >= 4) break;
   }
-  return out;
+  // Apply cinematic montage ordering: close/detail → process/medium → wide/establishing
+  return sortMontagePhotos(out);
 }
 
 export interface GenerateMultiReelRequest {
@@ -119,6 +158,10 @@ export interface GenerateMultiReelRequest {
   /** VPS / scene brief visual direction (English-safe slice fed to director). */
   agentVisualDirection?: string;
   cameraMotion?: string;
+  businessType?: string;
+  productType?: string;
+  strategicPurpose?: string;
+  missionBrief?: string;
 }
 
 export async function callGenerateMultiReel(

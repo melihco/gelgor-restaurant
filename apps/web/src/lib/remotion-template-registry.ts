@@ -7,8 +7,8 @@ import type { StoryCompositionId } from '@/remotion/types';
 import {
   AGENCY_BRAND_KITS,
   getBrandKit,
-  type AgencyBrandKit,
 } from './agency-brand-kits';
+import type { AgencyBrandKit } from './remotion-template-types';
 import {
   LEGACY_COMPOSITION_TEMPLATE,
   REMOTION_TEMPLATE_CATALOG,
@@ -17,6 +17,7 @@ import {
   listTemplatesForIntent,
 } from './remotion-template-catalog';
 import type { RemotionShowcaseJob, RemotionTemplateDefinition } from './remotion-template-types';
+import { resolveKitSectorForVibe } from './sector-template-vibes';
 
 const SHOWCASE_PHOTOS = [
   'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1080&q=85',
@@ -45,6 +46,39 @@ export const VERIFIED_SHOWCASE_PHOTOS = [
 
 export function pickVerifiedPhotoPool(startIndex: number, size = 7): string[] {
   const pool = VERIFIED_SHOWCASE_PHOTOS;
+  return Array.from({ length: size }, (_, i) => pool[(startIndex + i) % pool.length]!);
+}
+
+/** Beach club / marina showcase — golden hour, pool, Aegean lounge */
+/** HTTP 200 verified — beach, pool, resort lounge */
+export const BEACH_CLUB_SHOWCASE_PHOTOS = [
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1080&q=85',
+  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080&q=85',
+  'https://images.unsplash.com/photo-1505142468610-359e7d316be0?w=1080&q=85',
+  'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=1080&q=85',
+  'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?w=1080&q=85',
+  'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1080&q=85',
+  'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1080&q=85',
+] as const;
+
+export function pickBeachClubPhotoPool(startIndex = 0, size = 7): string[] {
+  const pool = BEACH_CLUB_SHOWCASE_PHOTOS;
+  return Array.from({ length: size }, (_, i) => pool[(startIndex + i) % pool.length]!);
+}
+
+/** Beauty salon / spa showcase — soft light, treatment, wellness (HTTP 200 verified) */
+export const BEAUTY_SALON_SHOWCASE_PHOTOS = [
+  'https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?w=1080&q=85',
+  'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=1080&q=85',
+  'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1080&q=85',
+  'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=1080&q=85',
+  'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=1080&q=85',
+  'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1080&q=85',
+  'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=1080&q=85',
+] as const;
+
+export function pickBeautySalonPhotoPool(startIndex = 0, size = 7): string[] {
+  const pool = BEAUTY_SALON_SHOWCASE_PHOTOS;
   return Array.from({ length: size }, (_, i) => pool[(startIndex + i) % pool.length]!);
 }
 
@@ -153,9 +187,14 @@ export function listRegistrySummary() {
 }
 
 export function resolveKitForSector(sector: string, seed = 0): string {
+  const kitSector = resolveKitSectorForVibe(sector).toLowerCase().replace(/\s+/g, '_');
   const norm = sector.toLowerCase().replace(/\s+/g, '_');
   const matches = AGENCY_BRAND_KITS.filter(
-    (k) => k.sector.includes(norm) || norm.includes(k.sector.split('_')[0]!),
+    (k) => k.sector === kitSector
+      || k.sector.includes(kitSector)
+      || kitSector.includes(k.sector)
+      || k.sector.includes(norm)
+      || norm.includes(k.sector.split('_')[0]!),
   );
   const pool = matches.length ? matches : AGENCY_BRAND_KITS;
   return pool[seed % pool.length]!.id;

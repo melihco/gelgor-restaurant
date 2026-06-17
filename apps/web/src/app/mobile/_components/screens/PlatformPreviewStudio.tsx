@@ -81,8 +81,8 @@ const D = {
   textPrimary: '#f0f0f5',
   textSecondary: 'rgba(255,255,255,0.55)',
   textMuted: 'rgba(255,255,255,0.28)',
-  accent: '#a78bfa',
-  accentGlow: 'rgba(167,139,250,0.25)',
+  accent: '#9DBECE',
+  accentGlow: 'rgba(157,190,206,0.25)',
   danger: '#ef4444',
   success: '#10b981',
   gold: '#f59e0b',
@@ -847,8 +847,8 @@ function AIExplanationSheet({ artifact, onClose }: { artifact: OutputArtifact; o
 
           {/* Confidence score — only if derived from real engagement signal */}
           {confidenceFromEng !== null && (
-            <div style={{ padding: '12px 14px', borderRadius: 14, background: 'rgba(167,139,250,0.06)',
-              border: '0.5px solid rgba(167,139,250,0.2)' }}>
+            <div style={{ padding: '12px 14px', borderRadius: 14, background: 'rgba(157,190,206,0.06)',
+              border: '0.5px solid rgba(157,190,206,0.2)' }}>
               <p style={{ fontSize: 11, fontWeight: 700, color: D.accent, textTransform: 'uppercase',
                 letterSpacing: '0.08em', marginBottom: 8 }}>Güven Skoru (etkileşim tahminine göre)</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -944,7 +944,7 @@ function ApprovalDock({ status, approving, onApprove, onRevise, onRegenerate, on
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={onRevise}
               style={{ flex: 1, padding: '12px', borderRadius: 14, cursor: 'pointer',
-                background: 'rgba(167,139,250,0.1)', border: '0.5px solid rgba(167,139,250,0.25)',
+                background: 'rgba(157,190,206,0.1)', border: '0.5px solid rgba(157,190,206,0.25)',
                 color: D.accent, fontSize: 13, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.68"/></svg>
@@ -1054,7 +1054,7 @@ export function PlatformPreviewStudio() {
     return (
       <div style={{ height: '100dvh', background: D.bg, display: 'flex', alignItems: 'center',
         justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
-        <div style={{ width: 36, height: 36, borderRadius: '50%', border: `2px solid rgba(167,139,250,0.2)`,
+        <div style={{ width: 36, height: 36, borderRadius: '50%', border: `2px solid rgba(157,190,206,0.2)`,
           borderTop: `2px solid ${D.accent}`, animation: 'spinSlow 1s linear infinite' }} />
         <span style={{ fontSize: 14, color: D.textSecondary }}>Yükleniyor…</span>
       </div>
@@ -1130,7 +1130,7 @@ export function PlatformPreviewStudio() {
                   {isPending ? 'Onay Bekliyor' : 'Onaylandı'}
                 </span>
                 <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8,
-                  background: 'rgba(167,139,250,0.12)', color: D.accent, fontWeight: 700 }}>
+                  background: 'rgba(157,190,206,0.12)', color: D.accent, fontWeight: 700 }}>
                   ✦ AI
                 </span>
               </div>

@@ -18,7 +18,13 @@ const nextConfig: NextConfig = {
    */
   allowedDevOrigins: ['*.ngrok-free.app', '*.ngrok-free.dev', '*.ngrok.io'],
   experimental: {
-    optimizePackageImports: ['@react-three/fiber', '@react-three/drei', 'lucide-react'],
+    optimizePackageImports: [
+      '@react-three/fiber',
+      '@react-three/drei',
+      'lucide-react',
+      '@tanstack/react-query',
+      '@microsoft/signalr',
+    ],
     /**
      * Varsayılan ~30 sn proxy limiti, Crew/LLM çağrılarını keser (content_ideation vb. 1–5 dk sürebilir).
      * .NET OrchestrationService:TimeoutSeconds (ör. 300) + pay bırakır.

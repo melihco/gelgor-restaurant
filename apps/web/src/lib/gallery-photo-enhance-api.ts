@@ -27,7 +27,14 @@ export type GalleryEnhanceRequest = {
   visualSubject?: AiVisualSubject | 'venue_ambiance' | 'product_hero';
   useBrandIdentity?: boolean;
   briefDrivesScene?: boolean;
+  adaptiveScene?: boolean;
+  adaptiveSceneMode?: 'venue_context' | 'product_showcase' | 'lifestyle_composite';
+  /** Reuse mission Crew brief — skips duplicate scene-brief LLM in enhance route */
+  prebuiltSceneBrief?: Record<string, unknown>;
+  missionId?: string;
 };
+
+export const GPT_IMAGE_ENHANCE_COST_USD = 0.21;
 
 export type GalleryEnhanceResultItem = {
   original: string;

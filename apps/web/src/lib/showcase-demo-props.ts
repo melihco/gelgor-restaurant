@@ -2,6 +2,16 @@
  * Per-family showcase demo copy — each template family gets distinct headline/subtitle.
  */
 import type { RemotionLayoutFamily, AgencyBrandKit } from './remotion-template-types';
+import {
+  BEACH_CLUB_FAMILY_DEMO,
+  BEACH_CLUB_SLOT_DEMO,
+  isBeachClubSector,
+} from './showcase-beach-club';
+import {
+  BEAUTY_SALON_FAMILY_DEMO,
+  BEAUTY_SALON_SLOT_DEMO,
+  isBeautySalonSector,
+} from './showcase-beauty-salon';
 
 export interface ShowcaseDemoProps {
   headline: string;
@@ -28,6 +38,7 @@ const FAMILY_DEMO: Record<RemotionLayoutFamily, ShowcaseDemoProps> = {
   minimal_luxury: { headline: 'Pure\nIndulgence', subtitle: 'Handcrafted detail', categoryLabel: 'LUXURY' },
   mosaic_pinterest: { headline: 'Save\nThis Mood', subtitle: 'Pin-worthy corners', categoryLabel: 'MOOD' },
   asymmetric_editorial: { headline: 'Bold\nContrast', subtitle: 'Editorial color block', categoryLabel: 'EDIT' },
+  polaroid_single: { headline: 'COOL\nOFF', subtitle: 'Mekanınızdan bir an', categoryLabel: 'DAILY' },
   polaroid_stack: { headline: 'Memory\nLane', subtitle: 'Polaroid week recap', categoryLabel: 'RECAP' },
   vibe_fullscreen: { headline: 'Main\nCharacter\nEnergy', subtitle: 'This is the vibe tonight', categoryLabel: 'VIBE' },
   bento_story: { headline: '4 Corners\nOne Mood', subtitle: 'Swipe for the full story', categoryLabel: 'BENTO' },
@@ -49,8 +60,29 @@ export function resolveShowcaseDemoProps(input: {
   kit: AgencyBrandKit;
   slotKey?: string;
   variantIndex?: number;
+  sector?: string;
+  presetKey?: string;
 }): ShowcaseDemoProps {
-  const base = (input.slotKey && SLOT_DEMO[input.slotKey]) || FAMILY_DEMO[input.family] || FAMILY_DEMO.editorial_bottom;
+  const sector = input.sector ?? input.kit.sector;
+  const beach = isBeachClubSector(sector)
+    || input.presetKey === 'yula_bodrum'
+    || input.presetKey === 'vibe_beach_club';
+  const beauty = isBeautySalonSector(sector) || input.presetKey === 'vibe_beauty_salon';
+
+  const base = beach
+    ? ((input.slotKey && BEACH_CLUB_SLOT_DEMO[input.slotKey])
+      || BEACH_CLUB_FAMILY_DEMO[input.family]
+      || FAMILY_DEMO[input.family]
+      || FAMILY_DEMO.editorial_bottom)
+    : beauty
+      ? ((input.slotKey && BEAUTY_SALON_SLOT_DEMO[input.slotKey])
+        || BEAUTY_SALON_FAMILY_DEMO[input.family]
+        || FAMILY_DEMO[input.family]
+        || FAMILY_DEMO.editorial_bottom)
+      : ((input.slotKey && SLOT_DEMO[input.slotKey])
+        || FAMILY_DEMO[input.family]
+        || FAMILY_DEMO.editorial_bottom);
+
   const vi = input.variantIndex ?? 0;
   const headline = vi % 3 === 1 && !base.headline.includes('\n')
     ? base.headline.replace(' ', '\n')

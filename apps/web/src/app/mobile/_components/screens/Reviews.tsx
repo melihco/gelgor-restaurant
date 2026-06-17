@@ -91,6 +91,7 @@ type Filter = 'all' | 'pending' | 'executed' | 'negative';
 
 export function Reviews() {
   const { t } = useTheme();
+  const { navigate } = useMobileStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<ReviewItem | null>(null);
 
@@ -129,7 +130,7 @@ export function Reviews() {
         {/* Header */}
         <div style={{ padding: '60px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
           <p style={{ fontSize: 12, fontWeight: 500, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Google Business</p>
-          <h1 style={{ fontSize: 32, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 16 }}>Reviews</h1>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 16 }}>Yorumlar</h1>
 
           {/* Stats */}
           {!isLoading && allReviews.length > 0 && (
@@ -176,11 +177,29 @@ export function Reviews() {
           {isLoading ? (
             <div style={{ ...t.surfaceCard, padding: '48px', textAlign: 'center', color: t.textMuted, fontSize: 13 }}>Yükleniyor...</div>
           ) : filtered.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '56px 0' }}>
+            <div style={{ textAlign: 'center', padding: '56px 20px' }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
-              <div style={{ fontSize: 14, color: t.textMuted }}>
-                {allReviews.length === 0 ? 'Henüz yorum analizi bulunmuyor' : 'Bu filtre için yorum yok'}
+              <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>
+                {allReviews.length === 0 ? 'Henüz yorum yok' : 'Bu filtre için yorum yok'}
               </div>
+              {allReviews.length === 0 && (
+                <>
+                  <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, marginBottom: 20, maxWidth: 280, margin: '0 auto 20px' }}>
+                    Google Business ve Instagram bağlantısı kurulunca yorumlar burada görünür ve AI yanıt önerileri hazırlanır.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('settings')}
+                    style={{
+                      padding: '11px 22px', borderRadius: 24, border: 'none', cursor: 'pointer',
+                      background: `linear-gradient(135deg, ${t.accent}, ${t.accent}cc)`,
+                      color: '#fff', fontSize: 13, fontWeight: 700,
+                    }}
+                  >
+                    Entegrasyonları Bağla
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -14,6 +14,7 @@ import {
   parseMertcafeSavedAccounts,
   type MertcafeSavedAccount,
 } from '@/lib/mertcafe-accounts';
+import { humanizeMertcafePublishError } from '@/lib/mertcafe-publish-auth';
 import {
   assertTenantMertcafeReady,
   normalizeMertcafeWorkspaceId,
@@ -135,12 +136,14 @@ export function extractAccountIdFromPostResponse(data: Record<string, unknown>):
 export function parseMertcafeErrorBody(data: Record<string, unknown>): string {
   const raw = String(data.detail || data.error || data.message || data.raw || '');
   if (!raw) return '';
+  let parsed = raw;
   try {
     const nested = JSON.parse(raw) as { error?: string; message?: string };
-    return String(nested.error || nested.message || raw);
+    parsed = String(nested.error || nested.message || raw);
   } catch {
-    return raw;
+    parsed = raw;
   }
+  return humanizeMertcafePublishError(parsed);
 }
 
 export async function mertcafeGet(

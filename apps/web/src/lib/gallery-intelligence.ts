@@ -31,6 +31,8 @@ export interface AnalysisLike {
   usageContext?: string;
   suggestedAssetType?: string;
   isLogo?: boolean;
+  captionHooks?: string[];
+  pairingKeywords?: string[];
   /** Stamped by the analyze pipeline (Sprint 2). ISO string. */
   analyzedAt?: string;
   /** Cached deterministic quality score (0..100), if already computed. */
@@ -69,6 +71,12 @@ export function computeAnalysisQuality(a: AnalysisLike): number {
   const usage = (a.usageContext ?? '').trim();
   if (usage.length >= 40) score += 12;
   else if (usage.length > 0) score += 6;
+
+  // caption hooks + pairing keywords — up to 10
+  const hooks = (a.captionHooks ?? []).filter((t) => typeof t === 'string' && t.trim());
+  const pairs = (a.pairingKeywords ?? []).filter((t) => typeof t === 'string' && t.trim());
+  if (hooks.length >= 3 && pairs.length >= 6) score += 10;
+  else if (hooks.length >= 1 || pairs.length >= 4) score += 5;
 
   // mood + asset type classified — up to 8
   if ((a.mood ?? '').trim()) score += 4;

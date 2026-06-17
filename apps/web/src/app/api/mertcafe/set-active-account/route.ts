@@ -16,6 +16,27 @@ type Body = {
   remember?: boolean;
 };
 
+function formatUpstreamError(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((item) => {
+        if (!item || typeof item !== 'object') return '';
+        const rec = item as Record<string, unknown>;
+        const loc = Array.isArray(rec.loc) ? rec.loc.join('.') : '';
+        const msg = String(rec.msg ?? rec.message ?? '').trim();
+        return loc && msg ? `${loc}: ${msg}` : msg;
+      })
+      .filter(Boolean);
+    if (msgs.length) return msgs.join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    const msg = String((detail as Record<string, unknown>).message ?? '').trim();
+    if (msg) return msg;
+  }
+  return fallback;
+}
+
 /** POST — set active Mertcafe publish account (brand_theme). */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: Body = {};
@@ -64,8 +85,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     `/api/v1/brand-context/${workspaceId}/theme/ai-settings`,
     {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
+      body: patch,
       timeoutMs: 15_000,
     },
   );
@@ -73,7 +93,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!patchRes.ok) {
     const errBody = (patchRes.data ?? {}) as Record<string, unknown>;
     return NextResponse.json(
-      { error: String(errBody.detail ?? errBody.error ?? 'Failed to save account') },
+      {
+        error: formatUpstreamError(
+          errBody.detail ?? errBody.error,
+          'Failed to save account',
+        ),
+      },
       { status: patchRes.status || 502 },
     );
   }

@@ -256,6 +256,59 @@ export const HEALTHCARE_PHOTO_IDS: string[] = [
   "1641230846322-caa4939d2cb1",
 ];
 
+/**
+ * Beauty & wellness — nail salon, hair salon, spa, barbershop, aesthetics.
+ * Curated Unsplash IDs: nail art, manicure, beauty salon interior,
+ * skincare, cosmetics, wellness treatments.
+ */
+export const BEAUTY_WELLNESS_PHOTO_IDS: string[] = [
+  // Nail art / manicure close-ups
+  "1604654894610-df63bc536371", // manicure hands pink nails
+  "1604654894654-dccdb3c2a2d9", // nail salon setup
+  "1607004001847-2df7fb165e6d", // colourful nail art
+  "1631729371254-42c2892f0e6e", // nail polish bottles
+  "1585442408416-a1ee6e0aa3b2", // manicure in progress
+  "1609859972023-c7b51e6f3b14", // gel nail application
+  "1582095133179-bfd5e5b33a87", // nail tools layout
+  "1573461160851-b46e40c1cdc6", // beauty salon interior
+  // Salon interior / atmosphere
+  "1560066984-138dadb4c035", // minimalist beauty salon
+  "1522337360788-8b13dee7a37e", // wellness spa interior
+  "1540555700478-4be289fbecef", // clean white spa
+  "1559339352-11d035aa65de", // beauty studio
+  "1571896349842-33c89424de2d", // skincare products flat lay
+  "1574015974293-817f0ebebb74", // treatment room
+  // Skincare / cosmetics
+  "1556742049-0cfed4f6a45d", // skincare bottles
+  "1593702288056-7927b442d0fa", // facial treatment
+  "1595475884562-073c30d45670", // beauty products
+  "1580618672591-eb180b1a973f", // cosmetics close-up
+  // Lifestyle / hands / texture
+  "1552664730-d307ca884978", // soft hands
+  "1525351484163-7529414344d8", // floral pink aesthetic
+  "1554519934-e32b1629d9ee", // pastel beauty flatlay
+  "1634449571010-02389ed0f9b0", // aesthetic beauty shot
+  "1635273051368-de31ef6a8cc4", // elegant lifestyle
+];
+
+/**
+ * Barber / hair salon seed pool.
+ */
+export const BARBER_SALON_PHOTO_IDS: string[] = [
+  "1503951914875-452162b0f3f1", // barber shop interior
+  "1567894340315-702c86bda3e3", // hair salon chair
+  "1521590832167-7bcbfaa6381f", // haircut styling
+  "1522337360788-8b13dee7a37e", // barbershop atmosphere
+  "1512941937669-90a1b58e7e9c", // hair styling tools
+  "1560066984-138dadb4c035", // clean salon interior
+  "1554519934-e32b1629d9ee", // grooming products
+  "1556761175-b413da4baf72", // scissors and comb
+  "1573461160851-b46e40c1cdc6", // barber at work
+  "1595475884562-073c30d45670", // hair products
+  "1523275335684-37898b6baf30", // watch/grooming lifestyle
+  "1629975305732-69bc8c5f3c80", // modern barbershop
+];
+
 export const GENERAL_BUSINESS_PHOTO_IDS: string[] = [
   "1414235077428-338989a2e8c0",
   "1460925895917-afdab827c52f",

@@ -42,7 +42,7 @@ export function LoginScreen() {
       if (friendly.status === 401 || friendly.status === 403) {
         setError('E-posta veya şifre hatalı.');
       } else if (friendly.status === 0) {
-        setError('Sunucuya bağlanılamıyor. Nexus API (5050) çalışıyor mu?');
+        setError('Bağlantı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.');
       } else {
         setError(friendly.detail || friendly.title);
       }
@@ -151,10 +151,10 @@ export function LoginScreen() {
             width: '100%', padding: '17px', borderRadius: 16,
             fontSize: 16, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
             background: t.isDark
-              ? 'linear-gradient(135deg, rgba(124,58,237,0.9), rgba(99,102,241,0.8))'
-              : 'linear-gradient(135deg, #7c3aed, #6366f1)',
+              ? 'linear-gradient(135deg, rgba(77,112,136,0.9), rgba(90,130,160,0.8))'
+              : 'linear-gradient(135deg, #4D7088, #5A82A0)',
             border: 'none', color: '#fff',
-            boxShadow: '0 4px 16px rgba(124,58,237,0.35)',
+            boxShadow: '0 4px 16px rgba(77,112,136,0.35)',
             opacity: loading ? 0.7 : 1,
             letterSpacing: '0.01em',
           }}

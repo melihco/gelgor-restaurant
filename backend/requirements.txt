@@ -43,6 +43,10 @@ apscheduler>=3.10.4
 # Observability
 structlog>=24.4.0
 
+# MCP design server (Visual Production Director tools)
+fastmcp>=2.0.0
+mcp>=1.6.0
+
 # Utilities
 python-dotenv>=1.0.1
 tenacity>=9.0.0

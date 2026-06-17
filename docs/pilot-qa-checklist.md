@@ -3,7 +3,7 @@
 **Amaç:** Bir pilot tenant'ı (ör. beach restaurant / nightlife) baştan sona doğrulamak.
 Otonom üretim (S10) **yalnızca** bu checklist tam geçtikten ve BAS=100 olduktan sonra açılır.
 
-**Pilot tenant:** `431b2901-a2dc-4df6-abe3-3670d9844851` (Sarnıç Beach)  
+**Pilot tenant:** `431b2901-a2dc-4df6-abe3-3670d9844851` (Sarnıç Beach) — kod: `SARNIC_BEACH_WORKSPACE_ID` in `apps/web/src/lib/visual-overlay-policy.ts`  
 **Tarih:** 2026-05-31  
 **Yapan:** Faz-1 audit (otomatik + manuel)  
 **Detay rapor:** [`pilot-qa-sarnic-results.md`](./pilot-qa-sarnic-results.md)  
@@ -125,3 +125,18 @@ NEXT_PUBLIC_AUTO_MISSION_TRIGGER=true
 ```
 
 Next.js yeniden başlat → Feed mount → auto-trigger aktif.
+
+---
+
+## 8. APO-8 — Maliyet + kapalı döngü (2026-06)
+
+| # | Kontrol | Beklenen | Sonuç |
+|---|---------|----------|-------|
+| 8.1 | auto-produce artifact metadata `cost_usd_estimate` | Her yeni üretimde >0 | ☐ yeniden üretim sonrası |
+| 8.2 | Mission detay → «Üretim maliyeti (tahmini)» | Runway/Remotion kırılımı | ☐ |
+| 8.3 | Reddedilen designed post → sonraki batch farklı `layout_family_hint` | Log: `APO-8 layout rotation` | ☐ |
+| 8.4 | Feed Reklam sekmesi | Yalnızca `paid_ad_creative` / `meta_ad` | ☐ ads_focus mission |
+| 8.5 | Takvim node → plan satırı Feed durumu | Feed'de / Eksik / Render | ☐ |
+| 8.6 | `brand_theme.quality_tier: agency` | Hub maliyet + 2 reel slot | ☐ opsiyonel |
+
+**Komut:** `./scripts/pilot-qa-audit.sh` + Mission Hub «Paketi yeniden üret»

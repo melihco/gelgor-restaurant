@@ -17,6 +17,12 @@ import {
   type ContentIntent,
 } from './brand-motion-profile';
 import { REMOTION_TEMPLATE_BY_ID } from './remotion-template-catalog';
+import { resolveSlotRenderTypography } from './brand-template-slot-typography';
+import { resolveSlotLogoForRender } from './brand-logo-production';
+import {
+  applyBrandTokensToRenderProps,
+  resolveBrandProductionTokens,
+} from './brand-production-tokens';
 
 export interface MissionStoryTemplatePick {
   slot: BrandTemplateLibrarySlot;
@@ -136,6 +142,8 @@ export interface StoryRemotionRenderBody {
   allowedCompositions?: StoryCompositionId[];
   motionStyle?: string;
   locale?: string;
+  uploadToR2?: boolean;
+  requirePersistent?: boolean;
   props: Record<string, unknown>;
 }
 
@@ -162,28 +170,64 @@ export function buildStoryRemotionRenderRequest(input: {
   const policy = input.brandTheme
     ? resolveBrandRemotionRenderPolicy(input.brandTheme, { sector: input.sector })
     : null;
+  const tokens = resolveBrandProductionTokens({
+    brandTheme: input.brandTheme,
+    sector: input.sector,
+    brandName: input.brandName,
+  });
+  const templateId = pick.storyTemplateId ?? '';
+  const slotTypo = resolveSlotRenderTypography({
+    slot: {
+      fontMode: pick.slot.fontMode,
+      fontPersonality: pick.slot.fontPersonality,
+      headingFont: pick.slot.headingFont,
+      bodyFont: pick.slot.bodyFont,
+      format: 'story',
+      storyTemplateId: pick.slot.storyTemplateId,
+      posterTemplateId: pick.slot.posterTemplateId,
+    },
+    templateId,
+    format: 'story',
+    brandHeadingFont: input.fontFamily ?? tokens.headingFont,
+    brandBodyFont: input.bodyFont ?? tokens.bodyFont,
+    sector: input.sector,
+  });
+  const compositionId = (
+    templateId && REMOTION_TEMPLATE_BY_ID.has(templateId)
+      ? compositionIdForStoryTemplate(templateId, pick.slot)
+      : pick.compositionId
+  ) as StoryCompositionId;
+  const baseProps = applyBrandTokensToRenderProps({
+    photoUrl: input.photoUrl,
+    headline: input.headline,
+    subtitle: input.caption.slice(0, 120),
+    brandName: input.brandName,
+    location: input.location ?? '',
+    mood: input.mood ?? '',
+    logoUrl: resolveSlotLogoForRender(input.logoUrl, pick.slot),
+    templateId,
+    kitId: pick.kitId,
+    librarySlotKey: pick.slot.key,
+    primaryColor: input.primaryColor ?? tokens.primaryColor,
+    accentColor: input.accentColor ?? tokens.accentColor,
+    sector: input.sector,
+    contentIntent: pick.intent,
+  }, tokens, {
+    headingFont: slotTypo.headingFont,
+    bodyFont: slotTypo.bodyFont,
+    fontPersonality: slotTypo.fontPersonality,
+    honorTemplateTypography: slotTypo.honorTemplateTypography,
+  });
   return {
-    compositionId: pick.compositionId,
+    compositionId,
     workspaceId: input.workspaceId,
     useCreativeDirector: true,
     brandTemplateLocked: pick.library.locked ?? policy?.brandTemplateLocked,
     allowedCompositions: policy?.allowedCompositions,
     motionStyle: input.motionStyle ?? policy?.motionStyle,
     locale: input.locale ?? policy?.locale,
-    props: {
-      photoUrl: input.photoUrl,
-      headline: input.headline,
-      subtitle: input.caption.slice(0, 120),
-      brandName: input.brandName,
-      location: input.location ?? '',
-      mood: input.mood ?? '',
-      logoUrl: input.logoUrl,
-      templateId: pick.storyTemplateId,
-      kitId: pick.kitId,
-      primaryColor: input.primaryColor,
-      accentColor: input.accentColor,
-      fontFamily: input.fontFamily,
-      bodyFont: input.bodyFont,
-    },
+    uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
+    requirePersistent: true,
+    props: baseProps,
   };
 }

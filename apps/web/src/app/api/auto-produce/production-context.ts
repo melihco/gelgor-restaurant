@@ -25,6 +25,7 @@ import { resolveVisualSubject } from '@/lib/ai-visual-production-standard';
 import { parseMotionProfileFromTheme } from '@/lib/brand-motion-profile';
 import { resolveKitForSector } from '@/lib/remotion-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
+import { resolveProductionLogoUrl } from '@/lib/brand-logo-production';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
 import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
 import { resolveAnnouncementBrandKit } from '@/lib/announcement-brand-kit';
@@ -32,6 +33,11 @@ import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
 import type { AiVisualProductionStandard } from '@/lib/ai-visual-production-standard';
 import type { AiEnhanceLevel } from '@/lib/ai-gallery-enhance';
 import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
+import type { BrandProfileSnapshot, ProductionBrandContextSnapshot } from '@smartagency/contracts';
+import {
+  parseTenantLearningApiResponse,
+  type TenantLearningSnapshot,
+} from '@/lib/mission-production-telemetry';
 
 const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
@@ -89,11 +95,14 @@ export interface ProductionContext {
   readonly motionProfile: ReturnType<typeof parseMotionProfileFromTheme>;
 
   // ── Learning / mission brief ──────────────────────────────────────────────
+  readonly tenantLearning: TenantLearningSnapshot;
+  /** Markdown block injected into production prompts (empty when no learning). */
   readonly tenantLearningBrief: string;
   readonly missionVisualBrief: string;
 
   // ── Context struct for visual pipeline ───────────────────────────────────
   readonly brandCtxForVisual: BrandContextForVisual;
+  readonly productionSnapshot: ProductionBrandContextSnapshot | null;
 }
 
 export interface BrandContextForVisual {
@@ -143,21 +152,58 @@ async function fetchBrandContextRaw(workspaceId: string): Promise<Record<string,
   return {};
 }
 
-async function fetchTenantLearningBrief(workspaceId: string): Promise<string> {
+async function fetchProductionSnapshot(
+  workspaceId: string,
+  baseUrl?: string,
+): Promise<ProductionBrandContextSnapshot | null> {
+  const origin = (baseUrl || process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
   try {
-    const r = await fetch(`${CREW_BACKEND}/api/v1/brand-context/${workspaceId}/tenant-learning`, {
+    const r = await fetch(`${origin}/api/production-context/${workspaceId}/snapshot`, {
       headers: {
-        'X-Internal-Api-Key': INTERNAL_KEY,
         'X-Tenant-Id': workspaceId,
       },
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(8_000),
     });
-    if (r.ok) {
-      const d = await r.json() as { prompt?: string };
-      return d.prompt?.trim() ?? '';
+    if (!r.ok) return null;
+    return await r.json() as ProductionBrandContextSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTenantLearningSnapshot(workspaceId: string): Promise<TenantLearningSnapshot> {
+  const url = `${CREW_BACKEND}/api/v1/brand-context/${workspaceId}/tenant-learning`;
+  const headers = {
+    'X-Internal-Api-Key': INTERNAL_KEY,
+    'X-Tenant-Id': workspaceId,
+  };
+
+  const attempt = async (): Promise<{ data: unknown; ok: boolean }> => {
+    try {
+      const r = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(8_000),
+      });
+      const data = await r.json().catch(() => null);
+      return { data, ok: r.ok };
+    } catch {
+      return { data: null, ok: false };
     }
-  } catch { /* non-fatal */ }
-  return '';
+  };
+
+  let last = await attempt();
+  if (!last.ok) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    last = await attempt();
+  }
+
+  const snapshot = parseTenantLearningApiResponse(last.data, last.ok);
+  if (snapshot.status === 'fetch_failed') {
+    console.warn(
+      `[production-context] tenant learning fetch failed for ${workspaceId.slice(0, 8)} — prompts may miss approval history`,
+    );
+  }
+  return snapshot;
 }
 
 // ─── Main factory ─────────────────────────────────────────────────────────────
@@ -175,10 +221,12 @@ export async function fetchProductionContext(
   overrides?: {
     brandName?: string;
     creativeBrief?: string | null;
+    baseUrl?: string;
+    productionSnapshot?: ProductionBrandContextSnapshot | null;
   },
 ): Promise<ProductionContext> {
   // Fetch brand data + theme in parallel for speed
-  const [raw, brandTheme, tenantLearningBrief] = await Promise.all([
+  const [rawBase, brandTheme, tenantLearning, productionSnapshot] = await Promise.all([
     fetchBrandContextRaw(workspaceId),
     fetchBrandThemeForProduction({
       workspaceId,
@@ -186,17 +234,55 @@ export async function fetchProductionContext(
       internalApiKey: INTERNAL_KEY,
       timeoutMs: 20_000,
     }).catch(() => null),
-    fetchTenantLearningBrief(workspaceId),
+    fetchTenantLearningSnapshot(workspaceId),
+    overrides?.productionSnapshot
+      ? Promise.resolve(overrides.productionSnapshot)
+      : fetchProductionSnapshot(workspaceId, overrides?.baseUrl),
   ]);
+  const brandSnapshot: BrandProfileSnapshot | null = productionSnapshot?.brand ?? null;
+
+  const snapshotGalleryUrls = brandSnapshot?.gallery
+    .map((item) => String(item.url ?? '').trim())
+    .filter((url) => url.startsWith('http://') || url.startsWith('https://')) ?? [];
+  const raw: Record<string, unknown> = brandSnapshot
+    ? {
+        ...rawBase,
+        business_name: brandSnapshot.brandName,
+        business_type: brandSnapshot.businessType || rawBase.business_type || rawBase.industry || '',
+        description: brandSnapshot.description ?? rawBase.description ?? '',
+        target_audience: brandSnapshot.targetAudience ?? rawBase.target_audience ?? '',
+        brand_tone: brandSnapshot.brandTone ?? rawBase.brand_tone ?? '',
+        brand_dna: brandSnapshot.brandDna ?? rawBase.brand_dna,
+        visual_dna: brandSnapshot.visualDna ?? rawBase.visual_dna ?? '',
+        website_summary: brandSnapshot.websiteSummary ?? rawBase.website_summary ?? '',
+        instagram_bio: brandSnapshot.instagramBio ?? rawBase.instagram_bio ?? '',
+        location: brandSnapshot.location ?? rawBase.location ?? '',
+        languages: brandSnapshot.languages?.length ? brandSnapshot.languages : rawBase.languages,
+        reference_image_urls: snapshotGalleryUrls.length >= 3
+          ? snapshotGalleryUrls
+          : rawBase.reference_image_urls,
+        logo_url:
+          brandSnapshot.gallery.find((item) => item.kind === 'logo')?.url
+          ?? rawBase.logo_url
+          ?? '',
+      }
+    : rawBase;
 
   // ── Brand identity ─────────────────────────────────────────────────────
-  const brandBusinessType = String(raw.business_type ?? raw.industry ?? '');
-  const brandLocation = String(raw.location ?? '');
-  const brandTone = String(raw.brand_tone ?? '');
-  const brandLogoUrl = String(raw.logo_url ?? '');
+  const brandBusinessType = String(brandSnapshot?.businessType ?? raw.business_type ?? raw.industry ?? '');
+  const brandLocation = String(brandSnapshot?.location ?? raw.location ?? '');
+  const brandTone = String(brandSnapshot?.brandTone ?? raw.brand_tone ?? '');
+  const brandLogoUrl = resolveProductionLogoUrl([
+    brandSnapshot?.gallery.find((item) => item.kind === 'logo')?.url,
+    typeof raw.logo_url === 'string' ? raw.logo_url : String(raw.logo_url ?? ''),
+  ]);
   const rawBrandName = String(
     overrides?.brandName
-    ?? resolveCanonicalBrandName(null, raw)
+    ?? brandSnapshot?.brandName
+    ?? resolveCanonicalBrandName(
+      brandSnapshot ? { brandName: brandSnapshot.brandName } : null,
+      raw,
+    )
     ?? raw.business_name
     ?? '',
   ).trim();
@@ -258,11 +344,12 @@ export async function fetchProductionContext(
   ) as 'minimal' | 'medium' | 'dense' | undefined;
   const motionProfile = parseMotionProfileFromTheme(productionBrandTheme, {
     sector: brandBusinessType,
-    languages: (raw.languages as string) ?? undefined,
+    languages: raw.languages ?? undefined,
     textOverlayDensity: typographyDensity,
   });
 
   // ── Mission brief ──────────────────────────────────────────────────────
+  const tenantLearningBrief = tenantLearning.prompt;
   const missionVisualBrief = resolveMissionVisualBrief(
     overrides?.creativeBrief,
     tenantLearningBrief,
@@ -292,15 +379,15 @@ export async function fetchProductionContext(
   const brandCtxForVisual: BrandContextForVisual = {
     business_name: brandName,
     business_type: brandBusinessType,
-    description: String(raw.description ?? ''),
+    description: String(brandSnapshot?.description ?? raw.description ?? ''),
     brand_tone: brandTone,
     visual_style: String(raw.visual_style ?? ''),
-    target_audience: String(raw.target_audience ?? ''),
+    target_audience: String(brandSnapshot?.targetAudience ?? raw.target_audience ?? ''),
     location: brandLocation,
-    website_summary: String(raw.website_summary ?? ''),
-    instagram_bio: String(raw.instagram_bio ?? ''),
-    brand_dna: raw.brand_dna as string | Record<string, unknown> | undefined,
-    visual_dna: String(raw.visual_dna ?? ''),
+    website_summary: String(brandSnapshot?.websiteSummary ?? raw.website_summary ?? ''),
+    instagram_bio: String(brandSnapshot?.instagramBio ?? raw.instagram_bio ?? ''),
+    brand_dna: (brandSnapshot?.brandDna ?? raw.brand_dna) as string | Record<string, unknown> | undefined,
+    visual_dna: String(brandSnapshot?.visualDna ?? raw.visual_dna ?? ''),
     logo_url: brandLogoUrl || undefined,
     brand_vibe_profile: hasVibe ? (vibeProfile as Record<string, unknown>) : undefined,
     website_intelligence: (raw.website_intelligence ?? null) as
@@ -333,9 +420,11 @@ export async function fetchProductionContext(
     hasVibe,
     vibeProfile,
     motionProfile,
+    tenantLearning,
     tenantLearningBrief,
     missionVisualBrief,
     brandCtxForVisual,
+    productionSnapshot,
   } satisfies ProductionContext);
 }
 

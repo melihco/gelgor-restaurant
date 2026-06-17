@@ -5,11 +5,13 @@ import sharp from 'sharp';
 import { generateStorageKey, getPresignedUrl, uploadToR2 } from '@/lib/r2-storage';
 import {
   extractAccountIdFromPostResponse,
+  extractMertcafeOAuthAccountId,
   loadMertcafeWorkspaceConfig,
   mertcafeGet,
   parseMertcafeErrorBody,
 } from '@/lib/mertcafe-api';
 import { appendMertcafeAccountToPayload } from '@/lib/mertcafe-config';
+import { resolveMertcafePublishAuth } from '@/lib/mertcafe-publish-auth';
 import { assertTenantMertcafeReady, requireMertcafeWorkspaceId } from '@/lib/mertcafe-tenant';
 
 export const runtime = 'nodejs';
@@ -49,6 +51,28 @@ function toPublicUrl(input: string | undefined, origin: string): string | undefi
  * direct R2 presigned URL so Mertcafe (on Railway) can fetch it without
  * going through our ngrok tunnel.
  */
+/** Internal /api/media-proxy — re-upload to R2 so Mertcafe can fetch (localhost/tunnel unsafe). */
+async function resolveMediaProxyForPublish(
+  url: string,
+  origin: string,
+  postType: PostType,
+): Promise<string> {
+  if (!url.includes('/api/media-proxy')) return url;
+  const publicUrl = toPublicUrl(url, origin) ?? url;
+  const normalized = await normalizeImageForInstagram(publicUrl, postType);
+  if (normalized !== publicUrl && normalized.startsWith('http')) return normalized;
+  try {
+    const res = await fetch(publicUrl, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) return url;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const key = generateStorageKey('mertcafe-publish', 'image', 'jpg');
+    const uploaded = await uploadToR2(buffer, key, 'image/jpeg');
+    return await getPresignedUrl(uploaded.key, 24 * 3600);
+  } catch {
+    return url;
+  }
+}
+
 async function resolveToPublicR2Url(url: string): Promise<string> {
   if (!url.includes('/api/media') || !url.includes('key=')) return url;
   try {
@@ -215,13 +239,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const useOAuth =
-    body.use_oauth_account === true ||
-    tenant.useOAuthAccount === true ||
-    body.account_id === 'oauth';
-
   const statusProbe = await mertcafeGet('/api/status', tenant.apiKey);
   const instagramConnected = statusProbe.ok && Boolean(statusProbe.data.instagram_connected);
+  const oauthAccountId = instagramConnected
+    ? extractMertcafeOAuthAccountId(statusProbe.data)
+    : undefined;
+
+  const publishAuth = resolveMertcafePublishAuth({
+    instagram_connected: instagramConnected,
+    use_oauth_account:
+      body.use_oauth_account === true
+      || tenant.useOAuthAccount === true
+      || body.account_id === 'oauth',
+    publish_account_id: body.account_id ?? tenant.publishAccountId ?? null,
+    oauth_account_id: oauthAccountId ?? null,
+  });
+  const useOAuth = publishAuth.useOAuthAccount;
 
   if (useOAuth) {
     if (!instagramConnected) {
@@ -249,7 +282,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     appendMertcafeAccountToPayload(
       payload,
       workspaceId,
-      body.account_id,
+      publishAuth.accountId ?? body.account_id,
       tenant.publishAccountId,
     );
     if (!payload.account_id) {
@@ -277,6 +310,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } else {
       let imageUrl = toPublicUrl(body.image_url, origin);
       if (!imageUrl) return NextResponse.json({ error: 'image_url or video_url is required for story posts' }, { status: 400 });
+      imageUrl = await resolveMediaProxyForPublish(imageUrl, origin, postType);
       imageUrl = await resolveToPublicR2Url(imageUrl);
       imageUrl = toPublicUrl(await normalizeImageForInstagram(imageUrl, postType), origin) ?? imageUrl;
       const mediaError = await assertMediaReachable(imageUrl, 'image');
@@ -326,6 +360,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } else {
     let imageUrl = toPublicUrl(body.image_url, origin);
     if (!imageUrl) return NextResponse.json({ error: 'image_url is required for feed posts' }, { status: 400 });
+    imageUrl = await resolveMediaProxyForPublish(imageUrl, origin, postType);
     // Resolve internal R2 proxy URLs to direct presigned CDN URLs before normalizing
     imageUrl = await resolveToPublicR2Url(imageUrl);
     imageUrl = toPublicUrl(await normalizeImageForInstagram(imageUrl, postType), origin) ?? imageUrl;

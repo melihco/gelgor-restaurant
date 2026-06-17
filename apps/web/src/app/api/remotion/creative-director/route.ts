@@ -11,7 +11,6 @@ import type { ContentIntent } from '@/lib/brand-motion-profile';
 import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
 import {
   LAYOUT_FAMILY_IDS,
-  buildFamilyCatalogForPrompt,
   clampLayoutOverrides,
   compositionToLayoutFamily,
   type CreativeDirectorLayoutOverrides,
@@ -22,7 +21,27 @@ import {
   refineCategoryLabel,
   refineLayoutFamilyForContent,
 } from '@/lib/remotion-quality';
-import { isAgencySector, normalizePosterCopy } from '@/lib/poster-quality';
+import {
+  buildPosterCreativeDirectorPrompt,
+  buildPosterCreativeDirectorUserHints,
+} from '@/lib/poster-creative-director-prompt';
+import {
+  buildStoryCreativeDirectorPrompt,
+  buildStoryCreativeDirectorUserHints,
+} from '@/lib/story-creative-director-prompt';
+import {
+  storySequenceCategoryLabel,
+  resolveSectorCtaHint,
+  type StorySequenceRole,
+} from '@/lib/story-sequence-rules';
+import {
+  resolveSectorLayoutHints,
+  resolveMotionLane,
+  clampOverlayToSectorFloor,
+  resolveHeadlineMaxChars,
+  MOTION_LANE_SPECS,
+} from '@/lib/sector-premium-presets';
+import { isAgencySector, isLogisticsSector, normalizePosterCopy } from '@/lib/poster-quality';
 
 export type { StoryCompositionId };
 
@@ -70,6 +89,7 @@ const FAMILY_TO_COMPOSITION: Partial<Record<RemotionLayoutFamily, StoryCompositi
   mosaic_pinterest: 'GallerySeriesStory',
   bento_story: 'GallerySeriesStory',
   diptych_collage: 'GallerySeriesStory',
+  polaroid_single: 'SpecStory',
   polaroid_stack: 'GallerySeriesStory',
   event_ticket: 'EventAnnouncementStory',
   neon_night: 'EventAnnouncementStory',
@@ -78,83 +98,97 @@ const FAMILY_TO_COMPOSITION: Partial<Record<RemotionLayoutFamily, StoryCompositi
 };
 
 function buildCreativeDirectorPrompt(): string {
-  return `You are the creative director at an Awwwards-caliber social agency.
-PRIME DIRECTIVE: Each story must look DISTINCT — never default to editorial_bottom unless content is truly mundane daily filler.
-Target Grafiker score ≥9/10. Logo is automatic top-center.
-NEVER ship legibility risk — bright venue photos need overlayOpacity ≥0.64 and vignette soft/noir.
-
-━━━ QUALITY RULES (mandatory) ━━━
-- displayHeadline ≤28 chars, no orphan words, ALL CAPS for editorial families
-- overlayOpacity: 0.64–0.78 for photo-overlay layouts (never below 0.58)
-- Prefer split_panel or frosted_glass when photo is busy / high-contrast
-- variantIndex 5–8 for campaigns; 2–4 for soft daily moments
-- layoutOverrides: always set vignette (soft) OR frostedCard for frosted_glass family
-
-━━━ LAYOUT FAMILY CATALOG (pick ONE — this drives the visual design) ━━━
-${buildFamilyCatalogForPrompt()}
-
-━━━ ROUTING (first strong match — prefer dramatic fit over safe default) ━━━
-campaign / offer / promo / discount / % / launch → campaign_hero OR bold_impact
-chef / feature / spotlight / editorial / magazine → magazine_cover OR editorial_left OR asymmetric_editorial
-luxury / premium / hotel / spa / fine dining → split_panel OR minimal_luxury
-event / ticket / lineup / DJ / party date → event_ticket OR neon_night
-menu / gallery / portfolio / social proof / 2+ photos → gallery_series OR bento_story OR mosaic_pinterest
-quote / testimonial / manifesto → quote_card
-location / travel / map / venue pin → location_pin
-empty horizon / sky / sea + ≤3 word headline → cinematic_center OR vibe_fullscreen
-nightlife / club / neon → neon_night
-daily food / cafe / lifestyle (only if nothing else matches) → editorial_bottom OR frosted_glass
-
-━━━ VARIANT INDEX (0–9) ━━━
-Pick variantIndex for visual spice within the family:
-0 = classic/safe, 3–5 = mid drama, 7–9 = bold (wide tracking, noir wash, double frame, deep fade)
-Use higher variants for campaigns and features; lower for soft daily moments.
-
-━━━ COPY RULES ━━━
-- categoryLabel: 1–2 WORDS CAPS, editorial (not generic "BRAND" or "FEATURE" unless truly apt)
-- displayHeadline: punchy, ≤28 chars, ALL CAPS for serif/editorial families
-- displaySubtitle: max 5 words mood tagline from caption, or empty
-- Match locale tone (TR content → Turkish subtitle ok)
-
-━━━ layoutOverrides (optional visual patches) ━━━
-duotoneWash: none|warm|cool|primary
-vignette: none|soft|noir|radial
-heroUppercase, heroTracking (0–0.18), heroScale (0.85–1.25)
-gradientStart (0.35–0.65), gradientEnd (0.7–0.92)
-accentLine: none|above|left_bar|both|underline
-frame: none|thin|double|inset
-fontPersonality: brand|serif_editorial|sans_modern|display_bold
-
-━━━ RESPONSE JSON ONLY ━━━
-{
-  "layoutFamily": "<one of catalog families>",
-  "variantIndex": 0,
-  "categoryLabel": "TASTE",
-  "displayHeadline": "SHORT HEADLINE",
-  "displaySubtitle": "mood line or empty",
-  "overlayOpacity": 0.68,
-  "headlineWeight": 900,
-  "headlineScale": 1.05,
-  "layoutOverrides": { "duotoneWash": "warm", "vignette": "soft" },
-  "rationale": "1 sentence why this family fits",
-  "designScore": 9
-}`;
+  return buildStoryCreativeDirectorPrompt();
 }
 
-function fallbackSpec(headline: string, caption: string, templateId?: string): CreativeDirectorSpec {
+const PREMIUM_FALLBACK_FAMILIES: RemotionLayoutFamily[] = [
+  'split_panel',
+  'frosted_glass',
+  'magazine_cover',
+  'minimal_luxury',
+  'cinematic_center',
+  'gallery_series',
+  'quote_card',
+];
+
+function pickFallbackFamily(input: {
+  preferredLayoutFamily?: RemotionLayoutFamily;
+  sector?: string;
+  allowedFamilies: RemotionLayoutFamily[];
+  recentLayoutFamilies?: RemotionLayoutFamily[];
+}): RemotionLayoutFamily {
+  const recent = new Set(input.recentLayoutFamilies ?? []);
+  const sector = String(input.sector ?? '').toLowerCase();
+  const sectorFavs: RemotionLayoutFamily[] =
+    /beauty|spa|wellness|salon/.test(sector) ? ['frosted_glass', 'magazine_cover', 'diptych_collage']
+      : /hotel|resort|fine_dining|restaurant/.test(sector) ? ['split_panel', 'minimal_luxury', 'magazine_cover']
+      : /beach|marina|pool|rooftop/.test(sector) ? ['cinematic_center', 'vibe_fullscreen', 'split_panel']
+      : /night|club|dj|event/.test(sector) ? ['neon_night', 'event_ticket', 'bold_impact']
+      : [];
+  const candidates = [
+    input.preferredLayoutFamily,
+    ...sectorFavs,
+    ...PREMIUM_FALLBACK_FAMILIES,
+    ...input.allowedFamilies,
+  ].filter((family): family is RemotionLayoutFamily => Boolean(family))
+    .filter((family) => input.allowedFamilies.includes(family));
+  return candidates.find((family) => !recent.has(family)) ?? input.allowedFamilies[0] ?? 'frosted_glass';
+}
+
+function avoidRepeatedLayoutFamily(input: {
+  layoutFamily: RemotionLayoutFamily;
+  preferredLayoutFamily?: RemotionLayoutFamily;
+  allowedFamilies: RemotionLayoutFamily[];
+  recentLayoutFamilies?: RemotionLayoutFamily[];
+  sector?: string;
+}): RemotionLayoutFamily {
+  const recent = input.recentLayoutFamilies ?? [];
+  if (!recent.includes(input.layoutFamily)) return input.layoutFamily;
+  return pickFallbackFamily({
+    preferredLayoutFamily: input.preferredLayoutFamily,
+    sector: input.sector,
+    allowedFamilies: input.allowedFamilies,
+    recentLayoutFamilies: recent,
+  });
+}
+
+function fallbackSpec(
+  headline: string,
+  caption: string,
+  opts: {
+    templateId?: string;
+    preferredLayoutFamily?: RemotionLayoutFamily;
+    sector?: string;
+    allowedFamilies?: RemotionLayoutFamily[];
+    storySequenceRole?: StorySequenceRole;
+    recentLayoutFamilies?: RemotionLayoutFamily[];
+    ctaText?: string;
+  } = {},
+): CreativeDirectorSpec {
+  const fallbackFamily = pickFallbackFamily({
+    preferredLayoutFamily: opts.preferredLayoutFamily,
+    sector: opts.sector,
+    allowedFamilies: opts.allowedFamilies?.length ? opts.allowedFamilies : LAYOUT_FAMILY_IDS,
+    recentLayoutFamilies: opts.recentLayoutFamilies,
+  });
+  const fallbackSubtitle = String(
+    opts.storySequenceRole === 'cta'
+      ? (opts.ctaText || caption || '')
+      : caption || '',
+  ).slice(0, opts.storySequenceRole === 'cta' ? 32 : 40);
   return {
-    layoutFamily: 'editorial_bottom',
-    variantIndex: 0,
-    compositionId: 'EditorialStory',
-    categoryLabel: 'MOMENT',
+    layoutFamily: fallbackFamily,
+    variantIndex: opts.storySequenceRole === 'cta' ? 6 : 3,
+    compositionId: FAMILY_TO_COMPOSITION[fallbackFamily] ?? 'EditorialStory',
+    categoryLabel: storySequenceCategoryLabel(opts.storySequenceRole ?? 'hook', opts.sector),
     displayHeadline: headline.toUpperCase().slice(0, 28),
-    displaySubtitle: caption?.slice(0, 40) ?? '',
+    displaySubtitle: fallbackSubtitle,
     overlayOpacity: 0.68,
     headlineWeight: 800,
     headlineScale: 1.0,
     layoutOverrides: {},
-    rationale: templateId ? `Fallback — kept ${templateId}` : 'Fallback defaults',
-    designScore: 7,
+    rationale: opts.templateId ? `Fallback — premium safe keep ${opts.templateId}` : 'Fallback premium-safe defaults',
+    designScore: 8,
   };
 }
 
@@ -184,6 +218,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     galleryPhotoCount?: number;
     sceneBrief?: string;
     preferredLayoutFamily?: RemotionLayoutFamily;
+    storySequenceRole?: StorySequenceRole;
+    storySequenceIndex?: number;
+    storySequenceTotal?: number;
+    recentLayoutFamilies?: RemotionLayoutFamily[];
+    ctaText?: string;
+    /** Set on Grafiker retry — steer CD toward legible layout */
+    grafikerFeedback?: string;
+    grafikerScore?: number;
+    retryAttempt?: number;
+    /** Sprint 6 — Luxury photo gate: photo quality below luxury floor → prefer overlay-safe families. */
+    preferSafeOverlay?: boolean;
   };
 
   try {
@@ -210,6 +255,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     galleryPhotoCount,
     sceneBrief,
     preferredLayoutFamily,
+    storySequenceRole,
+    storySequenceIndex,
+    storySequenceTotal,
+    recentLayoutFamilies,
+    ctaText,
+    grafikerFeedback,
+    grafikerScore,
+    retryAttempt,
+    preferSafeOverlay,
   } = body;
 
   if (!headline || !brandName) {
@@ -224,8 +278,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? [...new Set(allowedPool.map((id) => compositionToLayoutFamily(id)).filter(Boolean) as RemotionLayoutFamily[])]
     : LAYOUT_FAMILY_IDS;
 
+  const isPosterRender = (templateId ?? '').startsWith('poster_')
+    || (preferredCompositionId ?? '').startsWith('SpecPoster');
+
   try {
     const openai = new OpenAI({ apiKey });
+
+    // Sector premium presets — inject before the LLM call so the CD can make
+    // sector-aware layout decisions without relying on generic fallbacks.
+    const effectiveSector = String(sector ?? businessType ?? '');
+    const sectorMotionLane = !isPosterRender
+      ? resolveMotionLane(effectiveSector, storySequenceRole)
+      : null;
+    const sectorLayoutHints = (!isPosterRender && storySequenceRole)
+      ? resolveSectorLayoutHints(effectiveSector, storySequenceRole).filter(f => allowedFamilies.includes(f))
+      : [];
+    const sectorHeadlineMax = resolveHeadlineMaxChars(effectiveSector);
 
     const userPrompt = [
       `Brand: ${brandName}${businessType ? ` (${businessType})` : ''}${location ? ` — ${location}` : ''}`,
@@ -239,17 +307,73 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       typeof galleryPhotoCount === 'number' ? `Gallery photos available: ${galleryPhotoCount}` : '',
       sceneBrief ? `Product Scene Director brief: ${sceneBrief}` : '',
       preferredLayoutFamily ? `Preferred layout family (strong hint): ${preferredLayoutFamily}` : '',
+      !isPosterRender && sectorMotionLane
+        ? `Motion lane: ${sectorMotionLane} — ${MOTION_LANE_SPECS[sectorMotionLane].label}`
+        : '',
+      !isPosterRender && sectorLayoutHints.length
+        ? `SECTOR LAYOUT PREFERENCE (ordered): ${sectorLayoutHints.slice(0, 3).join(', ')} — pick first available that avoids repetition`
+        : '',
+      !isPosterRender && sectorHeadlineMax
+        ? `Headline max ${sectorHeadlineMax} chars for this sector — truncate tighter`
+        : '',
+      !isPosterRender && storySequenceRole
+        ? `Story sequence role: ${storySequenceRole.toUpperCase()} (${storySequenceIndex ?? '?'} / ${storySequenceTotal ?? '?'})`
+        : '',
+      !isPosterRender && recentLayoutFamilies?.length
+        ? `Avoid repeating recent layout families: ${recentLayoutFamilies.join(', ')}`
+        : '',
+      !isPosterRender && storySequenceRole === 'hook'
+        ? 'This is the FIRST story card. Prioritize curiosity, immediate visual tension, and zero hard CTA language.'
+        : '',
+      !isPosterRender && storySequenceRole === 'proof'
+        ? 'This is the MIDDLE story card. Prioritize proof, detail, texture, process, or social proof. No final CTA behavior.'
+        : '',
+      !isPosterRender && storySequenceRole === 'cta'
+        ? `This is the FINAL story card. Clear action is allowed, but only after value is visually established. CTA: ${resolveSectorCtaHint(String(sector ?? businessType ?? ''), locale, ctaText)}.`
+        : '',
       allowedFamilies.length < LAYOUT_FAMILY_IDS.length
         ? `ALLOWED layout families ONLY: ${allowedFamilies.join(', ')}`
+        : '',
+      // Sprint 6 — Luxury photo gate: low-quality photo → steer away from full-bleed.
+      !isPosterRender && preferSafeOverlay
+        ? 'PHOTO QUALITY ALERT: The reference photo has a low gallery match score. AVOID full-bleed luxury families (magazine_cover, cinematic_center, noir_editorial, vibe_fullscreen). Prefer frosted_glass, split_panel, or minimal_luxury with a solid overlay panel that conceals photo imperfections.'
         : '',
       `Headline: "${headline}"`,
       `Caption: "${caption?.slice(0, 220) ?? ''}"`,
       `Mood: ${mood || 'neutral'}`,
-      isAgencySector(String(sector ?? businessType ?? ''))
-        ? 'B2B/SaaS: poster layouts editorial_date | split_panel | magazine_cover — NOT promo_split unless real %/offer copy. Never use country-only location (Türkiye). Stack: headline + short support + CTA.'
+      isPosterRender
+        ? buildPosterCreativeDirectorUserHints({
+            sector,
+            businessType,
+            headline,
+            caption: caption ?? '',
+            templateId,
+            grafikerFeedback,
+            retryAttempt,
+            grafikerScore,
+          })
+        : '',
+      !isPosterRender && isAgencySector(String(sector ?? businessType ?? ''))
+        ? 'B2B/SaaS: story layouts split_panel | magazine_cover | frosted_glass — NOT campaign_hero unless real %/offer copy.'
+        : '',
+      !isPosterRender && isLogisticsSector(String(sector ?? businessType ?? ''))
+        ? 'LOGISTICS: prefer location_pin, split_panel, campaign_hero stories; designed posts → editorial_date not promo_split.'
+        : '',
+      !isPosterRender
+        ? buildStoryCreativeDirectorUserHints(String(sector ?? businessType ?? ''))
         : '',
       '',
-      'Pick a DISTINCT layout family — avoid editorial_bottom unless this is plain daily filler.',
+      isPosterRender
+        ? 'Pick poster layout family for agency-grade feed still — photo leads, no flat template slab.'
+        : 'Pick a DISTINCT layout family — avoid editorial_bottom unless this is plain daily filler.',
+      grafikerFeedback
+        ? [
+            '',
+            `GRAFIKER RETRY (attempt ${retryAttempt ?? 1}, prior score ${grafikerScore ?? '?'}/10):`,
+            grafikerFeedback,
+            'Fix: split_panel or frosted_glass, overlayOpacity ≥0.72, headline ≤24 chars, no text overlap. designScore must be ≥9.',
+          ].join('\n')
+        : '',
     ].filter(Boolean).join('\n');
 
     const response = await openai.chat.completions.create({
@@ -258,7 +382,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       temperature: 0.45,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: buildCreativeDirectorPrompt() },
+        {
+          role: 'system',
+          content: isPosterRender
+            ? buildPosterCreativeDirectorPrompt()
+            : buildCreativeDirectorPrompt(),
+        },
         { role: 'user', content: userPrompt },
       ],
     });
@@ -271,7 +400,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       layoutFamily = preferredLayoutFamily
         ?? compositionToLayoutFamily(parsed.compositionId)
         ?? currentLayoutFamily
-        ?? 'editorial_bottom';
+        ?? pickFallbackFamily({
+          preferredLayoutFamily,
+          sector: String(sector ?? businessType ?? ''),
+          allowedFamilies,
+          recentLayoutFamilies,
+        });
     }
     layoutFamily = refineLayoutFamilyForContent(
       layoutFamily,
@@ -281,19 +415,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!allowedFamilies.includes(layoutFamily)) {
       layoutFamily = allowedFamilies[0] ?? layoutFamily;
     }
+    if (!isPosterRender) {
+      layoutFamily = avoidRepeatedLayoutFamily({
+        layoutFamily,
+        preferredLayoutFamily,
+        allowedFamilies,
+        recentLayoutFamilies,
+        sector: String(sector ?? businessType ?? ''),
+      });
+    }
 
-    const variantIndex = Math.max(0, Math.min(9, Number(parsed.variantIndex) || 0));
+    const minimumVariant = storySequenceRole === 'cta' ? 5 : storySequenceRole === 'hook' ? 2 : 3;
+    const variantIndex = Math.max(minimumVariant, Math.min(9, Number(parsed.variantIndex) || 0));
     const compositionId = FAMILY_TO_COMPOSITION[layoutFamily]
       ?? (allowedPool.includes(parsed.compositionId as StoryCompositionId)
         ? parsed.compositionId!
         : 'EditorialStory');
 
-    const rawOpacity = Math.max(0.20, Math.min(0.82, Number(parsed.overlayOpacity) || 0.72));
+    // Apply sector overlay floor — prevents the CD from going too transparent
+    // on sectors where legibility is critical (nightlife, retail, agency).
+    const rawOpacityFromLLM = Math.max(0.20, Math.min(0.82, Number(parsed.overlayOpacity) || 0.72));
+    const rawOpacity = !isPosterRender
+      ? clampOverlayToSectorFloor(effectiveSector, rawOpacityFromLLM)
+      : rawOpacityFromLLM;
     const rawOverrides = clampLayoutOverrides(parsed.layoutOverrides as Record<string, unknown>);
     const premium = applyPremiumDirectorDefaults(layoutFamily, rawOpacity, rawOverrides);
 
-    const isPosterRender = (templateId ?? '').startsWith('poster_')
-      || (preferredCompositionId ?? '').startsWith('SpecPoster');
     const posterCopy = isPosterRender
       ? normalizePosterCopy({
           headline: String(parsed.displayHeadline ?? headline),
@@ -301,6 +448,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           brandName,
           location,
           caption: caption ?? '',
+          sector: String(sector ?? businessType ?? ''),
         })
       : null;
 
@@ -309,12 +457,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       variantIndex,
       compositionId,
       categoryLabel: refineCategoryLabel(
-        String(parsed.categoryLabel ?? 'MOMENT'),
+        String(parsed.categoryLabel ?? storySequenceCategoryLabel(storySequenceRole ?? 'hook', String(sector ?? businessType ?? ''), locale)),
         posterCopy?.headline ?? enforceDisplayHeadline(String(parsed.displayHeadline ?? headline)),
         location,
       ),
       displayHeadline: posterCopy?.headline
-        ?? enforceDisplayHeadline(String(parsed.displayHeadline ?? headline)),
+        ?? enforceDisplayHeadline(String(parsed.displayHeadline ?? headline)).slice(0, sectorHeadlineMax),
       displaySubtitle: posterCopy?.subtitle
         ?? String(parsed.displaySubtitle ?? caption?.slice(0, 60) ?? ''),
       overlayOpacity: premium.overlayOpacity,
@@ -329,13 +477,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     console.log(
       `[creative-director] ${brandName} → ${spec.layoutFamily}[${spec.variantIndex}] | ` +
-      `score=${spec.designScore} | "${spec.displayHeadline}" | ${spec.rationale.slice(0, 80)}`,
+      `lane=${sectorMotionLane ?? 'n/a'} | score=${spec.designScore} | ` +
+      `opacity=${spec.overlayOpacity.toFixed(2)} | "${spec.displayHeadline}" | ${spec.rationale.slice(0, 70)}`,
     );
 
     return NextResponse.json(spec);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[creative-director] error:', msg);
-    return NextResponse.json(fallbackSpec(headline, caption ?? '', templateId));
+    return NextResponse.json(fallbackSpec(headline, caption ?? '', {
+      templateId,
+      preferredLayoutFamily,
+      sector: String(sector ?? businessType ?? ''),
+      allowedFamilies,
+      storySequenceRole,
+      recentLayoutFamilies,
+      ctaText,
+    }));
   }
 }

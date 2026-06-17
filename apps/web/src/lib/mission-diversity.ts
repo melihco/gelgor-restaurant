@@ -12,6 +12,7 @@ export interface DiversityMissionLike {
   objective?: string | null;
   title?: string | null;
   status?: string;
+  trigger_signal?: string | null;
 }
 
 export interface MissionDiversityResult {
@@ -74,7 +75,10 @@ export function buildDiversityDirective(missions: DiversityMissionLike[]): strin
   lines.push('Son/aktif misyonlar (tekrarlamaktan kaçın, farklı format & stratejik açı seç):');
   for (const m of recent) {
     const obj = (m.objective || m.title || '').slice(0, 70);
-    lines.push(`- [${m.type ?? 'manual'}] ${obj}`);
+    const sig = m.trigger_signal
+      ? ` [sinyal:${(m.trigger_signal.split('.')[0] ?? '').toUpperCase()}]`
+      : '';
+    lines.push(`- [${m.type ?? 'manual'}]${sig} ${obj}`);
   }
   lines.push('Yeni öneriler bu açılardan FARKLI olmalı; format ve içerik türünü çeşitlendir.');
   return lines.join('\n');

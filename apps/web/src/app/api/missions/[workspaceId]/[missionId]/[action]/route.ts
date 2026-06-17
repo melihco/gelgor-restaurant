@@ -11,16 +11,22 @@
  */
 import { NextRequest } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ workspaceId: string; missionId: string; action: string }> },
 ) {
   const { workspaceId, missionId, action } = await params;
-  return proxyToCrewBackend(`/api/v1/missions/${workspaceId}/${missionId}/${action}`);
+  const tenantGuard = assertPathTenantMatchesRequest(req, workspaceId);
+  if (tenantGuard) return tenantGuard;
+  return proxyToCrewBackend(
+    `/api/v1/missions/${workspaceId}/${missionId}/${action}`,
+    { workspaceId, timeoutMs: 25_000 },
+  );
 }
 
 export async function PUT(
@@ -28,10 +34,12 @@ export async function PUT(
   { params }: { params: Promise<{ workspaceId: string; missionId: string; action: string }> },
 ) {
   const { workspaceId, missionId, action } = await params;
+  const tenantGuard = assertPathTenantMatchesRequest(req, workspaceId);
+  if (tenantGuard) return tenantGuard;
   let body: unknown = {};
   try { body = await req.json(); } catch { /* no body */ }
   return proxyToCrewBackend(
     `/api/v1/missions/${workspaceId}/${missionId}/${action}`,
-    { method: 'PUT', body, timeoutMs: 15_000 },
+    { method: 'PUT', body, workspaceId, timeoutMs: 25_000 },
   );
 }

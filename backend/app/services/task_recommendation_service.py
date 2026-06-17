@@ -273,9 +273,9 @@ def _fallback_recommendations() -> list[dict]:
         "task_type": "content_ideation",
         "title": "Haftalık Instagram içerik planı oluştur",
         "reason": "Henüz marka profili tamamlanmamış. Temel içerik planıyla başla.",
-        "brief": "Bu hafta için 5 Instagram içerik fikri üret.",
+        "brief": "Bu hafta için 7 Instagram içerik fikri üret (haftalık paket).",
         "estimated_impact": "Sosyal medya varlığı başlar.",
-        "input_data": {"brief": "Bu hafta için 5 Instagram içerik fikri.", "count": 5},
+        "input_data": {"brief": "Bu hafta için 7 Instagram içerik fikri.", "count": 7},
     }]
 
 
@@ -304,9 +304,9 @@ def _fallback_recommendations_from_health(brand: BrandInfo, health: dict) -> lis
             "agent_role": "content_agent", "task_type": "content_ideation",
             "title": "Bu haftaki Instagram içerik planını oluştur",
             "reason": f"{'İçerik üretilmemiş' if days_since is None else f'{days_since} gündür içerik yok'}. Pillar'lar: {pillars}.",
-            "brief": f"{brand.business_name} için bu hafta 5 Instagram içerik fikri. Pillar'lar: {pillars}.",
+            "brief": f"{brand.business_name} için bu hafta 7 Instagram içerik fikri. Pillar'lar: {pillars}.",
             "estimated_impact": "Etkileşim ve organik erişim artar.",
-            "input_data": {"brief": f"{brand.business_name} için 5 içerik.", "count": 5,
+            "input_data": {"brief": f"{brand.business_name} için 7 içerik.", "count": 7,
                            "content_pillars": content.get("confirmed_pillars", []), "autonomy_mode": True},
         })
 

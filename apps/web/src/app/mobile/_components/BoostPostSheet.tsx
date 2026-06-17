@@ -47,7 +47,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
 
   const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
     queryKey: ['mertcafe-status', workspaceId],
-    queryFn: () => apiClient.getMertcafeStatus(workspaceId),
+    queryFn: () => apiClient.getMertcafeStatus(workspaceId!),
     staleTime: 20_000,
   });
   const { data: mediaCheck, isLoading: mediaCheckLoading } = useQuery({
@@ -175,7 +175,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
               style={{
                 padding: '11px 12px', borderRadius: 12, border: 'none',
                 cursor: canConnectAds ? 'pointer' : 'default',
-                background: canConnectAds ? 'rgba(124,58,237,0.18)' : 'rgba(124,58,237,0.08)',
+                background: canConnectAds ? 'rgba(77,112,136,0.16)' : 'rgba(77,112,136,0.08)',
                 color: canConnectAds ? t.accent : t.textMuted,
                 fontWeight: 700, fontSize: 12,
               }}>
@@ -214,7 +214,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
               <button key={obj.id} onClick={() => setObjective(obj.id)} style={{
                 flex: 1, padding: '12px 6px', borderRadius: 14, cursor: 'pointer',
                 border: `${sel ? '1.5px' : '0.5px'} solid ${sel ? t.accent : t.separator}`,
-                background: sel ? (t.isDark ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.06)') : 'transparent',
+                background: sel ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
               }}>
                 <span style={{ fontSize: 22 }}>{obj.icon}</span>
@@ -236,7 +236,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
             <button key={b} onClick={() => { setBudgetTl(b); setShowCustom(false); }} style={{
               padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
               border: `${!showCustom && budgetTl === b ? '1.5px' : '0.5px'} solid ${!showCustom && budgetTl === b ? t.accent : t.separator}`,
-              background: !showCustom && budgetTl === b ? (t.isDark ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.06)') : 'transparent',
+              background: !showCustom && budgetTl === b ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
               color: !showCustom && budgetTl === b ? t.accent : t.textSecondary,
               fontSize: 13, fontWeight: 700,
             }}>{b}₺</button>
@@ -244,7 +244,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
           <button onClick={() => setShowCustom(s => !s)} style={{
             padding: '8px 14px', borderRadius: 20, cursor: 'pointer',
             border: `${showCustom ? '1.5px' : '0.5px'} solid ${showCustom ? t.accent : t.separator}`,
-            background: showCustom ? (t.isDark ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.06)') : 'transparent',
+            background: showCustom ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
             color: showCustom ? t.accent : t.textMuted, fontSize: 13, fontWeight: 600,
           }}>Özel</button>
         </div>
@@ -271,7 +271,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
             <button key={d} onClick={() => setDurationDays(d)} style={{
               flex: 1, padding: '8px 4px', borderRadius: 14, cursor: 'pointer',
               border: `${durationDays === d ? '1.5px' : '0.5px'} solid ${durationDays === d ? t.accent : t.separator}`,
-              background: durationDays === d ? (t.isDark ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.06)') : 'transparent',
+              background: durationDays === d ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
               color: durationDays === d ? t.accent : t.textSecondary,
               fontSize: 12, fontWeight: 700,
             }}>{d} gün</button>
@@ -341,8 +341,8 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
           style={{
             width: '100%', padding: '14px', borderRadius: 16,
             cursor: canCreateAd ? 'pointer' : 'default',
-            background: canCreateAd ? 'rgba(124,58,237,0.16)' : (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
-            border: `0.5px solid ${canCreateAd ? 'rgba(124,58,237,0.3)' : t.separator}`,
+            background: canCreateAd ? 'rgba(77,112,136,0.16)' : (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
+            border: `0.5px solid ${canCreateAd ? 'rgba(77,112,136,0.3)' : t.separator}`,
             color: canCreateAd ? t.accent : t.textMuted,
             fontSize: 13, fontWeight: 700,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,

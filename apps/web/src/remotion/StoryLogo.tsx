@@ -7,9 +7,13 @@
 import React from 'react';
 import { Img } from 'remotion';
 
-/** 120px × 1.8 = 216px — agency standard across all story templates */
-export const STORY_LOGO_HEIGHT = 216;
-export const STORY_LOGO_MAX_WIDTH = 400;
+/**
+ * 160px — reduced from 216px. Rationale: story canvas is 1080×1920.
+ * A 216px logo consumed ~11% of canvas height — overpowering for editorial layouts.
+ * 160px (~8.3%) matches premium brand placements (Vogue, Wallpaper, Monocle covers).
+ */
+export const STORY_LOGO_HEIGHT = 160;
+export const STORY_LOGO_MAX_WIDTH = 360;
 
 /** Compact logo — location cards, quote footers */
 export const STORY_LOGO_INLINE_HEIGHT = 72;
@@ -27,6 +31,14 @@ export interface StoryLogoProps {
   brandName: string;
   fontFamily?: string;
   opacity?: number;
+}
+
+function formatBrandNameFallback(brandName: string): string {
+  const trimmed = brandName.trim();
+  if (!trimmed) return '';
+  // Preserve operator-confirmed mixed case (e.g. "Kaçta Info") — avoid sluggy ALL CAPS.
+  if (/[a-zçğıöşü]/.test(trimmed)) return trimmed;
+  return trimmed.toUpperCase();
 }
 
 /** Inner mark only — wrap in AbsoluteFill at top center in each composition. */
@@ -55,16 +67,24 @@ export const StoryLogoMark: React.FC<StoryLogoProps> = ({
     <span
       style={{
         fontFamily,
-        fontWeight: 200,
-        fontSize: 22,
-        color: 'rgba(255,255,255,0.82)',
-        letterSpacing: 14,
+        fontWeight: 600,
+        fontSize: 24,
+        color: '#fff',
+        letterSpacing: 5,
         textTransform: 'uppercase',
-        textShadow: '0 2px 12px rgba(0,0,0,0.95), 0 0 40px rgba(0,0,0,0.6)',
+        textShadow: '0 1px 6px rgba(0,0,0,0.9)',
         opacity,
+        padding: '8px 20px',
+        borderRadius: 999,
+        // Refined: semi-transparent white border on near-transparent bg — more elegant
+        background: 'rgba(0,0,0,0.36)',
+        border: '1px solid rgba(255,255,255,0.22)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
       }}
     >
-      {brandName}
+      {formatBrandNameFallback(brandName)}
     </span>
   );
 };
@@ -129,7 +149,7 @@ export const StoryLogoInline: React.FC<StoryLogoProps & { height?: number }> = (
         whiteSpace: 'nowrap',
       }}
     >
-      {brandName}
+      {formatBrandNameFallback(brandName)}
     </span>
   );
 };
@@ -227,7 +247,7 @@ export const StoryLogoWatermark: React.FC<
           textTransform: 'uppercase',
         }}
       >
-        {brandName}
+        {formatBrandNameFallback(brandName)}
       </span>
     )}
   </div>

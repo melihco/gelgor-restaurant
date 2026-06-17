@@ -7,6 +7,8 @@ import React from 'react';
 import { AbsoluteFill, Img, useVideoConfig } from 'remotion';
 import type { PosterLayoutSpec } from '../lib/poster-template-types';
 import type { StoryProps } from './types';
+import { sanitizePosterText } from '../lib/announcement-text-fit';
+import { brandPanelGradientCss } from '../lib/brand-panel-gradient';
 import { headlineSize, splitHeadlineLines } from './shared/story-primitives';
 import { useRemotionFonts } from './shared/useRemotionFonts';
 
@@ -22,6 +24,21 @@ function parseLineup(subtitle: string, extras?: string[]): string[] {
   return [...new Set(merged)].slice(0, 8);
 }
 
+/** Multi-stop photo fade — avoids harsh 2-point gradient banding on promo/editorial posters. */
+function smoothPhotoGradient(spec: PosterLayoutSpec): string {
+  const start = Math.round(spec.gradientStart * 100);
+  const mid = Math.round((spec.gradientStart + (spec.gradientEnd - spec.gradientStart) * 0.5) * 100);
+  const end = Math.round(spec.gradientEnd * 100);
+  const op = spec.overlayOpacity;
+  return `linear-gradient(
+    to bottom,
+    transparent ${start}%,
+    rgba(0,0,0,${(op * 0.18).toFixed(2)}) ${mid}%,
+    rgba(0,0,0,${(op * 0.52).toFixed(2)}) ${Math.max(end - 10, mid + 5)}%,
+    rgba(0,0,0,${op.toFixed(2)}) 100%
+  )`;
+}
+
 export const PosterLayoutEngine: React.FC<PosterLayoutProps> = ({
   photoUrl, headline, subtitle = '', categoryLabel = '', brandName, location = '',
   eventDate = '', eventTime = '', cta = '',
@@ -31,19 +48,21 @@ export const PosterLayoutEngine: React.FC<PosterLayoutProps> = ({
   const { hero, body } = useRemotionFonts(spec.fontPersonality, fontFamily, bodyFont);
   const fonts = { hero, body };
   const { width, height } = useVideoConfig();
+  const cleanHeadline = sanitizePosterText(headline);
+  const cleanSubtitle = sanitizePosterText(subtitle);
   const photoH = Math.round(height * spec.photoRatio);
   const isPromoSplit = spec.posterMode === 'promo_split';
   const panelBg = spec.panelUsesPrimary ? primaryColor : '#0a0a0f';
-  const lineup = parseLineup(subtitle, lineupArtists);
+  const lineup = parseLineup(cleanSubtitle, lineupArtists);
   const headlineLines = splitHeadlineLines(
-    spec.heroUppercase ? headline.toUpperCase() : headline,
+    spec.heroUppercase ? cleanHeadline.toUpperCase() : cleanHeadline,
     3,
     format === 'post' ? 14 : 16,
   );
   const longestLine = headlineLines.reduce((a, b) => (a.length >= b.length ? a : b), '');
   const headSize = Math.round(
-    headlineSize(longestLine, spec.heroScale * (headlineLines.length > 2 ? 0.88 : 1))
-    * (format === 'post' ? 0.85 : 1),
+    headlineSize(longestLine, spec.heroScale * (headlineLines.length > 2 ? 0.82 : 0.92))
+    * (format === 'post' ? 0.78 : 0.88),
   );
   const headerH = spec.posterHeader === 'none' ? 0 : Math.round(width * 0.072);
   const footerH = spec.posterFooter === 'none' ? 0 : Math.round(width * 0.072);
@@ -161,38 +180,41 @@ export const PosterLayoutEngine: React.FC<PosterLayoutProps> = ({
     );
   };
 
-  const contentTop = headerH + Math.round(height * 0.08);
+  const contentTop = isPromoSplit
+    ? headerH + Math.round(height * 0.08)
+    : headerH + Math.round(height * 0.42);
   const contentBottom = height - footerH - Math.round(height * 0.06);
 
   return (
-    <AbsoluteFill style={{ background: panelBg, overflow: 'hidden' }}>
+    <AbsoluteFill style={{ background: isPromoSplit ? '#000' : panelBg, overflow: 'hidden' }}>
       {/* Photo zone */}
       <div style={{
         position: 'absolute', top: headerH, left: 0, right: 0,
-        height: isPromoSplit ? photoH : height - headerH,
+        height: isPromoSplit ? height - headerH - footerH : height - headerH,
         overflow: 'hidden',
       }}>
         <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        <AbsoluteFill style={{
-          background: `linear-gradient(to bottom, transparent ${Math.round(spec.gradientStart * 100)}%, rgba(0,0,0,${spec.overlayOpacity}) ${Math.round(spec.gradientEnd * 100)}%)`,
-        }} />
+        <AbsoluteFill style={{ background: smoothPhotoGradient(spec) }} />
         {spec.duotoneWash !== 'none' && (
           <AbsoluteFill style={{
             background: spec.duotoneWash === 'accent' ? accentColor : primaryColor,
-            opacity: spec.duotoneOpacity, mixBlendMode: 'multiply',
+            opacity: spec.duotoneOpacity * 0.75,
+            mixBlendMode: 'soft-light',
           }} />
         )}
         {spec.vignette !== 'none' && (
           <AbsoluteFill style={{
-            background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${spec.vignette === 'noir' ? 0.8 : 0.55}) 100%)`,
+            background: `radial-gradient(ellipse at center, transparent 38%, rgba(0,0,0,${spec.vignette === 'noir' ? 0.62 : 0.42}) 100%)`,
           }} />
         )}
       </div>
 
       {isPromoSplit && (
         <div style={{
-          position: 'absolute', top: headerH + photoH, left: 0, right: 0, bottom: footerH,
-          background: panelBg,
+          position: 'absolute', left: 0, right: 0, bottom: footerH,
+          height: Math.round(height * 0.52),
+          background: brandPanelGradientCss(panelBg, 0.94),
+          pointerEvents: 'none',
         }} />
       )}
 
@@ -212,7 +234,7 @@ export const PosterLayoutEngine: React.FC<PosterLayoutProps> = ({
         position: 'absolute', left: 48, right: 48,
         top: contentTop, bottom: contentBottom,
         display: 'flex', flexDirection: 'column',
-        justifyContent: isPromoSplit ? 'flex-start' : 'center',
+        justifyContent: 'flex-end',
         alignItems: spec.align === 'left' ? 'flex-start' : spec.align === 'right' ? 'flex-end' : 'center',
         textAlign: spec.align,
       }}>
@@ -248,12 +270,12 @@ export const PosterLayoutEngine: React.FC<PosterLayoutProps> = ({
 
         <LineupBlock />
 
-        {!lineup.length && subtitle && spec.posterMode !== 'lineup_tiered' && (
+        {!lineup.length && cleanSubtitle && spec.posterMode !== 'lineup_tiered' && (
           <span style={{
             fontFamily: fonts.body, fontSize: 20, color: 'rgba(255,255,255,0.78)',
             marginTop: 14, fontStyle: 'italic', maxWidth: '92%',
           }}>
-            {subtitle}
+            {cleanSubtitle}
           </span>
         )}
 

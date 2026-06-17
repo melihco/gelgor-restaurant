@@ -2,6 +2,11 @@
  * Remotion template catalog — 100 parametric story layouts (10 families × 10 variants).
  */
 
+import {
+  agencyStoryTags,
+  getAgencyStoryFamilyUpgrade,
+  normalizeAgencyStorySpec,
+} from './agency-template-standard';
 import type {
   RemotionLayoutFamily,
   RemotionLayoutSpec,
@@ -20,8 +25,9 @@ type TemplateIntent =
 
 const BASE_SPEC: RemotionLayoutSpec = {
   family: 'editorial_bottom',
-  collection: 'Editorial',
+  collection: 'Agency',
   fontPersonality: 'brand',
+  headlineTreatment: 'flat',
   heroWeight: 800,
   heroUppercase: true,
   heroTracking: 0.04,
@@ -71,7 +77,7 @@ type FamilyMeta = {
 const FAMILY_CATALOG: FamilyMeta[] = [
   {
     family: 'editorial_bottom',
-    collection: 'Editorial',
+    collection: 'Agency',
     legacyComposition: 'EditorialStory',
     nameTr: 'Editoryal Alt',
     nameEn: 'Editorial Bottom',
@@ -101,7 +107,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
   },
   {
     family: 'editorial_left',
-    collection: 'Magazine',
+    collection: 'Agency',
     legacyComposition: 'MagazineCoverStory',
     nameTr: 'Magazin Sol',
     nameEn: 'Magazine Left',
@@ -111,7 +117,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     sectors: ['fine_dining', 'fashion_retail', 'art_gallery'],
     base: {
       family: 'editorial_left',
-      collection: 'Magazine',
+      collection: 'Agency',
       textZone: 'bottom_left',
       fontPersonality: 'serif_editorial',
       heroWeight: 900,
@@ -137,7 +143,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
   },
   {
     family: 'split_panel',
-    collection: 'Luxury',
+    collection: 'Agency',
     legacyComposition: 'LuxurySplitStory',
     nameTr: 'Split Panel',
     nameEn: 'Luxury Split',
@@ -147,7 +153,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     sectors: ['hotel_resort', 'beach_club', 'fine_dining'],
     base: {
       family: 'split_panel',
-      collection: 'Luxury',
+      collection: 'Agency',
       backgroundMode: 'split_panel',
       textZone: 'split_panel',
       textOnPhoto: false,
@@ -173,7 +179,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
   },
   {
     family: 'magazine_cover',
-    collection: 'Magazine',
+    collection: 'Agency',
     legacyComposition: 'MagazineCoverStory',
     nameTr: 'Kapak Dev Tip',
     nameEn: 'Cover Giant Type',
@@ -183,26 +189,33 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     sectors: ['fashion_retail', 'art_gallery', 'music_venue'],
     base: {
       family: 'magazine_cover',
-      collection: 'Magazine',
+      collection: 'Agency',
       fontPersonality: 'display_bold',
       heroWeight: 900,
-      heroScale: 1.1,
-      gradientStart: 0.38,
-      overlayOpacity: 0.62,
-      kenBurnsScale: 1.1,
+      heroScale: 1.12,          // slightly larger for more commanding cover feel
+      heroTracking: 0,           // let editorialTracking() auto-apply negative tracking
+      gradientStart: 0.32,       // deeper engagement — brand tint starts higher
+      overlayOpacity: 0.68,
+      kenBurnsScale: 1.08,
+      kenBurnsOrigin: '50% 28%', // upper-third focal — face/product hero placement
+      vignette: 'soft',
       sideBar: 'left',
+      accentLine: 'above',        // above accent bar — magazine header convention
     },
     variants: [
+      // Variant 01 — Composition A: Classic bottom-left editorial (default)
       { suffix: 'Hero', suffixTr: 'Hero', patch: {} },
-      { suffix: 'Stacked', suffixTr: 'Yığılmış', patch: { textZone: 'bottom_center', align: 'center' } },
-      { suffix: 'Asymmetric', suffixTr: 'Asimetrik', patch: { textZone: 'bottom_right', align: 'right' } },
-      { suffix: 'Vignette', suffixTr: 'Vignette', patch: { vignette: 'radial' } },
-      { suffix: 'Noir', suffixTr: 'Noir', patch: { vignette: 'noir', duotoneWash: 'primary' } },
+      // Variant 02 — Composition B: Centered for announcement/event
+      { suffix: 'Stacked', suffixTr: 'Yığılmış', patch: { textZone: 'bottom_center', align: 'center', heroTracking: 0.02 } },
+      // Variant 03 — Composition C: Right-aligned for RTL-friendly or contrast layouts
+      { suffix: 'Asymmetric', suffixTr: 'Asimetrik', patch: { textZone: 'bottom_right', align: 'right', sideBar: 'none' } },
+      { suffix: 'Vignette', suffixTr: 'Vignette', patch: { vignette: 'radial', overlayOpacity: 0.72 } },
+      { suffix: 'Noir', suffixTr: 'Noir', patch: { vignette: 'noir', duotoneWash: 'primary', overlayOpacity: 0.78 } },
       { suffix: 'Gold Accent', suffixTr: 'Altın', patch: { accentOnCategory: true, accentLine: 'both' } },
-      { suffix: 'Sans Clean', suffixTr: 'Temiz Sans', patch: { fontPersonality: 'sans_modern' } },
-      { suffix: 'Serif Luxe', suffixTr: 'Serif Lüks', patch: { fontPersonality: 'serif_editorial', heroUppercase: false } },
+      { suffix: 'Sans Clean', suffixTr: 'Temiz Sans', patch: { fontPersonality: 'sans_modern', heroWeight: 800 } },
+      { suffix: 'Serif Luxe', suffixTr: 'Serif Lüks', patch: { fontPersonality: 'serif_editorial', heroUppercase: false, heroWeight: 700 } },
       { suffix: 'Compact', suffixTr: 'Kompakt', patch: { heroScale: 0.88 } },
-      { suffix: 'Oversized', suffixTr: 'Dev', patch: { heroScale: 1.18, heroTracking: 0.06 } },
+      { suffix: 'Oversized', suffixTr: 'Dev', patch: { heroScale: 1.22, heroWeight: 900 } },
     ],
   },
   {
@@ -222,21 +235,25 @@ const FAMILY_CATALOG: FamilyMeta[] = [
       align: 'center',
       heroWeight: 700,
       heroUppercase: true,
-      heroTracking: 0.18,
+      heroTracking: 0,           // auto-editorial negative tracking for weight 700+
       accentLine: 'none',
-      overlayOpacity: 0.72,
-      gradientStart: 0.45,
-      gradientEnd: 0.75,
+      overlayOpacity: 0.74,
+      gradientStart: 0.38,       // deeper start — earlier brand ownership of bottom zone
+      gradientEnd: 0.78,
       showLocation: true,
-      kenBurnsOrigin: '50% 40%',
+      kenBurnsOrigin: '50% 38%', // tighter upper third — cinematic convention
+      kenBurnsScale: 1.06,
     },
     variants: [
+      // Variant 01 — Composition A: Classic centered (default)
       { suffix: 'Horizon', suffixTr: 'Ufuk', patch: {} },
-      { suffix: 'Whisper', suffixTr: 'Fısıltı', patch: { heroWeight: 300, heroUppercase: false, heroTracking: 0.06 } },
-      { suffix: 'Bold', suffixTr: 'Kalın', patch: { fontPersonality: 'display_bold', heroWeight: 900 } },
+      // Variant 02 — Composition B: Whisper / luxury light type
+      { suffix: 'Whisper', suffixTr: 'Fısıltı', patch: { heroWeight: 300, heroUppercase: false, heroTracking: 0.08 } },
+      // Variant 03 — Composition C: Impact / bold campaign
+      { suffix: 'Bold', suffixTr: 'Kalın', patch: { fontPersonality: 'display_bold', heroWeight: 900, overlayOpacity: 0.80 } },
       { suffix: 'Bottom', suffixTr: 'Alt', patch: { textZone: 'bottom_center' } },
       { suffix: 'Top', suffixTr: 'Üst', patch: { textZone: 'top_center' } },
-      { suffix: 'Deep Vignette', suffixTr: 'Derin Vignette', patch: { vignette: 'radial', overlayOpacity: 0.78 } },
+      { suffix: 'Deep Vignette', suffixTr: 'Derin Vignette', patch: { vignette: 'radial', overlayOpacity: 0.82 } },
       { suffix: 'Cool Wash', suffixTr: 'Soğuk', patch: { duotoneWash: 'cool' } },
       { suffix: 'Warm Wash', suffixTr: 'Sıcak', patch: { duotoneWash: 'warm' } },
       { suffix: 'No Location', suffixTr: 'Lokasyonsuz', patch: { showLocation: false } },
@@ -269,7 +286,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     variants: [
       { suffix: 'Offer', suffixTr: 'Teklif', patch: {} },
       { suffix: 'Launch', suffixTr: 'Lansman', patch: { accentLine: 'above', heroUppercase: true } },
-      { suffix: 'Flash', suffixTr: 'Flaş', patch: { duotoneWash: 'accent', duotoneOpacity: 0.45 } },
+      { suffix: 'Flash', suffixTr: 'Flaş', patch: { duotoneWash: 'accent', duotoneOpacity: 0.45, fontPersonality: 'graphic_pop', headlineTreatment: 'bubble', heroWeight: 900 } },
       { suffix: 'Dark', suffixTr: 'Koyu', patch: { vignette: 'noir', overlayOpacity: 0.8 } },
       { suffix: 'Light Hero', suffixTr: 'İnce', patch: { heroWeight: 600, heroUppercase: false } },
       { suffix: 'Bottom Stack', suffixTr: 'Alt Yığın', patch: { textZone: 'bottom_center' } },
@@ -281,7 +298,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
   },
   {
     family: 'gallery_series',
-    collection: 'Gallery',
+    collection: 'Agency',
     legacyComposition: 'GallerySeriesStory',
     nameTr: 'Galeri Serisi',
     nameEn: 'Gallery Series',
@@ -291,7 +308,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     sectors: ['beach_club', 'fine_dining', 'hotel_resort'],
     base: {
       family: 'gallery_series',
-      collection: 'Gallery',
+      collection: 'Agency',
       backgroundMode: 'split_panel',
       textZone: 'split_panel',
       textOnPhoto: false,
@@ -377,7 +394,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     variants: [
       { suffix: 'Poster', suffixTr: 'Poster', patch: {} },
       { suffix: 'Flush Bottom', suffixTr: 'Alt Flush', patch: { textZone: 'bottom_center', heroScale: 1.08 } },
-      { suffix: 'Stacked', suffixTr: 'Yığılmış', patch: { heroTracking: 0.08, heroScale: 1.0 } },
+      { suffix: 'Stacked', suffixTr: 'Yığılmış', patch: { heroTracking: 0.04, heroScale: 1.0, fontPersonality: 'graphic_pop', headlineTreatment: 'bubble', heroUppercase: false } },
       { suffix: 'Neon Accent', suffixTr: 'Neon', patch: { duotoneWash: 'accent', duotoneOpacity: 0.5, accentOnCategory: true } },
       { suffix: 'Noir', suffixTr: 'Noir', patch: { vignette: 'noir', overlayOpacity: 0.82 } },
       { suffix: 'Outline Feel', suffixTr: 'Outline', patch: { accentLine: 'underline', heroTracking: 0.12 } },
@@ -389,7 +406,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
   },
   {
     family: 'noir_editorial',
-    collection: 'Noir',
+    collection: 'Agency',
     legacyComposition: 'CinematicStory',
     nameTr: 'Noir Editoryal',
     nameEn: 'Noir Editorial',
@@ -399,7 +416,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     sectors: ['cocktail_bar', 'wine_bar', 'steakhouse'],
     base: {
       family: 'noir_editorial',
-      collection: 'Noir',
+      collection: 'Agency',
       fontPersonality: 'serif_editorial',
       heroWeight: 400,
       heroUppercase: false,
@@ -583,7 +600,10 @@ const FAMILY_CATALOG: FamilyMeta[] = [
       { suffix: 'Classic', suffixTr: 'Klasik', patch: {} },
       { suffix: 'Bold', suffixTr: 'Kalın', patch: { fontPersonality: 'display_bold', heroWeight: 900, heroUppercase: true } },
       { suffix: 'Script', suffixTr: 'Script', patch: { fontPersonality: 'script', heroUppercase: false } },
-      { suffix: 'Noir', suffixTr: 'Noir', patch: { duotoneWash: 'primary', vignette: 'noir' } },
+      { suffix: 'Noir', suffixTr: 'Noir', patch: {
+        duotoneWash: 'primary', duotoneOpacity: 0.22, vignette: 'soft',
+        gradientStart: 0.55, gradientEnd: 0.88, overlayOpacity: 0.38,
+      } },
       { suffix: 'Warm', suffixTr: 'Sıcak', patch: { duotoneWash: 'warm' } },
       { suffix: 'Cool', suffixTr: 'Soğuk', patch: { duotoneWash: 'cool' } },
       { suffix: 'Sans', suffixTr: 'Sans', patch: { fontPersonality: 'sans_modern' } },
@@ -591,10 +611,41 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     ],
   },
   {
+    family: 'polaroid_single',
+    collection: 'Agency',
+    legacyComposition: 'SpecStory',
+    nameTr: 'Polaroid Tekli',
+    nameEn: 'Polaroid Single',
+    descTr: 'Ortada tek büyük polaroid — mekan hero fotoğrafı, alt tipografi.',
+    tags: ['polaroid', 'single', 'hero', 'venue'],
+    bestFor: ['daily_moment', 'social_proof', 'product_spotlight'],
+    sectors: ['beach_club', 'cafe_bakery', 'hotel_resort', 'cocktail_bar', 'brunch'],
+    base: {
+      family: 'polaroid_single',
+      collection: 'Agency',
+      fontPersonality: 'serif_editorial',
+      heroWeight: 700,
+      heroUppercase: false,
+      overlayOpacity: 0,
+      align: 'left',
+      vignette: 'soft',
+    },
+    variants: [
+      { suffix: 'Classic', suffixTr: 'Klasik', patch: {} },
+      { suffix: 'Serif', suffixTr: 'Serif', patch: { fontPersonality: 'serif_editorial', heroWeight: 600 } },
+      { suffix: 'Bold', suffixTr: 'Kalın', patch: { fontPersonality: 'display_bold', heroUppercase: true, heroWeight: 800 } },
+      { suffix: 'Warm', suffixTr: 'Sıcak', patch: { duotoneWash: 'warm', duotoneOpacity: 0.22 } },
+      { suffix: 'Minimal', suffixTr: 'Minimal', patch: { heroWeight: 400, heroScale: 0.95 } },
+      { suffix: 'Sans', suffixTr: 'Sans', patch: { fontPersonality: 'sans_modern' } },
+      { suffix: 'Script', suffixTr: 'Script', patch: { fontPersonality: 'script', heroUppercase: false } },
+      { suffix: 'Display', suffixTr: 'Display', patch: { fontPersonality: 'display_bold', heroScale: 1.05 } },
+    ],
+  },
+  {
     family: 'polaroid_stack',
     collection: 'Agency',
     legacyComposition: 'GallerySeriesStory',
-    nameTr: 'Polaroid Stack',
+    nameTr: 'Polaroid Çoklu',
     nameEn: 'Polaroid Stack',
     descTr: 'Eğik polaroid kareler — tactile editorial, 2–3 fotoğraf.',
     tags: ['polaroid', 'stack', 'tactile', 'multi_photo'],
@@ -644,7 +695,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
       { suffix: 'Classic', suffixTr: 'Klasik', patch: {} },
       { suffix: 'Serif', suffixTr: 'Serif', patch: { fontPersonality: 'serif_editorial', heroUppercase: false } },
       { suffix: 'Minimal', suffixTr: 'Minimal', patch: { heroWeight: 700, heroScale: 1.05 } },
-      { suffix: 'Bold', suffixTr: 'Kalın', patch: { heroScale: 1.2, heroTracking: 0.04 } },
+      { suffix: 'Bold', suffixTr: 'Kalın', patch: { heroScale: 1.15, heroTracking: 0.02, fontPersonality: 'neo_grotesk', headlineTreatment: 'sticker', heroUppercase: false } },
       { suffix: 'Warm', suffixTr: 'Sıcak', patch: { duotoneWash: 'warm', duotoneOpacity: 0.2 } },
       { suffix: 'Cool', suffixTr: 'Soğuk', patch: { duotoneWash: 'cool', duotoneOpacity: 0.2 } },
       { suffix: 'No Loc', suffixTr: 'Lokasyonsuz', patch: { showLocation: false } },
@@ -676,7 +727,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
       { suffix: 'Editorial', suffixTr: 'Editoryal', patch: { fontPersonality: 'brand' } },
       { suffix: 'Compact', suffixTr: 'Kompakt', patch: { heroScale: 0.85 } },
       { suffix: 'Accent', suffixTr: 'Accent', patch: { accentOnCategory: true } },
-      { suffix: 'Light', suffixTr: 'İnce', patch: { heroWeight: 600 } },
+      { suffix: 'Light', suffixTr: 'İnce', patch: { heroWeight: 700, fontPersonality: 'graphic_pop', headlineTreatment: 'bubble', heroUppercase: false } },
       { suffix: 'Mega', suffixTr: 'Mega', patch: { heroScale: 0.95, heroWeight: 900 } },
     ],
   },
@@ -737,13 +788,13 @@ const FAMILY_CATALOG: FamilyMeta[] = [
     },
     variants: [
       { suffix: 'Classic', suffixTr: 'Klasik', patch: {} },
-      { suffix: 'Serif', suffixTr: 'Serif', patch: { fontPersonality: 'brand', heroWeight: 500 } },
+      { suffix: 'Serif', suffixTr: 'Serif', patch: { fontPersonality: 'brand', heroWeight: 400 } },
       { suffix: 'Bold', suffixTr: 'Kalın', patch: { fontPersonality: 'display_bold', heroWeight: 700 } },
       { suffix: 'Whisper', suffixTr: 'Fısıltı', patch: { heroWeight: 300, heroScale: 0.92 } },
-      { suffix: 'Gold', suffixTr: 'Altın', patch: { accentOnCategory: true } },
+      { suffix: 'Bubble', suffixTr: 'Bubble', patch: { fontPersonality: 'graphic_pop', headlineTreatment: 'bubble', heroWeight: 800, heroUppercase: false, heroScale: 1.02 } },
       { suffix: 'Minimal', suffixTr: 'Minimal', patch: { overlayOpacity: 0.6, vignette: 'soft' } },
       { suffix: 'Editorial', suffixTr: 'Editoryal', patch: { fontPersonality: 'serif_editorial', heroTracking: 0.06 } },
-      { suffix: 'Wide', suffixTr: 'Geniş', patch: { heroScale: 1.08 } },
+      { suffix: 'Sticker', suffixTr: 'Sticker', patch: { fontPersonality: 'neo_grotesk', headlineTreatment: 'sticker', heroWeight: 800, heroScale: 1.05, heroUppercase: false } },
     ],
   },
   {
@@ -787,19 +838,28 @@ function mergeSpec(...layers: Partial<RemotionLayoutSpec>[]): RemotionLayoutSpec
 }
 
 function buildTemplate(family: FamilyMeta, variantIndex: number, variant: FamilyMeta['variants'][0]): RemotionTemplateDefinition {
-  const spec = mergeSpec({ family: family.family, collection: family.collection }, family.base, variant.patch);
+  const vibeCollection = family.collection;
+  const agencyUpgrade = getAgencyStoryFamilyUpgrade(family.family);
+  const merged = mergeSpec(
+    { family: family.family, collection: 'Agency' },
+    family.base,
+    agencyUpgrade ?? {},
+    variant.patch,
+  );
+  const spec = normalizeAgencyStorySpec(family.family, merged, vibeCollection);
   const nn = String(variantIndex + 1).padStart(2, '0');
   const id = `remotion_${family.family}_${nn}`;
+  const variantTag = variant.suffix.toLowerCase().replace(/\s+/g, '_');
 
   return {
     id,
     family: family.family,
-    collection: family.collection,
+    collection: 'Agency',
     variantIndex,
     nameTr: `${family.nameTr} · ${variant.suffixTr}`,
     nameEn: `${family.nameEn} · ${variant.suffix}`,
     descTr: family.descTr,
-    tags: [...family.tags, variant.suffix.toLowerCase().replace(/\s+/g, '_')],
+    tags: agencyStoryTags(family.family, vibeCollection, [...family.tags, variantTag]),
     bestFor: family.bestFor,
     legacyComposition: family.legacyComposition,
     spec,

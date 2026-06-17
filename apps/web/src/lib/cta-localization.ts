@@ -127,17 +127,37 @@ function replaceEmbeddedCta(text: string, oldCta: string, newCta: string): strin
   return text;
 }
 
+/** Normalize brand languages from string, comma-list, or string[] contract shape. */
+export function normalizeBrandLanguagesInput(raw: unknown): string {
+  if (raw == null) return 'tr';
+  if (Array.isArray(raw)) {
+    const first = raw.map((v) => String(v).trim()).find(Boolean);
+    return first ?? 'tr';
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed || 'tr';
+  }
+  const coerced = String(raw).trim();
+  return coerced || 'tr';
+}
+
+export function resolveBrandLanguageCode(raw: unknown): 'tr' | 'en' {
+  const primary = normalizeBrandLanguagesInput(raw).split(',')[0]?.trim().toLowerCase() || 'tr';
+  return primary === 'en' || primary.startsWith('en-') ? 'en' : 'tr';
+}
+
 /** Align caption + CTA to the same language (caption wins on mismatch). */
 export function harmonizeCaptionAndCta(
   caption: string,
   cta: string,
-  brandLanguages?: string | null,
+  brandLanguages?: unknown,
 ): { caption: string; cta: string } {
   const cap = caption.trim();
   const rawCta = cta.trim();
   if (!cap || !rawCta) return { caption: cap, cta: rawCta };
 
-  const brandLang = (brandLanguages ?? 'tr').split(',')[0]?.trim().toLowerCase() === 'en' ? 'en' : 'tr';
+  const brandLang = resolveBrandLanguageCode(brandLanguages);
   // Brand language setting wins — tenant choice overrides detected caption language
   const effectiveLang = brandLang;
   const newCta = localizeCta(rawCta, effectiveLang);

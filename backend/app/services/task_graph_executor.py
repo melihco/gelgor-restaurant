@@ -41,7 +41,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import structlog
@@ -52,9 +53,14 @@ from app.config import get_settings
 from app.crew.engine import get_crew_engine
 from app.models.mission import Mission, MissionTaskNode
 from app.schemas.mission import MissionStatus, TaskNodeStatus
-from app.services.brand_context_service import build_brand_info
+from app.services.brand_context_service import build_brand_info, get_brand_context
+from app.services.trend_intelligence_service import ensure_fresh_trend_brief_for_propose
 from app.services.execution_locks import get_content_lock
-from app.services.mission_service import get_ready_nodes
+from app.services.mission_service import (
+    ensure_feed_cohesion_review_persisted_node,
+    get_ready_nodes,
+)
+from app.services.output_summary_parser import extract_structured_payload_from_output_summary
 from app.services.tenant_learning_service import (
     build_learning_context_prompt,
     build_tenant_learning_snapshot,
@@ -63,6 +69,11 @@ from app.services.tenant_learning_service import (
 logger = structlog.get_logger()
 
 MAX_NODE_RETRIES = 3  # 4 total attempts (0 + 3 retries) — LLM calls can be flaky
+
+# Nodes with a live asyncio task in this process — used to detect DB "running" orphans
+# after uvicorn reload or crash (in-memory task gone, DB row still running).
+_active_node_executions: set[uuid.UUID] = set()
+ORPHAN_NODE_MIN_ELAPSED_SECONDS = 45
 
 # Task types that require per-tenant serialization (content_agent crews)
 _SERIALIZED_TASK_TYPES = frozenset({
@@ -297,31 +308,66 @@ async def _execute_node(
         agent_role=agent_role,
     )
 
-    # Feed Art Director runs inline after content_ideation (production stack).
-    # Graph nodes exist for Mission Hub visibility only — never invoke crew here.
+    _active_node_executions.add(node_id)
+    try:
+        await _execute_node_body(
+            mission_id=mission_id,
+            workspace_id=workspace_id,
+            node_key=node_key,
+            task_type=task_type,
+            agent_role=agent_role,
+            input_data=input_data,
+            mission_brief=mission_brief,
+            node_id=node_id,
+            node_title=node_title,
+            node_phase_index=node_phase_index,
+            factory=factory,
+            settings=settings,
+            engine=engine,
+            ws_str=ws_str,
+        )
+    finally:
+        _active_node_executions.discard(node_id)
+
+
+async def _execute_node_body(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    node_key: str,
+    task_type: str,
+    agent_role: str,
+    input_data: dict[str, Any],
+    mission_brief: str | None,
+    node_id: uuid.UUID,
+    node_title: str,
+    node_phase_index: int,
+    factory,
+    settings,
+    engine,
+    ws_str: str,
+) -> None:
+    # Feed Art Director is modeled as a placeholder mission node so Mission Hub
+    # can display lifecycle + report state, but execution itself happens inside
+    # the production orchestrator rather than via engine.execute().
     if task_type == "feed_cohesion_review":
         async with factory() as db:
-            r = await db.execute(
-                select(MissionTaskNode.output_summary).where(MissionTaskNode.id == node_id)
-            )
-            row = r.first()
-            summary = (row[0] if row else None) or ""
-            terminal = (
-                TaskNodeStatus.COMPLETED.value
-                if summary.strip()
-                else TaskNodeStatus.SKIPPED.value
-            )
+            await ensure_feed_cohesion_review_persisted_node(db, mission_id, workspace_id)
             await db.execute(
                 update(MissionTaskNode)
                 .where(MissionTaskNode.id == node_id)
                 .execution_options(synchronize_session=False)
                 .values(
-                    status=terminal,
-                    completed_at=datetime.now(timezone.utc),
+                    status=TaskNodeStatus.RUNNING.value,
+                    started_at=datetime.now(timezone.utc),
+                    completed_at=None,
+                    error_message=None,
                 )
             )
             await db.commit()
-        await _advance_after_node(mission_id, workspace_id)
+        asyncio.create_task(
+            _ensure_mission_feed_production(mission_id, workspace_id),
+            name=f"ensure_feed_after_fd_{mission_id}",
+        )
         return
 
     # ── Step 2: Load brand + inject learning context ───────────────────────────
@@ -357,6 +403,16 @@ async def _execute_node(
             except Exception as gu_exc:
                 logger.warning("node_gallery_usage_load_failed", node_key=node_key,
                                error=str(gu_exc)[:200])
+
+            # Enrich with operating policy (gallery/AI capability blocks).
+            # Previously only called from orchestration.py; adding here ensures
+            # mission content_ideation nodes also respect the brand's production policy.
+            try:
+                from app.services.brand_context_service import enrich_brand_operating_policy
+                brand = enrich_brand_operating_policy(brand)
+            except Exception as op_exc:
+                logger.warning("node_operating_policy_enrich_failed", node_key=node_key,
+                               error=str(op_exc)[:200])
 
     # ── Step 2b: Build MissionMemory (Task 7 — campaign narrative continuity) ────
     # Loads mission metadata + already-completed node outputs, builds a
@@ -409,6 +465,29 @@ async def _execute_node(
     effective_input = dict(input_data or {})
     if mission_brief and not effective_input.get("brief"):
         effective_input["brief"] = mission_brief
+
+    # Pass mission_id so content ideation can inject a run-unique variation seed.
+    if task_type == "content_ideation" and "mission_id" not in effective_input:
+        effective_input["mission_id"] = str(mission_id)
+
+    # Inject recently used weekly_themes into content_strategy so it avoids repeating them.
+    if task_type == "content_strategy":
+        async with factory() as _theme_db:
+            recent_themes = await _load_recent_weekly_themes(_theme_db, workspace_id)
+        if recent_themes:
+            theme_block = (
+                "=== DAHA ÖNCE KULLANILAN HAFTALIK TEMALAR (BUNLARI TEKRAR ETME) ===\n"
+                + "\n".join(f"- {t}" for t in recent_themes)
+                + "\n→ Bu hafta için TAMAMEN FARKLI bir tema seç."
+            )
+            effective_input["context_signals"] = (
+                (effective_input.get("context_signals") or "").rstrip() + "\n\n" + theme_block
+            ).strip()
+            logger.info(
+                "recent_weekly_themes_injected",
+                node_key=node_key,
+                count=len(recent_themes),
+            )
 
     # Wire strategy → ideation/calendar: inject content_strategy output into brief
     # so the ideation agent sees the weekly theme, pillar_mix and format targets.
@@ -473,6 +552,7 @@ async def _execute_node(
     # ── Step 5: Success — mark completed ──────────────────────────────────────
     output_artifact_id: str | None = None
     output_summary: str | None = None
+    output_payload: dict[str, Any] | list[dict[str, Any]] | None = None
 
     if result.get("status") == "completed":
         # Extract artifact ID if present in result (content/review/ads outputs)
@@ -486,6 +566,10 @@ async def _execute_node(
 
         raw = result.get("raw_output") or ""
         output_summary = raw if raw else None  # store full output — column is TEXT (unlimited)
+        output_payload = (
+            extract_structured_payload_from_output_summary(output_summary)
+            if output_summary else None
+        ) or None
 
         async with factory() as db:
             await db.execute(
@@ -497,6 +581,7 @@ async def _execute_node(
                     completed_at=datetime.now(timezone.utc),
                     output_artifact_id=output_artifact_id,
                     output_summary=output_summary,
+                    output_payload=output_payload,
                 )
             )
             await db.commit()
@@ -509,31 +594,94 @@ async def _execute_node(
             has_artifact=bool(output_artifact_id),
         )
 
+        if task_type in ("content_strategy", "content_ideation"):
+            try:
+                from app.services.ai_cost_service import record_mission_task_ai_cost
+
+                async with factory() as cost_db:
+                    await record_mission_task_ai_cost(
+                        cost_db, workspace_id, mission_id, task_type,
+                    )
+            except Exception as cost_exc:
+                logger.warning(
+                    "mission_task_cost_record_failed",
+                    mission_id=str(mission_id),
+                    task_type=task_type,
+                    error=str(cost_exc)[:200],
+                )
+
         # ── Production Stack: Feed Art Director → auto-produce ───────────────
         if task_type == "content_ideation" and output_summary:
+            async def _run_production_after_ideation() -> None:
+                try:
+                    data = await _trigger_content_production_pipeline(
+                        workspace_id=workspace_id,
+                        mission_id=mission_id,
+                        node_key=node_key,
+                        output_summary=output_summary,
+                        brand=brand,
+                    )
+                    if data and data.get("skipped"):
+                        reason = str(data.get("reason") or "")
+                        if reason in (
+                            "awaiting_other_ideation",
+                            "awaiting_visual_design_cards",
+                            "awaiting_content_calendar",
+                        ):
+                            asyncio.create_task(
+                                _delayed_ensure_mission_feed(
+                                    mission_id, workspace_id, delay_sec=120,
+                                ),
+                                name=f"delayed_ensure_feed_{mission_id}",
+                            )
+                            return
+                        if reason == "production_in_flight":
+                            return
+                        if reason and int(data.get("produced") or 0) > 0:
+                            return
+                    produced = int((data or {}).get("produced") or 0)
+                    if produced <= 0:
+                        err = str(
+                            (data or {}).get("error")
+                            or "İçerik üretildi ancak Feed'e kaydedilen parça yok"
+                        )[:400]
+                        await _record_mission_production_failure(
+                            mission_id,
+                            status_code=0,
+                            error=err,
+                        )
+                except Exception as exc:
+                    logger.exception(
+                        "production_pipeline_after_ideation_failed",
+                        mission_id=str(mission_id),
+                    )
+                    await _record_mission_production_failure(
+                        mission_id,
+                        status_code=0,
+                        error=str(exc)[:400],
+                    )
+
             asyncio.create_task(
-                _trigger_content_production_pipeline(
-                    workspace_id=workspace_id,
-                    mission_id=mission_id,
-                    node_key=node_key,
-                    output_summary=output_summary,
-                    brand=brand,
-                )
+                _run_production_after_ideation(),
+                name=f"produce_feed_{mission_id}",
             )
 
-        # ── content_calendar: announcement cards moved to auto-produce (Remotion) ──
-        # Old SVG/generate-event-card pipeline is disabled.
-        # Remotion EventAnnouncementStory handles all event/announcement stories.
-        # content_calendar ideas flow through auto-produce which fires Remotion renders.
-        if task_type == "content_calendar" and output_summary:
+        if task_type == "visual_design_cards" and output_summary:
             asyncio.create_task(
-                _trigger_auto_produce(
-                    workspace_id=workspace_id,
-                    mission_id=mission_id,
-                    node_key=node_key + "_calendar",
-                    output_summary=output_summary,
-                    brand=brand,
-                )
+                _ensure_mission_feed_production(mission_id, workspace_id),
+                name=f"ensure_feed_after_visual_design_{mission_id}",
+            )
+
+        # ── content_calendar: schedule plan ready → kick feed production ──
+        if task_type == "content_calendar" and output_summary:
+            logger.info(
+                "content_calendar_ready_for_feed",
+                mission_id=str(mission_id),
+                node_key=node_key,
+            )
+            asyncio.create_task(
+                _ensure_mission_feed_production(mission_id, workspace_id),
+                name=f"ensure_feed_after_calendar_{mission_id}",
             )
     else:
         # Crew returned status != "completed"
@@ -641,6 +789,10 @@ async def _advance_after_node(mission_id: uuid.UUID, workspace_id: uuid.UUID) ->
         # Check completion
         done = await _check_and_complete_mission(db, mission_id)
         if done:
+            asyncio.create_task(
+                _ensure_mission_feed_production(mission_id, workspace_id),
+                name=f"ensure_feed_{mission_id}",
+            )
             return
 
     # Not done — advance to next wave
@@ -766,7 +918,11 @@ async def _recover_stale_running_nodes() -> int:
             started = row.started_at.replace(tzinfo=timezone.utc) if row.started_at.tzinfo is None else row.started_at
             elapsed = (now - started).total_seconds()
 
-            if elapsed < stale_threshold_seconds:
+            is_orphan = row.id not in _active_node_executions
+            if is_orphan:
+                if elapsed < ORPHAN_NODE_MIN_ELAPSED_SECONDS:
+                    continue
+            elif elapsed < stale_threshold_seconds:
                 continue
 
             mission_status = row.mission_status
@@ -795,10 +951,17 @@ async def _recover_stale_running_nodes() -> int:
                         status=TaskNodeStatus.PENDING.value,
                         started_at=None,
                         retry_count=retry_count + 1,
-                        error_message=f"[Auto-recovery] LLM call exceeded {int(stale_threshold_seconds)}s. Retry {retry_count + 1}/{MAX_NODE_RETRIES}",
+                        error_message=(
+                            f"[Orphan recovery] Task lost after server restart ({int(elapsed)}s). "
+                            f"Retry {retry_count + 1}/{MAX_NODE_RETRIES}"
+                            if is_orphan
+                            else f"[Auto-recovery] LLM call exceeded {int(stale_threshold_seconds)}s. "
+                                 f"Retry {retry_count + 1}/{MAX_NODE_RETRIES}"
+                        ),
                     )
                 )
-                logger.warning("stale_node_auto_retry", node_key=row.node_key, elapsed_s=int(elapsed), attempt=retry_count + 1)
+                log_event = "orphan_node_auto_retry" if is_orphan else "stale_node_auto_retry"
+                logger.warning(log_event, node_key=row.node_key, elapsed_s=int(elapsed), attempt=retry_count + 1)
                 recovered += 1
 
             else:
@@ -873,17 +1036,37 @@ async def advance_all_active_missions() -> dict[str, int]:
                 error=str(exc)[:300],
             )
 
+    reconciled_feed = 0
+    try:
+        reconciled_feed = await _reconcile_completed_missions_missing_feed()
+    except Exception as exc:
+        logger.warning("reconcile_missing_feed_failed", error=str(exc)[:200])
+
     logger.info(
         "advance_all_complete",
         missions_checked=len(active_missions),
         nodes_launched=total_launched,
         stale_recovered=stale_recovered,
+        reconciled_feed=reconciled_feed,
     )
     return {
         "checked":          len(active_missions),
         "launched_total":    total_launched,
         "stale_recovered":   stale_recovered,
+        "reconciled_feed":   reconciled_feed,
     }
+
+
+async def recover_mission_graph_on_startup() -> None:
+    """
+    After uvicorn reload, in-memory asyncio tasks are gone but DB nodes may
+    still be 'running'. Orphan recovery (45s) + advance_all unblocks them.
+    """
+    try:
+        result = await advance_all_active_missions()
+        logger.info("mission_graph_startup_recovery", **result)
+    except Exception as exc:
+        logger.error("mission_graph_startup_recovery_failed", error=str(exc)[:300])
 
 
 # ── Auto-produce: fire-and-forget notification to Next.js BFF ──────────────
@@ -1020,6 +1203,43 @@ async def _trigger_announcement_cards(
                         mission_id=str(mission_id), error=str(exc)[:300])
 
 
+async def _load_recent_weekly_themes(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    limit: int = 6,
+) -> list[str]:
+    """Return weekly_theme values from recently completed content_strategy nodes."""
+    import re as _re
+    from datetime import datetime, timedelta, timezone as _tz
+    from sqlalchemy import select as _select
+    from app.models.mission import Mission as _Mission, MissionTaskNode as _Node
+
+    cutoff = datetime.now(_tz.utc) - timedelta(days=30)
+    try:
+        r = await db.execute(
+            _select(_Node.output_summary)
+            .join(_Mission, _Mission.id == _Node.mission_id)
+            .where(
+                _Mission.workspace_id == workspace_id,
+                _Node.task_type == "content_strategy",
+                _Node.status == "completed",
+                _Node.completed_at >= cutoff,
+            )
+            .order_by(_Node.completed_at.desc())
+            .limit(limit)
+        )
+        themes: list[str] = []
+        for (summary,) in r.all():
+            if not summary:
+                continue
+            m = _re.search(r'"weekly_theme"\s*:\s*"([^"]{5,120})"', summary)
+            if m:
+                themes.append(m.group(1))
+        return themes
+    except Exception:
+        return []
+
+
 async def _load_mission_production_context(
     mission_id: uuid.UUID,
 ) -> dict[str, str]:
@@ -1034,13 +1254,360 @@ async def _load_mission_production_context(
             m = r.scalar_one_or_none()
             if not m:
                 return {}
-            return {
+            summary = dict(getattr(m, "performance_summary", None) or {})
+            hub_pkg = str(summary.get("hub_production_package") or "").strip()
+            profile_tier = str(summary.get("production_profile_tier") or "").strip()
+            ctx = {
                 "mission_type": str(getattr(m, "type", "") or ""),
                 "mission_title": str(getattr(m, "title", "") or "")[:200],
                 "creative_brief": str(getattr(m, "creative_brief", "") or "")[:800],
             }
+            if hub_pkg:
+                ctx["production_package"] = hub_pkg
+            if profile_tier:
+                ctx["production_profile"] = profile_tier
+            return ctx
     except Exception:
         return {}
+
+
+async def _load_content_ideation_nodes(mission_id: uuid.UUID) -> list[dict[str, Any]]:
+    """All content_ideation nodes for merge / defer logic."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(
+                MissionTaskNode.node_key,
+                MissionTaskNode.status,
+                MissionTaskNode.output_summary,
+                MissionTaskNode.output_payload,
+                MissionTaskNode.task_type,
+            ).where(
+                MissionTaskNode.mission_id == mission_id,
+                MissionTaskNode.task_type == "content_ideation",
+            )
+        )
+        rows = r.all()
+    return [
+        {
+            "node_key": row[0],
+            "status": row[1],
+            "output_summary": row[2] or "",
+            "output_payload": row[3],
+            "task_type": row[4],
+        }
+        for row in rows
+    ]
+
+
+async def _load_visual_design_nodes(mission_id: uuid.UUID) -> list[dict[str, Any]]:
+    """All visual_design_cards nodes for feed production gating."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(
+                MissionTaskNode.node_key,
+                MissionTaskNode.status,
+                MissionTaskNode.output_summary,
+                MissionTaskNode.output_payload,
+                MissionTaskNode.task_type,
+            ).where(
+                MissionTaskNode.mission_id == mission_id,
+                MissionTaskNode.task_type == "visual_design_cards",
+            )
+        )
+        rows = r.all()
+    return [
+        {
+            "node_key": row[0],
+            "status": row[1],
+            "output_summary": row[2] or "",
+            "output_payload": row[3],
+            "task_type": row[4],
+        }
+        for row in rows
+    ]
+
+
+async def _other_ideation_nodes_pending(
+    mission_id: uuid.UUID,
+    completed_node_key: str,
+) -> bool:
+    """True when another content_ideation node is not completed yet."""
+    nodes = await _load_content_ideation_nodes(mission_id)
+    if len(nodes) <= 1:
+        return False
+    for n in nodes:
+        if n["node_key"] == completed_node_key:
+            continue
+        if n["status"] != TaskNodeStatus.COMPLETED.value:
+            return True
+    return False
+
+
+async def _load_content_calendar_nodes(mission_id: uuid.UUID) -> list[dict[str, Any]]:
+    """All content_calendar nodes for feed production gating."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(
+                MissionTaskNode.node_key,
+                MissionTaskNode.status,
+                MissionTaskNode.output_summary,
+                MissionTaskNode.output_payload,
+                MissionTaskNode.task_type,
+            ).where(
+                MissionTaskNode.mission_id == mission_id,
+                MissionTaskNode.task_type == "content_calendar",
+            )
+        )
+        rows = r.all()
+    return [
+        {
+            "node_key": row[0],
+            "status": row[1],
+            "output_summary": row[2] or "",
+            "output_payload": row[3],
+            "task_type": row[4],
+        }
+        for row in rows
+    ]
+
+
+def _parse_calendar_plans_from_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    import json as _json
+    import re as _re
+
+    plans: list[dict[str, Any]] = []
+    for node in nodes:
+        if node.get("status") != TaskNodeStatus.COMPLETED.value:
+            continue
+        raw = str(node.get("output_summary") or "").strip()
+        if len(raw) < 10:
+            continue
+        trimmed = raw.replace("```json", "").replace("```", "").strip()
+        try:
+            parsed = _json.loads(trimmed)
+        except Exception:
+            match = _re.search(r"\[[\s\S]*\]", trimmed)
+            if not match:
+                continue
+            try:
+                parsed = _json.loads(match.group())
+            except Exception:
+                continue
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    plans.append(item)
+        elif isinstance(parsed, dict):
+            for key in ("plans", "calendar", "items", "content_calendar", "schedule"):
+                arr = parsed.get(key)
+                if isinstance(arr, list):
+                    for item in arr:
+                        if isinstance(item, dict):
+                            plans.append(item)
+                    break
+    return plans[:12]
+
+
+async def _calendar_nodes_pending(mission_id: uuid.UUID) -> bool:
+    """
+    True when the mission includes content_calendar and at least one calendar node
+    is not completed yet. Missions without the node should not be blocked.
+    """
+    nodes = await _load_content_calendar_nodes(mission_id)
+    if not nodes:
+        return False
+    for n in nodes:
+        if (
+            n["status"] != TaskNodeStatus.COMPLETED.value
+            or not str(n.get("output_summary") or "").strip()
+        ):
+            return True
+    return False
+
+
+async def _visual_design_nodes_pending(mission_id: uuid.UUID) -> bool:
+    """
+    True when the mission includes visual_design_cards and at least one card node
+    is not completed yet. Missions without the node should not be blocked.
+    """
+    nodes = await _load_visual_design_nodes(mission_id)
+    if not nodes:
+        return False
+    for n in nodes:
+        if (
+            n["status"] != TaskNodeStatus.COMPLETED.value
+            or not str(n.get("output_summary") or "").strip()
+        ):
+            return True
+    return False
+
+
+async def _load_mission_type(mission_id: uuid.UUID) -> str:
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(select(Mission.type).where(Mission.id == mission_id))
+        row = r.one_or_none()
+    return str(row[0] or "").strip() if row else ""
+
+
+async def _resolve_merged_ideation_summary(
+    mission_id: uuid.UUID,
+    fallback_summary: str,
+) -> str:
+    from app.services.mission_ideation_merge import merge_mission_production_ideas_from_nodes
+
+    mission_type = await _load_mission_type(mission_id)
+    ideation_nodes = await _load_content_ideation_nodes(mission_id)
+    calendar_nodes = await _load_content_calendar_nodes(mission_id)
+    nodes = [*ideation_nodes, *calendar_nodes]
+    pool_json, ideas = merge_mission_production_ideas_from_nodes(
+        nodes,
+        mission_type=mission_type or None,
+    )
+    if ideas:
+        logger.info(
+            "mission_idea_pool_combined",
+            mission_id=str(mission_id),
+            idea_count=len(ideas),
+            ideation_count=sum(1 for i in ideas if i.get("source_node") == "content_ideation"),
+            calendar_count=sum(1 for i in ideas if i.get("source_node") == "content_calendar"),
+        )
+        return pool_json
+    return fallback_summary
+
+
+def _mission_feed_produced_count(perf: dict) -> int:
+    last = perf.get("last_feed_produce") or {}
+    return int(last.get("produced") or 0)
+
+
+_FEED_PRODUCTION_LOCK_TTL_SEC = 900  # 15 min — prevents duplicate FD + auto-produce
+
+
+def _feed_production_lock_active(summary: dict) -> bool:
+    lock = summary.get("feed_production_lock") or {}
+    at_raw = str(lock.get("at") or "").strip()
+    if not at_raw:
+        return False
+    try:
+        at = datetime.fromisoformat(at_raw.replace("Z", "+00:00"))
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+    except Exception:
+        return False
+    age = (datetime.now(timezone.utc) - at).total_seconds()
+    return age < _FEED_PRODUCTION_LOCK_TTL_SEC
+
+
+async def _acquire_feed_production_lock(
+    mission_id: uuid.UUID,
+    *,
+    force: bool = False,
+) -> bool:
+    """Per-mission mutex — duplicate ensure/kick/ideation paths share one production run."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.performance_summary).where(Mission.id == mission_id)
+        )
+        row = r.one_or_none()
+        summary = dict(row[0] or {}) if row else {}
+        if not force and _feed_production_lock_active(summary):
+            return False
+        summary["feed_production_lock"] = {
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(performance_summary=summary),
+        )
+        await db.commit()
+    return True
+
+
+async def _release_feed_production_lock(mission_id: uuid.UUID) -> None:
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.performance_summary).where(Mission.id == mission_id)
+        )
+        row = r.one_or_none()
+        if not row:
+            return
+        summary = dict(row[0] or {})
+        summary.pop("feed_production_lock", None)
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(performance_summary=summary),
+        )
+        await db.commit()
+
+
+async def _delayed_ensure_mission_feed(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    delay_sec: float = 120,
+) -> None:
+    """Retry Feed package after sibling ideation nodes may have finished."""
+    await asyncio.sleep(delay_sec)
+    await _ensure_mission_feed_production(mission_id, workspace_id)
+
+
+async def _ensure_mission_feed_production(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> None:
+    """Delegate to Sprint 2 mission feed orchestrator (lazy import avoids cycles)."""
+    from app.services.mission_feed_production_service import ensure_mission_feed_production
+
+    await ensure_mission_feed_production(mission_id, workspace_id)
+
+
+async def _reconcile_completed_missions_missing_feed() -> int:
+    """Safety net: completed missions with ideation but incomplete Feed package."""
+    from app.services.mission_ideation_merge import resolve_feed_package_total
+
+    factory = _get_session_factory()
+    reconciled = 0
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.id, Mission.workspace_id, Mission.performance_summary, Mission.type).where(
+                Mission.status == MissionStatus.COMPLETED.value,
+            )
+        )
+        rows = r.all()
+
+    for mission_id, workspace_id, perf_raw, mission_type in rows:
+        perf = dict(perf_raw or {})
+        package_total = resolve_feed_package_total(
+            str(mission_type or ""),
+            hub_production_package=str(perf.get("hub_production_package") or ""),
+        )
+        if _mission_feed_produced_count(perf) >= package_total:
+            continue
+        nodes = await _load_content_ideation_nodes(mission_id)
+        if not any(
+            n["status"] == TaskNodeStatus.COMPLETED.value
+            and len(str(n.get("output_summary") or "").strip()) > 20
+            for n in nodes
+        ):
+            continue
+        await _ensure_mission_feed_production(mission_id, workspace_id)
+        reconciled += 1
+        if reconciled >= 3:
+            break
+
+    if reconciled:
+        logger.info("reconcile_missions_missing_feed", count=reconciled)
+    return reconciled
 
 
 async def _trigger_content_production_pipeline(
@@ -1049,26 +1616,168 @@ async def _trigger_content_production_pipeline(
     node_key: str,
     output_summary: str,
     brand: Any,
-) -> None:
+    *,
+    force: bool = False,
+) -> dict | None:
     """
     Production Stack entry point: Feed Art Director review FIRST, then auto-produce
     with the report so layout rotation, hero reel, and flagged ideas apply.
     """
-    mission_ctx = await _load_mission_production_context(mission_id)
-    report: dict = {}
+    if not force and await _other_ideation_nodes_pending(mission_id, node_key):
+        await _reset_feed_cohesion_review_pending(
+            mission_id,
+            workspace_id,
+            error_message="Awaiting other content ideation nodes",
+        )
+        logger.info(
+            "auto_produce_deferred",
+            mission_id=str(mission_id),
+            node_key=node_key,
+            reason="awaiting_other_content_ideation",
+        )
+        return {"produced": 0, "skipped": True, "reason": "awaiting_other_ideation"}
+
+    if not force and await _visual_design_nodes_pending(mission_id):
+        await _reset_feed_cohesion_review_pending(
+            mission_id,
+            workspace_id,
+            error_message="Awaiting visual_design_cards",
+        )
+        logger.info(
+            "auto_produce_deferred",
+            mission_id=str(mission_id),
+            node_key=node_key,
+            reason="awaiting_visual_design_cards",
+        )
+        return {
+            "produced": 0,
+            "skipped": True,
+            "reason": "awaiting_visual_design_cards",
+        }
+
+    if not force and await _calendar_nodes_pending(mission_id):
+        await _reset_feed_cohesion_review_pending(
+            mission_id,
+            workspace_id,
+            error_message="Awaiting content_calendar",
+        )
+        logger.info(
+            "auto_produce_deferred",
+            mission_id=str(mission_id),
+            node_key=node_key,
+            reason="awaiting_content_calendar",
+        )
+        return {
+            "produced": 0,
+            "skipped": True,
+            "reason": "awaiting_content_calendar",
+        }
+
+    output_summary = await _resolve_merged_ideation_summary(mission_id, output_summary)
+
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.performance_summary, Mission.type).where(Mission.id == mission_id)
+        )
+        row = r.one_or_none()
+        perf = dict(row[0] or {}) if row else {}
+        mission_type = str(row[1] or "").strip() if row else ""
+    from app.services.mission_ideation_merge import resolve_feed_package_total
+
+    package_total = resolve_feed_package_total(
+        mission_type,
+        hub_production_package=str(perf.get("hub_production_package") or ""),
+    )
+    if not force and _recent_feed_produce_skip(perf, package_total=package_total):
+        logger.info(
+            "auto_produce_skip_recent",
+            mission_id=str(mission_id),
+            last=perf.get("last_feed_produce"),
+        )
+        return {"produced": int((perf.get("last_feed_produce") or {}).get("produced") or 0), "skipped": True}
+
+    if not await _acquire_feed_production_lock(mission_id, force=force):
+        logger.info(
+            "auto_produce_skip_in_flight",
+            mission_id=str(mission_id),
+            node_key=node_key,
+        )
+        return {"produced": 0, "skipped": True, "reason": "production_in_flight"}
+
     try:
-        report = await _run_feed_art_director_report(
+        return await _run_content_production_pipeline_locked(
             workspace_id=workspace_id,
             mission_id=mission_id,
+            node_key=node_key,
             output_summary=output_summary,
             brand=brand,
-            mission_ctx=mission_ctx,
+            force=force,
         )
-    except Exception as exc:
-        logger.warning(
-            "production_stack_feed_director_failed",
+    finally:
+        await _release_feed_production_lock(mission_id)
+
+
+async def _run_content_production_pipeline_locked(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    node_key: str,
+    output_summary: str,
+    brand: Any,
+    *,
+    force: bool = False,
+) -> dict | None:
+    mission_ctx = await _load_mission_production_context(mission_id)
+    await _refresh_trend_brief_if_stale(workspace_id, brand)
+    await _refresh_extended_intel_if_stale(workspace_id, brand)
+    report: dict = {}
+    cached = await _load_cached_feed_director_report(mission_id)
+    hub_pkg = str((mission_ctx or {}).get("production_package") or "").strip().lower()
+    if cached and hub_pkg:
+        cached_pkg = str(cached.get("production_package") or "").strip().lower()
+        if cached_pkg and cached_pkg != hub_pkg:
+            logger.info(
+                "feed_director_cache_package_mismatch",
+                mission_id=str(mission_id),
+                cached=cached_pkg,
+                hub=hub_pkg,
+            )
+            cached = None
+    if cached:
+        report = cached
+        logger.info(
+            "feed_director_cache_hit",
             mission_id=str(mission_id),
-            error=str(exc)[:200],
+            assignments=len(cached.get("production_assignments") or []),
+        )
+    else:
+        try:
+            report = await _run_feed_art_director_report(
+                workspace_id=workspace_id,
+                mission_id=mission_id,
+                output_summary=output_summary,
+                brand=brand,
+                mission_ctx=mission_ctx,
+            )
+        except Exception as exc:
+            logger.warning(
+                "production_stack_feed_director_failed",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+            await _mark_feed_cohesion_review_failed(
+                mission_id,
+                workspace_id,
+                str(exc),
+            )
+
+    if report.get("_fallback"):
+        logger.warning(
+            "feed_art_director_fallback_used",
+            mission_id=str(mission_id),
+            fallback_reason=str(report.get("_fallback_reason", ""))[:200],
+            production_package=str(report.get("production_package", "")),
+            assignments_generated=len(report.get("production_assignments") or []),
         )
 
     produce_data = await _trigger_auto_produce(
@@ -1079,12 +1788,40 @@ async def _trigger_content_production_pipeline(
         brand=brand,
         feed_director_report=report or None,
         mission_ctx=mission_ctx,
+        skip_artifact_dedupe=force,
     )
     if produce_data and report:
         pis = produce_data.get("pis")
         if pis:
             report["production_pis"] = pis
             await _persist_feed_cohesion_report(mission_id, workspace_id, report)
+
+    produced_n = int((produce_data or {}).get("produced") or 0)
+    if produced_n > 0:
+        await _record_mission_feed_produce_success(
+            mission_id,
+            produced=produced_n,
+            enhance_trace=produce_data.get("enhanceTrace") if produce_data else None,
+        )
+
+    cost_est = float((produce_data or {}).get("costEstimate") or 0)
+    if cost_est > 0:
+        try:
+            from app.services.ai_cost_service import append_mission_ai_cost
+
+            factory = _get_session_factory()
+            async with factory() as cost_db:
+                await append_mission_ai_cost(
+                    cost_db, mission_id, "auto_produce", cost_est,
+                )
+        except Exception as cost_exc:
+            logger.warning(
+                "mission_auto_produce_cost_append_failed",
+                mission_id=str(mission_id),
+                error=str(cost_exc)[:200],
+            )
+
+    return produce_data
 
 
 async def _ideation_dep_keys_for_mission(db: AsyncSession, mission_id: uuid.UUID) -> list[str]:
@@ -1107,15 +1844,14 @@ async def _upsert_feed_cohesion_review_output(
     Persist Feed Art Director report on a mission node for Mission Hub.
     Creates a completed node when strategist graphs omit feed_cohesion_review.
     """
+    payload = extract_structured_payload_from_output_summary(report_json)
     factory = _get_session_factory()
     async with factory() as db:
-        existing = await db.execute(
-            select(MissionTaskNode).where(
-                MissionTaskNode.mission_id == mission_id,
-                MissionTaskNode.task_type == "feed_cohesion_review",
-            )
+        existing_node = await ensure_feed_cohesion_review_persisted_node(
+            db,
+            mission_id,
+            workspace_id,
         )
-        existing_node = existing.scalar_one_or_none()
         now = datetime.now(timezone.utc)
 
         if existing_node:
@@ -1126,30 +1862,53 @@ async def _upsert_feed_cohesion_review_output(
                 .values(
                     status=TaskNodeStatus.COMPLETED.value,
                     completed_at=now,
+                    error_message=None,
                     output_summary=report_json,
-                )
-            )
-        else:
-            dep_keys = await _ideation_dep_keys_for_mission(db, mission_id)
-            db.add(
-                MissionTaskNode(
-                    id=uuid.uuid4(),
-                    mission_id=mission_id,
-                    workspace_id=workspace_id,
-                    node_key="feed_cohesion_review",
-                    phase_index=2,
-                    title="Feed uyumu ve slot planı",
-                    task_type="feed_cohesion_review",
-                    agent_role="feed_art_director_agent",
-                    input_data={},
-                    depends_on=dep_keys,
-                    status=TaskNodeStatus.COMPLETED.value,
-                    completed_at=now,
-                    output_summary=report_json,
-                    retry_count=0,
+                    output_payload=payload,
                 )
             )
         await db.commit()
+    await _advance_after_node(mission_id, workspace_id)
+
+
+async def _load_cached_feed_director_report(
+    mission_id: uuid.UUID,
+) -> dict | None:
+    """Reuse completed feed_cohesion_review output — avoids duplicate Crew LLM cost."""
+    import json as _json
+
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(MissionTaskNode.output_payload, MissionTaskNode.output_summary).where(
+                MissionTaskNode.mission_id == mission_id,
+                MissionTaskNode.task_type == "feed_cohesion_review",
+                MissionTaskNode.status == TaskNodeStatus.COMPLETED.value,
+            )
+        )
+        row = r.first()
+    payload = row[0] if row else None
+    raw = (row[1] if row else None) or ""
+    if isinstance(payload, dict) and payload.get("production_assignments"):
+        return payload
+    if len(raw.strip()) < 40:
+        return None
+    cleaned = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+    try:
+        parsed = _json.loads(cleaned)
+        if isinstance(parsed, dict) and parsed.get("production_assignments"):
+            return parsed
+    except Exception:
+        pass
+    try:
+        match = __import__("re").search(r"\{[\s\S]*\}", cleaned)
+        if match:
+            parsed = _json.loads(match.group())
+            if isinstance(parsed, dict):
+                return parsed
+    except Exception:
+        return None
+    return None
 
 
 async def _run_feed_art_director_report(
@@ -1163,6 +1922,23 @@ async def _run_feed_art_director_report(
     import json as _json
 
     from app.crew.crews.feed_art_director_crew import run_feed_art_director
+
+    factory = _get_session_factory()
+    async with factory() as db:
+        node = await ensure_feed_cohesion_review_persisted_node(db, mission_id, workspace_id)
+        if node:
+            await db.execute(
+                update(MissionTaskNode)
+                .where(MissionTaskNode.id == node.id)
+                .execution_options(synchronize_session=False)
+                .values(
+                    status=TaskNodeStatus.RUNNING.value,
+                    started_at=datetime.now(timezone.utc),
+                    completed_at=None,
+                    error_message=None,
+                )
+            )
+            await db.commit()
 
     ctx = mission_ctx or {}
     weekly_theme = ""
@@ -1180,11 +1956,13 @@ async def _run_feed_art_director_report(
 
     report = run_feed_art_director(
         brand=brand,
-        content_ideas_json=output_summary[:6000],
+        content_ideas_json=output_summary[:15000],
         weekly_theme=weekly_theme,
         mission_type=ctx.get("mission_type") or "",
         mission_title=title,
         creative_brief=brief,
+        production_package=ctx.get("production_package") or None,
+        production_profile=ctx.get("production_profile") or None,
     )
 
     report_json = _json.dumps(report, ensure_ascii=False, indent=2)
@@ -1199,7 +1977,74 @@ async def _run_feed_art_director_report(
 
     await _upsert_feed_cohesion_review_output(mission_id, workspace_id, report_json)
 
+    try:
+        from app.services.ai_cost_service import record_mission_category_cost
+
+        factory = _get_session_factory()
+        async with factory() as cost_db:
+            await record_mission_category_cost(
+                cost_db,
+                workspace_id,
+                mission_id,
+                "feed_art_director",
+            )
+    except Exception as cost_exc:
+        logger.warning(
+            "feed_art_director_cost_record_failed",
+            mission_id=str(mission_id),
+            error=str(cost_exc)[:200],
+        )
+
     return report
+
+
+async def _mark_feed_cohesion_review_failed(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    error: str,
+) -> None:
+    factory = _get_session_factory()
+    async with factory() as db:
+        node = await ensure_feed_cohesion_review_persisted_node(db, mission_id, workspace_id)
+        if not node:
+            return
+        await db.execute(
+            update(MissionTaskNode)
+            .where(MissionTaskNode.id == node.id)
+            .execution_options(synchronize_session=False)
+            .values(
+                status=TaskNodeStatus.FAILED.value,
+                completed_at=datetime.now(timezone.utc),
+                error_message=error[:500],
+            )
+        )
+        await db.commit()
+    await _advance_after_node(mission_id, workspace_id)
+
+
+async def _reset_feed_cohesion_review_pending(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    error_message: str | None = None,
+) -> None:
+    factory = _get_session_factory()
+    async with factory() as db:
+        node = await ensure_feed_cohesion_review_persisted_node(db, mission_id, workspace_id)
+        if not node:
+            return
+        await db.execute(
+            update(MissionTaskNode)
+            .where(MissionTaskNode.id == node.id)
+            .execution_options(synchronize_session=False)
+            .values(
+                status=TaskNodeStatus.PENDING.value,
+                started_at=None,
+                completed_at=None,
+                error_message=(error_message[:500] if error_message else None),
+            )
+        )
+        await db.commit()
 
 
 async def _persist_feed_cohesion_report(
@@ -1215,6 +2060,58 @@ async def _persist_feed_cohesion_report(
         workspace_id,
         _json.dumps(report, ensure_ascii=False, indent=2),
     )
+
+
+def _recent_feed_produce_skip(summary: dict, *, package_total: int) -> bool:
+    """Skip duplicate auto-produce only when the mission package was already produced."""
+    from app.services.mission_ideation_merge import MISSION_FEED_PACKAGE_TOTAL
+
+    expected = package_total if package_total > 0 else MISSION_FEED_PACKAGE_TOTAL
+    last = summary.get("last_feed_produce") or {}
+    produced = int(last.get("produced") or 0)
+    if produced < expected:
+        return False
+    at_raw = str(last.get("at") or "").strip()
+    if not at_raw:
+        return False
+    try:
+        at = datetime.fromisoformat(at_raw.replace("Z", "+00:00"))
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+    except Exception:
+        return False
+    age_h = (datetime.now(timezone.utc) - at).total_seconds() / 3600
+    return age_h < 6
+
+
+async def _record_mission_feed_produce_success(
+    mission_id: uuid.UUID,
+    *,
+    produced: int,
+    enhance_trace: list | None = None,
+) -> None:
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.performance_summary).where(Mission.id == mission_id)
+        )
+        row = r.one_or_none()
+        summary = dict(row[0] or {}) if row else {}
+        last_feed: dict = {
+            "produced": produced,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        if enhance_trace:
+            last_feed["enhance_trace"] = enhance_trace
+        summary["last_feed_produce"] = last_feed
+        summary.pop("production_error", None)
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(performance_summary=summary),
+        )
+        await db.commit()
 
 
 async def _record_mission_production_failure(
@@ -1253,6 +2150,8 @@ async def _trigger_auto_produce(
     brand: Any,
     feed_director_report: dict | None = None,
     mission_ctx: dict[str, str] | None = None,
+    *,
+    skip_artifact_dedupe: bool = False,
 ) -> dict | None:
     """
     Non-blocking call to Next.js /api/auto-produce after content_ideation completes.
@@ -1270,19 +2169,29 @@ async def _trigger_auto_produce(
         mission_ctx = await _load_mission_production_context(mission_id)
 
     try:
-        # ── Use canvas_output_parser for robust, schema-validated parsing ─────
+        # ── Parse ideas from output_summary ─────────────────────────────────
         from app.crew.canvas_output_parser import parse_ideation_output
-        # Priority 1: raw JSON parse — preserves full visual_production_spec,
-        # image_edit_prompt, reel_motion_spec from _enforce_idea_completeness.
-        # Canvas parser strips VPS and hardcodes "pure_photo" / empty reel spec.
+        # Priority 0: merged weekly package JSON from _resolve_merged_ideation_summary
+        # (calendar + ideation + ensure_weekly_format_coverage — TS parity).
         ideas: list = []
-        json_match = _re.search(r"\[.*\]", output_summary, _re.DOTALL)
-        if json_match:
+        stripped_summary = output_summary.strip()
+        if stripped_summary.startswith("["):
             try:
-                raw_list = _json.loads(json_match.group())
-                ideas = raw_list if isinstance(raw_list, list) else []
+                raw_list = _json.loads(stripped_summary)
+                if isinstance(raw_list, list) and raw_list:
+                    ideas = raw_list
             except Exception:
                 ideas = []
+
+        # Priority 1: extract JSON array from mixed output
+        if not ideas:
+            json_match = _re.search(r"\[.*\]", output_summary, _re.DOTALL)
+            if json_match:
+                try:
+                    raw_list = _json.loads(json_match.group())
+                    ideas = raw_list if isinstance(raw_list, list) else []
+                except Exception:
+                    ideas = []
 
         # Priority 2: canvas parser — only if raw parse failed or returned nothing
         if not ideas:
@@ -1374,6 +2283,16 @@ async def _trigger_auto_produce(
                 logger.warning("auto_gallery_analysis_trigger_failed",
                                workspace_id=str(workspace_id), error=str(_age)[:100])
 
+        calendar_nodes = await _load_content_calendar_nodes(mission_id)
+        calendar_plans = _parse_calendar_plans_from_nodes(calendar_nodes)
+
+        from app.services.mission_visual_design_parse import (
+            parse_visual_design_cards_from_nodes,
+        )
+
+        visual_design_nodes = await _load_visual_design_nodes(mission_id)
+        visual_design_cards = parse_visual_design_cards_from_nodes(visual_design_nodes)
+
         ctx = mission_ctx or {}
         payload = {
             "workspaceId": str(workspace_id),
@@ -1387,11 +2306,27 @@ async def _trigger_auto_produce(
             "missionTitle": ctx.get("mission_title") or None,
             "creativeBrief": ctx.get("creative_brief") or None,
         }
+        if calendar_plans:
+            payload["calendarPlans"] = calendar_plans
+        if visual_design_cards:
+            payload["visualDesignCards"] = visual_design_cards
+            logger.info(
+                "auto_produce_visual_design_cards",
+                mission_id=str(mission_id),
+                card_count=len(visual_design_cards),
+            )
         if feed_director_report:
             payload["feedDirectorReport"] = feed_director_report
-        pkg = feed_director_report.get("production_package") if feed_director_report else None
-        if isinstance(pkg, str) and pkg:
-            payload["productionPackage"] = pkg
+        pkg = (mission_ctx or {}).get("production_package")
+        if not isinstance(pkg, str) or not pkg.strip():
+            if feed_director_report:
+                pkg = feed_director_report.get("production_package")
+        if isinstance(pkg, str) and pkg.strip():
+            payload["productionPackage"] = pkg.strip()
+            if feed_director_report and isinstance(feed_director_report, dict):
+                feed_director_report["production_package"] = pkg.strip()
+        if skip_artifact_dedupe:
+            payload["skipArtifactDedupe"] = True
 
         # 320s matches Next.js route maxDuration=300s plus startup buffer.
         # Runway reels can take 3+ minutes, so 30s was timing out before artifacts
@@ -1421,6 +2356,8 @@ async def _trigger_auto_produce(
                 mission_id=str(mission_id),
                 node_key=node_key,
                 produced=data.get("produced", 0),
+                total=data.get("total", 0),
+                idea_count=data.get("ideaCount", 0),
                 pis_avg=(data.get("pis") or {}).get("avg"),
                 pis_skipped=(data.get("pis") or {}).get("skipped"),
             )
@@ -1471,54 +2408,136 @@ async def _trigger_auto_produce(
     return None
 
 
-async def _trigger_feed_art_director(
-    workspace_id: uuid.UUID,
-    mission_id: uuid.UUID,
-    node_key: str,
-    output_summary: str,
-    brand: Any,
-) -> None:
-    """
-    Non-blocking call to Feed Art Director crew after content_ideation completes.
-    Saves the cohesion report as a new completed node in the mission graph
-    so it appears in Mission Detail Sheet.
-    """
-    import json as _json
+# ── Intel auto-refresh helpers ─────────────────────────────────────────────────
 
+async def _refresh_trend_brief_if_stale(workspace_id: uuid.UUID, brand: Any) -> None:
+    """
+    Non-blocking trend brief refresh before mission production.
+    Opens its own DB session, calls ensure_fresh_trend_brief_for_propose with
+    a 72-hour staleness window (less urgent than the 48h propose SLA), and
+    updates brand.trend_brief in-place if a fresh brief was produced.
+    All exceptions are swallowed — this must never block mission production.
+    """
     try:
-        from app.crew.crews.feed_art_director_crew import run_feed_art_director
-
-        # Extract weekly theme from the ideation output if available
-        weekly_theme = ""
-        try:
-            clean = output_summary.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
-            ideas = _json.loads(clean) if clean.startswith("[") else []
-            if ideas:
-                weekly_theme = str(ideas[0].get("strategic_purpose", "") or "")[:100]
-        except Exception:
-            pass
-
-        report = run_feed_art_director(
-            brand=brand,
-            content_ideas_json=output_summary[:6000],
-            weekly_theme=weekly_theme,
-        )
-
-        report_json = _json.dumps(report, ensure_ascii=False, indent=2)
-
-        logger.info(
-            "feed_art_director_complete",
-            mission_id=str(mission_id),
-            node_key=node_key,
-            feed_score=report.get("feed_score"),
-            verdict=str(report.get("art_director_verdict", ""))[:80],
-        )
-
-        await _upsert_feed_cohesion_review_output(mission_id, workspace_id, report_json)
-
+        factory = _get_session_factory()
+        async with factory() as db:
+            brief_text, was_refreshed = await ensure_fresh_trend_brief_for_propose(
+                db,
+                workspace_id,
+                max_age_hours=72,
+            )
+        if was_refreshed and brief_text:
+            brand.trend_brief = brief_text
+            logger.info(
+                "mission_production_trend_brief_refreshed",
+                workspace_id=str(workspace_id),
+            )
+        else:
+            logger.debug(
+                "mission_production_trend_brief_fresh",
+                workspace_id=str(workspace_id),
+                was_refreshed=was_refreshed,
+            )
     except Exception as exc:
         logger.warning(
-            "feed_art_director_error",
-            mission_id=str(mission_id),
-            error=str(exc)[:300],
+            "mission_production_trend_brief_refresh_failed",
+            workspace_id=str(workspace_id),
+            error=str(exc)[:200],
+        )
+
+
+async def _refresh_extended_intel_if_stale(workspace_id: uuid.UUID, brand: Any) -> None:
+    """
+    Non-blocking refresh of TripAdvisor reviews, Instagram location posts, and
+    Google Trends stored on BrandContext. Skips if data was updated within the
+    last 14 days. Fetches TripAdvisor and location posts in parallel.
+    Updates brand fields in-place. All exceptions are swallowed — non-fatal.
+    """
+    try:
+        from app.crew.apify_scraper import fetch_tripadvisor_reviews, fetch_instagram_location_posts
+
+        settings = get_settings()
+        apify_key = settings.apify_api_key or ""
+        if not apify_key:
+            logger.debug(
+                "extended_intel_refresh_skipped_no_apify_key",
+                workspace_id=str(workspace_id),
+            )
+            return
+
+        factory = _get_session_factory()
+        async with factory() as db:
+            ctx = await get_brand_context(db, workspace_id)
+            if not ctx:
+                return
+
+            updated_at = getattr(ctx, "extended_intelligence_updated_at", None)
+            if updated_at:
+                try:
+                    last = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                    if (datetime.now(timezone.utc) - last) < timedelta(days=14):
+                        logger.debug(
+                            "extended_intel_refresh_skipped_fresh",
+                            workspace_id=str(workspace_id),
+                        )
+                        return
+                except (ValueError, AttributeError):
+                    pass
+
+            brand_name = getattr(ctx, "business_name", None) or ""
+            location = getattr(ctx, "location", None) or ""
+
+            ta_task = None
+            loc_task = None
+            if brand_name and location:
+                ta_task = asyncio.ensure_future(
+                    fetch_tripadvisor_reviews(brand_name, location, apify_key, timeout=60, max_reviews=10)
+                )
+            if location:
+                loc_task = asyncio.ensure_future(
+                    fetch_instagram_location_posts(location, apify_key, timeout=60, max_posts=15)
+                )
+
+            ta_data = None
+            loc_data = None
+            if ta_task is not None:
+                try:
+                    ta_data = await ta_task
+                except Exception as exc:
+                    logger.debug("tripadvisor_fetch_failed", error=str(exc)[:200])
+            if loc_task is not None:
+                try:
+                    loc_data = await loc_task
+                except Exception as exc:
+                    logger.debug("location_posts_fetch_failed", error=str(exc)[:200])
+
+            updated = False
+            if ta_data:
+                ctx.tripadvisor_reviews = json.dumps(ta_data)
+                brand.tripadvisor_reviews = ctx.tripadvisor_reviews
+                updated = True
+            if loc_data:
+                ctx.location_posts = json.dumps(loc_data)
+                brand.location_posts = ctx.location_posts
+                updated = True
+
+            if updated:
+                ctx.extended_intelligence_updated_at = datetime.now(timezone.utc).isoformat()
+                await db.commit()
+                logger.info(
+                    "extended_intel_refreshed",
+                    workspace_id=str(workspace_id),
+                    tripadvisor=bool(ta_data),
+                    location_posts=bool(loc_data),
+                )
+            else:
+                logger.debug(
+                    "extended_intel_refresh_no_new_data",
+                    workspace_id=str(workspace_id),
+                )
+    except Exception as exc:
+        logger.warning(
+            "extended_intel_refresh_failed",
+            workspace_id=str(workspace_id),
+            error=str(exc)[:200],
         )

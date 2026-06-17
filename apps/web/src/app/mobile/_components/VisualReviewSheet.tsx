@@ -175,7 +175,7 @@ export function VisualReviewSheet({ imageUrl, context, thumbnailUrl, onClose }: 
         <div style={{ padding: '0 20px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 36, height: 36, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+            background: 'linear-gradient(135deg,#5A82A0,#8AABBD)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18,
           }}>👁</div>
@@ -200,8 +200,8 @@ export function VisualReviewSheet({ imageUrl, context, thumbnailUrl, onClose }: 
         {status === 'loading' && (
           <div style={{ padding: '32px 20px', textAlign: 'center' }}>
             <div style={{
-              width: 40, height: 40, border: '3px solid rgba(99,102,241,0.2)',
-              borderTopColor: '#6366f1', borderRadius: '50%',
+              width: 40, height: 40, border: '3px solid rgba(90,130,160,0.2)',
+              borderTopColor: '#5A82A0', borderRadius: '50%',
               margin: '0 auto 16px',
               animation: 'spin 0.8s linear infinite',
             }} />
@@ -306,7 +306,7 @@ export function VisualReviewSheet({ imageUrl, context, thumbnailUrl, onClose }: 
             {/* Suggestions */}
             {result.suggestions.length > 0 && (
               <div style={{
-                background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)',
+                background: 'rgba(90,130,160,0.06)', border: '1px solid rgba(90,130,160,0.2)',
                 borderRadius: 16, padding: '16px', marginBottom: 16,
               }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#818cf8', marginBottom: 10 }}>
@@ -341,7 +341,7 @@ export function VisualReviewSheet({ imageUrl, context, thumbnailUrl, onClose }: 
               <button
                 onClick={onClose}
                 style={{
-                  flex: 1, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                  flex: 1, background: 'linear-gradient(135deg,#5A82A0,#8AABBD)',
                   border: 'none', color: '#fff', borderRadius: 12,
                   padding: '12px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}

@@ -11,9 +11,12 @@ import type { OutputArtifact } from '@/types';
 import type { T } from '../theme-context';
 import { VisualReviewBadge } from '../VisualReviewSheet';
 import { resolveClientMediaUrl } from '@/lib/media-url';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { buildTenantBrandContext } from '@/lib/tenant-brand-context';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { resolveMertcafePublishAuth } from '@/lib/mertcafe-publish-auth';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import { MOBILE_ARTIFACT_OUTPUTS_LIMIT } from '../../_lib/mobile-artifacts';
 
 type Platform = 'instagram' | 'x' | 'tiktok';
 type BrandProfile = { handle: string; name: string; logoUrl: string };
@@ -942,7 +945,7 @@ const KIND_COLOR: Record<ContentKind, string> = {
   plan:     '#34D399',
   report:   '#F59E0B',
   ad:       '#FCD34D',
-  other:    '#A78BFA',
+  other:    '#9DBECE',
 };
 
 // Label per type
@@ -1468,11 +1471,15 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
         throw new Error('Tenant seçili değil.');
       }
       const mcStatus = await apiClient.getMertcafeStatus(workspaceId);
-      if (!mcStatus.is_tenant_ready || !mcStatus.publish_account_id) {
-        throw new Error('Bu tenant için Instagram yayın hesabı yapılandırılmamış.');
+      if (!mcStatus.has_tenant_api_key) {
+        throw new Error('Bu tenant için Mertcafe API anahtarı yapılandırılmamış.');
       }
       if (!mcStatus.instagram_connected) {
-        throw new Error('Instagram OAuth bağlı değil.');
+        throw new Error('Instagram OAuth bağlı değil. Ayarlar → OAuth ile bağlanın.');
+      }
+      const publishAuth = resolveMertcafePublishAuth(mcStatus);
+      if (!publishAuth.useOAuthAccount && !publishAuth.accountId) {
+        throw new Error('Yayın hesabı seçilmemiş. Ayarlar → OAuth senkronu yapın.');
       }
 
       const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
@@ -1521,8 +1528,12 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
         post_type: postType,
         artifactId: artifact.id,
         workspaceId,
-        account_id: mcStatus.publish_account_id,
       };
+      if (publishAuth.useOAuthAccount) {
+        publishPayload.use_oauth_account = true;
+      } else if (publishAuth.accountId) {
+        publishPayload.account_id = publishAuth.accountId;
+      }
       if (postType === 'story') {
         if (videoUrl) {
           publishPayload.video_url = videoUrl;
@@ -1728,6 +1739,7 @@ export function Outputs() {
 
   const { data: rawArtifacts = [], isLoading, error } = useMobileArtifacts({
     subscribeOnly: true,
+    params: { limit: MOBILE_ARTIFACT_OUTPUTS_LIMIT },
   });
 
   // Brand profile — instagram handle + name + logo for native post headers
@@ -1737,12 +1749,13 @@ export function Outputs() {
     queryFn: () => apiClient.getCompanyProfile(),
     staleTime: 5 * 60_000,
   });
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn: () => apiClient.getBrandContextData(tenantId),
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId),
     staleTime: 60_000, // 1 min — logo_url artık doluyor, sık yenile
     enabled: !!tenantId,
   });
+  const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
   const brandProfile = buildBrandProfileFromQueries(profile, brandCtx, proxyUrl);
 
   // Scheduled posts — for "Zamanlandı" badge on cards
@@ -1795,10 +1808,10 @@ export function Outputs() {
         right: 20,
         zIndex: 50,
         width: 56, height: 56, borderRadius: '50%',
-        background: 'linear-gradient(135deg, #7C3AED, #6366F1)',
+        background: 'linear-gradient(135deg, #4D7088, #5A82A0)',
         border: 'none', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 4px 20px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.3)',
+        boxShadow: '0 4px 20px rgba(77,112,136,0.55), 0 2px 8px rgba(0,0,0,0.3)',
         transition: 'transform 150ms ease',
       }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
@@ -1823,7 +1836,7 @@ export function Outputs() {
             style={{
               padding: '11px 14px', borderRadius: 14, cursor: 'pointer', flexShrink: 0,
               border: `0.5px solid ${activePlatform === 'all' ? t.accent + '55' : t.separator}`,
-              background: activePlatform === 'all' ? (t.isDark ? 'rgba(167,139,250,0.1)' : 'rgba(167,139,250,0.08)') : 'transparent',
+              background: activePlatform === 'all' ? (t.isDark ? 'rgba(157,190,206,0.1)' : 'rgba(157,190,206,0.08)') : 'transparent',
               fontSize: 12, fontWeight: 600,
               color: activePlatform === 'all' ? t.accent : (t.isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.35)'),
               whiteSpace: 'nowrap', transition: 'all 180ms ease',
@@ -1887,19 +1900,19 @@ export function Outputs() {
               <div style={{ position: 'relative', width: 140, height: 140, margin: '0 auto 24px' }}>
                 {/* Outer pulse ring */}
                 <div style={{ position: 'absolute', inset: 0, borderRadius: '50%',
-                  background: 'radial-gradient(circle, rgba(167,139,250,0.18) 0%, transparent 65%)',
+                  background: 'radial-gradient(circle, rgba(157,190,206,0.18) 0%, transparent 65%)',
                   animation: 'breathe 3s ease-in-out infinite' }} />
                 {/* Mid ring */}
                 <div style={{ position: 'absolute', inset: 24, borderRadius: '50%',
                   background: 'radial-gradient(circle, rgba(96,165,250,0.16) 0%, transparent 60%)' }} />
                 {/* Inner glow */}
                 <div style={{ position: 'absolute', inset: 44, borderRadius: '50%',
-                  background: 'radial-gradient(circle, rgba(244,114,182,0.22) 0%, rgba(167,139,250,0.10) 70%, transparent 100%)' }} />
+                  background: 'radial-gradient(circle, rgba(244,114,182,0.22) 0%, rgba(157,190,206,0.10) 70%, transparent 100%)' }} />
                 {/* Sparkle */}
                 <div style={{ position: 'absolute', inset: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 48, color: '#fff', opacity: 0.95,
-                  textShadow: '0 4px 24px rgba(167,139,250,0.55)' }}>✦</div>
+                  textShadow: '0 4px 24px rgba(157,190,206,0.55)' }}>✦</div>
               </div>
 
               <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary,
@@ -1913,9 +1926,9 @@ export function Outputs() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 260, margin: '0 auto' }}>
                 <button onClick={() => navigate('missions')} style={{
                   padding: '14px', borderRadius: 16, cursor: 'pointer',
-                  background: 'linear-gradient(135deg, #7C3AED, #6366F1)',
+                  background: 'linear-gradient(135deg, #4D7088, #5A82A0)',
                   border: 'none', color: '#fff', fontSize: 14, fontWeight: 700,
-                  boxShadow: '0 4px 18px rgba(124,58,237,0.4)',
+                  boxShadow: '0 4px 18px rgba(77,112,136,0.4)',
                   letterSpacing: '-0.01em' }}>
                   ✦ Mission Hub'a Git
                 </button>

@@ -8,7 +8,13 @@ import {
   type TextOverlayDensity,
 } from './brand-text-overlay-prefs';
 import { brandHeadingUsesScriptStyle } from './announcement-brand-kit';
+import {
+  BRAND_HERO_GRADIENT_FILL,
+  buildBrandHeroGradientSvgDef,
+  heroGradientXRange,
+} from './brand-headline-gradient';
 import { textsAreDuplicate } from './poster-quality';
+import { buildBrandPanelSvgGradient } from './brand-panel-gradient';
 import {
   buildSvgTextBlock,
   estimateTextWidth,
@@ -175,12 +181,15 @@ function resolveOverlayColors(opts: AnnouncementOverlayInput): {
   text: string;
   shadow: string;
   primary: string;
+  headline: string;
 } {
+  const kit = opts.brandKit;
   return {
-    accent: opts.brandKit?.accentColor ?? opts.accentColor,
-    text: opts.brandKit?.textColor ?? opts.textColor,
-    shadow: opts.brandKit?.shadowColor ?? '#000000',
-    primary: opts.brandKit?.primaryColor ?? opts.accentColor,
+    accent: kit?.accentColor ?? opts.accentColor,
+    text: kit?.textColor ?? opts.textColor,
+    shadow: kit?.shadowColor ?? '#000000',
+    primary: kit?.primaryColor ?? opts.accentColor,
+    headline: kit?.headlineColor ?? kit?.textColor ?? opts.textColor ?? '#ffffff',
   };
 }
 
@@ -207,11 +216,10 @@ export function applyTextOverlayDensityToSpec(
   spec: TemplateLayoutSpec,
   density?: TextOverlayDensity,
 ): TemplateLayoutSpec {
-  if (!density || density === 'medium') return spec;
+  const effectiveDensity = density ?? 'medium';
+  const prefs = resolveTextOverlayPrefs({ typography: { text_overlay_density: effectiveDensity } });
 
-  const prefs = resolveTextOverlayPrefs({ typography: { text_overlay_density: density } });
-
-  if (density === 'dense') {
+  if (effectiveDensity === 'dense') {
     return {
       ...spec,
       heroScale: spec.heroScale * prefs.heroScaleMultiplier,
@@ -222,21 +230,25 @@ export function applyTextOverlayDensityToSpec(
 
   const centerHeavy = spec.textZone === 'center'
     || spec.family === 'promo_banner'
-    || spec.posterMode === 'promo_split';
+    || spec.posterMode === 'promo_split'
+    || spec.posterMode === 'gala_centered'
+    || spec.family === 'impact_vignette';
+
+  const photoDominant = effectiveDensity === 'minimal' || effectiveDensity === 'medium';
 
   return {
     ...spec,
     heroScale: spec.heroScale * prefs.heroScaleMultiplier,
     gradientStart: Math.max(spec.gradientStart, centerHeavy ? 0.55 : 0.48),
     gradientEnd: Math.min(spec.gradientEnd, 0.9),
-    photoFirst: centerHeavy ? true : spec.photoFirst,
+    photoFirst: centerHeavy || photoDominant ? true : spec.photoFirst,
     textZone: centerHeavy && spec.textZone === 'center' ? 'bottom_center' : spec.textZone,
     align: centerHeavy ? 'center' : spec.align,
     colorBlock: spec.colorBlock === 'none' && centerHeavy ? 'bottom_panel' : spec.colorBlock,
     colorBlockSize: centerHeavy
-      ? Math.min(spec.colorBlockSize || 0.42, 0.34)
+      ? Math.min(spec.colorBlockSize || 0.42, 0.32)
       : spec.colorBlockSize,
-    colorBlockOpacity: centerHeavy ? Math.max(spec.colorBlockOpacity, 0.88) : spec.colorBlockOpacity,
+    colorBlockOpacity: centerHeavy ? Math.max(spec.colorBlockOpacity, 0.86) : spec.colorBlockOpacity,
     vignetteDeep: false,
     duotoneOpacity: Math.min(spec.duotoneOpacity, 0.18),
   };
@@ -467,20 +479,12 @@ function buildColorBlockPanel(
     const panelTop = Math.round(height * (1 - size));
     const innerT = panelTop + Math.round(pad * 0.6);
     const innerB = height - Math.round(pad * 0.6);
-    const blendH = Math.round((height - panelTop) * 0.22);
+    const blendExtend = Math.round((height - panelTop) * 0.38);
+    const gradTop = Math.max(0, panelTop - blendExtend);
+    const gradH = height - gradTop;
+    const panelGrad = buildBrandPanelSvgGradient('brandPanelFade', fill, width, gradTop, gradH, opacity);
     return {
-      markup: `<defs>
-    <linearGradient id="panelTopBlend" x1="0" y1="${panelTop - blendH}" x2="0" y2="${panelTop + 4}" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="${fill}" stop-opacity="0"/>
-      <stop offset="100%" stop-color="${fill}" stop-opacity="${(opacity * 0.55).toFixed(3)}"/>
-    </linearGradient>
-    <linearGradient id="panelBody" x1="0" y1="${panelTop}" x2="0" y2="${height}" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="${fill}" stop-opacity="${(opacity * 0.88).toFixed(3)}"/>
-      <stop offset="100%" stop-color="${fill}" stop-opacity="${opacity.toFixed(3)}"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="${panelTop - blendH}" width="${width}" height="${blendH + 4}" fill="url(#panelTopBlend)"/>
-  <rect x="0" y="${panelTop}" width="${width}" height="${height - panelTop}" fill="url(#panelBody)"/>`,
+      markup: `<defs>${panelGrad.defs}</defs>${panelGrad.rect}`,
       boundsPatch: {
         top: innerT,
         bottom: innerB,
@@ -611,6 +615,14 @@ function buildSideVerticalLabel(
   return `<text x="${x}" y="${y}" font-family="${detailFont}" font-size="${size}" font-weight="600" letter-spacing="5" fill="${accent}" text-anchor="middle" dominant-baseline="middle" opacity="0.75" transform="rotate(-90 ${x} ${y})">${escapeXml(brand.slice(0, 24))}</text>`;
 }
 
+/** Accent gradient on light color panels washes out left glyphs — use solid ink there. */
+function resolveHeroHeadlineFill(spec: TemplateLayoutSpec, textColor: string): string {
+  const onSolidPanel = spec.colorBlock !== 'none'
+    && ['bottom_panel', 'left_panel', 'right_panel', 'top_bar'].includes(spec.colorBlock);
+  if (onSolidPanel || spec.photoFirst) return textColor;
+  return BRAND_HERO_GRADIENT_FILL;
+}
+
 function buildSvgFilters(spec: TemplateLayoutSpec, accent: string): string {
   // Soft text shadow — modern legibility lift so copy reads cleanly over any
   // photo (not just where the gradient is dark). Applied to all text layers.
@@ -695,6 +707,7 @@ function buildHeroTextBlock(
     return `<rect x="${Math.round(boxX)}" y="${Math.round(boxY)}" width="${Math.round(boxW)}" height="${Math.round(boxH)}" rx="${Math.round(boxH * 0.12)}" fill="${shadow}" opacity="0.72"/>${textBlock}`;
   }
 
+  const shadowFilter = filterAttr || ' filter="url(#softTextShadow)"';
   return buildSvgTextBlock({
     x: bounds.anchorX,
     y: layer.y,
@@ -704,7 +717,7 @@ function buildHeroTextBlock(
     textAnchor: bounds.textAnchor,
     opacity: layer.opacity,
     fit: layer.fit,
-  }).replace('<text ', `<text${filterAttr} `);
+  }).replace('<text ', `<text${shadowFilter} `);
 }
 
 function buildOfferBand(
@@ -1179,8 +1192,8 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
   // Display/impact families: larger hero (condensed fonts fit more text at bigger sizes)
   const isDisplayFamily = (spec.family && FAMILY_FONT_PERSONALITY[spec.family]) === 'force_display';
   const baseHero = contentType === 'story'
-    ? (isDisplayFamily ? 0.148 : 0.115)
-    : (isDisplayFamily ? 0.135 : 0.105);
+    ? (isDisplayFamily ? 0.132 : 0.108)
+    : (isDisplayFamily ? 0.118 : 0.092);
 
   // When text lives inside a left/right color-block panel, scale the hero
   // against the PANEL width so text cannot overflow outside the panel.
@@ -1245,8 +1258,8 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
     if (spec.textZone === 'center') {
       bounds = {
         ...bounds,
-        top: Math.round(height * 0.46),
-        bottom: Math.round(height * 0.78),
+        top: Math.round(height * 0.58),
+        bottom: Math.round(height * 0.84),
       };
     } else if (spec.textZone === 'top_center') {
       bounds = {
@@ -1303,7 +1316,7 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
         trackingRatio: spec.heroTracking,
         fontFamily: heroFont,
         fontWeight: scriptBrandHero ? 400 : spec.heroWeight,
-        fill: colors.headline,
+        fill: resolveHeroHeadlineFill(spec, colors.text),
         opacity: 0.97,
         maxLines: 3,
       },
@@ -1375,15 +1388,19 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
   const posterFooterBlock = buildPosterFooter(spec.posterFooter, width, height, colors.accent, colors.text, footerInfo, detailFont, opts.ticketLabel);
   const cornerOrnaments = spec.cornerOrnament ? buildCornerOrnaments(width, height, colors.accent) : '';
 
-  const artists = opts.lineupArtists ?? (heroRaw ? [heroRaw] : []);
+  const explicitLineup = (opts.lineupArtists ?? []).map((a) => String(a).trim()).filter(Boolean);
+  const lineupMin = spec.posterMode === 'gala_centered' ? 2 : 1;
+  const usePosterLineup = isPosterMode
+    && LINEUP_POSTER_MODES.has(spec.posterMode)
+    && explicitLineup.length >= lineupMin;
   const lineupTopY = posterHeaderBlock.bottomY > 0
     ? posterHeaderBlock.bottomY + Math.round(height * 0.04)
     : Math.round(height * 0.15);
   const lineupBottomY = spec.posterFooter !== 'none'
     ? height - Math.round(width * 0.085) - Math.round(height * 0.03)
     : Math.round(height * 0.82);
-  const lineupMarkup = isPosterMode
-    ? buildLineupStack(artists, spec.posterMode, cx, lineupTopY, lineupBottomY, Math.round(width * 0.84), heroFont, detailFont, colors.text, colors.accent, spec.ornamentDivider)
+  const lineupMarkup = usePosterLineup
+    ? buildLineupStack(explicitLineup, spec.posterMode, cx, lineupTopY, lineupBottomY, Math.round(width * 0.84), heroFont, detailFont, colors.text, colors.accent, spec.ornamentDivider)
     : '';
 
   const gradientLayer = spec.bandMode !== 'none' ? band.markup : buildGradientLayer(spec, width, height, colors.shadow);
@@ -1399,6 +1416,21 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
   const magazineDate = buildMagazineDate(spec, opts, width, height, colors.accent, detailFont);
   const sideLabel = buildSideVerticalLabel(spec, brandRaw, width, height, colors.accent, detailFont);
   const svgFilters = buildSvgFilters(spec, colors.accent);
+  const heroTextSpan = heroLayer?.fit.lines.length
+    ? Math.max(
+      ...heroLayer.fit.lines.map((line) =>
+        estimateTextWidth(line, heroLayer.fit.fontSize, heroLayer.fit.letterSpacing),
+      ),
+      1,
+    )
+    : bounds.maxWidth * 0.72;
+  const heroGradRange = heroGradientXRange(bounds.anchorX, heroTextSpan, bounds.textAnchor);
+  const brandHeroGradientDef = buildBrandHeroGradientSvgDef(
+    colors.primary,
+    colors.accent,
+    heroGradRange.x1,
+    heroGradRange.x2,
+  );
 
   let aboveHeroDate = '';
   if (spec.dateBadge === 'above_hero' && heroLayer) {
@@ -1430,7 +1462,7 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
     })
     : '';
 
-  const suppressStackForLineup = isPosterMode && LINEUP_POSTER_MODES.has(spec.posterMode);
+  const suppressStackForLineup = usePosterLineup;
   const textBlocks = suppressStackForLineup ? '' : stackLayers.map((layer) => {
     if (layer.key === 'hero') {
       return buildHeroTextBlock(layer, bounds, spec, colors.accent, colors.shadow);
@@ -1451,7 +1483,7 @@ export function buildLayoutSvg(opts: AnnouncementOverlayInput, layout: TemplateL
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-  ${svgFilters}
+  ${svgFilters.replace('</defs>', `  ${brandHeroGradientDef}\n  </defs>`)}
   ${gradientLayer}
   ${duotone}
   ${vignette}

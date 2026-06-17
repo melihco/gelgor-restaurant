@@ -47,7 +47,7 @@ export function productionIdeaFromArtifact(
   index = 0,
   missionId?: string,
 ): ProductionIdea {
-  const headline = idea.headline ?? idea.title ?? '';
+  const headline = idea.title ?? idea.headline ?? '';
   const contentType = idea.contentType ?? 'post';
   const treatment = idea.visualProductionSpec?.treatment;
 
@@ -93,12 +93,31 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
-function firstStr(rec: Record<string, unknown>, ...keys: string[]): string {
+export function firstStr(rec: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const s = str(rec[k]);
     if (s) return s;
   }
   return '';
+}
+
+/**
+ * Planning title from mission ideation — matches Mission Hub cards and feeds
+ * Remotion stories, posters, and feed overlay copy (not caption CTA hooks).
+ */
+export function resolveIdeationHeadline(rec: Record<string, unknown>): string {
+  return firstStr(
+    rec,
+    'concept_title',
+    'conceptTitle',
+    'idea_title',
+    'ideaTitle',
+    'title',
+    'headline',
+    'hook',
+    'subline',
+    'strategic_purpose',
+  );
 }
 
 /**
@@ -112,7 +131,7 @@ export function productionIdeaFromRecord(
   index = 0,
   missionId?: string,
 ): ProductionIdea {
-  const headline = firstStr(rec, 'headline', 'concept_title', 'title');
+  const headline = resolveIdeationHeadline(rec);
   const contentType = firstStr(rec, 'content_type', 'content_kind') || 'post';
 
   const vpsRaw = (rec.visual_production_spec ?? rec.visualProductionSpec) as
@@ -134,6 +153,8 @@ export function productionIdeaFromRecord(
   if (!canvaFieldCopy.headline && headline) canvaFieldCopy.headline = headline;
   const cta = firstStr(rec, 'cta', 'call_to_action');
   if (!canvaFieldCopy.cta && cta) canvaFieldCopy.cta = cta;
+  const subline = firstStr(rec, 'subline', 'tagline');
+  if (!canvaFieldCopy.subtitle && subline) canvaFieldCopy.subtitle = subline;
 
   const hashtags = Array.isArray(rec.hashtags)
     ? rec.hashtags.map((h) => String(h).trim()).filter(Boolean)
@@ -141,9 +162,10 @@ export function productionIdeaFromRecord(
   const eventDate = firstStr(rec, 'event_date', 'eventDate', 'date_suggestion');
   const location = firstStr(rec, 'location');
 
-  const selectedGalleryUrl = vpsRaw
-    ? str(vpsRaw.selected_gallery_url) || str(vpsRaw.selectedGalleryUrl) || null
-    : null;
+  const selectedGalleryUrl =
+    (vpsRaw ? str(vpsRaw.selected_gallery_url) || str(vpsRaw.selectedGalleryUrl) : null)
+    || str(rec.selected_gallery_url)
+    || null;
   const imageEditPrompt = (vpsRaw
     ? str(vpsRaw.image_edit_prompt) || str(vpsRaw.imageEditPrompt)
     : '') || firstStr(rec, 'visual_direction', 'image_prompt');

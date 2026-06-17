@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import load_only, selectinload
 
 from app.models.mission import Mission, MissionTaskNode
 from app.schemas.mission import (
@@ -132,41 +132,26 @@ def _seasonal_task_graph(
         ))
         phase0_keys.append("review_analysis")
 
-    post_count = profile["post_count"]
-    reel_count = profile["reel_count"]
     reel_suffix = profile["reel_brief_suffix"]
+    weekly_count = 7  # 3 story + 2 post + 1 carousel + 1 reel — single batch for Feed
 
     nodes.append(TaskNodeCreate(
-        node_key="post_ideation",
+        node_key="weekly_content_ideation",
         phase_index=1,
-        title=f"{phase_name} — Post Fikirleri ({post_count} konsept)",
+        title=f"{phase_name} — Haftalık İçerik Paketi ({weekly_count} parça)",
         task_type="content_ideation",
         agent_role="content_agent",
-        input_data={"count": post_count, "time_period": phase_name},
+        input_data={
+            "count": weekly_count,
+            "time_period": phase_name,
+            "format_mix": "3 story, 2 post, 1 carousel, 1 reel",
+            "reel_story_brief": reel_suffix,
+        },
         depends_on=["content_strategy"],
     ))
 
-    if reel_count > 0:
-        nodes.append(TaskNodeCreate(
-            node_key="reel_ideation",
-            phase_index=1,
-            title=f"{phase_name} — Reel/Story Fikirleri ({reel_count} konsept)",
-            task_type="content_ideation",
-            agent_role="content_agent",
-            input_data={"count": reel_count, "time_period": f"{phase_name} - {reel_suffix}"},
-            depends_on=["content_strategy"],
-        ))
-
-    cal_days = profile["calendar_days"]
-    nodes.append(TaskNodeCreate(
-        node_key="content_calendar",
-        phase_index=2,
-        title=f"{phase_name} — {cal_days} Günlük Yayın Takvimi",
-        task_type="content_calendar",
-        agent_role="content_agent",
-        input_data={"duration_days": cal_days, "frequency": "daily"},
-        depends_on=["post_ideation"],
-    ))
+    # content_calendar omitted when weekly_content_ideation already delivers the 7-piece
+    # Feed package — saves ~$0.30–0.50/misyon LLM without reducing publishable output.
 
     return nodes
 
@@ -220,7 +205,10 @@ def create_seasonal_mission_from_phase_change(
     node_keys_set = {n.node_key for n in task_nodes}
 
     phase0_keys = [k for k in ["content_strategy", "review_analysis"] if k in node_keys_set]
-    phase1_keys = [k for k in ["post_ideation", "reel_ideation"] if k in node_keys_set]
+    phase1_keys = [
+        k for k in ["weekly_content_ideation", "post_ideation", "reel_ideation"]
+        if k in node_keys_set
+    ]
     phase2_keys = [k for k in ["content_calendar"] if k in node_keys_set]
 
     phases = [
@@ -258,34 +246,175 @@ def create_seasonal_mission_from_phase_change(
 
 # ── Feed Art Director node (Mission Hub visibility) ───────────────────────────
 
+def dedupe_task_nodes_by_key(
+    task_nodes: list[TaskNodeCreate],
+) -> list[TaskNodeCreate]:
+    """Keep first occurrence per node_key — LLM graphs sometimes repeat nodes."""
+    seen: set[str] = set()
+    out: list[TaskNodeCreate] = []
+    for node in task_nodes:
+        if node.node_key in seen:
+            continue
+        seen.add(node.node_key)
+        out.append(node)
+    return out
+
+
 def ensure_feed_cohesion_review_node(
     task_nodes: list[TaskNodeCreate],
 ) -> list[TaskNodeCreate]:
     """
-    Strategist graphs often omit feed_cohesion_review. The production stack runs
-    Feed Art Director inline after content_ideation; this placeholder node stores
-    the report for Mission Hub (executor skips crew execution for this task_type).
+    Strategist graphs often omit feed_cohesion_review. We keep it as an explicit
+    placeholder mission node so Mission Hub can show status + report state, even
+    though the actual Feed Director execution happens inside the production
+    orchestrator (not as a direct engine.execute() crew node).
     """
-    if any(n.task_type == "feed_cohesion_review" for n in task_nodes):
-        return task_nodes
+    if any(
+        n.task_type == "feed_cohesion_review" or n.node_key == "feed_cohesion_review"
+        for n in task_nodes
+    ):
+        return dedupe_task_nodes_by_key(task_nodes)
 
     ideation_keys = [n.node_key for n in task_nodes if n.task_type == "content_ideation"]
     if not ideation_keys:
         return task_nodes
 
     max_phase = max(n.phase_index for n in task_nodes)
-    return [
+    return dedupe_task_nodes_by_key([
         *task_nodes,
         TaskNodeCreate(
             node_key="feed_cohesion_review",
             phase_index=max_phase + 1,
             title="Feed uyumu ve slot planı",
             task_type="feed_cohesion_review",
-            agent_role="feed_art_director_agent",
+            agent_role="feed_art_director",
             input_data={},
             depends_on=ideation_keys,
         ),
-    ]
+    ])
+
+
+async def ensure_feed_cohesion_review_persisted_node(
+    db: AsyncSession,
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> MissionTaskNode | None:
+    existing = await db.execute(
+        select(MissionTaskNode).where(
+            MissionTaskNode.mission_id == mission_id,
+            MissionTaskNode.task_type == "feed_cohesion_review",
+        )
+    )
+    node = existing.scalar_one_or_none()
+    if node:
+        if node.agent_role != "feed_art_director":
+            node.agent_role = "feed_art_director"
+            await db.flush()
+        return node
+
+    dep_rows = await db.execute(
+        select(MissionTaskNode.node_key, MissionTaskNode.phase_index).where(
+            MissionTaskNode.mission_id == mission_id,
+            MissionTaskNode.task_type == "content_ideation",
+        )
+    )
+    ideation_rows = dep_rows.all()
+    if not ideation_rows:
+        return None
+
+    depends_on = [str(row[0]) for row in ideation_rows if row[0]]
+    phase_index = max(int(row[1] or 0) for row in ideation_rows) + 1
+    node = MissionTaskNode(
+        id=uuid.uuid4(),
+        mission_id=mission_id,
+        workspace_id=workspace_id,
+        node_key="feed_cohesion_review",
+        phase_index=phase_index,
+        title="Feed uyumu ve slot planı",
+        task_type="feed_cohesion_review",
+        agent_role="feed_art_director",
+        input_data={},
+        depends_on=depends_on,
+        status=TaskNodeStatus.PENDING.value,
+        retry_count=0,
+    )
+    db.add(node)
+    await db.flush()
+    logger.info(
+        "feed_cohesion_review_node_created",
+        mission_id=str(mission_id),
+        workspace_id=str(workspace_id),
+        depends_on_count=len(depends_on),
+    )
+    return node
+
+
+# ── Production package persistence ───────────────────────────────────────────
+
+VALID_HUB_PRODUCTION_PACKAGES = frozenset({
+    "weekly_content",
+    "campaign",
+    "event",
+    "ads_focus",
+    "opportunity",
+})
+
+
+def normalize_hub_production_package(raw: str | None) -> str | None:
+    pkg = str(raw or "").strip()
+    return pkg if pkg in VALID_HUB_PRODUCTION_PACKAGES else None
+
+
+async def persist_hub_production_package(
+    db: AsyncSession,
+    mission_id: uuid.UUID,
+    package: str,
+    *,
+    production_profile_tier: str | None = None,
+    last_production_telemetry: dict | None = None,
+) -> bool:
+    """Stamp Mission Hub package + optional production telemetry on performance_summary."""
+    pkg = normalize_hub_production_package(package)
+    if not pkg:
+        return False
+    tier = str(production_profile_tier or "").strip().lower()
+    if tier and tier not in {"economy", "agency", "premium"}:
+        tier = ""
+    r = await db.execute(
+        select(Mission.performance_summary).where(Mission.id == mission_id),
+    )
+    row = r.one_or_none()
+    if not row:
+        return False
+    summary = dict(row[0] or {})
+    pkg_unchanged = summary.get("hub_production_package") == pkg
+    tier_unchanged = not tier or summary.get("production_profile_tier") == tier
+    telemetry_unchanged = (
+        last_production_telemetry is None
+        or summary.get("last_production_telemetry") == last_production_telemetry
+    )
+    if pkg_unchanged and tier_unchanged and telemetry_unchanged:
+        return True
+    summary["hub_production_package"] = pkg
+    summary["hub_production_package_at"] = datetime.now(timezone.utc).isoformat()
+    if tier:
+        summary["production_profile_tier"] = tier
+    if last_production_telemetry is not None:
+        summary["last_production_telemetry"] = last_production_telemetry
+    await db.execute(
+        update(Mission)
+        .where(Mission.id == mission_id)
+        .execution_options(synchronize_session=False)
+        .values(performance_summary=summary),
+    )
+    await db.commit()
+    logger.info(
+        "hub_production_package_persisted",
+        mission_id=str(mission_id),
+        package=pkg,
+        has_telemetry=last_production_telemetry is not None,
+    )
+    return True
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -320,7 +449,7 @@ async def create_mission(
     db.add(mission)
     await db.flush()  # get mission.id before inserting nodes
 
-    normalized_nodes = ensure_feed_cohesion_review_node(list(data.task_nodes))
+    normalized_nodes = ensure_feed_cohesion_review_node(dedupe_task_nodes_by_key(list(data.task_nodes)))
 
     for node_data in sorted(normalized_nodes, key=lambda n: n.phase_index):
         node = MissionTaskNode(
@@ -367,6 +496,27 @@ async def get_mission(
     return r.scalar_one_or_none()
 
 
+BLOCKING_MISSION_STATUSES = ("proposed", "approved", "in_flight")
+
+
+async def list_blocking_missions(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> list[Mission]:
+    """All proposed/approved/in_flight missions — not capped by recency."""
+    q = (
+        select(Mission)
+        .options(selectinload(Mission.task_nodes))
+        .where(
+            Mission.workspace_id == workspace_id,
+            Mission.status.in_(BLOCKING_MISSION_STATUSES),
+        )
+        .order_by(Mission.created_at.desc())
+    )
+    r = await db.execute(q)
+    return list(r.scalars().all())
+
+
 async def list_missions(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -377,7 +527,15 @@ async def list_missions(
     # previously fired one query per mission to load nodes.
     q = (
         select(Mission)
-        .options(selectinload(Mission.task_nodes))
+        .options(
+            selectinload(Mission.task_nodes).load_only(
+                MissionTaskNode.id,
+                MissionTaskNode.mission_id,
+                MissionTaskNode.status,
+                MissionTaskNode.phase_index,
+                MissionTaskNode.node_key,
+            )
+        )
         .where(Mission.workspace_id == workspace_id)
     )
     if status:
@@ -445,6 +603,8 @@ async def update_node_status(
         node.output_artifact_id = update.output_artifact_id
     if update.output_summary:
         node.output_summary = update.output_summary
+    if update.output_payload is not None:
+        node.output_payload = update.output_payload
     if update.error_message:
         node.error_message = update.error_message
     if update.status == TaskNodeStatus.RUNNING:

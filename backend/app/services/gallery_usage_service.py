@@ -8,14 +8,14 @@ but must not repeat for the same post type once shared in Feed/Outputs.
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 import httpx
+import structlog
 
 from app.config import get_settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 POST_TYPES = ("feed", "story", "reel", "carousel")
 

@@ -123,6 +123,7 @@ Scope examples by business type (find the closest match — if your type is not 
 - hotel / resort → oda, havuz, deniz manzarası, SPA. YASAK: ürün satışı, konser.
 - retail_fashion → koleksiyonlar, stil, trend. YASAK: yemek, etkinlik.
 - hair_salon / kuaför / güzellik merkezi → saç bakım, stil transformasyonu, ürün tanıtımı, müşteri öncesi-sonrası, randevu. YASAK: yemek, konaklama, canlı müzik.
+- nail_salon / tırnak salonu / beauty_wellness / spa / estetik → tırnak bakım, manikür, pedikür, kalıcı oje, nail art, cilt bakımı, epilasyon, randevu. YASAK: yemek, konaklama, DJ geceleri, spor aktivitesi. Sağlık/hijyen içeriği yapılabilir; tıbbi klinik iddiası YASAK.
 - gym / fitness / spor salonu → antrenman, üyelik avantajları, diyet ipuçları, motivasyon, eğitmen tanıtımı, vücut dönüşümü. YASAK: yemek servisi, konaklama, moda.
 - clinic / doktor / sağlık merkezi → hizmet tanıtımı, uzman görüşleri, hasta hikayeleri, bilgilendirme, randevu. YASAK: yemek, eğlence, moda.
 - auto_service / oto yıkama / oto tamir → hizmet vitrinleri, öncesi-sonrası, bakım ipuçları, kampanya. YASAK: yemek, konaklama, moda.
@@ -141,6 +142,30 @@ When in doubt, check: "Does {business_name} actually provide this service?" If y
 
 If custom_rules below explicitly forbid certain content types, those are ABSOLUTE — never override them.
 If content_pillars is empty, derive scope STRICTLY from business_type and brand description — do NOT fill gaps with generic hospitality content.
+
+🚫 HALLUCINATION ZERO-TOLERANCE — READ BEFORE WRITING ANY CAPTION:
+
+1. TESTIMONIALS / SOCIAL PROOF — STRICT RULES:
+   - NEVER invent a named customer (e.g. "Ayşe H.", "Mehmet Bey") unless their name appears in the brand's real Google/TripAdvisor reviews provided in brand context.
+   - NEVER invent a star rating (e.g. "5 yıldız verdik"), a specific review quote, or a specific satisfaction percentage unless it appears verbatim in the brand's provided review data.
+   - NEVER write "Bir müşterimiz şunu söyledi: ..." unless the exact quote is from a real review in brand context.
+   - For social_proof template_use_case WITHOUT real reviews provided: use GENERIC non-quoted language only:
+     * ALLOWED: "Müşterilerimiz kalıcı oleyi çok seviyor!", "Yüzlerce mutlu müşteri — siz de randevu alın!"
+     * FORBIDDEN: "Ayşe: 'Harika bir deneyimdi!'" (invented quote)
+   - If real review excerpts ARE provided in brand context under "What customers love": you MAY quote them directly (verbatim), clearly as customer feedback.
+
+2. SERVICES / PRICES / HOURS — NEVER INVENT:
+   - NEVER mention a service, product, price, or business hour that is not confirmed in brand description, website_intelligence, or content_pillars.
+   - If you're unsure whether {business_name} offers a specific service → omit it entirely, use a proven pillar instead.
+   - NEVER write specific prices (e.g. "150₺") unless they appear in provided brand data.
+
+3. AWARDS / CERTIFICATIONS / RANKINGS:
+   - NEVER mention awards, certifications, "Türkiye'nin en iyi ...", "#1 in ...", press features unless explicitly provided in brand data.
+
+4. EVENTS / DATES:
+   - NEVER invent a specific upcoming event (konser, tanıtım günü, özel gün) unless it appears in industry_calendar or brand context.
+
+These rules are ABSOLUTE. An invented fact that reaches the customer destroys brand trust.
 
 🚫 DATE RULE — MANDATORY: Today is included in the brief context below.
 NEVER generate content for a holiday, special day, or event that has ALREADY PASSED.
@@ -171,6 +196,21 @@ Every concept must be genuinely different from ALL past output for this brand.
    - Different content angle (behind-the-scenes → customer story → product spotlight → seasonal → trend)
 5. The anti-repeat list in Tenant Learning Intelligence must be respected strictly.
 6. If you cannot find {count} genuinely distinct angles, produce fewer but more original concepts.
+
+⚠️ FREE TRIAL / ÜCRETSİZ DENEME HEADLINE CAP (MANDATORY):
+Across the ENTIRE batch of {count} concepts:
+- MAXIMUM 1 concept may use "ücretsiz deneme", "free trial", or "deneme fırsatı" in headline, concept_title, or caption_draft hook.
+- If RECENTLY PRODUCED (last 14 days) already contains ücretsiz deneme / free trial → ZERO concepts with that angle this week. Use social_proof, educational_post, behind_the_scenes, or campaign_offer instead.
+- lead_generation is allowed once — but only ONE piece may lead with demo/trial copy; others use signup tips, feature spotlight, or customer proof without repeating trial wording.
+
+⚠️ SaaS / agency_services / berber-kuaför panel MIX (when count ≥ 7):
+Deliver at least ONE concept for EACH template_use_case:
+- lead_generation (demo/signup — trial wording only once, see cap above)
+- social_proof (customer success / testimonial / review)
+- educational_post (how-to / panel tip / workflow)
+- behind_the_scenes (product build / team / salon workflow)
+- campaign_offer OR event_announcement (promo without repeating free trial)
+Plus the standard 3 story + 2 post + 1 carousel + 1 reel format mix.
 
 ⚠️ TIMING IS EVERYTHING — CHECK THESE FIRST BEFORE GENERATING ANY IDEA:
 
@@ -226,7 +266,8 @@ For each concept, return a JSON object with:
 - "format": "feed" | "story" | "reel" | "carousel"  ← REQUIRED for LayoutEngine routing
 - "template_use_case": one of "event_announcement", "menu_share", "product_highlight", "campaign_offer", "behind_the_scenes", "social_proof", "educational_post", "daily_story", "lead_generation", "google_business_update"
 - "content_kind": "instagram_post" | "instagram_story" | "instagram_reel"
-- "headline": the exact short text that should fill the main visual headline — max 60 characters
+- "headline": campaign/marketing hook from the mission brief — max 60 characters. MUST NOT describe what is visible in a photo (no "sunset view", "cocktail on table", "interior shot"). Write the message first; the platform picks a gallery photo that fits this headline.
+  NEVER use the brand name alone as headline — and NEVER use the brand name with Turkish grammatical suffixes (e.g. "Kaçta Info'yu", "Marka'yı", "Venue'yu"). Headline must be a standalone marketing hook (e.g. "BU HAFTA", "YENİ BÖLÜM", "CEVAP BURADA") — not a sentence fragment about the brand.
 - "subline": supporting line below headline — max 120 characters. Empty string "" if not needed.
 - "bullets": optional array of 2–4 key points, each max 80 chars — for carousel/educational posts; empty array [] for others
 - "event_date": event/campaign/publish date if relevant, otherwise ""
@@ -353,8 +394,9 @@ For each concept, return a JSON object with:
       Fields:
         "camera_movement": MUST be EXACTLY one of this unified enum (used by Runway AI):
             "static" | "slow_pan" | "dolly_in" | "dolly_out" | "orbit" | "tracking" | "handheld" | "tilt_up" | "tilt_down"
-          Guide: luxury/hotel → "dolly_in"; beach/sunset → "slow_pan" or "dolly_out";
-                 event/crowd → "tracking"; product closeup → "orbit"; wellness/calm → "static" or "handheld"
+          Guide: luxury/interior → "dolly_in"; outdoor/landscape → "slow_pan" or "dolly_out";
+                 event/crowd → "tracking"; product closeup → "orbit"; wellness/calm/studio → "static" or "handheld";
+                 sport/action → "tracking" or "handheld"; fashion/product → "orbit" or "dolly_in"
         "pace": "slow" | "medium" | "dynamic" — match Brand Vibe DNA motion specs if available
         "transition_style": "smooth_dissolve" | "whip_pan" | "light_leak" | "cut" | "fade"
         "audio_mood": genre/BPM that fits the brand (e.g. "deep house 120bpm", "acoustic chill 90bpm")
@@ -363,14 +405,15 @@ Available venue gallery photos for selection:
 {reference_image_urls_list}
 
 Selection rules:
-- ALWAYS pick the most contextually relevant gallery photo — match the photo's content tags to the caption topic
+- Headline and caption_draft drive gallery selection — never rewrite headline to match a photo description
+- ALWAYS pick the most contextually relevant gallery photo — match the photo's content tags to the headline/caption topic
 - The gallery above lists scenes with their tags. Read the tags, pick the scene that fits your caption angle.
 - 🔒 PER-TYPE REUSE BAN: never select a gallery URL already marked ✓ for the SAME content_type (feed/story/reel/carousel)
 - Caption ↔ visual match must happen ONLY among photos eligible for that content_type (not already used for it)
-- Examples: writing about cocktails → pick "cocktail" scene | writing about atmosphere → pick "sunset" or "lounge" scene
-- For product/drink content → prefer scenes tagged cocktail, food, drink, menu
-- For brand story / behind-the-scenes → prefer scenes tagged bartender, kitchen, staff, process
-- For venue/ambiance → prefer scenes tagged pool, terrace, sunset, sea-view, lounge
+- Examples: match caption TOPIC to photo TAGS — writing about a product → pick product scene; writing about team/process → pick staff/process scene
+- For product content → prefer scenes tagged product, food, drink, item, package, shelf — adapt to what this brand sells
+- For brand story / behind-the-scenes → prefer scenes tagged staff, team, process, kitchen, studio, workshop
+- For venue/space → prefer scenes tagged interior, exterior, space, room, area — e.g. gym floor, clinic interior, showroom
 - For event/nightlife → prefer scenes tagged dj, stage, crowd, dance-floor, neon
 - NEVER default to the same photo for multiple concepts — every concept gets a DIFFERENT matched scene
 - If all matching photos are used for this content_type → selected_gallery_url: null + describe ideal new photo
@@ -391,13 +434,16 @@ Business: {business_name} | Location: {location} | Type: {business_type}
 Campaign brief: {brief}
 Active seasonal signals: {signals}
 
-ANNOUNCEMENT TYPES to consider (pick the most relevant for this brand right now):
-- venue_showcase   → outdoor terrace, pool area, sea view — "This is where magic happens"
-- product_reveal   → new cocktail, dish of the week, seasonal menu
-- event_teaser     → upcoming live music, DJ night, pop-up dinner
-- offer_campaign   → happy hour, weekend special, package deal
-- social_proof     → guest testimonial framing, milestone, award
-- behind_the_scenes → chef prep, sunset setup, team moment
+ANNOUNCEMENT TYPES to consider (pick the most relevant for THIS brand's actual business type):
+- venue_showcase   → physical space reveal (terrace, studio, showroom, clinic interior, gym floor) — adapt to what this business has
+- product_reveal   → new product, service, collection, dish, menu item, or feature launch
+- event_teaser     → upcoming class, live session, pop-up, open day, webinar, DJ night, workshop
+- offer_campaign   → limited-time deal, seasonal promo, membership offer, bundle campaign
+- social_proof     → client testimonial, milestone, award, before/after (where permitted), case study
+- behind_the_scenes → team moment, process shot, production/craft, day-in-life content
+
+⚠️ Do NOT default to hospitality (cocktails, pool, sunset) unless this business IS a beach club / hotel / restaurant.
+Match the type to what {business_name} actually sells: a gym → fitness class teaser; a clinic → service reveal; a bakery → product launch.
 
 RULES:
 - NEVER reference a past holiday or event. Today is {current_date}.

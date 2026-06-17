@@ -4,11 +4,23 @@
 import type { PosterLayoutFamily } from './poster-template-types';
 import type { TemplateLayoutSpec } from './announcement-template-types';
 import type { TextOverlayDensity } from './brand-text-overlay-prefs';
+import { sanitizePosterText } from './announcement-text-fit';
 import { enforceDisplayHeadline, refineCategoryLabel } from './remotion-quality';
+import {
+  isMeaninglessBrandEchoHeadline,
+  resolveMeaningfulProductionHeadline,
+} from './production-headline-quality';
 
 export const POSTER_GRAFIKER_PASS = 8;
 
-const PROMO_KEYWORDS = /\b(%|off|discount|promo|launch|offer|sale|indirim|fırsat|kampanya|save|deal|indirimi)\b/i;
+/** Hard promo — layout may use promo_split */
+const HARD_PROMO_KEYWORDS = /\b(%|off|discount|indirim|kampanya|save|deal|indirimi|launch|sale)\b/i;
+/** Soft seasonal — does not force promo_split */
+const SOFT_PROMO_KEYWORDS = /\b(promo|offer|fırsat|firsat)\b/i;
+const PROMO_KEYWORDS = new RegExp(
+  `${HARD_PROMO_KEYWORDS.source}|${SOFT_PROMO_KEYWORDS.source}`,
+  'i',
+);
 const GENERIC_GEO = /^(türkiye|turkey|tüm türkiye|global|worldwide)$/i;
 
 export function isGenericGeoLocation(location: string | undefined | null): boolean {
@@ -18,6 +30,20 @@ export function isGenericGeoLocation(location: string | undefined | null): boole
 
 export function isPromoOfferCopy(headline: string, caption = ''): boolean {
   return PROMO_KEYWORDS.test(`${headline} ${caption}`);
+}
+
+/** True only for discount / campaign copy — drives promo_split layout routing */
+export function isHardPromoOfferCopy(headline: string, caption = ''): boolean {
+  return HARD_PROMO_KEYWORDS.test(`${headline} ${caption}`);
+}
+
+export function isLogisticsSector(sector: string): boolean {
+  const s = sector.toLowerCase();
+  return /nakliyat|nakliye|lojistik|logistics|freight|taşımac|tasimac|transport|kargo|evden.eve|moving/.test(s);
+}
+
+export function isServiceSector(sector: string): boolean {
+  return isAgencySector(sector) || isLogisticsSector(sector) || /professional|consulting|b2b|kurumsal/.test(sector.toLowerCase());
 }
 
 export function isAgencySector(sector: string): boolean {
@@ -37,7 +63,8 @@ export function rankPosterFamiliesForSector(
   caption = '',
   textOverlayDensity?: TextOverlayDensity,
 ): PosterLayoutFamily[] {
-  const promo = isPromoOfferCopy(headline, caption);
+  const hardPromo = isHardPromoOfferCopy(headline, caption);
+  const service = isServiceSector(sector);
 
   if (textOverlayDensity === 'minimal') {
     const photoDominant: PosterLayoutFamily[] = [
@@ -57,7 +84,7 @@ export function rankPosterFamiliesForSector(
     return [...ordered, ...rest];
   }
 
-  if (isAgencySector(sector) && !promo) {
+  if (service && !hardPromo) {
     const preferred: PosterLayoutFamily[] = [
       'editorial_date',
       'restaurant_feature',
@@ -70,7 +97,19 @@ export function rankPosterFamiliesForSector(
     const rest = families.filter((f) => !ordered.includes(f));
     return [...ordered, ...rest];
   }
-  if (promo) {
+  if (isLogisticsSector(sector) && !hardPromo) {
+    const preferred: PosterLayoutFamily[] = [
+      'restaurant_feature',
+      'editorial_date',
+      'event_masthead',
+      'gala_invite',
+      'promo_split',
+    ];
+    const ordered = preferred.filter((f) => families.includes(f));
+    const rest = families.filter((f) => !ordered.includes(f));
+    return [...ordered, ...rest];
+  }
+  if (hardPromo) {
     const withPromo = ['promo_split', ...families.filter((f) => f !== 'promo_split')] as PosterLayoutFamily[];
     return withPromo;
   }
@@ -89,7 +128,7 @@ export function extractPosterSupportLine(
   maxWords = 5,
 ): string {
   const dateLine = [eventDate, eventTime].filter(Boolean).join(' · ');
-  const raw = (subtitle ?? '').trim();
+  const raw = sanitizePosterText(subtitle ?? '');
   if (!raw) return '';
 
   const firstSentence = raw.split(/[.!?]\s/)[0]?.trim() ?? raw;
@@ -115,6 +154,7 @@ export interface NormalizedPosterCopy {
 
 export function normalizePosterCopy(input: {
   headline: string;
+  ideationHeadline?: string;
   subtitle?: string;
   brandName: string;
   location?: string;
@@ -125,20 +165,38 @@ export function normalizePosterCopy(input: {
   sector?: string;
 }): NormalizedPosterCopy {
   const brand = input.brandName.trim() || 'BRAND';
-  const caption = (input.caption ?? input.subtitle ?? '').trim();
-  const rawHeadline = input.headline.trim() || caption.split(/[.!?]/)[0]?.trim() || brand;
+  const caption = sanitizePosterText(input.caption ?? input.subtitle ?? '');
+  const ideationRaw = sanitizePosterText((input.ideationHeadline ?? input.headline).trim());
+  const hasIdeationTitle = Boolean(
+    ideationRaw && !isMeaninglessBrandEchoHeadline(ideationRaw, brand),
+  );
+  const headlineResolved = hasIdeationTitle
+    ? { headline: ideationRaw, replaced: false as const }
+    : resolveMeaningfulProductionHeadline({
+        headline: sanitizePosterText(input.headline.trim()),
+        caption,
+        brandName: brand,
+        conceptTitle: ideationRaw,
+        maxLen: 38,
+      });
+  const rawHeadline = headlineResolved.headline
+    || caption.split(/[.!?]/)[0]?.trim()
+    || 'YENİ PAYLAŞIM';
 
   const agency = isAgencySector(input.sector ?? '');
-  const maxHeadlineChars = isPromoOfferCopy(rawHeadline, caption)
+  const promoFromHeadlineOnly = isPromoOfferCopy(rawHeadline, '');
+  const maxHeadlineChars = promoFromHeadlineOnly
     ? 32
     : agency
       ? 30
       : 38;
 
   const headline = enforceDisplayHeadline(
-    isPromoOfferCopy(rawHeadline, caption)
+    hasIdeationTitle
       ? rawHeadline
-      : extractHookFromLongHeadline(rawHeadline, caption, brand, maxHeadlineChars),
+      : promoFromHeadlineOnly
+        ? rawHeadline
+        : extractHookFromLongHeadline(rawHeadline, caption, brand, maxHeadlineChars),
     maxHeadlineChars,
   );
 
@@ -154,9 +212,17 @@ export function normalizePosterCopy(input: {
   const categoryLabel = refineCategoryLabel('', headline, loc || undefined);
 
   const cta = (input.cta ?? '').trim()
-    || (isPromoOfferCopy(headline, caption) ? 'Hemen Katıl' : 'Keşfet');
+    || resolvePosterCta({ headline, caption, sector: input.sector ?? '' });
 
   return { headline, subtitle, venueArea, categoryLabel, cta };
+}
+
+function resolvePosterCta(input: { headline: string; caption: string; sector: string }): string {
+  if (isHardPromoOfferCopy(input.headline, input.caption)) return 'Hemen Katıl';
+  if (isLogisticsSector(input.sector)) return 'Teklif Al';
+  if (isAgencySector(input.sector)) return 'Detayları İncele';
+  if (isPromoOfferCopy(input.headline, input.caption)) return 'Fırsatı Yakala';
+  return 'Keşfet';
 }
 
 function extractHookFromLongHeadline(
@@ -183,6 +249,39 @@ function extractHookFromLongHeadline(
   return brandName;
 }
 
+/** Photo-first legibility — küçük alt bant, görseli kapatmayan tipografi. */
+export function applyPhotoLegibilityLayoutPatch(
+  spec: TemplateLayoutSpec,
+  opts?: { hasLineup?: boolean },
+): TemplateLayoutSpec {
+  const hasLineup = Boolean(opts?.hasLineup);
+  const centerHeavy = spec.textZone === 'center'
+    || spec.posterMode === 'gala_centered'
+    || spec.posterMode === 'promo_split'
+    || spec.family === 'impact_vignette'
+    || spec.family === 'dj_night';
+
+  if (!centerHeavy || hasLineup) return spec;
+
+  return {
+    ...spec,
+    posterMode: spec.posterMode === 'gala_centered' ? 'none' : spec.posterMode,
+    textZone: 'bottom_center',
+    align: 'center',
+    heroScale: Math.min(spec.heroScale, 0.9),
+    gradientStart: Math.max(spec.gradientStart, 0.54),
+    gradientEnd: Math.min(Math.max(spec.gradientEnd, 0.86), 0.94),
+    colorBlock: spec.colorBlock === 'none' ? 'bottom_panel' : spec.colorBlock,
+    colorBlockSize: spec.colorBlock === 'none'
+      ? 0.3
+      : Math.min(spec.colorBlockSize || 0.42, 0.34),
+    colorBlockOpacity: Math.max(spec.colorBlockOpacity ?? 0, 0.84),
+    vignetteDeep: false,
+    duotoneOpacity: Math.min(spec.duotoneOpacity ?? 0.35, 0.22),
+    photoFirst: true,
+  };
+}
+
 /** Premium defaults for promo_banner / split panels (Awwwards-tier hierarchy). */
 export function applyPremiumPosterLayoutPatch(
   spec: TemplateLayoutSpec,
@@ -192,11 +291,36 @@ export function applyPremiumPosterLayoutPatch(
     return spec;
   }
 
-  const agency = isAgencySector(sector ?? '');
+  const sectorKey = sector ?? '';
+  const agency = isAgencySector(sectorKey);
+  const logistics = isLogisticsSector(sectorKey);
+  const service = isServiceSector(sectorKey);
+
+  // B2B / logistics: photo-first bottom scrim — not stock 50/50 beige slab
+  if (service || logistics) {
+    return {
+      ...spec,
+      photoFirst: true,
+      textZone: 'bottom_center',
+      align: 'center',
+      colorBlock: spec.colorBlock === 'none' ? 'bottom_panel' : spec.colorBlock,
+      colorBlockSize: Math.min(spec.colorBlockSize || 0.38, 0.3),
+      colorBlockOpacity: Math.min(spec.colorBlockOpacity, 0.86),
+      gradientStart: Math.max(spec.gradientStart, 0.56),
+      gradientEnd: Math.min(Math.max(spec.gradientEnd, 0.88), 0.94),
+      duotoneWash: spec.duotoneWash === 'none' ? 'primary' : spec.duotoneWash,
+      duotoneOpacity: Math.max(spec.duotoneOpacity ?? 0, 0.18),
+      vignetteDeep: false,
+      accentLine: spec.accentLine === 'none' ? 'above' : spec.accentLine,
+      heroTracking: Math.min(spec.heroTracking, 0.05),
+      heroScale: Math.min(spec.heroScale, 1.02),
+      showBrand: agency || logistics ? false : spec.showBrand,
+    };
+  }
 
   return {
     ...spec,
-    colorBlockSize: Math.max(spec.colorBlockSize, 0.42),
+    colorBlockSize: Math.max(spec.colorBlockSize, 0.36),
     colorBlockOpacity: Math.min(spec.colorBlockOpacity, agency ? 0.88 : 0.9),
     gradientStart: Math.max(spec.gradientStart, 0.48),
     gradientEnd: Math.max(spec.gradientEnd, 0.82),
@@ -272,9 +396,17 @@ export function scorePosterQa(input: {
     issues.push('generic_geo_in_copy');
     score -= 2;
   }
-  if (isPromoOfferCopy(headline, subtitle) && input.layoutFamily === 'editorial_date') {
+  if (isHardPromoOfferCopy(headline, subtitle) && input.layoutFamily === 'editorial_date') {
     issues.push('promo_copy_editorial_layout_mismatch');
     score -= 1;
+  }
+  if (
+    isServiceSector(sector)
+    && !isHardPromoOfferCopy(headline, subtitle)
+    && input.layoutFamily === 'promo_split'
+  ) {
+    issues.push('service_brand_promo_split_mismatch');
+    score -= 2;
   }
 
   const clamped = Math.max(0, Math.min(10, score));

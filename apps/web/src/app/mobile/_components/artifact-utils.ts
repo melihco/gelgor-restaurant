@@ -15,6 +15,21 @@ import { resolveClientMediaUrl } from '@/lib/media-url';
  * Replaces the duplicated `try { ... JSON.parse(artifact.content || '{}') ... } catch {}`
  * pattern that was scattered across 12+ files. Single source of truth for parsing.
  */
+/** Nexus may return metadata as a JSON string or object. */
+export function parseArtifactMetadata(
+  metadata: unknown,
+): Record<string, unknown> {
+  if (!metadata) return {};
+  if (typeof metadata === 'object') return metadata as Record<string, unknown>;
+  if (typeof metadata !== 'string') return {};
+  try {
+    const parsed = JSON.parse(metadata);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 export function parseArtifactContent(
   content: string | null | undefined,
 ): Record<string, unknown> {
@@ -428,6 +443,11 @@ function dedupeMediaUrls(urls: string[]): string[] {
   return out;
 }
 
+function readUrlArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return dedupeMediaUrls(raw.map(String).filter((u) => u.trim().length > 0));
+}
+
 function collectCarouselUrlCandidates(
   content: Record<string, unknown>,
   meta: Record<string, unknown>,
@@ -440,12 +460,19 @@ function collectCarouselUrlCandidates(
     meta.carousel_urls,
     (meta as any).media_urls,
     (meta as any).slides,
+    content.gallery_photo_urls,
+    meta.gallery_photo_urls,
   ];
   for (const c of candidates) {
     if (Array.isArray(c) && c.length >= 2) {
       return dedupeMediaUrls((c as string[]).map(String));
     }
   }
+  const galleryOnly = dedupeMediaUrls([
+    ...readUrlArray(content.gallery_photo_urls),
+    ...readUrlArray(meta.gallery_photo_urls),
+  ]);
+  if (galleryOnly.length >= 2) return galleryOnly;
   return [];
 }
 
@@ -458,15 +485,22 @@ export function shouldTreatAsInstagramCarousel(
   content: Record<string, unknown>,
   meta: Record<string, unknown>,
 ): boolean {
-  const urls = collectCarouselUrlCandidates(content, meta);
-  if (urls.length < 2) return false;
-
   if (meta.carousel_publish_as === 'feed' || content.carousel_publish_as === 'feed') {
     return false;
   }
 
+  const pipeline = String(meta.pipeline ?? content.pipeline ?? '').toLowerCase();
+  const role = String(meta.production_role ?? '').toLowerCase();
+  const galleryUrls = dedupeMediaUrls([
+    ...readUrlArray(content.gallery_photo_urls),
+    ...readUrlArray(meta.gallery_photo_urls),
+  ]);
+  const isGalleryCarouselSlot =
+    pipeline === 'carousel_gallery' || role === 'organic_carousel';
+
   if (meta.carousel_multi_photo === true || content.carousel_multi_photo === true) {
-    return true;
+    return collectCarouselUrlCandidates(content, meta).length >= 2
+      || galleryUrls.length >= 2;
   }
 
   // Branded auto-produce: one designed feed asset, not a user multi-photo carousel
@@ -474,19 +508,17 @@ export function shouldTreatAsInstagramCarousel(
     return false;
   }
 
+  if (isGalleryCarouselSlot && galleryUrls.length >= 2) {
+    return true;
+  }
+
+  const urls = collectCarouselUrlCandidates(content, meta);
+  if (urls.length < 2) return false;
+
   const kind = String(content.kind ?? meta.kind ?? '').toLowerCase();
   const ct = String(content.contentType ?? meta.contentType ?? '').toLowerCase();
-  if (!kind.includes('carousel') && !ct.includes('carousel')) return false;
-
-  const pipeline = String(meta.pipeline ?? content.pipeline ?? '').toLowerCase();
-  const role = String(meta.production_role ?? '').toLowerCase();
-  if (pipeline === 'carousel_gallery' || role === 'organic_carousel') {
-    const gallery = (
-      Array.isArray(meta.gallery_photo_urls) ? meta.gallery_photo_urls
-        : Array.isArray(content.gallery_photo_urls) ? content.gallery_photo_urls
-          : []
-    ) as string[];
-    if (dedupeMediaUrls(gallery.map(String)).length < 2) return false;
+  if (!kind.includes('carousel') && !ct.includes('carousel') && !isGalleryCarouselSlot) {
+    return false;
   }
 
   return true;

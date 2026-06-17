@@ -7,9 +7,30 @@
 import type { AiEnhanceLevel } from '@/lib/ai-gallery-enhance';
 import { shouldAiEnhanceGalleryPipeline } from '@/lib/ai-gallery-enhance';
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
+import { isNonVenueSector } from '@/lib/sector-gallery-seed';
+import {
+  isNonVenueSectorProfile,
+  getDefaultVisualSubject,
+} from '@/lib/sector-production-profile';
 
 export type AiEnhanceFormat = 'post' | 'story' | 'carousel' | 'reel';
-export type AiVisualSubject = 'auto' | 'venue_ambiance' | 'product_hero';
+export type AiVisualSubject = 'auto' | 'venue_ambiance' | 'product_hero' | 'digital_ui';
+
+/** Mission Hub — caption'a uygun sahne/ürün kompoziti (zayıf galeri dahil). */
+export type AiAdaptiveSceneMode =
+  | 'auto'
+  | 'venue_context'
+  | 'product_showcase'
+  | 'lifestyle_composite'
+  | 'digital_ui_context';
+
+export type ResolvedAdaptiveSceneMode =
+  | 'venue_context'
+  | 'product_showcase'
+  | 'lifestyle_composite'
+  | 'digital_ui_context';
+
+export type ResolvedVisualSubject = 'venue_ambiance' | 'product_hero' | 'digital_ui';
 
 export interface AiVisualProductionStandard {
   enabled: boolean;
@@ -19,6 +40,19 @@ export interface AiVisualProductionStandard {
   embedLogo: boolean;
   formats: Set<AiEnhanceFormat>;
   visualSubject: AiVisualSubject;
+  /**
+   * GPT images.edit on the matcher-selected gallery photo (not fresh generation).
+   * Bypasses cost-skip when gallery match is already high.
+   */
+  enhanceGallerySelected: boolean;
+  /** Caption + sektöre göre sahne yeniden kurulumu — post/carousel/story base foto. */
+  adaptiveScene: boolean;
+  adaptiveSceneMode: AiAdaptiveSceneMode;
+  /**
+   * Fresh AI image from caption + brand DNA (logo, vibe, brief).
+   * When on, organic/designed feed posts skip gallery matcher even if photos exist.
+   */
+  captionDrivenVisual: boolean;
 }
 
 const DEFAULT_FORMATS: AiEnhanceFormat[] = ['post', 'story', 'carousel', 'reel'];
@@ -49,7 +83,23 @@ export function resolveAiVisualProductionStandard(
 
   const rawSubject = String(brandTheme?.ai_visual_subject ?? 'auto');
   const visualSubject: AiVisualSubject =
-    rawSubject === 'venue_ambiance' || rawSubject === 'product_hero' ? rawSubject : 'auto';
+    rawSubject === 'venue_ambiance' || rawSubject === 'product_hero' || rawSubject === 'digital_ui'
+      ? rawSubject
+      : 'auto';
+
+  const rawAdaptiveMode = String(brandTheme?.ai_adaptive_scene_mode ?? 'auto');
+  const adaptiveSceneMode: AiAdaptiveSceneMode =
+    rawAdaptiveMode === 'venue_context'
+    || rawAdaptiveMode === 'product_showcase'
+    || rawAdaptiveMode === 'lifestyle_composite'
+    || rawAdaptiveMode === 'digital_ui_context'
+      ? rawAdaptiveMode
+      : 'auto';
+
+  const enhanceGallerySelected = enabled
+    && brandTheme?.ai_enhance_gallery_selected !== false;
+
+  const captionDrivenVisual = Boolean(brandTheme?.ai_caption_driven_visual) && enabled;
 
   return {
     enabled,
@@ -59,23 +109,140 @@ export function resolveAiVisualProductionStandard(
     embedLogo: brandTheme?.ai_embed_logo !== false,
     formats,
     visualSubject,
+    enhanceGallerySelected,
+    adaptiveScene: Boolean(brandTheme?.ai_adaptive_scene) && enabled,
+    adaptiveSceneMode,
+    captionDrivenVisual,
   };
+}
+
+/** Feed post slots: generate fresh AI from caption instead of gallery matcher. */
+export function shouldUseCaptionDrivenVisual(
+  standard: AiVisualProductionStandard,
+  contentKind: string,
+  assignment?: import('@/lib/mission-production-manifest').ProductionAssignment,
+): boolean {
+  if (!standard.captionDrivenVisual || !standard.enabled) return false;
+  if (!shouldAiEnhanceForOutput(standard, contentKind, assignment)) return false;
+  const role = assignment?.slot_role;
+  const pipeline = assignment?.pipeline;
+  if (
+    pipeline === 'runway_reel'
+    || pipeline === 'remotion_story'
+    || pipeline === 'carousel_gallery'
+    || role === 'organic_reel'
+    || role === 'organic_carousel'
+    || role === 'campaign_story_motion'
+    || role === 'organic_story_still'
+  ) {
+    return false;
+  }
+  return (
+    pipeline === 'gallery_photo'
+    || pipeline === 'remotion_poster'
+    || role === 'organic_post'
+    || role === 'designed_post'
+  );
+}
+
+/** Sektör + caption ipuçlarıyla sahne modu (auto için). */
+export function resolveAdaptiveSceneMode(
+  mode: AiAdaptiveSceneMode,
+  businessType: string,
+  caption: string,
+): ResolvedAdaptiveSceneMode {
+  if (mode === 'digital_ui_context') return 'digital_ui_context';
+  if (mode === 'venue_context' || mode === 'product_showcase' || mode === 'lifestyle_composite') {
+    return mode;
+  }
+  const bt = businessType.toLowerCase();
+  const cap = caption.toLowerCase();
+  if (isNonVenueSectorProfile(bt) || /saas|yazılım|yazilim|software|platform|panel|dashboard|b2b/i.test(bt + cap)) {
+    return 'digital_ui_context';
+  }
+  if (
+    /nakliyat|lojistik|logistics|transport|freight|warehouse|depo|taşımacılık/i.test(bt + cap)
+    || /barber|berber|salon|restaurant|cafe|hotel|beach|club|spa|clinic|dental|gym|venue|resort/i.test(bt)
+  ) {
+    return 'venue_context';
+  }
+  if (
+    /kolye|jewelry|mücevher|ring|yüzük|accessory|aksesuar|packaged|ambalaj|gıda|food|zeytin|olive|cosmetic|skincare|ürün/i.test(bt + cap)
+  ) {
+    return 'product_showcase';
+  }
+  if (/lifestyle|doğa|nature|farm|çiftlik|artisan|el yapımı|handmade/i.test(cap)) {
+    return 'lifestyle_composite';
+  }
+  if (/food|gıda|product|retail|e-commerce/i.test(bt)) {
+    return 'product_showcase';
+  }
+  if (isNonVenueSectorProfile(bt)) return 'digital_ui_context';
+  return 'venue_context';
+}
+
+/** GPT image-2 için caption-uyumlu sahne talimatı. */
+export function buildAdaptiveScenePromptBlock(input: {
+  mode: ResolvedAdaptiveSceneMode;
+  caption: string;
+  headline: string;
+  businessType: string;
+}): string {
+  const brief = [input.headline, input.caption].filter(Boolean).join(' — ').slice(0, 500);
+  const lines = [
+    'ADAPTIVE SCENE (Mission Hub — caption drives environment; photo must feel authentically shot in-scene):',
+  ];
+  if (input.mode === 'venue_context') {
+    lines.push(
+      `Place the subject in a real operational context that matches: "${brief}".`,
+      'Use warehouse, route, fleet, salon, kitchen, or venue cues from the caption — not a generic stock backdrop.',
+      'Lighting and perspective must feel like an on-location photograph taken for this post.',
+      'If the source photo is a weak match, recompose atmosphere around the caption while keeping brand-authentic details.',
+    );
+  } else if (input.mode === 'digital_ui_context') {
+    lines.push(
+      `B2B SaaS / software product visual for: "${brief}".`,
+      'Show dashboard UI, appointment calendar, mobile app screen, or abstract tech workspace — NEVER a physical shop storefront or street scene.',
+      'Use clean device mockups, UI panels, or editorial office-with-laptop compositions.',
+      'No invented gibberish signage, no fake barber shop exterior, no logistics fleet unless caption explicitly says so.',
+      'Preserve any real UI/screenshot pixels; only upgrade lighting and framing around digital product context.',
+    );
+  } else if (input.mode === 'product_showcase') {
+    lines.push(
+      `Instagram product-hero presentation for: "${brief}".`,
+      'Clean editorial framing, premium shadows, scroll-stopping composition.',
+      'Preserve product shape, label, and branding; upgrade only environment, light, and staging.',
+      'Jewelry/accessories: boutique display or lifestyle flat-lay; packaged goods: contextual props at edges only.',
+    );
+  } else {
+    lines.push(
+      `Lifestyle composite scene for: "${brief}".`,
+      'Merge subject with a believable real-world setting (e.g. olive grove for olive oil, workshop for artisan goods).',
+      'The final image must read as one coherent photograph — not a pasted cutout.',
+      'Props and background support the caption story; never obscure the hero subject.',
+    );
+  }
+  lines.push(`Sector hint: ${input.businessType || 'general'}`);
+  return lines.join('\n');
 }
 
 export function resolveVisualSubject(
   subject: AiVisualSubject,
   businessType: string,
-): 'venue_ambiance' | 'product_hero' {
+): ResolvedVisualSubject {
+  if (subject === 'digital_ui') return 'digital_ui';
   if (subject === 'venue_ambiance' || subject === 'product_hero') return subject;
-  const bt = businessType.toLowerCase();
-  if (
-    /barber|berber|salon|restaurant|cafe|hotel|beach|club|spa|clinic|dental|gym|fitness|venue|resort|bar\b/i.test(bt)
-  ) {
+
+  // Map profile's DefaultVisualSubject to this file's ResolvedVisualSubject type
+  const profileSubject = getDefaultVisualSubject(businessType);
+  if (profileSubject === 'digital_ui') return 'digital_ui';
+  if (profileSubject === 'product_closeup') return 'product_hero';
+  if (profileSubject === 'venue_interior' || profileSubject === 'service_person' || profileSubject === 'lifestyle') {
     return 'venue_ambiance';
   }
-  if (/food|gıda|product|retail|e-commerce|skincare|cosmetic|packaged/i.test(bt)) {
-    return 'product_hero';
-  }
+
+  // Fallback: auto or unknown — use non-venue check
+  if (isNonVenueSectorProfile(businessType)) return 'digital_ui';
   return 'venue_ambiance';
 }
 

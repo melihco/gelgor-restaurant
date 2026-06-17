@@ -2,9 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
 
 export const runtime = 'nodejs';
-export const maxDuration = 180;  // deep crawl + Apify can take up to 2 min
+export const maxDuration = 300;  // deep crawl + Apify + bounded CDN mirror
 
 const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent'];
+const MAX_CDN_MIRROR = 24;
+
+function asAnalyzePayload(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    success: data.success !== false,
+    ...data,
+  };
+}
 
 /** Download a CDN URL and re-upload to R2 for permanent storage. */
 async function mirrorToR2(cdnUrl: string, workspaceId: string): Promise<string> {
@@ -40,18 +48,27 @@ export async function POST(
     website_url: String(body.website_url ?? body.websiteUrl ?? '').trim(),
     instagram_handle: String(body.instagram_handle ?? body.instagramHandle ?? '').trim(),
     google_business_url: String(body.google_business_url ?? body.googleBusinessUrl ?? '').trim(),
+    brand_name: String(body.brand_name ?? body.brandName ?? body.companyName ?? '').trim(),
   };
 
   const pyRes = await proxyToCrewBackend(`/api/v1/brand-context/${workspaceId}/analyze`, {
     body: normalized,
-    timeoutMs: 170_000,
+    timeoutMs: 280_000,
   });
+
+  const onboardingAnalyze = request.headers.get('x-onboarding-analyze') === '1';
+  const skipCdnMirror = onboardingAnalyze || request.headers.get('x-skip-cdn-mirror') === '1';
 
   // After analysis: mirror Instagram CDN image URLs to R2 so they don't expire
   try {
     const data = await pyRes.clone().json() as Record<string, unknown>;
     const refUrls = data.reference_image_urls as string[] | undefined;
-    if (Array.isArray(refUrls) && refUrls.some(u => CDN_HOSTS.some(h => u.includes(h)))) {
+    if (
+      !skipCdnMirror
+      && Array.isArray(refUrls)
+      && refUrls.length <= 60
+      && refUrls.some(u => CDN_HOSTS.some(h => u.includes(h)))
+    ) {
       const mirrored = await Promise.allSettled(
         refUrls.map(async (url) => {
           if (CDN_HOSTS.some(h => url.includes(h))) {
@@ -80,6 +97,9 @@ export async function POST(
   } catch { /* non-fatal — return original response */ }
 
   // SaaS / dijital markalar: crawl'dan foto gelmezse sektör galerisi oluştur
+  if (onboardingAnalyze) {
+    return pyRes;
+  }
   try {
     const provisionRes = await fetch(`${request.nextUrl.origin}/api/brand-context/${workspaceId}/provision-gallery`, {
       method: 'POST',
@@ -93,7 +113,16 @@ export async function POST(
           { headers: { 'X-Internal-Api-Key': process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key' } },
         );
         if (refreshed.ok) {
-          return NextResponse.json(await refreshed.json(), { status: pyRes.status });
+          const ctx = await refreshed.json() as Record<string, unknown>;
+          const analyzeData = await pyRes.clone().json() as Record<string, unknown>;
+          return NextResponse.json(
+            asAnalyzePayload({
+              ...analyzeData,
+              brand_context: ctx,
+              reference_image_urls: analyzeData.reference_image_urls,
+            }),
+            { status: 200 },
+          );
         }
       }
     }

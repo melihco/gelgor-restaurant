@@ -65,6 +65,16 @@ export function hasBrowserApiAuthContext(): boolean {
   return !!getSessionToken();
 }
 
+/** Active session tenant from JWT — matches what getRequestContextHeaders sends to Nexus. */
+export function getSessionTenantId(): string | null {
+  const jwt = typeof window !== 'undefined' ? getSessionToken() : null;
+  if (!jwt) return null;
+  const claims = decodeJwtPayload(jwt);
+  if (!claims) return null;
+  const tenantId = claims['tenant_id'] || claims['tenantId'];
+  return tenantId?.trim() || null;
+}
+
 /** Decode JWT payload (base64url) without verifying signature — client-side only. */
 function decodeJwtPayload(token: string): Record<string, string> | null {
   try {

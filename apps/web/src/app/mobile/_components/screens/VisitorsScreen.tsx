@@ -5,6 +5,7 @@ import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { IcoBack, IcoRetry } from '../Icons';
 import { apiClient } from '@/lib/api-client';
+import { isMobileOperatorMode } from '../mobile-client-config';
 import type { T } from '../theme-context';
 
 type Range = '7daysAgo' | '30daysAgo' | '90daysAgo';
@@ -93,8 +94,9 @@ const MOCK: Record<Range, {
 
 export function VisitorsScreen() {
   const { t } = useTheme();
-  const { goBack } = useMobileStore();
+  const { goBack, navigate } = useMobileStore();
   const [range, setRange] = useState<Range>('30daysAgo');
+  const operatorMode = isMobileOperatorMode();
 
   const { data: apiData, isLoading, isError, refetch } = useQuery({
     queryKey: ['analytics-dashboard', range],
@@ -104,7 +106,45 @@ export function VisitorsScreen() {
     staleTime: 60_000,
   });
 
-  // Merge API data with mock fallback
+  const hasRealData = Boolean(apiData?.overview?.totalUsers);
+
+  // Müşteri modunda mock gösterme — gerçek Analytics verisi yoksa boş state
+  if (!isLoading && !hasRealData && !operatorMode) {
+    return (
+      <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100 }}>
+        <div style={{ padding: '56px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <IcoBack color={t.textSecondary} />
+            </button>
+            <div>
+              <p style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 3 }}>Google Analytics</p>
+              <h1 style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>Web Trafiği</h1>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 16, opacity: 0.2 }}>📊</div>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: t.textPrimary, marginBottom: 10 }}>Trafik verileri yakında</h2>
+          <p style={{ fontSize: 14, color: t.textSecondary, lineHeight: 1.6, margin: '0 auto 24px', maxWidth: 300 }}>
+            Google Analytics bağlantısı kurulduğunda ziyaretçi, oturum ve en çok görüntülenen sayfalar burada görünür.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('settings')}
+            style={{
+              padding: '12px 22px', borderRadius: 24, border: 'none', cursor: 'pointer',
+              background: t.accent, color: '#fff', fontSize: 14, fontWeight: 700,
+            }}
+          >
+            Entegrasyonları Bağla
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Merge API data with mock fallback (operatör modu)
   const d = (() => {
     const mock = MOCK[range];
     if (!apiData) return mock;
@@ -118,7 +158,7 @@ export function VisitorsScreen() {
       sources:     apiData.sources?.length ? (apiData.sources as any[]).map((s: any, i: number) => ({
         label: s.sourceMedium ?? s.label ?? `Kaynak ${i+1}`,
         value: Math.round(s.percentage ?? 0),
-        color: mock.sources[i]?.color ?? '#a78bfa',
+        color: mock.sources[i]?.color ?? '#9DBECE',
       })) : mock.sources,
       topPages: apiData.topPages?.length ? (apiData.topPages as any[]).slice(0, 5).map((p: any) => ({
         path: p.pagePath ?? p.path ?? '/',

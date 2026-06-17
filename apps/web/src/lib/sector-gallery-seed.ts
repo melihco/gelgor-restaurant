@@ -13,13 +13,19 @@ import {
   ECOMMERCE_PHOTO_IDS,
   HEALTHCARE_PHOTO_IDS,
   GENERAL_BUSINESS_PHOTO_IDS,
+  BEAUTY_WELLNESS_PHOTO_IDS,
+  BARBER_SALON_PHOTO_IDS,
   MASTER_GALLERY_PHOTO_IDS,
 } from '@/lib/sector-gallery-seed-data';
 
 export { SYNTHETIC_GALLERY_FULL };
 export const SYNTHETIC_GALLERY_MIN = BRS_MIN_USABLE_PHOTOS;
 
-/** Sectors that never rely on physical venue photography. */
+/**
+ * Sectors that never rely on physical venue photography.
+ * @deprecated Use isNonVenueSectorProfile() from sector-production-profile instead.
+ * Kept for backwards compatibility with callers that import NON_VENUE_SECTORS directly.
+ */
 export const NON_VENUE_SECTORS = new Set([
   'agency_services',
   'ecommerce_retail',
@@ -38,6 +44,12 @@ const SECTOR_ID_POOLS: Record<string, string[]> = {
   agency_services: AGENCY_SERVICES_PHOTO_IDS,
   ecommerce_retail: ECOMMERCE_PHOTO_IDS,
   healthcare_clinic: HEALTHCARE_PHOTO_IDS,
+  // Beauty & wellness — nail salon, spa, aesthetics, skincare
+  beauty_wellness: BEAUTY_WELLNESS_PHOTO_IDS,
+  nail_salon: BEAUTY_WELLNESS_PHOTO_IDS,
+  // Barber / hair salon
+  barber_salon: BARBER_SALON_PHOTO_IDS,
+  hair_salon: BARBER_SALON_PHOTO_IDS,
   general_business: GENERAL_BUSINESS_PHOTO_IDS,
 };
 
@@ -46,12 +58,37 @@ export const SECTOR_GALLERY_SEEDS: Record<string, string[]> = {
   agency_services: idsToUrls(AGENCY_SERVICES_PHOTO_IDS.slice(0, 10)),
   ecommerce_retail: idsToUrls(ECOMMERCE_PHOTO_IDS.slice(0, 10)),
   healthcare_clinic: idsToUrls(HEALTHCARE_PHOTO_IDS.slice(0, 8)),
+  beauty_wellness: idsToUrls(BEAUTY_WELLNESS_PHOTO_IDS.slice(0, 10)),
+  barber_salon: idsToUrls(BARBER_SALON_PHOTO_IDS.slice(0, 8)),
   general_business: idsToUrls(GENERAL_BUSINESS_PHOTO_IDS.slice(0, 8)),
 };
 
 export function normalizeSectorKey(sector: string | null | undefined): string {
   return (sector ?? 'general_business').toLowerCase().replace(/[\s-]+/g, '_').trim()
     || 'general_business';
+}
+
+/**
+ * SaaS / B2B software hint — catches description-level strings that suggest
+ * a software product even if sector ID isn't explicitly non-venue.
+ */
+const NON_VENUE_BUSINESS_HINT =
+  /saas|software|yazılım|yazilim|platform|b2b|tech_company|agency_services|professional_service|berber.*panel|kuafor.*panel|rezervasyon.*yazilim|appointment.*software|online.*randevu|barber.*software|salon.*software/i;
+
+/**
+ * Returns true when the sector should NOT be treated as a physical venue.
+ *
+ * Combines:
+ *  1. The canonical NON_VENUE_SECTORS set (exact sector IDs)
+ *  2. A regex for B2B / software descriptions (catches edge cases)
+ *
+ * For new sectors, prefer updating sector-production-profile.ts
+ * (hasPhysicalVenue: false) rather than adding here.
+ */
+export function isNonVenueSector(sector: string | null | undefined): boolean {
+  const key = normalizeSectorKey(sector);
+  if (NON_VENUE_SECTORS.has(key)) return true;
+  return NON_VENUE_BUSINESS_HINT.test(key);
 }
 
 /** Target gallery size: 100 when brand has no own photos; 8 minimum for BRS gates. */

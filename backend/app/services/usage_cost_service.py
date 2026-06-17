@@ -24,6 +24,11 @@ logger = structlog.get_logger(__name__)
 CATEGORY_AUTO_PRODUCE = "auto_produce"
 CATEGORY_MISSION_PROPOSE = "mission_propose"
 CATEGORY_CONTENT_IDEATION = "content_ideation"
+CATEGORY_CONTENT_STRATEGY = "content_strategy"
+CATEGORY_FEED_ART_DIRECTOR = "feed_art_director"
+CATEGORY_SCENE_BRIEF = "scene_brief"
+CATEGORY_GPT_IMAGE_ENHANCE = "gpt_image_enhance"
+CATEGORY_GALLERY_VISION = "gallery_vision_analysis"
 CATEGORY_MARKET_INTELLIGENCE = "market_intelligence"
 CATEGORY_GALLERY_MATCH = "gallery_match"
 CATEGORY_OTHER = "other"
@@ -144,6 +149,12 @@ async def check_budget(
     reason: str | None = None
 
     if settings.auto_produce_bypass_limits:
+        token_check: dict[str, Any] | None = None
+        if settings.token_billing_enabled:
+            from app.services.token_billing_service import check_token_wallet
+            token_check = await check_token_wallet(
+                db, workspace_id, additional_cost_usd, package_slug,
+            )
         return {
             "allowed": True,
             "spent_today_usd": round(spent, 4),
@@ -151,7 +162,8 @@ async def check_budget(
             "daily_budget_usd": daily_cap,
             "projected_usd": round(projected, 4),
             "reason": None,
-            "token_wallet": None,
+            "token_wallet": token_check,
+            "limits_bypassed": True,
         }
 
     if not allowed:
@@ -248,8 +260,21 @@ async def get_usage_summary(
         "currency_note": "Tahmini API maliyeti (USD); gerçek fatura OpenAI/Runway/Apify'dan gelir.",
     }
 
+    from app.services.ai_cost_service import ESTIMATED_COST_USD
+    from app.services.token_billing_service import (
+        CATEGORY_LABELS_TR,
+        build_token_wallet_summary,
+        get_month_cost_usd,
+    )
+
+    month_cost, month_tokens, month_categories = await get_month_cost_usd(db, workspace_id)
+    result["month_cost_usd"] = month_cost
+    result["month_tokens"] = month_tokens
+    result["month_category_totals"] = month_categories
+    result["category_labels"] = CATEGORY_LABELS_TR
+    result["unit_cost_hints_usd"] = ESTIMATED_COST_USD
+
     if settings.token_billing_enabled:
-        from app.services.token_billing_service import build_token_wallet_summary
         result["token_wallet"] = await build_token_wallet_summary(
             db,
             workspace_id,

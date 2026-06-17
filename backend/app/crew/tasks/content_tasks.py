@@ -4,11 +4,25 @@ CrewAI Task definitions for the Content Agent crew.
 
 from __future__ import annotations
 
+import hashlib
+import time as _time
 from datetime import datetime, timezone
 from crewai import Agent, Task
 
 from app.crew.context import BrandInfo, build_urgency_directive
 from app.crew.prompts.content_prompts import CONTENT_IDEATION_TASK, CONTENT_CALENDAR_TASK
+
+
+def _variation_seed_block(mission_id: str | None = None) -> str:
+    """Inject a run-unique token so same-context runs still produce different outputs."""
+    seed = hashlib.md5(
+        f"{mission_id or ''}{_time.time()}".encode()
+    ).hexdigest()[:8]
+    return (
+        f"## 🎲 ÇALIŞMA KİMLİĞİ: {seed}\n"
+        "Bu çalışmada üretilen 7 fikir bu özgün kimlik için yazılıyor. "
+        "Önceki misyonlarda üretilmiş fikirlerle birebir örtüşen HİÇBİR konsept kabul edilmez."
+    )
 
 
 def _date_context_block() -> str:
@@ -502,6 +516,7 @@ def create_content_ideation_task(
     brief: str = "",
     content_pillars: list[str] | None = None,
     autonomy_mode: bool = False,
+    mission_id: str | None = None,
 ) -> Task:
     gallery_scene_block = _build_gallery_scene_block(brand)
     recent_titles_block = _build_recent_titles_block(brand)
@@ -535,6 +550,10 @@ def create_content_ideation_task(
         reference_image_urls_list=gallery_scene_block,
         output_language=output_language,
     )
+
+    # Variation seed — run-unique token to prevent same-context repetition
+    seed_block = _variation_seed_block(mission_id)
+    description = seed_block + "\n\n---\n\n" + description
 
     # Date context — always first so agent knows exactly what day it is
     date_block = _date_context_block()

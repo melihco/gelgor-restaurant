@@ -18,8 +18,8 @@ STRATEGIST_AGENT_ROLE = "AI Creative Campaign Strategist"
 
 STRATEGIST_AGENT_GOAL = (
     "{business_name} için mevcut tüm istihbarat sinyallerini analiz et ve "
-    "2-3 adet koordineli, çok ajanlı kampanya misyonu öner. "
-    "Her misyon: net bir iş hedefi, faz planı ve çalıştırılabilir görev grafiği içermeli."
+    "tam olarak 1 adet koordineli, çok ajanlı kampanya misyonu öner. "
+    "Misyon: net bir iş hedefi, faz planı ve çalıştırılabilir görev grafiği içermeli."
 )
 
 STRATEGIST_AGENT_BACKSTORY = """\
@@ -73,7 +73,7 @@ IMPORTANT: Write ALL text fields in Turkish (title, objective, creative_brief, p
 - trigger_evidence alanında MUTLAKA "Tarih henüz gelmedi: [tarih]" şeklinde doğrulama yaz.
 - Şüphe durumunda: tarihi atlayıp güncel/sezonsal bir açı seç.
 
-{business_name} için mevcut tüm sinyalleri analiz et ve 2-3 adet koordineli misyon öner.
+{business_name} için mevcut tüm sinyalleri analiz et ve TAM OLARAK 1 adet koordineli misyon öner.
 
 🚫 KESİN YASAK — TEKRAR ÖNERME KURALI:
 Sinyal özetinin başındaki "SON ÖNERİLEN" listesindeki başlıkların herhangi biriyle
@@ -105,7 +105,7 @@ Her öneride hangi açıyı kullandığını "trigger_signal" alanında belirt (
 | review_agent            | review_analysis  |  single_review_response             |
 | content_agent           | content_ideation  |  content_calendar                  |
 | content_strategy_agent  | content_strategy                                        |
-| feed_art_director_agent | feed_cohesion_review (content_ideation sonrası; rapor Hub'da) |
+| feed_art_director       | feed_cohesion_review (content_ideation sonrası; rapor Hub'da) |
 | ads_agent               | campaign_analysis  |  ad_creative_generation           |
 | analytics_agent         | traffic_analysis  |  weekly_performance                |
 
@@ -144,7 +144,7 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
         "title": "Görev başlığı",
         "task_type": "yukarıdaki tablodan",
         "agent_role": "yukarıdaki tablodan",
-        "input_data": {{"brief": "görev için spesifik yönlendirme", "count": 5}},
+        "input_data": {{"brief": "görev için spesifik yönlendirme — 7 parça haftalık paket (3 story, 2 post, 1 carousel, 1 reel)", "count": 7}},
         "depends_on": []
       }}
     ],
@@ -168,7 +168,7 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
   "phases": [
     {{"index": 0, "name": "Strateji", "description": "İçerik yönü belirle", "node_keys": ["strategy"]}},
     {{"index": 1, "name": "Üretim", "description": "İçerik fikirleri üret", "node_keys": ["ideas"]}},
-    {{"index": 2, "name": "Plan", "description": "Yayın takvimi", "node_keys": ["calendar"]}}
+    {{"index": 2, "name": "Plan", "description": "Feed düzeni, tasarım yönü ve yayın takvimi", "node_keys": ["feed_cohesion_review", "design_cards", "calendar"]}}
   ],
   "task_nodes": [
     {{
@@ -183,10 +183,10 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
     {{
       "node_key": "ideas",
       "phase_index": 1,
-      "title": "İçerik Fikirleri (5 konsept)",
+      "title": "İçerik Fikirleri (7 parça — haftalık paket)",
       "task_type": "content_ideation",
       "agent_role": "content_agent",
-      "input_data": {{"count": 5, "time_period": "önümüzdeki 2 hafta", "brief": "[content_pillars'a uygun brief]"}},
+      "input_data": {{"count": 7, "time_period": "önümüzdeki 2 hafta", "brief": "[content_pillars'a uygun brief — 3 story, 2 post, 1 carousel, 1 reel]"}},
       "depends_on": ["strategy"]
     }},
     {{
@@ -194,8 +194,17 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
       "phase_index": 2,
       "title": "Feed uyumu ve slot planı",
       "task_type": "feed_cohesion_review",
-      "agent_role": "feed_art_director_agent",
+      "agent_role": "feed_art_director",
       "input_data": {{}},
+      "depends_on": ["ideas"]
+    }},
+    {{
+      "node_key": "design_cards",
+      "phase_index": 2,
+      "title": "Ajans Tasarım Varyasyonları",
+      "task_type": "visual_design_cards",
+      "agent_role": "content_agent",
+      "input_data": {{"count": 3, "brief": "[content_ideation içindeki en güçlü 3 fikri agency-style tasarım diline çevir]"}},
       "depends_on": ["ideas"]
     }},
     {{
@@ -215,5 +224,5 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
   "expected_outcome": "[Markaya özgü beklenen sonuç — generic 'rezervasyon artışı' değil]"
 }}
 
-Şimdi {business_name} için gerçek sinyallere dayalı 2-3 misyon öner.
+Şimdi {business_name} için gerçek sinyallere dayalı TAM OLARAK 1 ADET misyon öner. Birden fazla öneri kabul edilmez.
 """

@@ -1,8 +1,10 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import {
   buildTenantBrandContext,
   emptyTenantBrandContext,
@@ -31,12 +33,12 @@ export function useTenantBrand(workspaceId?: string | null): TenantBrandContext 
     enabled: Boolean(tenantId),
   });
 
-  const { data: brandCtx } = useQuery<Record<string, unknown> | null>({
-    queryKey: ['brand-context-data', tenantId],
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', tenantId],
     queryFn: async () => {
       if (!tenantId) return null;
       try {
-        return await apiClient.getBrandContextData(tenantId);
+        return await apiClient.getProductionBrandContextSnapshot(tenantId);
       } catch {
         return null;
       }
@@ -45,6 +47,9 @@ export function useTenantBrand(workspaceId?: string | null): TenantBrandContext 
     enabled: Boolean(tenantId),
   });
 
-  if (!tenantId) return emptyTenantBrandContext();
-  return buildTenantBrandContext(profile, brandCtx);
+  return useMemo(() => {
+    if (!tenantId) return emptyTenantBrandContext();
+    const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
+    return buildTenantBrandContext(profile, (brandCtx ?? null) as Record<string, unknown> | null);
+  }, [tenantId, profile, productionSnapshot]);
 }

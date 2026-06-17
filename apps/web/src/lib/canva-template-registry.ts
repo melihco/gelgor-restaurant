@@ -170,7 +170,7 @@ export async function mergeTemplateRegistry(
 
   return templates.map((template) => {
     const entry = byTemplateId.get(template.id);
-    if (!entry) return { ...template, tenantId, enabled: true };
+    if (!entry) return { ...template, tenantId, enabled: true } as CanvaTemplateMetadata;
 
     // If registry marks the preview as a video file, the template IS a Reel —
     // override title-inferred contentKinds so it always shows in the Reel tab.
@@ -213,7 +213,7 @@ export async function mergeTemplateRegistry(
       previewFormat: entry.previewFormat,
       previewMimeType: entry.previewMimeType,
       registryUpdatedAt: entry.updatedAt,
-    };
+    } as CanvaTemplateMetadata;
   });
 }
 

@@ -18,8 +18,52 @@ import {
   fetchBrandAlignmentGate,
 } from '@/lib/tenant-production-guard';
 
+/** Fetch context signals for this workspace (best-effort, returns null on failure). */
+async function fetchContextSignals(
+  workspaceId: string,
+  req: NextRequest,
+): Promise<string | null> {
+  try {
+    const origin = req.nextUrl.origin;
+    const res = await fetch(`${origin}/api/context-signals/${encodeURIComponent(workspaceId)}`, {
+      headers: { cookie: req.headers.get('cookie') ?? '' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { promptBlock?: string | null };
+    return data?.promptBlock?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export const runtime = 'nodejs';
 export const maxDuration = 120; // propose calls StrategistAgent (~60-90s)
+
+type MissionListItem = { id: string; status: string };
+
+function normalizeMissionList(data: unknown): MissionListItem[] {
+  if (Array.isArray(data)) {
+    return data
+      .map((m) => {
+        const row = m as Record<string, unknown>;
+        const id = String(row.id ?? row.mission_id ?? '').trim();
+        const status = String(row.status ?? '').trim();
+        return id && status ? { id, status } : null;
+      })
+      .filter((m): m is MissionListItem => m !== null);
+  }
+  if (data && typeof data === 'object') {
+    const wrapped = (data as { missions?: unknown }).missions;
+    if (Array.isArray(wrapped)) return normalizeMissionList(wrapped);
+  }
+  return [];
+}
+
+function proposalMissionId(m: Record<string, unknown>): string | null {
+  const id = String(m.id ?? m.mission_id ?? '').trim();
+  return id || null;
+}
 
 export async function POST(
   req: NextRequest,
@@ -54,23 +98,30 @@ export async function POST(
     return NextResponse.json({ skipped: true, reason: 'list_failed' });
   }
 
-  const missions: { status: string }[] = await listRes.json().catch(() => []);
+  const missions = normalizeMissionList(await listRes.json().catch(() => null));
   const hasActive = missions.some(
     m => m.status === 'in_flight' || m.status === 'approved',
   );
   const hasProposed = missions.some(m => m.status === 'proposed');
-
-  // Count completed missions today
-  const todayStart = new Date();
-  todayStart.setUTCHours(0, 0, 0, 0);
+  const completedCount = missions.filter(m => m.status === 'completed').length;
 
   if (hasActive) {
     return NextResponse.json({ skipped: true, reason: 'already_active' });
   }
 
+  // Completed weekly cycle — do not auto-propose on every Feed mount (cost leak).
+  if (completedCount > 0 && !hasProposed) {
+    return NextResponse.json({
+      skipped: true,
+      reason: 'completed_missions_exist',
+      completed_count: completedCount,
+      detail: 'Tamamlanmış mission varken yeni öneri oluşturulmadı.',
+    });
+  }
+
   // 2. If there are proposed missions, approve the first one
   if (hasProposed) {
-    const firstProposed = missions.find(m => m.status === 'proposed') as { id: string; status: string } | undefined;
+    const firstProposed = missions.find(m => m.status === 'proposed');
     if (firstProposed) {
       await proxyToCrewBackend(
         `/api/v1/missions/${workspaceId}/${firstProposed.id}/approve`,
@@ -80,10 +131,17 @@ export async function POST(
     }
   }
 
-  // 3. Propose new missions
+  // 3. Fetch context signals (trend, sector, season) before proposing.
+  //    Best-effort — proposal proceeds even if context signals are unavailable.
+  const contextSignals = await fetchContextSignals(workspaceId, req);
+
+  // 4. Propose new missions — inject context signals if available
   const proposeRes = await proxyToCrewBackend(
     `/api/v1/missions/${workspaceId}/propose`,
-    { body: {}, timeoutMs: 110_000 },
+    {
+      body: contextSignals ? { context_signals: contextSignals } : {},
+      timeoutMs: 110_000,
+    },
   );
 
   if (!proposeRes.ok) {
@@ -92,9 +150,18 @@ export async function POST(
 
   // Propose returns { proposals_created, missions: [...] } — not a bare array.
   const proposeData = await proposeRes.json().catch(() => null) as
-    | { missions?: { id: string }[] }
+    | { missions?: Record<string, unknown>[] }
+    | Record<string, unknown>[]
     | null;
-  const proposals: { id: string }[] = proposeData?.missions ?? [];
+  const rawProposals = Array.isArray(proposeData)
+    ? proposeData
+    : (proposeData?.missions ?? []);
+  const proposals = rawProposals
+    .map((m) => {
+      const id = proposalMissionId(m);
+      return id ? { id } : null;
+    })
+    .filter((m): m is { id: string } => m !== null);
   if (!proposals.length) {
     return NextResponse.json({ skipped: true, reason: 'no_proposals' });
   }

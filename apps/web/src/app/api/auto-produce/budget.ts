@@ -9,9 +9,9 @@
  * Executive=unlimited. Env var overrides act as operator ceilings on top.
  */
 
+import { NEXUS_API, INTERNAL_KEY } from './nexus-client';
+
 const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 /** Operator ceiling for daily artifact count — package limits apply first. */
 const AUTO_PRODUCE_MAX_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_DAILY || '200', 10);
 /** Mission → Feed may produce 5–7 slots in one run; must not share the manual daily cap. */
@@ -38,11 +38,12 @@ interface PackageLimits {
   /** MonthlyReels. -1 = unlimited. */
   monthlyReels: number;
   isUnlimited: boolean;
+  packageSlug: string | null;
 }
 
 const _limitsCache: Record<string, { limits: PackageLimits; expiresAt: number }> = {};
 
-async function fetchPackageLimits(workspaceId: string): Promise<PackageLimits> {
+export async function fetchPackageLimits(workspaceId: string): Promise<PackageLimits> {
   const now = Date.now();
   const cached = _limitsCache[workspaceId];
   if (cached && cached.expiresAt > now) return cached.limits;
@@ -53,30 +54,29 @@ async function fetchPackageLimits(workspaceId: string): Promise<PackageLimits> {
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
-    const data: { monthlyOutputs?: { socialContent: number; reels: number } | null } =
-      await res.json();
+    const data: {
+      packageSlug?: string;
+      monthlyOutputs?: { socialContent: number; reels: number } | null;
+    } = await res.json();
     const socialContent = data.monthlyOutputs?.socialContent ?? -1;
     const reels = data.monthlyOutputs?.reels ?? -1;
     const limits: PackageLimits = {
       dailySocialContent: socialContent === -1 ? -1 : Math.max(5, Math.ceil(socialContent / 30)),
       monthlyReels: reels,
       isUnlimited: socialContent === -1,
+      packageSlug: data.packageSlug?.trim() || null,
     };
     _limitsCache[workspaceId] = { limits, expiresAt: now + 60 * 60 * 1_000 };
     return limits;
   } catch {
     // Non-fatal: if Nexus is unreachable, fall through to env-var ceilings only.
-    return { dailySocialContent: -1, monthlyReels: -1, isUnlimited: true };
+    return { dailySocialContent: -1, monthlyReels: -1, isUnlimited: true, packageSlug: null };
   }
 }
 
-/**
- * Dev / pilot: skip daily USD cap, artifact count cap, and Runway reel cap.
- * Set AUTO_PRODUCE_BYPASS_LIMITS=false when billing limits go live.
- */
-export function isProductionLimitsBypassed(): boolean {
-  return process.env.AUTO_PRODUCE_BYPASS_LIMITS === 'true';
-}
+import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
+
+export { isProductionLimitsBypassed };
 
 /** In-process reel counter (resets on server restart; budget check is authoritative) */
 const _reelCountByWorkspace: Record<string, { date: string; count: number }> = {};

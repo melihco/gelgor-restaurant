@@ -16,6 +16,10 @@ import {
   deriveBrandTemplateLibrary,
   libraryToCatalogTemplates,
 } from '@/lib/brand-template-library';
+import { loadWorkspaceBrandTemplateLibrary } from '@/lib/brand-template-library-workspace';
+import { resolveShowcasePresetLibrary } from '@/lib/showcase-preset-libraries';
+import { getShowcasePreset, resolveShowcaseBrandKit } from '@/lib/brand-showcase-presets';
+import { buildBrandFingerprint } from '@/lib/tenant-template-seed';
 import {
   POSTER_FAMILY_META,
   POSTER_TEMPLATE_CATALOG,
@@ -33,11 +37,52 @@ export async function GET(req: Request): Promise<NextResponse> {
   const kind = url.searchParams.get('kind') ?? 'all'; // story | poster | all
   const includeEvaluation = url.searchParams.get('evaluation') === '1';
 
-  const brandMode = url.searchParams.get('brand') === '1' || Boolean(kitId);
-  const libraryKitId = kitId ?? AGENCY_BRAND_KITS[0]?.id;
-  const brandLibrary = libraryKitId
-    ? deriveBrandTemplateLibrary({ kitId: libraryKitId, sector: AGENCY_BRAND_KITS.find((k) => k.id === libraryKitId)?.sector ?? 'beach_club' })
-    : null;
+  const workspaceId = url.searchParams.get('workspaceId') ?? url.searchParams.get('workspace');
+  const presetKey = url.searchParams.get('preset');
+  const sectorParam = url.searchParams.get('sector');
+  const brandMode = url.searchParams.get('brand') === '1' || Boolean(kitId) || Boolean(workspaceId) || Boolean(presetKey);
+
+  let brandLibrary = null;
+  let usesSavedLibrary = false;
+  let resolvedKitId = kitId ?? AGENCY_BRAND_KITS[0]?.id;
+
+  if (workspaceId) {
+    const loaded = await loadWorkspaceBrandTemplateLibrary(workspaceId);
+    if (loaded) {
+      brandLibrary = loaded.library;
+      usesSavedLibrary = loaded.usesSavedLibrary;
+      resolvedKitId = loaded.kitId;
+    }
+  }
+
+  if (!brandLibrary && presetKey) {
+    brandLibrary = resolveShowcasePresetLibrary(presetKey);
+    if (brandLibrary) resolvedKitId = brandLibrary.kitId;
+  }
+
+  if (!brandLibrary && resolvedKitId) {
+    const kitSector = AGENCY_BRAND_KITS.find((k) => k.id === resolvedKitId)?.sector ?? 'beach_club';
+    const showcasePreset = presetKey ? getShowcasePreset(presetKey) : undefined;
+    const kit = resolveShowcaseBrandKit({ kitId: resolvedKitId, presetKey: presetKey ?? undefined });
+    const tenantId = workspaceId
+      ?? (presetKey ? `showcase_${presetKey}` : undefined)
+      ?? url.searchParams.get('diversify');
+    const brandFingerprint = buildBrandFingerprint({
+      tenantId: tenantId ?? undefined,
+      brandName: kit.brandName ?? kit.name,
+      primaryColor: kit.primaryColor,
+      accentColor: kit.accentColor,
+      headingFont: kit.headingFont,
+      bodyFont: kit.bodyFont,
+      motionStyle: kit.motionStyle,
+    });
+    brandLibrary = deriveBrandTemplateLibrary({
+      kitId: resolvedKitId,
+      sector: sectorParam ?? showcasePreset?.sector ?? kitSector,
+      tenantId: tenantId ?? undefined,
+      brandFingerprint,
+    });
+  }
 
   let templates = REMOTION_TEMPLATE_CATALOG;
   if (family) templates = templates.filter((t) => t.family === family);
@@ -119,6 +164,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     templates: displayTemplates,
     brandLibrary: brandLibrary ?? undefined,
     brandLibraryTemplates,
+    workspaceId: workspaceId ?? undefined,
+    usesSavedLibrary: workspaceId ? usesSavedLibrary : undefined,
+    presetKey: presetKey ?? undefined,
+    premiumPreset: Boolean(presetKey && resolveShowcasePresetLibrary(presetKey)),
     storyTemplates: payload,
     posterTemplates: posterPayload,
     brandKits: AGENCY_BRAND_KITS.map((k) => ({

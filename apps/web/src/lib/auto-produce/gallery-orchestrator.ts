@@ -1,0 +1,141 @@
+/**
+ * Gallery orchestrator for mission-level batch photo assignment.
+ *
+ * Builds a semantic gallery assignment map for all production queue slots
+ * before the per-idea production loop runs, so each idea gets the best
+ * matching gallery photo without competing with siblings.
+ */
+
+import {
+  assignPhotosToContents,
+  type GalleryPhotoMeta,
+  type MatchPhotoInput,
+  type PhotoMatchResult,
+  MIN_ACCEPT_SCORE,
+} from '@/lib/gallery-photo-matcher';
+import {
+  resolveContentKindForAssignment,
+} from '@/lib/production-pipeline-router';
+import {
+  kindToPostType,
+} from '@/lib/gallery-usage-tracker';
+import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
+import {
+  isMeaninglessBrandEchoHeadline,
+  resolveMeaningfulProductionHeadline,
+} from '@/lib/production-headline-quality';
+import { enforceDisplayHeadline } from '@/lib/remotion-quality';
+import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+
+/** Stable per-slot key: used to match gallery assignments to production loop items. */
+export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
+  return `${ideaIndex}::${slotRole}`;
+}
+
+/** Returns true when this pipeline type needs a real gallery photo as input. */
+export function assignmentUsesGalleryPhoto(
+  assignment: { pipeline?: string; slot_role?: string },
+): boolean {
+  const pipeline = String(assignment.pipeline ?? '');
+  const role = String(assignment.slot_role ?? '');
+  if (pipeline === 'remotion_poster' || role === 'designed_post') return false;
+  if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
+  if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
+  return (
+    pipeline === 'gallery_photo'
+    || pipeline === 'story_still'
+    || pipeline === 'carousel_gallery'
+    || pipeline === 'remotion_story'
+    || pipeline === 'runway_reel'
+  );
+}
+
+export interface GalleryOrchestrationInput {
+  missionId: string | undefined;
+  productionLoop: ManifestProductionQueueItem[];
+  galleryPhotos: string[];
+  galleryMeta: Record<string, GalleryPhotoMeta>;
+  brandBusinessType: string;
+  resolvedBrandName: string;
+  hasGallery: boolean;
+  hasRealBrandPhotos: boolean;
+}
+
+/**
+ * Build a semantic gallery assignment map for all production slots.
+ * Returns a Map keyed by `missionGallerySlotKey(ideaIndex, slotRole)`.
+ */
+export function buildMissionGalleryAssignments(
+  input: GalleryOrchestrationInput,
+): Map<string, PhotoMatchResult | null> {
+  const result = new Map<string, PhotoMatchResult | null>();
+
+  if (
+    !input.missionId
+    || !input.hasGallery
+    || !input.hasRealBrandPhotos
+    || input.productionLoop.length === 0
+  ) {
+    return result;
+  }
+
+  const assignItems: Array<{ key: string; input: MatchPhotoInput }> = [];
+
+  for (const queueItem of input.productionLoop) {
+    if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
+
+    const idea = queueItem.idea as Record<string, unknown>;
+    let caption = String(
+      idea.caption_draft ?? idea.caption ?? '',
+    ).trim();
+
+    const rawHeadline = resolveIdeationHeadline(idea);
+    let headline = rawHeadline;
+
+    if (!rawHeadline || isMeaninglessBrandEchoHeadline(rawHeadline, input.resolvedBrandName)) {
+      headline = resolveMeaningfulProductionHeadline({
+        headline: rawHeadline,
+        caption,
+        brandName: input.resolvedBrandName,
+        conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
+        maxLen: 72,
+      }).headline;
+    } else {
+      headline = enforceDisplayHeadline(rawHeadline, 72);
+    }
+
+    const kind = resolveContentKindForAssignment(queueItem.idea, queueItem.assignment);
+    const postType = kindToPostType(kind);
+
+    assignItems.push({
+      key: missionGallerySlotKey(queueItem.ideaIndex, String(queueItem.assignment.slot_role)),
+      input: {
+        caption,
+        headline,
+        mood: String(idea.mood ?? ''),
+        contentType: postType,
+        businessType: input.brandBusinessType,
+      },
+    });
+  }
+
+  if (assignItems.length === 0) return result;
+
+  const batchAssigned = assignPhotosToContents(
+    assignItems,
+    input.galleryPhotos,
+    input.galleryMeta,
+    { minScore: MIN_ACCEPT_SCORE },
+  );
+
+  for (const [key, val] of batchAssigned) {
+    result.set(key, val);
+  }
+
+  console.log(
+    `[auto-produce] Mission gallery batch assign: ${assignItems.length} slots, ` +
+    `${[...batchAssigned.values()].filter(Boolean).length} matched (≥${MIN_ACCEPT_SCORE})`,
+  );
+
+  return result;
+}

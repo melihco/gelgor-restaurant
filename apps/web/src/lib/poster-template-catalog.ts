@@ -3,6 +3,10 @@
  * Next-gen: event lineup, festival grid, DJ night, promo, gala, editorial date…
  */
 
+import {
+  AGENCY_POSTER_FAMILY_UPGRADES,
+  agencyPosterTags,
+} from './agency-template-standard';
 import type {
   PosterLayoutFamily,
   PosterLayoutSpec,
@@ -11,7 +15,7 @@ import type {
 
 const BASE: PosterLayoutSpec = {
   family: 'lineup_tiered',
-  collection: 'Event',
+  collection: 'Agency',
   posterMode: 'lineup_tiered',
   posterHeader: 'accent_bar',
   posterFooter: 'solid_bar',
@@ -123,11 +127,15 @@ const FAMILIES: FamilyMeta[] = [
     base: {
       family: 'promo_split', collection: 'Campaign', posterMode: 'promo_split',
       photoRatio: 0.58, posterFooter: 'solid_bar', heroScale: 1.15, showCta: true,
+      gradientStart: 0.44, gradientEnd: 0.91, overlayOpacity: 0.52, vignette: 'radial', duotoneOpacity: 0.26,
     },
     variants: [
       { suffix: 'Offer', suffixTr: 'Teklif', patch: {} },
-      { suffix: 'Wide Panel', suffixTr: 'Geniş Panel', patch: { photoRatio: 0.52 } },
-      { suffix: 'Bold', suffixTr: 'Kalın', patch: { heroScale: 1.22, heroWeight: 900 } },
+      { suffix: 'Wide Panel', suffixTr: 'Geniş Panel', patch: { photoRatio: 0.52, gradientStart: 0.48, overlayOpacity: 0.48 } },
+      { suffix: 'Bold', suffixTr: 'Kalın', patch: {
+        heroScale: 1.22, heroWeight: 900,
+        gradientStart: 0.50, gradientEnd: 0.93, overlayOpacity: 0.46, duotoneOpacity: 0.2, vignette: 'radial',
+      } },
       { suffix: 'Pill CTA', suffixTr: 'Pill CTA', patch: { posterFooter: 'pill_row' } },
       { suffix: 'Minimal', suffixTr: 'Minimal', patch: { posterFooter: 'transparent_bar', accentLine: 'none' } },
     ],
@@ -204,7 +212,7 @@ const FAMILIES: FamilyMeta[] = [
     nameEn: 'Restaurant Feature',
     descTr: 'Yemek fotoğrafı + split panel — menü / chef spotlight.',
     tags: ['food', 'menu', 'chef'],
-    sectors: ['fine_dining', 'steakhouse', 'mediterranean', 'agency_services', 'professional_service'],
+    sectors: ['fine_dining', 'steakhouse', 'mediterranean', 'agency_services', 'professional_service', 'moving_logistics', 'real_estate'],
     formats: ['post', 'portrait', 'story'],
     base: {
       family: 'restaurant_feature', collection: 'Hospitality', posterMode: 'promo_split',
@@ -270,18 +278,28 @@ function mergeSpec(...layers: Partial<PosterLayoutSpec>[]): PosterLayoutSpec {
 }
 
 function buildTemplate(family: FamilyMeta, idx: number, v: FamilyMeta['variants'][0]): PosterTemplateDefinition {
+  const vibeCollection = family.collection;
+  const agencyUpgrade = AGENCY_POSTER_FAMILY_UPGRADES[family.family];
+  const spec = mergeSpec(
+    { family: family.family, collection: 'Agency' },
+    family.base,
+    agencyUpgrade ?? {},
+    v.patch,
+  );
+  spec.collection = 'Agency';
   const nn = String(idx + 1).padStart(2, '0');
+  const variantTag = v.suffix.toLowerCase().replace(/\s+/g, '_');
   return {
     id: `poster_${family.family}_${nn}`,
     family: family.family,
-    collection: family.collection,
+    collection: 'Agency',
     variantIndex: idx,
     nameTr: `${family.nameTr} · ${v.suffixTr}`,
     nameEn: `${family.nameEn} · ${v.suffix}`,
     descTr: family.descTr,
-    tags: [...family.tags, v.suffix.toLowerCase()],
+    tags: agencyPosterTags(vibeCollection, [...family.tags, variantTag]),
     formats: family.formats,
-    spec: mergeSpec({ family: family.family, collection: family.collection }, family.base, v.patch),
+    spec,
     sectors: family.sectors,
     status: 'active',
   };

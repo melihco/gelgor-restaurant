@@ -136,11 +136,18 @@ export interface BrandTheme {
   /** AI visual production (Brand Hub → Ayarlar) */
   ai_photo_enhance?: boolean;
   ai_photo_enhance_level?: 'subtle' | 'moderate' | 'full';
+  /** GPT images.edit on matcher-selected gallery photo (not fresh generation). */
+  ai_enhance_gallery_selected?: boolean;
   ai_use_brand_identity?: boolean;
   ai_brief_drives_scene?: boolean;
   ai_embed_logo?: boolean;
   ai_enhance_formats?: Array<'post' | 'story' | 'carousel' | 'reel'>;
   ai_visual_subject?: 'auto' | 'venue_ambiance' | 'product_hero';
+  /** Caption-uyumlu sahne/ürün kompoziti — Mission Hub post/carousel/story base foto */
+  ai_adaptive_scene?: boolean;
+  ai_adaptive_scene_mode?: 'auto' | 'venue_context' | 'product_showcase' | 'lifestyle_composite';
+  /** Caption + brand DNA ile sıfırdan AI görsel — galeri olsa bile feed postlarında matcher atlanır */
+  ai_caption_driven_visual?: boolean;
   /** Experimental Crew VPD — default false; existing VPS from ideation wins on merge */
   enable_visual_production_director?: boolean;
   enableVisualProductionDirector?: boolean;

@@ -7,10 +7,11 @@ export {
   type PosterQaResult,
 } from './poster-quality';
 
-import { normalizePosterCopy, scorePosterQa } from './poster-quality';
+import { normalizePosterCopy, scorePosterQa, type PosterQaResult } from './poster-quality';
 
 export function resolvePosterOverlayCopy(input: {
   headline: string;
+  ideationHeadline?: string;
   subtitle?: string;
   brandName: string;
   location?: string;

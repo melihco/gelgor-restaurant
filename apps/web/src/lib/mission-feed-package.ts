@@ -1,5 +1,5 @@
 import {
-  isArtifactFeedPublishable,
+  isArtifactFeedReady,
   type WeeklyPublishSelection,
 } from '@/lib/weekly-publish-package';
 import type { OutputArtifact } from '@/types';
@@ -19,8 +19,12 @@ export type { ProductionBundleStatus } from '@/lib/production-bundle';
 export {
   canRetryStoryRender,
   dedupeProductionBundles,
+  dedupeStoryBarArtifacts,
+  filterConsumerStoryBar,
   getProductionBundleStatus,
+  getProductionDedupeKey,
   getProductionIdeaKey,
+  getStoryBarDedupeKey,
   isAwaitingStoryVideo,
   isBundleFailed,
   isBundleReadyForPublish,
@@ -32,7 +36,9 @@ export {
   parseArtifactMissionId,
   resolveBrandedPostUrl,
   resolvePosterUrl,
+  resolvePublishImageUrl,
   resolveStoryVideoUrl,
+  resolveStoryVideoClientUrl,
   storyRetryIsBusy,
   storyRetryLabel,
 } from '@/lib/production-bundle';
@@ -137,7 +143,7 @@ export function summarizeMissionFeedPackage(
   const roleCounts = countByProductionRole(mine);
   const pendingReview = mine.filter((a) => a.status === 'pending_review').length;
   const approved = mine.filter((a) => a.status === 'approved').length;
-  const publishableCount = mine.filter(isArtifactFeedPublishable).length;
+  const publishableCount = mine.filter(isArtifactFeedReady).length;
   return {
     storyVideos,
     posts,

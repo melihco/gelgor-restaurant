@@ -15,7 +15,11 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { IcoBack } from '../Icons';
 import { apiClient } from '@/lib/api-client';
 import { TokenWalletCard } from '../TokenWalletCard';
+import { ClientCreditSummary } from '../ClientCreditSummary';
+import { AiCostBreakdownCard } from '../AiCostBreakdownCard';
 import { PlanUsagePanel } from '../PlanUsagePanel';
+import { isDebugUiMode } from '../mobile-client-config';
+import { estimateRemainingPosts } from '@/lib/mobile-customer-copy';
 import type { T } from '../theme-context';
 
 // ── Kredi Paket Tanımları ──────────────────────────────────────────────
@@ -46,10 +50,10 @@ const CREDIT_PACKS: CreditPack[] = [
       { action: 'Auto-produce (7 post/misyon)',       creditsEach: 2,  qty: 5  },
     ],
     highlights: [
-      '~14 tam misyon döngüsü',
-      '98 sosyal medya içeriği',
-      '30 fotoğraf galeri analizi',
-      'Sınırsız caption + hashtag üretimi',
+      '14 tam misyon döngüsü / ay',
+      '98 organik sosyal içerik',
+      '14 Meta Ads + 14 Google Ads kreatifi',
+      '40 galeri analizi + sınırsız caption',
     ],
   },
   {
@@ -257,7 +261,7 @@ function PackDetailModal({
               width: '100%', padding: '16px',
               borderRadius: 16, border: 'none', cursor: 'pointer',
               fontSize: 15, fontWeight: 800, letterSpacing: '-0.01em',
-              background: `linear-gradient(135deg, ${t.accent}, #6366F1)`,
+              background: `linear-gradient(135deg, ${t.accent}, #5A82A0)`,
               color: '#fff',
             }}
           >
@@ -275,6 +279,7 @@ export function BillingScreen() {
   const { t } = useTheme();
   const { goBack } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
+  const debugMode = isDebugUiMode();
   const [modalPack, setModalPack] = useState<CreditPack | null>(null);
 
   const { data: quotaData } = useQuery({
@@ -345,7 +350,18 @@ export function BillingScreen() {
                 animation: 'spinSlow 1s linear infinite' }} />
             </div>
           ) : wallet ? (
-            <TokenWalletCard wallet={wallet} t={t} />
+            <>
+              <TokenWalletCard wallet={wallet} t={t} />
+              {!debugMode && remaining !== null && remaining > 0 && (
+                <div style={{ ...t.surfaceCard, padding: '14px 16px', marginTop: 10 }}>
+                  <div style={{ fontSize: 13, color: t.textSecondary, lineHeight: 1.55 }}>
+                    Bu ay yaklaşık{' '}
+                    <strong style={{ color: t.textPrimary }}>{estimateRemainingPosts(remaining)}</strong>
+                    {' '}içerik daha üretebilirsiniz (post + story paketi tahmini).
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div style={{ ...t.surfaceCard, padding: '18px', textAlign: 'center' }}>
               <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 6 }}>
@@ -364,13 +380,20 @@ export function BillingScreen() {
               quota={quotaData}
               wallet={usageCost?.token_wallet}
               packageSlug={quotaData.packageSlug}
+              debugMode={debugMode}
               t={t}
             />
           </div>
         )}
 
+        {debugMode && usageCost && (
+          <div style={{ padding: '20px 24px 0' }}>
+            <AiCostBreakdownCard data={usageCost} t={t} />
+          </div>
+        )}
+
         {/* Last 30-day summary */}
-        {(totalSpent !== null || artifactCount !== null) && (
+        {(artifactCount !== null || (debugMode && totalSpent !== null) || (!debugMode && remaining !== null)) && (
           <div style={{ padding: '20px 24px 0' }}>
             <SLabel t={t} text="Son 30 Gün" />
             <div style={{ display: 'flex', gap: 10 }}>
@@ -383,7 +406,7 @@ export function BillingScreen() {
                   </div>
                 </div>
               )}
-              {totalSpent !== null && (
+              {debugMode && totalSpent !== null && (
                 <div style={{ flex: 1, ...t.surfaceCard, padding: '16px', textAlign: 'center' }}>
                   <div style={{ fontSize: 26, fontWeight: 800, color: t.textPrimary,
                     letterSpacing: '-0.04em', lineHeight: 1,
@@ -425,7 +448,7 @@ export function BillingScreen() {
                   padding: '16px 18px',
                   border: pack.popular ? `0.5px solid ${t.accent}66` : `0.5px solid ${t.separator}`,
                   background: pack.popular
-                    ? (t.isDark ? 'rgba(124,58,237,0.08)' : 'rgba(124,58,237,0.04)')
+                    ? (t.isDark ? 'rgba(77,112,136,0.08)' : 'rgba(77,112,136,0.04)')
                     : (t.isDark ? 'rgba(255,255,255,0.035)' : '#fff'),
                   position: 'relative' as const,
                   display: 'flex', alignItems: 'center', gap: 14,

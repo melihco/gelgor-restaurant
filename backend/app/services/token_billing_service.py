@@ -29,28 +29,80 @@ GRANT_BY_PACKAGE: dict[str, int] = {
     "starter": 5_000,
     "studio": 5_000,
     "growth": 15_000,
-    "agency": 25_000,
+    "agency": 15_000,
     "performance": 40_000,
-    "signature": 50_000,
+    "signature": 40_000,
     "premium": 40_000,
     "executive": 150_000,
     "collective": 150_000,
 }
 
-# Mirrors PackagePlanCatalog.cs — monthly output promises for docs/UI cross-check
+# Mirrors package-plan-config.ts / PackagePlanCatalog.cs
 OUTPUTS_BY_PACKAGE: dict[str, dict[str, int]] = {
-    "starter": {"missions": 12, "social_content": 84, "gallery_analysis": 40, "reels": 0},
+    "starter": {
+        "missions": 14,
+        "social_content": 98,
+        "gallery_analysis": 40,
+        "reels": 0,
+        "meta_ad_creatives": 14,
+        "google_ad_creatives": 14,
+    },
+    "studio": {
+        "missions": 14,
+        "social_content": 98,
+        "gallery_analysis": 40,
+        "reels": 0,
+        "meta_ad_creatives": 14,
+        "google_ad_creatives": 14,
+    },
     "growth": {"missions": 28, "social_content": 196, "gallery_analysis": 120, "reels": 4},
+    "agency": {"missions": 28, "social_content": 196, "gallery_analysis": 120, "reels": 4},
     "performance": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
+    "signature": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
+    "premium": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
     "executive": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1},
+    "collective": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1},
 }
 
+# Tuned API unit costs (USD) — keep in sync with apps/web/src/lib/package-plan-config.ts
+API_UNIT_COST_USD: dict[str, float] = {
+    "mission_propose": 0.28,
+    "mission_production_cycle": 2.75,
+    "gallery_vision_analysis": 0.04,
+    "standalone_reel": 0.30,
+}
+
+
+def estimate_monthly_api_cost_usd(package_slug: str | None) -> float | None:
+    """Estimated API COGS if monthly output caps are fully used."""
+    outputs = OUTPUTS_BY_PACKAGE.get((package_slug or "").strip().lower())
+    if not outputs:
+        return None
+
+    def cap(v: int, default: int) -> int:
+        return default if v < 0 else v
+
+    missions = cap(outputs["missions"], 20)
+    gallery = cap(outputs["gallery_analysis"], 300)
+    reels = cap(outputs["reels"], 32)
+    u = API_UNIT_COST_USD
+    cost = missions * (u["mission_propose"] + u["mission_production_cycle"])
+    cost += gallery * u["gallery_vision_analysis"]
+    cost += max(0, reels - min(missions, reels)) * u["standalone_reel"]
+    return round(cost, 2)
+
 CATEGORY_LABELS_TR: dict[str, str] = {
-    "auto_produce": "İçerik üretimi",
+    "auto_produce": "Feed üretimi (görsel/video)",
     "mission_propose": "Mission önerisi",
+    "content_strategy": "İçerik stratejisi",
     "content_ideation": "İçerik fikirleri",
+    "feed_art_director": "Feed Art Director",
+    "scene_brief": "Sahne yönetmeni (scene brief)",
+    "gpt_image_enhance": "GPT fotoğraf iyileştirme",
+    "gallery_vision_analysis": "Galeri vision analizi",
     "market_intelligence": "Pazar analizi",
     "gallery_match": "Galeri eşleştirme",
+    "standalone_reel": "Bağımsız reel",
     "other": "Diğer",
 }
 
@@ -175,6 +227,7 @@ async def build_token_wallet_summary(
     period_tokens = sum(cost_usd_to_tokens(float(v)) for v in (category_totals or {}).values()) if category_totals else cost_usd_to_tokens(period_cost_usd)
 
     plan_outputs = OUTPUTS_BY_PACKAGE.get((package_slug or "").strip().lower())
+    plan_estimated_api = estimate_monthly_api_cost_usd(package_slug)
 
     return {
         **settings,
@@ -194,6 +247,7 @@ async def build_token_wallet_summary(
         "cost_profit_ratio": cp_ratio,
         "period_cost_profit_ratio": period_cp_ratio,
         "plan_monthly_outputs": plan_outputs,
+        "plan_estimated_api_cost_usd": plan_estimated_api,
         "category_tokens": cat_tokens,
         "category_labels": CATEGORY_LABELS_TR,
         "period_days": period_days,

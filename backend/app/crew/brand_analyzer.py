@@ -1054,6 +1054,111 @@ def _infer_brand_tone(text: str, industry: str = "") -> str:
     return TONE_MAP[best]
 
 
+async def _analyze_instagram_captions_llm(
+    captions: list[str],
+    posts_detail: list[dict[str, Any]],
+    engagement_stats: dict[str, Any],
+    brand_name: str,
+    openai_api_key: str,
+) -> dict[str, Any]:
+    """
+    Use GPT-4o to extract structured brand intelligence from real Instagram captions.
+    Returns content themes, voice patterns, CTA patterns, and emotional triggers
+    that agents use to match the brand's authentic voice.
+    """
+    import httpx as _httpx
+
+    if not captions:
+        return {}
+
+    captions_block = "\n".join(
+        f"{i + 1}. {c}" for i, c in enumerate(captions[:15])
+    )
+
+    # Top posts by engagement for voice benchmarking
+    top_posts = sorted(
+        [p for p in posts_detail if p.get("likes", 0) > 0],
+        key=lambda p: p.get("likes", 0),
+        reverse=True,
+    )[:5]
+    top_posts_block = ""
+    if top_posts:
+        top_posts_block = "\n\nEn çok beğenilen paylaşımlar:\n" + "\n".join(
+            f"- {p.get('likes', 0)} beğeni | {p.get('type', 'image')} | {p.get('caption', '')[:200]}"
+            for p in top_posts
+        )
+
+    engagement_block = ""
+    if engagement_stats:
+        engagement_block = (
+            f"\n\nEngagement özeti: Ortalama {engagement_stats.get('avg_likes', 0)} beğeni, "
+            f"{engagement_stats.get('avg_comments', 0)} yorum, "
+            f"etkileşim oranı %{engagement_stats.get('engagement_rate_pct', 0):.1f}. "
+            f"Format dağılımı: {engagement_stats.get('post_type_distribution', {})}."
+        )
+
+    system_prompt = (
+        "Sen bir sosyal medya marka analistsin. "
+        "Instagram caption'larını analiz ederek markanın gerçek sesini, "
+        "içerik temalarını ve stratejisini çıkarıyorsun. "
+        "Yanıtını JSON formatında ver, başka metin ekleme."
+    )
+
+    user_prompt = f"""Marka: {brand_name or 'Bilinmeyen'}
+
+Son Instagram paylaşımları:
+{captions_block}{top_posts_block}{engagement_block}
+
+Bu paylaşımları analiz et ve aşağıdaki JSON yapısını döndür:
+
+{{
+  "brand_voice": {{
+    "primary_tone": "markanın ana tonu (1-3 kelime, Türkçe)",
+    "writing_style": "yazım stili özeti",
+    "emoji_usage": "yok / az / orta / çok",
+    "caption_length": "kısa (< 80 karakter) / orta (80-200) / uzun (> 200)",
+    "engagement_style": "soru sorarak / bilgi vererek / hikaye anlatarak / duygusal bağ kurarak"
+  }},
+  "content_themes": [
+    {{"theme": "tema adı", "example": "kısa örnek caption", "frequency": "sık / ara sıra"}}
+  ],
+  "cta_patterns": ["kullanılan CTA'lar listesi"],
+  "emotional_triggers": ["kullanılan duygusal tetikleyiciler"],
+  "key_topics": ["sık işlenen konular"],
+  "posting_insights": {{
+    "best_performing_content_type": "en çok etkileşim alan içerik türü",
+    "audience_connection_method": "takipçilerle nasıl bağ kuruyor",
+    "brand_personality_traits": ["marka kişilik özellikleri"]
+  }},
+  "caption_examples": [
+    {{"label": "kısa örnek", "text": "en iyi örnek caption"}},
+    {{"label": "uzun örnek", "text": "en uzun ve en iyi örnek caption"}}
+  ]
+}}"""
+
+    try:
+        async with _httpx.AsyncClient(timeout=25.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openai_api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "max_tokens": 1200,
+                    "temperature": 0.2,
+                    "response_format": {"type": "json_object"},
+                },
+            )
+            data = resp.json()
+            raw = data["choices"][0]["message"]["content"].strip()
+            return json.loads(raw)
+    except Exception:
+        return {}
+
+
 async def analyze_brand(
     website_url: str = "",
     instagram_handle: str = "",
@@ -1072,6 +1177,7 @@ async def analyze_brand(
         fetch_google_business_apify,
         fetch_tripadvisor_reviews,
         fetch_instagram_location_posts,
+        fetch_competitor_instagram_profiles,
     )
 
     profile = company_profile or {}
@@ -1129,6 +1235,20 @@ async def analyze_brand(
             except Exception as _e:
                 logger.debug("location_posts_fetch_skipped", error=str(_e))
 
+        # Competitor Instagram profiles — best effort, sequential (free-tier constraint)
+        competitor_instagram_data: list[dict] = []
+        competitors_str = profile.get("competitors", "") or ""
+        if competitors_str:
+            from app.crew.crews.market_intelligence_crew import _extract_competitor_handles
+            comp_handles = _extract_competitor_handles(competitors_str)
+            if comp_handles:
+                try:
+                    competitor_instagram_data = await fetch_competitor_instagram_profiles(
+                        comp_handles, api_key, timeout=timeout
+                    )
+                except Exception as _e:
+                    logger.debug("competitor_instagram_fetch_skipped", error=str(_e))
+
     else:
         logger.info("brand_analyze_using_deep_http")
         website_data, instagram_data, google_data = await asyncio.gather(
@@ -1138,11 +1258,15 @@ async def analyze_brand(
         )
         tripadvisor_data = []
         location_posts_data = []
+        competitor_instagram_data = []
 
     # Synthesize
     analysis_text = synthesize_brand_analysis(website_data, instagram_data, google_data, profile)
+    # Include brand_name in combined_text — critical for sectors where the business name
+    # itself carries the industry signal (e.g. "Kadıköy Tırnak" → nail salon).
     combined_text = " ".join(
-        [
+        filter(None, [
+            profile.get("brand_name") or profile.get("business_name") or profile.get("name", ""),
             website_data.get("title", ""),
             website_data.get("description", ""),
             website_data.get("text_snippet", ""),
@@ -1150,7 +1274,7 @@ async def analyze_brand(
             " ".join(instagram_data.get("recent_captions", [])),
             google_data.get("category", ""),
             google_data.get("description", ""),
-        ]
+        ])
     )
 
     # Infer language
@@ -1186,8 +1310,10 @@ async def analyze_brand(
     )
 
     # Build reference_image_urls: website images first, then Instagram feed
-    # Skip ephemeral Instagram CDN URLs (expire within 24h) — only permanent URLs
-    _EPHEMERAL = re.compile(r"scontent-|cdninstagram\.com|fbcdn\.net|instagram\.fcdn", re.IGNORECASE)
+    # Instagram CDN URLs (scontent-, cdninstagram.com, fbcdn.net) are included here;
+    # the Next.js BFF analyze/route.ts mirrorToR2() downloads and re-uploads them to R2
+    # immediately during the same API call, replacing ephemeral CDN URLs with permanent ones.
+    _EPHEMERAL = re.compile(r"^data:|^blob:|localhost|127\.0\.0\.1|example\.com", re.IGNORECASE)
 
     reference_image_urls: list[str] = []
     seen_ref: set[str] = set()
@@ -1198,7 +1324,7 @@ async def analyze_brand(
         s = u.strip()
         if not s.startswith("http"):
             return False
-        # Skip ephemeral CDN URLs — they expire and can't be stored/used later
+        # Skip truly unusable URL formats (data URIs, blobs, localhost)
         if _EPHEMERAL.search(s):
             return False
         # Skip obvious non-images (videos, fonts, scripts)
@@ -1208,6 +1334,8 @@ async def analyze_brand(
         if "${" in s or "{{" in s:
             return False
         base = s.split("?")[0]
+        if "/wp-content/uploads" in base.lower():
+            base = re.sub(r"-\d+x\d+(?=\.(?:jpe?g|png|webp|gif|avif)$)", "", base, flags=re.IGNORECASE)
         if base in seen_ref:
             return False
         seen_ref.add(base)
@@ -1247,6 +1375,26 @@ async def analyze_brand(
         total=len(reference_image_urls),
     )
 
+    # Deep Instagram intelligence via GPT-4o — runs only when captions available
+    instagram_intelligence: dict[str, Any] = {}
+    captions_for_llm = instagram_data.get("recent_captions", [])
+    if captions_for_llm and settings.openai_api_key:
+        try:
+            instagram_intelligence = await _analyze_instagram_captions_llm(
+                captions=captions_for_llm,
+                posts_detail=instagram_data.get("posts_detail", []),
+                engagement_stats=instagram_data.get("engagement_stats", {}),
+                brand_name=profile.get("brand_name") or instagram_data.get("full_name") or "",
+                openai_api_key=settings.openai_api_key,
+            )
+            logger.info(
+                "instagram_llm_analysis_done",
+                handle=instagram_handle,
+                themes=len(instagram_intelligence.get("content_themes", [])),
+            )
+        except Exception as _e:
+            logger.warning("instagram_llm_analysis_failed", error=str(_e))
+
     return {
         "analysis_text": analysis_text,
         "website": website_data,
@@ -1254,11 +1402,13 @@ async def analyze_brand(
         "google_business": google_data,
         "tripadvisor_reviews": tripadvisor_data,
         "location_posts": location_posts_data,
+        "competitor_instagram_profiles": competitor_instagram_data,
         "top_hashtags": instagram_data.get("top_hashtags", []),
         "inferred_tone": inferred_tone,
         "inferred_language": inferred_language,
         "reference_image_urls": reference_image_urls,
         "website_intelligence": website_data.get("website_intelligence"),
+        "instagram_intelligence": instagram_intelligence,
         "report": {
             "brand_name": (
                 profile.get("brand_name")
@@ -1291,9 +1441,27 @@ async def _empty_dict() -> dict[str, Any]:
 
 
 def infer_industry(text: str, fallback: str = "") -> str:
+    """Infer the sector/industry from combined scraped text.
+
+    Priority order (highest first):
+    1. Production company (2+ strong signals) — always overrides stale fallback
+    2. Local / artisan food products (2+ signals)
+    3. Beauty & personal care (≥1 signal)
+    4. Fashion & clothing (≥1 signal)
+    5. Bakery / patisserie (≥1 signal, not ambiguous café)
+    6. Jewelry (≥1 specific signal)
+    7. Fitness / gym (≥1 signal)
+    8. fallback — respect previously saved industry for ambiguous cases
+    9. Standard patterns: coffee, beach_club, restaurant, hotel, healthcare, agency
+    10. general_business (default)
+
+    Fallback is intentionally placed AFTER strong brand-specific signals so that
+    a mis-classified brand can be corrected when the website/Instagram clearly
+    signals a different sector on re-analysis.
+    """
     blob = text.lower()
-    # Strong production/creative-agency signals must override stale fallback values
-    # (e.g. previously saved "restaurant_cafe" from weak early analysis).
+
+    # ── 1. Production / creative studio — strongest override ─────────────
     production_signals = [
         "production", "prodüksiyon", "post production", "post-production",
         "video production", "film production", "cinematic", "commercial",
@@ -1305,14 +1473,9 @@ def infer_industry(text: str, fallback: str = "") -> str:
     if production_hits >= 2:
         return "production_company"
 
-    # Keep fallback only when we don't have a strong contradictory signal.
-    if fallback:
-        return fallback
-
-    # ── Local / artisan food products — HIGHEST PRIORITY ─────────────────
+    # ── 2. Local / artisan food products ─────────────────────────────────
     # Must run BEFORE restaurant patterns because food product shops can
-    # mention "menü" (product catalog), "ürünler", "sipariş" — same words
-    # restaurants use — but they're NOT restaurants.
+    # mention "menü", "ürünler", "sipariş" — same words restaurants use.
     local_product_signals = [
         "yöresel", "yoresel", "zeytinyağı", "zeytinyagi", "zeytin yağı",
         "bal ", "badem", "incir", "pekmez", "reçel", "turşu", "peynir",
@@ -1321,10 +1484,9 @@ def infer_industry(text: str, fallback: str = "") -> str:
         "organik ürün", "organik gida", "hasat", "üretici",
         "sızma", "naturel", "doğal bal", "kuru meyve",
     ]
-    signal_count = sum(1 for w in local_product_signals if w in blob)
-    if signal_count >= 2:
+    local_product_hits = sum(1 for w in local_product_signals if w in blob)
+    if local_product_hits >= 2:
         return "local_products_shop"
-    # Single unambiguous signals
     if any(w in blob for w in [
         "yöresel ürün", "yoresel urun", "köy ürünleri", "koy urunleri",
         "zeytinyağı fabrika", "zeytinyagi fabrika", "sızma zeytinyağı",
@@ -1334,21 +1496,115 @@ def infer_industry(text: str, fallback: str = "") -> str:
     ]):
         return "local_products_shop"
 
-    # ── Standard patterns ──────────────────────────────────────────────────
+    # ── 3. Beauty & personal care ─────────────────────────────────────────
+    # Covers nail salon, spa, hair salon, barber, aesthetics.
+    # Runs BEFORE restaurant check (beauty sites also mention "fiyat", "menü").
+    beauty_signals = [
+        "tırnak", "tirnak", "nail", "manikür", "manikyur", "manicure",
+        "pedikür", "pedikyur", "pedicure", "kalıcı oje", "kali oje",
+        "nail art", "nail studio", "nail salon", "tırnak bakım", "tırnak tasarım",
+        "protez tırnak", "jel tırnak", "spa", "güzellik salonu", "guzellik salonu",
+        "güzellik merkezi", "estetik salon", "hair salon", "kuaför", "kuafor",
+        "berber", "epilasyon", "lazer epilasyon", "cilt bakım", "cilt bakimi",
+        "massage", "masaj", "beauty salon", "beauty center", "aesthetics", "estetisyen",
+        "microblading", "lash", "ipek kirpik", "kaş tasarım", "kas tasarim",
+        "dermatoloji", "dermatolojik bakım",
+    ]
+    if sum(1 for w in beauty_signals if w in blob) >= 1:
+        return "beauty_wellness"
+
+    # ── 4. Fashion & clothing ─────────────────────────────────────────────
+    # Boutique, fashion store, clothing brand — before generic fallback.
+    fashion_signals = [
+        "fashion", "moda", "giyim", "kıyafet", "kiyafet", "koleksiyon",
+        "clothing", "apparel", "boutique", "modacı", "tasarımcı giyim",
+        "triko", "kazak", "aksesuar", "şık", "women's clothing", "men's clothing",
+        "haute couture", "pret-a-porter", "prêt-à-porter", "sezon koleksiyonu",
+        "yeni sezon", "ilkbahar koleksiyonu", "sonbahar koleksiyonu",
+        "mağaza", "magaza", "giysi", "elbise", "pantolon", "bluz",
+    ]
+    fashion_hits = sum(1 for w in fashion_signals if w in blob)
+    # Require 2 signals to avoid false positives (e.g. "koleksiyon" alone in a jeweler)
+    if fashion_hits >= 2:
+        return "fashion_retail"
+    # Or a single high-confidence phrase
+    if any(w in blob for w in [
+        "fashion boutique", "clothing store", "giyim mağaza", "giyim markası",
+        "women's fashion", "men's fashion", "fashion brand", "moda markası",
+        "butik giyim", "moda evi",
+    ]):
+        return "fashion_retail"
+
+    # ── 5. Bakery / patisserie ────────────────────────────────────────────
+    bakery_signals = [
+        "pastane", "fırın", "firin", "ekmek", "börek", "borek",
+        "patisserie", "pâtisserie", "bakery", "cake shop", "pasta dükkan",
+        "taze ekmek", "çörek", "corek", "simit", "kurabiye",
+        "donut", "kruvasan", "croissant", "danish",
+    ]
+    if any(w in blob for w in bakery_signals):
+        # Prevent coffee_shop from being overridden by "pastane" alone in a café
+        # that also serves pastries — require the bakery signal to be dominant.
+        # A plain café would also have kahve/espresso/latte; a real bakery wouldn't.
+        coffee_words = {"coffee", "kahve", "latte", "espresso", "kafe", "roastery"}
+        has_coffee = any(w in blob for w in coffee_words)
+        if not has_coffee:
+            return "bakery_patisserie"
+        # Both coffee and bakery signals → treat as café_bakery
+        return "cafe_bakery"
+
+    # ── 6. Jewelry ────────────────────────────────────────────────────────
+    jewelry_signals = [
+        "mücevher", "mucevher", "jewelry", "jewellery", "kuyumcu",
+        "pırlanta", "pirlanta", "altın takı", "altin taki", "gümüş takı",
+        "gumus taki", "elmas", "diamond", "yüzük", "nişan yüzüğü",
+        "kolye", "bileklik", "küpe", "mücevherat",
+    ]
+    if any(w in blob for w in jewelry_signals):
+        return "jewelry_accessories"
+
+    # ── 7. Fitness / gym ──────────────────────────────────────────────────
+    fitness_signals = [
+        "gym", "spor salonu", "fitness center", "personal training",
+        "crossfit", "pilates studio", "yoga stüdyo", "yoga studio",
+        "antrenman", "personal trainer", "egzersiz", "spor merkezi",
+    ]
+    if any(w in blob for w in fitness_signals):
+        return "fitness"
+
+    # ── 8. Respect stale fallback for all remaining ambiguous signals ─────
+    # Strong sector-specific keywords above can now override a stale value.
+    # Everything below this point is lower-confidence pattern matching.
+    if fallback:
+        return fallback
+
+    # ── 9. Standard patterns ──────────────────────────────────────────────
     if any(w in blob for w in ["coffee", "kahve", "latte", "espresso", "cafe", "kafe", "roastery"]):
         return "coffee_shop"
-    if any(w in blob for w in ["beach club", "beach bar", "pool club", "gece kulübü", "dj set", "dj night"]):
+
+    # Beach club — exact phrases first, then multi-signal loose check
+    if any(w in blob for w in ["beach club", "beach bar", "pool club", "plaj kulüb", "pool party",
+                                "gece kulübü", "dj set", "dj night"]):
         return "beach_club"
-    if any(w in blob for w in ["beach", "club", "dj", "sunset bar", "rezervasyon", "reservation"]):
+    # Require at least 2 loose signals to avoid e.g. a hotel with "beach" view being classified here.
+    # "rezervasyon" alone is NOT enough — restaurants use it too.
+    beach_loose = sum(1 for w in ["beach", "plaj", "havuz", "pool", "club", "dj",
+                                   "sunset bar", "açık hava bar", "open air"] if w in blob)
+    if beach_loose >= 2:
+        return "beach_club"
+    # hospitality_entertainment only when combined nightlife signals appear
+    hospitality_hits = sum(1 for w in ["sunset bar", "open bar", "dj", "club", "beach", "plaj"] if w in blob)
+    if hospitality_hits >= 1 and any(w in blob for w in ["rezervasyon", "reservation"]):
         return "hospitality_entertainment"
+
     if any(w in blob for w in ["handmade", "el yap", "seramik", "takı", "craft", "atölye"]):
         return "handmade_product_brand"
-    if any(w in blob for w in ["production", "prodüksiyon", "sahne", "organizasyon", "event plann"]):
+    if any(w in blob for w in ["sahne", "organizasyon", "event plann"]):
         return "production_company"
     if any(w in blob for w in ["pizza", "burger", "restaurant", "restoran", "chef", "şef",
                                 "mutfak", "yemek menüsü", "masa rezervasyon", "sofra"]):
         return "restaurant"
-    # "menü" alone is NOT a restaurant signal — product shops have product menus too
+    # "menü" alone is NOT a restaurant signal — service businesses use it for price lists too
     if any(w in blob for w in ["hotel", "otel", "suite", "konaklama", "resort"]):
         return "hospitality"
     if any(w in blob for w in ["psikolog", "terapist", "terapi", "psikoterapi", "klinik", "doktor", "clinic"]):

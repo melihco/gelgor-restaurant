@@ -37,6 +37,9 @@ type MobileTheme = {
   accentBorder: string;
   separator: string;
   isDark: boolean;
+  warning: string;
+  success: string;
+  danger: string;
 };
 
 export function TenantOperatingCapabilitiesEditor({

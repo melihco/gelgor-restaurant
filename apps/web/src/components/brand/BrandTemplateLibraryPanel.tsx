@@ -8,12 +8,22 @@ import {
   listPosterTemplateOptions,
   listStoryTemplateOptions,
   patchLibrarySlot,
+  defaultSlotTypographyPatch,
   type BrandTemplateLibrary,
   type BrandTemplateLibrarySlot,
 } from '@/lib/brand-template-library';
+import {
+  FONT_PERSONALITY_LABELS_TR,
+  HEADING_FONT_PICKER_OPTIONS,
+  SLOT_FONT_MODE_LABELS,
+  slotTypographyPreviewLabel,
+  type SlotFontMode,
+} from '@/lib/brand-template-slot-typography';
 import { parseMotionProfileFromTheme, type MotionStyle } from '@/lib/brand-motion-profile';
 import { resolveKitForSector } from '@/lib/remotion-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
+import { getSectorVibeMeta } from '@/lib/sector-template-vibes';
+import { TemplateSlotPreviewModal } from '@/components/brand/TemplateSlotPreviewModal';
 
 type Variant = 'mobile' | 'desktop';
 
@@ -48,6 +58,7 @@ export function BrandTemplateLibraryPanel({
   const kitId = resolveKitForSector(sector, tenantKitSeed(workspaceId ?? undefined));
   const [draft, setDraft] = useState<BrandTemplateLibrary | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [previewSlot, setPreviewSlot] = useState<BrandTemplateLibrarySlot | null>(null);
 
   const { data: themePayload, isLoading } = useQuery({
     queryKey: ['brand-theme-kit', workspaceId],
@@ -95,12 +106,13 @@ export function BrandTemplateLibraryPanel({
       if (!res.ok) throw new Error('Kayıt başarısız');
       return res.json();
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, savedLibrary) => {
       setSaveMsg('Kütüphane kaydedildi ✓');
       queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', workspaceId] });
       queryClient.invalidateQueries({ queryKey: ['brand-readiness', workspaceId] });
       const palette = (theme as Record<string, unknown> | null)?.palette;
-      if (workspaceId && !palette) {
+      const libraryWasLocked = Boolean(savedLibrary?.locked);
+      if (workspaceId && !palette && !libraryWasLocked) {
         try {
           await fetch(`/api/brand-context/${workspaceId}/theme/derive`, {
             method: 'POST',
@@ -140,7 +152,7 @@ export function BrandTemplateLibraryPanel({
   const content = (
     <>
       <div style={{ marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: isMobile ? t?.textTertiary : 'rgb(100,116,139)' }}>
-        Feed, story (Remotion MP4) ve kampanya post üretimi bu 5 slottan seçer. Motion stili Marka Anayasası → Motion Stili kartından gelir. Kaydetmeden üretime yansımaz.
+        Feed, story (Remotion MP4) ve kampanya post üretimi bu 5 slottan seçer. Her slot için şablon + font modu + logo göster/gizle kaydedilir; renkler Marka Paleti’nden gelir. Kaydetmeden üretime yansımaz.
         {draft?.locked && (
           <span style={{ display: 'block', marginTop: 6, color: isMobile ? t?.accent : '#a78bfa', fontWeight: 600 }}>
             Özel kütüphane aktif (operatör düzenlemesi)
@@ -194,10 +206,11 @@ export function BrandTemplateLibraryPanel({
                   value={value}
                   onChange={(e) => {
                     const id = e.target.value;
+                    const typoPatch = defaultSlotTypographyPatch(id, slot.format);
                     if (slot.format === 'post') {
-                      updateSlot(slot.key, { posterTemplateId: id });
+                      updateSlot(slot.key, { posterTemplateId: id, ...typoPatch });
                     } else {
-                      updateSlot(slot.key, { storyTemplateId: id });
+                      updateSlot(slot.key, { storyTemplateId: id, ...typoPatch });
                     }
                   }}
                   style={{
@@ -211,26 +224,165 @@ export function BrandTemplateLibraryPanel({
                     marginBottom: 8,
                   }}
                 >
-                  {options.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label} · {opt.family}
-                    </option>
-                  ))}
+                  {slot.format === 'post' ? (
+                    (() => {
+                      const sectorOpts = options.filter((o) => o.tier === 'sector');
+                      const rest = options.filter((o) => o.tier !== 'sector');
+                      return (
+                        <>
+                          {sectorOpts.length > 0 ? (
+                            <optgroup label="⭐ Sektör vibe seçkisi">
+                              {sectorOpts.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </optgroup>
+                          ) : null}
+                          {rest.length > 0 ? (
+                            <optgroup label={sectorOpts.length ? 'Diğer post şablonları' : 'Post şablonları'}>
+                              {rest.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </optgroup>
+                          ) : null}
+                        </>
+                      );
+                    })()
+                  ) : (
+                    (() => {
+                      const sectorOpts = options.filter((o) => o.tier === 'sector');
+                      const agencyOpts = options.filter((o) => o.tier === 'agency');
+                      const polaroid = options.filter((o) => o.group?.startsWith('Polaroid') && o.tier === 'default');
+                      const other = options.filter(
+                        (o) => o.tier === 'default' && !o.group?.startsWith('Polaroid'),
+                      );
+                      return (
+                        <>
+                          {sectorOpts.length > 0 ? (
+                            <optgroup label="⭐ Sektör vibe seçkisi">
+                              {sectorOpts.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </optgroup>
+                          ) : null}
+                          {agencyOpts.length > 0 ? (
+                            <optgroup label="⭐ Ajans seçkisi">
+                              {agencyOpts.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </optgroup>
+                          ) : null}
+                          {polaroid.length > 0 ? (
+                            <optgroup label="Polaroid">
+                              {polaroid.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </optgroup>
+                          ) : null}
+                          {other.length > 0 ? (
+                            <optgroup label="Ajans kataloğu (diğer)">
+                              {other.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </optgroup>
+                          ) : null}
+                        </>
+                      );
+                    })()
+                  )}
                 </select>
 
-                <a
-                  href={`/remotion-showcase?kit=${encodeURIComponent(kitId)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: isMobile ? t?.textMuted : '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Tipografi
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {(['template', 'brand', 'custom'] as SlotFontMode[]).map((mode) => {
+                      const active = (slot.fontMode ?? 'template') === mode;
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => updateSlot(slot.key, { fontMode: mode })}
+                          style={{
+                            padding: '5px 10px',
+                            borderRadius: 999,
+                            border: `1px solid ${active ? (isMobile ? t?.accent : '#a78bfa') : border}`,
+                            background: active ? (isMobile ? t?.accentDim : 'rgba(167,139,250,0.15)') : 'transparent',
+                            color: active ? (isMobile ? t?.accent : '#e9d5ff') : (isMobile ? t?.textMuted : '#94a3b8'),
+                            fontSize: 10,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {SLOT_FONT_MODE_LABELS[mode]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 11, color: isMobile ? t?.textTertiary : '#64748b' }}>
+                    {slotTypographyPreviewLabel(slot)}
+                    {slot.fontPersonality && (slot.fontMode ?? 'template') === 'template' && (
+                      <span> · {FONT_PERSONALITY_LABELS_TR[slot.fontPersonality] ?? slot.fontPersonality}</span>
+                    )}
+                  </div>
+                  {(slot.fontMode ?? 'template') === 'custom' && (
+                    <select
+                      value={slot.headingFont ?? ''}
+                      onChange={(e) => updateSlot(slot.key, { headingFont: e.target.value, fontMode: 'custom' })}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: 10,
+                        border,
+                        background: isMobile ? (t?.isDark ? 'rgba(0,0,0,0.2)' : '#fff') : 'rgba(0,0,0,0.25)',
+                        color: isMobile ? t?.textPrimary : '#e2e8f0',
+                        fontSize: 12,
+                      }}
+                    >
+                      <option value="">Başlık fontu seç…</option>
+                      {HEADING_FONT_PICKER_OPTIONS.map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <label
                   style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginTop: 4,
+                    fontSize: 11,
+                    color: isMobile ? t?.textMuted : '#94a3b8',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={slot.showLogo !== false}
+                    onChange={(e) => updateSlot(slot.key, { showLogo: e.target.checked })}
+                  />
+                  Logo göster (Marka Detayı logosu)
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setPreviewSlot(slot)}
+                  style={{
+                    marginTop: 8,
+                    padding: 0,
+                    border: 'none',
+                    background: 'transparent',
                     fontSize: 11,
                     fontWeight: 600,
                     color: isMobile ? t?.accent : '#a78bfa',
-                    textDecoration: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
                   }}
                 >
-                  Showcase’de önizle →
-                </a>
+                  Önizle →
+                </button>
               </div>
             );
           })}
@@ -276,6 +428,18 @@ export function BrandTemplateLibraryPanel({
           </span>
         )}
       </div>
+      {previewSlot && draft && (
+        <TemplateSlotPreviewModal
+          open
+          onClose={() => setPreviewSlot(null)}
+          workspaceId={workspaceId}
+          kitId={kitId}
+          slot={draft.slots.find((s) => s.key === previewSlot.key) ?? previewSlot}
+          previewLibrary={draft}
+          isMobile={isMobile}
+          theme={t}
+        />
+      )}
     </>
   );
 

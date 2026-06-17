@@ -1,49 +1,65 @@
 'use client';
 
+import type React from 'react';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
+import { useTheme } from './theme-context';
 
 /**
- * Minimal brand loader — flat black, logo only, no card/glow layers.
+ * Branded splash / loading — minimal Apple-style logo breathe (no scan bar, no orbit).
  */
 export function BrandLoadingScreen({
-  label = 'Yükleniyor',
   fillViewport = true,
+  compact = false,
+  fillParent = false,
+  showLabel = false,
+  label,
 }: {
-  label?: string;
-  /** false when embedded in a scroll region (e.g. feed) */
   fillViewport?: boolean;
+  compact?: boolean;
+  fillParent?: boolean;
+  showLabel?: boolean;
+  label?: string;
 }) {
+  const { t } = useTheme();
+
+  const shellStyle: React.CSSProperties = fillParent
+    ? { flex: 1, width: '100%', minHeight: 0 }
+    : fillViewport
+      ? { minHeight: '100dvh', height: '100dvh', width: '100%' }
+      : { minHeight: '55dvh', width: '100%' };
+
   return (
     <div
       style={{
-        ...(fillViewport ? { minHeight: '100dvh', height: '100dvh' } : { minHeight: '55dvh' }),
-        width: '100%',
-        background: '#000',
+        ...shellStyle,
+        background: t.bg,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 24,
-        padding: '0 32px',
+        gap: 16,
+        padding: compact ? '32px 24px' : '0 24px',
       }}
     >
-      <div className="splash-logo-minimal" style={{ lineHeight: 0 }}>
+      <div className="brand-loader-breathe">
         <SmartAgencyLogo
           variant="full"
-          priority
-          className="block h-auto w-[min(220px,72vw)] max-w-[220px]"
+          priority={!compact}
+          className={`brand-loader-logo block h-auto${compact ? ' brand-loader-logo--sm' : ''}`}
         />
       </div>
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 500,
-          color: 'rgba(255,255,255,0.28)',
-          letterSpacing: '0.01em',
-        }}
-      >
-        {label}
-      </span>
+      {showLabel && label ? (
+        <span
+          style={{
+            fontSize: compact ? 12 : 13,
+            fontWeight: 500,
+            color: t.textMuted,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {label}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -11,13 +11,13 @@
  *   MissionHub (completed mission) →  this screen  →  Outputs (pending_review)
  *   → ApprovalFeedback → Published
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { ProductionBrandContextSnapshot } from '@smartagency/contracts';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { buildCanvaMissionSignal } from '@/lib/canva-mission-signal';
 import { AutoProductionFeed } from './AutoProductionFeed';
 import { apiClient } from '@/lib/api-client';
 import type { BrandTheme } from '@/types/brand-theme';
@@ -57,7 +57,6 @@ import {
   resolveAnnouncementBrandKit,
 } from '@/lib/announcement-brand-kit';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
-import { isCanvaEnabledClient } from '@/lib/canva-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   NON_VENUE_SECTORS,
@@ -71,8 +70,27 @@ import {
   maxPhotosForStrategy,
   resolveRunwayReelStrategy,
 } from '@/lib/reel-multi-production';
+import { productionIdeaFromRecord } from '@/lib/production-idea-parse';
+import {
+  buildReelAgentVisualDirection,
+  buildReelGenerateReelRequest,
+  reelDirectorExtrasFromIdeaRecord,
+} from '@/lib/reel-director-context';
+import { nodeHasOutput, nodeOutputArray, nodeOutputObject } from '@/lib/mission-node-output';
+import { extractObjectArrayFromSummary } from '@/lib/output-summary-array';
+import {
+  resolveAiVisualProductionStandard,
+  type BrandContextForVisual,
+} from '@/lib/ai-visual-production-standard';
+import {
+  auditRendererPayload,
+  type RendererBrandContext,
+  type RendererGalleryMeta,
+} from '@/lib/renderer-payload';
+import { inferProductionAssignment } from '@/lib/production-pipeline-router';
+import { isGalleryOnlyVisualPolicy, SARNIC_BEACH_WORKSPACE_ID } from '@/lib/visual-overlay-policy';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 
-const CANVA_ACTIVE = isCanvaEnabledClient();
 
 // ── Design card prompt builder ────────────────────────────────────────────────
 /**
@@ -330,34 +348,8 @@ async function ensureDesignFonts(): Promise<void> {
   ]);
 }
 
-export function upscaleCdnUrl(url: string): string {
-  try {
-    if (url.includes('wixstatic.com') && url.includes('/v1/fill/')) {
-      return url.replace(
-        /\/v1\/fill\/[^/]+\//,
-        '/v1/fill/w_1080,h_1920,al_c,q_90,usm_0.66_1.00_0.01,enc_avif,quality_auto/',
-      );
-    }
-    if (url.includes('cloudinary.com') && url.includes('/upload/')) {
-      return url.replace(
-        /\/upload\/[^/]*[wh]_\d+[^/]*\//,
-        '/upload/w_1080,h_1920,c_fill,q_auto,f_auto/',
-      );
-    }
-    if (url.includes('imgix.net')) {
-      const u = new URL(url);
-      u.searchParams.set('w', '1080');
-      u.searchParams.set('h', '1920');
-      u.searchParams.set('fit', 'crop');
-      u.searchParams.set('q', '90');
-      return u.toString();
-    }
-    if (url.includes('cdn.shopify.com') && /(_\d+x\d*\.)/.test(url)) {
-      return url.replace(/_\d+x\d*\./, '_1080x.');
-    }
-  } catch { /* malformed URL */ }
-  return url;
-}
+import { upscaleCdnUrl } from '@/lib/gallery-display-url';
+export { upscaleCdnUrl, toFullSizeGalleryUrl, prepareGalleryDisplayUrls } from '@/lib/gallery-display-url';
 
 export function hexToRgb(hex: string): string {
   const h = hex.replace('#', '');
@@ -806,52 +798,7 @@ function artifactIdeaToRecord(idea: ArtifactIdea, raw?: Record<string, unknown>)
 }
 
 function parseIdeasLegacyArrays(output_summary: string): Record<string, unknown>[] {
-  const tryArray = (arr: unknown[]): Record<string, unknown>[] => {
-    const filtered = arr.filter(isContentIdea);
-    return filtered.length > 0 ? filtered : [];
-  };
-
-  try {
-    const parsed = JSON.parse(output_summary.trim());
-    if (Array.isArray(parsed)) { const r = tryArray(parsed); if (r.length) return r; }
-  } catch { /* continue */ }
-
-  const codeBlockMatch = output_summary.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/i);
-  if (codeBlockMatch?.[1]) {
-    try {
-      const parsed = JSON.parse(codeBlockMatch[1]);
-      if (Array.isArray(parsed)) { const r = tryArray(parsed); if (r.length) return r; }
-    } catch { /* continue */ }
-  }
-
-  let best: Record<string, unknown>[] = [];
-  let searchFrom = 0;
-  while (true) {
-    const firstBracket = output_summary.indexOf('[', searchFrom);
-    if (firstBracket === -1) break;
-    let depth = 0, inStr = false, escape = false, end = -1;
-    for (let i = firstBracket; i < output_summary.length; i++) {
-      const ch = output_summary[i];
-      if (escape) { escape = false; continue; }
-      if (ch === '\\' && inStr) { escape = true; continue; }
-      if (ch === '"') { inStr = !inStr; continue; }
-      if (inStr) continue;
-      if (ch === '[') depth++;
-      if (ch === ']') { depth--; if (depth === 0) { end = i; break; } }
-    }
-    if (end !== -1) {
-      try {
-        const parsed = JSON.parse(output_summary.slice(firstBracket, end + 1));
-        if (Array.isArray(parsed)) {
-          const r = tryArray(parsed);
-          if (r.length > best.length) best = r;
-        }
-      } catch { /* continue */ }
-      searchFrom = end + 1;
-    } else { break; }
-  }
-
-  return best;
+  return extractObjectArrayFromSummary(output_summary).filter(isContentIdea);
 }
 
 function parseIdeas(output_summary: string | null): Record<string, unknown>[] {
@@ -898,7 +845,7 @@ function getIdeaField(idea: Record<string, unknown>, ...keys: string[]): string 
 }
 
 const FORMAT_COLOR: Record<string, string> = {
-  post:     '#A78BFA',
+  post:     '#9DBECE',
   story:    '#F472B6',
   reel:     '#F59E0B',
   carousel: '#60A5FA',
@@ -914,6 +861,7 @@ function IdeaCard({
   brandName,
   location,
   referenceImageUrls,
+  prefetchedAgencyDesigns,
   onSaved,
 }: {
   idea: Record<string, unknown>;
@@ -923,10 +871,14 @@ function IdeaCard({
   brandName?: string;
   location?: string;
   referenceImageUrls?: string[];
+  prefetchedAgencyDesigns?: Record<string, unknown>[];
   onSaved: () => void;
 }) {
   const { t } = useTheme();
   const { navigate } = useMobileStore();
+  const missionIdFromStore = useMobileStore(
+    (s) => (s as { missionContentMissionId?: string | null }).missionContentMissionId ?? null,
+  );
   const queryClient = useQueryClient();
 
   const headlineBase = getIdeaField(idea, 'headline', 'concept_title', 'idea_title', 'title', 'hook', 'theme', 'subject');
@@ -1005,13 +957,7 @@ function IdeaCard({
   const [canvasStyleIdx, setCanvasStyleIdx] = useState(0);
   const [isFavourited, setIsFavourited] = useState(false);
 
-  // ── Canva brand template autofill ─────────────────────────────────────
-  const [isGeneratingCanva,   setIsGeneratingCanva]   = useState(false);
-  const [canvaDesignResult,   setCanvaDesignResult]   = useState<{
-    editUrl: string; thumbnailUrl?: string; templateTitle?: string; designId?: string;
-  } | null>(null);
-  const [canvaError,          setCanvaError]          = useState<string | null>(null);
-  const [savedTemplates, setSavedTemplates] = useState<DesignTemplate[]>([]);
+    const [savedTemplates, setSavedTemplates] = useState<DesignTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [lastUsedTemplate, setLastUsedTemplate] = useState<Omit<DesignTemplate, 'id' | 'thumbnail' | 'savedAt'> | null>(null);
   const [templateSaved, setTemplateSaved] = useState(false);
@@ -1032,9 +978,9 @@ function IdeaCard({
 
   // Brand context for design card generation (reference images + visual DNA)
   const { tenantId } = useWorkspaceStore();
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn: () => apiClient.getBrandContextData(tenantId),
+  const { data: productionSnapshot } = useQuery<ProductionBrandContextSnapshot | null>({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId),
     staleTime: 10 * 60_000,
     enabled: Boolean(tenantId),
   });
@@ -1055,6 +1001,36 @@ function IdeaCard({
     staleTime: 5 * 60_000,
     enabled: Boolean(tenantId),
   });
+
+  const aiVisualStandard = useMemo(
+    () => resolveAiVisualProductionStandard(brandTheme as Record<string, unknown> | undefined),
+    [brandTheme],
+  );
+  const brandCtx = useMemo(
+    () => productionSnapshotToLegacyBrandContext(productionSnapshot),
+    [productionSnapshot],
+  );
+  const pyCtx = brandCtx;
+  const sector = String(pyCtx?.industry ?? pyCtx?.business_type ?? '');
+  const brandCtxForVisual = useMemo((): BrandContextForVisual => ({
+    business_name: brandName ?? String(pyCtx?.business_name ?? ''),
+    business_type: sector,
+    description: String(pyCtx?.description ?? ''),
+    brand_tone: String(pyCtx?.brand_tone ?? ''),
+    visual_style: String(pyCtx?.visual_style ?? ''),
+    target_audience: String(pyCtx?.target_audience ?? ''),
+    location: location ?? String(pyCtx?.location ?? ''),
+    website_summary: String(pyCtx?.website_summary ?? ''),
+    instagram_bio: String(pyCtx?.instagram_bio ?? ''),
+    brand_dna: pyCtx?.brand_dna as string | Record<string, unknown> | undefined,
+    visual_dna: String(pyCtx?.visual_dna ?? ''),
+    logo_url: String(pyCtx?.logo_url ?? ''),
+    brand_vibe_profile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
+    website_intelligence: pyCtx?.website_intelligence as Record<string, unknown> | string | null,
+    content_pillars: Array.isArray(pyCtx?.content_pillars) ? (pyCtx.content_pillars as string[]) : undefined,
+    default_ctas: Array.isArray(pyCtx?.default_ctas) ? (pyCtx.default_ctas as string[]) : undefined,
+    custom_rules: String(pyCtx?.custom_rules ?? ''),
+  }), [brandName, pyCtx, sector, location]);
 
   // Load saved templates for this brand whenever tenantId is known
   useEffect(() => { setSavedTemplates(loadSavedTemplates(tenantId)); }, [tenantId]);
@@ -1097,19 +1073,9 @@ function IdeaCard({
   })();
 
   // Gallery analysis — React Query cache, available synchronously in mutations
-  const { data: galleryAnalysisRaw } = useQuery({
-    queryKey: ['gallery-analysis', tenantId],
-    queryFn: async () => {
-      const res = await fetch(`/api/brand-context/${tenantId}/gallery-analysis`);
-      if (!res.ok) return {};
-      return res.json() as Promise<Record<string, { contentTags?: string[]; description?: string; usageContext?: string; mood?: string }>>;
-    },
-    staleTime: 10 * 60_000,
-    enabled: Boolean(tenantId),
-  });
   // Enrich gallery metadata: derive contentTags/bestFor/usageContext from descriptions
   // when the stored analysis only has description + mood (missing structured tags).
-  const galleryAnalysis = enrichGalleryAnalysis((galleryAnalysisRaw ?? {}) as Record<string, GalleryPhotoMeta>);
+  const galleryAnalysis = enrichGalleryAnalysis((productionSnapshot?.galleryAnalysis ?? {}) as Record<string, GalleryPhotoMeta>);
 
   // Parse brand reference images — exclude non-product assets (maps, logos, footers, menus)
   const EXCLUDE_PATTERNS = [
@@ -1162,6 +1128,21 @@ function IdeaCard({
   }
 
   const contentTypeFmt = fmt.includes('story') ? 'story' : fmt.includes('reel') ? 'reel' : 'post';
+  const blocksCanvasOverlay = useMemo(() => {
+    if (!tenantId) return false;
+    const ideaRecord = idea as Record<string, unknown>;
+    const assignment = inferProductionAssignment(
+      index,
+      ideaRecord,
+      missionIdFromStore ?? '',
+      0,
+      0,
+      0,
+      sector,
+    );
+    if (tenantId === SARNIC_BEACH_WORKSPACE_ID && assignment.slot_role === 'organic_post') return true;
+    return isGalleryOnlyVisualPolicy(assignment, ideaRecord);
+  }, [tenantId, idea, index, missionIdFromStore, sector]);
   const postTypeBucket = contentTypeToPostType(contentTypeFmt);
   const usedForThisType = getExcludeUrlsForPostType(galleryUsage, postTypeBucket);
   const isUrlUsedForCurrentType = (url: string) =>
@@ -1263,10 +1244,16 @@ function IdeaCard({
   //   4. Canvas fallback: if no OpenAI key configured, use composeAgencyDesignCard
   //
   // The brand photo is NEVER replaced — edit mode preserves it pixel-for-pixel.
-  const [agencyDesigns, setAgencyDesigns] = useState<Record<string, unknown>[]>([]);
-  const [agencyDesignIdx, setAgencyDesignIdx] = useState(0);
+  const [agencyDesigns, setAgencyDesigns] = useState<Record<string, unknown>[]>(() => prefetchedAgencyDesigns ?? []);
+  const [agencyDesignIdx, setAgencyDesignIdx] = useState(() => (prefetchedAgencyDesigns?.length ? index % prefetchedAgencyDesigns.length : 0));
   const [agencyDesignLabel, setAgencyDesignLabel] = useState('');
   const [directorLogoUrl, setDirectorLogoUrl] = useState('');
+
+  useEffect(() => {
+    if (!prefetchedAgencyDesigns?.length) return;
+    setAgencyDesigns(prefetchedAgencyDesigns);
+    setAgencyDesignIdx(index % prefetchedAgencyDesigns.length);
+  }, [prefetchedAgencyDesigns, index]);
 
   const agencyDesignMutation = useMutation({
     mutationFn: async (): Promise<{ imageUrl: string }> => {
@@ -1497,6 +1484,11 @@ function IdeaCard({
   // ── Canvas Tasarım — brand photo + professional text overlay ────────────────
   const brandGenerateMutation = useMutation({
     mutationFn: async (): Promise<{ imageUrl: string }> => {
+      if (blocksCanvasOverlay) {
+        throw new Error(
+          'Bu fikir galeri-only politika ile üretiliyor — canvas metin overlay kullanılmıyor. Feed\'de otomatik üretimi bekleyin veya «Fotoğraf Seç» ile ham galeri kullanın.',
+        );
+      }
       if (!brandRefImages.length) throw new Error('Marka fotoğrafı bulunamadı. Brand Hub\'dan fotoğraf yükleyin.');
 
       // Prefer real photos — skip logos and PNGs (vectors)
@@ -1681,6 +1673,21 @@ function IdeaCard({
     const limit = maxPhotosForStrategy(resolved === 'single' ? 'multi_ref' : resolved);
     setMultiReelStrategy(montageStrategy);
 
+    const directorExtras = reelDirectorExtrasFromIdeaRecord(idea, {
+      sector,
+      businessType: sector,
+      aiVisualStandard,
+      brandContextForVisual: brandCtxForVisual,
+      vibeProfile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
+      brandThemeGrading: brandTheme?.grading
+        ? {
+            look: brandTheme.grading.look,
+            lut_directive: (brandTheme.grading as { lutDirective?: string }).lutDirective ?? brandTheme.grading.look,
+          }
+        : undefined,
+      workspaceId: tenantId,
+      strategicPurpose: purpose,
+    });
     const multi = await callGenerateMultiReel(window.location.origin, {
       workspaceId: tenantId,
       photos: photoInputs.slice(0, limit),
@@ -1688,9 +1695,7 @@ function IdeaCard({
       caption: caption.slice(0, 300),
       brandName: brandName ?? (brandCtx?.business_name as string | undefined) ?? '',
       brandLocation: brandCtx?.location ?? location ?? '',
-      vibeProfile: (brandCtx as Record<string, unknown> | undefined)?.brand_vibe_profile as
-        | Record<string, unknown>
-        | undefined,
+      vibeProfile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
       brandThemeGrading: brandTheme?.grading
         ? {
             look: brandTheme.grading.look,
@@ -1700,6 +1705,20 @@ function IdeaCard({
       strategy: montageStrategy,
       ratio: '720:1280',
       duration: 5,
+      agentVisualDirection: buildReelAgentVisualDirection(
+        productionIdeaFromRecord({ ...idea, headline, caption_draft: caption, cta, hashtags, content_type: fmt }, index),
+        { brandName: brandName ?? String(brandCtx?.business_name ?? ''), location: brandCtx?.location ?? location, missionBrief },
+        {
+          photoUrl: promptImage,
+          description: String(findAnalysis(promptImage)?.description ?? ''),
+          tags: (findAnalysis(promptImage)?.contentTags as string[] | undefined) ?? [],
+        },
+        directorExtras,
+      ).slice(0, 400),
+      businessType: sector,
+      strategicPurpose: purpose,
+      missionBrief,
+      productType: directorExtras.productType,
     });
 
     if (!multi.videoUrl) {
@@ -1764,33 +1783,61 @@ function IdeaCard({
         }
       }
 
-      const vibeClause = brandTheme
-        ? `Visual style: ${brandTheme.grading?.look ?? ''}. ${brandTheme.grading?.lutDirective ?? ''}. Color palette: ${brandTheme.palette?.description ?? ''}.`
-        : '';
-      const concept = [agentEditPrompt || visualDir, vibeClause].filter(Boolean).join(' ') || caption;
+      const analysis = findAnalysis(promptImage);
+      const pIdea = productionIdeaFromRecord(
+        { ...idea, headline, caption_draft: caption, cta, hashtags, content_type: fmt, strategic_purpose: purpose },
+        index,
+      );
+      const rendererBrand: RendererBrandContext = {
+        brandName: brandName ?? String(brandCtx?.business_name ?? ''),
+        location: brandCtx?.location ?? location ?? '',
+        businessType: sector,
+        missionBrief,
+        brandTone: String(brandCtx?.brand_tone ?? 'friendly'),
+        targetAudience: String(brandCtx?.target_audience ?? ''),
+        vibeProfile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
+        themeGrading: brandTheme?.grading
+          ? {
+              look: brandTheme.grading.look,
+              lutDirective: (brandTheme.grading as { lutDirective?: string }).lutDirective,
+              paletteDescription: brandTheme.palette?.description,
+            }
+          : undefined,
+        visualStyle: brandTheme?.grading?.look || String(brandCtx?.visual_style ?? 'warm natural'),
+      };
+      const galleryMeta: RendererGalleryMeta = {
+        photoUrl: promptImage,
+        description: String(analysis?.description ?? ''),
+        tags: (analysis?.contentTags as string[] | undefined) ?? [],
+      };
+      const directorExtras = reelDirectorExtrasFromIdeaRecord(idea, {
+        sector,
+        businessType: sector,
+        aiVisualStandard,
+        brandContextForVisual: brandCtxForVisual,
+        vibeProfile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
+        brandThemeGrading: brandTheme?.grading
+          ? {
+              look: brandTheme.grading.look,
+              lut_directive: (brandTheme.grading as { lutDirective?: string }).lutDirective,
+            }
+          : undefined,
+        workspaceId: tenantId,
+        strategicPurpose: purpose,
+      });
+      const reelBody = buildReelGenerateReelRequest(
+        pIdea,
+        rendererBrand,
+        galleryMeta,
+        promptImage,
+        directorExtras,
+      );
+      auditRendererPayload('runway', reelBody);
 
       const res = await fetch('/api/generate-reel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: headline || `${brandName} Reel`,
-          caption,
-          concept,
-          platform: 'instagram',
-          contentType: 'reel',
-          visualStyle: brandTheme?.grading?.look || (brandCtx as Record<string, unknown>)?.visual_style || 'warm natural',
-          brandTone: (brandCtx as Record<string, unknown>)?.brand_tone || 'friendly',
-          targetAudience: (brandCtx as Record<string, unknown>)?.target_audience || '',
-          duration: 5,
-          cameraMotion: 'dolly_in',
-          ratio: '720:1280',
-          tags: hashtags.slice(0, 5),
-          promptImage,
-          sceneMetadata: {
-            brandName,
-            location: (brandCtx as Record<string, unknown>)?.location ?? '',
-          },
-        }),
+        body: JSON.stringify(reelBody),
       });
       const data = await res.json();
       const resolvedVideoUrl: string | null = data.videoUrl ?? data.outputUrls?.[0] ?? null;
@@ -2085,96 +2132,6 @@ function IdeaCard({
     }
   }
 
-  // ── Canva brand template autofill → Outputs ──────────────────────────────
-  async function generateCanvaDesign() {
-    if (isGeneratingCanva) return;
-    setIsGeneratingCanva(true);
-    setCanvaError(null);
-    setCanvaDesignResult(null);
-
-    try {
-      const ideaRecord: Record<string, unknown> = {
-        ...idea,
-        headline,
-        caption_draft: caption,
-        cta,
-        hashtags,
-        strategic_purpose: purpose,
-        content_type: contentTypeFmt,
-      };
-      const { title, signal } = buildCanvaMissionSignal({
-        idea: ideaRecord,
-        brandName,
-        location,
-        missionBrief,
-        imageUrl: generatedUrl ?? agentGalleryUrl ?? referenceImageUrls?.[0],
-      });
-
-      const res = await fetch('/api/canva/autofill-design', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId,
-          title,
-          signal,
-          lineage: { source: 'mission_advanced', ideaIndex: index },
-        }),
-        signal: AbortSignal.timeout(90_000),
-      });
-
-      const data = await res.json();
-
-      if (res.status === 401) {
-        setCanvaError('Canva bağlı değil — Daha Fazlası → Canva Şablonlarım → Canva ile Bağlan');
-        return;
-      }
-      if (res.status === 409) {
-        setCanvaError(data.error ?? 'Bu içerik türü için uygun Canva şablonu bulunamadı. Canva\'da yeni bir şablon ekleyin.');
-        return;
-      }
-      if (!res.ok) throw new Error(data.error ?? 'Canva tasarımı oluşturulamadı.');
-
-      const design = data.design;
-      const editUrl = design?.url ?? design?.urls?.edit_url;
-      if (!editUrl) throw new Error('Canva tasarım URL\'si alınamadı.');
-
-      const thumbnailUrl = design?.thumbnail?.url;
-      const templateTitle = data.decision?.template?.title;
-
-      const contentKind = signal.kind;
-      setCanvaDesignResult({ editUrl, thumbnailUrl, templateTitle, designId: design?.id });
-
-      // Save to Outputs
-      await apiClient.saveCreativeArtifact({
-        title:       `${headline || brandName} — Canva ${templateTitle ?? contentKind}`,
-        contentUrl:  editUrl,
-        platform:    'canva',
-        contentType: contentKind.replace('instagram_', ''),
-        content: JSON.stringify({
-          canvaEditUrl: editUrl,
-          canvaThumbnail: thumbnailUrl,
-          canvaDesignId: design?.id,
-          templateTitle,
-          caption,
-          kind: contentKind,
-          canvaFieldCopy: signal.canvaFieldCopy,
-          source: 'canva_autofill',
-        }),
-        metadata: {
-          source: 'canva_autofill',
-          canvaEditUrl: editUrl,
-          canvaDesignId: design?.id,
-          templateTitle,
-          contentKind,
-        },
-      });
-      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-    } catch (e: any) {
-      setCanvaError(e?.message?.slice(0, 160) || 'Canva hatası');
-    } finally {
-      setIsGeneratingCanva(false);
-    }
-  }
 
   // ── "Tüm Formatları Üret" — post + story + carousel paralel ─────────────
   async function generateAllFormats() {
@@ -2446,16 +2403,16 @@ function IdeaCard({
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
             padding: '7px 10px', borderRadius: 10,
-            background: 'rgba(139,92,246,0.06)', border: '0.5px solid rgba(139,92,246,0.2)',
+            background: 'rgba(138,171,189,0.06)', border: '0.5px solid rgba(138,171,189,0.2)',
           }}>
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 6,
-              background: 'rgba(139,92,246,0.15)', color: '#8B5CF6', fontWeight: 700 }}>AI</span>
-            <span style={{ fontSize: 11, color: '#8B5CF6', fontWeight: 500, flex: 1 }}>
+              background: 'rgba(138,171,189,0.15)', color: '#8AABBD', fontWeight: 700 }}>AI</span>
+            <span style={{ fontSize: 11, color: '#8AABBD', fontWeight: 500, flex: 1 }}>
               Feed'e otomatik eklendi
             </span>
             <button onClick={() => navigate('feed')} style={{
               padding: '3px 8px', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: 'rgba(139,92,246,0.12)', color: '#8B5CF6', fontSize: 10, fontWeight: 700,
+              background: 'rgba(138,171,189,0.12)', color: '#8AABBD', fontSize: 10, fontWeight: 700,
             }}>
               Gor
             </button>
@@ -2469,7 +2426,7 @@ function IdeaCard({
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               flex: 1, padding: '7px', borderRadius: 8, border: 'none', cursor: 'pointer',
               fontSize: 12, fontWeight: 600, transition: 'all 160ms ease',
-              background: activeTab === tab ? (t.isDark ? 'rgba(124,58,237,0.25)' : '#fff') : 'transparent',
+              background: activeTab === tab ? (t.isDark ? 'rgba(77,112,136,0.25)' : '#fff') : 'transparent',
               color: activeTab === tab ? t.accent : t.textMuted,
               boxShadow: activeTab === tab ? '0 1px 4px rgba(0,0,0,0.15)' : 'none',
             }}>
@@ -2513,9 +2470,9 @@ function IdeaCard({
                       style={{
                         borderRadius: 14, padding: '12px 14px', cursor: 'pointer',
                         background: isSelected
-                          ? (t.isDark ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.06)')
+                          ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)')
                           : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                        border: `${isSelected ? '1.5px' : '0.5px'} solid ${isSelected ? 'rgba(124,58,237,0.45)' : t.separator}`,
+                        border: `${isSelected ? '1.5px' : '0.5px'} solid ${isSelected ? 'rgba(77,112,136,0.45)' : t.separator}`,
                         transition: 'all 160ms ease',
                         position: 'relative',
                       }}>
@@ -2730,10 +2687,10 @@ function IdeaCard({
         {/* ── Remotion Story Önizleme ─────────────────────────────────────── */}
         {(fmtLower.includes('story') || fmtLower.includes('reel')) && (
           <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14,
-            background: 'rgba(124,58,237,0.07)', border: '0.5px solid rgba(124,58,237,0.2)' }}>
+            background: 'rgba(77,112,136,0.07)', border: '0.5px solid rgba(77,112,136,0.2)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
               <span style={{ fontSize: 13 }}>▶</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>Remotion Story</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#4D7088' }}>Remotion Story</span>
               <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 'auto' }}>
                 Creative Director + Grafiker Review dahil
               </span>
@@ -2827,12 +2784,12 @@ function IdeaCard({
         {/* Etkinlik kartı üretiliyor */}
         {isGeneratingEventCard && (
           <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 10,
-            background: 'rgba(167,139,250,0.06)', border: '0.5px solid rgba(167,139,250,0.2)',
+            background: 'rgba(157,190,206,0.06)', border: '0.5px solid rgba(157,190,206,0.2)',
             display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
-              border: '2px solid rgba(167,139,250,0.3)', borderTop: '2px solid #8B5CF6',
+              border: '2px solid rgba(157,190,206,0.3)', borderTop: '2px solid #8AABBD',
               animation: 'spinSlow 0.8s linear infinite' }} />
-            <span style={{ fontSize: 11, color: '#8B5CF6', fontWeight: 600 }}>
+            <span style={{ fontSize: 11, color: '#8AABBD', fontWeight: 600 }}>
               Etkinlik kartı üretiliyor — GPT-image-1 + SVG overlay...
             </span>
           </div>
@@ -2841,11 +2798,11 @@ function IdeaCard({
         {/* Etkinlik kartı sonucu */}
         {eventCardUrl && (
           <div style={{ marginTop: 10, borderRadius: 14, overflow: 'hidden',
-            border: '0.5px solid rgba(167,139,250,0.3)' }}>
+            border: '0.5px solid rgba(157,190,206,0.3)' }}>
             <img src={eventCardUrl} alt="Event card"
               style={{ width: '100%', display: 'block', borderRadius: 14 }} />
-            <div style={{ padding: '8px 12px', background: 'rgba(167,139,250,0.06)',
-              fontSize: 11, color: '#8B5CF6', textAlign: 'center', fontWeight: 600 }}>
+            <div style={{ padding: '8px 12px', background: 'rgba(157,190,206,0.06)',
+              fontSize: 11, color: '#8AABBD', textAlign: 'center', fontWeight: 600 }}>
               ✓ Etkinlik kartı üretildi — Çıktılara eklendi
             </div>
           </div>
@@ -2860,65 +2817,6 @@ function IdeaCard({
           </div>
         )}
 
-        {/* ── Canva (disabled — Remotion production) ── */}
-        {CANVA_ACTIVE && isGeneratingCanva && (
-          <div style={{ marginTop: 10, padding: '12px 14px', borderRadius: 14,
-            background: 'rgba(124,58,237,0.06)', border: '0.5px solid rgba(124,58,237,0.25)',
-            display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
-              border: '2px solid rgba(124,58,237,0.3)', borderTop: '2px solid #7C3AED',
-              animation: 'spinSlow 0.8s linear infinite' }} />
-            <div>
-              <div style={{ fontSize: 12, color: '#7C3AED', fontWeight: 700 }}>
-                Canva şablonu dolduruluyor…
-              </div>
-              <div style={{ fontSize: 10, color: 'rgba(124,58,237,0.6)', marginTop: 2 }}>
-                Headline · Caption · CTA → Marka şablonuna aktarılıyor
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Canva tasarım sonucu ────────────────────────────────────── */}
-        {CANVA_ACTIVE && canvaDesignResult && (
-          <div style={{ marginTop: 10, borderRadius: 14,
-            background: 'rgba(124,58,237,0.06)', border: '0.5px solid rgba(124,58,237,0.3)',
-            overflow: 'hidden' }}>
-            {canvaDesignResult.thumbnailUrl && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={canvaDesignResult.thumbnailUrl} alt="Canva önizleme"
-                style={{ width: '100%', display: 'block', maxHeight: 220, objectFit: 'cover' }} />
-            )}
-            <div style={{ padding: '10px 14px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED',
-                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
-                ✓ Canva tasarımı oluşturuldu — Çıktılara eklendi
-              </div>
-              {canvaDesignResult.templateTitle && (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 8 }}>
-                  Şablon: {canvaDesignResult.templateTitle}
-                </div>
-              )}
-              <a href={canvaDesignResult.editUrl} target="_blank" rel="noopener noreferrer"
-                style={{
-                  display: 'block', width: '100%', padding: '10px 0', borderRadius: 10,
-                  background: '#7C3AED', color: '#fff', fontWeight: 700, fontSize: 13,
-                  textAlign: 'center', textDecoration: 'none',
-                }}>
-                ◧ Canva&apos;da Düzenle
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* ── Canva hatası ────────────────────────────────────────────── */}
-        {CANVA_ACTIVE && canvaError && (
-          <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 12,
-            background: 'rgba(239,68,68,0.06)', border: '0.5px solid rgba(239,68,68,0.2)',
-            fontSize: 11, color: '#EF4444', fontWeight: 600 }}>
-            ◧ {canvaError}
-          </div>
-        )}
 
         {/* ── Unused Gallery Photos → Caption Suggestions ─────────────── */}
         {Object.keys(galleryAnalysis).length > 0 && (
@@ -2933,7 +2831,7 @@ function IdeaCard({
               style={{
                 width: '100%', padding: '10px 14px', borderRadius: 12,
                 border: `0.5px solid ${t.separator}`, cursor: 'pointer',
-                background: t.isDark ? 'rgba(139,92,246,0.06)' : 'rgba(139,92,246,0.04)',
+                background: t.isDark ? 'rgba(138,171,189,0.06)' : 'rgba(138,171,189,0.04)',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 color: t.textSecondary, fontSize: 12, fontWeight: 600,
               }}
@@ -2949,7 +2847,7 @@ function IdeaCard({
                 {isGeneratingUnusedCaptions && (
                   <div style={{ padding: '20px', textAlign: 'center', color: t.textMuted, fontSize: 11 }}>
                     <div style={{ width: 16, height: 16, borderRadius: '50%',
-                      border: `2px solid ${t.separator}`, borderTop: '2px solid #8B5CF6',
+                      border: `2px solid ${t.separator}`, borderTop: '2px solid #8AABBD',
                       animation: 'spinSlow 0.8s linear infinite', margin: '0 auto 8px' }} />
                     AI görselleri analiz ediyor...
                   </div>
@@ -2985,7 +2883,7 @@ function IdeaCard({
                         </p>
                         <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 8,
-                            background: 'rgba(139,92,246,0.1)', color: '#8B5CF6', fontWeight: 600 }}>
+                            background: 'rgba(138,171,189,0.1)', color: '#8AABBD', fontWeight: 600 }}>
                             {suggestion.contentType}
                           </span>
                           <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 8,
@@ -3005,7 +2903,7 @@ function IdeaCard({
                         style={{
                           flexShrink: 0, padding: '6px 10px', borderRadius: 8,
                           border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700,
-                          background: 'linear-gradient(135deg, #8B5CF6cc, #8B5CF688)',
+                          background: 'linear-gradient(135deg, #8AABBDcc, #8AABBD88)',
                           color: '#fff',
                         }}
                       >
@@ -3021,7 +2919,7 @@ function IdeaCard({
                     style={{
                       width: '100%', padding: '8px', borderRadius: 10,
                       border: `0.5px solid ${t.separator}`, cursor: 'pointer',
-                      background: 'transparent', color: '#8B5CF6',
+                      background: 'transparent', color: '#8AABBD',
                       fontSize: 11, fontWeight: 600, marginTop: 4,
                     }}
                   >
@@ -3228,7 +3126,7 @@ function IdeaCard({
                       disabled={!bgPhoto || !eventForm.eventName.trim() || eventPreviewLoading}
                       style={{
                         padding: '8px 12px', borderRadius: 10, border: 'none', cursor: bgPhoto ? 'pointer' : 'default',
-                        background: bgPhoto && eventForm.eventName.trim() ? t.accent : 'rgba(167,139,250,0.25)',
+                        background: bgPhoto && eventForm.eventName.trim() ? t.accent : 'rgba(157,190,206,0.25)',
                         color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0,
                         opacity: bgPhoto && eventForm.eventName.trim() ? 1 : 0.55,
                       }}
@@ -3496,7 +3394,7 @@ function IdeaCard({
                 disabled={!eventForm.eventName.trim()}
                 style={{
                   flex: 2, padding: '12px', borderRadius: 14, cursor: eventForm.eventName.trim() ? 'pointer' : 'default',
-                  background: eventForm.eventName.trim() ? t.accent : 'rgba(167,139,250,0.2)',
+                  background: eventForm.eventName.trim() ? t.accent : 'rgba(157,190,206,0.2)',
                   border: 'none', color: '#fff', fontSize: 13, fontWeight: 700,
                   opacity: eventForm.eventName.trim() ? 1 : 0.5,
                 }}>
@@ -3523,39 +3421,6 @@ function IdeaCard({
               Otonom üretim dışında kalan manuel seçenekler. Günlük akış için &quot;Otonom&quot; modunu kullanın.
             </p>
 
-            {CANVA_ACTIVE && (
-            <button
-              onClick={isGeneratingCanva ? undefined : () => { generateCanvaDesign(); setShowOverflowSheet(false); }}
-              disabled={isGeneratingCanva}
-              style={{
-                width: '100%', padding: '14px 16px', borderRadius: 16, cursor: isGeneratingCanva ? 'default' : 'pointer',
-                background: isGeneratingCanva ? 'rgba(124,58,237,0.08)' : 'linear-gradient(135deg,rgba(124,58,237,0.18),rgba(124,58,237,0.08))',
-                border: `1.5px solid ${isGeneratingCanva ? 'rgba(124,58,237,0.2)' : 'rgba(124,58,237,0.45)'}`,
-                display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', marginBottom: 12,
-                opacity: isGeneratingCanva ? 0.7 : 1,
-              }}>
-              {isGeneratingCanva
-                ? <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: '2px solid rgba(124,58,237,0.3)', borderTop: '2px solid #7C3AED', animation: 'spinSlow 0.8s linear infinite' }} />
-                : <span style={{ fontSize: 20, flexShrink: 0, width: 28, textAlign: 'center' }}>◧</span>}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#7C3AED' }}>
-                  {isGeneratingCanva ? 'Canva şablonu dolduruluyor…' : 'Canva Şablonu ile Üret'}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(124,58,237,0.65)', marginTop: 1 }}>
-                  {canvaDesignResult
-                    ? `✓ ${canvaDesignResult.templateTitle ?? 'Tasarım hazır'} — Outputs\'a eklendi`
-                    : 'Headline · Caption · CTA → Marka şablonu → Outputs'}
-                </div>
-              </div>
-              {canvaDesignResult?.editUrl && (
-                <a href={canvaDesignResult.editUrl} target="_blank" rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 10, background: '#7C3AED', color: '#fff', fontSize: 11, fontWeight: 700, textDecoration: 'none' }}>
-                  Düzenle
-                </a>
-              )}
-            </button>
-            )}
 
             {/* ── Görsel seçenekler ── */}
             <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, paddingLeft: 4 }}>
@@ -3569,8 +3434,11 @@ function IdeaCard({
                   action: () => { pickPhotoMutation.mutate(); setShowOverflowSheet(false); },
                 },
                 {
-                  icon: `${CANVAS_STYLES[canvasStyleIdx % CANVAS_STYLES.length]!.icon}`, label: `Canvas: ${CANVAS_STYLES[canvasStyleIdx % CANVAS_STYLES.length]!.name}`, sub: 'Tipografi + marka fotoğrafı overlay',
-                  disabled: !brandRefImages.length,
+                  icon: `${CANVAS_STYLES[canvasStyleIdx % CANVAS_STYLES.length]!.icon}`, label: `Canvas: ${CANVAS_STYLES[canvasStyleIdx % CANVAS_STYLES.length]!.name}`,
+                  sub: blocksCanvasOverlay
+                    ? 'Galeri-only — auto-produce kullanın'
+                    : 'Tipografi + marka fotoğrafı overlay',
+                  disabled: !brandRefImages.length || blocksCanvasOverlay,
                   action: () => { brandGenerateMutation.mutate(); setShowOverflowSheet(false); },
                 },
                 {
@@ -3718,32 +3586,37 @@ export function MissionContentFactory() {
   // Get mission creative brief from strategy node
   const strategyNode = prog?.nodes.find(n => n.task_type === 'content_strategy');
   let missionBrief = '';
-  if (strategyNode?.output_summary) {
-    try {
-      const s = JSON.parse(strategyNode.output_summary.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/,'').trim());
-      missionBrief = s.mission_brief || s.weekly_theme || '';
-    } catch {}
+  const strategyPayload = nodeOutputObject(strategyNode);
+  if (strategyPayload) {
+    missionBrief = String(strategyPayload.mission_brief ?? strategyPayload.weekly_theme ?? '').trim();
   }
 
-  const ideas = node ? parseIdeas(node.output_summary) : [];
+  const ideas = node
+    ? (() => {
+      const payloadIdeas = nodeOutputArray(node);
+      return payloadIdeas.length > 0 ? payloadIdeas : parseIdeas(node.output_summary);
+    })()
+    : [];
+  const visualDesignNode = prog?.nodes.find(
+    (n) => n.task_type === 'visual_design_cards' && n.status === 'completed' && nodeHasOutput(n),
+  );
+  const missionDesignCards = useMemo(
+    () => {
+      const payloadCards = visualDesignNode ? nodeOutputArray(visualDesignNode) : [];
+      return payloadCards.length > 0 ? payloadCards : parseIdeas(visualDesignNode?.output_summary ?? null);
+    },
+    [visualDesignNode],
+  );
 
   // Brand context + gallery for AutoProductionFeed
-  const { data: mainBrandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn: () => apiClient.getBrandContextData(tenantId),
+  const { data: mainProductionSnapshot } = useQuery<ProductionBrandContextSnapshot | null>({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId),
     staleTime: 10 * 60_000,
     enabled: Boolean(tenantId),
   });
-  const { data: mainGalleryRaw } = useQuery({
-    queryKey: ['gallery-analysis', tenantId],
-    queryFn: async () => {
-      const res = await fetch(`/api/brand-context/${tenantId}/gallery-analysis`);
-      return res.ok ? res.json() : {};
-    },
-    staleTime: 10 * 60_000,
-    enabled: Boolean(tenantId),
-  });
-  const mainGallery = mainGalleryRaw ?? {};
+  const mainBrandCtx = productionSnapshotToLegacyBrandContext(mainProductionSnapshot);
+  const mainGallery = mainProductionSnapshot?.galleryAnalysis ?? {};
 
   // Build full reference image pool for AutoProductionFeed.
   // Python BrandContext is the authoritative source (gallery deletions update it).
@@ -3796,8 +3669,7 @@ export function MissionContentFactory() {
       .then((r) => r.json())
       .then((d: { provisioned?: boolean }) => {
         if (d.provisioned) {
-          queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
-          queryClient.invalidateQueries({ queryKey: ['gallery-analysis', tenantId] });
+          queryClient.invalidateQueries({ queryKey: ['production-context-snapshot', tenantId] });
         }
       })
       .catch(() => { galleryProvisionedRef.current = false; });
@@ -3859,6 +3731,7 @@ export function MissionContentFactory() {
         ideas={ideas}
         brandRefImages={allBrandImages}
         galleryAnalysis={mainGallery}
+        productionSnapshot={mainProductionSnapshot}
         tenantId={tenantId}
         brandName={tenantBrand.brandName || profile?.brandName || ''}
         location={(mainBrandCtx as { location?: string } | undefined)?.location}
@@ -3871,9 +3744,12 @@ export function MissionContentFactory() {
         sector={mainBrandCtx?.business_type ?? mainBrandCtx?.industry ?? tenantBrand.sector}
         missionId={missionId}
         nodeKey={nodeKey}
-        serverProductionOnly={
-          prog?.status === 'completed' || prog?.status === 'running'
-        }
+        serverProductionOnly={Boolean(
+          missionId
+          && prog?.nodes?.some(
+            (n) => n.task_type === 'content_ideation' && n.status === 'completed',
+          ),
+        )}
       />
     );
   }
@@ -3975,6 +3851,7 @@ export function MissionContentFactory() {
           brandName={profile?.brandName}
           location={profile?.location}
           referenceImageUrls={referenceImageUrls}
+          prefetchedAgencyDesigns={missionDesignCards}
           onSaved={() => setSavedCount(c => c + 1)}
         />
       </div>

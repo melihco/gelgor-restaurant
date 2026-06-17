@@ -26,6 +26,12 @@ from crewai import LLM
 
 from app.config import get_settings
 from app.crew.context import BrandInfo
+from app.crew.registry import (
+    get_agent_roles,
+    get_task_types_for_role,
+    is_valid_agent_task_pair,
+    first_task_type_for_role,
+)
 from app.crew.crews.review_crew import (
     run_review_analysis,
     run_single_review_response,
@@ -75,97 +81,13 @@ CONTENT_SHAPED_TASK_TYPES = frozenset(
 )
 
 
-AGENT_ROLES = {
-    "review_agent": {
-        "display_name": "Review Agent",
-        "description": "Monitors and responds to Google Business reviews",
-        "category": "reputation",
-        "task_types": ["review_analysis", "single_review_response"],
-    },
-    "content_agent": {
-        "display_name": "Content Agent",
-        "description": "Creates Instagram content strategy and concepts",
-        "category": "content",
-        "task_types": ["content_ideation", "content_calendar", "visual_design_cards"],
-    },
-    "content_strategy_agent": {
-        "display_name": "Content Strategy Agent",
-        "description": "Decides weekly content priorities and mission briefs",
-        "category": "content",
-        "task_types": ["content_strategy"],
-    },
-    "ads_agent": {
-        "display_name": "Ads Agent",
-        "description": "Analyzes and optimizes advertising campaigns",
-        "category": "advertising",
-        "task_types": [
-            "campaign_analysis",
-            "ad_creative_generation",
-            "auto_budget_optimize",
-            "ads_budget_optimization",
-        ],
-    },
-    "analytics_agent": {
-        "display_name": "Analytics Agent",
-        "description": "Analyzes website traffic, search performance, and conversions",
-        "category": "analytics",
-        "task_types": ["traffic_analysis", "conversion_report", "weekly_performance"],
-    },
-    "intelligence_agent": {
-        "display_name": "CEO Intelligence Agent",
-        "description": "Analyses workspace health and generates prioritised task recommendations",
-        "category": "intelligence",
-        "task_types": ["workspace_intelligence"],
-    },
-    "strategic_agent": {
-        "display_name": "Campaign Strategist",
-        "description": (
-            "Reads all intelligence signals and generates coordinated multi-agent "
-            "MissionProposal[] objects with full TaskGraphs"
-        ),
-        "category": "intelligence",
-        "task_types": ["mission_planning"],
-    },
-    "feed_art_director": {
-        "display_name": "Feed Art Director",
-        "description": (
-            "Reviews the full weekly content batch for cohesion: format distribution, "
-            "visual variety, theme alignment, engagement arc, and publish schedule. "
-            "Ensures the Instagram feed looks agency-produced, not algorithmic."
-        ),
-        "category": "visual",
-        "task_types": ["feed_cohesion_review"],
-    },
-    "product_visual_studio": {
-        "display_name": "Product Visual Studio",
-        "description": (
-            "Generates creative scene briefs for product photo enhancement. "
-            "Reads brand DNA, sector, and caption to produce precise GPT image-2 "
-            "directives that enhance the background, lighting, and composition "
-            "while keeping the product, label, and logo pixel-perfect."
-        ),
-        "category": "visual",
-        "task_types": ["product_scene_brief"],
-    },
-    "visual_production_director": {
-        "display_name": "Visual Production Director (experimental)",
-        "description": (
-            "Opt-in: enriches each idea's visual_production_spec before auto-produce. "
-            "Brand identity stable; post brief drives scene. Does not replace ideation or Feed Art Director."
-        ),
-        "category": "visual",
-        "task_types": ["visual_production_enrich"],
-    },
-}
+AGENT_ROLES = get_agent_roles()
 
 
 # Tasks that benefit most from Claude's creative language ability
 _CLAUDE_PREFERRED_TASKS = {
-    "content_ideation",
-    "content_calendar",
-    "content_strategy",
-    "single_review_response",
-    "review_analysis",
+    # Disabled — use OpenAI for CrewAI tasks; Anthropic reserved for MCP design consult only.
+    # Re-enable when Anthropic credits are available: add task names back here.
 }
 
 # Tasks that benefit from GPT-4o's analytical / structured-output strength
@@ -279,10 +201,7 @@ class CrewEngine:
         return AGENT_ROLES
 
     def is_valid_execution(self, agent_role: str, task_type: str) -> bool:
-        role_info = AGENT_ROLES.get(agent_role)
-        if not role_info:
-            return False
-        return task_type in role_info["task_types"]
+        return is_valid_agent_task_pair(agent_role, task_type)
 
     def correct_execution(self, agent_role: str, task_type: str) -> tuple[str, str]:
         """
@@ -302,9 +221,9 @@ class CrewEngine:
             return "content_agent", task_type
 
         role_info = AGENT_ROLES.get(agent_role)
-        if role_info and role_info.get("task_types"):
+        if role_info and get_task_types_for_role(agent_role):
             # Keep the agent, use its first valid task_type
-            corrected_task = role_info["task_types"][0]
+            corrected_task = first_task_type_for_role(agent_role)
             logger.warning(
                 "engine_task_type_corrected",
                 original=f"{agent_role}/{task_type}",
@@ -350,10 +269,19 @@ class CrewEngine:
             llm_model=getattr(llm, "model", "unknown"),
         )
 
-        # Auto-correct invalid combinations instead of failing with 502.
-        # .NET passes whatever task_type the UI sent — we make it work.
         if not self.is_valid_execution(agent_role, task_type):
-            agent_role, task_type = self.correct_execution(agent_role, task_type)
+            logger.error(
+                "crew_execution_invalid_pair",
+                agent_role=agent_role,
+                task_type=task_type,
+            )
+            return {
+                "status": "failed",
+                "error": f"Invalid agent/task pair: {agent_role}/{task_type}",
+                "agent_role": agent_role,
+                "task_type": task_type,
+                "crew_name": f"{agent_role.replace('_agent', '')}_crew",
+            }
 
         try:
             result = self._dispatch(agent_role, task_type, brand, input_data, llm=llm)
@@ -425,6 +353,7 @@ class CrewEngine:
                     strategy_action_id=input_data.get("strategy_action_id", ""),
                     llm=effective_llm,
                     iterations=iterations,
+                    mission_id=input_data.get("mission_id"),
                 )
 
             if task_type == "content_calendar":

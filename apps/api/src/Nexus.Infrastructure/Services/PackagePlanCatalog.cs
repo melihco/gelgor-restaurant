@@ -1,8 +1,9 @@
 namespace Nexus.Infrastructure.Services;
 
 /// <summary>
-/// Single source for subscription quotas and monthly output promises (Usage &amp; Plan UI).
-/// Values align with credit-pack economics (~7 posts/mission, ~36 kr/mission core).
+/// Single source for subscription quotas, list prices (TRY), and monthly output promises.
+/// Sync with apps/web/src/lib/package-plan-config.ts and backend token_billing_service.py.
+/// Unit economics: ~$3.03 API per full mission cycle (propose + 7-piece weekly produce).
 /// </summary>
 internal static class PackagePlanCatalog
 {
@@ -21,42 +22,41 @@ internal static class PackagePlanCatalog
 
     private static readonly Dictionary<string, PlanSpec> Plans = new(StringComparer.OrdinalIgnoreCase)
     {
-        // Pilot / dev scale (~4×) — prod fiyatlar aynı; kota Feed + misyon testleri için genişletildi.
         ["starter"] = new(
             Slug: "starter",
-            AgentRunLimit: 50,
-            ProviderActionLimit: 60,
-            LiveProviderActionLimit: 4,
-            LlmTokenLimit: 800_000,
-            MonthlyGrantTokens: 20_000,
-            MonthlyMissions: 50,
-            MonthlySocialContent: 350,
-            MonthlyGalleryAnalysis: 160,
-            MonthlyReels: 4,
+            AgentRunLimit: 14,
+            ProviderActionLimit: 18,
+            LiveProviderActionLimit: 0,
+            LlmTokenLimit: 200_000,
+            MonthlyGrantTokens: 5_000,
+            MonthlyMissions: 14,
+            MonthlySocialContent: 98,
+            MonthlyGalleryAnalysis: 40,
+            MonthlyReels: 0,
             MonthlyPriceTry: 2_528m),
         ["growth"] = new(
             Slug: "growth",
-            AgentRunLimit: 120,
-            ProviderActionLimit: 180,
-            LiveProviderActionLimit: 32,
-            LlmTokenLimit: 2_000_000,
-            MonthlyGrantTokens: 60_000,
-            MonthlyMissions: 120,
-            MonthlySocialContent: 800,
-            MonthlyGalleryAnalysis: 480,
-            MonthlyReels: 16,
+            AgentRunLimit: 28,
+            ProviderActionLimit: 45,
+            LiveProviderActionLimit: 8,
+            LlmTokenLimit: 500_000,
+            MonthlyGrantTokens: 15_000,
+            MonthlyMissions: 28,
+            MonthlySocialContent: 196,
+            MonthlyGalleryAnalysis: 120,
+            MonthlyReels: 4,
             MonthlyPriceTry: 4_768m),
         ["performance"] = new(
             Slug: "performance",
-            AgentRunLimit: 260,
-            ProviderActionLimit: 560,
-            LiveProviderActionLimit: 160,
-            LlmTokenLimit: 4_000_000,
-            MonthlyGrantTokens: 160_000,
-            MonthlyMissions: 260,
-            MonthlySocialContent: 1_820,
-            MonthlyGalleryAnalysis: 1_000,
-            MonthlyReels: 32,
+            AgentRunLimit: 65,
+            ProviderActionLimit: 140,
+            LiveProviderActionLimit: 40,
+            LlmTokenLimit: 1_000_000,
+            MonthlyGrantTokens: 40_000,
+            MonthlyMissions: 65,
+            MonthlySocialContent: 455,
+            MonthlyGalleryAnalysis: 250,
+            MonthlyReels: 8,
             MonthlyPriceTry: 7_968m),
         ["executive"] = new(
             Slug: "executive",
@@ -75,7 +75,16 @@ internal static class PackagePlanCatalog
     public static PlanSpec? TryGet(string? slug)
     {
         var key = (slug ?? string.Empty).Trim().ToLowerInvariant();
-        return Plans.TryGetValue(key, out var spec) ? spec : null;
+        if (Plans.TryGetValue(key, out var spec))
+            return spec;
+        return key switch
+        {
+            "studio" => Plans["starter"],
+            "agency" => Plans["growth"],
+            "signature" or "premium" => Plans["performance"],
+            "collective" => Plans["executive"],
+            _ => null,
+        };
     }
 
     public static int ResolveAgentRunLimit(string? slug) => TryGet(slug)?.AgentRunLimit ?? 0;
@@ -87,5 +96,5 @@ internal static class PackagePlanCatalog
     public static int ResolveTokenLimit(string? slug) => TryGet(slug)?.LlmTokenLimit ?? 0;
 
     public static int ResolveMonthlyGrantTokens(string? slug) =>
-        TryGet(slug)?.MonthlyGrantTokens ?? 25_000;
+        TryGet(slug)?.MonthlyGrantTokens ?? 5_000;
 }

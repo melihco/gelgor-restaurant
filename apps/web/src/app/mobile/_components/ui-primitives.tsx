@@ -9,7 +9,7 @@ export function CircleProgress({
   value,            // 0–100
   size = 80,
   strokeWidth = 6,
-  color = '#a78bfa',
+  color = '#9DBECE',
   trackColor,
   label,
   sublabel,
@@ -59,7 +59,7 @@ export function CircleProgress({
 
 // ─── Agent Avatar ──────────────────────────────────────────────────────
 const AGENT_COLORS: Record<string, string> = {
-  '#a78bfa': '#a78bfa', '#f472b6': '#f472b6', '#60a5fa': '#60a5fa',
+  '#9DBECE': '#9DBECE', '#f472b6': '#f472b6', '#60a5fa': '#60a5fa',
   '#34d399': '#34d399', '#f59e0b': '#f59e0b', '#818cf8': '#818cf8',
 };
 
@@ -153,7 +153,7 @@ export function Card({ t, children, style, onClick }: {
 }
 
 // ─── Gradient accent line ──────────────────────────────────────────────
-export function AccentLine({ color = '#a78bfa' }: { color?: string }) {
+export function AccentLine({ color = '#9DBECE' }: { color?: string }) {
   return (
     <div style={{ height: 1, borderRadius: 1, background: `linear-gradient(90deg, transparent, ${color}60, transparent)`, margin: '12px 0' }} />
   );

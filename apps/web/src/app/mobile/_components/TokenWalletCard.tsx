@@ -32,7 +32,7 @@ export function TokenWalletCard({ wallet, compact, t }: TokenWalletCardProps) {
     <div style={{
       padding: compact ? '12px 14px' : '16px 18px',
       borderRadius: 16,
-      background: t.isDark ? 'rgba(124,58,237,0.08)' : 'linear-gradient(135deg, rgba(124,58,237,0.06), rgba(99,102,241,0.04))',
+      background: t.isDark ? 'rgba(77,112,136,0.08)' : 'linear-gradient(135deg, rgba(77,112,136,0.06), rgba(90,130,160,0.04))',
       border: `0.5px solid ${atLimit ? 'rgba(239,68,68,0.4)' : `${t.accent}44`}`,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
@@ -77,7 +77,7 @@ export function TokenWalletCard({ wallet, compact, t }: TokenWalletCardProps) {
 
       {!compact && Object.keys(wallet.category_tokens ?? {}).length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-          {Object.entries(wallet.category_tokens ?? {}).slice(0, 4).map(([key, val]) => (
+          {Object.entries(wallet.category_tokens ?? {}).map(([key, val]) => (
             <span key={key} style={{
               fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 20,
               background: t.accentDim, color: t.accent,

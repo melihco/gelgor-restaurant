@@ -19,6 +19,7 @@ needs semantic evaluation (optional, off by default).
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -250,6 +251,45 @@ def check_weekly_content(
                         "Do not translate word-by-word — write as a native copywriter would."
                     ),
                 ))
+
+    # ── Check 5: Free trial headline cap ───────────────────────────────────
+    trial_count = 0
+    for c in concepts:
+        blob = " ".join(
+            str(c.get(f) or "")
+            for f in ("headline", "concept_title", "idea_title", "caption_draft")
+        )
+        if re.search(r"ücretsiz\s*deneme|free\s*trial|deneme\s*fırsat", blob, re.I):
+            trial_count += 1
+    if trial_count > 1:
+        issues.append(ConsistencyIssue(
+            severity="error",
+            check="free_trial_headline_cap",
+            description=f"ücretsiz deneme / free trial hook used in {trial_count}/{n} pieces (max 1)",
+            suggestion=(
+                "Only ONE concept may lead with ücretsiz deneme or free trial. "
+                "Rotate others to social_proof, educational_post, or behind_the_scenes."
+            ),
+        ))
+
+    # ── Check 6: SaaS strategist use-case mix (weekly missions) ──────────
+    if n >= 7:
+        use_cases = {
+            str(c.get("template_use_case") or "").lower()
+            for c in concepts
+        }
+        required_saas = ("lead_generation", "social_proof", "educational_post", "behind_the_scenes")
+        missing_saas = [uc for uc in required_saas if uc not in use_cases]
+        if len(missing_saas) >= 3:
+            issues.append(ConsistencyIssue(
+                severity="warning",
+                check="saas_use_case_mix",
+                description=f"Missing strategist use cases: {', '.join(missing_saas)}",
+                suggestion=(
+                    "SaaS/agency weekly mix needs lead_generation, social_proof, "
+                    "educational_post, and behind_the_scenes — at least one each."
+                ),
+            ))
 
     errors = [i for i in issues if i.severity == "error"]
     warnings = [i for i in issues if i.severity == "warning"]

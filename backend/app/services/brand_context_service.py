@@ -22,8 +22,15 @@ from app.crew.context import BrandInfo
 from app.schemas.brand_context import BrandContextCreate, BrandContextUpdate
 from app.schemas.internal import InternalBrandContext
 from app.services.workspace_service import ensure_nexus_mirror_workspace
+from app.services.redis_cache import cache as _cache
 
 logger = structlog.get_logger()
+
+_BRAND_CTX_TTL = 300  # 5 minutes
+
+
+def _brand_ctx_cache_key(workspace_id: uuid.UUID) -> str:
+    return f"brand_ctx:{workspace_id}"
 
 
 # ── Pinterest field extractor ─────────────────────────────────────────────
@@ -695,6 +702,8 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
         website_intelligence=getattr(ctx, "website_intelligence", None) or None,
         preferred_llm_provider=getattr(ctx, "llm_provider", None) or None,
         preferred_llm_model=getattr(ctx, "llm_model", None) or None,
+        instagram_recent_captions=_parse_json_list(getattr(ctx, "instagram_recent_captions", None)),
+        instagram_intelligence=getattr(ctx, "instagram_intelligence", None) or None,
         **_extract_pinterest_fields(getattr(ctx, "visual_inspiration", None)),
     )
 
@@ -730,7 +739,7 @@ def build_brand_info_from_internal(ctx: InternalBrandContext) -> BrandInfo:
         instagram_bio=ctx.instagram_bio,
         discovery_confidence=ctx.discovery_confidence,
         brand_constitution_confirmed=ctx.brand_constitution_confirmed,
-        reference_image_urls=list(ctx.reference_image_urls),
+        reference_image_urls=_parse_reference_image_urls(ctx.reference_image_urls),
         google_rating=ctx.google_rating,
         google_review_count=ctx.google_review_count,
         google_review_signals=list(ctx.google_review_signals),
@@ -774,6 +783,105 @@ def enrich_brand_operating_policy(brand: BrandInfo) -> BrandInfo:
     brand.operating_capabilities = profile.enabled_capabilities
     brand.gallery_policy = profile.gallery_policy
     brand.operating_policy_prompt = build_operating_policy_prompt_block(profile)
+    return brand
+
+
+def merge_dotnet_brand_with_python_db(
+    base: BrandInfo,
+    py_brand: BrandInfo,
+    *,
+    dotnet_content_pillars: list[str] | None = None,
+) -> BrandInfo:
+    """
+    Merge Python DB intelligence into a .NET-originated BrandInfo.
+    Shared by internal orchestration and mission production paths.
+    """
+    if py_brand.visual_dna:
+        base.visual_dna = py_brand.visual_dna
+    if py_brand.competitor_brief:
+        base.competitor_brief = py_brand.competitor_brief
+    if py_brand.trend_brief:
+        base.trend_brief = py_brand.trend_brief
+    if dotnet_content_pillars:
+        base.content_pillars = list(dotnet_content_pillars)
+    elif py_brand.content_pillars:
+        base.content_pillars = py_brand.content_pillars
+    if py_brand.default_ctas:
+        base.default_ctas = py_brand.default_ctas
+    if py_brand.risk_rules:
+        base.risk_rules = py_brand.risk_rules
+    if py_brand.reference_image_urls:
+        base.reference_image_urls = py_brand.reference_image_urls
+    if py_brand.instagram_top_hashtags:
+        base.instagram_top_hashtags = py_brand.instagram_top_hashtags
+    if py_brand.google_rating:
+        base.google_rating = py_brand.google_rating
+    if py_brand.google_review_count:
+        base.google_review_count = py_brand.google_review_count
+    if py_brand.google_review_signals:
+        base.google_review_signals = py_brand.google_review_signals
+    if py_brand.website_summary:
+        base.website_summary = py_brand.website_summary
+    if py_brand.instagram_bio:
+        base.instagram_bio = py_brand.instagram_bio
+    base.discovery_confidence = py_brand.discovery_confidence or base.discovery_confidence
+    base.brand_constitution_confirmed = py_brand.brand_constitution_confirmed
+    if py_brand.languages and py_brand.languages.strip():
+        base.languages = py_brand.languages
+    if py_brand.brand_dna:
+        base.brand_dna = py_brand.brand_dna
+    if py_brand.industry_calendar:
+        base.industry_calendar = py_brand.industry_calendar
+    if py_brand.competitor_pulse:
+        base.competitor_pulse = py_brand.competitor_pulse
+    if py_brand.market_opportunity_ideas:
+        base.market_opportunity_ideas = py_brand.market_opportunity_ideas
+    if py_brand.social_signals:
+        base.social_signals = py_brand.social_signals
+    if py_brand.gallery_analysis:
+        base.gallery_analysis = py_brand.gallery_analysis
+    if py_brand.brand_vibe_profile:
+        base.brand_vibe_profile = py_brand.brand_vibe_profile
+    if py_brand.brand_theme:
+        base.brand_theme = py_brand.brand_theme
+    if py_brand.website_intelligence:
+        base.website_intelligence = py_brand.website_intelligence
+    if py_brand.preferred_llm_provider:
+        base.preferred_llm_provider = py_brand.preferred_llm_provider
+    if py_brand.preferred_llm_model:
+        base.preferred_llm_model = py_brand.preferred_llm_model
+    return base
+
+
+async def build_production_brand_context(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    apply_gallery_usage: bool = True,
+) -> BrandInfo | None:
+    """
+    Brand context for mission Feed production — same enrichment stack as agent execution.
+    """
+    brand = await build_brand_info(db, workspace_id)
+    if not brand:
+        return None
+    brand.tenant_id = str(workspace_id)
+    enrich_brand_operating_policy(brand)
+    if apply_gallery_usage:
+        try:
+            from app.services.gallery_usage_service import (
+                apply_gallery_usage_to_brand,
+                fetch_gallery_usage_by_type,
+            )
+
+            usage = await fetch_gallery_usage_by_type(str(workspace_id))
+            apply_gallery_usage_to_brand(brand, usage)
+        except Exception as exc:
+            logger.warning(
+                "production_gallery_usage_load_failed",
+                workspace_id=str(workspace_id),
+                error=str(exc)[:200],
+            )
     return brand
 
 
@@ -989,26 +1097,104 @@ async def persist_discovery_result(
             ctx.business_name, ctx.website_summary or "",
             ctx.instagram_bio or "", ctx.description or "", new_industry,
         ]))
-        better = normalize_industry_id(infer_industry(all_text))
+        # Use the raw inferred ID for storage so the TypeScript sector-production-profile
+        # system can use the most specific sector (e.g. "jewelry_accessories", not "fashion_retail").
+        # normalize_industry_id is only for Python playbook lookups, not for DB storage.
+        raw_inferred = infer_industry(all_text)
+        better = raw_inferred  # store raw; TypeScript profile handles specific behaviours
         if is_saas_brand and better not in ("agency_services", "ecommerce_retail"):
             better = "agency_services"
         current = ctx.business_type or ""
         GENERIC = {"general_business", "local_service_business", "business", ""}
-        SPECIFIC = {"local_products_shop", "beach_club", "healthcare_clinic",
-                    "beauty_wellness", "real_estate", "ecommerce_retail",
-                    "agency_services", "mental_health_clinic", "production_company"}
+        SPECIFIC = {
+            "local_products_shop", "beach_club", "healthcare_clinic",
+            "beauty_wellness", "real_estate", "ecommerce_retail",
+            "agency_services", "mental_health_clinic", "production_company",
+            # New specific sectors — always preferred over generic labels
+            "fashion_retail", "jewelry_accessories", "bakery_patisserie",
+            "cafe_bakery", "fitness", "barber_salon", "nightclub_lounge",
+        }
         ALLOW_CORRECTIVE_REMAPS = {
+            # Stale restaurant/cafe label → more accurate re-analysis result
             ("restaurant_cafe", "agency_services"),
+            ("restaurant_cafe", "beauty_wellness"),
+            ("restaurant_cafe", "healthcare_clinic"),
+            ("restaurant_cafe", "local_products_shop"),
+            ("restaurant_cafe", "handmade_product_brand"),
+            ("restaurant_cafe", "fashion_retail"),
+            ("restaurant_cafe", "jewelry_accessories"),
+            ("restaurant_cafe", "bakery_patisserie"),
+            ("restaurant_cafe", "fitness"),
+            # Coffee shop misidentified — stale
             ("coffee_shop", "agency_services"),
+            ("coffee_shop", "beauty_wellness"),
+            ("coffee_shop", "fashion_retail"),
+            ("coffee_shop", "jewelry_accessories"),
+            # Other stale general labels
             ("hospitality_entertainment", "agency_services"),
             ("local_service_business", "agency_services"),
+            ("local_service_business", "beauty_wellness"),
+            ("local_service_business", "healthcare_clinic"),
+            ("local_service_business", "fashion_retail"),
+            ("local_service_business", "jewelry_accessories"),
+            ("local_service_business", "bakery_patisserie"),
+            ("local_service_business", "fitness"),
             ("beach_club", "agency_services"),
+            ("general_business", "beauty_wellness"),
+            ("general_business", "healthcare_clinic"),
+            ("general_business", "local_products_shop"),
+            ("general_business", "fashion_retail"),
+            ("general_business", "jewelry_accessories"),
+            ("general_business", "bakery_patisserie"),
+            ("general_business", "fitness"),
         }
+        # Additionally: if business name contains strong sector signals and current is generic/wrong,
+        # force a name-signal override for key sectors.
+        name_lower = (ctx.business_name or "").lower()
+        BEAUTY_NAME_SIGNALS = [
+            "tırnak", "tirnak", "nail", "manikür", "manikyur", "manicure",
+            "pedikür", "pedikyur", "güzellik", "guzellik", "spa", "kuaför",
+            "kuafor", "berber", "estetik", "lash", "epilasyon",
+        ]
+        JEWELRY_NAME_SIGNALS = [
+            "mücevher", "mucevher", "jewelry", "kuyumcu", "pırlanta", "pirlanta",
+            "altın", "altin", "elmas", "diamond",
+        ]
+        FASHION_NAME_SIGNALS = [
+            "boutique", "moda", "giyim", "fashion", "atelier", "atölye",
+        ]
+        BAKERY_NAME_SIGNALS = [
+            "pastane", "fırın", "firin", "ekmek", "pasta", "patisserie",
+        ]
+        _stale_labels = (*GENERIC, "restaurant_cafe", "coffee_shop", "local_service_business",
+                         "general_business", "hospitality_entertainment")
+        name_implies_beauty = any(s in name_lower for s in BEAUTY_NAME_SIGNALS)
+        name_implies_jewelry = any(s in name_lower for s in JEWELRY_NAME_SIGNALS)
+        name_implies_fashion = any(s in name_lower for s in FASHION_NAME_SIGNALS)
+        name_implies_bakery = any(s in name_lower for s in BAKERY_NAME_SIGNALS)
+        name_override_to_beauty = name_implies_beauty and current in _stale_labels
+        name_override_to_jewelry = name_implies_jewelry and current in _stale_labels
+        name_override_to_fashion = name_implies_fashion and current in _stale_labels
+        name_override_to_bakery = name_implies_bakery and current in _stale_labels
+        any_name_override = (
+            name_override_to_beauty or name_override_to_jewelry
+            or name_override_to_fashion or name_override_to_bakery
+        )
         should_update = (
             current in GENERIC
             or (current not in SPECIFIC and better in SPECIFIC)
             or ((current, better) in ALLOW_CORRECTIVE_REMAPS)
+            or any_name_override
         )
+        # Apply name-signal override when keyword inference produced a generic fallback
+        if name_override_to_beauty and better not in SPECIFIC:
+            better = "beauty_wellness"
+        if name_override_to_jewelry and better not in SPECIFIC:
+            better = "jewelry_accessories"
+        if name_override_to_fashion and better not in SPECIFIC:
+            better = "fashion_retail"
+        if name_override_to_bakery and better not in SPECIFIC:
+            better = "bakery_patisserie"
         if should_update:
             if better and better != current:
                 ctx.business_type = better
@@ -1111,6 +1297,14 @@ async def persist_discovery_result(
 
         ctx.reference_image_urls = json.dumps(raw_refs)
 
+    # Deep Instagram intelligence — captions + GPT-4o analysis
+    ig_captions = (analysis_result.get("instagram") or {}).get("recent_captions") or []
+    if ig_captions:
+        ctx.instagram_recent_captions = json.dumps(ig_captions, ensure_ascii=False)
+    ig_intelligence = analysis_result.get("instagram_intelligence")
+    if isinstance(ig_intelligence, dict) and ig_intelligence:
+        ctx.instagram_intelligence = ig_intelligence
+
     # Website intelligence — menu catalog + photo inventory from crawl
     wi = analysis_result.get("website_intelligence")
     if isinstance(wi, dict) and wi:
@@ -1138,3 +1332,88 @@ async def persist_discovery_result(
 
     await db.flush()
     return ctx
+
+
+async def bootstrap_brand_intelligence(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> dict[str, str]:
+    """
+    Day-1 intelligence seeding for a workspace.
+
+    Populates industry_calendar, trend_brief, competitor_pulse, and
+    market_opportunity_ideas if they are currently empty.  Designed to be
+    called immediately after brand-constitution confirmation AND by the
+    daily scheduler backfill loop for any workspace that still has NULL
+    signals.
+
+    Returns a dict describing what was generated / skipped.
+    """
+    import asyncio as _asyncio
+    import json as _json
+
+    from app.config import get_settings
+    from app.services.industry_intelligence_service import build_industry_calendar
+    from app.crew.crews.market_intelligence_crew import run_market_intelligence
+
+    settings = get_settings()
+    results: dict[str, str] = {}
+
+    ctx = await get_brand_context(db, workspace_id)
+    if not ctx:
+        return {"error": "brand_context_not_found"}
+
+    brand = await build_brand_info(db, workspace_id)
+    if not brand or not brand.business_type:
+        return {"skipped": "no_business_type"}
+
+    # ── Industry Calendar ─────────────────────────────────────────────────
+    if not ctx.industry_calendar:
+        try:
+            calendar = await build_industry_calendar(
+                brand,
+                openai_api_key=settings.openai_api_key or "",
+                perplexity_api_key=settings.perplexity_api_key or "",
+                perplexity_model=settings.perplexity_model,
+                tavily_api_key=getattr(settings, "tavily_api_key", "") or "",
+                brave_api_key=getattr(settings, "brave_search_api_key", "") or "",
+            )
+            ctx.industry_calendar = _json.dumps(calendar, ensure_ascii=False)
+            ctx.industry_intelligence_updated_at = datetime.now(timezone.utc).isoformat()
+            results["industry_calendar"] = "generated"
+            logger.info(
+                "bootstrap_industry_calendar",
+                workspace_id=str(workspace_id),
+                industry=calendar.get("industry_type", ""),
+            )
+        except Exception as exc:
+            logger.warning("bootstrap_industry_calendar_failed", workspace_id=str(workspace_id), error=str(exc)[:200])
+            results["industry_calendar"] = f"failed:{str(exc)[:80]}"
+    else:
+        results["industry_calendar"] = "already_present"
+
+    # ── Market Intelligence (trend_brief + competitor_pulse) ──────────────
+    if not ctx.trend_brief or not ctx.competitor_pulse:
+        try:
+            market_result = await _asyncio.to_thread(run_market_intelligence, brand)
+            if market_result.get("trend_brief"):
+                ctx.trend_brief = market_result["trend_brief"]
+                ctx.trend_brief_updated_at = market_result.get("refreshed_at")
+            if market_result.get("competitor_pulse"):
+                ctx.competitor_pulse = market_result["competitor_pulse"]
+            if market_result.get("urgent_content_ideas"):
+                ctx.market_opportunity_ideas = _json.dumps(
+                    market_result["urgent_content_ideas"], ensure_ascii=False
+                )
+            ctx.market_intelligence_updated_at = market_result.get("refreshed_at")
+            results["market_intelligence"] = "generated"
+            logger.info("bootstrap_market_intelligence", workspace_id=str(workspace_id))
+        except Exception as exc:
+            logger.warning("bootstrap_market_intelligence_failed", workspace_id=str(workspace_id), error=str(exc)[:200])
+            results["market_intelligence"] = f"failed:{str(exc)[:80]}"
+    else:
+        results["market_intelligence"] = "already_present"
+
+    db.add(ctx)
+    await db.commit()
+    return results

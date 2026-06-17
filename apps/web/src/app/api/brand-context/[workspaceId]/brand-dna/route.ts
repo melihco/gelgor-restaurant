@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 export async function POST(
   _req: NextRequest,
@@ -11,6 +11,6 @@ export async function POST(
   const { workspaceId } = await params;
   return proxyToCrewBackend(`/api/v1/brand-context/${workspaceId}/brand-dna`, {
     body: {},
-    timeoutMs: 55_000,
+    timeoutMs: 120_000,
   });
 }

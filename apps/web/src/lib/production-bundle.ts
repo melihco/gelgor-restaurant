@@ -1,5 +1,15 @@
 import type { OutputArtifact } from '@/types';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent, parseArtifactMetadata } from '@/app/mobile/_components/artifact-utils';
+import { upscaleCdnUrl } from '@/lib/gallery-display-url';
+import { mediaUrlForKey, resolveClientMediaUrl } from '@/lib/media-url';
+
+/** Local helper — avoids circular import via media-url / artifact-utils. */
+function upgradePhotoUrlForDisplay(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('http')) return trimmed;
+  return upscaleCdnUrl(trimmed);
+}
 
 export type ProductionBundleStatus = 'rendering' | 'ready' | 'failed';
 
@@ -23,7 +33,15 @@ export function resolveStoryVideoUrl(artifact: OutputArtifact): string | null {
   if (!raw || !/\.(mp4|mov|webm)(\?|$)/i.test(raw)) return null;
   if (raw.startsWith('http') || raw.startsWith('/api/') || raw.startsWith('data:')) return raw;
   if (raw.startsWith('/')) return `/api/media?key=${encodeURIComponent(raw.replace(/^\//, ''))}`;
-  return raw;
+  // Bare R2 object key (tenant/stories/foo.mp4)
+  return mediaUrlForKey(raw);
+}
+
+/** Browser `<video src>` — resolves R2 keys and bare paths for client playback. */
+export function resolveStoryVideoClientUrl(artifact: OutputArtifact): string | null {
+  const raw = resolveStoryVideoUrl(artifact);
+  if (!raw) return null;
+  return resolveClientMediaUrl(raw) ?? raw;
 }
 
 function hasProductionBundleFlag(artifact: OutputArtifact): boolean {
@@ -37,15 +55,18 @@ function hasProductionBundleFlag(artifact: OutputArtifact): boolean {
 
 /** DB/content bundle_status only — never call getProductionBundleStatus from here. */
 function readRawBundleStatus(artifact: OutputArtifact): string {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
   const content = parseArtifactContent(artifact.content);
   return String(
     meta.bundle_status || meta.bundleStatus || content.bundle_status || content.bundleStatus || '',
   ).toLowerCase();
 }
 
+/** Remotion story queue — Grafiker retries + parallel renders can exceed 90s. */
+export const REMOTION_BUNDLE_STALE_MS = 360_000;
+
 /** Stuck render queue (no video, older than maxAgeMs). Uses raw status only to avoid recursion. */
-function isRenderingTimedOut(artifact: OutputArtifact, maxAgeMs = 90_000): boolean {
+function isRenderingTimedOut(artifact: OutputArtifact, maxAgeMs = REMOTION_BUNDLE_STALE_MS): boolean {
   if (resolveStoryVideoUrl(artifact)) return false;
   const created = new Date(artifact.createdAt).getTime();
   if (!Number.isFinite(created)) return true;
@@ -58,10 +79,13 @@ function isRenderingTimedOut(artifact: OutputArtifact, maxAgeMs = 90_000): boole
 }
 
 export function getProductionBundleStatus(artifact: OutputArtifact): ProductionBundleStatus | null {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
   const content = parseArtifactContent(artifact.content);
   const raw = readRawBundleStatus(artifact);
   const role = String(meta.production_role ?? content.production_role ?? '').trim();
+
+  // attach-video may have run while bundle_status was still "rendering" (retry race).
+  if (resolveStoryVideoUrl(artifact)) return 'ready';
 
   const looksRendering = raw === 'rendering'
     || (raw === '' && hasProductionBundleFlag(artifact) && !resolveStoryVideoUrl(artifact));
@@ -74,7 +98,6 @@ export function getProductionBundleStatus(artifact: OutputArtifact): ProductionB
   }
 
   if (raw === 'rendering' || raw === 'ready' || raw === 'failed') return raw;
-  if (resolveStoryVideoUrl(artifact)) return 'ready';
   if (role === 'organic_story_still' && resolvePosterUrl(artifact)) return 'ready';
   if (isPostKind(artifact) && hasProductionBundleFlag(artifact)) {
     const branded = resolveBrandedPostUrl(artifact);
@@ -108,6 +131,60 @@ export function isPostKind(artifact: OutputArtifact): boolean {
   return kind.includes('post') || ct === 'post' || ct.includes('instagram_post');
 }
 
+function isPersistedExportImageUrl(url: string): boolean {
+  const u = url.trim().toLowerCase();
+  if (!u) return false;
+  if (u.startsWith('/api/media')) return true;
+  if (u.includes('/posts/') || u.includes('/image/')) return true;
+  if (/\.(png|jpe?g|webp)(\?|$)/i.test(u) && !u.includes('unsplash.com')) return true;
+  return false;
+}
+
+/** Instagram/Mertcafe publish — prefer R2 branded export over gallery previews. */
+export function resolvePublishImageUrl(artifact: OutputArtifact): string | null {
+  const branded = resolveBrandedPostUrl(artifact);
+  if (branded) return branded;
+
+  const content = parseArtifactContent(artifact.content);
+  const meta = parseArtifactMetadata(artifact.metadata);
+  const candidates = [
+    content.imageUrl,
+    meta.imageUrl,
+    meta.enhanced_photo_url,
+    content.enhanced_photo_url,
+    content.exportUrl,
+    content.permanentPreviewUrl,
+    meta.exportUrl,
+    meta.permanentPreviewUrl,
+    content.canvaDownloadUrl,
+    meta.canvaDownloadUrl,
+    meta.feed_preview_url,
+    content.feed_preview_url,
+    meta.poster_url,
+    meta.posterUrl,
+    content.posterUrl,
+    content.poster_url,
+    meta.reference_photo_url,
+    content.reference_photo_url,
+    artifact.contentUrl,
+  ];
+
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim();
+    if (!raw || /\.(mp4|mov|webm)(\?|$)/i.test(raw)) continue;
+    if (raw.includes('canva.com/design')) continue;
+    if (raw.includes('/api/media-proxy') && !isPersistedExportImageUrl(raw)) {
+      // Skip expired Unsplash proxies when a persisted export exists elsewhere in candidates
+      const hasExport = candidates.some(
+        (c) => typeof c === 'string' && isPersistedExportImageUrl(String(c)),
+      );
+      if (hasExport) continue;
+    }
+    return upgradePhotoUrlForDisplay(raw) ?? raw;
+  }
+  return null;
+}
+
 /** Branded PNG from Remotion poster pipeline (feed post bundle). */
 export function resolveBrandedPostUrl(artifact: OutputArtifact): string | null {
   if (!isPostKind(artifact)) return null;
@@ -125,14 +202,29 @@ export function resolveBrandedPostUrl(artifact: OutputArtifact): string | null {
 /** Raw gallery photo for Remotion render — never use text-baked branded stills as photo input. */
 export function resolveGalleryPhotoForRender(artifact: OutputArtifact): string | null {
   const content = parseArtifactContent(artifact.content);
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
-  const raw = String(
-    meta.reference_photo_url || content.reference_photo_url
-    || meta.poster_url || meta.posterUrl || content.posterUrl || content.poster_url
-    || content.imageUrl || meta.imageUrl || '',
-  ).trim();
-  if (!raw || /\.(mp4|mov|webm)(\?|$)/i.test(raw)) return null;
-  return raw;
+  const meta = parseArtifactMetadata(artifact.metadata);
+  const candidates = [
+    meta.enhanced_photo_url,
+    content.enhanced_photo_url,
+    meta.feed_preview_url,
+    content.feed_preview_url,
+    meta.poster_url,
+    meta.posterUrl,
+    content.posterUrl,
+    content.poster_url,
+    content.imageUrl,
+    meta.imageUrl,
+    meta.selected_gallery_url,
+    content.selected_gallery_url,
+    meta.reference_photo_url,
+    content.reference_photo_url,
+  ];
+  for (const candidate of candidates) {
+    const raw = String(candidate || '').trim();
+    if (!raw || /\.(mp4|mov|webm)(\?|$)/i.test(raw)) continue;
+    return upgradePhotoUrlForDisplay(raw) ?? raw;
+  }
+  return null;
 }
 
 /** Gallery poster for a production bundle (before or after video render). */
@@ -140,13 +232,33 @@ export function resolvePosterUrl(artifact: OutputArtifact): string | null {
   const content = parseArtifactContent(artifact.content);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const feedPreview = String(meta.feed_preview_url || content.feed_preview_url || '').trim();
-  if (feedPreview && !/\.(mp4|mov|webm)(\?|$)/i.test(feedPreview)) return feedPreview;
+  if (feedPreview && !/\.(mp4|mov|webm)(\?|$)/i.test(feedPreview)) {
+    return upgradePhotoUrlForDisplay(feedPreview) ?? feedPreview;
+  }
 
   const gallery = resolveGalleryPhotoForRender(artifact);
   if (gallery) return gallery;
   const raw = String(content.imageUrl || meta.imageUrl || '').trim();
   if (!raw || /\.(mp4|mov|webm)(\?|$)/i.test(raw)) return null;
-  return raw;
+  return upgradePhotoUrlForDisplay(raw) ?? raw;
+}
+
+function normalizeProductionHeadline(raw: unknown): string {
+  return String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function artifactPackageFormat(artifact: OutputArtifact): string {
+  const content = parseArtifactContent(artifact.content);
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const kind = String(content.kind || meta.kind || '').toLowerCase();
+  const ct = String((artifact as { contentType?: string }).contentType || content.contentType || '').toLowerCase();
+  if (kind.includes('story') || kind.includes('canvas') || ct.includes('story') || ct.includes('canvas')) {
+    return 'story';
+  }
+  if (kind.includes('reel') || ct.includes('reel')) return 'reel';
+  if (kind.includes('carousel') || ct.includes('carousel')) return 'carousel';
+  if (kind.includes('event') || kind.includes('announcement')) return 'story';
+  return 'post';
 }
 
 export function getProductionIdeaKey(artifact: OutputArtifact): string {
@@ -155,11 +267,76 @@ export function getProductionIdeaKey(artifact: OutputArtifact): string {
   const ideaId = String(meta.idea_id || meta.ideaId || content.idea_id || content.ideaId || '').trim();
   if (ideaId) return ideaId;
   const missionId = parseArtifactMissionId(artifact) || 'no-mission';
-  const headline = String(meta.headline || content.headline || artifact.title || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
+  const headline = normalizeProductionHeadline(meta.headline || content.headline || artifact.title);
   return `${missionId}::${headline}`;
+}
+
+/** Per-story identity — never collapse distinct ideas that share a bad duplicate headline. */
+export function getStoryBarDedupeKey(artifact: OutputArtifact): string {
+  const missionId = parseArtifactMissionId(artifact) || 'no-mission';
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const content = parseArtifactContent(artifact.content);
+  const ideaId = String(meta.idea_id || meta.ideaId || content.idea_id || content.ideaId || '').trim();
+  const ideaIndex = meta.idea_index ?? content.idea_index ?? meta.ideaIndex;
+  if (typeof ideaIndex === 'number') return `story::${missionId}::idx-${ideaIndex}`;
+  if (ideaId && missionId !== 'no-mission' && ideaId.startsWith(`${missionId}-`)) {
+    const suffix = ideaId.slice(missionId.length + 1);
+    const parsedIdx = Number.parseInt(suffix, 10);
+    if (!Number.isNaN(parsedIdx)) return `story::${missionId}::idx-${parsedIdx}`;
+  }
+  if (ideaId) return `story::${ideaId}`;
+  const slotKey = String(meta.library_slot_key || meta.librarySlotKey || '').trim();
+  if (slotKey) return `story::${missionId}::${slotKey}`;
+  const headline = normalizeProductionHeadline(meta.headline || content.headline || artifact.title);
+  if (headline) return `story::${missionId}::${headline}`;
+  return `story::${artifact.id}`;
+}
+
+/** Semantic dedupe key — ignores random per-run idea_id UUIDs. */
+export function getProductionDedupeKey(artifact: OutputArtifact): string {
+  const fmt = artifactPackageFormat(artifact);
+  if (fmt === 'story') return getStoryBarDedupeKey(artifact);
+  const missionId = parseArtifactMissionId(artifact) || 'no-mission';
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const content = parseArtifactContent(artifact.content);
+  const headline = normalizeProductionHeadline(meta.headline || content.headline || artifact.title);
+  if (headline) return `${fmt}::${missionId}::${headline}`;
+  const ideaId = String(meta.idea_id || meta.ideaId || content.idea_id || content.ideaId || '').trim();
+  if (ideaId) return `${fmt}::${ideaId}`;
+  return `${fmt}::${artifact.id}`;
+}
+
+export function buildIdeaProductionDedupeKey(
+  missionId: string | undefined,
+  idea: Record<string, unknown>,
+  ideaIndex: number,
+  slotRole?: string,
+): string {
+  const ct = String(
+    idea.content_type || idea.content_kind || idea.format || idea.kind || 'post',
+  ).toLowerCase();
+  let fmt = 'post';
+  if (ct.includes('reel')) fmt = 'reel';
+  else if (ct.includes('carousel')) fmt = 'carousel';
+  else if (ct.includes('story') || ct.includes('canvas') || ct.includes('event') || ct.includes('announcement')) {
+    fmt = 'story';
+  }
+  const mid = missionId || 'no-mission';
+  const slot = String(slotRole ?? '').trim();
+  const slotSuffix = slot ? `::${slot}` : '';
+  if (fmt === 'story') {
+    const stableId = String(idea.id || idea.idea_id || '').trim();
+    if (stableId) return `story::${stableId}${slotSuffix}`;
+    const idx = typeof idea.idea_index === 'number' ? idea.idea_index : ideaIndex;
+    return `story::${mid}::idx-${idx}${slotSuffix}`;
+  }
+  const headline = normalizeProductionHeadline(
+    idea.headline || idea.concept_title || idea.title || idea.caption_draft,
+  );
+  if (headline) return `${fmt}::${mid}::${headline}${slotSuffix}`;
+  const stableId = String(idea.id || idea.idea_id || '').trim();
+  if (stableId) return `${fmt}::${stableId}${slotSuffix}`;
+  return `${fmt}::${mid}::idx-${ideaIndex}${slotSuffix}`;
 }
 
 function bundlePriority(artifact: OutputArtifact): number {
@@ -176,36 +353,98 @@ function bundlePriority(artifact: OutputArtifact): number {
 }
 
 /**
- * One idea = one artifact. Collapses legacy duplicate pairs (image placeholder + Remotion video).
+ * One idea = one artifact. Collapses duplicate runs (same headline/format) and legacy
+ * bundle pairs (image placeholder + Remotion video).
  */
-export function dedupeProductionBundles(artifacts: OutputArtifact[]): OutputArtifact[] {
-  const storyGroups = new Map<string, OutputArtifact[]>();
-  const passthrough: OutputArtifact[] = [];
+function dedupeByKey(
+  artifacts: OutputArtifact[],
+  keyFn: (artifact: OutputArtifact) => string,
+): OutputArtifact[] {
+  const groups = new Map<string, OutputArtifact[]>();
 
   for (const artifact of artifacts) {
-    if (!isStoryKind(artifact)) {
-      passthrough.push(artifact);
-      continue;
-    }
-    const key = getProductionIdeaKey(artifact);
-    const group = storyGroups.get(key) ?? [];
+    const key = keyFn(artifact);
+    const group = groups.get(key) ?? [];
     group.push(artifact);
-    storyGroups.set(key, group);
+    groups.set(key, group);
   }
 
-  const dedupedStories: OutputArtifact[] = [];
-  for (const group of storyGroups.values()) {
+  const deduped: OutputArtifact[] = [];
+  for (const group of groups.values()) {
     if (group.length === 1) {
-      dedupedStories.push(group[0]!);
+      deduped.push(group[0]!);
       continue;
     }
     const winner = [...group].sort((a, b) => bundlePriority(b) - bundlePriority(a))[0]!;
-    dedupedStories.push(winner);
+    deduped.push(winner);
   }
 
-  return [...passthrough, ...dedupedStories].sort(
+  return deduped.sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+}
+
+export function dedupeProductionBundles(artifacts: OutputArtifact[]): OutputArtifact[] {
+  return dedupeByKey(artifacts, getProductionDedupeKey);
+}
+
+/** Story bubble bar — one ring per idea/slot, not per headline text. */
+export function dedupeStoryBarArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
+  return dedupeByKey(artifacts, getStoryBarDedupeKey);
+}
+
+function storyIdeaSortKey(artifact: OutputArtifact): number {
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const content = parseArtifactContent(artifact.content);
+  const idx = meta.idea_index ?? content.idea_index ?? meta.ideaIndex;
+  if (typeof idx === 'number') return idx;
+  return 999;
+}
+
+/**
+ * Consumer Feed story bar — hide failed/stale duplicates and cap ring count.
+ * Operator mode should pass through the full deduped pool.
+ */
+export function filterConsumerStoryBar(
+  artifacts: OutputArtifact[],
+  opts?: { maxRings?: number; missionId?: string | null },
+): OutputArtifact[] {
+  const maxRings = opts?.maxRings ?? 4;
+  let pool = dedupeStoryBarArtifacts(artifacts).filter((a) => {
+    if (isBundleFailed(a) && !resolveStoryVideoUrl(a)) return false;
+    if (isBundleStaleRendering(a)) return false;
+    return true;
+  });
+
+  if (opts?.missionId) {
+    pool = pool.filter((a) => parseArtifactMissionId(a) === opts.missionId);
+  } else {
+    const byMission = new Map<string, OutputArtifact[]>();
+    for (const artifact of pool) {
+      const mid = parseArtifactMissionId(artifact) || 'none';
+      const group = byMission.get(mid) ?? [];
+      group.push(artifact);
+      byMission.set(mid, group);
+    }
+    const newestMissionIds = [...byMission.entries()]
+      .sort(([, a], [, b]) => {
+        const ta = Math.max(...a.map((x) => new Date(x.createdAt).getTime()));
+        const tb = Math.max(...b.map((x) => new Date(x.createdAt).getTime()));
+        return tb - ta;
+      })
+      .slice(0, 2)
+      .map(([mid]) => mid);
+    pool = pool.filter((a) => newestMissionIds.includes(parseArtifactMissionId(a) || 'none'));
+  }
+
+  return pool
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === 'pending_review' ? -1 : 1;
+      const idx = storyIdeaSortKey(a) - storyIdeaSortKey(b);
+      if (idx !== 0) return idx;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .slice(0, maxRings);
 }
 
 /** Feed story bar + story tab: production bundle with poster and/or Remotion video. */
@@ -243,7 +482,7 @@ export function isBundleFailed(artifact: OutputArtifact): boolean {
 /** Rendering longer than maxAgeMs with no video — likely queue timeout or server restart. */
 export function isBundleStaleRendering(
   artifact: OutputArtifact,
-  maxAgeMs = 90_000,
+  maxAgeMs = REMOTION_BUNDLE_STALE_MS,
 ): boolean {
   const status = getProductionBundleStatus(artifact);
   if (status !== 'rendering') return false;

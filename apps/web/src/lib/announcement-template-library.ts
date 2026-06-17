@@ -22,7 +22,7 @@ import type {
   AnnouncementTemplateId,
   AnnouncementUseCase,
 } from './announcement-template-types';
-import { applyPremiumPosterLayoutPatch } from './poster-quality';
+import { applyPhotoLegibilityLayoutPatch, applyPremiumPosterLayoutPatch } from './poster-quality';
 
 import {
   getSectorCollection,
@@ -121,7 +121,10 @@ export function resolveFormatDimensions(format: AnnouncementContentFormat): { wi
 export function buildAnnouncementOverlaySvg(opts: AnnouncementOverlayInput): Buffer {
   const templateId = normalizeTemplateId(opts.templateId);
   const rawLayout = opts.layout ?? resolveTemplateLayout(templateId);
-  const layout = applyPremiumPosterLayoutPatch(rawLayout, opts.sector);
+  const layout = applyPhotoLegibilityLayoutPatch(
+    applyPremiumPosterLayoutPatch(rawLayout, opts.sector),
+    { hasLineup: Boolean(opts.lineupArtists?.length) },
+  );
   const svg = buildLayoutSvg(opts, layout);
   return Buffer.from(svg);
 }

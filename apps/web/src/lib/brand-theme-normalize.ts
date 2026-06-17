@@ -3,22 +3,30 @@
 const AI_KEYS_SNAKE = [
   'ai_photo_enhance',
   'ai_photo_enhance_level',
+  'ai_enhance_gallery_selected',
   'ai_use_brand_identity',
   'ai_brief_drives_scene',
   'ai_embed_logo',
   'ai_enhance_formats',
   'ai_visual_subject',
+  'ai_adaptive_scene',
+  'ai_adaptive_scene_mode',
+  'ai_caption_driven_visual',
   'enable_visual_production_director',
 ] as const;
 
 const CAMEL_TO_SNAKE: Record<string, string> = {
   aiPhotoEnhance: 'ai_photo_enhance',
   aiPhotoEnhanceLevel: 'ai_photo_enhance_level',
+  aiEnhanceGallerySelected: 'ai_enhance_gallery_selected',
   aiUseBrandIdentity: 'ai_use_brand_identity',
   aiBriefDrivesScene: 'ai_brief_drives_scene',
   aiEmbedLogo: 'ai_embed_logo',
   aiEnhanceFormats: 'ai_enhance_formats',
   aiVisualSubject: 'ai_visual_subject',
+  aiAdaptiveScene: 'ai_adaptive_scene',
+  aiAdaptiveSceneMode: 'ai_adaptive_scene_mode',
+  aiCaptionDrivenVisual: 'ai_caption_driven_visual',
   enableVisualProductionDirector: 'enable_visual_production_director',
 };
 

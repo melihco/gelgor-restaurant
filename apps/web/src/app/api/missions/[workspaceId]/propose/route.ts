@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { BRS_PROPOSE_THRESHOLD } from '@/lib/brand-readiness';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
 import {
   assertPathTenantMatchesRequest,
@@ -14,7 +15,7 @@ export const maxDuration = 120; // StrategistAgent takes 30–90s
  * Constitution approval pushes BRS to 85+ (full autonomy path), but core brand
  * data (gallery, pillars, CTAs, theme) at 70+ is sufficient for proposal.
  */
-const BRS_GATE = 70;
+const BRS_GATE = BRS_PROPOSE_THRESHOLD;
 const GIS_GATE = 70;
 
 export async function POST(

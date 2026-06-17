@@ -25,7 +25,7 @@ import type { BrandRuleItem } from '@/types';
 
 const RULE_TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
   cta:               { label: 'Onaylı CTA',         icon: '💬', color: '#10B981' },
-  format_preference: { label: 'Tercih Edilen Format', icon: '✦',  color: '#A78BFA' },
+  format_preference: { label: 'Tercih Edilen Format', icon: '✦',  color: '#9DBECE' },
   format_avoidance:  { label: 'Kaçınılacak Format',  icon: '⚠',  color: '#F59E0B' },
   hook_pattern:      { label: 'Kanıtlı Hook Tipi',   icon: '◎',  color: '#60A5FA' },
   content_pillar:    { label: 'İçerik Sütunu',        icon: '⬡',  color: '#F472B6' },

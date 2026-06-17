@@ -45,7 +45,8 @@ const FONT_PAIRS: Array<{ heading: string; body: string; motionStyle: AgencyBran
 ];
 
 const SHOWCASE_COPY: Record<string, { headline: string; subtitle: string; category: string }> = {
-  beach_club: { headline: 'Gün Batımı Ritüeli', subtitle: 'Deniz kenarında akşam', category: 'BEACH' },
+  beach_club: { headline: 'Golden Hour Ritüeli', subtitle: 'Deniz · lounge · sunset', category: 'SUNSET' },
+  beauty_salon: { headline: 'Işıltını\nKeşfet', subtitle: 'Cilt · saç · manikür', category: 'GLOW' },
   fine_dining: { headline: 'Şefin Seçimi', subtitle: 'Mevsimsel tadım menüsü', category: 'TASTING' },
   hotel_resort: { headline: 'Kaçış Başlasın', subtitle: 'Premium konaklama', category: 'STAY' },
   nightclub: { headline: 'Gece Canlanıyor', subtitle: 'DJ set · VIP', category: 'NIGHT' },
@@ -58,8 +59,16 @@ function kitCopy(sector: string) {
 
 /** Build 50 kits from sector × palette × font rotation */
 export const AGENCY_BRAND_KITS: AgencyBrandKit[] = SECTORS.map((sector, i) => {
-  const palette = PALETTES[i % PALETTES.length]!;
-  const fonts = FONT_PAIRS[i % FONT_PAIRS.length]!;
+  const palette = sector === 'beach_club'
+    ? { primary: '#0f172a', accent: '#fb923c', text: '#fff7ed' }
+    : sector === 'beauty_salon'
+      ? { primary: '#1a1218', accent: '#e8b4b8', text: '#fdf2f8' }
+      : PALETTES[i % PALETTES.length]!;
+  const fonts = sector === 'beach_club'
+    ? { heading: 'Bodoni Moda', body: 'Manrope', motionStyle: 'luxury' as const }
+    : sector === 'beauty_salon'
+      ? { heading: 'Cormorant Garamond', body: 'Lora', motionStyle: 'luxury' as const }
+      : FONT_PAIRS[i % FONT_PAIRS.length]!;
   const copy = kitCopy(sector);
   const id = `kit_${String(i + 1).padStart(2, '0')}_${sector}`;
 

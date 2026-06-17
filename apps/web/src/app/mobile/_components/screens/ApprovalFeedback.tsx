@@ -10,6 +10,7 @@
  */
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -31,12 +32,13 @@ function ImageGenPanel({ artifactId, caption, title, queryClient }: {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn: () => apiClient.getBrandContextData(tenantId),
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId),
     staleTime: 10 * 60_000,
     enabled: !!tenantId,
   });
+  const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
 
   async function generate(mode: 'post' | 'story' | 'reel') {
     setError(null);
@@ -94,9 +96,9 @@ function ImageGenPanel({ artifactId, caption, title, queryClient }: {
       <div style={{ padding: '13px 16px 10px', borderBottom: '0.5px solid rgba(255,255,255,0.06)',
         display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ width: 28, height: 28, borderRadius: 8,
-          background: 'rgba(167,139,250,0.1)', border: '0.5px solid rgba(167,139,250,0.2)',
+          background: 'rgba(157,190,206,0.1)', border: '0.5px solid rgba(157,190,206,0.2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9DBECE" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
             <polyline points="21 15 16 10 5 21"/>
           </svg>
@@ -120,21 +122,21 @@ function ImageGenPanel({ artifactId, caption, title, queryClient }: {
               disabled={!!generating}
               style={{
                 flex: 1, padding: '12px 6px', borderRadius: 14, cursor: generating ? 'default' : 'pointer',
-                background: isLoading ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.04)',
-                border: `0.5px solid ${isLoading ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.1)'}`,
+                background: isLoading ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)',
+                border: `0.5px solid ${isLoading ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.1)'}`,
                 opacity: generating && !isLoading ? 0.4 : 1,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
                 transition: 'all 150ms ease',
               }}>
               {isLoading ? (
                 <div style={{ width: 16, height: 16, borderRadius: '50%',
-                  border: '2px solid rgba(167,139,250,0.3)', borderTop: '2px solid #a78bfa',
+                  border: '2px solid rgba(157,190,206,0.3)', borderTop: '2px solid #9DBECE',
                   animation: 'spinSlow 0.8s linear infinite' }} />
               ) : (
                 <span style={{ fontSize: 18, opacity: 0.7 }}>{m.icon}</span>
               )}
               <span style={{ fontSize: 12, fontWeight: 700,
-                color: isLoading ? '#a78bfa' : 'rgba(248,250,252,0.8)' }}>{m.label}</span>
+                color: isLoading ? '#9DBECE' : 'rgba(248,250,252,0.8)' }}>{m.label}</span>
               <span style={{ fontSize: 10, color: 'rgba(148,163,184,0.4)' }}>{m.sub}</span>
             </button>
           );
@@ -171,6 +173,15 @@ const CHIPS = [
 
 // Revision scope — narrows what AI rewrites. "all" preserves existing behaviour.
 type RevisionScope = 'all' | 'caption' | 'image';
+type RevisionInput = RevisionScope | { scope: RevisionScope; note?: string; chips?: string[] };
+
+const QUICK_REVISION_CHIPS: { id: string; label: string; scope: RevisionScope; note: string }[] = [
+  { id: 'headline', label: 'Başlığı değiştir', scope: 'caption', note: 'Başlığı daha kısa ve net yap' },
+  { id: 'photo', label: 'Farklı fotoğraf', scope: 'image', note: 'Galeriden konuya daha uygun fotoğraf seç' },
+  { id: 'shorter', label: 'Daha kısa caption', scope: 'caption', note: 'Caption en fazla 2 cümle olsun' },
+  { id: 'cta-strong', label: 'CTA güçlendir', scope: 'caption', note: 'Harekete geçirici CTA ekle' },
+  { id: 'design', label: 'Renk / tasarım', scope: 'all', note: 'Marka renklerine daha sadık tasarım' },
+];
 
 /** "Content Agent: Content Calendar" → daha okunaklı başlık hiyerarşisi */
 function splitArtifactTitle(raw: string): { agentLine: string; taskLine: string | null } {
@@ -217,14 +228,14 @@ function SuccessScreen({ decided, onBack }: { decided: 'approved' | 'rejected' |
   const isRevision = decided === 'rejected';
 
   return (
-    <div style={{ height: '100dvh', background: '#050508', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+    <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
       <div style={{
         width: 80, height: 80, borderRadius: '50%', marginBottom: 24,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: decided === 'approved' ? 'rgba(52,211,153,0.1)' : decided === 'revision' ? 'rgba(167,139,250,0.1)' : 'rgba(251,113,133,0.08)',
-        border: `1px solid ${decided === 'approved' ? 'rgba(52,211,153,0.25)' : decided === 'revision' ? 'rgba(167,139,250,0.25)' : 'rgba(251,113,133,0.2)'}`,
+        background: decided === 'approved' ? 'rgba(52,211,153,0.1)' : decided === 'revision' ? 'rgba(157,190,206,0.1)' : 'rgba(251,113,133,0.08)',
+        border: `1px solid ${decided === 'approved' ? 'rgba(52,211,153,0.25)' : decided === 'revision' ? 'rgba(157,190,206,0.25)' : 'rgba(251,113,133,0.2)'}`,
       }}>
-        <span style={{ fontSize: 32, color: decided === 'approved' ? '#34d399' : decided === 'revision' ? '#a78bfa' : '#fb7185' }}>
+        <span style={{ fontSize: 32, color: decided === 'approved' ? '#34d399' : decided === 'revision' ? '#9DBECE' : '#fb7185' }}>
           {decided === 'approved' ? '✓' : decided === 'revision' ? '↺' : '×'}
         </span>
       </div>
@@ -237,7 +248,7 @@ function SuccessScreen({ decided, onBack }: { decided: 'approved' | 'rejected' |
         {decided === 'approved'
           ? 'İçerik yayın kuyruğuna alındı.'
           : decided === 'revision'
-            ? 'Notlarınız kaydedildi. İçerik geri bildiriminiz doğrultusunda yeniden üretilecek ve Outputs\'a eklenecek.'
+            ? 'Notlarınız kaydedildi. AI ekibiniz güncelliyor — yaklaşık 10 dakika içinde yeni versiyon İçerik sekmesinde görünür.'
             : 'İçerik reddedildi ve arşivlendi.'}
       </div>
 
@@ -279,12 +290,12 @@ function ContentCard({ signal, artifact, t }: {
     }}>
       {/* Header strip */}
       <div style={{ padding: '14px 16px 12px', borderBottom: '0.5px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#a78bfa', boxShadow: '0 0 8px rgba(167,139,250,0.6)', flexShrink: 0 }} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#9DBECE', boxShadow: '0 0 8px rgba(157,190,206,0.6)', flexShrink: 0 }} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#9DBECE', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
           {getTypeLabel(signal)}
         </span>
         {ideas.length > 1 && (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.12)', color: '#a78bfa', fontWeight: 600, marginLeft: 4 }}>
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(157,190,206,0.12)', color: '#9DBECE', fontWeight: 600, marginLeft: 4 }}>
             {ideas.length} fikir
           </span>
         )}
@@ -348,12 +359,14 @@ export function ApprovalFeedback() {
 
   // Instagram connection status
   const { data: metaStatus } = useQuery({
-    queryKey: ['meta-status-mobile'],
+    queryKey: ['meta-status-mobile', tenantId],
     queryFn: async () => {
-      const res = await fetch('/api/meta/analytics').catch(() => null);
+      if (!tenantId) return { connected: false };
+      const res = await fetch(`/api/meta/analytics?workspaceId=${encodeURIComponent(tenantId)}`).catch(() => null);
       if (!res?.ok) return { connected: false };
       return res.json() as Promise<{ connected: boolean; ig_username?: string }>;
     },
+    enabled: Boolean(tenantId),
     staleTime: 5 * 60_000,
   });
   const igConnected = Boolean(metaStatus?.connected);
@@ -402,16 +415,17 @@ export function ApprovalFeedback() {
   });
 
   const revisionMutation = useMutation({
-    mutationFn: async (scope: RevisionScope = 'all') => {
+    mutationFn: async (input: RevisionInput = 'all') => {
       if (!artifact) return;
-      // Prepend scope marker so the agent knows what to rewrite. Backwards
-      // compatible: 'all' = old behaviour (no marker).
+      const scope = typeof input === 'string' ? input : input.scope;
+      const extraNote = typeof input === 'string' ? undefined : input.note;
+      const extraChips = typeof input === 'string' ? undefined : input.chips;
       const scopePrefix = scope === 'caption'
         ? '[REVISE_CAPTION_ONLY] '
         : scope === 'image'
           ? '[REVISE_IMAGE_ONLY] '
           : '';
-      const fb = scopePrefix + ([note, ...selectedChips].filter(Boolean).join(', ') || 'Revision requested');
+      const fb = scopePrefix + ([note, extraNote, ...selectedChips, ...(extraChips ?? [])].filter(Boolean).join(', ') || 'Revision requested');
       await apiClient.requestRevision(artifact.id, fb);
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['artifacts'] }); setDecided('revision'); },
@@ -519,8 +533,8 @@ export function ApprovalFeedback() {
 
   if (isLoading || !artifact) {
     return (
-      <div style={{ height: '100dvh', background: '#050508', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
-        <div style={{ width: 40, height: 40, borderRadius: '50%', border: '2px solid rgba(167,139,250,0.2)', borderTop: '2px solid #a78bfa', animation: 'spinSlow 1.2s linear infinite' }} />
+      <div style={{ height: '100dvh', background: '#07090F', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', border: '2px solid rgba(157,190,206,0.2)', borderTop: '2px solid #9DBECE', animation: 'spinSlow 1.2s linear infinite' }} />
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>Yükleniyor</div>
       </div>
     );
@@ -534,7 +548,7 @@ export function ApprovalFeedback() {
   return (
     <div style={{
       position: 'relative',
-      height: '100dvh', background: '#050508',
+      height: '100dvh', background: '#07090F',
       display: 'flex', flexDirection: 'column',
       overflowX: 'hidden',  // only clip horizontal overflow, not vertical scroll
       fontFamily: '-apple-system, "SF Pro Display", system-ui, sans-serif',
@@ -626,7 +640,7 @@ export function ApprovalFeedback() {
               background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.08)' }}>
               {head && (
                 <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(167,139,250,0.6)',
+                  <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(157,190,206,0.6)',
                     textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Başlık</p>
                   <p style={{ fontSize: 14, fontWeight: 700, color: 'rgba(248,250,252,0.9)', margin: 0, lineHeight: 1.4 }}>
                     {head.slice(0, 100)}
@@ -635,7 +649,7 @@ export function ApprovalFeedback() {
               )}
               {cap && (
                 <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(167,139,250,0.6)',
+                  <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(157,190,206,0.6)',
                     textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>Caption</p>
                   <p style={{ fontSize: 13, color: 'rgba(226,232,240,0.8)', margin: 0, lineHeight: 1.65,
                     whiteSpace: 'pre-wrap' }}>
@@ -652,7 +666,7 @@ export function ApprovalFeedback() {
               )}
               {tags.length > 0 && (
                 <div style={{ marginBottom: missionBrief ? 10 : 0 }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(167,139,250,0.6)',
+                  <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(157,190,206,0.6)',
                     textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Hashtag'ler</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                     {tags.map((h, i) => (
@@ -679,6 +693,31 @@ export function ApprovalFeedback() {
           );
         })()}
 
+        {/* ── QUICK REVISION CHIPS ── */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.4)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+            Hızlı Revizyon
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {QUICK_REVISION_CHIPS.map(chip => (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => revisionMutation.mutate({ scope: chip.scope, note: chip.note })}
+                disabled={revisionMutation.isPending || !artifact}
+                style={{
+                  padding: '8px 14px', borderRadius: 30, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  background: 'rgba(52,211,153,0.08)',
+                  border: '0.5px solid rgba(52,211,153,0.22)',
+                  color: '#34d399',
+                  opacity: revisionMutation.isPending ? 0.5 : 1,
+                }}>
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* ── FEEDBACK CHIPS ── */}
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.4)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
@@ -690,9 +729,9 @@ export function ApprovalFeedback() {
               return (
                 <button key={chip.id} onClick={() => toggleChip(chip.id)} style={{
                   padding: '8px 15px', borderRadius: 30, cursor: 'pointer', fontSize: 13, fontWeight: on ? 600 : 400,
-                  background: on ? 'rgba(167,139,250,0.14)' : 'rgba(255,255,255,0.05)',
-                  border: `0.5px solid ${on ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.09)'}`,
-                  color: on ? '#a78bfa' : 'rgba(148,163,184,0.55)',
+                  background: on ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.05)',
+                  border: `0.5px solid ${on ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.09)'}`,
+                  color: on ? '#9DBECE' : 'rgba(148,163,184,0.55)',
                   transition: 'all 140ms ease',
                 }}>
                   {chip.label}
@@ -721,7 +760,7 @@ export function ApprovalFeedback() {
               width: '100%', marginTop: 8, padding: '13px 15px', borderRadius: 14,
               resize: 'none', outline: 'none', boxSizing: 'border-box',
               fontSize: 14, lineHeight: 1.55,
-              background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(167,139,250,0.25)',
+              background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(157,190,206,0.25)',
               color: '#f8fafc',
             }}
           />
@@ -820,7 +859,7 @@ export function ApprovalFeedback() {
                   style={{ flex: 1, padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
                     background: 'rgba(255,255,255,0.04)',
                     border: '0.5px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(167,139,250,0.85)', fontSize: 11, fontWeight: 600 }}>
+                    color: 'rgba(157,190,206,0.85)', fontSize: 11, fontWeight: 600 }}>
                   ✎ Sadece Caption
                 </button>
                 <button type="button"
@@ -829,7 +868,7 @@ export function ApprovalFeedback() {
                   style={{ flex: 1, padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
                     background: 'rgba(255,255,255,0.04)',
                     border: '0.5px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(167,139,250,0.85)', fontSize: 11, fontWeight: 600 }}>
+                    color: 'rgba(157,190,206,0.85)', fontSize: 11, fontWeight: 600 }}>
                   🖼 Sadece Görsel
                 </button>
                 <button type="button"
@@ -852,13 +891,13 @@ export function ApprovalFeedback() {
                 disabled={revisionMutation.isPending || !artifact}
                 style={{
                   flex: 1, padding: '13px 14px', borderRadius: 16, cursor: 'pointer',
-                  background: 'rgba(167,139,250,0.10)', border: '0.5px solid rgba(167,139,250,0.25)',
-                  color: '#a78bfa', fontSize: 13, fontWeight: 700,
+                  background: 'rgba(157,190,206,0.10)', border: '0.5px solid rgba(157,190,206,0.25)',
+                  color: '#9DBECE', fontSize: 13, fontWeight: 700,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   opacity: revisionMutation.isPending ? 0.6 : 1,
                 }}>
                 {revisionMutation.isPending ? (
-                  <div style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(167,139,250,0.3)', borderTop: '2px solid #a78bfa', animation: 'spinSlow 0.8s linear infinite' }} />
+                  <div style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid rgba(157,190,206,0.3)', borderTop: '2px solid #9DBECE', animation: 'spinSlow 0.8s linear infinite' }} />
                 ) : (
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.68"/></svg>
                 )}

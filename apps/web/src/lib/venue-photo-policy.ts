@@ -6,6 +6,8 @@
  *
  * Enable AI grading only for specific upscale cases: VENUE_PHOTO_PRESERVE=false
  */
+import { isNonVenueSector } from '@/lib/sector-gallery-seed';
+import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
 export function shouldPreserveVenuePhotos(): boolean {
   return process.env.VENUE_PHOTO_PRESERVE !== 'false';
 }
@@ -14,8 +16,10 @@ export function shouldPreserveVenuePhotos(): boolean {
  * AI color grading on gallery photos in auto-produce.
  * OFF by default — Remotion handles the visual treatment over original photos.
  * Enable only explicitly: AUTO_PRODUCE_SUBTLE_ENHANCE=true
+ * SaaS / non-venue sectors always skip — Remotion + digital UI only.
  */
-export function shouldAutoProduceEnhanceGallery(): boolean {
+export function shouldAutoProduceEnhanceGallery(businessType?: string | null): boolean {
+  if (businessType && isNonVenueSectorProfile(businessType)) return false;
   if (!shouldPreserveVenuePhotos()) return true;
   return process.env.AUTO_PRODUCE_SUBTLE_ENHANCE === 'true';
 }

@@ -45,6 +45,10 @@ class BrandInfo:
     instagram_handle: str = ""
     website_summary: str = ""
     instagram_bio: str = ""
+    # Verbatim recent captions — injected so agents match the brand's real writing voice
+    instagram_recent_captions: list[str] = field(default_factory=list)
+    # GPT-4o structured analysis of Instagram: voice, themes, CTAs, emotional triggers
+    instagram_intelligence: dict | None = None
     discovery_confidence: int | None = None
     brand_constitution_confirmed: bool = False
     reference_image_urls: list[str] = field(default_factory=list)
@@ -359,10 +363,10 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
 
     # ── Profile-based filtering ───────────────────────────────────────────
     include_market_intel = profile in ("full", "ads", "video")
-    include_social_listening = profile == "full"
+    include_social_listening = profile in ("full", "video")
     include_industry_calendar = profile in ("full", "ads", "video")
-    include_customer_signals = profile in ("full", "review", "ads")
-    include_learning = profile in ("full", "review")
+    include_customer_signals = profile in ("full", "review", "ads", "video")
+    include_learning = profile in ("full", "review", "ads", "video")
 
     # ── Brand DNA — synthesised master intelligence, read first ──────────
     if brand.brand_dna:
@@ -475,7 +479,7 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
             "",
         ]
 
-    if brand.instagram_bio or brand.instagram_top_hashtags:
+    if brand.instagram_bio or brand.instagram_top_hashtags or brand.instagram_intelligence or brand.instagram_recent_captions:
         social_lines = ["## Social Media Intelligence (from live Instagram analysis)"]
         if brand.instagram_bio:
             social_lines.append(f"**Account Bio**: {brand.instagram_bio[:150]}")
@@ -486,6 +490,61 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
             social_lines.append(
                 "Use the above hashtags in content — they reflect the brand's real audience and engagement patterns."
             )
+
+        # GPT-4o structured brand voice analysis from real captions
+        if brand.instagram_intelligence:
+            ig = brand.instagram_intelligence
+            bv = ig.get("brand_voice", {})
+            if bv:
+                voice_parts = []
+                if bv.get("primary_tone"):
+                    voice_parts.append(f"Ton: {bv['primary_tone']}")
+                if bv.get("writing_style"):
+                    voice_parts.append(f"Yazım stili: {bv['writing_style']}")
+                if bv.get("emoji_usage"):
+                    voice_parts.append(f"Emoji kullanımı: {bv['emoji_usage']}")
+                if bv.get("caption_length"):
+                    voice_parts.append(f"Caption uzunluğu: {bv['caption_length']}")
+                if bv.get("engagement_style"):
+                    voice_parts.append(f"Etkileşim stili: {bv['engagement_style']}")
+                if voice_parts:
+                    social_lines.append(f"**Marka Sesi (gerçek paylaşımlardan analiz)**: {' | '.join(voice_parts)}")
+
+            themes = ig.get("content_themes", [])
+            if themes:
+                theme_strs = [
+                    f"{t.get('theme', '')} ({t.get('frequency', '')}): \"{t.get('example', '')[:80]}\""
+                    for t in themes[:5] if t.get("theme")
+                ]
+                social_lines.append(f"**İçerik Temaları**: {' | '.join(theme_strs)}")
+
+            cta_patterns = ig.get("cta_patterns", [])
+            if cta_patterns:
+                social_lines.append(f"**Gerçek CTA'lar**: {' | '.join(cta_patterns[:6])}")
+
+            triggers = ig.get("emotional_triggers", [])
+            if triggers:
+                social_lines.append(f"**Duygusal Tetikleyiciler**: {', '.join(triggers[:5])}")
+
+            insights = ig.get("posting_insights", {})
+            if insights.get("audience_connection_method"):
+                social_lines.append(f"**Takipçiyle bağ kurma yöntemi**: {insights['audience_connection_method']}")
+
+            # Best caption examples for direct voice mimicking
+            caption_examples = ig.get("caption_examples", [])
+            if caption_examples:
+                social_lines.append("**Örnek gerçek captionlar (bu sesi taklit et)**:")
+                for ex in caption_examples[:2]:
+                    if ex.get("text"):
+                        social_lines.append(f'  - "{ex["text"][:200]}"')
+
+        # Fallback: show raw captions if no LLM analysis
+        elif brand.instagram_recent_captions:
+            social_lines.append("**Son gerçek paylaşımlar (marka sesini yakala)**:")
+            for cap in brand.instagram_recent_captions[:3]:
+                if cap.strip():
+                    social_lines.append(f'  - "{cap[:180]}"')
+
         social_lines.append("")
         sections += social_lines
 

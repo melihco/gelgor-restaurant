@@ -26,3 +26,38 @@ export function pickFromPool<T>(pool: T[], tenantId: string | undefined, salt: s
   const seed = tenantId?.trim() ? hashTenantSeed(tenantId, salt) : fallbackIndex;
   return pool[seed % pool.length]!;
 }
+
+export interface BrandFingerprintInput {
+  tenantId?: string;
+  brandName?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  headingFont?: string;
+  bodyFont?: string;
+  motionStyle?: string;
+  logoUrl?: string;
+}
+
+export function buildBrandFingerprint(input: BrandFingerprintInput): string {
+  const parts = [
+    input.tenantId?.trim().toLowerCase() ?? '',
+    input.brandName?.trim().toLowerCase() ?? '',
+    input.primaryColor?.trim().toLowerCase() ?? '',
+    input.accentColor?.trim().toLowerCase() ?? '',
+    input.headingFont?.trim().toLowerCase() ?? '',
+    input.bodyFont?.trim().toLowerCase() ?? '',
+    input.motionStyle?.trim().toLowerCase() ?? '',
+    input.logoUrl?.trim() ?? '',
+  ].filter(Boolean);
+  return parts.join('|');
+}
+
+/** Tenant + görsel kimlik → slot seed (workspace olmasa bile farklı kombinasyonlar). */
+export function diversificationSeed(
+  tenantId: string | undefined,
+  fingerprint: string,
+  slot: number,
+): number {
+  const base = tenantId?.trim() || fingerprint || 'anonymous';
+  return hashTenantSeed(base, `diversify_slot_${slot}_${fingerprint.slice(0, 64)}`);
+}

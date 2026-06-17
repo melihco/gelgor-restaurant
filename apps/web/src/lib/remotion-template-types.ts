@@ -22,6 +22,7 @@ export type RemotionLayoutFamily =
   | 'minimal_luxury'
   | 'mosaic_pinterest'
   | 'asymmetric_editorial'
+  | 'polaroid_single'
   | 'polaroid_stack'
   | 'vibe_fullscreen'
   | 'bento_story'
@@ -54,7 +55,19 @@ export type RemotionCollection =
   | 'Noir'
   | 'Agency';
 
-export type FontPersonality = 'brand' | 'serif_editorial' | 'sans_modern' | 'display_bold' | 'script';
+export type FontPersonality =
+  | 'brand'
+  | 'serif_editorial'
+  | 'sans_modern'
+  | 'display_bold'
+  | 'poster_display'
+  | 'script'
+  | 'graphic_pop'
+  | 'neo_grotesk'
+  | 'luxury_serif'
+  | 'fashion_editorial';
+
+export type HeadlineTreatment = 'flat' | 'bubble' | 'sticker';
 
 export type BackgroundMode = 'photo_full' | 'split_panel' | 'duotone_wash' | 'solid_panel';
 
@@ -65,6 +78,8 @@ export interface RemotionLayoutSpec {
 
   // ── Font ──────────────────────────────────────────────────────
   fontPersonality: FontPersonality;
+  /** Graphic designer headline wrap — bubble pills or tilted stickers */
+  headlineTreatment?: HeadlineTreatment;
   heroWeight: 300 | 400 | 600 | 700 | 800 | 900;
   heroUppercase: boolean;
   heroTracking: number;

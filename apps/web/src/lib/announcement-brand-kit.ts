@@ -7,6 +7,7 @@
  */
 
 import { SAFE_FONTS } from '@/types/brand-theme';
+import { resolveProductionLogoUrl } from './brand-logo-production';
 
 export interface AnnouncementBrandKit {
   primaryColor: string;
@@ -26,6 +27,7 @@ const DEFAULT_KIT: AnnouncementBrandKit = {
   primaryColor: '#1a1a2e',
   accentColor: '#E8C87A',
   textColor: '#FFFFFF',        // crisp white — poster standard
+  headlineColor: '#FFFFFF',
   shadowColor: '#0d0d1a',
   headingFontStack: "'Bodoni Moda', 'Playfair Display', Georgia, 'Times New Roman', serif",
   bodyFontStack: "'Barlow Condensed', 'DM Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif",
@@ -145,6 +147,7 @@ export function resolveAnnouncementBrandKit(sources: {
   let shadow: string | null = null;
   let headingFont: string | null = null;
   let bodyFont: string | null = null;
+  let headlineColor: string | null = null;
 
   const themePalette = readPalette(theme ?? undefined);
   const vibePalette = readPalette(vibe ?? undefined);
@@ -196,11 +199,12 @@ export function resolveAnnouncementBrandKit(sources: {
     ?? sanitizeFontName(profile.secondaryFont ?? profile.secondary_font)
     ?? fontFromCtx;
 
-  const logoRaw =
-    (typeof ctx.logo_url === 'string' && ctx.logo_url.startsWith('http') ? ctx.logo_url : null)
-    ?? (typeof ctx.logoUrl === 'string' && ctx.logoUrl.startsWith('http') ? ctx.logoUrl : null)
-    ?? (typeof profile.logoUrl === 'string' && profile.logoUrl.startsWith('http') ? profile.logoUrl : null)
-    ?? (typeof profile.logo_url === 'string' && profile.logo_url.startsWith('http') ? profile.logo_url : null);
+  const logoRaw = resolveProductionLogoUrl([
+    typeof ctx.logo_url === 'string' ? ctx.logo_url : String(ctx.logo_url ?? ''),
+    typeof ctx.logoUrl === 'string' ? ctx.logoUrl : String(ctx.logoUrl ?? ''),
+    typeof profile.logoUrl === 'string' ? profile.logoUrl : String(profile.logoUrl ?? ''),
+    typeof profile.logo_url === 'string' ? profile.logo_url : String(profile.logo_url ?? ''),
+  ]) || null;
 
   const brandName = String(
     profile.brandName ?? profile.brand_name

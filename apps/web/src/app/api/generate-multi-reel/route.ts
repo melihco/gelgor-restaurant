@@ -63,6 +63,10 @@ interface MultiReelRequest {
   duration?: number;
   agentVisualDirection?: string;
   cameraMotion?: string;
+  businessType?: string;
+  productType?: string;
+  strategicPurpose?: string;
+  missionBrief?: string;
 }
 
 const RUNWAY_MAX_BYTES = 7 * 1024 * 1024;
@@ -311,7 +315,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Build AI director prompt from the combined photo context
   const combinedDesc = photos.map(p => p.description).filter(Boolean).join(' | ');
   const combinedTags = [...new Set(photos.flatMap(p => p.tags ?? []))].slice(0, 15);
-  const contentKind = inferContentKind({ headline, caption, photoTags: combinedTags });
+  const contentKind = inferContentKind({
+    headline,
+    caption,
+    photoTags: combinedTags,
+    businessType: body.businessType,
+    productType: body.productType,
+  });
 
   let directorPrompt: string;
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -323,6 +333,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         contentKind,
         brandName,
         brandLocation,
+        businessType: body.businessType,
+        productType: body.productType,
+        strategicPurpose: body.strategicPurpose,
+        missionBrief: body.missionBrief,
         photoDescription: combinedDesc.slice(0, 300),
         photoTags: combinedTags,
         vibeProfile: vibeProfile as Parameters<typeof buildDirectorPromptWithAI>[0]['vibeProfile'],

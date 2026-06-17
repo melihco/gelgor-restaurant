@@ -1,6 +1,6 @@
 /**
- * Subscription plan quotas + monthly output promises (mirrors PackagePlanCatalog.cs).
- * Used by Usage & Plan / Settings / Billing UI.
+ * Subscription plan quotas, list prices, and unit economics (USD API).
+ * Mirrors PackagePlanCatalog.cs + token_billing_service.py OUTPUTS/GRANT.
  */
 
 export interface PlanMonthlyOutputs {
@@ -8,6 +8,10 @@ export interface PlanMonthlyOutputs {
   socialContent: number;
   galleryAnalysis: number;
   reels: number;
+  /** Meta reklam kreatifi (designed_post türevi) */
+  metaAdCreatives: number;
+  /** Google Ads kreatifi (designed_post türevi) */
+  googleAdCreatives: number;
 }
 
 export interface PlanQuotaLimits {
@@ -21,7 +25,7 @@ export interface PlanQuotaLimits {
 export interface PlanSpec {
   slug: string;
   name: string;
-  /** Public list price (USD) — lowest tier is $79 */
+  /** Public list price (USD) */
   monthlyPriceUsd: number;
   monthlyPriceTry: number;
   quotas: PlanQuotaLimits;
@@ -31,8 +35,19 @@ export interface PlanSpec {
 
 const UNLIMITED = -1;
 
-/** USD/TRY for plan economics display (configurable via env later). */
+/** USD/TRY for plan economics display. */
 export const PLAN_USD_TRY_RATE = 32;
+
+/**
+ * Tuned API unit costs (USD) — aligned with auto-produce/strategist telemetry + ~15% buffer.
+ * @see mission-production-manifest MISSION_WEEKLY_PACKAGE_COUNTS (7 pieces/mission)
+ */
+export const PLAN_API_UNIT_COSTS = {
+  missionPropose: 0.28,
+  missionProductionCycle: 2.75,
+  galleryVisionAnalysis: 0.04,
+  standaloneReel: 0.3,
+} as const;
 
 export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   starter: {
@@ -41,23 +56,25 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     monthlyPriceUsd: 79,
     monthlyPriceTry: 79 * PLAN_USD_TRY_RATE,
     quotas: {
-      agentRuns: 50,
-      providerActions: 60,
-      liveProviderActions: 4,
-      llmTokens: 800_000,
-      monthlyGrantTokens: 20_000,
+      agentRuns: 14,
+      providerActions: 18,
+      liveProviderActions: 0,
+      llmTokens: 200_000,
+      monthlyGrantTokens: 5_000,
     },
     outputs: {
-      missions: 50,
-      socialContent: 350,
-      galleryAnalysis: 160,
-      reels: 4,
+      missions: 14,
+      socialContent: 98,
+      galleryAnalysis: 40,
+      reels: 0,
+      metaAdCreatives: 14,
+      googleAdCreatives: 14,
     },
     outputHighlights: [
-      '50 tam misyon döngüsü / ay',
-      '350 sosyal medya içeriği',
-      '160 galeri fotoğraf analizi',
-      '20.000 SA Kredi aylık',
+      '14 tam misyon döngüsü / ay (7 organik + Meta & Google reklam türevi)',
+      '98 organik sosyal içerik + 14 Meta + 14 Google reklam kreatifi',
+      '40 galeri fotoğraf analizi',
+      '5.000 SA Kredi aylık',
     ],
   },
   growth: {
@@ -66,23 +83,25 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     monthlyPriceUsd: 149,
     monthlyPriceTry: 149 * PLAN_USD_TRY_RATE,
     quotas: {
-      agentRuns: 120,
-      providerActions: 180,
-      liveProviderActions: 32,
-      llmTokens: 2_000_000,
-      monthlyGrantTokens: 60_000,
+      agentRuns: 28,
+      providerActions: 45,
+      liveProviderActions: 8,
+      llmTokens: 500_000,
+      monthlyGrantTokens: 15_000,
     },
     outputs: {
-      missions: 120,
-      socialContent: 800,
-      galleryAnalysis: 480,
-      reels: 16,
+      missions: 28,
+      socialContent: 196,
+      galleryAnalysis: 120,
+      reels: 4,
+      metaAdCreatives: 28,
+      googleAdCreatives: 28,
     },
     outputHighlights: [
-      '120 tam misyon döngüsü / ay',
-      '800 sosyal medya içeriği',
-      '480 galeri analizi · 16 reel',
-      '60.000 SA Kredi aylık',
+      '28 misyon döngüsü / ay',
+      '196 sosyal içerik · 4 Runway reel',
+      '120 galeri analizi',
+      '15.000 SA Kredi aylık',
     ],
   },
   performance: {
@@ -91,23 +110,25 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     monthlyPriceUsd: 249,
     monthlyPriceTry: 249 * PLAN_USD_TRY_RATE,
     quotas: {
-      agentRuns: 260,
-      providerActions: 560,
-      liveProviderActions: 160,
-      llmTokens: 4_000_000,
-      monthlyGrantTokens: 160_000,
+      agentRuns: 65,
+      providerActions: 140,
+      liveProviderActions: 40,
+      llmTokens: 1_000_000,
+      monthlyGrantTokens: 40_000,
     },
     outputs: {
-      missions: 260,
-      socialContent: 1_820,
-      galleryAnalysis: 1_000,
-      reels: 32,
+      missions: 65,
+      socialContent: 455,
+      galleryAnalysis: 250,
+      reels: 8,
+      metaAdCreatives: 14,
+      googleAdCreatives: 14,
     },
     outputHighlights: [
-      '260 tam misyon döngüsü / ay',
-      '1.820 sosyal medya içeriği',
-      '1.000 galeri · 32 Runway reel',
-      '160.000 SA Kredi aylık',
+      '65 misyon döngüsü / ay',
+      '455 sosyal içerik · 8 reel',
+      '250 galeri analizi',
+      '40.000 SA Kredi aylık',
     ],
   },
   executive: {
@@ -127,6 +148,8 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
       socialContent: UNLIMITED,
       galleryAnalysis: UNLIMITED,
       reels: UNLIMITED,
+      metaAdCreatives: UNLIMITED,
+      googleAdCreatives: UNLIMITED,
     },
     outputHighlights: [
       'Sınırsız misyon ve provider aksiyon',
@@ -137,21 +160,56 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   },
 };
 
+const SLUG_ALIASES: Record<string, keyof typeof PACKAGE_PLANS> = {
+  studio: 'starter',
+  agency: 'growth',
+  signature: 'performance',
+  premium: 'performance',
+  collective: 'executive',
+};
+
+function finiteCap(value: number, cap: number): number {
+  return value < 0 ? cap : value;
+}
+
+/** Estimated API COGS if monthly output caps are fully utilized. */
+export function estimatePlanMonthlyApiCostUsd(plan: PlanSpec): number {
+  const missions = finiteCap(plan.outputs.missions, 20);
+  const gallery = finiteCap(plan.outputs.galleryAnalysis, 300);
+  const reels = finiteCap(plan.outputs.reels, 32);
+
+  const perMission =
+    PLAN_API_UNIT_COSTS.missionPropose + PLAN_API_UNIT_COSTS.missionProductionCycle;
+  let cost = missions * perMission + gallery * PLAN_API_UNIT_COSTS.galleryVisionAnalysis;
+
+  const extraReels = Math.max(0, reels - Math.min(missions, reels));
+  cost += extraReels * PLAN_API_UNIT_COSTS.standaloneReel;
+
+  return Math.round(cost * 100) / 100;
+}
+
+/** Gross margin % on list price if all outputs are consumed (API only). */
+export function estimatePlanMarginOnRevenuePercent(plan: PlanSpec): number | null {
+  if (plan.monthlyPriceUsd <= 0) return null;
+  const cogs = estimatePlanMonthlyApiCostUsd(plan);
+  return Math.round(((plan.monthlyPriceUsd - cogs) / plan.monthlyPriceUsd) * 1000) / 10;
+}
+
 export function getPlanSpec(slug: string | null | undefined): PlanSpec | null {
   if (!slug) return null;
-  return PACKAGE_PLANS[slug.trim().toLowerCase()] ?? null;
+  const key = slug.trim().toLowerCase();
+  return PACKAGE_PLANS[key] ?? (SLUG_ALIASES[key] ? PACKAGE_PLANS[SLUG_ALIASES[key]!] ?? null : null);
 }
 
 export function formatOutputLimit(value: number): string {
   return value < 0 ? 'Sınırsız' : value.toLocaleString('tr-TR');
 }
 
-/** Sorted tiers for Usage & Plan (lowest = $79 Starter). */
 export const PACKAGE_PLAN_TIERS: PlanSpec[] = [
-  PACKAGE_PLANS.starter,
-  PACKAGE_PLANS.growth,
-  PACKAGE_PLANS.performance,
-  PACKAGE_PLANS.executive,
+  PACKAGE_PLANS.starter!,
+  PACKAGE_PLANS.growth!,
+  PACKAGE_PLANS.performance!,
+  PACKAGE_PLANS.executive!,
 ];
 
 export function formatPlanMonthlyPrice(plan: PlanSpec): string {

@@ -34,11 +34,13 @@ const RECONNECT_DELAY = 3000;
 const signalRLogger: ILogger = {
   log(logLevel, message) {
     const text = String(message);
-    const isExpectedSocketClose =
+    const isExpectedDevNoise =
       text.includes('WebSocket closed with status code: 1006') ||
-      text.includes('Connection disconnected with error');
+      text.includes('Connection disconnected with error') ||
+      text.includes('Handshake was canceled') ||
+      text.includes('handshake');
 
-    if (isExpectedSocketClose) {
+    if (isExpectedDevNoise) {
       console.debug('SignalR connection closed; reconnect will continue automatically.');
       return;
     }
@@ -107,70 +109,58 @@ function normalizeAgentRunProgress(raw: unknown): AgentRunProgressEvent | null {
   };
 }
 
-export async function initializeSignalR(): Promise<HubConnection> {
-  if (
-    connection &&
-    (connection.state === HubConnectionState.Connected ||
-      connection.state === HubConnectionState.Connecting ||
-      connection.state === HubConnectionState.Reconnecting)
-  ) {
-    return connection;
-  }
-  if (connectionPromise) {
-    return connectionPromise;
-  }
+function buildHubConnection(): HubConnection {
+  const hub = new HubConnectionBuilder()
+    .withUrl(getSignalRHubUrl(), {
+      accessTokenFactory: () => getSessionToken() ?? '',
+      headers: getRequestContextHeaders(),
+      withCredentials: true,
+    })
+    .withAutomaticReconnect({
+      nextRetryDelayInMilliseconds: () => RECONNECT_DELAY,
+    })
+    .configureLogging(signalRLogger)
+    .build();
 
-  connection = new HubConnectionBuilder()
-      .withUrl(getSignalRHubUrl(), {
-        accessTokenFactory: () => getSessionToken() ?? '',
-        headers: getRequestContextHeaders(),
-        withCredentials: true,
-      })
-      .withAutomaticReconnect({
-        nextRetryDelayInMilliseconds: () => RECONNECT_DELAY,
-      })
-      .configureLogging(signalRLogger)
-      .build();
-
-  connection.on('AgentStateChanged', (event: AgentStateChangedEvent) => {
+  hub.on('AgentStateChanged', (event: AgentStateChangedEvent) => {
     handleAgentStateChanged(event);
   });
 
-  connection.on('TaskStatusChanged', (event: TaskStatusChangedEvent) => {
+  hub.on('TaskStatusChanged', (event: TaskStatusChangedEvent) => {
     handleTaskStatusChanged(event);
   });
 
-  connection.on('NewNotification', (event: NewNotificationEvent) => {
+  hub.on('NewNotification', (event: NewNotificationEvent) => {
     handleNewNotification(event);
   });
 
-  connection.on('OutputReady', (event: OutputReadyEvent) => {
+  hub.on('OutputReady', (event: OutputReadyEvent) => {
     handleOutputReady(event);
   });
 
-  connection.on('BriefDecomposed', (event: BriefDecomposedEvent) => {
+  hub.on('BriefDecomposed', (event: BriefDecomposedEvent) => {
     handleBriefDecomposed(event);
   });
 
-  connection.on('AgentRunProgress', (raw: unknown) => {
+  hub.on('AgentRunProgress', (raw: unknown) => {
     const event = normalizeAgentRunProgress(raw);
     if (event) handleAgentRunProgress(event);
   });
 
-  connection.onreconnecting(() => {
+  hub.onreconnecting(() => {
     reconnectAttempts++;
   });
 
-  connection.onreconnected(async () => {
+  hub.onreconnected(async () => {
     reconnectAttempts = 0;
     try {
-      await connection?.invoke('JoinOffice', getLiveTenantId(), getLiveOfficeId());
+      await hub.invoke('JoinOffice', getLiveTenantId(), getLiveOfficeId());
     } catch (error) {
       console.warn('SignalR rejoin failed after reconnect', error);
     }
   });
 
-  connection.onclose((error) => {
+  hub.onclose((error) => {
     connectionPromise = null;
     if (intentionalDisconnect) {
       connection = null;
@@ -181,40 +171,80 @@ export async function initializeSignalR(): Promise<HubConnection> {
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       setTimeout(() => {
         void initializeSignalR().catch((initError) => {
-          console.warn('SignalR reconnect attempt failed', initError);
+          if (!isTransientSignalRError(initError) && !isBackendUnavailableError(initError)) {
+            console.warn('SignalR reconnect attempt failed', initError);
+          }
         });
       }, RECONNECT_DELAY);
     }
-    if (error) {
+    if (error && !isTransientSignalRError(error)) {
       console.warn('SignalR disconnected unexpectedly', error);
     }
   });
 
+  return hub;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function initializeSignalR(): Promise<HubConnection> {
+  if (connectionPromise) {
+    return connectionPromise;
+  }
+  if (
+    connection &&
+    (connection.state === HubConnectionState.Connected ||
+      connection.state === HubConnectionState.Connecting ||
+      connection.state === HubConnectionState.Reconnecting)
+  ) {
+    return connection;
+  }
+
   connectionPromise = (async () => {
-    try {
-      intentionalDisconnect = false;
-      await connection!.start();
-      await connection!.invoke('JoinOffice', getLiveTenantId(), getLiveOfficeId());
-      reconnectAttempts = 0;
-      return connection!;
-    } catch (error) {
-      connectionPromise = null;
-      connection = null;
-      const backendDown = isBackendUnavailableError(error);
-      if (!backendDown && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        setTimeout(() => {
-          void initializeSignalR().catch((initError) => {
-            if (!isBackendUnavailableError(initError)) {
-              console.warn('SignalR connection retry failed', initError);
-            }
-          });
-        }, RECONNECT_DELAY);
+    intentionalDisconnect = false;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < MAX_RECONNECT_ATTEMPTS; attempt++) {
+      if (connection) {
+        try {
+          await connection.stop();
+        } catch {
+          /* stale hub from a canceled handshake */
+        }
+        connection = null;
       }
-      throw error;
+
+      connection = buildHubConnection();
+
+      try {
+        await connection.start();
+        await connection.invoke('JoinOffice', getLiveTenantId(), getLiveOfficeId());
+        reconnectAttempts = 0;
+        return connection;
+      } catch (error) {
+        lastError = error;
+        const transient = isTransientSignalRError(error);
+        const backendDown = isBackendUnavailableError(error);
+        if (backendDown || (!transient && attempt >= 2)) {
+          break;
+        }
+        await sleep(RECONNECT_DELAY * (attempt + 1));
+      }
     }
+
+    connectionPromise = null;
+    connection = null;
+    throw lastError ?? new Error('SignalR connection failed');
   })();
 
   return connectionPromise;
+}
+
+function isTransientSignalRError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /Handshake was canceled|stopped during negotiation|AbortError|The connection was stopped/i.test(msg);
 }
 
 function isBackendUnavailableError(error: unknown): boolean {

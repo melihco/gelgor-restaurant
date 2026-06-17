@@ -27,7 +27,9 @@ import {
   staggerOpacity,
   stableTextLayerStyle,
   stableTextOpacity,
+  storyTextLayerStyle,
   textShadowHeavy,
+  resolveStoryTextColors,
 } from './shared/story-primitives';
 import { useStoryFonts } from './shared/useRemotionFonts';
 
@@ -89,6 +91,9 @@ export function QuoteCardLayout({
   brandName,
   primaryColor = '#1a2b4a',
   accentColor = '#c9a96e',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -97,10 +102,12 @@ export function QuoteCardLayout({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const quoteText = headline.replace(/^["'""]|["'""]$/g, '');
   const fontSize = headlineSize(quoteText, (headlineScale ?? spec.heroScale) * 0.72);
   const cardOp = stableTextOpacity(frame, 16, 34);
   const lockOp = stableTextOpacity(frame, 36, 52);
+  const graphicQuote = spec.headlineTreatment === 'bubble' || spec.headlineTreatment === 'sticker';
 
   return (
     <AbsoluteFill style={{ background: primaryColor }}>
@@ -122,8 +129,8 @@ export function QuoteCardLayout({
       }}>
         {categoryLabel ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 10, letterSpacing: 12, textTransform: 'uppercase',
-            color: accentColor, marginBottom: 16, opacity: staggerOpacity(frame, 8, 20),
+            fontFamily: fonts.body, fontSize: 13, letterSpacing: 12, textTransform: 'uppercase',
+            color: textColors.category, marginBottom: 16, opacity: staggerOpacity(frame, 8, 20),
           }}>
             {categoryLabel}
           </span>
@@ -132,33 +139,41 @@ export function QuoteCardLayout({
         <div style={{
           width: '100%',
           maxWidth: 920,
-          padding: '36px 32px 28px',
-          borderRadius: 24,
-          background: 'rgba(0,0,0,0.62)',
-          border: `1px solid ${accentColor}55`,
-          boxShadow: `0 24px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12)`,
+          padding: graphicQuote ? '40px 28px 32px' : '36px 32px 28px',
+          borderRadius: graphicQuote ? 28 : 24,
+          background: graphicQuote ? 'rgba(0,0,0,0.48)' : 'rgba(0,0,0,0.62)',
+          border: graphicQuote ? `2px solid ${accentColor}88` : `1px solid ${accentColor}55`,
+          boxShadow: graphicQuote
+            ? `0 28px 90px rgba(0,0,0,0.55)`
+            : `0 24px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12)`,
           opacity: cardOp,
           ...stableTextLayerStyle,
           position: 'relative',
         }}>
-          <span style={{
-            position: 'absolute', top: 8, left: 24,
-            fontFamily: fonts.hero, fontSize: 120, lineHeight: 1, color: accentColor, opacity: 0.45,
-          }}>
-            “
-          </span>
-          <div style={{ paddingTop: 24, paddingLeft: 8 }}>
+          {!graphicQuote ? (
+            <span style={{
+              position: 'absolute', top: 8, left: 24,
+              fontFamily: fonts.hero, fontSize: 120, lineHeight: 1, color: accentColor, opacity: 0.45,
+            }}>
+              “
+            </span>
+          ) : null}
+          <div style={{ paddingTop: graphicQuote ? 8 : 24, paddingLeft: graphicQuote ? 0 : 8 }}>
             <HeadlineStack
               headline={quoteText}
               fontFamily={fonts.hero}
-              fontWeight={headlineWeight ?? 400}
+              fontWeight={headlineWeight ?? spec.heroWeight ?? 400}
               fontSize={fontSize}
               color="#fff"
               frame={frame}
               fps={fps}
               startFrame={20}
               lineGap={1.12}
-              textShadow={textShadowHeavy}
+              textShadow={graphicQuote ? undefined : textShadowHeavy}
+              headlineTreatment={spec.headlineTreatment}
+              accentColor={accentColor}
+              align="center"
+              holdOpacity
             />
           </div>
           {subtitle ? (
@@ -166,9 +181,9 @@ export function QuoteCardLayout({
               display: 'block', marginTop: 20, paddingTop: 16,
               borderTop: `1px solid ${accentColor}44`,
               fontFamily: fonts.body, fontSize: 18, fontStyle: 'italic',
-              color: accentColor, opacity: staggerOpacity(frame, 28, 42),
+              color: textColors.category, opacity: staggerOpacity(frame, 28, 42),
             }}>
-              {subtitle}
+              {subtitle.slice(0, 120)}
             </span>
           ) : null}
         </div>
@@ -198,6 +213,9 @@ export function LocationPinLayout({
   location = '',
   primaryColor = '#1a2b4a',
   accentColor = '#c9a96e',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -207,6 +225,7 @@ export function LocationPinLayout({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const place = location || subtitle || brandName;
   const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 0.88);
   const cardOp = stableTextOpacity(frame, 18, 36);
@@ -219,19 +238,21 @@ export function LocationPinLayout({
       <AbsoluteFill style={{
         background: `linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 35%, rgba(0,0,0,0.75) 100%)`,
       }} />
-      <FilmGrainOverlay opacity={0.08} />
+      <FilmGrainOverlay opacity={0.05} />
       <StoryLogoWatermark logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} position="bottom-right" opacity={0.16} />
       <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="3.8%" />
 
       <AbsoluteFill style={{
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
         padding: '22% 40px 9%',
+        zIndex: 8,
+        ...stableTextLayerStyle,
       }}>
         <div style={{ opacity: headOp, ...stableTextLayerStyle }}>
           {categoryLabel ? (
             <span style={{
-              fontFamily: fonts.body, fontSize: 10, letterSpacing: 12, textTransform: 'uppercase',
-              color: accentColor, marginBottom: 12, display: 'block',
+              fontFamily: fonts.body, fontSize: 13, letterSpacing: 12, textTransform: 'uppercase',
+              color: textColors.category, marginBottom: 12, display: 'block',
             }}>
               {categoryLabel}
             </span>
@@ -248,12 +269,13 @@ export function LocationPinLayout({
             startFrame={10}
             lineGap={1.06}
             textShadow={textShadowHeavy}
+            holdOpacity
           />
         </div>
 
         <div style={{
           opacity: cardOp,
-          ...stableTextLayerStyle,
+          ...storyTextLayerStyle,
         }}>
           <div style={{
             display: 'flex',
@@ -261,7 +283,7 @@ export function LocationPinLayout({
             gap: 16,
             padding: '18px 20px',
             borderRadius: 20,
-            background: 'rgba(0,0,0,0.65)',
+            background: 'rgba(8,8,12,0.9)',
             border: '1px solid rgba(255,255,255,0.22)',
             boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
           }}>

@@ -21,8 +21,6 @@ import {
   useVideoConfig,
   interpolate,
   Img,
-  Audio,
-  staticFile,
 } from 'remotion';
 import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
@@ -34,40 +32,7 @@ import {
   stableTextLayerStyle,
   stableTextOpacity,
 } from './shared/story-primitives';
-
-// ── Royalty-free background music catalog ─────────────────────────────────────
-// Kevin MacLeod CC0 tracks served from Next.js /public/audio/
-// staticFile() resolves correctly for both dev and server-side Remotion rendering
-// staticFile('audio/track.mp3') → Remotion serves from publicDir/audio/track.mp3
-// Note: NO leading slash — Remotion staticFile is relative to publicDir root
-// WAV files: universally supported by Chromium (Remotion's renderer)
-const MUSIC_CATALOG: Record<string, { file: string; label: string }> = {
-  'deep house':         { file: 'audio/deep-house.wav',    label: 'Deep House' },
-  'lounge jazz':        { file: 'audio/lounge-jazz.wav',   label: 'Lounge Jazz' },
-  'beach pop':          { file: 'audio/beach-pop.wav',     label: 'Beach Pop' },
-  'ambient chill':      { file: 'audio/ambient-chill.wav', label: 'Ambient Chill' },
-  'acoustic folk':      { file: 'audio/acoustic-folk.wav', label: 'Acoustic Folk' },
-  'upbeat commercial':  { file: 'audio/upbeat.wav',        label: 'Upbeat Commercial' },
-  'latin tropical':     { file: 'audio/beach-pop.wav',     label: 'Latin Tropical' },
-};
-
-function resolveMusicUrl(audioMood: string): string | null {
-  const key = audioMood.toLowerCase().trim();
-  if (!key) return null;
-  // Exact match
-  const exactEntry = MUSIC_CATALOG[key];
-  if (exactEntry) return staticFile(exactEntry.file);
-  // Partial match
-  const partialKey = Object.keys(MUSIC_CATALOG).find(k => key.includes(k) || k.includes(key));
-  if (partialKey) return staticFile(MUSIC_CATALOG[partialKey]!.file);
-  // Keyword fallback
-  if (/party|night|club|dj|dance|festival/.test(key)) return staticFile(MUSIC_CATALOG['deep house']!.file);
-  if (/beach|sea|summer|tropical/.test(key)) return staticFile(MUSIC_CATALOG['beach pop']!.file);
-  if (/chill|relax|calm|peaceful|ambient/.test(key)) return staticFile(MUSIC_CATALOG['ambient chill']!.file);
-  if (/jazz|lounge|elegant|luxury/.test(key)) return staticFile(MUSIC_CATALOG['lounge jazz']!.file);
-  // Default: upbeat for any event
-  return staticFile(MUSIC_CATALOG['upbeat commercial']!.file);
-}
+import { StoryAudioLayer } from './shared/story-audio';
 
 interface EventStoryProps extends StoryProps {
   eventDate?: string;
@@ -96,6 +61,7 @@ export const EventAnnouncementStory: React.FC<EventStoryProps> = ({
   ctaUrl = '',
   logoUrl = '',
   audioMood = '',
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('display_bold', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -129,25 +95,10 @@ export const EventAnnouncementStory: React.FC<EventStoryProps> = ({
   // Bottom zone height: more elements = taller zone
   const bottomZonePct = Math.min(48, 28 + bottomElementCount * 5);
 
-  const musicUrl = resolveMusicUrl(audioMood);
-
   return (
     <AbsoluteFill style={{ background: '#111', overflow: 'hidden' }}>
 
-      {/* ── Background music — mood-based ambient track ── */}
-      {musicUrl && (
-        <Audio
-          src={musicUrl}
-          volume={(f: number) =>
-            interpolate(f, [0, 30, durationInFrames - 20, durationInFrames], [0, 0.55, 0.55, 0], {
-              extrapolateLeft: 'clamp',
-              extrapolateRight: 'clamp',
-            })
-          }
-          loop
-          playbackRate={1}
-        />
-      )}
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
 
       {/* ── Photo — Ken Burns, fills full frame ── */}
       <AbsoluteFill style={{ transform: `scale(${photoScale})`, transformOrigin: 'center 40%' }}>

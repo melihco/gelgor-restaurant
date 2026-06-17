@@ -6,12 +6,17 @@
  */
 
 import type { StoryCompositionId } from '@/remotion/types';
+import { storyMusicLabel } from './story-audio-catalog';
+import { resolveStoryAudioMood } from './story-audio-mood';
+import { resolveStoryTtsVoiceId, storyVoiceLabel } from './story-voice-catalog';
 import { resolveTemplateId } from './remotion-template-registry';
 
 export type MotionStyle = 'minimal' | 'editorial' | 'luxury' | 'bold' | 'playful';
 export type TextDensity = 'minimal' | 'medium' | 'dense';
 export type TextTransformPolicy = 'uppercase' | 'sentence' | 'none';
 export type MediaFallback = 'brand_solid' | 'logo_hero' | 'block';
+/** Story MP4: müzik + caption TTS veya yalnızca müzik */
+export type StoryAudioMode = 'music_only' | 'music_and_voice';
 
 export type ContentIntent =
   | 'daily_moment'
@@ -36,6 +41,11 @@ export interface CompositionWeights {
   CampaignHeroStory?: number;
   MagazineCoverStory?: number;
   GallerySeriesStory?: number;
+  SpecStory?: number;
+  SpecPosterStory?: number;
+  SpecPosterPost?: number;
+  SpecPosterPortrait?: number;
+  [key: string]: number | undefined;
 }
 
 export interface MotionLearningHints {
@@ -62,6 +72,12 @@ export interface BrandMotionProfile {
     minMatchScore: number;
   };
   audioMoodPool: string[];
+  /** Müşteri seçimi — story arka plan müziği (STORY_MUSIC_CATALOG key) */
+  storyAudioMood?: string;
+  /** music_only | music_and_voice (caption TTS) */
+  storyAudioMode?: StoryAudioMode;
+  /** OpenAI TTS voice — nova, shimmer, onyx, echo, alloy, fable */
+  storyVoiceId?: string;
   /** Operator + future tenant-learning adjustments */
   learning?: MotionLearningHints;
   /** Set when operator overrides auto-derived defaults */
@@ -195,16 +211,33 @@ const DEFAULT_PROFILE: BrandMotionProfile = {
     fallback: 'brand_solid',
     minMatchScore: 55,
   },
-  audioMoodPool: ['ambient chill', 'lounge jazz', 'acoustic folk'],
+  audioMoodPool: [
+    'surf-house-productions-island-breeze',
+    'mixaund-upbeat',
+    'peyruis-dancefloor',
+    'punch-deck-neon-drive',
+  ],
+  storyAudioMood: 'surf-house-productions-island-breeze',
+  storyAudioMode: 'music_and_voice',
+  storyVoiceId: 'nova',
 };
 
 function normalizeSector(sector: string): string {
   return sector.toLowerCase().replace(/[\s-]+/g, '_').trim();
 }
 
-function parseLocale(raw: string | undefined): string {
-  if (!raw) return 'tr';
-  return raw.split(',')[0]?.trim().toLowerCase() || 'tr';
+function parseLocale(raw: unknown): string {
+  if (raw == null) return 'tr';
+  if (Array.isArray(raw)) {
+    const first = raw.map((v) => String(v).trim()).find(Boolean);
+    return first?.split(',')[0]?.trim().toLowerCase() || 'tr';
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return 'tr';
+    return trimmed.split(',')[0]?.trim().toLowerCase() || 'tr';
+  }
+  return String(raw).split(',')[0]?.trim().toLowerCase() || 'tr';
 }
 
 function textTransformForLocale(locale: string): TextTransformPolicy {
@@ -214,7 +247,7 @@ function textTransformForLocale(locale: string): TextTransformPolicy {
 
 export function deriveMotionProfile(options: {
   sector?: string;
-  languages?: string;
+  languages?: unknown;
   textOverlayDensity?: TextDensity;
   existing?: Partial<BrandMotionProfile> | null;
 }): BrandMotionProfile {
@@ -261,6 +294,11 @@ export function deriveMotionProfile(options: {
     audioMoodPool: existing?.audioMoodPool?.length
       ? existing.audioMoodPool
       : DEFAULT_PROFILE.audioMoodPool,
+    storyAudioMood: existing?.storyAudioMood
+      ?? existing?.audioMoodPool?.[0]
+      ?? DEFAULT_PROFILE.storyAudioMood,
+    storyAudioMode: existing?.storyAudioMode ?? DEFAULT_PROFILE.storyAudioMode,
+    storyVoiceId: existing?.storyVoiceId ?? DEFAULT_PROFILE.storyVoiceId,
     learning: existing?.learning,
     operatorOverride: Boolean(existing?.operatorOverride),
   };
@@ -290,6 +328,9 @@ function parseRawMotionProfile(raw: Record<string, unknown> | null | undefined):
         }
       : undefined,
     audioMoodPool: (raw.audio_mood_pool ?? raw.audioMoodPool) as string[] | undefined,
+    storyAudioMood: String(raw.story_audio_mood ?? raw.storyAudioMood ?? '').trim() || undefined,
+    storyAudioMode: (raw.story_audio_mode ?? raw.storyAudioMode) as StoryAudioMode | undefined,
+    storyVoiceId: String(raw.story_voice_id ?? raw.storyVoiceId ?? '').trim() || undefined,
     learning,
     operatorOverride: Boolean(raw.operator_override ?? raw.operatorOverride),
   };
@@ -297,7 +338,7 @@ function parseRawMotionProfile(raw: Record<string, unknown> | null | undefined):
 
 export function parseMotionProfileFromTheme(
   theme: Record<string, unknown> | null | undefined,
-  fallback?: { sector?: string; languages?: string; textOverlayDensity?: TextDensity },
+  fallback?: { sector?: string; languages?: unknown; textOverlayDensity?: TextDensity },
 ): BrandMotionProfile {
   const rawRecord = (theme?.motion_profile ?? theme?.motionProfile) as Record<string, unknown> | undefined;
   const parsed = parseRawMotionProfile(rawRecord);
@@ -322,11 +363,59 @@ export function normalizeMotionProfile(profile: BrandMotionProfile): BrandMotion
     weights[id] = Math.max(0, w);
   }
 
+  const storyAudioMode: StoryAudioMode = profile.storyAudioMode === 'music_only'
+    ? 'music_only'
+    : 'music_and_voice';
+
   return {
     ...profile,
     preferPurePhotoStories: Math.min(0.95, Math.max(0.4, profile.preferPurePhotoStories ?? 0.72)),
     compositionWeights: weights,
     blockedCompositions: [...blocked],
+    storyAudioMode,
+    storyAudioMood: profile.storyAudioMood?.trim() || profile.audioMoodPool?.[0] || DEFAULT_PROFILE.storyAudioMood,
+    storyVoiceId: resolveStoryTtsVoiceId(profile.storyVoiceId, profile.locale),
+  };
+}
+
+export function shouldEnableStoryVoiceover(profile: BrandMotionProfile): boolean {
+  return profile.storyAudioMode !== 'music_only';
+}
+
+export function describeStoryAudioPolicy(profile: BrandMotionProfile): string {
+  const mood = resolveStoryAudioMood({
+    selected: profile.storyAudioMood,
+    pool: profile.audioMoodPool,
+  });
+  const music = storyMusicLabel(mood);
+  if (!shouldEnableStoryVoiceover(profile)) {
+    return `${music} · Sadece müzik`;
+  }
+  const voiceName = storyVoiceLabel(profile.storyVoiceId);
+  return `${music} · Ses: ${voiceName} (doğal tempo)`;
+}
+
+/** PUT /brand-context/{id}/theme — motion_profile JSON */
+export function motionProfileToThemeJson(profile: BrandMotionProfile): Record<string, unknown> {
+  return {
+    motion_style: profile.motionStyle,
+    locale: profile.locale,
+    text_density: profile.textDensity,
+    text_transform: profile.textTransform,
+    prefer_pure_photo_stories: profile.preferPurePhotoStories,
+    composition_weights: profile.compositionWeights,
+    blocked_compositions: profile.blockedCompositions,
+    allowed_intents: profile.allowedIntents,
+    media_policy: {
+      require_gallery: profile.mediaPolicy.requireGallery,
+      fallback: profile.mediaPolicy.fallback,
+      min_match_score: profile.mediaPolicy.minMatchScore,
+    },
+    audio_mood_pool: profile.audioMoodPool,
+    story_audio_mood: profile.storyAudioMood,
+    story_audio_mode: profile.storyAudioMode ?? 'music_and_voice',
+    story_voice_id: profile.storyVoiceId ?? 'nova',
+    operator_override: profile.operatorOverride ?? true,
   };
 }
 
@@ -402,7 +491,7 @@ const INTENT_COMPOSITION: Partial<Record<ContentIntent, StoryCompositionId>> = {
 export type GallerySeriesLayout = 'dual' | 'triple' | 'sequence';
 
 export function resolveGallerySeriesLayout(photoCount: number, seed = 0): GallerySeriesLayout {
-  if (photoCount >= 3) return seed % 2 === 0 ? 'triple' : 'sequence';
+  if (photoCount >= 2) return 'sequence';
   return 'dual';
 }
 

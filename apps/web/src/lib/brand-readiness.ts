@@ -78,25 +78,24 @@ export interface BrandReadinessInputs {
   defaultCtaCount: number;
 }
 
-/** Map BRS fix hints to Brand Constitution tab ids. */
+/** Map BRS fix hints to Brand Constitution tab ids (4-tab layout). */
 export function brandReadinessFixToBrandTab(
   fix: string | undefined,
-): 'identity' | 'brand' | 'content' | 'analysis' | 'gallery' | 'settings' | 'vibe' | null {
+): 'identity' | 'brand' | 'gallery' | null {
   switch (fix) {
     case 'brand-constitution':
       return 'identity';
     case 'brand-analysis':
-      return 'analysis';
+    case 'brand-dna':
+      return 'identity';
     case 'gallery':
       return 'gallery';
-    case 'brand-dna':
-      return 'analysis';
     case 'brand-theme':
       return 'brand';
     case 'story-templates':
       return null;
     case 'content-pillars':
-      return 'content';
+      return 'identity';
     case 'brand':
       return 'identity';
     default:

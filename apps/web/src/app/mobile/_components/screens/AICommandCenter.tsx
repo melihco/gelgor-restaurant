@@ -14,7 +14,9 @@ import type { OutputArtifact, RecommendedTask } from '@/types';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import { isMobileOperatorMode } from '../mobile-client-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import { MOBILE_ARTIFACT_FEED_LIMIT } from '../../_lib/mobile-artifacts';
 import { useTheme } from '../theme-context';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 
 const AGENT_ROLE_TO_NUM: Record<string, number> = {
   review_agent: 8, content_agent: 3, content_strategy_agent: 2,
@@ -39,9 +41,9 @@ type QuickItem = 'icerikler' | 'mission' | 'marka' | 'analiz' | 'reklamlar';
 
 const QUICK_ITEMS: { id: QuickItem; label: string; dest: string }[] = [
   { id: 'icerikler', label: 'İçerikler', dest: 'feed' },
-  { id: 'mission',   label: 'Mission',   dest: 'missions' },
+  { id: 'mission',   label: 'Haftalık Plan', dest: 'missions' },
   { id: 'marka',     label: 'Marka',     dest: 'brand' },
-  { id: 'analiz',    label: 'Analiz',    dest: 'insights' },
+  { id: 'analiz',    label: 'Performans', dest: 'insights' },
   { id: 'reklamlar', label: 'Reklamlar', dest: 'ads' },
 ];
 
@@ -168,7 +170,7 @@ function PreviewMission({ missions, navigate }: { missions: any[]; navigate: (s:
           })
         )}
       </div>
-      <PreviewCTA label="Mission Hub'a git" onClick={() => navigate('missions')} />
+      <PreviewCTA label="Haftalık Plana Git" onClick={() => navigate('missions')} />
     </div>
   );
 }
@@ -181,12 +183,13 @@ function PreviewMarka({ tenantId, navigate }: { tenantId: string; navigate: (s: 
     staleTime: 10 * 60_000,
     enabled: Boolean(tenantId),
   });
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn: () => apiClient.getBrandContextData(tenantId),
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId),
     staleTime: 10 * 60_000,
     enabled: !!tenantId,
   });
+  const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
 
   const p = profile as any;
   const b = brandCtx as any;
@@ -266,10 +269,13 @@ export function AICommandCenter() {
   const greeting  = hour < 5 ? 'İyi geceler' : hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar';
   const today     = new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  const { data: rawArtifacts = [] } = useMobileArtifacts({ subscribeOnly: true });
+  const { data: rawArtifacts = [] } = useMobileArtifacts({
+    subscribeOnly: true,
+    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
+  });
   const { data: ops } = useQuery({
     queryKey: ['operations-summary'], queryFn: () => apiClient.getOperationsSummary(),
-    refetchInterval: 15_000, staleTime: 10_000, refetchIntervalInBackground: false,
+    refetchInterval: 30_000, staleTime: 30_000, refetchIntervalInBackground: false,
   });
   const { data: agents = [] } = useQuery({
     queryKey: ['agents', officeId], queryFn: () => apiClient.getAgents(officeId),
@@ -380,6 +386,43 @@ export function AICommandCenter() {
             ))}
           </div>
         </div>
+
+        {/* ─── PRIMARY ACTION (customer) ─────────────────────────── */}
+        {!operatorMode && pending.length > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('feed')}
+            style={{
+              width: '100%', padding: '14px 20px', cursor: 'pointer',
+              background: t.isDark ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.08)',
+              border: 'none',
+              borderBottom: `0.5px solid ${t.separator}`,
+              display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+            }}
+          >
+            <span style={{ flex: 1, fontSize: 14, color: t.warning, fontWeight: 700 }}>
+              {pending.length} içerik onayınızı bekliyor
+            </span>
+            <span style={{ fontSize: 13, color: t.warning, fontWeight: 600 }}>→</span>
+          </button>
+        )}
+        {!operatorMode && pending.length === 0 && inFlight.length > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('missions')}
+            style={{
+              width: '100%', padding: '14px 20px', cursor: 'pointer',
+              background: 'transparent', border: 'none',
+              borderBottom: `0.5px solid ${t.separator}`,
+              display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+            }}
+          >
+            <span style={{ flex: 1, fontSize: 14, color: t.accent, fontWeight: 600 }}>
+              Haftalık planınız hazırlanıyor
+            </span>
+            <span style={{ fontSize: 12, color: t.textMuted }}>→</span>
+          </button>
+        )}
 
         {/* ─── LIVE BANNER (operator only) ────────────────────────── */}
         {operatorMode && liveRuns.length > 0 && (
@@ -563,15 +606,15 @@ export function AICommandCenter() {
             <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary,
               letterSpacing: '-0.03em', marginBottom: 8 }}>Hazırız</div>
             <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.7,
-              marginBottom: 28, maxWidth: 240, margin: '0 auto 28px' }}>
-              Mission Hub'dan ilk kampanyanı başlat.
+              marginBottom: 28, maxWidth: 260, margin: '0 auto 28px' }}>
+              Haftalık planınızı başlatın — AI markanıza uygun içerik önerileri hazırlar.
             </div>
             <button onClick={() => navigate('missions')} style={{
               padding: '13px 28px', borderRadius: 30, cursor: 'pointer',
               background: t.accent, border: 'none',
               color: '#fff', fontSize: 14, fontWeight: 700,
             }}>
-              Mission Hub →
+              Haftalık Plana Git →
             </button>
           </div>
         )}

@@ -3,10 +3,13 @@
 import type { CSSProperties } from 'react';
 import {
   computePlanEconomics,
+  estimatePlanMarginOnRevenuePercent,
+  estimatePlanMonthlyApiCostUsd,
   formatOutputLimit,
   formatPlanMonthlyPrice,
   getPlanSpec,
   PACKAGE_PLAN_TIERS,
+  PLAN_API_UNIT_COSTS,
   type PlanSpec,
 } from '@/lib/package-plan-config';
 import type { PlanMonthlyOutputs, UsageQuotaSummary } from '@/types';
@@ -33,6 +36,8 @@ function mapApiOutputs(raw?: UsageQuotaSummary['monthlyOutputs'] | Record<string
     socialContent: r.socialContent ?? r.SocialContent ?? 0,
     galleryAnalysis: r.galleryAnalysis ?? r.GalleryAnalysis ?? 0,
     reels: r.reels ?? r.Reels ?? 0,
+    metaAdCreatives: r.metaAdCreatives ?? r.meta_ad_creatives ?? r.MetaAdCreatives ?? 0,
+    googleAdCreatives: r.googleAdCreatives ?? r.google_ad_creatives ?? r.GoogleAdCreatives ?? 0,
   };
 }
 
@@ -40,40 +45,67 @@ export function PlanUsagePanel({
   quota,
   wallet,
   packageSlug,
+  debugMode = false,
   t,
 }: {
   quota: UsageQuotaSummary | null | undefined;
   wallet?: TokenWalletSummary | null;
   packageSlug?: string | null;
+  debugMode?: boolean;
   t: ThemeSlice;
 }) {
   const slug = packageSlug ?? quota?.packageSlug;
   const plan = getPlanSpec(slug);
   const outputs = mapApiOutputs(quota?.monthlyOutputs) ?? plan?.outputs ?? null;
 
-  const quotaRows = quota
-    ? [
-        { label: 'Ajan Çalışmaları', metric: quota.agentRuns, color: '#a78bfa' },
-        { label: 'Provider Aksiyonlar', metric: quota.providerActions, color: '#60a5fa' },
-        { label: 'Canlı Yayın', metric: quota.liveProviderActions, color: '#f59e0b' },
-        { label: 'Token Kullanımı', metric: quota.tokens, color: '#34d399' },
-      ]
-    : plan
+  const estimatedFullUtilCogs = plan ? estimatePlanMonthlyApiCostUsd(plan) : null;
+  const estimatedFullUtilMargin = plan ? estimatePlanMarginOnRevenuePercent(plan) : null;
+
+  const quotaRows = debugMode
+    ? (quota
       ? [
-          { label: 'Ajan Çalışmaları', used: 0, limit: plan.quotas.agentRuns, color: '#a78bfa' },
-          { label: 'Provider Aksiyonlar', used: 0, limit: plan.quotas.providerActions, color: '#60a5fa' },
-          { label: 'Canlı Yayın', used: 0, limit: plan.quotas.liveProviderActions, color: '#f59e0b' },
-          { label: 'Token Kullanımı', used: 0, limit: plan.quotas.llmTokens, color: '#34d399' },
-        ].map((r) => ({
-          label: r.label,
-          metric: {
-            used: r.used,
-            limit: r.limit,
-            isUnlimited: r.limit < 0,
-          },
-          color: r.color,
-        }))
-      : [];
+          { label: 'Ajan Çalışmaları', metric: quota.agentRuns, color: '#9DBECE' },
+          { label: 'Provider Aksiyonlar', metric: quota.providerActions, color: '#60a5fa' },
+          { label: 'Canlı Yayın', metric: quota.liveProviderActions, color: '#f59e0b' },
+          { label: 'Token Kullanımı', metric: quota.tokens, color: '#34d399' },
+        ]
+      : plan
+        ? [
+            { label: 'Ajan Çalışmaları', used: 0, limit: plan.quotas.agentRuns, color: '#9DBECE' },
+            { label: 'Provider Aksiyonlar', used: 0, limit: plan.quotas.providerActions, color: '#60a5fa' },
+            { label: 'Canlı Yayın', used: 0, limit: plan.quotas.liveProviderActions, color: '#f59e0b' },
+            { label: 'Token Kullanımı', used: 0, limit: plan.quotas.llmTokens, color: '#34d399' },
+          ].map((r) => ({
+            label: r.label,
+            metric: {
+              used: r.used,
+              limit: r.limit,
+              isUnlimited: r.limit < 0,
+            },
+            color: r.color,
+          }))
+        : [])
+    : (quota
+      ? [
+          { label: 'Kampanya planı', metric: quota.agentRuns, color: '#9DBECE' },
+          { label: 'İçerik üretimi', metric: quota.providerActions, color: '#60a5fa' },
+          { label: 'SA Kredi', metric: quota.tokens, color: '#34d399' },
+        ]
+      : plan
+        ? [
+            { label: 'Kampanya planı', used: 0, limit: plan.quotas.agentRuns, color: '#9DBECE' },
+            { label: 'İçerik üretimi', used: 0, limit: plan.quotas.providerActions, color: '#60a5fa' },
+            { label: 'SA Kredi', used: 0, limit: plan.quotas.llmTokens, color: '#34d399' },
+          ].map((r) => ({
+            label: r.label,
+            metric: {
+              used: r.used,
+              limit: r.limit,
+              isUnlimited: r.limit < 0,
+            },
+            color: r.color,
+          }))
+        : []);
 
   const economics = plan && wallet?.enabled
     ? computePlanEconomics(plan.monthlyPriceTry, wallet.month_cost_usd, wallet.month_billed_usd)
@@ -91,6 +123,7 @@ export function PlanUsagePanel({
         </div>
       )}
 
+      {debugMode && (
       <div style={{ ...t.surfaceCard, padding: '14px 16px' }}>
         <div style={{
           fontSize: 11, fontWeight: 700, color: t.labelColor,
@@ -108,7 +141,7 @@ export function PlanUsagePanel({
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '10px 12px', borderRadius: 12,
                   background: active
-                    ? (t.isDark ? 'rgba(124,58,237,0.12)' : 'rgba(124,58,237,0.06)')
+                    ? (t.isDark ? 'rgba(77,112,136,0.12)' : 'rgba(77,112,136,0.06)')
                     : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
                   border: active ? `0.5px solid ${t.accent}55` : `0.5px solid ${t.separator}`,
                 }}
@@ -131,7 +164,30 @@ export function PlanUsagePanel({
         <div style={{ marginTop: 10, fontSize: 10, color: t.textTertiary, lineHeight: 1.45 }}>
           Giriş paketi $79/ay. Üst paketler daha yüksek kota ve SA Kredi içerir.
         </div>
+        {plan && estimatedFullUtilCogs != null && (
+          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10,
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            border: `0.5px solid ${t.separator}` }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: t.labelColor, marginBottom: 6,
+              letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Tahmini API maliyeti (tam kota)
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>
+              ~${estimatedFullUtilCogs.toFixed(2)}/ay
+              {estimatedFullUtilMargin != null && (
+                <span style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, marginLeft: 8 }}>
+                  · liste fiyatına göre marj %{estimatedFullUtilMargin}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: t.textTertiary, marginTop: 6, lineHeight: 1.45 }}>
+              Misyon ~${(PLAN_API_UNIT_COSTS.missionPropose + PLAN_API_UNIT_COSTS.missionProductionCycle).toFixed(2)}
+              {' '}(öneri + 7 parça üretim) · galeri ${PLAN_API_UNIT_COSTS.galleryVisionAnalysis.toFixed(2)}/foto
+            </div>
+          </div>
+        )}
       </div>
+      )}
 
       {outputs && (
         <div style={{ ...t.surfaceCard, padding: '16px 18px' }}>
@@ -144,7 +200,9 @@ export function PlanUsagePanel({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {[
               { label: 'Misyon', value: outputs.missions },
-              { label: 'Sosyal içerik', value: outputs.socialContent },
+              { label: 'Organik içerik', value: outputs.socialContent },
+              { label: 'Meta reklam', value: outputs.metaAdCreatives },
+              { label: 'Google Ads', value: outputs.googleAdCreatives },
               { label: 'Galeri analizi', value: outputs.galleryAnalysis },
               { label: 'Reel', value: outputs.reels },
             ].map((item) => (
@@ -209,7 +267,7 @@ export function PlanUsagePanel({
         </div>
       )}
 
-      {wallet?.enabled && (
+      {debugMode && wallet?.enabled && (
         <div style={{ ...t.surfaceCard, padding: '16px 18px' }}>
           <div style={{
             fontSize: 11, fontWeight: 700, color: t.labelColor,

@@ -23,6 +23,9 @@ import {
   stableTextLayerStyle,
   stableTextOpacity,
   textShadowHeavy,
+  textShadowEditorial,
+  textShadowAmbient,
+  FilmGrainOverlay,
 } from './shared/story-primitives';
 import { StoryFontProvider, useStoryFonts } from './shared/useRemotionFonts';
 import {
@@ -31,6 +34,7 @@ import {
   EventTicketLayout,
   MinimalLuxuryLayout,
   MosaicPinterestLayout,
+  PolaroidSingleLayout,
   PolaroidStackLayout,
 } from './AgencyStoryLayouts';
 import {
@@ -50,6 +54,7 @@ import {
   LocationPinLayout,
   QuoteCardLayout,
 } from './SocialStoryLayouts';
+import { brandPanelGradientCss, cinematicScrimCss } from '../lib/brand-panel-gradient';
 
 export interface StoryLayoutEngineProps extends StoryProps {
   layoutSpec: RemotionLayoutSpec;
@@ -84,6 +89,8 @@ export const StoryLayoutEngine: React.FC<StoryLayoutEngineProps> = (props) => {
       return <MosaicPinterestLayout {...props} layoutSpec={spec} />;
     case 'asymmetric_editorial':
       return <AsymmetricEditorialLayout {...props} layoutSpec={spec} />;
+    case 'polaroid_single':
+      return <PolaroidSingleLayout {...props} layoutSpec={spec} />;
     case 'polaroid_stack':
       return <PolaroidStackLayout {...props} layoutSpec={spec} />;
     case 'vibe_fullscreen':
@@ -116,12 +123,18 @@ export const StoryLayoutEngine: React.FC<StoryLayoutEngineProps> = (props) => {
   })();
 
   const brandHeading = props.fontFamily?.trim();
+  const useTemplateTypo = props.honorTemplateTypography === true;
+  const personality = useTemplateTypo
+    ? (props.fontPersonality ?? spec.fontPersonality)
+    : brandHeading
+      ? 'brand'
+      : spec.fontPersonality;
   return (
     <StoryFontProvider
-      personality={brandHeading ? 'brand' : spec.fontPersonality}
+      personality={personality}
       headingFont={props.fontFamily}
       bodyFont={props.bodyFont}
-      honorExplicitBrand={Boolean(brandHeading)}
+      honorExplicitBrand={useTemplateTypo ? false : Boolean(brandHeading)}
     >
       {inner}
     </StoryFontProvider>
@@ -179,8 +192,9 @@ function SplitPanelLayout({
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const panelRatio = spec.panelRatio;
-  const photoH = Math.round(height * (1 - panelRatio));
-  const panelH = height - photoH;
+  const panelH = Math.round(height * panelRatio);
+  const blendExtra = Math.round(height * 0.14);
+  const gradientH = panelH + blendExtra;
   const panelBg = spec.panelUsesPrimary ? primaryColor : '#0a0a0f';
   const fonts = useStoryFonts();
   const textColors = resolveStoryTextColors({ headlineColor, subtitleColor, categoryColor, accentColor });
@@ -189,20 +203,21 @@ function SplitPanelLayout({
   const headOp = stableTextOpacity(frame, 16, 34);
 
   return (
-    <AbsoluteFill style={{ background: panelBg }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: photoH, overflow: 'hidden' }}>
-        <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={24} />
-        <div style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0, height: '20%',
-          background: `linear-gradient(to bottom, transparent, ${panelBg})`,
-        }} />
-      </div>
+    <AbsoluteFill style={{ background: '#000' }}>
+      <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={24} />
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: gradientH,
+        background: brandPanelGradientCss(panelBg, 0.96),
+        opacity: panelIn,
+        pointerEvents: 'none',
+      }} />
+      <FrameLayer spec={spec} accent={accentColor} />
       <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.9} />
       <div style={{
-        position: 'absolute', top: photoH, left: 0, right: 0, height: panelH,
-        background: panelBg, opacity: panelIn,
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: panelH,
         display: 'flex', flexDirection: 'column', alignItems: spec.align === 'left' ? 'flex-start' : 'center',
         justifyContent: 'center', padding: '28px 48px', textAlign: spec.align,
+        zIndex: 5,
       }}>
         {spec.accentLine === 'above' || spec.accentLine === 'both' ? (
           <div style={{ width: 48, height: 3, background: accentColor, marginBottom: 16 }} />
@@ -222,6 +237,8 @@ function SplitPanelLayout({
             fontWeight={headlineWeight ?? spec.heroWeight}
             fontSize={fontSize}
             color={textColors.headline}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
             tracking={spec.heroTracking}
             frame={frame}
@@ -288,7 +305,7 @@ function EditorialBottomLayout(props: LayoutProps) {
 
       {spec.accentLine === 'left_bar' || spec.accentLine === 'both' ? (
         <div style={{
-          position: 'absolute', left: sidePad - 20, bottom: '14%', width: 4, height: `${barH * 0.55}%`,
+          position: 'absolute', left: sidePad - 20, bottom: '14%', width: 4, height: `${Math.round(barH * 0.55)}%`,
           background: accentColor, borderRadius: 2,
         }} />
       ) : null}
@@ -302,7 +319,7 @@ function EditorialBottomLayout(props: LayoutProps) {
           <span style={{
             fontFamily: fonts.body, fontSize: 11, letterSpacing: trackingToLetterSpacing(spec.categoryTracking),
             textTransform: 'uppercase', color: spec.accentOnCategory ? accentColor : textColors.category,
-            marginBottom: 10, textShadow: textShadowHeavy,
+            marginBottom: 12, textShadow: textShadowEditorial,
           }}>
             {categoryLabel}
           </span>
@@ -314,20 +331,22 @@ function EditorialBottomLayout(props: LayoutProps) {
             fontWeight={headlineWeight ?? spec.heroWeight}
             fontSize={fontSize}
             color={textColors.headline}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
             tracking={spec.heroTracking}
             frame={frame}
             fps={fps}
             startFrame={22}
-            lineGap={1.08}
-            textShadow={textShadowHeavy}
+            lineGap={1.06}
+            textShadow={textShadowEditorial}
           />
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 26, fontStyle: spec.subtitleItalic ? 'italic' : 'normal',
-            color: textColors.subtitle, marginTop: 14, opacity: headOp, textShadow: textShadowHeavy,
-            lineHeight: 1.48, maxWidth: '92%', display: 'block',
+            fontFamily: fonts.body, fontSize: 20, fontStyle: spec.subtitleItalic ? 'italic' : 'normal',
+            color: textColors.subtitle, marginTop: 14, opacity: headOp, textShadow: textShadowAmbient,
+            lineHeight: 1.52, maxWidth: '92%', display: 'block',
           }}>
             {subtitle}
           </span>
@@ -360,43 +379,59 @@ function FrostedLayout(props: LayoutProps) {
     <AbsoluteFill style={{ background: '#000' }}>
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={20} />
       <VignetteLayer spec={spec} />
+      {/* Upgraded: smooth cinematic scrim instead of hard gradient stop */}
       <AbsoluteFill style={{
-        background: `linear-gradient(to bottom, transparent ${Math.round(spec.gradientStart * 100)}%, rgba(0,0,0,${overlayOp}) 100%)`,
+        background: cinematicScrimCss(overlayOp, Math.round(spec.gradientStart * 100)),
       }} />
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.88} />
+      <FilmGrainOverlay opacity={0.05} fine />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.86} />
       <AbsoluteFill style={{
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
         padding: `0 40px ${Math.round((1 - spec.frostedY) * 100)}%`,
       }}>
         <div style={{
-          width: '100%', maxWidth: 920, padding: '32px 36px', borderRadius: 20, opacity: cardOp,
+          width: '100%', maxWidth: 920, padding: '28px 32px 30px', borderRadius: 16, opacity: cardOp,
           ...stableTextLayerStyle,
-          background: spec.frostedCard ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.72)',
-          border: `1px solid rgba(255,255,255,0.15)`,
+          // Frosted: real backdrop-blur for glass effect; solid: refined dark card
+          background: spec.frostedCard ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.60)',
+          border: spec.frostedCard
+            ? '1px solid rgba(255,255,255,0.28)'
+            : '1px solid rgba(255,255,255,0.10)',
+          backdropFilter: spec.frostedCard ? 'blur(12px)' : 'blur(4px)',
+          WebkitBackdropFilter: spec.frostedCard ? 'blur(12px)' : 'blur(4px)',
+          boxShadow: '0 8px 40px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06)',
           textAlign: spec.align,
         }}>
           {categoryLabel ? (
-            <span style={{ fontFamily: fonts.body, fontSize: 11, letterSpacing: 10, textTransform: 'uppercase', color: accentColor }}>
+            <span style={{
+              fontFamily: fonts.body, fontSize: 10, letterSpacing: 7, textTransform: 'uppercase',
+              color: accentColor, display: 'block', marginBottom: 10,
+            }}>
               {categoryLabel}
             </span>
           ) : null}
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 8 }}>
             <HeadlineStack
               headline={headline}
               fontFamily={fonts.hero}
               fontWeight={headlineWeight ?? spec.heroWeight}
               fontSize={fontSize}
               color={textColors.headline}
+              primaryColor={props.primaryColor}
+              accentColor={accentColor}
               uppercase={spec.heroUppercase}
               tracking={spec.heroTracking}
               frame={frame}
               fps={fps}
               startFrame={24}
-              lineGap={1.1}
+              lineGap={1.08}
             />
           </div>
           {subtitle ? (
-            <span style={{ fontFamily: fonts.body, fontSize: 20, color: textColors.subtitle, marginTop: 10, display: 'block', fontStyle: spec.subtitleItalic ? 'italic' : 'normal' }}>
+            <span style={{
+              fontFamily: fonts.body, fontSize: 19, color: textColors.subtitle, marginTop: 12,
+              display: 'block', fontStyle: spec.subtitleItalic ? 'italic' : 'normal', lineHeight: 1.5,
+            }}>
               {subtitle}
             </span>
           ) : null}

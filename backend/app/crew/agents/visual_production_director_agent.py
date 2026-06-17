@@ -27,14 +27,28 @@ Rules:
 """
 
 
-def create_visual_production_director_agent(brand: BrandInfo, llm: LLM | None = None) -> Agent:
+def create_visual_production_director_agent(
+    brand: BrandInfo,
+    llm: LLM | None = None,
+    tools: list | None = None,
+) -> Agent:
     settings = get_settings()
     context = build_brand_context_prompt(brand)
+    agent_tools = tools if tools is not None else []
+    mcp_note = ""
+    if agent_tools:
+        mcp_note = (
+            "\n\nYou have the agent_design_consult tool for premium visual direction. "
+            "Use it when sector/business model is ambiguous (SaaS vs venue) or layout needs "
+            "professional hierarchy. Incorporate guidance into visual_production_spec; "
+            "still output final JSON only."
+        )
     return Agent(
         role=VPD_ROLE,
         goal=VPD_GOAL.format(business_name=brand.business_name),
-        backstory=VPD_BACKSTORY + f"\n\n{context}",
+        backstory=VPD_BACKSTORY + f"\n\n{context}{mcp_note}",
         llm=llm,
+        tools=agent_tools,
         verbose=settings.crew_verbose,
         allow_delegation=False,
     )

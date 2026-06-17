@@ -17,6 +17,8 @@ export interface GalleryPhotoAnalysis {
   isLogo: boolean;
   suggestedAssetType: string;
   usageContext: string;
+  captionHooks?: string[];
+  pairingKeywords?: string[];
   /** Deterministic 0..100 quality of this analysis (Sprint 2 GIS). */
   qualityScore?: number;
   /** ISO timestamp when this analysis was produced (Sprint 2 GIS recency). */
@@ -59,8 +61,13 @@ Respond ONLY with JSON (no markdown):
   "hasText": true|false,
   "isLogo": true|false,
   "suggestedAssetType": "venue_reference|hero_image|product_image|service_photo|event_photo|food_drink_photo|brand_background|logo|team_photo|before_after|equipment_photo",
-  "usageContext": "Specific caption/content types this photo pairs best with — be specific to what the photo shows"
+  "usageContext": "Specific caption/content types this photo pairs best with — be specific to what the photo shows",
+  "captionHooks": ["short TR caption hook 1", "short EN hook 2", "..."],
+  "pairingKeywords": ["bilingual", "tokens", "for", "matcher"]
 }
+
+captionHooks: 3–6 short phrases (Turkish + English) that would appear in an Instagram caption when THIS exact photo is shown.
+pairingKeywords: 8–14 concrete nouns/adjectives visible in the image (bilingual where useful) for search matching.
 
 bestFor/notGoodFor values: venue_photo, product_highlight, service_showcase, drink_showcase, food_showcase, event_announcement, behind_the_scenes, social_proof, daily_story, campaign_offer, brand_background, story_format, feed_post, reel_cover, before_after, team_intro, customer_result, equipment_showcase`;
 
@@ -77,7 +84,9 @@ async function analyzePhoto(
 ): Promise<GalleryPhotoAnalysis> {
   // standard: gpt-4o-mini + detail:low — ~15x cheaper, fine for bulk tagging.
   // hero:     gpt-4o + detail:high — richer tags for the most important photos.
-  const isHero = tier === 'hero';
+  // DEV_COST_MODE=true overrides hero to mini (cheaper during development).
+  const devCostMode = process.env.GALLERY_ANALYSIS_DEV_MODE === 'true';
+  const isHero = tier === 'hero' && !devCostMode;
   const response = await openai.chat.completions.create({
     model: isHero ? 'gpt-4o' : 'gpt-4o-mini',
     max_tokens: isHero ? 700 : 500,
@@ -116,6 +125,8 @@ async function analyzePhoto(
     isLogo: Boolean(parsed.isLogo),
     suggestedAssetType: String(parsed.suggestedAssetType ?? 'venue_reference'),
     usageContext: String(parsed.usageContext ?? ''),
+    captionHooks: Array.isArray(parsed.captionHooks) ? parsed.captionHooks.map(String) : [],
+    pairingKeywords: Array.isArray(parsed.pairingKeywords) ? parsed.pairingKeywords.map(String) : [],
     analyzedAt: new Date().toISOString(),
   };
   analysis.qualityScore = computeAnalysisQuality(analysis);

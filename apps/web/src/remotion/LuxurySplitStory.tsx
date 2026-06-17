@@ -18,6 +18,7 @@ import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
 import { HeadlineStack, headlineSize, stableScale, stableTextOpacity } from './shared/story-primitives';
+import { StoryAudioLayer } from './shared/story-audio';
 
 /** Photo share of frame height — panel gets the rest for headline/subtitle/CTA */
 const PHOTO_HEIGHT_RATIO = 0.56;
@@ -37,6 +38,8 @@ export const LuxurySplitStory: React.FC<StoryProps> = ({
   headlineScale = 1.0,
   logoUrl = '',
   cta = '',
+  audioMood,
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('serif_editorial', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -49,7 +52,7 @@ export const LuxurySplitStory: React.FC<StoryProps> = ({
     extrapolateRight: 'clamp',
   }));
 
-  const lineWidth = interpolate(frame, [8, 32], [0, 100], { extrapolateRight: 'clamp' });
+  const lineWidth = Math.round(interpolate(frame, [8, 32], [0, 100], { extrapolateRight: 'clamp' }));
   const panelOpacity = stableTextOpacity(frame, 0, 16);
   const metaOpacity = stableTextOpacity(frame, 8, 24);
   const subOpacity = stableTextOpacity(frame, 28, 44);
@@ -160,6 +163,8 @@ export const LuxurySplitStory: React.FC<StoryProps> = ({
             fontWeight={headlineWeight ?? 800}
             fontSize={fontSize}
             color="#fff"
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={false}
             tracking={charCount <= 14 ? 0.08 : 0.02}
             frame={frame}
@@ -227,6 +232,7 @@ export const LuxurySplitStory: React.FC<StoryProps> = ({
           · · ·
         </span>
       </div>
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
     </AbsoluteFill>
   );
 };

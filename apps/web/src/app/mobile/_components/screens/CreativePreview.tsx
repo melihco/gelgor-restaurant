@@ -9,11 +9,12 @@
  * - Cinematic first. Information second. Forms never.
  */
 
-import { useState, useRef, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
+import { useArtifactDecision } from '../../_hooks/use-artifact-decision';
 import { signalFromArtifact, MobileArtifactView } from '../MobileArtifactView';
 import { resolveArtifact, contentTypeLabel, type ResolvedArtifact } from '../artifact-utils';
 import type { ArtifactSignal } from '../MobileArtifactView';
@@ -35,8 +36,8 @@ export function ArtifactThumbnail({ resolved, size = 44, radius = 12 }: {
       </div>
     );
   }
-  const cfgs: Record<string, [string, string]> = { image: ['#a78bfa', '🖼'], video: ['#f472b6', '▶'], text: ['#60a5fa', 'T'], multi: ['#34d399', '⊞'], report: ['#f59e0b', '↗'] };
-  const [c, icon] = cfgs[resolved.kind] ?? ['#a78bfa', '✦'];
+  const cfgs: Record<string, [string, string]> = { image: ['#9DBECE', '🖼'], video: ['#f472b6', '▶'], text: ['#60a5fa', 'T'], multi: ['#34d399', '⊞'], report: ['#f59e0b', '↗'] };
+  const [c, icon] = cfgs[resolved.kind] ?? ['#9DBECE', '✦'];
   return (
     <div style={{ width: size, height: size, borderRadius: radius, flexShrink: 0, background: `${c}14`, border: `0.5px solid ${c}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.38 }}>
       {icon}
@@ -169,12 +170,50 @@ function MediaCanvas({ signal, idea, fullHeight = false, kind }: {
   );
 }
 
+// ─── Post-decision success screen ─────────────────────────────────────
+function DecidedScreen({ decided, onBack }: { decided: 'approved' | 'rejected'; onBack: () => void }) {
+  const [countdown, setCountdown] = useState(2);
+  useEffect(() => {
+    const t = setInterval(() => setCountdown(c => c - 1), 1000);
+    const nav = setTimeout(onBack, 2000);
+    return () => { clearInterval(t); clearTimeout(nav); };
+  }, [onBack]);
+
+  const isApproved = decided === 'approved';
+  return (
+    <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+      <div style={{
+        width: 80, height: 80, borderRadius: '50%', marginBottom: 24,
+        background: isApproved ? 'rgba(52,211,153,0.1)' : 'rgba(251,113,133,0.08)',
+        border: `1px solid ${isApproved ? 'rgba(52,211,153,0.25)' : 'rgba(251,113,133,0.2)'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <span style={{ fontSize: 32, color: isApproved ? '#34d399' : '#fb7185' }}>
+          {isApproved ? '✓' : '×'}
+        </span>
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: '#f8fafc', marginBottom: 8, letterSpacing: '-0.02em' }}>
+        {isApproved ? 'Onaylandı ✓' : 'Reddedildi'}
+      </div>
+      <div style={{ fontSize: 14, color: 'rgba(148,163,184,0.65)', textAlign: 'center', lineHeight: 1.7, marginBottom: 32, maxWidth: 280 }}>
+        {isApproved
+          ? 'İçerik yayın kuyruğuna alındı.'
+          : 'İçerik reddedildi. Revizyon talebi varsa Onay ekranından not ekleyebilirsiniz.'}
+      </div>
+      <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.3)', marginBottom: 20 }}>
+        {countdown > 0 ? `${countdown} saniye içinde geri dönülüyor…` : 'Yönlendiriliyor…'}
+      </div>
+      <button onClick={onBack} style={{ padding: '11px 28px', borderRadius: 30, cursor: 'pointer', background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
+        Şimdi Geri Dön
+      </button>
+    </div>
+  );
+}
+
 // ─── MAIN CREATIVE PREVIEW ────────────────────────────────────────────
 export function CreativePreview() {
   const { t } = useTheme();
   const { goBack, openApproval, selectedArtifactId } = useMobileStore();
-  const queryClient = useQueryClient();
-
   const [activeIdea, setActiveIdea] = useState(0);
   const [showSheet, setShowSheet] = useState(false);
   const [selectedChips, setSelectedChips] = useState<string[]>([]);
@@ -262,23 +301,27 @@ export function CreativePreview() {
     }
   }, [exporting, workspaceId]);
 
-  const approveMutation = useMutation({
-    mutationFn: async () => { if (artifact) await apiClient.approveArtifact(artifact.id, 'Approved from preview'); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['artifacts'] }); setDecided('approved'); },
-    onError: () => setDecided('approved'),
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: async () => { if (artifact) await apiClient.rejectArtifact(artifact.id, 'Rejected'); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['artifacts'] }); setDecided('rejected'); },
-    onError: () => setDecided('rejected'),
-  });
+  const { approveMutation, rejectMutation } = useArtifactDecision(artifact?.id ?? null);
+  const prevApprovingRef = useRef(false);
+  const prevRejectingRef = useRef(false);
+  useEffect(() => {
+    if (prevApprovingRef.current && !approveMutation.isPending) {
+      setDecided('approved');
+    }
+    prevApprovingRef.current = approveMutation.isPending;
+  }, [approveMutation.isPending]);
+  useEffect(() => {
+    if (prevRejectingRef.current && !rejectMutation.isPending) {
+      setDecided('rejected');
+    }
+    prevRejectingRef.current = rejectMutation.isPending;
+  }, [rejectMutation.isPending]);
 
   // ── Loading ──────────────────────────────────────────────────────────
   if (isLoading || !artifact) {
     return (
-      <div style={{ height: '100dvh', background: '#050508', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
-        <div style={{ width: 48, height: 48, borderRadius: '50%', border: '2px solid rgba(167,139,250,0.3)', borderTop: '2px solid #a78bfa', animation: 'spinSlow 1.2s linear infinite' }} />
+      <div style={{ height: '100dvh', background: '#07090F', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 48, height: 48, borderRadius: '50%', border: '2px solid rgba(157,190,206,0.3)', borderTop: '2px solid #9DBECE', animation: 'spinSlow 1.2s linear infinite' }} />
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.04em' }}>İçerik yükleniyor</div>
       </div>
     );
@@ -286,29 +329,7 @@ export function CreativePreview() {
 
   // ── Decided ───────────────────────────────────────────────────────────
   if (decided) {
-    return (
-      <div style={{ height: '100dvh', background: '#050508', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
-        <div style={{
-          width: 80, height: 80, borderRadius: '50%', marginBottom: 20,
-          background: decided === 'approved' ? 'rgba(52,211,153,0.1)' : 'rgba(251,113,133,0.08)',
-          border: `1px solid ${decided === 'approved' ? 'rgba(52,211,153,0.25)' : 'rgba(251,113,133,0.2)'}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <span style={{ fontSize: 32, color: decided === 'approved' ? '#34d399' : '#fb7185' }}>
-            {decided === 'approved' ? '✓' : '×'}
-          </span>
-        </div>
-        <div style={{ fontSize: 22, fontWeight: 700, color: '#f8fafc', marginBottom: 8, letterSpacing: '-0.02em' }}>
-          {decided === 'approved' ? 'Onaylandı' : 'Reddedildi'}
-        </div>
-        <div style={{ fontSize: 14, color: 'rgba(148,163,184,0.5)', marginBottom: 40, textAlign: 'center', lineHeight: 1.6 }}>
-          {decided === 'approved' ? 'İçerik yayın kuyruğuna alındı.' : 'İçerik revizyon için kuyruğa alındı.'}
-        </div>
-        <button onClick={goBack} style={{ padding: '13px 32px', borderRadius: 30, cursor: 'pointer', background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.6)', fontSize: 14, letterSpacing: '0.02em' }}>
-          Geri Dön
-        </button>
-      </div>
-    );
+    return <DecidedScreen decided={decided} onBack={goBack} />;
   }
 
   // ── Resolve ───────────────────────────────────────────────────────────
@@ -415,9 +436,9 @@ export function CreativePreview() {
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => setShowSheet(true)} style={{
                     flex: 1, padding: '13px', borderRadius: 16,
-                    background: 'rgba(167,139,250,0.12)', backdropFilter: 'blur(12px)',
-                    border: '0.5px solid rgba(167,139,250,0.28)',
-                    color: '#a78bfa', fontSize: 13, fontWeight: 700,
+                    background: 'rgba(157,190,206,0.12)', backdropFilter: 'blur(12px)',
+                    border: '0.5px solid rgba(157,190,206,0.28)',
+                    color: '#9DBECE', fontSize: 13, fontWeight: 700,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
                     cursor: 'pointer',
                   }}>
@@ -446,8 +467,8 @@ export function CreativePreview() {
                 </div>
                 <button onClick={() => setShowSheet(true)} style={{
                   flex: 1, padding: '13px', borderRadius: 16,
-                  background: 'rgba(167,139,250,0.1)', border: '0.5px solid rgba(167,139,250,0.25)',
-                  color: '#a78bfa', fontSize: 13, fontWeight: 600,
+                  background: 'rgba(157,190,206,0.1)', border: '0.5px solid rgba(157,190,206,0.25)',
+                  color: '#9DBECE', fontSize: 13, fontWeight: 600,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, cursor: 'pointer',
                 }}>
                   ✦ Geri Bildirim
@@ -465,7 +486,7 @@ export function CreativePreview() {
 
   // ── Post / Content Plan / Report — Instagram-native rendering ──────────
   return (
-    <div style={{ height: '100dvh', background: '#050508', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
+    <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
 
       {/* Transparent floating back button — no background, no badges */}
       <div style={{
@@ -487,7 +508,7 @@ export function CreativePreview() {
       </div>
 
       {/* ── Instagram-native content preview (starts from very top) ── */}
-      <div style={{ flex: 1, overflowY: 'auto', background: '#050508', paddingBottom: 130 }}>
+      <div style={{ flex: 1, overflowY: 'auto', background: '#07090F', paddingBottom: 130 }}>
         <MobileArtifactView artifact={artifact} immersiveVisual signal={signal} />
       </div>
 
@@ -521,8 +542,8 @@ export function CreativePreview() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setShowSheet(true)} style={{
                 flex: 1, padding: '13px', borderRadius: 16, cursor: 'pointer',
-                background: 'rgba(167,139,250,0.08)', border: '0.5px solid rgba(167,139,250,0.2)',
-                color: '#a78bfa', fontSize: 13, fontWeight: 700,
+                background: 'rgba(157,190,206,0.08)', border: '0.5px solid rgba(157,190,206,0.2)',
+                color: '#9DBECE', fontSize: 13, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
               }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.68"/></svg>
@@ -559,8 +580,8 @@ export function CreativePreview() {
             </div>
             <button onClick={() => setShowSheet(true)} style={{
               flex: 1, padding: '12px', borderRadius: 14, cursor: 'pointer',
-              background: 'rgba(167,139,250,0.07)', border: '0.5px solid rgba(167,139,250,0.18)',
-              color: '#a78bfa', fontSize: 13, fontWeight: 600,
+              background: 'rgba(157,190,206,0.07)', border: '0.5px solid rgba(157,190,206,0.18)',
+              color: '#9DBECE', fontSize: 13, fontWeight: 600,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
             }}>
               ✦ Geri Bildirim
@@ -613,10 +634,10 @@ function FeedbackSheet({ signal, artifact, chips, setChips, onClose, onApprove, 
 
         {/* AI Context */}
         <div style={{ padding: '16px 22px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 16px', borderRadius: 16, background: 'rgba(167,139,250,0.06)', border: '0.5px solid rgba(167,139,250,0.14)', marginBottom: 20 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa', fontSize: 12, flexShrink: 0 }}>✦</div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 16px', borderRadius: 16, background: 'rgba(157,190,206,0.06)', border: '0.5px solid rgba(157,190,206,0.14)', marginBottom: 20 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(157,190,206,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9DBECE', fontSize: 12, flexShrink: 0 }}>✦</div>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 5 }}>AI Önerisi</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#9DBECE', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 5 }}>AI Önerisi</div>
               <p style={{ fontSize: 13, color: 'rgba(148,163,184,0.65)', lineHeight: 1.6, margin: 0 }}>
                 Bu içerik marka kimliğinize uygun, luxury & warm tonlar kullanılarak hazırlandı. Hedef kitlenizle duygusal bağ kuracak şekilde optimize edildi.
               </p>
@@ -633,9 +654,9 @@ function FeedbackSheet({ signal, artifact, chips, setChips, onClose, onApprove, 
               return (
                 <button key={chip.id} onClick={() => toggle(chip.id)} style={{
                   padding: '9px 16px', borderRadius: 30, cursor: 'pointer', fontSize: 13, fontWeight: on ? 600 : 400,
-                  background: on ? 'rgba(167,139,250,0.14)' : 'rgba(255,255,255,0.04)',
-                  border: `0.5px solid ${on ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.08)'}`,
-                  color: on ? '#a78bfa' : 'rgba(148,163,184,0.55)',
+                  background: on ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.04)',
+                  border: `0.5px solid ${on ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                  color: on ? '#9DBECE' : 'rgba(148,163,184,0.55)',
                   transition: 'all 150ms ease',
                 }}>
                   {chip.label}

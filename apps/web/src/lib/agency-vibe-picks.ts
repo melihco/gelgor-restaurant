@@ -1,21 +1,10 @@
 /**
- * Curated Agency showcase — 12 strongest templates (Sprint 1 vibe upgrade).
- * One standout variant per layout family; ordered for visual variety in showcase.
+ * Agency featured story templates — showcase / dropdown öne çıkanlar.
+ * Tüm katalog artık collection=Agency; bu liste "editör seçkisi" (22 aile × 1 varyant).
  */
-export const AGENCY_VIBE_PICK_TEMPLATE_IDS = [
-  'remotion_vibe_fullscreen_04',
-  'remotion_quote_card_01',
-  'remotion_location_pin_01',
-  'remotion_neon_night_02',
-  'remotion_bento_story_01',
-  'remotion_event_ticket_03',
-  'remotion_asymmetric_editorial_02',
-  'remotion_minimal_luxury_01',
-  'remotion_mosaic_pinterest_03',
-  'remotion_neon_night_01',
-  'remotion_vibe_fullscreen_01',
-  'remotion_bento_story_06',
-] as const;
+import { AGENCY_FEATURED_STORY_TEMPLATE_IDS } from './agency-template-standard';
+
+export const AGENCY_VIBE_PICK_TEMPLATE_IDS = AGENCY_FEATURED_STORY_TEMPLATE_IDS;
 
 export type AgencyVibePickId = (typeof AGENCY_VIBE_PICK_TEMPLATE_IDS)[number];
 

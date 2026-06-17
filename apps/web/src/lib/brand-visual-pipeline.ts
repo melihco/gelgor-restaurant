@@ -15,8 +15,16 @@ import {
   enhanceGalleryPhotosForIdea,
   type AiEnhanceLevel,
 } from '@/lib/ai-gallery-enhance';
+import {
+  resolveGptEnhanceSkipReason,
+  shouldRunGptImageEnhance,
+  type GptEnhancePolicyInput,
+  type GptEnhanceSkipCode,
+} from '@/lib/gpt-enhance-policy';
 import type { BrandContextForVisual } from '@/lib/ai-visual-production-standard';
 import { resolveVisualSubject } from '@/lib/ai-visual-production-standard';
+import { isNonVenueSector } from '@/lib/sector-gallery-seed';
+import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
 
 /** Mission Hub brief + tenant learning — "Brief sahneyi yönetir" için. */
 export function resolveMissionVisualBrief(
@@ -41,6 +49,10 @@ export function buildAiVisualStandardMetadata(
     brief_drives_scene: standard.briefDrivesScene,
     embed_logo: standard.embedLogo,
     formats: [...standard.formats],
+    enhance_gallery_selected: standard.enhanceGallerySelected,
+    adaptive_scene: standard.adaptiveScene,
+    adaptive_scene_mode: standard.adaptiveSceneMode,
+    caption_driven_visual: standard.captionDrivenVisual,
   };
 }
 
@@ -108,16 +120,58 @@ export interface GptImageEnhanceForIdeaInput {
   logoUrl?: string;
   referenceImageUrls?: string[];
   maxPhotos?: number;
+  missionId?: string;
+  enhancePolicy?: Omit<GptEnhancePolicyInput, 'visualStandard' | 'contentKind' | 'assignment'>;
 }
 
 /** gpt-image-2 gallery enhance — Marka Detayı + Scene Brief ile. */
 export async function runGptImageEnhanceForIdea(
   input: GptImageEnhanceForIdeaInput,
-): Promise<{ photoUrls: string[]; applied: boolean }> {
+): Promise<{ photoUrls: string[]; applied: boolean; skipReason?: GptEnhanceSkipCode; apiFailed?: boolean }> {
   const originals = input.photoUrls.filter((u) => u?.trim());
   if (!originals.length) return { photoUrls: [], applied: false };
+
+  if (isNonVenueSectorProfile(input.businessType)) {
+    console.log(
+      `[auto-produce] GPT enhance skipped (non_venue_saas) sector=${input.businessType}`,
+    );
+    return { photoUrls: originals, applied: false, skipReason: 'non_venue_saas' };
+  }
+
+  const policyInput: GptEnhancePolicyInput | null = input.enhancePolicy
+    ? {
+      visualStandard: input.visualStandard,
+      contentKind: input.contentKind,
+      assignment: input.assignment,
+      businessType: input.businessType,
+      ...input.enhancePolicy,
+    }
+    : null;
+
+  if (policyInput) {
+    const skipReason = resolveGptEnhanceSkipReason(policyInput);
+    if (skipReason) {
+      console.log(
+        `[auto-produce] GPT enhance skipped (${skipReason}) pipeline=${input.assignment.pipeline} ` +
+        `score=${policyInput.galleryMatchScore ?? 'n/a'}`,
+      );
+      return { photoUrls: originals, applied: false, skipReason };
+    }
+    if (!shouldRunGptImageEnhance(policyInput)) {
+      return { photoUrls: originals, applied: false, skipReason: 'gallery_match_ok' };
+    }
+  }
+
   if (!shouldAiEnhanceForOutput(input.visualStandard, input.contentKind, input.assignment)) {
-    return { photoUrls: originals, applied: false };
+    const skipReason = !input.visualStandard.enabled ? 'disabled' as const : 'format_excluded' as const;
+    if (input.visualStandard.enabled) {
+      const fmt = contentKindToAiFormat(input.contentKind);
+      console.warn(
+        `[brand-visual-pipeline] AI enhance ON but skipped (format=${fmt ?? 'n/a'}, ` +
+        `pipeline=${input.assignment.pipeline}, role=${input.assignment.slot_role})`,
+      );
+    }
+    return { photoUrls: originals, applied: false, skipReason };
   }
 
   const contextCaption = buildAiEnhanceContextCaption({
@@ -153,10 +207,12 @@ export async function runGptImageEnhanceForIdea(
     mood: input.mood,
     cta: input.cta,
     directorSceneExtra: directorSceneExtra || undefined,
+    sceneBrief: input.sceneBrief,
+    missionId: input.missionId,
   });
 
   if (enhancedUrls.length) {
     return { photoUrls: enhancedUrls, applied: true };
   }
-  return { photoUrls: originals, applied: false };
+  return { photoUrls: originals, applied: false, apiFailed: true };
 }

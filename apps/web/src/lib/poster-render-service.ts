@@ -18,6 +18,7 @@ import {
 } from './announcement-brand-kit';
 import { loadFontFiles, primaryFamily } from './svg-font-loader';
 import { getPosterTemplate } from './poster-template-catalog';
+import { sanitizePosterText } from './announcement-text-fit';
 import { auditPosterOverlayCopy, resolvePosterOverlayCopy } from './poster-copy';
 import { buildPosterGrafikerRetryHeadline } from './poster-quality';
 import {
@@ -155,6 +156,7 @@ async function renderAgencyPosterOnce(
 
   const copy = resolvePosterOverlayCopy({
     headline,
+    ideationHeadline: headline,
     subtitle: input.subtitle,
     brandName: input.brandName,
     location: input.location,
@@ -231,7 +233,7 @@ export async function renderAgencyPoster(input: AgencyPosterRenderInput): Promis
   grafikerPass: boolean;
   grafikerReview: GrafikerReviewResult | null;
 }> {
-  let headline = input.headline.trim() || 'İçerik';
+  let headline = sanitizePosterText(input.headline) || 'İçerik';
   let last: Awaited<ReturnType<typeof renderAgencyPosterOnce>> | null = null;
   let grafikerReview: GrafikerReviewResult | null = null;
 

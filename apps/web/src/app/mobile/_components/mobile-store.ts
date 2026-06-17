@@ -29,10 +29,9 @@ export type MobileScreen =
   | 'mission-factory'
   | 'feed'
   | 'platform-preview'
-  | 'reels-studio'
-  | 'canva-templates';
+  | 'reels-studio';
 
-export type NavTab = 'home' | 'content' | 'missions' | 'reviews' | 'more';
+export type NavTab = 'feed' | 'missions' | 'brand' | 'more';
 
 interface MobileStore {
   screen: MobileScreen;
@@ -66,12 +65,12 @@ interface MobileStore {
 }
 
 export const useMobileStore = create<MobileStore>((set, get) => ({
-  screen: 'home',
-  activeTab: 'home',
+  screen: 'feed',
+  activeTab: 'feed',
   selectedCampaignId: null,
   selectedArtifactId: null,
   selectedReviewId: null,
-  history: ['home'],
+  history: ['feed'],
   missionContentMissionId: null,
   missionContentNodeKey: null,
   brandReadinessFix: null,
@@ -122,10 +121,9 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
 
   setTab: (tab) => {
     const map: Record<NavTab, MobileScreen> = {
-      home: 'home',
-      content: 'feed',
+      feed: 'feed',
       missions: 'missions',
-      reviews: 'reviews',
+      brand: 'brand',
       more: 'more',
     };
     const screen = resolveClientScreen(map[tab]);
@@ -162,7 +160,7 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   openFeedForMission: (missionId) =>
     set({
       feedMissionFilterId: missionId,
-      activeTab: 'content',
+      activeTab: 'feed',
       screen: 'feed',
       history: ['feed'],
     }),

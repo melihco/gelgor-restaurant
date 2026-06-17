@@ -3,6 +3,33 @@
 import dynamic from 'next/dynamic';
 import { ScreenSkeleton } from './ScreenSkeleton';
 
+/** Dev hot-reload / stale .next → ChunkLoadError: one automatic full reload per session key. */
+function importWithChunkRetry<T extends Record<string, unknown>>(
+  key: string,
+  importer: () => Promise<T>,
+): () => Promise<T> {
+  return async () => {
+    try {
+      return await importer();
+    } catch (err) {
+      const msg = String(err instanceof Error ? err.message : err);
+      const isChunk =
+        msg.includes('ChunkLoadError')
+        || msg.includes('Loading chunk')
+        || msg.includes('Failed to fetch dynamically imported module');
+      if (isChunk && typeof window !== 'undefined') {
+        const storageKey = `chunk-retry:${key}`;
+        if (!sessionStorage.getItem(storageKey)) {
+          sessionStorage.setItem(storageKey, '1');
+          window.location.reload();
+          return new Promise(() => {});
+        }
+      }
+      throw err;
+    }
+  };
+}
+
 export const AICommandCenter = dynamic(
   () => import('./screens/AICommandCenter').then((m) => ({ default: m.AICommandCenter })),
   { loading: () => <ScreenSkeleton /> },
@@ -84,30 +111,30 @@ export const BillingScreen = dynamic(
   { loading: () => <ScreenSkeleton /> },
 );
 export const MissionHub = dynamic(
-  () => import('./screens/MissionHub').then((m) => ({ default: m.MissionHub })),
-  { loading: () => <ScreenSkeleton /> },
+  importWithChunkRetry('MissionHub', () =>
+    import('./screens/MissionHub').then((m) => ({ default: m.MissionHub }))),
+  { loading: () => <ScreenSkeleton />, ssr: false },
 );
 export const BrandRulesScreen = dynamic(
   () => import('./screens/BrandRulesScreen').then((m) => ({ default: m.BrandRulesScreen })),
   { loading: () => <ScreenSkeleton /> },
 );
 export const MissionContentFactory = dynamic(
-  () => import('./screens/MissionContentFactory').then((m) => ({ default: m.MissionContentFactory })),
-  { loading: () => <ScreenSkeleton /> },
+  importWithChunkRetry('MissionContentFactory', () =>
+    import('./screens/MissionContentFactory').then((m) => ({ default: m.MissionContentFactory }))),
+  { loading: () => <ScreenSkeleton />, ssr: false },
 );
 export const PlatformFeed = dynamic(
-  () => import('./screens/PlatformFeed').then((m) => ({ default: m.PlatformFeed })),
-  { loading: () => <ScreenSkeleton /> },
+  importWithChunkRetry('PlatformFeed', () =>
+    import('./screens/PlatformFeed').then((m) => ({ default: m.PlatformFeed }))),
+  { loading: () => <ScreenSkeleton />, ssr: false },
 );
 export const PlatformPreviewStudio = dynamic(
-  () => import('./screens/PlatformPreviewStudio').then((m) => ({ default: m.PlatformPreviewStudio })),
-  { loading: () => <ScreenSkeleton /> },
+  importWithChunkRetry('PlatformPreviewStudio', () =>
+    import('./screens/PlatformPreviewStudio').then((m) => ({ default: m.PlatformPreviewStudio }))),
+  { loading: () => <ScreenSkeleton />, ssr: false },
 );
 export const ReelsStudio = dynamic(
   () => import('./screens/ReelsStudio').then((m) => ({ default: m.ReelsStudio })),
-  { loading: () => <ScreenSkeleton /> },
-);
-export const CanvaTemplatesScreen = dynamic(
-  () => import('./screens/CanvaTemplatesScreen').then((m) => ({ default: m.default })),
   { loading: () => <ScreenSkeleton /> },
 );

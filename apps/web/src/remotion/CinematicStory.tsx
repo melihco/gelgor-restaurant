@@ -25,7 +25,7 @@ import {
   Img,
 } from 'remotion';
 import type { StoryProps } from './types';
-import { StoryLogoTopCenter } from './StoryLogo';
+import { StoryLogoTopCenter, StoryLogoLockup } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
 import {
   HeadlineStack,
@@ -33,7 +33,10 @@ import {
   stableScale,
   stableTextLayerStyle,
   stableTextOpacity,
+  textShadowHeavy,
 } from './shared/story-primitives';
+import { StoryAudioLayer } from './shared/story-audio';
+import { brandPanelGradientCss } from '../lib/brand-panel-gradient';
 
 export const CinematicStory: React.FC<StoryProps> = ({
   photoUrl,
@@ -41,11 +44,14 @@ export const CinematicStory: React.FC<StoryProps> = ({
   subtitle = '',
   brandName,
   location = '',
+  primaryColor = '#0a0a0f',
   accentColor = '#c9a96e',
   fontFamily = 'Bodoni Moda',
   bodyFont,
   overlayOpacity,
   logoUrl = '',
+  audioMood,
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('serif_editorial', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -64,7 +70,7 @@ export const CinematicStory: React.FC<StoryProps> = ({
 
   const lineOpacity = stableTextOpacity(frame, 10, 30);
   const subtitleOpacity = stableTextOpacity(frame, 34, 56);
-  const locationOpacity = stableTextOpacity(frame, 50, 68);
+  const lockupOpacity = stableTextOpacity(frame, 50, 68);
   const accentOpacity = stableTextOpacity(frame, 22, 38);
 
   const fontSize = headlineSize(headline, 1);
@@ -95,19 +101,16 @@ export const CinematicStory: React.FC<StoryProps> = ({
         background: 'radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(0,0,0,0.45) 100%)',
       }} />
 
-      {/* Top safe-zone fade */}
+      {/* Top safe-zone — logo readability */}
       <AbsoluteFill style={{
-        background: 'linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, transparent 22%)',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.22) 16%, transparent 30%)',
       }} />
 
-      {/* Bottom safe-zone fade */}
-      <AbsoluteFill style={{
-        background: 'linear-gradient(to top, rgba(0,0,0,0.40) 0%, transparent 20%)',
-      }} />
-
-      {/* Bottom safe-zone fade */}
-      <AbsoluteFill style={{
-        background: 'linear-gradient(to bottom, transparent 78%, rgba(0,0,0,0.58) 100%)',
+      {/* Bottom brand zone — smooth fade for lockup */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: '42%',
+        background: brandPanelGradientCss(primaryColor, 0.88),
+        pointerEvents: 'none',
       }} />
 
       <StoryLogoTopCenter
@@ -121,16 +124,26 @@ export const CinematicStory: React.FC<StoryProps> = ({
       {/* Center accent separator — thin line above headline */}
       <AbsoluteFill style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        paddingBottom: '15%', opacity: lineOpacity,
+        paddingBottom: '18%', opacity: lineOpacity,
       }}>
         <div style={{ width: '6%', height: 2, borderRadius: 1, background: accentColor }} />
       </AbsoluteFill>
 
       <AbsoluteFill style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        paddingTop: '8%',
+        padding: '0 9%',
       }}>
-        <div style={{ textAlign: 'center', padding: '0 11%', ...stableTextLayerStyle }}>
+        <div style={{
+          textAlign: 'center',
+          padding: '30px 34px 28px',
+          borderRadius: 20,
+          background: 'rgba(0,0,0,0.56)',
+          border: `1px solid ${accentColor}44`,
+          boxShadow: '0 18px 56px rgba(0,0,0,0.48)',
+          maxWidth: 920,
+          width: '100%',
+          ...stableTextLayerStyle,
+        }}>
           <HeadlineStack
             headline={headline.toUpperCase()}
             fontFamily={hero}
@@ -143,39 +156,41 @@ export const CinematicStory: React.FC<StoryProps> = ({
             fps={fps}
             startFrame={16}
             lineGap={1.15}
+            textShadow={textShadowHeavy}
           />
+          {subtitle ? (
+            <span style={{
+              display: 'block',
+              marginTop: 18,
+              fontFamily: body,
+              fontWeight: 500,
+              fontSize: 24,
+              color: 'rgba(255,255,255,0.96)',
+              lineHeight: 1.45,
+              letterSpacing: 0.6,
+              opacity: subtitleOpacity,
+              textShadow: textShadowHeavy,
+            }}>
+              {subtitle}
+            </span>
+          ) : null}
         </div>
       </AbsoluteFill>
 
-      {/* Subtitle — mood/tagline */}
-      {subtitle ? (
-        <AbsoluteFill style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          paddingTop: '38%',
-        }}>
-          <span style={{
-            fontFamily: hero, fontWeight: 300, fontStyle: 'italic', fontSize: 28,
-            color: 'rgba(255,255,255,0.92)', letterSpacing: 2,
-            opacity: subtitleOpacity,
-            ...stableTextLayerStyle,
-            textAlign: 'center', maxWidth: '60%',
-          }}>
-            {subtitle}
-          </span>
-        </AbsoluteFill>
-      ) : null}
-
-      {/* Location tag at bottom */}
+      {/* Brand lockup at bottom */}
       <AbsoluteFill style={{
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        paddingBottom: '4%', opacity: locationOpacity,
+        paddingBottom: '4.5%', opacity: lockupOpacity,
       }}>
-        <span style={{
-          fontFamily: body, fontWeight: 300, fontSize: 20,
-          color: 'rgba(255,255,255,0.45)', letterSpacing: 7, textTransform: 'uppercase',
-        }}>
-          {location || brandName}
-        </span>
+        <StoryLogoLockup
+          logoUrl={logoUrl}
+          brandName={brandName}
+          fontFamily={hero}
+          primaryColor={primaryColor}
+          accentColor={accentColor}
+          caption={location || 'Verified experience'}
+          height={64}
+        />
       </AbsoluteFill>
 
       {/* Accent bar — bottom center */}
@@ -185,6 +200,7 @@ export const CinematicStory: React.FC<StoryProps> = ({
       }}>
         <div style={{ width: '10%', height: 2, borderRadius: 1, background: accentColor }} />
       </AbsoluteFill>
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
     </AbsoluteFill>
   );
 };

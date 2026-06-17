@@ -6,6 +6,11 @@
  */
 import type { OutputArtifact } from '@/types';
 import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import type { GptEnhanceSkipCode } from '@/lib/gpt-enhance-policy';
+import {
+  labelAiEnhanceStatus,
+  type AiEnhanceUiStatus,
+} from '@/lib/ai-enhance-ui-labels';
 import {
   artifactProductionRole,
   buildMissionProductionManifest,
@@ -21,6 +26,7 @@ import {
   parseArtifactMissionId,
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
+import { nodeOutputObject } from '@/lib/mission-node-output';
 
 export type SlotDeliveryStatus = 'ready' | 'rendering' | 'failed' | 'missing' | 'pending';
 
@@ -34,6 +40,10 @@ export interface MissionSlotChecklistItem {
   status: SlotDeliveryStatus;
   artifactId: string | null;
   headline: string | null;
+  /** AI Fotoğraf İyileştirme — artifact metadata'dan */
+  aiEnhanceStatus?: AiEnhanceUiStatus;
+  aiEnhanceLabel?: string;
+  aiEnhanceSkipCode?: GptEnhanceSkipCode;
 }
 
 export interface MissionSlotChecklist {
@@ -56,7 +66,8 @@ export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   organic_reel: 'Organik reel',
   campaign_reel_motion: 'Kampanya reel',
   organic_carousel: 'Carousel',
-  paid_ad_creative: 'Reklam kreatifi',
+  paid_ad_creative: 'Meta reklam kreatifi',
+  paid_ad_google_creative: 'Google Ads kreatifi',
 };
 
 const STATUS_TR: Record<SlotDeliveryStatus, string> = {
@@ -76,6 +87,7 @@ export function inferManifestMissionType(input: {
   title?: string | null;
   assignments: ProductionAssignment[];
 }): MissionProductionManifest['missionType'] {
+  if (String(input.missionType ?? '').trim().toLowerCase() === 'opportunity') return 'opportunity';
   if (input.assignments.some((a) => a.slot_role === 'paid_ad_creative')) return 'ads_focus';
   if (input.assignments.some((a) => a.slot_role.includes('campaign'))) return 'campaign';
   const t = `${input.missionType ?? ''} ${input.title ?? ''}`.toLowerCase();
@@ -103,19 +115,10 @@ function parseFdAssignments(raw: unknown): ProductionAssignment[] {
 }
 
 export function extractFeedDirectorReportFromNodes(
-  nodes: Array<{ task_type?: string; output_summary?: string | null }>,
+  nodes: Array<{ task_type?: string; output_summary?: string | null; output_payload?: unknown }>,
 ): Record<string, unknown> | null {
   const node = nodes.find((n) => n.task_type === 'feed_cohesion_review');
-  if (!node?.output_summary) return null;
-  try {
-    const cleaned = node.output_summary
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```\s*$/, '')
-      .trim();
-    return JSON.parse(cleaned) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+  return nodeOutputObject(node);
 }
 
 function resolveArtifactSlotStatus(
@@ -136,14 +139,67 @@ function resolveArtifactSlotStatus(
   if (role === 'campaign_story_motion' || (role.includes('story') && isProductionBundleStory(artifact))) {
     if (resolveStoryVideoUrl(artifact)) return 'ready';
     if (bundle === 'ready') return 'ready';
-    const url = String(artifact.contentUrl ?? '').trim();
-    if (url && !/\.(mp4|mov|webm)(\?|$)/i.test(url)) return 'ready';
     return bundle ? 'rendering' : 'missing';
+  }
+
+  if (role === 'designed_post') {
+    const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+    if (meta.grafiker_pass === false) return 'failed';
+    if (isBundleRendering(artifact)) return 'rendering';
+    const url = String(artifact.contentUrl ?? '').trim();
+    if (!url) return 'missing';
+    const ref = String(meta.reference_photo_url ?? '').trim();
+    if (ref && url === ref) return 'failed';
+    return 'ready';
   }
 
   const url = String(artifact.contentUrl ?? '').trim();
   if (!url) return 'missing';
   return 'ready';
+}
+
+function resolveAiEnhanceFromArtifact(
+  artifact: OutputArtifact | null,
+  debugMode: boolean,
+): Pick<MissionSlotChecklistItem, 'aiEnhanceStatus' | 'aiEnhanceLabel' | 'aiEnhanceSkipCode'> {
+  if (!artifact) return {};
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const enabled = meta.ai_visual_standard_enabled !== false
+    && meta.ai_enhance_attempted !== false;
+  if (!enabled && !meta.ai_gallery_enhanced) {
+    return {
+      aiEnhanceStatus: 'off',
+      aiEnhanceLabel: labelAiEnhanceStatus('off', null, debugMode),
+    };
+  }
+  if (meta.ai_gallery_enhanced === true) {
+    const vs = meta.ai_visual_standard as Record<string, unknown> | undefined;
+    const adaptive = vs?.adaptive_scene === true || meta.ai_adaptive_scene === true;
+    return {
+      aiEnhanceStatus: 'applied',
+      aiEnhanceLabel: adaptive
+        ? (debugMode ? 'GPT adaptive scene uygulandı' : 'Sahne caption\'a uyarlandı')
+        : labelAiEnhanceStatus('applied', null, debugMode),
+    };
+  }
+  const rawSkip = String(meta.ai_enhance_skip_reason ?? '').trim();
+  const skipCode = rawSkip as GptEnhanceSkipCode;
+  const validCodes: GptEnhanceSkipCode[] = [
+    'disabled', 'format_excluded', 'remotion_story', 'remotion_post', 'gallery_match_ok', 'stock_only',
+  ];
+  const code = validCodes.includes(skipCode) ? skipCode : undefined;
+  if (meta.ai_enhance_api_failed) {
+    return {
+      aiEnhanceStatus: 'failed',
+      aiEnhanceLabel: labelAiEnhanceStatus('failed', code, debugMode),
+      ...(code ? { aiEnhanceSkipCode: code } : {}),
+    };
+  }
+  return {
+    aiEnhanceStatus: 'skipped',
+    aiEnhanceLabel: labelAiEnhanceStatus('skipped', code ?? 'remotion_story', debugMode),
+    ...(code ? { aiEnhanceSkipCode: code } : {}),
+  };
 }
 
 function matchArtifactForAssignment(
@@ -160,15 +216,23 @@ function matchArtifactForAssignment(
     if (parseArtifactMissionId(a) !== missionId) return false;
     const meta = (a.metadata ?? {}) as Record<string, unknown>;
     const content = parseArtifactContent(a.content);
+    const metaIdx = meta.idea_index ?? content.idea_index;
+    if (typeof ideaIdx === 'number' && ideaIdx >= 0 && typeof metaIdx === 'number') {
+      if (metaIdx !== ideaIdx) return false;
+      const artifactRole = artifactProductionRole(meta)
+        ?? (String(meta.production_role ?? '') as ProductionSlotRole | null);
+      if (!artifactRole || artifactRole === role) return true;
+      if (role === 'organic_post' && artifactRole === 'organic_carousel') return true;
+      if (role === 'campaign_story_motion' && isProductionBundleStory(a)) return true;
+      if (role.includes('reel') && artifactRole.includes('reel')) return true;
+      return false;
+    }
     const artifactRole = artifactProductionRole(meta)
       ?? (String(meta.production_role ?? '') as ProductionSlotRole | null);
     if (artifactRole !== role) {
       if (role === 'organic_post' && artifactRole === 'organic_carousel') return true;
+      if (role === 'campaign_story_motion' && isProductionBundleStory(a)) return true;
       return false;
-    }
-    const metaIdx = meta.idea_index ?? content.idea_index;
-    if (typeof ideaIdx === 'number' && ideaIdx >= 0 && typeof metaIdx === 'number') {
-      return metaIdx === ideaIdx;
     }
     return true;
   });
@@ -188,7 +252,10 @@ export function buildMissionSlotChecklist(input: {
   artifacts: OutputArtifact[];
   /** Mission still running — unfilled slots show pending instead of missing */
   missionInFlight?: boolean;
+  /** Operator UI — teknik enhance etiketleri */
+  debugMode?: boolean;
 }): MissionSlotChecklist {
+  const debugMode = Boolean(input.debugMode);
   const assignments = Array.isArray(input.assignments)
     ? (input.assignments as ProductionAssignment[])
     : parseFdAssignments(input.assignments);
@@ -246,9 +313,30 @@ export function buildMissionSlotChecklist(input: {
         status,
         artifactId: artifact?.id ?? null,
         headline,
+        ...resolveAiEnhanceFromArtifact(artifact, debugMode),
       });
     });
-  } else {
+  }
+
+  // FD < 7 slot atasa bile manifest zorunlu rolleri göster (pending).
+  const coveredRoles = new Set(items.map((i) => i.role));
+  for (const slot of manifest.slots.filter((s) => s.required)) {
+    if (coveredRoles.has(slot.role)) continue;
+    items.push({
+      assignmentIndex: items.length,
+      ideaIndex: null,
+      role: slot.role,
+      pipeline: slot.pipeline,
+      label: SLOT_ROLE_LABEL_TR[slot.role] ?? slot.role,
+      required: true,
+      status: input.missionInFlight ? 'pending' : 'missing',
+      artifactId: null,
+      headline: null,
+    });
+    coveredRoles.add(slot.role);
+  }
+
+  if (items.length === 0) {
     for (const slot of manifest.slots.filter((s) => s.required)) {
       const artifact = missionArtifacts.find((a) => {
         const role = artifactProductionRole((a.metadata ?? {}) as Record<string, unknown>);

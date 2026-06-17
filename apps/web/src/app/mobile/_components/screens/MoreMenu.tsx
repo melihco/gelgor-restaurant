@@ -1,25 +1,20 @@
 'use client';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useMobileStore } from '../mobile-store';
 import { useAuthStore } from '../auth-store';
 import { apiClient } from '@/lib/api-client';
-import { isCanvaEnabledClient } from '@/lib/canva-config';
 import { buildMoreMenuGroups } from '../mobile-client-config';
+import { summarizeMobileIntegrations } from '@/lib/mobile-integration-status';
 import { IcoLogout } from '../Icons';
-
-const integrations = [
-  { name: 'Google Business', connected: true,  color: '#34D399' },
-  { name: 'Instagram',       connected: true,  color: '#F472B6' },
-  { name: 'Google Ads',      connected: true,  color: '#60A5FA' },
-  { name: 'Analytics',       connected: false, color: '#FBBF24' },
-];
 
 // Icon paths per menu item type — premium SVG, no emoji
 const ITEM_ICONS: Record<string, string> = {
   'Onay Akışı':        'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM9 14l2 2 4-4',
   'İçerik Planı':      'M4 22V3M4 4h14l-4 5 4 5H4',
+  'Haftalık Plan':     'M4 22V3M4 4h14l-4 5 4 5H4',
   'Yeni İstek':        'M12 5v14M5 12h14',
   'Marka Ayarları':    'M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM12 8v4M10 12h4',
   'Performans':        'M3 20h18M5 20V12M9 20V8M13 20V4M17 20V10',
@@ -73,11 +68,17 @@ export function MoreMenu() {
   const initials    = displayName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const email       = user?.email ?? 'Smart Agency müşteri paneli';
 
-  const connectedCount = integrations.filter(i => i.connected).length;
+  const { data: integrationConnections = [] } = useQuery({
+    queryKey: ['integrations'],
+    queryFn: () => apiClient.getIntegrations(),
+    staleTime: 60_000,
+  });
+  const { items: integrations, connectedCount, total: integrationTotal } =
+    summarizeMobileIntegrations(integrationConnections);
+
   const groups = buildMoreMenuGroups({
-    canvaEnabled: isCanvaEnabledClient(),
     connectedCount,
-    integrationTotal: integrations.length,
+    integrationTotal,
   });
 
   return (
@@ -92,8 +93,8 @@ export function MoreMenu() {
       <div style={{
         padding: 'calc(env(safe-area-inset-top,0px) + 20px) 22px 22px',
         background: t.isDark
-          ? 'linear-gradient(180deg, rgba(139,92,246,0.10) 0%, rgba(6,6,14,0) 100%)'
-          : 'linear-gradient(180deg, rgba(124,58,237,0.05) 0%, rgba(244,244,248,0) 100%)',
+          ? 'linear-gradient(180deg, rgba(138,171,189,0.10) 0%, rgba(6,6,14,0) 100%)'
+          : 'linear-gradient(180deg, rgba(77,112,136,0.05) 0%, rgba(244,244,248,0) 100%)',
         borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'}`,
       }}>
 
@@ -101,10 +102,10 @@ export function MoreMenu() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
           <div style={{
             width: 52, height: 52, borderRadius: 16, flexShrink: 0,
-            background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
+            background: 'linear-gradient(135deg, #8AABBD 0%, #2D5068 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18, fontWeight: 900, color: '#fff',
-            boxShadow: '0 4px 18px rgba(139,92,246,0.35)',
+            boxShadow: '0 4px 18px rgba(138,171,189,0.35)',
           }}>
             {initials}
           </div>
@@ -123,7 +124,7 @@ export function MoreMenu() {
         {/* Integration status chips */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {integrations.map(intg => (
-            <div key={intg.name} style={{
+            <div key={intg.provider} style={{
               display: 'flex', alignItems: 'center', gap: 5,
               padding: '5px 10px', borderRadius: 20,
               background: intg.connected
@@ -141,7 +142,7 @@ export function MoreMenu() {
                 fontSize: 10.5, fontWeight: 600,
                 color: intg.connected ? intg.color : t.textMuted,
               }}>
-                {intg.name.split(' ')[0]}
+                {intg.shortLabel}
               </span>
             </div>
           ))}

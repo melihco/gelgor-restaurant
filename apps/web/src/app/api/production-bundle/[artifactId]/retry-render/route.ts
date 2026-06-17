@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { assertWorkspaceMatchesRequestTenant } from '@/lib/tenant-production-guard';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent, parseArtifactMetadata } from '@/app/mobile/_components/artifact-utils';
 import {
   getProductionBundleStatus,
   isBundleRendering,
@@ -16,7 +16,13 @@ import {
 } from '@/lib/production-bundle';
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import { getRemotionTemplate } from '@/lib/remotion-template-catalog';
-import { applyBrandTokensToRenderProps, fetchBrandProductionTokensForWorkspace } from '@/lib/brand-production-tokens';
+import {
+  applyBrandTokensToRenderProps,
+  fetchBrandProductionTokensForWorkspace,
+  fetchBrandThemeForWorkspace,
+} from '@/lib/brand-production-tokens';
+import { persistRemotionVideoOutput } from '@/lib/remotion-video-persist';
+import { normalizePhotoUrlForRemotionRender } from '@/lib/media-url';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -28,7 +34,7 @@ const BASE_URL = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
 async function patchBundleStatus(
   artifactId: string,
   tenantId: string,
-  status: 'rendering' | 'failed',
+  status: 'rendering' | 'ready' | 'failed',
   error?: string,
 ): Promise<void> {
   await fetch(`${NEXUS_API}/api/artifacts/${artifactId}/bundle-status`, {
@@ -100,7 +106,8 @@ export async function POST(
     }
     const artifact = await artRes.json();
     const content = parseArtifactContent(artifact.content);
-    const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+    const meta = parseArtifactMetadata(artifact.metadata);
+    const normalizedArtifact = { ...artifact, metadata: meta };
 
     const posterUrl = resolveGalleryPhotoForRender(artifact)
       || resolvePosterUrl(artifact)
@@ -109,10 +116,10 @@ export async function POST(
       return NextResponse.json({ error: 'no_poster_url' }, { status: 400 });
     }
 
-    const hadVideo = Boolean(resolveStoryVideoUrl(artifact));
-    const hadPoster = Boolean(resolveBrandedPostUrl(artifact));
-    const isPost = isPostKind(artifact);
-    const previousStatus = getProductionBundleStatus(artifact);
+    const hadVideo = Boolean(resolveStoryVideoUrl(normalizedArtifact));
+    const hadPoster = Boolean(resolveBrandedPostUrl(normalizedArtifact));
+    const isPost = isPostKind(normalizedArtifact);
+    const previousStatus = getProductionBundleStatus(normalizedArtifact);
 
     await patchBundleStatus(artifactId, tenantId, 'rendering');
 
@@ -125,23 +132,80 @@ export async function POST(
       || (isPost ? 'poster_promo_split_01' : 'remotion_editorial_bottom_01'),
     );
     const headline = String(meta.headline || content.headline || artifact.title || 'Marka Story');
-    const subtitle = String(content.caption || meta.caption || '').slice(0, 100);
+    const voiceoverCaption = String(content.caption || meta.caption || '').trim();
+    const subtitle = voiceoverCaption.slice(0, 100);
 
-    const brandTokens = await fetchBrandProductionTokensForWorkspace(tenantId, {
-      brandName: String(meta.brandName || content.brandName || 'Brand'),
-      sector: String(meta.sector || meta.business_type || ''),
-    });
+    const sector = String(meta.sector || meta.business_type || '');
+    const [brandTokens, theme] = await Promise.all([
+      fetchBrandProductionTokensForWorkspace(tenantId, {
+        brandName: String(meta.brandName || content.brandName || 'Brand'),
+        sector,
+      }),
+      fetchBrandThemeForWorkspace(tenantId),
+    ]);
+
+    const librarySlotKey = String(
+      meta.library_slot_key || meta.librarySlotKey || content.librarySlotKey || '',
+    ).trim();
+    let slotTypography: {
+      headingFont?: string;
+      bodyFont?: string;
+      fontPersonality?: string;
+      honorTemplateTypography?: boolean;
+    } | undefined;
+    let logoUrl = String(meta.logoUrl || meta.logo_url || '');
+    if (librarySlotKey && !isPost) {
+      const { ensureBrandTemplateLibrary } = await import('@/lib/brand-template-library');
+      const { resolveKitForSector } = await import('@/lib/remotion-template-registry');
+      const { tenantKitSeed } = await import('@/lib/tenant-template-seed');
+      const { resolveSlotRenderTypography } = await import('@/lib/brand-template-slot-typography');
+      const { resolveSlotLogoForRender } = await import('@/lib/brand-logo-production');
+      const kitId = resolveKitForSector(sector, tenantKitSeed(tenantId));
+      const library = ensureBrandTemplateLibrary(theme, { sector, kitId, tenantId });
+      const slot = library.slots.find((s) => s.key === librarySlotKey);
+      if (slot) {
+        const slotTypo = resolveSlotRenderTypography({
+          slot: {
+            fontMode: slot.fontMode,
+            fontPersonality: slot.fontPersonality,
+            headingFont: slot.headingFont,
+            bodyFont: slot.bodyFont,
+            format: 'story',
+            storyTemplateId: slot.storyTemplateId,
+            posterTemplateId: slot.posterTemplateId,
+          },
+          templateId,
+          format: 'story',
+          brandHeadingFont: brandTokens.headingFont,
+          brandBodyFont: brandTokens.bodyFont,
+          sector,
+        });
+        slotTypography = {
+          headingFont: slotTypo.headingFont,
+          bodyFont: slotTypo.bodyFont,
+          fontPersonality: slotTypo.fontPersonality,
+          honorTemplateTypography: slotTypo.honorTemplateTypography,
+        };
+        logoUrl = resolveSlotLogoForRender(logoUrl, slot) ?? '';
+      }
+    }
+
+    const photoUrlForRender = normalizePhotoUrlForRemotionRender(posterUrl);
 
     const renderProps = applyBrandTokensToRenderProps({
       templateId,
       kitId: meta.kitId || content.kitId,
-      photoUrl: posterUrl,
+      librarySlotKey: librarySlotKey || undefined,
+      photoUrl: photoUrlForRender,
       headline,
       subtitle,
+      caption: voiceoverCaption,
+      voiceoverScript: voiceoverCaption,
       brandName: String(meta.brandName || content.brandName || 'Brand'),
       location: String(meta.location || content.location || ''),
-      logoUrl: String(meta.logoUrl || meta.logo_url || ''),
-    }, brandTokens);
+      logoUrl,
+      sector,
+    }, brandTokens, slotTypography);
     if (isPost) {
       renderProps.posterTemplateId = templateId;
     }
@@ -157,17 +221,21 @@ export async function POST(
         motionStyle: String(meta.motionStyle || meta.motion_style || ''),
         locale: String(meta.locale || meta.language || ''),
         uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
+        requirePersistent: true,
+        brandTemplateLocked: Boolean(meta.brandTemplateLocked ?? meta.brand_template_locked),
         props: renderProps,
       }),
-      signal: AbortSignal.timeout(280_000),
+      signal: AbortSignal.timeout(360_000),
     }).then(async (renderRes) => {
       const data = await renderRes.json().catch(() => ({})) as {
         videoUrl?: string;
+        videoBase64?: string;
         imageUrl?: string;
         compositionId?: string;
         grafikerScore?: number | null;
         grafikerPass?: boolean;
         durationMs?: number;
+        bytes?: number;
         error?: string;
       };
 
@@ -199,7 +267,13 @@ export async function POST(
         return;
       }
 
-      if (!data.videoUrl) {
+      const videoUrl = await persistRemotionVideoOutput(tenantId, {
+        videoUrl: data.videoUrl,
+        videoBase64: data.videoBase64,
+        compositionId: data.compositionId || compositionId,
+        bytes: data.bytes,
+      });
+      if (!videoUrl) {
         await patchBundleStatus(
           artifactId,
           tenantId,
@@ -210,7 +284,7 @@ export async function POST(
       }
 
       const ok = await attachVideo(artifactId, tenantId, {
-        videoUrl: data.videoUrl,
+        videoUrl,
         posterUrl,
         compositionId: data.compositionId || compositionId,
         grafikerScore: data.grafikerScore ?? null,
@@ -220,6 +294,8 @@ export async function POST(
 
       if (!ok) {
         await patchBundleStatus(artifactId, tenantId, 'failed', 'attach_video_failed');
+      } else {
+        await patchBundleStatus(artifactId, tenantId, 'ready');
       }
     }).catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);

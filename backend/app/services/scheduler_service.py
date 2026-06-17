@@ -305,6 +305,9 @@ async def _daily_market_intelligence_job() -> None:
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         logger.info("market_intelligence_job_complete", elapsed_seconds=elapsed, workspaces=len(contexts))
 
+        # Backfill: seed intelligence for workspaces that still have NULL signals
+        await _backfill_missing_intelligence_signals()
+
     except Exception as exc:
         logger.error("market_intelligence_job_failed", error=str(exc))
 
@@ -860,6 +863,144 @@ async def _daily_health_job() -> None:
         logger.error("scheduler_daily_job_failed", error=str(exc), elapsed_seconds=elapsed)
 
 
+async def _backfill_missing_intelligence_signals() -> None:
+    """
+    Find all confirmed brand contexts that have NULL intelligence signals and
+    run bootstrap_brand_intelligence for each.  Called at the end of every
+    _daily_market_intelligence_job so the first run after onboarding always
+    fills any gaps left by new brands.
+    """
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.services.brand_context_service import bootstrap_brand_intelligence
+    from sqlalchemy import select
+    import asyncio as _asyncio
+
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(
+                select(BrandContext).where(
+                    BrandContext.brand_constitution_confirmed_at.isnot(None),
+                    (BrandContext.industry_calendar == None)  # noqa: E711
+                    | (BrandContext.trend_brief == None)  # noqa: E711
+                    | (BrandContext.competitor_pulse == None),  # noqa: E711
+                )
+            )
+            missing = rows.scalars().all()
+
+        logger.info("intelligence_backfill_start", workspaces_missing=len(missing))
+
+        for ctx in missing:
+            try:
+                async with async_session_factory() as db:
+                    result = await bootstrap_brand_intelligence(db, ctx.workspace_id)
+                    logger.info(
+                        "intelligence_backfill_done",
+                        workspace_id=str(ctx.workspace_id),
+                        result=result,
+                    )
+                await _asyncio.sleep(3)
+            except Exception as exc:
+                logger.warning(
+                    "intelligence_backfill_workspace_failed",
+                    workspace_id=str(ctx.workspace_id),
+                    error=str(exc)[:200],
+                )
+    except Exception as exc:
+        logger.error("intelligence_backfill_job_failed", error=str(exc)[:300])
+
+
+async def _semi_auto_proposal_job() -> None:
+    """
+    Runs Monday + Thursday at 07:00 UTC.
+
+    Proposes missions for workspaces that have a confirmed brand context and no
+    active/proposed missions in the last 7 days.  Does NOT auto-approve — the
+    operator reviews and approves via Mission Hub.  Ensures intelligence signals
+    are fresh before proposing; triggers bootstrap if signals are missing.
+    """
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.models.mission import Mission
+    from app.services.brand_context_service import bootstrap_brand_intelligence, build_brand_info as build_brand_info_fn
+    from app.services.strategist_service import propose_missions_for_workspace
+    from sqlalchemy import select, func
+    import asyncio as _asyncio
+
+    logger.info("semi_auto_proposal_job_start")
+    start = datetime.now(timezone.utc)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    proposed_count = 0
+
+    try:
+        async with async_session_factory() as db:
+            # All confirmed brand contexts
+            rows = await db.execute(
+                select(BrandContext).where(
+                    BrandContext.brand_constitution_confirmed_at.isnot(None)
+                )
+            )
+            contexts = rows.scalars().all()
+
+        for ctx in contexts:
+            ws_id = ctx.workspace_id
+            try:
+                async with async_session_factory() as db:
+                    # Skip if there's an active/proposed mission in the last 7 days
+                    recent = await db.execute(
+                        select(func.count()).select_from(Mission).where(
+                            Mission.workspace_id == ws_id,
+                            Mission.status.in_(["proposed", "approved", "in_progress"]),
+                            Mission.created_at >= cutoff,
+                        )
+                    )
+                    if recent.scalar() > 0:
+                        continue
+
+                    # Bootstrap if signals are still empty
+                    needs_bootstrap = not ctx.industry_calendar or not ctx.trend_brief or not ctx.competitor_pulse
+                    if needs_bootstrap:
+                        await bootstrap_brand_intelligence(db, ws_id)
+                        logger.info("semi_auto_proposal_bootstrap_triggered", workspace_id=str(ws_id))
+                        # Give it one more cycle to settle; skip proposal this run
+                        continue
+
+                    # Build context signals from Python (no frontend session available)
+                    from app.services.context_signal_service import build_python_context_signals
+                    brand_for_signals = await build_brand_info_fn(db, ws_id)
+                    context_signals_str: str | None = None
+                    if brand_for_signals:
+                        context_signals_str = build_python_context_signals(brand_for_signals)
+
+                    missions = await propose_missions_for_workspace(
+                        db, ws_id,
+                        context_signals=context_signals_str,
+                        force=False,
+                    )
+                    if missions:
+                        proposed_count += len(missions) if isinstance(missions, list) else 1
+                        logger.info(
+                            "semi_auto_proposal_created",
+                            workspace_id=str(ws_id),
+                            count=proposed_count,
+                        )
+
+                await _asyncio.sleep(2)
+
+            except Exception as exc:
+                logger.error(
+                    "semi_auto_proposal_workspace_failed",
+                    workspace_id=str(ws_id),
+                    error=str(exc)[:300],
+                )
+
+        elapsed = (datetime.now(timezone.utc) - start).total_seconds()
+        logger.info("semi_auto_proposal_job_complete", elapsed_seconds=elapsed, proposed=proposed_count)
+
+    except Exception as exc:
+        logger.error("semi_auto_proposal_job_failed", error=str(exc)[:300])
+
+
 async def startup_warm_cache() -> None:
     """
     Called once on server startup. Refreshes stale workspaces in the background
@@ -1021,6 +1162,18 @@ def start_scheduler() -> AsyncIOScheduler:
             max_instances=1,
             misfire_grace_time=3600,
         )
+
+    # Semi-autonomous proposal — proposes only, operator approves via Mission Hub
+    # Runs Monday + Thursday 07:00 UTC (before the morning health check)
+    _scheduler.add_job(
+        _semi_auto_proposal_job,
+        trigger=CronTrigger(day_of_week="mon,thu", hour=7, minute=0, timezone="UTC"),
+        id="semi_auto_proposal",
+        name="Semi-Autonomous Mission Proposal (Mon+Thu)",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=7200,
+    )
 
     _scheduler.start()
     logger.info(

@@ -7,6 +7,8 @@ import { IcoBack } from '../Icons';
 import { apiClient } from '@/lib/api-client';
 import { MertcafeAccountSwitcher } from '../MertcafeAccountSwitcher';
 import { PlanUsagePanel } from '../PlanUsagePanel';
+import { isDebugUiMode } from '../mobile-client-config';
+import { summarizeMobileIntegrations } from '@/lib/mobile-integration-status';
 import type { T } from '../theme-context';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -28,6 +30,7 @@ export function SettingsScreen() {
   const { t } = useTheme();
   const { goBack } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
+  const debugMode = isDebugUiMode();
 
   const { data: quotaData } = useQuery({
     queryKey: ['usage-quota'],
@@ -41,6 +44,13 @@ export function SettingsScreen() {
     enabled: Boolean(tenantId),
     staleTime: 60_000,
   });
+
+  const { data: integrationConnections = [] } = useQuery({
+    queryKey: ['integrations'],
+    queryFn: () => apiClient.getIntegrations(),
+    staleTime: 60_000,
+  });
+  const { items: integrationItems } = summarizeMobileIntegrations(integrationConnections);
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
@@ -70,12 +80,8 @@ export function SettingsScreen() {
         {/* Diğer entegrasyonlar */}
         <SLabel t={t} text="Diğer Entegrasyonlar" />
         <div style={{ ...t.surfaceGroup, marginBottom: 24 }}>
-          {[
-            { icon: '🔍', label: 'Google Business', sub: 'Yorum ve konum', coming: false },
-            { icon: '📈', label: 'Google Analytics', sub: 'Site trafiği', coming: true },
-            { icon: '💰', label: 'Google Ads', sub: 'Reklam yönetimi', coming: false },
-          ].map((item, i, arr) => (
-            <div key={item.label}>
+          {integrationItems.map((item, i) => (
+            <div key={item.provider}>
               {i > 0 && <Divider t={t} />}
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px' }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0,
@@ -86,15 +92,23 @@ export function SettingsScreen() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: t.textPrimary }}>{item.label}</div>
-                  <div style={{ fontSize: 11, color: t.textTertiary, marginTop: 1 }}>{item.sub}</div>
+                  <div style={{ fontSize: 11, color: t.textTertiary, marginTop: 1 }}>
+                    {item.connected && item.displayName ? item.displayName : item.sub}
+                  </div>
                 </div>
-                {item.coming ? (
-                  <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 20,
-                    background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                    color: t.textMuted, fontWeight: 600 }}>Yakında</span>
-                ) : (
+                {item.connected ? (
                   <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 20,
                     background: 'rgba(16,185,129,0.08)', color: '#10B981', fontWeight: 600 }}>Bağlı</span>
+                ) : item.status === 'Expired' ? (
+                  <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 20,
+                    background: 'rgba(245,158,11,0.10)', color: '#F59E0B', fontWeight: 600 }}>Yenile</span>
+                ) : item.status === 'Error' ? (
+                  <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 20,
+                    background: 'rgba(239,68,68,0.10)', color: '#EF4444', fontWeight: 600 }}>Hata</span>
+                ) : (
+                  <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 20,
+                    background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                    color: t.textMuted, fontWeight: 600 }}>Bağlı değil</span>
                 )}
               </div>
             </div>
@@ -107,6 +121,7 @@ export function SettingsScreen() {
             quota={quotaData ?? undefined}
             wallet={usageCost?.token_wallet}
             packageSlug={quotaData?.packageSlug}
+            debugMode={debugMode}
             t={t}
           />
         </div>

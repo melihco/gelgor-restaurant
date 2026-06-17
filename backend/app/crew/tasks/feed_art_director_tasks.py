@@ -14,6 +14,34 @@ def _weekly_theme_slug(weekly_theme: str) -> str:
     return slug or "mission-week"
 
 
+def _production_assignment_directive(production_package: str) -> str:
+    if production_package == "opportunity":
+        return """
+### 8. Production assignments (MANDATORY — exactly 3 opportunity slots)
+Return **exactly 3** entries in production_assignments — one per opportunity package slot.
+Reuse idea_index round-robin when fewer than 3 ideas exist. Do NOT assign paid ads or carousel.
+
+Required slot mix (opportunity):
+- exactly 1 designed_post
+- exactly 1 campaign_story_motion (library_slot_key required)
+- exactly 1 organic_reel (set hero_reel_index to that idea_index)
+
+manifest_coverage_pct must be 100 when all 3 slots are assigned.
+"""
+    return """
+### 8. Production assignments (MANDATORY — exactly 7 weekly slots)
+Return **exactly 7** entries in production_assignments — one per weekly package slot, NOT one per idea.
+Reuse idea_index round-robin when fewer than 7 ideas exist.
+
+Required slot mix (weekly_content):
+- exactly 1 organic_post
+- exactly 1 designed_post
+- exactly 1 organic_carousel
+- exactly 3 campaign_story_motion (each a DIFFERENT layout_family_hint AND DIFFERENT library_slot_key)
+- exactly 1 organic_reel (set hero_reel_index to that idea_index)
+"""
+
+
 def create_feed_cohesion_task(
     agent: Agent,
     brand_name: str,
@@ -31,6 +59,7 @@ def create_feed_cohesion_task(
     `content_ideas_json` is the raw JSON array from content_ideation output.
     """
     weekly_theme_slug = _weekly_theme_slug(weekly_theme)
+    slot_directive = _production_assignment_directive(production_package)
 
     mission_block = ""
     if mission_title or creative_brief or mission_type:
@@ -48,7 +77,10 @@ You are the Feed Art Director for {brand_name} ({business_type}).
 Weekly theme: "{weekly_theme}"
 {mission_block}
 
-## Content batch to review:
+## Content batch to review (combined pool from two independent sources):
+- source_node "content_ideation": creative ideas from the ideation agent — concept_title / headline / caption_draft
+- source_node "content_calendar": event-based ideas from the calendar agent — headline is the event name (concept_title), caption_draft is the event description
+Review all ideas on their own merits regardless of source. Assign the best ideas to production slots.
 {content_ideas_json[:6000]}
 
 ## Your analysis tasks:
@@ -85,13 +117,35 @@ Assign each idea to a day and optional time slot. Aim for:
 - No reels on Monday (low organic reach)
 - Carousels on Tuesday/Wednesday (highest save rate)
 
-### 8. Production assignments (MANDATORY — one per idea index)
+{slot_directive}
+
+For EVERY assignment entry include: idea_index, slot_role, pipeline, copy_bundle_id, publish_channel, rationale.
+Optional: layout_family_hint (designed_post / stories), library_slot_key (campaign_story_motion only).
+
+### MANDATORY: visual_subject_hint for every gallery-using slot
+For ALL slots that use real brand gallery photos (organic_post, campaign_story_motion, organic_carousel, organic_reel),
+include "visual_subject_hint": a comma-separated list of 2-4 specific visual subject keywords the gallery photo MUST show.
+These keywords are matched against the photo's vision analysis tags — they act as a photo selection filter.
+
+Rules for visual_subject_hint:
+- Use the same language as the caption (TR/EN) + specific service/product terminology from the idea
+- For beauty/nail ideas: MUST include the specific service (e.g. "tırnak, manikür, nail art" — NOT "güzellik, bakım")
+- For food ideas: specify the dish type (e.g. "kahvaltı, tabak" — NOT just "yemek")
+- For event ideas: specify the visual scene (e.g. "sahne, kalabalık, gece")
+- For before/after results: include "before after, sonuç"
+- For product/showcase: specify the exact product (e.g. "kalıcı oje, el, parmak")
+- NEVER use generic words alone (güzellik, hizmet, bakım, servis) without a specific qualifier
+
 For EVERY idea in the batch (0-based index), assign exactly one production slot.
 Copy (caption, CTA, hashtags) stays on the idea — this only routes VISUAL pipeline.
 
 slot_role options:
 - organic_post — gallery photo feed post (NO designed poster)
 - designed_post — Remotion/SVG designed poster (campaign, promo, brand hero)
+  For designed_post set layout_family_hint to a POSTER family (not story):
+  editorial_date | restaurant_feature for B2B/logistics/service seasonal copy;
+  promo_split ONLY when copy has % / indirim / kampanya;
+  event_masthead for dated launches. Never hint promo_split for vague "fırsat" alone.
 - campaign_story_motion — Remotion motion story MP4 (ALL story slots — no static-only stories)
 - organic_reel — Runway reel (organic); hero_reel_index must point here
 - campaign_reel_motion — Runway reel (campaign/promo)
@@ -168,7 +222,8 @@ Return ONLY valid JSON — no markdown, no preamble:
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "editorial_date",
-      "rationale": "short reason"
+      "visual_subject_hint": "nail art, tırnak, manikür",
+      "rationale": "nail art idea → show actual nail close-up photo"
     }},
     {{
       "idea_index": 1,
@@ -178,7 +233,8 @@ Return ONLY valid JSON — no markdown, no preamble:
       "publish_channel": "instagram_organic",
       "layout_family_hint": "magazine_cover",
       "library_slot_key": "event_story",
-      "rationale": "event-themed idea → event_story brand template"
+      "visual_subject_hint": "sahne, kalabalık, gece, event",
+      "rationale": "event-themed idea → show crowd/stage photo"
     }}
   ],
   "manifest_coverage_pct": 0-100,

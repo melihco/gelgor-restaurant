@@ -4,14 +4,24 @@
  */
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import { isPersistableEnhanceUrl, MAX_GALLERY_ENHANCE_PHOTOS } from '@/lib/gallery-photo-enhance-api';
+import { persistEnhancedImageUrls } from '@/lib/persist-enhanced-images';
 import type { AiVisualProductionStandard, BrandContextForVisual } from '@/lib/ai-visual-production-standard';
 import {
+  buildAdaptiveScenePromptBlock,
   buildBrandIdentityPromptBlock,
   buildPostScenePromptBlock,
   mergeEnhanceDirectorCaption,
+  resolveAdaptiveSceneMode,
   resolveVisualSubject,
 } from '@/lib/ai-visual-production-standard';
 import { normalizeBrandThemeRecord } from '@/lib/brand-theme-normalize';
+import {
+  isOpenAiQuotaBlocked,
+  isOpenAiQuotaOrBillingError,
+  markOpenAiQuotaBlocked,
+} from '@/lib/openai-error-utils';
+import type { ProductSceneBrief } from '@/lib/production-stack';
+import { sceneBriefForEnhanceApi } from '@/lib/production-stack';
 
 export {
   resolveAiVisualProductionStandard,
@@ -70,6 +80,9 @@ export function multiGalleryPhotoCount(
   if (assignment.pipeline === 'carousel_gallery' || contentKind === 'instagram_carousel') {
     return 4;
   }
+  if (assignment.pipeline === 'remotion_story' || assignment.slot_role === 'campaign_story_motion') {
+    return 4;
+  }
   return 3;
 }
 
@@ -115,11 +128,18 @@ export async function enhanceGalleryPhotosForIdea(opts: {
   cta?: string;
   /** Crew Scene Director / production-stack brief — appended to post scene block. */
   directorSceneExtra?: string;
+  /** Mission-level brief — passed to enhance API to skip duplicate Crew scene-brief */
+  sceneBrief?: ProductSceneBrief | null;
+  missionId?: string;
 }): Promise<string[]> {
   const urls = opts.photoUrls
     .filter((u) => typeof u === 'string' && u.trim().length > 0)
     .slice(0, opts.maxPhotos ?? MAX_GALLERY_ENHANCE_PHOTOS);
   if (!urls.length) return [];
+  if (isOpenAiQuotaBlocked()) {
+    console.warn('[ai-gallery-enhance] skipped — OpenAI quota cooldown active');
+    return [];
+  }
 
   const standard = opts.visualStandard;
   const identityBlock = standard?.useBrandIdentity && opts.brandCtx
@@ -135,7 +155,19 @@ export async function enhanceGalleryPhotosForIdea(opts: {
         cta: opts.cta,
       })
     : '';
-  const sceneBlock = [postScene, opts.directorSceneExtra?.trim()]
+  const adaptiveBlock = standard?.adaptiveScene
+    ? buildAdaptiveScenePromptBlock({
+        mode: resolveAdaptiveSceneMode(
+          standard.adaptiveSceneMode,
+          opts.businessType,
+          opts.caption ?? opts.contextCaption,
+        ),
+        caption: opts.caption ?? opts.contextCaption,
+        headline: opts.headline ?? '',
+        businessType: opts.businessType,
+      })
+    : '';
+  const sceneBlock = [postScene, adaptiveBlock, opts.directorSceneExtra?.trim()]
     .filter(Boolean)
     .join('\n\n');
   const directorCaption = standard
@@ -165,6 +197,16 @@ export async function enhanceGalleryPhotosForIdea(opts: {
     visualSubject,
     useBrandIdentity: standard?.useBrandIdentity ?? true,
     briefDrivesScene: standard?.briefDrivesScene ?? true,
+    adaptiveScene: standard?.adaptiveScene ?? false,
+    adaptiveSceneMode: standard?.adaptiveScene
+      ? resolveAdaptiveSceneMode(
+          standard.adaptiveSceneMode,
+          opts.businessType,
+          opts.caption ?? opts.contextCaption,
+        )
+      : undefined,
+    prebuiltSceneBrief: sceneBriefForEnhanceApi(opts.sceneBrief),
+    missionId: opts.missionId,
   };
 
   const timeoutMs = urls.length > 1 ? 240_000 : 120_000;
@@ -177,24 +219,49 @@ export async function enhanceGalleryPhotosForIdea(opts: {
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(timeoutMs),
       });
+      const data = await res.json().catch(() => ({})) as {
+        imageUrls?: string[];
+        imageUrl?: string;
+        code?: string;
+        error?: string;
+      };
+
       if (!res.ok) {
-        const errText = await res.text().catch(() => '');
+        const code = String(data.code ?? '');
+        const errText = data.error ?? '';
         console.warn(
           `[ai-gallery-enhance] enhance HTTP ${res.status} attempt ${attempt + 1}:`,
           errText.slice(0, 200),
         );
-        continue;
+        if (
+          code === 'openai_quota_exceeded'
+          || code === 'billing_hard_limit'
+          || /billing_hard_limit|quota/i.test(errText)
+        ) {
+          markOpenAiQuotaBlocked();
+          break;
+        }
+        if (res.status >= 500 && attempt === 0) continue;
+        break;
       }
-      const data = await res.json() as { imageUrls?: string[]; imageUrl?: string };
+
       const list = Array.isArray(data.imageUrls) ? data.imageUrls : [];
       const merged = list.length ? list : (data.imageUrl ? [data.imageUrl] : []);
-      const persistable = merged.filter((u) => isPersistableEnhanceUrl(u));
+      let persistable = merged.filter((u) => isPersistableEnhanceUrl(u));
+      if (!persistable.length && merged.some((u) => u.startsWith('data:image/'))) {
+        persistable = await persistEnhancedImageUrls(merged, opts.workspaceId);
+      }
       if (persistable.length) return persistable;
     } catch (err) {
       console.warn(
         `[ai-gallery-enhance] enhance failed attempt ${attempt + 1}:`,
         err instanceof Error ? err.message : err,
       );
+      if (isOpenAiQuotaOrBillingError(err)) {
+        markOpenAiQuotaBlocked();
+        break;
+      }
+      if (attempt === 0) continue;
     }
   }
   return [];

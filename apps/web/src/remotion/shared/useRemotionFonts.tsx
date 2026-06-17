@@ -34,7 +34,7 @@ async function loadGoogleFontFamily(name: string): Promise<void> {
     }
 
     try {
-      const cssUrl = `https://fonts.googleapis.com/css2?family=${spec}&display=swap`;
+      const cssUrl = `https://fonts.googleapis.com/css2?family=${spec}&display=block`;
       const cssRes = await fetch(cssUrl, { signal: AbortSignal.timeout(12_000) });
       if (!cssRes.ok) return;
       const css = await cssRes.text();
@@ -44,7 +44,7 @@ async function loadGoogleFontFamily(name: string): Promise<void> {
 
       await Promise.all(
         urls.map(async (url) => {
-          const face = new FontFace(trimmed, `url(${url})`, { display: 'swap' });
+          const face = new FontFace(trimmed, `url(${url})`, { display: 'block' });
           await face.load();
           document.fonts.add(face);
         }),

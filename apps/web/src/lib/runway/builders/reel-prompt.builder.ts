@@ -13,6 +13,7 @@
  */
 
 import { normalizeCameraMotion } from '@/lib/camera-motion';
+import { buildReelArchetypePromptBlock } from '@/lib/reel-canva-archetypes';
 import { applyFidelityToDirectorPrompt } from '@/lib/runway-reel-fidelity';
 import type {
   CameraMotion,
@@ -62,37 +63,74 @@ function resolveVisualStyle(style?: string): string {
   return known ?? style;
 }
 
-// ── Content type → opener hook ────────────────────────────────────────────
+// ── Beat-led hook builder ─────────────────────────────────────────────────
+// Sprint 5: replaced generic "Opening shot:" with a 3-beat cinematic arc.
 
+/** Hook taxonomy → opening micro-description + natural midpoint turn. */
+const HOOK_ARCHETYPES: Record<string, { beat1: string; beat2: string; beat3: string }> = {
+  venue: {
+    beat1: 'A close detail — surface texture, candlelight shimmer, or a single striking element — fills the frame',
+    beat2: 'a slow pull back reveals the full scene breathing with ambient warmth and depth',
+    beat3: 'the atmosphere settles into an invitation, golden light washing everything',
+  },
+  food: {
+    beat1: 'A tight macro on the dish — glaze catching light, steam curling up, garnish vivid and precise',
+    beat2: 'the camera breathes outward to show the full plate on a beautifully set surface',
+    beat3: 'warm candlelight pools across the composition, color rich and appetite-awakening',
+  },
+  cocktail: {
+    beat1: 'Crystal glass in macro — ice glistening, condensation beading on the surface, liquid luminous',
+    beat2: 'the camera eases back to reveal the table setting, light catching the rim',
+    beat3: 'warm ambient glow settles across the glass and surrounding atmosphere',
+  },
+  product: {
+    beat1: 'The product emerges from soft shadow — surface texture, label detail, or material quality sharp and precise',
+    beat2: 'a gentle pull reveals the full product in its environment, light defining form',
+    beat3: 'clean, confident composition — premium and still',
+  },
+  beauty: {
+    beat1: 'Skin texture or treatment detail in soft diffused light — luminous and close',
+    beat2: 'a shimmer shift — light catching new surface angles, the transformation visible',
+    beat3: 'serene spa atmosphere settles in, warmth and stillness filling the frame',
+  },
+  wellness: {
+    beat1: 'Hands, fabric, or a ritual object in intimate soft light — texture inviting calm',
+    beat2: 'gentle atmospheric deepening — steam or soft particles drift through the scene',
+    beat3: 'restorative stillness lands — the frame breathes slowly and beautifully',
+  },
+  event: {
+    beat1: 'A charged detail from the scene — a glass raised, a light catching a face, a performer mid-moment',
+    beat2: 'the camera pulls wide to reveal the full energy of the space',
+    beat3: 'warmth and connection fill the wide shot — the event is alive',
+  },
+  person: {
+    beat1: 'Hands at work — craft visible, tools precise, light catching motion',
+    beat2: 'a reveal to the full figure or workspace, mastery in context',
+    beat3: 'quiet confidence in stillness — artisan energy, premium and intentional',
+  },
+};
+
+function buildBeatLedOpeningHook(contentKind: string, concept: string): string {
+  const kind = contentKind.toLowerCase();
+  let key = 'venue';
+  for (const k of Object.keys(HOOK_ARCHETYPES)) {
+    if (kind.includes(k)) { key = k; break; }
+  }
+  const arc = HOOK_ARCHETYPES[key]!;
+  const conceptWords = concept.split(' ').slice(0, 5).join(' ');
+  return (
+    `${arc.beat1} — ${conceptWords}. Then, ${arc.beat2}. ` +
+    `Finally, ${arc.beat3}.`
+  );
+}
+
+/** Legacy signature kept for backward-compat with buildReelPrompt(). */
 function buildOpeningHook(
   contentType: string,
   concept: string,
-  title: string,
+  _title: string,
 ): string {
-  const lower = contentType.toLowerCase();
-
-  if (lower.includes('venue') || lower.includes('restaurant') || lower.includes('cafe')) {
-    return `Opening shot: An inviting exterior or interior reveal of the venue`;
-  }
-  if (lower.includes('product')) {
-    return `Opening shot: A dramatic product close-up emerging from soft shadow`;
-  }
-  if (lower.includes('event')) {
-    return `Opening shot: The energy and atmosphere of the event from an elevated angle`;
-  }
-  if (lower.includes('service') || lower.includes('promo')) {
-    return `Opening shot: A compelling visual metaphor for the service benefit`;
-  }
-  if (lower.includes('ad') || lower.includes('campaign')) {
-    return `Opening shot: High-impact brand visual with immediate emotional pull`;
-  }
-  if (lower.includes('lifestyle')) {
-    return `Opening shot: An aspirational lifestyle moment unfolding naturally`;
-  }
-
-  // Generic fallback: extract key nouns from concept
-  const words = concept.split(' ').slice(0, 6).join(' ');
-  return `Opening shot: Visually arresting scene of ${words}`;
+  return buildBeatLedOpeningHook(contentType, concept);
 }
 
 // ── Lighting descriptor ────────────────────────────────────────────────────
@@ -154,10 +192,30 @@ function inferMood(brandTone?: string, targetAudience?: string): string {
 }
 
 // ── CTA integration ───────────────────────────────────────────────────────
+// Sprint 5 — CTA Intrusion Guard:
+// CTA language is only appended after the visual has earned it through
+// a beat-2 payoff. The "desire" close in Beat 3 implicitly sets up the CTA;
+// we describe the emotional state, not a text overlay.
 
 function buildCtaEnding(cta?: string): string {
   if (!cta) return '';
-  return `, ending with a visual pause that creates desire for "${cta}"`;
+  // Describe the FEELING that makes the viewer want to act, not the CTA itself.
+  // This prevents the prompt from requesting a text-on-screen CTA (Runway can't do that)
+  // and instead creates the emotional pre-condition for the off-screen CTA to land.
+  const lower = cta.toLowerCase();
+  if (/reserv|book|masa|table/.test(lower)) {
+    return ', the final frame evoking a strong sense of wanting to be there — to sit, to taste, to belong';
+  }
+  if (/randevu|appoint|session|book your/.test(lower)) {
+    return ', the final frame leaving a feeling of calm desire — the viewer already imagining themselves there';
+  }
+  if (/shop|buy|order|sipari/.test(lower)) {
+    return ', the close landing on the product with quiet confidence — ownership feels natural';
+  }
+  if (/join|kaydol|start|deneme|trial/.test(lower)) {
+    return ', the final frame energetic and open — an invitation, not a demand';
+  }
+  return `, the final frame creating a quiet desire for "${cta.slice(0, 40)}"`;
 }
 
 // ── Tag context ────────────────────────────────────────────────────────────
@@ -263,27 +321,44 @@ export function buildReelPrompt(ctx: PromptBuilderContext): BuiltPrompt {
 }
 
 // ── AI Director Prompt ─────────────────────────────────────────────────────
-// Uses GPT-4o to produce a Runway-optimized, shot-by-shot cinematic director
+// Uses GPT-4o to produce a Runway-optimized, beat-led cinematic director
 // prompt tailored to the specific photo, brand DNA, and content type.
 // Falls back to buildReelPrompt() on any failure.
 
-const DIRECTOR_SYSTEM_PROMPT = `You are a creative director at a luxury social media agency. You write Runway AI video generation prompts for Instagram Reels.
+const DIRECTOR_SYSTEM_PROMPT = `You are a creative director at a world-class social media agency. You write Runway AI video generation prompts for Instagram Reels that retain viewers through scroll-stop → value → desire → action.
 
-YOUR JOB: Turn a content brief (headline + caption + photo) into a visual description for Runway.
-The video must SHOW what the caption SAYS — it should visually tell the exact same story.
+BEAT STRUCTURE (mandatory for every prompt):
+Every Reel must have THREE beats embedded naturally in the description:
+  BEAT 1 — HOOK (0.0–1.5s): The most visually arresting single frame. Subject must be identifiable in the first second. Use a close detail, texture catch, steam, shimmer, or movement that demands attention.
+  BEAT 2 — PAYOFF / TENSION TURN (1.5–3.5s): A shift — reveal, pull back, motion change, or contrast. The scene earns the viewer's continued attention by delivering something new.
+  BEAT 3 — CLOSE / DESIRE (3.5–5s): Land on a composition that creates desire or calm, setting up the CTA moment. Not a logo — a feeling.
+
+HOOK TAXONOMY (pick ONE, apply its motion recipe):
+  • Detail→Reveal: tight macro on texture/subject → slow pull back to full scene
+  • Atmosphere Drop: wide establishing shot, slow breath of ambient motion (fog, candle, breeze)
+  • Product Arrival: subject enters frame center, light catches surface
+  • Craft Moment: hands/tools in motion, intimate process close-up
+  • POV Pull: subtle forward drift toward the key subject
+  • Transformation Beat: within-frame shift — steam rising, light changing, bokeh clearing
 
 RULES:
-1. Identify the KEY SUBJECT from the caption (specific product, dish, drink, moment, person)
-2. Describe that subject as it appears in the photo — use the photo description to ground it in reality
-3. Add warm, atmospheric light (brand color grading)
-4. One gentle camera motion (slow push, soft pan, or still)
-5. Any organic scene motion (steam, ripple, light shift, liquid, breeze)
+1. Identify the KEY SUBJECT from the caption (specific product, dish, drink, treatment, moment)
+2. Describe that subject as visible in the photo — ground every sentence in the reference image
+3. Apply brand color grading as atmospheric light (warm rose, golden hour, cool spa, etc.)
+4. Camera: ONE motion per clip — slow push, soft pan, locked static, or gentle tilt. Never mixed.
+5. Organic micro-motion only: steam, ripple, shimmer, candle flicker, fabric breeze, ice condensation
+
+MIDPOINT ESCALATION (mandatory):
+Every prompt must include a deliberate TURN at the midpoint — a shift in scale, focus, or motion direction.
+The viewer must feel something changes around the 2–2.5 second mark.
+This is what separates a flat animated photo from a cinematic reel.
+Examples: wide → tight, still → breathe, dark → warm reveal, blur → clarity.
 
 CAPTION → VISUAL TRANSLATION:
-- "best gin tonic in Bodrum" → beautiful gin tonic glass catching golden light
-- "fresh seafood tonight" → beautifully plated seafood dish in warm candlelight
-- "sunset views" → atmospheric terrace with golden sky and ambient warmth
-- "handcrafted cocktails" → bartender hands in motion, glass detail, garnish reveal
+  "best gin tonic" → crystal glass, detail on ice + condensation (Beat 1) → slow pull back to table setting (Beat 2) → warm ambient glow landing on glass (Beat 3)
+  "fresh seafood tonight" → plated seafood macro (Beat 1) → steam rising, candlelight catching sauce (Beat 2) → wide plate in candlelight atmosphere (Beat 3)
+  "bridal glow package" → skin texture in soft light (Beat 1) → gentle shimmer shift across skin surface (Beat 2) → serene spa atmosphere settle (Beat 3)
+  "sunset sessions" → terrace detail at golden hour (Beat 1) → slow pull to horizon (Beat 2) → ambient warmth, horizon glow (Beat 3)
 
 REFERENCE FIDELITY (mandatory):
 - Animate ONLY what is visible in the reference photo. Do not invent objects, people, logos, or scenery.
@@ -291,14 +366,14 @@ REFERENCE FIDELITY (mandatory):
 - Motion: subtle only — shimmer, steam, ripple, soft parallax, gentle focus breathing.
 - Camera: locked-off or very slow drift unless the brief explicitly requests otherwise.
 
-STRICT RULES:
+STRICT OUTPUT RULES:
 - English only — no Turkish or any non-ASCII characters
-- ONE paragraph, 100–180 words maximum
-- Start directly with the visual — no intro phrases like "Here is..." or "This scene..."
-- No bullet points, no timestamps, no section headers, no cinematography jargon
-- Keep it atmospheric and simple — Runway works better with evocative descriptions than technical specs
+- ONE paragraph, 120–190 words maximum
+- Start directly with the visual — no phrases like "Here is...", "This scene...", "In this reel..."
+- No bullet points, no timestamps, no section headers like "Beat 1:"
+- Write as one flowing cinematic description — beats are felt, not labeled
 - NEVER mention brand names or location names (these cause generation errors)
-- Describe what IS in the photo, not imagined additions`;
+- Describe what IS in the photo; do not invent additions`;
 
 export interface DirectorPromptContext {
   headline: string;
@@ -306,8 +381,20 @@ export interface DirectorPromptContext {
   contentKind: string; // 'cocktail', 'food', 'venue', 'person', 'product', 'event'
   brandName: string;
   brandLocation?: string;
+  /** Sector / business_type — steers product vs venue cinematography */
+  businessType?: string;
+  productType?: string;
+  strategicPurpose?: string;
+  missionBrief?: string;
   /** Photo description from gallery_analysis */
   photoDescription?: string;
+  /** One-line frame moment (gallery vision) */
+  photoSceneMoment?: string;
+  /** Subtle motions safe for image-to-video */
+  photoMicroMotions?: string[];
+  photoMood?: string;
+  photoUsageContext?: string;
+  photoPairingKeywords?: string[];
   /** Photo content tags from gallery_analysis */
   photoTags?: string[];
   /** brand_vibe_profile */
@@ -371,6 +458,16 @@ const ATMOSPHERE_TEMPLATES: Record<string, (
     const product = productFromCaption ?? tags.find(t => /bottle|package|label|jar|box/i.test(t)) ?? 'product';
     return `A premium ${product} in clean ${grading} light. Beautiful reflections play across the surface, texture and quality unmistakable. A slow, elegant reveal - rotating or pulling back to show the full product. Confident, minimal, beautifully composed.`;
   },
+  beauty: (_desc, tags, _brand, _loc, grading, caption) => {
+    const treatment = caption.match(/\b(facial|manicure|pedicure|blowout|bridal|glow|skincare|cilt|bakım|manikür)\b/i)?.[1]
+      ?? tags.find(t => /facial|nail|skin|spa|salon|glow/i.test(t))
+      ?? 'beauty treatment';
+    return `A serene ${treatment} moment bathed in soft ${grading} light. Skin texture luminous, tools and products arranged with quiet luxury. Gentle shimmer on highlights, calm spa atmosphere. Slow cinematic drift across the frame, intimate and premium salon energy.`;
+  },
+  wellness: (_desc, _tags, _brand, _loc, grading, caption) => {
+    const ritual = caption.match(/\b(ritual|wellness|spa|massage|yoga|meditation|aroma)\b/i)?.[1] ?? 'wellness ritual';
+    return `A calming ${ritual} scene in ${grading} ambient light. Soft fabrics, natural textures, breathing stillness. Subtle steam or light particles drift through the frame. Locked composition with gentle atmospheric pulse — restorative and high-end.`;
+  },
 };
 
 /**
@@ -381,20 +478,38 @@ const ATMOSPHERE_TEMPLATES: Record<string, (
  * IMPORTANT: Uses flowing, natural language — no structured sections, timestamps,
  * or technical camera terms that confuse Runway's model.
  */
+function buildPhotoGroundedRunwayCore(ctx: DirectorPromptContext, gradingLook: string): string | null {
+  const moment = ctx.photoSceneMoment?.trim() || ctx.photoDescription?.trim();
+  if (!moment || moment.length < 35) return null;
+
+  const motions = (ctx.photoMicroMotions ?? []).slice(0, 3).join(', ');
+  const moodBit = ctx.photoMood ? ` ${ctx.photoMood} atmosphere.` : '';
+  const motionBit = motions ? ` Subtle motion only: ${motions}.` : '';
+  const usage = ctx.photoUsageContext ? ` ${ctx.photoUsageContext.slice(0, 80)}.` : '';
+
+  return (
+    `${moment.slice(0, 320)}.${moodBit}${usage}${motionBit} `
+    + `${gradingLook} cinematic light, locked composition, animate only what is visible in the reference frame.`
+  ).replace(/\s{2,}/g, ' ').trim();
+}
+
 export function buildDirectorPromptTemplate(ctx: DirectorPromptContext): string {
   const kind = ctx.contentKind in ATMOSPHERE_TEMPLATES ? ctx.contentKind : 'venue';
   const photoDesc = ctx.photoDescription ?? ctx.headline ?? '';
-  const photoTags = ctx.photoTags ?? [];
+  const photoTags = [
+    ...(ctx.photoTags ?? []),
+    ...(ctx.photoPairingKeywords ?? []),
+  ];
 
   const gradingLook = ctx.brandThemeGrading?.look ?? ctx.vibeProfile?.grading?.look ?? 'warm golden';
   const location = ctx.brandLocation ?? '';
-  // Use the actual caption (content brief) to extract specific product/subject from the idea
   const captionForTemplate = ctx.caption ?? ctx.headline ?? '';
 
-  const core = ATMOSPHERE_TEMPLATES[kind]?.(photoDesc, photoTags, ctx.brandName, location, gradingLook, captionForTemplate)
-    ?? `${photoDesc.slice(0, 150)} in warm cinematic light, beautiful and atmospheric.`;
+  const grounded = buildPhotoGroundedRunwayCore(ctx, gradingLook);
+  const core = grounded
+    ?? ATMOSPHERE_TEMPLATES[kind]?.(photoDesc, photoTags, ctx.brandName, location, gradingLook, captionForTemplate)
+    ?? `${photoDesc.slice(0, 220)} in warm cinematic light, beautiful and atmospheric.`;
 
-  // Add gentle mood if provided
   const mood = ctx.mood ? ` ${ctx.mood}.` : '';
 
   // Avoid duplicate endings (some template variants already end with "Cinematic quality.")
@@ -478,13 +593,28 @@ export async function buildDirectorPromptWithAI(
       `Headline: "${ctx.headline}"`,
       `Caption (what this content says): "${ctx.caption.slice(0, 300)}"`,
       ctx.mood ? `Mood: ${ctx.mood}` : '',
+      ctx.businessType ? `Sector / business: ${ctx.businessType.slice(0, 120)}` : '',
+      ctx.productType ? `Product focus: ${ctx.productType.slice(0, 120)}` : '',
+      ctx.strategicPurpose ? `Strategic purpose: ${ctx.strategicPurpose.slice(0, 200)}` : '',
+      ctx.missionBrief ? `Mission context: ${ctx.missionBrief.slice(0, 280)}` : '',
       ``,
-      `PHOTO (this is the first frame — describe what's actually visible):`,
+      `PHOTO FRAME (first frame — animate ONLY what is visible; do not invent subjects):`,
+      ctx.photoSceneMoment
+        ? `- Scene moment: ${ctx.photoSceneMoment.slice(0, 320)}`
+        : '',
       ctx.photoDescription
-        ? `- Description: ${ctx.photoDescription}`
-        : '- (unknown — infer from caption)',
+        ? `- Full description: ${ctx.photoDescription.slice(0, 500)}`
+        : '- (unknown — infer from caption only)',
+      ctx.photoMood ? `- Photo mood: ${ctx.photoMood}` : '',
+      ctx.photoUsageContext ? `- Usage context: ${ctx.photoUsageContext.slice(0, 120)}` : '',
+      ctx.photoMicroMotions?.length
+        ? `- Allowed micro-motions: ${ctx.photoMicroMotions.slice(0, 4).join('; ')}`
+        : '',
       ctx.photoTags?.length
-        ? `- Tags: ${ctx.photoTags.slice(0, 12).join(', ')}`
+        ? `- Tags: ${ctx.photoTags.slice(0, 14).join(', ')}`
+        : '',
+      ctx.photoPairingKeywords?.length
+        ? `- Pairing: ${ctx.photoPairingKeywords.slice(0, 8).join(', ')}`
         : '',
       ctx.agentVisualDirection
         ? `- Agent visual direction: ${ctx.agentVisualDirection.slice(0, 280)}`
@@ -496,6 +626,13 @@ export async function buildDirectorPromptWithAI(
       primaryColor ? `Primary: ${primaryColor}` : '',
       accentColor ? `Accent: ${accentColor}` : '',
       cameraMove ? `Camera preference: ${cameraMove}` : '',
+      ``,
+      buildReelArchetypePromptBlock({
+        headline: ctx.headline,
+        caption: ctx.caption,
+        sector: ctx.businessType,
+        contentKind: ctx.contentKind,
+      }),
       ``,
       `TASK: Write a Runway video prompt that SHOWS the story told in the caption above.`,
       `The video must be grounded in what's actually in the photo. One flowing paragraph, max 180 words.`,
@@ -553,12 +690,37 @@ export async function buildDirectorPromptWithAI(
 export function inferContentKind(opts: {
   headline: string;
   caption: string;
+  photoDescription?: string;
+  photoSceneMoment?: string;
   photoTags?: string[];
   contentType?: string;
+  businessType?: string;
+  productType?: string;
 }): string {
-  const text = [opts.headline, opts.caption, ...(opts.photoTags ?? [])].join(' ').toLowerCase();
+  const text = [
+    opts.headline,
+    opts.caption,
+    opts.photoDescription ?? '',
+    opts.photoSceneMoment ?? '',
+    opts.productType ?? '',
+    opts.businessType ?? '',
+    ...(opts.photoTags ?? []),
+  ].join(' ').toLowerCase();
   const ct = (opts.contentType ?? '').toLowerCase();
+  const sector = (opts.businessType ?? '').toLowerCase();
 
+  if (
+    /local_product|e.?commerce|retail|shop|market|grocery|honey|bal\b|almond|badem|olive|zeytin|packaged|product_shop/.test(
+      sector + text,
+    )
+  ) {
+    return 'product';
+  }
+
+  if (/beauty|güzellik|guzellik|salon|facial|manicure|manikür|skincare|cilt|bridal|glow|estetik|nail/.test(text)) {
+    return 'beauty';
+  }
+  if (/wellness|spa|massage|ritual|yoga|meditation|aroma|hamam/.test(text)) return 'wellness';
   if (/cocktail|tequila|whisky|whiskey|wine|şarap|beer|bira|drink|içecek|kokteyl|pour|bartend|mixolog/.test(text)) return 'cocktail';
   if (/burger|pizza|pasta|steak|food|yemek|dish|plate|menu|salad|dessert|tatlı|cheese|seafood/.test(text)) return 'food';
   if (/chef|cook|team|staff|mixolog|barista|stylist|trainer|doctor|person|people|meet|portrait/.test(text)) return 'person';

@@ -22,7 +22,7 @@ interface Props {
 
 const PRIORITY_COLOR: Record<string, string> = {
   low:      '#60A5FA',
-  medium:   '#A78BFA',
+  medium:   '#9DBECE',
   high:     '#F59E0B',
   critical: '#EF4444',
 };

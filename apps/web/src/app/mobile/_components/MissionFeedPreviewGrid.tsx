@@ -28,8 +28,8 @@ const FORMAT_LABEL: Record<PackageFormat, string> = {
 };
 
 const FORMAT_COLOR: Record<PackageFormat, string> = {
-  story: '#A78BFA',
-  post: '#8B5CF6',
+  story: '#9DBECE',
+  post: '#8AABBD',
   reel: '#F472B6',
   carousel: '#60A5FA',
 };
@@ -181,7 +181,7 @@ function MissionFeedPreviewTile({
           <div style={{
             width: 22, height: 22, borderRadius: '50%',
             border: '2px solid rgba(255,255,255,0.25)',
-            borderTop: '2px solid #8B5CF6',
+            borderTop: '2px solid #8AABBD',
             animation: 'spinSlow 0.9s linear infinite',
           }} />
         </div>
@@ -222,9 +222,11 @@ function MissionFeedPreviewTile({
       {bundleStatus === 'failed' && (
         <div style={{
           position: 'absolute', bottom: 6, right: 6, fontSize: 8, fontWeight: 800,
-          padding: '2px 6px', borderRadius: 6, background: 'rgba(239,68,68,0.85)', color: '#fff',
+          padding: '2px 6px', borderRadius: 6,
+          background: thumb ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.85)',
+          color: '#fff',
         }}>
-          Hata
+          {thumb ? 'Video eksik' : 'Hata'}
         </div>
       )}
 

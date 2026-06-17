@@ -121,6 +121,13 @@ export interface ReelGenerationInput {
   // ── AI Director Prompt context ──────────────────────────────────────────
   /** Description of the matched gallery photo (from gallery_analysis) */
   photoDescription?: string;
+  /** One-line frame moment from gallery vision */
+  photoSceneMoment?: string;
+  /** Subtle i2v motions derived from photo subjects */
+  photoMicroMotions?: string[];
+  photoMood?: string;
+  photoUsageContext?: string;
+  photoPairingKeywords?: string[];
   /** Content tags of the matched gallery photo */
   photoTags?: string[];
   /** Brand vibe profile for color grading / motion injection */
@@ -141,6 +148,8 @@ export interface ReelGenerationInput {
   caption?: string;
   /** VPS image_edit_prompt / scene brief slice for director grounding */
   agentVisualDirection?: string;
+  /** hero = gen4.5 premium quality; standard = gen4_turbo (mission budget) */
+  qualityTier?: 'hero' | 'standard';
 }
 
 // ── Output ─────────────────────────────────────────────────────────────────

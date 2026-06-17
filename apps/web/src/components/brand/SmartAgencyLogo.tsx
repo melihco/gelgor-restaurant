@@ -10,8 +10,10 @@ type SmartAgencyLogoProps = {
   priority?: boolean;
 };
 
-const W = 1024;
-const H = 682;
+const FULL_W = 525;
+const FULL_H = 123;
+const MARK_W = 200;
+const MARK_H = 123;
 
 export function SmartAgencyLogo({
   className,
@@ -20,21 +22,14 @@ export function SmartAgencyLogo({
 }: SmartAgencyLogoProps) {
   if (variant === 'markOnly') {
     return (
-      <span
-        className={cn(
-          'relative block shrink-0 overflow-hidden rounded-xl bg-black h-9 w-9',
-          className,
-        )}
-      >
-        <Image
-          src="/smartagency-logo.png"
-          alt="SmartAgency"
-          width={W}
-          height={H}
-          priority={priority}
-          className="absolute left-0 top-0 h-full w-[260%] max-w-none object-cover object-left"
-        />
-      </span>
+      <Image
+        src="/smartagency-mark.png"
+        alt="SmartAgency"
+        width={MARK_W}
+        height={MARK_H}
+        priority={priority}
+        className={cn('h-9 w-auto object-contain', className)}
+      />
     );
   }
 
@@ -42,10 +37,10 @@ export function SmartAgencyLogo({
     <Image
       src="/smartagency-logo.png"
       alt="SmartAgency"
-      width={W}
-      height={H}
+      width={FULL_W}
+      height={FULL_H}
       priority={priority}
-      className={cn('h-9 w-auto max-w-[200px] object-contain object-left', className)}
+      className={cn('h-9 w-auto max-w-[240px] object-contain', className)}
     />
   );
 }

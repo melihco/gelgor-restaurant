@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db, get_tenant_id
-from app.crew.engine import AGENT_ROLES
+from app.crew.registry import get_agent_roles
 from app.models.agent_config import AgentDefinition, AgentInstance
 from app.schemas.agent import (
     AgentDefinitionRead,
@@ -31,6 +31,7 @@ from app.schemas.agent import (
 from app.services.agent_execution_service import execute_agent, ExecutionError
 
 router = APIRouter()
+AGENT_ROLES = get_agent_roles()
 
 
 @router.get("/roles", response_model=dict)

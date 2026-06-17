@@ -18,6 +18,8 @@ import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useTheme } from '../theme-context';
 import { apiClient } from '@/lib/api-client';
+import { nodeOutputArray } from '@/lib/mission-node-output';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import type { T } from '../theme-context';
 import type { MissionSummary, MissionNodeProgress } from '@/types/index';
 import {
@@ -125,60 +127,50 @@ function parseIdeationNode(
   missionId: string,
   fallbackPhotos: string[],
 ): ReelBrief[] {
-  if (!node.output_summary) return [];
-
-  let ideas: any[] = [];
-  try {
-    const raw = node.output_summary.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-    const parsed = JSON.parse(raw);
-    ideas = Array.isArray(parsed) ? parsed
-      : Array.isArray(parsed?.ideas) ? parsed.ideas
-      : Array.isArray(parsed?.content_ideas) ? parsed.content_ideas
-      : [];
-  } catch {
-    return [];
-  }
+  const ideas = nodeOutputArray(node);
+  if (ideas.length === 0) return [];
 
   return ideas
-    .filter((idea: any) => {
-      const fmt = (idea.format ?? idea.content_type ?? idea.type ?? '').toLowerCase();
+    .filter((idea) => {
+      const fmt = String(idea.format ?? idea.content_type ?? idea.type ?? '').toLowerCase();
       return fmt.includes('reel') || fmt.includes('video') || fmt.includes('story');
     })
-      .map((idea: any, i: number): ReelBrief => {
-      const galleryUrl = idea.visual_brief?.gallery_url
-        ?? idea.visualBrief?.galleryUrl
-        ?? null;
-      const photo = (isUsableUrl(galleryUrl) ? galleryUrl : null) ?? fallbackPhotos[i % fallbackPhotos.length] ?? null;
-      const ct = idea.content_type ?? idea.contentType ?? idea.type ?? 'reel';
-      const visualDir = idea.visual_direction ?? idea.visualDirection ?? '';
-      const productionNotes = idea.production_notes ?? idea.productionNotes ?? '';
+      .map((idea, i: number): ReelBrief => {
+      const visualBrief = (
+        idea.visual_brief && typeof idea.visual_brief === 'object' ? idea.visual_brief : idea.visualBrief
+      ) as Record<string, unknown> | undefined;
+      const galleryUrl = (visualBrief?.gallery_url ?? visualBrief?.galleryUrl ?? null) as string | null;
+      const photo = (galleryUrl && isUsableUrl(galleryUrl) ? galleryUrl : null) ?? fallbackPhotos[i % fallbackPhotos.length] ?? null;
+      const ct = String(idea.content_type ?? idea.contentType ?? idea.type ?? 'reel');
+      const visualDir = String(idea.visual_direction ?? idea.visualDirection ?? '');
+      const productionNotes = String(idea.production_notes ?? idea.productionNotes ?? '');
 
       // Build scene concept from agent visual fields (priority order)
       const sceneParts: string[] = [
         visualDir,
-        idea.image_prompt ?? idea.imagePrompt ?? '',
-        idea.visual_brief?.treatment ?? idea.visualBrief?.treatment ?? '',
+        String(idea.image_prompt ?? idea.imagePrompt ?? ''),
+        String(visualBrief?.treatment ?? ''),
         productionNotes,
-      ].map(s => (s ?? '').trim()).filter(Boolean);
+      ].map(s => s.trim()).filter(Boolean);
       const sceneConcept = sceneParts.length > 0
         ? sceneParts.join('. ').slice(0, 280)
-        : (idea.caption ?? '').slice(0, 280);
+        : String(idea.caption ?? '').slice(0, 280);
 
       return {
         id:           `${missionId}:${node.node_key}:${i}`,
         missionTitle,
         missionId,
         nodeKey:      node.node_key,
-        headline:     idea.headline ?? idea.title ?? idea.idea_title ?? '',
-        caption:      idea.caption ?? '',
+        headline:     String(idea.headline ?? idea.title ?? idea.idea_title ?? ''),
+        caption:      String(idea.caption ?? ''),
         sceneConcept,
-        hashtags:     Array.isArray(idea.hashtags) ? idea.hashtags.join(' ') : (idea.hashtags ?? ''),
+        hashtags:     Array.isArray(idea.hashtags) ? (idea.hashtags as string[]).join(' ') : String(idea.hashtags ?? ''),
         photoUrl:     photo,
         visualStyle:  guessStyle(ct, visualDir),
         cameraMotion: guessMotion(visualDir, productionNotes),
         duration:     guessDuration(productionNotes, ct),
         contentType:  ct,
-        suggestedDate: idea.posting_time_suggestion ?? idea.best_time ?? '',
+        suggestedDate: String(idea.posting_time_suggestion ?? idea.best_time ?? ''),
       };
     });
 }
@@ -197,12 +189,13 @@ export function ReelsStudio() {
   const [loadingBriefs, setLoadingBriefs] = useState(true);
 
   // ── Brand context & gallery ──────────────────────────────────────────────
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn:  () => apiClient.getBrandContextData(tenantId),
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn:  () => apiClient.getProductionBrandContextSnapshot(tenantId),
     enabled:  Boolean(tenantId),
     staleTime: 60_000,
   });
+  const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
 
   const galleryPhotos = parseGalleryUrls(brandCtx?.reference_image_urls).slice(0, 12);
 
@@ -721,7 +714,7 @@ function DetailView({ brief, tenantId, brandCtx, galleryPhotos, t, S, onBack, qc
                 </div>
                 {packResults.length === 0 && (
                   <button onClick={handleBrandedPack} disabled={isBuildingPack}
-                    style={{ width: '100%', padding: '10px', background: isBuildingPack ? t.elevated : '#7c3aed', border: `1px solid ${isBuildingPack ? t.separator : '#7c3aed'}`, borderRadius: 10, color: isBuildingPack ? t.textSecondary : '#fff', fontSize: 12, fontWeight: 700, cursor: isBuildingPack ? 'default' : 'pointer' }}>
+                    style={{ width: '100%', padding: '10px', background: isBuildingPack ? t.elevated : '#4D7088', border: `1px solid ${isBuildingPack ? t.separator : '#4D7088'}`, borderRadius: 10, color: isBuildingPack ? t.textSecondary : '#fff', fontSize: 12, fontWeight: 700, cursor: isBuildingPack ? 'default' : 'pointer' }}>
                     {isBuildingPack
                       ? <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}><span style={S.spinner} />Creatomate render… (1-2dk)</span>
                       : '✦ Branded Pack Üret (Creatomate)'}
@@ -971,7 +964,7 @@ function ManualTab({ tenantId, brandCtx, galleryPhotos, t, S, qc }: {
             </div>
             {packResults.length === 0 && (
               <button onClick={handleBrandedPack} disabled={isBuildingPack}
-                style={{ width: '100%', padding: '10px', background: isBuildingPack ? t.elevated : '#7c3aed', border: `1px solid ${isBuildingPack ? t.separator : '#7c3aed'}`, borderRadius: 10, color: isBuildingPack ? t.textSecondary : '#fff', fontSize: 12, fontWeight: 700, cursor: isBuildingPack ? 'default' : 'pointer' }}>
+                style={{ width: '100%', padding: '10px', background: isBuildingPack ? t.elevated : '#4D7088', border: `1px solid ${isBuildingPack ? t.separator : '#4D7088'}`, borderRadius: 10, color: isBuildingPack ? t.textSecondary : '#fff', fontSize: 12, fontWeight: 700, cursor: isBuildingPack ? 'default' : 'pointer' }}>
                 {isBuildingPack
                   ? <span style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}><span style={S.spinner} />Creatomate render… (1-2dk)</span>
                   : '✦ Markalı Video Paketi Oluştur'}

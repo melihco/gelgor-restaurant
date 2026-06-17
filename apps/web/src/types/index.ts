@@ -571,6 +571,7 @@ export interface MissionNodeProgress {
   is_ready: boolean;
   output_artifact_id: string | null;
   output_summary: string | null;  // full agent output (up to 8000 chars)
+  output_payload?: Record<string, unknown> | Record<string, unknown>[] | null;
   started_at: string | null;
   completed_at: string | null;
   error_message: string | null;
@@ -617,6 +618,7 @@ export interface ProposeMissionsResponse {
     expected_outcome: string;
   }>;
   message: string;
+  skip_reason?: string | null;
 }
 
 export interface IndustryPlaybookDto {

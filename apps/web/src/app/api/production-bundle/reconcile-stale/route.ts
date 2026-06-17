@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       contentUrl: art.contentUrl ?? '',
       createdAt: art.createdAt ?? new Date().toISOString(),
       contentType: art.contentType,
-    } as import('@/types').OutputArtifact;
+    } as unknown as import('@/types').OutputArtifact;
 
     if (!isBundleStaleRendering(stub)) continue;
 
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     if (!poster) continue;
 
     const content = parseArtifactContent(stub.content);
-    const kind = String(content.kind || stub.contentType || 'instagram_story').toLowerCase();
+    const kind = String(content.kind || art.contentType || 'instagram_story').toLowerCase();
     const contentType = kind.includes('post') ? 'instagram_post' : 'instagram_story';
 
     if (await patchReady(art.id, tenantId, poster, contentType)) {

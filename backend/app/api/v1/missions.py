@@ -16,6 +16,7 @@ the workspace that owns it (enforced via workspace_id FK check in service layer)
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime
 from typing import Any
@@ -37,13 +38,26 @@ from app.schemas.mission import (
 from app.services.mission_service import (
     approve_mission,
     get_ready_nodes,
+    list_blocking_missions,
     list_missions,
+    normalize_hub_production_package,
+    persist_hub_production_package,
     reject_mission,
+)
+from app.services.mission_feed_production_service import (
+    FeedProductionError,
+    MissionFeedProductionRequest,
+    kick_feed_production as kick_feed_production_service,
+    reproduce_feed_production as reproduce_feed_production_service,
 )
 from app.services.strategist_service import propose_missions_for_workspace
 
 logger = structlog.get_logger()
 router = APIRouter()
+
+
+def _feed_production_http_error(exc: FeedProductionError) -> HTTPException:
+    return HTTPException(exc.status_code, exc.detail)
 
 
 # ── Response models (inline — keeps this file self-contained) ─────────────────
@@ -59,6 +73,7 @@ class NodeProgressItem(BaseModel):
     is_ready: bool          # pending + all deps completed → ready to run
     output_artifact_id: str | None
     output_summary: str | None  # full agent output for UI display (up to 8000 chars)
+    output_payload: dict[str, Any] | list[dict[str, Any]] | None = None
     started_at: datetime | None
     completed_at: datetime | None
     error_message: str | None
@@ -124,6 +139,7 @@ class ProposeMissionsResponse(BaseModel):
     proposals_created: int
     missions: list[dict[str, Any]]
     message: str
+    skip_reason: str | None = None
 
 
 class ProposeMissionsRequest(BaseModel):
@@ -131,6 +147,16 @@ class ProposeMissionsRequest(BaseModel):
     markdown block (season, full moon, holidays, weekly rhythm, sector triggers)
     produced by the TS Context Signal Engine and injected into the Strategist."""
     context_signals: str | None = None
+    production_package: str | None = None
+
+
+class HubProductionPackageRequest(BaseModel):
+    production_package: str
+    production_profile_tier: str | None = None
+    last_production_telemetry: dict | None = None
+
+
+# MissionFeedProductionRequest lives in mission_feed_production_service (Sprint 2).
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -151,6 +177,7 @@ def _compute_node_items(
             is_ready=n.node_key in ready_keys,
             output_artifact_id=n.output_artifact_id,
             output_summary=n.output_summary,
+            output_payload=n.output_payload,
             started_at=n.started_at,
             completed_at=n.completed_at,
             error_message=n.error_message,
@@ -298,9 +325,33 @@ async def propose_missions(
     """
     logger.info("propose_missions_requested", workspace_id=str(workspace_id))
     context_signals = (body.context_signals if body else None) or None
+    production_package = normalize_hub_production_package(
+        body.production_package if body else None,
+    )
+
+    blocking = await list_blocking_missions(db, workspace_id)
+    if blocking:
+        sample = " · ".join(f"{m.title[:36]}" for m in blocking[:2])
+        logger.info(
+            "propose_missions_blocked",
+            workspace_id=str(workspace_id),
+            blocking_count=len(blocking),
+        )
+        return ProposeMissionsResponse(
+            workspace_id=str(workspace_id),
+            proposals_created=0,
+            missions=[],
+            skip_reason="blocking_missions",
+            message=(
+                f"Yeni öneri için önce mevcut misyonları bitirin veya reddedin "
+                f"({len(blocking)} bekleyen/aktif). "
+                f"{sample}"
+            ),
+        )
+
     try:
         created = await propose_missions_for_workspace(
-            db, workspace_id, context_signals=context_signals,
+            db, workspace_id, context_signals=context_signals, force=True,
         )
     except RuntimeError as exc:
         # Human-readable LLM/quota errors — return 402 so frontend can display them
@@ -313,16 +364,26 @@ async def propose_missions(
                      workspace_id=str(workspace_id), error=str(exc)[:400])
         raise HTTPException(500, f"Mission proposal generation failed: {exc}") from exc
 
+    if created:
+        msg = (
+            f"{len(created)} yeni misyon önerisi oluşturuldu. "
+            "Mission Hub'dan inceleyip onaylayabilirsiniz."
+        )
+        skip_reason = None
+    else:
+        skip_reason = "strategist_empty"
+        msg = (
+            "StrategistAgent geçerli misyon üretemedi. "
+            "Marka Anayasası (açıklama, hedef kitle, konum), galeri analizi ve "
+            "sektör sinyallerini kontrol edip birkaç dakika sonra tekrar deneyin."
+        )
+
     return ProposeMissionsResponse(
         workspace_id=str(workspace_id),
         proposals_created=len(created),
         missions=created,
-        message=(
-            f"{len(created)} yeni misyon önerisi oluşturuldu. "
-            "Mission Hub'dan inceleyip onaylayabilirsiniz."
-            if created else
-            "Misyon önerisi üretilemedi. Marka bağlamı ve sinyal verilerini kontrol edin."
-        ),
+        message=msg,
+        skip_reason=skip_reason,
     )
 
 
@@ -598,6 +659,8 @@ async def restart_workspace_mission(
     - Resets mission status → in_progress
     - Resets failed/skipped/blocked task nodes → pending
     - Completed nodes are left untouched (partial work preserved)
+    - EXCEPT `feed_cohesion_review`, which is always reset because it is a
+      derived placeholder node for the latest production pass
     - The TaskGraphExecutor picks it up on the next scheduler tick
     """
     from datetime import datetime, timezone
@@ -629,16 +692,37 @@ async def restart_workspace_mission(
         )
     )
 
-    # Reset only failed/skipped/blocked nodes — keep completed ones
+    # Reset failed/skipped/blocked/running nodes — keep completed ones.
+    # Running is included so a stuck in_flight node can be manually restarted.
     await db.execute(
         update(MissionTaskNode)
         .where(
             MissionTaskNode.mission_id == mission_id,
-            MissionTaskNode.status.in_(["failed", "skipped", "blocked"]),
+            MissionTaskNode.status.in_(["failed", "skipped", "blocked", "running"]),
         )
         .values(
             status=TaskNodeStatus.PENDING.value,
             output_summary=None,
+            output_payload=None,
+            error_message=None,
+            started_at=None,
+            completed_at=None,
+        )
+    )
+
+    # Feed Director node is a placeholder for the latest production/orchestration
+    # pass, not durable mission work. Always reset it on restart so the next run
+    # recomputes slot assignments and report state from fresh ideation outputs.
+    await db.execute(
+        update(MissionTaskNode)
+        .where(
+            MissionTaskNode.mission_id == mission_id,
+            MissionTaskNode.task_type == "feed_cohesion_review",
+        )
+        .values(
+            status=TaskNodeStatus.PENDING.value,
+            output_summary=None,
+            output_payload=None,
             error_message=None,
             started_at=None,
             completed_at=None,
@@ -649,8 +733,91 @@ async def restart_workspace_mission(
 
     logger.info("mission_restarted_via_api", mission_id=str(mission_id))
 
+    try:
+        import asyncio as _asyncio
+        from app.services.task_graph_executor import advance_mission
+        _asyncio.create_task(
+            advance_mission(mission_id, workspace_id),
+            name=f"advance_on_restart_{mission_id}",
+        )
+    except Exception as _e:
+        logger.warning("immediate_advance_on_restart_failed", error=str(_e)[:200])
+
     return {
         "id":      str(mission_id),
         "status":  MissionStatus.IN_FLIGHT.value,
         "message": "Misyon yeniden başlatıldı.",
     }
+
+
+@router.patch("/{workspace_id}/{mission_id}/hub-production-package")
+async def patch_hub_production_package(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    body: HubProductionPackageRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist Mission Hub production package on mission.performance_summary."""
+    await _load_mission_or_404(db, workspace_id, mission_id)
+    pkg = normalize_hub_production_package(body.production_package)
+    if not pkg:
+        raise HTTPException(
+            400,
+            "production_package must be weekly_content, campaign, event, or ads_focus",
+        )
+    tier = str(body.production_profile_tier or "").strip().lower()
+    if tier and tier not in {"economy", "agency", "premium"}:
+        tier = ""
+    ok = await persist_hub_production_package(
+        db,
+        mission_id,
+        pkg,
+        production_profile_tier=tier or None,
+        last_production_telemetry=body.last_production_telemetry,
+    )
+    if not ok:
+        raise HTTPException(500, "Failed to persist production package")
+    return {
+        "mission_id": str(mission_id),
+        "hub_production_package": pkg,
+        "message": "Üretim paketi kaydedildi.",
+    }
+
+
+@router.put("/{workspace_id}/{mission_id}/kick-feed-production")
+async def kick_feed_production(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    body: MissionFeedProductionRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Start Feed auto-produce in the background (non-blocking).
+    Returns immediately; artifacts appear in Feed as each slot completes.
+    """
+    try:
+        return await kick_feed_production_service(
+            db, workspace_id, mission_id, body,
+        )
+    except FeedProductionError as exc:
+        raise _feed_production_http_error(exc) from exc
+
+
+@router.put("/{workspace_id}/{mission_id}/reproduce-feed")
+async def reproduce_mission_feed(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    body: MissionFeedProductionRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Re-run Feed Art Director + auto-produce from existing content_ideation output.
+    Use when ideation succeeded but Feed artifacts were never created (budget, timeout).
+    Operator action — does not re-run Strategist or Crew ideation.
+    """
+    try:
+        return await reproduce_feed_production_service(
+            db, workspace_id, mission_id, body,
+        )
+    except FeedProductionError as exc:
+        raise _feed_production_http_error(exc) from exc

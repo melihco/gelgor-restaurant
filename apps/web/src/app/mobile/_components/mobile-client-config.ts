@@ -10,6 +10,14 @@ export function isMobileOperatorMode(): boolean {
   return process.env.NEXT_PUBLIC_MOBILE_OPERATOR_MODE === 'true';
 }
 
+/** Maliyet, API dökümü ve operasyon araçları — ajans / geliştirme. */
+export function isDebugUiMode(): boolean {
+  return (
+    isMobileOperatorMode()
+    || process.env.NEXT_PUBLIC_DEBUG_UI === 'true'
+  );
+}
+
 /** Not listed in tab / More menu; still reachable when linked from a mission flow. */
 export const FLOW_MOBILE_SCREENS = new Set<MobileScreen>([
   'creative-preview',
@@ -26,7 +34,6 @@ export const INTERNAL_MOBILE_SCREENS = new Set<MobileScreen>([
   'agents',
   'ai-activity',
   'reels-studio',
-  'canva-templates',
   'brand-rules',
   'campaigns',
   'outputs',
@@ -38,35 +45,35 @@ const REDIRECT_MAP: Partial<Record<MobileScreen, MobileScreen>> = {
   templates: 'brand',
   campaigns: 'missions',
   'campaign-detail': 'missions',
-  agents: 'home',
-  'ai-activity': 'home',
+  agents: 'feed',
+  'ai-activity': 'feed',
   'reels-studio': 'more',
-  'canva-templates': 'more',
   'brand-rules': 'brand',
 };
 
 export function resolveClientScreen(screen: MobileScreen): MobileScreen {
   if (isMobileOperatorMode()) return screen;
-  return REDIRECT_MAP[screen] ?? (INTERNAL_MOBILE_SCREENS.has(screen) ? 'home' : screen);
+  return REDIRECT_MAP[screen] ?? (INTERNAL_MOBILE_SCREENS.has(screen) ? 'feed' : screen);
 }
 
 /** Keep bottom tab highlight in sync when opening screens from deep links. */
 export function tabForMobileScreen(screen: MobileScreen): ClientNavTab | null {
-  if (screen === 'home') return 'home';
   if (screen === 'feed' || screen === 'outputs' || screen === 'creative-preview' || screen === 'approval' || screen === 'platform-preview') {
-    return 'content';
+    return 'feed';
   }
   if (screen === 'missions' || screen === 'mission-factory' || screen === 'campaigns' || screen === 'campaign-detail') {
     return 'missions';
   }
-  if (screen === 'reviews' || screen === 'review-detail') return 'reviews';
-  if (screen === 'more' || screen === 'brand' || screen === 'settings' || screen === 'billing' || screen === 'notifications' || screen === 'insights' || screen === 'ads' || screen === 'visitors' || screen === 'new-brief') {
+  if (screen === 'brand' || screen === 'brand-rules' || screen === 'templates') {
+    return 'brand';
+  }
+  if (screen === 'more' || screen === 'settings' || screen === 'billing' || screen === 'notifications' || screen === 'insights' || screen === 'ads' || screen === 'visitors' || screen === 'new-brief' || screen === 'reviews' || screen === 'review-detail') {
     return 'more';
   }
   return null;
 }
 
-export type ClientNavTab = 'home' | 'content' | 'missions' | 'reviews' | 'more';
+export type ClientNavTab = 'feed' | 'missions' | 'brand' | 'more';
 
 /**
  * Floating pill nav — single icon path (no active/idle split, color handled by MobileNav).
@@ -74,36 +81,28 @@ export type ClientNavTab = 'home' | 'content' | 'missions' | 'reviews' | 'more';
  */
 export const CLIENT_NAV_TABS: { id: ClientNavTab; label: string; icon: string; active: string; idle: string }[] = [
   {
-    id: 'home',
-    label: 'Özet',
-    // Abstract command center: 4-segment overview grid
-    icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
-    active: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
-    idle:   'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z',
-  },
-  {
-    id: 'content',
-    label: 'İçerik',
-    // Stacked image cards (post/story/reel stack)
-    icon: 'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 12h16M9 6V4M15 6V4M8 15l3-3 2 2 3-4',
-    active: 'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 12h16M9 6V4M15 6V4M8 15l3-3 2 2 3-4',
-    idle:   'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 12h16M9 6V4M15 6V4M8 15l3-3 2 2 3-4',
+    id: 'feed',
+    label: 'Feed',
+    // Stacked content cards — primary production surface
+    icon: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
+    active: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
+    idle:   'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
   },
   {
     id: 'missions',
     label: 'Plan',
-    // Mission flag / direction indicator
-    icon: 'M4 22V3M4 4h14l-4 5 4 5H4',
-    active: 'M4 22V3M4 4h14l-4 5 4 5H4',
-    idle:   'M4 22V3M4 4h14l-4 5 4 5H4',
+    // Calendar / weekly planner
+    icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
+    active: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
+    idle:   'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
   },
   {
-    id: 'reviews',
-    label: 'Yorumlar',
-    // Chat bubble with star accent
-    icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v.5M10.5 10l1.5-2.5 1.5 2.5-2 1 2 1-1.5 2.5',
-    active: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 10h8M8 14h5',
-    idle:   'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 10h8M8 14h5',
+    id: 'brand',
+    label: 'Marka',
+    // Diamond / brand gem
+    icon: 'M12 2l4 6h6l-4.5 5 1.5 7-7-4-7 4 1.5-7L2 8h6z',
+    active: 'M12 2l4 6h6l-4.5 5 1.5 7-7-4-7 4 1.5-7L2 8h6z',
+    idle:   'M12 2l4 6h6l-4.5 5 1.5 7-7-4-7 4 1.5-7L2 8h6z',
   },
   {
     id: 'more',
@@ -125,7 +124,7 @@ export type MoreMenuItem = {
   operatorOnly?: boolean;
 };
 
-export function buildMoreMenuGroups(opts: { canvaEnabled: boolean; connectedCount: number; integrationTotal: number }): {
+export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCount: number; integrationTotal: number }): {
   title: string;
   items: MoreMenuItem[];
 }[] {
@@ -133,8 +132,8 @@ export function buildMoreMenuGroups(opts: { canvaEnabled: boolean; connectedCoun
     {
       title: 'İçerik',
       items: [
-        { label: 'Onay Akışı', sub: 'Üretilen post, story ve reel', iconBg: '#a78bfa', iconText: '▣', screen: 'feed' },
-        { label: 'İçerik Planı', sub: 'Haftalık mission ve üretim durumu', iconBg: '#7c3aed', iconText: '✦', screen: 'missions' },
+        { label: 'Onay Akışı', sub: 'Üretilen post, story ve reel', iconBg: '#9DBECE', iconText: '▣', screen: 'feed' },
+        { label: 'Haftalık Plan', sub: 'Kampanya ve içerik üretim durumu', iconBg: '#4D7088', iconText: '✦', screen: 'missions' },
         { label: 'Yeni İstek', sub: 'Ek brief veya kampanya talebi', iconBg: '#f87171', iconText: '+', screen: 'new-brief' },
       ],
     },
@@ -152,7 +151,7 @@ export function buildMoreMenuGroups(opts: { canvaEnabled: boolean; connectedCoun
           badge: opts.connectedCount < opts.integrationTotal ? '!' : undefined,
         },
         { label: 'Bildirimler', sub: 'Onay ve üretim bildirimleri', iconBg: '#60a5fa', iconText: '◍', screen: 'notifications' },
-        { label: 'Kullanım & Plan', sub: 'Kredi ve aylık kullanım', iconBg: '#a78bfa', iconText: '◇', screen: 'billing' },
+        { label: 'Kullanım & Plan', sub: 'Kredi ve aylık kullanım', iconBg: '#9DBECE', iconText: '◇', screen: 'billing' },
       ],
     },
     {
@@ -173,13 +172,10 @@ export function buildMoreMenuGroups(opts: { canvaEnabled: boolean; connectedCoun
       title: 'Ajans Operasyonları',
       items: [
         { label: 'AI Aktivite', sub: 'Ajan logları ve canlı üretim', iconBg: '#10b981', iconText: '◎', screen: 'ai-activity', operatorOnly: true },
-        { label: 'AI Ajanlar', sub: 'Ajan sağlığı ve görevler', iconBg: '#a78bfa', iconText: '◉', screen: 'agents', operatorOnly: true },
+        { label: 'AI Ajanlar', sub: 'Ajan sağlığı ve görevler', iconBg: '#9DBECE', iconText: '◉', screen: 'agents', operatorOnly: true },
         { label: 'Reels Studio', sub: 'Runway ile reel üretimi', iconBg: '#f43f5e', iconText: '▶', screen: 'reels-studio', operatorOnly: true },
         { label: 'Marka Kuralları', sub: 'Öğrenme ve onay önerileri', iconBg: '#10b981', iconText: '◈', screen: 'brand-rules', operatorOnly: true },
         { label: 'Story Şablonları', sub: 'Remotion kütüphanesi', iconBg: '#60a5fa', iconText: '▶', screen: 'templates', operatorOnly: true },
-        ...(opts.canvaEnabled
-          ? [{ label: 'Canva Şablonları', sub: 'Marka template bağlantısı', iconBg: '#00c4cc', iconText: '◧', screen: 'canva-templates' as MobileScreen, operatorOnly: true }]
-          : []),
         { label: 'Çıktılar (ham)', sub: 'Tüm artifact listesi', iconBg: '#64748b', iconText: '▤', screen: 'outputs', operatorOnly: true },
       ],
     },

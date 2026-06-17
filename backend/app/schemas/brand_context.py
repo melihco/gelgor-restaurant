@@ -149,6 +149,12 @@ class BrandAnalyzeRequest(BaseModel):
     website_url: str = ""
     instagram_handle: str = ""
     google_business_url: str = ""
+    brand_name: str = ""
+
+
+class ConfirmConstitutionRequest(BaseModel):
+    auto_confirmed: bool = False
+    synthesize_dna: bool = True
 
 
 class SourceStatus(BaseModel):

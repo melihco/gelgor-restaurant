@@ -192,41 +192,43 @@ export class RunwayVideoService {
     mode: 'text-to-video' | 'image-to-video',
   ): Promise<ReelGenerationResult> {
     let taskId = '';
-    // gen4_turbo + 5s = 10 credits/video (most efficient: 225 videos/month on Pro)
-    // gen4.5 costs 50 credits/video — 5x more expensive, only use if quality critical
-    const modelUsed = 'gen4_turbo';
-    const effectiveDuration = Math.min(req.duration, 5) as ReelDuration; // cap at 5s
+    const useHeroModel = originalInput.qualityTier === 'hero'
+      || process.env.RUNWAY_MODEL === 'gen4.5';
+    let modelUsed: 'gen4.5' | 'gen4_turbo' = useHeroModel ? 'gen4.5' : 'gen4_turbo';
+    const effectiveDuration = Math.min(req.duration, 5) as ReelDuration;
 
     try {
       let sdkPayload: ImageToVideoCreateParams;
 
-      // gen4_turbo accepts a single promptImage (string: HTTPS URL or base64 data URI).
-      // It does NOT support multi-image arrays — attempting that causes a 400 validation error.
-      // When multi-reference mode was requested, we use the first (best semantic match) photo.
       const resolvedPromptImage: string | undefined =
         req.multiRefImages && req.multiRefImages.length >= 1
-          ? req.multiRefImages[0].uri  // best semantic match photo only
+          ? req.multiRefImages[0]!.uri
           : req.promptImage;
 
-      const payload: ImageToVideoCreateParams.Gen4Turbo = {
-        model: 'gen4_turbo',
-        promptText: req.promptText,
-        promptImage: resolvedPromptImage,
-        ratio: req.ratio,
-        duration: effectiveDuration,
-      };
-      sdkPayload = payload;
-
-      if (false) {
-        // gen4.5 — high quality but 50 credits/5s (use only for hero content)
-        const payload2: ImageToVideoCreateParams.Gen4_5 = {
+      if (useHeroModel && resolvedPromptImage) {
+        const payloadHero: ImageToVideoCreateParams.Gen4_5 = {
           model: 'gen4.5',
           promptText: req.promptText,
-          promptImage: req.promptImage as string,
+          promptImage: resolvedPromptImage,
           ratio: req.ratio,
           duration: effectiveDuration,
         };
-        sdkPayload = payload2;
+        sdkPayload = payloadHero;
+        modelUsed = 'gen4.5';
+        console.log('[runway] Hero reel — gen4.5 image-to-video');
+      } else {
+        if (useHeroModel && !resolvedPromptImage) {
+          console.warn('[runway] Hero tier requested but no promptImage — falling back to gen4_turbo');
+        }
+        modelUsed = 'gen4_turbo';
+        const payload: ImageToVideoCreateParams.Gen4Turbo = {
+          model: 'gen4_turbo',
+          promptText: req.promptText,
+          promptImage: resolvedPromptImage ?? '',
+          ratio: req.ratio,
+          duration: effectiveDuration,
+        };
+        sdkPayload = payload;
       }
 
       // ── Submit task and wait ── gen4_turbo typically completes in 60-90s ──

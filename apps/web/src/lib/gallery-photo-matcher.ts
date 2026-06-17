@@ -11,8 +11,10 @@
  *  - URL keys normalized (gallery analysis originals vs upscaled display URLs)
  */
 
+import { captionPhotoConflictPenalty } from '@/lib/caption-photo-alignment';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
 
 export interface GalleryPhotoMeta {
   contentTags?: string[];
@@ -23,6 +25,8 @@ export interface GalleryPhotoMeta {
   notGoodFor?: string[];
   suggestedAssetType?: string;
   isLogo?: boolean;
+  captionHooks?: string[];
+  pairingKeywords?: string[];
 }
 
 export interface MatchPhotoInput {
@@ -39,6 +43,12 @@ export interface MatchPhotoInput {
    * context receive a mild penalty so sector-irrelevant photos rank lower.
    */
   businessType?: string;
+  /**
+   * Story sequence role ('hook' | 'proof' | 'cta').
+   * When provided, photos matching the role's preferred asset types receive
+   * a bonus so hook → atmospheric/wide, proof → detail/process, cta → outcome.
+   */
+  storySequenceRole?: 'hook' | 'proof' | 'cta';
 }
 
 export interface PhotoMatchResult {
@@ -57,6 +67,13 @@ export const MIN_ACCEPT_SCORE = 28;
 
 /** Strong match — prefer these over weak fallbacks. */
 export const STRONG_MATCH_SCORE = 52;
+
+/**
+ * Minimum gallery match score to allow Runway Reel generation.
+ * Runway is expensive and produces poor quality video when the source photo
+ * is a weak semantic match for the caption. Below this, fall back to a still.
+ */
+export const RUNWAY_GALLERY_MIN_SCORE = 42;
 
 /** Relaxed threshold for manual "pick photo" when nothing clears MIN_ACCEPT. */
 export const RELAXED_MATCH_SCORE = 10;
@@ -89,6 +106,19 @@ export interface MatchClassification {
 }
 
 /** Maps a raw match score to a production-quality classification + UI label. */
+/** Read gallery match score from artifact metadata (auto-produce or manual save). */
+export function resolveArtifactMatchScore(meta: Record<string, unknown>): number | null {
+  if (meta.caption_driven_visual === true) return null;
+  if (meta.gallery_sourced === false) return null;
+  const raw = meta.gallery_match_score ?? meta.galleryMatchScore;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 export function classifyMatch(score: number): MatchClassification {
   if (score >= STRONG_MATCH_SCORE) {
     return { quality: 'strong', usable: true, needsReview: false, label: 'Güçlü eşleşme' };
@@ -237,46 +267,235 @@ const SUBJECT_SYNONYMS: [string, string[], number][] = [
  * Business type → preferred photo category keywords.
  * Soft signal only — boosts matching photos, penalises mismatches.
  * Keys are lowercased substrings matched against `businessType`.
+ *
+ * Each entry has: match[] (businessType substrings), prefer[] (photo searchable boosts),
+ * avoid[] (photo searchable penalties).
  */
 const BUSINESS_TYPE_AFFINITY: Array<{
   match: string[];
   prefer: string[];
   avoid: string[];
 }> = [
+  // ── Food & beverage ─────────────────────────────────────────────────────
   {
-    match: ['restaurant', 'cafe', 'kahve', 'bistro', 'bakery', 'fırın', 'patisserie'],
-    prefer: ['food', 'drink', 'chef', 'kitchen', 'dish', 'meal', 'cuisine', 'menu'],
-    avoid: ['equipment', 'machine', 'medical', 'clinic', 'room', 'bed'],
+    match: [
+      'restaurant', 'restoran', 'cafe', 'kafe', 'kahve', 'bistro',
+      'bakery', 'fırın', 'firin', 'patisserie', 'pastane', 'cafe_bakery',
+      'bakery_patisserie', 'coffee_shop', 'roastery', 'dondurma',
+    ],
+    prefer: [
+      'food', 'dish', 'plate', 'meal', 'cuisine', 'chef', 'kitchen',
+      'menu', 'dessert', 'pastry', 'bread', 'ekmek', 'pasta', 'tatlı',
+      'yemek', 'tabak', 'mutfak', 'kahve', 'kahvaltı', 'brunch',
+      'latte', 'espresso', 'cappuccino', 'croissant', 'börek', 'borek',
+      'dondurma', 'kurabiye', 'kek', 'waffle', 'cheesecake',
+      'serving', 'plating', 'ingredients', 'fresh', 'seasonal',
+    ],
+    avoid: ['medical', 'clinic', 'equipment machine', 'gym', 'surgery', 'before after'],
   },
+  // ── Hotel & hospitality ──────────────────────────────────────────────────
   {
-    match: ['hotel', 'resort', 'otel', 'spa', 'villa', 'boutique'],
-    prefer: ['room', 'lobby', 'pool', 'terrace', 'outdoor', 'interior', 'bed', 'suite'],
-    avoid: ['medical', 'clinic', 'gym equipment'],
+    match: [
+      'hotel', 'otel', 'resort', 'villa', 'boutique hotel',
+      'suites', 'suite', 'konaklama', 'pension', 'pansiyon',
+    ],
+    prefer: [
+      'room', 'oda', 'lobby', 'lobi', 'pool', 'havuz', 'terrace', 'teras',
+      'interior', 'bed', 'yatak', 'suite', 'garden', 'bahçe', 'sea view',
+      'deniz manzarası', 'luxury', 'lüks', 'amenity', 'balcony', 'balkon',
+      'reception', 'resepsiyon', 'breakfast', 'kahvaltı', 'rooftop',
+    ],
+    avoid: ['medical', 'clinic', 'gym equipment', 'surgery'],
   },
+  // ── Beach club / nightlife ───────────────────────────────────────────────
   {
-    match: ['event', 'etkinlik', 'entertainment', 'eğlence', 'club', 'nightlife', 'venue', 'mekan', 'show'],
-    prefer: ['event', 'concert', 'performance', 'crowd', 'stage', 'people', 'celebration'],
-    avoid: ['before after', 'medical', 'product shelf'],
+    match: [
+      'beach_club', 'beach club', 'nightclub', 'club', 'lounge',
+      'entertainment', 'hospitality_entertainment', 'gece kulübü',
+      'etkinlik', 'event venue', 'mekan',
+    ],
+    prefer: [
+      'sunset', 'beach', 'plaj', 'pool', 'havuz', 'crowd', 'dj', 'stage',
+      'event', 'concert', 'performance', 'people', 'celebration', 'party',
+      'cocktail', 'bar', 'night', 'gece', 'lights', 'dance', 'dans',
+      'outdoor', 'açık hava', 'sea', 'deniz', 'atmosphere',
+    ],
+    avoid: ['before after', 'medical', 'product shelf', 'gym equipment'],
   },
+  // ── Fitness / gym ────────────────────────────────────────────────────────
   {
-    match: ['gym', 'fitness', 'spor', 'crossfit', 'pilates', 'yoga', 'studio'],
-    prefer: ['equipment', 'exercise', 'workout', 'training', 'result', 'transformation', 'muscle', 'athlete'],
-    avoid: ['food', 'dish', 'meal', 'menu', 'medical'],
+    match: [
+      'gym', 'fitness', 'spor salonu', 'crossfit', 'pilates',
+      'yoga', 'studio', 'antrenman', 'spor merkezi',
+    ],
+    prefer: [
+      'equipment', 'ekipman', 'exercise', 'egzersiz', 'workout', 'antrenman',
+      'training', 'eğitim', 'result', 'transformation', 'muscle', 'kas',
+      'athlete', 'sporcu', 'weight', 'barbell', 'dumbbell', 'cardio',
+      'stretch', 'pose', 'class', 'instructor', 'personal trainer',
+      'body', 'vücut', 'fitness', 'strong', 'fit',
+    ],
+    avoid: ['food', 'dish', 'meal', 'medical procedure', 'surgery'],
   },
+  // ── Nail salon (highest specificity — must come before general beauty) ───
   {
-    match: ['salon', 'kuaför', 'beauty', 'güzellik', 'nail', 'tırnak', 'barber', 'berber'],
-    prefer: ['hair', 'makeup', 'nail', 'before after', 'result', 'treatment', 'service'],
-    avoid: ['food', 'equipment machine', 'outdoor nature'],
+    match: [
+      'nail', 'tırnak', 'tirnak', 'nail_salon', 'nail_studio',
+      'nail art', 'nail care',
+    ],
+    prefer: [
+      'nail', 'tırnak', 'tirnak', 'oje', 'nail art', 'nail polish',
+      'manikür', 'manikyur', 'manicure', 'pedikür', 'pedikyur', 'pedicure',
+      'kalıcı oje', 'gel nail', 'jel tırnak', 'protez tırnak', 'acrylic nail',
+      'nail design', 'tırnak tasarım', 'french manicure', 'nail extension',
+      'cuticle', 'nail file', 'hand', 'el', 'finger', 'parmak',
+      'result', 'before after', 'close-up', 'detail',
+    ],
+    avoid: [
+      'food', 'lash', 'kirpik', 'eyelash', 'ipek kirpik',
+      'haircut', 'saç kesim', 'hair color', 'saç boyama', 'fön',
+      'massage', 'facial', 'cilt bakım',
+    ],
   },
+  // ── Lash & brow studio ──────────────────────────────────────────────────
   {
-    match: ['clinic', 'klinik', 'dental', 'diş', 'medical', 'tıp', 'aesthetic', 'estetik'],
-    prefer: ['before after', 'result', 'treatment', 'equipment', 'clean', 'professional'],
-    avoid: ['food', 'nightlife', 'crowd', 'party'],
+    match: [
+      'lash', 'kirpik', 'brow', 'kaş', 'lash_studio',
+      'lash extension', 'kirpik uzatma', 'ipek kirpik',
+    ],
+    prefer: [
+      'lash', 'kirpik', 'eyelash', 'brow', 'kaş', 'eyebrow',
+      'lash extension', 'lash lift', 'kirpik uzatma', 'kirpik perma',
+      'ipek kirpik', 'microblading', 'brow lamination', 'kaş tasarım',
+      'eye', 'göz', 'result', 'before after', 'close-up', 'treatment',
+    ],
+    avoid: ['food', 'nail', 'tırnak', 'oje', 'haircut', 'saç kesim'],
   },
+  // ── Spa / massage / wellness center ─────────────────────────────────────
   {
-    match: ['retail', 'mağaza', 'shop', 'store', 'fashion', 'moda', 'jewelry', 'takı'],
-    prefer: ['product', 'collection', 'display', 'packaging', 'merchandise', 'item'],
+    match: [
+      'spa', 'massage', 'masaj', 'wellness center', 'relaxation',
+      'hammam', 'hamam', 'sauna', 'termal',
+    ],
+    prefer: [
+      'massage', 'masaj', 'spa', 'relaxation', 'dinlenme', 'pool', 'havuz',
+      'steam', 'sauna', 'towel', 'havlu', 'candle', 'mum', 'serene',
+      'treatment', 'therapy', 'terapi', 'body', 'skin', 'cilt',
+      'essential oil', 'aromatherapy', 'zen', 'calm', 'peaceful',
+    ],
+    avoid: ['food', 'nail', 'gym equipment', 'medical procedure'],
+  },
+  // ── General beauty / hair salon (fallback after nail/lash/spa) ──────────
+  {
+    match: [
+      'salon', 'kuaför', 'beauty', 'güzellik', 'barber', 'berber',
+      'beauty_wellness', 'hair salon', 'saç salonu', 'estetik salon',
+    ],
+    prefer: [
+      'hair', 'saç', 'sac', 'makeup', 'makyaj', 'before after', 'result',
+      'treatment', 'service', 'salon', 'haircut', 'saç kesim', 'blowout',
+      'fön', 'balayage', 'highlight', 'color', 'boya', 'styling',
+      'transformation', 'dönüşüm', 'brush', 'mirror', 'ayna',
+    ],
+    avoid: ['food', 'equipment machine', 'outdoor nature', 'medical procedure'],
+  },
+  // ── Medical / dental / aesthetics clinic ────────────────────────────────
+  {
+    match: [
+      'clinic', 'klinik', 'dental', 'diş', 'medical', 'tıp',
+      'aesthetic', 'estetik', 'healthcare', 'saglik', 'sağlık',
+      'psikoloji', 'terapi', 'orthodontic',
+    ],
+    prefer: [
+      'before after', 'result', 'treatment', 'tedavi', 'equipment',
+      'ekipman', 'clean', 'temiz', 'professional', 'profesyonel',
+      'consultation', 'danışma', 'doctor', 'doktor', 'patient',
+      'clinical', 'modern', 'technology', 'teknoloji',
+    ],
+    avoid: ['food', 'nightlife', 'crowd', 'party', 'beach'],
+  },
+  // ── Fashion & clothing ───────────────────────────────────────────────────
+  {
+    match: [
+      'fashion', 'moda', 'clothing', 'giyim', 'fashion_retail',
+      'boutique', 'butik', 'apparel', 'koleksiyon',
+    ],
+    prefer: [
+      'clothing', 'kıyafet', 'outfit', 'collection', 'koleksiyon',
+      'model', 'fashion', 'moda', 'style', 'stil', 'look', 'editorial',
+      'dress', 'elbise', 'jacket', 'ceket', 'jeans', 'accessories',
+      'aksesuar', 'runway', 'campaign', 'flatlay', 'product',
+    ],
+    avoid: ['food', 'medical', 'gym equipment', 'beach only'],
+  },
+  // ── Jewelry & accessories ────────────────────────────────────────────────
+  {
+    match: [
+      'jewelry', 'jewellery', 'mücevher', 'takı', 'kuyumcu',
+      'jewelry_accessories', 'ring', 'yüzük', 'necklace', 'kolye',
+    ],
+    prefer: [
+      'jewelry', 'mücevher', 'takı', 'ring', 'yüzük', 'necklace', 'kolye',
+      'bracelet', 'bileklik', 'earring', 'küpe', 'diamond', 'elmas',
+      'gold', 'altın', 'silver', 'gümüş', 'gemstone', 'pırlanta',
+      'close-up', 'detail', 'sparkle', 'luxury', 'lüks', 'packaging',
+      'product', 'flat lay', 'on model', 'hand',
+    ],
+    avoid: ['food', 'medical', 'gym equipment', 'hair only'],
+  },
+  // ── Real estate & property ───────────────────────────────────────────────
+  {
+    match: [
+      'real_estate', 'emlak', 'property', 'konut', 'daire',
+      'villa', 'apartment', 'residence',
+    ],
+    prefer: [
+      'interior', 'iç mekan', 'exterior', 'dış cephe', 'room', 'oda',
+      'kitchen', 'mutfak', 'living room', 'salon', 'terrace', 'teras',
+      'garden', 'bahçe', 'pool', 'havuz', 'view', 'manzara',
+      'luxury', 'lüks', 'modern', 'architect', 'detail',
+    ],
+    avoid: ['food', 'medical', 'gym equipment', 'crowd'],
+  },
+  // ── Local products & artisan food ────────────────────────────────────────
+  {
+    match: [
+      'local_products', 'yöresel', 'artisan', 'organik', 'zeytinyağı',
+      'handmade', 'el yapımı', 'local_products_shop',
+    ],
+    prefer: [
+      'product', 'jar', 'kavanoz', 'bottle', 'şişe', 'package', 'ambalaj',
+      'natural', 'doğal', 'organic', 'organik', 'harvest', 'hasat',
+      'ingredient', 'malzeme', 'texture', 'close-up', 'rustic', 'artisan',
+      'handmade', 'el yapımı', 'farm', 'çiftlik', 'village', 'köy',
+    ],
+    avoid: ['medical', 'gym equipment', 'urban nightlife'],
+  },
+  // ── General retail & e-commerce ──────────────────────────────────────────
+  {
+    match: [
+      'retail', 'mağaza', 'shop', 'store', 'ecommerce', 'e-ticaret',
+      'magaza', 'market',
+    ],
+    prefer: [
+      'product', 'ürün', 'collection', 'koleksiyon', 'display', 'vitrin',
+      'packaging', 'ambalaj', 'merchandise', 'shelf', 'raf',
+      'flat lay', 'close-up', 'detail', 'unboxing', 'branding',
+    ],
     avoid: ['food', 'medical', 'gym equipment'],
+  },
+  // ── Agency / professional services ──────────────────────────────────────
+  {
+    match: [
+      'agency', 'ajans', 'consulting', 'danışmanlık', 'law', 'avukat',
+      'agency_services', 'production_company',
+    ],
+    prefer: [
+      'office', 'ofis', 'team', 'ekip', 'meeting', 'toplantı',
+      'professional', 'profesyonel', 'workspace', 'laptop', 'presentation',
+      'creative', 'design', 'branding', 'digital', 'technology',
+    ],
+    avoid: ['food', 'gym equipment', 'medical procedure'],
   },
 ];
 
@@ -443,6 +662,8 @@ function tokenize(text: string): string[] {
 function buildSearchable(meta: GalleryPhotoMeta): string {
   return [
     ...(meta.contentTags ?? []),
+    ...(meta.captionHooks ?? []),
+    ...(meta.pairingKeywords ?? []),
     meta.description ?? '',
     meta.usageContext ?? '',
     meta.mood ?? '',
@@ -454,9 +675,11 @@ function scorePhotoForContent(
   meta: GalleryPhotoMeta,
   input: MatchPhotoInput,
 ): { score: number; reasons: string[] } {
-  const caption = [input.headline, input.caption, input.visualDirection, input.strategicPurpose]
+  const headlineText = (input.headline ?? '').trim();
+  const captionBody = [input.caption, input.visualDirection, input.strategicPurpose]
     .filter(Boolean)
     .join(' ');
+  const caption = [headlineText, captionBody].filter(Boolean).join(' ');
   const text = caption.toLowerCase();
   const searchable = buildSearchable(meta);
   const reasons: string[] = [];
@@ -481,10 +704,20 @@ function scorePhotoForContent(
   const descriptionText = (meta.description ?? '').toLowerCase();
   const contentTagsText = (meta.contentTags ?? []).join(' ').toLowerCase();
   const captionWords = tokenize(caption);
+  const headlineWords = tokenize(headlineText);
 
   let descHits = 0;
   let tagHits = 0;
+  let headlineDescHits = 0;
+  for (const w of headlineWords) {
+    if (descriptionText.includes(w)) { score += 9; headlineDescHits++; }
+    else if (contentTagsText.includes(w)) { score += 7; }
+    else if (searchable.includes(w)) { score += 4; }
+  }
+  if (headlineDescHits >= 2) reasons.push(`headline:${headlineDescHits} desc hits`);
+
   for (const w of captionWords) {
+    if (headlineWords.includes(w)) continue;
     if (descriptionText.includes(w)) { score += 5; descHits++; }
     else if (contentTagsText.includes(w)) { score += 4; tagHits++; }
     else if (searchable.includes(w)) { score += 2; }
@@ -528,6 +761,23 @@ function scorePhotoForContent(
     reasons.push('bestFor fit');
   }
 
+  // ── Asset-role routing boost (sector + story sequence role) ────────────────
+  // Photos that match the role's preferred asset types receive a bonus so the
+  // right photo archetype lands in the right sequence position.
+  if (input.storySequenceRole) {
+    const preferredAssets = resolveAssetRolePreferences(input.businessType, input.storySequenceRole);
+    const photoAssets = [
+      ...(meta.bestFor ?? []),
+      meta.suggestedAssetType ?? '',
+      meta.usageContext ?? '',
+    ].join(' ').toLowerCase();
+    const roleHit = preferredAssets.some(a => photoAssets.includes(a.replace(/_/g, ' ')));
+    if (roleHit) {
+      score += 12;
+      reasons.push(`role_fit:${input.storySequenceRole}`);
+    }
+  }
+
   // ── Asset type penalties ─────────────────────────────────────────────────
   // ── Logo / brand background penalty (universal) ──────────────────────────
   const assetType = (meta.suggestedAssetType ?? '').toLowerCase();
@@ -569,6 +819,44 @@ function scorePhotoForContent(
       if (preferHit) { score += 12; reasons.push(`businessType prefer`); }
       if (avoidHit && !preferHit) { score -= 18; reasons.push(`businessType mismatch`); }
     }
+  }
+
+  // ── Caption-driven sub-service bonus (beauty sector) ─────────────────────
+  // When caption explicitly names a specific beauty service (nail, lash, hair),
+  // give a strong extra bonus when the photo also shows that same service.
+  // This disambiguates mixed salon galleries without needing vector embeddings.
+  const BEAUTY_SUB_SERVICES: Array<{ captionTerms: string[]; photoTerms: string[] }> = [
+    {
+      captionTerms: ['nail', 'tırnak', 'tirnak', 'oje', 'manikür', 'manikyur', 'manicure', 'pedikür', 'pedicure', 'nail art'],
+      photoTerms: ['nail', 'tırnak', 'tirnak', 'oje', 'manikür', 'manicure', 'pedicure', 'nail art', 'nail polish'],
+    },
+    {
+      captionTerms: ['lash', 'kirpik', 'eyelash', 'ipek kirpik', 'lash lift', 'lash extension', 'kirpik uzatma'],
+      photoTerms: ['lash', 'kirpik', 'eyelash', 'lash extension', 'lash lift', 'ipek kirpik'],
+    },
+    {
+      captionTerms: ['saç', 'sac', 'hair', 'balayage', 'highlight', 'saç kesim', 'haircut', 'keratin', 'fön'],
+      photoTerms: ['hair', 'saç', 'sac', 'haircut', 'hairstyle', 'balayage', 'highlight', 'fön'],
+    },
+    {
+      captionTerms: ['kaş', 'kas', 'brow', 'microblading', 'kaş tasarım'],
+      photoTerms: ['brow', 'kaş', 'kas', 'microblading', 'eyebrow'],
+    },
+  ];
+  for (const cluster of BEAUTY_SUB_SERVICES) {
+    const captionHitsCluster = cluster.captionTerms.filter(t => text.includes(t)).length;
+    const photoHitsCluster = cluster.photoTerms.filter(t => searchable.includes(t)).length;
+    if (captionHitsCluster >= 1 && photoHitsCluster >= 1) {
+      score += 20;
+      reasons.push(`beauty_sub_service_match:${cluster.captionTerms[0]}`);
+      break; // only one cluster bonus per photo
+    }
+  }
+
+  const conflict = captionPhotoConflictPenalty(caption, searchable);
+  if (conflict > 0) {
+    score -= conflict;
+    reasons.push(`caption-photo conflict -${conflict}`);
   }
 
   return { score: Math.max(0, score), reasons };
@@ -674,6 +962,8 @@ export function matchPhotoToContent(
     minScore?: number;
     /** Manual pick: return best available even below minScore; never random. */
     bestEffort?: boolean;
+    /** Per-idea seed so equal-scored photos rotate across slots. */
+    tieBreakSeed?: number;
   },
 ): PhotoMatchResult | null {
   const usableCandidates = candidateUrls.filter(isUsableGalleryPhotoUrl);
@@ -681,13 +971,22 @@ export function matchPhotoToContent(
   const lookup = buildGalleryLookup(galleryAnalysis, options?.displayUrls ?? usableCandidates);
   const minScore = options?.minScore ?? MIN_ACCEPT_SCORE;
 
-  const ranked = rankPhotosForContent(
-    input,
-    usableCandidates,
-    lookup,
-    excludeBases,
-    galleryAnalysis,
-  );
+  const ranked = options?.tieBreakSeed != null
+    ? rankPhotosForContentSeeded(
+      input,
+      usableCandidates,
+      lookup,
+      options.tieBreakSeed,
+      excludeBases,
+      galleryAnalysis,
+    )
+    : rankPhotosForContent(
+      input,
+      usableCandidates,
+      lookup,
+      excludeBases,
+      galleryAnalysis,
+    );
   const best = ranked[0];
   if (best && best.score >= minScore) return best;
 
@@ -738,7 +1037,57 @@ export function assignPhotosToContents(
   return assigned;
 }
 
-/** Resolve agent-suggested URL vs best semantic match — agent wins only if score is close enough. */
+/** Pick up to `count` carousel slides — each must clear minScore; no unscored padding. */
+export function pickScoredCarouselSlides(
+  input: MatchPhotoInput,
+  candidateUrls: string[],
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  excludeUrls: string[],
+  count: number,
+  minScore = MIN_ACCEPT_SCORE,
+): PhotoMatchResult[] {
+  const lookup = buildGalleryLookup(galleryAnalysis, candidateUrls);
+  const usedBases = new Set(excludeUrls.map(normalizeGalleryUrl));
+  const picked: PhotoMatchResult[] = [];
+
+  for (let i = 0; i < count; i += 1) {
+    const ranked = rankPhotosForContent(input, candidateUrls, lookup, usedBases, galleryAnalysis);
+    const best = ranked.find((r) => r.score >= minScore);
+    if (!best) break;
+    picked.push(best);
+    usedBases.add(normalizeGalleryUrl(best.url));
+  }
+
+  return picked;
+}
+
+/** True when photo has vision tags or description for semantic matching. */
+export function isGalleryPhotoAnalyzed(meta: GalleryPhotoMeta | undefined): boolean {
+  if (!meta) return false;
+  const tags = meta.contentTags ?? [];
+  const desc = String(meta.description ?? '').trim();
+  return tags.length >= 2 || desc.length >= 12;
+}
+
+export function galleryAnalysisCoverageStats(
+  photos: string[],
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+): { analyzed: number; total: number; sufficient: boolean } {
+  const real = photos.filter((u) => isUsableGalleryPhotoUrl(u));
+  if (real.length === 0) {
+    return { analyzed: 0, total: 0, sufficient: true };
+  }
+  let analyzed = 0;
+  const lookup = buildGalleryLookup(galleryAnalysis, real);
+  for (const url of real) {
+    const base = normalizeGalleryUrl(url);
+    const entry = lookup.get(base);
+    if (isGalleryPhotoAnalyzed(entry?.meta)) analyzed += 1;
+  }
+  const ratio = analyzed / real.length;
+  const sufficient = analyzed >= Math.min(3, real.length) || ratio >= 0.55;
+  return { analyzed, total: real.length, sufficient };
+}
 export function resolveBestGalleryUrl(
   input: MatchPhotoInput,
   candidateUrls: string[],
@@ -748,6 +1097,7 @@ export function resolveBestGalleryUrl(
     excludeUrls?: string[];
     displayUrls?: string[];
     minScore?: number;
+    tieBreakSeed?: number;
   },
 ): PhotoMatchResult | null {
   const minScore = options?.minScore ?? MIN_ACCEPT_SCORE;
@@ -773,13 +1123,11 @@ export function resolveBestGalleryUrl(
     ...options,
     minScore: 0,
   });
-  // Trust the agent's pick if it passes the minimum bar and isn't dramatically worse
-  // than the algorithmic best. The LLM has full semantic context at ideation time,
-  // while the algorithmic scorer only has keyword overlap. Window widened to 22 pts.
+  const agentMin = Math.max(minScore, GIS_PILOT_MIN_SCORE);
   if (
     agentRank
-    && agentRank.score >= minScore
-    && agentRank.score >= best.score - 22
+    && agentRank.score >= agentMin
+    && agentRank.score >= best.score - 12
   ) {
     return { ...agentRank, url: agentUrl };
   }

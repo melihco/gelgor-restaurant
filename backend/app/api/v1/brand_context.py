@@ -17,6 +17,7 @@ from app.schemas.brand_context import (
     BrandContextCreate,
     BrandContextRead,
     BrandContextUpdate,
+    ConfirmConstitutionRequest,
     SourceStatus,
 )
 from app.schemas.brand_theme import AiThemeSettingsPatch, BrandThemeSaveRequest
@@ -132,6 +133,38 @@ async def get_brand_context(
     return ctx
 
 
+@router.get("/{workspace_id}/snapshot", summary="Normalized brand intelligence snapshot")
+async def get_brand_context_snapshot(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    ctx = await brand_context_service.ensure_brand_context(db, workspace_id)
+    ctx = await brand_context_service.seed_missing_brand_fields(db, ctx)
+    theme = dict(ctx.brand_theme) if isinstance(ctx.brand_theme, dict) else {}
+    return {
+        "workspace_id": str(workspace_id),
+        "business_name": ctx.business_name or "",
+        "business_type": ctx.business_type or "",
+        "description": ctx.description or "",
+        "target_audience": ctx.target_audience or "",
+        "brand_tone": ctx.brand_tone or "",
+        "visual_style": ctx.visual_style or "",
+        "visual_dna": ctx.visual_dna or "",
+        "brand_dna": ctx.brand_dna or "",
+        "website_summary": ctx.website_summary or "",
+        "instagram_bio": ctx.instagram_bio or "",
+        "location": ctx.location or "",
+        "languages": list(ctx.languages or []),
+        "reference_image_urls": brand_context_service._parse_reference_image_urls(
+            ctx.reference_image_urls,
+        ),
+        "logo_url": ctx.logo_url or "",
+        "brand_theme": theme,
+        "brand_constitution_confirmed_at": ctx.brand_constitution_confirmed_at,
+        "brand_theme_updated_at": ctx.brand_theme_updated_at.isoformat() if ctx.brand_theme_updated_at else None,
+    }
+
+
 @router.post("/{workspace_id}", response_model=BrandContextRead, status_code=201)
 async def create_brand_context(
     workspace_id: uuid.UUID,
@@ -159,16 +192,49 @@ async def update_brand_context(
 @router.post("/{workspace_id}/confirm-constitution", response_model=BrandContextRead)
 async def confirm_brand_constitution(
     workspace_id: uuid.UUID,
+    body: ConfirmConstitutionRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Sets brand_constitution_confirmed_at; agents receive confirmed=True after this.
     Also auto-bootstraps BrandTheme so the brand kit is ready immediately.
+    When synthesize_dna=True, writes Brand DNA (living constitution) from gallery + discovery.
     """
+    opts = body or ConfirmConstitutionRequest()
     ctx = await brand_context_service.ensure_brand_context(db, workspace_id)
     ctx = await brand_context_service.seed_missing_brand_fields(db, ctx)
+
+    if opts.synthesize_dna:
+        import json as _json
+        from app.services.brand_dna_service import build_brand_dna
+        from app.services.brand_context_service import build_brand_info
+
+        settings = get_settings()
+        if settings.openai_api_key:
+            brand = await build_brand_info(db, workspace_id)
+            if brand:
+                try:
+                    dna = await build_brand_dna(brand, openai_api_key=settings.openai_api_key)
+                    ctx.brand_dna = _json.dumps(dna, ensure_ascii=False)
+                    ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
+                    logger.info(
+                        "brand_dna_synthesised_on_confirm",
+                        workspace_id=str(workspace_id),
+                        richness=dna.get("data_richness"),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "brand_dna_on_confirm_failed",
+                        workspace_id=str(workspace_id),
+                        error=str(exc)[:200],
+                    )
+
     ctx.brand_constitution_confirmed_at = datetime.now(timezone.utc)
     await db.flush()
-    logger.info("brand_constitution_confirmed", workspace_id=str(workspace_id))
+    logger.info(
+        "brand_constitution_confirmed",
+        workspace_id=str(workspace_id),
+        auto=opts.auto_confirmed,
+    )
 
     # Auto-bootstrap BrandTheme — fire and forget (non-blocking)
     import asyncio as _asyncio
@@ -191,6 +257,23 @@ async def confirm_brand_constitution(
             logger.warning("brand_theme_bootstrap_failed", workspace_id=str(workspace_id), error=str(_e)[:200])
 
     _asyncio.create_task(_bootstrap_theme())
+
+    # Auto-bootstrap intelligence signals (industry_calendar + trend_brief + competitor_pulse)
+    async def _bootstrap_intelligence():
+        try:
+            from app.database import async_session_factory
+            from app.services.brand_context_service import bootstrap_brand_intelligence
+            async with async_session_factory() as _db:
+                result = await bootstrap_brand_intelligence(_db, workspace_id)
+                logger.info(
+                    "brand_intelligence_bootstrapped_on_constitution",
+                    workspace_id=str(workspace_id),
+                    result=result,
+                )
+        except Exception as _e:
+            logger.warning("brand_intelligence_bootstrap_failed", workspace_id=str(workspace_id), error=str(_e)[:200])
+
+    _asyncio.create_task(_bootstrap_intelligence())
 
     return ctx
 
@@ -262,11 +345,12 @@ async def analyze_brand_context(
     )
 
     try:
+        brand_name = (body.brand_name or "").strip()
         result = await analyze_brand(
             website_url=body.website_url,
             instagram_handle=body.instagram_handle,
             google_business_url=body.google_business_url,
-            company_profile={},
+            company_profile={"brand_name": brand_name} if brand_name else {},
         )
     except Exception as exc:
         logger.error("brand_analyze_failed", workspace_id=str(workspace_id), error=str(exc))
@@ -314,6 +398,11 @@ async def analyze_brand_context(
             instagram_handle=body.instagram_handle.lstrip("@") if body.instagram_handle else None,
             google_business_url=body.google_business_url or None,
         )
+        if brand_name:
+            ctx.business_name = brand_name
+            report = result.get("report") if isinstance(result.get("report"), dict) else {}
+            if isinstance(report, dict):
+                report["brand_name"] = brand_name
     except Exception as exc:
         logger.error("brand_context_persist_failed", workspace_id=str(workspace_id), error=str(exc))
         raise HTTPException(500, f"Failed to save analysis results: {exc}") from exc
@@ -702,6 +791,12 @@ class GalleryAnalysisEntry(_BaseModel):
     # Sprint 2 (GIS): deterministic analysis quality (0..100) + freshness timestamp
     quality_score: int | None = _Field(default=None, alias="qualityScore")
     analyzed_at: str | None = _Field(default=None, alias="analyzedAt")
+    # Sub-service matching fields — persisted so cross-service conflict detection
+    # survives DB round-trips without re-running expensive vision analysis.
+    caption_hooks: list[str] = _Field(default_factory=list, alias="captionHooks")
+    pairing_keywords: list[str] = _Field(default_factory=list, alias="pairingKeywords")
+    # Canonical beauty sub-service category: nail | lash | hair | brow | spa | general
+    service_category: str = _Field(default="", alias="serviceCategory")
 
 class GalleryAnalysisSaveRequest(_BaseModel):
     results: list[GalleryAnalysisEntry]

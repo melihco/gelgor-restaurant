@@ -70,7 +70,7 @@ function IgPost({
           {/* Avatar with Instagram gradient ring */}
           <div style={{ width: 34, height: 34, borderRadius: '50%', padding: 2, background: 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)', flexShrink: 0 }}>
             <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 2 }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: 'linear-gradient(135deg,#7c3aed,#6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff' }}>
+              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: 'linear-gradient(135deg,#4D7088,#5A82A0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff' }}>
                 {(handle || 'B').slice(0,1).toUpperCase()}
               </div>
             </div>
@@ -105,7 +105,7 @@ function IgPost({
           position: 'relative', overflow: 'hidden', padding: 28,
         }}>
           {/* Glow layers */}
-          <div style={{ position: 'absolute', top: '15%', left: '50%', transform: 'translateX(-50%)', width: '120%', height: '50%', background: 'radial-gradient(ellipse, rgba(124,58,237,0.2) 0%, transparent 65%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', top: '15%', left: '50%', transform: 'translateX(-50%)', width: '120%', height: '50%', background: 'radial-gradient(ellipse, rgba(77,112,136,0.2) 0%, transparent 65%)', pointerEvents: 'none' }} />
           <div style={{ position: 'absolute', bottom: '5%', right: '-10%', width: '80%', height: '40%', background: 'radial-gradient(ellipse, rgba(59,130,246,0.12) 0%, transparent 65%)', pointerEvents: 'none' }} />
 
           {/* Brand monogram */}
@@ -259,7 +259,7 @@ function IgStoryReel({
         <img src={img} alt="" referrerPolicy="no-referrer"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#a78bfa,#f472b6,#60a5fa)' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#9DBECE,#f472b6,#60a5fa)' }} />
       )}
 
       {/* Bottom gradient */}
@@ -361,26 +361,26 @@ function CalendarDayCard({ idea, index, total, t, isActive, onSelect }: {
 
   const priorityColor = priority === 'high' || priority === 'critical'
     ? '#F59E0B'
-    : priority === 'low' ? '#60A5FA' : '#A78BFA';
+    : priority === 'low' ? '#60A5FA' : '#9DBECE';
 
   return (
     <button onClick={onSelect} style={{
       width: '100%', textAlign: 'left', padding: '16px 18px', cursor: 'pointer',
       background: isActive
-        ? (t.isDark ? 'rgba(124,58,237,0.10)' : 'rgba(109,40,217,0.06)')
+        ? (t.isDark ? 'rgba(77,112,136,0.10)' : 'rgba(109,40,217,0.06)')
         : (t.isDark ? 'rgba(255,255,255,0.03)' : '#fff'),
-      border: `0.5px solid ${isActive ? 'rgba(124,58,237,0.35)' : t.separator}`,
+      border: `0.5px solid ${isActive ? 'rgba(77,112,136,0.35)' : t.separator}`,
       borderRadius: 16,
       boxShadow: !t.isDark ? (isActive ? '0 2px 12px rgba(109,40,217,0.08)' : '0 1px 6px rgba(0,0,0,0.05)') : 'none',
       position: 'relative', overflow: 'hidden',
     }}>
-      {isActive && t.isDark && <div style={{ position: 'absolute', top: 0, left: '10%', right: '10%', height: '0.5px', background: 'linear-gradient(90deg,transparent,rgba(124,58,237,0.6),transparent)' }} />}
+      {isActive && t.isDark && <div style={{ position: 'absolute', top: 0, left: '10%', right: '10%', height: '0.5px', background: 'linear-gradient(90deg,transparent,rgba(77,112,136,0.6),transparent)' }} />}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Day number badge */}
-          <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: isActive ? 'rgba(124,58,237,0.15)' : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ fontSize: 9, color: isActive ? '#A78BFA' : t.labelColor, fontWeight: 700, lineHeight: 1 }}>GÜN</div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: isActive ? '#A78BFA' : t.textPrimary, lineHeight: 1.1 }}>{day}</div>
+          <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: isActive ? 'rgba(77,112,136,0.14)' : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ fontSize: 9, color: isActive ? '#9DBECE' : t.labelColor, fontWeight: 700, lineHeight: 1 }}>GÜN</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: isActive ? '#9DBECE' : t.textPrimary, lineHeight: 1.1 }}>{day}</div>
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, lineHeight: 1.2, marginBottom: 2 }}>{theme}</div>
@@ -470,8 +470,8 @@ function ContentPlanView({ signal, immersiveVisual = false }: { signal: Artifact
         const label = formatLabel(ideaItem.contentType ?? ideaItem.contentKind);
         const conceptName = (ideaItem as any).concept_title ?? ideaItem.headline ?? ideaItem.title ?? '';
         const isSel = i === active;
-        const colors: Record<string, string> = { Story: '#f472b6', Reel: '#f472b6', Post: '#60a5fa', 'Post 4:5': '#60a5fa', Carousel: '#a78bfa' };
-        const c = colors[label] ?? '#a78bfa';
+        const colors: Record<string, string> = { Story: '#f472b6', Reel: '#f472b6', Post: '#60a5fa', 'Post 4:5': '#60a5fa', Carousel: '#9DBECE' };
+        const c = colors[label] ?? '#9DBECE';
         // Pill shows "Post · Concept" format when concept name exists
         const pillText = conceptName
           ? `${label} ${i + 1}  ·  ${conceptName.length > 14 ? conceptName.slice(0, 14) + '…' : conceptName}`
@@ -522,23 +522,23 @@ function ContentPlanView({ signal, immersiveVisual = false }: { signal: Artifact
             const type  = (dayIdea.content_type ?? dayIdea.contentType ?? 'post').replace(/_/g, ' ');
             const priority = dayIdea.priority ?? 'medium';
             const isActive = i === active;
-            const priorityColor = priority === 'high' || priority === 'critical' ? '#F59E0B' : priority === 'low' ? '#60A5FA' : '#A78BFA';
+            const priorityColor = priority === 'high' || priority === 'critical' ? '#F59E0B' : priority === 'low' ? '#60A5FA' : '#9DBECE';
 
             return (
               <button key={i} onClick={() => setActive(i)} style={{
                 width: '100%', textAlign: 'left', padding: '11px 14px',
                 borderRadius: 13, cursor: 'pointer',
                 background: isActive
-                  ? (t.isDark ? 'rgba(124,58,237,0.10)' : 'rgba(109,40,217,0.06)')
+                  ? (t.isDark ? 'rgba(77,112,136,0.10)' : 'rgba(109,40,217,0.06)')
                   : (t.isDark ? 'rgba(255,255,255,0.03)' : '#fff'),
-                border: `0.5px solid ${isActive ? 'rgba(124,58,237,0.35)' : t.separator}`,
+                border: `0.5px solid ${isActive ? 'rgba(77,112,136,0.35)' : t.separator}`,
                 boxShadow: !t.isDark && !isActive ? '0 1px 4px rgba(0,0,0,0.04)' : 'none',
                 display: 'flex', alignItems: 'center', gap: 10,
               }}>
                 {/* Day badge */}
-                <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: isActive ? 'rgba(124,58,237,0.15)' : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ fontSize: 8, color: isActive ? '#A78BFA' : t.labelColor, fontWeight: 700, lineHeight: 1 }}>G</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: isActive ? '#A78BFA' : t.textPrimary, lineHeight: 1.1 }}>{day}</div>
+                <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: isActive ? 'rgba(77,112,136,0.14)' : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ fontSize: 8, color: isActive ? '#9DBECE' : t.labelColor, fontWeight: 700, lineHeight: 1 }}>G</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: isActive ? '#9DBECE' : t.textPrimary, lineHeight: 1.1 }}>{day}</div>
                 </div>
 
                 {/* Content */}
@@ -635,7 +635,7 @@ function ContentPlanView({ signal, immersiveVisual = false }: { signal: Artifact
 
           {/* CTA */}
           {ctaText && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 30, background: t.isDark ? 'rgba(124,58,237,0.12)' : 'rgba(109,40,217,0.07)', border: `0.5px solid ${t.accentBorder}`, marginBottom: 10 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 30, background: t.isDark ? 'rgba(77,112,136,0.12)' : 'rgba(109,40,217,0.07)', border: `0.5px solid ${t.accentBorder}`, marginBottom: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: t.accent }}>{ctaText} →</span>
             </div>
           )}

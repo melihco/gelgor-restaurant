@@ -181,6 +181,7 @@ class MissionTaskNode(BaseModel):
     # a creatable artifact (content_ideation, ad_creative_generation, etc.).
     output_artifact_id: Mapped[str | None] = mapped_column(String(36))
     output_summary: Mapped[str | None] = mapped_column(Text)
+    output_payload: Mapped[dict | list | None] = mapped_column(JSONB)
 
     # ── Execution tracking ────────────────────────────────────────────────
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

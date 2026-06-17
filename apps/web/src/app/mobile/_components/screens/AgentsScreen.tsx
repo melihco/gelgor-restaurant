@@ -73,7 +73,7 @@ function resolveProfileKey(agentTypeNum: string, agentName: string, runTypeStr: 
 
 // ─── Agent type → color + role ────────────────────────────────────────
 const AGENT_META: Record<string, { role: string; color: string }> = {
-  '1':  { role: 'İçerik Yazarı',   color: '#A78BFA' },  // BlogWriter
+  '1':  { role: 'İçerik Yazarı',   color: '#9DBECE' },  // BlogWriter
   '2':  { role: 'Tasarımcı',        color: '#F472B6' },  // SocialMediaDesigner
   '3':  { role: 'Araştırmacı',      color: '#60A5FA' },  // Researcher
   '4':  { role: 'Geliştirici',      color: '#818CF8' },  // Developer
@@ -88,7 +88,7 @@ const AGENT_META: Record<string, { role: string; color: string }> = {
 };
 
 function agentMeta(agentType: unknown) {
-  return AGENT_META[String(agentType)] ?? { role: 'AI Ajan', color: '#A78BFA' };
+  return AGENT_META[String(agentType)] ?? { role: 'AI Ajan', color: '#9DBECE' };
 }
 
 // ─── Format helpers ───────────────────────────────────────────────────

@@ -1,0 +1,12 @@
+{
+  "name": "smart-agency",
+  "private": true,
+  "workspaces": [
+    "apps/mobile",
+    "packages/*"
+  ],
+  "scripts": {
+    "contracts:typecheck": "tsc -p packages/contracts/tsconfig.json --noEmit",
+    "mobile:typecheck": "tsc -p apps/mobile/tsconfig.json --noEmit"
+  }
+}

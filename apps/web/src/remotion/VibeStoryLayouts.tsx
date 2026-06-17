@@ -24,6 +24,7 @@ import {
   neonGlowStyle,
   staggerOpacity,
   stableTextLayerStyle,
+  resolveStoryTextColors,
 } from './shared/story-primitives';
 import { useStoryFonts } from './shared/useRemotionFonts';
 
@@ -40,13 +41,15 @@ function galleryUrls(photoUrl: string, extras?: string[]): string[] {
 /** Oversized stacked type + circular hero photo — Spotify/Apple vibe */
 export function VibeFullscreenLayout({
   photoUrl, headline, subtitle = '', categoryLabel = '', brandName,
-  primaryColor = '#0a0a0f', accentColor = '#c9a96e', headlineWeight, headlineScale = 1,
+  primaryColor = '#0a0a0f', accentColor = '#c9a96e', categoryColor, headlineColor, subtitleColor,
+  headlineWeight, headlineScale = 1,
   logoUrl = '', location = '', layoutSpec: spec,
 }: Props & { layoutSpec: RemotionLayoutSpec }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
-  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.35);
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
+  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.08);
   const photoScale = interpolate(frame, [8, 40], [0.6, 1], { extrapolateRight: 'clamp' });
   const photoOp = staggerOpacity(frame, 10, 28);
 
@@ -60,8 +63,8 @@ export function VibeFullscreenLayout({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           {categoryLabel ? (
             <span style={{
-              fontFamily: fonts.body, fontSize: 10, letterSpacing: 14, textTransform: 'uppercase',
-              color: accentColor, padding: '8px 14px', border: `1px solid ${accentColor}66`, borderRadius: 999,
+              fontFamily: fonts.body, fontSize: 13, letterSpacing: 14, textTransform: 'uppercase',
+              color: textColors.category, padding: '8px 14px', border: `1px solid ${textColors.category}66`, borderRadius: 999,
               opacity: staggerOpacity(frame, 0, 14),
             }}>
               {categoryLabel}
@@ -75,20 +78,24 @@ export function VibeFullscreenLayout({
             fontFamily={fonts.hero}
             fontWeight={headlineWeight ?? 900}
             fontSize={fontSize}
-            color="#fff"
+            color={textColors.headline}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
-            tracking={0.02}
+            tracking={spec.heroTracking}
             frame={frame}
             fps={fps}
             startFrame={12}
             lineGap={0.82}
+            headlineTreatment={spec.headlineTreatment}
+            align="left"
           />
           {subtitle ? (
             <span style={{
-              fontFamily: fonts.body, fontSize: 20, color: 'rgba(255,255,255,0.55)', marginTop: 20,
+              fontFamily: fonts.body, fontSize: 20, color: textColors.subtitle, marginTop: 20,
               opacity: staggerOpacity(frame, 32, 48), letterSpacing: 1,
             }}>
-              {subtitle}
+              {subtitle.slice(0, 120)}
             </span>
           ) : null}
         </div>
@@ -114,12 +121,14 @@ export function VibeFullscreenLayout({
 /** Bento grid — 4 asymmetric cells + type block (2025 feed native) */
 export function BentoStoryLayout({
   photoUrl, galleryPhotoUrls, headline, subtitle = '', categoryLabel = '',
-  primaryColor = '#1a2b4a', accentColor = '#c9a96e', headlineWeight, headlineScale = 1,
+  primaryColor = '#1a2b4a', accentColor = '#c9a96e', categoryColor, headlineColor, subtitleColor,
+  headlineWeight, headlineScale = 1,
   brandName, logoUrl = '', layoutSpec: spec,
 }: Props) {
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const photos = galleryUrls(photoUrl, galleryPhotoUrls);
   const p0 = photos[0]!;
   const p1 = photos[1] ?? p0;
@@ -159,7 +168,7 @@ export function BentoStoryLayout({
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
           {categoryLabel ? (
-            <span style={{ fontFamily: fonts.body, fontSize: 9, letterSpacing: 12, textTransform: 'uppercase', color: accentColor }}>
+            <span style={{ fontFamily: fonts.body, fontSize: 12, letterSpacing: 12, textTransform: 'uppercase', color: textColors.category }}>
               {categoryLabel}
             </span>
           ) : null}
@@ -175,10 +184,13 @@ export function BentoStoryLayout({
           fps={fps}
           startFrame={20}
           lineGap={0.95}
+          headlineTreatment={spec.headlineTreatment}
+          accentColor={accentColor}
+          align={spec.align}
         />
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 16, color: 'rgba(255,255,255,0.65)', marginTop: 10 }}>
-            {subtitle.slice(0, 90)}
+          <span style={{ fontFamily: fonts.body, fontSize: 16, color: textColors.subtitle, marginTop: 10 }}>
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
       </div>
@@ -193,14 +205,16 @@ export function BentoStoryLayout({
 /** Nightlife / DJ — mesh + neon glow type + pulse accent */
 export function NeonNightLayout({
   photoUrl, headline, subtitle = '', categoryLabel = '', brandName,
-  primaryColor = '#1e1b4b', accentColor = '#a78bfa', headlineWeight, headlineScale = 1,
+  primaryColor = '#1e1b4b', accentColor = '#a78bfa', categoryColor, headlineColor, subtitleColor,
+  headlineWeight, headlineScale = 1,
   logoUrl = '', cta = '', eventDate, eventTime, layoutSpec: spec,
 }: Props) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.15);
-  const pulse = 0.85 + 0.15 * Math.sin((frame / fps) * Math.PI * 2.5);
+  const pulse = Math.round((0.85 + 0.15 * Math.sin((frame / fps) * Math.PI * 2.5)) * 100) / 100;
 
   return (
     <AbsoluteFill style={{ background: '#030308' }}>
@@ -217,9 +231,9 @@ export function NeonNightLayout({
         </div>
         {categoryLabel ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 11, letterSpacing: 18, textTransform: 'uppercase',
-            color: accentColor, marginBottom: 16, opacity: staggerOpacity(frame, 4, 18),
-            textShadow: neonGlowStyle(accentColor, 0.6),
+            fontFamily: fonts.body, fontSize: 13, letterSpacing: 18, textTransform: 'uppercase',
+            color: textColors.category, marginBottom: 16, opacity: staggerOpacity(frame, 4, 18),
+            textShadow: neonGlowStyle(textColors.category, 0.6),
           }}>
             {categoryLabel}
           </span>
@@ -231,6 +245,8 @@ export function NeonNightLayout({
             fontWeight={headlineWeight ?? 900}
             fontSize={fontSize}
             color="#fff"
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase
             tracking={0.06}
             frame={frame}
@@ -242,10 +258,10 @@ export function NeonNightLayout({
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 18, color: 'rgba(255,255,255,0.7)', marginTop: 16,
+            fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 16,
             opacity: staggerOpacity(frame, 30, 44),
           }}>
-            {subtitle}
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
         {(eventDate || eventTime) ? (

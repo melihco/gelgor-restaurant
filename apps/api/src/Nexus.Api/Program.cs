@@ -657,6 +657,14 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
         new { Slug = "executive", MonthlyPrice = 15968m, YearlyPrice = 159680m }
     };
 
+    var packageQuotaPatches = new[]
+    {
+        new { Slug = "starter", TaskLimit = 14, Features = "[\"14 misyon/ay\",\"98 organik içerik\",\"14 Meta + 14 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
+        new { Slug = "growth", TaskLimit = 28, Features = "[\"28 misyon/ay\",\"196 sosyal içerik\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"4 reel\",\"Blog + SEO\"]" },
+        new { Slug = "performance", TaskLimit = 65, Features = "[\"65 misyon/ay\",\"455 sosyal içerik\",\"40.000 SA Kredi\",\"250 galeri analizi\",\"8 Runway reel\",\"Growth Recovery\"]" },
+        new { Slug = "executive", TaskLimit = -1, Features = "[\"Sınırsız misyon & içerik\",\"150.000 SA Kredi\",\"Tüm agentlar\",\"AI CEO\",\"Öncelikli destek\"]" },
+    };
+
     foreach (var patch in packagePricePatches)
     {
         var package = await ctx.PackageDefinitions.FirstOrDefaultAsync(p => p.Slug == patch.Slug);
@@ -665,6 +673,18 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
 
         package.MonthlyPrice = patch.MonthlyPrice;
         package.YearlyPrice = patch.YearlyPrice;
+        package.UpdatedBy = userId;
+        package.UpdatedAt = DateTime.UtcNow;
+    }
+
+    foreach (var patch in packageQuotaPatches)
+    {
+        var package = await ctx.PackageDefinitions.FirstOrDefaultAsync(p => p.Slug == patch.Slug);
+        if (package is null)
+            continue;
+
+        package.TaskLimitPerMonth = patch.TaskLimit;
+        package.Features = patch.Features;
         package.UpdatedBy = userId;
         package.UpdatedAt = DateTime.UtcNow;
     }

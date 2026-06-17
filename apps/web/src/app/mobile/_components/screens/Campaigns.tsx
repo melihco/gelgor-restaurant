@@ -14,14 +14,14 @@ import type { Brief } from '@/types';
 // ─── Brief → visual campaign ──────────────────────────────────────────
 const STATUS_MAP: Record<string, { label: string; color: string; dimKey: string }> = {
   draft:       { label: 'Taslak',      color: '#60a5fa', dimKey: 'rgba(96,165,250,0.10)'     },
-  decomposed:  { label: 'Hazırlanıyor',color: '#a78bfa', dimKey: 'rgba(167,139,250,0.10)'    },
+  decomposed:  { label: 'Hazırlanıyor',color: '#9DBECE', dimKey: 'rgba(157,190,206,0.10)'    },
   in_progress: { label: 'Aktif',       color: '#34d399', dimKey: 'rgba(52,211,153,0.10)'     },
   review:      { label: 'İnceleme',    color: '#f59e0b', dimKey: 'rgba(245,158,11,0.10)'     },
   completed:   { label: 'Tamamlandı',  color: '#60a5fa', dimKey: 'rgba(96,165,250,0.10)'     },
   archived:    { label: 'Arşiv',       color: '#71717a', dimKey: 'rgba(113,113,122,0.08)'    },
 };
 
-const STATUS_COLORS = ['#a78bfa', '#f472b6', '#60a5fa', '#34d399', '#f59e0b', '#818cf8'];
+const STATUS_COLORS = ['#9DBECE', '#f472b6', '#60a5fa', '#34d399', '#f59e0b', '#818cf8'];
 
 function briefColor(index: number): string {
   return STATUS_COLORS[index % STATUS_COLORS.length]!;
@@ -188,7 +188,7 @@ export function Campaigns() {
               </div>
             )}
           </div>
-          <button onClick={() => navigate('new-brief')} style={{ marginTop: 8, padding: '10px 16px', borderRadius: 12, cursor: 'pointer', background: 'linear-gradient(135deg, rgba(124,58,237,0.85), rgba(99,102,241,0.75))', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 3px 12px rgba(124,58,237,0.3)' }}>
+          <button onClick={() => navigate('new-brief')} style={{ marginTop: 8, padding: '10px 16px', borderRadius: 12, cursor: 'pointer', background: 'linear-gradient(135deg, rgba(77,112,136,0.90), rgba(45,80,104,0.85))', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 3px 12px rgba(77,112,136,0.3)' }}>
             <span style={{ fontSize: 16 }}>+</span> Yeni
           </button>
         </div>

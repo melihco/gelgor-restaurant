@@ -11,16 +11,20 @@
  *   - Each card is full-platform preview with approve/revision actions
  *   - Tab bar to filter by platform/format
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
+import { nodeOutputObject } from '@/lib/mission-node-output';
 import { resolveArtifact, parseArtifactContent, normalizeHashtags as normalizeHashtagsUtil, resolveCarouselUrls } from '../artifact-utils';
+import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline } from '@/lib/feed-display-caption';
 import { SafeCoverImage } from '../SafeCoverImage';
 import {
   dedupeProductionBundles,
+  dedupeStoryBarArtifacts,
+  filterConsumerStoryBar,
   isBundleRendering,
   isBundleFailed,
   canRetryStoryRender,
@@ -31,13 +35,25 @@ import {
   parseArtifactMissionId,
   resolvePosterUrl,
   resolveBrandedPostUrl,
+  resolvePublishImageUrl,
   isAwaitingStoryVideo,
   isPostKind,
   resolveStoryVideoUrl as resolveStoryVideoUrlShared,
+  resolveStoryVideoClientUrl,
 } from '@/lib/mission-feed-package';
 import {
   filterFeedPublishableArtifacts,
+  filterMissionPrimaryFeedArtifacts,
+  isArtifactFeedPublishable,
 } from '@/lib/weekly-publish-package';
+import {
+  extractWeeklyThemeFromNodes,
+  summarizeMissionPlanningOutputs,
+  summarizeMissionProductionPipeline,
+} from '@/lib/mission-pipeline-transparency';
+import { buildFeedDirectorTelemetry } from '@/lib/mission-production-telemetry';
+import { resolveApprovalQualityGate } from '@/lib/approval-quality-gate';
+import { buildFeedArtifactViewModel, detectFeedArtifactKind } from '@/lib/artifact-view-model';
 import {
   artifactMatchesSlotFilter,
   type FeedSlotFilter,
@@ -45,60 +61,44 @@ import {
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { getRequestContextHeaders } from '@/lib/runtime-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import { MOBILE_ARTIFACT_FEED_LIMIT } from '../../_lib/mobile-artifacts';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
+import {
+  adChannelFromArtifact,
+  adPlatformLabel,
+  adPlatformShortLabel,
+  isPaidAdArtifact,
+  isOrganicFeedArtifact,
+} from '@/lib/ad-publish-utils';
+import { BoostPostSheet } from '../BoostPostSheet';
+import {
+  classifyMatch,
+  MIN_ACCEPT_SCORE,
+  resolveArtifactMatchScore,
+} from '@/lib/gallery-photo-matcher';
 import { VisualReviewBadge } from '../VisualReviewSheet';
 import { useTenantBrandContext } from '../TenantBrandProvider';
-import { isMobileOperatorMode } from '../mobile-client-config';
+import { isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
+import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
 import { resolveClientMediaUrl } from '@/lib/media-url';
+import { resolveMertcafePublishAuth } from '@/lib/mertcafe-publish-auth';
 import {
   artifactToNativeContent,
   detectPreviewMode,
   PlatformNativePreview,
   PLATFORM_TABS,
+  StoryCoverImage,
+  StoryFullscreenImage,
+  StoryPreviewVideo,
   type PreviewPlatform,
 } from '../platform-native-previews';
-
-function detectKind(artifact: OutputArtifact): string {
-  const ct = ((artifact as any).artifactType ?? '').toLowerCase();
-  const contentRaw = (artifact as any).content || '{}';
-  const content = (() => { try { return JSON.parse(contentRaw); } catch { return {}; } })() as Record<string, unknown>;
-  const meta = ((artifact as any).metadata ?? {}) as Record<string, unknown>;
-
-  // 1. Top-level kind (auto-produce, Creatomate)
-  const kind = ((content.kind as string) ?? '').toLowerCase();
-  // 2. Canva autofill: nested in renderedPreview
-  const rpKind = ((content.renderedPreview as Record<string, unknown>)?.kind as string ?? '').toLowerCase();
-  // 3. video URL fields
-  const videoUrl = (content.videoUrl || meta.videoUrl
-    || (content as any).renderedPreview?.videoUrl) as string | undefined;
-  const contentUrl = ((artifact as any).contentUrl as string) ?? '';
-  // 4. export format stored in metadata
-  const exportFmt = ((meta.canvaExportFormat as string)
-    ?? (content as any).renderedPreview?.exportFormat
-    ?? '').toLowerCase();
-  // 5. contentType field (if Nexus exposes it)
-  const contentType = ((artifact as any).contentType ?? '').toLowerCase();
-  // 6. title hint (fallback for Canva artifacts with generic artifactType)
-  const title = ((artifact as any).title ?? '').toLowerCase();
-
-  const signals = [kind, rpKind, ct, contentType, exportFmt, title].join(' ');
-
-  // Story check FIRST — Remotion stories have videoUrl + .mp4 contentUrl
-  // but their kind/contentType explicitly says 'story'.
-  if (signals.includes('story') || signals.includes('canvas')) return 'story';
-
-  // Reel: explicit reel signal, or video without story signal
-  if (signals.includes('reel')
-    || exportFmt === 'mp4'
-    || (videoUrl && !contentUrl.includes('.mp4'))   // Runway reel: video URL, no .mp4 in contentUrl
-    || (videoUrl && !signals.includes('story'))) return 'reel';
-
-  if (signals.includes('ad')) return 'ad';
-  return 'post';
-}
 import type { OutputArtifact } from '@/types';
+import {
+  formatPublishScheduleLabel,
+  sortFeedArtifactsForDisplay,
+} from '@/lib/feed-publish-schedule';
 
 type FeedFilter = 'all' | 'post' | 'story' | 'reel' | 'ad';
 
@@ -107,6 +107,77 @@ interface BrandAlignmentData {
   canProposeMissions: boolean;
   canAutoProduce: boolean;
   weakest: { id: string; label: string; score: number | null; fix: string } | null;
+  subScores?: Array<{ id: string; label: string; score: number | null }>;
+}
+
+function alignmentSubScore(
+  data: BrandAlignmentData | null | undefined,
+  id: string,
+): number | null {
+  const hit = data?.subScores?.find((s) => s.id === id);
+  return typeof hit?.score === 'number' ? hit.score : null;
+}
+
+function detectKind(artifact: OutputArtifact): string {
+  return detectFeedArtifactKind(artifact);
+}
+
+function parseFeedDirectorReportFromNodes(
+  nodes: Array<{ task_type?: string; status?: string; output_summary?: string | null; output_payload?: unknown }>,
+): Record<string, unknown> | null {
+  const node = nodes.find(
+    (n) => n.task_type === 'feed_cohesion_review' && n.status === 'completed',
+  );
+  return nodeOutputObject(node);
+}
+
+function FeedArtifactQualityStrip({
+  meta,
+  t,
+  igHome,
+}: {
+  meta: Record<string, unknown>;
+  t: ReturnType<typeof useTheme>['t'];
+  igHome: boolean;
+}) {
+  const slotLabel = productionRoleBadge(meta);
+  const fdScore = typeof meta.feed_director_score === 'number' ? meta.feed_director_score : null;
+  const grafiker = typeof meta.grafiker_score === 'number' ? meta.grafiker_score : null;
+  const grafikerPass = typeof meta.grafiker_pass === 'boolean' ? meta.grafiker_pass : null;
+  if (!slotLabel && fdScore == null && grafiker == null) return null;
+
+  const chip = (label: string, value: string, color: string) => (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 700,
+      padding: '3px 7px',
+      borderRadius: 6,
+      background: color,
+      color: '#fff',
+      letterSpacing: '0.02em',
+    }}>
+      {label}: {value}
+    </span>
+  );
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 6,
+      margin: igHome ? '0 14px 8px' : '0 12px 8px',
+    }}>
+      {slotLabel && chip('Slot', slotLabel, 'rgba(59,130,246,0.75)')}
+      {fdScore != null && chip('FD', `${fdScore}`, 'rgba(16,185,129,0.75)')}
+      {grafiker != null && chip(
+        'Grafiker',
+        `${grafiker}/10`,
+        grafikerPass === false || grafiker < 8
+          ? 'rgba(245,158,11,0.85)'
+          : 'rgba(16,185,129,0.85)',
+      )}
+    </div>
+  );
 }
 
 /** Story bar: all story kinds (Remotion, poster still, legacy). */
@@ -125,7 +196,65 @@ function productionRoleBadge(meta: Record<string, unknown>): string | null {
   if (role.includes('campaign') || pipeline.includes('remotion')) return 'Kampanya';
   if (role.includes('reel') || pipeline === 'runway_reel') return 'Reel';
   if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'Carousel';
+  if (role === 'paid_ad_google_creative' || pipeline === 'google_ad') return 'Google Ads';
+  if (role === 'paid_ad_creative' || pipeline === 'meta_ad') return 'Meta Ads';
   return null;
+}
+
+function AdPublishActions({
+  artifact,
+  workspaceId,
+  onOpenMeta,
+  onOpenGoogle,
+  t,
+}: {
+  artifact: OutputArtifact;
+  workspaceId?: string;
+  onOpenMeta: () => void;
+  onOpenGoogle: () => void;
+  t: ReturnType<typeof useTheme>['t'];
+}) {
+  const channel = adChannelFromArtifact(artifact);
+  const label = adPlatformLabel(channel);
+  const isMeta = channel === 'meta_ads';
+  const isGoogle = channel === 'google_ads';
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 8,
+      padding: '0 14px 14px', background: '#000',
+      borderTop: '0.5px solid rgba(255,255,255,0.06)',
+    }}>
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+        {label} kreatifi — organik yayın yerine reklam panelinden gönderin
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {(isMeta || !channel) && (
+          <button type="button" onClick={onOpenMeta}
+            style={{
+              flex: 1, padding: '10px 12px', borderRadius: 10, border: 'none',
+              background: 'linear-gradient(135deg,#1877F2,#0d5bb5)', color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>
+            Meta&apos;da yayınla
+          </button>
+        )}
+        {(isGoogle || !channel) && (
+          <button type="button" onClick={onOpenGoogle}
+            style={{
+              flex: 1, padding: '10px 12px', borderRadius: 10, border: 'none',
+              background: 'linear-gradient(135deg,#4285F4,#1a73e8)', color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>
+            Google Ads
+          </button>
+        )}
+      </div>
+      {!workspaceId && (
+        <span style={{ fontSize: 10, color: t.warning }}>Workspace bağlantısı gerekli</span>
+      )}
+    </div>
+  );
 }
 
 function InstagramProfileBar({ handle, logoUrl, postCount, storyCount }: {
@@ -244,42 +373,110 @@ function InstagramHomeHeader({
   );
 }
 
-function NativeFeedCard({ artifact, platform, onApprove, onRevision, onRetryRender, retryingRender, approving, revisioning, t }: {
+const NativeFeedCard = React.memo(function NativeFeedCard({
+  artifact, platform, onApprove, onRevision, onRetryRender, retryingRender, approving, revisioning,
+  workspaceId, onOpenMetaAd, onOpenGoogleAd, t,
+}: {
   artifact: OutputArtifact;
   platform: PreviewPlatform;
-  onApprove: () => void;
-  onRevision: () => void;
-  onRetryRender?: () => void;
+  onApprove: (artifactId: string) => void;
+  onRevision: (artifactId: string) => void;
+  onRetryRender?: (artifactId: string) => void;
   retryingRender?: boolean;
   approving: boolean;
   revisioning: boolean;
+  workspaceId?: string;
+  onOpenMetaAd?: (artifactId: string) => void;
+  onOpenGoogleAd?: () => void;
   t: ReturnType<typeof useTheme>['t'];
 }) {
   const tenantBrand = useTenantBrandContext();
-  const { openApproval } = useMobileStore();
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const openApproval = useMobileStore((s) => s.openApproval);
+  const vm = React.useMemo(() => buildFeedArtifactViewModel(artifact), [artifact]);
+  const meta = vm.meta;
   const handle = resolveFeedHandle(meta, tenantBrand);
   const logoUrl = tenantBrand.logoUrl ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl) : undefined;
-  const kind = detectKind(artifact);
-  const mode = detectPreviewMode(artifact, kind);
-  const content = artifactToNativeContent(artifact);
-  const isPending = artifact.status === 'pending_review';
-  const isApproved = artifact.status === 'approved';
-  const isRendering = isBundleRendering(artifact) && !resolveStoryVideoUrlShared(artifact);
-  const canRetry = canRetryStoryRender(artifact);
+  const kind = vm.kind;
+  const mode = vm.previewMode;
+  const content = vm.content;
+  const isPending = vm.isPendingReview;
+  const isApproved = vm.isApproved;
+  const isRendering = vm.isRendering;
+  const canRetry = vm.canRetryRender;
+  const scheduleLabel = vm.scheduleLabel;
+  const isAdCreative = vm.isAdCreative;
+  const isDesignedPost = vm.isDesignedPost;
+  const adBadge = vm.adBadge ?? '';
+  const matchScore = vm.quality.matchScore;
+  const matchCls = matchScore != null ? classifyMatch(matchScore) : null;
+  const matchRejected = matchCls?.quality === 'rejected';
+  const matchWeak = matchCls?.quality === 'weak' && (matchScore ?? 0) > 5;
+  const qualityGate = vm.quality;
+  const canApproveHard = !qualityGate.hardBlock;
+  const hasSoftWarnings = qualityGate.softWarnings.length > 0;
+  const [softApproveAck, setSoftApproveAck] = React.useState(false);
+
+  const handleApproveClick = () => {
+    if (!canApproveHard || approving || isRendering) return;
+    if (hasSoftWarnings && !softApproveAck) {
+      setSoftApproveAck(true);
+      return;
+    }
+    onApprove(artifact.id);
+    setSoftApproveAck(false);
+  };
 
   const cardBg = platform === 'instagram' ? '#000' : (t.isDark ? '#0F0F1C' : '#fff');
   const igHome = !isMobileOperatorMode() && platform === 'instagram';
 
+  const swipeStartX = React.useRef<number | null>(null);
+  const [swipeDx, setSwipeDx] = React.useState(0);
+  const SWIPE_THRESHOLD = 72;
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!isPending || isRendering) return;
+    swipeStartX.current = e.clientX;
+  };
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (swipeStartX.current === null) return;
+    const dx = e.clientX - swipeStartX.current;
+    if (Math.abs(dx) > 4) setSwipeDx(dx);
+  };
+  const handlePointerUp = () => {
+    if (swipeStartX.current === null) return;
+    swipeStartX.current = null;
+    if (swipeDx >= SWIPE_THRESHOLD) {
+      onApprove(artifact.id);
+    } else if (swipeDx <= -SWIPE_THRESHOLD) {
+      onRevision(artifact.id);
+    }
+    setSwipeDx(0);
+  };
+
+  const swipeOpacity = Math.min(Math.abs(swipeDx) / SWIPE_THRESHOLD, 1);
+  const isSwipingRight = swipeDx > 12;
+  const isSwipingLeft = swipeDx < -12;
+
   return (
-    <div style={{
-      marginBottom: igHome ? 0 : 10,
-      borderRadius: igHome ? 0 : 18,
-      overflow: 'hidden',
-      background: cardBg,
-      border: igHome ? 'none' : `0.5px solid ${t.separator}`,
-      borderBottom: igHome ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
-    }}>
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      style={{
+        marginBottom: igHome ? 0 : 10,
+        borderRadius: igHome ? 0 : 18,
+        overflow: 'hidden',
+        background: cardBg,
+        border: igHome ? 'none' : `0.5px solid ${t.separator}`,
+        borderBottom: igHome ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 680px',
+        transform: `translateX(${Math.max(-48, Math.min(48, swipeDx * 0.4))}px)`,
+        transition: swipeDx === 0 ? 'transform 200ms cubic-bezier(0.22,1,0.36,1)' : 'none',
+        position: 'relative',
+        touchAction: 'pan-y',
+      }}>
       <div style={{ position: 'relative' }}>
         <PlatformNativePreview
           platform={platform}
@@ -290,6 +487,41 @@ function NativeFeedCard({ artifact, platform, onApprove, onRevision, onRetryRend
           isPending={isPending}
           timeLabel={timeAgo(artifact.createdAt)}
         />
+
+        {(scheduleLabel || isAdCreative) && mode !== 'story' && (
+          <span style={{
+            position: 'absolute', top: 10, left: 10, zIndex: 2,
+            fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 8,
+            background: isAdCreative ? 'rgba(24,119,242,0.85)' : 'rgba(0,0,0,0.55)',
+            color: isAdCreative ? '#fff' : '#C9A96E', letterSpacing: '0.02em',
+          }}>
+            {isAdCreative ? adBadge : scheduleLabel}
+          </span>
+        )}
+
+        {/* Swipe intent overlay */}
+        {(isSwipingRight || isSwipingLeft) && isPending && !isRendering && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 10,
+            background: isSwipingRight
+              ? `rgba(52,211,153,${swipeOpacity * 0.25})`
+              : `rgba(157,190,206,${swipeOpacity * 0.2})`,
+            display: 'flex', alignItems: 'center', justifyContent: isSwipingRight ? 'flex-start' : 'flex-end',
+            padding: '0 24px',
+            pointerEvents: 'none',
+            transition: 'background 60ms ease',
+          }}>
+            <div style={{
+              fontSize: 28, fontWeight: 900,
+              opacity: swipeOpacity,
+              transform: `scale(${0.7 + swipeOpacity * 0.4})`,
+              transition: 'opacity 60ms, transform 60ms',
+              color: isSwipingRight ? '#34d399' : '#9DBECE',
+            }}>
+              {isSwipingRight ? '✓' : '↺'}
+            </div>
+          </div>
+        )}
 
         {/* Rendering overlay — minimal */}
         {isRendering && (
@@ -305,65 +537,176 @@ function NativeFeedCard({ artifact, platform, onApprove, onRevision, onRetryRend
               animation: 'spinSlow 0.9s linear infinite',
             }} />
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 600 }}>
-              Hazırlanıyor
+              {isMobileOperatorMode()
+                ? 'Hazırlanıyor'
+                : (kind === 'reel' ? 'Reel hazırlanıyor (~30 sn)' : kind === 'story' ? 'Story videosu hazırlanıyor (~2 dk)' : 'Görsel hazırlanıyor…')}
             </span>
           </div>
         )}
       </div>
 
+      {isPending && matchWeak && (
+        <div style={{
+          margin: igHome ? '0 14px 8px' : '0 12px 8px',
+          padding: '8px 12px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.3)',
+        }}>
+          <span style={{ fontSize: 11, color: '#F59E0B', lineHeight: 1.4 }}>
+            Zayıf eşleşme — onaylamadan önce fotoğrafın konuyla örtüştüğünü doğrulayın.
+          </span>
+        </div>
+      )}
+
+      {isPending && matchRejected && (
+        <div style={{
+          margin: igHome ? '0 14px 8px' : '0 12px 8px',
+          padding: '10px 12px', borderRadius: 10,
+          background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#EF4444', marginBottom: 4 }}>
+            Fotoğraf — Metin Uyumsuzluğu
+          </div>
+          <span style={{ fontSize: 11, color: '#FCA5A5', lineHeight: 1.4 }}>
+            {(matchScore ?? 0) <= 5
+              ? 'Bu fotoğraf başlıkla uyumlu görünmüyor. Düzenle ile farklı bir görsel seçebilirsiniz.'
+              : 'Bu fotoğraf başlık/konuyla tam örtüşmüyor. Onaylamadan önce kontrol edin.'}
+            {isDebugUiMode() && (
+              <> Skor {Math.round(matchScore ?? 0)}/{MIN_ACCEPT_SCORE}</>
+            )}
+          </span>
+        </div>
+      )}
+
+      {isPending && hasSoftWarnings && (
+        <div style={{
+          margin: igHome ? '0 14px 8px' : '0 12px 8px',
+          padding: '8px 12px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.3)',
+        }}>
+          <span style={{ fontSize: 11, color: '#F59E0B', lineHeight: 1.45 }}>
+            {qualityGate.softWarnings.join(' · ')}
+            {softApproveAck && ' — Onayla ile yayına alabilirsiniz.'}
+          </span>
+        </div>
+      )}
+
+      {isPending && <FeedArtifactQualityStrip meta={meta} t={t} igHome={igHome} />}
+
       {/* Approval actions — IG home: slim bar under post; operator: full strip */}
       {igHome ? (
-        isPending && (
-          <div style={{
-            display: 'flex', gap: 8, padding: '0 14px 14px', background: '#000',
-            borderTop: '0.5px solid rgba(255,255,255,0.06)',
-          }}>
-            <button type="button" onClick={onApprove} disabled={approving || isRendering}
-              style={{
-                flex: 1, padding: '10px 0', border: 'none', background: 'none',
-                color: approving ? 'rgba(255,255,255,0.4)' : '#60A5FA',
-                fontSize: 14, fontWeight: 700, cursor: approving || isRendering ? 'not-allowed' : 'pointer',
-              }}>
-              {approving ? 'Onaylanıyor…' : 'Onayla ve yayınla'}
-            </button>
-            <button type="button" onClick={() => openApproval(artifact.id)}
-              style={{
-                padding: '10px 0', border: 'none', background: 'none',
-                color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-              }}>
-              Düzenle
-            </button>
-          </div>
+        isPending && isAdCreative ? (
+          <AdPublishActions
+            artifact={artifact}
+            workspaceId={workspaceId}
+            onOpenMeta={() => onOpenMetaAd?.(artifact.id)}
+            onOpenGoogle={() => onOpenGoogleAd?.()}
+            t={t}
+          />
+        ) : isPending && (
+          <>
+            <div style={{
+              display: 'flex', gap: 8, padding: '0 14px 14px', background: '#000',
+              borderTop: '0.5px solid rgba(255,255,255,0.06)',
+            }}>
+              <button type="button" onClick={handleApproveClick} disabled={approving || isRendering || !canApproveHard}
+                title={qualityGate.hardBlockReason ?? undefined}
+                style={{
+                  flex: 1, padding: '10px 0', border: 'none', background: 'none',
+                  color: approving || !canApproveHard ? 'rgba(255,255,255,0.4)' : '#60A5FA',
+                  fontSize: 14, fontWeight: 700, cursor: approving || isRendering || !canApproveHard ? 'not-allowed' : 'pointer',
+                }}>
+                {approving
+                  ? 'Onaylanıyor…'
+                  : !canApproveHard
+                    ? '⚠ Eşleşme yok'
+                    : hasSoftWarnings && !softApproveAck
+                      ? 'Onayla (uyarı)'
+                      : hasSoftWarnings
+                        ? 'Yine de onayla'
+                        : 'Onayla ve yayınla'}
+              </button>
+              <button type="button" onClick={() => openApproval(artifact.id)}
+                style={{
+                  padding: '10px 0', border: 'none', background: 'none',
+                  color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                }}>
+                Düzenle
+              </button>
+            </div>
+            {isDesignedPost && !isAdCreative && (
+              <AdPublishActions
+                artifact={artifact}
+                workspaceId={workspaceId}
+                onOpenMeta={() => onOpenMetaAd?.(artifact.id)}
+                onOpenGoogle={() => onOpenGoogleAd?.()}
+                t={t}
+              />
+            )}
+          </>
         )
       ) : (
         <div style={{ padding: '10px 12px 12px', background: cardBg }}>
-          {(content.grafikerScore != null || isApproved) && (
+          {(isApproved || (isDebugUiMode() && content.grafikerScore != null)) && (
             <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
               {isApproved && (
                 <span style={{ fontSize: 10, fontWeight: 700, color: t.success }}>✓ Onaylı</span>
               )}
-              {content.grafikerScore != null && (
+              {isDebugUiMode() && content.grafikerScore != null && (
                 <span style={{ fontSize: 10, color: t.textMuted }}>
                   {content.grafikerScore}/10
                 </span>
               )}
             </div>
           )}
-          <div style={{ display: 'flex', gap: 7 }}>
-            {isPending && (
-              <button type="button" onClick={onApprove} disabled={approving || isRendering}
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            {isPending && isAdCreative && (
+              <>
+                <button type="button" onClick={() => onOpenMetaAd?.(artifact.id)}
+                  style={{
+                    flex: 1, minWidth: 120, padding: '12px 16px', borderRadius: 12, border: 'none',
+                    background: '#1877F2', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                  Meta Ads
+                </button>
+                <button type="button" onClick={() => onOpenGoogleAd?.()}
+                  style={{
+                    flex: 1, minWidth: 120, padding: '12px 16px', borderRadius: 12, border: 'none',
+                    background: '#1a73e8', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  }}>
+                  Google Ads
+                </button>
+              </>
+            )}
+            {isPending && !isAdCreative && (
+              <button type="button" onClick={handleApproveClick} disabled={approving || isRendering || !canApproveHard}
+                title={qualityGate.hardBlockReason ?? undefined}
                 style={{
                   flex: 1, padding: '12px 16px', borderRadius: 12, border: 'none',
-                  background: isRendering ? t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' : t.success,
-                  color: isRendering ? t.textMuted : '#fff',
+                  background: isRendering || !canApproveHard
+                    ? t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+                    : t.success,
+                  color: isRendering || !canApproveHard ? t.textMuted : '#fff',
                   fontSize: 13, fontWeight: 700,
-                  cursor: approving || isRendering ? 'not-allowed' : 'pointer',
+                  cursor: approving || isRendering || !canApproveHard ? 'not-allowed' : 'pointer',
                 }}>
-                {approving ? 'Paylaşılıyor…' : '✓ Onayla'}
+                {approving
+                  ? 'Paylaşılıyor…'
+                  : !canApproveHard
+                    ? '⚠ Eşleşme yok'
+                    : hasSoftWarnings && !softApproveAck
+                      ? '✓ Onayla (uyarı)'
+                      : hasSoftWarnings
+                        ? 'Yine de onayla'
+                        : '✓ Onayla'}
               </button>
             )}
             {canRetry && onRetryRender && (
-              <StoryRetryButton artifact={artifact} retrying={Boolean(retryingRender)} onRetry={onRetryRender} variant="card" />
+              <StoryRetryButton
+                artifact={artifact}
+                retrying={Boolean(retryingRender)}
+                onRetry={() => onRetryRender(artifact.id)}
+                variant="card"
+              />
             )}
             <button type="button" onClick={() => openApproval(artifact.id)}
               style={{
@@ -378,7 +721,7 @@ function NativeFeedCard({ artifact, platform, onApprove, onRevision, onRetryRend
               {isPending ? 'Düzenle' : 'Detay'}
             </button>
             {isPending && (
-              <button type="button" onClick={onRevision} disabled={revisioning}
+              <button type="button" onClick={() => onRevision(artifact.id)} disabled={revisioning}
                 style={{
                   width: 46, flexShrink: 0,
                   padding: '13px 0', borderRadius: 14,
@@ -396,7 +739,15 @@ function NativeFeedCard({ artifact, platform, onApprove, onRevision, onRetryRend
       )}
     </div>
   );
-}
+}, (prev, next) =>
+  prev.artifact.id === next.artifact.id
+  && prev.artifact.status === next.artifact.status
+  && prev.artifact.contentUrl === next.artifact.contentUrl
+  && prev.approving === next.approving
+  && prev.revisioning === next.revisioning
+  && prev.retryingRender === next.retryingRender
+  && prev.platform === next.platform,
+);
 
 function isRemotionVideoStory(artifact: OutputArtifact): boolean {
   return isRemotionVideoStoryArtifact(artifact);
@@ -435,17 +786,22 @@ function resolveArtifactImg(artifact: { contentUrl?: string | null; content?: st
   // Sprint 8 (S8.4): prefer the EXPORTED / PERMANENT Instagram-ready asset so the
   // Feed preview is exactly what gets published. Thumbnails are only a fallback.
   const candidates: Array<unknown> = [
-    // 1. Exported / permanent high-res asset (publishable)
+    // 1. Production export (R2 Remotion poster / designed post)
+    content.imageUrl, meta.imageUrl,
+    meta.enhanced_photo_url, content.enhanced_photo_url,
+    // 2. Exported / permanent high-res asset (Canva etc.)
     content.canvaDownloadUrl, content.exportUrl, content.permanentPreviewUrl,
     rendered.exportUrl, rendered.permanentPreviewUrl,
     canvaDesign.exportUrl, canvaDesign.permanentPreviewUrl, canvaDesign.canvaDownloadUrl,
     meta.canvaDownloadUrl, meta.exportUrl, meta.permanentPreviewUrl,
-    // 2. Thumbnails / preview fields (fallback)
+    // 3. Thumbnails / preview fields
     content.canvaThumbnail, content.canvaThumb,
     rendered.imageUrl, rendered.thumbnailUrl,
-    canvaDesign.thumbnailUrl,
-    content.imageUrl,
-    meta.imageUrl, meta.canvaThumbnail,
+    canvaDesign.thumbnailUrl, meta.canvaThumbnail,
+    // 4. Gallery previews — last (Unsplash proxies may be expired)
+    meta.feed_preview_url, content.feed_preview_url,
+    meta.poster_url, meta.posterUrl, content.posterUrl, content.poster_url,
+    meta.reference_photo_url, content.reference_photo_url,
   ];
   // Helper: skip video files — they can't be displayed as images
   const isVideoUrl = (u: unknown) => typeof u === 'string' && (
@@ -500,7 +856,7 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
 }) {
   const tenantBrand = useTenantBrandContext();
   const [slide, setSlide] = React.useState(0);
-  const { openApproval } = useMobileStore();
+  const openApproval = useMobileStore((s) => s.openApproval);
   const content = parseArtifactContent(artifact.content);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
 
@@ -512,8 +868,13 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
     ? rawUrls.map((u) => resolveImg(u) ?? u).filter(Boolean)
     : fallback ? [fallback] : [];
 
-  const headline  = (content.headline as string) || (meta.headline as string) || artifact.title || '';
-  const caption   = (content.caption  as string) || (meta.caption  as string) || '';
+  const captionInput = {
+    content: content as Record<string, unknown>,
+    metadata: meta,
+    title: artifact.title,
+  };
+  const headline  = resolveFeedDisplayHeadline(captionInput);
+  const caption   = resolveFeedDisplayCaption(captionInput);
   const hashtags  = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? []);
   const handle    = resolveFeedHandle(meta, tenantBrand);
   const isApproved     = artifact.status === 'approved';
@@ -671,30 +1032,42 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
   t: ReturnType<typeof useTheme>['t'];
 }) {
   const tenantBrand = useTenantBrandContext();
-  const { openApproval } = useMobileStore();
+  const openApproval = useMobileStore((s) => s.openApproval);
   const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const content = parseArtifactContent(artifact.content);
 
   const brandedUrl = resolveBrandedPostUrl(artifact);
   const posterUrl = resolvePosterUrl(artifact);
+  const galleryImg = resolveImg(
+    String(meta.reference_photo_url || content.reference_photo_url || meta.poster_url || ''),
+  );
   const awaitingBrandedPoster = isPostKind(artifact) && isAwaitingStoryVideo(artifact);
+  const isGallerySourced = (meta as any)?.gallery_sourced === true || Boolean((meta as any)?.reference_photo_url);
   const displayImg = awaitingBrandedPoster
     ? null
-    : (brandedUrl && posterUrl && brandedUrl !== posterUrl ? brandedUrl : null)
-      ?? resolveArtifactImg(artifact)
-      ?? resolveImg(resolved?.imageUrl ?? undefined);
+    : (isGallerySourced && galleryImg)
+      ? galleryImg
+      : (brandedUrl && posterUrl && brandedUrl !== posterUrl ? resolveImg(brandedUrl) : null)
+        ?? resolveArtifactImg(artifact)
+        ?? galleryImg
+        ?? resolveImg(resolved?.imageUrl ?? undefined);
   const img = displayImg;
-  const headline = (content.headline as string) || (meta.headline as string) || artifact.title || '';
-  const caption = (content.caption as string) || (meta.caption as string) || resolved?.caption || '';
+  const captionInput = {
+    content: content as Record<string, unknown>,
+    metadata: meta,
+    title: artifact.title,
+  };
+  const headline = resolveFeedDisplayHeadline(captionInput);
+  const caption = resolveFeedDisplayCaption(captionInput) || resolved?.caption || '';
   const hashtags = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []);
   const handle   = resolveFeedHandle(meta, tenantBrand);
   const isApproved = artifact.status === 'approved';
   const isAutoProduced = (meta as any)?.auto_produced === true || (meta as any)?.source === 'auto-produce';
-  const isGallerySourced = (meta as any)?.gallery_sourced === true || Boolean((meta as any)?.reference_photo_url);
   const isAgencyBranded = (meta as any)?.agency_branded === true
     || Boolean(brandedUrl && posterUrl && brandedUrl !== posterUrl);
   const slotBadge = productionRoleBadge(meta);
+  const scheduleLabel = formatPublishScheduleLabel(meta);
 
   return (
     <div style={{
@@ -718,6 +1091,10 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
           <div style={{ fontSize: 11, color: t.textMuted }}>{timeAgo(artifact.createdAt)}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          {scheduleLabel && (
+            <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
+              background: 'rgba(201,169,110,0.15)', color: '#C9A96E' }}>{scheduleLabel}</span>
+          )}
           {slotBadge && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
               background: 'rgba(59,130,246,0.12)', color: '#3B82F6' }}>{slotBadge}</span>
@@ -728,11 +1105,11 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
           )}
           {isAgencyBranded && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
-              background: 'rgba(139,92,246,0.12)', color: '#8B5CF6' }}>Ajans</span>
+              background: 'rgba(138,171,189,0.12)', color: '#8AABBD' }}>Ajans</span>
           )}
           {isAutoProduced && !isGallerySourced && !isAgencyBranded && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, fontWeight: 700,
-              background: 'rgba(139,92,246,0.12)', color: '#8B5CF6' }}>AI</span>
+              background: 'rgba(138,171,189,0.12)', color: '#8AABBD' }}>AI</span>
           )}
           {isApproved && (
             <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, fontWeight: 700,
@@ -760,7 +1137,7 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
           <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 10, background: t.isDark ? '#12121a' : '#f0f0f0' }}>
             <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.separator}`,
-              borderTop: '3px solid #8B5CF6', animation: 'spinSlow 0.9s linear infinite' }} />
+              borderTop: '3px solid #8AABBD', animation: 'spinSlow 0.9s linear infinite' }} />
             <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Marka şablonu uygulanıyor…</span>
           </div>
         ) : img ? (
@@ -776,19 +1153,19 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
                 transform: 'scale(1.1)',
                 pointerEvents: 'none',
               }} />
-            {/* Asıl görsel — tam boyut, kırpma yok */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img} alt="" referrerPolicy="no-referrer"
-              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            {/* Asıl görsel — tam boyut; galeri URL fallback */}
+            <SafeCoverImage
+              src={img}
+              fallbacks={[galleryImg, resolveImg(brandedUrl ?? undefined), resolveImg(posterUrl ?? undefined)]}
               style={{
                 display: 'block',
                 position: 'relative',
                 width: '100%',
                 height: 'auto',
-                maxHeight: '80vw',  // Instagram max 1:1 eşdeğeri
+                maxHeight: '80vw',
                 objectFit: 'contain',
-                imageRendering: '-webkit-optimize-contrast' as const,
-              }} />
+              }}
+            />
           </>
         ) : (
           <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center',
@@ -886,7 +1263,7 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
   t: ReturnType<typeof useTheme>['t'];
 }) {
   const tenantBrand = useTenantBrandContext();
-  const { openApproval } = useMobileStore();
+  const openApproval = useMobileStore((s) => s.openApproval);
   const content = parseArtifactContent(artifact.content);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
 
@@ -902,8 +1279,13 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
     return rawReelVideo;
   })();
   const thumbUrl = resolveArtifactImg(artifact);
-  const headline = (content.headline as string) || (meta.headline as string) || artifact.title || '';
-  const caption = (content.caption as string) || (meta.caption as string) || '';
+  const captionInput = {
+    content: content as Record<string, unknown>,
+    metadata: meta,
+    title: artifact.title,
+  };
+  const headline = resolveFeedDisplayHeadline(captionInput);
+  const caption = resolveFeedDisplayCaption(captionInput);
   const hashtags = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? []);
   const handle = '@' + resolveFeedHandle(meta, tenantBrand);
   const isApproved = artifact.status === 'approved';
@@ -949,7 +1331,7 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
             </span>
             {isAutoProduced && (
               <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
-                background: 'rgba(139,92,246,0.85)', color: '#fff', fontWeight: 700 }}>AI</span>
+                background: 'rgba(138,171,189,0.85)', color: '#fff', fontWeight: 700 }}>AI</span>
             )}
             {slotBadge && (
               <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
@@ -1108,7 +1490,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
   t: ReturnType<typeof useTheme>['t'];
 }) {
   const tenantBrand = useTenantBrandContext();
-  const { openApproval } = useMobileStore();
+  const openApproval = useMobileStore((s) => s.openApproval);
   const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
   const content = parseArtifactContent(artifact.content);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
@@ -1204,7 +1586,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
           <div style={{ position: 'absolute', top: 48, right: 14, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             {/* Composition ID chip */}
             <div style={{ padding: '3px 8px', borderRadius: 8,
-              background: 'rgba(124,58,237,0.75)', color: '#fff', fontSize: 9, fontWeight: 700,
+              background: 'rgba(77,112,136,0.75)', color: '#fff', fontSize: 9, fontWeight: 700,
               backdropFilter: 'blur(4px)', letterSpacing: 1 }}>
               {(() => {
                 const compId = String((content as any)?.compositionId || meta?.compositionId || '');
@@ -1214,7 +1596,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
               })()}
             </div>
             {/* Grafiker score chip (when available) */}
-            {typeof meta?.grafiker_score === 'number' && (
+            {isDebugUiMode() && typeof meta?.grafiker_score === 'number' && (
               <div style={{ padding: '2px 7px', borderRadius: 8,
                 background: (meta.grafiker_score as number) >= 8
                   ? 'rgba(16,185,129,0.75)'
@@ -1264,7 +1646,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
         <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 6, alignItems: 'center' }}>
           {(meta as any)?.auto_produced && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
-              background: 'rgba(139,92,246,0.85)', color: '#fff', fontWeight: 700, letterSpacing: '0.04em' }}>AI</span>
+              background: 'rgba(138,171,189,0.85)', color: '#fff', fontWeight: 700, letterSpacing: '0.04em' }}>AI</span>
           )}
           {slotBadge && (
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
@@ -1339,6 +1721,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
 export function PlatformFeed() {
   const { t } = useTheme();
   const operatorMode = isMobileOperatorMode();
+  const debugMode = isDebugUiMode();
   // navigate and openApproval already destructured above
   const queryClient = useQueryClient();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
@@ -1354,7 +1737,9 @@ export function PlatformFeed() {
     staleTime: 60_000,
     enabled: Boolean(tenantId),
   });
-  const { navigate, openApproval } = useMobileStore();
+  const navigate = useMobileStore((s) => s.navigate);
+  const openApproval = useMobileStore((s) => s.openApproval);
+  const [boostAdArtifact, setBoostAdArtifact] = useState<OutputArtifact | null>(null);
   const [filter, setFilter] = useState<FeedFilter>('all');
   const [slotFilter, setSlotFilter] = useState<FeedSlotFilter>('all');
   const feedMissionFromStore = useMobileStore((s) => s.feedMissionFilterId);
@@ -1379,8 +1764,6 @@ export function PlatformFeed() {
   // Story bubble viewer state
   const [storyViewIdx, setStoryViewIdx] = useState<number | null>(null);
   const [storyProgress, setStoryProgress] = useState(0);
-  const storyVideoRef = React.useRef<HTMLVideoElement | null>(null);
-
   // Auto-trigger the mission pipeline on mount (fire-and-forget).
   // Kicks off propose → approve → task_graph_executor → content_ideation
   // → auto-produce → Feed artifacts without any manual interaction.
@@ -1396,6 +1779,18 @@ export function PlatformFeed() {
       setPipelineStatus('idle');
       return;
     }
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const triggerGuardKey = `sa-auto-trigger:${tenantId}:${dayKey}`;
+    try {
+      if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(triggerGuardKey)) {
+        setPipelineStatus('done');
+        setAutoTriggerReason('already_triggered_today');
+        return;
+      }
+    } catch {
+      /* private mode */
+    }
+
     setPipelineStatus('running');
     setAutoTriggerReason(null);
     fetch(`/api/missions/${tenantId}/auto-trigger`, {
@@ -1405,6 +1800,13 @@ export function PlatformFeed() {
       .then(r => r.json())
       .then((data: { triggered?: boolean; skipped?: boolean; reason?: string; detail?: string }) => {
         setPipelineStatus(data.triggered ? 'running' : 'done');
+        if (data.triggered || data.skipped) {
+          try {
+            sessionStorage.setItem(triggerGuardKey, '1');
+          } catch {
+            /* ignore */
+          }
+        }
         if (data.skipped) {
           setAutoTriggerReason(data.reason ?? 'skipped');
         }
@@ -1420,8 +1822,16 @@ export function PlatformFeed() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
-  const { data: rawArtifacts = [], isLoading, refetch: refetchArtifacts } = useMobileArtifacts({
+  const { data: rawArtifacts = [], isLoading, isError: artifactsError, isFetching: artifactsFetching, refetch: refetchArtifacts } = useMobileArtifacts({
     subscribeOnly: true,
+    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
+  });
+
+  // Galeri (approved) görünümü için tam geçmiş — limit olmadan bir kez yüklenir
+  const { data: allHistoryArtifacts = [] } = useMobileArtifacts({
+    subscribeOnly: false,
+    params: { limit: 500 },
+    enabled: showApproved,
   });
 
   const { data: usageCost } = useQuery({
@@ -1444,37 +1854,29 @@ export function PlatformFeed() {
     ...mobileQueryDefaults,
   });
 
-  const productionBudgetBlocked = usageCost != null && (
+  const productionBudgetBlocked = !isProductionLimitsBypassed() && usageCost != null && (
     (usageCost.remaining_today_usd ?? 1) <= 0.001
     || (usageCost.token_wallet?.enabled === true
       && (usageCost.token_wallet.remaining_tokens ?? 0) <= 0)
   );
-
-  React.useEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-  }, [queryClient, tenantId]);
 
   const dedupedRaw = React.useMemo(
     () => dedupeProductionBundles(rawArtifacts as OutputArtifact[]),
     [rawArtifacts],
   );
 
+  // Galeri modunda tam geçmişi (limit=500) kullan, pending modunda hızlı pencereyi
+  const dedupedFull = React.useMemo(
+    () => showApproved && allHistoryArtifacts.length > dedupedRaw.length
+      ? dedupeProductionBundles(allHistoryArtifacts as OutputArtifact[])
+      : dedupedRaw,
+    [showApproved, allHistoryArtifacts, dedupedRaw],
+  );
+
   const hasRenderingBundles = React.useMemo(
     () => dedupedRaw.some((a) => isBundleRendering(a) && !resolveStoryVideoUrlShared(a)),
     [dedupedRaw],
   );
-
-  React.useEffect(() => {
-    if (!hasRenderingBundles) return;
-    const id = setInterval(() => { void refetchArtifacts(); }, 5_000);
-    return () => clearInterval(id);
-  }, [hasRenderingBundles, refetchArtifacts]);
-
-  React.useEffect(() => {
-    if (pipelineStatus !== 'running') return;
-    const id = setInterval(() => { void refetchArtifacts(); }, 20_000);
-    return () => clearInterval(id);
-  }, [pipelineStatus, refetchArtifacts]);
 
   React.useEffect(() => {
     if (!tenantId || !hasRenderingBundles) return;
@@ -1530,10 +1932,58 @@ export function PlatformFeed() {
     return map;
   }, [missionList]);
 
-  const allArtifacts = React.useMemo(
-    () => filterFeedPublishableArtifacts(dedupedRaw),
-    [dedupedRaw],
-  );
+  const { data: filteredMissionProg } = useQuery({
+    queryKey: ['mission-progress-feed', tenantId, missionFilterId],
+    queryFn: () => apiClient.getMissionProgress(tenantId!, missionFilterId!),
+    enabled: Boolean(tenantId && missionFilterId),
+    staleTime: 60_000,
+  });
+
+  const filteredMissionContext = React.useMemo(() => {
+    if (!missionFilterId) return null;
+    const missionArts = dedupedRaw.filter((a) => parseArtifactMissionId(a) === missionFilterId);
+    const nodes = filteredMissionProg?.nodes ?? [];
+    const planning = summarizeMissionPlanningOutputs(nodes);
+    const fdReport = parseFeedDirectorReportFromNodes(nodes);
+    const fdTelemetry = buildFeedDirectorTelemetry(fdReport);
+    const pipeline = summarizeMissionProductionPipeline({
+      artifacts: missionArts,
+      missionId: missionFilterId,
+      checklist: null,
+      planning,
+      fdAssignmentCount: fdReport?.production_assignments
+        ? (fdReport.production_assignments as unknown[]).length
+        : null,
+    });
+    return {
+      theme: planning.strategyTheme ?? extractWeeklyThemeFromNodes(nodes),
+      title: missionTitleById.get(missionFilterId) ?? null,
+      pipeline,
+      fdScore: fdTelemetry.feed_score,
+      manifestCoverage: typeof fdReport?.manifest_coverage_pct === 'number'
+        ? fdReport.manifest_coverage_pct
+        : null,
+    };
+  }, [missionFilterId, dedupedRaw, filteredMissionProg?.nodes, missionTitleById]);
+
+  const allArtifacts = React.useMemo(() => {
+    // Galeri görünümünde (showApproved) tam geçmiş, approved olan her şeyi göster
+    const sourcePool = dedupedFull;
+    if (showApproved) {
+      return sourcePool
+        .filter((a) => a.status === 'approved')
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+    const publishable = filterFeedPublishableArtifacts(sourcePool);
+    if (missionFilterId && filteredMissionProg?.nodes?.length) {
+      return filterMissionPrimaryFeedArtifacts(
+        sourcePool,
+        missionFilterId,
+        filteredMissionProg.nodes,
+      );
+    }
+    return publishable;
+  }, [dedupedFull, showApproved, missionFilterId, filteredMissionProg?.nodes]);
 
   const rawPendingCount = React.useMemo(
     () => dedupedRaw.filter((a) => a.status === 'pending_review').length,
@@ -1560,8 +2010,8 @@ export function PlatformFeed() {
           'Instagram OAuth bağlı değil. Ayarlar → Farklı hesaba geç (OAuth) ile tamamlayın, sonra OAuth senkronu.',
         );
       }
-      const useOAuth = Boolean(mcStatus.use_oauth_account) || !mcStatus.publish_account_id;
-      if (!useOAuth && !mcStatus.publish_account_id) {
+      const publishAuth = resolveMertcafePublishAuth(mcStatus);
+      if (!publishAuth.useOAuthAccount && !publishAuth.accountId) {
         throw new Error(
           'Yayın hesabı seçilmemiş. Ayarlar → OAuth senkronu veya kayıtlı hesaptan seçin.',
         );
@@ -1570,18 +2020,29 @@ export function PlatformFeed() {
       const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
       const content = parseArtifactContent(artifact.content);
       const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+      const matchScore = resolveArtifactMatchScore(meta);
+      if (matchScore != null && classifyMatch(matchScore).quality === 'rejected') {
+        throw new Error(
+          'Fotoğraf içerikle eşleşmiyor — galeri analizini çalıştırın veya fotoğrafı değiştirin.',
+        );
+      }
       const kind = detectKind(artifact);
 
       // Stories never carry a caption — event info is baked into the image overlay
       const caption = kind === 'story'
         ? ''
-        : String((content.caption as string) || (meta.caption as string) || resolved?.caption || '');
+        : resolveFeedDisplayCaption({
+          content: content as Record<string, unknown>,
+          metadata: meta,
+          title: artifact.title,
+        }) || resolved?.caption || '';
       const hashtags = kind === 'story'
         ? []
         : normalizeHashtagsUtil(content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []);
       // Sprint 8 (S8.4): publish the SAME asset the preview shows (export-first).
       const imageUrl = String(
-        resolveArtifactImg(artifact)
+        resolvePublishImageUrl(artifact)
+        || resolveArtifactImg(artifact)
         || (content.imageUrl as string) || (meta.imageUrl as string)
         || resolved?.imageUrl || artifact.contentUrl || '',
       );
@@ -1635,10 +2096,10 @@ export function PlatformFeed() {
         workspaceId: tenantId,
         artifactId: artifact.id,
       };
-      if (useOAuth) {
+      if (publishAuth.useOAuthAccount) {
         publishPayload.use_oauth_account = true;
-      } else if (mcStatus.publish_account_id) {
-        publishPayload.account_id = mcStatus.publish_account_id;
+      } else if (publishAuth.accountId) {
+        publishPayload.account_id = publishAuth.accountId;
       }
       if (postType === 'story') {
         if (publicVideoUrl) {
@@ -1699,8 +2160,14 @@ export function PlatformFeed() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['artifacts'] }),
   });
 
-  const pendingCount = allArtifacts.filter(a => a.status === 'pending_review').length;
-  const approvedCount = allArtifacts.filter(a => a.status === 'approved').length;
+  const pendingCount = useMemo(
+    () => allArtifacts.filter((a) => a.status === 'pending_review').length,
+    [allArtifacts],
+  );
+  const approvedCount = useMemo(
+    () => allArtifacts.filter((a) => a.status === 'approved').length,
+    [allArtifacts],
+  );
 
   const tenantBrand = useTenantBrandContext();
   const feedHandle = resolveFeedHandle({}, tenantBrand);
@@ -1708,19 +2175,30 @@ export function PlatformFeed() {
     ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl)
     : undefined;
 
-  // Story bubble bar — ALL story types (Remotion video, poster still, event, canvas)
+  // Story bubble bar — per-idea rings (not headline-deduped feed list)
   const storyArtifacts = React.useMemo(() => {
-    return [
-      ...allArtifacts.filter(a => a.status === 'pending_review' && isFeedStoryItem(a)),
-      ...allArtifacts.filter(a => a.status === 'approved'       && isFeedStoryItem(a)),
-    ].sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'pending_review' ? -1 : 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    const pool = dedupedRaw.filter((a) => isFeedStoryItem(a) && isArtifactFeedPublishable(a));
+    if (operatorMode) {
+      const deduped = dedupeStoryBarArtifacts(pool);
+      const scoped = missionFilterId
+        ? deduped.filter((a) => parseArtifactMissionId(a) === missionFilterId)
+        : deduped;
+      return [
+        ...scoped.filter((a) => a.status === 'pending_review'),
+        ...scoped.filter((a) => a.status === 'approved'),
+      ].sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'pending_review' ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    }
+    return filterConsumerStoryBar(pool, {
+      maxRings: 4,
+      missionId: missionFilterId,
     });
-  }, [allArtifacts]);
+  }, [dedupedRaw, missionFilterId, operatorMode]);
 
   // Story viewer helpers
-  const resolveStoryVideo = (artifact: OutputArtifact): string | null => resolveStoryVideoUrlShared(artifact);
+  const resolveStoryVideo = (artifact: OutputArtifact): string | null => resolveStoryVideoClientUrl(artifact);
   const resolveStoryPoster = (artifact: OutputArtifact): string | null => {
     const poster = resolvePosterUrl(artifact);
     if (poster) return resolveImg(poster);
@@ -1769,11 +2247,10 @@ export function PlatformFeed() {
     prevPendingRef.current = pendingCount;
   }, [pendingCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const artifacts = allArtifacts
-    .filter(a => {
-      if (showApproved) return a.status === 'approved';
-      return a.status === 'pending_review';
-    })
+  const filteredFeedArtifacts = useMemo(() => allArtifacts
+    // allArtifacts zaten galeri modunda approved, pending modunda pending_review içeriyor
+    .filter(a => showApproved ? a.status === 'approved' : a.status === 'pending_review')
+    .filter(a => operatorMode || !isBundleFailed(a))
     .filter(a => {
       // Exclude old SVG announcement_calendar stories — replaced by Remotion
       try {
@@ -1786,26 +2263,63 @@ export function PlatformFeed() {
     })
     // Stories live in the bubble bar — never in the main feed scroll
     .filter(a => !isFeedStoryItem(a as any))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .filter(a => {
       if (missionFilterId) return parseArtifactMissionId(a) === missionFilterId;
       return true;
     })
     .filter(a => {
+      if (filter === 'ad') {
+        const k = detectKind(a as any);
+        return isPaidAdArtifact(a) || k === 'ad' || k === 'ad_creative';
+      }
+      // designed_post → Meta/Google türevleri ayrı artifact; ana feed'de tek kart göster
+      if (!isOrganicFeedArtifact(a as OutputArtifact)) return false;
       if (filter === 'all') return true;
       const k = detectKind(a as any);
       if (filter === 'post') return k === 'post' || k === 'image';
       if (filter === 'reel') return k === 'reel' || k === 'video';
-      if (filter === 'ad') return k === 'ad' || k === 'ad_creative';
       return true;
     })
     .filter(a => artifactMatchesSlotFilter(a, slotFilter, detectKind))
-    .slice(0, 100);
+    // Galeri modunda tüm geçmişi göster; pending modunda 100 ile sınırla
+    .slice(0, showApproved ? 500 : 100), [allArtifacts, showApproved, missionFilterId, filter, slotFilter, operatorMode]);
 
-  const feedPostCount = allArtifacts.filter((a) => {
+  const artifacts = useMemo(
+    () => sortFeedArtifactsForDisplay(filteredFeedArtifacts, {
+      missionScoped: Boolean(missionFilterId),
+    }),
+    [filteredFeedArtifacts, missionFilterId],
+  );
+
+  const feedPostCount = useMemo(() => allArtifacts.filter((a) => {
     const k = detectKind(a);
     return k === 'post' || k === 'reel' || detectPreviewMode(a, k) === 'carousel';
-  }).length;
+  }).length, [allArtifacts]);
+
+  const artifactsRef = useRef(artifacts);
+  artifactsRef.current = artifacts;
+
+  const handleApproveById = useCallback((artifactId: string) => {
+    const art = artifactsRef.current.find((a) => a.id === artifactId);
+    if (art) approveMutation.mutate(art);
+  }, [approveMutation.mutate]);
+
+  const handleRevisionById = useCallback((artifactId: string) => {
+    revisionMutation.mutate(artifactId);
+  }, [revisionMutation.mutate]);
+
+  const handleRetryRenderById = useCallback((artifactId: string) => {
+    void retryStoryRender(artifactId);
+  }, [retryStoryRender]);
+
+  const handleOpenMetaAdById = useCallback((artifactId: string) => {
+    const art = artifactsRef.current.find((a) => a.id === artifactId);
+    if (art) setBoostAdArtifact(art);
+  }, []);
+
+  const handleOpenGoogleAd = useCallback(() => {
+    navigate('ads');
+  }, [navigate]);
 
   const feedBg = !operatorMode || platformView === 'instagram' ? '#000' : (t.isDark ? '#0a0a0f' : '#f7f7f7');
 
@@ -1823,6 +2337,7 @@ export function PlatformFeed() {
         { id: 'post', label: 'Gönderi' },
         { id: 'story', label: 'Story' },
         { id: 'reel', label: 'Reel' },
+        { id: 'ad', label: 'Reklam', icon: '📊' },
       ];
 
   const SLOT_TABS: { id: FeedSlotFilter; label: string }[] =
@@ -1838,6 +2353,37 @@ export function PlatformFeed() {
     setSlotFilter('all');
   }, [filter]);
 
+  if (isLoading && !operatorMode) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 40,
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#000',
+      }}>
+        <div style={{
+          flexShrink: 0,
+          background: 'rgba(0,0,0,0.96)',
+          backdropFilter: 'blur(32px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(32px) saturate(200%)',
+          borderBottom: '0.5px solid rgba(255,255,255,0.08)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        }}>
+          <InstagramHomeHeader
+            showApproved={showApproved}
+            pendingCount={pendingCount}
+            approvedCount={approvedCount}
+            onShowPending={() => setShowApproved(false)}
+            onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
+          />
+        </div>
+        <BrandLoadingScreen fillViewport={false} fillParent />
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: '100dvh', background: feedBg, paddingBottom: 104 }}>
 
@@ -1849,9 +2395,10 @@ export function PlatformFeed() {
           : (t.isDark ? 'rgba(6,6,14,0.96)' : 'rgba(244,244,248,0.96)'),
         backdropFilter: 'blur(32px) saturate(200%)',
         WebkitBackdropFilter: 'blur(32px) saturate(200%)',
-        borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
+        borderBottom: !operatorMode
+          ? '0.5px solid rgba(255,255,255,0.08)'
+          : `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
         paddingTop: 'calc(env(safe-area-inset-top,0px) + 8px)',
-        borderBottom: !operatorMode ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
       }}>
         {operatorMode ? (
           <>
@@ -1916,15 +2463,24 @@ export function PlatformFeed() {
             border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.25)' : 'rgba(245,158,11,0.30)'}`,
           }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: t.warning, marginBottom: 4 }}>
-              Marka kurulumu eksik
+              {debugMode
+                ? `Otonom üretim kapalı (BAS ${brandAlignment.bas ?? '—'}/100)`
+                : 'Marka profiliniz tamamlanıyor'}
             </div>
             <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
-              Tam otomatik içerik üretimi için marka profilinizi tamamlayın.
-              {brandAlignment.weakest?.label && (
-                <span style={{ display: 'block', marginTop: 3, color: t.textMuted }}>
-                  Eksik: {brandAlignment.weakest.label}
-                </span>
-              )}
+              {debugMode
+                ? (
+                  <>
+                    Feed açılınca yeni kampanya otomatik başlamaz. Onaylı misyonlarda Kampanyalar →
+                    «Feed&apos;e gönderileri üret» kullanın veya marka skorlarını 100&apos;e çıkarın.
+                    {brandAlignment.weakest?.label && (
+                      <span style={{ display: 'block', marginTop: 3, color: t.textMuted }}>
+                        En zayıf: {brandAlignment.weakest.label} ({brandAlignment.weakest.score ?? '—'})
+                      </span>
+                    )}
+                  </>
+                )
+                : 'Marka ayarlarınızı tamamladığınızda yeni kampanyalar otomatik başlar. Mevcut onaylı kampanyalarınız etkilenmez.'}
             </div>
             <button
               type="button"
@@ -1936,8 +2492,35 @@ export function PlatformFeed() {
                 background: t.warning,
               }}
             >
-              Markayı tamamla →
+              Marka ayarları →
             </button>
+          </div>
+        )}
+
+        {pipelineStatus === 'running' && pendingCount === 0 && !productionBudgetBlocked && (
+          <div style={{
+            margin: '0 16px 10px',
+            padding: '10px 12px',
+            borderRadius: 12,
+            background: t.isDark ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.06)',
+            border: `0.5px solid ${t.isDark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.30)'}`,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+              border: '1.5px solid rgba(52,211,153,0.35)',
+              borderTop: '1.5px solid #34d399',
+              animation: 'spinSlow 1s linear infinite',
+            }} />
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#34d399', marginBottom: 2 }}>
+                Misyon hazırlanıyor
+              </div>
+              <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
+                Strateji, fikirler ve ajans tasarım kartları hazırlanıyor — içerikler
+                birkaç dakika içinde burada görünür.
+              </div>
+            </div>
           </div>
         )}
 
@@ -1982,11 +2565,11 @@ export function PlatformFeed() {
                 color: !missionFilterId ? '#3B82F6' : (platformView === 'instagram' ? 'rgba(255,255,255,0.5)' : t.textMuted),
                 fontSize: 11, fontWeight: 700,
               }}>
-              Tüm missionlar
+              Tüm planlar
             </button>
             {missionIds.slice(0, 8).map((mid) => {
               const active = missionFilterId === mid;
-              const title = missionTitleById.get(mid) ?? `Misyon ${mid.slice(0, 8)}…`;
+              const title = missionTitleById.get(mid) ?? `Plan ${mid.slice(0, 8)}…`;
               return (
                 <button
                   key={mid}
@@ -2009,6 +2592,59 @@ export function PlatformFeed() {
           </div>
         )}
 
+        {missionFilterId && filteredMissionContext && (
+          <div style={{
+            margin: '0 16px 10px', padding: '12px 14px', borderRadius: 14,
+            background: platformView === 'instagram'
+              ? 'rgba(255,255,255,0.06)'
+              : (t.isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.06)'),
+            border: `0.5px solid ${platformView === 'instagram' ? 'rgba(255,255,255,0.1)' : 'rgba(59,130,246,0.22)'}`,
+          }}>
+            {filteredMissionContext.theme && (
+              <div style={{
+                fontSize: 12, fontWeight: 700, lineHeight: 1.4, marginBottom: 6,
+                color: platformView === 'instagram' ? 'rgba(255,255,255,0.92)' : t.textPrimary,
+              }}>
+                {filteredMissionContext.theme}
+              </div>
+            )}
+            <div style={{
+              fontSize: 11, lineHeight: 1.45,
+              color: platformView === 'instagram' ? 'rgba(255,255,255,0.55)' : t.textMuted,
+            }}>
+              {debugMode ? (
+                <>
+                  {filteredMissionContext.pipeline.manifestReady}/{filteredMissionContext.pipeline.manifestRequired} slot hazır
+                  {' · '}
+                  {filteredMissionContext.pipeline.publishReady}/{filteredMissionContext.pipeline.productionTarget} yayına hazır
+                  {filteredMissionContext.fdScore != null && (
+                    <> · FD {filteredMissionContext.fdScore}</>
+                  )}
+                  {filteredMissionContext.manifestCoverage != null && (
+                    <> · Manifest {filteredMissionContext.manifestCoverage}%</>
+                  )}
+                  {brandAlignment && (
+                    <>
+                      {' · '}
+                      BAS {brandAlignment.bas}
+                      {alignmentSubScore(brandAlignment, 'GIS') != null && (
+                        <> · GIS {alignmentSubScore(brandAlignment, 'GIS')}</>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  {filteredMissionContext.pipeline.publishReady}/{filteredMissionContext.pipeline.productionTarget} içerik hazır
+                  {filteredMissionContext.pipeline.publishReady < filteredMissionContext.pipeline.productionTarget
+                    ? ' · kalan gönderiler hazırlanıyor'
+                    : ' · onayınızı bekliyor'}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div style={{
           display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
           paddingLeft: 16, paddingRight: 8, gap: 6, paddingBottom: 12,
@@ -2016,7 +2652,7 @@ export function PlatformFeed() {
           {TABS.map(tab => {
             const active = filter === tab.id;
             const tabColor = tab.id === 'reel' ? '#F43F5E'
-              : tab.id === 'story' ? '#8B5CF6'
+              : tab.id === 'story' ? '#8AABBD'
               : tab.id === 'ad' ? '#F59E0B'
               : tab.id === 'post' ? '#60A5FA'
               : t.textPrimary;
@@ -2055,9 +2691,9 @@ export function PlatformFeed() {
                     borderRadius: 16,
                     cursor: 'pointer',
                     background: active
-                      ? (ig ? 'rgba(139,92,246,0.25)' : (t.isDark ? 'rgba(139,92,246,0.2)' : 'rgba(139,92,246,0.12)'))
+                      ? (ig ? 'rgba(138,171,189,0.25)' : (t.isDark ? 'rgba(138,171,189,0.2)' : 'rgba(138,171,189,0.12)'))
                       : 'transparent',
-                    border: `0.5px solid ${active ? 'rgba(139,92,246,0.45)' : (ig ? 'rgba(255,255,255,0.1)' : t.separator)}`,
+                    border: `0.5px solid ${active ? 'rgba(138,171,189,0.45)' : (ig ? 'rgba(255,255,255,0.1)' : t.separator)}`,
                     color: active ? (ig ? '#E9D5FF' : t.textPrimary) : (ig ? 'rgba(255,255,255,0.4)' : t.textMuted),
                     fontSize: 11,
                     fontWeight: active ? 700 : 500,
@@ -2097,6 +2733,34 @@ export function PlatformFeed() {
         </div>
       )}
 
+      {/* ── Mission hazırlanıyor banner — pipeline tetiklendi, içerik henüz gelmedi ── */}
+      {pipelineStatus === 'running' && pendingCount === 0 && !isLoading && !showApproved && (
+        <div style={{
+          margin: '10px 16px 4px',
+          padding: '12px 14px',
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(16,185,129,0.10), rgba(52,211,153,0.05))',
+          border: '0.5px solid rgba(16,185,129,0.25)',
+          display: 'flex', alignItems: 'flex-start', gap: 10,
+        }}>
+          <div style={{
+            width: 10, height: 10, borderRadius: '50%', flexShrink: 0, marginTop: 3,
+            border: '1.5px solid rgba(52,211,153,0.35)',
+            borderTop: '1.5px solid #34d399',
+            animation: 'spinSlow 1s linear infinite',
+          }} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399', marginBottom: 3 }}>
+              Misyon hazırlanıyor
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.55 }}>
+              Strateji, içerik fikirleri ve ajans tasarım kartları hazırlanıyor.
+              İçerikler birkaç dakika içinde Feed'e düşer.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Profile stats bar — agency only; IG home has no profile block in feed */}
       {operatorMode && platformView === 'instagram' && artifacts.length + storyArtifacts.length > 0 && (
         <InstagramProfileBar
@@ -2124,16 +2788,19 @@ export function PlatformFeed() {
             const isPending = art.status === 'pending_review';
             const isViewed = storyViewIdx !== null && storyViewIdx > idx;
             const isRendering = isBundleRendering(art);
+            const isFailed = isBundleFailed(art) && !vid;
             const initials = brandName ? brandName.slice(0, 2).toUpperCase() : 'S';
             const grafikerScore = typeof meta.grafiker_score === 'number' ? meta.grafiker_score : null;
             const isRemotionVid = Boolean(vid);
-            // Remotion stories: purple-to-gold gradient | Rendering: amber pulse | Viewed: grey
+            // Remotion stories: purple-to-gold gradient | Rendering: amber | Failed: red | Viewed: grey
             const ringBg = isViewed || !isPending
               ? t.separator
+              : isFailed
+              ? 'linear-gradient(135deg, #dc2626, #ef4444, #f87171)'
               : isRendering && !isRemotionVid
               ? 'linear-gradient(135deg, #f59e0b, #fbbf24, #fcd34d)'
               : isRemotionVid
-              ? 'linear-gradient(135deg, #7c3aed, #8B5CF6, #c9a96e, #f59e0b)'
+              ? 'linear-gradient(135deg, #4D7088, #8AABBD, #c9a96e, #f59e0b)'
               : 'linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)';
 
             return (
@@ -2180,13 +2847,13 @@ export function PlatformFeed() {
                       <div style={{
                         position: 'absolute', bottom: 0, right: 0,
                         width: 18, height: 18, borderRadius: '50%',
-                        background: '#8B5CF6', border: `1.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                        background: '#8AABBD', border: `1.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 8, color: '#fff',
                       }}>▶</div>
                     )}
                     {/* Grafiker score badge */}
-                    {operatorMode && grafikerScore !== null && grafikerScore >= 8 && (
+                    {debugMode && grafikerScore !== null && grafikerScore >= 8 && (
                       <div style={{
                         position: 'absolute', top: 0, right: 0,
                         width: 16, height: 16, borderRadius: '50%',
@@ -2218,7 +2885,7 @@ export function PlatformFeed() {
                     variant="bubble"
                   />
                   {operatorMode && isRemotionVid && !isViewed && (
-                    <div style={{ fontSize: 9, color: '#a78bfa', fontWeight: 700, marginTop: 1 }}>
+                    <div style={{ fontSize: 9, color: '#9DBECE', fontWeight: 700, marginTop: 1 }}>
                       ▶ Video
                     </div>
                   )}
@@ -2234,109 +2901,127 @@ export function PlatformFeed() {
         createPortal(
           <div style={{
             position: 'fixed', inset: 0, zIndex: 800,
+            width: '100vw', height: '100dvh', maxHeight: '100dvh',
             background: '#000',
             display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',
             animation: 'fadeIn 120ms ease both',
           }}>
-            {/* Progress bars */}
+            {/* Story stage — full content visible, no button overlap */}
             <div style={{
-              position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-              display: 'flex', gap: 3, padding: '12px 10px 0',
+              flex: 1, minHeight: 0, position: 'relative',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: '#000',
             }}>
-              {storyArtifacts.map((_, si) => (
-                <div key={si} style={{
-                  flex: 1, height: 2.5, borderRadius: 2,
-                  background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
-                }}>
-                  <div style={{
-                    height: '100%', borderRadius: 2, background: '#fff',
-                    width: si < storyViewIdx! ? '100%'
-                      : si === storyViewIdx ? `${storyProgress}%` : '0%',
-                    transition: si === storyViewIdx ? 'none' : undefined,
-                  }} />
-                </div>
-              ))}
-            </div>
+              {/* Progress bars */}
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+                display: 'flex', gap: 3,
+                padding: 'max(10px, env(safe-area-inset-top)) 10px 0',
+              }}>
+                {storyArtifacts.map((_, si) => (
+                  <div key={si} style={{
+                    flex: 1, height: 2.5, borderRadius: 2,
+                    background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      height: '100%', borderRadius: 2, background: '#fff',
+                      width: si < storyViewIdx! ? '100%'
+                        : si === storyViewIdx ? `${storyProgress}%` : '0%',
+                      transition: si === storyViewIdx ? 'none' : undefined,
+                    }} />
+                  </div>
+                ))}
+              </div>
 
-            {/* Header */}
-            <div style={{
-              position: 'absolute', top: 22, left: 0, right: 0, zIndex: 10,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 14px',
-            }}>
+              {/* Header */}
+              <div style={{
+                position: 'absolute', top: 'max(28px, calc(env(safe-area-inset-top) + 16px))',
+                left: 0, right: 0, zIndex: 10,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 14px',
+              }}>
+                {(() => {
+                  const art = storyArtifacts[storyViewIdx!]!;
+                  const poster = resolveStoryPoster(art);
+                  const meta = (art.metadata ?? {}) as Record<string, unknown>;
+                  const brandName = String(meta.brandName || 'Story');
+                  const ago = timeAgo(art.createdAt);
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
+                        border: '1.5px solid rgba(255,255,255,0.6)' }}>
+                        {poster
+                          ? <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <div style={{ width: '100%', height: '100%', background: '#333',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 12, fontWeight: 800, color: '#fff' }}>
+                              {brandName.slice(0, 2).toUpperCase()}
+                            </div>
+                        }
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{brandName}</div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)' }}>{ago}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <button onClick={closeStory} style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#fff', fontSize: 22, padding: 6, lineHeight: 1,
+                }}>✕</button>
+              </div>
+
+              {/* Story content — video or image (contain = full frame visible) */}
               {(() => {
                 const art = storyArtifacts[storyViewIdx!]!;
+                const vid = resolveStoryVideo(art);
                 const poster = resolveStoryPoster(art);
-                const meta = (art.metadata ?? {}) as Record<string, unknown>;
-                const brandName = String(meta.brandName || 'Story');
-                const ago = timeAgo(art.createdAt);
+                const mediaStyle: React.CSSProperties = {
+                  position: 'relative',
+                  width: '100%', height: '100%',
+                  maxWidth: '100%', maxHeight: '100%',
+                  objectFit: 'contain', objectPosition: 'center',
+                };
                 return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
-                      border: '1.5px solid rgba(255,255,255,0.6)' }}>
-                      {poster
-                        ? <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : <div style={{ width: '100%', height: '100%', background: '#333',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 12, fontWeight: 800, color: '#fff' }}>
-                            {brandName.slice(0, 2).toUpperCase()}
-                          </div>
-                      }
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{brandName}</div>
-                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)' }}>{ago}</div>
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    overflow: 'hidden',
+                  }}>
+                    {vid ? (
+                      <StoryPreviewVideo
+                        key={vid}
+                        src={vid}
+                        poster={poster ?? undefined}
+                        style={mediaStyle}
+                      />
+                    ) : poster ? (
+                      <StoryCoverImage src={poster} style={mediaStyle} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: '#111',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: 40, opacity: 0.2 }}>◉</span>
+                      </div>
+                    )}
+
+                    {/* Tap zones: left = prev, right = next */}
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5 }}>
+                      <div style={{ flex: 1 }} onClick={prevStory} />
+                      <div style={{ flex: 1 }} onClick={nextStory} />
                     </div>
                   </div>
                 );
               })()}
-              <button onClick={closeStory} style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: '#fff', fontSize: 22, padding: 6, lineHeight: 1,
-              }}>✕</button>
             </div>
 
-            {/* Story content — video or image */}
-            {(() => {
-              const art = storyArtifacts[storyViewIdx!]!;
-              const vid = resolveStoryVideo(art);
-              const poster = resolveStoryPoster(art);
-              return (
-                <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                  {vid ? (
-                    <video
-                      ref={storyVideoRef}
-                      key={vid}
-                      src={vid}
-                      poster={poster ?? undefined}
-                      autoPlay muted playsInline
-                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                      onEnded={nextStory}
-                    />
-                  ) : poster ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  ) : (
-                    <div style={{ width: '100%', height: '100%', background: '#111',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: 40, opacity: 0.2 }}>◉</span>
-                    </div>
-                  )}
-
-                  {/* Tap zones: left = prev, right = next */}
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5 }}>
-                    <div style={{ flex: 1 }} onClick={prevStory} />
-                    <div style={{ flex: 1 }} onClick={nextStory} />
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Bottom bar */}
+            {/* Action dock — below story, never covers content */}
             <div style={{
-              position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10,
-              padding: '12px 16px max(20px, env(safe-area-inset-bottom))',
-              background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)',
+              flexShrink: 0, zIndex: 20,
+              padding: '10px 14px max(12px, env(safe-area-inset-bottom))',
+              background: 'rgba(8,8,10,0.98)',
+              borderTop: '0.5px solid rgba(255,255,255,0.08)',
               display: 'flex', flexDirection: 'column', gap: 8,
             }}>
               {(() => {
@@ -2355,17 +3040,17 @@ export function PlatformFeed() {
                 return (
                   <>
                     {/* Remotion info bar */}
-                    {isRemotionVideo && (
+                    {debugMode && isRemotionVideo && (
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         padding: '6px 10px', borderRadius: 10,
-                        background: 'rgba(139,92,246,0.20)', border: '0.5px solid rgba(139,92,246,0.4)',
+                        background: 'rgba(138,171,189,0.20)', border: '0.5px solid rgba(138,171,189,0.4)',
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>
+                          <span style={{ fontSize: 11, color: '#9DBECE', fontWeight: 700 }}>
                             ▶ Remotion {compositionId.replace('Story', '')}
                           </span>
-                          {grafiker !== null && (
+                          {debugMode && grafiker !== null && (
                             <span style={{
                               fontSize: 10, padding: '2px 7px', borderRadius: 10,
                               background: grafiker >= 8 ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
@@ -2406,12 +3091,12 @@ export function PlatformFeed() {
                         padding: '8px 12px', borderRadius: 10,
                         background: 'rgba(245,158,11,0.18)', border: '0.5px solid rgba(245,158,11,0.35)',
                       }}>
-                        Video render ediliyor… (~1 dk)
+                        Video hazırlanıyor… (~2 dk)
                       </div>
                     )}
 
                     {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
                     {canRetryStoryRender(art) && (
                       <StoryRetryButton
                         artifact={art}
@@ -2420,36 +3105,54 @@ export function PlatformFeed() {
                         variant="viewer"
                       />
                     )}
+                    {publishErrors[art.id] && (
+                      <div style={{
+                        fontSize: 11, color: '#FCA5A5', textAlign: 'center',
+                        padding: '8px 12px', borderRadius: 10,
+                        background: 'rgba(239,68,68,0.18)', border: '0.5px solid rgba(239,68,68,0.35)',
+                      }}>
+                        {publishErrors[art.id]}
+                      </div>
+                    )}
                     {canApprove && (
-                      <button onClick={() => { approveMutation.mutate(art); nextStory(); }}
+                      <button
+                        onClick={() => {
+                          void approveMutation.mutateAsync(art)
+                            .then(() => nextStory())
+                            .catch(() => undefined);
+                        }}
+                        disabled={approveMutation.isPending}
                         style={{
-                          flex: 1, padding: '13px', borderRadius: 12, border: 'none',
-                          background: '#10B981', color: '#fff', fontSize: 14, fontWeight: 700,
-                          cursor: 'pointer', display: 'flex', alignItems: 'center',
+                          flex: 1, minWidth: 0, padding: '11px 12px', borderRadius: 12, border: 'none',
+                          background: '#10B981', color: '#fff', fontSize: 13, fontWeight: 700,
+                          cursor: approveMutation.isPending ? 'wait' : 'pointer',
+                          display: 'flex', alignItems: 'center',
                           justifyContent: 'center', gap: 6,
+                          opacity: approveMutation.isPending ? 0.85 : 1,
+                          whiteSpace: 'nowrap',
                         }}>
                         {approveMutation.isPending ? (
-                          <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Onaylanıyor…</>
+                          <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Paylaşılıyor…</>
                         ) : (
-                          <>✓ Onayla {isRemotionVideo ? '& Paylaş' : ''}</>
+                          <>{isRemotionVideo ? '▶ Story paylaş' : '✓ Onayla'}</>
                         )}
                       </button>
                     )}
                     <button onClick={() => { closeStory(); openApproval(art.id); }}
                       style={{
-                        flex: canApprove ? 0.5 : 1, padding: '13px', borderRadius: 12,
+                        flex: canApprove ? '0 0 auto' : 1, padding: '11px 16px', borderRadius: 12,
                         border: 'none',
-                        background: 'rgba(255,255,255,0.12)', color: '#fff',
-                        fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.10)', color: '#fff',
+                        fontSize: 13, fontWeight: 600, cursor: 'pointer',
                       }}>
                       {canApprove ? 'Düzenle' : isPending ? 'İncele' : '···'}
                     </button>
                     {!isPending && (
                       <button onClick={nextStory}
                         style={{
-                          padding: '13px 20px', borderRadius: 12, border: 'none',
-                          background: 'rgba(255,255,255,0.12)', color: '#fff',
-                          fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                          flex: '0 0 auto', padding: '11px 14px', borderRadius: 12, border: 'none',
+                          background: 'rgba(255,255,255,0.10)', color: '#fff',
+                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
                         }}>
                         Sonraki →
                       </button>
@@ -2474,9 +3177,7 @@ export function PlatformFeed() {
               animation: 'spinSlow 1s linear infinite' }} />
             <span style={{ fontSize: 13, color: t.textMuted }}>Yükleniyor…</span>
           </div>
-        ) : (
-          <BrandLoadingScreen fillViewport={false} />
-        )
+        ) : null
       ) : artifacts.length === 0 ? (
         <div style={{ padding: '60px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.15 }}>📸</div>
@@ -2487,8 +3188,16 @@ export function PlatformFeed() {
             {showApproved
               ? 'Onaylanan içerikler burada görünür.'
               : rawPendingCount > pendingPublishableCount
-                ? `${rawPendingCount} üretim var; ${rawPendingCount - pendingPublishableCount} tanesi medya hazır olana kadar gizli. Render bitince otomatik görünür.`
-                : 'Mission Hub\'dan bir misyon başlatın — içerikler üretilince burada görünür.'}
+                ? `${rawPendingCount - pendingPublishableCount} içerik hazırlanıyor — render bitince Feed'e düşecek.`
+                : pipelineStatus === 'running'
+                  ? 'Kampanya hazırlanıyor — strateji, içerik fikirleri ve ajans tasarım kartları oluşturuluyor. Birkaç dakika içinde içerikler burada görünür.'
+                  : brandAlignment && !brandAlignment.canAutoProduce
+                    ? (debugMode
+                      ? 'Otonom üretim kapalı (BAS < 100). Kampanyalar\'da onaylı misyon için «Feed\'e gönderileri üret» veya hatalı kampanyayı ↺ yeniden başlatın.'
+                      : 'Marka profilinizi tamamlayın — ardından yeni kampanyalar otomatik başlar.')
+                    : (debugMode
+                      ? 'Mission Hub\'dan bir misyon başlatın — içerikler üretilince burada görünür.'
+                      : 'Kampanyalar sekmesinden yeni plan onaylayın — içerikler hazır olunca burada görünür.')}
           </div>
           {!showApproved && missionFilterId && rawPendingCount > 0 && artifacts.length === 0 && (
             <button
@@ -2531,32 +3240,43 @@ export function PlatformFeed() {
               style={{
                 padding: '10px 20px', borderRadius: 20, border: 'none',
                 background: `linear-gradient(135deg, ${t.accent}cc, ${t.accent}88)`,
-                color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginLeft: 8,
+                color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                marginTop: approvedCount > 0 ? 8 : 0,
               }}
             >
-              Mission Hub'a Git
+              {debugMode ? 'Mission Hub\'a Git' : 'Haftalık Plana Git'}
             </button>
           )}
         </div>
       ) : (
         <div style={{ background: feedBg }}>
-          {artifacts.map(artifact => {
+          {artifacts.map((artifact, idx) => {
             const isApproving   = approveMutation.isPending   && approveMutation.variables?.id === artifact.id;
             const isRevisioning = revisionMutation.isPending  && revisionMutation.variables  === artifact.id;
 
             return (
-              <NativeFeedCard
+              <div
                 key={artifact.id}
-                artifact={artifact}
-                platform={operatorMode ? platformView : 'instagram'}
-                t={t}
-                approving={isApproving}
-                revisioning={isRevisioning}
-                retryingRender={retryingStoryId === artifact.id}
-                onApprove={() => approveMutation.mutate(artifact)}
-                onRevision={() => revisionMutation.mutate(artifact.id)}
-                onRetryRender={() => { void retryStoryRender(artifact.id); }}
-              />
+                style={{
+                  animation: `cardEnter 280ms cubic-bezier(0.22,1,0.36,1) both`,
+                  animationDelay: `${Math.min(idx * 40, 320)}ms`,
+                }}
+              >
+                <NativeFeedCard
+                  artifact={artifact}
+                  platform={operatorMode ? platformView : 'instagram'}
+                  workspaceId={tenantId ?? undefined}
+                  t={t}
+                  approving={isApproving}
+                  revisioning={isRevisioning}
+                  retryingRender={retryingStoryId === artifact.id}
+                  onApprove={handleApproveById}
+                  onRevision={handleRevisionById}
+                  onRetryRender={handleRetryRenderById}
+                  onOpenMetaAd={handleOpenMetaAdById}
+                  onOpenGoogleAd={handleOpenGoogleAd}
+                />
+              </div>
             );
           })}
         </div>
@@ -2575,6 +3295,46 @@ export function PlatformFeed() {
           )}
         </div>
       )}
+      {boostAdArtifact && (
+        <BoostPostSheet
+          isOpen
+          artifactId={boostAdArtifact.id}
+          workspaceId={tenantId ?? undefined}
+          caption={parseArtifactContent(boostAdArtifact.content).caption as string | undefined}
+          imageUrl={boostAdArtifact.contentUrl ?? undefined}
+          onClose={() => setBoostAdArtifact(null)}
+        />
+      )}
+
+      {/* FAB — New Brief */}
+      <button
+        onClick={() => navigate('new-brief')}
+        aria-label="Yeni İstek"
+        style={{
+          position: 'fixed',
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 84px)',
+          right: 20,
+          zIndex: 98,
+          width: 52,
+          height: 52,
+          borderRadius: '50%',
+          background: '#8AABBD',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 20px rgba(138,171,189,0.4)',
+          animation: 'fabPulse 3s ease-in-out infinite',
+          transition: 'transform 120ms ease',
+        }}
+        onPointerEnter={e => { (e.currentTarget as HTMLButtonElement).style.animation = 'none'; (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)'; }}
+        onPointerLeave={e => { (e.currentTarget as HTMLButtonElement).style.animation = 'fabPulse 3s ease-in-out infinite'; (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'; }}
+      >
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#07090F" strokeWidth={2.5} strokeLinecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
     </div>
   );
 }

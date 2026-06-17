@@ -53,9 +53,13 @@ function NotificationHydration() {
         await initializeSignalR();
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        if (/500|Internal Server Error|Failed to fetch|negotiation/i.test(msg)) {
+        if (
+          /500|Internal Server Error|Failed to fetch|negotiation|Handshake was canceled|stopped during negotiation/i.test(
+            msg,
+          )
+        ) {
           console.debug(
-            '[signalr] Hub bağlantısı kurulamadı (Nexus kapalı veya proxy hatası).',
+            '[signalr] Hub bağlantısı kurulamadı (Nexus kapalı, proxy veya dev hot-reload).',
             msg.slice(0, 120),
           );
         } else {
@@ -80,25 +84,29 @@ function NotificationHydration() {
   return null;
 }
 
-export function Providers({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 30_000,
-            retry: (failureCount, error) => {
-              if (error instanceof ApiRequestError) {
-                // 429/404 are usually non-transient here; retrying fans out traffic.
-                if (error.status === 429 || error.status === 404) return false;
-              }
-              return failureCount < 1;
-            },
-            refetchOnWindowFocus: false,
-          },
+function createAppQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        // 60 s global default — most data (missions, briefs, agents) is stable within a minute.
+        // Brand scores use server-side cache; artifacts use the dedicated poller.
+        staleTime: 60_000,
+        gcTime: 5 * 60_000,
+        retry: (failureCount, error) => {
+          if (error instanceof ApiRequestError) {
+            if (error.status === 429 || error.status === 404) return false;
+          }
+          return failureCount < 1;
         },
-      })
-  );
+        refetchOnWindowFocus: false,
+      },
+    },
+  });
+}
+
+/** Shared React Query client — used by mobile and desk routes. */
+export function QueryProviders({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(createAppQueryClient);
 
   registerQueryClient(queryClient);
 
@@ -106,16 +114,28 @@ export function Providers({ children }: { children: ReactNode }) {
     return () => {
       registerQueryClient(null);
     };
-  }, []);
+  }, [queryClient]);
 
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
+/** Desk-only chrome: TailAdmin theme, sidebar, notifications + SignalR. */
+export function DeskProviders({ children }: { children: ReactNode }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <SidebarProvider>
-          <NotificationHydration />
-          {children}
-        </SidebarProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <SidebarProvider>
+        <NotificationHydration />
+        {children}
+      </SidebarProvider>
+    </ThemeProvider>
+  );
+}
+
+/** @deprecated Prefer QueryProviders at root + DeskProviders on /desk. */
+export function Providers({ children }: { children: ReactNode }) {
+  return (
+    <QueryProviders>
+      <DeskProviders>{children}</DeskProviders>
+    </QueryProviders>
   );
 }

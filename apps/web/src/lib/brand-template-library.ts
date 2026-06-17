@@ -21,16 +21,33 @@ import {
   REMOTION_TEMPLATE_BY_ID,
   getRemotionTemplate,
 } from './remotion-template-catalog';
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { FontPersonality, RemotionLayoutFamily } from './remotion-template-types';
 import { resolveKitForSector } from './remotion-template-registry';
-import { hashTenantSeed, tenantKitSeed, tenantSlotSeed } from './tenant-template-seed';
+import { diversificationSeed, hashTenantSeed, tenantKitSeed } from './tenant-template-seed';
 import { resolveTextOverlayPrefs } from './brand-text-overlay-prefs';
 import { rankPosterFamiliesForSector } from './poster-quality';
+import {
+  agencyStoryPickScore,
+  isAgencyStoryTemplate,
+} from './agency-template-standard';
+import {
+  getSectorCuratedPosterIds,
+  getSectorCuratedStoryIds,
+  getSectorSlotPosterFamilies,
+  getSectorSlotPreset,
+  getSectorSlotStoryFamilies,
+  isAgencyVibePickTemplateId,
+  normalizeSectorVibe,
+  resolveKitSectorForVibe,
+} from './sector-template-vibes';
+import { defaultSlotTypographyPatch } from './brand-template-slot-typography';
+
+export { resolveSlotRenderTypography, defaultSlotTypographyPatch } from './brand-template-slot-typography';
 
 export type BrandTemplateSlotFormat = 'story' | 'post' | 'poster';
 
 export interface BrandTemplateLibrarySlot {
-  slot: 1 | 2 | 3 | 4 | 5;
+  slot: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   key: string;
   labelTr: string;
   labelEn: string;
@@ -40,6 +57,13 @@ export interface BrandTemplateLibrarySlot {
   posterTemplateId?: string;
   legacyComposition?: StoryCompositionId;
   enabled: boolean;
+  /** template = şablon fontPersonality; brand = Marka Detayı; custom = headingFont seçimi */
+  fontMode?: import('./brand-template-slot-typography').SlotFontMode;
+  fontPersonality?: FontPersonality;
+  headingFont?: string;
+  bodyFont?: string;
+  /** false = bu slotta logo gösterilmez (varsayılan: göster) */
+  showLogo?: boolean;
 }
 
 export interface BrandTemplateLibrary {
@@ -53,7 +77,7 @@ export interface BrandTemplateLibrary {
 }
 
 interface SlotSpec {
-  slot: 1 | 2 | 3 | 4 | 5;
+  slot: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   key: string;
   labelTr: string;
   labelEn: string;
@@ -74,7 +98,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Daily Story',
     format: 'story',
     useCase: 'daily',
-    storyFamilies: ['editorial_bottom', 'minimal_luxury', 'asymmetric_editorial', 'frosted_glass', 'location_pin'],
+    storyFamilies: ['editorial_bottom', 'minimal_luxury', 'asymmetric_editorial', 'frosted_glass', 'location_pin', 'polaroid_single', 'polaroid_stack', 'vibe_fullscreen', 'cinematic_center', 'quote_card'],
     intents: ['daily_moment', 'product_spotlight', 'educational'],
     treatments: ['pure_photo', 'daily', 'menu'],
   },
@@ -85,7 +109,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Event Story',
     format: 'story',
     useCase: 'event',
-    storyFamilies: ['event_ticket', 'campaign_hero', 'bold_impact'],
+    storyFamilies: ['event_ticket', 'campaign_hero', 'bold_impact', 'neon_night', 'bento_story'],
     legacyComposition: 'SpecStory',
     intents: ['event', 'invitation', 'announcement'],
     treatments: ['story_event', 'event', 'event_announcement', 'dj'],
@@ -108,7 +132,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Editorial Story',
     format: 'story',
     useCase: 'editorial',
-    storyFamilies: ['split_panel', 'magazine_cover', 'minimal_luxury', 'noir_editorial', 'asymmetric_editorial'],
+    storyFamilies: ['split_panel', 'magazine_cover', 'minimal_luxury', 'noir_editorial', 'asymmetric_editorial', 'editorial_left', 'cinematic_center'],
     intents: ['announcement', 'product_spotlight'],
     treatments: ['feature', 'editorial', 'chef', 'spotlight'],
   },
@@ -119,17 +143,42 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Social Proof',
     format: 'story',
     useCase: 'social_proof',
-    storyFamilies: ['gallery_series', 'diptych_collage', 'mosaic_pinterest', 'polaroid_stack', 'quote_card', 'editorial_bottom'],
+    storyFamilies: ['gallery_series', 'diptych_collage', 'mosaic_pinterest', 'polaroid_single', 'polaroid_stack', 'quote_card', 'editorial_bottom', 'bento_story', 'location_pin'],
     legacyComposition: 'GallerySeriesStory',
     intents: ['social_proof'],
     treatments: ['social_proof', 'review', 'ugc'],
+  },
+  {
+    slot: 6,
+    key: 'social_proof_post',
+    labelTr: 'Sosyal Kanıt Post',
+    labelEn: 'Social Proof Post',
+    format: 'post',
+    useCase: 'social_proof',
+    posterFamilies: ['editorial_date', 'restaurant_feature', 'gala_invite', 'art_deco', 'event_masthead'],
+    intents: ['social_proof'],
+    treatments: ['social_proof', 'review', 'ugc', 'testimonial'],
+  },
+  {
+    slot: 7,
+    key: 'ad_creative_post',
+    labelTr: 'Reklam Kreatifi',
+    labelEn: 'Ad Creative',
+    format: 'post',
+    useCase: 'campaign',
+    posterFamilies: ['editorial_date', 'restaurant_feature', 'gala_invite', 'art_deco', 'event_masthead'],
+    intents: [],
+    treatments: ['ad_creative', 'ad'],
   },
 ];
 
 function sectorMatchesTemplate(sector: string, templateSectors: string[]): boolean {
   const norm = sector.toLowerCase().replace(/\s+/g, '_');
-  return templateSectors.some(
-    (s) => norm.includes(s.split('_')[0]!) || s.includes(norm.split('_')[0]!),
+  const kitSector = resolveKitSectorForVibe(sector).toLowerCase().replace(/\s+/g, '_');
+  const vibe = normalizeSectorVibe(sector);
+  const keys = new Set([norm, kitSector, vibe].filter(Boolean) as string[]);
+  return templateSectors.some((s) =>
+    [...keys].some((k) => k.includes(s.split('_')[0]!) || s.includes(k.split('_')[0]!)),
   );
 }
 
@@ -138,16 +187,28 @@ function pickStoryTemplate(
   families: RemotionLayoutFamily[],
   seed: number,
   avoidIds: string[] = [],
+  avoidFamilies: RemotionLayoutFamily[] = [],
 ): string | undefined {
   const sectorPool = REMOTION_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
   const pool = sectorPool.length >= 5 ? sectorPool : REMOTION_TEMPLATE_CATALOG;
   const allMatches = families.flatMap((family) => pool.filter((t) => t.family === family));
   const unique = Array.from(new Map(allMatches.map((t) => [t.id, t])).values());
-  const available = avoidIds.length
-    ? unique.filter((t) => !avoidIds.includes(t.id))
+  const familyFiltered = avoidFamilies.length
+    ? unique.filter((t) => !avoidFamilies.includes(t.family))
     : unique;
-  const pickFrom = available.length ? available : unique;
-  if (pickFrom.length) return pickFrom[seed % pickFrom.length]!.id;
+  const candidatePool = familyFiltered.length ? familyFiltered : unique;
+  const available = avoidIds.length
+    ? candidatePool.filter((t) => !avoidIds.includes(t.id))
+    : candidatePool;
+  const pickFrom = available.length ? available : candidatePool.length ? candidatePool : unique;
+  if (pickFrom.length) {
+    const ranked = [...pickFrom].sort((a, b) => {
+      const scoreDiff = agencyStoryPickScore(b.id, b.tags) - agencyStoryPickScore(a.id, a.tags);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.id.localeCompare(b.id);
+    });
+    return ranked[seed % ranked.length]!.id;
+  }
   return pool[seed % pool.length]?.id;
 }
 
@@ -208,20 +269,45 @@ export function deriveBrandTemplateLibrary(input: {
   sector: string;
   motionStyle?: string;
   tenantId?: string;
+  /** Renk/font/logo hash — tenant olmadan bile slot çeşitliliği */
+  brandFingerprint?: string;
 }): BrandTemplateLibrary {
   const kitSeed = tenantKitSeed(input.tenantId);
   const kitId = input.kitId ?? resolveKitForSector(input.sector, kitSeed);
   const kit = getBrandKit(kitId);
   const sector = kit?.sector ?? input.sector;
 
+  const sectorInput = input.sector ?? sector;
+  const usedStoryIds: string[] = [];
+  const usedPosterIds: string[] = [];
+  const usedStoryFamilies: RemotionLayoutFamily[] = [];
+
   const slots: BrandTemplateLibrarySlot[] = BRAND_LIBRARY_SLOT_SPECS.map((spec) => {
-    const slotSeed = tenantSlotSeed(input.tenantId, spec.slot);
+    const slotSeed = diversificationSeed(input.tenantId, input.brandFingerprint ?? '', spec.slot);
+    const vibePreset = getSectorSlotPreset(sectorInput, spec.key);
+    const storyFamilies = getSectorSlotStoryFamilies(sectorInput, spec.key, spec.storyFamilies);
+    const posterFamilies = getSectorSlotPosterFamilies(sectorInput, spec.key, spec.posterFamilies);
     const storyTemplateId = spec.storyFamilies
-      ? pickStoryTemplate(sector, spec.storyFamilies, slotSeed)
+      ? vibePreset?.storyTemplateId
+        ?? pickStoryTemplate(
+          sector,
+          storyFamilies ?? spec.storyFamilies!,
+          slotSeed,
+          usedStoryIds,
+          usedStoryFamilies,
+        )
       : undefined;
     const posterTemplateId = spec.posterFamilies
-      ? pickPosterTemplate(sector, spec.posterFamilies, slotSeed)
+      ? vibePreset?.posterTemplateId
+        ?? pickPosterTemplate(sector, posterFamilies ?? spec.posterFamilies!, slotSeed, usedPosterIds)
       : undefined;
+
+    if (storyTemplateId) {
+      usedStoryIds.push(storyTemplateId);
+      const fam = REMOTION_TEMPLATE_BY_ID.get(storyTemplateId)?.family;
+      if (fam) usedStoryFamilies.push(fam);
+    }
+    if (posterTemplateId) usedPosterIds.push(posterTemplateId);
 
     return {
       slot: spec.slot,
@@ -393,6 +479,9 @@ export function resolveProductionTemplate(input: {
   headline?: string;
   caption?: string;
   brandTheme?: Record<string, unknown> | null;
+  librarySlotKey?: string;
+  slotRole?: ProductionSlotRole | string;
+  templateUseCase?: string;
 }): {
   slot: BrandTemplateLibrarySlot;
   storyTemplateId?: string;
@@ -400,7 +489,15 @@ export function resolveProductionTemplate(input: {
   compositionId: RemotionCompositionId;
   kitId: string;
 } {
-  const slot = selectBrandLibrarySlot(input.library, input);
+  let slot: BrandTemplateLibrarySlot;
+  if (input.librarySlotKey) {
+    const forced = input.library.slots.find(
+      (s) => s.key === input.librarySlotKey && s.enabled,
+    );
+    slot = forced ?? selectBrandLibrarySlot(input.library, input);
+  } else {
+    slot = selectBrandLibrarySlot(input.library, input);
+  }
   const slotSpec = getSlotSpec(slot.key);
   const avoidIds = input.usedTemplateIds ?? [];
   const seed = storyTemplateSeed({
@@ -512,17 +609,22 @@ export function mapProductionContextToLibrarySlotKey(input: {
   templateUseCase?: string;
   hasEventDetails?: boolean;
 }): string | undefined {
-  const role = String(input.slotRole ?? '');
-  if (role === 'campaign_story_motion') return 'event_story';
-
   const treatment = (input.treatment ?? '').toLowerCase();
   const useCase = (input.templateUseCase ?? '').toLowerCase();
+  const role = String(input.slotRole ?? '').toLowerCase();
 
   if (input.hasEventDetails) return 'event_story';
   if (input.intent === 'event' || input.intent === 'invitation' || input.intent === 'announcement') {
     return 'event_story';
   }
-  if (input.intent === 'social_proof' || /social_proof|review|ugc|testimonial/.test(treatment)) {
+  if (
+    input.intent === 'social_proof'
+    || /social_proof|review|ugc|testimonial/.test(treatment)
+    || /social_proof|review|testimonial/.test(useCase)
+  ) {
+    if (role === 'designed_post' || role === 'paid_ad_creative' || role === 'paid_ad_google_creative') {
+      return 'social_proof_post';
+    }
     return 'social_proof';
   }
   if (input.intent === 'campaign_offer' || /campaign|promo|offer/.test(useCase)) {
@@ -663,6 +765,29 @@ export interface TemplateOption {
   id: string;
   label: string;
   family: string;
+  group?: string;
+  tier?: 'sector' | 'agency' | 'default';
+  fontPersonality?: FontPersonality;
+  fontPreview?: string;
+}
+
+const STORY_FAMILY_GROUP_TR: Partial<Record<RemotionLayoutFamily, string>> = {
+  polaroid_single: 'Polaroid · tek foto',
+  polaroid_stack: 'Polaroid · 2–3 foto',
+};
+
+const STORY_FAMILY_BADGE_TR: Partial<Record<RemotionLayoutFamily, string>> = {
+  polaroid_single: 'tek foto',
+  polaroid_stack: '2–3 foto',
+};
+
+export function storyTemplateFamilyForSlot(
+  library: BrandTemplateLibrary | null | undefined,
+  slotKey: string | undefined,
+): RemotionLayoutFamily | undefined {
+  if (!library || !slotKey) return undefined;
+  const tid = library.slots.find((s) => s.key === slotKey)?.storyTemplateId;
+  return tid && REMOTION_TEMPLATE_BY_ID.has(tid) ? getRemotionTemplate(tid)?.family : undefined;
 }
 
 export function listStoryTemplateOptions(sector: string, slotKey: string): TemplateOption[] {
@@ -671,24 +796,82 @@ export function listStoryTemplateOptions(sector: string, slotKey: string): Templ
   const sectorPool = REMOTION_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
   const pool = sectorPool.length >= 5 ? sectorPool : REMOTION_TEMPLATE_CATALOG;
   const filtered = families.length ? pool.filter((t) => families.includes(t.family)) : pool;
-  const list = (filtered.length ? filtered : pool).slice(0, 20);
-  return list.map((t) => ({ id: t.id, label: t.nameTr, family: t.family }));
+  const baseList = filtered.length ? filtered : pool;
+
+  const curatedIds = getSectorCuratedStoryIds(sector, slotKey);
+  const curatedSet = new Set(curatedIds);
+  const ordered: typeof baseList = [];
+  for (const id of curatedIds) {
+    const tpl = REMOTION_TEMPLATE_BY_ID.get(id);
+    if (tpl && baseList.some((t) => t.id === id)) ordered.push(tpl);
+  }
+  const agencyRanked = [...baseList]
+    .filter((t) => !ordered.some((o) => o.id === t.id))
+    .sort((a, b) => {
+      const scoreDiff = agencyStoryPickScore(b.id, b.tags) - agencyStoryPickScore(a.id, a.tags);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.nameTr.localeCompare(b.nameTr, 'tr');
+    });
+  for (const tpl of agencyRanked) {
+    if (!ordered.some((o) => o.id === tpl.id)) ordered.push(tpl);
+  }
+  const list = ordered.slice(0, 28);
+
+  return list.map((t) => {
+    const badge = STORY_FAMILY_BADGE_TR[t.family];
+    const tier = curatedSet.has(t.id)
+      ? 'sector' as const
+      : isAgencyStoryTemplate(t) || isAgencyVibePickTemplateId(t.id)
+        ? 'agency' as const
+        : 'default' as const;
+    const baseLabel = badge ? `${t.nameTr} · ${badge}` : t.nameTr;
+    return {
+      id: t.id,
+      label: tier === 'agency' && !curatedSet.has(t.id) ? `${baseLabel} · Ajans` : baseLabel,
+      family: t.family,
+      group: STORY_FAMILY_GROUP_TR[t.family],
+      tier,
+      fontPersonality: t.spec.fontPersonality,
+      fontPreview: t.spec.fontPersonality,
+    };
+  });
 }
 
 export function listPosterTemplateOptions(sector: string, slotKey: string): TemplateOption[] {
   const spec = getSlotSpec(slotKey);
-  const families = spec?.posterFamilies ?? ['promo_split'];
+  const families = getSectorSlotPosterFamilies(sector, slotKey, spec?.posterFamilies) ?? spec?.posterFamilies ?? ['promo_split'];
   const sectorPool = POSTER_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
   const pool = sectorPool.length >= 3 ? sectorPool : POSTER_TEMPLATE_CATALOG;
   const filtered = pool.filter((t) => families.includes(t.family));
-  const list = (filtered.length ? filtered : pool).slice(0, 15);
-  return list.map((t) => ({ id: t.id, label: t.nameTr, family: t.family }));
+  const baseList = filtered.length ? filtered : pool;
+
+  const curatedIds = getSectorCuratedPosterIds(sector, slotKey);
+  const curatedSet = new Set(curatedIds);
+  const ordered: typeof baseList = [];
+  for (const id of curatedIds) {
+    const tpl = POSTER_TEMPLATE_BY_ID.get(id);
+    if (tpl) ordered.push(tpl);
+  }
+  for (const tpl of baseList) {
+    if (!ordered.some((o) => o.id === tpl.id)) ordered.push(tpl);
+  }
+  const list = ordered.slice(0, 18);
+
+  return list.map((t) => ({
+    id: t.id,
+    label: t.nameTr,
+    family: t.family,
+    tier: curatedSet.has(t.id) ? 'sector' as const : 'agency' as const,
+  }));
 }
 
 export function patchLibrarySlot(
   library: BrandTemplateLibrary,
   slotKey: string,
-  patch: Partial<Pick<BrandTemplateLibrarySlot, 'storyTemplateId' | 'posterTemplateId' | 'enabled'>>,
+  patch: Partial<Pick<
+    BrandTemplateLibrarySlot,
+    'storyTemplateId' | 'posterTemplateId' | 'enabled' | 'fontMode' | 'fontPersonality' | 'headingFont' | 'bodyFont' | 'showLogo'
+  >>,
 ): BrandTemplateLibrary {
   return validateLibrarySlotIds({
     ...library,
@@ -701,17 +884,28 @@ export function patchLibrarySlot(
 export function validateLibrarySlotIds(library: BrandTemplateLibrary): BrandTemplateLibrary {
   return {
     ...library,
-    slots: library.slots.map((slot) => ({
-      ...slot,
-      storyTemplateId: slot.storyTemplateId && REMOTION_TEMPLATE_BY_ID.has(slot.storyTemplateId)
+    slots: library.slots.map((slot) => {
+      const storyTemplateId = slot.storyTemplateId && REMOTION_TEMPLATE_BY_ID.has(slot.storyTemplateId)
         ? slot.storyTemplateId
-        : pickStoryTemplate(getBrandKit(library.kitId)?.sector ?? 'general_business', ['editorial_bottom'], slot.slot - 1),
-      posterTemplateId: slot.posterTemplateId && POSTER_TEMPLATE_BY_ID.has(slot.posterTemplateId)
+        : pickStoryTemplate(getBrandKit(library.kitId)?.sector ?? 'general_business', ['editorial_bottom'], slot.slot - 1);
+      const posterTemplateId = slot.posterTemplateId && POSTER_TEMPLATE_BY_ID.has(slot.posterTemplateId)
         ? slot.posterTemplateId
         : slot.format === 'post'
           ? pickPosterTemplate(getBrandKit(library.kitId)?.sector ?? 'general_business', ['promo_split'], slot.slot - 1)
-          : undefined,
-    })),
+          : undefined;
+      const templateId = slot.format === 'post' ? posterTemplateId : storyTemplateId;
+      const typoBackfill = !slot.fontPersonality && templateId
+        ? defaultSlotTypographyPatch(templateId, slot.format)
+        : {};
+      return {
+        ...slot,
+        ...typoBackfill,
+        fontMode: slot.fontMode ?? 'template',
+        showLogo: slot.showLogo ?? true,
+        storyTemplateId,
+        posterTemplateId,
+      };
+    }),
   };
 }
 

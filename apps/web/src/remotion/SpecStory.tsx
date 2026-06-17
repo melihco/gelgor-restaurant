@@ -9,6 +9,7 @@ import { getRemotionTemplate } from '../lib/remotion-template-catalog';
 import { getBrandKit } from '../lib/agency-brand-kits';
 import type { StoryProps } from './types';
 import { StoryLayoutEngine } from './StoryLayoutEngine';
+import { StoryAudioLayer } from './shared/story-audio';
 
 export interface SpecStoryProps extends StoryProps {
   templateId?: string;
@@ -89,9 +90,14 @@ export const SpecStory: React.FC<SpecStoryProps> = (props) => {
   const layoutSpec = mergeLayoutSpec(template.spec, {
     ...props.layoutSpecPatch,
     overlayOpacity: merged.overlayOpacity ?? props.layoutSpecPatch?.overlayOpacity ?? template.spec.overlayOpacity,
-    heroWeight: merged.headlineWeight ?? props.layoutSpecPatch?.heroWeight ?? template.spec.heroWeight,
+    heroWeight: (merged.headlineWeight ?? props.layoutSpecPatch?.heroWeight ?? template.spec.heroWeight) as 300 | 400 | 600 | 700 | 800 | 900,
     heroScale: merged.headlineScale ?? props.layoutSpecPatch?.heroScale ?? template.spec.heroScale,
   });
 
-  return <StoryLayoutEngine {...merged} layoutSpec={layoutSpec} />;
+  return (
+    <>
+      <StoryAudioLayer audioMood={merged.audioMood} storyMusicUrl={merged.storyMusicUrl} voiceoverUrl={merged.voiceoverUrl} />
+      <StoryLayoutEngine {...merged} layoutSpec={layoutSpec} />
+    </>
+  );
 };

@@ -31,6 +31,7 @@ export type PosterFooter = 'none' | 'solid_bar' | 'transparent_bar' | 'pill_row'
 export type PosterFormat = 'story' | 'post' | 'portrait';
 
 export type PosterCollection =
+  | 'Agency'
   | 'Event'
   | 'Festival'
   | 'Nightlife'

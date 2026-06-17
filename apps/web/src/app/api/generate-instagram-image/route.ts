@@ -3,6 +3,13 @@ import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { API_BASE_URL } from '@/lib/runtime-config';
 import { shouldPreserveVenuePhotos } from '@/lib/venue-photo-policy';
+import {
+  getSectorProfile,
+  getSectorBackgroundScenePrompt,
+  getSectorImageNegativeGuards,
+  getSectorSceneLockSubject,
+  sectorMenuIsServiceList,
+} from '@/lib/sector-production-profile';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -112,6 +119,11 @@ type InstagramImageInput = {
    * concrete palette, grading directives, composition rules, anti-patterns.
    * Stored on brand_contexts.brand_vibe_profile.
    */
+  /**
+   * Caption + brand DNA fresh generation — skips gallery reference edit;
+   * forces OpenAI and uses full buildPrompt with vibe/location/logo hints.
+   */
+  captionDrivenMode?: boolean;
   brandVibeProfile?: {
     palette?: { primary?: string; accent?: string; neutral?: string; shadow?: string; palette_description?: string };
     grading?: { look?: string; lut_directive?: string };
@@ -322,20 +334,27 @@ const PRODUCT_USE_CASES = new Set([
   'product_highlight', 'menu_share', 'product_showcase',
 ]);
 
-function isProductContent(assetIntent?: string, context?: string): boolean {
+function isProductContent(assetIntent?: string, context?: string, businessType?: string): boolean {
   if (assetIntent && PRODUCT_ASSET_INTENTS.has(assetIntent)) return true;
+
+  // Service sectors use "menü" for price/service lists, not food menus.
+  // Check profile table — no hardcoded sector strings here.
+  if (businessType && sectorMenuIsServiceList(businessType)) return false;
+
   if (context) {
     const low = context.toLowerCase();
     if (PRODUCT_USE_CASES.has(low)) return true;
-    // Detect product keywords in the context string
-    if (/product|ürün|lokum|şişe|bottle|food|yemek|menu|menü|dish|plate|paket|package|tatlı|sweet|çikolata|chocolate|peynir|cheese|zeytinyağı|olive oil/.test(low)) return true;
+    // Food/product keywords — but NOT "menü" alone (service sectors use it for price lists)
+    if (/product|ürün|lokum|şişe|bottle|food|yemek|dish|plate|tatlı|sweet|çikolata|chocolate|peynir|cheese|zeytinyağı|olive oil/.test(low)) return true;
+    // "menu/menü" only counts as food when paired with actual food terms
+    if (/(?:menü|menu).{0,30}(?:yemek|food|pizza|burger|steak|çorba|soup|salata|salad|içecek|drink)/.test(low)) return true;
   }
   return false;
 }
 
-function buildEnhancePrompt(brandName?: string, context?: string, assetIntent?: string, logoUrl?: string, vibeProfile?: InstagramImageInput['brandVibeProfile']): string {
+function buildEnhancePrompt(brandName?: string, context?: string, assetIntent?: string, logoUrl?: string, vibeProfile?: InstagramImageInput['brandVibeProfile'], businessType?: string): string {
   const brand = brandName ? ` (${brandName})` : '';
-  const isProduct = isProductContent(assetIntent, context);
+  const isProduct = isProductContent(assetIntent, context, businessType);
 
   // Core preservation rule — applies to ALL enhancements
   const preservationCore = [
@@ -433,15 +452,9 @@ function buildProductBackgroundPrompt(params: {
   const dna = visualDna || 'warm, natural light, premium quality';
   const tone = brandTone || 'elegant and inviting';
 
-  // Derive a fitting background scene from brand context
+  // Sector-aware background scene — driven by profile table, no hardcoded regexes
   const bgScene = compactLines([
-    businessType?.toLowerCase().includes('beach') || businessType?.toLowerCase().includes('club')
-      ? 'sun-drenched terrace with turquoise sea view in the background, soft bokeh, golden hour light'
-      : businessType?.toLowerCase().includes('restaurant') || businessType?.toLowerCase().includes('cafe')
-        ? 'warm restaurant interior with soft ambient lighting, natural wood surfaces, shallow depth of field'
-        : businessType?.toLowerCase().includes('hotel') || businessType?.toLowerCase().includes('resort')
-          ? 'luxury hotel poolside or lobby setting, marble surfaces, natural light, editorial feel'
-          : 'premium brand environment with natural textures, soft directional light, editorial quality',
+    getSectorBackgroundScenePrompt(businessType),
     location ? `The setting evokes ${location} — local materials, local light quality, authentic sense of place.` : '',
     `Visual DNA: ${dna}.`,
     `Brand tone: ${tone}.`,
@@ -532,6 +545,65 @@ async function maybeExpandImageScenePrompt(basePrompt: string): Promise<string> 
   }
 }
 
+/**
+ * Generates the VISUAL SCENE LOCK block injected at the top of every AI image prompt.
+ * Driven entirely by the sector profile table — no hardcoded sector strings here.
+ *
+ * For service sectors with low gallery reliability (beauty, barber, healthcare…),
+ * the lock narrows the subject further based on caption keywords so the model
+ * renders the specific treatment/service mentioned, not just a generic salon.
+ */
+function buildSectorSceneLock(
+  industry?: string,
+  businessType?: string,
+  title?: string,
+  caption?: string,
+): string {
+  const sector = industry ?? businessType;
+  const profile = getSectorProfile(sector);
+  const sceneLockSubject = profile.sceneLockSubject;
+  const negativeGuards = profile.imageNegativeGuards;
+
+  // For service-person sectors with low gallery reliability, refine the subject
+  // from the caption so the model doesn't render a generic salon when brief says "nail art".
+  let refinedSubject = sceneLockSubject;
+  if (profile.defaultVisualSubject === 'service_person' && profile.galleryReliability === 'low') {
+    const text = ((title ?? '') + ' ' + (caption ?? '')).toLowerCase();
+    // Nail / manicure / pedicure focus
+    if (/tırnak|nail|manikür|pedikür|oje|gel|kalıcı|protez|nail.art/.test(text)) {
+      refinedSubject =
+        'Close-up editorial photograph of beautifully manicured hands with professional nail art / gel polish / nail design. ' +
+        'Nail detail: high-definition texture, professional finish, clean cuticles, elegant colour. ' +
+        'Background: softly blurred modern nail salon — white/marble surfaces, soft window light, botanical accents.';
+    } else if (/saç|hair|kesim|boyama|fön|highlights|blowout/.test(text)) {
+      refinedSubject =
+        'Close-up or lifestyle shot of professional hair styling — fresh blowout, precise cut, or vivid color treatment. ' +
+        'Setting: upscale hair salon with modern styling chairs, clean mirrors, soft studio light.';
+    } else if (/cilt|skin|yüz|facial|peeling|serum|maske/.test(text)) {
+      refinedSubject =
+        'Serene close-up of a professional skincare or facial treatment in a premium beauty studio. ' +
+        'Clean, clinical-minimal aesthetic, soft diffused window light, botanical accents.';
+    } else if (/traş|tıraş|beard|sakal|barber/.test(text)) {
+      refinedSubject =
+        'Barbershop lifestyle — barber styling a client\'s hair/beard with precision, professional tools, warm studio light.';
+    }
+  }
+
+  // Build the SCENE LOCK block
+  const lines = [
+    '══ VISUAL SCENE LOCK (highest priority — override any other scene interpretation) ══',
+    `SUBJECT: ${refinedSubject}`,
+    `Background scene: ${profile.backgroundScenePrompt}`,
+    `Mood: ${profile.colorGrade === 'warm' ? 'warm, editorial, inviting' : profile.colorGrade === 'cool' ? 'clean, cool, minimal editorial' : profile.colorGrade === 'vibrant' ? 'vibrant, energetic, aspirational' : profile.colorGrade === 'dark_moody' ? 'dramatic, dark, premium nightlife' : 'neutral, professional, editorial'}`,
+    ...negativeGuards,
+  ];
+
+  // Only emit scene lock when we have something sector-specific to say
+  if (profile.sectorId === 'general_business' && negativeGuards.length === 0) return '';
+
+  return compactLines(lines);
+}
+
 function buildPrompt(input: InstagramImageInput) {
   const contentType = input.contentType ?? 'post';
   const isStory = contentType === 'story';
@@ -570,12 +642,21 @@ function buildPrompt(input: InstagramImageInput) {
     format,
   ]);
 
+  // Sector-specific negative guards — from profile table, no hardcoded sector strings
+  const sectorNegativeGuards = getSectorImageNegativeGuards(input.industry ?? input.businessType);
+  const sectorProfile = getSectorProfile(input.industry ?? input.businessType);
+  const isVenueFood = sectorProfile.defaultVisualSubject === 'venue_interior' && !sectorMenuIsServiceList(input.industry ?? input.businessType);
+
   const negativeConstraints = compactLines([
     'ABSOLUTELY FORBIDDEN: fake Instagram screenshot, phone screen, social media UI, like/comment/share icons, profile header, caption block, hashtag text, post frame, story frame, browser window, app interface.',
     'Avoid: AI poster look, over-designed graphic, illustration, 3D render, cartoon, collage, flyer, menu board, stock-photo cliche, theatrical staged composition.',
-    'Do not put typography, captions, logos, watermarks, QR codes, UI elements, banners, labels, subtitles or unreadable text inside the image.',
-    'Avoid distorted hands, faces, teeth, eyes, food, tableware, cutlery, menus, reflections, shadows and impossible geometry.',
-    'No random brand names, no fake event sponsors, no text artifacts.',
+    'CRITICAL — NO TEXT IN IMAGE: Do not render any letters, words, numbers, glyphs, symbols, typography, captions, subtitles, watermarks, logos, banners, labels, price tags, menus, signs, headlines, or any text artifact of any kind inside the generated image. Text must be completely absent. Any visible character will disqualify the image.',
+    'No random brand names, no fake business names, no event sponsor names, no readable signs, no garbled or partial text, no text artifacts, no letterforms of any kind.',
+    // Sector-specific guards from profile table
+    ...sectorNegativeGuards,
+    isVenueFood
+      ? 'Avoid: distorted hands, faces, teeth. No fake decorations or fantasy food.'
+      : 'Avoid distorted hands, faces, teeth, eyes, food, tableware, cutlery, reflections and impossible geometry.',
   ]);
 
   const logoSection = clean(input.logoUrl)
@@ -637,10 +718,19 @@ function buildPrompt(input: InstagramImageInput) {
       ])
     : undefined;
 
+  const sceneLock = buildSectorSceneLock(
+    input.industry,
+    input.businessType,
+    input.title,
+    input.caption,
+  );
+
   return compactLines([
     'You are a senior commercial art director and production photographer. Generate a single raw camera photograph that will later be placed into a social media card by the app.',
     'The image itself must contain only the photographic scene. No text. No layout. No UI. No mockup.',
     '',
+    // Scene lock goes FIRST — highest attention weight for the model
+    ...(sceneLock ? [sceneLock, ''] : []),
     'BRAND INTELLIGENCE',
     brandSection || 'Use a premium, trustworthy local business brand identity.',
     '',
@@ -1095,7 +1185,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'enhanceMode requires at least one referenceImageUrl' }, { status: 400 });
     }
 
-    const isProduct = isProductContent(input.assetIntent, input.enhanceContext);
+    const isProduct = isProductContent(input.assetIntent, input.enhanceContext, input.industry);
     const openaiForSelect = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
     const contentBrief = [input.enhanceContext, input.title, input.caption].filter(Boolean).join('. ');
     const useMultiEnhance = validEnhanceUrls.length >= 2
@@ -1220,20 +1310,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? input.designCardPrompt!
     : await maybeExpandImageScenePrompt(buildPrompt(input));
 
-  const preferredProvider: ImageProvider = isDesignedCard
+  const preferredProvider: ImageProvider = isDesignedCard || input.captionDrivenMode
     ? 'openai'
     : ((process.env.SMART_AGENCY_IMAGE_PROVIDER ?? 'flux') as ImageProvider);
+
+  const scratchReferenceUrls = input.captionDrivenMode
+    ? undefined
+    : referenceImageUrls;
 
   try {
     let generated: GeneratedImage;
     try {
       generated = preferredProvider === 'openai'
-        ? await generateWithOpenAI(prompt, contentType, referenceImageUrls, isDesignedCard)
+        ? await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard)
         : await generateWithFlux(prompt, contentType);
     } catch (primaryError) {
       if (preferredProvider === 'openai') throw primaryError;
       console.warn('[/api/generate-instagram-image] Flux failed, falling back to OpenAI:', primaryError);
-      generated = await generateWithOpenAI(prompt, contentType, referenceImageUrls, isDesignedCard);
+      generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard);
     }
 
     // Upload to R2 for permanent storage (required for Meta API publishing)

@@ -1,4 +1,6 @@
 import { API_BASE_URL, DEFAULT_TENANT_ID } from '@/lib/runtime-config';
+
+const DEFAULT_USER_ID = 'default-user';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { CanvaTemplateDatasetField, CanvaTemplateMetadata } from '@/lib/canva-template-selection';
 

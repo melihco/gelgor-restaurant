@@ -11,7 +11,7 @@ import { humanizeAgentError } from '@/lib/humanize-agent-error';
 
 // ─── Agent meta ────────────────────────────────────────────────────────
 const AGENT_META: Record<string, { role: string; color: string; icon: string }> = {
-  blogwriter:                { role: 'İçerik Yazarı',   color: '#A78BFA', icon: '✍' },
+  blogwriter:                { role: 'İçerik Yazarı',   color: '#9DBECE', icon: '✍' },
   instagramcontentgenerator: { role: 'İçerik Üretici',  color: '#F472B6', icon: '✦' },
   socialmediadesigner:       { role: 'Tasarımcı',        color: '#F472B6', icon: '◈' },
   googleadsanalyst:          { role: 'Reklam Analisti',  color: '#60A5FA', icon: '◎' },
@@ -19,7 +19,7 @@ const AGENT_META: Record<string, { role: string; color: string; icon: string }> 
   customerreviewresponder:   { role: 'Yorum Uzmanı',     color: '#F59E0B', icon: '💬' },
   aiceo:                     { role: 'Strateji CEO',     color: '#A5B4FC', icon: '◆' },
   chatbotmanager:            { role: 'Bot Yöneticisi',   color: '#818CF8', icon: '⟳' },
-  writer:    { role: 'Yazar',       color: '#A78BFA', icon: '✍' },
+  writer:    { role: 'Yazar',       color: '#9DBECE', icon: '✍' },
   designer:  { role: 'Tasarımcı',   color: '#F472B6', icon: '◈' },
   analyst:   { role: 'Analist',     color: '#34D399', icon: '↗' },
   manager:   { role: 'Yönetici',    color: '#A5B4FC', icon: '◆' },
@@ -27,7 +27,7 @@ const AGENT_META: Record<string, { role: string; color: string; icon: string }> 
 };
 
 function getMeta(agentType: string) {
-  return AGENT_META[(agentType ?? '').toLowerCase()] ?? { role: 'AI Ajan', color: '#A78BFA', icon: '✦' };
+  return AGENT_META[(agentType ?? '').toLowerCase()] ?? { role: 'AI Ajan', color: '#9DBECE', icon: '✦' };
 }
 
 // ─── Status ring ──────────────────────────────────────────────────────

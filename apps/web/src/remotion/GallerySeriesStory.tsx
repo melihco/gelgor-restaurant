@@ -4,7 +4,7 @@
  * Layouts (auto from photo count):
  *   dual    — 2 photos side-by-side top + typography panel bottom
  *   triple  — 3 horizontal strips top + panel bottom
- *   sequence — crossfade 3 photos top + panel bottom (8s cycle)
+ *   sequence — crossfade up to 4 photos top + panel bottom (8s → ~2s per slide)
  *
  * Typography never overlays photos — lives in bottom brand panel.
  */
@@ -22,6 +22,7 @@ import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
 import { HeadlineStack, headlineSize, stableTextOpacity } from './shared/story-primitives';
+import { StoryAudioLayer } from './shared/story-audio';
 
 const PHOTO_ZONE_RATIO = 0.54;
 const PANEL_RATIO = 1 - PHOTO_ZONE_RATIO;
@@ -31,7 +32,7 @@ function uniquePhotos(primary: string, extras?: string[]): string[] {
   for (const u of [primary, ...(extras ?? [])]) {
     if (u && !out.includes(u)) out.push(u);
   }
-  return out.slice(0, 3);
+  return out.slice(0, 4);
 }
 
 export const GallerySeriesStory: React.FC<StoryProps> = ({
@@ -51,6 +52,8 @@ export const GallerySeriesStory: React.FC<StoryProps> = ({
   headlineScale = 1.0,
   logoUrl = '',
   cta = '',
+  audioMood,
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('sans_modern', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -224,6 +227,7 @@ export const GallerySeriesStory: React.FC<StoryProps> = ({
           </span>
         ) : null}
       </div>
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
     </AbsoluteFill>
   );
 };

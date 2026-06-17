@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Smart Agency",
+    "slug": "smart-agency",
+    "scheme": "smartagency",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.smartagency.mobile"
+    },
+    "extra": {
+      "apiBaseUrl": "http://127.0.0.1:3000"
+    }
+  }
+}

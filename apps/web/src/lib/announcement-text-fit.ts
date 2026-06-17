@@ -2,6 +2,21 @@
  * Text fitting for announcement SVG overlays — auto-scale, wrap, stay in bounds.
  */
 
+/** Strip emoji/hashtags — Resvg + display fonts render these as ? tofu boxes on posters. */
+export function sanitizePosterText(text: string): string {
+  if (!text) return '';
+  let s = text
+    .replace(/#[\w\u00C0-\u024F]+/gi, ' ')
+    .replace(/@[\w.]+/g, ' ')
+    .replace(/\?{2,}/g, ' ')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\uFE00-\uFE0F\u200D\u20E3]/g, '')
+    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '')
+    .replace(/[\uFFFD]/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -95,6 +110,16 @@ export function fitTextToWidth(
   minFontSizeRatio = 0.52,
   maxLines = 2,
 ): FitTextResult {
+  text = sanitizePosterText(text);
+  if (!text) {
+    return {
+      fontSize: baseFontSize,
+      letterSpacing: 0,
+      lines: [],
+      lineHeight: baseFontSize,
+      blockHeight: 0,
+    };
+  }
   const safeWidth = Math.round(maxWidth * FIT_WIDTH_SAFETY);
   const minFontSize = Math.max(12, Math.round(baseFontSize * minFontSizeRatio));
   let fontSize = baseFontSize;

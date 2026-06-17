@@ -8,6 +8,7 @@ service over an internal service-to-service contract.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
@@ -44,8 +45,14 @@ async def lifespan(app: FastAPI):
 
     # ── Sprint C: CEO Intelligence Scheduler ────────────────────────────
     from app.services.scheduler_service import start_scheduler, startup_warm_cache
+    from app.services.task_graph_executor import recover_mission_graph_on_startup
     start_scheduler()
     await startup_warm_cache()
+    # Do not block HTTP — recovery can trigger slow feed-production backfills.
+    asyncio.create_task(
+        recover_mission_graph_on_startup(),
+        name="mission_graph_startup_recovery",
+    )
 
     yield
 

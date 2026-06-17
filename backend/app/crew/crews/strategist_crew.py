@@ -23,20 +23,12 @@ from app.config import get_settings
 from app.crew.agents.strategist_agent import create_strategist_agent
 from app.crew.context import BrandInfo
 from app.crew.prompts.strategist_prompts import STRATEGIST_TASK_PROMPT
+from app.crew.registry import VALID_AGENT_TASK_MAP
 from app.crew.token_usage import total_tokens_from_crew
 
 logger = structlog.get_logger()
 
 
-# ── Valid agent/task combinations (mirrors engine.py AGENT_ROLES) ────────────
-_VALID_AGENT_TASKS: dict[str, list[str]] = {
-    "review_agent":           ["review_analysis", "single_review_response"],
-    "content_agent":          ["content_ideation", "content_calendar", "visual_design_cards"],
-    "content_strategy_agent": ["content_strategy"],
-    "ads_agent":              ["campaign_analysis", "ad_creative_generation",
-                               "auto_budget_optimize", "ads_budget_optimization"],
-    "analytics_agent":        ["traffic_analysis", "conversion_report", "weekly_performance"],
-}
 _VALID_MISSION_TYPES = {"seasonal", "opportunity", "competitive", "recovery", "manual"}
 _VALID_PRIORITIES    = {"critical", "high", "medium", "low"}
 
@@ -252,12 +244,13 @@ def run_mission_planning(
     planning_task = Task(
         description=task_description,
         expected_output=(
-            "A JSON array of 2-3 MissionProposal objects. Each proposal must contain: "
+            "A JSON array containing EXACTLY 1 MissionProposal object. "
+            "Do NOT return more than one proposal. Each proposal must contain: "
             "title, type, trigger_signal, trigger_evidence, objective, timeline_days, "
             "creative_brief, phases (list), task_nodes (list with node_key, phase_index, "
             "title, task_type, agent_role, input_data, depends_on), assigned_agent_roles, "
             "priority, confidence, rationale, expected_outcome. "
-            "Return ONLY the JSON array, no prose."
+            "Return ONLY the JSON array with one object, no prose."
         ),
         agent=agent,
     )
@@ -436,13 +429,22 @@ def _validate_node(node: dict, existing_keys: set[str]) -> dict | None:
         return None
 
     # Validate agent/task combination
-    if agent_role not in _VALID_AGENT_TASKS:
-        agent_role = "content_agent"
-    valid_tasks = _VALID_AGENT_TASKS[agent_role]
+    if agent_role not in VALID_AGENT_TASK_MAP:
+        logger.warning(
+            "strategist_node_dropped_invalid_agent_role",
+            node_key=node_key,
+            agent_role=agent_role,
+        )
+        return None
+    valid_tasks = VALID_AGENT_TASK_MAP[agent_role]
     if task_type not in valid_tasks:
-        task_type = valid_tasks[0]
-        logger.warning("strategist_node_task_type_corrected",
-                       node_key=node_key, corrected_to=task_type)
+        logger.warning(
+            "strategist_node_dropped_invalid_task_type",
+            node_key=node_key,
+            agent_role=agent_role,
+            task_type=task_type,
+        )
+        return None
 
     # Validate depends_on: remove self-reference and unknown keys
     raw_deps = node.get("depends_on") or []

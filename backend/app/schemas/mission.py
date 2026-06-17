@@ -97,6 +97,7 @@ class TaskNodeRead(OrmBase):
     status: str
     output_artifact_id: str | None
     output_summary: str | None
+    output_payload: dict[str, Any] | list[dict[str, Any]] | None = None
     started_at: datetime | None
     completed_at: datetime | None
     error_message: str | None
@@ -110,6 +111,7 @@ class TaskNodeStatusUpdate(BaseModel):
     status: TaskNodeStatus
     output_artifact_id: str | None = None
     output_summary: str | None = None
+    output_payload: dict[str, Any] | list[dict[str, Any]] | None = None
     error_message: str | None = None
 
 

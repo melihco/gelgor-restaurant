@@ -40,6 +40,14 @@ export interface RendererGalleryMeta {
   tags?: string[];
   /** Match score 0..100 of the chosen photo (Sprint 2 GIS). */
   matchScore?: number;
+  /** One-line frame summary from gallery vision (Runway fidelity). */
+  sceneMoment?: string;
+  /** Subtle i2v motions derived from visible subjects. */
+  microMotions?: string[];
+  photoMood?: string;
+  usageContext?: string;
+  pairingKeywords?: string[];
+  hasPeople?: boolean;
 }
 
 // ── Reel (Runway) ──────────────────────────────────────────────────────────────
@@ -214,7 +222,7 @@ export function buildCanvaIdeaRecord(
 
 const REQUIRED_BY_RENDERER: Record<ProductionRenderer, string[]> = {
   canva: ['title', 'kind', 'canvaFieldCopy.headline'],
-  runway: ['title', 'concept', 'promptImage'],
+  runway: ['title', 'caption', 'concept', 'promptImage'],
   announcement: ['photoUrl', 'templateId', 'eventName', 'brandName'],
   photo: ['title', 'contentType', 'referenceImageUrls'],
   canvas: ['photoUrl', 'eventName'],
@@ -268,6 +276,7 @@ export function resolveProductionRenderer(
       return 'announcement';
     case 'remotion_poster':
     case 'meta_ad':
+    case 'google_ad':
       // Canva retired — designed posts & ads use Remotion/announcement stack
       return 'announcement';
     case 'gallery_photo':

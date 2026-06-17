@@ -116,6 +116,12 @@ class BrandContext(BaseModel):
     # Timestamp of last extended intelligence refresh
     extended_intelligence_updated_at: Mapped[str | None] = mapped_column(String(50))
 
+    # ── Deep Instagram intelligence (migration 0021) ──────────────────────
+    # Recent captions stored verbatim — injected into agent prompts for voice matching
+    instagram_recent_captions: Mapped[str | None] = mapped_column(Text)
+    # GPT-4o structured analysis: brand_voice, content_themes, cta_patterns, emotional_triggers
+    instagram_intelligence: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # AI-generated visual identity analysis (GPT-4o Vision on reference_image_urls).
     # Describes color palette, mood, lighting, materials, venue aesthetic.
     # Used in agent prompts so content/visual direction stays venue-consistent.

@@ -22,7 +22,7 @@ const TASK_STATUS: Record<string, { label: string; color: string }> = {
 
 const BRIEF_STATUS: Record<string, { label: string; color: string }> = {
   draft:       { label: 'Taslak',       color: '#60a5fa' },
-  decomposed:  { label: 'Hazırlanıyor', color: '#a78bfa' },
+  decomposed:  { label: 'Hazırlanıyor', color: '#9DBECE' },
   in_progress: { label: 'Aktif',        color: '#34d399' },
   review:      { label: 'İnceleme',     color: '#f59e0b' },
   completed:   { label: 'Tamamlandı',   color: '#60a5fa' },
@@ -44,7 +44,7 @@ function timeAgo(iso: string | undefined): string {
 }
 
 const AGENT_COLORS: Record<string, string> = {
-  writer: '#a78bfa', designer: '#f472b6', analyst: '#34d399',
+  writer: '#9DBECE', designer: '#f472b6', analyst: '#34d399',
   manager: '#a5b4fc', researcher: '#60a5fa', developer: '#818cf8',
 };
 function taskColor(task: TaskItem): string {
@@ -52,7 +52,7 @@ function taskColor(task: TaskItem): string {
   for (const [k, v] of Object.entries(AGENT_COLORS)) {
     if (agent.includes(k)) return v;
   }
-  return '#a78bfa';
+  return '#9DBECE';
 }
 
 type Tab = 'overview' | 'tasks' | 'outputs';
@@ -110,7 +110,7 @@ export function CampaignDetail() {
     <div style={{ minHeight: '100dvh', background: t.bg, transition: 'background 300ms', fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
 
       {/* Hero header */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 16px) 20px 20px', background: t.isDark ? 'linear-gradient(180deg, rgba(124,58,237,0.07) 0%, transparent 100%)' : 'linear-gradient(180deg, rgba(124,58,237,0.03) 0%, transparent 100%)', borderBottom: `0.5px solid ${t.separator}` }}>
+      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 16px) 20px 20px', background: t.isDark ? 'linear-gradient(180deg, rgba(77,112,136,0.07) 0%, transparent 100%)' : 'linear-gradient(180deg, rgba(77,112,136,0.03) 0%, transparent 100%)', borderBottom: `0.5px solid ${t.separator}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
           <button onClick={goBack} style={{ width: 32, height: 32, borderRadius: '50%', ...t.iconBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.textSecondary} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M10 6l-5 6 5 6"/></svg>

@@ -46,6 +46,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
     const oauthAccountId = extractMertcafeOAuthAccountId(data);
+    const instagramConnected = Boolean(data.instagram_connected);
+    // OAuth bağlıyken yayın her zaman bağlı IG hesabına gider (eski account_id kullanılmaz).
+    const useOAuth = instagramConnected || Boolean(tenant.useOAuthAccount);
 
     const instagramUsername = String(
       data.instagram_username ?? data.username ?? data.ig_username ?? '',
@@ -53,18 +56,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       api_key: typeof data.api_key === 'string' ? data.api_key : undefined,
-      instagram_connected: Boolean(data.instagram_connected),
+      instagram_connected: instagramConnected,
       meta_ads_connected: Boolean(data.meta_ads_connected),
       instagram_account_id: tenant.publishAccountId ?? oauthAccountId ?? null,
       publish_account_id: tenant.publishAccountId ?? oauthAccountId ?? null,
       oauth_account_id: oauthAccountId ?? null,
       instagram_username: instagramUsername || null,
-      use_oauth_account: Boolean(tenant.useOAuthAccount),
+      use_oauth_account: useOAuth,
       saved_accounts: tenant.savedAccounts,
       workspace_id: workspaceId,
       has_tenant_api_key: true,
-      has_publish_account: tenant.hasPublishAccount,
-      is_tenant_ready: tenant.isTenantReady || (Boolean(data.instagram_connected) && tenant.useOAuthAccount),
+      has_publish_account: tenant.hasPublishAccount || instagramConnected,
+      is_tenant_ready: tenant.isTenantReady || (instagramConnected && useOAuth),
       api_key_source: tenant.apiKeySource,
       account_source: tenant.accountSource,
     });

@@ -31,10 +31,10 @@ const DENSITY_DEFAULTS: Record<
     canvasStyleIndex: 0,
   },
   medium: {
-    heroScaleMultiplier: 0.9,
-    overlayOpacity: 0.48,
-    textSafeAreaFraction: 0.52,
-    preferPhotoDominantLayouts: false,
+    heroScaleMultiplier: 0.82,
+    overlayOpacity: 0.52,
+    textSafeAreaFraction: 0.36,
+    preferPhotoDominantLayouts: true,
     canvasStyleIndex: 0,
   },
   dense: {
@@ -87,6 +87,69 @@ export function resolveTextOverlayPrefs(
     textSafeAreaFraction: Math.min(0.75, Math.max(0.22, safeFrac)),
     preferPhotoDominantLayouts: base.preferPhotoDominantLayouts,
     canvasStyleIndex: base.canvasStyleIndex,
+  };
+}
+
+const CENTER_HEAVY_FAMILIES = new Set([
+  'cinematic_center',
+  'bold_impact',
+  'vibe_fullscreen',
+  'neon_night',
+]);
+
+/** Remotion SpecStory — fotoğrafı kapatmadan metni alt banda taşır. */
+export function buildBrandTextOverlayLayoutPatch(
+  spec: {
+    family?: string;
+    textZone?: string;
+    gradientStart?: number;
+    gradientEnd?: number;
+    overlayOpacity?: number;
+    heroScale?: number;
+    heroWeight?: number;
+    frostedCard?: boolean;
+    vignette?: string;
+    align?: string;
+  },
+  brandTheme?: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const prefs = resolveTextOverlayPrefs(brandTheme);
+  const centerHeavy =
+    spec.textZone === 'center'
+    || CENTER_HEAVY_FAMILIES.has(String(spec.family ?? ''));
+
+  const patch: Record<string, unknown> = {
+    overlayOpacity: Math.max(
+      Number(spec.overlayOpacity ?? 0.5),
+      prefs.overlayOpacity,
+    ),
+    heroScale: Number(spec.heroScale ?? 1) * prefs.heroScaleMultiplier,
+    gradientStart: Math.max(Number(spec.gradientStart ?? 0.45), 0.48),
+    gradientEnd: Math.max(Number(spec.gradientEnd ?? 0.82), 0.88),
+  };
+
+  if (prefs.density === 'dense' && !prefs.preferPhotoDominantLayouts) {
+    return patch;
+  }
+
+  if (!centerHeavy && !prefs.preferPhotoDominantLayouts) {
+    return patch;
+  }
+
+  // Fotoğraf önde: metin alt şerit / panel — ürün ve araç görünür kalır
+  return {
+    ...patch,
+    family: CENTER_HEAVY_FAMILIES.has(String(spec.family ?? ''))
+      ? 'editorial_bottom'
+      : spec.family,
+    textZone: 'bottom_center',
+    align: 'center',
+    gradientStart: Math.max(0.55, Number(spec.gradientStart ?? 0.45)),
+    gradientEnd: Math.max(0.9, Number(spec.gradientEnd ?? 0.82)),
+    overlayOpacity: Math.max(patch.overlayOpacity as number, 0.58),
+    frostedCard: Boolean(spec.frostedCard),
+    vignette: spec.vignette === 'none' ? 'soft' : spec.vignette,
+    heroWeight: Math.max(Number(spec.heroWeight ?? 700), 800),
   };
 }
 

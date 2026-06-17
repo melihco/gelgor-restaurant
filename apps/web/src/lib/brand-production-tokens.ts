@@ -7,6 +7,7 @@ import {
   type AnnouncementBrandKit,
 } from '@/lib/announcement-brand-kit';
 import { resolveTextOverlayPrefs } from '@/lib/brand-text-overlay-prefs';
+import { resolveSectorColorPreset } from '@/lib/sector-color-presets';
 import { resolveProductionStoryFonts } from '@/lib/premium-font-registry';
 import type { FontPersonality } from '@/lib/remotion-template-types';
 
@@ -62,6 +63,68 @@ function parseHex(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
   const m = raw.match(/#[0-9a-fA-F]{3,8}\b/);
   return m ? m[0] : null;
+}
+
+/**
+ * Auto-generate a complementary accent from a primary colour when no accent is defined.
+ *
+ * Strategy: shift hue by 30–60° toward warm-gold/amber for dark primaries,
+ * toward cool-teal for bright/warm primaries. This prevents the flat "same-hue" look
+ * that occurs when primary === accent.
+ */
+function deriveComplementaryAccent(primaryHex: string): string {
+  const h = primaryHex.replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return '#c9a96e';
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+
+  // Convert to HSL
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return '#c9a96e'; // achromatic — default warm gold
+
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let hue = 0;
+  if (max === r) hue = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) hue = ((b - r) / d + 2) / 6;
+  else hue = ((r - g) / d + 4) / 6;
+  const hDeg = hue * 360;
+
+  // Determine accent hue shift: warm primaries (red/orange) get cool teal accent;
+  // cool/neutral primaries (blue/navy/grey) get warm gold accent.
+  const isWarm = (hDeg >= 0 && hDeg <= 50) || (hDeg >= 330 && hDeg <= 360);
+  const isNeutral = s < 0.15;
+  let accentHue: number;
+  if (isNeutral) {
+    accentHue = 42; // warm gold for achromatic / dark navy
+  } else if (isWarm) {
+    accentHue = (hDeg + 185) % 360; // complementary cool-teal
+  } else {
+    accentHue = 38 + ((hDeg * 0.06) % 18); // warm amber/gold range 38–56°
+  }
+
+  // Build accent: mid lightness (55%), moderate saturation (70%)
+  const accentS = 0.70;
+  const accentL = l < 0.35 ? 0.62 : 0.52; // brighter on dark bg
+  const accentRgb = hslToRgb(accentHue / 360, accentS, accentL);
+  return `#${accentRgb.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue2rgb = (t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [hue2rgb(h + 1 / 3), hue2rgb(h), hue2rgb(h - 1 / 3)];
 }
 
 function subtitleFromTextColor(textColor: string): string {
@@ -121,17 +184,34 @@ export function resolveBrandProductionTokens(input: {
   else if (ctxPrimary) sources.push('brand_context.primary');
   else if (vibePalette?.primary) sources.push('vibe.palette');
 
+  const sectorPalette = input.sector ? resolveSectorColorPreset(input.sector) : null;
+
   const primaryColor =
     themePalette?.primary
     ?? ctxPrimary
     ?? vibePalette?.primary
+    ?? sectorPalette?.primary
     ?? announcementKit.primaryColor;
 
-  const accentColor =
+  const rawAccent =
     themePalette?.accent
     ?? ctxAccent
     ?? vibePalette?.accent
+    ?? sectorPalette?.accent
     ?? announcementKit.accentColor;
+
+  // If primary === accent (common when brands provide only one colour), derive a
+  // complementary accent so gradient headline and panel treatments work properly.
+  const accentIsSameAsPrimary = rawAccent && primaryColor
+    && rawAccent.toLowerCase() === primaryColor.toLowerCase();
+  const accentColor = accentIsSameAsPrimary
+    ? deriveComplementaryAccent(primaryColor)
+    : rawAccent;
+
+  if (sectorPalette?.primary && !themePalette?.primary && !ctxPrimary && !vibePalette?.primary) {
+    sources.push('sector.palette');
+  }
+  if (accentIsSameAsPrimary) sources.push('accent.derived');
 
   const headingRaw =
     themeTypo?.heading
@@ -206,11 +286,26 @@ export function resolveBrandProductionTokens(input: {
 export function applyBrandTokensToRenderProps(
   props: Record<string, unknown>,
   tokens: BrandProductionTokens,
+  slotTypography?: {
+    headingFont?: string;
+    bodyFont?: string;
+    fontPersonality?: string;
+    honorTemplateTypography?: boolean;
+  },
 ): Record<string, unknown> {
+  const headingFont = slotTypography?.headingFont ?? tokens.headingFont;
+  const bodyFont = slotTypography?.bodyFont ?? tokens.bodyFont;
+  const forceTemplateFonts = slotTypography?.honorTemplateTypography === true;
   return {
     ...props,
-    fontFamily:       props.fontFamily       ?? tokens.headingFont,
-    bodyFont:         props.bodyFont         ?? tokens.bodyFont,
+    fontFamily:       forceTemplateFonts ? headingFont : (props.fontFamily ?? headingFont),
+    bodyFont:         forceTemplateFonts ? bodyFont : (props.bodyFont ?? bodyFont),
+    ...(slotTypography?.fontPersonality
+      ? {
+          fontPersonality: slotTypography.fontPersonality,
+          honorTemplateTypography: slotTypography.honorTemplateTypography ?? true,
+        }
+      : {}),
     primaryColor:     props.primaryColor     ?? tokens.primaryColor,
     accentColor:      props.accentColor      ?? tokens.accentColor,
     headlineColor:    props.headlineColor    ?? tokens.headlineColor,

@@ -46,7 +46,13 @@ import {
   BrandRuleItem,
   BrandRulesScanResponse,
 } from '@/types';
+import type {
+  BrandProfileSnapshot,
+  PlatformAdminOverview,
+  ProductionBrandContextSnapshot,
+} from '@smartagency/contracts';
 import { getApiFetchUrl, getRequestContextHeaders } from '@/lib/runtime-config';
+import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { setSessionToken } from '@/lib/session-token';
 
 export class ApiRequestError extends Error {
@@ -62,6 +68,27 @@ export class ApiRequestError extends Error {
     this.statusText = statusText;
     this.responseBody = responseBody;
   }
+}
+
+/** Retry when Python crew backend is briefly unreachable (503 / network blip). */
+async function fetchWithTransientRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  retries = 2,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const res = await fetch(input, init);
+      if (res.status !== 503 || attempt === retries) return res;
+      await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+    } catch (err) {
+      lastError = err;
+      if (attempt === retries) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Request failed');
 }
 
 export interface UserFriendlyApiError {
@@ -128,6 +155,7 @@ function statusTitle(status: number) {
   if (status === 403) return 'Bu işlem için yetkin yok';
   if (status === 404) return 'Kayıt bulunamadı';
   if (status === 409) return 'Bu kayıt zaten var';
+  if (status === 503) return 'Servis geçici olarak ulaşılamıyor';
   if (status >= 500) return 'Sunucu tarafında bir sorun oluştu';
   return 'İşlem tamamlanamadı';
 }
@@ -137,9 +165,10 @@ function stringValue(value: unknown) {
 }
 
 function cleanErrorMessage(message: string) {
-  return message
+  const stripped = message
     .replace(/^API Error:\s*\d+\s+[A-Za-z ]+\s*-\s*/i, '')
     .trim();
+  return humanizeMobileServiceError(stripped);
 }
 
 /** Nexus API expects ApprovalMode as numeric enum unless JsonStringEnumConverter is enabled. */
@@ -153,8 +182,8 @@ function normalizeApprovalModeForApi(
   mode: SaveCompanyProfileRequest['defaultApprovalMode'],
 ): number {
   if (typeof mode === 'number' && Number.isFinite(mode)) return mode;
-  if (typeof mode === 'string' && mode in APPROVAL_MODE_NUMERIC) {
-    return APPROVAL_MODE_NUMERIC[mode];
+  if (typeof mode === 'string' && Object.prototype.hasOwnProperty.call(APPROVAL_MODE_NUMERIC, mode)) {
+    return APPROVAL_MODE_NUMERIC[mode] ?? 1;
   }
   return 1;
 }
@@ -365,10 +394,31 @@ class ApiClient {
     instagram_bio?: string;
     target_audience?: string;
     business_type?: string;
+    website_url?: string;
+    instagram_handle?: string;
+    description?: string;
+    brand_dna?: string;
+    brand_constitution_confirmed_at?: string | null;
+    campaign_goals?: string;
   }> {
     const res = await fetch(`/api/brand-context-data/${workspaceId}`);
-    if (!res.ok) return {};
-    return res.json();
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) {
+      const msg = String(data.message ?? data.error ?? `HTTP ${res.status}`);
+      throw new Error(
+        data.error === 'crew_backend_unreachable'
+          ? `Marka servisi şu an ulaşılamıyor: ${msg}`
+          : `Marka verisi alınamadı: ${msg}`,
+      );
+    }
+    return data;
+  }
+
+  /** Copy Python brand_context into Nexus CompanyProfile (fills empty fields only). */
+  async hydrateCompanyProfileFromPython(workspaceId: string): Promise<{ ok: boolean; applied?: string[] }> {
+    return this.request(`/api/brand-context/${workspaceId}/hydrate-company-profile`, {
+      method: 'POST',
+    });
   }
 
   /**
@@ -867,15 +917,24 @@ class ApiClient {
    */
   async analyzeBrandContext(
     workspaceId: string,
-    data: { websiteUrl?: string; instagramHandle?: string; googleBusinessUrl?: string },
+    data: {
+      websiteUrl?: string;
+      instagramHandle?: string;
+      googleBusinessUrl?: string;
+      brandName?: string;
+    },
   ): Promise<PythonBrandAnalyzeResponse> {
     const res = await fetch(`/api/brand-context/${workspaceId}/analyze`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getRequestContextHeaders(),
+      },
       body: JSON.stringify({
         website_url: data.websiteUrl || '',
         instagram_handle: data.instagramHandle || '',
         google_business_url: data.googleBusinessUrl || '',
+        brand_name: data.brandName || '',
       }),
     });
     const json = await res.json();
@@ -894,6 +953,7 @@ class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': workspaceId },
       body: '{}',
+      signal: AbortSignal.timeout(120_000),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1252,6 +1312,45 @@ class ApiClient {
     return this.request('/api/operations/summary');
   }
 
+  async getPlatformAdminOverview(): Promise<PlatformAdminOverview> {
+    const res = await fetch('/api/admin/platform/overview', {
+      headers: {
+        ...getRequestContextHeaders(),
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      throw new Error(`Platform overview failed (${res.status})`);
+    }
+    return res.json();
+  }
+
+  async getPlatformBrandSnapshot(workspaceId: string): Promise<BrandProfileSnapshot> {
+    const res = await fetch(`/api/brand-profile/${encodeURIComponent(workspaceId)}/snapshot`, {
+      headers: {
+        ...getRequestContextHeaders(),
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      throw new Error(`Brand snapshot failed (${res.status})`);
+    }
+    return res.json();
+  }
+
+  async getProductionBrandContextSnapshot(workspaceId: string): Promise<ProductionBrandContextSnapshot> {
+    const res = await fetch(`/api/production-context/${encodeURIComponent(workspaceId)}/snapshot`, {
+      headers: {
+        ...getRequestContextHeaders(),
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      throw new Error(`Production context snapshot failed (${res.status})`);
+    }
+    return res.json();
+  }
+
   /** Agent stats derived from Python mission task nodes (for agents run via the mission pipeline). */
   async getMissionAgentStats(workspaceId: string): Promise<{
     workspace_id: string;
@@ -1364,21 +1463,37 @@ class ApiClient {
 
   // ── Mission API (Python crew backend via Next.js BFF) ──────────────────────
 
-  async listMissions(workspaceId: string, status?: string): Promise<MissionSummary[]> {
-    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-    const res = await fetch(`/api/missions/${workspaceId}${qs}`);
+  async listMissions(
+    workspaceId: string,
+    status?: string,
+    limit = 20,
+  ): Promise<MissionSummary[]> {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (limit !== 20) qs.set('limit', String(limit));
+    const query = qs.toString() ? `?${qs}` : '';
+    const res = await fetch(`/api/missions/${workspaceId}${query}`);
     if (!res.ok) throw new Error(`Missions list failed (${res.status})`);
     return res.json();
+  }
+
+  /** Hub list: single fetch — proposed/active/completed all share one ordered list. */
+  async listMissionsForHub(workspaceId: string): Promise<MissionSummary[]> {
+    return this.listMissions(workspaceId, undefined, 35);
   }
 
   async proposeMissions(
     workspaceId: string,
     contextSignals?: string,
+    opts?: { productionPackage?: string },
   ): Promise<ProposeMissionsResponse> {
+    const body: Record<string, string> = {};
+    if (contextSignals) body.context_signals = contextSignals;
+    if (opts?.productionPackage) body.production_package = opts.productionPackage;
     const res = await fetch(`/api/missions/${workspaceId}/propose`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(contextSignals ? { context_signals: contextSignals } : {}),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1389,8 +1504,16 @@ class ApiClient {
   }
 
   async getMissionProgress(workspaceId: string, missionId: string): Promise<MissionProgress> {
-    const res = await fetch(`/api/missions/${workspaceId}/${missionId}/progress`);
-    if (!res.ok) throw new Error(`Mission progress failed (${res.status})`);
+    const res = await fetchWithTransientRetry(
+      `/api/missions/${workspaceId}/${missionId}/progress`,
+      {
+        headers: {
+          ...getRequestContextHeaders(),
+          'X-Tenant-Id': workspaceId,
+        },
+      },
+    );
+    if (!res.ok) throw new Error(humanizeMobileServiceError(`Mission progress failed (${res.status})`, res.status));
     return res.json();
   }
 
@@ -1440,6 +1563,79 @@ class ApiClient {
       throw new Error(err?.detail || err?.error || `Restart failed (${res.status})`);
     }
     return res.json();
+  }
+
+  /** Non-blocking — starts Python ensure + Next auto-produce in background. */
+  async kickMissionFeedProduction(
+    workspaceId: string,
+    missionId: string,
+    opts?: { productionPackage?: string },
+  ): Promise<{ accepted?: boolean; message?: string }> {
+    const res = await fetchWithTransientRetry(
+      `/api/missions/${workspaceId}/${missionId}/kick-feed-production`,
+      {
+        method: 'PUT',
+        headers: {
+          ...getRequestContextHeaders(),
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': workspaceId,
+        },
+        body: JSON.stringify({
+          productionPackage: opts?.productionPackage,
+        }),
+        signal: AbortSignal.timeout(90_000),
+      },
+    );
+    const body = await res.json().catch(() => ({})) as {
+      error?: string;
+      detail?: string;
+      message?: string;
+      accepted?: boolean;
+    };
+    if (!res.ok) {
+      throw new Error(
+        humanizeMobileServiceError(
+          body.error || body.detail || body.message || `Feed başlatılamadı (${res.status})`,
+          res.status,
+        ),
+      );
+    }
+    return body;
+  }
+
+  async reproduceMissionFeed(
+    workspaceId: string,
+    missionId: string,
+    opts?: { productionPackage?: string },
+  ): Promise<{ message?: string; produced?: number; publishReady?: number; total?: number }> {
+    const res = await fetch(`/api/missions/${workspaceId}/${missionId}/reproduce-feed`, {
+      method: 'PUT',
+      headers: {
+        ...getRequestContextHeaders(),
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': workspaceId,
+      },
+      body: JSON.stringify({
+        productionPackage: opts?.productionPackage,
+      }),
+      signal: AbortSignal.timeout(600_000),
+    });
+    const body = await res.json().catch(() => ({})) as {
+      error?: string;
+      detail?: string;
+      message?: string;
+      produced?: number;
+      code?: string;
+    };
+    if (!res.ok) {
+      throw new Error(
+        body.error || body.detail || body.message || `Feed üretimi başarısız (${res.status})`,
+      );
+    }
+    if ((body.produced ?? 0) <= 0) {
+      throw new Error(body.error || body.message || 'Feed\'e kaydedilen içerik yok');
+    }
+    return body;
   }
 
   async getWorkspaceUsageCost(
@@ -1559,6 +1755,11 @@ export interface WorkspaceUsageSummary {
     breakdown?: Record<string, number>;
   }[];
   currency_note?: string;
+  category_labels?: Record<string, string>;
+  month_cost_usd?: number;
+  month_tokens?: number;
+  month_category_totals?: Record<string, number>;
+  unit_cost_hints_usd?: Record<string, number>;
   token_wallet?: TokenWalletSummary;
 }
 

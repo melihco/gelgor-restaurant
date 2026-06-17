@@ -12,25 +12,30 @@
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import type { T } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useAuthStore } from '../auth-store';
 import { apiClient, type WorkspaceUsageSummary } from '@/lib/api-client';
-import { TokenWalletCard } from '../TokenWalletCard';
+import { AiCostBreakdownCard } from '../AiCostBreakdownCard';
+import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import type { MissionSummary, MissionProgress, MissionNodeProgress } from '@/types';
 import { BRS_PROPOSE_THRESHOLD, type BrandReadinessResult } from '@/lib/brand-readiness';
-import { parseProductionIdeas } from '@/lib/production-idea-parse';
+import { humanizeAgentError } from '@/lib/humanize-agent-error';
+import { parseProductionIdeas, productionIdeasFromParsed } from '@/lib/production-idea-parse';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { computeIdeaContractScore } from '@/types/production-idea';
 import type { SignalRecord } from '@/lib/context-signals';
 import { computeMissionDiversity, buildDiversityDirective } from '@/lib/mission-diversity';
-import { isMobileOperatorMode } from '../mobile-client-config';
+import { isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
+import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
 import {
   buildProductionPackageDirective,
   getMissionProductionPackage,
   missionProductionPackageLabel,
+  parseHubProductionPackage,
   setMissionProductionPackage,
   type MissionProductionPackage,
 } from '@/lib/mission-production-prefs';
@@ -47,13 +52,44 @@ import {
   type MissionSlotChecklist,
   type SlotDeliveryStatus,
 } from '@/lib/mission-slot-checklist';
+import { summarizeAiEnhanceItems } from '@/lib/ai-enhance-ui-labels';
 import {
   buildWeeklySelectionFromMissionNodes,
   filterFeedPublishableArtifacts,
   formatWeeklyPackageSummary,
+  formatWeeklyPackageTarget,
   type WeeklyPublishSelection,
 } from '@/lib/weekly-publish-package';
 import { parseArtifactMissionId } from '@/lib/mission-feed-package';
+import { MISSION_WEEKLY_PACKAGE_COUNTS } from '@/lib/mission-production-manifest';
+import { isFeedProductionLockActive } from '@/lib/mission-production-guard';
+import {
+  nodeHasOutput,
+  nodeOutputArray,
+  nodeOutputObject,
+  nodeOutputText,
+} from '@/lib/mission-node-output';
+import {
+  countMissionProducedArtifacts,
+  countPlanningNodeResults,
+  describeMissionPipelineGap,
+  summarizeMissionPlanningOutputs,
+  summarizeMissionProductionSkipAlerts,
+  summarizeMissionProductionPipeline,
+  type MissionProductionPipelineSummary,
+} from '@/lib/mission-pipeline-transparency';
+import {
+  summarizeMissionStrategistKpi,
+  type MissionStrategistKpiSummary,
+} from '@/lib/mission-strategist-kpi';
+import {
+  telemetryFromMissionProgress,
+  describeTelemetryAlerts,
+} from '@/lib/mission-production-telemetry';
+import {
+  describeStoryAudioPolicy,
+  parseMotionProfileFromTheme,
+} from '@/lib/brand-motion-profile';
 import {
   collectMissionPreviewArtifacts,
   MissionFeedPreviewGrid,
@@ -62,6 +98,18 @@ import type { OutputArtifact } from '@/types';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { mobileArtifactsQueryKey } from '../../_lib/mobile-artifacts';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
+import {
+  linkCalendarItemsToArtifacts,
+  CALENDAR_STATUS_TR,
+  type CalendarItemLink,
+} from '@/lib/content-calendar-artifact-link';
+import { formatUsd } from '@/lib/ai-cost-catalog';
+import { missionFeedStatusLabel } from '@/lib/mobile-customer-copy';
+import {
+  buildMissionAiCostSummary,
+  formatMissionAiCostRange,
+  type MissionAiCostSummary,
+} from '@/lib/mission-ai-cost';
 
 interface BasSubScore {
   id: string;
@@ -86,19 +134,9 @@ interface ContextSignalsData {
   promptBlock: string;
 }
 
-const USD_TRY = 32;
-const CATEGORY_LABELS: Record<string, string> = {
-  auto_produce: 'İçerik fabrikası',
-  mission_propose: 'Strateji',
-  content_ideation: 'İçerik fikri',
-  market_intelligence: 'Pazar zekası',
-  gallery_match: 'Galeri eşleştirme',
-  other: 'Diğer',
-};
-
 // ── Task type → customer-facing label + icon ──────────────────────────────────
 const TASK_META: Record<string, { label: string; icon: string; color: string; resultNoun: string }> = {
-  content_strategy:        { label: 'Haftalık İçerik Stratejisi',  icon: '🗺',  color: '#8B5CF6', resultNoun: 'strateji' },
+  content_strategy:        { label: 'Haftalık İçerik Stratejisi',  icon: '🗺',  color: '#8AABBD', resultNoun: 'strateji' },
   content_ideation:        { label: 'İçerik Fikirleri',            icon: '💡',  color: '#F59E0B', resultNoun: 'fikir' },
   content_calendar:        { label: 'Yayın Takvimi',               icon: '📅',  color: '#10B981', resultNoun: 'plan' },
   visual_design_cards:     { label: 'Görsel Tasarım Önerileri',    icon: '🎨',  color: '#EC4899', resultNoun: 'tasarım' },
@@ -106,19 +144,19 @@ const TASK_META: Record<string, { label: string; icon: string; color: string; re
   single_review_response:  { label: 'Yorum Yanıtları',             icon: '💬',  color: '#10B981', resultNoun: 'yanıt' },
   traffic_analysis:        { label: 'Trafik Analizi',              icon: '📊',  color: '#3B82F6', resultNoun: 'rapor' },
   conversion_report:       { label: 'Dönüşüm Raporu',              icon: '📈',  color: '#10B981', resultNoun: 'rapor' },
-  weekly_performance:      { label: 'Haftalık Performans',         icon: '📉',  color: '#8B5CF6', resultNoun: 'rapor' },
+  weekly_performance:      { label: 'Haftalık Performans',         icon: '📉',  color: '#8AABBD', resultNoun: 'rapor' },
   campaign_analysis:       { label: 'Kampanya Analizi',            icon: '🎯',  color: '#F59E0B', resultNoun: 'analiz' },
   ad_creative_generation:  { label: 'Reklam Metinleri',            icon: '📢',  color: '#EF4444', resultNoun: 'reklam' },
   auto_budget_optimize:    { label: 'Bütçe Optimizasyonu',         icon: '💰',  color: '#10B981', resultNoun: 'öneri' },
   ads_budget_optimization: { label: 'Reklam Bütçesi',              icon: '💰',  color: '#10B981', resultNoun: 'öneri' },
-  mission_planning:        { label: 'Misyon Planlaması',            icon: '🚀',  color: '#8B5CF6', resultNoun: 'plan' },
+  mission_planning:        { label: 'Misyon Planlaması',            icon: '🚀',  color: '#8AABBD', resultNoun: 'plan' },
   workspace_intelligence:  { label: 'İş Zekâsı Raporu',           icon: '🧠',  color: '#3B82F6', resultNoun: 'rapor' },
   feed_cohesion_review:    { label: 'Feed uyumu ve slot planı',      icon: '🎬',  color: '#10B981', resultNoun: 'rapor' },
-  product_scene_brief:     { label: 'Ürün Sahne Yönetmeni',        icon: '📸',  color: '#8B5CF6', resultNoun: 'brief' },
+  product_scene_brief:     { label: 'Ürün Sahne Yönetmeni',        icon: '📸',  color: '#8AABBD', resultNoun: 'brief' },
 };
 
 function taskMeta(taskType: string) {
-  return TASK_META[taskType] ?? { label: taskType.replace(/_/g, ' '), icon: '✦', color: '#8B5CF6', resultNoun: 'çıktı' };
+  return TASK_META[taskType] ?? { label: taskType.replace(/_/g, ' '), icon: '✦', color: '#8AABBD', resultNoun: 'çıktı' };
 }
 
 /** Hub satır başlığı — DB'deki strategist title; teknik FD adını müşteri etiketine çevirir. */
@@ -133,16 +171,7 @@ function displayNodeTitle(node: MissionNodeProgress): string {
 
 /** Count ideas / items inside a node output for the result badge */
 function countNodeResults(node: MissionNodeProgress): number | null {
-  if (!node.output_summary) return null;
-  const ideas = parseProductionIdeas(node.output_summary);
-  if (ideas.length > 0) return ideas.length;
-  try {
-    const json = JSON.parse(node.output_summary.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim());
-    if (Array.isArray(json)) return json.length;
-    if (Array.isArray(json?.ideas)) return json.ideas.length;
-    if (Array.isArray(json?.responses)) return json.responses.length;
-  } catch { /* ok */ }
-  return null;
+  return countPlanningNodeResults(node);
 }
 
 /**
@@ -150,11 +179,12 @@ function countNodeResults(node: MissionNodeProgress): number | null {
  * completeness (0..100). Surfaces parse loss / missing fields right in the Hub.
  * Returns null when the node has no parseable ideas.
  */
-function computeNodeIcs(outputSummary: string | null): number | null {
-  const ideas = parseProductionIdeas(outputSummary);
-  if (ideas.length === 0) return null;
-  const total = ideas.reduce((sum, idea) => sum + computeIdeaContractScore(idea).score, 0);
-  return Math.round(total / ideas.length);
+function computeNodeIcs(node: MissionNodeProgress): number | null {
+  const ideas = parseProductionIdeas(node.output_summary ?? '');
+  const parsedIdeas = ideas.length > 0 ? ideas : productionIdeasFromParsed(nodeOutputArray(node));
+  if (parsedIdeas.length === 0) return null;
+  const total = parsedIdeas.reduce((sum, idea) => sum + computeIdeaContractScore(idea).score, 0);
+  return Math.round(total / parsedIdeas.length);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -171,7 +201,7 @@ function timeAgo(iso: string | null | undefined): string {
 const PRIORITY_COLOR: Record<string, string> = {
   critical: '#EF4444',
   high:     '#F59E0B',
-  medium:   '#A78BFA',
+  medium:   '#9DBECE',
   low:      '#60A5FA',
 };
 
@@ -222,13 +252,19 @@ function ProgressRing({ pct, color, size = 52 }: { pct: number; color: string; s
 
 function friendlyError(raw: string): string {
   const msg = raw.replace(/^\[(Final|Attempt \d+)\]\s*/, '');
-  if (msg.includes('insufficient_quota') || msg.includes('429'))
-    return '⚡ OpenAI kotası doldu — platform.openai.com/billing';
+  const human = humanizeAgentError(msg);
+  if (human) {
+    if (human.title === 'OpenAI kotası') return `⚡ ${human.summary}`;
+    if (human.title === 'İstek limiti') return `⏱ ${human.summary} (429 — kota değil, kısa bekleyip yeniden dene)`;
+    if (human.title === 'API anahtarı') return `🔑 ${human.summary}`;
+    if (human.title === 'Zaman aşımı') return `⏱ ${human.summary}`;
+    return human.summary;
+  }
   if (msg.includes('timed out') || msg.includes('TimeoutError'))
     return '⏱ Zaman aşımı — daha sonra tekrar dene';
   if (msg.includes('API_KEY') || msg.includes('api_key'))
-    return '🔑 API anahtarı eksik';
-  return msg.slice(0, 100) || 'Bilinmeyen hata';
+    return '🔑 API anahtarı eksik veya geçersiz';
+  return msg.slice(0, 120) || 'Bilinmeyen hata';
 }
 
 const NODE_STATUS_UI: Record<string, { icon: string; color: string; bg: string; label: string }> = {
@@ -362,24 +398,119 @@ function NodeRows({ nodes }: { nodes: MissionProgress['nodes'] }) {
 
 // ── InFlightCard — polls /progress every 5s ───────────────────────────────────
 
-function InFlightCard({ mission, workspaceId, onCancel, onRestart, onTapCompleted }: {
+function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedProduction, onTapCompleted, isRestarting, isKickingFeed }: {
   mission: MissionSummary;
   workspaceId: string;
   onCancel: (id: string) => void;
   onRestart: (id: string) => void;
+  onKickFeedProduction?: (id: string) => void;
   onTapCompleted?: () => void;
+  isRestarting?: boolean;
+  isKickingFeed?: boolean;
 }) {
   const { t } = useTheme();
+  const debugMode = isDebugUiMode();
   const pColor = PRIORITY_COLOR[mission.priority] ?? t.accent;
+  const queryClient = useQueryClient();
+  const feedTarget = MISSION_WEEKLY_PACKAGE_COUNTS.total;
 
-  // Poll every 15s — balances responsiveness with battery & backend load
   const { data: prog } = useQuery({
     queryKey: ['mission-progress', mission.id],
     queryFn: () => apiClient.getMissionProgress(workspaceId, mission.id),
-    refetchInterval: 15_000,
-    staleTime: 10_000,
-    refetchIntervalInBackground: false,
+    enabled: mission.status === 'in_flight' || mission.status === 'approved',
+    refetchInterval: mission.status === 'in_flight' ? 20_000 : false,
+    staleTime: 12_000,
+    refetchIntervalInBackground: true,
   });
+
+  const ideationDone = (prog?.nodes ?? []).some(
+    (n) => n.task_type === 'content_ideation' && n.status === 'completed',
+  );
+  const visualDesignNodes = (prog?.nodes ?? []).filter(
+    (n) => n.task_type === 'visual_design_cards',
+  );
+  const visualDesignPending = ideationDone
+    && visualDesignNodes.length > 0
+    && visualDesignNodes.some(
+      (n) => n.status !== 'completed' || !nodeHasOutput(n),
+    );
+  const calendarNodes = (prog?.nodes ?? []).filter((n) => n.task_type === 'content_calendar');
+  const calendarPending = ideationDone
+    && calendarNodes.length > 0
+    && calendarNodes.some(
+      (n) => n.status !== 'completed' || !nodeHasOutput(n),
+    );
+  const feedPrepPending = visualDesignPending || calendarPending;
+
+  const { data: missionArtifacts = [], refetch: refetchMissionArtifacts } = useMobileArtifacts({
+    params: { missionId: mission.id, limit: 80 },
+    enabled: ideationDone,
+    subscribeOnly: true,
+  });
+
+  const feedPublishableCount = useMemo(
+    () => filterFeedPublishableArtifacts(
+      missionArtifacts.filter((a) => parseArtifactMissionId(a) === mission.id),
+    ).length,
+    [missionArtifacts, mission.id],
+  );
+
+  const feedProducedCount = useMemo(
+    () => countMissionProducedArtifacts(missionArtifacts, mission.id),
+    [missionArtifacts, mission.id],
+  );
+
+  const lastFeedProduced = Number(
+    (prog?.performance_summary as { last_feed_produce?: { produced?: number } } | undefined)
+      ?.last_feed_produce?.produced ?? 0,
+  );
+  const inFlightSlotChecklist = useMemo(() => {
+    const fd = extractFeedDirectorReportFromNodes(prog?.nodes ?? []);
+    return buildMissionSlotChecklist({
+      missionId: mission.id,
+      missionType: mission.type,
+      missionTitle: mission.title,
+      assignments: fd?.production_assignments,
+      artifacts: missionArtifacts,
+      missionInFlight: mission.status === 'in_flight' || mission.status === 'approved',
+    });
+  }, [mission.id, mission.type, mission.title, mission.status, missionArtifacts, prog?.nodes]);
+
+  const feedProductionLockActive = isFeedProductionLockActive(
+    prog?.performance_summary as Record<string, unknown> | undefined,
+  );
+  const manifestGap = (inFlightSlotChecklist.readyRequired ?? 0)
+    < (inFlightSlotChecklist.requiredTotal ?? feedTarget);
+  const feedPackageComplete = feedPublishableCount >= feedTarget && !manifestGap;
+
+  const autoKickRef = useRef(false);
+  const feedBackgroundActive = Boolean(isKickingFeed);
+
+  useEffect(() => {
+    if (!ideationDone || !onKickFeedProduction || feedPackageComplete) return;
+    if (feedPrepPending) return;
+    if (feedProductionLockActive) return;
+    if (autoKickRef.current) return;
+    autoKickRef.current = true;
+    onKickFeedProduction(mission.id);
+  }, [
+    ideationDone,
+    feedPrepPending,
+    feedProductionLockActive,
+    onKickFeedProduction,
+    feedPackageComplete,
+    mission.id,
+  ]);
+
+  useEffect(() => {
+    if (!feedBackgroundActive) return;
+    const id = setInterval(() => {
+      void refetchMissionArtifacts();
+      void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
+      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+    }, 12_000);
+    return () => clearInterval(id);
+  }, [feedBackgroundActive, mission.id, queryClient, refetchMissionArtifacts]);
 
   const pct      = prog?.completion_pct ?? mission.completion_pct;
   const nodes    = prog?.nodes ?? [];
@@ -388,13 +519,22 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onTapComplete
   const done     = prog?.completed_nodes ?? mission.completed_nodes;
   const total    = prog?.total_nodes ?? mission.total_nodes;
   const hasError = failed > 0 && running === 0;
+  const isFailedCompleted =
+    mission.status === 'completed' && (hasError || (mission.failed_nodes ?? 0) > 0);
+  const canRestart = hasError || pct === 0 || isFailedCompleted;
+  const showFeedStatus = ideationDone && !feedPackageComplete;
   const isWaiting = mission.status === 'approved' && running === 0 && done === 0 && !hasError;
+
+  const runningNode = nodes.find((n) => n.status === 'running');
+  const runningStepLabel = runningNode
+    ? (TASK_META[runningNode.task_type]?.label ?? runningNode.title)
+    : null;
 
   const ringColor = hasError ? '#EF4444' : pColor;
   const statusLabel = hasError
     ? '✕ Hata'
     : mission.status === 'in_flight' && running > 0
-      ? `▶ ${running} görev çalışıyor`
+      ? (debugMode ? `▶ ${running} görev çalışıyor` : '▶ Hazırlanıyor')
       : mission.status === 'in_flight'
         ? '◎ İşleniyor'
         : '✓ Onaylandı';
@@ -433,25 +573,46 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onTapComplete
               {mission.title}
             </div>
             <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 3 }}>
-              {done}/{total} görev tamamlandı
+              {debugMode
+                ? `${done}/${total} görev tamamlandı`
+                : feedPublishableCount > 0 || feedProducedCount > 0
+                  ? `${feedPublishableCount}/${feedTarget} yayına hazır`
+                    + (feedProducedCount > feedPublishableCount
+                      ? ` · ${feedProducedCount} üretildi`
+                      : '')
+                  : runningStepLabel
+                    ? `${runningStepLabel} hazırlanıyor…`
+                    : 'İçerik planı hazırlanıyor'}
               {mission.timeline_days ? ` · ${mission.timeline_days} gün` : ''}
             </div>
           </div>
 
-          {mission.status !== 'completed' && (
+          {(canRestart || mission.status !== 'completed') && (
             <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-              {(hasError || pct === 0) && (
-                <button onClick={() => onRestart(mission.id)} style={{
-                  padding: '6px 11px', borderRadius: 30, cursor: 'pointer',
-                  background: 'rgba(99,102,241,0.08)', border: '0.5px solid rgba(99,102,241,0.22)',
-                  color: '#818cf8', fontSize: 11, fontWeight: 600,
-                }}>↺ Yeniden</button>
+              {debugMode && canRestart && (
+                <button
+                  type="button"
+                  disabled={isRestarting}
+                  onClick={() => onRestart(mission.id)}
+                  style={{
+                    padding: '6px 11px', borderRadius: 30,
+                    cursor: isRestarting ? 'wait' : 'pointer',
+                    opacity: isRestarting ? 0.65 : 1,
+                    background: isFailedCompleted ? 'rgba(90,130,160,0.16)' : 'rgba(90,130,160,0.08)',
+                    border: '0.5px solid rgba(90,130,160,0.28)',
+                    color: '#818cf8', fontSize: 11, fontWeight: 600,
+                  }}
+                >
+                  {isRestarting ? '…' : '↺ Yeniden'}
+                </button>
               )}
-              <button onClick={() => onCancel(mission.id)} style={{
-                padding: '6px 11px', borderRadius: 30, cursor: 'pointer',
-                background: 'rgba(239,68,68,0.07)', border: '0.5px solid rgba(239,68,68,0.18)',
-                color: t.danger, fontSize: 11, fontWeight: 600,
-              }}>İptal</button>
+              {mission.status !== 'completed' && (
+                <button type="button" onClick={() => onCancel(mission.id)} style={{
+                  padding: '6px 11px', borderRadius: 30, cursor: 'pointer',
+                  background: 'rgba(239,68,68,0.07)', border: '0.5px solid rgba(239,68,68,0.18)',
+                  color: t.danger, fontSize: 11, fontWeight: 600,
+                }}>İptal</button>
+              )}
             </div>
           )}
         </div>
@@ -465,15 +626,94 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onTapComplete
             <div style={{ width: 10, height: 10, borderRadius: '50%',
               border: `1.5px solid ${t.separator}`, borderTop: `1.5px solid ${pColor}`,
               animation: 'spinSlow 1s linear infinite', flexShrink: 0 }} />
-            Executor başlatılıyor... 5 dakika içinde görevler otomatik atanacak
+            {debugMode
+              ? 'Executor başlatılıyor... 5 dakika içinde görevler otomatik atanacak'
+              : 'Kampanya başlatılıyor — birkaç dakika içinde içerikler hazırlanacak'}
           </div>
         )}
 
         {/* ── Node rows with names + status ── */}
-        {nodes.length > 0 ? (
+        {(isFailedCompleted || showFeedStatus) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+            {debugMode && isFailedCompleted && (
+              <button
+                type="button"
+                disabled={isRestarting}
+                onClick={() => onRestart(mission.id)}
+                style={{
+                  width: '100%', padding: '11px 14px', borderRadius: 12,
+                  cursor: isRestarting ? 'wait' : 'pointer',
+                  background: 'linear-gradient(135deg, rgba(90,130,160,0.22), rgba(129,140,248,0.12))',
+                  border: '0.5px solid rgba(90,130,160,0.35)',
+                  color: '#a5b4fc', fontSize: 13, fontWeight: 700,
+                  opacity: isRestarting ? 0.7 : 1,
+                }}
+              >
+                {isRestarting ? 'Yeniden başlatılıyor…' : '↺ Hatalı görevleri yeniden başlat'}
+              </button>
+            )}
+            {showFeedStatus && (
+              <div style={{
+                width: '100%', padding: '11px 14px', borderRadius: 12,
+                background: 'linear-gradient(135deg, rgba(16,185,129,0.14), rgba(52,211,153,0.06))',
+                border: '0.5px solid rgba(16,185,129,0.28)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  {feedBackgroundActive && (
+                    <div style={{ width: 10, height: 10, borderRadius: '50%',
+                      border: '1.5px solid rgba(52,211,153,0.3)',
+                      borderTop: '1.5px solid #34d399',
+                      animation: 'spinSlow 1s linear infinite', flexShrink: 0 }} />
+                  )}
+                  <span style={{ color: '#34d399', fontSize: 13, fontWeight: 700 }}>
+                    {visualDesignPending
+                      ? 'Görsel tasarım önerileri bekleniyor'
+                      : calendarPending
+                        ? 'Yayın takvimi hazırlanıyor'
+                        : feedBackgroundActive
+                          ? 'Feed arka planda üretiliyor'
+                          : 'Feed üretimi bekleniyor'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
+                  {visualDesignPending
+                    ? 'Ajans tasarım kartları tamamlanınca Feed üretimi otomatik başlayacak.'
+                    : calendarPending
+                      ? 'Yayın planı tamamlanınca her plan satırı için Feed çıktısı üretilir.'
+                      : feedPublishableCount > 0
+                        ? `${feedPublishableCount}/${feedTarget} yayına hazır`
+                          + (feedProducedCount > feedPublishableCount
+                            ? ` (${feedProducedCount} üretildi, render bekliyor olabilir)`
+                            : '')
+                          + ' — yeni içerikler geldikçe Feed\'de listelenir.'
+                        : feedProducedCount > 0
+                          ? `${feedProducedCount} çıktı üretildi — yayına hazır hale geldikçe Feed\'de görünür.`
+                          : 'Gönderiler hazır oldukça Feed sekmesine düşer (story, post, carousel, reel).'}
+                </div>
+                {!feedBackgroundActive && !feedPrepPending && onKickFeedProduction && (
+                  <button
+                    type="button"
+                    disabled={isKickingFeed}
+                    onClick={() => onKickFeedProduction(mission.id)}
+                    style={{
+                      marginTop: 10, padding: '8px 12px', borderRadius: 10,
+                      cursor: isKickingFeed ? 'wait' : 'pointer',
+                      background: 'rgba(16,185,129,0.12)',
+                      border: '0.5px solid rgba(16,185,129,0.35)',
+                      color: '#34d399', fontSize: 11, fontWeight: 700,
+                    }}
+                  >
+                    Şimdi başlat
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {debugMode && (nodes.length > 0 ? (
           <NodeRows nodes={nodes} />
         ) : (
-          /* No progress data yet — show placeholder rows from mission summary */
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
             {Array.from({ length: total || 2 }).map((_, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -485,7 +725,7 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onTapComplete
               </div>
             ))}
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
@@ -623,7 +863,7 @@ import type { ArtifactSignal } from '@/components/artifacts/artifact-preview';
  * Maps task_type to the artifact type string the parser expects.
  */
 function nodeToSignal(node: MissionNodeProgress): ArtifactSignal | null {
-  const raw = node.output_summary ?? '';
+  const raw = nodeOutputText(node);
   if (!raw) return null;
 
   // Map task_type → artifactType string (mirrors what .NET stores in OutputArtifacts)
@@ -661,12 +901,8 @@ function nodeToSignal(node: MissionNodeProgress): ArtifactSignal | null {
 
 // Content strategy renders differently — structured summary card
 function ContentStrategyView({ node, t }: { node: MissionNodeProgress; t: ReturnType<typeof useTheme>['t'] }) {
-  const raw = node.output_summary ?? '';
-  let obj: Record<string, unknown> = {};
-  try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    obj = JSON.parse(cleaned);
-  } catch { /* use empty */ }
+  const raw = nodeOutputText(node);
+  const obj = nodeOutputObject(node) ?? {};
 
   const theme   = String(obj.weekly_theme ?? obj.theme ?? '');
   const brief   = String(obj.mission_brief ?? obj.brief ?? '');
@@ -771,13 +1007,15 @@ function ContentStrategyView({ node, t }: { node: MissionNodeProgress; t: Return
 
 // Content ideation / calendar — rendered as proper content cards
 // ── Calendar Items View — for content_calendar task output ──────────────────
-function CalendarItemsView({ items, t, onGoToFeed }: {
+function CalendarItemsView({ items, links, t, onGoToFeed, onOpenArtifact }: {
   items: unknown[];
+  links?: CalendarItemLink[];
   t: ReturnType<typeof useTheme>['t'];
   onGoToFeed?: () => void;
+  onOpenArtifact?: (artifactId: string) => void;
 }) {
   const FMT_COLORS: Record<string, { bg: string; color: string; icon: string }> = {
-    story:    { bg: 'rgba(139,92,246,0.15)', color: '#8B5CF6', icon: '◉' },
+    story:    { bg: 'rgba(138,171,189,0.15)', color: '#8AABBD', icon: '◉' },
     post:     { bg: 'rgba(59,130,246,0.15)', color: '#3B82F6', icon: '□' },
     reel:     { bg: 'rgba(236,72,153,0.15)', color: '#EC4899', icon: '▶' },
     carousel: { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', icon: '⊞' },
@@ -797,8 +1035,13 @@ function CalendarItemsView({ items, t, onGoToFeed }: {
       <div style={{ padding: '8px 12px', borderRadius: 10, marginBottom: 4,
         background: 'rgba(16,185,129,0.08)', border: '0.5px solid rgba(16,185,129,0.2)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700 }}>
-          📅 {items.length} yayın planı hazır
+        <div>
+          <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700 }}>
+            📅 {items.length} yayın planı planlandı
+          </div>
+          <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3 }}>
+            Planlama çıktısı — üretimde gün, saat ve format kaynağı.
+          </div>
         </div>
         {onGoToFeed && (
           <button onClick={onGoToFeed} style={{ padding: '4px 10px', borderRadius: 8,
@@ -822,6 +1065,13 @@ function CalendarItemsView({ items, t, onGoToFeed }: {
         const area    = String(it.venue_area || it.location || '');
         const mood    = String(it.photo_mood || it.mood || '');
         const priority = String(it.priority || '').toLowerCase();
+        const link = links?.[i];
+        const status = link?.status ?? 'unlinked';
+        const statusColor = status === 'ready' ? '#10B981'
+          : status === 'rendering' || status === 'pending' ? '#F59E0B'
+            : status === 'failed' ? '#EF4444'
+              : status === 'missing' ? '#94A3B8'
+                : t.textMuted;
 
         return (
           <div key={i} style={{ borderRadius: 14,
@@ -830,7 +1080,7 @@ function CalendarItemsView({ items, t, onGoToFeed }: {
 
             {/* Card header: format + type + priority */}
             <div style={{ padding: '9px 12px', borderBottom: `0.5px solid ${t.separator}`,
-              display: 'flex', alignItems: 'center', gap: 8 }}>
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 9px', borderRadius: 20,
                 background: fmtCfg.bg, color: fmtCfg.color }}>
                 {fmtCfg.icon} {fmt.toUpperCase()}
@@ -840,12 +1090,29 @@ function CalendarItemsView({ items, t, onGoToFeed }: {
                   {TYPE_LABELS[type] || type.replace(/_/g, ' ')}
                 </span>
               )}
+              {link && (
+                <span style={{ fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 8,
+                  background: `${statusColor}18`, color: statusColor }}>
+                  {CALENDAR_STATUS_TR[status]}
+                </span>
+              )}
               {priority && (
                 <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 700,
                   color: PRIORITY_COLORS[priority] ?? t.textMuted,
                   textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {priority === 'recommended' ? '✓ Önerilen' : priority === 'high' ? '🔴 Yüksek' : priority}
                 </span>
+              )}
+              {link?.artifactId && onOpenArtifact && status === 'ready' && (
+                <button
+                  type="button"
+                  onClick={() => onOpenArtifact(link.artifactId!)}
+                  style={{
+                    fontSize: 9, fontWeight: 800, padding: '4px 8px', borderRadius: 8, border: 'none',
+                    cursor: 'pointer', background: 'rgba(59,130,246,0.12)', color: '#3B82F6',
+                  }}>
+                  Önizle
+                </button>
               )}
             </div>
 
@@ -896,10 +1163,11 @@ function CalendarItemsView({ items, t, onGoToFeed }: {
   );
 }
 
-function ContentIdeasView({ signal, t, onGoToFeed }: {
+function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation' }: {
   signal: ArtifactSignal;
   t: ReturnType<typeof useTheme>['t'];
   onGoToFeed?: () => void;
+  planningKind?: 'ideation' | 'design';
 }) {
   const ideas = signal.ideas ?? [];
   if (!ideas.length && !signal.caption) {
@@ -920,8 +1188,8 @@ function ContentIdeasView({ signal, t, onGoToFeed }: {
   const FMT_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
     post:            { icon: '□', label: 'Post',    color: '#3B82F6' },
     instagram_post:  { icon: '□', label: 'Post',    color: '#3B82F6' },
-    story:           { icon: '◉', label: 'Story',   color: '#8B5CF6' },
-    instagram_story: { icon: '◉', label: 'Story',   color: '#8B5CF6' },
+    story:           { icon: '◉', label: 'Story',   color: '#8AABBD' },
+    instagram_story: { icon: '◉', label: 'Story',   color: '#8AABBD' },
     reel:            { icon: '▶', label: 'Reel',    color: '#EC4899' },
     instagram_reel:  { icon: '▶', label: 'Reel',    color: '#EC4899' },
     carousel:        { icon: '⊞', label: 'Carousel',color: '#F59E0B' },
@@ -935,14 +1203,21 @@ function ContentIdeasView({ signal, t, onGoToFeed }: {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontSize: 12, color: '#10B981', fontWeight: 700 }}>
-            {items.length} içerik fikri Feed'e eklendi
+            {planningKind === 'design'
+              ? `${items.length} tasarım kartı planlandı`
+              : `${items.length} içerik fikri planlandı`}
+          </div>
+          <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3, lineHeight: 1.4 }}>
+            {planningKind === 'design'
+              ? 'Planlama çıktısı — designed post slotunda görsel brief olarak kullanılır.'
+              : 'Planlama çıktısı — üretimde caption ve format kaynağı; Feed dosyası değildir.'}
           </div>
           {/* Story/Remotion indicator */}
-          {items.some((idea: any) => {
+          {planningKind === 'ideation' && items.some((idea: any) => {
             const t = String((idea as any)?.visual_production_spec?.treatment || '').toLowerCase();
             return t === 'story_event' || t === 'event_announcement' || t === 'campaign_offer';
           }) && (
-            <div style={{ fontSize: 10, color: '#8B5CF6', marginTop: 2 }}>
+            <div style={{ fontSize: 10, color: '#8AABBD', marginTop: 2 }}>
               ▶ Remotion story'leri arka planda render ediliyor — Feed story bar'ında görünür
             </div>
           )}
@@ -959,7 +1234,7 @@ function ContentIdeasView({ signal, t, onGoToFeed }: {
 
       {items.slice(0, 8).map((idea, i) => {
         const ia       = idea as any;
-        const headline = ia.headline ?? ia.conceptTitle ?? ia.concept_title ?? `Fikir ${i + 1}`;
+        const headline = ia.concept_title ?? ia.conceptTitle ?? ia.idea_title ?? ia.title ?? ia.headline ?? `Fikir ${i + 1}`;
         const caption  = ia.caption ?? ia.captionDraft ?? ia.caption_draft ?? '';
         const hashtags = Array.isArray(ia.hashtags) ? ia.hashtags.slice(0, 4) : [];
         const mood     = ia.mood ?? ia.tone ?? '';
@@ -1203,18 +1478,6 @@ function tryParseJson(raw: string): Record<string, unknown> | null {
     const parsed = JSON.parse(clean);
     if (Array.isArray(parsed)) return { items: parsed };
     return typeof parsed === 'object' ? parsed : null;
-  } catch { return null; }
-}
-
-/** Extract raw JSON array or object from mixed text+JSON output */
-function extractJsonArray(raw: string): unknown[] | null {
-  try {
-    // Find first [ ... ] block
-    const start = raw.indexOf('[');
-    const end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) return null;
-    const arr = JSON.parse(raw.slice(start, end + 1));
-    return Array.isArray(arr) ? arr : null;
   } catch { return null; }
 }
 
@@ -1481,7 +1744,7 @@ function CampaignOutputView({ data, t }: { data: Record<string, unknown>; t: T }
         <div style={{ display: 'flex', gap: 10 }}>
           {budget && (
             <div style={{ flex: 1, padding: '10px 12px', borderRadius: 12, textAlign: 'center',
-              background: 'rgba(99,102,241,0.08)', border: '0.5px solid rgba(99,102,241,0.2)' }}>
+              background: 'rgba(90,130,160,0.08)', border: '0.5px solid rgba(90,130,160,0.2)' }}>
               <div style={{ fontSize: 9, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Bütçe Önerisi</div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#818cf8', marginTop: 4 }}>{budget}</div>
             </div>
@@ -1529,12 +1792,8 @@ function CampaignOutputView({ data, t }: { data: Record<string, unknown>; t: T }
 
 // ── Feed Cohesion Report view ─────────────────────────────────────────────────
 function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: ReturnType<typeof useTheme>['t'] }) {
-  const raw = node.output_summary ?? '';
-  let report: Record<string, unknown> = {};
-  try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    report = JSON.parse(cleaned);
-  } catch { return null; }
+  const report = nodeOutputObject(node);
+  if (!report) return null;
 
   const feedScore = typeof report.feed_score === 'number' ? report.feed_score : null;
   const dist = (report.format_distribution ?? {}) as Record<string, number>;
@@ -1562,7 +1821,8 @@ function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: Ret
     organic_reel: 'Organik reel',
     campaign_reel_motion: 'Kampanya reel',
     organic_carousel: 'Carousel',
-    paid_ad_creative: 'Reklam',
+    paid_ad_creative: 'Meta reklam',
+    paid_ad_google_creative: 'Google Ads',
   };
   const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const DAY_TR: Record<string, string> = { Mon: 'Pzt', Tue: 'Sal', Wed: 'Çar', Thu: 'Per', Fri: 'Cum', Sat: 'Cmt', Sun: 'Paz' };
@@ -1650,7 +1910,7 @@ function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: Ret
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {(['post', 'story', 'reel', 'carousel'] as const).map(fmt => {
               const count = dist[fmt] ?? 0;
-              const fmtColors: Record<string, string> = { post: '#3B82F6', story: '#8B5CF6', reel: '#EC4899', carousel: '#F59E0B' };
+              const fmtColors: Record<string, string> = { post: '#3B82F6', story: '#8AABBD', reel: '#EC4899', carousel: '#F59E0B' };
               return (
                 <div key={fmt} style={{ padding: '6px 12px', borderRadius: 20,
                   background: fmtColors[fmt] + '18', border: `0.5px solid ${fmtColors[fmt]}40` }}>
@@ -1723,10 +1983,25 @@ function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: Ret
   );
 }
 
-function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: unknown; onGoToFeed?: () => void }) {
+function NodeOutputView({
+  node,
+  missionId,
+  missionArtifacts,
+  missionInFlight,
+  onGoToFeed,
+  onOpenArtifact,
+}: {
+  node: MissionNodeProgress;
+  t?: unknown;
+  missionId?: string;
+  missionArtifacts?: OutputArtifact[];
+  missionInFlight?: boolean;
+  onGoToFeed?: () => void;
+  onOpenArtifact?: (artifactId: string) => void;
+}) {
   const { t } = useTheme();
 
-  if (!node.output_summary) {
+  if (!nodeHasOutput(node)) {
     return (
       <div style={{ fontSize: 12, color: t.textMuted, fontStyle: 'italic', padding: '8px 0',
         textAlign: 'center' }}>
@@ -1747,19 +2022,19 @@ function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: u
 
   // Analytics tasks — KPI cards + insights
   if (['traffic_analysis', 'conversion_report', 'weekly_performance'].includes(node.task_type)) {
-    const data = tryParseJson(node.output_summary ?? '');
+    const data = nodeOutputObject(node) ?? tryParseJson(nodeOutputText(node));
     if (data) return <AnalyticsOutputView data={data} t={t} />;
   }
 
   // Review tasks
   if (['review_analysis', 'single_review_response'].includes(node.task_type)) {
-    const data = tryParseJson(node.output_summary ?? '');
+    const data = nodeOutputObject(node) ?? tryParseJson(nodeOutputText(node));
     if (data) return <ReviewOutputView data={data} t={t} />;
   }
 
   // Campaign / ads analysis
   if (['campaign_analysis', 'ads_budget_optimization', 'auto_budget_optimize'].includes(node.task_type)) {
-    const data = tryParseJson(node.output_summary ?? '');
+    const data = nodeOutputObject(node) ?? tryParseJson(nodeOutputText(node));
     if (data) return <CampaignOutputView data={data} t={t} />;
   }
 
@@ -1769,7 +2044,7 @@ function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: u
   // Ad creative
   if (node.task_type === 'ad_creative_generation') {
     // Direct array parse (output often starts with prose before JSON array)
-    const adItems = extractJsonArray(node.output_summary ?? '');
+    const adItems = nodeOutputArray(node);
     if (adItems && adItems.length > 0) {
       return <AdCreativeDirectView items={adItems} t={t} />;
     }
@@ -1779,21 +2054,22 @@ function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: u
   // Content ideation / calendar / visual design
   // content_calendar — dedicated calendar card view
   if (node.task_type === 'content_calendar') {
-    const calItems = extractJsonArray(node.output_summary ?? '');
+    const calItems = nodeOutputArray(node, ['plans', 'calendar', 'items', 'content_calendar', 'schedule']);
     if (calItems && calItems.length > 0) {
       return <CalendarItemsView items={calItems} t={t} onGoToFeed={onGoToFeed} />;
     }
   }
 
-  // content_ideation — try direct array parse first (preserves all agent fields)
+  // content_ideation / visual_design_cards — planlama görünümü (Feed dosyası değil)
   if (['content_ideation', 'visual_design_cards'].includes(node.task_type)) {
-    const ideaItems = extractJsonArray(node.output_summary ?? '');
+    const planningKind = node.task_type === 'visual_design_cards' ? 'design' : 'ideation';
+    const ideaItems = nodeOutputArray(node);
     if (ideaItems && ideaItems.length > 0) {
-      // Feed into ContentIdeasView via a synthetic signal
       const syntheticSignal = { ideas: ideaItems.map(item => {
         const it = item as Record<string, unknown>;
         return {
-          headline:    it.headline ?? it.concept_title ?? it.title ?? '',
+          headline:    it.concept_title ?? it.conceptTitle ?? it.idea_title ?? it.title ?? it.headline ?? '',
+          concept_title: it.concept_title ?? it.conceptTitle ?? it.idea_title ?? it.title ?? it.headline ?? '',
           caption:     it.caption_draft ?? it.caption ?? '',
           cta:         it.cta ?? '',
           contentType: it.content_type ?? it.content_kind ?? 'post',
@@ -1803,9 +2079,20 @@ function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: u
           ...it,
         };
       }) } as any;
-      return <ContentIdeasView signal={syntheticSignal} t={t} onGoToFeed={onGoToFeed} />;
+      return (
+        <ContentIdeasView
+          signal={syntheticSignal}
+          t={t}
+          onGoToFeed={onGoToFeed}
+          planningKind={planningKind}
+        />
+      );
     }
-    if (signal) return <ContentIdeasView signal={signal} t={t} onGoToFeed={onGoToFeed} />;
+    if (signal) {
+      return (
+        <ContentIdeasView signal={signal} t={t} onGoToFeed={onGoToFeed} planningKind={planningKind} />
+      );
+    }
   }
 
   // Generic signal — summary + recommendations
@@ -1832,7 +2119,7 @@ function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: u
   }
 
   // Try JSON parse for any remaining task types
-  const anyData = tryParseJson(node.output_summary ?? '');
+  const anyData = nodeOutputObject(node) ?? tryParseJson(nodeOutputText(node));
   if (anyData) {
     const sum = anyData.summary as string || anyData.executive_summary as string ||
                 anyData.analysis as string || anyData.brief as string || '';
@@ -1858,7 +2145,7 @@ function NodeOutputView({ node, onGoToFeed }: { node: MissionNodeProgress; t?: u
   return (
     <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6,
       whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-      {(node.output_summary ?? '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim().slice(0, 1000)}
+      {nodeOutputText(node).replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim().slice(0, 1000)}
     </div>
   );
 }
@@ -1873,19 +2160,253 @@ const SLOT_STATUS_COLOR: Record<SlotDeliveryStatus, string> = {
   pending: '#F59E0B',
 };
 
+function MissionAiCostPanel({
+  summary,
+  t,
+}: {
+  summary: MissionAiCostSummary | null;
+  t: T;
+}) {
+  if (!summary) return null;
+
+  const totalLabel = formatMissionAiCostRange(summary);
+
+  return (
+    <div style={{
+      padding: '12px 14px', borderRadius: 14, marginBottom: 16,
+      background: t.isDark ? 'rgba(245,158,11,0.06)' : 'rgba(245,158,11,0.05)',
+      border: '0.5px solid rgba(245,158,11,0.25)',
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 800, color: '#F59E0B', letterSpacing: '0.06em',
+        textTransform: 'uppercase', marginBottom: 6,
+      }}>
+        AI maliyeti — bu misyon
+      </div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: t.textPrimary, marginBottom: 4 }}>
+        {totalLabel}
+        <span style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, marginLeft: 8 }}>
+          API · {summary.artifactCount > 0 ? `${summary.artifactCount} Feed çıktısı` : 'tahmini'}
+        </span>
+      </div>
+      {summary.isEstimate && summary.lines.length === 0 && (
+        <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 8 }}>
+          Aralık: {formatUsd(summary.minUsd)} – {formatUsd(summary.maxUsd)} (tam 7 parçalık paket)
+        </div>
+      )}
+      {summary.lines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+          {summary.lines.map((line) => (
+            <div
+              key={line.key}
+              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 }}
+            >
+              <span style={{ color: t.textSecondary }}>{line.label}</span>
+              <span style={{ fontWeight: 700, color: t.textPrimary, whiteSpace: 'nowrap' }}>
+                {formatUsd(line.usd)}
+                {line.source === 'estimated' ? (
+                  <span style={{ fontWeight: 500, color: t.textMuted, marginLeft: 4 }}>≈</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {summary.feedBreakdown && summary.feedBreakdown.qualityTier && (
+        <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8 }}>
+          Kalite: <strong style={{ color: t.textPrimary }}>{summary.feedBreakdown.qualityTier}</strong>
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: t.textTertiary, marginTop: 8, lineHeight: 1.4 }}>
+        Strategist, strateji, fikirler, Feed Director, scene brief ve görsel/video üretimi dahil.
+      </div>
+    </div>
+  );
+}
+
+function MissionProductionAlertsBanner({
+  alerts,
+  t,
+}: {
+  alerts: string[];
+  t: T;
+}) {
+  if (!alerts.length) return null;
+  return (
+    <div style={{
+      marginTop: 10, padding: '10px 12px', borderRadius: 10,
+      background: t.isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.08)',
+      border: '0.5px solid rgba(245,158,11,0.28)',
+    }}>
+      <div style={{
+        fontSize: 10, fontWeight: 700, color: '#F59E0B',
+        textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6,
+      }}>
+        Üretim uyarıları
+      </div>
+      {alerts.map((alert) => (
+        <div key={alert} style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.45, marginTop: 3 }}>
+          {alert}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MissionStrategistKpiStrip({
+  kpi,
+  t,
+}: {
+  kpi: MissionStrategistKpiSummary;
+  t: T;
+}) {
+  const templatePct = Math.round(kpi.templateCoverageRatio * 100);
+  const cells = [
+    {
+      label: 'Benzersiz başlık',
+      value: kpi.uniqueHeadlines,
+      sub: kpi.totalArtifacts > 0 ? `/${kpi.totalArtifacts} parça` : 'henüz üretim yok',
+    },
+    {
+      label: 'Benzersiz foto',
+      value: kpi.uniquePhotos,
+      sub: 'galeri kaynağı',
+    },
+    {
+      label: 'Şablon kapsama',
+      value: `${templatePct}%`,
+      sub: `${kpi.uniqueTemplates}/${kpi.manifestTarget} slot`,
+    },
+  ];
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{
+        fontSize: 9, fontWeight: 700, color: t.textMuted,
+        textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
+      }}>
+        Strategist KPI
+      </div>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+      }}>
+        {cells.map((cell) => (
+          <div key={cell.label} style={{
+            padding: '10px 8px', borderRadius: 10, textAlign: 'center',
+            background: t.isDark ? 'rgba(90,130,160,0.08)' : 'rgba(90,130,160,0.06)',
+            border: `0.5px solid ${t.isDark ? 'rgba(90,130,160,0.2)' : 'rgba(90,130,160,0.15)'}`,
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {cell.label}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, lineHeight: 1.2, marginTop: 2 }}>
+              {cell.value}
+            </div>
+            <div style={{ fontSize: 9, color: t.textMuted, marginTop: 2 }}>{cell.sub}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MissionProductionPipelineStrip({
+  pipeline,
+  gapHint,
+  storyAudioHint,
+  t,
+}: {
+  pipeline: MissionProductionPipelineSummary;
+  gapHint: string | null;
+  storyAudioHint?: string | null;
+  t: T;
+}) {
+  const renderingPending = Math.max(0, pipeline.producedArtifacts - pipeline.publishReady);
+  const cells = [
+    { label: 'Hedef', value: pipeline.productionTarget, sub: 'zorunlu slot' },
+    { label: 'Slot hazır', value: pipeline.manifestReady, sub: `/${pipeline.manifestRequired} manifest` },
+    { label: 'Yayına hazır', value: pipeline.publishReady, sub: renderingPending > 0 ? `${renderingPending} render` : 'Feed' },
+  ];
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8,
+      }}>
+        {cells.map((cell) => (
+          <div key={cell.label} style={{
+            padding: '10px 8px', borderRadius: 10, textAlign: 'center',
+            background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+            border: `0.5px solid ${t.separator}`,
+          }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {cell.label}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, lineHeight: 1.2, marginTop: 2 }}>
+              {cell.value}
+            </div>
+            <div style={{ fontSize: 9, color: t.textMuted, marginTop: 2 }}>{cell.sub}</div>
+          </div>
+        ))}
+      </div>
+      {storyAudioHint && (
+        <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8, lineHeight: 1.45 }}>
+          Story ses: <span style={{ color: t.textSecondary }}>{storyAudioHint}</span>
+        </div>
+      )}
+      {(pipeline.plannedCalendarRows > 0 || pipeline.plannedAssignments != null) && (
+        <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8, lineHeight: 1.45 }}>
+          Planlama:
+          {pipeline.plannedCalendarRows > 0 && ` ${pipeline.plannedCalendarRows} takvim satırı`}
+          {pipeline.plannedAssignments != null && ` · ${pipeline.plannedAssignments} slot ataması`}
+          {pipeline.manifestRequired > 0 && ` · manifest ${pipeline.manifestReady}/${pipeline.manifestRequired}`}
+        </div>
+      )}
+      {gapHint && (
+        <div style={{
+          marginTop: 8, fontSize: 11, color: t.textSecondary, lineHeight: 1.5,
+          padding: '8px 10px', borderRadius: 8,
+          background: t.isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)',
+          border: '0.5px solid rgba(245,158,11,0.2)',
+        }}>
+          {gapHint}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MissionSlotChecklistPanel({
   checklist,
+  pipelineSummary,
+  strategistKpi,
+  pipelineGapHint,
+  productionAlerts,
+  storyAudioHint,
   workspaceId,
+  missionId,
   isLoading,
   onGoToFeed,
   onRefresh,
+  onReproduceFeed,
+  isReproducingFeed,
+  debugMode = false,
   t,
 }: {
   checklist: MissionSlotChecklist | null;
+  pipelineSummary?: MissionProductionPipelineSummary | null;
+  strategistKpi?: MissionStrategistKpiSummary | null;
+  pipelineGapHint?: string | null;
+  productionAlerts?: string[];
+  storyAudioHint?: string | null;
   workspaceId: string;
+  missionId: string;
   isLoading: boolean;
   onGoToFeed: () => void;
   onRefresh: () => void;
+  onReproduceFeed?: (missionId: string) => void;
+  isReproducingFeed?: boolean;
+  debugMode?: boolean;
   t: T;
 }) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -1895,16 +2416,156 @@ function MissionSlotChecklistPanel({
       <div style={{ padding: '12px 14px', borderRadius: 14, marginBottom: 16,
         background: t.isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.05)',
         border: '0.5px solid rgba(59,130,246,0.2)' }}>
-        <div style={{ fontSize: 12, color: t.textMuted }}>Üretim manifesti kontrol ediliyor…</div>
+        <div style={{ fontSize: 12, color: t.textMuted }}>
+          {debugMode ? 'Üretim manifesti kontrol ediliyor…' : 'İçerik durumu kontrol ediliyor…'}
+        </div>
       </div>
     );
   }
-  if (!checklist || checklist.items.length === 0) return null;
+  if (!checklist || checklist.items.length === 0) {
+    if (!pipelineSummary) return null;
+    if (!debugMode) {
+      const ready = pipelineSummary.publishReady;
+      const total = pipelineSummary.productionTarget;
+      return (
+        <div style={{
+          padding: '14px 16px', borderRadius: 14, marginBottom: 16,
+          background: t.isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.05)',
+          border: '0.5px solid rgba(59,130,246,0.25)',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
+            {ready >= total ? 'İçerik paketi hazır' : `${ready}/${total} içerik hazır`}
+          </div>
+          <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
+            {ready > 0
+              ? 'Onay bekleyen gönderiler İçerik sekmesinde.'
+              : 'Görseller hazırlanıyor — birkaç dakika içinde görünür.'}
+          </div>
+          {ready > 0 && (
+            <button
+              type="button"
+              onClick={onGoToFeed}
+              style={{
+                marginTop: 12, width: '100%', padding: '10px', borderRadius: 10,
+                border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                background: t.accent, color: '#fff',
+              }}
+            >
+              İçeriklere git →
+            </button>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div style={{
+        padding: '14px 16px', borderRadius: 14, marginBottom: 16,
+        background: t.isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.05)',
+        border: '0.5px solid rgba(59,130,246,0.25)',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: '#3B82F6', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+          Üretim → Feed
+        </div>
+        {strategistKpi && (
+          <MissionStrategistKpiStrip kpi={strategistKpi} t={t} />
+        )}
+        <MissionProductionPipelineStrip
+          pipeline={pipelineSummary}
+          gapHint={pipelineGapHint ?? null}
+          storyAudioHint={storyAudioHint}
+          t={t}
+        />
+        {productionAlerts && productionAlerts.length > 0 && (
+          <MissionProductionAlertsBanner alerts={productionAlerts} t={t} />
+        )}
+      </div>
+    );
+  }
+
+  if (!debugMode) {
+    const ready = checklist.readyRequired;
+    const total = checklist.requiredTotal;
+    const pct = checklist.coveragePct;
+    const manifestReady = pipelineSummary?.manifestReady ?? ready;
+    const manifestRequired = pipelineSummary?.manifestRequired ?? total;
+    const preparing = checklist.renderingCount > 0 || manifestReady < manifestRequired;
+    const displayReady = manifestReady;
+    const displayTotal = manifestRequired;
+
+    return (
+      <div style={{
+        padding: '14px 16px', borderRadius: 14, marginBottom: 16,
+        background: t.isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.05)',
+        border: `0.5px solid rgba(59,130,246,0.25)`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>
+            Haftalık içerik paketi
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 800, color: pct >= 80 ? '#10B981' : '#3B82F6' }}>
+            {displayReady}/{displayTotal}
+          </span>
+        </div>
+        <div style={{
+          height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 10,
+          background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+        }}>
+          <div style={{
+            width: `${pct}%`, height: '100%', borderRadius: 3,
+            background: 'linear-gradient(90deg, #3B82F6, #60A5FA)',
+            transition: 'width 0.4s ease',
+          }} />
+        </div>
+        <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
+          {preparing
+            ? 'Gönderiler hazırlandıkça İçerik sekmesinde görünür.'
+            : displayReady >= displayTotal
+              ? 'Haftalık paketiniz onaya hazır.'
+              : `${displayReady} içerik onayınızı bekliyor.`}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          {displayReady < displayTotal && onReproduceFeed && (
+            <button
+              type="button"
+              onClick={() => onReproduceFeed(missionId)}
+              disabled={isReproducingFeed}
+              style={{
+                flex: 1, minWidth: 140, padding: '10px', borderRadius: 10, border: 'none',
+                cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                background: t.accent, color: '#fff',
+                opacity: isReproducingFeed ? 0.7 : 1,
+              }}
+            >
+              {isReproducingFeed ? 'Üretiliyor…' : 'Eksik içerikleri üret'}
+            </button>
+          )}
+          {ready > 0 && (
+            <button
+              type="button"
+              onClick={onGoToFeed}
+              style={{
+                flex: 1, minWidth: 120, padding: '10px', borderRadius: 10,
+                border: `0.5px solid rgba(59,130,246,0.35)`,
+                cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                background: 'rgba(59,130,246,0.12)', color: '#3B82F6',
+              }}
+            >
+              İçeriklere git →
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const summary = formatSlotChecklistSummary(checklist);
   const pct = checklist.coveragePct;
+  const missingCount = checklist.items.filter((i) => i.status === 'missing').length;
   const hasIssue = checklist.failedCount > 0 || checklist.renderingCount > 0
+    || missingCount > 0
     || checklist.readyRequired < checklist.requiredTotal;
+  const needsReproduce = missingCount > 0 || checklist.failedCount > 0;
+  const canReproduce = Boolean(onReproduceFeed) && needsReproduce;
 
   const retryRender = async (artifactId: string) => {
     setRetryingId(artifactId);
@@ -1962,6 +2623,17 @@ function MissionSlotChecklistPanel({
                   {item.headline.slice(0, 28)}
                 </span>
               )}
+              {item.aiEnhanceLabel && (
+                <span style={{
+                  fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 6, flexShrink: 0,
+                  background: item.aiEnhanceStatus === 'applied'
+                    ? 'rgba(16,185,129,0.15)'
+                    : 'rgba(148,163,184,0.12)',
+                  color: item.aiEnhanceStatus === 'applied' ? '#10B981' : '#94A3B8',
+                }}>
+                  {item.aiEnhanceLabel.slice(0, debugMode ? 42 : 28)}
+                </span>
+              )}
               {item.status === 'failed' && item.artifactId && (
                 <button
                   type="button"
@@ -1979,18 +2651,58 @@ function MissionSlotChecklistPanel({
           );
         })}
       </div>
-      {(checklist.failedCount > 0 || checklist.renderingCount > 0) && (
-        <button
-          type="button"
-          onClick={onGoToFeed}
-          style={{
-            marginTop: 12, width: '100%', padding: '10px', borderRadius: 10, border: 'none',
-            cursor: 'pointer', fontSize: 12, fontWeight: 700,
-            background: 'rgba(59,130,246,0.12)', color: '#3B82F6',
-          }}>
-          Feed&apos;de incele →
-        </button>
+      {summarizeAiEnhanceItems(checklist.items, debugMode) && (
+        <div style={{
+          marginTop: 10, padding: '10px 12px', borderRadius: 10,
+          background: t.isDark ? 'rgba(77,112,136,0.08)' : 'rgba(77,112,136,0.06)',
+          border: `0.5px solid ${t.isDark ? 'rgba(77,112,136,0.22)' : 'rgba(77,112,136,0.14)'}`,
+          fontSize: 11, color: t.textMuted, lineHeight: 1.55,
+        }}>
+          <div style={{ fontWeight: 800, color: '#9DBECE', marginBottom: 4, fontSize: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            AI Fotoğraf İyileştirme
+          </div>
+          {summarizeAiEnhanceItems(checklist.items, debugMode)}
+        </div>
       )}
+      {checklist.renderingCount > 0 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: t.textMuted, lineHeight: 1.5 }}>
+          {checklist.renderingCount} slot render ediliyor — birkaç dakika sonra yenileyin.
+        </div>
+      )}
+      {missingCount > 0 && (
+        <div style={{ marginTop: 8, fontSize: 11, color: '#94A3B8', lineHeight: 1.5 }}>
+          {missingCount} zorunlu slot henüz üretilmedi.
+        </div>
+      )}
+      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {canReproduce && (
+          <button
+            type="button"
+            disabled={isReproducingFeed}
+            onClick={() => onReproduceFeed!(missionId)}
+            style={{
+              width: '100%', padding: '11px', borderRadius: 10, border: 'none',
+              cursor: isReproducingFeed ? 'default' : 'pointer', fontSize: 12, fontWeight: 800,
+              background: 'linear-gradient(135deg, #4D7088, #8AABBD)',
+              color: '#fff',
+              opacity: isReproducingFeed ? 0.7 : 1,
+            }}>
+            {isReproducingFeed ? 'Paket üretiliyor…' : 'Paketi yeniden üret'}
+          </button>
+        )}
+        {(checklist.failedCount > 0 || checklist.renderingCount > 0 || missingCount > 0) && (
+          <button
+            type="button"
+            onClick={onGoToFeed}
+            style={{
+              width: '100%', padding: '10px', borderRadius: 10, border: 'none',
+              cursor: 'pointer', fontSize: 12, fontWeight: 700,
+              background: 'rgba(59,130,246,0.12)', color: '#3B82F6',
+            }}>
+            Feed&apos;de incele →
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -2015,8 +2727,8 @@ function MissionPublishPackageCard({
   if (isLoading && previewArtifacts.length === 0) {
     return (
       <div style={{ padding: '12px 14px', borderRadius: 14, marginBottom: 16,
-        background: t.isDark ? 'rgba(139,92,246,0.08)' : 'rgba(139,92,246,0.06)',
-        border: '0.5px solid rgba(139,92,246,0.25)' }}>
+        background: t.isDark ? 'rgba(138,171,189,0.08)' : 'rgba(138,171,189,0.06)',
+        border: '0.5px solid rgba(138,171,189,0.25)' }}>
         <div style={{ fontSize: 12, color: t.textMuted }}>Feed paketi yükleniyor…</div>
       </div>
     );
@@ -2030,24 +2742,35 @@ function MissionPublishPackageCard({
   return (
     <div style={{
       padding: '16px', borderRadius: 16, marginBottom: 16,
-      background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(201,169,110,0.08))',
-      border: '0.5px solid rgba(139,92,246,0.35)',
+      background: 'linear-gradient(135deg, rgba(77,112,136,0.12), rgba(201,169,110,0.08))',
+      border: '0.5px solid rgba(138,171,189,0.35)',
     }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: '#8B5CF6', letterSpacing: '0.06em',
+      <div style={{ fontSize: 11, fontWeight: 800, color: '#8AABBD', letterSpacing: '0.06em',
         textTransform: 'uppercase', marginBottom: 8 }}>
         Haftalık Yayın Paketi
         {selection?.selectionSource === 'feed_art_director' && isMobileOperatorMode() && (
           <span style={{ marginLeft: 6, color: '#10B981', fontWeight: 700 }}>· Art Director</span>
         )}
       </div>
+      <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6, lineHeight: 1.45 }}>
+        Hedef paket: {formatWeeklyPackageTarget()} ({MISSION_WEEKLY_PACKAGE_COUNTS.total} içerik)
+      </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: t.textPrimary, marginBottom: 6 }}>
         {hasContent ? selectionLabel : 'Video story\'ler hazırlanıyor…'}
       </div>
       <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
         {hasContent && pkg
-          ? pkg.pendingReview > 0
-            ? `${pkg.pendingReview} içerik Feed'de onayınızı bekliyor.${pkg.backupCount > 0 ? ` (+${pkg.backupCount} ek üretim önerilen paket dışında)` : ''}`
-            : `${pkg.approved} içerik onaylandı · Feed\'de yayın geçmişini kontrol edin.`
+          ? (() => {
+              const ready = pkg.primaryCount ?? selection?.primary.length ?? 0;
+              const target = MISSION_WEEKLY_PACKAGE_COUNTS.total;
+              const progress =
+                ready > 0 && ready < target
+                  ? `${ready}/${target} slot üretildi · `
+                  : '';
+              return pkg.pendingReview > 0
+                ? `${progress}${pkg.pendingReview} içerik Feed'de onayınızı bekliyor.${pkg.backupCount > 0 ? ` (+${pkg.backupCount} ek üretim önerilen paket dışında)` : ''}`
+                : `${progress}${pkg.approved} içerik onaylandı · Feed'de yayın geçmişini kontrol edin.`;
+            })()
           : previewArtifacts.length > 0
             ? `${previewArtifacts.length} içerik önizlenebilir · render devam edebilir.`
             : 'Auto-produce ve Remotion render arka planda çalışıyor (1–3 dk). Biraz sonra Feed\'i yenileyin.'}
@@ -2068,13 +2791,13 @@ function MissionPublishPackageCard({
           )}
           {pkg.storyStills > 0 && (
             <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20,
-              background: 'rgba(139,92,246,0.12)', color: '#A78BFA' }}>
+              background: 'rgba(138,171,189,0.12)', color: '#9DBECE' }}>
               Story {pkg.storyStills}
             </span>
           )}
           {pkg.storyMotion > 0 && (
             <span style={{ fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20,
-              background: 'rgba(124,58,237,0.15)', color: '#C4B5FD' }}>
+              background: 'rgba(77,112,136,0.14)', color: '#C4B5FD' }}>
               Motion {pkg.storyMotion}
             </span>
           )}
@@ -2110,15 +2833,15 @@ function MissionPublishPackageCard({
         style={{
           width: '100%', padding: '13px 16px', borderRadius: 12, border: 'none', cursor: 'pointer',
           background: hasContent && (pkg?.pendingReview ?? 0) > 0
-            ? 'linear-gradient(135deg, #7c3aed, #8B5CF6)'
+            ? 'linear-gradient(135deg, #4D7088, #8AABBD)'
             : (t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
           color: hasContent && (pkg?.pendingReview ?? 0) > 0 ? '#fff' : t.textSecondary,
           fontSize: 14, fontWeight: 800,
-          boxShadow: hasContent && (pkg?.pendingReview ?? 0) > 0 ? '0 4px 20px rgba(124,58,237,0.35)' : 'none',
+          boxShadow: hasContent && (pkg?.pendingReview ?? 0) > 0 ? '0 4px 20px rgba(77,112,136,0.35)' : 'none',
         }}>
         {(pkg?.pendingReview ?? 0) > 0
-          ? `Feed'e Git → ${pkg!.pendingReview} içerik onay bekliyor`
-          : hasContent ? 'Feed\'de Görüntüle' : 'Feed\'e Git'}
+          ? `İçeriklere git → ${pkg!.pendingReview} onay bekliyor`
+          : hasContent ? 'İçerikleri görüntüle' : 'İçeriklere git'}
       </button>
     </div>
   );
@@ -2132,7 +2855,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   onClose: () => void;
 }) {
   const { t } = useTheme();
+  const debugMode = isDebugUiMode();
   const { openMissionFactory, navigate, openFeedForMission, openPlatformPreview } = useMobileStore();
+  const openArtifactPreview = (artifactId: string) => openPlatformPreview(artifactId);
   const [expandedNode, setExpandedNode] = useState<string | null>(null);
 
   const { data: prog, isLoading } = useQuery({
@@ -2140,6 +2865,25 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     queryFn: () => apiClient.getMissionProgress(workspaceId, mission.id),
     staleTime: 30_000,
   });
+
+  const { data: brandThemePayload } = useQuery({
+    queryKey: ['brand-theme-kit', workspaceId],
+    queryFn: async () => {
+      const res = await fetch(`/api/brand-context/${workspaceId}/theme`, {
+        headers: { 'X-Tenant-Id': workspaceId },
+      });
+      if (!res.ok) return null;
+      return res.json() as { theme?: Record<string, unknown> };
+    },
+    staleTime: 60_000,
+    enabled: Boolean(workspaceId),
+  });
+
+  const storyAudioHint = useMemo(() => {
+    const theme = brandThemePayload?.theme;
+    if (!theme) return null;
+    return describeStoryAudioPolicy(parseMotionProfileFromTheme(theme));
+  }, [brandThemePayload]);
 
   const isCompleted = mission.status === 'completed';
   const showFeedPackage = isCompleted || mission.status === 'in_flight';
@@ -2151,10 +2895,13 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   });
 
   useEffect(() => {
-    if (!showFeedPackage || !missionInFlight) return;
-    const id = setInterval(() => { void refetchMissionArtifacts(); }, 20_000);
+    if (!showFeedPackage) return;
+    const awaitingArtifacts = isCompleted && (feedArtifacts?.length ?? 0) === 0;
+    if (!missionInFlight && !awaitingArtifacts) return;
+    const intervalMs = missionInFlight ? 30_000 : 12_000;
+    const id = setInterval(() => { void refetchMissionArtifacts(); }, intervalMs);
     return () => clearInterval(id);
-  }, [showFeedPackage, missionInFlight, refetchMissionArtifacts]);
+  }, [showFeedPackage, missionInFlight, isCompleted, feedArtifacts?.length, refetchMissionArtifacts]);
   const weeklySelection = useMemo(() => {
     if (!feedArtifacts || !prog?.nodes?.length) return null;
     return buildWeeklySelectionFromMissionNodes(feedArtifacts, mission.id, prog.nodes);
@@ -2186,25 +2933,155 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     [prog?.nodes],
   );
 
+  const planningSummary = useMemo(
+    () => summarizeMissionPlanningOutputs(prog?.nodes ?? []),
+    [prog?.nodes],
+  );
+
+  const lastFeedProduced = Number(
+    (prog?.performance_summary as { last_feed_produce?: { produced?: number } } | undefined)
+      ?.last_feed_produce?.produced ?? 0,
+  );
+
+  const missionAiCost = useMemo(() => buildMissionAiCostSummary({
+    missionId: mission.id,
+    artifacts: feedArtifacts ?? [],
+    performanceSummary: (prog?.performance_summary ?? null) as Record<string, unknown> | null,
+    nodes: prog?.nodes ?? null,
+  }), [feedArtifacts, mission.id, prog?.performance_summary, prog?.nodes]);
+
   const slotChecklist = useMemo(() => {
-    if (!feedArtifacts?.length) return null;
     return buildMissionSlotChecklist({
       missionId: mission.id,
       missionType: mission.type,
       missionTitle: mission.title,
       assignments: fdReport?.production_assignments,
-      artifacts: feedArtifacts,
+      artifacts: feedArtifacts ?? [],
       missionInFlight: mission.status === 'in_flight' || mission.status === 'approved',
+      debugMode,
     });
-  }, [feedArtifacts, mission.id, mission.type, mission.title, mission.status, fdReport]);
+  }, [debugMode, feedArtifacts, mission.id, mission.type, mission.title, mission.status, fdReport]);
+
+  const pipelineSummary = useMemo(() => {
+    const fdAssignments = Array.isArray(fdReport?.production_assignments)
+      ? fdReport!.production_assignments!.length
+      : null;
+    return summarizeMissionProductionPipeline({
+      artifacts: feedArtifacts ?? [],
+      missionId: mission.id,
+      checklist: slotChecklist,
+      planning: planningSummary,
+      fdAssignmentCount: fdAssignments,
+      lastFeedProduced: lastFeedProduced > 0 ? lastFeedProduced : null,
+    });
+  }, [feedArtifacts, mission.id, slotChecklist, planningSummary, fdReport, lastFeedProduced]);
+
+  const strategistKpi = useMemo(
+    () => summarizeMissionStrategistKpi({
+      artifacts: feedArtifacts ?? [],
+      missionId: mission.id,
+    }),
+    [feedArtifacts, mission.id],
+  );
+
+  const pipelineGapHint = useMemo(() => {
+    if (!pipelineSummary) return null;
+    return describeMissionPipelineGap(planningSummary, pipelineSummary);
+  }, [planningSummary, pipelineSummary]);
+
+  const productionTelemetry = useMemo(
+    () => telemetryFromMissionProgress({
+      performanceSummary: (prog?.performance_summary ?? null) as Record<string, unknown> | null,
+      feedDirectorReport: fdReport,
+      pipelineSummary: pipelineSummary
+        ? {
+          producedArtifacts: pipelineSummary.producedArtifacts,
+          publishReady: pipelineSummary.publishReady,
+        }
+        : null,
+    }),
+    [prog?.performance_summary, fdReport, pipelineSummary],
+  );
+
+  const productionSkipAlerts = useMemo(() => {
+    const productionPis = (fdReport?.production_pis ?? null) as {
+      skipped?: number;
+      warnings?: unknown[];
+    } | null;
+    return summarizeMissionProductionSkipAlerts({
+      checklist: slotChecklist,
+      fdReport,
+      pipeline: pipelineSummary,
+      productionPis,
+      tenantLearningStatus: productionTelemetry?.tenant_learning?.status ?? null,
+      fdRawAssignmentCount: Array.isArray(fdReport?.production_assignments)
+        ? (fdReport.production_assignments as unknown[]).length
+        : null,
+      artifacts: feedArtifacts ?? [],
+      missionId: mission.id,
+    });
+  }, [slotChecklist, fdReport, pipelineSummary, productionTelemetry, feedArtifacts, mission.id]);
+
+  const telemetryAlerts = useMemo(
+    () => (productionTelemetry ? describeTelemetryAlerts(productionTelemetry) : []),
+    [productionTelemetry],
+  );
 
   const queryClient = useQueryClient();
   const refreshFeedPackage = () => {
     void queryClient.invalidateQueries({
-      queryKey: mobileArtifactsQueryKey({ missionId: mission.id, limit: 80 }),
+      queryKey: mobileArtifactsQueryKey(workspaceId, { missionId: mission.id, limit: 80 }),
     });
     void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
   };
+
+  const [reproduceFeedError, setReproduceFeedError] = useState<string | null>(null);
+  const [reproduceFeedOk, setReproduceFeedOk] = useState<string | null>(null);
+  const hubProductionPackage =
+    parseHubProductionPackage(prog?.performance_summary?.hub_production_package)
+    ?? getMissionProductionPackage(workspaceId);
+  const autoFeedBootstrapRef = useRef(false);
+  const kickFeedMutation = useMutation({
+    mutationFn: () => apiClient.kickMissionFeedProduction(workspaceId, mission.id, {
+      productionPackage: hubProductionPackage,
+    }),
+    onSuccess: (data) => {
+      setReproduceFeedError(null);
+      setReproduceFeedOk(
+        data?.message?.trim() || 'Feed üretimi arka planda başlatıldı.',
+      );
+      refreshFeedPackage();
+      void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
+      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+    },
+    onError: (err: Error) => {
+      setReproduceFeedOk(null);
+      setReproduceFeedError(err.message?.trim() || 'Feed üretimi başlatılamadı');
+    },
+    onSettled: () => {
+      autoFeedBootstrapRef.current = false;
+    },
+  });
+
+  const reproduceFeedMutation = useMutation({
+    mutationFn: () => apiClient.reproduceMissionFeed(workspaceId, mission.id, {
+      productionPackage: hubProductionPackage,
+    }),
+    onSuccess: (data) => {
+      setReproduceFeedError(null);
+      setReproduceFeedOk(
+        data?.message?.trim()
+        || `${data?.produced ?? 0} içerik Feed'e eklendi.`,
+      );
+      refreshFeedPackage();
+      void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
+      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+    },
+    onError: (err: Error) => {
+      setReproduceFeedOk(null);
+      setReproduceFeedError(err.message?.trim() || 'Feed üretimi başlatılamadı');
+    },
+  });
 
   const goToFeed = () => {
     onClose();
@@ -2215,6 +3092,58 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const rate = mission.total_nodes > 0
     ? Math.round((mission.completed_nodes / mission.total_nodes) * 100)
     : 0;
+  const hasPreviewContent = previewArtifacts.length > 0 || (feedPackage?.totalPublishable ?? 0) > 0;
+  const slotRendering = (slotChecklist?.renderingCount ?? 0) > 0;
+
+  const visualDesignNodes = (prog?.nodes ?? []).filter(
+    (n) => n.task_type === 'visual_design_cards',
+  );
+  const visualDesignPending = (prog?.nodes ?? []).some(
+    (n) => n.task_type === 'content_ideation' && n.status === 'completed',
+  )
+    && visualDesignNodes.length > 0
+    && visualDesignNodes.some(
+      (n) => n.status !== 'completed' || !nodeHasOutput(n),
+    );
+  const calendarNodes = (prog?.nodes ?? []).filter((n) => n.task_type === 'content_calendar');
+  const calendarPending = (prog?.nodes ?? []).some(
+    (n) => n.task_type === 'content_ideation' && n.status === 'completed',
+  )
+    && calendarNodes.length > 0
+    && calendarNodes.some(
+      (n) => n.status !== 'completed' || !nodeHasOutput(n),
+    );
+  const feedPrepPending = visualDesignPending || calendarPending;
+
+  const feedProductionLockActive = isFeedProductionLockActive(
+    prog?.performance_summary as Record<string, unknown> | undefined,
+  );
+
+  useEffect(() => {
+    if (autoFeedBootstrapRef.current || kickFeedMutation.isPending) return;
+    if (!showFeedPackage) return;
+    if (feedProductionLockActive) return;
+    const ideationDone = (prog?.nodes ?? []).some(
+      (n) => n.task_type === 'content_ideation' && n.status === 'completed',
+    );
+    if (!ideationDone || feedPrepPending) return;
+    const target = pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total;
+    const publishReady = pipelineSummary?.publishReady ?? 0;
+    const manifestGap = (slotChecklist?.readyRequired ?? 0) < (slotChecklist?.requiredTotal ?? target);
+    if (publishReady >= target && !manifestGap) return;
+    autoFeedBootstrapRef.current = true;
+    kickFeedMutation.mutate();
+  }, [
+    showFeedPackage,
+    feedPrepPending,
+    feedProductionLockActive,
+    pipelineSummary?.publishReady,
+    pipelineSummary?.productionTarget,
+    slotChecklist?.readyRequired,
+    slotChecklist?.requiredTotal,
+    prog?.nodes,
+    kickFeedMutation,
+  ]);
 
   if (typeof window === 'undefined') return null;
 
@@ -2257,6 +3186,24 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               {mission.objective}
             </div>
           )}
+          {debugMode && telemetryAlerts.length > 0 && (
+            <div style={{
+              marginTop: 10,
+              padding: '10px 12px',
+              borderRadius: 12,
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.35)',
+              fontSize: 11,
+              color: '#FCA5A5',
+              lineHeight: 1.45,
+            }}>
+              {telemetryAlerts.map((alert) => (
+                <div key={alert} style={{ marginTop: telemetryAlerts[0] === alert ? 0 : 6 }}>
+                  {alert}
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
             {mission.completed_nodes}/{mission.total_nodes} görev · {timeAgo(mission.completed_at)}
           </div>
@@ -2274,7 +3221,14 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
           )}
 
           {/* Mission results summary banner */}
-          {!isLoading && completedNodes.length > 0 && (
+          {!isLoading && completedNodes.length > 0 && (() => {
+            const feedStatus = missionFeedStatusLabel({
+              publishReady: pipelineSummary?.publishReady ?? 0,
+              productionTarget: pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total,
+              hasPreviewContent,
+              rate,
+            });
+            return (
             <div style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 16,
               background: rate >= 80
                 ? 'rgba(16,185,129,0.08)'
@@ -2283,12 +3237,42 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>{rate >= 80 ? '✅' : '⏳'}</span>
-                <div style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>
-                  {rate >= 80 ? 'Misyon başarıyla tamamlandı' : `%${rate} tamamlandı`}
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>
+                    {debugMode
+                      ? (rate >= 80
+                        ? ((pipelineSummary?.publishReady ?? 0) >= (pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total)
+                          ? (hasPreviewContent ? 'Misyon başarıyla tamamlandı' : 'Strateji görevleri tamamlandı')
+                          : 'Strateji tamam — Feed üretimi eksik')
+                        : `%${rate} tamamlandı`)
+                      : feedStatus.title}
+                  </div>
+                  {!debugMode && feedStatus.subtitle && (
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, lineHeight: 1.45 }}>
+                      {feedStatus.subtitle}
+                    </div>
+                  )}
+                  {debugMode && rate >= 80 && !hasPreviewContent && (
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, lineHeight: 1.45 }}>
+                      Planlama tamam; Feed görselleri ayrı üretim adımında oluşur.
+                    </div>
+                  )}
+                  {planningSummary.strategyTheme && (
+                    <div style={{ fontSize: 11, color: t.textSecondary, marginTop: 4, lineHeight: 1.4 }}>
+                      Haftalık tema: <span style={{ fontWeight: 700 }}>{planningSummary.strategyTheme}</span>
+                    </div>
+                  )}
                 </div>
               </div>
-              {/* Per-node result chips */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {debugMode && (
+                <>
+              <div style={{
+                fontSize: 9, fontWeight: 800, color: t.textMuted, letterSpacing: '0.06em',
+                textTransform: 'uppercase', marginBottom: 6,
+              }}>
+                Planlama (AI) — Feed dosyası değil
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: pipelineSummary ? 10 : 0 }}>
                 {completedNodes.map(node => {
                   const m = taskMeta(node.task_type);
                   const cnt = countNodeResults(node);
@@ -2303,30 +3287,76 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                   );
                 })}
               </div>
+              {pipelineSummary && (
+                <div style={{
+                  paddingTop: 10, marginTop: 4,
+                  borderTop: `0.5px solid ${t.separator}`,
+                }}>
+                  <div style={{
+                    fontSize: 9, fontWeight: 800, color: '#3B82F6', letterSpacing: '0.06em',
+                    textTransform: 'uppercase', marginBottom: 8,
+                  }}>
+                    Üretim → Feed özeti
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11, color: t.textSecondary }}>
+                    <span><strong style={{ color: t.textPrimary }}>{pipelineSummary.productionTarget}</strong> hedef</span>
+                    <span><strong style={{ color: t.textPrimary }}>{pipelineSummary.producedArtifacts}</strong> üretildi</span>
+                    <span><strong style={{ color: '#10B981' }}>{pipelineSummary.publishReady}</strong> yayına hazır</span>
+                  </div>
+                  {pipelineGapHint && (
+                    <div style={{ fontSize: 10, color: t.textMuted, marginTop: 6, lineHeight: 1.45 }}>
+                      {pipelineGapHint}
+                    </div>
+                  )}
+                </div>
+              )}
+                </>
+              )}
             </div>
+            );
+          })()}
+
+          {debugMode && (isCompleted || mission.status === 'in_flight') && (
+            <MissionAiCostPanel summary={missionAiCost} t={t} />
           )}
 
           {(isCompleted || mission.status === 'in_flight') && (
             <MissionSlotChecklistPanel
               checklist={slotChecklist}
+              pipelineSummary={pipelineSummary}
+              strategistKpi={strategistKpi}
+              pipelineGapHint={pipelineGapHint}
+              productionAlerts={productionSkipAlerts}
+              storyAudioHint={storyAudioHint}
               workspaceId={workspaceId}
+              missionId={mission.id}
               isLoading={feedPkgLoading}
               onGoToFeed={goToFeed}
               onRefresh={refreshFeedPackage}
+              onReproduceFeed={(pipelineSummary?.publishReady ?? 0) < (pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total)
+                ? () => { kickFeedMutation.mutate(); }
+                : undefined}
+              isReproducingFeed={kickFeedMutation.isPending || reproduceFeedMutation.isPending}
+              debugMode={debugMode}
               t={t}
             />
           )}
 
-          {isCompleted && previewArtifacts.length === 0 && (() => {
+          {isCompleted && !hasPreviewContent && (() => {
             const productionError = prog?.performance_summary?.production_error;
             const errMsg = String(productionError?.message ?? '').toLowerCase();
-            const isStillProcessing =
-              errMsg.includes('disconnected') ||
-              errMsg.includes('server') ||
-              errMsg.includes('timeout') ||
-              errMsg.includes('connection');
-            const isBudget = productionError?.status_code === 429
-              || errMsg.includes('bütçe') || errMsg.includes('budget') || errMsg.includes('limit');
+            const isStillProcessing = (kickFeedMutation.isPending || reproduceFeedMutation.isPending)
+              || slotRendering
+              || feedPkgLoading
+              || errMsg.includes('disconnected')
+              || errMsg.includes('server')
+              || errMsg.includes('timeout')
+              || errMsg.includes('connection')
+              || (errMsg.includes('rendering') && !errMsg.includes('failed'));
+            const isBudget = !isProductionLimitsBypassed() && (
+              productionError?.status_code === 429
+              || errMsg.includes('bütçe') || errMsg.includes('budget') || errMsg.includes('limit')
+            );
             const ideationNode = prog?.nodes?.find(n => n.task_type === 'content_ideation' && n.status === 'completed');
 
             return (
@@ -2336,14 +3366,26 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                 border: `0.5px solid ${t.separator}`,
               }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
-                  {isStillProcessing ? 'Görseller hazırlanıyor' : 'İçerik henüz hazır değil'}
+                  {visualDesignPending
+                    ? 'Görsel tasarım önerileri bekleniyor'
+                    : calendarPending
+                      ? 'Yayın takvimi hazırlanıyor'
+                      : isStillProcessing ? 'Görseller hazırlanıyor' : 'Feed görselleri henüz yok'}
                 </div>
                 <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
-                  {isStillProcessing
-                    ? 'Reel ve story videoları arka planda üretiliyor. Bu işlem 3-5 dakika sürebilir — bir süre sonra İçerik ekranını açın.'
+                  {visualDesignPending
+                    ? 'Ajans tasarım kartları tamamlanınca Feed üretimi otomatik başlayacak.'
+                    : calendarPending
+                      ? 'Plan satırları (format, tarih, başlık) hazır olunca her biri için Feed çıktısı üretilir.'
+                      : isStillProcessing
+                    ? 'Görseller hazırlanıyor — gönderiler geldikçe Feed sekmesinde görünür.'
                     : isBudget
-                      ? 'Bugünkü içerik üretimi tamamlandı. Yarın otomatik devam edecek veya aşağıdan manuel başlatabilirsiniz.'
-                      : 'Kampanya tamamlandı fakat görseller oluşturulamadı. Aşağıdan tekrar başlatabilirsiniz.'}
+                      ? (debugMode
+                        ? 'Bugünkü üretim kotası doldu. Yarın otomatik devam eder veya aşağıdan manuel başlatın.'
+                        : 'Bu ayki kredi limitiniz doldu. Yeni içerik yarın veya kredi yüklemesi sonrası devam eder.')
+                      : (debugMode
+                        ? 'Strateji ve fikirler tamam. Feed üretimi arka planda başlatılır; gerekirse aşağıdan yenileyin.'
+                        : 'Planınız hazır. Görseller arka planda üretiliyor — birkaç dakika içinde Feed\'de görünür.')}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
@@ -2358,25 +3400,53 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                   >
                     ↻ Yenile
                   </button>
-                  {!isStillProcessing && ideationNode && (
+                  {debugMode && !isStillProcessing && (
+                    <button
+                      type="button"
+                      onClick={() => reproduceFeedMutation.mutate()}
+                      disabled={reproduceFeedMutation.isPending}
+                      style={{
+                        padding: '9px 14px', borderRadius: 12, cursor: 'pointer',
+                        background: t.accent, border: 'none',
+                        color: '#fff', fontSize: 12, fontWeight: 700,
+                        opacity: (kickFeedMutation.isPending || reproduceFeedMutation.isPending) ? 0.7 : 1,
+                      }}
+                    >
+                      {(kickFeedMutation.isPending || reproduceFeedMutation.isPending)
+                        ? 'Arka planda üretiliyor…'
+                        : 'Feed üretimini başlat →'}
+                    </button>
+                  )}
+                  {debugMode && !isStillProcessing && ideationNode && (
                     <button
                       type="button"
                       onClick={() => openMissionFactory(mission.id, ideationNode.node_key)}
                       style={{
                         padding: '9px 14px', borderRadius: 12, cursor: 'pointer',
-                        background: t.accent, border: 'none',
-                        color: '#fff', fontSize: 12, fontWeight: 700,
+                        background: 'transparent',
+                        border: `0.5px solid ${t.accentBorder}`,
+                        color: t.accent, fontSize: 12, fontWeight: 700,
                       }}
                     >
-                      İçerikleri Üret →
+                      İçerik fabrikası
                     </button>
                   )}
                 </div>
+                {reproduceFeedOk && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#22C55E', lineHeight: 1.45 }}>
+                    {reproduceFeedOk}
+                  </div>
+                )}
+                {reproduceFeedError && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#EF4444', lineHeight: 1.45 }}>
+                    {reproduceFeedError}
+                  </div>
+                )}
               </div>
             );
           })()}
 
-          {showFeedPackage && (previewArtifacts.length > 0 || isCompleted) && (
+          {showFeedPackage && (hasPreviewContent || missionInFlight || (isCompleted && feedPkgLoading)) && (
             <MissionPublishPackageCard
               pkg={feedPackage}
               selection={weeklySelection}
@@ -2432,15 +3502,15 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
 
           {completedNodes.map(node => {
             const isOpen = expandedNode === node.node_key;
-            const hasOutput = Boolean(node.output_summary);
+            const hasOutput = nodeHasOutput(node);
             const meta = taskMeta(node.task_type);
             const resultCount = hasOutput ? countNodeResults(node) : null;
             const ics = node.task_type === 'content_ideation' && hasOutput
-              ? computeNodeIcs(node.output_summary)
+              ? computeNodeIcs(node)
               : null;
             const icsColor = ics == null ? t.textMuted
               : ics >= 90 ? '#10B981' : ics >= 70 ? '#F59E0B' : '#EF4444';
-            const isContentNode = ['content_ideation','content_calendar','visual_design_cards'].includes(node.task_type);
+            const isContentNode = ['content_ideation', 'visual_design_cards'].includes(node.task_type);
 
             return (
               <div key={node.node_key} style={{ marginBottom: 10 }}>
@@ -2473,10 +3543,19 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                       {meta.label}
                     </div>
                     {/* Result summary */}
-                    <div style={{ fontSize: 11, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 11, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {['content_ideation', 'visual_design_cards', 'content_calendar', 'content_strategy', 'feed_cohesion_review'].includes(node.task_type) && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 6,
+                          background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                          color: t.textMuted, letterSpacing: '0.03em',
+                        }}>
+                          planlama
+                        </span>
+                      )}
                       {hasOutput && resultCount != null ? (
                         <span style={{ color: meta.color, fontWeight: 600 }}>
-                          {resultCount} {meta.resultNoun} üretildi
+                          {resultCount} {meta.resultNoun} planlandı
                         </span>
                       ) : hasOutput ? (
                         <span style={{ color: '#10B981', fontWeight: 600 }}>Tamamlandı ✓</span>
@@ -2512,11 +3591,15 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                     <NodeOutputView
                       node={node}
                       t={t}
+                      missionId={mission.id}
+                      missionArtifacts={feedArtifacts ?? []}
+                      missionInFlight={mission.status === 'in_flight' || mission.status === 'approved'}
                       onGoToFeed={isContentNode ? goToFeed : undefined}
+                      onOpenArtifact={openArtifactPreview}
                     />
 
                     {/* Per-node action buttons */}
-                    {isContentNode && node.output_summary && (
+                    {isContentNode && hasOutput && (
                       <div style={{ marginTop: 14 }}>
                         <button
                           onClick={() => { onClose(); openMissionFactory(mission.id, node.node_key); }}
@@ -2880,98 +3963,11 @@ function ContextSignalsCard({
   );
 }
 
-function UsageCostCard({ data }: { data: WorkspaceUsageSummary }) {
-  const { t } = useTheme();
-  if (!data) return null;
-
-  if (data.token_wallet?.enabled) {
-    return (
-      <div style={{ margin: '12px 22px 0' }}>
-        <TokenWalletCard wallet={data.token_wallet} t={t} />
-      </div>
-    );
-  }
-
-  const spent = data.spent_today_usd;
-  const cap = data.daily_budget_usd;
-  const pct = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
-  const atCap = data.remaining_today_usd <= 0.001;
-  const topCategories = Object.entries(data.category_totals || {})
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-
-  return (
-    <div style={{
-      margin: '12px 22px 0',
-      padding: '14px 16px',
-      borderRadius: 16,
-      background: t.isDark ? 'rgba(255,255,255,0.04)' : '#fff',
-      border: `0.5px solid ${atCap ? 'rgba(239,68,68,0.35)' : t.separator}`,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: t.labelColor, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            API maliyeti
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, marginTop: 4, letterSpacing: '-0.02em' }}>
-            ${data.week_cost_usd.toFixed(2)}
-            <span style={{ fontSize: 12, fontWeight: 500, color: t.textMuted, marginLeft: 6 }}>
-              / hafta
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
-            ≈ {(data.week_cost_usd * USD_TRY).toFixed(0)} ₺ · {data.week_artifact_count} içerik · {data.week_mission_count} mission
-          </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 11, color: t.textMuted }}>Bugün</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: atCap ? '#EF4444' : t.accent }}>
-            ${spent.toFixed(2)} / ${cap.toFixed(2)}
-          </div>
-          <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>
-            {atCap ? 'Bütçe doldu' : `$${data.remaining_today_usd.toFixed(2)} kaldı`}
-          </div>
-        </div>
-      </div>
-
-      <div style={{
-        marginTop: 12, height: 6, borderRadius: 3, overflow: 'hidden',
-        background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-      }}>
-        <div style={{
-          width: `${pct}%`, height: '100%', borderRadius: 3,
-          background: atCap
-            ? 'linear-gradient(90deg, #EF4444, #F87171)'
-            : `linear-gradient(90deg, ${t.accent}cc, ${t.accent})`,
-          transition: 'width 0.4s ease',
-        }} />
-      </div>
-
-      {topCategories.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-          {topCategories.map(([key, val]) => (
-            <span key={key} style={{
-              fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 20,
-              background: t.accentDim, color: t.accent,
-            }}>
-              {CATEGORY_LABELS[key] ?? key} ${val.toFixed(2)}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8, lineHeight: 1.4 }}>
-        Tahmini API maliyeti (USD). Otonom üretim günlük ${cap.toFixed(2)} ile sınırlı.
-      </div>
-    </div>
-  );
-}
-
 export function MissionHub() {
   const { t } = useTheme();
   const operatorMode = isMobileOperatorMode();
-  const { navigate, goBack, openBrand, openStoryTemplates } = useMobileStore();
+  const debugMode = isDebugUiMode();
+  const { navigate, goBack, openBrand, openStoryTemplates, openFeedForMission } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
@@ -2979,36 +3975,87 @@ export function MissionHub() {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [detailMission, setDetailMission] = useState<MissionSummary | null>(null);
   const [productionPackage, setProductionPackageState] = useState<MissionProductionPackage>('weekly_content');
+  const [deferGateQueries, setDeferGateQueries] = useState(false);
 
   const wsId = tenantId;
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDeferGateQueries(true), 350);
+    return () => window.clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     if (!wsId) return;
     setProductionPackageState(getMissionProductionPackage(wsId));
   }, [wsId]);
 
-  const { data: missions = [], isLoading } = useQuery({
+  const { data: missions = [], isLoading: missionsInitialLoading } = useQuery({
     queryKey: ['missions', wsId],
-    queryFn: () => apiClient.listMissions(wsId),
-    refetchInterval: 15_000,
-    staleTime: 8_000,
+    queryFn: () => apiClient.listMissionsForHub(wsId),
+    refetchInterval: (query) => {
+      const list = (query.state.data as MissionSummary[] | undefined) ?? [];
+      const active = list.some(
+        (m) => m.status === 'in_flight' || m.status === 'approved',
+      );
+      return active ? 25_000 : false;
+    },
+    staleTime: 45_000,
+    placeholderData: keepPreviousData,
     enabled: Boolean(wsId),
     ...mobileQueryDefaults,
   });
+  const missionsLoading = missionsInitialLoading && missions.length === 0;
 
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', wsId],
-    queryFn: () => apiClient.getBrandContextData(wsId),
-    staleTime: 30_000, // kısa tut — location/description sonradan doldurulabilir
-    enabled: Boolean(wsId),
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', wsId],
+    queryFn: async () => {
+      try {
+        return await apiClient.getProductionBrandContextSnapshot(wsId);
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 5 * 60_000,
+    retry: 1,
+    enabled: Boolean(wsId) && Boolean(proposeError),
   });
+  const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
+
+  const profileHydratedRef = useRef(false);
+  useEffect(() => {
+    if (profileHydratedRef.current || !wsId) return;
+    const hydrateKey = `sa-profile-hydrate:${wsId}`;
+    try {
+      if (sessionStorage.getItem(hydrateKey)) return;
+    } catch { /* private mode */ }
+    profileHydratedRef.current = true;
+    const runHydrate = () => {
+      fetch(`/api/brand-context/${wsId}/hydrate-company-profile`, {
+        method: 'POST',
+        headers: { 'X-Tenant-Id': wsId },
+      })
+        .then(() => {
+          try { sessionStorage.setItem(hydrateKey, '1'); } catch { /* ignore */ }
+          if (!operatorMode) return;
+          queryClient.invalidateQueries({ queryKey: ['brand-readiness', wsId] });
+          queryClient.invalidateQueries({ queryKey: ['production-context-snapshot', wsId] });
+          queryClient.invalidateQueries({ queryKey: ['gallery-intelligence', wsId] });
+        })
+        .catch(() => {
+          profileHydratedRef.current = false;
+        });
+    };
+    const delayMs = operatorMode ? 800 : 12_000;
+    const t = window.setTimeout(runHydrate, delayMs);
+    return () => window.clearTimeout(t);
+  }, [wsId, queryClient, operatorMode]);
 
   const { data: usageCost } = useQuery({
     queryKey: ['usage-cost', wsId],
     queryFn: () => apiClient.getWorkspaceUsageCost(wsId),
     staleTime: 30_000,
     refetchInterval: 60_000,
-    enabled: Boolean(wsId),
+    enabled: Boolean(wsId) && operatorMode,
     ...mobileQueryDefaults,
   });
 
@@ -3016,12 +4063,16 @@ export function MissionHub() {
   const { data: readiness } = useQuery<BrandReadinessResult>({
     queryKey: ['brand-readiness', wsId],
     queryFn: async () => {
-      const res = await fetch(`/api/brand-readiness/${wsId}`);
+      const res = await fetch(`/api/brand-readiness/${wsId}`, {
+        headers: { 'X-Tenant-Id': wsId },
+      });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
-    staleTime: 30_000,
-    enabled: Boolean(wsId),
+    staleTime: operatorMode ? 30_000 : 3 * 60_000,
+    retry: 1,
+    enabled: Boolean(wsId) && deferGateQueries,
+    ...mobileQueryDefaults,
   });
 
   // Brand Alignment Score (Sprint 8) — aggregate of the standing sub-scores.
@@ -3033,7 +4084,7 @@ export function MissionHub() {
       return res.json();
     },
     staleTime: 60_000,
-    enabled: Boolean(wsId),
+    enabled: Boolean(wsId) && operatorMode,
   });
 
   // Context signals (Sprint 6) — deterministic season/full-moon/holiday/sector
@@ -3046,7 +4097,7 @@ export function MissionHub() {
       return res.json();
     },
     staleTime: 60_000,
-    enabled: Boolean(wsId),
+    enabled: Boolean(wsId) && operatorMode,
   });
 
   // Industry calendar freshness (Sprint 6 stale badge).
@@ -3058,7 +4109,7 @@ export function MissionHub() {
       return res.json();
     },
     staleTime: 120_000,
-    enabled: Boolean(wsId),
+    enabled: Boolean(wsId) && operatorMode,
   });
 
   const calendarStaleDays = (() => {
@@ -3078,8 +4129,9 @@ export function MissionHub() {
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },
-    staleTime: 60_000,
-    enabled: Boolean(wsId),
+    staleTime: operatorMode ? 60_000 : 3 * 60_000,
+    enabled: Boolean(wsId) && deferGateQueries,
+    ...mobileQueryDefaults,
   });
 
   const readinessScore = readiness?.score ?? null;
@@ -3091,26 +4143,34 @@ export function MissionHub() {
   const gisBlocks = gisScore != null ? gisScore < 70 : false;
   const readinessBlocks = brsBlocks || gisBlocks;
 
-  // Auto-run gallery vision analysis when photos exist but GIS is below gate.
+  // Auto-run gallery vision analysis when photos exist but GIS is below gate (operator only).
   const coverageJobStarted = useRef(false);
   useEffect(() => {
-    if (!wsId || coverageJobStarted.current || gisScore == null || gisScore >= 70) return;
+    if (!operatorMode || !wsId || coverageJobStarted.current || gisScore == null || gisScore >= 70) return;
+    const coverageKey = `sa-coverage-job:${wsId}`;
+    try {
+      if (sessionStorage.getItem(coverageKey)) return;
+    } catch { /* ignore */ }
     coverageJobStarted.current = true;
-    fetch(`/api/gallery-intelligence/${wsId}/analyze-coverage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maxImages: 20, tier: 'standard' }),
-    })
-      .then(() => {
-        queryClient.invalidateQueries({ queryKey: ['gallery-intelligence', wsId] });
-        queryClient.invalidateQueries({ queryKey: ['brand-readiness', wsId] });
+    const t = window.setTimeout(() => {
+      fetch(`/api/gallery-intelligence/${wsId}/analyze-coverage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxImages: 20, tier: 'standard' }),
       })
-      .catch(() => {
-        coverageJobStarted.current = false;
-      });
-  }, [wsId, gisScore, queryClient]);
+        .then(() => {
+          try { sessionStorage.setItem(coverageKey, '1'); } catch { /* ignore */ }
+          queryClient.invalidateQueries({ queryKey: ['gallery-intelligence', wsId] });
+          queryClient.invalidateQueries({ queryKey: ['brand-readiness', wsId] });
+        })
+        .catch(() => {
+          coverageJobStarted.current = false;
+        });
+    }, 5_000);
+    return () => window.clearTimeout(t);
+  }, [wsId, gisScore, queryClient, operatorMode]);
 
-  const budgetExhausted = usageCost != null && (
+  const budgetExhausted = !isProductionLimitsBypassed() && usageCost != null && (
     usageCost.remaining_today_usd <= 0.001
     || (usageCost.token_wallet?.enabled === true
       && (usageCost.token_wallet.remaining_tokens ?? 0) <= 0)
@@ -3119,6 +4179,8 @@ export function MissionHub() {
   const proposed  = missions.filter(m => m.status === 'proposed');
   const active    = missions.filter(m => ['approved','in_flight'].includes(m.status));
   const hasBlockingMissions = proposed.length > 0 || active.length > 0;
+  const hasProposedBlocking = proposed.length > 0;
+  const hasActiveOnlyBlocking = active.length > 0 && proposed.length === 0;
   // Completed with errors (failed_nodes > 0) shown in active section so errors are visible
   const failedCompleted = missions.filter(m => m.status === 'completed' && m.failed_nodes > 0);
   const completed = missions.filter(m => m.status === 'completed' && m.failed_nodes === 0).slice(0, 5);
@@ -3127,6 +4189,7 @@ export function MissionHub() {
     'weekly_content',
     'campaign',
     'event',
+    'ads_focus',
   ];
 
   const handleProductionPackageChange = (pkg: MissionProductionPackage) => {
@@ -3140,18 +4203,25 @@ export function MissionHub() {
       const directive = buildDiversityDirective(missions);
       const pkgDirective = buildProductionPackageDirective(productionPackage);
       const block = [contextSignals?.promptBlock, pkgDirective, directive].filter(Boolean).join('\n\n');
-      return apiClient.proposeMissions(wsId, block || undefined);
+      return apiClient.proposeMissions(wsId, block || undefined, {
+        productionPackage,
+      });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
       queryClient.invalidateQueries({ queryKey: ['usage-cost', wsId] });
-      setProposeError(null);
       if (data.proposals_created === 0) {
-        setProposeError(
-          data.message?.trim()
-            || 'Yeni öneri üretilemedi. StrategistAgent geçerli misyon çıkaramadı — birkaç dakika sonra tekrar deneyin.',
-        );
+        if (data.skip_reason === 'blocking_missions') {
+          void queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
+        }
+        const msg = data.message?.trim()
+          || (data.skip_reason === 'blocking_missions'
+            ? 'Önce bekleyen veya aktif misyonu onaylayın / reddedin.'
+            : 'Yeni öneri üretilemedi — birkaç dakika sonra tekrar deneyin.');
+        setProposeError(msg);
+        return;
       }
+      setProposeError(null);
     },
     onError: (err: Error) => {
       setProposeError(err.message?.trim() || 'Öneri oluşturulamadı.');
@@ -3179,10 +4249,52 @@ export function MissionHub() {
 
   const restartMutation = useMutation({
     mutationFn: (missionId: string) => apiClient.restartMission(wsId, missionId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['missions', wsId] }),
+    onSuccess: (_data, missionId) => {
+      setProposeError(null);
+      queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
+      queryClient.invalidateQueries({ queryKey: ['mission-progress', missionId] });
+    },
+    onError: (err: Error) => {
+      setProposeError(err.message?.trim() || 'Misyon yeniden başlatılamadı.');
+    },
   });
 
-  const isEmpty = !isLoading && proposed.length === 0 && active.length === 0 && completed.length === 0 && failedCompleted.length === 0;
+  const kickFeedMutation = useMutation({
+    mutationFn: (missionId: string) => apiClient.kickMissionFeedProduction(wsId, missionId, {
+      productionPackage,
+    }),
+    onSuccess: (data, missionId) => {
+      setProposeError(null);
+      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
+      queryClient.invalidateQueries({ queryKey: ['mission-progress', missionId] });
+    },
+    onError: (err: Error) => {
+      setProposeError(err.message?.trim() || 'Feed üretimi başlatılamadı.');
+    },
+  });
+
+  const reproduceFeedMutation = useMutation({
+    mutationFn: (missionId: string) => apiClient.reproduceMissionFeed(wsId, missionId, {
+      productionPackage,
+    }),
+    onSuccess: (data, missionId) => {
+      if ((data?.produced ?? 0) > 0) {
+        setProposeError(null);
+        openFeedForMission(missionId);
+      } else {
+        setProposeError(data?.message?.trim() || 'Feed\'e kaydedilen içerik yok.');
+      }
+      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
+      queryClient.invalidateQueries({ queryKey: ['mission-progress', missionId] });
+    },
+    onError: (err: Error) => {
+      setProposeError(err.message?.trim() || 'Feed üretimi başlatılamadı.');
+    },
+  });
+
+  const isEmpty = !missionsLoading && proposed.length === 0 && active.length === 0 && completed.length === 0 && failedCompleted.length === 0;
 
   return (
     <>
@@ -3207,10 +4319,10 @@ export function MissionHub() {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: t.textPrimary,
             letterSpacing: '-0.03em', lineHeight: 1.1 }}>
-            {operatorMode ? 'Mission Hub' : 'Kampanyalar'}
+            {operatorMode ? 'Mission Hub' : 'Haftalık Plan'}
           </div>
           <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>
-            {operatorMode ? 'Otonom kampanya yönetimi' : 'AI önerileri ve onay akışı'}
+            {operatorMode ? 'Otonom kampanya yönetimi' : 'İçerik planları ve üretim durumu'}
           </div>
         </div>
         {/* New Mission button */}
@@ -3223,7 +4335,7 @@ export function MissionHub() {
               : hasBlockingMissions
                 ? 'Önce mevcut önerileri onaylayın veya aktif kampanyayı tamamlayın'
                 : budgetExhausted
-                  ? 'Günlük API bütçesi doldu'
+                  ? (debugMode ? 'Günlük API bütçesi doldu' : 'Kredi limiti doldu')
                   : undefined
           }
           style={{
@@ -3240,11 +4352,32 @@ export function MissionHub() {
             <><div style={{ width: 10, height: 10, borderRadius: '50%',
               border: `2px solid ${t.separator}`, borderTop: `2px solid ${t.accent}`,
               animation: 'spinSlow 0.8s linear infinite' }} />Analiz...</>
-          ) : <><span>✦</span>{operatorMode ? 'Yeni Öneri' : 'Yeni Kampanya'}</>}
+          ) : <><span>✦</span>{operatorMode ? 'Yeni Öneri' : 'Yeni Plan'}</>}
         </button>
       </div>
 
-      {operatorMode && usageCost ? <UsageCostCard data={usageCost} /> : null}
+      {debugMode && usageCost ? <AiCostBreakdownCard data={usageCost} t={t} /> : null}
+
+      {/* Summary strip — client mode only, shown when there are missions */}
+      {!operatorMode && missions.length > 0 && (
+        <div style={{
+          margin: '14px 22px 0',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 8,
+        }}>
+          {[
+            { label: 'Onay Bekliyor', value: proposed.length, color: proposed.length > 0 ? '#F59E0B' : t.textMuted, bg: proposed.length > 0 ? 'rgba(245,158,11,0.08)' : (t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)') },
+            { label: 'Üretimde', value: active.length, color: active.length > 0 ? '#34d399' : t.textMuted, bg: active.length > 0 ? 'rgba(52,211,153,0.08)' : (t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)') },
+            { label: 'Tamamlandı', value: completed.length + failedCompleted.length, color: t.textSecondary, bg: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' },
+          ].map(({ label, value, color, bg }) => (
+            <div key={label} style={{ padding: '10px 8px', borderRadius: 12, background: bg, textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1, letterSpacing: '-0.03em' }}>{value}</div>
+              <div style={{ fontSize: 10, color: t.textMuted, marginTop: 4, fontWeight: 600, letterSpacing: '0.03em' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Production package — agency tooling */}
       {operatorMode && <div style={{ margin: '12px 22px 0' }}>
@@ -3304,9 +4437,12 @@ export function MissionHub() {
           {budgetExhausted && (operatorMode
             ? 'Günlük AI bütçesi doldu — yarın yenilenir veya bakiye yükleyin.'
             : 'Bugünkü üretim kotası doldu — yarın devam edecek.')}
-          {!budgetExhausted && hasBlockingMissions && (operatorMode
-            ? 'Aktif veya bekleyen misyon var — önce tamamlayın veya reddedin.'
-            : 'Önce mevcut kampanyayı onaylayın veya tamamlayın.')}
+          {!budgetExhausted && hasProposedBlocking && (operatorMode
+            ? 'Onay bekleyen misyon var — önce onaylayın veya reddedin.'
+            : 'Önce bekleyen kampanya önerisini onaylayın veya reddedin.')}
+          {!budgetExhausted && hasActiveOnlyBlocking && (operatorMode
+            ? 'Aktif kampanya çalışıyor — tamamlanınca yeni öneri alın.'
+            : 'Kampanya hazırlanıyor — tamamlanınca yeni öneri alabilirsiniz.')}
           {!budgetExhausted && !hasBlockingMissions && readinessBlocks && (
             operatorMode ? (
               <span>
@@ -3409,6 +4545,9 @@ export function MissionHub() {
           errLower.includes('quota') ||
           errLower.includes('429') ||
           errLower.includes('openai');
+        const isBlockingError =
+          errLower.includes('bekleyen/aktif') || errLower.includes('bitirin veya reddedin');
+        const blockingList = [...proposed, ...active];
         const cardTitle = !allFilled
           ? 'Marka verisi eksik'
           : isQuotaError
@@ -3444,6 +4583,53 @@ export function MissionHub() {
               </div>
             </div>
 
+            {isBlockingError && blockingList.length > 0 && (
+              <div style={{ padding: '10px 16px', borderTop: `0.5px solid ${t.separator}` }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: t.warning, letterSpacing: '0.08em',
+                  textTransform: 'uppercase', marginBottom: 8 }}>
+                  Bekleyen / aktif ({blockingList.length})
+                </div>
+                {blockingList.map((m) => (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 0', borderBottom: `0.5px solid ${t.separator}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.title}
+                      </div>
+                      <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>
+                        {m.status === 'proposed' ? 'Onay bekliyor' : m.status === 'approved' ? 'Onaylandı · sırada' : 'Üretimde'}
+                      </div>
+                    </div>
+                    {m.status === 'proposed' && (
+                      <button
+                        type="button"
+                        onClick={() => rejectMutation.mutate(m.id)}
+                        disabled={rejectMutation.isPending}
+                        style={{ fontSize: 10, fontWeight: 700, padding: '6px 10px', borderRadius: 8,
+                          border: '0.5px solid rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)',
+                          color: '#EF4444', cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        Reddet
+                      </button>
+                    )}
+                    {(m.status === 'approved' || m.status === 'in_flight') && (
+                      <button
+                        type="button"
+                        onClick={() => cancelMutation.mutate(m.id)}
+                        disabled={cancelMutation.isPending}
+                        style={{ fontSize: 10, fontWeight: 700, padding: '6px 10px', borderRadius: 8,
+                          border: `0.5px solid ${t.separator}`, background: 'transparent',
+                          color: t.textMuted, cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        İptal
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {!allFilled && (
               <div style={{ padding: '10px 16px' }}>
                 {missingFields.map((item, i) => (
@@ -3465,7 +4651,7 @@ export function MissionHub() {
               {!allFilled && (
                 <button onClick={() => openBrand()} style={{
                   flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
-                  background: 'rgba(167,139,250,0.12)', border: '0.5px solid rgba(167,139,250,0.3)',
+                  background: 'rgba(157,190,206,0.12)', border: '0.5px solid rgba(157,190,206,0.3)',
                   fontSize: 12, fontWeight: 700, color: t.accent,
                 }}>
                   Marka Hub'ını Doldur →
@@ -3474,14 +4660,14 @@ export function MissionHub() {
               <button onClick={() => {
                 if (hasBlockingMissions || budgetExhausted || readinessBlocks) return;
                 setProposeError(null);
-                queryClient.invalidateQueries({ queryKey: ['brand-context-data', wsId] });
+                queryClient.invalidateQueries({ queryKey: ['production-context-snapshot', wsId] });
                 setTimeout(() => proposeMutation.mutate(), 300);
               }} disabled={hasBlockingMissions || budgetExhausted || readinessBlocks} style={{
                 flex: allFilled ? 1 : 0, padding: '10px 14px', borderRadius: 12,
                 cursor: (hasBlockingMissions || budgetExhausted || readinessBlocks) ? 'default' : 'pointer',
                 opacity: (hasBlockingMissions || budgetExhausted || readinessBlocks) ? 0.45 : 1,
-                background: allFilled ? 'rgba(167,139,250,0.12)' : 'transparent',
-                border: allFilled ? '0.5px solid rgba(167,139,250,0.3)' : `0.5px solid ${t.separator}`,
+                background: allFilled ? 'rgba(157,190,206,0.12)' : 'transparent',
+                border: allFilled ? '0.5px solid rgba(157,190,206,0.3)' : `0.5px solid ${t.separator}`,
                 fontSize: 12, fontWeight: allFilled ? 700 : 400,
                 color: allFilled ? t.accent : t.textMuted,
               }}>
@@ -3495,26 +4681,40 @@ export function MissionHub() {
       <div style={{ padding: '24px 22px 0' }}>
 
         {/* ── Loading ── */}
-        {isLoading && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
-            <div style={{ width: 32, height: 32, borderRadius: '50%',
-              border: `3px solid ${t.separator}`, borderTop: `3px solid ${t.accent}`,
-              animation: 'spinSlow 1s linear infinite', margin: '0 auto 16px' }} />
-            <div style={{ fontSize: 14, color: t.textMuted }}>Kampanyalar yükleniyor...</div>
-          </div>
+        {missionsLoading && (
+          <BrandLoadingScreen compact fillViewport={false} />
         )}
 
         {/* ── Empty state ── */}
-        {isEmpty && !isLoading && (
+        {isEmpty && !missionsLoading && (
           <div style={{ textAlign: 'center', paddingTop: 60 }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>✦</div>
             <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>
-              Henüz kampanya yok
+              {operatorMode ? 'Henüz kampanya yok' : 'Henüz içerik planı yok'}
             </div>
             <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, marginBottom: 28, maxWidth: 280, margin: '0 auto 28px' }}>
-              "Yeni Öneri" butonuna basarak StrategistAgent'ın tüm sinyal verilerini
-              analiz etmesini ve kampanya önerileri üretmesini sağla.
+              {operatorMode
+                ? '"Yeni Öneri" butonuna basarak StrategistAgent\'ın tüm sinyal verilerini analiz etmesini ve kampanya önerileri üretmesini sağla.'
+                : 'İlk haftalık planınızı başlatın. AI markanıza uygun içerik fikirleri hazırlayıp onayınıza sunar.'}
             </div>
+            {!operatorMode && (
+              <button
+                type="button"
+                onClick={() => { setProposeError(null); proposeMutation.mutate(); }}
+                disabled={proposeMutation.isPending || budgetExhausted || hasBlockingMissions || readinessBlocks}
+                style={{
+                  padding: '12px 24px', borderRadius: 30, border: 'none', cursor: 'pointer',
+                  background: proposeMutation.isPending
+                    ? t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
+                    : `linear-gradient(135deg, ${t.accent}, ${t.accent}cc)`,
+                  color: proposeMutation.isPending ? t.textMuted : '#fff',
+                  fontSize: 14, fontWeight: 700,
+                  boxShadow: proposeMutation.isPending ? 'none' : `0 2px 12px ${t.accent}40`,
+                }}
+              >
+                {proposeMutation.isPending ? 'Hazırlanıyor…' : '✦ Yeni Plan Başlat'}
+              </button>
+            )}
           </div>
         )}
 
@@ -3573,6 +4773,9 @@ export function MissionHub() {
                 <InFlightCard key={m.id} mission={m} workspaceId={wsId}
                   onCancel={() => {}}
                   onRestart={(id) => restartMutation.mutate(id)}
+                  onKickFeedProduction={(id) => kickFeedMutation.mutate(id)}
+                  isRestarting={restartMutation.isPending && restartMutation.variables === m.id}
+                  isKickingFeed={kickFeedMutation.isPending && kickFeedMutation.variables === m.id}
                   onTapCompleted={() => setDetailMission(m)} />
               ))}
             </div>
@@ -3586,7 +4789,7 @@ export function MissionHub() {
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.live,
                 animation: 'liveGlow 2s infinite', boxShadow: `0 0 8px ${t.live}` }} />
               <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
-                letterSpacing: '0.1em', textTransform: 'uppercase' }}>Aktif Kampanyalar</span>
+                letterSpacing: '0.1em', textTransform: 'uppercase' }}>{operatorMode ? 'Aktif Kampanyalar' : 'Üretimde'}</span>
               <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20,
                 background: 'rgba(16,185,129,0.10)', color: t.live, fontWeight: 700 }}>
                 {active.length}
@@ -3600,6 +4803,9 @@ export function MissionHub() {
                   workspaceId={wsId}
                   onCancel={(id) => cancelMutation.mutate(id)}
                   onRestart={(id) => restartMutation.mutate(id)}
+                  onKickFeedProduction={(id) => kickFeedMutation.mutate(id)}
+                  isRestarting={restartMutation.isPending && restartMutation.variables === m.id}
+                  isKickingFeed={kickFeedMutation.isPending && kickFeedMutation.variables === m.id}
                 />
               ))}
             </div>

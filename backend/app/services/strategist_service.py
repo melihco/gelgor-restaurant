@@ -28,6 +28,7 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.crew.context import BrandInfo
 from app.crew.crews.strategist_crew import run_mission_planning
 from app.crew.engine import get_crew_engine
@@ -39,13 +40,107 @@ from app.schemas.mission import (
     TaskNodeCreate,
 )
 from app.services.brand_context_service import build_brand_info
-from app.services.mission_service import create_mission, ensure_feed_cohesion_review_node, list_missions
+from app.services.mission_service import (
+    create_mission,
+    dedupe_task_nodes_by_key,
+    ensure_feed_cohesion_review_node,
+    list_missions,
+)
 from app.services.tenant_learning_service import (
     build_tenant_learning_snapshot,
     build_learning_context_prompt,
 )
 
 logger = structlog.get_logger()
+
+
+_SECTOR_ANGLE_PACKS: dict[str, dict[str, list[str]]] = {
+    "restaurant": {
+        "SEZONSAL": ["Yaz Menüsü Lansmanı", "Ramazan Özel Menüsü", "Yılbaşı Gala Menüsü", "Kurban Bayramı Özel", "Sonbahar Tatları"],
+        "ÜRÜN_HIGHLIGHT": ["Şef'in Önerisi", "Yeni Tatlar", "Tatlı Menüsü Spotu", "Mevsim Ürünleri", "Haftalık Spesyal"],
+        "DÖNÜŞÜM_İTİŞİ": ["Rezervasyon Haftası", "Grup Yemek Fırsatı", "İş Yemeği Paketi", "Erken Rezervasyon İndirimi"],
+        "SOSYAL_KANIT": ["Misafir Yorumları", "Chef Table Deneyimi", "En Çok Beğenilen Yemekler"],
+    },
+    "beach_club": {
+        "SEZONSAL": ["Plaj Sezonu Açılışı", "Gün Batımı Partisi Serisi", "Sezon Kapanış Gecesi", "Haftalık Tema Geceleri"],
+        "HEDEF_KİTLE": ["Tatilci Paketi", "Yerel Müdavimler", "Yabancı Turist Odaklı", "Kurumsal Etkinlik"],
+        "DÖNÜŞÜM_İTİŞİ": ["VIP Rezervasyon", "Haftalık Abonelik", "Doğum Günü Paketi", "Cabana Kiralama"],
+        "SOSYAL_KANIT": ["Influencer Ziyaretleri", "Deneyim Anları", "Before & After Gün Batımı"],
+    },
+    "hotel": {
+        "SEZONSAL": ["Erken Rezervasyon Kampanyası", "Yaz Paketi", "Honeymoon Sezonu", "Kış Kaçamağı"],
+        "DÖNÜŞÜM_İTİŞİ": ["Doğrudan Rezervasyon İndirimi", "Uzun Konaklama Fırsatı", "Son Dakika Teklifi"],
+        "HEDEF_KİTLE": ["İş Seyahati", "Aile Tatili", "Çift Kaçamağı", "Bütçe Dostu Seçenek"],
+        "ÜRÜN_HIGHLIGHT": ["Spa & Wellness", "Restoran Deneyimi", "Oda Türleri Tanıtımı"],
+    },
+    "wellness": {
+        "SEZONSAL": ["Yeni Yıl Hedefleri", "Yaz Öncesi Hazırlık", "Sonbahar Reset Programı", "Kış Motivasyonu"],
+        "DÖNÜŞÜM_İTİŞİ": ["Ücretsiz Deneme Seansı", "Aylık Paket", "Çift Üyelik", "3+1 Kampanya"],
+        "HEDEF_KİTLE": ["Yoğun Çalışanlar", "Aktif Yaşam Tutkunları", "Yeni Başlayanlar"],
+        "SOSYAL_KANIT": ["Üye Dönüşüm Hikayeleri", "Uzman Görüşleri", "Sonuç Fotoğrafları"],
+    },
+    "retail": {
+        "SEZONSAL": ["Sezon Sonu Satışı", "Yeni Koleksiyon Lansmanı", "Bayram Öncesi Alışveriş", "Okul Dönemi"],
+        "DÖNÜŞÜM_İTİŞİ": ["Sınırlı Stok Uyarısı", "Bundle Teklifi", "Sadakat Kartı Avantajı"],
+        "ÜRÜN_HIGHLIGHT": ["Bestseller Spotlight", "Trend Ürünler", "Özel Tasarım Koleksiyonu"],
+        "HEDEF_KİTLE": ["Genç Alışverişçiler", "Hediye Arayanlar", "Marka Sadıkları"],
+    },
+    "nightlife": {
+        "SEZONSAL": ["Yaz Partileri Serisi", "Yılbaşı Özel Gece", "Valentines DJ Night", "Sezon Açılış Partisi"],
+        "HEDEF_KİTLE": ["Turist Profili", "Yerel Düzenliler", "Kurumsal After-Work"],
+        "DÖNÜŞÜM_İTİŞİ": ["Guestlist Kaydı", "VIP Masa Rezervasyonu", "Erken Bilet"],
+        "SOSYAL_KANIT": ["Geçmiş Gece Anları", "DJ & Sanatçı Spotlight", "Müşteri Anları"],
+    },
+    "cafe": {
+        "SEZONSAL": ["Kış Sıcak İçecek Serisi", "Yaz Soğuk Brew Kampanyası", "Ramazan Sahur Menüsü"],
+        "ÜRÜN_HIGHLIGHT": ["Özel Blend Kahveler", "Mevsimlik Pastalar", "Brunch Menüsü"],
+        "DÖNÜŞÜM_İTİŞİ": ["Kahve Aboneliği", "10'u Al 1'i Bedava", "Sabah Erken Fırsatı"],
+        "SOSYAL_KANIT": ["Barista Hikayesi", "Müşteri Keyfi Anları", "Çalışma Ortamı Vibes"],
+    },
+    "clinic": {
+        "SEZONSAL": ["Yeni Yıl Kararları", "Okul Öncesi Check-up", "Bahar Alerjisi Sezonu"],
+        "HEDEF_KİTLE": ["Aile Sağlığı", "Profesyoneller", "Yaşlı Bakımı"],
+        "DÖNÜŞÜM_İTİŞİ": ["Online Randevu Kolaylığı", "İlk Muayene Paketi", "Aile Paketi"],
+        "SOSYAL_KANIT": ["Hasta Memnuniyeti", "Uzman Kadro Tanıtımı", "Başarı Hikayeleri"],
+    },
+}
+
+_SECTOR_KEYWORDS: dict[str, list[str]] = {
+    "restaurant": ["restoran", "restaurant", "yemek", "bistro", "kafeterya", "lokanta", "eatery"],
+    "beach_club": ["beach", "plaj", "beach club", "summer club", "deniz", "marine"],
+    "hotel": ["otel", "hotel", "resort", "boutique hotel", "pansiyon", "konaklama"],
+    "wellness": ["spa", "wellness", "gym", "fitness", "yoga", "pilates", "spor salonu", "beauty"],
+    "retail": ["mağaza", "boutique", "shop", "retail", "fashion", "giyim", "aksesuar", "e-ticaret"],
+    "nightlife": ["bar", "club", "nightclub", "lounge", "disco", "gece kulübü", "pub"],
+    "cafe": ["cafe", "kahve", "coffee", "patisserie", "pastane", "kafe"],
+    "clinic": ["klinik", "clinic", "doktor", "hospital", "hastane", "sağlık merkezi", "poliklinik"],
+}
+
+
+def _sector_angle_block(brand: "BrandInfo") -> str:  # type: ignore[name-defined]
+    """Return a sector-specific angle pack to append to learning_context."""
+    btype = (brand.business_type or "").lower()
+    location = (getattr(brand, "location", "") or getattr(brand, "city", "") or "").strip()
+
+    matched_sector: str | None = None
+    for sector, keywords in _SECTOR_KEYWORDS.items():
+        if any(kw in btype for kw in keywords):
+            matched_sector = sector
+            break
+
+    if not matched_sector or matched_sector not in _SECTOR_ANGLE_PACKS:
+        return ""
+
+    pack = _SECTOR_ANGLE_PACKS[matched_sector]
+    lines = [
+        "=== SEKTÖRE ÖZEL MİSYON AÇILARI ===",
+        f"İşletme türü: {btype}" + (f" | Lokasyon: {location}" if location else ""),
+        "Bu sektör için önerilen misyon açısı örnekleri:",
+    ]
+    for angle, examples in pack.items():
+        lines.append(f"• {angle} → " + ", ".join(f'"{e}"' for e in examples[:3]))
+    lines.append("Genel ifadeler yerine bu sektöre özgü, lokasyon ve tarih bağlamını içeren açıları kullan.")
+    return "\n".join(lines)
 
 
 def _raise_on_crew_failure(result: dict[str, Any]) -> None:
@@ -94,7 +189,23 @@ def _proposal_dict_to_mission_create(proposal: dict[str, Any]) -> MissionCreate 
             for p in (proposal.get("phases") or [])
         ]
 
-        # Task nodes
+        # Task nodes — dedupe node_key (LLM sometimes repeats feed_cohesion_review)
+        seen_node_keys: set[str] = set()
+        deduped_nodes: list[dict[str, Any]] = []
+        for raw in (proposal.get("task_nodes") or []):
+            node_key = str(raw.get("node_key") or "").strip()
+            if not node_key:
+                continue
+            if node_key in seen_node_keys:
+                logger.warning(
+                    "proposal_duplicate_node_key_skipped",
+                    node_key=node_key,
+                    title=proposal.get("title", "?"),
+                )
+                continue
+            seen_node_keys.add(node_key)
+            deduped_nodes.append(raw)
+
         task_nodes = [
             TaskNodeCreate(
                 node_key=n["node_key"],
@@ -106,13 +217,14 @@ def _proposal_dict_to_mission_create(proposal: dict[str, Any]) -> MissionCreate 
                 brief_override=n.get("brief_override"),
                 depends_on=n.get("depends_on") or [],
             )
-            for n in (proposal.get("task_nodes") or [])
+            for n in deduped_nodes
         ]
 
         if not task_nodes:
             return None
 
         task_nodes = ensure_feed_cohesion_review_node(task_nodes)
+        task_nodes = dedupe_task_nodes_by_key(task_nodes)
 
         mission_type = proposal.get("type", "manual")
         priority_str = proposal.get("priority", "high")
@@ -175,6 +287,29 @@ async def _load_recent_mission_context(
             lines.append(f"- [{m[2].upper()}] {m[0]} (tür: {m[1]}, sinyal: {m[3] or 'manuel'})")
         lines.append("")
 
+    # Build an explicit "used vs available" checklist for the 9-angle taxonomy
+    # so the LLM can immediately see which angles are exhausted vs fresh.
+    _ALL_SIGNALS = [
+        "RAKIP_BOŞLUĞU", "SEZONSAL", "İÇERİK_AÇIĞI", "HEDEF_KİTLE",
+        "DÖNÜŞÜM_İTİŞİ", "SOSYAL_KANIT", "ÜRÜN_HIGHLIGHT", "MARKETİNG_ARAÇ", "ANALİTİK_SAĞLIK",
+    ]
+    used_signals: set[str] = set()
+    for m in missions:
+        if m[3]:
+            base = str(m[3]).split(".")[0].upper().strip()
+            used_signals.add(base)
+    available = [s for s in _ALL_SIGNALS if s not in used_signals]
+    exhausted = [s for s in _ALL_SIGNALS if s in used_signals]
+    lines.append("### 📊 STRATEJİK AÇI DURUMU:")
+    if exhausted:
+        lines.append(f"✅ Kullanıldı (TEKRAR ETME): {', '.join(sorted(exhausted))}")
+    if available:
+        lines.append(f"⬜ Kullanılmadı (BUNLARDAN BİRİNİ SEÇ): {', '.join(available)}")
+    else:
+        lines.append("⬜ Tüm açılar kullanıldı — en az 3 ay öncekini yeniden değerlendirebilirsin.")
+    lines.append("→ Sonraki öneri MUTLAKA ⬜ listesinden bir açı kullanmalı.")
+    lines.append("")
+
     # Recently produced content (last 3 weeks) — from suggestions table
     try:
         from app.models.task import Suggestion
@@ -207,6 +342,7 @@ async def propose_missions_for_workspace(
     *,
     force: bool = False,
     context_signals: str | None = None,
+    production_package: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Run the StrategistAgent for a workspace and persist resulting proposals.
@@ -214,7 +350,8 @@ async def propose_missions_for_workspace(
     Returns a list of created mission dicts (id + title + status + proposal metadata).
     Skips LLM call when active/proposed missions already exist (unless force=True).
     """
-    # ── Debounce: don't re-run expensive StrategistAgent if pipeline is busy ──
+    # Blocking missions are handled in the API layer (clear message to the operator).
+    # Service-level skip only when force=False and called from scheduler/internal paths.
     if not force:
         existing_missions = await list_missions(db, workspace_id, limit=30)
         blocking_statuses = {"proposed", "in_flight", "approved"}
@@ -233,6 +370,19 @@ async def propose_missions_for_workspace(
     if not brand:
         logger.warning("propose_missions_no_brand", workspace_id=str(workspace_id))
         return []
+
+    # ── Trend brief freshness (48h SLA before propose) ───────────────────
+    try:
+        from app.services.trend_intelligence_service import ensure_fresh_trend_brief_for_propose
+        fresh_brief, was_refreshed = await ensure_fresh_trend_brief_for_propose(
+            db, workspace_id, max_age_hours=48,
+        )
+        if fresh_brief:
+            brand.trend_brief = fresh_brief
+        if was_refreshed:
+            logger.info("propose_missions_trend_brief_fresh", workspace_id=str(workspace_id))
+    except Exception as exc:
+        logger.warning("propose_trend_freshness_failed", error=str(exc)[:200])
 
     # Inject learning context (approved/rejected history) into BrandInfo
     try:
@@ -277,6 +427,15 @@ async def propose_missions_for_workspace(
     except Exception as exc:
         logger.warning("strategist_performance_feedback_failed", error=str(exc)[:200])
 
+    # ── Inject sector-specific angle packs ──────────────────────────────
+    try:
+        sector_block = _sector_angle_block(brand)
+        if sector_block:
+            brand.learning_context = (brand.learning_context or "") + "\n\n" + sector_block
+            logger.info("sector_angle_block_injected", workspace_id=str(workspace_id), business_type=brand.business_type)
+    except Exception as exc:
+        logger.warning("sector_angle_block_failed", error=str(exc)[:200])
+
     # ── Run StrategistAgent ───────────────────────────────────────────────
     import asyncio
     engine = get_crew_engine()
@@ -311,6 +470,16 @@ async def propose_missions_for_workspace(
                        raw_preview=result.get("raw_output", "")[:200])
         await _record_propose_mission_cost(db, workspace_id, created_count=0)
         return []
+
+    # Hard cap: operator requests exactly 1 mission per "Yeni Kampanya" click.
+    # LLM sometimes ignores the count rule — enforce it deterministically here.
+    if len(proposals) > 1:
+        logger.info(
+            "propose_missions_capped_to_1",
+            workspace_id=str(workspace_id),
+            original_count=len(proposals),
+        )
+        proposals = proposals[:1]
 
     # ── Post-propose: filter out missions about PAST holidays / events ────
     # LLM often ignores the date rule in the prompt, so we enforce it here
@@ -368,6 +537,7 @@ async def propose_missions_for_workspace(
 
     # ── Persist each valid proposal ───────────────────────────────────────
     created: list[dict[str, Any]] = []
+    conversion_failed = 0
     for proposal in proposals:
         # Sprint 7 (S7.3): output quality validation — log gaps so weak briefs
         # are observable. Required for a complete, trigger-grounded proposal.
@@ -385,9 +555,16 @@ async def propose_missions_for_workspace(
 
         mission_create = _proposal_dict_to_mission_create(proposal)
         if not mission_create:
+            conversion_failed += 1
             continue
         try:
             mission = await create_mission(db, workspace_id, mission_create)
+            if production_package:
+                from app.services.mission_service import persist_hub_production_package
+
+                await persist_hub_production_package(
+                    db, mission.id, production_package,
+                )
             created.append({
                 "id":               str(mission.id),
                 "title":            mission.title,
@@ -415,7 +592,14 @@ async def propose_missions_for_workspace(
         workspace_id=str(workspace_id),
         total_proposals=len(proposals),
         persisted=len(created),
+        conversion_failed=conversion_failed,
     )
+
+    if proposals and not created and conversion_failed >= len(proposals):
+        raise RuntimeError(
+            "StrategistAgent misyon grafiği oluşturulamadı (görev düğümü çakışması veya eksik alan). "
+            "Birkaç dakika sonra tekrar deneyin."
+        )
 
     await _record_propose_mission_cost(db, workspace_id, created_count=len(created))
     return created
@@ -434,7 +618,7 @@ async def _record_propose_mission_cost(
             check_budget,
             record_cost,
         )
-        estimate = 0.22 if created_count > 0 else 0.12
+        estimate = 0.28 if created_count > 0 else 0.15
         budget = await check_budget(db, workspace_id, estimate)
         if budget["allowed"]:
             await record_cost(

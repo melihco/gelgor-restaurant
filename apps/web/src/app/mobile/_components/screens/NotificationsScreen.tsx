@@ -1,15 +1,20 @@
 'use client';
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { IcoBack, IcoCheck } from '../Icons';
 import { apiClient } from '@/lib/api-client';
+import { isMobileOperatorMode } from '../mobile-client-config';
+import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import type { T } from '../theme-context';
 
 type NType = 'approval' | 'alert' | 'complete' | 'review' | 'system';
 
 const TYPE_CFG: Record<string, { icon: string; color: string }> = {
-  artifact_ready:         { icon: '✦', color: '#a78bfa' },
+  artifact_ready:         { icon: '✦', color: '#9DBECE' },
   action_pending:         { icon: '◎', color: '#f59e0b' },
   agent_blocked:          { icon: '⚑', color: '#fb7185' },
   agent_completed:        { icon: '✓', color: '#34d399' },
@@ -42,7 +47,9 @@ function timeAgo(iso: string): string {
 export function NotificationsScreen() {
   const { t } = useTheme();
   const { goBack, navigate, openApproval } = useMobileStore();
+  const { tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
+  const operatorMode = isMobileOperatorMode();
 
   const { data: rawNotifs = [], isLoading } = useQuery({
     queryKey: ['notifications'],
@@ -52,6 +59,33 @@ export function NotificationsScreen() {
     refetchIntervalInBackground: false,
   });
 
+  const { data: artifacts = [] } = useMobileArtifacts({
+    params: { limit: 40 },
+    enabled: Boolean(tenantId),
+    subscribeOnly: true,
+  });
+
+  const derivedNotifs = useMemo(() => {
+    const pending = filterFeedPublishableArtifacts(artifacts)
+      .filter((a) => a.status === 'pending_review')
+      .slice(0, 8);
+    return pending.map((a) => ({
+      id: `art-${a.id}`,
+      type: 'action_pending',
+      title: 'Onay Bekliyor',
+      message: (a.title ?? 'İçerik').slice(0, 80),
+      createdAt: a.createdAt,
+      read: false,
+      relatedEntityId: a.id,
+    }));
+  }, [artifacts]);
+
+  const items = rawNotifs.length > 0
+    ? rawNotifs
+    : operatorMode
+      ? MOCK_NOTIFICATIONS
+      : derivedNotifs;
+
   const markReadMutation = useMutation({
     mutationFn: (id: string) => apiClient.markNotificationRead(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
@@ -59,13 +93,12 @@ export function NotificationsScreen() {
 
   const markAllMutation = useMutation({
     mutationFn: async () => {
-      const unread = items.filter((n: any) => !n.read);
+      const unread = items.filter((n: any) => !n.read && !String(n.id).startsWith('art-'));
       await Promise.all(unread.map((n: any) => apiClient.markNotificationRead(n.id)));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
 
-  const items = rawNotifs.length > 0 ? rawNotifs : MOCK_NOTIFICATIONS;
   const unread = items.filter((n: any) => !n.read).length;
 
   const handleTap = (n: any) => {
@@ -110,6 +143,24 @@ export function NotificationsScreen() {
       <div style={{ padding: '12px 24px 0' }}>
         {isLoading ? (
           <div style={{ ...t.surfaceGroup, padding: '32px', textAlign: 'center', color: t.textMuted, fontSize: 13 }}>Yükleniyor...</div>
+        ) : items.length === 0 ? (
+          <div style={{ ...t.surfaceGroup, padding: '48px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🔔</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>Bildirim yok</div>
+            <p style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, margin: '0 0 20px' }}>
+              Onay bekleyen içerikler, yeni yorumlar ve üretim tamamlama bildirimleri burada görünür.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('feed')}
+              style={{
+                padding: '11px 20px', borderRadius: 24, border: 'none', cursor: 'pointer',
+                background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700,
+              }}
+            >
+              İçeriklere Git
+            </button>
+          </div>
         ) : (
           <>
             {grouped.unread.length > 0 && (

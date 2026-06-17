@@ -31,6 +31,127 @@ from app.services.pillar_coverage_service import (
     pillar_coverage_stats,
 )
 from app.crew.cta_localization import harmonize_content_concepts, resolve_output_language
+from app.services.output_summary_parser import extract_object_array_from_output_summary
+
+
+# ─── Post-ideation scope & hallucination validator ───────────────────────────
+
+# Patterns that indicate an invented named customer quote (high hallucination risk).
+# Matches: "Ayşe H.: '...'", "Mehmet Bey şunu söyledi: '...'"
+_INVENTED_QUOTE_PATTERNS = [
+    re.compile(
+        r'(?:[A-ZÇĞİÖŞÜ][a-zçğışöü]{2,}\s+(?:[A-ZÇĞİÖŞÜ]\.?|Bey|Hanım|bey|hanım))'
+        r'.{0,60}["\'\u201c\u201d\u2018\u2019«»].+?["\'\u201c\u201d\u2018\u2019«»]',
+        re.DOTALL | re.UNICODE,
+    ),
+]
+_STAR_CLAIM_PATTERN = re.compile(r'\b5\s*[yıl]*\s*yıldız\b|\b5[\s-]*star\b', re.IGNORECASE)
+_PERCENTAGE_CLAIM_PATTERN = re.compile(
+    r'\b(?:müşterilerin?|kullanıcıların?|clients?)\s+%\s*\d+|\b%\s*\d+\s*(?:memnun|happy|satisfied)\b',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_social_proof_caption(caption: str, has_real_reviews: bool) -> tuple[str, bool]:
+    """
+    Remove invented customer quotes/names from social_proof captions when the brand
+    has no real reviews loaded in context.
+
+    Returns (sanitized_caption, was_modified).
+    """
+    if has_real_reviews:
+        return caption, False  # Real reviews are available — quotes may be legitimate
+
+    modified = caption
+    changed = False
+
+    for pattern in _INVENTED_QUOTE_PATTERNS:
+        if pattern.search(modified):
+            # Replace the invented quote with a generic phrase
+            modified = pattern.sub('müşterilerimiz', modified)
+            changed = True
+
+    if _STAR_CLAIM_PATTERN.search(modified) and not has_real_reviews:
+        modified = _STAR_CLAIM_PATTERN.sub('yüksek memnuniyetle', modified)
+        changed = True
+
+    return modified, changed
+
+
+def _validate_and_sanitize_ideas(
+    concepts: list[dict[str, Any]],
+    brand: BrandInfo,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """
+    Deterministic post-ideation validator:
+    1. Strip invented testimonials from social_proof ideas when no real reviews exist.
+    2. Log a warning (but don't remove) when captions mention unknown service keywords
+       not found in website_intelligence catalog.
+
+    Returns (sanitized_concepts, warnings_list).
+    """
+    warnings: list[str] = []
+
+    # Does the brand have real review data loaded?
+    has_real_reviews = bool(
+        getattr(brand, 'google_review_signals', None)
+        or getattr(brand, 'tripadvisor_reviews', None)
+    )
+
+    # Build a set of known service/product terms from website_intelligence
+    known_service_terms: set[str] = set()
+    wi = getattr(brand, 'website_intelligence', None) or {}
+    if isinstance(wi, dict):
+        for cat in wi.get('menu_catalog', []):
+            name = cat.get('name', '').lower()
+            if name:
+                known_service_terms.add(name)
+            for item in cat.get('items', []):
+                item_name = (item if isinstance(item, str) else item.get('name', '')).lower()
+                if item_name:
+                    known_service_terms.add(item_name)
+    # Also add content_pillars as known scope
+    for pillar in (getattr(brand, 'content_pillars', None) or []):
+        known_service_terms.add(pillar.lower())
+
+    sanitized = []
+    for idea in concepts:
+        idea = dict(idea)
+        use_case = str(idea.get('template_use_case', ''))
+        caption = str(idea.get('caption_draft', ''))
+        concept_title = str(idea.get('concept_title', idea.get('idea_title', '')))
+
+        # 1. Testimonial sanitization for social_proof
+        if use_case == 'social_proof' and caption:
+            clean_caption, was_changed = _sanitize_social_proof_caption(caption, has_real_reviews)
+            if was_changed:
+                idea['caption_draft'] = clean_caption
+                if idea.get('caption_draft_alt'):
+                    idea['caption_draft_alt'], _ = _sanitize_social_proof_caption(
+                        str(idea['caption_draft_alt']), has_real_reviews,
+                    )
+                warnings.append(
+                    f"social_proof_sanitized: '{concept_title[:50]}' — "
+                    "removed invented customer name/quote (no real reviews in brand context)"
+                )
+                logger.warning(
+                    "hallucination_guard_sanitized: concept=%s use_case=%s reviews=%s",
+                    concept_title[:60], use_case, has_real_reviews,
+                )
+
+        # 2. Service scope check — warn only (LLM may legitimately describe general concepts)
+        if known_service_terms and caption:
+            cap_lower = caption.lower()
+            # Check for specific product/service price claims (high hallucination risk)
+            if re.search(r'\b\d+\s*[₺$€tl]\b', cap_lower):
+                warnings.append(
+                    f"scope_warning_price: '{concept_title[:50]}' — "
+                    "caption contains a price claim; verify it matches actual brand pricing"
+                )
+
+        sanitized.append(idea)
+
+    return sanitized, warnings
 
 # Field length caps for synthesised Canva copy (mirror autofill limits).
 _CANVA_HEADLINE_MAX = 47
@@ -47,25 +168,9 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
     complete at the SOURCE (so ICS = 100 without relying on downstream
     matcher/fallback). Pure/deterministic — never calls an LLM.
 
-    - selected_gallery_url: assign an unused gallery photo (per content_type)
-      when the agent left it null/empty.
     - canva_field_copy: synthesise {headline, cta, subtitle} from concept copy.
     - asset_intent: infer a sensible default from template_use_case.
     """
-    gallery = [u for u in (brand.reference_image_urls or []) if isinstance(u, str) and u.strip()]
-    used_by_type: dict[str, set[str]] = {}
-
-    def pick_gallery(content_type: str) -> str | None:
-        if not gallery:
-            return None
-        used = used_by_type.setdefault(content_type, set())
-        for url in gallery:
-            if url not in used:
-                used.add(url)
-                return url
-        # All used for this type → reuse the first (better than null).
-        return gallery[0]
-
     for item in concepts:
         if not isinstance(item, dict):
             continue
@@ -85,11 +190,7 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
         if not isinstance(vps, dict):
             vps = {}
             item["visual_production_spec"] = vps
-        sel = vps.get("selected_gallery_url")
-        if (not sel or not str(sel).strip()) and gallery:
-            vps["selected_gallery_url"] = pick_gallery(content_type)
-        elif isinstance(sel, str) and sel.strip():
-            used_by_type.setdefault(content_type, set()).add(sel.strip())
+        # selected_gallery_url: agent may set it; when null, TypeScript auto-produce matches semantically.
         if not vps.get("treatment"):
             vps["treatment"] = "pure_photo"
 
@@ -310,6 +411,124 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
     return concepts
 
 
+_FREE_TRIAL_RE = re.compile(
+    r"ücretsiz\s*deneme|free\s*trial|deneme\s*fırsat|deneme\s*firsat",
+    re.IGNORECASE,
+)
+_SAAS_SECTOR_HINTS = (
+    "saas", "software", "agency", "berber", "kuaför", "kuaför", "panel", "tech",
+)
+_SAAS_REQUIRED_USE_CASES = (
+    "lead_generation",
+    "social_proof",
+    "educational_post",
+    "behind_the_scenes",
+)
+_ROTATION_USE_CASES = (
+    "social_proof",
+    "educational_post",
+    "behind_the_scenes",
+    "product_highlight",
+    "campaign_offer",
+)
+_ROTATION_HEADLINES_TR = {
+    "social_proof": "Müşteri başarı hikayesi",
+    "educational_post": "Panel ipucu",
+    "behind_the_scenes": "Perde arkası",
+    "product_highlight": "Özellik vitrini",
+    "campaign_offer": "Kampanya duyurusu",
+}
+
+
+def _idea_text_blob(item: dict) -> str:
+    return " ".join(
+        str(item.get(f) or "")
+        for f in ("headline", "concept_title", "idea_title", "title", "caption_draft", "caption")
+    )
+
+
+def _is_saas_brand(brand: BrandInfo) -> bool:
+    bt = str(getattr(brand, "business_type", "") or "").lower()
+    return any(h in bt for h in _SAAS_SECTOR_HINTS)
+
+
+def _rotate_away_from_free_trial(item: dict, rotation_index: int) -> None:
+    use_case = _ROTATION_USE_CASES[rotation_index % len(_ROTATION_USE_CASES)]
+    headline = _ROTATION_HEADLINES_TR.get(use_case, "Yeni içerik")
+    item["template_use_case"] = use_case
+    item["headline"] = headline
+    item["concept_title"] = headline
+    item["idea_title"] = headline
+    item["title"] = headline
+
+
+def _enforce_free_trial_headline_cap(concepts: list) -> list:
+    """Max 1 ücretsiz deneme / free trial headline per batch."""
+    trial_idxs: list[int] = []
+    for i, item in enumerate(concepts):
+        if not isinstance(item, dict):
+            continue
+        if _FREE_TRIAL_RE.search(_idea_text_blob(item)):
+            trial_idxs.append(i)
+    if len(trial_idxs) <= 1:
+        return concepts
+    for j, idx in enumerate(trial_idxs[1:]):
+        if isinstance(concepts[idx], dict):
+            _rotate_away_from_free_trial(concepts[idx], j)
+    return concepts
+
+
+def _enforce_saas_use_case_mix(concepts: list, brand: BrandInfo) -> list:
+    """When count ≥ 7 on SaaS/agency brands, ensure strategist use-case diversity."""
+    if not _is_saas_brand(brand) or len(concepts) < 7:
+        return concepts
+
+    present = {
+        str(c.get("template_use_case") or "").lower()
+        for c in concepts
+        if isinstance(c, dict)
+    }
+    missing = [uc for uc in _SAAS_REQUIRED_USE_CASES if uc not in present]
+    if not missing:
+        return concepts
+
+    donors = [
+        c for c in concepts
+        if isinstance(c, dict)
+        and str(c.get("template_use_case") or "").lower() in ("product_highlight", "lead_generation", "")
+    ]
+    rotation = 0
+    for uc in missing:
+        donor = donors[rotation % len(donors)] if donors else None
+        if not isinstance(donor, dict):
+            continue
+        donor["template_use_case"] = uc
+        if _FREE_TRIAL_RE.search(_idea_text_blob(donor)):
+            _rotate_away_from_free_trial(donor, rotation)
+        elif uc == "social_proof":
+            donor["headline"] = "Müşteri başarı hikayesi"
+            donor["concept_title"] = donor["headline"]
+        elif uc == "educational_post":
+            donor["headline"] = "Panel ipucu"
+            donor["concept_title"] = donor["headline"]
+        elif uc == "behind_the_scenes":
+            donor["headline"] = "Perde arkası"
+            donor["concept_title"] = donor["headline"]
+        rotation += 1
+    return concepts
+
+
+def _enforce_strategist_idea_diversity(concepts: list, brand: BrandInfo, target_count: int) -> list:
+    """Expand thin batches + promo / SaaS mix enforcement (deterministic)."""
+    if target_count >= 7 and len(concepts) < target_count:
+        from app.services.mission_ideation_merge import ensure_weekly_format_coverage
+
+        concepts = ensure_weekly_format_coverage(concepts, concepts)
+    concepts = _enforce_free_trial_headline_cap(concepts)
+    concepts = _enforce_saas_use_case_mix(concepts, brand)
+    return concepts
+
+
 def _run_revision_pass(
     brand: BrandInfo,
     original_output: str,
@@ -366,19 +585,22 @@ def _run_single_ideation(
     content_pillars: list[str] | None,
     autonomy_mode: bool,
     llm: Any,
+    mission_id: str | None = None,
 ) -> tuple[str, int]:
     """Single ideation run — returns (raw_output, tokens_used)."""
     content_agent = create_content_agent(brand, llm=llm, for_ideation=True)
     ideation_task = create_content_ideation_task(
         content_agent, brand, count, time_period,
         brief=brief, content_pillars=content_pillars, autonomy_mode=autonomy_mode,
+        mission_id=mission_id,
     )
     crew = Crew(
         agents=[content_agent], tasks=[ideation_task],
         process=Process.sequential, verbose=get_settings().crew_verbose,
     )
     result = crew.kickoff()
-    return str(result), total_tokens_from_crew(crew)
+    raw = result.raw if hasattr(result, "raw") and result.raw else str(result)
+    return raw, total_tokens_from_crew(crew)
 
 
 def _pick_better_output(output_a: str, output_b: str, brand: BrandInfo) -> str:
@@ -389,10 +611,9 @@ def _pick_better_output(output_a: str, output_b: str, brand: BrandInfo) -> str:
     def score(raw: str) -> float:
         s = 0.0
         try:
-            m = re.search(r"\[.*\]", raw, re.DOTALL)
-            if not m:
+            concepts = extract_object_array_from_output_summary(raw)
+            if not concepts:
                 return 0.0
-            concepts = json.loads(m.group())
             s += len(concepts) * 2  # more valid concepts = better
             # Check diversity of hook types
             hooks = {c.get("caption_hook_type", "") for c in concepts if c.get("caption_hook_type")}
@@ -423,6 +644,7 @@ def run_content_ideation(
     strategy_action_id: str = "",
     llm: LLM | None = None,
     iterations: int = 1,
+    mission_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Generate content concepts for a brand.
@@ -433,13 +655,13 @@ def run_content_ideation(
     settings = get_settings()
 
     raw_output_a, tokens_a = _run_single_ideation(
-        brand, count, time_period, brief, content_pillars, autonomy_mode, llm
+        brand, count, time_period, brief, content_pillars, autonomy_mode, llm, mission_id=mission_id,
     )
     total_tokens = tokens_a
 
     if iterations >= 2:
         raw_output_b, tokens_b = _run_single_ideation(
-            brand, count, time_period, brief, content_pillars, autonomy_mode, llm
+            brand, count, time_period, brief, content_pillars, autonomy_mode, llm, mission_id=mission_id,
         )
         total_tokens += tokens_b
         raw_output = _pick_better_output(raw_output_a, raw_output_b, brand)
@@ -452,20 +674,29 @@ def run_content_ideation(
     consistency_report = None
     revision_used = False
     try:
-        json_match = re.search(r"\[.*\]", raw_output, re.DOTALL)
-        if json_match:
-            concepts = json.loads(json_match.group())
+        concepts = extract_object_array_from_output_summary(raw_output)
+        if concepts:
             concepts = harmonize_content_concepts(concepts, brand.languages)
             concepts = _enforce_idea_completeness(concepts, brand)
+            concepts = _enforce_strategist_idea_diversity(concepts, brand, count)
+            # ── Hallucination & scope guard (deterministic, no LLM) ─────────
+            concepts, scope_warnings = _validate_and_sanitize_ideas(concepts, brand)
+            if scope_warnings:
+                logger.info(
+                    "ideation_scope_warnings: count=%d tenant=%s warnings=%s",
+                    len(scope_warnings),
+                    getattr(brand, 'tenant_id', 'unknown'),
+                    scope_warnings[:5],
+                )
             pillars_for_batch = content_pillars or brand.content_pillars
             concepts, pillars_filled = enforce_confirmed_pillar_coverage(
                 concepts, pillars_for_batch,
             )
             if pillars_filled:
                 logger.info(
-                    "pillar_coverage_enforced",
-                    filled=pillars_filled,
-                    tenant=getattr(brand, "tenant_id", "unknown"),
+                    "pillar_coverage_enforced: filled=%s tenant=%s",
+                    pillars_filled,
+                    getattr(brand, "tenant_id", "unknown"),
                 )
             raw_output = json.dumps(concepts, ensure_ascii=False)
             report = check_weekly_content(
@@ -489,11 +720,11 @@ def run_content_ideation(
                 total_tokens += revision_tokens
 
                 if revised_output:
-                    revised_match = re.search(r"\[.*\]", revised_output, re.DOTALL)
-                    if revised_match:
-                        revised_concepts = json.loads(revised_match.group())
+                    revised_concepts = extract_object_array_from_output_summary(revised_output)
+                    if revised_concepts:
                         revised_concepts = harmonize_content_concepts(revised_concepts, brand.languages)
                         revised_concepts = _enforce_idea_completeness(revised_concepts, brand)
+                        revised_concepts = _enforce_strategist_idea_diversity(revised_concepts, brand, count)
                         revised_concepts, _ = enforce_confirmed_pillar_coverage(
                             revised_concepts, pillars_for_batch,
                         )
@@ -532,9 +763,9 @@ def run_content_ideation(
             }
     except Exception as _qe:
         logger.warning(
-            "content_quality_gate_failed",
-            error=str(_qe)[:300],
-            tenant=getattr(brand, "tenant_id", "unknown"),
+            "content_quality_gate_failed: error=%s tenant=%s",
+            str(_qe)[:300],
+            getattr(brand, "tenant_id", "unknown"),
         )
 
     return {

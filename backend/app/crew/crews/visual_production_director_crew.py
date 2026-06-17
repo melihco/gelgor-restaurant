@@ -19,6 +19,7 @@ from app.crew.agents.visual_production_director_agent import create_visual_produ
 from app.crew.context import BrandInfo
 from app.crew.tasks.visual_production_director_tasks import create_visual_production_director_task
 from app.crew.token_usage import total_tokens_from_crew
+from app.crew.tools.anthropic_mcp_tool import build_mcp_tools_for_brand
 
 logger = structlog.get_logger()
 
@@ -62,7 +63,11 @@ def run_visual_production_director(
     feed_json = json.dumps(feed_director_report or {}, ensure_ascii=False)[:4000]
 
     try:
-        agent = create_visual_production_director_agent(brand, llm=llm)
+        mcp_tools = build_mcp_tools_for_brand(
+            brand.business_name,
+            brand.business_type or "brand",
+        )
+        agent = create_visual_production_director_agent(brand, llm=llm, tools=mcp_tools)
         task = create_visual_production_director_task(
             agent=agent,
             brand_name=brand.business_name,
@@ -71,6 +76,7 @@ def run_visual_production_director(
             weekly_theme=weekly_theme,
             production_package=production_package,
             feed_report_json=feed_json,
+            mcp_enabled=bool(mcp_tools),
         )
         crew = Crew(
             agents=[agent],

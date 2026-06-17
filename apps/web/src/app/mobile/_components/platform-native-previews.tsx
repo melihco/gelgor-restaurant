@@ -3,7 +3,7 @@
  * Platform-native preview components — Instagram / TikTok / X pixel-faithful layouts.
  * Shared by PlatformFeed and PlatformPreviewStudio.
  */
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { OutputArtifact } from '@/types';
 import { parseArtifactContent, resolveArtifact, resolveCarouselUrls, normalizeHashtags } from './artifact-utils';
 import { resolveClientMediaUrl } from '@/lib/media-url';
@@ -11,6 +11,7 @@ import {
   resolveBrandedPostUrl,
   resolvePosterUrl,
   resolveStoryVideoUrl,
+  resolveStoryVideoClientUrl,
 } from '@/lib/production-bundle';
 
 export type PreviewPlatform = 'instagram' | 'tiktok' | 'x';
@@ -30,6 +31,64 @@ export interface NativeContentData {
   templateId?: string;
   compositionId?: string;
   grafikerScore?: number | null;
+}
+
+/** Feed preview video — decode/play only when visible in the scroll viewport. */
+function VisibilityGatedVideo({
+  src,
+  loop = false,
+  poster,
+  style,
+  onError,
+  onEnded,
+}: {
+  src: string;
+  loop?: boolean;
+  poster?: string;
+  style?: React.CSSProperties;
+  onError?: () => void;
+  onEnded?: () => void;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const syncPlayback = (inView: boolean) => {
+      if (inView) {
+        void el.play().catch(() => undefined);
+      } else {
+        el.pause();
+      }
+    };
+
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        syncPlayback(entry.isIntersecting && entry.intersectionRatio >= 0.25);
+      },
+      { threshold: [0, 0.25, 0.5] },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [src]);
+
+  return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    <video
+      ref={ref}
+      src={src}
+      poster={poster}
+      loop={loop}
+      muted
+      playsInline
+      preload="metadata"
+      onError={onError}
+      onEnded={onEnded}
+      style={style}
+    />
+  );
 }
 
 export function artifactToNativeContent(artifact: OutputArtifact): NativeContentData {
@@ -266,12 +325,14 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
   return (
     <div style={{ position: 'relative', background: '#000', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
       {content.videoUrl ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
-        <video src={content.videoUrl} autoPlay loop muted playsInline
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <VisibilityGatedVideo
+          src={content.videoUrl}
+          loop
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
       ) : content.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer"
+        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : null}
       <div style={{ position: 'absolute', inset: 0,
@@ -303,18 +364,107 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
   );
 }
 
+/** Tam ekran story — 9:16 çerçeveyi doldurur; yatay görsellerde blur arka plan + ortada tam görüntü. */
+export function StoryFullscreenImage({ src, style }: {
+  src: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: '#000', ...style }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          objectFit: 'cover', objectPosition: 'center',
+          filter: 'blur(28px) brightness(0.4)', transform: 'scale(1.12)',
+        }}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        referrerPolicy="no-referrer"
+        style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          objectFit: 'contain', objectPosition: 'center',
+        }}
+      />
+    </div>
+  );
+}
+
+/** Designed story still (Remotion poster) — single cover layer, no blur ghost. */
+export function StoryCoverImage({ src, style }: {
+  src: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      referrerPolicy="no-referrer"
+      style={{
+        position: 'absolute', inset: 0, width: '100%', height: '100%',
+        objectFit: 'cover', objectPosition: 'center',
+        ...style,
+      }}
+    />
+  );
+}
+
 // Story preview: play once then hold last frame — looping re-triggers intro text motion (jitter).
-function StoryPreviewVideo({ src, poster, style }: {
+export function StoryPreviewVideo({ src, poster, style }: {
   src: string;
   poster?: string;
   style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [videoFailed, setVideoFailed] = useState(false);
-  if (videoFailed && poster) {
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || videoFailed) return;
+
+    const syncPlayback = (inView: boolean) => {
+      if (inView) {
+        void el.play().catch(() => undefined);
+      } else {
+        el.pause();
+      }
+    };
+
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        syncPlayback(entry.isIntersecting && entry.intersectionRatio >= 0.25);
+      },
+      { threshold: [0, 0.25, 0.5] },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [src, videoFailed]);
+
+  if (videoFailed) {
+    if (poster) {
+      return <StoryCoverImage src={poster} style={style} />;
+    }
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={poster} alt="" referrerPolicy="no-referrer" style={style} />
+      <div style={{
+        ...style,
+        background: 'linear-gradient(160deg, #1a1a2e 0%, #0d0d14 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'rgba(255,255,255,0.35)',
+        fontSize: 13,
+        fontWeight: 600,
+      }}>
+        Video yüklenemedi
+      </div>
     );
   }
   return (
@@ -323,9 +473,9 @@ function StoryPreviewVideo({ src, poster, style }: {
       ref={ref}
       src={src}
       poster={poster}
-      autoPlay
       muted
       playsInline
+      preload="metadata"
       onError={() => setVideoFailed(true)}
       onEnded={() => {
         const v = ref.current;
@@ -353,10 +503,7 @@ export function InstagramStoryNative({ content, handle, logoUrl, isPending }: {
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : content.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer"
-          onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '0'; }}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <StoryCoverImage src={content.imageUrl} />
       ) : (
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#3a1040,#0d0515)' }} />
       )}
@@ -370,7 +517,7 @@ export function InstagramStoryNative({ content, handle, logoUrl, isPending }: {
           <div style={{ flex: 1 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{h}</span>
             {content.templateId && (
-              <span style={{ fontSize: 10, marginLeft: 8, color: 'rgba(167,139,250,0.9)', fontWeight: 600 }}>
+              <span style={{ fontSize: 10, marginLeft: 8, color: 'rgba(157,190,206,0.9)', fontWeight: 600 }}>
                 {content.templateId.replace(/^remotion_|^poster_/i, '').replace(/_/g, ' ')}
               </span>
             )}
@@ -416,12 +563,14 @@ export function TikTokNative({ content, handle, logoUrl, isPending }: {
   return (
     <div style={{ position: 'relative', background: '#010101', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
       {content.videoUrl ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption
-        <video src={content.videoUrl} autoPlay loop muted playsInline
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <VisibilityGatedVideo
+          src={content.videoUrl}
+          loop
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
       ) : content.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer"
+        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : null}
       <div style={{ position: 'absolute', inset: 0,

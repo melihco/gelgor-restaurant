@@ -148,7 +148,7 @@ function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags
                   <button key={p.label} onClick={() => setSelectedISO(p.iso)}
                     style={{ padding: '8px 14px', borderRadius: 20, cursor: 'pointer',
                       border: `${sel ? '1.5px' : '0.5px'} solid ${sel ? t.accent : t.separator}`,
-                      background: sel ? (t.isDark ? 'rgba(124,58,237,0.1)' : 'rgba(124,58,237,0.06)') : 'transparent',
+                      background: sel ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
                       color: sel ? t.accent : t.textSecondary,
                       fontSize: 13, fontWeight: 600 }}>
                     {p.label}
@@ -221,12 +221,12 @@ function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags
           style={{ width: '100%', padding: '14px', borderRadius: 16, border: 'none',
             cursor: isValid && !scheduleMutation.isPending ? 'pointer' : 'default',
             background: isValid && !scheduleMutation.isPending
-              ? 'linear-gradient(135deg, #7C3AED, #6366F1)'
+              ? 'linear-gradient(135deg, #4D7088, #5A82A0)'
               : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'),
             color: isValid && !scheduleMutation.isPending ? '#fff' : t.textMuted,
             fontSize: 14, fontWeight: 800,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            boxShadow: isValid && !scheduleMutation.isPending ? '0 4px 18px rgba(124,58,237,0.35)' : 'none',
+            boxShadow: isValid && !scheduleMutation.isPending ? '0 4px 18px rgba(77,112,136,0.35)' : 'none',
             marginBottom: 10 }}>
           {scheduleMutation.isPending
             ? <><div style={{ width: 14, height: 14, borderRadius: '50%',

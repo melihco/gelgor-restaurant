@@ -111,6 +111,48 @@ async def _fetch_hashtag_health(
         logger.debug("hashtag_analytics_failed", error=str(exc))
         return ""
 
+# ── TikTok trend signals helper ───────────────────────────────────────────────
+
+async def _fetch_tiktok_trend_signals(
+    keywords: list[str],
+    api_key: str,
+    timeout: int = 60,
+) -> str:
+    """
+    Fetch trending TikTok videos for keywords and format for prompt injection.
+    Returns a formatted string, or "" on failure.
+    """
+    if not keywords or not api_key:
+        return ""
+    try:
+        from app.crew.apify_scraper import fetch_tiktok_trends
+        items = await fetch_tiktok_trends(keywords[:3], api_key, timeout=timeout)
+        if not items:
+            return ""
+        lines = ["**TikTok Trend Sinyalleri:**"]
+        for item in items[:5]:
+            text = item.get("text") or ""
+            play = item.get("playCount") or 0
+            sound = item.get("soundTitle") or ""
+            hashtags = item.get("hashtags") or []
+            if play >= 1_000_000:
+                play_str = f"{play / 1_000_000:.1f}M izlenme"
+            elif play >= 1_000:
+                play_str = f"{play / 1_000:.0f}K izlenme"
+            else:
+                play_str = f"{play} izlenme"
+            line = f'- "{text[:80]}..." — {play_str}'
+            if sound:
+                line += f" | 🎵 {sound}"
+            if hashtags:
+                line += f" | {' '.join(hashtags[:4])}"
+            lines.append(line)
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.debug("tiktok_trends_fetch_failed", error=str(exc))
+        return ""
+
+
 # ── Seasonal context helpers ───────────────────────────────────────────────
 
 _BODRUM_SEASONAL = {
@@ -224,10 +266,11 @@ async def build_trend_brief(
     loc_clean = location.lower().split(",")[0].strip()
     loc_tag = re.sub(r"[^a-z0-9]", "", loc_clean)
 
-    # Fetch trending hashtags + Google Trends + hashtag health in parallel
+    # Fetch trending hashtags + Google Trends + hashtag health + TikTok in parallel
     trending_tags: list[str] = []
     google_trends_str = ""
     hashtag_health_str = ""
+    tiktok_str = ""
 
     import asyncio as _asyncio
     trend_tasks = []
@@ -239,11 +282,13 @@ async def build_trend_brief(
     kw_list = (keywords or [])[:5] or [brand_name]
     trend_tasks.append(_fetch_google_trends_signals(kw_list, api_key, geo=geo, timeout=timeout))
     trend_tasks.append(_fetch_hashtag_health(top_hashtags or [], api_key, timeout=timeout))
+    trend_tasks.append(_fetch_tiktok_trend_signals(kw_list[:3], api_key, timeout=timeout))
 
     results = await _asyncio.gather(*trend_tasks, return_exceptions=True)
     trending_tags = results[0] if isinstance(results[0], list) else []
     google_trends_str = results[1] if isinstance(results[1], str) else ""
     hashtag_health_str = results[2] if isinstance(results[2], str) else ""
+    tiktok_str = results[3] if isinstance(results[3], str) else ""
 
     # Upcoming weekend signal
     days_to_weekend = (5 - now.weekday()) % 7  # days until Saturday
@@ -278,6 +323,9 @@ async def build_trend_brief(
     if hashtag_health_str:
         lines += ["", hashtag_health_str]
 
+    if tiktok_str:
+        lines += ["", tiktok_str]
+
     lines += [
         "",
         f"**İçerik aksiyonu**: {brand_name} için bu hafta öne çıkarılacak pillar'lar: "
@@ -304,3 +352,75 @@ def is_trend_brief_stale(last_updated_iso: str | None, max_age_days: int = 7) ->
         return (datetime.now(timezone.utc) - last) > timedelta(days=max_age_days)
     except (ValueError, AttributeError):
         return True
+
+
+def is_trend_brief_stale_hours(last_updated_iso: str | None, max_age_hours: int = 48) -> bool:
+    """Return True if trend brief is older than max_age_hours (mission propose SLA)."""
+    if not last_updated_iso:
+        return True
+    try:
+        last = datetime.fromisoformat(last_updated_iso.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - last) > timedelta(hours=max_age_hours)
+    except (ValueError, AttributeError):
+        return True
+
+
+async def ensure_fresh_trend_brief_for_propose(
+    db,
+    workspace_id,
+    *,
+    max_age_hours: int = 48,
+) -> tuple[str, bool]:
+    """
+    Refresh trend_brief when stale before StrategistAgent propose.
+    Returns (brief_text, was_refreshed).
+    """
+    import uuid
+
+    from app.config import get_settings
+    from app.services import brand_context_service
+    from app.services.brand_context_service import _parse_json_list
+
+    settings = get_settings()
+    ws_id = workspace_id if isinstance(workspace_id, uuid.UUID) else uuid.UUID(str(workspace_id))
+    ctx = await brand_context_service.get_brand_context(db, ws_id)
+    if not ctx:
+        return "", False
+
+    existing = getattr(ctx, "trend_brief", None) or ""
+    updated_at = getattr(ctx, "trend_brief_updated_at", None)
+
+    if existing and not is_trend_brief_stale_hours(updated_at, max_age_hours=max_age_hours):
+        return existing, False
+
+    raw_keywords = getattr(ctx, "keywords", None) or ""
+    kw_list = [k.strip() for k in raw_keywords.replace("\n", ",").split(",") if k.strip()][:5]
+    top_hashtags = _parse_json_list(getattr(ctx, "instagram_top_hashtags", None))
+    location_str = ctx.location or "Turkey"
+    geo = "TR"
+
+    trend_brief = await build_trend_brief(
+        brand_name=ctx.business_name,
+        location=location_str,
+        content_pillars=_parse_json_list(ctx.content_pillars),
+        api_key=settings.apify_api_key or "",
+        keywords=kw_list,
+        top_hashtags=top_hashtags,
+        geo=geo,
+    )
+
+    if not trend_brief:
+        logger.warning("propose_trend_refresh_empty", workspace_id=str(ws_id))
+        return existing, False
+
+    ctx.trend_brief = trend_brief
+    ctx.trend_brief_updated_at = datetime.now(timezone.utc).isoformat()
+    await db.flush()
+    await db.commit()
+
+    logger.info(
+        "propose_trend_brief_refreshed",
+        workspace_id=str(ws_id),
+        max_age_hours=max_age_hours,
+    )
+    return trend_brief, True

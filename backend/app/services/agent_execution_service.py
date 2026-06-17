@@ -29,7 +29,8 @@ import structlog
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crew.engine import get_crew_engine, AGENT_ROLES
+from app.crew.engine import get_crew_engine
+from app.crew.registry import get_agent_roles
 from app.models.agent_config import AgentInstance, AgentDefinition
 from app.models.task import Task, Suggestion, ActionLog
 from app.services.brand_context_service import build_brand_info
@@ -39,6 +40,7 @@ from app.services.tenant_learning_service import (
 )
 
 logger = structlog.get_logger()
+AGENT_ROLES = get_agent_roles()
 
 
 class ExecutionError(Exception):

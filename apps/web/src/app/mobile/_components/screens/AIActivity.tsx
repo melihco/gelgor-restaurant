@@ -42,12 +42,12 @@ interface ActivityItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 const AGENT_COLOR: Record<string, string> = {
-  blogwriter: '#a78bfa', instagramcontentgenerator: '#f472b6', socialmediadesigner: '#f472b6',
+  blogwriter: '#9DBECE', instagramcontentgenerator: '#f472b6', socialmediadesigner: '#f472b6',
   googleadsanalyst: '#60a5fa', analyticsanalyst: '#34d399', customerreviewresponder: '#f59e0b',
-  aiceo: '#a5b4fc', chatbotmanager: '#818cf8', writer: '#a78bfa', designer: '#f472b6',
+  aiceo: '#a5b4fc', chatbotmanager: '#818cf8', writer: '#9DBECE', designer: '#f472b6',
   analyst: '#34d399', manager: '#a5b4fc', researcher: '#60a5fa', developer: '#818cf8',
   instagram: '#f472b6', googleads: '#60a5fa', googlebusiness: '#34d399', googleanalytics: '#f59e0b',
-  default: '#a78bfa',
+  default: '#9DBECE',
 };
 const agentColor = (t: string) => AGENT_COLOR[(t ?? '').toLowerCase()] ?? AGENT_COLOR['default']!;
 

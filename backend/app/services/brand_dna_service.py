@@ -74,6 +74,33 @@ def _safe_json(text: str | None) -> Any:
         return None
 
 
+def _build_gallery_scene_catalog(gallery_analysis_raw: str) -> list[dict[str, Any]]:
+    """Compact per-photo inventory for Brand DNA synthesis (caption↔image pairing)."""
+    data = _safe_json(gallery_analysis_raw)
+    if not isinstance(data, dict) or not data:
+        return []
+
+    scenes: list[dict[str, Any]] = []
+    for url, meta in data.items():
+        if not isinstance(meta, dict):
+            continue
+        tags = meta.get("contentTags") or []
+        if not tags and not meta.get("usageContext") and not meta.get("description"):
+            continue
+        scenes.append({
+            "url": str(url)[:120],
+            "tags": (tags[:8] if isinstance(tags, list) else []),
+            "mood": str(meta.get("mood") or ""),
+            "usage": str(meta.get("usageContext") or "")[:160],
+            "description": str(meta.get("description") or "")[:200],
+            "caption_hooks": (meta.get("captionHooks") or [])[:6],
+            "pairing_keywords": (meta.get("pairingKeywords") or [])[:10],
+            "best_for": (meta.get("bestFor") or [])[:4],
+        })
+    scenes.sort(key=lambda s: len(s.get("tags") or []), reverse=True)
+    return scenes[:24]
+
+
 async def build_brand_dna(brand: BrandInfo, openai_api_key: str = "") -> dict[str, Any]:
     """
     Synthesise all available signals about a brand into a structured DNA document.
@@ -110,6 +137,7 @@ async def build_brand_dna(brand: BrandInfo, openai_api_key: str = "") -> dict[st
         "market_opportunity_ideas": _safe_json(brand.market_opportunity_ideas) or [],
         "industry_calendar_current_phase": None,
         "learning_context": brand.learning_context[:600] if brand.learning_context else "",
+        "gallery_scene_catalog": _build_gallery_scene_catalog(brand.gallery_analysis or ""),
     }
 
     # Extract current phase from industry calendar if available
@@ -125,7 +153,7 @@ async def build_brand_dna(brand: BrandInfo, openai_api_key: str = "") -> dict[st
     has_meaningful_data = bool(
         signals["website_summary"] or signals["instagram_bio"] or
         signals["competitor_brief"] or signals["learning_context"] or
-        signals["visual_dna"]
+        signals["visual_dna"] or signals["gallery_scene_catalog"]
     )
 
     if not has_meaningful_data or not openai_api_key:
@@ -203,9 +231,19 @@ Return a JSON object with EXACTLY these fields:
 
   "sales_strategy_context": "Content strategy aligned with sales funnel — what moves people from awareness to purchase/visit/booking for this specific business",
 
-  "agency_recommendation": "If you were a senior account manager at a premium agency, what ONE strategic recommendation would you make to this brand this week?"
+  "agency_recommendation": "If you were a senior account manager at a premium agency, what ONE strategic recommendation would you make to this brand this week?",
+
+  "gallery_content_pairing_guide": [
+    {{
+      "scene_or_product": "what the photo shows",
+      "ideal_caption_angle": "how to write captions when using this visual",
+      "avoid_in_caption": "what NOT to claim when this photo is used",
+      "example_hook_tr": "short Turkish caption hook"
+    }}
+  ]
 }}
 
+Use gallery_scene_catalog to fill gallery_content_pairing_guide with REAL scenes from analyzed photos.
 Be SPECIFIC. Use actual data from the signals. If data is missing for a field, make the best inference from what's available. Never write 'not available' — always provide the best possible intelligence.
 """
 
@@ -231,6 +269,7 @@ def _score_data_richness(signals: dict) -> str:
     if signals.get("instagram_bio"): score += 2
     if signals.get("google_review_signals"): score += 2
     if signals.get("visual_dna"): score += 2
+    if signals.get("gallery_scene_catalog"): score += 3
     if signals.get("competitor_brief"): score += 1
     if signals.get("learning_context"): score += 3
     if signals.get("industry_calendar_current_phase"): score += 2
@@ -337,6 +376,24 @@ def build_brand_dna_prompt(dna: dict[str, Any]) -> str:
                 f"- **[{urgency.upper()}]** {opp.get('opportunity', '')} "
                 f"({opp.get('format', 'post')}) — {opp.get('why_now', '')}"
             )
+        lines.append("")
+
+    pairing = dna.get("gallery_content_pairing_guide", [])
+    if isinstance(pairing, list) and pairing:
+        lines.append("### 🖼 Gallery ↔ Caption Pairing (use real photos only)")
+        for item in pairing[:8]:
+            if not isinstance(item, dict):
+                continue
+            scene = item.get("scene_or_product", "")
+            angle = item.get("ideal_caption_angle", "")
+            avoid = item.get("avoid_in_caption", "")
+            hook = item.get("example_hook_tr", "")
+            line = f"- **{scene}**: {angle}"
+            if hook:
+                line += f' (örnek: "{hook}")'
+            if avoid:
+                line += f" — Kaçın: {avoid}"
+            lines.append(line)
         lines.append("")
 
     # Brand voice

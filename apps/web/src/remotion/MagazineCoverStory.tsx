@@ -18,6 +18,7 @@ import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
 import { HeadlineStack, headlineSize, stablePx, stableScale, stableTextOpacity } from './shared/story-primitives';
+import { StoryAudioLayer } from './shared/story-audio';
 
 export const MagazineCoverStory: React.FC<StoryProps> = ({
   photoUrl,
@@ -34,6 +35,8 @@ export const MagazineCoverStory: React.FC<StoryProps> = ({
   headlineScale = 1.0,
   logoUrl = '',
   location = '',
+  audioMood,
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('serif_editorial', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -136,6 +139,7 @@ export const MagazineCoverStory: React.FC<StoryProps> = ({
           </span>
         </div>
       </AbsoluteFill>
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
     </AbsoluteFill>
   );
 };

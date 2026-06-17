@@ -8,8 +8,12 @@ export interface StoryProps {
   photoUrl: string;
   /** Main headline — bold statement */
   headline: string;
-  /** Optional subtitle / tagline */
+  /** Optional subtitle / tagline (ekranda) */
   subtitle?: string;
+  /** Mission / Feed caption — TTS için birincil kaynak */
+  caption?: string;
+  /** Açık TTS metni (caption ile aynı olabilir) */
+  voiceoverScript?: string;
   /** Small category label above headline (e.g. "KITCHEN", "SUNSET") */
   categoryLabel?: string;
   /** Brand name — shown at top */
@@ -26,6 +30,9 @@ export interface StoryProps {
   fontFamily?: string;
   /** Google Font — body / caption */
   bodyFont?: string;
+  /** Template kütüphanesi slot fontPersonality — şablon modunda marka fontunu ezmez */
+  fontPersonality?: import('../lib/remotion-template-types').FontPersonality;
+  honorTemplateTypography?: boolean;
   /** Overlay headline color (brand_theme.palette.neutral / announcement kit) */
   headlineColor?: string;
   /** Subtitle / body on photo */
@@ -62,6 +69,12 @@ export interface StoryProps {
   // ── Audio ─────────────────────────────────────────────────────
   /** Audio mood key: "deep house" | "lounge jazz" | "beach pop" | "ambient chill" | "acoustic folk" | "upbeat commercial" */
   audioMood?: string;
+  /** Pre-resolved proxy URL for story BGM (server-side render — avoids Remotion bundle port mismatch) */
+  storyMusicUrl?: string;
+  /** Server-rendered TTS clip (file:// URL) — muxed into MP4 at render time */
+  voiceoverUrl?: string;
+  /** BCP-47 / short locale for TTS voice selection */
+  locale?: string;
 
   /** Extra gallery URLs for multi-photo layouts (GallerySeriesStory) */
   galleryPhotoUrls?: string[];

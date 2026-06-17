@@ -12,10 +12,12 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
+import { BRS_PROPOSE_THRESHOLD } from '@/lib/brand-readiness';
 import {
   assertPathTenantMatchesRequest,
   buildTenantForwardHeaders,
 } from '@/lib/tenant-production-guard';
+import { basCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
 
@@ -93,6 +95,13 @@ export async function GET(
   const tenantGuard = assertPathTenantMatchesRequest(req, tenantId);
   if (tenantGuard) return tenantGuard;
 
+  const cached = basCache.get(tenantId);
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=60' },
+    });
+  }
+
   const origin = req.nextUrl.origin;
   const fwd = { ...buildTenantForwardHeaders(req) };
 
@@ -131,23 +140,28 @@ export async function GET(
 
   // Autonomy gate: every standing score must be 100 (ICS/PIS validated at runtime).
   const canAutoProduce = allStandingPresent && standing.every((s) => s === 100);
-  const canProposeMissions = brsScore != null && gisScore != null && brsScore >= 80 && gisScore >= 70;
+  const canProposeMissions = brsScore != null && gisScore != null
+    && brsScore >= BRS_PROPOSE_THRESHOLD && gisScore >= 70;
 
   // Lowest standing sub-score drives the headline "what to fix".
   const weakest = subScores
     .filter((s) => s.kind === 'standing' && typeof s.score === 'number')
     .sort((a, b) => (a.score as number) - (b.score as number))[0] ?? null;
 
-  return NextResponse.json(
-    {
-      tenantId,
-      bas,
-      canProposeMissions,
-      canAutoProduce,
-      subScores,
-      weakest: weakest ? { id: weakest.id, label: weakest.label, score: weakest.score, fix: weakest.fix } : null,
-      sources: { brs: brs != null, gis: gis != null, ccs: ccs != null },
-    },
-    { status: 200 },
-  );
+  const payload = {
+    tenantId,
+    bas,
+    canProposeMissions,
+    canAutoProduce,
+    subScores,
+    weakest: weakest ? { id: weakest.id, label: weakest.label, score: weakest.score, fix: weakest.fix } : null,
+    sources: { brs: brs != null, gis: gis != null, ccs: ccs != null },
+  };
+
+  basCache.set(tenantId, payload);
+
+  return NextResponse.json(payload, {
+    status: 200,
+    headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=60' },
+  });
 }

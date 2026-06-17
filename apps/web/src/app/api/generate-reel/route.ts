@@ -401,11 +401,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         // `input.concept` is a secondary vibe/creative-direction string.
         const captionBrief = (reelInput.caption || input.concept || '').slice(0, 350);
 
+        const sceneMeta = input.sceneMetadata ?? {};
         const contentKind = inferContentKind({
           headline: input.title ?? '',
           caption: captionBrief,
+          photoDescription: reelInput.photoDescription,
+          photoSceneMoment: reelInput.photoSceneMoment,
           photoTags: reelInput.photoTags,
           contentType: input.contentType,
+          businessType: String(sceneMeta.businessType ?? sceneMeta.sector ?? ''),
+          productType: String(sceneMeta.productType ?? ''),
         });
 
         const agentVisualDirection = String(
@@ -421,11 +426,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             contentKind,
             brandName: String(input.sceneMetadata?.brandName ?? ''),
             brandLocation: String(input.sceneMetadata?.location ?? input.sceneMetadata?.brandLocation ?? ''),
+            businessType: String(sceneMeta.businessType ?? sceneMeta.sector ?? ''),
+            productType: String(sceneMeta.productType ?? ''),
+            strategicPurpose: String(sceneMeta.strategicPurpose ?? ''),
+            missionBrief: String(sceneMeta.missionBrief ?? ''),
             photoDescription: reelInput.photoDescription,
+            photoSceneMoment: reelInput.photoSceneMoment,
+            photoMicroMotions: reelInput.photoMicroMotions,
+            photoMood: reelInput.photoMood,
+            photoUsageContext: reelInput.photoUsageContext,
+            photoPairingKeywords: reelInput.photoPairingKeywords,
             photoTags: reelInput.photoTags,
             vibeProfile: reelInput.vibeProfile,
             brandThemeGrading: reelInput.brandThemeGrading,
-            mood: input.visualStyle ?? input.brandTone ?? '',
+            mood: reelInput.photoMood ?? input.visualStyle ?? input.brandTone ?? '',
             agentVisualDirection,
           },
           openaiKey,
@@ -451,10 +465,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             brandName: String(input.sceneMetadata?.brandName ?? ''),
             brandLocation: String(input.sceneMetadata?.location ?? input.sceneMetadata?.brandLocation ?? ''),
             photoDescription: reelInput.photoDescription,
+            photoSceneMoment: reelInput.photoSceneMoment,
+            photoMicroMotions: reelInput.photoMicroMotions,
+            photoMood: reelInput.photoMood,
+            photoUsageContext: reelInput.photoUsageContext,
+            photoPairingKeywords: reelInput.photoPairingKeywords,
             photoTags: reelInput.photoTags,
             vibeProfile: reelInput.vibeProfile,
             brandThemeGrading: reelInput.brandThemeGrading,
-            mood: input.visualStyle ?? input.brandTone ?? '',
+            mood: reelInput.photoMood ?? input.visualStyle ?? input.brandTone ?? '',
             agentVisualDirection: String(
               reelInput.agentVisualDirection ?? input.sceneMetadata?.agentVisualDirection ?? '',
             ).trim().slice(0, 400) || undefined,
@@ -474,6 +493,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             contentKind: inferContentKind({
               headline: input.title ?? '',
               caption: captionFallback,
+              photoDescription: reelInput.photoDescription,
+              photoSceneMoment: reelInput.photoSceneMoment,
               photoTags: reelInput.photoTags,
               contentType: input.contentType,
             }),

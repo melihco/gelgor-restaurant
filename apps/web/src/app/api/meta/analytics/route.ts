@@ -6,7 +6,11 @@ const CREW_API = process.env.CREW_BACKEND_URL ?? 'http://localhost:8000';
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const workspaceId = request.nextUrl.searchParams.get('workspaceId');
+  const workspaceId =
+    request.nextUrl.searchParams.get('workspaceId')
+    ?? request.headers.get('X-Tenant-Id')
+    ?? request.headers.get('x-tenant-id')
+    ?? '';
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }
@@ -27,7 +31,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function DELETE(request: NextRequest): Promise<NextResponse> {
-  const workspaceId = request.nextUrl.searchParams.get('workspaceId');
+  const workspaceId =
+    request.nextUrl.searchParams.get('workspaceId')
+    ?? request.headers.get('X-Tenant-Id')
+    ?? request.headers.get('x-tenant-id')
+    ?? '';
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }

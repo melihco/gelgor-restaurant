@@ -48,10 +48,10 @@ export const BrandedFeedPost: React.FC<FeedPostProps> = ({
 
   const headlineLines = splitHeadlineLines(headline, 3, format === '4:5' ? 16 : 14);
   const longestLine = headlineLines.reduce((a, b) => (a.length >= b.length ? a : b), headline);
-  const headlineFontSize = longestLine.length < 12 ? 72
-    : longestLine.length < 18 ? 60
-    : longestLine.length < 26 ? 48
-    : 40;
+  const headlineFontSize = longestLine.length < 12 ? 58
+    : longestLine.length < 18 ? 48
+    : longestLine.length < 26 ? 40
+    : 32;
   const headlineText = headlineLines.map((l) => (l.length < 30 ? l.toUpperCase() : l));
 
   return (

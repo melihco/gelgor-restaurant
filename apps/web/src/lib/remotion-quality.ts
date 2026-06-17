@@ -3,9 +3,16 @@
  */
 import type { CreativeDirectorLayoutOverrides } from './creative-director-routing';
 import type { RemotionLayoutFamily } from './remotion-template-types';
+import { sanitizePosterText } from './announcement-text-fit';
 
 export const GRAFIKER_PASS_THRESHOLD = 8;
+export const GRAFIKER_HARD_FLOOR = 4;   // Below this: discard render, fall back to gallery still
 export const GRAFIKER_MAX_RETRIES = 2;
+
+export function resolveGrafikerMaxRetries(profileMax?: number | null): number {
+  if (profileMax == null || !Number.isFinite(profileMax)) return GRAFIKER_MAX_RETRIES;
+  return Math.max(0, Math.min(2, Math.floor(profileMax)));
+}
 
 const PHOTO_OVERLAY_FAMILIES: RemotionLayoutFamily[] = [
   'editorial_bottom',
@@ -35,7 +42,7 @@ export interface GrafikerReviewResult {
 
 /** Punchy display copy — word-safe truncation for story frames. */
 export function enforceDisplayHeadline(headline: string, maxChars = 28): string {
-  const trimmed = headline.trim();
+  const trimmed = sanitizePosterText(headline);
   if (trimmed.length <= maxChars) return trimmed;
   const wordSafe = trimmed.slice(0, maxChars + 1).replace(/\s+\S*$/, '').trim();
   return (wordSafe || trimmed.slice(0, maxChars)).trim();
@@ -198,11 +205,14 @@ const GRAFIKER_POSTER_SYSTEM_PROMPT = `You are a senior art director reviewing a
 
 Check specifically:
 1. FULL WORDS VISIBLE — no letters cut off at left/right/top/bottom frame edges (e.g. "DİJİTAL" must not appear as "İGİTAL").
-2. TEXT FIT — headline fits inside safe area; multi-line wrap is OK if balanced.
-3. LEGIBILITY — contrast over photo; no overlap between headline, subtitle, and logo.
-4. HIERARCHY — headline dominates; looks agency-grade.
+2. NO FADED GLYPHS — left-side letters must not look pale/washed vs the rest (gradient artifact on light panels = fail).
+3. TEXT FIT — headline fits inside safe area; multi-line wrap is OK if balanced.
+4. LEGIBILITY — contrast over photo AND over color panels; no overlap between headline, subtitle, logo, CTA.
+5. HIERARCHY — headline dominates subtitle; CTA is distinct; looks agency-grade not stock template.
+6. COMPOSITION — reject amateur 50/50 photo + flat beige/tan block with centered generic type unless real discount promo.
+7. BRAND INTEGRATION — palette should feel on-brand (primary/accent), not default template beige.
 
-pass = true ONLY if score ≥ 8 AND all words fully visible AND legibility clear.
+pass = true ONLY if score ≥ 8 AND all words fully visible AND legibility clear AND hierarchy_ok AND no template-y flat split.
 
 Respond ONLY with JSON:
 {"score":1-10,"pass":true/false,"text_overlap":true/false,"text_legibility":"clear|partial|poor","overlay_sufficient":true/false,"hierarchy_ok":true/false,"issues":[],"verdict":"..."}`;

@@ -35,6 +35,50 @@ export const GOOGLE_FONT_SPECS: Record<string, string> = {
   'Great Vibes': 'Great+Vibes:wght@400',
   'Allura': 'Allura:wght@400',
   'Source Serif 4': 'Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400',
+  'Baloo 2': 'Baloo+2:wght@400;500;600;700;800',
+  'Unbounded': 'Unbounded:wght@400;500;600;700;800;900',
+  'Plus Jakarta Sans': 'Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400',
+  'Nunito': 'Nunito:ital,wght@0,400;0,600;0,700;0,800;1,400',
+  'Bricolage Grotesque': 'Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800',
+  'Newsreader': 'Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400',
+
+  // ── Premium additions ────────────────────────────────────────────────────────
+
+  /** Trending 2024-26 editorial serif — luxury, hotel, fashion, fine dining */
+  'Instrument Serif': 'Instrument+Serif:ital,wght@0,400;1,400',
+
+  /** Magazine-quality readable serif — editorial bodies, campaign captions */
+  'Spectral': 'Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400',
+
+  /** Roman capitals — fine dining, luxury events, black-tie occasions */
+  'Cinzel': 'Cinzel:wght@400;600;700;900',
+
+  /** Ultra-thin elegant display — haute couture, premium boutique */
+  'Italiana': 'Italiana:wght@400',
+
+  /** Condensed impact poster face — nightlife, concerts, festival headliners */
+  'Big Shoulders Display': 'Big+Shoulders+Display:wght@400;600;700;800;900',
+
+  /** Geometric fashion sans — fashion brands, clean retail, contemporary studio */
+  'Josefin Sans': 'Josefin+Sans:ital,wght@0,300;0,400;0,600;0,700;1,400',
+
+  /** Refined philosophical serif — wellness, spa, holistic, high-end clinic */
+  'Philosopher': 'Philosopher:ital,wght@0,400;0,700;1,400',
+
+  /** Expressive display serif — lifestyle, female-skewed brands, editorial blogs */
+  'Yeseva One': 'Yeseva+One:wght@400',
+
+  /** Classic vintage display — boutique hotel, bar, heritage brand, brasserie */
+  'Forum': 'Forum:wght@400',
+
+  /** Minimal fashion editorial body — runway shows, style editorials, lookbooks */
+  'Tenor Sans': 'Tenor+Sans:wght@400',
+
+  /** Sharp modern grotesque — tech-forward brands, creative agencies, startups */
+  'Epilogue': 'Epilogue:wght@400;500;700;900',
+
+  /** Techy futuristic condensed — DJ tech, esports, innovation brands */
+  'Chakra Petch': 'Chakra+Petch:ital,wght@0,400;0,600;0,700;1,400',
 };
 
 export interface FontStackResult {
@@ -88,17 +132,16 @@ export function resolveFontStack(
     }
     case 'display_bold': {
       // Impact-level poster typography — nightclub, concert, festival, streetwear
-      const hero = heroFont(brandFont, 'Anton', { honorExplicitBrand: honor });
+      const hero = heroFont(brandFont, 'Big Shoulders Display', { honorExplicitBrand: honor });
       const body = bodyFont || 'Barlow Condensed';
       return {
-        hero: stack(hero, 'Anton', 'Archivo Black', 'Oswald', 'Bebas Neue', 'Impact', 'sans-serif'),
+        hero: stack(hero, 'Big Shoulders Display', 'Anton', 'Archivo Black', 'Oswald', 'Impact', 'sans-serif'),
         body: stack(body, 'Barlow Condensed', 'Oswald', 'Roboto Condensed', 'sans-serif'),
-        families: [hero, body, 'Anton', 'Archivo Black', 'Oswald'],
+        families: [hero, body, 'Big Shoulders Display', 'Anton', 'Archivo Black'],
       };
     }
     case 'poster_display': {
       // Premium poster quality: editorial serif headline + tight condensed body
-      // Best for designed_post, designed posters, campaign hero
       const hero = heroFont(brandFont, 'Bodoni Moda', { honorExplicitBrand: honor });
       const body = bodyFont || 'Barlow Condensed';
       return {
@@ -121,6 +164,43 @@ export function resolveFontStack(
         hero: stack('Great Vibes', 'Allura', 'Segoe Script', 'cursive'),
         body: stack(bodyFont || 'Cormorant Garamond', 'Lora', 'Georgia', 'serif'),
         families: ['Great Vibes', bodyFont || 'Cormorant Garamond'],
+      };
+    }
+    case 'graphic_pop': {
+      const hero = heroFont(brandFont, 'Baloo 2', { honorExplicitBrand: honor });
+      const body = bodyFont || 'Nunito';
+      return {
+        hero: stack(hero, 'Baloo 2', 'Unbounded', 'Poppins', 'sans-serif'),
+        body: stack(body, 'Nunito', 'Plus Jakarta Sans', 'DM Sans', 'sans-serif'),
+        families: [hero, body, 'Baloo 2', 'Nunito'],
+      };
+    }
+    case 'neo_grotesk': {
+      const hero = heroFont(brandFont, 'Unbounded', { honorExplicitBrand: honor });
+      const body = bodyFont || 'Plus Jakarta Sans';
+      return {
+        hero: stack(hero, 'Unbounded', 'Bricolage Grotesque', 'Space Grotesk', 'sans-serif'),
+        body: stack(body, 'Plus Jakarta Sans', 'DM Sans', 'Manrope', 'sans-serif'),
+        families: [hero, body, 'Unbounded', 'Plus Jakarta Sans'],
+      };
+    }
+    case 'luxury_serif': {
+      const hero = heroFont(brandFont, 'Instrument Serif', { honorExplicitBrand: honor });
+      const body = bodyFont || 'Spectral';
+      return {
+        hero: stack(hero, 'Instrument Serif', 'Newsreader', 'Playfair Display', 'Cormorant Garamond', 'Georgia', 'serif'),
+        body: stack(body, 'Spectral', 'Bricolage Grotesque', 'Manrope', 'DM Sans', 'sans-serif'),
+        families: [hero, body, 'Instrument Serif', 'Newsreader', 'Spectral'],
+      };
+    }
+    case 'fashion_editorial': {
+      // Runway / editorial fashion — refined geometric + minimal body
+      const hero = heroFont(brandFont, 'Josefin Sans', { honorExplicitBrand: honor });
+      const body = bodyFont || 'Tenor Sans';
+      return {
+        hero: stack(hero, 'Josefin Sans', 'Italiana', 'Raleway', 'Helvetica Neue', 'sans-serif'),
+        body: stack(body, 'Tenor Sans', 'Cormorant Garamond', 'Lora', 'serif'),
+        families: [hero, body, 'Josefin Sans', 'Italiana', 'Tenor Sans'],
       };
     }
     case 'brand':
@@ -147,53 +227,59 @@ export function defaultFontsForSector(sector: string): { heading: string; body: 
 
   // ── Nightlife / Entertainment ────────────────────────────────────────────
   if (s.includes('night') || s.includes('club') || s.includes('disco') || s.includes('lounge_bar')) {
-    return { heading: 'Anton', body: 'Barlow Condensed' };
+    return { heading: 'Big Shoulders Display', body: 'Barlow Condensed' };
   }
   if (s.includes('concert') || s.includes('festival') || s.includes('music') || s.includes('dj')) {
-    return { heading: 'Archivo Black', body: 'Barlow Condensed' };
+    return { heading: 'Big Shoulders Display', body: 'Barlow Condensed' };
   }
   // ── Event / Entertainment Venue ─────────────────────────────────────────
   if (s.includes('event') || s.includes('theater') || s.includes('theatre') || s.includes('show') || s.includes('performance')) {
-    return { heading: 'Playfair Display', body: 'Cormorant Garamond' };
+    return { heading: 'Cinzel', body: 'Cormorant Garamond' };
   }
   if (s.includes('entertainment') || s.includes('eğlence') || s.includes('mekan')) {
     return { heading: 'Bodoni Moda', body: 'Barlow Condensed' };
   }
   // ── Luxury / Fine Dining ─────────────────────────────────────────────────
   if (s.includes('fine_dining') || s.includes('steak') || s.includes('wine') || s.includes('gourmet')) {
-    return { heading: 'Cormorant Garamond', body: 'Libre Baskerville' };
+    return { heading: 'Cinzel', body: 'Spectral' };
   }
   if (s.includes('luxury') || s.includes('premium') || s.includes('lüks')) {
-    return { heading: 'Bodoni Moda', body: 'Cormorant Garamond' };
+    return { heading: 'Cinzel', body: 'Cormorant Garamond' };
   }
   // ── Restaurant / Cafe ───────────────────────────────────────────────────
   if (s.includes('restaurant') || s.includes('restoran') || s.includes('bistro') || s.includes('brasserie')) {
     return { heading: 'Playfair Display', body: 'Lora' };
   }
-  if (s.includes('cafe') || s.includes('kahve') || s.includes('coffee') || s.includes('bakery') || s.includes('patisserie') || s.includes('pastry')) {
-    return { heading: 'Fraunces', body: 'Lora' };
+  if (s.includes('cafe') || s.includes('kahve') || s.includes('coffee') || s.includes('bakery') || s.includes('patisserie') || s.includes('pastry') || s.includes('brunch')) {
+    return { heading: 'Baloo 2', body: 'Nunito' };
   }
   // ── Hotel / Resort / Wellness ────────────────────────────────────────────
   if (s.includes('hotel') || s.includes('resort') || s.includes('boutique_hotel')) {
-    return { heading: 'Bodoni Moda', body: 'Manrope' };
+    return { heading: 'Instrument Serif', body: 'Spectral' };
   }
   if (s.includes('spa') || s.includes('wellness') || s.includes('yoga') || s.includes('pilates')) {
-    return { heading: 'Cormorant Garamond', body: 'DM Sans' };
+    return { heading: 'Philosopher', body: 'Spectral' };
   }
   // ── Beach / Marina / Outdoor ─────────────────────────────────────────────
   if (s.includes('beach') || s.includes('pool') || s.includes('marina') || s.includes('yacht') || s.includes('boat')) {
     return { heading: 'Syne', body: 'Sora' };
   }
-  // ── Fashion / Beauty ─────────────────────────────────────────────────────
-  if (s.includes('fashion') || s.includes('moda') || s.includes('boutique') || s.includes('clothing')) {
-    return { heading: 'Syne', body: 'Manrope' };
+  // ── Fashion / Beauty / Local retail ──────────────────────────────────────
+  if (s.includes('barber') || s.includes('berber') || s.includes('kuaför') || s.includes('kuafor')) {
+    return { heading: 'Unbounded', body: 'Barlow Condensed' };
   }
-  if (s.includes('beauty') || s.includes('salon') || s.includes('guzellik') || s.includes('nail') || s.includes('barber')) {
-    return { heading: 'Fraunces', body: 'DM Sans' };
+  if (s.includes('beauty') || s.includes('salon') || s.includes('guzellik') || s.includes('nail')) {
+    return { heading: 'Yeseva One', body: 'Cormorant Garamond' };
+  }
+  if (s.includes('retail') || s.includes('perakende') || s.includes('boutique')) {
+    return { heading: 'Josefin Sans', body: 'Plus Jakarta Sans' };
+  }
+  if (s.includes('fashion') || s.includes('moda') || s.includes('clothing')) {
+    return { heading: 'Josefin Sans', body: 'Tenor Sans' };
   }
   // ── Tech / Agency / Professional ─────────────────────────────────────────
   if (s.includes('tech') || s.includes('startup') || s.includes('agency') || s.includes('ajans') || s.includes('co_work')) {
-    return { heading: 'Space Grotesk', body: 'DM Sans' };
+    return { heading: 'Epilogue', body: 'DM Sans' };
   }
   if (s.includes('clinic') || s.includes('klinik') || s.includes('medical') || s.includes('dental')) {
     return { heading: 'DM Serif Display', body: 'Manrope' };

@@ -25,6 +25,7 @@ from app.services.brand_context_service import (
     build_brand_info_from_internal,
     build_brand_info,
     enrich_brand_operating_policy,
+    merge_dotnet_brand_with_python_db,
 )
 from app.services.tenant_learning_service import build_tenant_learning_snapshot, build_learning_context_prompt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,68 +135,13 @@ async def execute_internal_agent(
         ws_id = _uuid.UUID(request.tenant_id)
         py_brand = await build_brand_info(db, ws_id)
         if py_brand:
-            # Merge: Python DB fields win if non-empty, otherwise keep .NET values
-            if py_brand.visual_dna:
-                brand.visual_dna = py_brand.visual_dna
-            if py_brand.competitor_brief:
-                brand.competitor_brief = py_brand.competitor_brief
-            if py_brand.trend_brief:
-                brand.trend_brief = py_brand.trend_brief
-            # Marka Anayasası contentNeeds (.NET CompanyProfile) wins over stale Python mirror
-            if request.brand_context.content_pillars:
-                brand.content_pillars = list(request.brand_context.content_pillars)
-            elif py_brand.content_pillars:
-                brand.content_pillars = py_brand.content_pillars
-            if py_brand.default_ctas:
-                brand.default_ctas = py_brand.default_ctas
-            if py_brand.risk_rules:
-                brand.risk_rules = py_brand.risk_rules
-            if py_brand.reference_image_urls:
-                brand.reference_image_urls = py_brand.reference_image_urls
-            if py_brand.instagram_top_hashtags:
-                brand.instagram_top_hashtags = py_brand.instagram_top_hashtags
-            if py_brand.google_rating:
-                brand.google_rating = py_brand.google_rating
-            if py_brand.google_review_count:
-                brand.google_review_count = py_brand.google_review_count
-            if py_brand.google_review_signals:
-                brand.google_review_signals = py_brand.google_review_signals
-            if py_brand.website_summary:
-                brand.website_summary = py_brand.website_summary
-            if py_brand.instagram_bio:
-                brand.instagram_bio = py_brand.instagram_bio
-            brand.discovery_confidence = py_brand.discovery_confidence or brand.discovery_confidence
-            brand.brand_constitution_confirmed = py_brand.brand_constitution_confirmed
-            # Language is set in Brand Hub (Python DB) — always wins over .NET default
-            if py_brand.languages and py_brand.languages.strip():
-                brand.languages = py_brand.languages
-            # ── Master intelligence layer (Sprint 2-4) ────────────────────
-            if py_brand.brand_dna:
-                brand.brand_dna = py_brand.brand_dna
-            if py_brand.industry_calendar:
-                brand.industry_calendar = py_brand.industry_calendar
-            if py_brand.competitor_pulse:
-                brand.competitor_pulse = py_brand.competitor_pulse
-            if py_brand.market_opportunity_ideas:
-                brand.market_opportunity_ideas = py_brand.market_opportunity_ideas
-            if py_brand.social_signals:
-                brand.social_signals = py_brand.social_signals
-            # Gallery analysis — photo tags/descriptions for visual matching
-            if py_brand.gallery_analysis:
-                brand.gallery_analysis = py_brand.gallery_analysis
-            # Brand Vibe Profile — agency-grade visual DNA from reference accounts
-            if py_brand.brand_vibe_profile:
-                brand.brand_vibe_profile = py_brand.brand_vibe_profile
-            if py_brand.brand_theme:
-                brand.brand_theme = py_brand.brand_theme
-            if py_brand.website_intelligence:
-                brand.website_intelligence = py_brand.website_intelligence
-            # Per-tenant LLM override — e.g. B2B event agency uses Claude Opus,
-            # beach club uses GPT-4o. Never inherits another tenant's model choice.
-            if py_brand.preferred_llm_provider:
-                brand.preferred_llm_provider = py_brand.preferred_llm_provider
-            if py_brand.preferred_llm_model:
-                brand.preferred_llm_model = py_brand.preferred_llm_model
+            brand = merge_dotnet_brand_with_python_db(
+                brand,
+                py_brand,
+                dotnet_content_pillars=list(request.brand_context.content_pillars or [])
+                if request.brand_context.content_pillars
+                else None,
+            )
             logger.info(
                 "brand_context_enriched_from_python_db",
                 tenant_id=request.tenant_id,

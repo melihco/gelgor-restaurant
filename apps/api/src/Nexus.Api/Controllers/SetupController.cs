@@ -109,11 +109,51 @@ public class SetupController : ControllerBase
         return Ok(profile);
     }
 
+    [HttpGet("snapshot-core")]
+    public async Task<ActionResult<BrandProfileCoreSnapshotDto>> GetBrandProfileSnapshotCore(
+        CancellationToken cancellationToken)
+    {
+        var profile = await _setupService.GetCompanyProfileAsync(_requestContext.TenantId, cancellationToken);
+        return Ok(new BrandProfileCoreSnapshotDto(
+            _requestContext.TenantId,
+            profile.BrandName,
+            profile.Industry,
+            profile.Location,
+            profile.BrandTone,
+            profile.TargetAudience,
+            profile.VisualStyle,
+            profile.CampaignGoals,
+            SplitCsv(profile.Languages),
+            profile.LogoUrl,
+            profile.WebsiteUrl,
+            profile.Description,
+            profile.InstagramHandle,
+            profile.GoogleBusinessUrl,
+            SplitCsv(profile.BrandImageUrls),
+            profile.PrimaryFont,
+            profile.SecondaryFont,
+            SplitCsv(profile.BrandColors),
+            SplitCsv(profile.AccentColors),
+            profile.CustomerVisibleSummary,
+            profile.SystemIntelligence,
+            profile.DiscoveryConfidence,
+            profile.CreativeProfileConfirmedAt
+        ));
+    }
+
     [HttpPut("profile")]
     public async Task<ActionResult<CompanyProfileDto>> SaveProfile([FromBody] SaveCompanyProfileRequest request, CancellationToken cancellationToken)
     {
         var profile = await _setupService.SaveCompanyProfileAsync(_requestContext.TenantId, request, cancellationToken);
         return Ok(profile);
+    }
+
+    private static IReadOnlyList<string> SplitCsv(string? value)
+    {
+        return (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToArray();
     }
 
     [HttpPost("complete")]

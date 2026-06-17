@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "paths": {
+      "@smartagency/contracts": [
+        "../../packages/contracts/src/index.ts"
+      ],
+      "@smartagency/contracts/*": [
+        "../../packages/contracts/src/*"
+      ],
+      "@mobile/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "App.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ]
+}

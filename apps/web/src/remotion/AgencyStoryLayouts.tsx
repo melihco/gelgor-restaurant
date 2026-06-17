@@ -14,7 +14,7 @@ import {
 } from 'remotion';
 import type { RemotionLayoutSpec } from '../lib/remotion-template-types';
 import type { StoryProps } from './types';
-import { StoryLogoTopCenter, StoryLogoMark } from './StoryLogo';
+import { StoryLogoInline, StoryLogoTopCenter, StoryLogoMark } from './StoryLogo';
 import {
   KenBurnsPhoto,
   FilmGrainOverlay,
@@ -24,8 +24,12 @@ import {
   stableTextLayerStyle,
   stableTextOpacity,
   textShadowHeavy,
+  textShadowEditorial,
+  textShadowAmbient,
+  resolveStoryTextColors,
 } from './shared/story-primitives';
 import { useStoryFonts } from './shared/useRemotionFonts';
+import { brandPanelGradientCss, cinematicScrimCss } from '../lib/brand-panel-gradient';
 
 export type AgencyLayoutProps = StoryProps & { layoutSpec: RemotionLayoutSpec };
 
@@ -35,6 +39,31 @@ function galleryUrls(photoUrl: string, extras?: string[]): string[] {
     if (u && !out.includes(u)) out.push(u);
   }
   return out.slice(0, 3);
+}
+
+/** Kurumsal renklerle uyumlu story arka planı — polaroid / collage layout'ları */
+function BrandStoryBackdrop({
+  primaryColor,
+  accentColor,
+}: {
+  primaryColor: string;
+  accentColor: string;
+}) {
+  return (
+    <>
+      <AbsoluteFill style={{ background: primaryColor }} />
+      <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.9} />
+      <AbsoluteFill
+        style={{
+          background: `
+            radial-gradient(ellipse 90% 55% at 50% 28%, ${accentColor}28 0%, transparent 58%),
+            linear-gradient(180deg, ${accentColor}14 0%, transparent 32%, ${primaryColor} 72%)
+          `,
+        }}
+      />
+      <FilmGrainOverlay opacity={0.07} />
+    </>
+  );
 }
 
 function CtaPill({
@@ -132,6 +161,9 @@ export function EventTicketLayout({
   brandName,
   accentColor = '#c9a96e',
   primaryColor = '#1a2b4a',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -143,6 +175,7 @@ export function EventTicketLayout({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.05);
   const headOp = stableTextOpacity(frame, 18, 36);
   const metaOp = interpolate(frame, [32, 48], [0, 1], { extrapolateRight: 'clamp' });
@@ -163,7 +196,7 @@ export function EventTicketLayout({
         pointerEvents: 'none',
         boxShadow: `inset 0 0 0 6px ${primaryColor}, inset 0 0 0 8px ${accentColor}55`,
       }} />
-      <FilmGrainOverlay opacity={0.09} />
+      <FilmGrainOverlay opacity={0.06} />
       <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="5.5%" />
       <AbsoluteFill style={{
         display: 'flex',
@@ -172,11 +205,13 @@ export function EventTicketLayout({
         alignItems: 'center',
         padding: '0 56px 11%',
         textAlign: 'center',
+        zIndex: 8,
+        ...stableTextLayerStyle,
       }}>
         {categoryLabel ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 12, letterSpacing: 14, textTransform: 'uppercase',
-            color: accentColor, marginBottom: 12, opacity: headOp,
+            fontFamily: fonts.body, fontSize: 13, letterSpacing: 14, textTransform: 'uppercase',
+            color: textColors.category, marginBottom: 12, opacity: headOp,
           }}>
             {categoryLabel}
           </span>
@@ -187,7 +222,9 @@ export function EventTicketLayout({
             fontFamily={fonts.hero}
             fontWeight={headlineWeight ?? spec.heroWeight}
             fontSize={fontSize}
-            color="#fff"
+            color={textColors.headline}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
             tracking={spec.heroTracking}
             frame={frame}
@@ -199,10 +236,10 @@ export function EventTicketLayout({
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 20, color: 'rgba(255,255,255,0.8)', marginTop: 12,
+            fontFamily: fonts.body, fontSize: 20, color: textColors.subtitle, marginTop: 12,
             fontStyle: spec.subtitleItalic ? 'italic' : 'normal', opacity: metaOp,
           }}>
-            {subtitle}
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
         <EventMetaRow eventDate={eventDate} eventTime={eventTime} primary={primaryColor} accent={accentColor} fonts={fonts} opacity={metaOp} />
@@ -221,6 +258,9 @@ export function DiptychCollageLayout({
   brandName,
   primaryColor = '#1a2b4a',
   accentColor = '#c9a96e',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -231,6 +271,7 @@ export function DiptychCollageLayout({
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const photos = galleryUrls(photoUrl, galleryPhotoUrls);
   const photoH = Math.round(height * 0.56);
   const panelH = height - photoH;
@@ -239,9 +280,10 @@ export function DiptychCollageLayout({
   const headOp = stableTextOpacity(frame, 20, 38);
 
   return (
-    <AbsoluteFill style={{ background: primaryColor }}>
+    <AbsoluteFill style={{ background: '#000' }}>
       <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.35} />
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: photoH, display: 'flex', gap: 6, padding: 6, boxSizing: 'border-box' }}>
+      <FilmGrainOverlay opacity={0.05} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: photoH, display: 'flex', gap: 6, padding: 6, boxSizing: 'border-box', zIndex: 2 }}>
         {photos.slice(0, 2).map((url, i) => (
           <div key={url + i} style={{ flex: 1, overflow: 'hidden', borderRadius: 10 }}>
             <KenBurnsPhoto photoUrl={url} scaleMax={1.06 + i * 0.01} origin={i === 0 ? '30% 50%' : '70% 50%'} driftY={12} />
@@ -249,10 +291,18 @@ export function DiptychCollageLayout({
         ))}
       </div>
       <div style={{
-        position: 'absolute', top: photoH, left: 0, right: 0, height: panelH,
-        background: primaryColor, opacity: panelOp,
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: panelH + Math.round(height * 0.12),
+        background: brandPanelGradientCss(primaryColor, 0.94),
+        opacity: panelOp,
+        pointerEvents: 'none',
+        zIndex: 4,
+      }} />
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: panelH,
         display: 'flex', flexDirection: 'column', justifyContent: 'center',
-        padding: '24px 44px', borderTop: `3px solid ${accentColor}`,
+        padding: '24px 44px',
+        zIndex: 8,
+        ...stableTextLayerStyle,
       }}>
         <div style={{ position: 'absolute', top: 20, left: 44 }}>
           <StoryLogoMark logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.9} />
@@ -264,26 +314,28 @@ export function DiptychCollageLayout({
             fontWeight={headlineWeight ?? spec.heroWeight}
             fontSize={fontSize}
             color="#fff"
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
             frame={frame}
             fps={fps}
             startFrame={20}
             lineGap={1.08}
+            holdOpacity
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 18, color: 'rgba(255,255,255,0.72)', marginTop: 10, opacity: headOp }}>
-            {subtitle}
+          <span style={{ fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 10, opacity: headOp }}>
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
         {spec.showLocation && location ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 12, letterSpacing: 3, textTransform: 'uppercase', color: accentColor, marginTop: 12, opacity: headOp }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 12, letterSpacing: 3, textTransform: 'uppercase', color: textColors.category, marginTop: 12, opacity: headOp }}>
             {location}
           </span>
         ) : null}
         {spec.showCtaPill && cta ? <CtaPill cta={cta} accent={accentColor} fonts={fonts} opacity={headOp} /> : null}
       </div>
-      <FilmGrainOverlay opacity={0.08} />
     </AbsoluteFill>
   );
 }
@@ -297,6 +349,9 @@ export function MinimalLuxuryLayout({
   brandName,
   accentColor = '#c9a96e',
   primaryColor = '#1a2b4a',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -306,48 +361,55 @@ export function MinimalLuxuryLayout({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.1);
   const headOp = stableTextOpacity(frame, 24, 42);
   const frameOp = interpolate(frame, [0, 24], [0, 1], { extrapolateRight: 'clamp' });
 
   return (
     <AbsoluteFill style={{ background: '#000' }}>
-      <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.3} />
+      <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.22} />
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={1.05} origin="50% 40%" driftY={16} />
+      {/* Cinematic bottom scrim — eliminates harsh brand panel hard edge */}
       <AbsoluteFill style={{
-        background: `linear-gradient(to bottom, transparent 45%, rgba(0,0,0,${spec.overlayOpacity * 0.85}) 100%)`,
+        background: cinematicScrimCss(spec.overlayOpacity ?? 0.88, 38),
       }} />
+      {/* Inset frame — luxury signature */}
       <AbsoluteFill style={{
         boxSizing: 'border-box',
-        margin: '7%',
-        border: `1px solid ${accentColor}aa`,
+        margin: '6.5%',
+        border: `1px solid ${accentColor}88`,
         opacity: frameOp,
         pointerEvents: 'none',
-        boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.12)`,
+        boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 60px rgba(0,0,0,0.25)`,
       }} />
-      <FilmGrainOverlay opacity={0.07} />
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.88} paddingTop="8%" />
+      <FilmGrainOverlay opacity={0.06} fine />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.85} paddingTop="8%" />
       <AbsoluteFill style={{
         display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-        padding: '0 10% 12%', textAlign: spec.align,
+        padding: '0 10% 11%', textAlign: spec.align,
         alignItems: spec.align === 'center' ? 'center' : 'flex-start',
       }}>
         {categoryLabel ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 11, letterSpacing: 12, textTransform: 'uppercase',
-            color: accentColor, marginBottom: 16, opacity: headOp,
+            fontFamily: fonts.body, fontSize: 11, letterSpacing: 8, textTransform: 'uppercase',
+            color: textColors.category, marginBottom: 18, opacity: headOp,
+            textShadow: textShadowAmbient,
           }}>
             {categoryLabel}
           </span>
         ) : null}
-        <div style={{ width: 48, height: 1, background: accentColor, marginBottom: 20, opacity: headOp }} />
+        {/* Thinner, more refined hairline */}
+        <div style={{ width: 40, height: 1, background: accentColor, marginBottom: 22, opacity: headOp }} />
         <div style={{ maxWidth: '92%', ...stableTextLayerStyle }}>
           <HeadlineStack
             headline={headline}
             fontFamily={fonts.hero}
             fontWeight={headlineWeight ?? 400}
             fontSize={fontSize}
-            color="#fff"
+            color={textColors.headline}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
             tracking={spec.heroTracking}
             frame={frame}
@@ -359,13 +421,13 @@ export function MinimalLuxuryLayout({
         {subtitle ? (
           <span style={{
             fontFamily: fonts.body, fontSize: 20, fontStyle: 'italic',
-            color: 'rgba(255,255,255,0.72)', marginTop: 14, opacity: headOp,
+            color: textColors.subtitle, marginTop: 14, opacity: headOp,
           }}>
-            {subtitle}
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
         {spec.showLocation && location ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 12, letterSpacing: 4, color: accentColor, marginTop: 18, opacity: headOp * 0.85 }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 12, letterSpacing: 4, color: textColors.category, marginTop: 18, opacity: headOp * 0.85 }}>
             {location.toUpperCase()}
           </span>
         ) : null}
@@ -419,9 +481,12 @@ export function MosaicPinterestLayout({
       </div>
       <FilmGrainOverlay opacity={0.07} />
       <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: bandH + Math.round(height * 0.1),
+        background: brandPanelGradientCss(primaryColor, 0.95),
+        borderTop: `2px solid ${accentColor}55`,
+      }} />
+      <div style={{
         position: 'absolute', bottom: 0, left: 0, right: 0, height: bandH,
-        background: primaryColor,
-        borderTop: `4px solid ${accentColor}`,
         display: 'flex', flexDirection: 'column', justifyContent: 'center',
         padding: '0 40px',
       }}>
@@ -435,6 +500,8 @@ export function MosaicPinterestLayout({
             fontWeight={headlineWeight ?? spec.heroWeight}
             fontSize={fontSize}
             color="#fff"
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             frame={frame}
             fps={fps}
             startFrame={22}
@@ -442,8 +509,8 @@ export function MosaicPinterestLayout({
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 17, color: 'rgba(255,255,255,0.7)', marginTop: 8, opacity: headOp }}>
-            {subtitle.slice(0, 90)}
+          <span style={{ fontFamily: fonts.body, fontSize: 17, color: 'rgba(255,255,255,0.78)', marginTop: 8, opacity: headOp }}>
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
         {spec.showCtaPill && cta ? <CtaPill cta={cta} accent={accentColor} fonts={fonts} opacity={headOp} /> : null}
@@ -461,6 +528,9 @@ export function AsymmetricEditorialLayout({
   brandName,
   primaryColor = '#1a2b4a',
   accentColor = '#c9a96e',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -469,16 +539,45 @@ export function AsymmetricEditorialLayout({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
   const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale));
   const panelSlide = 0;
   const panelOp = interpolate(frame, [10, 28], [0, 1], { extrapolateRight: 'clamp' });
   const headOp = stableTextOpacity(frame, 24, 40);
 
+  const duotoneColor = spec.duotoneWash === 'accent' ? accentColor
+    : spec.duotoneWash === 'warm' ? '#ea580c'
+      : spec.duotoneWash === 'cool' ? '#0284c7'
+        : primaryColor;
+
   return (
-    <AbsoluteFill style={{ background: '#000' }}>
-      <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.2} />
+    <AbsoluteFill style={{ background: '#0a0a0f' }}>
+      <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.12} />
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin="30% 50%" driftY={20} />
-      <FilmGrainOverlay opacity={0.08} />
+      {spec.duotoneWash !== 'none' && (
+        <AbsoluteFill style={{
+          background: duotoneColor,
+          opacity: (spec.duotoneOpacity ?? 0.35) * 0.55,
+          mixBlendMode: 'soft-light',
+          pointerEvents: 'none',
+        }} />
+      )}
+      {spec.vignette !== 'none' && (
+        <AbsoluteFill style={{
+          background: `radial-gradient(ellipse at 28% 48%, transparent 42%, rgba(0,0,0,${spec.vignette === 'noir' ? 0.5 : 0.32}) 100%)`,
+          pointerEvents: 'none',
+        }} />
+      )}
+      <AbsoluteFill style={{
+        background: `linear-gradient(to bottom, transparent 58%, rgba(0,0,0,0.28) 100%)`,
+        pointerEvents: 'none',
+      }} />
+      <AbsoluteFill style={{
+        background: `linear-gradient(to right, transparent 38%, ${primaryColor}99 72%, ${primaryColor}dd 88%)`,
+        opacity: panelOp,
+        pointerEvents: 'none',
+      }} />
+      <FilmGrainOverlay opacity={0.06} />
       <div style={{ position: 'absolute', top: 48, left: 40, zIndex: 15 }}>
         <StoryLogoMark logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.95} />
       </div>
@@ -488,7 +587,7 @@ export function AsymmetricEditorialLayout({
         bottom: 0,
         width: '54%',
         minHeight: '42%',
-        background: primaryColor,
+        background: `linear-gradient(145deg, ${primaryColor}f2 0%, ${primaryColor} 62%, ${accentColor}18 100%)`,
         opacity: panelOp,
         transform: 'translateZ(0)',
         ...stableTextLayerStyle,
@@ -496,12 +595,13 @@ export function AsymmetricEditorialLayout({
         flexDirection: 'column',
         justifyContent: 'center',
         padding: '36px 40px',
-        borderLeft: `5px solid ${accentColor}`,
+        borderLeft: `3px solid ${accentColor}88`,
+        boxShadow: `-24px 0 48px ${primaryColor}55`,
       }}>
         {categoryLabel ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 10, letterSpacing: 10, textTransform: 'uppercase',
-            color: accentColor, marginBottom: 12,
+            fontFamily: fonts.body, fontSize: 13, letterSpacing: 10, textTransform: 'uppercase',
+            color: textColors.category, marginBottom: 12,
           }}>
             {categoryLabel}
           </span>
@@ -512,7 +612,9 @@ export function AsymmetricEditorialLayout({
             fontFamily={fonts.hero}
             fontWeight={headlineWeight ?? spec.heroWeight}
             fontSize={fontSize}
-            color="#fff"
+            color={textColors.headline}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={spec.heroUppercase}
             frame={frame}
             fps={fps}
@@ -521,11 +623,122 @@ export function AsymmetricEditorialLayout({
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 18, color: 'rgba(255,255,255,0.75)', marginTop: 12, opacity: headOp }}>
-            {subtitle}
+          <span style={{ fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 12, opacity: headOp }}>
+            {subtitle.slice(0, 120)}
           </span>
         ) : null}
       </div>
+    </AbsoluteFill>
+  );
+}
+
+/** Single hero polaroid — venue photo in tactile frame, editorial headline below */
+export function PolaroidSingleLayout({
+  photoUrl,
+  headline,
+  subtitle = '',
+  categoryLabel = '',
+  brandName,
+  accentColor = '#c9a96e',
+  primaryColor = '#1a2b4a',
+  categoryColor,
+  headlineColor,
+  subtitleColor,
+  headlineWeight,
+  headlineScale = 1,
+  logoUrl = '',
+  layoutSpec: spec,
+}: AgencyLayoutProps) {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ categoryColor, accentColor, headlineColor, subtitleColor });
+  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 0.92);
+  const headOp = stableTextOpacity(frame, 36, 52);
+  const cardOp = interpolate(frame, [4, 28], [0, 1], { extrapolateRight: 'clamp' });
+  const cardLift = Math.round(interpolate(frame, [4, 28], [28, 0], { extrapolateRight: 'clamp' }));
+  const rot = interpolate(frame, [8, 40], [-4, -2.5], { extrapolateRight: 'clamp' });
+
+  return (
+    <AbsoluteFill style={{ background: primaryColor }}>
+      <BrandStoryBackdrop primaryColor={primaryColor} accentColor={accentColor} />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="4.5%" />
+      <div
+        style={{
+          position: 'absolute',
+          top: '18%',
+          left: '50%',
+          width: '62%',
+          aspectRatio: '4/5',
+          transform: `translateX(-50%) translateY(${cardLift}px) rotate(${rot}deg)`,
+          background: '#faf8f5',
+          padding: 12,
+          paddingBottom: 44,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)',
+          opacity: cardOp,
+          boxSizing: 'border-box',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+          <KenBurnsPhoto photoUrl={photoUrl} scaleMax={1.06} origin="50% 42%" driftY={12} />
+        </div>
+      </div>
+      <AbsoluteFill
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+          padding: '0 40px 9%',
+          background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.35) 38%, transparent 62%)',
+        }}
+      >
+        {categoryLabel ? (
+          <span
+            style={{
+              fontFamily: fonts.body,
+              fontSize: 13,
+              letterSpacing: 10,
+              textTransform: 'uppercase',
+              color: textColors.category,
+              marginBottom: 10,
+              opacity: headOp,
+              ...stableTextLayerStyle,
+            }}
+          >
+            {categoryLabel}
+          </span>
+        ) : null}
+        <div style={{ opacity: headOp, ...stableTextLayerStyle }}>
+          <HeadlineStack
+            headline={headline}
+            fontFamily={fonts.hero}
+            fontWeight={headlineWeight ?? spec.heroWeight}
+            fontSize={fontSize}
+            color="#fff"
+            primaryColor={primaryColor}
+            accentColor={accentColor}
+            uppercase={spec.heroUppercase}
+            frame={frame}
+            fps={fps}
+            startFrame={32}
+            lineGap={1.06}
+          />
+        </div>
+        {subtitle ? (
+          <span
+            style={{
+              fontFamily: fonts.body,
+              fontSize: 17,
+              color: textColors.subtitle,
+              marginTop: 10,
+              opacity: headOp,
+            }}
+          >
+            {subtitle.slice(0, 120)}
+          </span>
+        ) : null}
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 }
@@ -539,6 +752,8 @@ export function PolaroidStackLayout({
   brandName,
   accentColor = '#c9a96e',
   primaryColor = '#1a2b4a',
+  subtitleColor,
+  headlineColor,
   headlineWeight,
   headlineScale = 1,
   logoUrl = '',
@@ -547,67 +762,128 @@ export function PolaroidStackLayout({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
+  const textColors = resolveStoryTextColors({ accentColor, headlineColor, subtitleColor });
   const photos = galleryUrls(photoUrl, galleryPhotoUrls);
+  const count = Math.min(photos.length, 3);
   const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 0.85);
   const headOp = stableTextOpacity(frame, 30, 48);
-  const polaroidOp = interpolate(frame, [0, 24], [0, 1], { extrapolateRight: 'clamp' });
+  const logoOp = stableTextOpacity(frame, 18, 34);
+  const hasCopy = Boolean(headline?.trim() || subtitle?.trim());
 
-  const frames = [
-    { url: photos[0], rot: -4, top: '14%', left: '8%', w: '42%' },
-    { url: photos[1] ?? photos[0], rot: 3, top: '12%', left: '48%', w: '44%' },
-    { url: photos[2] ?? photos[0], rot: -2, top: '38%', left: '26%', w: '48%' },
-  ].slice(0, Math.min(photos.length, 3));
+  /** Konumlar kolaj kutusuna göre — ekranın orta bandında dikey denge */
+  const layout2 = [
+    { url: photos[0], rot: -5, top: '10%', left: '4%', w: '48%', z: 2 },
+    { url: photos[1]!, rot: 4, top: '6%', left: '50%', w: '46%', z: 3 },
+  ];
+  const layout3 = [
+    { url: photos[0], rot: -6, top: '2%', left: '2%', w: '42%', z: 2 },
+    { url: photos[1]!, rot: 5, top: '0%', left: '52%', w: '42%', z: 3 },
+    { url: photos[2]!, rot: -2, top: '38%', left: '20%', w: '56%', z: 4 },
+  ];
+  const frames = count >= 3 ? layout3 : count === 2 ? layout2 : layout2.slice(0, 1);
+  const polaroidShadow = `0 28px 64px ${primaryColor}aa, 0 10px 28px rgba(0,0,0,0.35), 0 0 0 1px ${accentColor}44`;
 
   return (
-    <AbsoluteFill style={{ background: '#0a0a0f' }}>
-      <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.55} />
-      <FilmGrainOverlay opacity={0.09} />
-      {frames.map((f, i) => (
-        <div
-          key={i}
+    <AbsoluteFill style={{ background: primaryColor }}>
+      <BrandStoryBackdrop primaryColor={primaryColor} accentColor={accentColor} />
+
+      <div
+        style={{
+          position: 'absolute',
+          top: '20%',
+          left: '3%',
+          right: '3%',
+          height: '54%',
+          zIndex: 5,
+        }}
+      >
+        {frames.map((f, i) => {
+          const polaroidOp = interpolate(frame, [i * 7, i * 7 + 22], [0, 1], { extrapolateRight: 'clamp' });
+          const lift = Math.round(interpolate(frame, [i * 7, i * 7 + 22], [18, 0], { extrapolateRight: 'clamp' }));
+          return (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                top: f.top,
+                left: f.left,
+                width: f.w,
+                aspectRatio: '4/5',
+                background: '#faf8f5',
+                padding: 10,
+                paddingBottom: 38,
+                boxShadow: polaroidShadow,
+                transform: `rotate(${f.rot}deg) translateY(${lift}px)`,
+                opacity: polaroidOp,
+                boxSizing: 'border-box',
+                zIndex: f.z,
+              }}
+            >
+              <Img src={f.url ?? photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Logo — polaroidların altında, kurumsal vurgu çizgisi ile */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: hasCopy ? '17%' : '11%',
+          left: 0,
+          right: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+          zIndex: 25,
+          opacity: logoOp,
+          pointerEvents: 'none',
+        }}
+      >
+        <div style={{ width: 52, height: 2, background: accentColor, borderRadius: 1, opacity: 0.9 }} />
+        <StoryLogoInline
+          logoUrl={logoUrl}
+          brandName={brandName}
+          fontFamily={fonts.hero}
+          height={logoUrl ? 96 : 44}
+          opacity={1}
+        />
+      </div>
+
+      {hasCopy ? (
+        <AbsoluteFill
           style={{
-            position: 'absolute',
-            top: f.top,
-            left: f.left,
-            width: f.w,
-            aspectRatio: '4/5',
-            background: '#fff',
-            padding: 10,
-            paddingBottom: 36,
-            boxShadow: '0 24px 60px rgba(0,0,0,0.55)',
-            transform: `rotate(${f.rot}deg)`,
-            opacity: polaroidOp,
-            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            padding: '0 44px 8%',
+            background: `linear-gradient(to top, ${primaryColor}f2 0%, ${primaryColor}88 28%, transparent 52%)`,
+            zIndex: 12,
           }}
         >
-          <Img src={f.url ?? photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        </div>
-      ))}
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.9} paddingTop="3%" />
-      <AbsoluteFill style={{
-        display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-        padding: '0 44px 10%',
-        background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 45%)',
-      }}>
-        <div style={{ ...stableTextLayerStyle }}>
-          <HeadlineStack
-            headline={headline}
-            fontFamily={fonts.hero}
-            fontWeight={headlineWeight ?? spec.heroWeight}
-            fontSize={fontSize}
-            color="#fff"
-            frame={frame}
-            fps={fps}
-            startFrame={30}
-            lineGap={1.08}
-          />
-        </div>
-        {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 18, color: accentColor, marginTop: 10, opacity: headOp }}>
-            {subtitle.slice(0, 80)}
-          </span>
-        ) : null}
-      </AbsoluteFill>
+          <div style={{ ...stableTextLayerStyle }}>
+            <HeadlineStack
+              headline={headline}
+              fontFamily={fonts.hero}
+              fontWeight={headlineWeight ?? spec.heroWeight}
+              fontSize={fontSize}
+              color="#fff"
+              primaryColor={primaryColor}
+              accentColor={accentColor}
+              frame={frame}
+              fps={fps}
+              startFrame={30}
+              lineGap={1.08}
+            />
+          </div>
+          {subtitle ? (
+            <span style={{ fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 10, opacity: headOp }}>
+              {subtitle.slice(0, 120)}
+            </span>
+          ) : null}
+        </AbsoluteFill>
+      ) : null}
     </AbsoluteFill>
   );
 }

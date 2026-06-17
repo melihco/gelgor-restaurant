@@ -73,7 +73,8 @@ async def _run_actor(
 async def fetch_instagram_apify(handle: str, api_key: str, timeout: int = 60) -> dict[str, Any]:
     """
     Fetch Instagram profile + recent posts via Apify.
-    Returns the same shape as the original fetch_instagram_profile().
+    Returns the same shape as the original fetch_instagram_profile(), plus
+    per-post engagement metrics and post metadata for deep brand learning.
     """
     handle = handle.lstrip("@").strip()
     result: dict[str, Any] = {
@@ -89,6 +90,9 @@ async def fetch_instagram_apify(handle: str, api_key: str, timeout: int = 60) ->
         "feed_image_urls": [],
         "raw_fetch_ok": False,
         "source": "apify",
+        # New: per-post detail for deep brand analysis
+        "posts_detail": [],
+        "engagement_stats": {},
     }
 
     items = await _run_actor(
@@ -117,20 +121,66 @@ async def fetch_instagram_apify(handle: str, api_key: str, timeout: int = 60) ->
     captions: list[str] = []
     all_hashtags: list[str] = []
     image_urls: list[str] = []
+    posts_detail: list[dict[str, Any]] = []
+    likes_list: list[int] = []
+    comments_list: list[int] = []
 
     for post in posts[:20]:
         caption = post.get("caption") or post.get("text") or ""
-        if caption:
-            captions.append(caption[:400])
-            all_hashtags.extend(re.findall(r"#\w+", caption))
+        likes = post.get("likesCount") or post.get("likes") or 0
+        comments = post.get("commentsCount") or post.get("comments") or 0
+        timestamp = post.get("timestamp") or post.get("takenAtTimestamp") or ""
+        # type: "GraphImage" / "GraphVideo" / "GraphSidecar" → normalize
+        raw_type = post.get("type") or post.get("productType") or ""
+        if "video" in raw_type.lower() or raw_type in ("REEL", "Reel"):
+            post_type = "reel"
+        elif "sidecar" in raw_type.lower() or raw_type == "CAROUSEL_ALBUM":
+            post_type = "carousel"
+        else:
+            post_type = "image"
 
-        for img_key in ("displayUrl", "imageUrl", "thumbnailUrl", "display_url"):
+        img_url = ""
+        for img_key in ("displayUrl", "imageUrl", "display_url", "thumbnailUrl"):
             img = post.get(img_key)
             if isinstance(img, str) and img.startswith("http"):
-                image_urls.append(img.split("?")[0])
+                img_url = img.split("?")[0]
                 break
 
-    result["recent_captions"] = captions[:8]
+        if caption:
+            captions.append(caption[:500])
+            all_hashtags.extend(re.findall(r"#\w+", caption))
+        if img_url:
+            image_urls.append(img_url)
+        if isinstance(likes, int) and likes > 0:
+            likes_list.append(likes)
+        if isinstance(comments, int) and comments > 0:
+            comments_list.append(comments)
+
+        posts_detail.append({
+            "caption": caption[:500] if caption else "",
+            "likes": likes,
+            "comments": comments,
+            "timestamp": str(timestamp)[:20] if timestamp else "",
+            "type": post_type,
+            "image_url": img_url,
+        })
+
+    result["recent_captions"] = captions[:15]
+    result["posts_detail"] = posts_detail
+
+    # Engagement stats aggregate
+    follower_count = result["follower_count"] or 0
+    avg_likes = int(sum(likes_list) / len(likes_list)) if likes_list else 0
+    avg_comments = int(sum(comments_list) / len(comments_list)) if comments_list else 0
+    engagement_rate = round((avg_likes + avg_comments) / follower_count * 100, 2) if follower_count > 0 else 0
+    type_counts = Counter(p["type"] for p in posts_detail)
+    result["engagement_stats"] = {
+        "avg_likes": avg_likes,
+        "avg_comments": avg_comments,
+        "engagement_rate_pct": engagement_rate,
+        "post_type_distribution": dict(type_counts),
+        "total_posts_analyzed": len(posts_detail),
+    }
 
     tag_counts = Counter(all_hashtags)
     result["top_hashtags"] = [t for t, _ in tag_counts.most_common(15)]
@@ -151,6 +201,8 @@ async def fetch_instagram_apify(handle: str, api_key: str, timeout: int = 60) ->
         posts=len(posts),
         hashtags=len(result["top_hashtags"]),
         images=len(result["feed_image_urls"]),
+        avg_likes=avg_likes,
+        engagement_rate=engagement_rate,
     )
     return result
 
@@ -920,3 +972,149 @@ async def fetch_google_business_apify(url_or_name: str, api_key: str, timeout: i
         rating=result["rating"],
     )
     return result
+
+
+# ── Competitor Instagram profiles ──────────────────────────────────────────────
+
+async def fetch_competitor_instagram_profiles(
+    handles: list[str],
+    api_key: str,
+    timeout: int = 90,
+    max_posts: int = 10,
+) -> list[dict]:
+    """
+    Scrape competitor Instagram profiles via Apify.
+
+    Returns list of dicts with keys:
+        handle, bio, follower_count, post_count, top_content_types,
+        top_hashtags, avg_likes, recent_captions
+
+    Runs handles sequentially to stay within Apify free-tier memory limits.
+    Skips any handle that fails — caller always gets a safe (possibly empty) list.
+    """
+    results: list[dict] = []
+
+    for handle in handles[:4]:  # cap at 4 competitors — free-tier constraint
+        try:
+            raw = await fetch_instagram_apify(handle, api_key, timeout=timeout)
+
+            # Fetch raw posts separately to get per-post like counts.
+            # fetch_instagram_apify already called the actor once; we call it again
+            # with a small resultsLimit so we can read likesCount from post objects.
+            posts_raw: list[dict] = []
+            try:
+                items = await _run_actor(
+                    "apify~instagram-profile-scraper",
+                    {"usernames": [handle.lstrip("@").strip()], "resultsLimit": max_posts},
+                    api_key=api_key,
+                    timeout=timeout,
+                )
+                if items:
+                    posts_raw = items[0].get("latestPosts") or items[0].get("posts") or []
+            except Exception:
+                pass  # fall back to 0 avg_likes
+
+            like_counts = [p.get("likesCount") or p.get("likes") or 0 for p in posts_raw[:max_posts]]
+            avg_likes = int(sum(like_counts) / len(like_counts)) if like_counts else 0
+
+            # Infer content types from captions
+            captions_sample = raw.get("recent_captions", [])[:max_posts]
+            content_type_counts: Counter[str] = Counter()
+            for cap in captions_sample:
+                cap_lower = cap.lower()
+                if "reel" in cap_lower or "#reel" in cap_lower:
+                    content_type_counts["reels"] += 1
+                elif "story" in cap_lower or "hikaye" in cap_lower:
+                    content_type_counts["stories"] += 1
+                elif "carousel" in cap_lower or "swipe" in cap_lower:
+                    content_type_counts["carousel"] += 1
+                else:
+                    content_type_counts["feed_post"] += 1
+
+            top_content_types = [ct for ct, _ in content_type_counts.most_common(3)] or ["feed_post"]
+
+            results.append({
+                "handle": handle.lstrip("@").strip(),
+                "bio": raw.get("bio", ""),
+                "follower_count": raw.get("follower_count"),
+                "post_count": raw.get("post_count"),
+                "top_content_types": top_content_types,
+                "top_hashtags": raw.get("top_hashtags", [])[:5],
+                "avg_likes": avg_likes,
+                "recent_captions": captions_sample[:5],
+            })
+
+            logger.info(
+                "competitor_instagram_scraped",
+                handle=handle,
+                followers=raw.get("follower_count"),
+                avg_likes=avg_likes,
+            )
+
+        except Exception as exc:
+            logger.debug("competitor_instagram_skip", handle=handle, error=str(exc))
+            continue
+
+    return results
+
+
+# ── TikTok Trends ─────────────────────────────────────────────────────────────
+
+async def fetch_tiktok_trends(
+    keywords: list[str],
+    api_key: str,
+    timeout: int = 90,
+    max_videos: int = 20,
+) -> list[dict]:
+    """
+    Fetch trending TikTok videos matching keywords via Apify.
+    Used to discover viral hooks, formats, and sounds relevant to brand content.
+    Returns list of {text, playCount, likeCount, shareCount, soundTitle, hashtags} dicts.
+    """
+    if not keywords or not api_key:
+        return []
+    try:
+        items = await _run_actor(
+            "clockworks/tiktok-scraper",
+            {
+                "searchQueries": keywords[:3],
+                "resultsPerPage": max_videos,
+                "shouldDownloadVideos": False,
+                "shouldDownloadCovers": False,
+            },
+            api_key=api_key,
+            timeout=timeout,
+        )
+        results = []
+        for item in (items or []):
+            text = item.get("text") or item.get("desc") or ""
+            play = item.get("playCount") or item.get("stats", {}).get("playCount") or 0
+            likes = (
+                item.get("diggCount")
+                or item.get("likeCount")
+                or item.get("stats", {}).get("diggCount")
+                or 0
+            )
+            shares = item.get("shareCount") or item.get("stats", {}).get("shareCount") or 0
+            # Sound title: try musicMeta first, then music dict
+            music_meta = item.get("video", {}).get("musicMeta") or {}
+            sound = (
+                music_meta.get("musicName")
+                or item.get("music", {}).get("title")
+                or item.get("musicTitle")
+                or ""
+            )
+            hashtags = re.findall(r"#\w+", text.lower())
+            results.append({
+                "text": text[:200],
+                "playCount": play,
+                "likeCount": likes,
+                "shareCount": shares,
+                "soundTitle": sound,
+                "hashtags": hashtags[:8],
+            })
+        results.sort(key=lambda x: x["playCount"], reverse=True)
+        return results[:max_videos]
+    except Exception as exc:
+        logger.warning("fetch_tiktok_trends_failed", error=str(exc))
+        return []

@@ -30,14 +30,16 @@ Provider action usage is calculated from `ExecutionJob` records in the active su
 
 ## Package-Derived Quotas (PackagePlanCatalog)
 
-| Plan | Agent runs | Provider | Live | LLM tokens | SA Kredi/ay |
-|------|------------|----------|------|------------|-------------|
-| starter | 12 | 15 | 0 | 200k | 5.000 |
-| growth | 28 | 45 | 8 | 500k | 15.000 |
-| performance | 65 | 140 | 40 | 1M | 40.000 |
-| executive | ∞ | ∞ | ∞ | ∞ | 150.000 |
+| Plan | USD/ay | TRY/ay | Agent runs | Provider | Live | LLM tokens | SA Kredi/ay |
+|------|--------|--------|------------|----------|------|------------|-------------|
+| starter | $79 | 2.528₺ | 12 | 15 | 0 | 200k | 5.000 |
+| growth | $149 | 4.768₺ | 28 | 45 | 8 | 500k | 15.000 |
+| performance | $249 | 7.968₺ | 65 | 140 | 40 | 1M | 40.000 |
+| executive | $499 | 15.968₺ | ∞ | ∞ | ∞ | ∞ | 150.000 |
 
-Monthly output promises (missions × ~7 posts): Starter 12/84, Growth 28/196, Performance 65/455.
+Monthly outputs: Starter 12 misyon / 84 içerik, Growth 28/196, Performance 65/455 (+ reel kotası).
+
+Tahmini API COGS (tam kota, `package-plan-config.ts`): Starter ~$39, Growth ~$93, Performance ~$214, Executive cap ~$65 (20 misyon örnek).
 
 Token wallet exposes `cost_profit_ratio` (maliyet/kar) and `effective_margin_percent` on Usage & Plan screens.
 

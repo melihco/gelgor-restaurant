@@ -42,11 +42,15 @@ logger = structlog.get_logger()
 AI_THEME_SETTING_KEYS = (
     "ai_photo_enhance",
     "ai_photo_enhance_level",
+    "ai_enhance_gallery_selected",
     "ai_use_brand_identity",
     "ai_brief_drives_scene",
     "ai_embed_logo",
     "ai_enhance_formats",
     "ai_visual_subject",
+    "ai_adaptive_scene",
+    "ai_adaptive_scene_mode",
+    "ai_caption_driven_visual",
     "enable_visual_production_director",
 )
 
@@ -59,6 +63,9 @@ _CAMEL_AI_KEYS: dict[str, str] = {
     "aiEmbedLogo": "ai_embed_logo",
     "aiEnhanceFormats": "ai_enhance_formats",
     "aiVisualSubject": "ai_visual_subject",
+    "aiAdaptiveScene": "ai_adaptive_scene",
+    "aiAdaptiveSceneMode": "ai_adaptive_scene_mode",
+    "aiCaptionDrivenVisual": "ai_caption_driven_visual",
     "enableVisualProductionDirector": "enable_visual_production_director",
 }
 
@@ -139,6 +146,61 @@ _SECTOR_DEFAULTS: dict[str, dict] = {
         "typography": ThemeTypography(heading_font="Space Grotesk", body_font="Inter", text_overlay_density="medium", personality="sharp, innovative, confident"),
         "grading": ThemeGrading(look="digital modern", lut_directive="cool neutral, clean whites, accent color pops, high clarity"),
         "overlay": ThemeOverlay(opacity=0.3, color="#0f172a"),
+    },
+    # ── Extended sector coverage ───────────────────────────────────────────────
+    "hotel_resort": {
+        "palette": ThemePalette(primary="#1c2b1e", accent="#c9a84c", neutral="#f5f0e8", shadow="#0d1610", description="luxury nature retreat"),
+        "typography": ThemeTypography(heading_font="Cormorant Garamond", body_font="DM Sans", text_overlay_density="minimal", personality="refined, serene, prestigious"),
+        "grading": ThemeGrading(look="luxury warm editorial", lut_directive="warm highlights, rich greens, golden hour glow, cinematic depth"),
+        "overlay": ThemeOverlay(opacity=0.3, color="#1c2b1e"),
+    },
+    "barber_salon": {
+        "palette": ThemePalette(primary="#1a1a1a", accent="#c9a84c", neutral="#f5f0e0", shadow="#000000", description="dark gold classic barbershop"),
+        "typography": ThemeTypography(heading_font="Montserrat", body_font="DM Sans", text_overlay_density="medium", personality="classic, bold, masculine"),
+        "grading": ThemeGrading(look="dark editorial sharp", lut_directive="deep blacks, warm gold tones, sharp contrast, vintage grain"),
+        "overlay": ThemeOverlay(opacity=0.4, color="#1a1a1a"),
+    },
+    "fitness": {
+        "palette": ThemePalette(primary="#0d0d0d", accent="#ef4444", neutral="#f5f5f5", shadow="#000000", description="bold energetic sport"),
+        "typography": ThemeTypography(heading_font="Syne", body_font="Inter", text_overlay_density="medium", personality="energetic, motivational, powerful"),
+        "grading": ThemeGrading(look="high energy sport", lut_directive="punchy contrast, desaturated mid-tones, vivid accent, dynamic shadows"),
+        "overlay": ThemeOverlay(opacity=0.45, color="#0d0d0d"),
+    },
+    "fashion_retail": {
+        "palette": ThemePalette(primary="#f5f0ec", accent="#1a1a1a", neutral="#ffffff", shadow="#0d0d0d", description="editorial minimal light"),
+        "typography": ThemeTypography(heading_font="Josefin Sans", body_font="DM Sans", text_overlay_density="minimal", personality="editorial, sleek, aspirational"),
+        "grading": ThemeGrading(look="editorial fashion", lut_directive="bright, clean, minimal colour grading, fashion-editorial whites"),
+        "overlay": ThemeOverlay(opacity=0.2, color="#f5f0ec"),
+    },
+    "cafe_bakery": {
+        "palette": ThemePalette(primary="#4a2f1a", accent="#e8b87d", neutral="#fdf6ee", shadow="#2c1a0e", description="warm bakery artisan"),
+        "typography": ThemeTypography(heading_font="Fraunces", body_font="Lora", text_overlay_density="minimal", personality="cozy, artisan, welcoming"),
+        "grading": ThemeGrading(look="warm artisan", lut_directive="warm amber tones, soft bakery light, inviting shadows, slight grain"),
+        "overlay": ThemeOverlay(opacity=0.2, color="#4a2f1a"),
+    },
+    "tech_startup": {
+        "palette": ThemePalette(primary="#0a0a0f", accent="#7c3aed", neutral="#f8f8ff", shadow="#050508", description="dark tech innovative"),
+        "typography": ThemeTypography(heading_font="Space Grotesk", body_font="Inter", text_overlay_density="medium", personality="innovative, precise, forward-thinking"),
+        "grading": ThemeGrading(look="dark tech minimal", lut_directive="deep dark tones, vivid purple accent, high clarity, minimal film grain"),
+        "overlay": ThemeOverlay(opacity=0.35, color="#0a0a0f"),
+    },
+    "automotive": {
+        "palette": ThemePalette(primary="#0d0d0d", accent="#c0c0c0", neutral="#f0f0f0", shadow="#000000", description="dark metallic prestige"),
+        "typography": ThemeTypography(heading_font="Montserrat", body_font="DM Sans", text_overlay_density="medium", personality="powerful, precise, aspirational"),
+        "grading": ThemeGrading(look="automotive prestige", lut_directive="deep blacks, metallic highlights, cinematic wide, low saturation"),
+        "overlay": ThemeOverlay(opacity=0.45, color="#0d0d0d"),
+    },
+    "dental": {
+        "palette": ThemePalette(primary="#f0f9ff", accent="#0ea5e9", neutral="#ffffff", shadow="#0c4a6e", description="bright clinical smile"),
+        "typography": ThemeTypography(heading_font="Inter", body_font="DM Sans", text_overlay_density="minimal", personality="clean, trustworthy, friendly"),
+        "grading": ThemeGrading(look="bright clinical", lut_directive="cool clean whites, bright tones, sky-blue accent, no shadows"),
+        "overlay": ThemeOverlay(opacity=0.12, color="#0c4a6e"),
+    },
+    "nightclub_lounge": {
+        "palette": ThemePalette(primary="#0a0a14", accent="#e040fb", neutral="#1a1a2e", shadow="#000000", description="dark neon nightlife"),
+        "typography": ThemeTypography(heading_font="Syne", body_font="Montserrat", text_overlay_density="medium", personality="bold, electric, nocturnal"),
+        "grading": ThemeGrading(look="dark neon editorial", lut_directive="crushed blacks, vivid neon accents, dramatic shadows, cinematic"),
+        "overlay": ThemeOverlay(opacity=0.5, color="#0a0a14"),
     },
 }
 
@@ -391,6 +453,9 @@ def _derive_motion_profile(
             (existing or {}).get("media_policy") or media_by_sector.get(sector_key, ThemeMediaPolicy()).model_dump()
         ),
         audio_mood_pool=(existing or {}).get("audio_mood_pool") or ["ambient chill", "lounge jazz", "acoustic folk"],
+        story_audio_mood=(existing or {}).get("story_audio_mood"),
+        story_audio_mode=(existing or {}).get("story_audio_mode") or "music_and_voice",
+        story_voice_id=(existing or {}).get("story_voice_id") or "nova",
         operator_override=bool((existing or {}).get("operator_override")),
     )
 
@@ -513,6 +578,7 @@ async def derive_brand_theme(ctx: "BrandContext") -> BrandTheme:
         contrast_valid=contrast_valid,
         ai_photo_enhance=bool(ai_settings.get("ai_photo_enhance", False)),
         ai_photo_enhance_level=str(ai_settings.get("ai_photo_enhance_level", "moderate")),
+        ai_enhance_gallery_selected=bool(ai_settings.get("ai_enhance_gallery_selected", True)),
         ai_use_brand_identity=bool(ai_settings.get("ai_use_brand_identity", True)),
         ai_brief_drives_scene=bool(ai_settings.get("ai_brief_drives_scene", True)),
         ai_embed_logo=bool(ai_settings.get("ai_embed_logo", True)),
@@ -520,6 +586,8 @@ async def derive_brand_theme(ctx: "BrandContext") -> BrandTheme:
         if isinstance(ai_settings.get("ai_enhance_formats"), list)
         else ["post", "story", "carousel", "reel"],
         ai_visual_subject=str(ai_settings.get("ai_visual_subject", "auto")),
+        ai_adaptive_scene=bool(ai_settings.get("ai_adaptive_scene", False)),
+        ai_adaptive_scene_mode=str(ai_settings.get("ai_adaptive_scene_mode", "auto")),
         enable_visual_production_director=bool(
             ai_settings.get("enable_visual_production_director", False),
         ),
@@ -537,18 +605,52 @@ async def derive_brand_theme(ctx: "BrandContext") -> BrandTheme:
     return theme
 
 
-async def save_brand_theme(ctx: "BrandContext", theme: "BrandTheme", db) -> None:
+def _merge_theme_dict_for_save(
+    incoming: dict,
+    existing: dict | None,
+) -> dict:
+    """Preserve operator-locked template_library + extra keys across derive/save cycles."""
+    merged = dict(incoming)
+    if not isinstance(existing, dict):
+        return merged
+
+    existing_lib = existing.get("template_library")
+    incoming_lib = merged.get("template_library")
+    if isinstance(existing_lib, dict) and existing_lib.get("slots"):
+        if not isinstance(incoming_lib, dict) or not incoming_lib.get("slots"):
+            merged["template_library"] = existing_lib
+        elif existing_lib.get("locked") and not incoming_lib.get("locked"):
+            merged["template_library"] = {**existing_lib, **incoming_lib, "locked": True}
+
+    for key in ("announcement_templates", "mertcafe_instagram_accounts", "mertcafe_api_key"):
+        if key in existing and key not in merged:
+            merged[key] = existing[key]
+
+    return merged
+
+
+async def save_brand_theme(ctx: "BrandContext", theme: "BrandTheme | dict", db) -> None:
     """Persist a derived or manually-overridden BrandTheme to brand_context."""
     from datetime import datetime, timezone
     from sqlalchemy import update
     from app.models.brand_context import BrandContext
+
+    if hasattr(theme, "model_dump"):
+        theme_dict = theme.model_dump(mode="json")
+    elif isinstance(theme, dict):
+        theme_dict = dict(theme)
+    else:
+        theme_dict = {}
+
+    existing = ctx.brand_theme if isinstance(ctx.brand_theme, dict) else {}
+    theme_dict = _merge_theme_dict_for_save(theme_dict, existing)
 
     await db.execute(
         update(BrandContext)
         .where(BrandContext.workspace_id == ctx.workspace_id)
         .execution_options(synchronize_session=False)
         .values(
-            brand_theme=theme.model_dump(mode="json"),
+            brand_theme=theme_dict,
             brand_theme_updated_at=datetime.now(timezone.utc),
         )
     )

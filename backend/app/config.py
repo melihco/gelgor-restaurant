@@ -48,7 +48,16 @@ class Settings(BaseSettings):
 
     # Anthropic Claude — best for creative content (brand voice, captions, copy)
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_model: str = "claude-sonnet-4-6"
+    anthropic_mcp_model: str = "claude-sonnet-4-6"
+
+    # Agent MCP skill — optional remote MCP servers; Claude fallback when unset
+    agent_mcp_enabled: bool = True
+    # Local design MCP (default http://127.0.0.1:8010/mcp) — start with scripts/start-design-mcp.sh
+    mcp_design_url: str = "http://127.0.0.1:8010/mcp"
+    mcp_auth_token: str = ""
+    # Optional remote: [{"name":"smartagency-design","url":"https://host/mcp","authorization_token_env":"MCP_AUTH_TOKEN"}]
+    mcp_servers_json: str = ""
 
     # Perplexity — real-time web search for agent market research
     # Get key at: https://www.perplexity.ai/settings/api
@@ -166,8 +175,8 @@ class Settings(BaseSettings):
     auto_content_hour: int = 9       # UTC (TR 12:00) — kept for env override; scheduler now runs every 6h
     auto_content_max_daily: int = 12  # max auto-missions per workspace per day (pilot testing)
     workspace_daily_budget_usd: float = 50.0  # full-quality runs (Runway + Remotion + GPT enhance)
-    # Pilot: AUTO_PRODUCE_BYPASS_LIMITS=true skips daily USD cap in usage_cost_service
-    auto_produce_bypass_limits: bool = False
+    # Varsayılan kapalı kota; AUTO_PRODUCE_BYPASS_LIMITS=false ile günlük USD limiti açılır
+    auto_produce_bypass_limits: bool = True
 
     # ── Token billing (SA Kredi) ─────────────────────────
     # Customer price = API cost × TOKEN_MARKUP_MULTIPLIER (default 10×)

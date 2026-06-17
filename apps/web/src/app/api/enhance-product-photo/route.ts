@@ -43,13 +43,20 @@ import {
   type LogoPlacement,
 } from '@/lib/logo-compositor';
 import { buildAiEnhanceContextCaption } from '@/lib/ai-gallery-enhance';
-import { resolveVisualSubject, type AiVisualSubject } from '@/lib/ai-visual-production-standard';
+import { resolveVisualSubject, type AiVisualSubject, type ResolvedVisualSubject } from '@/lib/ai-visual-production-standard';
 import {
+  GPT_IMAGE_ENHANCE_COST_USD,
   isPersistableEnhanceUrl,
   normalizeGalleryPhotoUrls,
   type GalleryEnhanceRequest,
   type GalleryEnhanceResultItem,
 } from '@/lib/gallery-photo-enhance-api';
+import {
+  classifyOpenAiError,
+  isOpenAiQuotaOrBillingError,
+  markOpenAiQuotaBlocked,
+} from '@/lib/openai-error-utils';
+import { recordWorkspaceUsageCost } from '@/lib/usage-cost-client';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -77,6 +84,8 @@ const SECTOR_BACKGROUNDS: Record<string, string> = {
   saas:            'minimal SaaS brand environment, soft blue-purple gradient, clean modern workspace aesthetic',
   b2b:             'corporate modern office backdrop, neutral slate tones, confident professional lighting',
   consulting:      'upscale consulting firm setting, warm neutral gradient, editorial professionalism',
+  logistics:       'active logistics yard or highway corridor, fleet vehicles, industrial daylight, operational authenticity',
+  local_service:   'real on-site service environment, practical lighting, trustworthy local business context',
 };
 
 function getSectorBackground(businessType: string, caption: string): string {
@@ -101,6 +110,12 @@ function getSectorBackground(businessType: string, caption: string): string {
   if (/spor|fitness|antrenman|sport|workout/i.test(cap)) {
     return SECTOR_BACKGROUNDS.sports_fitness!;
   }
+  if (/nakliyat|lojistik|logistics|transport|freight|taşımacılık|kargo/i.test(bt + cap)) {
+    return SECTOR_BACKGROUNDS.logistics!;
+  }
+  if (/zeytin|olive|ağaç|grove|çiftlik|farm/i.test(cap)) {
+    return 'sunlit olive grove with natural trees and golden Mediterranean light, authentic agricultural setting';
+  }
 
   if (/agency|ajans|marketing|saas|b2b|consulting|danışmanlık|yazılım|software/i.test(bt + cap)) {
     if (/saas|yazılım|software|platform|b2b/i.test(bt + cap)) return SECTOR_BACKGROUNDS.saas!;
@@ -119,8 +134,15 @@ function resolveDirectorCaption(caption: string, headline: string, missionBrief:
 }
 
 function preservationBlock(
-  visualSubject: 'venue_ambiance' | 'product_hero',
+  visualSubject: ResolvedVisualSubject,
 ): string {
+  if (visualSubject === 'digital_ui') {
+    return `⚠️ DIGITAL PRODUCT PRESERVATION — NEVER VIOLATE:
+• Show SaaS dashboard, appointment UI, mobile app screen, or abstract tech workspace
+• Do NOT replace with a physical shop storefront, street scene, or barber salon exterior
+• Do NOT invent gibberish signage or fake venue branding in the image
+• Preserve any real UI/screenshot pixels; only adjust lighting and device framing`;
+  }
   if (visualSubject === 'venue_ambiance') {
     return `⚠️ VENUE PRESERVATION — NEVER VIOLATE:
 • Keep the real venue interior, architecture, furniture, mirrors, and staff EXACTLY as photographed
@@ -141,12 +163,19 @@ function buildQuickSceneBrief(
   productType: string,
   level: EnhanceLevel,
   businessType: string,
-  visualSubject: 'venue_ambiance' | 'product_hero',
+  visualSubject: ResolvedVisualSubject,
 ): Record<string, unknown> {
   const bg = getSectorBackground(businessType, caption + ' ' + productType);
   const isVenue = visualSubject === 'venue_ambiance';
+  const isDigital = visualSubject === 'digital_ui';
 
-  const levelInstructions: Record<EnhanceLevel, string> = isVenue
+  const levelInstructions: Record<EnhanceLevel, string> = isDigital
+    ? {
+        subtle: 'ONLY refine lighting on device/UI mockup. Do NOT add storefront or street background.',
+        moderate: 'Place UI in clean desk/laptop or mobile mockup with soft professional light. No physical shop scene.',
+        full: 'Editorial SaaS hero: device mockup + abstract tech gradient or modern office blur. Never a barber shop exterior.',
+      }
+    : isVenue
     ? {
         subtle: 'ONLY enhance lighting and color grade on the existing venue photo. Do NOT change layout or replace the space.',
         moderate: 'Refine lighting, color grade, and subtle atmosphere to match the post brief. Keep the same room and fixtures visible.',
@@ -158,7 +187,7 @@ function buildQuickSceneBrief(
         full: `Full scene transformation: (1) new background: "${bg}"; (2) cinematic golden-hour or editorial lighting; (3) 1-2 contextual props at scene edges; (4) lens compression, shallow depth of field; (5) magazine-quality composition.`,
       };
 
-  const prompt = `${isVenue ? 'Venue' : 'Product'} photography enhancement for ${brandName}.
+  const prompt = `${isDigital ? 'Digital product' : isVenue ? 'Venue' : 'Product'} photography enhancement for ${brandName}.
 
 ${preservationBlock(visualSubject)}
 
@@ -189,7 +218,7 @@ async function getSceneBrief(opts: {
   level: EnhanceLevel;
   businessType: string;
   brandName: string;
-  visualSubject: 'venue_ambiance' | 'product_hero';
+  visualSubject: ResolvedVisualSubject;
 }): Promise<Record<string, unknown>> {
   const { workspaceId, caption, productType, level, businessType, brandName, visualSubject } = opts;
 
@@ -240,7 +269,9 @@ async function getSceneBrief(opts: {
         response_format: { type: 'json_object' },
         messages: [{
           role: 'system',
-          content: visualSubject === 'venue_ambiance'
+          content: visualSubject === 'digital_ui'
+            ? `You are a B2B SaaS product photography art director. Brand identity is in the caption block. Show dashboard/UI/device mockups — NEVER a physical shop storefront. Output JSON: gpt_image2_prompt, logo_placement, logo_size_pct, logo_opacity, background_concept, sector_archetype, mood_words.`
+            : visualSubject === 'venue_ambiance'
             ? `You are a venue/social photography art director. Brand identity is in the caption block; post brief controls mood/lighting only. NEVER replace the real venue. Output JSON: gpt_image2_prompt, logo_placement, logo_size_pct, logo_opacity, background_concept, sector_archetype, mood_words.`
             : `You are a product photography art director. Brand identity is in the caption block; post brief controls scene mood. Output JSON: gpt_image2_prompt, logo_placement, logo_size_pct, logo_opacity, background_concept, sector_archetype, mood_words.`,
         }, {
@@ -327,14 +358,24 @@ async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
   }
 
   const imageFile = new File([new Uint8Array(imageBuffer)], 'product.jpg', { type: 'image/jpeg' });
-  const response = await openai.images.edit({
-    model: 'gpt-image-2',
-    image: imageFile,
-    prompt: enhancePrompt,
-    n: 1,
-    size: '1024x1024',
-    quality: 'high',
-  });
+  let response;
+  try {
+    response = await openai.images.edit({
+      model: 'gpt-image-2',
+      image: imageFile,
+      prompt: enhancePrompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'high',
+    });
+  } catch (err: unknown) {
+    if (isOpenAiQuotaOrBillingError(err)) {
+      const wrapped = new Error('OpenAI quota or billing limit reached') as Error & { code: string };
+      wrapped.code = classifyOpenAiError(err);
+      throw wrapped;
+    }
+    throw err;
+  }
 
   const b64 = response.data?.[0]?.b64_json;
   const rawUrl = response.data?.[0]?.url;
@@ -381,6 +422,55 @@ async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
   return { imageUrl: finalImageUrl, logoApplied, stages };
 }
 
+function resolveSceneBriefForRequest(input: {
+  prebuilt?: Record<string, unknown>;
+  postSceneBlock?: string;
+  workspaceId: string;
+  caption: string;
+  productType: string;
+  level: EnhanceLevel;
+  businessType: string;
+  brandName: string;
+  visualSubject: ResolvedVisualSubject;
+}): Promise<Record<string, unknown>> {
+  const prebuilt = input.prebuilt;
+  if (prebuilt?.gpt_image2_prompt) {
+    console.log(
+      `[enhance-product] reusing mission scene brief (${String(prebuilt._source ?? 'prebuilt')})`,
+    );
+    return Promise.resolve(prebuilt);
+  }
+
+  const hasDirectorContext = Boolean(
+    input.postSceneBlock?.includes('POST SCENE BRIEF')
+    || input.postSceneBlock?.includes('ADAPTIVE SCENE')
+    || input.postSceneBlock?.includes('BRAND IDENTITY'),
+  );
+  if (hasDirectorContext) {
+    console.log('[enhance-product] quick scene brief (director blocks in caption — no Crew call)');
+    return Promise.resolve(
+      buildQuickSceneBrief(
+        input.caption,
+        input.brandName,
+        input.productType,
+        input.level,
+        input.businessType,
+        input.visualSubject,
+      ),
+    );
+  }
+
+  return getSceneBrief({
+    workspaceId: input.workspaceId,
+    caption: input.caption,
+    productType: input.productType,
+    level: input.level,
+    businessType: input.businessType,
+    brandName: input.brandName,
+    visualSubject: input.visualSubject,
+  });
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -416,10 +506,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const visualSubject = resolveVisualSubject(rawSubject, businessType);
 
   const directorCaption = resolveDirectorCaption(caption, headline, missionBrief);
+  const missionId = body.missionId;
   const t0 = Date.now();
 
   try {
-    const sceneBrief = await getSceneBrief({
+    const sceneBrief = await resolveSceneBriefForRequest({
+      prebuilt: body.prebuiltSceneBrief,
+      postSceneBlock: body.postSceneBlock,
       workspaceId,
       caption: directorCaption,
       productType,
@@ -429,10 +522,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       visualSubject,
     });
 
+    let quotaErrorCode: string | null = null;
     const results: GalleryEnhanceResultItem[] = await Promise.all(
       photoUrls.map(async (photoUrl): Promise<GalleryEnhanceResultItem> => {
         try {
-          const { imageUrl, logoApplied, stages } = await runSingleGalleryEnhance({
+          const { imageUrl } = await runSingleGalleryEnhance({
             apiKey,
             photoUrl,
             directorCaption,
@@ -448,6 +542,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           });
           return { original: photoUrl, imageUrl };
         } catch (err: unknown) {
+          const code = (err as { code?: string })?.code ?? classifyOpenAiError(err);
+          if (code === 'openai_quota_exceeded' || code === 'billing_hard_limit') {
+            quotaErrorCode = code;
+          }
           const msg = err instanceof Error ? err.message : 'Enhance failed';
           return { original: photoUrl, imageUrl: null, error: msg };
         }
@@ -467,10 +565,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
 
     if (!primary) {
+      if (quotaErrorCode) markOpenAiQuotaBlocked();
+      const status = quotaErrorCode ? 429 : 500;
       return NextResponse.json(
-        { error: 'No photo could be enhanced', results, photoCount: photoUrls.length },
-        { status: 500 },
+        {
+          error: quotaErrorCode
+            ? 'OpenAI kota veya billing limiti doldu — enhance atlandı'
+            : 'No photo could be enhanced',
+          code: quotaErrorCode ?? 'enhance_failed',
+          results,
+          photoCount: photoUrls.length,
+        },
+        { status },
       );
+    }
+
+    if (workspaceId) {
+      const enhanceCost = GPT_IMAGE_ENHANCE_COST_USD * imageUrls.length;
+      void recordWorkspaceUsageCost(workspaceId, 'gpt_image_enhance', enhanceCost, {
+        artifactCount: imageUrls.length,
+      });
     }
 
     return NextResponse.json({

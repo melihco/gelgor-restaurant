@@ -18,6 +18,7 @@ from app.config import get_settings
 from app.crew.agents.intelligence_agent import create_intelligence_agent
 from app.crew.context import BrandInfo, build_brand_context_prompt
 from app.crew.cta_localization import resolve_output_language
+from app.crew.registry import VALID_AGENT_TASK_MAP
 from app.crew.prompts.intelligence_prompts import INTELLIGENCE_TASK_PROMPT
 from app.crew.token_usage import total_tokens_from_crew
 from app.crew.tools.workspace_health import WorkspaceHealthAnalyzerTool
@@ -118,39 +119,9 @@ def _parse_recommendations(raw: str) -> list[dict]:
 
 _VALID_PRIORITIES = {"critical", "high", "medium", "low"}
 
-# Authoritative agent → allowed task_types mapping (mirrors engine.py AGENT_ROLES).
-# Used to cross-validate that the CEO agent doesn't mix roles and tasks.
-# Ordered list so the first item is always the safest default for that agent.
-_AGENT_TASK_MAP: dict[str, list[str]] = {
-    "review_agent":           ["review_analysis", "single_review_response"],
-    "content_agent":          ["content_ideation", "content_calendar", "visual_design_cards"],
-    "content_strategy_agent": ["content_strategy"],
-    "ads_agent":              ["campaign_analysis", "ads_budget_optimization"],
-    "analytics_agent":        ["traffic_analysis", "weekly_performance", "conversion_report"],
-}
-
 # Flat sets for individual field validation
-_VALID_AGENTS    = set(_AGENT_TASK_MAP.keys())
-_VALID_TASK_TYPES = {t for tasks in _AGENT_TASK_MAP.values() for t in tasks}
-
-
-def _fix_agent_task_pair(agent_role: str, task_type: str) -> tuple[str, str]:
-    """
-    Ensure agent_role and task_type are a valid combination.
-    If the pair is invalid, keep the agent_role and pick its default task_type.
-    Returns (agent_role, task_type) that is guaranteed to pass engine validation.
-    """
-    if agent_role not in _VALID_AGENTS:
-        agent_role = "content_agent"
-    if task_type not in _AGENT_TASK_MAP.get(agent_role, set()):
-        # Pick the first valid task_type for this agent
-        task_type = next(iter(_AGENT_TASK_MAP[agent_role]))
-        logger.warning(
-            "intelligence_task_type_corrected",
-            agent_role=agent_role,
-            corrected_to=task_type,
-        )
-    return agent_role, task_type
+_VALID_AGENTS    = set(VALID_AGENT_TASK_MAP.keys())
+_VALID_TASK_TYPES = {t for tasks in VALID_AGENT_TASK_MAP.values() for t in tasks}
 
 
 def _validate_recommendations(items: list) -> list[dict]:
@@ -160,9 +131,16 @@ def _validate_recommendations(items: list) -> list[dict]:
         if not isinstance(item, dict):
             continue
 
-        raw_agent = item.get("agent_role", "content_agent")
-        raw_task  = item.get("task_type",  "content_ideation")
-        agent_role, task_type = _fix_agent_task_pair(raw_agent, raw_task)
+        agent_role = str(item.get("agent_role", "content_agent")).strip()
+        task_type = str(item.get("task_type", "content_ideation")).strip()
+        if agent_role not in _VALID_AGENTS or task_type not in VALID_AGENT_TASK_MAP.get(agent_role, set()):
+            logger.warning(
+                "intelligence_invalid_recommendation_dropped",
+                agent_role=agent_role,
+                task_type=task_type,
+                title=str(item.get("title", ""))[:80],
+            )
+            continue
 
         rec = {
             "priority":         item.get("priority", "medium") if item.get("priority") in _VALID_PRIORITIES else "medium",

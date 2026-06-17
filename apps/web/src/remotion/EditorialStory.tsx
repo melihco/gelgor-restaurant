@@ -24,6 +24,7 @@ import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
 import { HeadlineStack, headlineSize, stablePx, stableScale, stableTextOpacity } from './shared/story-primitives';
+import { StoryAudioLayer } from './shared/story-audio';
 
 export const EditorialStory: React.FC<StoryProps> = ({
   photoUrl,
@@ -39,6 +40,8 @@ export const EditorialStory: React.FC<StoryProps> = ({
   headlineWeight = 900,
   headlineScale = 1.0,
   logoUrl = '',
+  audioMood,
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('serif_editorial', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -131,7 +134,7 @@ export const EditorialStory: React.FC<StoryProps> = ({
           position: 'absolute',
           left: 0, bottom: '6%',
           width: 4,
-          height: `${barH * 1.2}px`,
+          height: `${Math.round(barH * 1.2)}px`,
           maxHeight: 180,
           background: accentColor,
           borderRadius: '0 2px 2px 0',
@@ -157,7 +160,7 @@ export const EditorialStory: React.FC<StoryProps> = ({
             {/* Horizontal rule — wipes right */}
             <div style={{
               height: 1, background: `linear-gradient(to right, ${accentColor}CC, transparent)`,
-              width: `${ruleW * 2}px`, maxWidth: 120,
+              width: `${Math.round(ruleW * 2)}px`, maxWidth: 120,
               flexShrink: 0,
             }} />
           </div>
@@ -171,6 +174,8 @@ export const EditorialStory: React.FC<StoryProps> = ({
             fontWeight={headlineWeight ?? 900}
             fontSize={fontSize}
             color="#ffffff"
+            primaryColor={primaryColor}
+            accentColor={accentColor}
             uppercase={false}
             tracking={letterSp >= 3 ? 0.2 : letterSp >= 1 ? 0.08 : 0.02}
             frame={frame}
@@ -185,7 +190,7 @@ export const EditorialStory: React.FC<StoryProps> = ({
         {subtitle && (
           <div style={{ opacity: subOp, marginBottom: 28, paddingLeft: 2 }}>
             <span style={{
-              fontFamily: hero, fontWeight: 300, fontStyle: 'italic', fontSize: 28,
+              fontFamily: hero, fontWeight: 300, fontStyle: 'italic', fontSize: 22,
               color: 'rgba(255,255,255,0.90)', letterSpacing: 1.2, lineHeight: 1.5,
               display: 'block', maxWidth: '88%',
               textShadow: '0 1px 8px rgba(0,0,0,0.95), 0 3px 20px rgba(0,0,0,0.80)',
@@ -208,6 +213,7 @@ export const EditorialStory: React.FC<StoryProps> = ({
           </span>
         </div>
       </AbsoluteFill>
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
     </AbsoluteFill>
   );
 };

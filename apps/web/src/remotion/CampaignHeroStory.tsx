@@ -24,6 +24,7 @@ import {
   stableTextOpacity,
   useStableTextReveal,
 } from './shared/story-primitives';
+import { StoryAudioLayer } from './shared/story-audio';
 
 export const CampaignHeroStory: React.FC<StoryProps> = ({
   photoUrl,
@@ -39,6 +40,8 @@ export const CampaignHeroStory: React.FC<StoryProps> = ({
   headlineScale = 1.0,
   logoUrl = '',
   cta = '',
+  audioMood,
+  voiceoverUrl,
 }) => {
   const { hero, body } = useRemotionFonts('sans_modern', fontFamily, bodyFont);
   const frame = useCurrentFrame();
@@ -60,6 +63,7 @@ export const CampaignHeroStory: React.FC<StoryProps> = ({
 
   return (
     <AbsoluteFill style={{ background: '#000', overflow: 'hidden' }}>
+      <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
       <AbsoluteFill style={{ transform: `scale(${photoScale})`, transformOrigin: 'center center' }}>
         <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       </AbsoluteFill>
@@ -142,7 +146,7 @@ export const CampaignHeroStory: React.FC<StoryProps> = ({
 
       <AbsoluteFill style={{
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-        paddingBottom: '3.5%', opacity: interpolate(frame, [60, 78], [0, 0.5], { extrapolateRight: 'clamp' }),
+        paddingBottom: '3.5%', opacity: interpolate(frame, [60, 78], [0, 0.5], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
       }}>
         <div style={{ width: '14%', height: 2, borderRadius: 1, background: accentColor }} />
       </AbsoluteFill>

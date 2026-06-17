@@ -2,18 +2,9 @@
  * BFF route — Brand Readiness Score (BRS).
  *
  * GET /api/brand-readiness/{tenantId}
- *
- * Composes several Python brand-context endpoints into one stable contract for
- * the mobile + Hub UI, then scores them with the pure `computeBrandReadiness`
- * library. See docs/foundation-sprint-program.md § Sprint 1.
- *
- * Sub-requests (all best-effort — a failing one degrades that check, never the route):
- *   - GET /api/v1/brand-context/{id}                  → constitution, discovery, refs, pillars, ctas, logo
- *   - GET /api/v1/brand-context/{id}/gallery-analysis → { [url]: analysis }
- *   - GET /api/v1/brand-context/{id}/theme            → { theme, updated_at }
- *   - GET /api/v1/brand-context/{id}/all-briefs       → { brand_dna, ... }
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { readBrandContextFromDb } from '@/lib/brand-context-db-fallback';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import {
@@ -23,8 +14,10 @@ import {
   type BrandReadinessInputs,
 } from '@/lib/brand-readiness';
 import { parseBrandTemplateLibraryFromTheme } from '@/lib/brand-template-library';
+import { brsCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 interface BrandContextRaw {
   reference_image_urls?: unknown;
@@ -33,10 +26,51 @@ interface BrandContextRaw {
   discovery_confidence?: number | null;
   brand_constitution_confirmed_at?: string | null;
   logo_url?: string | null;
+  gallery_analysis?: unknown;
+  brand_dna?: unknown;
+  brand_theme?: unknown;
+  visual_dna?: unknown;
 }
 
 function isNonEmptyObject(v: unknown): boolean {
   return Boolean(v) && typeof v === 'object' && Object.keys(v as object).length > 0;
+}
+
+function parseJsonField(raw: unknown): unknown {
+  if (raw == null) return null;
+  if (typeof raw === 'object') return raw;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function galleryMapFromContext(ctx: BrandContextRaw): Record<string, unknown> {
+  const parsed = parseJsonField(ctx.gallery_analysis);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return {};
+}
+
+function themeFromContext(ctx: BrandContextRaw): Record<string, unknown> | undefined {
+  const parsed = parseJsonField(ctx.brand_theme);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function briefsFromContext(ctx: BrandContextRaw): {
+  brand_dna?: unknown;
+  visual_dna?: unknown;
+} {
+  return {
+    brand_dna: parseJsonField(ctx.brand_dna) ?? ctx.brand_dna,
+    visual_dna: parseJsonField(ctx.visual_dna) ?? ctx.visual_dna,
+  };
 }
 
 export async function GET(
@@ -47,26 +81,45 @@ export async function GET(
   const tenantGuard = assertPathTenantMatchesRequest(req, tenantId);
   if (tenantGuard) return tenantGuard;
 
+  // Serve from in-process cache when fresh — avoids 4 parallel backend calls per dashboard load.
+  const cached = brsCache.get(tenantId);
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=60' },
+    });
+  }
+
   const [ctxRes, galleryRes, themeRes, briefsRes] = await Promise.all([
     fetchCrewBackendJson<BrandContextRaw>(`/api/v1/brand-context/${tenantId}`, {
       workspaceId: tenantId,
+      timeoutMs: 8_000,
     }),
     fetchCrewBackendJson<Record<string, unknown>>(
       `/api/v1/brand-context/${tenantId}/gallery-analysis`,
-      { workspaceId: tenantId },
+      { workspaceId: tenantId, timeoutMs: 8_000 },
     ),
-    fetchCrewBackendJson<{ theme?: unknown; updated_at?: string | null }>(
+    fetchCrewBackendJson<{ theme?: unknown }>(
       `/api/v1/brand-context/${tenantId}/theme`,
-      { workspaceId: tenantId },
+      { workspaceId: tenantId, timeoutMs: 8_000 },
     ),
     fetchCrewBackendJson<{ brand_dna?: unknown; visual_dna?: unknown }>(
       `/api/v1/brand-context/${tenantId}/all-briefs`,
-      { workspaceId: tenantId },
+      { workspaceId: tenantId, timeoutMs: 8_000 },
     ),
   ]);
 
-  // If the brand context itself does not exist, the tenant is unconfigured.
-  if (!ctxRes.ok && ctxRes.status === 404) {
+  let ctx: BrandContextRaw = ctxRes.data ?? {};
+  let fromDatabase = false;
+
+  if (!ctxRes.ok || !ctxRes.data) {
+    const dbRow = await readBrandContextFromDb(tenantId);
+    if (dbRow) {
+      ctx = dbRow as BrandContextRaw;
+      fromDatabase = true;
+    }
+  }
+
+  if (!ctxRes.ok && !fromDatabase && ctxRes.status === 404) {
     return NextResponse.json(
       {
         error: 'brand_context_not_found',
@@ -81,18 +134,29 @@ export async function GET(
     );
   }
 
-  const ctx = ctxRes.data ?? {};
-  const galleryMap = galleryRes.ok && galleryRes.data && typeof galleryRes.data === 'object'
-    ? (galleryRes.data as Record<string, unknown>)
-    : {};
+  if (!fromDatabase && !ctxRes.ok && !isNonEmptyObject(ctx) && !ctx.reference_image_urls) {
+    const dbRow = await readBrandContextFromDb(tenantId);
+    if (dbRow) {
+      ctx = dbRow as BrandContextRaw;
+      fromDatabase = true;
+    }
+  }
+
+  const galleryMap =
+    galleryRes.ok && galleryRes.data && typeof galleryRes.data === 'object'
+      ? (galleryRes.data as Record<string, unknown>)
+      : galleryMapFromContext(ctx);
 
   const allUrls = parseStringOrArray(ctx.reference_image_urls);
   const usablePhotos = filterUsablePhotos(allUrls, ctx.logo_url);
   const analyzedSet = new Set(Object.keys(galleryMap));
   const analyzedPhotoCount = usablePhotos.filter((u) => analyzedSet.has(u)).length;
 
-  const themeData = themeRes.ok ? themeRes.data : null;
-  const themeObj = themeData?.theme as Record<string, unknown> | undefined;
+  const themeObj = (
+    themeRes.ok && themeRes.data?.theme && typeof themeRes.data.theme === 'object'
+      ? (themeRes.data.theme as Record<string, unknown>)
+      : themeFromContext(ctx)
+  );
   const hasBrandTheme = Boolean(
     themeObj
       && isNonEmptyObject(themeObj)
@@ -101,10 +165,9 @@ export async function GET(
   const library = parseBrandTemplateLibraryFromTheme(themeObj);
   const hasTemplateLibrary = Boolean(library?.locked && library.slots.length === 5);
 
-  const briefsData = briefsRes.ok ? briefsRes.data : null;
-  // Accept visual_dna as equivalent brand-identity data when brand_dna is not yet synthesized.
-  // visual_dna is the AI-analyzed visual identity output from brand discovery — contains
-  // palette, typography, tone, and composition data that serves the same purpose.
+  const briefsData = briefsRes.ok && briefsRes.data
+    ? briefsRes.data
+    : briefsFromContext(ctx);
   const hasBrandDna = isNonEmptyObject(briefsData?.brand_dna)
     || isNonEmptyObject(briefsData?.visual_dna)
     || (typeof briefsData?.visual_dna === 'string' && (briefsData.visual_dna as string).length > 50);
@@ -123,18 +186,23 @@ export async function GET(
 
   const result = computeBrandReadiness(inputs);
 
-  return NextResponse.json(
-    {
-      tenantId,
-      ...result,
-      inputs,
-      sources: {
-        brandContext: ctxRes.ok,
-        galleryAnalysis: galleryRes.ok,
-        theme: themeRes.ok,
-        briefs: briefsRes.ok,
-      },
+  const payload = {
+    tenantId,
+    ...result,
+    inputs,
+    sources: {
+      brandContext: ctxRes.ok || fromDatabase,
+      galleryAnalysis: galleryRes.ok || Boolean(ctx.gallery_analysis),
+      theme: themeRes.ok || Boolean(ctx.brand_theme),
+      briefs: briefsRes.ok || Boolean(ctx.brand_dna || ctx.visual_dna),
+      fromDatabase,
     },
-    { status: 200 },
-  );
+  };
+
+  brsCache.set(tenantId, payload);
+
+  return NextResponse.json(payload, {
+    status: 200,
+    headers: { 'X-Cache': 'MISS', 'Cache-Control': 'private, max-age=60' },
+  });
 }

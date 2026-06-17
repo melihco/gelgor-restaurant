@@ -8,6 +8,7 @@ import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
 import { useBrandStoryTemplates } from '@/hooks/useBrandStoryTemplates';
 import { IcoBack } from '../Icons';
@@ -17,12 +18,13 @@ export function Templates() {
   const { goBack, navigate } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
 
-  const { data: brandCtx } = useQuery({
-    queryKey: ['brand-context-data', tenantId],
-    queryFn: () => apiClient.getBrandContextData(tenantId!),
+  const { data: productionSnapshot } = useQuery({
+    queryKey: ['production-context-snapshot', tenantId],
+    queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId!),
     enabled: Boolean(tenantId),
     staleTime: 120_000,
   });
+  const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
 
   const sector = brandCtx?.business_type ?? brandCtx?.industry ?? 'beach_club';
   const { isLocked, storySlots, isLoading } = useBrandStoryTemplates(tenantId, sector);
