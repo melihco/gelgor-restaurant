@@ -59,39 +59,41 @@ export function mergeProductionBrandContextSnapshot(input: {
   brand: BrandProfileSnapshot;
   brandContext: Record<string, unknown>;
 }): ProductionBrandContextSnapshot {
+  const brand = (input.brand ?? {}) as BrandProfileSnapshot;
+  const brandContext = input.brandContext ?? {};
   const generatedAt = new Date().toISOString();
   const visualContext: ProductionVisualContext = {
-    businessName: String(input.brandContext.business_name ?? input.brand.brandName ?? ''),
-    businessType: String(input.brandContext.business_type ?? input.brand.businessType ?? ''),
-    description: String(input.brandContext.description ?? input.brand.description ?? ''),
-    brandTone: String(input.brandContext.brand_tone ?? input.brand.brandTone ?? ''),
-    visualStyle: String(input.brandContext.visual_style ?? ''),
-    targetAudience: String(input.brandContext.target_audience ?? input.brand.targetAudience ?? ''),
-    location: String(input.brandContext.location ?? input.brand.location ?? ''),
-    websiteSummary: String(input.brandContext.website_summary ?? input.brand.websiteSummary ?? ''),
-    instagramBio: String(input.brandContext.instagram_bio ?? input.brand.instagramBio ?? ''),
-    brandDna: (input.brandContext.brand_dna ?? input.brand.brandDna) as string | Record<string, unknown> | undefined,
-    visualDna: String(input.brandContext.visual_dna ?? input.brand.visualDna ?? ''),
+    businessName: String(brandContext.business_name ?? brand.brandName ?? ''),
+    businessType: String(brandContext.business_type ?? brand.businessType ?? ''),
+    description: String(brandContext.description ?? brand.description ?? ''),
+    brandTone: String(brandContext.brand_tone ?? brand.brandTone ?? ''),
+    visualStyle: String(brandContext.visual_style ?? ''),
+    targetAudience: String(brandContext.target_audience ?? brand.targetAudience ?? ''),
+    location: String(brandContext.location ?? brand.location ?? ''),
+    websiteSummary: String(brandContext.website_summary ?? brand.websiteSummary ?? ''),
+    instagramBio: String(brandContext.instagram_bio ?? brand.instagramBio ?? ''),
+    brandDna: (brandContext.brand_dna ?? brand.brandDna) as string | Record<string, unknown> | undefined,
+    visualDna: String(brandContext.visual_dna ?? brand.visualDna ?? ''),
     logoUrl: String(
-      input.brandContext.logo_url
-      ?? input.brand?.gallery?.find((item) => item.kind === 'logo')?.url
+      brandContext.logo_url
+      ?? brand.gallery?.find((item) => item.kind === 'logo')?.url
       ?? '',
     ) || undefined,
-    brandVibeProfile: input.brandContext.brand_vibe_profile as Record<string, unknown> | undefined,
-    websiteIntelligence: (input.brandContext.website_intelligence ?? null) as
+    brandVibeProfile: brandContext.brand_vibe_profile as Record<string, unknown> | undefined,
+    websiteIntelligence: (brandContext.website_intelligence ?? null) as
       Record<string, unknown> | string | null,
-    contentPillars: parseStringList(input.brandContext.content_pillars),
-    defaultCtas: parseStringList(input.brandContext.default_ctas),
-    customRules: String(input.brandContext.custom_rules ?? ''),
-    referenceImageUrls: parseStringList(input.brandContext.reference_image_urls)
+    contentPillars: parseStringList(brandContext.content_pillars),
+    defaultCtas: parseStringList(brandContext.default_ctas),
+    customRules: String(brandContext.custom_rules ?? ''),
+    referenceImageUrls: parseStringList(brandContext.reference_image_urls)
       .filter((url) => typeof url === 'string' && url.startsWith('http')),
   };
   return {
     workspaceId: input.workspaceId,
-    tenantId: input.brand.tenantId,
-    brand: input.brand,
+    tenantId: brand.tenantId ?? input.workspaceId,
+    brand,
     visualContext,
-    galleryAnalysis: normalizeGalleryAnalysis(input.brandContext.gallery_analysis),
+    galleryAnalysis: normalizeGalleryAnalysis(brandContext.gallery_analysis),
     source: 'brand_profile_snapshot+brand_context',
     snapshotVersion: 1,
     generatedAt,

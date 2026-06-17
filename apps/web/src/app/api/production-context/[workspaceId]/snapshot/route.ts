@@ -46,11 +46,16 @@ export async function GET(
     fetchJson(`${req.nextUrl.origin}/api/brand-context-data/${workspaceId}`, headers),
   ]);
 
-  return NextResponse.json(
-    mergeProductionBrandContextSnapshot({
-      workspaceId,
-      brand: brand as unknown as BrandProfileSnapshot,
-      brandContext,
-    }),
-  );
+  try {
+    return NextResponse.json(
+      mergeProductionBrandContextSnapshot({
+        workspaceId,
+        brand: brand as unknown as BrandProfileSnapshot,
+        brandContext,
+      }),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: 'snapshot_merge_failed', message }, { status: 500 });
+  }
 }
