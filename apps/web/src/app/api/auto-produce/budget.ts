@@ -10,8 +10,9 @@
  */
 
 import { NEXUS_API, INTERNAL_KEY } from './nexus-client';
+import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
 
-const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
+const CREW_BACKEND = getCrewBackendBaseUrl();
 /** Operator ceiling for daily artifact count — package limits apply first. */
 const AUTO_PRODUCE_MAX_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_DAILY || '200', 10);
 /** Mission → Feed may produce 5–7 slots in one run; must not share the manual daily cap. */
