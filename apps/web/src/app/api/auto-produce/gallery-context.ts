@@ -24,6 +24,7 @@ import {
   isUsableGalleryPhotoUrl,
 } from '@/lib/media-url';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { mergeSectorGallerySeed, SYNTHETIC_GALLERY_MIN } from '@/lib/sector-gallery-seed';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
 import { GIS_PROPOSE_THRESHOLD } from '@/lib/gallery-intelligence';
@@ -168,6 +169,19 @@ export async function fetchGalleryContext(
  * Mission production gate — require vision tags/descriptions before semantic matching.
  * Runs analyze-coverage synchronously when coverage is insufficient.
  */
+async function fetchPersistedGalleryAnalysis(
+  workspaceId: string,
+): Promise<Record<string, GalleryPhotoMeta>> {
+  const res = await fetchCrewBackendJson<Record<string, GalleryPhotoMeta>>(
+    `/api/v1/brand-context/${workspaceId}/gallery-analysis`,
+    { workspaceId, timeoutMs: 20_000 },
+  );
+  if (!res.ok || !res.data || typeof res.data !== 'object') {
+    return {};
+  }
+  return res.data;
+}
+
 export async function ensureGalleryAnalysisForProduction(
   workspaceId: string,
   photos: string[],
@@ -211,9 +225,15 @@ export async function ensureGalleryAnalysisForProduction(
         blocked: 'Galeri analizi tamamlanamadı — caption eşleşmesi için önce galeriyi analiz edin',
       };
     }
-    const data = (await res.json()) as { analysis?: Record<string, GalleryPhotoMeta> };
+    const data = (await res.json()) as {
+      analysis?: Record<string, GalleryPhotoMeta>;
+      newlyAnalyzed?: number;
+      complete?: boolean;
+    };
+    const persisted = await fetchPersistedGalleryAnalysis(workspaceId);
     const merged = {
       ...((galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>),
+      ...persisted,
       ...(data.analysis ?? {}),
     };
     enriched = enrichGalleryAnalysis(merged);
