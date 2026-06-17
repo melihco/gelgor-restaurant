@@ -859,7 +859,7 @@ public class SetupController : ControllerBase
             var instagramFollowers = GetNullableInt64(root, "instagram_followers");
 
             // Persist to CompanyProfile
-            profile.BrandAnalysis = analysisText;
+            profile.BrandAnalysis = analysisText ?? string.Empty;
             profile.BrandAnalyzedAt = DateTime.UtcNow;
 
             // Auto-update inferred fields if they were empty
@@ -869,18 +869,21 @@ public class SetupController : ControllerBase
                 profile.Languages = inferredLang;
 
             profile.UpdatedBy = _requestContext.UserId;
-            if (!string.IsNullOrWhiteSpace(analysisText))
+            CompanyProfileFieldTrimmer.Apply(profile);
+            if (!string.IsNullOrWhiteSpace(profile.BrandAnalysis))
             {
+                var memoryContent = CompanyProfileFieldTrimmer.TruncateForStorage(
+                    $"InferredTone: {inferredTone}\n" +
+                    $"InferredLanguage: {inferredLang}\n" +
+                    $"TopHashtags: {topHashtags}\n" +
+                    $"Analysis:\n{profile.BrandAnalysis}",
+                    24000);
                 _db.BrandMemoryDocuments.Add(new BrandMemoryDocument
                 {
                     TenantId = _requestContext.TenantId,
                     DocumentType = "brand_profile:account_analysis",
-                    Title = $"Brand Analysis • {profile.BrandName}",
-                    Content =
-                        $"InferredTone: {inferredTone}\n" +
-                        $"InferredLanguage: {inferredLang}\n" +
-                        $"TopHashtags: {topHashtags}\n" +
-                        $"Analysis:\n{analysisText}",
+                    Title = CompanyProfileFieldTrimmer.TruncateForStorage($"Brand Analysis • {profile.BrandName}", 500),
+                    Content = memoryContent,
                     CreatedBy = _requestContext.UserId,
                     UpdatedBy = _requestContext.UserId
                 });
@@ -890,7 +893,7 @@ public class SetupController : ControllerBase
             return Ok(new
             {
                 success = true,
-                analysisText,
+                analysisText = profile.BrandAnalysis,
                 inferredTone,
                 inferredLang,
                 topHashtags,

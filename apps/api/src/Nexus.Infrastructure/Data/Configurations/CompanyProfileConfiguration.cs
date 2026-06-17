@@ -34,7 +34,7 @@ public class CompanyProfileConfiguration : IEntityTypeConfiguration<CompanyProfi
         builder.Property(e => e.InstagramHandle).HasMaxLength(100);
         builder.Property(e => e.GoogleBusinessUrl).HasMaxLength(500);
         builder.Property(e => e.BrandImageUrls).HasMaxLength(2000);
-        builder.Property(e => e.BrandAnalysis).HasMaxLength(8000);
+        builder.Property(e => e.BrandAnalysis).HasColumnType("text");
         builder.Property(e => e.BrandAnalyzedAt);
         builder.Property(e => e.PlatformProfiles).HasColumnType("jsonb");
         builder.Property(e => e.ContentNeeds).HasColumnType("jsonb");
@@ -43,7 +43,7 @@ public class CompanyProfileConfiguration : IEntityTypeConfiguration<CompanyProfi
         builder.Property(e => e.TemplateFamilies).HasColumnType("jsonb");
         builder.Property(e => e.RiskRules).HasColumnType("jsonb");
         builder.Property(e => e.CustomerVisibleSummary).HasMaxLength(2000);
-        builder.Property(e => e.SystemIntelligence).HasMaxLength(12000);
+        builder.Property(e => e.SystemIntelligence).HasColumnType("text");
         builder.Property(e => e.DiscoveryConfidence);
         builder.Property(e => e.CreativeProfileConfirmedAt);
 

@@ -31,9 +31,9 @@ public static class CompanyProfileFieldTrimmer
         profile.InstagramHandle = Truncate(profile.InstagramHandle, 100);
         profile.GoogleBusinessUrl = Truncate(profile.GoogleBusinessUrl, 500);
         profile.BrandImageUrls = Truncate(profile.BrandImageUrls, 2000);
-        profile.BrandAnalysis = Truncate(profile.BrandAnalysis, 8000);
+        profile.BrandAnalysis = Truncate(profile.BrandAnalysis, 12000);
         profile.CustomerVisibleSummary = Truncate(profile.CustomerVisibleSummary, 2000);
-        profile.SystemIntelligence = Truncate(profile.SystemIntelligence, 12000);
+        profile.SystemIntelligence = Truncate(profile.SystemIntelligence, 24000);
     }
 
     internal static string Truncate(string? value, int maxLength)
@@ -43,4 +43,6 @@ public static class CompanyProfileFieldTrimmer
 
         return value[..maxLength];
     }
+
+    public static string TruncateForStorage(string? value, int maxLength) => Truncate(value, maxLength);
 }
