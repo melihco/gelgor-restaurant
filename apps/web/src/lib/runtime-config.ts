@@ -1,50 +1,50 @@
 import { getSessionToken } from '@/lib/session-token';
+import { resolveServerApiBaseUrl, resolveServerSignalrBaseUrl } from '@/lib/backend-origin';
+import {
+  resolvePublicApiUrl,
+  resolvePublicSignalrUrl,
+} from '@/lib/runtime-public-config';
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050';
+/** Server-side module init; browser code must call getApiBaseUrl(). */
+export const API_BASE_URL = resolveServerApiBaseUrl();
 
-/**
- * Tarayıcıda `next dev` iken Nexus REST çağrılarını Next üzerinden proxylemek için (CORS / "Failed to fetch").
- * Prod veya explicit `NEXT_PUBLIC_BROWSER_API_PROXY=false` iken doğrudan `NEXT_PUBLIC_API_URL` kullanılır.
- * Uzun Crew çağrıları için `next.config.ts` içinde `experimental.proxyTimeout` değerinin yüksek olması gerekir.
- */
-function useBrowserBackendProxy(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    process.env.NODE_ENV === 'development' &&
-    process.env.NEXT_PUBLIC_BROWSER_API_PROXY !== 'false'
-  );
+export function getApiBaseUrl(): string {
+  return resolvePublicApiUrl().replace(/\/$/, '');
 }
 
-/** REST isteği için tam URL. `/api/canva/*` gibi endpoint'ler doğrudan Next route'ına gider burada değişmez — .NET hep `/api/.../` ile kullanılıyor. */
+/**
+ * Tarayıcıda her zaman Next proxy kullan — CORS yok, Docker build-time NEXT_PUBLIC bake sorunu yok.
+ * Route handler runtime'da NEXUS_API_URL / BACKEND_ORIGIN okur.
+ */
+function useBrowserBackendProxy(): boolean {
+  if (typeof window === 'undefined') return false;
+  return process.env.NEXT_PUBLIC_BROWSER_API_PROXY !== 'false';
+}
+
+/** REST isteği için tam URL. Browser proxy modunda `/api/nexus-backend/*` (runtime route handler). */
 export function getApiFetchUrl(endpoint: string): string {
   const ep = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   if (!ep.startsWith('/api/')) {
-    const base = API_BASE_URL.replace(/\/$/, '');
+    const base = getApiBaseUrl();
     return `${base}${ep}`;
   }
   if (useBrowserBackendProxy()) {
     const rest = ep.slice(5);
     return `/api/nexus-backend/${rest}`;
   }
-  const base = API_BASE_URL.replace(/\/$/, '');
+  const base = getApiBaseUrl();
   return `${base}${ep}`;
 }
 
-export const SIGNALR_BASE_URL =
-  process.env.NEXT_PUBLIC_SIGNALR_URL || API_BASE_URL;
-
-/**
- * Tarayıcı + dev proxy modunda SignalR'i Next rewrites ile aynı origin'e alır (/nexus-signalr/* → Nexus).
- * Aksi halde negotiate fetch cross-origin'e düşer (cookie/session, port, güvenilir bağlantı).
- */
 export function getSignalRHubUrl(): string {
-  if (typeof window !== 'undefined' && useBrowserBackendProxy()) {
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_BROWSER_API_PROXY !== 'false') {
     return `/nexus-signalr/hubs/office`;
   }
-  const base = SIGNALR_BASE_URL.replace(/\/$/, '');
+  const base = resolvePublicSignalrUrl().replace(/\/$/, '');
   return `${base}/hubs/office`;
 }
+
+export const SIGNALR_BASE_URL = resolveServerSignalrBaseUrl();
 
 export const DEFAULT_TENANT_ID =
   process.env.NEXT_PUBLIC_TENANT_ID ||
@@ -80,8 +80,6 @@ function decodeJwtPayload(token: string): Record<string, string> | null {
   try {
     const part = token.split('.')[1];
     if (!part) return null;
-    // Convert base64url → base64, then add required padding for atob.
-    // Without padding atob throws when payload length % 4 !== 0.
     const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
     const json = atob(padded);
@@ -99,7 +97,6 @@ export function getRequestContextHeaders(): Record<string, string> {
   const jwt = typeof window !== 'undefined' ? getSessionToken() : null;
   if (jwt) {
     headers.Authorization = `Bearer ${jwt}`;
-    // Extract tenant/user/office from JWT claims — real session takes priority over demo values
     const claims = decodeJwtPayload(jwt);
     if (claims) {
       const tenantId = claims['tenant_id'] || claims['tenantId'];
@@ -112,7 +109,6 @@ export function getRequestContextHeaders(): Record<string, string> {
     }
   }
 
-  // Fallback: demo context when no real session exists (dev/testing without login)
   if (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true') {
     headers['X-Tenant-Id'] = DEFAULT_TENANT_ID;
     headers['X-User-Id'] = DEFAULT_USER_ID;

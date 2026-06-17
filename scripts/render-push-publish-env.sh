@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Yerel .env → Render servisleri (publish: Meta, Mertcafe, R2, Runway)
+# Yerel .env → Render (web + crew + shared group)
+# API key'ler local ile aynı olmalı; Render wiring URL'leri (DATABASE_URL, hostport) dokunulmaz.
+#
 # Kullanım:
 #   export RENDER_API_KEY=rnd_...
 #   ./scripts/render-push-publish-env.sh
-#   ./scripts/render-push-publish-env.sh --dry-run   # sadece dosya üret
+#   ./scripts/render-push-publish-env.sh --dry-run
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,6 +13,7 @@ WEB_ENV="${ROOT}/apps/web/.env.local"
 BACKEND_ENV="${ROOT}/backend/.env"
 OUT_WEB="${ROOT}/render.env.publish.web.local"
 OUT_CREW="${ROOT}/render.env.publish.crew.local"
+OUT_SHARED="${ROOT}/render.env.publish.shared.local"
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
@@ -24,10 +27,9 @@ load_env_file() {
   set +a
 }
 
-load_env_file "$WEB_ENV"
 load_env_file "$BACKEND_ENV"
+load_env_file "$WEB_ENV"
 
-# Runway: tek isim
 if [[ -z "${RUNWAY_API_SECRET:-}" && -n "${RUNWAYML_API_SECRET:-}" ]]; then
   RUNWAY_API_SECRET="$RUNWAYML_API_SECRET"
 fi
@@ -44,38 +46,55 @@ write_kv_file() {
   done
 }
 
+# Paylaşılan grup — web + api + crew (INTERNAL_API_KEY eşleşmesi kritik)
+SHARED_KEYS=(
+  INTERNAL_API_KEY
+  OPENAI_API_KEY
+  APIFY_API_KEY
+  META_APP_ID
+  META_APP_SECRET
+)
+
 WEB_KEYS=(
+  INTERNAL_API_KEY
   META_APP_ID META_APP_SECRET
-  MERTCAFE_BASE_URL MERTCAFE_WORKSPACE_API_KEYS MERTCAFE_API_KEY
+  MERTCAFE_BASE_URL MERTCAFE_WORKSPACE_API_KEYS MERTCAFE_WORKSPACE_INSTAGRAM_ACCOUNTS MERTCAFE_API_KEY
   CLOUDFLARE_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY
   R2_BUCKET_NAME R2_PUBLIC_URL R2_ENDPOINT
-  OPENAI_API_KEY FAL_API_KEY RUNWAY_API_SECRET
+  OPENAI_API_KEY FAL_API_KEY RUNWAY_API_SECRET APIFY_API_KEY
   SMART_AGENCY_IMAGE_PROVIDER SMART_AGENCY_IMAGE_MODEL SMART_AGENCY_IMAGE_QUALITY
   RUNWAY_MODEL RUNWAY_API_VERSION RUNWAY_DEFAULT_DURATION RUNWAY_DEFAULT_RATIO RUNWAY_TIMEOUT_MS
-  APIFY_API_KEY
+  AUTO_PRODUCE_GALLERY_ONLY AUTO_PRODUCE_BYPASS_LIMITS AUTO_PRODUCE_RUNWAY AUTO_PRODUCE_SUBTLE_ENHANCE
+  AUTO_PRODUCE_DAILY_BUDGET_USD AUTO_PRODUCE_MAX_DAILY AUTO_PRODUCE_MAX_REELS_DAILY
+  MISSION_AUTO_PRODUCE_MAX_PER_RUN VENUE_PHOTO_PRESERVE
+  ANTHROPIC_API_KEY
 )
 
 CREW_KEYS=(
+  INTERNAL_API_KEY
   META_APP_ID META_APP_SECRET META_USD_TRY_RATE
-  OPENAI_API_KEY APIFY_API_KEY ANTHROPIC_API_KEY
+  OPENAI_API_KEY OPENAI_MODEL OPENAI_CONTENT_MODEL OPENAI_LITE_MODEL
+  APIFY_API_KEY APIFY_TIMEOUT_SECONDS ANTHROPIC_API_KEY ANTHROPIC_MODEL
+  CREWAI_LLM_PROVIDER TENANT_LEARNING_ENABLED TENANT_LEARNING_MAX_EXAMPLES
+  WORKSPACE_DAILY_BUDGET_USD AUTO_CONTENT_MAX_DAILY AUTO_PRODUCE_BYPASS_LIMITS
+  BRAVE_SEARCH_API_KEY
 )
 
+write_kv_file "$OUT_SHARED" "${SHARED_KEYS[@]}"
 write_kv_file "$OUT_WEB" "${WEB_KEYS[@]}"
 write_kv_file "$OUT_CREW" "${CREW_KEYS[@]}"
 
-echo "==> Publish env dosyaları yazıldı (gitignore — commit ETME)"
-echo "    $OUT_WEB"
-echo "    $OUT_CREW"
+echo "==> Publish env dosyaları (gitignore — commit ETME)"
+echo "    shared: $(wc -l <"$OUT_SHARED" | tr -d ' ') keys → $OUT_SHARED"
+echo "    web:    $(wc -l <"$OUT_WEB" | tr -d ' ') keys → $OUT_WEB"
+echo "    crew:   $(wc -l <"$OUT_CREW" | tr -d ' ') keys → $OUT_CREW"
 echo ""
-echo "Dashboard (Blueprint sonrası):"
-echo "  smartagency-web  → Environment → Add from .env → render.env.publish.web.local"
-echo "  smartagency-crew → Environment → Add from .env → render.env.publish.crew.local"
-echo "  smartagency-shared grubunda META_* yoksa crew/web dosyaları yeterli"
+echo "Dokunulmayan Render wiring: DATABASE_URL, NEXT_PUBLIC_* URL, BACKEND_ORIGIN, CREW_BACKEND_URL, OrchestrationService__BaseUrl"
 echo ""
 
 if [[ -z "${RENDER_API_KEY:-}" ]]; then
   echo "RENDER_API_KEY yok — API push atlandı."
-  echo "API ile otomatik: export RENDER_API_KEY=rnd_... && $0"
+  echo "export RENDER_API_KEY=rnd_... && $0"
   exit 0
 fi
 
@@ -100,17 +119,38 @@ for item in data:
 " "$name"
 }
 
+find_env_group_id() {
+  curl -sS "https://api.render.com/v1/env-groups?limit=20" \
+    -H "Authorization: Bearer ${RENDER_API_KEY}" \
+    | python3 -c "
+import json,sys
+name=sys.argv[1]
+for item in json.load(sys.stdin):
+    g=item.get('envGroup') or item
+    if (g.get('name') or '').strip()==name:
+        print(g.get('id',''))
+        break
+" "$1"
+}
+
 put_env_from_file() {
-  local service_id="$1"
-  local file="$2"
+  local target_kind="$1"
+  local target_id="$2"
+  local file="$3"
   [[ -f "$file" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
     local key="${line%%=*}"
     local val="${line#*=}"
+    local url
+    if [[ "$target_kind" == "group" ]]; then
+      url="https://api.render.com/v1/env-groups/${target_id}/env-vars/${key}"
+    else
+      url="https://api.render.com/v1/services/${target_id}/env-vars/${key}"
+    fi
     local code
     code="$(curl -sS -o /dev/null -w "%{http_code}" \
-      -X PUT "https://api.render.com/v1/services/${service_id}/env-vars/${key}" \
+      -X PUT "$url" \
       -H "Authorization: Bearer ${RENDER_API_KEY}" \
       -H "Content-Type: application/json" \
       -d "$(python3 -c 'import json,sys; print(json.dumps({"value": sys.argv[1]}))' "$val")")"
@@ -118,17 +158,19 @@ put_env_from_file() {
   done <"$file"
 }
 
+SHARED_ID="$(find_env_group_id smartagency-shared)"
 WEB_ID="$(find_service_id smartagency-web)"
 CREW_ID="$(find_service_id smartagency-crew)"
 
-if [[ -z "$WEB_ID" || -z "$CREW_ID" ]]; then
-  echo "Servis bulunamadı. Dashboard'daki isimler: smartagency-web, smartagency-crew"
-  echo "WEB_ID=${WEB_ID:-} CREW_ID=${CREW_ID:-}"
+if [[ -z "$SHARED_ID" || -z "$WEB_ID" || -z "$CREW_ID" ]]; then
+  echo "Servis/grup bulunamadı. SHARED=${SHARED_ID:-} WEB=${WEB_ID:-} CREW=${CREW_ID:-}"
   exit 1
 fi
 
+echo "==> smartagency-shared (${SHARED_ID})"
+put_env_from_file group "$SHARED_ID" "$OUT_SHARED"
 echo "==> smartagency-web (${WEB_ID})"
-put_env_from_file "$WEB_ID" "$OUT_WEB"
+put_env_from_file service "$WEB_ID" "$OUT_WEB"
 echo "==> smartagency-crew (${CREW_ID})"
-put_env_from_file "$CREW_ID" "$OUT_CREW"
-echo "==> Tamam. Her serviste Manual Deploy tetikle."
+put_env_from_file service "$CREW_ID" "$OUT_CREW"
+echo "==> Tamam. Servisler otomatik redeploy olabilir; web build bitene kadar bekleyin."

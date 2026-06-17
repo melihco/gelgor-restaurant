@@ -71,14 +71,10 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  /** `beforeFiles` — yoksa App Router `/api/nexus-backend/*` için sayfa arayıp HTML 404 üretiyor */
+  /** Runtime route handler (`/api/nexus-backend/[...path]`) proxies using BACKEND_ORIGIN/NEXUS_API_URL. */
   async rewrites() {
     return {
       beforeFiles: [
-        {
-          source: '/api/nexus-backend/:path*',
-          destination: `${normalizedBackend}/api/:path*`,
-        },
         {
           source: '/nexus-signalr/:path*',
           destination: `${normalizedBackend}/:path*`,
