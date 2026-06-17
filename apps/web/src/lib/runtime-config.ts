@@ -49,6 +49,10 @@ export const SIGNALR_BASE_URL = resolveServerSignalrBaseUrl();
 
 /** Same-origin BFF calls from server route handlers (avoid public URL loopback on Render). */
 export function getNextjsInternalOrigin(): string {
+  const port = process.env.PORT?.trim();
+  if (port && process.env.RENDER) {
+    return `http://127.0.0.1:${port}`;
+  }
   const raw = process.env.NEXTJS_INTERNAL_URL?.trim() || 'http://localhost:3000';
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
   return withScheme.replace(/\/$/, '');
