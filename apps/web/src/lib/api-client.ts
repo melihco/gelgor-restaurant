@@ -51,7 +51,7 @@ import type {
   PlatformAdminOverview,
   ProductionBrandContextSnapshot,
 } from '@smartagency/contracts';
-import { getApiFetchUrl, getRequestContextHeaders } from '@/lib/runtime-config';
+import { getApiFetchUrl, getRequestContextHeaders, getTenantBffHeaders } from '@/lib/runtime-config';
 import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { setSessionToken } from '@/lib/session-token';
 
@@ -401,7 +401,9 @@ class ApiClient {
     brand_constitution_confirmed_at?: string | null;
     campaign_goals?: string;
   }> {
-    const res = await fetch(`/api/brand-context-data/${workspaceId}`);
+    const res = await fetch(`/api/brand-context-data/${workspaceId}`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (!res.ok) {
       const msg = String(data.message ?? data.error ?? `HTTP ${res.status}`);
@@ -928,7 +930,7 @@ class ApiClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...getRequestContextHeaders(),
+        ...getTenantBffHeaders(workspaceId),
       },
       body: JSON.stringify({
         website_url: data.websiteUrl || '',
@@ -951,7 +953,10 @@ class ApiClient {
   async confirmBrandConstitution(workspaceId: string): Promise<{ brand_constitution_confirmed_at: string }> {
     const res = await fetch(`/api/brand-context/${workspaceId}/confirm-constitution`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': workspaceId },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getTenantBffHeaders(workspaceId),
+      },
       body: '{}',
       signal: AbortSignal.timeout(120_000),
     });
@@ -969,7 +974,9 @@ class ApiClient {
    * Cached for 1 hour on the Python side — fast for dashboard display.
    */
   async getRecommendations(workspaceId: string): Promise<TaskRecommendationsResponse> {
-    const res = await fetch(`/api/intelligence/${workspaceId}/recommendations`);
+    const res = await fetch(`/api/intelligence/${workspaceId}/recommendations`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error || `Recommendations failed (${res.status})`);
@@ -978,7 +985,10 @@ class ApiClient {
   }
 
   async refreshRecommendations(workspaceId: string): Promise<TaskRecommendationsResponse> {
-    const res = await fetch(`/api/intelligence/${workspaceId}/recommendations`, { method: 'POST' });
+    const res = await fetch(`/api/intelligence/${workspaceId}/recommendations`, {
+      method: 'POST',
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error || `Refresh failed (${res.status})`);
@@ -1327,9 +1337,7 @@ class ApiClient {
 
   async getPlatformBrandSnapshot(workspaceId: string): Promise<BrandProfileSnapshot> {
     const res = await fetch(`/api/brand-profile/${encodeURIComponent(workspaceId)}/snapshot`, {
-      headers: {
-        ...getRequestContextHeaders(),
-      },
+      headers: getTenantBffHeaders(workspaceId),
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
@@ -1340,9 +1348,7 @@ class ApiClient {
 
   async getProductionBrandContextSnapshot(workspaceId: string): Promise<ProductionBrandContextSnapshot> {
     const res = await fetch(`/api/production-context/${encodeURIComponent(workspaceId)}/snapshot`, {
-      headers: {
-        ...getRequestContextHeaders(),
-      },
+      headers: getTenantBffHeaders(workspaceId),
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
@@ -1472,7 +1478,9 @@ class ApiClient {
     if (status) qs.set('status', status);
     if (limit !== 20) qs.set('limit', String(limit));
     const query = qs.toString() ? `?${qs}` : '';
-    const res = await fetch(`/api/missions/${workspaceId}${query}`);
+    const res = await fetch(`/api/missions/${workspaceId}${query}`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (!res.ok) throw new Error(`Missions list failed (${res.status})`);
     return res.json();
   }
@@ -1492,7 +1500,10 @@ class ApiClient {
     if (opts?.productionPackage) body.production_package = opts.productionPackage;
     const res = await fetch(`/api/missions/${workspaceId}/propose`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getTenantBffHeaders(workspaceId),
+      },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -1507,10 +1518,7 @@ class ApiClient {
     const res = await fetchWithTransientRetry(
       `/api/missions/${workspaceId}/${missionId}/progress`,
       {
-        headers: {
-          ...getRequestContextHeaders(),
-          'X-Tenant-Id': workspaceId,
-        },
+        headers: getTenantBffHeaders(workspaceId),
       },
     );
     if (!res.ok) throw new Error(humanizeMobileServiceError(`Mission progress failed (${res.status})`, res.status));
@@ -1520,7 +1528,10 @@ class ApiClient {
   async approveMission(workspaceId: string, missionId: string, approvedBy: string): Promise<unknown> {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/approve`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getTenantBffHeaders(workspaceId),
+      },
       body: JSON.stringify({ approved_by: approvedBy }),
     });
     if (!res.ok) {
@@ -1533,7 +1544,10 @@ class ApiClient {
   async rejectMission(workspaceId: string, missionId: string, reason?: string): Promise<unknown> {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/reject`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getTenantBffHeaders(workspaceId),
+      },
       body: JSON.stringify({ reason: reason ?? null }),
     });
     if (!res.ok) {
@@ -1546,6 +1560,7 @@ class ApiClient {
   async cancelMission(workspaceId: string, missionId: string): Promise<unknown> {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/cancel`, {
       method: 'PUT',
+      headers: getTenantBffHeaders(workspaceId),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1557,6 +1572,7 @@ class ApiClient {
   async restartMission(workspaceId: string, missionId: string): Promise<unknown> {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/restart`, {
       method: 'PUT',
+      headers: getTenantBffHeaders(workspaceId),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1576,9 +1592,8 @@ class ApiClient {
       {
         method: 'PUT',
         headers: {
-          ...getRequestContextHeaders(),
+          ...getTenantBffHeaders(workspaceId),
           'Content-Type': 'application/json',
-          'X-Tenant-Id': workspaceId,
         },
         body: JSON.stringify({
           productionPackage: opts?.productionPackage,
@@ -1611,9 +1626,8 @@ class ApiClient {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/reproduce-feed`, {
       method: 'PUT',
       headers: {
-        ...getRequestContextHeaders(),
+        ...getTenantBffHeaders(workspaceId),
         'Content-Type': 'application/json',
-        'X-Tenant-Id': workspaceId,
       },
       body: JSON.stringify({
         productionPackage: opts?.productionPackage,
@@ -1645,7 +1659,9 @@ class ApiClient {
   ): Promise<WorkspaceUsageSummary> {
     const qs = new URLSearchParams({ days: String(days) });
     if (packageSlug) qs.set('package_slug', packageSlug);
-    const res = await fetch(`/api/usage-cost/${workspaceId}?${qs.toString()}`);
+    const res = await fetch(`/api/usage-cost/${workspaceId}?${qs.toString()}`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (res.status === 503) {
       return emptyWorkspaceUsageSummary(workspaceId, days, true);
     }
@@ -1657,19 +1673,26 @@ class ApiClient {
 
   async listBrandRules(workspaceId: string, status?: string): Promise<BrandRuleItem[]> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-    const res = await fetch(`/api/brand-rules/${workspaceId}${qs}`);
+    const res = await fetch(`/api/brand-rules/${workspaceId}${qs}`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (!res.ok) throw new Error(`Brand rules list failed (${res.status})`);
     return res.json();
   }
 
   async getPendingBrandRules(workspaceId: string): Promise<BrandRuleItem[]> {
-    const res = await fetch(`/api/brand-rules/${workspaceId}/pending`);
+    const res = await fetch(`/api/brand-rules/${workspaceId}/pending`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (!res.ok) throw new Error(`Pending rules failed (${res.status})`);
     return res.json();
   }
 
   async scanBrandRules(workspaceId: string): Promise<BrandRulesScanResponse> {
-    const res = await fetch(`/api/brand-rules/${workspaceId}/scan`, { method: 'POST' });
+    const res = await fetch(`/api/brand-rules/${workspaceId}/scan`, {
+      method: 'POST',
+      headers: getTenantBffHeaders(workspaceId),
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error || `Scan failed (${res.status})`);
@@ -1680,7 +1703,10 @@ class ApiClient {
   async approveBrandRule(workspaceId: string, ruleId: string, approvedBy = 'operator'): Promise<unknown> {
     const res = await fetch(`/api/brand-rules/${workspaceId}/${ruleId}/approve`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getTenantBffHeaders(workspaceId),
+      },
       body: JSON.stringify({ approved_by: approvedBy }),
     });
     if (!res.ok) {
@@ -1693,6 +1719,7 @@ class ApiClient {
   async rejectBrandRule(workspaceId: string, ruleId: string): Promise<unknown> {
     const res = await fetch(`/api/brand-rules/${workspaceId}/${ruleId}/reject`, {
       method: 'PUT',
+      headers: getTenantBffHeaders(workspaceId),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

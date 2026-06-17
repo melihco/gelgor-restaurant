@@ -4,6 +4,7 @@ import {
   resolvePublicApiUrl,
   resolvePublicSignalrUrl,
 } from '@/lib/runtime-public-config';
+import { decodeJwtPayload } from '@/lib/jwt-tenant';
 
 /** Server-side module init; browser code must call getApiBaseUrl(). */
 export const API_BASE_URL = resolveServerApiBaseUrl();
@@ -75,20 +76,6 @@ export function getSessionTenantId(): string | null {
   return tenantId?.trim() || null;
 }
 
-/** Decode JWT payload (base64url) without verifying signature — client-side only. */
-function decodeJwtPayload(token: string): Record<string, string> | null {
-  try {
-    const part = token.split('.')[1];
-    if (!part) return null;
-    const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
-    const json = atob(padded);
-    return JSON.parse(json) as Record<string, string>;
-  } catch {
-    return null;
-  }
-}
-
 export function getRequestContextHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'X-Correlation-Id': createCorrelationId(),
@@ -115,6 +102,14 @@ export function getRequestContextHeaders(): Record<string, string> {
     headers['X-Office-Id'] = DEFAULT_OFFICE_ID;
   }
 
+  return headers;
+}
+
+/** Tenant-scoped Next BFF routes require X-Tenant-Id in production middleware. */
+export function getTenantBffHeaders(workspaceId: string): Record<string, string> {
+  const ws = workspaceId.trim();
+  const headers = getRequestContextHeaders();
+  if (ws) headers['X-Tenant-Id'] = ws;
   return headers;
 }
 

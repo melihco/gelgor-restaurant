@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readBrandContextFromDb } from '@/lib/brand-context-db-fallback';
+import { fetchNexusBrandContextFallback } from '@/lib/nexus-brand-context-fallback';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ workspaceId: string }> },
 ) {
   const { workspaceId } = await params;
@@ -19,6 +20,10 @@ export async function GET(
   const row = await readBrandContextFromDb(workspaceId);
   if (row) {
     return NextResponse.json(row, { status: 200 });
+  }
+  const nexusRow = await fetchNexusBrandContextFallback(req, workspaceId);
+  if (nexusRow) {
+    return NextResponse.json(nexusRow, { status: 200 });
   }
   return proxied;
 }

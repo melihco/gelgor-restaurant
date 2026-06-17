@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
+import { extractTenantIdFromAuthHeader } from '@/lib/jwt-tenant';
 
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
@@ -11,10 +12,17 @@ export function isTrustedInternalRequest(req: NextRequest): boolean {
 /** Forward browser session tenant + JWT to same-origin BFF sub-requests. */
 export function buildTenantForwardHeaders(req: NextRequest): Record<string, string> {
   const headers: Record<string, string> = {};
-  const tenant = req.headers.get('X-Tenant-Id') || req.headers.get('x-tenant-id');
+  const tenant =
+    req.headers.get('X-Tenant-Id') ||
+    req.headers.get('x-tenant-id') ||
+    extractTenantIdFromAuthHeader(req.headers.get('Authorization'));
   if (tenant) headers['X-Tenant-Id'] = tenant;
   const auth = req.headers.get('Authorization');
   if (auth) headers['Authorization'] = auth;
+  const user = req.headers.get('X-User-Id') || req.headers.get('x-user-id');
+  const office = req.headers.get('X-Office-Id') || req.headers.get('x-office-id');
+  if (user) headers['X-User-Id'] = user;
+  if (office) headers['X-Office-Id'] = office;
   return headers;
 }
 
@@ -38,6 +46,7 @@ export function assertWorkspaceMatchesRequestTenant(
   const headerTenant = (
     req.headers.get('X-Tenant-Id') ||
     req.headers.get('x-tenant-id') ||
+    extractTenantIdFromAuthHeader(req.headers.get('Authorization')) ||
     ''
   ).trim();
 

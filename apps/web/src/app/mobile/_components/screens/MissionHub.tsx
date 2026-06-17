@@ -26,6 +26,7 @@ import { BRS_PROPOSE_THRESHOLD, type BrandReadinessResult } from '@/lib/brand-re
 import { humanizeAgentError } from '@/lib/humanize-agent-error';
 import { parseProductionIdeas, productionIdeasFromParsed } from '@/lib/production-idea-parse';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
+import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { computeIdeaContractScore } from '@/types/production-idea';
 import type { SignalRecord } from '@/lib/context-signals';
 import { computeMissionDiversity, buildDiversityDirective } from '@/lib/mission-diversity';
@@ -4032,7 +4033,7 @@ export function MissionHub() {
     const runHydrate = () => {
       fetch(`/api/brand-context/${wsId}/hydrate-company-profile`, {
         method: 'POST',
-        headers: { 'X-Tenant-Id': wsId },
+        headers: getTenantBffHeaders(wsId),
       })
         .then(() => {
           try { sessionStorage.setItem(hydrateKey, '1'); } catch { /* ignore */ }
@@ -4064,7 +4065,7 @@ export function MissionHub() {
     queryKey: ['brand-readiness', wsId],
     queryFn: async () => {
       const res = await fetch(`/api/brand-readiness/${wsId}`, {
-        headers: { 'X-Tenant-Id': wsId },
+        headers: getTenantBffHeaders(wsId),
       });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
@@ -4125,7 +4126,9 @@ export function MissionHub() {
   const { data: gis } = useQuery<{ score: number; canPropose: boolean }>({
     queryKey: ['gallery-intelligence', wsId],
     queryFn: async () => {
-      const res = await fetch(`/api/gallery-intelligence/${wsId}`);
+      const res = await fetch(`/api/gallery-intelligence/${wsId}`, {
+        headers: getTenantBffHeaders(wsId),
+      });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     },

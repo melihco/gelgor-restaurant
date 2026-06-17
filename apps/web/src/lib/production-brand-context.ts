@@ -74,7 +74,7 @@ export function mergeProductionBrandContextSnapshot(input: {
     visualDna: String(input.brandContext.visual_dna ?? input.brand.visualDna ?? ''),
     logoUrl: String(
       input.brandContext.logo_url
-      ?? input.brand.gallery.find((item) => item.kind === 'logo')?.url
+      ?? input.brand?.gallery?.find((item) => item.kind === 'logo')?.url
       ?? '',
     ) || undefined,
     brandVibeProfile: input.brandContext.brand_vibe_profile as Record<string, unknown> | undefined,

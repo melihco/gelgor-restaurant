@@ -17,6 +17,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
+import { getTenantBffHeaders } from '@/lib/runtime-config';
+import { fetchTenantBff } from '@/lib/bff-fetch';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/types';
 import type { T } from '../theme-context';
@@ -299,8 +301,8 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const r = await fetch(`/api/brand-context/${tenantId}/theme`, {
-        headers: { 'X-Tenant-Id': tenantId },
+      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
+        headers: getTenantBffHeaders(tenantId),
       });
       if (r.ok) {
         const data = await r.json();
@@ -326,7 +328,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
         } else {
           // Tema yoksa marka renklerinden başlangıç değerlerini al
           try {
-            const ctxRes = await fetch(`/api/brand-context-data/${tenantId}`);
+            const ctxRes = await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId);
             if (ctxRes.ok) {
               const ctx = await ctxRes.json() as Record<string, string | undefined>;
               if (ctx.brand_primary_color) setEditPrimary(ctx.brand_primary_color);
@@ -424,7 +426,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
 
   const syncBrandContextColors = async (primary: string, accent: string) => {
     if (!tenantId) return;
-    await fetch(`/api/brand-context-data/${tenantId}`, {
+    await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -451,7 +453,7 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
     setSaving(true);
     setStatus('Renk paleti kaydediliyor…');
     try {
-      const r = await fetch(`/api/brand-context/${tenantId}/theme`, {
+      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
         body: JSON.stringify(payload),
@@ -482,9 +484,9 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
     setDeriving(true);
     setStatus('Tema türetiliyor…');
     try {
-      const r = await fetch(`/api/brand-context/${tenantId}/theme/derive`, {
+      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/derive`, tenantId, {
         method: 'POST',
-        headers: { 'X-Tenant-Id': tenantId },
+        headers: getTenantBffHeaders(tenantId),
       });
       if (r.ok) {
         const data = await r.json();
@@ -992,7 +994,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     try {
       const key = galleryUrlKey(urlToRemove);
       const updated = refUrls.filter(u => galleryUrlKey(u) !== key);
-      await fetch(`/api/brand-context-data/${tenantId}`, {
+      await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference_image_urls: JSON.stringify(updated) }),
@@ -1027,7 +1029,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     // Load persisted analysis — only analyze NEW photos
     let existingAnalysis: Record<string, unknown> = {};
     try {
-      const cacheRes = await fetch(`/api/brand-context/${tenantId}/gallery-analysis`);
+      const cacheRes = await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId);
       if (cacheRes.ok) existingAnalysis = await cacheRes.json();
     } catch { /* proceed without cache */ }
 
@@ -1068,7 +1070,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
       const quotaError = errors.some((e: { error: string }) => e.error?.includes('429') || e.error?.includes('quota'));
 
       if (count > 0) {
-      await fetch(`/api/brand-context/${tenantId}/gallery-analysis`, {
+      await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ results }),
@@ -1116,7 +1118,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
       if (newUrls.length === 0) throw new Error('Hiçbir fotoğraf yüklenemedi');
 
       const updatedRefs = [...newUrls, ...refUrls.filter(u => !newUrls.includes(u))];
-      await fetch(`/api/brand-context-data/${tenantId}`, {
+      await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference_image_urls: JSON.stringify(updatedRefs) }),
@@ -1125,7 +1127,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
       setAnalyzeStatus(`${newUrls.length} fotoğraf analiz ediliyor…`);
       let existingAnalysis: Record<string, unknown> = {};
       try {
-        const cacheRes = await fetch(`/api/brand-context/${tenantId}/gallery-analysis`);
+        const cacheRes = await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId);
         if (cacheRes.ok) existingAnalysis = await cacheRes.json();
       } catch { /* proceed without cache */ }
 
@@ -1138,7 +1140,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
         const data = await analysisRes.json();
         const results = Array.isArray(data?.results) ? data.results : [];
         if (results.length > 0) {
-          await fetch(`/api/brand-context/${tenantId}/gallery-analysis`, {
+          await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ results }),
@@ -1345,7 +1347,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
             {deleteMode && autoFlaggedCount > 0 && (
               <button onClick={async () => {
                 const clean = displayUrls.filter(u => !AUTO_EXCLUDE.some(p => u.toLowerCase().includes(p)));
-                await fetch(`/api/brand-context-data/${tenantId}`, {
+                await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ reference_image_urls: JSON.stringify(clean) }),
@@ -1434,7 +1436,7 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
     setLoading(true);
     setStatus('Apify ile postlar çekiliyor…');
     try {
-      const res = await fetch(`/api/brand-context/${tenantId}/extract-vibe`, {
+      const res = await fetchTenantBff(`/api/brand-context/${tenantId}/extract-vibe`, tenantId, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ handles: cleaned, posts_per_handle: 10, max_images: 10, persist: true }),
@@ -1675,8 +1677,8 @@ export function BrandConstitution() {
     queryKey: ['brand-theme-kit', tenantId],
     queryFn: async () => {
       if (!tenantId) return null;
-      const r = await fetch(`/api/brand-context/${tenantId}/theme`, {
-        headers: { 'X-Tenant-Id': tenantId },
+      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
+        headers: getTenantBffHeaders(tenantId),
       });
       if (!r.ok) return null;
       return r.json() as Promise<{ theme?: Record<string, unknown> | null }>;
@@ -1720,7 +1722,7 @@ export function BrandConstitution() {
     const nexusLang = String(p.languages || '').split(',')[0]?.trim().toLowerCase();
     const pyLang = String(b.languages || '').split(',')[0]?.trim().toLowerCase();
     if (nexusLang && nexusLang !== pyLang && (nexusLang === 'en' || nexusLang === 'tr' || nexusLang === 'de')) {
-      fetch(`/api/brand-context/${tenantId}/set-language`, {
+      fetchTenantBff(`/api/brand-context/${tenantId}/set-language`, tenantId, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ language: nexusLang }),
@@ -1730,7 +1732,7 @@ export function BrandConstitution() {
     }
     if (Object.keys(patch).length === 0) { backfilledRef.current = true; return; }
     backfilledRef.current = true;
-    fetch(`/api/brand-context-data/${tenantId}`, {
+    fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
@@ -1747,7 +1749,7 @@ export function BrandConstitution() {
       queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
       const name = String(variables.brandName || '').trim();
       if (name && tenantId) {
-        fetch(`/api/brand-context-data/${tenantId}`, {
+        fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ business_name: name }),
@@ -1811,7 +1813,7 @@ export function BrandConstitution() {
     if (hasPrimaryFont && hasSecondaryFont && hasColors) return;
 
     brandKitEnrichedRef.current = true;
-    fetch(`/api/brand-context/${tenantId}/enrich-brand-kit`, { method: 'POST' })
+    fetchTenantBff(`/api/brand-context/${tenantId}/enrich-brand-kit`, tenantId, { method: 'POST' })
       .then(async (r) => (r.ok ? r.json() : null))
       .then((data: {
         primary_font?: string;
@@ -1965,7 +1967,7 @@ export function BrandConstitution() {
 
   function patchPythonBrandFields(body: Record<string, unknown>) {
     if (!tenantId) return;
-    fetch(`/api/brand-context-data/${tenantId}`, {
+    fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1997,7 +1999,7 @@ export function BrandConstitution() {
         contrast_valid: true,
       },
     };
-    await fetch(`/api/brand-context/${tenantId}/theme`, {
+    await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
       body: JSON.stringify(payload),
@@ -2044,7 +2046,7 @@ export function BrandConstitution() {
 
       // Languages need the dedicated /set-language endpoint (not the generic PATCH)
       if (field === 'languages' && tenantId) {
-        fetch(`/api/brand-context/${tenantId}/set-language`, {
+        fetchTenantBff(`/api/brand-context/${tenantId}/set-language`, tenantId, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ language: value }),
@@ -2914,7 +2916,7 @@ export function BrandConstitution() {
                   const optimistic = { ...(prev ?? {}), ...patch };
                   queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: optimistic });
                   try {
-                    const res = await fetch(`/api/brand-context/${tenantId}/theme/ai-settings`, {
+                    const res = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/ai-settings`, tenantId, {
                       method: 'PATCH',
                       headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
                       body: JSON.stringify(patch),
@@ -2950,7 +2952,7 @@ export function BrandConstitution() {
                   }),
                 );
                 try {
-                  const res = await fetch(`/api/brand-context/${tenantId}/theme/ai-settings`, {
+                  const res = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/ai-settings`, tenantId, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
                     body: JSON.stringify(patch),
@@ -3331,7 +3333,7 @@ export function BrandConstitution() {
                   ...next,
                   operatorOverride: true,
                 });
-                await fetch(`/api/brand-context/${tenantId}/theme`, {
+                await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
                   body: JSON.stringify({

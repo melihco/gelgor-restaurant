@@ -32,7 +32,7 @@ envVarGroups:
       - key: OrchestrationService__UseDevMock
         value: false
       - key: ENABLE_PUBLIC_API
-        value: false
+        value: true
 
 services:
   # Python Crew — private (yalnızca Render internal network)

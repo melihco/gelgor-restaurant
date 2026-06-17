@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { extractTenantIdFromAuthHeader } from '@/lib/jwt-tenant';
 
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
@@ -46,6 +47,7 @@ export function middleware(req: NextRequest): NextResponse {
   const headerTenant = (
     req.headers.get('X-Tenant-Id') ||
     req.headers.get('x-tenant-id') ||
+    extractTenantIdFromAuthHeader(req.headers.get('Authorization')) ||
     ''
   ).trim();
 
