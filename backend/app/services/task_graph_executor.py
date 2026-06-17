@@ -1731,7 +1731,7 @@ async def _run_content_production_pipeline_locked(
     await _refresh_trend_brief_if_stale(workspace_id, brand)
     await _refresh_extended_intel_if_stale(workspace_id, brand)
     report: dict = {}
-    cached = await _load_cached_feed_director_report(mission_id)
+    cached = None if force else await _load_cached_feed_director_report(mission_id)
     hub_pkg = str((mission_ctx or {}).get("production_package") or "").strip().lower()
     if cached and hub_pkg:
         cached_pkg = str(cached.get("production_package") or "").strip().lower()
@@ -1904,7 +1904,7 @@ async def _load_cached_feed_director_report(
         match = __import__("re").search(r"\{[\s\S]*\}", cleaned)
         if match:
             parsed = _json.loads(match.group())
-            if isinstance(parsed, dict):
+            if isinstance(parsed, dict) and parsed.get("production_assignments"):
                 return parsed
     except Exception:
         return None
