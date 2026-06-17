@@ -296,15 +296,10 @@ async def enrich_brand_kit_from_website(
         logger.error("enrich_brand_kit_failed", workspace_id=str(workspace_id), error=str(exc))
         raise HTTPException(500, f"Brand kit enrichment failed: {exc}") from exc
 
-    if not result.get("ok"):
-        raise HTTPException(
-            422,
-            result.get("error") or "Could not detect fonts or colors from website",
-        )
-
     kit = result.get("kit") or {}
     return {
-        "ok": True,
+        "ok": bool(result.get("ok")),
+        "reason": result.get("reason") or result.get("error"),
         "applied": result.get("applied", []),
         "primary_font": result.get("brand_font_family") or kit.get("heading_font"),
         "secondary_font": (kit.get("body_font") or ""),

@@ -70,7 +70,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** Retry when Python crew backend is briefly unreachable (503 / network blip). */
+/** Retry when API is briefly unavailable (503) or rate-limited (429). */
 async function fetchWithTransientRetry(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -80,8 +80,10 @@ async function fetchWithTransientRetry(
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
       const res = await fetch(input, init);
-      if (res.status !== 503 || attempt === retries) return res;
-      await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+      if ((res.status !== 503 && res.status !== 429) || attempt === retries) return res;
+      const retryAfter = Number(res.headers.get('retry-after') || 0);
+      const delayMs = retryAfter > 0 ? retryAfter * 1000 : 800 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     } catch (err) {
       lastError = err;
       if (attempt === retries) throw err;
@@ -204,7 +206,7 @@ class ApiClient {
 
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await fetchWithTransientRetry(url, {
       credentials: 'include',
       ...fetchOptions,
       signal: controller?.signal ?? fetchOptions.signal,
@@ -213,7 +215,7 @@ class ApiClient {
         ...getRequestContextHeaders(),
         ...fetchOptions.headers,
       },
-    });
+    }, 2);
     } catch (cause) {
       const aborted = cause instanceof DOMException && cause.name === 'AbortError';
       const message = aborted
@@ -365,7 +367,7 @@ class ApiClient {
       const artifacts = await this.request<any[]>(endpoint);
       return artifacts.map((artifact) => this.mapArtifact(artifact));
     } catch (error) {
-      if (error instanceof Error && error.message.includes('404')) {
+      if (error instanceof ApiRequestError && (error.status === 404 || error.status === 429)) {
         return [];
       }
       throw error;

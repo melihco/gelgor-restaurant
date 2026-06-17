@@ -208,6 +208,26 @@ class Settings(BaseSettings):
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return url
 
+    @staticmethod
+    def _ensure_http_url(v: object, default: str) -> str:
+        url = str(v or "").strip().rstrip("/")
+        if not url:
+            return default
+        if url.startswith(("http://", "https://")):
+            return url
+        return f"http://{url}"
+
+    @field_validator("nextjs_internal_url", mode="before")
+    @classmethod
+    def normalize_nextjs_internal_url(cls, v: object) -> str:
+        """Render hostport is bare hostname:port — httpx requires a scheme."""
+        return cls._ensure_http_url(v, "http://localhost:3000")
+
+    @field_validator("nexus_api_url", mode="before")
+    @classmethod
+    def normalize_nexus_api_url(cls, v: object) -> str:
+        return cls._ensure_http_url(v, "http://localhost:5050")
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors(cls, v: str) -> str:

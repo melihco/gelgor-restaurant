@@ -13,6 +13,6 @@ export async function POST(
   const fillEmptyOnly = url.searchParams.get('fill_empty_only') !== 'false';
   return proxyToCrewBackend(
     `/api/v1/brand-context/${workspaceId}/enrich-brand-kit-from-website?fill_empty_only=${fillEmptyOnly}`,
-    { method: 'POST' },
+    { method: 'POST', timeoutMs: 90_000 },
   );
 }

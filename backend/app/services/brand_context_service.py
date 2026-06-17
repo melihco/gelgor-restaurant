@@ -951,6 +951,28 @@ def apply_website_brand_kit(
     return applied
 
 
+def _apply_default_brand_fonts(ctx: BrandContext) -> list[str]:
+    """Safe typography when website kit extraction fails but fonts are still missing."""
+    applied: list[str] = []
+    if not (ctx.brand_font_family or "").strip():
+        ctx.brand_font_family = "Inter"
+        applied.append("brand_font_family_fallback")
+
+    theme = dict(ctx.brand_theme) if isinstance(ctx.brand_theme, dict) else {}
+    typo = dict(theme.get("typography") or {})
+    if not (typo.get("heading_font") or "").strip():
+        typo["heading_font"] = ctx.brand_font_family or "Inter"
+        applied.append("theme.typography.heading_font_fallback")
+    if not (typo.get("body_font") or "").strip():
+        typo["body_font"] = "DM Sans"
+        applied.append("theme.typography.body_font_fallback")
+
+    if applied:
+        theme["typography"] = typo
+        ctx.brand_theme = theme
+    return applied
+
+
 async def enrich_brand_kit_from_website(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -964,23 +986,34 @@ async def enrich_brand_kit_from_website(
     ctx = await ensure_brand_context(db, workspace_id)
     url = (ctx.website_url or "").strip()
     if not url:
-        return {"ok": False, "error": "no_website_url", "applied": []}
+        return {"ok": False, "reason": "no_website_url", "applied": []}
 
     from app.services.website_brand_kit_service import fetch_brand_kit_from_website
 
+    website: dict = {}
     kit = await fetch_brand_kit_from_website(url)
     if not kit or kit.get("confidence", 0) < 25:
         website = await fetch_website_deep(url)
         kit = website.get("brand_kit") if isinstance(website.get("brand_kit"), dict) else {}
-    if not kit or kit.get("confidence", 0) < 25:
-        return {
-            "ok": False,
-            "error": "no_kit_detected",
-            "applied": [],
-            "website_ok": bool(website.get("raw_fetch_ok")),
-        }
+    if (not kit or kit.get("confidence", 0) < 25) and url.startswith(("http://", "https://")):
+        from urllib.parse import urlparse, urlunparse
 
-    applied = apply_website_brand_kit(ctx, kit, fill_empty_only=fill_empty_only)
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        alt_host = host[4:] if host.startswith("www.") else f"www.{host}"
+        alt_url = urlunparse(parsed._replace(netloc=alt_host))
+        if alt_url != url:
+            alt_kit = await fetch_brand_kit_from_website(alt_url)
+            if alt_kit and alt_kit.get("confidence", 0) >= 25:
+                kit = alt_kit
+
+    applied: list[str] = []
+    if kit and kit.get("confidence", 0) >= 25:
+        applied = apply_website_brand_kit(ctx, kit, fill_empty_only=fill_empty_only)
+
+    if not applied and fill_empty_only:
+        applied = _apply_default_brand_fonts(ctx)
+
     if applied:
         theme = await derive_brand_theme(ctx)
         await save_brand_theme(ctx, theme, db)
@@ -989,10 +1022,37 @@ async def enrich_brand_kit_from_website(
 
     await db.commit()
 
+    has_fonts = bool((ctx.brand_font_family or "").strip())
+    has_colors = bool((ctx.brand_primary_color or "").strip() and (ctx.brand_accent_color or "").strip())
+
+    if not applied:
+        if has_fonts and has_colors:
+            return {
+                "ok": True,
+                "reason": "already_complete",
+                "applied": [],
+                "kit": kit or {},
+                "brand_font_family": ctx.brand_font_family,
+                "brand_primary_color": ctx.brand_primary_color,
+                "brand_accent_color": ctx.brand_accent_color,
+                "theme": ctx.brand_theme,
+            }
+        return {
+            "ok": False,
+            "reason": "no_kit_detected",
+            "applied": [],
+            "website_ok": bool(website.get("raw_fetch_ok")),
+            "kit": kit or {},
+            "brand_font_family": ctx.brand_font_family,
+            "brand_primary_color": ctx.brand_primary_color,
+            "brand_accent_color": ctx.brand_accent_color,
+            "theme": ctx.brand_theme,
+        }
+
     return {
-        "ok": bool(applied),
+        "ok": True,
         "applied": applied,
-        "kit": kit,
+        "kit": kit or {},
         "brand_font_family": ctx.brand_font_family,
         "brand_primary_color": ctx.brand_primary_color,
         "brand_accent_color": ctx.brand_accent_color,

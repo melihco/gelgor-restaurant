@@ -81,6 +81,8 @@ services:
           name: smartagency-crew
           type: pserv
           property: hostport
+      - key: RateLimit__PermitLimit
+        value: "480"
       - key: FRONTEND_BASE_URL
         fromService:
           name: smartagency-web

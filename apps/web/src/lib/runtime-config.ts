@@ -47,6 +47,11 @@ export function getSignalRHubUrl(): string {
 
 export const SIGNALR_BASE_URL = resolveServerSignalrBaseUrl();
 
+/** Same-origin BFF calls from server route handlers (avoid public URL loopback on Render). */
+export function getNextjsInternalOrigin(): string {
+  return (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
 export const DEFAULT_TENANT_ID =
   process.env.NEXT_PUBLIC_TENANT_ID ||
   '00000000-0000-0000-0000-000000000001';

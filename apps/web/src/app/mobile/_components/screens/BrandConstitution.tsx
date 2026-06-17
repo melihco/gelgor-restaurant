@@ -1641,6 +1641,7 @@ export function BrandConstitution() {
   const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
   const [tab, setTab] = useState<Tab>('identity');
   const [saved, setSaved] = useState(false);
+  const [analyzeFeedback, setAnalyzeFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [newCompetitor, setNewCompetitor] = useState('');
   const [confirmingConstitution, setConfirmingConstitution] = useState(false);
   const [constitutionConfirmError, setConstitutionConfirmError] = useState<string | null>(null);
@@ -1816,12 +1817,13 @@ export function BrandConstitution() {
     fetchTenantBff(`/api/brand-context/${tenantId}/enrich-brand-kit`, tenantId, { method: 'POST' })
       .then(async (r) => (r.ok ? r.json() : null))
       .then((data: {
+        ok?: boolean;
         primary_font?: string;
         secondary_font?: string;
         brand_colors?: string;
         accent_color?: string;
       } | null) => {
-        if (!data) return;
+        if (!data?.ok) return;
         const updates: Partial<SaveCompanyProfileRequest> = {};
         if (!String(p.primaryFont || '').trim() && data.primary_font) updates.primaryFont = data.primary_font;
         if (!String(p.secondaryFont || '').trim() && data.secondary_font) updates.secondaryFont = data.secondary_font;
@@ -1841,60 +1843,48 @@ export function BrandConstitution() {
   // Re-analyze mutation
   const analyzeMutation = useMutation({
     mutationFn: async () => {
+      setAnalyzeFeedback(null);
       const websiteUrl       = ((profile as any)?.websiteUrl ?? '').trim();
       const instagramHandle  = ((profile as any)?.instagramHandle ?? '').trim();
       const googleUrl        = ((profile as any)?.googleBusinessUrl ?? '').trim();
 
-      // Step 1: Refresh .NET profile using live discovery data when URLs exist.
-      if (websiteUrl || instagramHandle || googleUrl) {
-        try {
-          const discovery = await apiClient.discoverBrand({
-            websiteUrl: websiteUrl || undefined,
-            instagramHandle: instagramHandle || undefined,
-            googleBusinessUrl: googleUrl || undefined,
-            applyToProfile: true,
-          });
-          const r = discovery?.report;
-          const current = profile as any;
-          if (r) {
-            const summary = `${r.brandName || current?.brandName || 'Marka'} için sektör ${r.industry || 'general_business'} olarak analiz edildi. Öncelikli hedefler: ${(r.primaryGoals ?? []).slice(0, 3).join(', ') || 'bilinirlik'}. Önerilen sosyal medya ihtiyaçları: ${(r.contentPillars ?? []).slice(0, 5).join(', ') || 'daily_story'}.`;
-            await apiClient.saveCompanyProfile({
-              ...current,
-              brandName: r.brandName || current?.brandName || '',
-              industry: r.industry || current?.industry || '',
-              brandTone: r.brandTone || current?.brandTone || '',
-              targetAudience: Array.isArray(r.targetAudience) ? r.targetAudience.join(', ') : (current?.targetAudience || ''),
-              visualStyle: r.visualStyle || current?.visualStyle || '',
-              campaignGoals: Array.isArray(r.primaryGoals) ? r.primaryGoals.join(', ') : (current?.campaignGoals || ''),
-              websiteUrl: websiteUrl || current?.websiteUrl || '',
-              instagramHandle: instagramHandle || current?.instagramHandle || '',
-              googleBusinessUrl: googleUrl || current?.googleBusinessUrl || '',
-              description: r.websiteSummary || current?.description || '',
-              contentNeeds: Array.isArray(r.contentPillars) ? JSON.stringify(r.contentPillars) : (current?.contentNeeds || ''),
-              riskRules: r.riskRules && Object.keys(r.riskRules).length ? JSON.stringify(r.riskRules) : (current?.riskRules || ''),
-              customerVisibleSummary: summary,
-              languages: current?.languages || discovery?.inferredLanguage || 'tr',
-            } as SaveCompanyProfileRequest);
-          }
-        } catch {
-          await apiClient.analyzeBrand();
-        }
-      } else {
+      if (!websiteUrl && !instagramHandle && !googleUrl) {
+        throw new Error('Marka analizi için web sitesi veya Instagram bilgisi gerekli.');
+      }
+
+      // Step 1: .NET discovery (applyToProfile persists CompanyProfile + brand memory).
+      try {
+        await apiClient.discoverBrand({
+          websiteUrl: websiteUrl || undefined,
+          instagramHandle: instagramHandle || undefined,
+          googleBusinessUrl: googleUrl || undefined,
+          applyToProfile: true,
+        });
+      } catch {
         await apiClient.analyzeBrand();
       }
 
-      // Step 2: Python deep crawl — only if we have at least a website or Instagram URL
-      if (tenantId && (websiteUrl || instagramHandle)) {
-        await apiClient.analyzeBrandContext(tenantId, {
+      // Step 2: Python deep crawl + persist brand_context.
+      if (tenantId) {
+        return apiClient.analyzeBrandContext(tenantId, {
           websiteUrl,
           instagramHandle,
           googleBusinessUrl: googleUrl,
-        }).catch(() => {/* non-fatal */});
+          brandName: String((profile as any)?.brandName || ''),
+        });
       }
+      return null;
     },
     onSuccess: () => {
+      setAnalyzeFeedback({ kind: 'ok', text: 'Marka analizi tamamlandı.' });
       queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
-        void invalidateBrandContextWriteQueries(queryClient, tenantId);
+      void invalidateBrandContextWriteQueries(queryClient, tenantId);
+    },
+    onError: (err) => {
+      setAnalyzeFeedback({
+        kind: 'err',
+        text: err instanceof Error ? err.message : 'Marka analizi başarısız oldu.',
+      });
     },
   });
 
@@ -2695,12 +2685,26 @@ export function BrandConstitution() {
             <button
               onClick={() => analyzeMutation.mutate()}
               disabled={analyzeMutation.isPending}
-              style={{ width: '100%', padding: '14px', borderRadius: 16, cursor: 'pointer', marginBottom: 14, background: t.accentDim, border: `0.5px solid ${t.accentBorder}`, color: t.accent, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              style={{ width: '100%', padding: '14px', borderRadius: 16, cursor: 'pointer', marginBottom: analyzeFeedback ? 8 : 14, background: t.accentDim, border: `0.5px solid ${t.accentBorder}`, color: t.accent, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
               {analyzeMutation.isPending ? (
                 <><div style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${t.accent}40`, borderTop: `2px solid ${t.accent}`, animation: 'spinSlow 0.8s linear infinite' }} /> Analiz Ediliyor...</>
               ) : '✦ Markayı Yeniden Analiz Et'}
             </button>
+            {analyzeFeedback && (
+              <div style={{
+                marginBottom: 14,
+                padding: '10px 12px',
+                borderRadius: 12,
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: analyzeFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
+                background: analyzeFeedback.kind === 'err' ? 'rgba(245,158,11,0.12)' : t.surface,
+                border: `0.5px solid ${analyzeFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : t.separator}`,
+              }}>
+                {analyzeFeedback.text}
+              </div>
+            )}
 
             <SCard t={t} title="AI Değerlendirmesi" accent={t.accent}>
               <InfoRow t={t} label="Tamamlanma Skoru" value={`${score}%`} color={t.accent} />

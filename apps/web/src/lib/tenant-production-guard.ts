@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { extractTenantIdFromAuthHeader } from '@/lib/jwt-tenant';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
@@ -92,7 +93,7 @@ export async function fetchBrandAlignmentGate(
   tenantId: string,
 ): Promise<BrandAlignmentGate | null> {
   try {
-    const res = await fetch(`${req.nextUrl.origin}/api/brand-alignment/${tenantId}`, {
+    const res = await fetch(`${getNextjsInternalOrigin()}/api/brand-alignment/${tenantId}`, {
       headers: buildTenantForwardHeaders(req),
       signal: AbortSignal.timeout(12_000),
     });

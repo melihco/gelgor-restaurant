@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runDeepBrandSetup } from '@/lib/onboarding-brand-setup';
 import { buildTenantForwardHeaders, assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600;
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
   if (tenantGuard) return tenantGuard;
 
   const result = await runDeepBrandSetup({
-    origin: req.nextUrl.origin,
+    origin: getNextjsInternalOrigin(),
     tenantId,
     companyName,
     websiteUrl: websiteUrl || undefined,
