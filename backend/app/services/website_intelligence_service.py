@@ -57,6 +57,21 @@ _VENUE_PATH_HINTS = re.compile(
     re.IGNORECASE,
 )
 
+# QR / digital menu SaaS — often on a different host than the venue homepage
+_EXTERNAL_MENU_HOST = re.compile(
+    r"(view\.qrall\.co|menu\.qrall|qrmenu\.|digitalmenu\.|menulog\.|getmenu\.|"
+    r"menufy\.|toasttab\.com/menu|squareup\.com/menu|bentobox\.|"
+    r"menu\.page|menumiz\.|siparis\.|order\.|yemeksepeti\.com/restaurant|"
+    r"dijitalmenu|online-menu|digital-menu)",
+    re.IGNORECASE,
+)
+
+_MENU_LINK_TEXT = re.compile(
+    r"(qr\s*men[üu]|dijital\s*men[üu]|online\s*men[üu]|men[üu]m[üu]z|"
+    r"men[üu]m[üu]ze|sipari[sş]\s*ver|order\s*now|see\s*menu|view\s*menu)",
+    re.IGNORECASE,
+)
+
 
 def _base_domain(url: str) -> str:
     p = urlparse(url if url.startswith("http") else f"https://{url}")
@@ -89,6 +104,112 @@ def discover_internal_urls(html: str, page_url: str, base: str) -> list[str]:
             seen.add(key)
             found.append(full)
     return found
+
+
+def discover_external_menu_urls(html: str, page_url: str) -> list[str]:
+    """
+    Find QR / digital menu links that live on another domain (common for cafes).
+    Also matches anchor text like 'QR Menü', 'Dijital Menü'.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    for m in re.finditer(
+        r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([\s\S]{0,120}?)</a>',
+        html,
+        re.IGNORECASE,
+    ):
+        href = m.group(1).strip()
+        anchor = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(2))).strip()
+        if href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        full = urljoin(page_url, href).split("#")[0]
+        if not full.startswith("http"):
+            continue
+        host_path = f"{urlparse(full).netloc}{urlparse(full).path}".lower()
+        if not _EXTERNAL_MENU_HOST.search(host_path) and not _MENU_LINK_TEXT.search(anchor):
+            continue
+        key = full.rstrip("/").lower()
+        if key not in seen:
+            seen.add(key)
+            found.append(full)
+
+    # Bare hrefs without anchor context (footer icon links)
+    for m in re.finditer(r'href=["\']([^"\']+)["\']', html, re.IGNORECASE):
+        href = m.group(1).strip()
+        if href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        full = urljoin(page_url, href).split("#")[0]
+        if not full.startswith("http"):
+            continue
+        host_path = f"{urlparse(full).netloc}{urlparse(full).path}".lower()
+        if not _EXTERNAL_MENU_HOST.search(host_path):
+            continue
+        key = full.rstrip("/").lower()
+        if key not in seen:
+            seen.add(key)
+            found.append(full)
+
+    return found[:8]
+
+
+def discover_all_crawl_seeds(
+    html: str,
+    page_url: str,
+    base: str,
+    extra_urls: list[str] | None = None,
+) -> list[str]:
+    """Same-domain menu/gallery paths + cross-domain QR menus + explicit seeds."""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(u: str | None) -> None:
+        if not u or not isinstance(u, str):
+            return
+        s = u.strip()
+        if not s.startswith("http"):
+            return
+        key = s.split("#")[0].rstrip("/").lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(s.split("#")[0])
+
+    for u in discover_internal_urls(html, page_url, base):
+        add(u)
+    for u in discover_external_menu_urls(html, page_url):
+        add(u)
+    for u in extra_urls or []:
+        add(u)
+    return out
+
+
+def extract_menu_items_from_html(html: str, page_url: str) -> list[dict[str, str]]:
+    """Pair img src + alt into structured menu items."""
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for m in re.finditer(r"<img[^>]+>", html, re.IGNORECASE | re.DOTALL):
+        tag = m.group(0)
+        alt_m = re.search(r'alt=["\']([^"\']{2,120})["\']', tag, re.IGNORECASE)
+        src = None
+        for attr in ("data-src", "data-lazy-src", "data-lazy", "data-original", "src"):
+            src_m = re.search(rf'{attr}=["\']([^"\']+)["\']', tag, re.IGNORECASE)
+            if src_m and not src_m.group(1).startswith("data:"):
+                src = urljoin(page_url, src_m.group(1).split("?")[0])
+                break
+        if not src or not _probably_photo_url(src):
+            continue
+        name = (alt_m.group(1).strip() if alt_m else "").strip()
+        if name.lower() in ("image", "photo", "logo", "icon", ""):
+            name = ""
+        key = src.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({"name": name, "image_url": src})
+
+    return items[:60]
 
 
 def classify_image_url(url: str) -> str:
@@ -227,9 +348,11 @@ def build_menu_catalog(
             continue
         seen_cat_urls.add(key)
 
-        # Build item list from image filenames + alt text
+        # Build item list from img tags (src + alt paired)
         items: list[dict[str, str]] = []
         if html:
+            items = extract_menu_items_from_html(html, url)
+        if not items:
             for m in re.finditer(r'<img[^>]+alt=["\']([^"\']{2,80})["\'][^>]*>', html, re.IGNORECASE):
                 alt = m.group(1).strip()
                 if alt.lower() not in ("image", "photo", "logo", ""):

@@ -357,6 +357,7 @@ class BrandAnalysisRequest(BaseModel):
     website_url: str = ""
     instagram_handle: str = ""
     google_business_url: str = ""
+    menu_url: str = ""
     brand_name: str = ""
     industry: str = ""
 
@@ -372,6 +373,7 @@ async def analyze_brand_endpoint(request: BrandAnalysisRequest):
             website_url=request.website_url,
             instagram_handle=request.instagram_handle,
             google_business_url=request.google_business_url,
+            menu_url=request.menu_url or "",
             company_profile={
                 "brand_name": request.brand_name,
                 "industry": request.industry,

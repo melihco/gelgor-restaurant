@@ -48,6 +48,7 @@ export async function POST(
     website_url: String(body.website_url ?? body.websiteUrl ?? '').trim(),
     instagram_handle: String(body.instagram_handle ?? body.instagramHandle ?? '').trim(),
     google_business_url: String(body.google_business_url ?? body.googleBusinessUrl ?? '').trim(),
+    menu_url: String(body.menu_url ?? body.menuUrl ?? '').trim(),
     brand_name: String(body.brand_name ?? body.brandName ?? body.companyName ?? '').trim(),
   };
 

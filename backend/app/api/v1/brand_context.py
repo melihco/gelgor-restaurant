@@ -325,10 +325,10 @@ async def analyze_brand_context(
     Run brand discovery from external URLs and persist the result.
     Never fails silently — returns per-source status even on partial failure.
     """
-    if not body.website_url and not body.instagram_handle and not body.google_business_url:
+    if not body.website_url and not body.instagram_handle and not body.google_business_url and not body.menu_url:
         raise HTTPException(
             400,
-            "Provide at least one of: website_url, instagram_handle, google_business_url",
+            "Provide at least one of: website_url, instagram_handle, google_business_url, menu_url",
         )
 
     logger.info(
@@ -345,6 +345,7 @@ async def analyze_brand_context(
             website_url=body.website_url,
             instagram_handle=body.instagram_handle,
             google_business_url=body.google_business_url,
+            menu_url=body.menu_url or "",
             company_profile={"brand_name": brand_name} if brand_name else {},
         )
     except Exception as exc:

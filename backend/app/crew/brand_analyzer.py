@@ -438,7 +438,11 @@ def _pick_crawl_subpages(links: list[str], base_url: str, base_domain: str, max_
     return [u for _, u in candidates[:max_pages]]
 
 
-async def fetch_website_deep(url: str) -> dict[str, Any]:
+async def fetch_website_deep(
+    url: str,
+    *,
+    extra_crawl_urls: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Deep website crawl using sitemap + link discovery — no Apify needed.
 
@@ -528,8 +532,10 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
             _hr = await _hc.get(url)
             if _hr.status_code < 400:
                 homepage_html = _hr.text
-                from app.services.website_intelligence_service import discover_internal_urls
-                for link in discover_internal_urls(homepage_html, str(_hr.url), base_domain):
+                from app.services.website_intelligence_service import discover_all_crawl_seeds
+                for link in discover_all_crawl_seeds(
+                    homepage_html, str(_hr.url), base_domain, extra_crawl_urls,
+                ):
                     if link not in crawl_urls:
                         crawl_urls.append(link)
     except Exception:
@@ -546,12 +552,12 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
     crawled_pages: list[dict[str, Any]] = []
     max_pages = 35 if len(crawl_urls) > 8 else 20
     batch_urls = crawl_urls[:max_pages]
-    page_results: list[tuple[int, str, str, list[str]]] = []
+    page_results: list[tuple[int, str, str, list[str], str]] = []
 
     async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=headers) as client:
         TR_CHARS = re.compile(r"[çğışöüÇĞİŞÖÜ]")
 
-        async def fetch_page(page_url: str) -> tuple[int, str, str, list[str]]:
+        async def fetch_page(page_url: str) -> tuple[int, str, str, list[str], str]:
             try:
                 r = await client.get(page_url)
                 if r.status_code >= 400:
@@ -560,7 +566,7 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
                     is_html = "html" in r.headers.get("content-type", "") or body.strip().lower().startswith(("<!doc", "<html"))
                     has_imgs = bool(re.search(r'\.(?:jpg|jpeg|png|webp)', body))
                     if not (is_html and has_imgs):
-                        return (0, "", "", [])
+                        return (0, "", "", [], "")
                 html_content = r.text
                 title = ""
                 tm = re.search(r"<title[^>]*>(.*?)</title>", html_content, re.IGNORECASE | re.DOTALL)
@@ -571,45 +577,54 @@ async def fetch_website_deep(url: str) -> dict[str, Any]:
                 imgs = extract_image_urls_from_html(html_content, page_url)
 
                 if not text:
-                    return (0, "", "", imgs)
+                    return (0, title, "", imgs, html_content[:120_000])
 
                 # Penalise English-only pages
                 tr_ratio = len(TR_CHARS.findall(text)) / max(len(text), 1)
                 if tr_ratio < 0.005 and len(text) > 200:
-                    return (1, title, text[:1000], imgs)
+                    return (1, title, text[:1000], imgs, html_content[:120_000])
 
                 score = len(PRODUCT_KEYWORDS.findall(text)) + len(text) // 200
                 tr_product_signals = ["zeytinyağı", "bal ", "badem", "reçel", "turşu",
                                       "yöresel", "doğal", "hasat", "ürün", "pekmez"]
                 score += sum(5 for w in tr_product_signals if w in text.lower())
-                return (score, title, text[:5000], imgs)
+                return (score, title, text[:5000], imgs, html_content[:120_000])
             except Exception:
-                return (0, "", "", [])
+                return (0, "", "", [], "")
 
         import asyncio as _asyncio
         tasks = [fetch_page(u) for u in batch_urls]
         page_results = await _asyncio.gather(*tasks)
 
-    for score, title, text, imgs in page_results:
+    for score, title, text, imgs, _html in page_results:
         if text and score > 0:
             scored_pages.append((score, title, text))
         all_image_urls.extend(imgs)
 
-    for page_url, (score, title, text, imgs) in zip(batch_urls, page_results):
+    for page_url, (score, title, text, imgs, page_html) in zip(batch_urls, page_results):
         crawled_pages.append({
             "url": page_url,
             "title": title,
             "text": text,
-            "html": "",
+            "html": page_html,
             "image_urls": imgs,
         })
 
     if not scored_pages:
         # Fallback: homepage only, no scoring
         try:
-            s, t, text = (await fetch_page(url))  # type: ignore
+            s, t, text, imgs, page_html = await fetch_page(url)
             if text:
                 scored_pages.append((s, t, text))
+            elif imgs:
+                all_image_urls.extend(imgs)
+                crawled_pages.append({
+                    "url": url,
+                    "title": t,
+                    "text": "",
+                    "html": page_html,
+                    "image_urls": imgs,
+                })
         except Exception:
             pass
 
@@ -1167,6 +1182,7 @@ async def analyze_brand(
     website_url: str = "",
     instagram_handle: str = "",
     google_business_url: str = "",
+    menu_url: str = "",
     company_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
@@ -1186,6 +1202,7 @@ async def analyze_brand(
 
     profile = company_profile or {}
     settings = get_settings()
+    extra_crawl = [menu_url.strip()] if (menu_url or "").strip() else None
     use_apify = bool(
         settings.apify_enabled
         and settings.apify_api_key
@@ -1199,7 +1216,9 @@ async def analyze_brand(
 
         # Website: try Apify deep crawl first; fall back to deep direct HTTP on failure/limit
         if website_url:
-            website_data = await fetch_website_apify(website_url, api_key, timeout)
+            website_data = await fetch_website_apify(
+                website_url, api_key, timeout, extra_crawl_urls=extra_crawl,
+            )
             apify_images = len(website_data.get("image_urls") or [])
             if not website_data.get("raw_fetch_ok") or apify_images < 8:
                 logger.info(
@@ -1208,7 +1227,13 @@ async def analyze_brand(
                     raw_fetch_ok=website_data.get("raw_fetch_ok"),
                     apify_images=apify_images,
                 )
-                website_data = await fetch_website_deep(website_url)
+                website_data = await fetch_website_deep(
+                    website_url, extra_crawl_urls=extra_crawl,
+                )
+        elif extra_crawl:
+            website_data = await fetch_website_deep(
+                extra_crawl[0], extra_crawl_urls=extra_crawl,
+            )
         else:
             website_data = await _empty_dict()
 
@@ -1262,7 +1287,11 @@ async def analyze_brand(
     else:
         logger.info("brand_analyze_using_deep_http")
         website_data, instagram_data, google_data = await asyncio.gather(
-            fetch_website_deep(website_url) if website_url else _empty_dict(),
+            fetch_website_deep(website_url, extra_crawl_urls=extra_crawl)
+            if website_url else (
+                fetch_website_deep(extra_crawl[0], extra_crawl_urls=extra_crawl)
+                if extra_crawl else _empty_dict()
+            ),
             fetch_instagram_profile(instagram_handle) if instagram_handle else _empty_dict(),
             fetch_google_business_info(google_business_url) if google_business_url else _empty_dict(),
         )

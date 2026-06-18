@@ -372,12 +372,16 @@ def _detect_spa_from_html(html: str) -> bool:
     return any(m in html for m in markers)
 
 
-async def _fetch_homepage_html(url: str, base_domain: str) -> tuple[str, list[str]]:
+async def _fetch_homepage_html(
+    url: str,
+    base_domain: str,
+    extra_crawl_urls: list[str] | None = None,
+) -> tuple[str, list[str]]:
     """
-    Fetch homepage HTML and discover menu/category internal links.
+    Fetch homepage HTML and discover menu/category internal + external links.
     Returns (html, discovered_urls).
     """
-    from app.services.website_intelligence_service import discover_internal_urls
+    from app.services.website_intelligence_service import discover_all_crawl_seeds
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
@@ -390,7 +394,9 @@ async def _fetch_homepage_html(url: str, base_domain: str) -> tuple[str, list[st
             if r.status_code >= 400:
                 return "", []
             html = r.text
-            discovered = discover_internal_urls(html, str(r.url), base_domain)
+            discovered = discover_all_crawl_seeds(
+                html, str(r.url), base_domain, extra_crawl_urls,
+            )
             return html, discovered
     except Exception as exc:
         logger.debug("homepage_prefetch_failed", url=url, error=str(exc))
@@ -443,7 +449,13 @@ async def _extract_images_from_url_direct(url: str, base_domain: str) -> list[st
         return []
 
 
-async def fetch_website_apify(url: str, api_key: str, timeout: int = 90) -> dict[str, Any]:
+async def fetch_website_apify(
+    url: str,
+    api_key: str,
+    timeout: int = 90,
+    *,
+    extra_crawl_urls: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Deep website crawl via Apify Website Content Crawler.
 
@@ -494,6 +506,16 @@ async def fetch_website_apify(url: str, api_key: str, timeout: int = 90) -> dict
     seen_urls: set[str] = {url}
     start_urls = [{"url": url}]
 
+    for seed in extra_crawl_urls or []:
+        s = (seed or "").strip()
+        if not s.startswith("http"):
+            continue
+        if not s.startswith(("http://", "https://")):
+            s = f"https://{s}"
+        if s.rstrip("/").lower() not in {u.rstrip("/").lower() for u in seen_urls}:
+            seen_urls.add(s)
+            start_urls.append({"url": s})
+
     for su in sitemap_urls[:12]:    # sitemap URLs first (more reliable)
         if su not in seen_urls:
             seen_urls.add(su)
@@ -509,7 +531,9 @@ async def fetch_website_apify(url: str, api_key: str, timeout: int = 90) -> dict
                 break
 
     # ── Phase 3: Homepage prefetch — discover menu category URLs ───────────
-    homepage_html, discovered_links = await _fetch_homepage_html(url, base_domain)
+    homepage_html, discovered_links = await _fetch_homepage_html(
+        url, base_domain, extra_crawl_urls,
+    )
     menu_heavy = len(discovered_links) >= 3
     for link in discovered_links[:25]:
         if link not in seen_urls:

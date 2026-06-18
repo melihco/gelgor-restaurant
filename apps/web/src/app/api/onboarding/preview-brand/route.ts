@@ -50,10 +50,11 @@ export async function POST(request: NextRequest) {
   const websiteUrl = str(body.websiteUrl ?? body.website_url);
   const instagramHandle = str(body.instagramHandle ?? body.instagram_handle).replace(/^@/, '');
   const googleBusinessUrl = str(body.googleBusinessUrl ?? body.google_business_url);
+  const menuUrl = str(body.menuUrl ?? body.menu_url);
 
-  if (!websiteUrl && !instagramHandle && !googleBusinessUrl) {
+  if (!websiteUrl && !instagramHandle && !googleBusinessUrl && !menuUrl) {
     return NextResponse.json(
-      { success: false, message: 'En az bir web sitesi veya Instagram hesabı girin.' },
+      { success: false, message: 'En az bir web sitesi, menü linki veya Instagram hesabı girin.' },
       { status: 400 },
     );
   }
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
         website_url: websiteUrl,
         instagram_handle: instagramHandle,
         google_business_url: googleBusinessUrl,
+        menu_url: menuUrl,
       }),
       signal: AbortSignal.timeout(170_000),
     });

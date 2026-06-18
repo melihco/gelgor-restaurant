@@ -73,10 +73,11 @@ function extractDomain(url: string): string {
 }
 
 // ─── URL Step ─────────────────────────────────────────────────────────
-function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string) => void; onLogin: () => void }) {
+function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUrl: string) => void; onLogin: () => void }) {
   const { t } = useTheme();
   const [url, setUrl]     = useState('');
   const [ig, setIg]       = useState('');
+  const [menuUrl, setMenuUrl] = useState('');
   const [error, setError] = useState('');
   const [mode, setMode]   = useState<'web' | 'social'>('web');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,19 +88,24 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string) => voi
     const cleanIg = stripHandle(ig);
     if (mode === 'social') {
       if (!cleanIg) { setError('Instagram kullanıcı adınızı girin'); return; }
-      onNext('', cleanIg);
+      onNext('', cleanIg, '');
       return;
     }
     const normalized = normalizeUrl(url);
-    if (!normalized && !cleanIg) { setError('Web sitesi URL\'i veya Instagram handle\'ı girin'); return; }
+    const normalizedMenu = menuUrl.trim() ? normalizeUrl(menuUrl) : '';
+    if (!normalized && !cleanIg && !normalizedMenu) { setError('Web sitesi URL\'i, menü linki veya Instagram handle\'ı girin'); return; }
     if (normalized) {
       try { new URL(normalized); } catch { setError('Geçerli bir URL girin (örn: siteniz.com)'); return; }
     }
-    onNext(normalized, cleanIg);
+    if (normalizedMenu) {
+      try { new URL(normalizedMenu); } catch { setError('Geçerli bir menü linki girin'); return; }
+    }
+    onNext(normalized, cleanIg, normalizedMenu);
   }
 
   const hasWebInput = url.trim().length > 0;
   const hasIgInput  = ig.trim().length > 0;
+  const hasMenuInput = menuUrl.trim().length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#04040A', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif' }}>
@@ -166,6 +172,28 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string) => voi
                     color: '#F4F4F8',
                     boxShadow: hasWebInput ? '0 0 0 3px rgba(77,112,136,0.12)' : 'none',
                     transition: 'border 200ms, box-shadow 200ms',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* QR / digital menu optional */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>QR Menü / Dijital Menü (opsiyonel)</div>
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: 'rgba(148,163,184,0.3)', pointerEvents: 'none' }}>📋</div>
+                <input
+                  value={menuUrl}
+                  onChange={e => { setMenuUrl(e.target.value); setError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+                  placeholder="menu.siteniz.com veya QR menü linki"
+                  type="url"
+                  style={{
+                    width: '100%', padding: '13px 16px 13px 34px', borderRadius: 14, outline: 'none', boxSizing: 'border-box',
+                    fontSize: 15,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `0.5px solid ${hasMenuInput ? 'rgba(77,112,136,0.25)' : 'rgba(255,255,255,0.08)'}`,
+                    color: '#F4F4F8',
                   }}
                 />
               </div>
@@ -253,8 +281,8 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string) => voi
 }
 
 // ─── Analysis Step ─────────────────────────────────────────────────────
-function AnalyzingStep({ url, ig, onDone }: {
-  url: string; ig: string;
+function AnalyzingStep({ url, ig, menuUrl, onDone }: {
+  url: string; ig: string; menuUrl: string;
   onDone: (result: BrandDiscoveryResult | null) => void;
 }) {
   const { t } = useTheme();
@@ -279,6 +307,7 @@ function AnalyzingStep({ url, ig, onDone }: {
       body: JSON.stringify({
         websiteUrl: url,
         instagramHandle: ig || undefined,
+        menuUrl: menuUrl || undefined,
       }),
     })
       .then(async (res) => {
@@ -303,7 +332,7 @@ function AnalyzingStep({ url, ig, onDone }: {
         if (!cancelled) setApiSettled(true);
       });
     return () => { cancelled = true; };
-  }, [url, ig]);
+  }, [url, ig, menuUrl]);
 
   // Animate steps sequentially; finish only after API settles (or min animation time)
   useEffect(() => {
@@ -637,10 +666,11 @@ function ResultsStep({ result, url, ig, onNext }: {
 }
 
 // ─── Sign Up Step ──────────────────────────────────────────────────────
-function SignupStep({ brandName, websiteUrl, igHandle, discoveryResult, onDone }: {
+function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult, onDone }: {
   brandName: string;
   websiteUrl: string;
   igHandle: string;
+  menuUrl: string;
   discoveryResult: BrandDiscoveryResult | null;
   onDone: (companyName: string) => void;
 }) {
@@ -761,8 +791,8 @@ function SignupStep({ brandName, websiteUrl, igHandle, discoveryResult, onDone }
   }
 
   async function runFullBrandOnboarding(tenantId: string) {
-    if (!websiteUrl && !igHandle) {
-      throw new Error('Marka analizi için web sitesi veya Instagram gerekli.');
+    if (!websiteUrl && !igHandle && !menuUrl) {
+      throw new Error('Marka analizi için web sitesi, menü linki veya Instagram gerekli.');
     }
 
     setStatus('Derin marka analizi: web, Instagram, galeri ve anayasa (1–3 dk)...');
@@ -777,6 +807,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, discoveryResult, onDone }
         companyName: company.trim(),
         websiteUrl: websiteUrl || undefined,
         instagramHandle: igHandle || undefined,
+        menuUrl: menuUrl || undefined,
       }),
     });
 
@@ -848,7 +879,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, discoveryResult, onDone }
       setStatus('Firma profili kaydediliyor...');
       await apiClient.saveCompanyProfile(baselineProfile() as any);
 
-      if (session.tenantId && (websiteUrl || igHandle)) {
+      if (session.tenantId && (websiteUrl || igHandle || menuUrl)) {
         await runFullBrandOnboarding(session.tenantId);
       }
 
@@ -1019,6 +1050,7 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
   const [step, setStep] = useState<Step>('url');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [igHandle, setIgHandle]     = useState('');
+  const [menuUrl, setMenuUrl]       = useState('');
   const [result, setResult]         = useState<BrandDiscoveryResult | null>(null);
   const [signupBrandName, setSignupBrandName] = useState('');
 
@@ -1032,7 +1064,7 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
     <div key={step} style={slideStyle}>
       {step === 'url' && (
         <UrlStep
-          onNext={(url, ig) => { setWebsiteUrl(url); setIgHandle(ig); setStep('analyzing'); }}
+          onNext={(url, ig, menu) => { setWebsiteUrl(url); setIgHandle(ig); setMenuUrl(menu); setStep('analyzing'); }}
           onLogin={onLogin}
         />
       )}
@@ -1040,6 +1072,7 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
         <AnalyzingStep
           url={websiteUrl}
           ig={igHandle}
+          menuUrl={menuUrl}
           onDone={(res) => { setResult(res); setStep('results'); }}
         />
       )}
@@ -1051,6 +1084,7 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
           brandName={brandName}
           websiteUrl={websiteUrl}
           igHandle={igHandle}
+          menuUrl={menuUrl}
           discoveryResult={result}
           onDone={(companyName) => {
             setSignupBrandName(companyName);

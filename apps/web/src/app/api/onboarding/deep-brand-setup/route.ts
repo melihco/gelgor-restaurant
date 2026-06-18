@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
   const instagramHandle = String(body.instagramHandle ?? '').replace(/^@/, '').trim();
   const googleBusinessUrl = String(body.googleBusinessUrl ?? '').trim();
 
+  const menuUrl = String(body.menuUrl ?? body.menu_url ?? '').trim();
+
   if (!tenantId) {
     return NextResponse.json({ error: 'tenantId required' }, { status: 400 });
   }
@@ -35,6 +37,7 @@ export async function POST(req: NextRequest) {
     websiteUrl: websiteUrl || undefined,
     instagramHandle: instagramHandle || undefined,
     googleBusinessUrl: googleBusinessUrl || undefined,
+    menuUrl: menuUrl || undefined,
     headers: buildTenantForwardHeaders(req),
   });
 

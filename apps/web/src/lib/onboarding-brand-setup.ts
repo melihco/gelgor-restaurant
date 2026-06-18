@@ -19,6 +19,7 @@ export interface DeepBrandSetupInput {
   websiteUrl?: string;
   instagramHandle?: string;
   googleBusinessUrl?: string;
+  menuUrl?: string;
   headers?: Record<string, string>;
 }
 
@@ -284,6 +285,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     websiteUrl = '',
     instagramHandle = '',
     googleBusinessUrl = '',
+    menuUrl = '',
     headers = {},
   } = input;
 
@@ -293,7 +295,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   let constitutionConfirmed = false;
   let brandDnaRichness: string | null = null;
 
-  if (!websiteUrl && !instagramHandle) {
+  if (!websiteUrl && !instagramHandle && !menuUrl) {
     return {
       ok: false,
       steps,
@@ -302,7 +304,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
       constitutionConfirmed: false,
       brandDnaRichness: null,
       productionReady: false,
-      errors: ['Web sitesi veya Instagram gerekli.'],
+      errors: ['Web sitesi, menü linki veya Instagram gerekli.'],
     };
   }
 
@@ -313,6 +315,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
       website_url: websiteUrl,
       instagram_handle: instagramHandle.replace(/^@/, ''),
       google_business_url: googleBusinessUrl,
+      menu_url: menuUrl,
       brand_name: companyName,
     },
     { ...headers, 'X-Onboarding-Analyze': '1', 'X-Skip-Cdn-Mirror': '1' },

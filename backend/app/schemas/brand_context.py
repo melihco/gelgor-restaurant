@@ -149,6 +149,7 @@ class BrandAnalyzeRequest(BaseModel):
     website_url: str = ""
     instagram_handle: str = ""
     google_business_url: str = ""
+    menu_url: str = ""
     brand_name: str = ""
 
 
