@@ -129,7 +129,7 @@ export const MissionContentFactory = dynamic(
 export const PlatformFeed = dynamic(
   importWithChunkRetry('PlatformFeed', () =>
     import('./screens/PlatformFeed').then((m) => ({ default: m.PlatformFeed }))),
-  { loading: () => <ScreenSkeleton />, ssr: false },
+  { loading: () => null, ssr: false },
 );
 export const PlatformPreviewStudio = dynamic(
   importWithChunkRetry('PlatformPreviewStudio', () =>

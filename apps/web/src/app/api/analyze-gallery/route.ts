@@ -48,6 +48,7 @@ TAG EVERY VISIBLE ELEMENT (use categories relevant to what you see):
 - Food/Drink: dish name + ingredients, drink type + garnish, presentation style
 - Space/Venue: specific room type, furniture, architectural features, outdoor/indoor
 - Products: product name/type, packaging, material, display method
+- **Packaged goods / local products:** read ANY visible label text on the package (e.g. "KURU NANE", "BADEM") and put exact product names in contentTags + pairingKeywords (TR + EN)
 - Equipment/Tools: specific items relevant to the business (salon chair, gym rack, medical device, etc.)
 - People: role/context (stylist, trainer, customer, team, model)
 - Atmosphere: lighting mood, time of day, ambiance elements

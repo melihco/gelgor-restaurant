@@ -25,11 +25,6 @@ export function useMobileArtifacts(options?: Options) {
     ...base,
     enabled: (options?.enabled ?? true) && Boolean(tenantId),
     refetchInterval: options?.subscribeOnly ? false : base.refetchInterval,
-    queryFn: async () => {
-      const { apiClient } = await import('@/lib/api-client');
-      const merged = { limit: 100, ...options?.params };
-      return apiClient.getArtifacts(merged, tenantId!);
-    },
   });
 }
 

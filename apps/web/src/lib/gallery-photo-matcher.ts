@@ -65,6 +65,96 @@ export interface PhotoMatchResult {
  */
 export const MIN_ACCEPT_SCORE = 28;
 
+/**
+ * Yerel üretici / gıda mağazası SKU sözlüğü.
+ * Caption ↔ galeri eşleşmesi, çapraz ürün cezası ve vision tag zenginleştirmede ortak kaynak.
+ */
+export const LOCAL_PRODUCT_SKU_CLUSTERS: ReadonlyArray<{
+  id: string;
+  terms: readonly string[];
+}> = [
+  { id: 'badem', terms: ['badem', 'almond', 'badam', 'bademli', 'badem ezmesi', 'badem ezme', 'almond butter', 'almond paste', 'roasted almond', 'kavrulmuş badem', 'kavrulmus badem', 'çiğ badem', 'cig badem', 'badem şöleni', 'badem soleni'] },
+  { id: 'nane', terms: ['nane', 'mint', 'kuru nane', 'dry mint', 'nanə', 'nane yaprağı', 'nane yapragi', 'spearmint', 'peppermint', 'dried mint leaves'] },
+  { id: 'zeytinyağı', terms: ['zeytinyağı', 'zeytinyagi', 'zeytin yagi', 'zeytin yağı', 'olive oil', 'extra virgin', 'sızma', 'sizma', 'naturel sızma', 'erken hasat', 'cold pressed olive'] },
+  { id: 'zeytin', terms: ['zeytin', 'olive', 'siyah zeytin', 'yeşil zeytin', 'yesil zeytin', 'green olive', 'black olive'] },
+  { id: 'reçel', terms: ['reçel', 'recel', 'jam', 'marmalade', 'confiture', 'incir reçeli', 'incir receli', 'ayva reçeli', 'ayva receli', 'çilek reçeli', 'cilek receli', 'portakal reçeli', 'vişne reçeli', 'visne receli', 'gül reçeli', 'gul receli'] },
+  { id: 'bal', terms: ['bal', 'honey', 'petek', 'petek bal', 'comb honey', 'süzme bal', 'suzme bal', 'çiçek balı', 'cicek bali', 'keçiboynuzu balı', 'keciboynuzu bali'] },
+  { id: 'pekmez', terms: ['pekmez', 'molasses', 'üzüm pekmezi', 'uzum pekmezi', 'dut pekmezi', 'carob molasses', 'keçiboynuzu pekmezi', 'keciboynuzu pekmezi', 'tahin pekmez'] },
+  { id: 'incir', terms: ['incir', 'fig', 'kuru incir', 'dried fig', 'fig jam', 'taze incir'] },
+  { id: 'kayısı', terms: ['kayısı', 'kayisi', 'apricot', 'kuru kayısı', 'kuru kayisi', 'dried apricot', 'malatya kayısı'] },
+  { id: 'ceviz', terms: ['ceviz', 'walnut', 'ceviz içi', 'ceviz ici', 'walnut kernel', 'kırık ceviz', 'kirik ceviz'] },
+  { id: 'fındık', terms: ['fındık', 'findik', 'hazelnut', 'kavrulmuş fındık', 'kavrulmus findik', 'fındık ezmesi', 'findik ezmesi'] },
+  { id: 'fıstık', terms: ['fıstık', 'fistik', 'pistachio', 'antep fıstığı', 'antep fistigi', 'roasted pistachio'] },
+  { id: 'kaju', terms: ['kaju', 'cashew', 'kaju fıstığı', 'kaju fistigi'] },
+  { id: 'leblebi', terms: ['leblebi', 'roasted chickpea', 'sarı leblebi', 'sari leblebi', 'çifte kavrulmuş', 'cifte kavrulmus'] },
+  { id: 'turşu', terms: ['turşu', 'tursu', 'pickle', 'pickled', 'salatalık turşusu', 'salatalik tursusu', 'biber turşusu', 'lahana turşusu'] },
+  { id: 'salça', terms: ['salça', 'salca', 'tomato paste', 'domates salçası', 'domates salcasi', 'biber salçası', 'biber salcasi'] },
+  { id: 'domates', terms: ['domates', 'tomato', 'domates kurusu', 'sun dried tomato', 'kurutulmuş domates', 'kurutulmus domates'] },
+  { id: 'biber', terms: ['biber', 'pepper', 'pul biber', 'isot', 'urfa biber', 'kırmızı biber', 'kirmizi biber', 'chili flake', 'acı biber', 'aci biber'] },
+  { id: 'sumak', terms: ['sumak', 'sumac', 'ground sumac'] },
+  { id: 'tarçın', terms: ['tarçın', 'tarcin', 'cinnamon', 'cinnamon stick', 'tarçın çubuk'] },
+  { id: 'kekik', terms: ['kekik', 'thyme', 'kuru kekik', 'dried thyme', 'wild thyme', 'dağ kekiği', 'dag kekigi'] },
+  { id: 'biberiye', terms: ['biberiye', 'rosemary', 'kuru biberiye'] },
+  { id: 'defne', terms: ['defne', 'defne yaprağı', 'defne yapragi', 'bay leaf', 'laurel leaf', 'dried bay'] },
+  { id: 'kimyon', terms: ['kimyon', 'cumin', 'ground cumin'] },
+  { id: 'zencefil', terms: ['zencefil', 'ginger', 'ground ginger', 'taze zencefil'] },
+  { id: 'zerdeçal', terms: ['zerdeçal', 'zerdecal', 'turmeric', 'curcuma'] },
+  { id: 'tahin', terms: ['tahin', 'tahini', 'sesame paste', 'susam ezmesi'] },
+  { id: 'peynir', terms: ['peynir', 'cheese', 'tulum peynir', 'tulum peyniri', 'kaşar', 'kasar', 'lor peynir', 'ezine peyniri', 'yöresel peynir', 'yoresel peynir'] },
+  { id: 'tereyağı', terms: ['tereyağı', 'tereyagi', 'butter', 'sade yağ', 'sade yag', 'clarified butter'] },
+  { id: 'tarhana', terms: ['tarhana', 'tarhana çorbası', 'tarhana corbasi', 'homemade tarhana'] },
+  { id: 'erişte', terms: ['erişte', 'eriste', 'homemade pasta', 'el yapımı erişte', 'handmade noodle'] },
+  { id: 'ekmek', terms: ['ekmek', 'bread', 'köy ekmeği', 'koy eknegi', 'sourdough', 'artisan bread'] },
+  { id: 'çay', terms: ['çay', 'cay', 'tea', 'black tea', 'bitki çayı', 'bitki cayi', 'herbal tea', 'adaçayı', 'adacayi', 'ihlamur', 'papatya çayı'] },
+  { id: 'kahve', terms: ['kahve', 'coffee', 'turk kahvesi', 'türk kahvesi', 'ground coffee', 'filtre kahve'] },
+  { id: 'dut', terms: ['dut', 'mulberry', 'dut kurusu', 'white mulberry', 'dried mulberry'] },
+  { id: 'üzüm', terms: ['üzüm', 'uzum', 'grape', 'kuru üzüm', 'kuru uzum', 'raisin', 'sultana'] },
+  { id: 'elma', terms: ['elma', 'apple', 'elma kurusu', 'dried apple ring', 'apple chip'] },
+  { id: 'ayva', terms: ['ayva', 'quince', 'ayva reçeli', 'quince jam'] },
+  { id: 'portakal', terms: ['portakal', 'orange', 'turunç', 'turunc', 'mandalina', 'mandarin'] },
+  { id: 'limon', terms: ['limon', 'lemon', 'limon kabuğu', 'limon kabugu', 'citrus zest'] },
+  { id: 'nar', terms: ['nar', 'pomegranate', 'nar ekşisi', 'nar eksisi', 'pomegranate molasses'] },
+  { id: 'sucuk', terms: ['sucuk', 'sausage', 'garlic sausage', 'fermented sausage'] },
+  { id: 'pastırma', terms: ['pastırma', 'pastirma', 'cured beef', 'basturma'] },
+  { id: 'zeytin_ezmesi', terms: ['zeytin ezmesi', 'zeytin ezme', 'olive tapenade', 'olive spread'] },
+  { id: 'ot', terms: ['kuru ot', 'dried herb', 'dağ otu', 'dag otu', 'wild herb', 'foraged herb', 'mixed herbs'] },
+  { id: 'şölen', terms: ['şölen', 'solen', 'feast', 'atıştırmalık', 'atistirmalik', 'snack mix', 'natural snack', 'celebration spread'] },
+] as const;
+
+function flattenLocalProductTerms(max = 64): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
+    for (const term of cluster.terms) {
+      const key = term.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(term);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
+
+function detectLocalProductClusters(text: string): Set<number> {
+  const lower = text.toLowerCase();
+  const hits = new Set<number>();
+  LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
+    if (cluster.terms.some((t) => lower.includes(t.toLowerCase()))) hits.add(idx);
+  });
+  return hits;
+}
+
+function productPhotoConflictPenalty(captionText: string, photoSearchable: string): number {
+  const cap = detectLocalProductClusters(captionText);
+  const photo = detectLocalProductClusters(photoSearchable);
+  if (cap.size === 0 || photo.size === 0) return 0;
+  for (const idx of cap) {
+    if (photo.has(idx)) return 0;
+  }
+  return 58;
+}
+
 /** Strong match — prefer these over weak fallbacks. */
 export const STRONG_MATCH_SCORE = 52;
 
@@ -257,6 +347,12 @@ const SUBJECT_SYNONYMS: [string, string[], number][] = [
                    'park', 'outdoor', 'natural', 'scenics', 'scenic'], 10],
   ['light',       ['light', 'lighting', 'ışık', 'sunlight', 'golden', 'bright', 'glow',
                    'illuminated', 'shadow', 'warm light', 'ambient light'], 8],
+
+  // ── Local artisan / packaged goods (TR + EN) ─────────────────────────────
+  ['artisan_food', ['yöresel', 'yoresel', 'köy', 'koy', 'doğal', 'dogal', 'organik', 'organic',
+                   'artisan', 'handmade', 'el yapımı', 'el yapimi', 'hasat', 'harvest', 'geleneksel',
+                   'traditional', 'local product', 'yerel ürün', 'yerel urun', 'ambalaj', 'packaging',
+                   'kavanoz', 'jar', 'şişe', 'sise', 'bottle', 'poşet', 'poset', 'bag', 'etiket', 'label'], 11],
 
   // ── Universal brand / identity ───────────────────────────────
   ['brand',       ['logo', 'brand', 'marka', 'sign', 'signage', 'entrance', 'facade',
@@ -464,10 +560,11 @@ const BUSINESS_TYPE_AFFINITY: Array<{
       'handmade', 'el yapımı', 'local_products_shop',
     ],
     prefer: [
-      'product', 'jar', 'kavanoz', 'bottle', 'şişe', 'package', 'ambalaj',
-      'natural', 'doğal', 'organic', 'organik', 'harvest', 'hasat',
+      'product', 'jar', 'kavanoz', 'bottle', 'şişe', 'sise', 'package', 'ambalaj',
+      'natural', 'doğal', 'dogal', 'organic', 'organik', 'harvest', 'hasat',
       'ingredient', 'malzeme', 'texture', 'close-up', 'rustic', 'artisan',
-      'handmade', 'el yapımı', 'farm', 'çiftlik', 'village', 'köy',
+      'handmade', 'el yapımı', 'el yapimi', 'farm', 'çiftlik', 'ciftlik', 'village', 'köy', 'koy',
+      ...flattenLocalProductTerms().slice(0, 48),
     ],
     avoid: ['medical', 'gym equipment', 'urban nightlife'],
   },
@@ -576,6 +673,17 @@ export function enrichTagsFromDescription(meta: GalleryPhotoMeta): Partial<Galle
   // Merge GPT-provided tags with description-derived words
   const existingTags = new Set(meta.contentTags ?? []);
   const allTags = new Set([...existingTags, ...contentWords.slice(0, 20)]);
+  const pairingKeywords = new Set(meta.pairingKeywords ?? []);
+
+  for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
+    const hit = cluster.terms.some((t) => descLower.includes(t.toLowerCase()));
+    if (!hit) continue;
+    allTags.add(cluster.id);
+    for (const term of cluster.terms.slice(0, 6)) {
+      allTags.add(term.toLowerCase());
+      pairingKeywords.add(term.toLowerCase());
+    }
+  }
 
   // ── Step 2: Infer bestFor from universal activity patterns ─────────────────
   // Universal patterns — apply to any sector without hardcoding domain terms
@@ -607,6 +715,7 @@ export function enrichTagsFromDescription(meta: GalleryPhotoMeta): Partial<Galle
     contentTags: [...allTags],
     bestFor: [...bestFor],
     usageContext: meta.usageContext || desc.slice(0, 200),
+    pairingKeywords: pairingKeywords.size ? [...pairingKeywords] : meta.pairingKeywords,
   };
 }
 
@@ -669,36 +778,6 @@ function buildSearchable(meta: GalleryPhotoMeta): string {
     meta.mood ?? '',
     ...(meta.bestFor ?? []),
   ].join(' ').toLowerCase();
-}
-
-const LOCAL_PRODUCT_CLUSTERS: string[][] = [
-  ['badem', 'almond', 'badam', 'bademli'],
-  ['nane', 'mint', 'kuru nane', 'dry mint'],
-  ['zeytinyağı', 'zeytinyagi', 'olive oil', 'extra virgin'],
-  ['reçel', 'recel', 'jam', 'marmalade'],
-  ['bal', 'honey', 'petek'],
-  ['pekmez', 'molasses'],
-  ['incir', 'fig'],
-  ['turşu', 'tursu', 'pickle'],
-];
-
-function detectLocalProductClusters(text: string): Set<number> {
-  const lower = text.toLowerCase();
-  const hits = new Set<number>();
-  LOCAL_PRODUCT_CLUSTERS.forEach((terms, idx) => {
-    if (terms.some((t) => lower.includes(t))) hits.add(idx);
-  });
-  return hits;
-}
-
-function productPhotoConflictPenalty(captionText: string, photoSearchable: string): number {
-  const cap = detectLocalProductClusters(captionText);
-  const photo = detectLocalProductClusters(photoSearchable);
-  if (cap.size === 0 || photo.size === 0) return 0;
-  for (const idx of cap) {
-    if (photo.has(idx)) return 0;
-  }
-  return 58;
 }
 
 function scorePhotoForContent(
@@ -883,22 +962,12 @@ function scorePhotoForContent(
     }
   }
 
-  const PRODUCT_SUB_TYPES: Array<{ captionTerms: string[]; photoTerms: string[] }> = [
-    { captionTerms: ['badem', 'almond', 'badam'], photoTerms: ['badem', 'almond', 'badam', 'bademli'] },
-    { captionTerms: ['nane', 'mint', 'kuru nane'], photoTerms: ['nane', 'mint', 'kuru nane', 'dry mint'] },
-    { captionTerms: ['zeytinyağı', 'zeytinyagi', 'olive oil'], photoTerms: ['zeytinyağı', 'zeytinyagi', 'olive oil', 'zeytin'] },
-    { captionTerms: ['reçel', 'recel', 'jam'], photoTerms: ['reçel', 'recel', 'jam', 'marmalade'] },
-    { captionTerms: ['bal', 'honey'], photoTerms: ['bal', 'honey', 'petek'] },
-    { captionTerms: ['pekmez'], photoTerms: ['pekmez', 'molasses'] },
-    { captionTerms: ['incir', 'fig'], photoTerms: ['incir', 'fig'] },
-    { captionTerms: ['turşu', 'tursu', 'pickle'], photoTerms: ['turşu', 'tursu', 'pickle'] },
-  ];
-  for (const cluster of PRODUCT_SUB_TYPES) {
-    const captionHitsCluster = cluster.captionTerms.filter(t => text.includes(t)).length;
-    const photoHitsCluster = cluster.photoTerms.filter(t => searchable.includes(t)).length;
+  for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
+    const captionHitsCluster = cluster.terms.filter((t) => text.includes(t.toLowerCase())).length;
+    const photoHitsCluster = cluster.terms.filter((t) => searchable.includes(t.toLowerCase())).length;
     if (captionHitsCluster >= 1 && photoHitsCluster >= 1) {
       score += 24;
-      reasons.push(`product_match:${cluster.captionTerms[0]}`);
+      reasons.push(`product_match:${cluster.id}`);
       break;
     }
   }

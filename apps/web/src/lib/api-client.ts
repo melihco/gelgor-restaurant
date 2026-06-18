@@ -112,6 +112,10 @@ export interface GetArtifactsParams {
   missionId?: string;
 }
 
+export interface GetArtifactsOptions {
+  timeoutMs?: number;
+}
+
 export function toUserFriendlyApiError(error: unknown, fallback = 'İşlem tamamlanamadı.'): UserFriendlyApiError {
   if (error instanceof ApiRequestError) {
     const parsed = parseErrorBody(error.responseBody);
@@ -358,7 +362,11 @@ class ApiClient {
   }
 
   // Artifacts & Review
-  async getArtifacts(params?: GetArtifactsParams, tenantId?: string): Promise<OutputArtifact[]> {
+  async getArtifacts(
+    params?: GetArtifactsParams,
+    tenantId?: string,
+    options?: GetArtifactsOptions,
+  ): Promise<OutputArtifact[]> {
     const qs = new URLSearchParams();
     if (params?.agentRunId) qs.set('agentRunId', params.agentRunId);
     if (params?.status) qs.set('status', params.status);
@@ -369,7 +377,10 @@ class ApiClient {
     const endpoint = `/api/artifacts${qs.toString() ? `?${qs.toString()}` : ''}`;
     const scopedHeaders = tenantId ? getTenantBffHeaders(tenantId) : undefined;
     try {
-      const artifacts = await this.request<any[]>(endpoint, { headers: scopedHeaders });
+      const artifacts = await this.request<any[]>(endpoint, {
+        headers: scopedHeaders,
+        timeoutMs: options?.timeoutMs ?? 15_000,
+      });
       return artifacts.map((artifact) => this.mapArtifact(artifact));
     } catch (error) {
       if (error instanceof ApiRequestError && (error.status === 401 || error.status === 404 || error.status === 429)) {
