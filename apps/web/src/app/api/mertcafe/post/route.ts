@@ -174,50 +174,89 @@ async function assertMediaReachable(url: string, kind: 'image' | 'video'): Promi
   }
 }
 
-async function normalizeImageForInstagram(url: string, postType: PostType): Promise<string> {
+async function fetchImageBuffer(url: string): Promise<{ buffer: Buffer; contentType: string } | null> {
   try {
-    const head = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(12_000) });
-    const contentType = (head.headers.get('content-type') || '').toLowerCase();
-    if (contentType && !contentType.startsWith('image/')) return url;
-
-    const imageRes = await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(20_000) });
-    if (!imageRes.ok) return url;
-    const input = Buffer.from(await imageRes.arrayBuffer());
-    const looksWebp = contentType.includes('image/webp') || /\.webp(\?|$)/i.test(url);
-    const meta = await sharp(input).metadata();
-    const w = meta.width ?? 0;
-    const h = meta.height ?? 0;
-    let shouldTransform = looksWebp;
-    let working = sharp(input);
-
-    if (postType === 'feed' && w > 0 && h > 0) {
-      const ratio = w / h;
-      if (ratio < 0.75 || ratio > 1.91) {
-        const target = 4 / 5;
-        if (ratio < target) {
-          const targetH = Math.round(w / target);
-          const top = Math.max(0, Math.floor((h - targetH) / 2));
-          working = working.extract({ left: 0, top, width: w, height: Math.min(targetH, h) });
-        } else {
-          const targetW = Math.round(h * target);
-          const left = Math.max(0, Math.floor((w - targetW) / 2));
-          working = working.extract({ left, top: 0, width: Math.min(targetW, w), height: h });
-        }
-        shouldTransform = true;
-      }
+    const res = await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(25_000) });
+    if (!res.ok) return null;
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType && !contentType.startsWith('image/') && !contentType.includes('octet-stream')) {
+      return null;
     }
+    return { buffer: Buffer.from(await res.arrayBuffer()), contentType };
+  } catch {
+    return null;
+  }
+}
 
-    if (!shouldTransform) return url;
-    const output = await working.jpeg({ quality: 92 }).toBuffer();
-    const key = generateStorageKey('mertcafe-publish', 'image', 'jpg');
-    const uploaded = await uploadToR2(output, key, 'image/jpeg');
-    try {
-      return await getPresignedUrl(uploaded.key, 24 * 3600);
-    } catch {
-      return uploaded.url;
-    }
+async function uploadNormalizedFeedImage(buffer: Buffer): Promise<string> {
+  const key = generateStorageKey('mertcafe-publish', 'image', 'jpg');
+  await uploadToR2(buffer, key, 'image/jpeg');
+  return getPresignedUrl(key, 24 * 3600);
+}
+
+/** Instagram feed: 0.75 (3:4) – 1.91; story-format görselleri merkezden kırpar. */
+async function normalizeImageForInstagram(url: string, postType: PostType): Promise<string> {
+  if (postType !== 'feed') return url;
+
+  const fetched = await fetchImageBuffer(url);
+  if (!fetched) return url;
+
+  const { buffer: input, contentType } = fetched;
+  const looksWebp = contentType.includes('image/webp') || /\.webp(\?|$)/i.test(url);
+
+  let meta: sharp.Metadata;
+  try {
+    meta = await sharp(input).metadata();
   } catch {
     return url;
+  }
+
+  const w = meta.width ?? 0;
+  const h = meta.height ?? 0;
+  if (w <= 0 || h <= 0) return url;
+
+  const ratio = w / h;
+  const minRatio = 0.75;
+  const maxRatio = 1.91;
+  const needsCrop = ratio < minRatio || ratio > maxRatio;
+  const needsConvert = looksWebp;
+
+  if (!needsCrop && !needsConvert) return url;
+
+  let working = sharp(input);
+  if (needsCrop) {
+    if (ratio < minRatio) {
+      const targetH = Math.round(w / minRatio);
+      const top = Math.max(0, Math.floor((h - targetH) / 2));
+      working = working.extract({ left: 0, top, width: w, height: Math.min(targetH, h) });
+    } else {
+      const targetW = Math.round(h * maxRatio);
+      const left = Math.max(0, Math.floor((w - targetW) / 2));
+      working = working.extract({ left, top: 0, width: Math.min(targetW, w), height: h });
+    }
+  }
+
+  try {
+    const output = await working.jpeg({ quality: 92 }).toBuffer();
+    const outMeta = await sharp(output).metadata();
+    const outW = outMeta.width ?? 0;
+    const outH = outMeta.height ?? 0;
+    const outRatio = outW > 0 && outH > 0 ? outW / outH : 0;
+    if (outRatio < minRatio - 0.01 || outRatio > maxRatio + 0.01) {
+      throw new Error(`Kırpma sonrası oran hâlâ geçersiz (${outW}×${outH}).`);
+    }
+    const presigned = await uploadNormalizedFeedImage(output);
+    console.log(
+      '[mertcafe/post] Normalized feed image',
+      `${w}×${h} → ${outW}×${outH}`,
+      presigned.slice(0, 80),
+    );
+    return presigned;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'unknown';
+    throw new Error(
+      `Görsel Instagram feed oranına kırpılamadı (${w}×${h}, ${ratio.toFixed(2)}:1). ${detail}`,
+    );
   }
 }
 
@@ -361,9 +400,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     let imageUrl = toPublicUrl(body.image_url, origin);
     if (!imageUrl) return NextResponse.json({ error: 'image_url is required for feed posts' }, { status: 400 });
     imageUrl = await resolveMediaProxyForPublish(imageUrl, origin, postType);
-    // Resolve internal R2 proxy URLs to direct presigned CDN URLs before normalizing
     imageUrl = await resolveToPublicR2Url(imageUrl);
-    imageUrl = toPublicUrl(await normalizeImageForInstagram(imageUrl, postType), origin) ?? imageUrl;
+    try {
+      imageUrl = await normalizeImageForInstagram(imageUrl, postType);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'Feed görseli Instagram oranına uyarlanamadı.' },
+        { status: 422 },
+      );
+    }
     const mediaError = await assertMediaReachable(imageUrl, 'image');
     if (mediaError) {
       return NextResponse.json(

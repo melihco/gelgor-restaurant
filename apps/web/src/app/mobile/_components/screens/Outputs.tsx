@@ -14,7 +14,7 @@ import { resolveClientMediaUrl } from '@/lib/media-url';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { buildTenantBrandContext } from '@/lib/tenant-brand-context';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
-import { resolveMertcafePublishAuth } from '@/lib/mertcafe-publish-auth';
+import { resolveMertcafePublishAuth, assertMertcafePublishReady, humanizeMertcafePublishError } from '@/lib/mertcafe-publish-auth';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { MOBILE_ARTIFACT_OUTPUTS_LIMIT } from '../../_lib/mobile-artifacts';
 
@@ -1471,16 +1471,8 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
         throw new Error('Tenant seçili değil.');
       }
       const mcStatus = await apiClient.getMertcafeStatus(workspaceId);
-      if (!mcStatus.has_tenant_api_key) {
-        throw new Error('Bu tenant için Mertcafe API anahtarı yapılandırılmamış.');
-      }
-      if (!mcStatus.instagram_connected) {
-        throw new Error('Instagram OAuth bağlı değil. Ayarlar → OAuth ile bağlanın.');
-      }
+      assertMertcafePublishReady(mcStatus);
       const publishAuth = resolveMertcafePublishAuth(mcStatus);
-      if (!publishAuth.useOAuthAccount && !publishAuth.accountId) {
-        throw new Error('Yayın hesabı seçilmemiş. Ayarlar → OAuth senkronu yapın.');
-      }
 
       const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
       const content = parseArtifactContent(artifact.content);
@@ -1564,7 +1556,10 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
       });
       const publishJson = await publishRes.json().catch(() => ({}));
       if (!publishRes.ok) {
-        throw new Error((publishJson as { error?: string }).error || `Paylaşım başarısız (${publishRes.status})`);
+        throw new Error(
+          humanizeMertcafePublishError(String((publishJson as { error?: string }).error || ''))
+            || `Paylaşım başarısız (${publishRes.status})`,
+        );
       }
 
       await apiClient.approveArtifact(artifact.id, 'Approved and published from platform feed');

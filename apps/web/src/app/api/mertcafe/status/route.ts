@@ -4,6 +4,7 @@ import {
   loadMertcafeWorkspaceConfig,
   mertcafeGet,
 } from '@/lib/mertcafe-api';
+import { resolveMertcafePublishReadiness } from '@/lib/mertcafe-publish-auth';
 import { requireMertcafeWorkspaceId } from '@/lib/mertcafe-tenant';
 
 export const runtime = 'nodejs';
@@ -54,12 +55,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       data.instagram_username ?? data.username ?? data.ig_username ?? '',
     ).trim();
 
+    const publishGate = resolveMertcafePublishReadiness({
+      has_tenant_api_key: true,
+      instagram_connected: instagramConnected,
+      use_oauth_account: useOAuth,
+      publish_account_id: tenant.publishAccountId ?? oauthAccountId ?? null,
+      oauth_account_id: oauthAccountId ?? null,
+    });
+
     return NextResponse.json({
       api_key: typeof data.api_key === 'string' ? data.api_key : undefined,
       instagram_connected: instagramConnected,
       meta_ads_connected: Boolean(data.meta_ads_connected),
-      instagram_account_id: tenant.publishAccountId ?? oauthAccountId ?? null,
-      publish_account_id: tenant.publishAccountId ?? oauthAccountId ?? null,
+      instagram_account_id: useOAuth
+        ? (oauthAccountId ?? null)
+        : (tenant.publishAccountId ?? oauthAccountId ?? null),
+      publish_account_id: useOAuth
+        ? null
+        : (tenant.publishAccountId ?? oauthAccountId ?? null),
       oauth_account_id: oauthAccountId ?? null,
       instagram_username: instagramUsername || null,
       use_oauth_account: useOAuth,
@@ -67,7 +80,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       workspace_id: workspaceId,
       has_tenant_api_key: true,
       has_publish_account: tenant.hasPublishAccount || instagramConnected,
-      is_tenant_ready: tenant.isTenantReady || (instagramConnected && useOAuth),
+      is_tenant_ready: publishGate.ready,
+      publish_ready: publishGate.ready,
+      publish_blocker: publishGate.blocker ?? null,
       api_key_source: tenant.apiKeySource,
       account_source: tenant.accountSource,
     });

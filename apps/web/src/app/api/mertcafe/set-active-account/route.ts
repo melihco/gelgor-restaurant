@@ -73,6 +73,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const patch: Record<string, unknown> = {
     mertcafe_instagram_account_id: accountId,
+    mertcafe_use_oauth_account: false,
   };
   if (remember) {
     patch.mertcafe_instagram_accounts = mergeMertcafeSavedAccounts(existing, {

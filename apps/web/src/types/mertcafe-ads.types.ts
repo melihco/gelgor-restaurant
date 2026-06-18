@@ -22,6 +22,9 @@ export interface MertcafeStatus {
   account_source?: 'theme' | 'env_map' | 'none';
   use_oauth_account?: boolean;
   instagram_username?: string | null;
+  /** Same gate as POST /api/mertcafe/post — UI can show before approve. */
+  publish_ready?: boolean;
+  publish_blocker?: string | null;
 }
 
 export interface MertcafeProvisionResult {

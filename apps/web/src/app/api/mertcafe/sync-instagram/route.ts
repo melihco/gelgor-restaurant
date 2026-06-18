@@ -73,16 +73,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     `/api/v1/brand-context/${workspaceId}/theme/ai-settings`,
     {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
+      body: patch,
       timeoutMs: 15_000,
     },
   );
 
   if (!patchRes.ok) {
     const errBody = (patchRes.data ?? {}) as Record<string, unknown>;
+    const detail = errBody.detail ?? errBody.error;
+    const detailMsg =
+      typeof detail === 'string'
+        ? detail
+        : detail && typeof detail === 'object'
+          ? JSON.stringify(detail)
+          : '';
     return NextResponse.json(
-      { error: String(errBody.detail ?? errBody.error ?? 'Theme sync failed') },
+      { error: detailMsg || 'Theme sync failed' },
       { status: patchRes.status || 502 },
     );
   }
