@@ -21,8 +21,12 @@ import {
   fetchBrandProductionTokensForWorkspace,
   fetchBrandThemeForWorkspace,
 } from '@/lib/brand-production-tokens';
+import {
+  buildSafeOverlayRetryProps,
+  callRemotionRenderApi,
+  ensureRemotionPhotoUrl,
+} from '@/lib/remotion-bundle-render';
 import { persistRemotionVideoOutput } from '@/lib/remotion-video-persist';
-import { normalizePhotoUrlForRemotionRender } from '@/lib/media-url';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -190,7 +194,7 @@ export async function POST(
       }
     }
 
-    const photoUrlForRender = normalizePhotoUrlForRemotionRender(posterUrl);
+    const photoUrlForRender = ensureRemotionPhotoUrl(posterUrl);
 
     const renderProps = applyBrandTokensToRenderProps({
       templateId,
@@ -211,40 +215,37 @@ export async function POST(
     }
 
     // Fire-and-forget — Remotion can take 1–3 min; don't block the Feed UI
-    fetch(`${BASE_URL}/api/remotion/render`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    void (async () => {
+      const baseRenderBody = {
         compositionId,
         workspaceId: tenantId,
-        useCreativeDirector: true,
         motionStyle: String(meta.motionStyle || meta.motion_style || ''),
         locale: String(meta.locale || meta.language || ''),
         uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
         requirePersistent: true,
         brandTemplateLocked: Boolean(meta.brandTemplateLocked ?? meta.brand_template_locked),
-        props: renderProps,
-      }),
-      signal: AbortSignal.timeout(360_000),
-    }).then(async (renderRes) => {
-      const data = await renderRes.json().catch(() => ({})) as {
-        videoUrl?: string;
-        videoBase64?: string;
-        imageUrl?: string;
-        compositionId?: string;
-        grafikerScore?: number | null;
-        grafikerPass?: boolean;
-        durationMs?: number;
-        bytes?: number;
-        error?: string;
       };
 
-      if (!renderRes.ok) {
+      let data = await callRemotionRenderApi(BASE_URL, {
+        ...baseRenderBody,
+        useCreativeDirector: true,
+        props: renderProps,
+      });
+
+      if (!data.ok) {
+        data = await callRemotionRenderApi(BASE_URL, {
+          ...baseRenderBody,
+          useCreativeDirector: false,
+          props: buildSafeOverlayRetryProps(renderProps as Record<string, unknown>),
+        });
+      }
+
+      if (!data.ok) {
         await patchBundleStatus(
           artifactId,
           tenantId,
           'failed',
-          data.error || `Render failed (${renderRes.status})`,
+          data.error || `Render failed (${data.status})`,
         );
         return;
       }
@@ -264,6 +265,7 @@ export async function POST(
           renderMs: data.durationMs ?? null,
         });
         if (!ok) await patchBundleStatus(artifactId, tenantId, 'failed', 'attach_poster_failed');
+        else await patchBundleStatus(artifactId, tenantId, 'ready');
         return;
       }
 
@@ -297,7 +299,7 @@ export async function POST(
       } else {
         await patchBundleStatus(artifactId, tenantId, 'ready');
       }
-    }).catch(async (err) => {
+    })().catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       await patchBundleStatus(artifactId, tenantId, 'failed', msg);
     });

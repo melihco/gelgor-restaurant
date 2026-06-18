@@ -637,10 +637,14 @@ async def _execute_node_body(
                             return
                         if reason == "production_in_flight":
                             return
+                        publish_ready = int((data or {}).get("publishReady") or 0)
+                        if publish_ready > 0:
+                            return
                         if reason and int(data.get("produced") or 0) > 0:
                             return
                     produced = int((data or {}).get("produced") or 0)
-                    if produced <= 0:
+                    publish_ready = int((data or {}).get("publishReady") or 0)
+                    if produced <= 0 and publish_ready <= 0:
                         err = str(
                             (data or {}).get("error")
                             or "İçerik üretildi ancak Feed'e kaydedilen parça yok"
@@ -1484,6 +1488,35 @@ def _mission_feed_produced_count(perf: dict) -> int:
     return int(last.get("produced") or 0)
 
 
+def _mission_feed_publish_ready_count(perf: dict) -> int:
+    last = perf.get("last_feed_produce") or {}
+    if "publish_ready" in last or "publishReady" in last:
+        return int(last.get("publish_ready") or last.get("publishReady") or 0)
+    return int(last.get("produced") or 0)
+
+
+def _mission_feed_package_complete(perf: dict, *, package_total: int) -> bool:
+    """True when publish-ready slots meet package target and nothing is still rendering."""
+    from app.services.mission_ideation_merge import MISSION_FEED_PACKAGE_TOTAL
+
+    expected = package_total if package_total > 0 else MISSION_FEED_PACKAGE_TOTAL
+    last = perf.get("last_feed_produce") or {}
+    publish_ready = int(last.get("publish_ready") or last.get("publishReady") or 0)
+    rendering = int(last.get("rendering") or 0)
+    if rendering > 0:
+        return False
+    manifest_ready = int(last.get("manifest_ready") or last.get("manifestReady") or 0)
+    required_total = int(last.get("required_total") or last.get("requiredTotal") or expected)
+    if required_total > 0 and manifest_ready >= required_total:
+        return True
+    if publish_ready >= expected:
+        return True
+    # Legacy rows (pre publishReady telemetry)
+    if "publish_ready" not in last and "publishReady" not in last:
+        return int(last.get("produced") or 0) >= expected
+    return False
+
+
 _FEED_PRODUCTION_LOCK_TTL_SEC = 900  # 15 min — prevents duplicate FD + auto-produce
 
 
@@ -1591,7 +1624,7 @@ async def _reconcile_completed_missions_missing_feed() -> int:
             str(mission_type or ""),
             hub_production_package=str(perf.get("hub_production_package") or ""),
         )
-        if _mission_feed_produced_count(perf) >= package_total:
+        if _mission_feed_package_complete(perf, package_total=package_total):
             continue
         nodes = await _load_content_ideation_nodes(mission_id)
         if not any(
@@ -1797,10 +1830,29 @@ async def _run_content_production_pipeline_locked(
             await _persist_feed_cohesion_report(mission_id, workspace_id, report)
 
     produced_n = int((produce_data or {}).get("produced") or 0)
-    if produced_n > 0:
+    publish_ready_n = int((produce_data or {}).get("publishReady") or 0)
+    rendering_n = int((produce_data or {}).get("rendering") or 0)
+    manifest_obj = (produce_data or {}).get("manifest") or {}
+    manifest_ready_n = int(
+        manifest_obj.get("filledRequired")
+        or manifest_obj.get("filled_required")
+        or publish_ready_n
+        or 0
+    )
+    required_total_n = int(
+        manifest_obj.get("requiredSlots")
+        or manifest_obj.get("required_slots")
+        or (produce_data or {}).get("total")
+        or 0
+    )
+    if produced_n > 0 or publish_ready_n > 0 or rendering_n > 0:
         await _record_mission_feed_produce_success(
             mission_id,
             produced=produced_n,
+            publish_ready=publish_ready_n,
+            rendering=rendering_n,
+            manifest_ready=manifest_ready_n,
+            required_total=required_total_n,
             enhance_trace=produce_data.get("enhanceTrace") if produce_data else None,
         )
 
@@ -2063,14 +2115,10 @@ async def _persist_feed_cohesion_report(
 
 
 def _recent_feed_produce_skip(summary: dict, *, package_total: int) -> bool:
-    """Skip duplicate auto-produce only when the mission package was already produced."""
-    from app.services.mission_ideation_merge import MISSION_FEED_PACKAGE_TOTAL
-
-    expected = package_total if package_total > 0 else MISSION_FEED_PACKAGE_TOTAL
-    last = summary.get("last_feed_produce") or {}
-    produced = int(last.get("produced") or 0)
-    if produced < expected:
+    """Skip duplicate auto-produce when the mission package is publish-ready."""
+    if not _mission_feed_package_complete(summary, package_total=package_total):
         return False
+    last = summary.get("last_feed_produce") or {}
     at_raw = str(last.get("at") or "").strip()
     if not at_raw:
         return False
@@ -2088,6 +2136,10 @@ async def _record_mission_feed_produce_success(
     mission_id: uuid.UUID,
     *,
     produced: int,
+    publish_ready: int = 0,
+    rendering: int = 0,
+    manifest_ready: int = 0,
+    required_total: int = 0,
     enhance_trace: list | None = None,
 ) -> None:
     factory = _get_session_factory()
@@ -2099,6 +2151,13 @@ async def _record_mission_feed_produce_success(
         summary = dict(row[0] or {}) if row else {}
         last_feed: dict = {
             "produced": produced,
+            "publish_ready": publish_ready,
+            "publishReady": publish_ready,
+            "rendering": rendering,
+            "manifest_ready": manifest_ready,
+            "manifestReady": manifest_ready,
+            "required_total": required_total,
+            "requiredTotal": required_total,
             "at": datetime.now(timezone.utc).isoformat(),
         }
         if enhance_trace:

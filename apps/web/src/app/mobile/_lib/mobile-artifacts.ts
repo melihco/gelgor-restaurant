@@ -69,6 +69,15 @@ export function shouldPollArtifactsForScreen(screen: string): boolean {
   return ARTIFACT_POLL_SCREENS.has(screen);
 }
 
+/** Poll on any screen while a mission is producing (global production awareness). */
+export function shouldPollArtifactsGlobally(
+  screen: string,
+  opts?: { activeMissionProduction?: boolean },
+): boolean {
+  if (shouldPollArtifactsForScreen(screen)) return true;
+  return Boolean(opts?.activeMissionProduction);
+}
+
 /**
  * Adaptive poll interval with exponential backoff.
  *
@@ -82,8 +91,18 @@ export function mobileArtifactsPollIntervalMs(
   screen: string,
   artifacts: OutputArtifact[] | undefined,
   unchangedPolls = 0,
+  opts?: { globalMissionPoll?: boolean },
 ): number | false {
-  if (!shouldPollArtifactsForScreen(screen)) return false;
+  if (!shouldPollArtifactsForScreen(screen) && !opts?.globalMissionPoll) return false;
+
+  if (opts?.globalMissionPoll && !shouldPollArtifactsForScreen(screen)) {
+    const deduped = dedupeProductionBundles(artifacts ?? []);
+    const hasRendering = deduped.some(
+      (a) => isBundleRendering(a) && !resolveStoryVideoUrl(a),
+    );
+    if (hasRendering) return 10_000;
+    return 15_000;
+  }
 
   if (screen === 'feed') {
     const deduped = dedupeProductionBundles(artifacts ?? []);

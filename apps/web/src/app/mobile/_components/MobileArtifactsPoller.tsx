@@ -3,31 +3,51 @@
 import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
+import { apiClient } from '@/lib/api-client';
 import { useMobileStore } from './mobile-store';
 import { resolveClientScreen } from './mobile-client-config';
+import { mobileQueryDefaults } from '../_lib/mobile-query';
 import type { OutputArtifact } from '@/types';
 import {
   getMobileArtifactsQueryOptions,
   mobileArtifactsListLimitForScreen,
   mobileArtifactsPollIntervalMs,
-  shouldPollArtifactsForScreen,
+  shouldPollArtifactsGlobally,
 } from '../_lib/mobile-artifacts';
 
+function hasActiveMissionProduction(
+  missions: Array<{ status?: string }>,
+): boolean {
+  return missions.some(
+    (m) => m.status === 'in_flight' || m.status === 'approved',
+  );
+}
+
 /**
- * Single artifact poll loop for /mobile — only active on feed/mission/output screens.
- * Implements exponential backoff: when artifact count is stable (no new items),
- * the poll interval doubles every 3 polls, up to 90 s. Active renders reset to 8 s.
+ * Single artifact poll loop for /mobile.
+ * Polls on feed/mission screens AND globally while mission production runs.
  */
 export function MobileArtifactsPoller() {
   const screen = resolveClientScreen(useMobileStore((s) => s.screen));
   const tenantId = useActiveTenantId();
-  const poll = shouldPollArtifactsForScreen(screen);
 
-  // Track consecutive polls where artifact count didn't change → drive backoff.
+  const { data: missions = [] } = useQuery({
+    queryKey: ['missions', tenantId],
+    queryFn: () => apiClient.listMissionsForHub(tenantId!),
+    enabled: Boolean(tenantId),
+    staleTime: 25_000,
+    refetchInterval: 30_000,
+    ...mobileQueryDefaults,
+  });
+
+  const activeMissionProduction = hasActiveMissionProduction(missions);
+  const poll = shouldPollArtifactsGlobally(screen, { activeMissionProduction });
+
   const unchangedPollsRef = useRef(0);
   const lastArtifactCountRef = useRef<number | null>(null);
 
   const listLimit = mobileArtifactsListLimitForScreen(screen);
+  const globalMissionPoll = activeMissionProduction && !['feed', 'missions', 'mission-factory'].includes(screen);
 
   useQuery({
     ...getMobileArtifactsQueryOptions(tenantId ?? '', { limit: listLimit }),
@@ -40,12 +60,16 @@ export function MobileArtifactsPoller() {
       if (lastArtifactCountRef.current === count) {
         unchangedPollsRef.current += 1;
       } else {
-        // New data arrived — reset backoff.
         unchangedPollsRef.current = 0;
         lastArtifactCountRef.current = count;
       }
 
-      return mobileArtifactsPollIntervalMs(screen, artifacts, unchangedPollsRef.current);
+      return mobileArtifactsPollIntervalMs(
+        screen,
+        artifacts,
+        unchangedPollsRef.current,
+        { globalMissionPoll },
+      );
     },
   });
 

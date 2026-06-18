@@ -59,6 +59,7 @@ import { themeFlag, themeString, themeStringArray } from '@/lib/brand-theme-ai-s
 import { invalidateBrandContextWriteQueries } from '@/lib/query-client-bridge';
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
+import { BrandSectionIntro } from '../BrandSectionIntro';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 function ChevronRight({ color }: { color: string }) {
@@ -197,7 +198,7 @@ function TagChip({ text, color, t }: { text: string; color: string; t: T }) {
   );
 }
 
-type Tab = 'identity' | 'brand' | 'gallery';
+type Tab = 'identity' | 'content' | 'visual' | 'production' | 'gallery';
 
 // ─── Brand Kit Tab ───────────────────────────────────────────────────────────
 
@@ -2051,10 +2052,11 @@ export function BrandConstitution() {
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'identity', label: 'Kimlik' },
-    { id: 'gallery',  label: 'Galeri' },
-    { id: 'brand',    label: 'Görsel' },
+    { id: 'content', label: 'İçerik' },
+    { id: 'visual', label: 'Görsel' },
+    { id: 'production', label: 'Üretim' },
+    { id: 'gallery', label: 'Galeri' },
   ];
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const constitutionConfirmedAt = (pyCtx as { brand_constitution_confirmed_at?: string | null } | undefined)
     ?.brand_constitution_confirmed_at;
 
@@ -2176,7 +2178,7 @@ export function BrandConstitution() {
             {p.brandTone && (
               <button
                 type="button"
-                onClick={() => setTab('identity')}
+                onClick={() => setTab('content')}
                 style={{ padding: '6px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', background: t.accentDim, color: t.accent }}
               >
                 {p.brandTone}
@@ -2185,7 +2187,7 @@ export function BrandConstitution() {
             {(p.targetAudience || (pyCtx as any)?.target_audience) && (
               <button
                 type="button"
-                onClick={() => setTab('identity')}
+                onClick={() => setTab('content')}
                 style={{ padding: '6px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: t.textSecondary, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               >
                 {String(p.targetAudience || (pyCtx as any)?.target_audience || '').slice(0, 48)}
@@ -2196,9 +2198,8 @@ export function BrandConstitution() {
 
         {/* iOS-style segmented control */}
         <div style={{
-          display: 'flex', gap: 3, padding: 3, marginBottom: 4,
-          borderRadius: 10,
-          background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+          display: 'flex', gap: 6, padding: '0 0 4px', marginBottom: 4,
+          overflowX: 'auto', WebkitOverflowScrolling: 'touch',
         }}>
           {TABS.map((tb) => {
             const isActive = tab === tb.id;
@@ -2209,14 +2210,14 @@ export function BrandConstitution() {
                 onClick={() => setTab(tb.id)}
                 aria-current={isActive ? 'page' : undefined}
                 style={{
-                  flex: 1, padding: '8px 4px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
+                  flex: '0 0 auto', padding: '8px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap',
                   color: isActive ? t.textPrimary : t.textTertiary,
                   background: isActive
                     ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF')
-                    : 'transparent',
+                    : (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
                   boxShadow: isActive ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
-                  transition: 'background 180ms ease, color 180ms ease, box-shadow 180ms ease',
+                  transition: 'background 180ms ease, color 180ms ease',
                 }}
               >
                 {tb.label}
@@ -2232,6 +2233,11 @@ export function BrandConstitution() {
         {/* IDENTITY */}
         {tab === 'identity' && (
           <>
+            <BrandSectionIntro
+              t={t}
+              title="Kimlik"
+              description="Marka adı, iletişim kanalları ve temel tanım. Mission ve Feed üretimi bu bilgileri referans alır."
+            />
             {!constitutionConfirmedAt && (
               <div style={{
                 marginBottom: 20,
@@ -2322,7 +2328,7 @@ export function BrandConstitution() {
             </div>
 
             <SCard t={t} title="Marka Açıklaması">
-              <Field t={t} label="Açıklama" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayan birkaç cümle..." />
+              <Field t={t} label="Açıklama & Ürünler" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin — ajanlar bunu kullanır." />
             </SCard>
 
             <SCard t={t} title="Logo & Görseller">
@@ -2339,49 +2345,16 @@ export function BrandConstitution() {
                 </div>
               )}
             </SCard>
-
-            {/* ── Gelişmiş toggle ── */}
-            <div style={{ ...t.surfaceGroup, marginTop: 4 }}>
-              <button
-                type="button"
-                onClick={() => setShowAdvanced(v => !v)}
-                style={{
-                  width: '100%', padding: '13px 16px', minHeight: 44, cursor: 'pointer',
-                  background: 'transparent', border: 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                }}
-              >
-                <span style={{ fontSize: 16, fontWeight: 400, color: t.textPrimary }}>Gelişmiş</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transform: showAdvanced ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 220ms ease', opacity: 0.5 }}>
-                  <polyline points="6 9 12 15 18 9"/>
-                </svg>
-              </button>
-            </div>
           </>
         )}
 
-        {/* BRAND */}
-        {tab === 'brand' && (
+        {tab === 'content' && (
           <>
-            {/* ── Ürünler & Hizmetler — agents için en kritik alan ── */}
-            <SCard t={t} title="Ürünler & Hizmetler" accent="#10B981">
-              <p style={{ fontSize: 11, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
-                Bu alan ajanların ürettiği içeriklerin kalitesini doğrudan etkiler. Ne sattığınızı, hangi ürün/hizmetleriniz olduğunu, fiyat aralıklarını ve özel özelliklerinizi yazın.
-              </p>
-              <Field t={t} label="Ürün / Hizmet Kataloğu"
-                value={p.description || (pyCtx as any)?.description || ''}
-                onSave={save('description')}
-                multiline
-                hint="örn: Erken hasat sızma zeytinyağı (500ml-5lt), kekik balı, akasya balı, çam balı, Datça bademi, kuru incir. Hepsi Datça'dan, üreticiden direkt."
-              />
-              <Field t={t} label="Kampanya Hedefleri & Müşteri Profili"
-                value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''}
-                onSave={save('campaignGoals')}
-                multiline
-                hint="örn: Online siparişleri artır. Yöresel ürün arayan bilinçli tüketiciler, hediye almak isteyen ziyaretçiler, sağlıklı beslenmeye önem verenler."
-              />
-            </SCard>
+            <BrandSectionIntro
+              t={t}
+              title="İçerik"
+              description="Ses tonu, hedef kitle ve kampanya odağı. Mission ve Feed caption'ları bu stratejiye göre üretilir."
+            />
 
             <SCard t={t} title="Ses & Ton">
               <div>
@@ -2415,26 +2388,6 @@ export function BrandConstitution() {
                 )}
               </div>
             </SCard>
-
-            <SCard t={t} title="Görsel Dil">
-              <Field t={t} label="Görsel Stil" value={p.visualStyle || (pyCtx as any)?.visual_style || ''} onSave={save('visualStyle')} multiline hint="örn: minimal, luxury, cinematic..." />
-            </SCard>
-
-            <BrandTemplateLibraryPanel
-              workspaceId={tenantId}
-              sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
-              variant="mobile"
-              mobileTheme={{
-                accent: t.accent,
-                accentBorder: t.accentBorder,
-                accentDim: t.accentDim,
-                separator: t.separator,
-                textPrimary: t.textPrimary,
-                textMuted: t.textMuted,
-                textTertiary: t.textTertiary,
-                isDark: t.isDark,
-              }}
-            />
 
             <SCard t={t} title="Hedef Kitle">
               <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline hint="Kim için üretiyoruz?" />
@@ -2545,6 +2498,36 @@ export function BrandConstitution() {
                 );
               })()}
             </SCard>
+          </>
+        )}
+
+        {tab === 'visual' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Görsel"
+              description="Renk paleti, tipografi, şablon kütüphanesi ve marka DNA. Remotion story/reel tasarımları buradan beslenir."
+            />
+
+            <SCard t={t} title="Görsel Dil">
+              <Field t={t} label="Görsel Stil" value={p.visualStyle || (pyCtx as any)?.visual_style || ''} onSave={save('visualStyle')} multiline hint="örn: minimal, luxury, cinematic..." />
+            </SCard>
+
+            <BrandTemplateLibraryPanel
+              workspaceId={tenantId}
+              sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
+              variant="mobile"
+              mobileTheme={{
+                accent: t.accent,
+                accentBorder: t.accentBorder,
+                accentDim: t.accentDim,
+                separator: t.separator,
+                textPrimary: t.textPrimary,
+                textMuted: t.textMuted,
+                textTertiary: t.textTertiary,
+                isDark: t.isDark,
+              }}
+            />
 
             <SCard t={t} title="Tipografi">
               <Field t={t} label="Ana Font"
@@ -2586,11 +2569,18 @@ export function BrandConstitution() {
                 }}
               />
             </SCard>
+
+            <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
           </>
         )}
 
-        {tab === 'identity' && showAdvanced && (
+        {tab === 'production' && (
           <>
+            <BrandSectionIntro
+              t={t}
+              title="Üretim"
+              description="AI ayarları, onay modu, entegrasyonlar ve analiz. Mission → Feed hattının teknik kontrol paneli."
+            />
             <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
                 Post ve story görselleri Remotion ile otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
@@ -2677,11 +2667,6 @@ export function BrandConstitution() {
                 ))}
               </SCard>
             )}
-          </>
-        )}
-
-        {tab === 'identity' && showAdvanced && (
-          <>
             {/* Re-analyze button */}
             <button
               onClick={() => analyzeMutation.mutate()}
@@ -2863,22 +2848,7 @@ export function BrandConstitution() {
                 </div>
               )}
             </SCard>
-          </>
-        )}
 
-        {/* GALLERY */}
-        {/* GALLERY */}
-        {tab === 'gallery' && (
-          <GalleryTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} companyProfile={profile as CompanyProfile} />
-        )}
-
-        {/* VIBE DNA */}
-        {tab === 'brand' && (
-          <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
-        )}
-
-        {tab === 'identity' && showAdvanced && (
-          <>
             <SCard t={t} title="Onay Modu" accent={t.warning}>
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, color: t.textTertiary, marginBottom: 12, lineHeight: 1.5 }}>
@@ -3011,9 +2981,9 @@ export function BrandConstitution() {
                 <SCard t={t} title="AI Görsel Geliştirme" accent={t.accent}>
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-                      Açıkken Mission üretimi galeri fotoğrafını caption + marka parametreleriyle GPT ile düzenler;
-                      Feed&apos;de bu görsel kullanılır. Story/reel tasarımı Remotion ile devam eder.
-                      Kapalıyken ham galeri + yalnızca şablon/sunum katmanı.
+                      Varsayılan: galeri fotoğrafı seçilir ve isteğe bağlı GPT ile iyileştirilir.
+                      <strong style={{ color: t.textSecondary }}> Sıfırdan üretim</strong> ayrı bir anahtardır — marka açmadan
+                      caption&apos;tan yeni görsel üretilmez. Story/reel tasarımı Remotion ile devam eder.
                     </div>
 
                     {/* Toggle */}
@@ -3119,11 +3089,11 @@ export function BrandConstitution() {
                           border: `0.5px solid ${aiCaptionDriven && aiEnabled ? 'rgba(59,130,246,0.35)' : t.separator}`,
                         }}>
                           <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Caption&apos;a özel AI görsel</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Sıfırdan görsel üret</div>
                             <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.45 }}>
                               {aiCaptionDriven && aiEnabled
-                                ? 'Galeri olsa bile feed postları caption + marka DNA ile sıfırdan üretilir'
-                                : 'Kapalı — önce galeri matcher, sonra enhance'}
+                                ? 'Feed postları galeri yerine caption + marka DNA ile sıfırdan üretilir — Remotion story/reel ayrı kalır'
+                                : 'Kapalı — galeri matcher + (isteğe bağlı) galeri iyileştirme kullanılır; sıfırdan üretim için bu anahtarı açın'}
                             </div>
                           </div>
                           <button
@@ -3431,6 +3401,10 @@ export function BrandConstitution() {
               </SCard>
             )}
           </>
+        )}
+
+        {tab === 'gallery' && (
+          <GalleryTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} companyProfile={profile as CompanyProfile} />
         )}
       </div>
     </div>

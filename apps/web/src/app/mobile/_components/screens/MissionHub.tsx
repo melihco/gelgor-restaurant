@@ -101,6 +101,7 @@ import {
   collectMissionPreviewArtifacts,
   MissionFeedPreviewGrid,
 } from '../MissionFeedPreviewGrid';
+import { filterMissionRenderRetryArtifacts } from '@/lib/mission-render-retry';
 import type { OutputArtifact } from '@/types';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { mobileArtifactsQueryKey } from '../../_lib/mobile-artifacts';
@@ -2845,6 +2846,9 @@ function MissionPublishPackageCard({
   onPreviewArtifact,
   isLoading,
   onGoToFeed,
+  workspaceId,
+  missionId,
+  onRefresh,
   t,
 }: {
   pkg: MissionFeedPackage | null;
@@ -2853,8 +2857,41 @@ function MissionPublishPackageCard({
   onPreviewArtifact: (artifactId: string) => void;
   isLoading: boolean;
   onGoToFeed: () => void;
+  workspaceId?: string;
+  missionId?: string;
+  onRefresh?: () => void;
   t: T;
 }) {
+  const [retryingAll, setRetryingAll] = useState(false);
+  const autoRetriedRef = useRef(false);
+
+  const failedRenderCount = useMemo(() => {
+    if (!missionId) return 0;
+    return filterMissionRenderRetryArtifacts(previewArtifacts, missionId).length;
+  }, [previewArtifacts, missionId]);
+
+  useEffect(() => {
+    if (!workspaceId || !missionId || autoRetriedRef.current || failedRenderCount === 0) return;
+    autoRetriedRef.current = true;
+    void fetch(`/api/missions/${workspaceId}/${missionId}/retry-render`, {
+      method: 'POST',
+      headers: { 'X-Tenant-Id': workspaceId },
+    }).then(() => onRefresh?.()).catch(() => undefined);
+  }, [workspaceId, missionId, failedRenderCount, onRefresh]);
+
+  const retryAllRenders = async () => {
+    if (!workspaceId || !missionId) return;
+    setRetryingAll(true);
+    try {
+      await fetch(`/api/missions/${workspaceId}/${missionId}/retry-render`, {
+        method: 'POST',
+        headers: { 'X-Tenant-Id': workspaceId },
+      });
+      onRefresh?.();
+    } finally {
+      setRetryingAll(false);
+    }
+  };
   if (isLoading && previewArtifacts.length === 0) {
     return (
       <div style={{ padding: '12px 14px', borderRadius: 14, marginBottom: 16,
@@ -2950,6 +2987,23 @@ function MissionPublishPackageCard({
         <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 12, lineHeight: 1.45 }}>
           Yedek: {pkg.backupCount} içerik · onay bekliyorsa Feed&apos;de de görünür.
         </div>
+      )}
+      {failedRenderCount > 0 && workspaceId && missionId && (
+        <button
+          type="button"
+          onClick={() => void retryAllRenders()}
+          disabled={retryingAll}
+          style={{
+            width: '100%', padding: '10px 14px', borderRadius: 12, border: 'none',
+            cursor: retryingAll ? 'default' : 'pointer', marginBottom: 12,
+            background: 'rgba(245,158,11,0.15)', color: '#F59E0B',
+            fontSize: 12, fontWeight: 800,
+          }}
+        >
+          {retryingAll
+            ? 'Remotion yeniden başlatılıyor…'
+            : `${failedRenderCount} eksik video/poster — yeniden üret`}
+        </button>
       )}
       {previewArtifacts.length > 0 && (
         <MissionFeedPreviewGrid
@@ -3591,6 +3645,12 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               onPreviewArtifact={openPlatformPreview}
               isLoading={feedPkgLoading && !feedPackage?.totalPublishable && previewArtifacts.length === 0}
               onGoToFeed={goToFeed}
+              workspaceId={workspaceId}
+              missionId={mission.id}
+              onRefresh={() => {
+                void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+                void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
+              }}
               t={t}
             />
           )}

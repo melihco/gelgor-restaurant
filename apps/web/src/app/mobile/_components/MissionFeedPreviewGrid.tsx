@@ -13,7 +13,9 @@ import {
 } from '@/lib/weekly-publish-package';
 import {
   getProductionBundleStatus,
+  isBundleFailed,
   isBundleRendering,
+  isPostKind,
   resolvePosterUrl,
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
@@ -142,6 +144,15 @@ function MissionFeedPreviewTile({
   const headline = String(meta.headline || native.headline || artifact.title || '').slice(0, 40);
   const pending = artifact.status === 'pending_review';
 
+  const bundleIssueLabel = (() => {
+    if (rendering) return 'Render…';
+    if (bundleStatus !== 'failed') return null;
+    if (fmt === 'story' || fmt === 'reel') return 'Video eksik';
+    if (fmt === 'post' || isPostKind(artifact)) return 'Poster eksik';
+    if (fmt === 'carousel') return 'Slayt eksik';
+    return thumb ? 'Medya eksik' : 'Hata';
+  })();
+
   return (
     <button
       type="button"
@@ -219,14 +230,16 @@ function MissionFeedPreviewTile({
         }} />
       )}
 
-      {bundleStatus === 'failed' && (
+      {(rendering || bundleStatus === 'failed') && bundleIssueLabel && (
         <div style={{
           position: 'absolute', bottom: 6, right: 6, fontSize: 8, fontWeight: 800,
           padding: '2px 6px', borderRadius: 6,
-          background: thumb ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.85)',
+          background: rendering
+            ? 'rgba(59,130,246,0.85)'
+            : thumb ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.85)',
           color: '#fff',
         }}>
-          {thumb ? 'Video eksik' : 'Hata'}
+          {bundleIssueLabel}
         </div>
       )}
 

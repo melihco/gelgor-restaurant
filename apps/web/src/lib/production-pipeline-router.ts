@@ -694,9 +694,10 @@ export function evaluateFeedDirectorProductionGate(input: {
   const effectiveCoverage = reportCoverage ?? input.validation.coveragePct;
   const warnings: string[] = [];
   const blockPolicy = input.productionProfile.fdFallbackPolicy === 'block';
-  /** Mission Hub path: ship Feed outputs; manifest gaps are warnings, not hard blocks. */
+  /** Mission runs require a full manifest slot map — not warn-only incomplete slots. */
+  const hardBlockIncomplete = blockPolicy || Boolean(input.missionId);
+  /** Relax only FD assignment heuristics on mission path, not slot completeness. */
   const missionRelaxed = Boolean(input.missionId);
-  const hardBlockIncomplete = blockPolicy && !missionRelaxed;
 
   if (!input.missionId) {
     return {

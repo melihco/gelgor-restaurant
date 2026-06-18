@@ -26,6 +26,12 @@ import {
 } from '@/lib/story-sequence-rules';
 import { assessPremiumRubric } from '@/lib/premium-approval-rubric';
 import {
+  buildSafeOverlayRetryProps,
+  callRemotionRenderApi,
+  ensureRemotionPhotoUrl,
+  persistStoryVideo,
+} from '@/lib/remotion-bundle-render';
+import {
   shouldShowLogo,
   resolveMotionLane,
   MOTION_LANE_SPECS,
@@ -349,12 +355,9 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       preferSafeOverlay: photoQualityBelowLuxuryFloor || undefined,
     };
 
-    fetch(`${ctx.routeBaseUrl}/api/remotion/render`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    void (async () => {
+      const baseRenderBody = {
         compositionId,
-        useCreativeDirector: true,
         brandTemplateLocked: storyPick.libraryLocked || templateLibrary.locked,
         motionStyle: motionProfile.motionStyle,
         locale: motionProfile.locale,
@@ -363,41 +366,43 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         requirePersistent: true,
         workspaceId: ctx.workspaceId,
         grafikerMaxRetries: ctx.grafikerMaxRetries,
+      };
+
+      let data = await callRemotionRenderApi(ctx.routeBaseUrl, {
+        ...baseRenderBody,
+        useCreativeDirector: true,
         props: storyProps,
-      }),
-      signal: AbortSignal.timeout(360_000),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        console.warn('[auto-produce] Remotion render failed:', res.status, errText.slice(0, 120));
+      });
+
+      if (!data.ok) {
+        console.warn(
+          `[auto-produce] Remotion story pass-1 failed (${data.error}) — safe-overlay retry: "${candidate.headline.slice(0, 40)}"`,
+        );
+        data = await callRemotionRenderApi(ctx.routeBaseUrl, {
+          ...baseRenderBody,
+          useCreativeDirector: false,
+          props: buildSafeOverlayRetryProps(storyProps as Record<string, unknown>),
+        });
+      }
+
+      if (!data.ok) {
+        console.warn('[auto-produce] Remotion story pass-2 failed:', data.error);
         await ctx.nexusClient.markBundleFailed({
           workspaceId: ctx.workspaceId,
           artifactId: candidate.artifactId,
-          error: `Render HTTP ${res.status}`,
+          error: data.error || `Render HTTP ${data.status}`,
           posterUrl: candidate.photoUrl,
           contentType: 'instagram_story',
           pipeline: 'remotion_story',
           slotRole: candidate.slotRole,
-          attachGalleryStill: false,
+          attachGalleryStill: true,
           toFeedPreviewUrl,
           probeMediaUrl,
         });
         return;
       }
-      const data = await res.json() as {
-        videoUrl?: string; videoBase64?: string;
-        compositionId?: string;
-        templateId?: string;
-        creativeDirector?: Record<string, unknown>;
-        grafikerScore?: number | null; grafikerPass?: boolean;
-        durationMs?: number; bytes?: number;
-      };
-      const persistedVideoUrl = await persistRemotionVideoOutput(ctx.workspaceId, {
-        videoUrl: data.videoUrl,
-        videoBase64: data.videoBase64,
-        compositionId: data.compositionId ?? compositionId,
-        bytes: data.bytes,
-      });
+
+      const persistedVideoUrl = await persistStoryVideo(ctx.workspaceId, data, compositionId);
 
       if (!persistedVideoUrl) {
         console.warn('[auto-produce] Remotion: no output URL');
@@ -409,7 +414,7 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
           contentType: 'instagram_story',
           pipeline: 'remotion_story',
           slotRole: candidate.slotRole,
-          attachGalleryStill: false,
+          attachGalleryStill: true,
           toFeedPreviewUrl,
           probeMediaUrl,
         });
@@ -422,11 +427,10 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       const grafikerPass = data.grafikerPass !== false
         && (grafikerScore == null || grafikerScore >= GRAFIKER_PASS_THRESHOLD);
 
-      const cdLayoutFamily = String(data.creativeDirector?.layoutFamily ?? '');
-      const cdDesignScore = Number(data.creativeDirector?.designScore ?? 0);
-      const cdVariant = data.creativeDirector?.variantIndex ?? '-';
+      const cdLayoutFamily = String((data as { creativeDirector?: Record<string, unknown> }).creativeDirector?.layoutFamily ?? '');
+      const cdDesignScore = Number((data as { creativeDirector?: Record<string, unknown> }).creativeDirector?.designScore ?? 0);
+      const cdVariant = (data as { creativeDirector?: Record<string, unknown> }).creativeDirector?.variantIndex ?? '-';
 
-      // Layout originality: is this layout family fresh or repeated?
       const layoutIsRepeated = cdLayoutFamily
         ? recentLayoutFamilies.includes(cdLayoutFamily as RemotionLayoutFamily)
         : false;
@@ -438,10 +442,9 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         `cd=${cdLayoutFamily || 'n/a'}[${cdVariant}] design=${cdDesignScore}/10 | ` +
         `grafiker=${grafikerScore}/10 pass=${grafikerPass} | ` +
         `originality=${layoutOriginalityScore} repeated=${layoutIsRepeated} | ` +
-        `"${candidate.headline.slice(0, 40)}"`
+        `"${candidate.headline.slice(0, 40)}"`,
       );
 
-      // Register this layout family so subsequent cards avoid repeating it.
       if (cdLayoutFamily) usedLayoutFamilies.push(cdLayoutFamily as RemotionLayoutFamily);
 
       const existingArtifactId = candidate.artifactId;
@@ -462,18 +465,16 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
           contentType: 'instagram_story',
           pipeline: 'remotion_story',
           slotRole: candidate.slotRole,
-          attachGalleryStill: false,
+          attachGalleryStill: true,
           toFeedPreviewUrl,
           probeMediaUrl,
         });
         return;
       }
 
-      // Hard floor: if Grafiker score is catastrophically low after all retries,
-      // discard the render and fall back to gallery still rather than publishing garbage.
       if (grafikerScore != null && grafikerScore < GRAFIKER_HARD_FLOOR) {
         console.warn(
-          `[auto-produce] Story Grafiker HARD FLOOR: ${grafikerScore}/10 < ${GRAFIKER_HARD_FLOOR} — discarding render, using gallery still: "${candidate.headline.slice(0, 40)}"`,
+          `[auto-produce] Story Grafiker HARD FLOOR: ${grafikerScore}/10 — gallery still: "${candidate.headline.slice(0, 40)}"`,
         );
         await ctx.nexusClient.markBundleFailed({
           workspaceId: ctx.workspaceId,
@@ -492,11 +493,10 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
 
       if (grafikerScore != null && !grafikerPass) {
         console.warn(
-          `[auto-produce] Story Grafiker ${grafikerScore}/10 — attaching video (below ideal ${GRAFIKER_PASS_THRESHOLD}, above hard floor ${GRAFIKER_HARD_FLOOR}): "${candidate.headline.slice(0, 40)}"`,
+          `[auto-produce] Story Grafiker ${grafikerScore}/10 — attaching video: "${candidate.headline.slice(0, 40)}"`,
         );
       }
 
-      // Sprint 4 — Premium Approval Rubric: score copy quality before attaching.
       const rubric = assessPremiumRubric({
         headline: candidate.headline,
         caption: candidate.caption,
@@ -506,15 +506,6 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         sector: brandBusinessType,
       });
       producedHeadlines.push(candidate.headline);
-      if (!rubric.pass && !rubric.caution) {
-        console.warn(
-          `[auto-produce] Rubric FAIL (${rubric.score}/100) — ${rubric.reasons.join(', ')}: "${candidate.headline.slice(0, 40)}"`,
-        );
-      } else if (rubric.caution) {
-        console.warn(
-          `[auto-produce] Rubric CAUTION (${rubric.score}/100) — ${rubric.reasons.join(', ')}: "${candidate.headline.slice(0, 40)}"`,
-        );
-      }
 
       const patchResult = await ctx.nexusClient.attachVideo({
         workspaceId: ctx.workspaceId,
@@ -538,14 +529,14 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       if (patchResult.ok) {
         console.log(
           `[auto-produce] ProductionBundle ready: ${existingArtifactId} | ` +
-          `${finalCompositionId} | grafiker=${grafikerScore}/10 | rubric=${rubric.score}/100`
+          `${finalCompositionId} | grafiker=${grafikerScore}/10 | rubric=${rubric.score}/100`,
         );
       } else {
         console.warn(`[auto-produce] attach-video failed: ${patchResult.error}`);
       }
-    }).catch(async (err) => {
+    })().catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[auto-produce] Remotion story error (no fallback): ${msg.slice(0, 80)}`);
+      console.warn(`[auto-produce] Remotion story error: ${msg.slice(0, 80)}`);
       await ctx.nexusClient.markBundleFailed({
         workspaceId: ctx.workspaceId,
         artifactId: candidate.artifactId,
@@ -554,7 +545,7 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         contentType: 'instagram_story',
         pipeline: 'remotion_story',
         slotRole: candidate.slotRole,
-        attachGalleryStill: false,
+        attachGalleryStill: true,
         toFeedPreviewUrl,
         probeMediaUrl,
       });
@@ -666,7 +657,7 @@ export async function runRemotionPostPhase(ctx: RemotionRenderPhaseContext): Pro
       posterTemplateId,
       kitId: production.kitId,
       librarySlotKey: production.slot.key,
-      photoUrl: candidate.photoUrl,
+      photoUrl: ensureRemotionPhotoUrl(candidate.photoUrl),
       headline: posterCopy.headline,
       subtitle: posterCopy.subtitle,
       brandName: resolvedBrandName,

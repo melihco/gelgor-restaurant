@@ -316,7 +316,8 @@ async def ensure_mission_feed_production(
     from app.services.task_graph_executor import (
         _load_content_calendar_nodes,
         _load_content_ideation_nodes,
-        _mission_feed_produced_count,
+        _mission_feed_package_complete,
+        _mission_feed_publish_ready_count,
     )
 
     factory = _get_session_factory()
@@ -335,7 +336,7 @@ async def ensure_mission_feed_production(
         mission_type,
         hub_production_package=str(perf.get("hub_production_package") or ""),
     )
-    if _mission_feed_produced_count(perf) >= package_total:
+    if _mission_feed_package_complete(perf, package_total=package_total):
         return
 
     ideation_raw = await _load_content_ideation_nodes(mission_id)
@@ -359,7 +360,7 @@ async def ensure_mission_feed_production(
         "ensure_mission_feed_start",
         mission_id=str(mission_id),
         idea_count=len(ideas),
-        prior_produced=_mission_feed_produced_count(perf),
+        prior_produced=_mission_feed_publish_ready_count(perf),
     )
 
     try:

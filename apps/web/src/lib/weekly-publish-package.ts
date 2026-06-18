@@ -12,6 +12,7 @@ import {
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
 import { nodeHasOutput, nodeOutputArray, nodeOutputObject } from '@/lib/mission-node-output';
+import { buildMissionProductionIdeas } from '@/lib/mission-production-plan';
 import { isPublishableMediaUrl } from '@/lib/media-url';
 import {
   MISSION_WEEKLY_PACKAGE_COUNTS,
@@ -629,6 +630,8 @@ export function selectWeeklyPublishPackageByAssignments(
 export function extractContentIdeationIdeas(
   nodes: MissionNodeProgress[],
 ): Record<string, unknown>[] {
+  const merged = buildMissionProductionIdeas({ nodes });
+  if (merged.length > 0) return merged;
   const node = nodes.find(
     (n) => n.task_type === 'content_ideation' && n.status === 'completed' && nodeHasOutput(n),
   );

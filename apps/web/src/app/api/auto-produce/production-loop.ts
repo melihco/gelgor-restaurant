@@ -230,6 +230,14 @@ import {
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
 import {
+  findMissionSlotBackfillItems,
+} from '@/lib/mission-slot-backfill';
+import {
+  resolveGalleryFirstForSlot,
+  shouldUseGalleryFirstMission,
+  type GalleryFirstCaptionSource,
+} from '@/lib/gallery-first-production';
+import {
   buildMissionGalleryAssignments,
   missionGallerySlotKey,
   assignmentUsesGalleryPhoto,
@@ -306,6 +314,10 @@ export interface RunProductionParams {
   missionTitle: string | null;
   creativeBrief: string | null;
   skipArtifactDedupe?: boolean;
+  /** Internal — second pass for failed/missing manifest slots only. */
+  slotBackfillPass?: boolean;
+  /** Internal — keys `${ideaIndex}:${slot_role}` to re-run on backfill pass. */
+  backfillSlotKeys?: string[];
 }
 
 export async function runProduction(params: RunProductionParams): Promise<NextResponse> {
@@ -316,6 +328,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandNameOverride, productionSnapshot, bundleCards,
     feedDirectorReport, strategistMissionType,
     productionPackage, missionTitle, creativeBrief, skipArtifactDedupe,
+    slotBackfillPass = false,
+    backfillSlotKeys,
   } = params;
   const brandName = brandNameOverride ?? undefined;
   const pipelineRun = createProductionPipelineRun({ workspaceId, missionId });
@@ -590,12 +604,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     packageSlug: pkgLimits.packageSlug ?? 'weekly',
   });
 
-  const productionLoop: ManifestProductionQueueItem[] = manifestQueue;
+  const productionLoop: ManifestProductionQueueItem[] = slotBackfillPass && backfillSlotKeys?.length
+    ? manifestQueue.filter((item) =>
+        backfillSlotKeys.includes(`${item.ideaIndex}:${item.assignment.slot_role}`),
+      )
+    : manifestQueue;
 
-  if (missionId) {
+  if (missionId && !slotBackfillPass) {
     console.log(
       `[auto-produce] Manifest production queue: ${productionLoop.length} slots ` +
       `(ideas=${toProcess.length}, max=${maxIdeas}, package=${manifestMissionType})`,
+    );
+  } else if (missionId && slotBackfillPass) {
+    console.log(
+      `[auto-produce] Slot backfill pass: ${productionLoop.length} slots`,
     );
   }
 
@@ -608,7 +630,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     resolvedBrandName,
     hasGallery,
     hasRealBrandPhotos,
+    brandDescription: String(brandCtx.description ?? ''),
+    creativeBrief: creativeBrief ?? undefined,
   });
+
+  const missionSessionCaptions: string[] = [];
 
   for (const queueItem of productionLoop) {
     const ideaCostBefore = costEstimate;
@@ -673,10 +699,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
     // service terms (e.g. "tırnak, manikür, nail art") as primary selection signals.
     const fdVisualHint = (assignment?.visual_subject_hint ?? '').trim();
-    const ideationCaption = fdVisualHint
+    let ideationCaption = fdVisualHint
       ? `${caption} ${fdVisualHint}`.trim()
       : caption;
-    const hashtags = normalizeHashtags(idea.hashtags);
+    let hashtags = normalizeHashtags(idea.hashtags);
     let cta = getField(idea, 'cta', 'call_to_action');
     if (caption && cta) {
       const harmonized = harmonizeCaptionAndCta(
@@ -754,7 +780,60 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...Array.from(batchUsedGalleryMission),
     ];
 
-    if (!caption && !headline) {
+    let preassignedGalleryUrl: string | null = null;
+    let galleryFirstSource: GalleryFirstCaptionSource | null = null;
+    let galleryMatchScoreEarly: number | null = null;
+
+    if (shouldUseGalleryFirstMission({
+      missionId,
+      hasGallery,
+      hasRealBrandPhotos,
+      slotBackfillPass,
+      assignment,
+    })) {
+      const gf = await resolveGalleryFirstForSlot({
+        assignment,
+        storyIndex,
+        galleryPhotos,
+        galleryMeta,
+        excludeUrls: missionGalleryExclude,
+        brandName: resolvedBrandName,
+        brandLocation,
+        brandDescription: String(brandCtx.description ?? ''),
+        businessType: brandBusinessType,
+        visualSubjectHint: fdVisualHint,
+        creativeBrief: creativeBrief ?? undefined,
+        ideationCaption,
+        ideationHeadline,
+        existingCaptions: missionSessionCaptions,
+        slotBackfillPass,
+        ideaIndex,
+        forceRewrite: Boolean(slotBackfillPass),
+      });
+      if (gf?.applied) {
+        preassignedGalleryUrl = gf.photoUrl;
+        galleryFirstSource = gf.source;
+        galleryMatchScoreEarly = gf.matchScore;
+        if (gf.caption.trim()) {
+          caption = gf.caption;
+          ideationCaption = gf.caption;
+          missionSessionCaptions.push(gf.caption);
+        }
+        if (gf.headline.trim()) {
+          headline = gf.headline;
+          ideationHeadline = gf.headline;
+        }
+        if (gf.hashtags.length) {
+          hashtags = gf.hashtags;
+        }
+        console.log(
+          `[auto-produce] gallery-first ${gf.source} slot ${assignment.slot_role}: ` +
+          `"${headline.slice(0, 48)}" (score ${gf.matchScore ?? '—'})`,
+        );
+      }
+    }
+
+    if (!caption && !headline && !preassignedGalleryUrl) {
       results.push({ title: '(empty idea)', imageUrl: '', error: 'No caption or headline' });
       continue;
     }
@@ -925,10 +1004,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let captionDrivenGenerated = false;
     let carouselGalleryUrls: string[] = [];
     let enhancedGallerySet: string[] = [];
-    let galleryMatchScore: number | null = null;
+    let galleryMatchScore: number | null = galleryMatchScoreEarly;
 
     const agentUrl = idea.visual_production_spec?.selected_gallery_url || idea.selected_gallery_url || null;
     const batchExclude = batchUsedByType[postType];
+    /** Brand Hub → Sıfırdan görsel üret: galeri olsa bile feed postlarında matcher atlanır. */
+    const captionDrivenSlot = shouldUseCaptionDrivenVisual(aiVisualStandard, kind, assignment);
 
     // Brief'ten gelen fotoğraf her zaman öncelik alır — marka galerisi seçimini override et
     if (!referenceUrl && typeof agentUrl === 'string' && agentUrl.startsWith('http')) {
@@ -936,7 +1017,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       console.log(`[auto-produce] brief photo override: "${headline.slice(0, 50)}"`);
     }
 
-    if (shouldUseCaptionDrivenVisual(aiVisualStandard, kind, assignment) && !hasRealBrandPhotos && !referenceUrl) {
+    if (!referenceUrl && preassignedGalleryUrl && !captionDrivenSlot) {
+      referenceUrl = preassignedGalleryUrl;
+      console.log(
+        `[auto-produce] gallery-first photo: "${headline.slice(0, 48)}" → ${preassignedGalleryUrl.slice(0, 72)}`,
+      );
+    }
+
+    if (captionDrivenSlot && !referenceUrl) {
       const aiFromCaption = await generateVibeImage({
         workspaceId,
         headline,
@@ -966,7 +1054,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!referenceUrl && hasGallery) {
+    if (!referenceUrl && !captionDrivenGenerated && hasGallery) {
       const agentGalleryUrl =
         typeof agentUrl === 'string' && (agentUrl.startsWith('http') || agentUrl.startsWith('/api/'))
           ? agentUrl
@@ -1089,10 +1177,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    // Marka galerisi varsa gerçek mekan fotoğrafı zorunlu — AI scratch / stock yerine galeri.
-    if (hasRealBrandPhotos && galleryPhotos.length) {
+    // Marka galerisi varsa gerçek mekan fotoğrafı zorunlu — sıfırdan üretim açıksa atlanır.
+    if (hasRealBrandPhotos && galleryPhotos.length && !captionDrivenGenerated) {
       const venuePhotos = galleryPhotos.filter((u) => !isStockGalleryPhotoUrl(u));
-      if (venuePhotos.length && (!referenceUrl || referenceIsStock || captionDrivenGenerated)) {
+      if (venuePhotos.length && (!referenceUrl || referenceIsStock)) {
         const venuePick = pickGalleryPhotoForIdea(
           ideationCaption,
           ideationHeadline,
@@ -2382,12 +2470,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           );
         }
       } else if (productionProfile.requireRemotionGrafiker) {
-        if (missionId && referenceUrl) {
+        if (missionId) {
           console.warn(
-            `[auto-produce] Remotion poster yok — mission gallery fallback: "${headline.slice(0, 40)}"`,
+            `[auto-produce] Remotion poster zorunlu — mission slot atlandı: "${headline.slice(0, 40)}"`,
           );
-          imageUrl = referenceUrl;
-        } else {
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: 'Remotion poster üretilemedi (mission designed_post)',
+          });
+          continue;
+        }
         console.warn(
           `[auto-produce] Remotion poster zorunlu — üretilemedi: "${headline.slice(0, 40)}"`,
         );
@@ -2397,7 +2490,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           error: 'Remotion poster üretilemedi (Grafiker zorunlu profil)',
         });
         continue;
-        }
       } else {
         console.warn(
           `[auto-produce] AI branded post layer başarısız — feed ham foto riski: "${headline.slice(0, 40)}"`,
@@ -2560,6 +2652,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         : {}),
       ...(ideationHeadline ? { ideation_headline: ideationHeadline.slice(0, 120) } : {}),
       ...(ideationCaption ? { ideation_caption: ideationCaption.slice(0, 500) } : {}),
+      ...(galleryFirstSource ? {
+        gallery_first_caption: true,
+        caption_source: galleryFirstSource,
+      } : {}),
       ...(galleryPhotoDescription
         ? { gallery_photo_description: galleryPhotoDescription.slice(0, 800) }
         : {}),
@@ -3146,6 +3242,67 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
   releaseAllProductionLocks(workspaceId, missionId);
 
+  // ── Slot backfill: one retry pass for missing/failed manifest slots ────────
+  let mergedResults = results;
+  let mergedSaved = saved;
+  let mergedPublishReady = publishReady;
+  let mergedRendering = rendering;
+  let mergedWithheld = withheld;
+  let backfillAttempted = false;
+
+  if (
+    missionId
+    && !slotBackfillPass
+    && rendering === 0
+  ) {
+    const backfillItems = findMissionSlotBackfillItems(productionLoop, results);
+    if (backfillItems.length > 0) {
+      backfillAttempted = true;
+      const keys = backfillItems.map(
+        (i) => `${i.ideaIndex}:${i.assignment.slot_role}`,
+      );
+      console.log(
+        `[auto-produce] slot backfill triggered: ${keys.join(', ')}`,
+      );
+      try {
+        const bfResp = await runProduction({
+          ...params,
+          slotBackfillPass: true,
+          skipArtifactDedupe: true,
+          backfillSlotKeys: keys,
+        });
+        const bfData = (await bfResp.json()) as {
+          produced?: number;
+          publishReady?: number;
+          rendering?: number;
+          withheld?: number;
+          results?: typeof results;
+        };
+        if (Array.isArray(bfData.results)) {
+          const bfKeys = new Set(keys);
+          mergedResults = [
+            ...results.filter((r) => {
+              const meta = r.metadata ?? {};
+              const k = `${meta.idea_index ?? ''}:${meta.production_role ?? ''}`;
+              return !bfKeys.has(k);
+            }),
+            ...bfData.results,
+          ];
+        }
+        mergedSaved = mergedResults.filter((r) => r.id && !r.error).length;
+        mergedPublishReady = mergedResults.filter(
+          (r) => r.id && !r.error && r.publishReady === true,
+        ).length;
+        mergedRendering = mergedResults.filter(
+          (r) => r.id && !r.error && r.rendering === true,
+        ).length;
+        mergedWithheld = mergedResults.filter((r) => !r.id && r.error).length;
+      } catch (err) {
+        console.warn('[auto-produce] slot backfill pass failed:', err);
+      }
+    }
+  }
+
   const productionTelemetry = buildMissionProductionTelemetry({
     profileTier: productionProfile.tier,
     hubPackage: productionPackage,
@@ -3153,10 +3310,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     feedDirectorReport,
     tenantLearning,
     run: {
-      produced: saved,
-      publish_ready: publishReady,
-      rendering,
-      withheld,
+      produced: mergedSaved,
+      publish_ready: mergedPublishReady,
+      rendering: mergedRendering,
+      withheld: mergedWithheld,
     },
     scheduleArtifactsWithLabel: countArtifactsWithScheduleLabel(
       results.filter((r) => r.metadata) as Array<{ metadata?: unknown }>,
@@ -3165,10 +3322,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   });
 
   return NextResponse.json(attachPipelineTrace({
-    produced: saved,
-    publishReady,
-    rendering,
-    withheld,
+    produced: mergedSaved,
+    publishReady: mergedPublishReady,
+    rendering: mergedRendering,
+    withheld: mergedWithheld,
+    backfillAttempted,
     total: productionLoop.length,
     ideaCount: toProcess.length,
     parsed: productionIdeas.length,
@@ -3184,7 +3342,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       warnings: pisWarnings,
     },
     enhanceTrace: enhanceTraces,
-    results,
-    artifacts: results,
+    results: mergedResults,
+    artifacts: mergedResults,
   }, pipelineRun));
 }

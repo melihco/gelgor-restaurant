@@ -13,12 +13,6 @@ import {
   type PhotoMatchResult,
   MIN_ACCEPT_SCORE,
 } from '@/lib/gallery-photo-matcher';
-import {
-  resolveContentKindForAssignment,
-} from '@/lib/production-pipeline-router';
-import {
-  kindToPostType,
-} from '@/lib/gallery-usage-tracker';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import {
   isMeaninglessBrandEchoHeadline,
@@ -26,6 +20,7 @@ import {
 } from '@/lib/production-headline-quality';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import { buildSlotGalleryMatchInput } from '@/lib/gallery-first-production';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -59,6 +54,8 @@ export interface GalleryOrchestrationInput {
   resolvedBrandName: string;
   hasGallery: boolean;
   hasRealBrandPhotos: boolean;
+  brandDescription?: string;
+  creativeBrief?: string;
 }
 
 /**
@@ -79,16 +76,14 @@ export function buildMissionGalleryAssignments(
     return result;
   }
 
-  const assignItems: Array<{ key: string; input: MatchPhotoInput }> = [];
+  const assignItems: Array<{ key: string; input: MatchPhotoInput; storyIndex: number }> = [];
+  let storyOrdinal = 0;
 
   for (const queueItem of input.productionLoop) {
     if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
 
     const idea = queueItem.idea as Record<string, unknown>;
-    let caption = String(
-      idea.caption_draft ?? idea.caption ?? '',
-    ).trim();
-
+    const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
     const rawHeadline = resolveIdeationHeadline(idea);
     let headline = rawHeadline;
 
@@ -104,25 +99,34 @@ export function buildMissionGalleryAssignments(
       headline = enforceDisplayHeadline(rawHeadline, 72);
     }
 
-    const kind = resolveContentKindForAssignment(queueItem.idea, queueItem.assignment);
-    const postType = kindToPostType(kind);
+    const isStory = String(queueItem.assignment.slot_role ?? '').includes('story')
+      || queueItem.assignment.pipeline === 'remotion_story'
+      || queueItem.assignment.pipeline === 'story_still';
+    const storyIndex = isStory ? storyOrdinal++ : 0;
+
+    const matchInput = buildSlotGalleryMatchInput({
+      assignment: queueItem.assignment,
+      storyIndex,
+      brandName: input.resolvedBrandName,
+      brandDescription: input.brandDescription,
+      businessType: input.brandBusinessType,
+      visualSubjectHint: String(queueItem.assignment.visual_subject_hint ?? ''),
+      creativeBrief: input.creativeBrief,
+      ideationCaption: caption,
+      ideationHeadline: headline,
+    });
 
     assignItems.push({
       key: missionGallerySlotKey(queueItem.ideaIndex, String(queueItem.assignment.slot_role)),
-      input: {
-        caption,
-        headline,
-        mood: String(idea.mood ?? ''),
-        contentType: postType,
-        businessType: input.brandBusinessType,
-      },
+      input: matchInput,
+      storyIndex,
     });
   }
 
   if (assignItems.length === 0) return result;
 
   const batchAssigned = assignPhotosToContents(
-    assignItems,
+    assignItems.map(({ key, input: matchIn }) => ({ key, input: matchIn })),
     input.galleryPhotos,
     input.galleryMeta,
     { minScore: MIN_ACCEPT_SCORE },
