@@ -12,6 +12,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { mediaUrlForKey } from './media-url';
+import { fetchExternalImageBuffer } from './external-image-fetch';
 
 const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID!;
 const BUCKET = process.env.R2_BUCKET_NAME ?? 'smartagency-media';
@@ -93,10 +94,13 @@ export async function uploadImageFromUrl(
   key: string,
 ): Promise<UploadResult | null> {
   try {
-    const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(30_000) });
-    if (!res.ok) return null;
-    const contentType = res.headers.get('content-type')?.split(';')[0] ?? 'image/jpeg';
-    const buffer = Buffer.from(await res.arrayBuffer());
+    const buffer = await fetchExternalImageBuffer(sourceUrl, 30_000);
+    if (!buffer) return null;
+    const contentType = sourceUrl.toLowerCase().endsWith('.png')
+      ? 'image/png'
+      : sourceUrl.toLowerCase().endsWith('.webp')
+        ? 'image/webp'
+        : 'image/jpeg';
     return uploadToR2(buffer, key, contentType);
   } catch {
     return null;
