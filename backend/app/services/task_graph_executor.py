@@ -2351,6 +2351,9 @@ async def _trigger_auto_produce(
             )
         if feed_director_report:
             payload["feedDirectorReport"] = feed_director_report
+        brand_theme = getattr(brand, "brand_theme", None) if brand else None
+        if isinstance(brand_theme, dict) and brand_theme:
+            payload["brandTheme"] = brand_theme
         pkg = (mission_ctx or {}).get("production_package")
         if not isinstance(pkg, str) or not pkg.strip():
             if feed_director_report:

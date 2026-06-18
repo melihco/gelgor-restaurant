@@ -121,7 +121,12 @@ export function applyAgencyProductionThemeDefaults(
     base.ai_adaptive_scene = true;
     reasons.push(`adaptive_scene_forced:${profile.sectorId}`);
   } else if (base.ai_adaptive_scene === undefined) {
-    base.ai_adaptive_scene = false;
+    // Medium/low gallery reliability: default adaptive scene ON so weak-match slots
+    // use GPT enhance instead of brand_solid vibe generation.
+    base.ai_adaptive_scene = profile.galleryReliability !== 'high';
+    if (base.ai_adaptive_scene) {
+      reasons.push(`adaptive_scene_default:${profile.sectorId}`);
+    }
   }
 
   // Caption-driven: generate fresh from brief when gallery can't deliver

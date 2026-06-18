@@ -225,10 +225,12 @@ export async function fetchProductionContext(
     creativeBrief?: string | null;
     baseUrl?: string;
     productionSnapshot?: ProductionBrandContextSnapshot | null;
+    /** Mission auto-produce: Python passes persisted brand_theme when crew fetch fails. */
+    brandThemeOverride?: Record<string, unknown> | null;
   },
 ): Promise<ProductionContext> {
   // Fetch brand data + theme in parallel for speed
-  const [rawBase, brandTheme, tenantLearning, productionSnapshot] = await Promise.all([
+  const [rawBase, fetchedTheme, tenantLearning, productionSnapshot] = await Promise.all([
     fetchBrandContextRaw(workspaceId),
     fetchBrandThemeForProduction({
       workspaceId,
@@ -241,6 +243,12 @@ export async function fetchProductionContext(
       ? Promise.resolve(overrides.productionSnapshot)
       : fetchProductionSnapshot(workspaceId, overrides?.baseUrl),
   ]);
+  const brandTheme = fetchedTheme || overrides?.brandThemeOverride
+    ? {
+        ...(fetchedTheme ?? {}),
+        ...(overrides?.brandThemeOverride ?? {}),
+      }
+    : null;
   const brandSnapshot: BrandProfileSnapshot | null = productionSnapshot?.brand ?? null;
 
   const snapshotGalleryUrls = filterBrandGalleryUrls(

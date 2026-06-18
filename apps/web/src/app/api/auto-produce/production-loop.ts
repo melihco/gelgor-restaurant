@@ -307,6 +307,7 @@ export interface RunProductionParams {
   galleryAnalysis: Record<string, unknown> | null;
   brandNameOverride: string | null;
   productionSnapshot: ProductionBrandContextSnapshot | null;
+  brandThemeOverride?: Record<string, unknown> | null;
   bundleCards?: boolean;
   feedDirectorReport: Record<string, unknown> | null;
   strategistMissionType: string | null;
@@ -328,6 +329,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandNameOverride, productionSnapshot, bundleCards,
     feedDirectorReport, strategistMissionType,
     productionPackage, missionTitle, creativeBrief, skipArtifactDedupe,
+    brandThemeOverride,
     slotBackfillPass = false,
     backfillSlotKeys,
   } = params;
@@ -345,6 +347,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       creativeBrief: creativeBrief ?? undefined,
       baseUrl: getNextjsInternalOrigin(),
       productionSnapshot,
+      brandThemeOverride: brandThemeOverride ?? undefined,
     }),
   );
   if (!pctx) {

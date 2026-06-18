@@ -36,6 +36,8 @@ interface AutoProduceRequest {
   galleryAnalysis?: Record<string, unknown>;
   brandName?: string;
   productionSnapshot?: ProductionBrandContextSnapshot | null;
+  /** Persisted brand_theme from Python — ensures AI settings survive crew fetch failures. */
+  brandTheme?: Record<string, unknown> | null;
   /**
    * Bundle mode: after the primary artifact, auto-generate
    * Remotion story MP4 + poster stills for each idea.
@@ -74,6 +76,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     galleryAnalysis,
     brandName,
     productionSnapshot,
+    brandTheme,
     bundleCards,
     feedDirectorReport,
     missionType: strategistMissionType,
@@ -158,6 +161,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       galleryAnalysis: galleryAnalysis ?? null,
       brandNameOverride: brandName ?? null,
       productionSnapshot: productionSnapshot ?? null,
+      brandThemeOverride: brandTheme ?? null,
       bundleCards,
       feedDirectorReport: (feedDirectorReport ?? null) as Record<string, unknown> | null,
       strategistMissionType: strategistMissionType ?? null,
