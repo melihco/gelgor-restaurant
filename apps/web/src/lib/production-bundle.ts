@@ -430,7 +430,7 @@ export function filterConsumerStoryBar(
 ): OutputArtifact[] {
   const maxRings = opts?.maxRings ?? 4;
   let pool = dedupeStoryBarArtifacts(artifacts).filter((a) => {
-    if (isBundleFailed(a) && !resolveStoryVideoUrl(a)) return false;
+    if (isBundleFailed(a) && !resolveStoryVideoUrl(a) && !resolvePosterUrl(a)) return false;
     if (isBundleStaleRendering(a)) return false;
     return true;
   });

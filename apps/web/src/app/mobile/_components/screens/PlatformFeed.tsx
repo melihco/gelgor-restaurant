@@ -62,7 +62,6 @@ import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
-  MOBILE_ARTIFACT_FEED_INITIAL,
   MOBILE_ARTIFACT_FEED_LIMIT,
 } from '../../_lib/mobile-artifacts';
 import { FeedLazyPostList } from '../FeedLazyPostList';
@@ -1729,6 +1728,30 @@ export function PlatformFeed() {
   // navigate and openApproval already destructured above
   const queryClient = useQueryClient();
   const tenantId = useActiveTenantId();
+
+  const {
+    data: rawArtifacts = [],
+    isPending: artifactsPending,
+    isFetching: artifactsFetching,
+    isError: artifactsError,
+    refetch: refetchArtifacts,
+  } = useMobileArtifacts({
+    subscribeOnly: true,
+    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
+  });
+
+  const mergedRawArtifacts = rawArtifacts;
+
+  const dedupedRaw = React.useMemo(
+    () => dedupeFeedDisplayArtifacts(mergedRawArtifacts as OutputArtifact[]),
+    [mergedRawArtifacts],
+  );
+
+  const dedupedFull = dedupedRaw;
+  const loadMoreArtifacts = React.useCallback(() => {
+    void refetchArtifacts();
+  }, [refetchArtifacts]);
+
   const { data: brandAlignment } = useQuery<BrandAlignmentData>({
     queryKey: ['brand-alignment', tenantId],
     queryFn: async () => {
@@ -1740,7 +1763,7 @@ export function PlatformFeed() {
       return res.json();
     },
     staleTime: 60_000,
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && !artifactsPending,
   });
   const navigate = useMobileStore((s) => s.navigate);
   const openApproval = useMobileStore((s) => s.openApproval);
@@ -1784,6 +1807,7 @@ export function PlatformFeed() {
       setPipelineStatus('idle');
       return;
     }
+    const run = () => {
     const dayKey = new Date().toISOString().slice(0, 10);
     const triggerGuardKey = `sa-auto-trigger:${tenantId}:${dayKey}`;
     try {
@@ -1824,39 +1848,11 @@ export function PlatformFeed() {
         }
       })
       .catch(() => setPipelineStatus('done'));
+    };
+    const timer = setTimeout(run, 2500);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
-
-  const {
-    data: initialArtifacts = [],
-    isLoading: initialLoading,
-    isError: artifactsError,
-    refetch: refetchArtifacts,
-  } = useMobileArtifacts({
-    subscribeOnly: true,
-    params: { limit: MOBILE_ARTIFACT_FEED_INITIAL },
-  });
-
-  const {
-    data: extendedArtifacts,
-    isFetching: extendedFetching,
-  } = useMobileArtifacts({
-    subscribeOnly: true,
-    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
-    enabled: !initialLoading,
-  });
-
-  const rawArtifacts = extendedArtifacts ?? initialArtifacts;
-
-  const dedupedRaw = React.useMemo(
-    () => dedupeFeedDisplayArtifacts(rawArtifacts as OutputArtifact[]),
-    [rawArtifacts],
-  );
-
-  const dedupedFull = dedupedRaw;
-  const loadMoreArtifacts = React.useCallback(() => {
-    /* extended pool loads automatically; hook reserved for future pagination */
-  }, []);
 
   const { data: usageCost } = useQuery({
     queryKey: ['usage-cost', tenantId],
@@ -1873,7 +1869,7 @@ export function PlatformFeed() {
         token_wallet?: { enabled?: boolean; remaining_tokens?: number };
       }>;
     },
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && !artifactsPending,
     staleTime: 60_000,
     ...mobileQueryDefaults,
   });
@@ -2257,7 +2253,8 @@ export function PlatformFeed() {
   const filteredFeedArtifacts = useMemo(() => allArtifacts
     // allArtifacts zaten galeri modunda approved, pending modunda pending_review içeriyor
     .filter(a => showApproved ? a.status === 'approved' : a.status === 'pending_review')
-    .filter(a => operatorMode || !isBundleFailed(a))
+    // isArtifactFeedReady (via filterFeedDisplayArtifacts) already gates display-ready items,
+    // including failed Remotion bundles with a poster still — do not hide them again here.
     .filter(a => {
       // Exclude old SVG announcement_calendar stories — replaced by Remotion
       try {
@@ -2362,31 +2359,10 @@ export function PlatformFeed() {
     setSlotFilter('all');
   }, [filter]);
 
-  const feedBootstrapping = !operatorMode && initialLoading && dedupedRaw.length === 0;
-
-  if (feedBootstrapping) {
-    return (
-      <div style={{ minHeight: '100dvh', background: '#000', paddingBottom: 104 }}>
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 30,
-          background: 'rgba(0,0,0,0.96)',
-          backdropFilter: 'blur(32px) saturate(200%)',
-          WebkitBackdropFilter: 'blur(32px) saturate(200%)',
-          borderBottom: '0.5px solid rgba(255,255,255,0.08)',
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-        }}>
-          <InstagramHomeHeader
-            showApproved={showApproved}
-            pendingCount={pendingCount}
-            approvedCount={approvedCount}
-            onShowPending={() => setShowApproved(false)}
-            onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
-          />
-        </div>
-        <FeedLoadingSkeleton message="Feed yükleniyor…" />
-      </div>
-    );
-  }
+  const feedPostsLoading = !operatorMode
+    && Boolean(tenantId)
+    && artifactsPending
+    && dedupedRaw.length === 0;
 
   return (
     <div style={{ minHeight: '100dvh', background: feedBg, paddingBottom: 104 }}>
@@ -2738,7 +2714,7 @@ export function PlatformFeed() {
       )}
 
       {/* ── Mission hazırlanıyor banner — pipeline tetiklendi, içerik henüz gelmedi ── */}
-      {pipelineStatus === 'running' && pendingCount === 0 && !initialLoading && !showApproved && (
+      {pipelineStatus === 'running' && pendingCount === 0 && !artifactsPending && !showApproved && (
         <div style={{
           margin: '10px 16px 4px',
           padding: '12px 14px',
@@ -3175,7 +3151,9 @@ export function PlatformFeed() {
       )}
 
       {/* Feed */}
-      {artifacts.length === 0 ? (
+      {feedPostsLoading ? (
+        <FeedLoadingSkeleton message="Gönderiler yükleniyor…" />
+      ) : artifacts.length === 0 ? (
         !operatorMode ? (
           <div className="feed-empty">
             <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.35 }}>📸</div>
@@ -3348,7 +3326,7 @@ export function PlatformFeed() {
               );
             }}
           />
-          {extendedFetching && artifacts.length > 0 && (
+          {artifactsFetching && artifacts.length > 0 && (
             <div style={{ padding: '8px 16px 24px', textAlign: 'center', fontSize: 11, opacity: 0.4, color: '#fff' }}>
               Arşiv güncelleniyor…
             </div>
