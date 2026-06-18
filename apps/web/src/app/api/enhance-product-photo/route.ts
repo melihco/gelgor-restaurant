@@ -58,6 +58,7 @@ import {
 } from '@/lib/openai-error-utils';
 import { recordWorkspaceUsageCost } from '@/lib/usage-cost-client';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -316,8 +317,14 @@ async function uploadEnhancedBufferToR2(
 // ─── Fetch image as buffer via media proxy ────────────────────────────────────
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  if (url.startsWith('http')) {
+    const direct = await fetchExternalImageBuffer(url);
+    if (direct) return direct;
+  }
+
   const proxyBases = [
     getNextjsInternalOrigin(),
+    process.env.RENDER_EXTERNAL_URL?.trim().replace(/\/$/, ''),
     process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, ''),
   ].filter(Boolean) as string[];
 
@@ -330,18 +337,6 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
       if (res.ok) return Buffer.from(await res.arrayBuffer());
     } catch {
       /* try next base */
-    }
-  }
-
-  if (url.startsWith('http')) {
-    try {
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SmartAgency/1.0)' },
-        signal: AbortSignal.timeout(20_000),
-      });
-      if (res.ok) return Buffer.from(await res.arrayBuffer());
-    } catch {
-      /* fall through */
     }
   }
 
