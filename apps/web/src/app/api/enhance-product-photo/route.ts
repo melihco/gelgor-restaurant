@@ -316,17 +316,36 @@ async function uploadEnhancedBufferToR2(
 // ─── Fetch image as buffer via media proxy ────────────────────────────────────
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
-  try {
-    const proxyBase = getNextjsInternalOrigin();
-    const proxyUrl = url.startsWith('http')
-      ? `${proxyBase}/api/media-proxy?url=${encodeURIComponent(url)}`
-      : `${proxyBase}${url}`;
-    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(20_000) });
-    if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
-  } catch {
-    return null;
+  const proxyBases = [
+    getNextjsInternalOrigin(),
+    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, ''),
+  ].filter(Boolean) as string[];
+
+  for (const proxyBase of proxyBases) {
+    try {
+      const proxyUrl = url.startsWith('http')
+        ? `${proxyBase}/api/media-proxy?url=${encodeURIComponent(url)}`
+        : `${proxyBase}${url}`;
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(20_000) });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+    } catch {
+      /* try next base */
+    }
   }
+
+  if (url.startsWith('http')) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SmartAgency/1.0)' },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+    } catch {
+      /* fall through */
+    }
+  }
+
+  return null;
 }
 
 type EnhanceRunOpts = {
