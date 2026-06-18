@@ -671,6 +671,36 @@ function buildSearchable(meta: GalleryPhotoMeta): string {
   ].join(' ').toLowerCase();
 }
 
+const LOCAL_PRODUCT_CLUSTERS: string[][] = [
+  ['badem', 'almond', 'badam', 'bademli'],
+  ['nane', 'mint', 'kuru nane', 'dry mint'],
+  ['zeytinyağı', 'zeytinyagi', 'olive oil', 'extra virgin'],
+  ['reçel', 'recel', 'jam', 'marmalade'],
+  ['bal', 'honey', 'petek'],
+  ['pekmez', 'molasses'],
+  ['incir', 'fig'],
+  ['turşu', 'tursu', 'pickle'],
+];
+
+function detectLocalProductClusters(text: string): Set<number> {
+  const lower = text.toLowerCase();
+  const hits = new Set<number>();
+  LOCAL_PRODUCT_CLUSTERS.forEach((terms, idx) => {
+    if (terms.some((t) => lower.includes(t))) hits.add(idx);
+  });
+  return hits;
+}
+
+function productPhotoConflictPenalty(captionText: string, photoSearchable: string): number {
+  const cap = detectLocalProductClusters(captionText);
+  const photo = detectLocalProductClusters(photoSearchable);
+  if (cap.size === 0 || photo.size === 0) return 0;
+  for (const idx of cap) {
+    if (photo.has(idx)) return 0;
+  }
+  return 58;
+}
+
 function scorePhotoForContent(
   meta: GalleryPhotoMeta,
   input: MatchPhotoInput,
@@ -853,13 +883,39 @@ function scorePhotoForContent(
     }
   }
 
+  const PRODUCT_SUB_TYPES: Array<{ captionTerms: string[]; photoTerms: string[] }> = [
+    { captionTerms: ['badem', 'almond', 'badam'], photoTerms: ['badem', 'almond', 'badam', 'bademli'] },
+    { captionTerms: ['nane', 'mint', 'kuru nane'], photoTerms: ['nane', 'mint', 'kuru nane', 'dry mint'] },
+    { captionTerms: ['zeytinyağı', 'zeytinyagi', 'olive oil'], photoTerms: ['zeytinyağı', 'zeytinyagi', 'olive oil', 'zeytin'] },
+    { captionTerms: ['reçel', 'recel', 'jam'], photoTerms: ['reçel', 'recel', 'jam', 'marmalade'] },
+    { captionTerms: ['bal', 'honey'], photoTerms: ['bal', 'honey', 'petek'] },
+    { captionTerms: ['pekmez'], photoTerms: ['pekmez', 'molasses'] },
+    { captionTerms: ['incir', 'fig'], photoTerms: ['incir', 'fig'] },
+    { captionTerms: ['turşu', 'tursu', 'pickle'], photoTerms: ['turşu', 'tursu', 'pickle'] },
+  ];
+  for (const cluster of PRODUCT_SUB_TYPES) {
+    const captionHitsCluster = cluster.captionTerms.filter(t => text.includes(t)).length;
+    const photoHitsCluster = cluster.photoTerms.filter(t => searchable.includes(t)).length;
+    if (captionHitsCluster >= 1 && photoHitsCluster >= 1) {
+      score += 24;
+      reasons.push(`product_match:${cluster.captionTerms[0]}`);
+      break;
+    }
+  }
+
   const conflict = captionPhotoConflictPenalty(caption, searchable);
   if (conflict > 0) {
     score -= conflict;
     reasons.push(`caption-photo conflict -${conflict}`);
   }
 
-  return { score: Math.max(0, score), reasons };
+  const productConflict = productPhotoConflictPenalty(caption, searchable);
+  if (productConflict > 0) {
+    score -= productConflict;
+    reasons.push(`product-label conflict -${productConflict}`);
+  }
+
+  return { score, reasons };
 }
 
 export function rankPhotosForContent(

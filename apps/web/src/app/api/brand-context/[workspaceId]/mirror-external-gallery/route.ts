@@ -11,6 +11,8 @@ import { parseStringOrArray } from '@/lib/brand-readiness';
 import { filterBrandGalleryUrls } from '@/lib/gallery-upload';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { generateStorageKey, isR2Configured, uploadToR2 } from '@/lib/r2-storage';
+import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -51,6 +53,10 @@ export async function POST(
 
   const ctxRes = await fetchCrewBackendJson<{ reference_image_urls?: unknown }>(
     `/api/v1/brand-context/${workspaceId}`,
+    { workspaceId, timeoutMs: 20_000 },
+  );
+  const analysisRes = await fetchCrewBackendJson<Record<string, GalleryPhotoMeta>>(
+    `/api/v1/brand-context/${workspaceId}/gallery-analysis`,
     { workspaceId, timeoutMs: 20_000 },
   );
   if (!ctxRes.ok || !ctxRes.data) {
@@ -112,6 +118,31 @@ export async function POST(
   );
   if (!patchRes.ok) {
     return NextResponse.json({ error: 'reference_urls_patch_failed' }, { status: 502 });
+  }
+
+  const priorAnalysis = analysisRes.ok && analysisRes.data ? analysisRes.data : {};
+  if (urlMap.size > 0 && Object.keys(priorAnalysis).length > 0) {
+    const results: Array<{ url: string } & GalleryPhotoMeta> = [];
+    for (const [oldUrl, newUrl] of urlMap.entries()) {
+      const oldBase = normalizeGalleryUrl(oldUrl);
+      const metaEntry = Object.entries(priorAnalysis).find(
+        ([k]) => normalizeGalleryUrl(k) === oldBase,
+      );
+      if (metaEntry) {
+        results.push({ url: newUrl, ...(metaEntry[1] as GalleryPhotoMeta) });
+      }
+    }
+    if (results.length) {
+      await fetchCrewBackendJson(
+        `/api/v1/brand-context/${workspaceId}/gallery-analysis`,
+        {
+          method: 'POST',
+          workspaceId,
+          body: { results },
+          timeoutMs: 20_000,
+        },
+      );
+    }
   }
 
   return NextResponse.json({
