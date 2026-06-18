@@ -140,7 +140,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'No ideas provided' }, { status: 400 });
     }
 
-    // Mission Feed: reproduce-feed ile aynı 3S+2P+1C+1R normalizasyonu (Python path dahil).
+    // Mission Feed: reproduce-feed ile aynı 2S+2P+1R normalizasyonu (Python path dahil).
     if (missionId) {
       const ideaPool = [
         ...(Array.isArray(ideas) ? ideas as Record<string, unknown>[] : []),

@@ -268,8 +268,8 @@ const CSS = `
     filter: drop-shadow(0 8px 24px rgba(0,0,0,0.18));
   }
   .sa-mobile .brand-loader-logo--sm {
-    width: min(168px, 48vw);
-    max-width: 168px;
+    width: auto;
+    max-width: none;
     filter: drop-shadow(0 6px 18px rgba(0,0,0,0.14));
   }
 
@@ -356,8 +356,19 @@ const CSS = `
   .sa-mobile .onboarding-logo {
     display: block;
     margin: 0 auto 28px;
+    width: min(248px, 78vw);
+    height: auto !important;
+    max-width: none;
     object-fit: contain;
     filter: drop-shadow(0 4px 24px rgba(0,0,0,0.35));
+  }
+  .sa-mobile .login-logo {
+    display: block;
+    margin: 0 auto;
+    width: min(220px, 85vw);
+    height: auto !important;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 20px rgba(0,0,0,0.28));
   }
   .sa-mobile .onboarding-title {
     margin: 0 0 10px;
@@ -676,32 +687,68 @@ const CSS = `
   .sa-mobile .screen-enter { animation: fadeUp 300ms cubic-bezier(0.22,1,0.36,1) both; }
   .sa-mobile .nav-enter   { animation: navPop 360ms cubic-bezier(0.34,1.2,0.64,1) both; }
 
-  /* ── Desktop phone frame (≥ 768px) ── */
+  /* ── Desktop / tablet — Instagram web genişliği (≥768px) ── */
   @media (min-width: 768px) {
     .sa-mobile-outer {
       position: fixed;
       inset: 0;
       display: flex;
-      align-items: flex-start;
+      align-items: stretch;
       justify-content: center;
-      background: linear-gradient(165deg, #0F1520 0%, #08090F 50%, #050608 100%);
+      background: #000;
     }
 
     .sa-mobile-frame {
       position: relative;
-      width: 393px;       /* iPhone 14 Pro logical width */
+      /* IG web ana feed sütunu ~630px; geniş ekranda biraz daha ferah */
+      width: min(630px, calc(100vw - 40px));
       height: 100vh;
       max-height: 100dvh;
       overflow: hidden;
       flex-shrink: 0;
-      /* Key: transform makes position:fixed descendants use THIS as containing block */
       transform: translateZ(0);
-      /* Subtle device-edge borders */
-      border-left:  0.5px solid rgba(255,255,255,0.09);
-      border-right: 0.5px solid rgba(255,255,255,0.09);
-      box-shadow:
-        -24px 0 80px rgba(0,0,0,0.55),
-         24px 0 80px rgba(0,0,0,0.55);
+      background: var(--sa-mobile-bg, #000);
+      border-left: 0.5px solid rgba(255, 255, 255, 0.08);
+      border-right: 0.5px solid rgba(255, 255, 255, 0.08);
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .sa-mobile-frame {
+      width: min(720px, calc(100vw - 80px));
+    }
+  }
+
+  /* Story / reel kartları — IG web: ortalanmış 9:16 sütun */
+  @media (min-width: 768px) {
+    .sa-mobile .ig-vertical-media-card {
+      max-width: 420px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  /* Story viewer portal (document.body — .sa-mobile dışında) */
+  @media (min-width: 768px) {
+    .ig-story-viewer-backdrop {
+      align-items: center;
+      background: rgba(0, 0, 0, 0.96) !important;
+    }
+    .ig-story-viewer-column {
+      width: min(420px, 100%);
+      height: 100%;
+      max-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+    }
+    .ig-story-viewer-stage {
+      border-radius: 12px 12px 0 0;
+      overflow: hidden;
+    }
+    .ig-story-viewer-dock {
+      width: 100%;
+      border-radius: 0 0 12px 12px;
     }
   }
 
@@ -794,7 +841,10 @@ function AppShell() {
         }
         setUser(me);
       })
-      .catch(() => setUser(null));
+      .catch(() => {
+        setUser(null);
+        setShowLogin(true);
+      });
   }, [setUser, setTenantFromSession]);
 
   useEffect(() => {

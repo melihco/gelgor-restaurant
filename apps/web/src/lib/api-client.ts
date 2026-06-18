@@ -230,6 +230,10 @@ class ApiClient {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
+      if (response.status === 401 && typeof window !== 'undefined') {
+        setSessionToken(null);
+        window.dispatchEvent(new CustomEvent('smartagency-auth-changed'));
+      }
       throw new ApiRequestError(response.status, response.statusText, errorBody);
     }
 
@@ -368,7 +372,7 @@ class ApiClient {
       const artifacts = await this.request<any[]>(endpoint, { headers: scopedHeaders });
       return artifacts.map((artifact) => this.mapArtifact(artifact));
     } catch (error) {
-      if (error instanceof ApiRequestError && (error.status === 404 || error.status === 429)) {
+      if (error instanceof ApiRequestError && (error.status === 401 || error.status === 404 || error.status === 429)) {
         return [];
       }
       throw error;

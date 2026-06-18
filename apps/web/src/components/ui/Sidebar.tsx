@@ -3,9 +3,10 @@
 import {
   Activity, BarChart3, Bot, BrainCircuit, CheckSquare, ChevronLeft,
   ChevronRight, CreditCard, FileText, Gauge, LayoutDashboard, Link2,
-  MessageSquare, Palette, PenTool, SearchCode, Settings, ShieldCheck, Sparkles,
+  MessageSquare, Palette, PenTool, SearchCode, Settings, ShieldCheck,
 } from 'lucide-react';
 import { useState } from 'react';
+import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { useNavigationStore, type AppPage } from '@/stores/navigation-store';
 import { useDashboardSnapshot } from '@/hooks/use-dashboard-snapshot';
 import { cn } from '@/lib/utils';
@@ -78,16 +79,12 @@ export default function Sidebar() {
       className="relative z-50 flex h-full shrink-0 flex-col border-r border-gray-200 bg-white shadow-theme-xl transition-all duration-300 dark:border-gray-800 dark:bg-gray-900"
       style={{ width: collapsed ? 88 : 290 }}
     >
-      <div className="flex h-[76px] items-center gap-3 border-b border-gray-200 px-5 dark:border-gray-800">
-        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-500 shadow-theme-md">
-          <Sparkles className="h-5 w-5 text-white" />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="text-sm font-semibold tracking-[-0.02em] text-gray-800 dark:text-white/90">SmartAgency</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">AI Command Center</p>
-          </div>
-        )}
+      <div className="flex h-[68px] items-center gap-3 border-b border-gray-200 px-4 dark:border-gray-800">
+        <SmartAgencyLogo
+          variant={collapsed ? 'mark' : 'full'}
+          framed
+          className={collapsed ? '!h-7 !w-7' : '!h-8 max-w-[168px]'}
+        />
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5 scrollbar-thin">
@@ -152,22 +149,13 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-gray-200 p-3 dark:border-gray-800">
-        {!collapsed && (
-          <div className="mb-3 rounded-xl border border-success-200 bg-success-50 p-3 dark:border-success-500/20 dark:bg-success-500/[0.10]">
-            <div className="flex items-center gap-2 text-xs font-semibold text-success-700 dark:text-success-300">
-              <span className="h-2 w-2 rounded-full bg-success-500" />
-              AI system observing
-            </div>
-            <p className="mt-1 text-[11px] leading-4 text-success-700/70 dark:text-success-300/60">Agents, approvals and provider health are monitored.</p>
-          </div>
-        )}
         <button
           type="button"
           onClick={() => setCollapsed((value) => !value)}
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white py-2 text-gray-500 shadow-theme-xs transition-colors hover:bg-gray-50 hover:text-gray-700 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          {!collapsed && <span className="text-xs font-semibold">Collapse</span>}
+          {!collapsed && <span className="text-xs font-semibold">Daralt</span>}
         </button>
       </div>
     </aside>

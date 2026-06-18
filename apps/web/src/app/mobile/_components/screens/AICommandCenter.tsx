@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMobileStore } from '../mobile-store';
 import { useAuthStore } from '../auth-store';
 import { ProfileSheet } from '../ProfileSheet';
+import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { apiClient } from '@/lib/api-client';
 import { resolveArtifact } from '../artifact-utils';
 import { resolvePosterUrl } from '@/lib/production-bundle';
@@ -267,7 +268,6 @@ export function AICommandCenter() {
   const initials  = brandName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const hour      = new Date().getHours();
   const greeting  = hour < 5 ? 'İyi geceler' : hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar';
-  const today     = new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const { data: rawArtifacts = [] } = useMobileArtifacts({
     subscribeOnly: true,
@@ -342,9 +342,9 @@ export function AICommandCenter() {
           borderBottom: `0.5px solid ${t.separator}`,
         }}>
 
-          {/* Top row: date + profile */}
+          {/* Top row: logo + profile */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <span style={{ fontSize: 12, color: t.textMuted }}>{today}</span>
+            <SmartAgencyLogo variant="mark" framed className="!h-7 !w-7" />
             <button onClick={openProfile} style={{
               width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
               background: t.accent,

@@ -124,26 +124,46 @@ function isReelArtifact(artifact: OutputArtifact): boolean {
   return kind.includes('reel') || ct.includes('reel');
 }
 
+/** Client-side mission filter — matches metadata OR content JSON mission_id. */
+export function filterArtifactsForMission(
+  artifacts: OutputArtifact[],
+  missionId: string,
+): OutputArtifact[] {
+  return dedupeProductionBundles(
+    artifacts.filter((a) => parseArtifactMissionId(a) === missionId),
+  );
+}
+
 export function summarizeMissionFeedPackage(
   artifacts: OutputArtifact[],
   missionId: string,
   selection?: WeeklyPublishSelection | null,
 ): MissionFeedPackage {
   const deduped = dedupeProductionBundles(artifacts);
-  const mine = selection
+  const allProduced = deduped.filter((a) => {
+    if (parseArtifactMissionId(a) !== missionId) return false;
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    return meta.auto_produced === true
+      || meta.production_bundle === true
+      || meta.production_role != null
+      || meta.ad_creative === true
+      || meta.source === 'auto-produce'
+      || meta.source === 'remotion';
+  });
+  const mine = selection?.primary.length
     ? selection.primary
-    : deduped.filter((a) => parseArtifactMissionId(a) === missionId);
+    : allProduced;
   const backupCount = selection?.backup.length ?? Math.max(
     0,
-    deduped.filter((a) => parseArtifactMissionId(a) === missionId).length - mine.length,
+    allProduced.length - mine.length,
   );
   const storyVideos = mine.filter(isRemotionVideoStoryArtifact).length;
   const posts = mine.filter(isFeedPostArtifact).length;
   const reels = mine.filter(isReelArtifact).length;
   const roleCounts = countByProductionRole(mine);
-  const pendingReview = mine.filter((a) => a.status === 'pending_review').length;
-  const approved = mine.filter((a) => a.status === 'approved').length;
-  const publishableCount = mine.filter(isArtifactFeedReady).length;
+  const pendingReview = allProduced.filter((a) => a.status === 'pending_review').length;
+  const approved = allProduced.filter((a) => a.status === 'approved').length;
+  const publishableCount = allProduced.filter(isArtifactFeedReady).length;
   return {
     storyVideos,
     posts,
@@ -152,7 +172,7 @@ export function summarizeMissionFeedPackage(
     approved,
     totalPublishable: publishableCount,
     backupCount,
-    primaryCount: selection?.primary.length ?? mine.length,
+    primaryCount: allProduced.length,
     selectionSource: selection?.selectionSource,
     feedDirectorScore: selection?.feedDirectorScore ?? null,
     organicPosts: roleCounts.organicPosts,

@@ -227,7 +227,6 @@ async def kick_feed_production(
     body: MissionFeedProductionRequest | None = None,
 ) -> dict[str, Any]:
     """Non-blocking: schedule background ensure pipeline."""
-    import asyncio
 
     _, _, nodes = await prepare_feed_production(
         db, workspace_id, mission_id, body,
@@ -243,10 +242,9 @@ async def kick_feed_production(
             "İçerik fikirleri henüz hazır değil — görev tamamlanınca Feed otomatik üretilir.",
         )
 
-    asyncio.create_task(
-        ensure_mission_feed_production(mission_id, workspace_id),
-        name=f"kick_feed_{mission_id}",
-    )
+    from app.services.task_graph_executor import _schedule_ensure_mission_feed
+
+    _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=5)
     logger.info("kick_feed_production", mission_id=str(mission_id))
     return {
         "accepted": True,
@@ -364,13 +362,31 @@ async def ensure_mission_feed_production(
     )
 
     try:
-        await run_feed_production_pipeline(
+        produce_data = await run_feed_production_pipeline(
             workspace_id=workspace_id,
             mission_id=mission_id,
             node_key=node_key,
             output_summary=summary,
             force=False,
         )
+        if produce_data and produce_data.get("skipped"):
+            reason = str(produce_data.get("reason") or "")
+            if reason == "production_in_flight":
+                from app.services.task_graph_executor import _schedule_ensure_mission_feed
+
+                _schedule_ensure_mission_feed(
+                    mission_id, workspace_id, delay_sec=90,
+                )
+            elif reason in (
+                "awaiting_other_ideation",
+                "awaiting_visual_design_cards",
+                "awaiting_content_calendar",
+            ):
+                from app.services.task_graph_executor import _schedule_ensure_mission_feed
+
+                _schedule_ensure_mission_feed(
+                    mission_id, workspace_id, delay_sec=120,
+                )
     except FeedProductionError as exc:
         logger.warning(
             "ensure_mission_feed_failed",

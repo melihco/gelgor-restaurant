@@ -114,7 +114,7 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
         <SmartAgencyLogo
           variant="full"
           priority
-          className="onboarding-logo !h-auto !w-[min(248px,78vw)] !max-w-none"
+          className="onboarding-logo"
         />
         <h1 className="onboarding-title">Markanızı tanıyalım</h1>
         <p className="onboarding-lead">

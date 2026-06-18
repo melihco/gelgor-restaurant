@@ -43,7 +43,7 @@ const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier
     remotionStoryMotionSlots: 3,
     remotionStoryStillSlots: 0,
     grafikerMaxRetries: 2,
-    fdFallbackPolicy: 'block',
+    fdFallbackPolicy: 'allow_warn',
     skipAggressiveEnhance: false,
     reelRemotionMotionFallback: true,
   },

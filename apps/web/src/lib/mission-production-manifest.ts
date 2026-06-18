@@ -112,13 +112,13 @@ export interface MissionProductionManifest {
   version: 1;
 }
 
-/** Standard weekly mission deliverable: 3 story + 3 post (incl. carousel) + 1 reel */
+/** Standard weekly mission deliverable: 2 story + 2 post + 1 reel (5 organic — stable v1) */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
-  story: 3,
+  story: 2,
   post: 2,
-  carousel: 1,
+  carousel: 0,
   reel: 1,
-  total: 7,
+  total: 5,
 } as const;
 
 /** Strategist opportunity missions — 3 acil fikir → 1 post + 1 story + 1 reel (reklam yok). */
@@ -208,14 +208,6 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
     intentHint: 'brand_awareness',
   },
   {
-    role: 'organic_carousel',
-    pipeline: 'carousel_gallery',
-    format: 'carousel',
-    captionSurface: 'feed_card',
-    required: true,
-    intentHint: 'social_proof',
-  },
-  {
     role: 'campaign_story_motion',
     pipeline: 'remotion_story',
     format: 'story',
@@ -230,14 +222,6 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
     captionSurface: 'visual_only',
     required: true,
     intentHint: 'daily_story',
-  },
-  {
-    role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
-    format: 'story',
-    captionSurface: 'visual_only',
-    required: true,
-    intentHint: 'behind_the_scenes',
   },
   {
     role: 'organic_reel',

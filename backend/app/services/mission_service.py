@@ -133,7 +133,7 @@ def _seasonal_task_graph(
         phase0_keys.append("review_analysis")
 
     reel_suffix = profile["reel_brief_suffix"]
-    weekly_count = 7  # 3 story + 2 post + 1 carousel + 1 reel — single batch for Feed
+    weekly_count = 5  # 2 story + 2 post + 1 reel — stable weekly Feed package
 
     nodes.append(TaskNodeCreate(
         node_key="weekly_content_ideation",
@@ -144,13 +144,13 @@ def _seasonal_task_graph(
         input_data={
             "count": weekly_count,
             "time_period": phase_name,
-            "format_mix": "3 story, 2 post, 1 carousel, 1 reel",
+            "format_mix": "2 story, 2 post, 1 reel",
             "reel_story_brief": reel_suffix,
         },
         depends_on=["content_strategy"],
     ))
 
-    # content_calendar omitted when weekly_content_ideation already delivers the 7-piece
+    # content_calendar omitted when weekly_content_ideation already delivers the 5-piece
     # Feed package — saves ~$0.30–0.50/misyon LLM without reducing publishable output.
 
     return nodes

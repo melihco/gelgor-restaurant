@@ -16,10 +16,12 @@ import {
   isBundleFailed,
   isBundleRendering,
   isPostKind,
+  parseArtifactMissionId,
   resolvePosterUrl,
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
 import { resolveClientMediaUrl } from '@/lib/media-url';
+import { listMissionProducedArtifacts } from '@/lib/mission-pipeline-transparency';
 import { SafeCoverImage } from './SafeCoverImage';
 
 const FORMAT_LABEL: Record<PackageFormat, string> = {
@@ -91,7 +93,9 @@ export function MissionFeedPreviewGrid({
           {title}
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, color: t.textTertiary }}>
-          {sorted.length} içerik · dokunarak aç
+          {sorted.length} içerik
+          {sorted.some((a) => isBundleRendering(a)) ? ' · render devam ediyor' : ''}
+          {' · dokunarak aç'}
         </span>
       </div>
       <div style={{
@@ -259,7 +263,7 @@ function MissionFeedPreviewTile({
   );
 }
 
-/** Collect weekly package slots + publishable mission artifacts for preview. */
+/** Collect all mission-produced artifacts for Hub preview (rendering + ads included). */
 export function collectMissionPreviewArtifacts(
   allArtifacts: OutputArtifact[] | undefined,
   missionId: string,
@@ -285,6 +289,7 @@ export function collectMissionPreviewArtifacts(
     out.push(a);
   };
 
+  // FD selection order first (when matched)
   if (selection) {
     for (const a of [
       ...selection.slots.stories,
@@ -297,11 +302,16 @@ export function collectMissionPreviewArtifacts(
     }
   }
 
+  // All produced mission outputs — do not hide rendering / unmatched slots
+  for (const a of listMissionProducedArtifacts(allArtifacts ?? [], missionId)) {
+    push(a);
+  }
+
   if (out.length) return out;
 
   const pool = extraPublishable ?? allArtifacts ?? [];
   for (const a of pool) {
-    push(a);
+    if (parseArtifactMissionId(a) === missionId) push(a);
   }
   return out;
 }

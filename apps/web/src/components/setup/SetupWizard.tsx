@@ -214,7 +214,7 @@ export default function SetupWizard() {
       {/* Top bar */}
       <header className="relative z-10 flex h-16 items-center justify-between border-b border-white/[0.06] bg-black/20 px-8 backdrop-blur-2xl">
         <div className="flex items-center gap-3">
-          <SmartAgencyLogo variant="full" priority className="h-9 max-w-[200px]" />
+          <SmartAgencyLogo variant="full" priority framed className="h-9 max-w-[200px]" />
           <div>
             <p className="text-xs text-zinc-600">Self-serve onboarding merkezi</p>
           </div>

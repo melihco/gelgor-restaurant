@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { apiClient } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
@@ -39,10 +40,8 @@ export default function PlatformAdminPage() {
   return (
     <main className="min-h-screen bg-[#07080f] px-6 py-8 text-white">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
-        <div className="flex flex-col gap-3">
-          <div className="inline-flex w-fit rounded-full border border-violet-400/25 bg-violet-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-300">
-            Platform Admin
-          </div>
+        <div className="flex flex-col gap-2">
+          <SmartAgencyLogo variant="auto" autoBreakpoint="md" framed className="!h-8 xl:max-w-[200px]" />
           <h1 className="text-4xl font-semibold tracking-[-0.04em]">Replatform Control Surface</h1>
           <p className="max-w-3xl text-sm leading-6 text-white/60">
             Yeni admin yüzeyinin ilk sürümü. Mevcut Nexus, brand-context ve operations verilerini tek ekranda toplar;

@@ -17,6 +17,17 @@ const HOP_BY_HOP = new Set([
   'content-length',
 ]);
 
+/** Nexus reads Bearer or sa_session cookie — forward cookie as Bearer when needed. */
+function ensureUpstreamAuth(req: NextRequest, headers: Headers): void {
+  if (headers.get('authorization')?.trim()) return;
+  const cookie = req.headers.get('cookie') ?? '';
+  const match = cookie.match(/(?:^|;\s*)sa_session=([^;]+)/i);
+  const token = match?.[1] ? decodeURIComponent(match[1].trim()) : '';
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+}
+
 async function proxyToNexus(req: NextRequest, pathSegments: string[]): Promise<NextResponse> {
   const backend = resolveServerApiBaseUrl();
   const path = pathSegments.join('/');
@@ -28,6 +39,7 @@ async function proxyToNexus(req: NextRequest, pathSegments: string[]): Promise<N
       headers.set(key, value);
     }
   });
+  ensureUpstreamAuth(req, headers);
 
   const init: RequestInit = {
     method: req.method,

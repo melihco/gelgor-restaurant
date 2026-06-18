@@ -29,15 +29,14 @@ Required slot mix (opportunity):
 manifest_coverage_pct must be 100 when all 3 slots are assigned.
 """
     return """
-### 8. Production assignments (MANDATORY — exactly 7 weekly slots)
-Return **exactly 7** entries in production_assignments — one per weekly package slot, NOT one per idea.
-Reuse idea_index round-robin when fewer than 7 ideas exist.
+### 8. Production assignments (MANDATORY — exactly 5 weekly slots)
+Return **exactly 5** entries in production_assignments — one per weekly package slot, NOT one per idea.
+Reuse idea_index round-robin when fewer than 5 ideas exist.
 
 Required slot mix (weekly_content):
 - exactly 1 organic_post
 - exactly 1 designed_post
-- exactly 1 organic_carousel
-- exactly 3 campaign_story_motion (each a DIFFERENT layout_family_hint AND DIFFERENT library_slot_key)
+- exactly 2 campaign_story_motion (each a DIFFERENT layout_family_hint AND DIFFERENT library_slot_key)
 - exactly 1 organic_reel (set hero_reel_index to that idea_index)
 """
 

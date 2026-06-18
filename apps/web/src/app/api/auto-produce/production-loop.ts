@@ -231,9 +231,6 @@ import {
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
 import {
-  findMissionSlotBackfillItems,
-} from '@/lib/mission-slot-backfill';
-import {
   resolveGalleryFirstForSlot,
   shouldUseGalleryFirstMission,
   type GalleryFirstCaptionSource,
@@ -3243,66 +3240,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
   releaseAllProductionLocks(workspaceId, missionId);
 
-  // ── Slot backfill: one retry pass for missing/failed manifest slots ────────
-  let mergedResults = results;
-  let mergedSaved = saved;
-  let mergedPublishReady = publishReady;
-  let mergedRendering = rendering;
-  let mergedWithheld = withheld;
-  let backfillAttempted = false;
+  // Slot backfill disabled — stable 5-slot package; no extra AI spend chasing missing slots.
+  const backfillAttempted = false;
+  const mergedResults = results;
+  const mergedSaved = saved;
+  const mergedPublishReady = publishReady;
+  const mergedRendering = rendering;
+  const mergedWithheld = withheld;
 
+  /* legacy backfill (7-slot era) — re-enable when package target increases
   if (
     missionId
     && !slotBackfillPass
     && rendering === 0
   ) {
-    const backfillItems = findMissionSlotBackfillItems(productionLoop, results);
-    if (backfillItems.length > 0) {
-      backfillAttempted = true;
-      const keys = backfillItems.map(
-        (i) => `${i.ideaIndex}:${i.assignment.slot_role}`,
-      );
-      console.log(
-        `[auto-produce] slot backfill triggered: ${keys.join(', ')}`,
-      );
-      try {
-        const bfResp = await runProduction({
-          ...params,
-          slotBackfillPass: true,
-          skipArtifactDedupe: true,
-          backfillSlotKeys: keys,
-        });
-        const bfData = (await bfResp.json()) as {
-          produced?: number;
-          publishReady?: number;
-          rendering?: number;
-          withheld?: number;
-          results?: typeof results;
-        };
-        if (Array.isArray(bfData.results)) {
-          const bfKeys = new Set(keys);
-          mergedResults = [
-            ...results.filter((r) => {
-              const meta = r.metadata ?? {};
-              const k = `${meta.idea_index ?? ''}:${meta.production_role ?? ''}`;
-              return !bfKeys.has(k);
-            }),
-            ...bfData.results,
-          ];
-        }
-        mergedSaved = mergedResults.filter((r) => r.id && !r.error).length;
-        mergedPublishReady = mergedResults.filter(
-          (r) => r.id && !r.error && r.publishReady === true,
-        ).length;
-        mergedRendering = mergedResults.filter(
-          (r) => r.id && !r.error && r.rendering === true,
-        ).length;
-        mergedWithheld = mergedResults.filter((r) => !r.id && r.error).length;
-      } catch (err) {
-        console.warn('[auto-produce] slot backfill pass failed:', err);
-      }
-    }
+    ...
   }
+  */
 
   const productionTelemetry = buildMissionProductionTelemetry({
     profileTier: productionProfile.tier,

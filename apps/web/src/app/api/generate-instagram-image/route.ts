@@ -154,7 +154,7 @@ function isDalleModel(model: string) {
 }
 
 function sizeFor(contentType: string, model: string) {
-  if (isDalleModel(model)) return contentType === 'story' ? '1024x1792' : '1024x1024';
+  if (isDalleModel(model)) return contentType === 'story' ? '1024x1536' : '1024x1024';
   // gpt-image-2 supports higher resolutions
   if (model === 'gpt-image-2') return contentType === 'story' ? '1024x1536' : '1024x1024';
   // gpt-image-1 fallback
@@ -1150,7 +1150,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         model: 'gpt-image-1',
         image: file,
         prompt: overlayPrompt,
-        size: contentType === 'story' ? '1024x1792' : '1024x1024',
+        size: contentType === 'story' ? '1024x1536' : '1024x1024',
         quality: 'high',
       } as Parameters<typeof openaiForOverlay.images.edit>[0]);
 

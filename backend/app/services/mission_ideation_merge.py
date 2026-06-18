@@ -1,7 +1,7 @@
 """
 Merge multiple content_ideation node outputs into one weekly Feed package batch.
 
-Target per mission: 3 story + 2 post + 1 carousel + 1 reel (7 total).
+Target per mission: 2 story + 2 post + 1 reel (5 total).
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ from typing import Any
 from app.services.output_summary_parser import extract_object_array_from_output_summary
 
 # Aligns with apps/web MISSION_WEEKLY_PACKAGE_COUNTS
-MISSION_FEED_PACKAGE_TOTAL = 7
+MISSION_FEED_PACKAGE_TOTAL = 5
 MISSION_OPPORTUNITY_PACKAGE_TOTAL = 3
 FORMAT_TARGETS: dict[str, int] = {
-    "story": 3,
+    "story": 2,
     "post": 2,
-    "carousel": 1,
+    "carousel": 0,
     "reel": 1,
 }
 OPPORTUNITY_FORMAT_TARGETS: dict[str, int] = {

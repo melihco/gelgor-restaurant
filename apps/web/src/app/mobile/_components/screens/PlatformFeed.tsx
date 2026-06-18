@@ -1293,7 +1293,7 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
   const slotBadge = productionRoleBadge(meta);
 
   return (
-    <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}` }}>
+    <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}` }} className="ig-vertical-media-card">
       {/* 9:16 Reel frame */}
       <div style={{ width: '100%', aspectRatio: '9/16', maxHeight: '85vh',
         background: '#000', position: 'relative', overflow: 'hidden' }}>
@@ -1531,7 +1531,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
   const slotBadge = productionRoleBadge(meta);
 
   return (
-    <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}`, paddingBottom: 0 }}>
+    <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}`, paddingBottom: 0 }} className="ig-vertical-media-card">
       {/* Full-width 9:16 story frame — NO caption below */}
       <div style={{
         width: '100%',
@@ -2901,19 +2901,21 @@ export function PlatformFeed() {
       {/* ── Story Viewer (fullscreen portal) ── */}
       {storyViewIdx !== null && storyArtifacts[storyViewIdx] && typeof window !== 'undefined' && (
         createPortal(
-          <div style={{
+          <div className="ig-story-viewer-backdrop" style={{
             position: 'fixed', inset: 0, zIndex: 800,
-            width: '100vw', height: '100dvh', maxHeight: '100dvh',
+            width: '100%', height: '100dvh', maxHeight: '100dvh',
             background: '#000',
             display: 'flex', flexDirection: 'column',
             overflow: 'hidden',
             animation: 'fadeIn 120ms ease both',
           }}>
+            <div className="ig-story-viewer-column">
             {/* Story stage — full content visible, no button overlap */}
-            <div style={{
+            <div className="ig-story-viewer-stage" style={{
               flex: 1, minHeight: 0, position: 'relative',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: '#000',
+              width: '100%',
             }}>
               {/* Progress bars */}
               <div style={{
@@ -3019,7 +3021,7 @@ export function PlatformFeed() {
             </div>
 
             {/* Action dock — below story, never covers content */}
-            <div style={{
+            <div className="ig-story-viewer-dock" style={{
               flexShrink: 0, zIndex: 20,
               padding: '10px 14px max(12px, env(safe-area-inset-bottom))',
               background: 'rgba(8,8,10,0.98)',
@@ -3163,6 +3165,7 @@ export function PlatformFeed() {
                   </>
                 );
               })()}
+            </div>
             </div>
           </div>,
           document.body

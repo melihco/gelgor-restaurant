@@ -101,21 +101,34 @@ export interface MissionProductionPipelineSummary {
   lastProduceRun: number | null;
 }
 
+export function isMissionProducedArtifact(artifact: OutputArtifact): boolean {
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  return meta.auto_produced === true
+    || meta.production_bundle === true
+    || meta.production_role != null
+    || meta.ad_creative === true
+    || meta.source === 'auto-produce'
+    || meta.source === 'remotion';
+}
+
+/** Mission-scoped auto-produce outputs (includes rendering bundles). */
+export function listMissionProducedArtifacts(
+  artifacts: OutputArtifact[],
+  missionId: string,
+): OutputArtifact[] {
+  return dedupeProductionBundles(
+    artifacts.filter((a) => {
+      if (parseArtifactMissionId(a) !== missionId) return false;
+      return isMissionProducedArtifact(a);
+    }),
+  );
+}
+
 export function countMissionProducedArtifacts(
   artifacts: OutputArtifact[],
   missionId: string,
 ): number {
-  return dedupeProductionBundles(
-    artifacts.filter((a) => {
-      if (parseArtifactMissionId(a) !== missionId) return false;
-      const meta = (a.metadata ?? {}) as Record<string, unknown>;
-      return meta.auto_produced === true
-        || meta.production_bundle === true
-        || meta.production_role
-        || meta.source === 'auto-produce'
-        || meta.source === 'remotion';
-    }),
-  ).length;
+  return listMissionProducedArtifacts(artifacts, missionId).length;
 }
 
 export function summarizeMissionProductionPipeline(input: {

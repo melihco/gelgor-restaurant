@@ -38,13 +38,11 @@ _STORY_LIBRARY_SLOT_ROTATION = (
     "social_proof",
 )
 
-# Haftalık Feed paketi — her misyonda tam 7 slot (fikir sayısından bağımsız)
-_WEEKLY_PACKAGE_TOTAL = 7
+# Haftalık Feed paketi — her misyonda tam 5 slot (fikir sayısından bağımsız)
+_WEEKLY_PACKAGE_TOTAL = 5
 _WEEKLY_SLOT_SPECS: list[tuple[str, str]] = [
     ("organic_post", "gallery_photo"),
     ("designed_post", "remotion_poster"),
-    ("organic_carousel", "carousel_gallery"),
-    ("campaign_story_motion", "remotion_story"),
     ("campaign_story_motion", "remotion_story"),
     ("campaign_story_motion", "remotion_story"),
     ("organic_reel", "runway_reel"),
@@ -67,15 +65,13 @@ def _manifest_required_counts(production_profile: str | None = None) -> dict[str
         return {
             "organic_post": 1,
             "designed_post": 1,
-            "organic_carousel": 1,
-            "campaign_story_motion": 3,
+            "campaign_story_motion": 2,
             "organic_story_still": 1,
         }
     return {
         "organic_post": 1,
         "designed_post": 1,
-        "organic_carousel": 1,
-        "campaign_story_motion": 3,
+        "campaign_story_motion": 2,
         "organic_reel": 1,
     }
 
@@ -265,7 +261,7 @@ def _normalize_production_assignments(
                     library_slot_key=_story_library_slot_key(story_n))
             story_n += 1
 
-    # Build exactly 7 final assignments in _WEEKLY_SLOT_SPECS order.
+    # Build exactly 5 final assignments in _WEEKLY_SLOT_SPECS order.
     # Group by_index entries by slot_role so we can pick format-matched ideas per slot.
     by_role: dict[str, list[dict[str, Any]]] = {}
     for entry in by_index.values():

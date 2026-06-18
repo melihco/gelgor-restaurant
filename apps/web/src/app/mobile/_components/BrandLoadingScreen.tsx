@@ -43,8 +43,9 @@ export function BrandLoadingScreen({
     >
       <div className="brand-loader-breathe">
         <SmartAgencyLogo
-          variant="full"
+          variant={compact ? 'mark' : 'full'}
           priority={!compact}
+          framed={compact}
           className={`brand-loader-logo block h-auto${compact ? ' brand-loader-logo--sm' : ''}`}
         />
       </div>

@@ -75,6 +75,9 @@ MAX_NODE_RETRIES = 3  # 4 total attempts (0 + 3 retries) — LLM calls can be fl
 _active_node_executions: set[uuid.UUID] = set()
 ORPHAN_NODE_MIN_ELAPSED_SECONDS = 45
 
+# Debounced Feed ensure — coalesce feed_cohesion / mission-complete / calendar triggers.
+_scheduled_ensure_tasks: dict[str, asyncio.Task] = {}
+
 # Task types that require per-tenant serialization (content_agent crews)
 _SERIALIZED_TASK_TYPES = frozenset({
     "content_ideation", "content_calendar", "content_strategy",
@@ -364,9 +367,10 @@ async def _execute_node_body(
                 )
             )
             await db.commit()
-        asyncio.create_task(
-            _ensure_mission_feed_production(mission_id, workspace_id),
-            name=f"ensure_feed_after_fd_{mission_id}",
+        _schedule_ensure_mission_feed(
+            mission_id,
+            workspace_id,
+            delay_sec=5,
         )
         return
 
@@ -610,83 +614,20 @@ async def _execute_node_body(
                     error=str(cost_exc)[:200],
                 )
 
-        # ── Production Stack: Feed Art Director → auto-produce ───────────────
-        if task_type == "content_ideation" and output_summary:
-            async def _run_production_after_ideation() -> None:
-                try:
-                    data = await _trigger_content_production_pipeline(
-                        workspace_id=workspace_id,
-                        mission_id=mission_id,
-                        node_key=node_key,
-                        output_summary=output_summary,
-                        brand=brand,
-                    )
-                    if data and data.get("skipped"):
-                        reason = str(data.get("reason") or "")
-                        if reason in (
-                            "awaiting_other_ideation",
-                            "awaiting_visual_design_cards",
-                            "awaiting_content_calendar",
-                        ):
-                            asyncio.create_task(
-                                _delayed_ensure_mission_feed(
-                                    mission_id, workspace_id, delay_sec=120,
-                                ),
-                                name=f"delayed_ensure_feed_{mission_id}",
-                            )
-                            return
-                        if reason == "production_in_flight":
-                            return
-                        publish_ready = int((data or {}).get("publishReady") or 0)
-                        if publish_ready > 0:
-                            return
-                        if reason and int(data.get("produced") or 0) > 0:
-                            return
-                    produced = int((data or {}).get("produced") or 0)
-                    publish_ready = int((data or {}).get("publishReady") or 0)
-                    if produced <= 0 and publish_ready <= 0:
-                        err = str(
-                            (data or {}).get("error")
-                            or "İçerik üretildi ancak Feed'e kaydedilen parça yok"
-                        )[:400]
-                        await _record_mission_production_failure(
-                            mission_id,
-                            status_code=0,
-                            error=err,
-                        )
-                except Exception as exc:
-                    logger.exception(
-                        "production_pipeline_after_ideation_failed",
-                        mission_id=str(mission_id),
-                    )
-                    await _record_mission_production_failure(
-                        mission_id,
-                        status_code=0,
-                        error=str(exc)[:400],
-                    )
-
-            asyncio.create_task(
-                _run_production_after_ideation(),
-                name=f"produce_feed_{mission_id}",
-            )
+        # Feed production runs once via feed_cohesion_review + mission-complete ensure.
+        # Early ideation trigger caused 409 races and incomplete calendar merges.
 
         if task_type == "visual_design_cards" and output_summary:
-            asyncio.create_task(
-                _ensure_mission_feed_production(mission_id, workspace_id),
-                name=f"ensure_feed_after_visual_design_{mission_id}",
-            )
+            _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=45)
 
-        # ── content_calendar: schedule plan ready → kick feed production ──
+        # ── content_calendar: schedule debounced ensure after calendar lands ──
         if task_type == "content_calendar" and output_summary:
             logger.info(
                 "content_calendar_ready_for_feed",
                 mission_id=str(mission_id),
                 node_key=node_key,
             )
-            asyncio.create_task(
-                _ensure_mission_feed_production(mission_id, workspace_id),
-                name=f"ensure_feed_after_calendar_{mission_id}",
-            )
+            _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=45)
     else:
         # Crew returned status != "completed"
         error_msg = result.get("error", "Crew returned non-completed status")
@@ -793,10 +734,7 @@ async def _advance_after_node(mission_id: uuid.UUID, workspace_id: uuid.UUID) ->
         # Check completion
         done = await _check_and_complete_mission(db, mission_id)
         if done:
-            asyncio.create_task(
-                _ensure_mission_feed_production(mission_id, workspace_id),
-                name=f"ensure_feed_{mission_id}",
-            )
+            _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=10)
             return
 
     # Not done — advance to next wave
@@ -1594,6 +1532,35 @@ async def _delayed_ensure_mission_feed(
     await _ensure_mission_feed_production(mission_id, workspace_id)
 
 
+def _schedule_ensure_mission_feed(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    delay_sec: float = 20,
+) -> None:
+    """
+    Coalesce duplicate Feed production triggers into one debounced ensure run.
+    Prevents content_ideation + calendar + feed_cohesion from racing (409 / cut-off).
+    """
+    key = str(mission_id)
+    existing = _scheduled_ensure_tasks.get(key)
+    if existing is not None and not existing.done():
+        return
+
+    async def _run() -> None:
+        try:
+            if delay_sec > 0:
+                await asyncio.sleep(delay_sec)
+            await _ensure_mission_feed_production(mission_id, workspace_id)
+        finally:
+            _scheduled_ensure_tasks.pop(key, None)
+
+    _scheduled_ensure_tasks[key] = asyncio.create_task(
+        _run(),
+        name=f"sched_ensure_feed_{mission_id}",
+    )
+
+
 async def _ensure_mission_feed_production(
     mission_id: uuid.UUID,
     workspace_id: uuid.UUID,
@@ -1855,6 +1822,12 @@ async def _run_content_production_pipeline_locked(
             required_total=required_total_n,
             enhance_trace=produce_data.get("enhanceTrace") if produce_data else None,
         )
+        if rendering_n > 0:
+            _schedule_ensure_mission_feed(
+                mission_id=mission_id,
+                workspace_id=workspace_id,
+                delay_sec=180,
+            )
 
     cost_est = float((produce_data or {}).get("costEstimate") or 0)
     if cost_est > 0:
@@ -2400,7 +2373,7 @@ async def _trigger_auto_produce(
         # read_timeout: generous (360s) — Runway reels + Remotion stories take 3-5 min.
         # RemoteProtocolError / ReadTimeout are treated as fire-and-forget below:
         # the Next.js route keeps running in background even if Python disconnects.
-        _timeout = httpx.Timeout(connect=15.0, read=360.0, write=30.0, pool=5.0)
+        _timeout = httpx.Timeout(connect=15.0, read=580.0, write=30.0, pool=5.0)
         async with httpx.AsyncClient(timeout=_timeout) as client:
             resp = await client.post(
                 f"{nextjs_url}/api/auto-produce",

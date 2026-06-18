@@ -34,7 +34,7 @@ import {
   type ContentIntent,
 } from '@/lib/brand-motion-profile';
 import { resolveShowcasePhotoForRender } from '@/lib/brand-showcase-presets';
-import { isUsableGalleryPhotoUrl, probeGalleryImageUrl } from '@/lib/media-url';
+import { isUsableGalleryPhotoUrl, normalizePhotoUrlForRemotionRender, probeMediaUrl } from '@/lib/media-url';
 import {
   buildDirectorLayoutSpecPatch,
   buildGrafikerRetryPatch,
@@ -667,14 +667,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
-  if (!(await probeGalleryImageUrl(reqProps.photoUrl))) {
+  const photoUrlForProbe = normalizePhotoUrlForRemotionRender(reqProps.photoUrl);
+  if (!(await probeMediaUrl(photoUrlForProbe))) {
     return NextResponse.json(
       { error: 'Photo URL is not reachable (expired, blocked, or not an image)' },
       { status: 422 },
     );
   }
 
-  let propsForRender = reqProps;
+  let propsForRender = {
+    ...reqProps,
+    photoUrl: photoUrlForProbe,
+  };
   let brandTheme: Record<string, unknown> | null = null;
   let effectiveBrandTemplateLocked = brandTemplateLocked;
   let effectiveMotionStyle = motionStyle;

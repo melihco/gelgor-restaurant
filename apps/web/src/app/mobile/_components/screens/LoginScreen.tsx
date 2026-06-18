@@ -69,7 +69,7 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
         <SmartAgencyLogo
           variant="full"
           priority
-          className="mx-auto block h-auto w-[220px] max-w-[min(220px,85vw)]"
+          className="login-logo"
         />
       </div>
 

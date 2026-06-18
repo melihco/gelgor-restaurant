@@ -121,8 +121,12 @@ export function PageHeader({ t, eyebrow, title, subtitle, right }: {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
       <div>
-        {eyebrow && <p style={{ fontSize: 11, fontWeight: 600, color: t.labelColor, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 5 }}>{eyebrow}</p>}
-        <h1 style={{ fontSize: 30, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: subtitle ? 4 : 0 }}>{title}</h1>
+        {eyebrow && (
+          <p style={{ fontSize: 12, fontWeight: 500, color: t.textTertiary, marginBottom: 4 }}>
+            {eyebrow}
+          </p>
+        )}
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: subtitle ? 4 : 0 }}>{title}</h1>
         {subtitle && <p style={{ fontSize: 13, color: t.textTertiary }}>{subtitle}</p>}
       </div>
       {right && <div style={{ marginTop: 4 }}>{right}</div>}

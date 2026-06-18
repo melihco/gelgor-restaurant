@@ -50,7 +50,7 @@ export function MobileNav() {
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 100,
-        width: 'min(320px, calc(100vw - 32px))',
+        width: 'min(560px, calc(100% - 32px))',
         height: 54,
         background: t.navBg,
         backdropFilter: 'blur(48px) saturate(180%)',

@@ -210,7 +210,7 @@ Deliver at least ONE concept for EACH template_use_case:
 - educational_post (how-to / panel tip / workflow)
 - behind_the_scenes (product build / team / salon workflow)
 - campaign_offer OR event_announcement (promo without repeating free trial)
-Plus the standard 3 story + 2 post + 1 carousel + 1 reel format mix.
+Plus the standard 2 story + 2 post + 1 reel format mix.
 
 ⚠️ TIMING IS EVERYTHING — CHECK THESE FIRST BEFORE GENERATING ANY IDEA:
 
@@ -250,7 +250,7 @@ Autonomy mode: {autonomy_mode}
 From {count} concepts, aim for this distribution:
 - ~40%% posts (feed_text_overlay or pure_photo treatment)
 - ~30%% stories (pure_photo dominant — see STORY RULE below)
-- When count ≥ 7 (standard weekly mission): deliver EXACTLY — 3 story + 2 post + 1 carousel + 1 reel (7 total).
+- When count ≥ 5 (standard weekly mission): deliver EXACTLY — 2 story + 2 post + 1 reel (5 total).
 - Otherwise: ~40%% post / ~30%% story / ~20%% reel / ~10%% carousel; minimum 1 reel with reel_motion_spec.
 
 ⚠️ STORY TEXT OVERLAY RULE:

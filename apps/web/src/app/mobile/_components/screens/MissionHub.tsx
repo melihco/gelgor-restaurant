@@ -67,7 +67,7 @@ import {
   type WeeklyPublishSelection,
   type FormatDistribution,
 } from '@/lib/weekly-publish-package';
-import { parseArtifactMissionId } from '@/lib/mission-feed-package';
+import { filterArtifactsForMission, parseArtifactMissionId } from '@/lib/mission-feed-package';
 import { MISSION_WEEKLY_PACKAGE_COUNTS } from '@/lib/mission-production-manifest';
 import { isFeedProductionLockActive } from '@/lib/mission-production-guard';
 import {
@@ -457,11 +457,15 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
     );
   const feedPrepPending = visualDesignPending || calendarPending;
 
-  const { data: missionArtifacts = [], refetch: refetchMissionArtifacts } = useMobileArtifacts({
-    params: { missionId: mission.id, limit: 80 },
+  const { data: artifactPool = [], refetch: refetchMissionArtifacts } = useMobileArtifacts({
+    params: { limit: 80 },
     enabled: ideationDone,
     subscribeOnly: true,
   });
+  const missionArtifacts = useMemo(
+    () => filterArtifactsForMission(artifactPool, mission.id),
+    [artifactPool, mission.id],
+  );
 
   const feedPublishableCount = useMemo(
     () => filterFeedPublishableArtifacts(
@@ -3073,11 +3077,15 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const isCompleted = mission.status === 'completed';
   const showFeedPackage = isCompleted || mission.status === 'in_flight';
   const missionInFlight = mission.status === 'in_flight' || mission.status === 'approved';
-  const { data: feedArtifacts, isLoading: feedPkgLoading, refetch: refetchMissionArtifacts } = useMobileArtifacts({
-    params: { missionId: mission.id, limit: 80 },
+  const { data: feedArtifactPool = [], isLoading: feedPkgLoading, refetch: refetchMissionArtifacts } = useMobileArtifacts({
+    params: { limit: 80 },
     subscribeOnly: true,
     enabled: showFeedPackage,
   });
+  const feedArtifacts = useMemo(
+    () => filterArtifactsForMission(feedArtifactPool, mission.id),
+    [feedArtifactPool, mission.id],
+  );
 
   useEffect(() => {
     if (!showFeedPackage) return;

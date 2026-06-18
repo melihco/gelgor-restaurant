@@ -274,7 +274,7 @@ function cloneIdeaForFormat(
 }
 
 /**
- * P1-5 — Ensure 3 story + 2 post + 1 carousel + 1 reel before manifest routing.
+ * P1-5 — Ensure 2 story + 2 post + 1 reel before manifest routing.
  * Calendar rows and ideation overflow backfill missing format buckets.
  */
 export function ensureWeeklyFormatCoverage(

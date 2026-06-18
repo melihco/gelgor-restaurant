@@ -122,7 +122,7 @@ export default function CustomerSetupPage() {
       <header className="relative z-10 border-b border-white/[0.06] bg-[#030712]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <SmartAgencyLogo variant="full" priority className="h-10 max-w-[220px]" />
+            <SmartAgencyLogo variant="full" priority framed className="h-10 max-w-[220px]" />
             <p className="text-[10px] uppercase tracking-[0.14em] text-gray-500">
               Kurulum akışı — demo
             </p>

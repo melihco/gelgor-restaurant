@@ -29,9 +29,14 @@ public class ArtifactService : IArtifactService
             var filteredQuery = _dbContext.OutputArtifacts
                 .FromSqlInterpolated($@"
                     SELECT *
-                    FROM ""OutputArtifacts""
-                    WHERE ""TenantId"" = {tenantId}
-                      AND ""Metadata""->>'mission_id' = {mid}
+            FROM ""OutputArtifacts""
+            WHERE ""TenantId"" = {tenantId}
+              AND (
+                ""Metadata""->>'mission_id' = {mid}
+                OR ""Metadata""->>'missionId' = {mid}
+                OR (""Content""::jsonb->>'mission_id') = {mid}
+                OR (""Content""::jsonb->>'missionId') = {mid}
+              )
                 ")
                 .AsNoTracking();
 
