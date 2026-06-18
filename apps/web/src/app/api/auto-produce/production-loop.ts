@@ -1322,14 +1322,46 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!referenceUrl || !(await probeMediaUrlReliable(referenceUrl))) {
-      console.warn(`[auto-produce] broken gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
+    if (referenceUrl && !referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))) {
+      // External URL is broken — attempt fallback to a fresh gallery pick before aborting.
+      console.warn(`[auto-produce] broken external gallery URL — attempting fallback pick: ${referenceUrl.slice(0, 100)}`);
+      const fallback = galleryPhotos.length
+        ? pickGalleryPhotoForIdea(
+            ideationCaption,
+            ideationHeadline,
+            mood,
+            galleryMeta,
+            galleryPhotos.filter((u) => u !== referenceUrl),
+            missionGalleryExclude,
+            batchExclude,
+            postType,
+            null,
+            brandBusinessType,
+            false,
+            ideaIndex,
+          )
+        : null;
+      if (fallback) {
+        console.log(`[auto-produce] fallback gallery pick: ${fallback.slice(0, 80)}`);
+        referenceUrl = fallback;
+        referenceIsStock = isStockGalleryPhotoUrl(fallback);
+      } else {
+        console.warn(`[auto-produce] no fallback gallery URL — slot skipped`);
+        results.push({
+          title: headline,
+          imageUrl: '',
+          error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+        });
+        continue;
+      }
+    }
+
+    if (!referenceUrl || referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl))) {
+      console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
       results.push({
         title: headline,
         imageUrl: '',
-        error: referenceUrl?.startsWith('/api/')
-          ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
-          : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+        error: 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin',
       });
       continue;
     }
