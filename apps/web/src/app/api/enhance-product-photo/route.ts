@@ -57,6 +57,7 @@ import {
   markOpenAiQuotaBlocked,
 } from '@/lib/openai-error-utils';
 import { recordWorkspaceUsageCost } from '@/lib/usage-cost-client';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -316,7 +317,7 @@ async function uploadEnhancedBufferToR2(
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   try {
-    const proxyBase = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+    const proxyBase = getNextjsInternalOrigin();
     const proxyUrl = url.startsWith('http')
       ? `${proxyBase}/api/media-proxy?url=${encodeURIComponent(url)}`
       : `${proxyBase}${url}`;

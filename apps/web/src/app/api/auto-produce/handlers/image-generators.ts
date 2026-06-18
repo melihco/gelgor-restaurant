@@ -42,6 +42,7 @@ import type { ProductSceneBrief } from '@/lib/production-stack';
 import { galleryMetaToRendererGallery } from '@/lib/runway-scene-from-gallery';
 import type { MissionVisualDesignCard } from '@/lib/mission-visual-design-cards';
 import { scoreReelHook } from '@/lib/reel-hook-score';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export async function generateVibeImage(opts: {
   workspaceId: string;
@@ -67,7 +68,7 @@ export async function generateVibeImage(opts: {
 }): Promise<string | null> {
   if (shouldPreserveVenuePhotos() && opts.referenceImageUrl) {
     try {
-      const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+      const baseUrl = getNextjsInternalOrigin();
       const proxyUrl = `${baseUrl}/api/media-proxy?url=${encodeURIComponent(opts.referenceImageUrl)}`;
       const probeRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(8_000) });
       if (probeRes.ok) {
@@ -87,7 +88,7 @@ export async function generateVibeImage(opts: {
     }
   }
   try {
-    const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+    const baseUrl = getNextjsInternalOrigin();
     const enhancePrompt = opts.agentImageEditPrompt
       || [
           'Apply agency-grade color grading to this brand photo.',
@@ -158,7 +159,7 @@ export async function generateDesignedImageFromMissionCard(opts: {
   const prompt = String(opts.card.image_generation_prompt ?? '').trim();
   if (!prompt || !isUsableGalleryPhotoUrl(opts.referenceImageUrl)) return null;
   try {
-    const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+    const baseUrl = getNextjsInternalOrigin();
     const referenceImageUrls = [
       opts.referenceImageUrl,
       ...(opts.extraReferenceImageUrls ?? []).filter((url) => url && url !== opts.referenceImageUrl),
@@ -215,7 +216,7 @@ export async function generateEventOverlayImage(opts: {
 }): Promise<string | null> {
   if (!isUsableGalleryPhotoUrl(opts.referenceImageUrl)) return null;
   try {
-    const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+    const baseUrl = getNextjsInternalOrigin();
     const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -327,7 +328,7 @@ export async function generateVibeCarousel(opts: {
   excludeUrls: string[];
   count: number;
 }): Promise<{ enhancedUrls: string[]; galleryUrls: string[] }> {
-  const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const baseUrl = getNextjsInternalOrigin();
 
   const localUsed = [...opts.excludeUrls];
   const candidates = opts.candidateUrls.filter(
@@ -399,7 +400,7 @@ export async function renderEventCardFromPayload(
   gallery: RendererGalleryMeta,
   opts: { workspaceId: string; vibeProfile?: Record<string, unknown> },
 ): Promise<string | null> {
-  const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+  const baseUrl = getNextjsInternalOrigin();
   const payload = buildEventCardPayload(prodIdea, brand, gallery, { workspaceId: opts.workspaceId });
   if (!isUsableGalleryPhotoUrl(payload.photoUrl)) return null;
   try {
@@ -485,7 +486,7 @@ export async function generateRunwayReel(opts: {
   motionProfile?: BrandMotionProfile;
 }): Promise<RunwayReelProduceResult | null> {
   try {
-    const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+    const baseUrl = getNextjsInternalOrigin();
     const sectorId = normalizeSectorId(opts.businessType);
     const brandReel = opts.motionProfile
       ? resolveBrandReelProductionParams(opts.motionProfile, sectorId)
