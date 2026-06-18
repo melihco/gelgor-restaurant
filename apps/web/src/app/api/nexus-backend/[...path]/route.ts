@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveServerApiBaseUrl } from '@/lib/backend-origin';
+import { isJwtExpired } from '@/lib/jwt-tenant';
 
 export const runtime = 'nodejs';
 export const maxDuration = 360;
@@ -19,11 +20,18 @@ const HOP_BY_HOP = new Set([
 
 /** Nexus reads Bearer or sa_session cookie — forward cookie as Bearer when needed. */
 function ensureUpstreamAuth(req: NextRequest, headers: Headers): void {
+  const auth = headers.get('authorization')?.trim() ?? '';
+  if (auth.startsWith('Bearer ')) {
+    const token = auth.slice(7).trim();
+    if (token && isJwtExpired(token)) {
+      headers.delete('authorization');
+    }
+  }
   if (headers.get('authorization')?.trim()) return;
   const cookie = req.headers.get('cookie') ?? '';
   const match = cookie.match(/(?:^|;\s*)sa_session=([^;]+)/i);
   const token = match?.[1] ? decodeURIComponent(match[1].trim()) : '';
-  if (token) {
+  if (token && !isJwtExpired(token)) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 }

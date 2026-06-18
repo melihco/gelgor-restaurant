@@ -2876,13 +2876,17 @@ export function PlatformFeed() {
             overflow: 'hidden',
             animation: 'fadeIn 120ms ease both',
           }}>
-            <div className="ig-story-viewer-column">
-            {/* Story stage — full content visible, no button overlap */}
+            <div className="ig-story-viewer-column" style={{
+              display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
+              width: '100%', height: '100%', maxHeight: '100dvh',
+            }}>
+            {/* Story stage — full content visible, dock stays below */}
             <div className="ig-story-viewer-stage" style={{
-              flex: 1, minHeight: 0, position: 'relative',
+              flex: '1 1 0', minHeight: 0, position: 'relative',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: '#000',
               width: '100%',
+              overflow: 'hidden',
             }}>
               {/* Progress bars */}
               <div style={{
@@ -2977,10 +2981,10 @@ export function PlatformFeed() {
                       </div>
                     )}
 
-                    {/* Tap zones: left = prev, right = next */}
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5 }}>
-                      <div style={{ flex: 1 }} onClick={prevStory} />
-                      <div style={{ flex: 1 }} onClick={nextStory} />
+                    {/* Tap zones: left = prev, right = next — header/dock excluded */}
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5, pointerEvents: 'none' }}>
+                      <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={prevStory} aria-hidden />
+                      <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={nextStory} aria-hidden />
                     </div>
                   </div>
                 );
@@ -3066,16 +3070,6 @@ export function PlatformFeed() {
                       </div>
                     )}
 
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-                    {canRetryStoryRender(art) && (
-                      <StoryRetryButton
-                        artifact={art}
-                        retrying={retryingStoryId === art.id}
-                        onRetry={() => { void retryStoryRender(art.id); }}
-                        variant="viewer"
-                      />
-                    )}
                     {publishErrors[art.id] && (
                       <div style={{
                         fontSize: 11, color: '#FCA5A5', textAlign: 'center',
@@ -3085,9 +3079,22 @@ export function PlatformFeed() {
                         {publishErrors[art.id]}
                       </div>
                     )}
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', position: 'relative', zIndex: 31 }}>
+                    {canRetryStoryRender(art) && (
+                      <StoryRetryButton
+                        artifact={art}
+                        retrying={retryingStoryId === art.id}
+                        onRetry={() => { void retryStoryRender(art.id); }}
+                        variant="viewer"
+                      />
+                    )}
                     {canApprove && (
                       <button
-                        onClick={() => {
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           void approveMutation.mutateAsync(art)
                             .then(() => nextStory())
                             .catch(() => undefined);
@@ -3109,7 +3116,7 @@ export function PlatformFeed() {
                         )}
                       </button>
                     )}
-                    <button onClick={() => { closeStory(); openApproval(art.id); }}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); closeStory(); openApproval(art.id); }}
                       style={{
                         flex: canApprove ? '0 0 auto' : 1, padding: '11px 16px', borderRadius: 12,
                         border: 'none',

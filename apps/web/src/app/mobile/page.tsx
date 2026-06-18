@@ -11,6 +11,10 @@ import { apiClient } from '@/lib/api-client';
 import { getSessionToken } from '@/lib/session-token';
 import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
 import { BrandLoadingScreen } from './_components/BrandLoadingScreen';
+import {
+  getMobileArtifactsQueryOptions,
+  MOBILE_ARTIFACT_FEED_INITIAL,
+} from './_lib/mobile-artifacts';
 
 import {
   AICommandCenter,
@@ -729,6 +733,31 @@ const CSS = `
   }
 
   /* Story viewer portal (document.body — .sa-mobile dışında) */
+  .ig-story-viewer-backdrop {
+    display: flex;
+    flex-direction: column;
+  }
+  .ig-story-viewer-column {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    max-height: 100dvh;
+  }
+  .ig-story-viewer-stage {
+    flex: 1 1 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .ig-story-viewer-dock {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 30;
+    pointer-events: auto;
+  }
   @media (min-width: 768px) {
     .ig-story-viewer-backdrop {
       align-items: center;
@@ -736,15 +765,10 @@ const CSS = `
     }
     .ig-story-viewer-column {
       width: min(420px, 100%);
-      height: 100%;
-      max-height: 100dvh;
-      display: flex;
-      flex-direction: column;
       box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
     }
     .ig-story-viewer-stage {
       border-radius: 12px 12px 0 0;
-      overflow: hidden;
     }
     .ig-story-viewer-dock {
       width: 100%;
@@ -857,6 +881,9 @@ function AppShell() {
         queryFn: () => apiClient.listMissionsForHub(tenantId),
         staleTime: 45_000,
       });
+      void queryClient.prefetchQuery(
+        getMobileArtifactsQueryOptions(tenantId, { limit: MOBILE_ARTIFACT_FEED_INITIAL }),
+      );
     };
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(prefetch, { timeout: 2000 });

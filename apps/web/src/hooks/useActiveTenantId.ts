@@ -11,6 +11,7 @@ export function resolveActiveTenantId(storeTenantId?: string | null): string | n
     const session = getSessionTenantId();
     if (session) return session;
     if (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true') return DEFAULT_TENANT_ID;
+    return null;
   }
   const stored = storeTenantId?.trim();
   return stored || null;
@@ -38,19 +39,23 @@ export function useActiveTenantId(): string | null {
   const activeTenantId =
     sessionTenantId
     ?? (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true' ? DEFAULT_TENANT_ID : null)
-    ?? storeTenantId
     ?? null;
 
-  useEffect(() => {
-    if (!activeTenantId) return;
-    if (storeTenantId !== activeTenantId) {
-      setTenantFromSession(activeTenantId);
-    }
-    if (prevActiveRef.current && prevActiveRef.current !== activeTenantId) {
-      invalidateTenantBrandQueries(activeTenantId);
-    }
-    prevActiveRef.current = activeTenantId;
-  }, [activeTenantId, storeTenantId, setTenantFromSession]);
+  // Keep workspace store aligned when session is authoritative.
+  const effectiveTenantId =
+    activeTenantId
+    ?? (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true' ? storeTenantId : null);
 
-  return activeTenantId;
+  useEffect(() => {
+    if (!effectiveTenantId) return;
+    if (storeTenantId !== effectiveTenantId) {
+      setTenantFromSession(effectiveTenantId);
+    }
+    if (prevActiveRef.current && prevActiveRef.current !== effectiveTenantId) {
+      invalidateTenantBrandQueries(effectiveTenantId);
+    }
+    prevActiveRef.current = effectiveTenantId;
+  }, [effectiveTenantId, storeTenantId, setTenantFromSession]);
+
+  return effectiveTenantId;
 }

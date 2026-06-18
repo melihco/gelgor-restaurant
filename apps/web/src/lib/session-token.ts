@@ -1,3 +1,5 @@
+import { isJwtExpired } from '@/lib/jwt-tenant';
+
 /** Nexus login/register yanıtındaki JWT; Next proxy ile çerez güvenilir olmadığında API + SignalR için taşınır. */
 const KEY = 'smartagency_sa_session_jwt';
 
@@ -5,7 +7,13 @@ export function getSessionToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     const v = sessionStorage.getItem(KEY);
-    return v && v.trim().length > 0 ? v.trim() : null;
+    if (!v || v.trim().length === 0) return null;
+    const token = v.trim();
+    if (isJwtExpired(token)) {
+      sessionStorage.removeItem(KEY);
+      return null;
+    }
+    return token;
   } catch {
     return null;
   }

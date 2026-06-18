@@ -12,6 +12,15 @@ export function decodeJwtPayload(token: string): Record<string, string> | null {
   }
 }
 
+/** Client-side expiry hint — avoids sending stale Bearer that blocks sa_session cookie fallback. */
+export function isJwtExpired(token: string, skewSec = 30): boolean {
+  const claims = decodeJwtPayload(token);
+  if (!claims) return true;
+  const exp = Number(claims.exp);
+  if (!Number.isFinite(exp) || exp <= 0) return false;
+  return exp * 1000 <= Date.now() + skewSec * 1000;
+}
+
 export function extractTenantIdFromAuthHeader(authHeader: string | null | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7).trim();

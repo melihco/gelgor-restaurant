@@ -1,51 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 
 export const runtime = 'nodejs';
 
-const CREW_API = process.env.CREW_BACKEND_URL ?? 'http://localhost:8000';
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
-
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  const workspaceId =
+function resolveWorkspaceId(request: NextRequest): string {
+  return (
     request.nextUrl.searchParams.get('workspaceId')
     ?? request.headers.get('X-Tenant-Id')
     ?? request.headers.get('x-tenant-id')
-    ?? '';
+    ?? ''
+  ).trim();
+}
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const workspaceId = resolveWorkspaceId(request);
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }
 
-  try {
-    const res = await fetch(`${CREW_API}/api/v1/social/meta/analytics/${workspaceId}`, {
-      headers: { 'X-Internal-Api-Key': INTERNAL_KEY },
-      next: { revalidate: 3600 },
+  const upstream = await fetchCrewBackendJson<Record<string, unknown>>(
+    `/api/v1/social/meta/analytics/${workspaceId}`,
+    { timeoutMs: 20_000, workspaceId },
+  );
+
+  if (!upstream.ok) {
+    return NextResponse.json({
+      connected: false,
+      unavailable: true,
+      error: upstream.error === 'upstream_error'
+        ? 'Meta analytics service unavailable'
+        : upstream.error ?? 'Meta analytics unavailable',
     });
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to fetch analytics' },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.json(upstream.data ?? { connected: false });
 }
 
 export async function DELETE(request: NextRequest): Promise<NextResponse> {
-  const workspaceId =
-    request.nextUrl.searchParams.get('workspaceId')
-    ?? request.headers.get('X-Tenant-Id')
-    ?? request.headers.get('x-tenant-id')
-    ?? '';
+  const workspaceId = resolveWorkspaceId(request);
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }
-  try {
-    await fetch(`${CREW_API}/api/v1/social/meta/disconnect/${workspaceId}`, {
-      method: 'DELETE',
-      headers: { 'X-Internal-Api-Key': INTERNAL_KEY },
-    });
-    return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: 'disconnect failed' }, { status: 500 });
+
+  const upstream = await fetchCrewBackendJson(
+    `/api/v1/social/meta/disconnect/${workspaceId}`,
+    { method: 'DELETE', timeoutMs: 15_000, workspaceId },
+  );
+
+  if (!upstream.ok) {
+    return NextResponse.json(
+      { error: upstream.error ?? 'disconnect failed' },
+      { status: upstream.status || 503 },
+    );
   }
+
+  return NextResponse.json({ success: true });
 }
