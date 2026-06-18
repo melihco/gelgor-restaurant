@@ -17,6 +17,7 @@ import { isUsableGalleryPhotoUrl } from './media-url';
 import { resolvePosterOverlayCopy } from './poster-copy';
 import { resolveSlotRenderTypography } from './brand-template-slot-typography';
 import { resolveSlotLogoForRender } from './brand-logo-production';
+import { buildInternalProductionHeaders } from './tenant-production-guard';
 
 export interface RemotionBrandStillInput {
   workspaceId: string;
@@ -168,7 +169,7 @@ export async function renderRemotionBrandStillResult(
     });
     const res = await fetch(`${baseUrl}/api/remotion/render`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildInternalProductionHeaders(input.workspaceId),
       body: JSON.stringify({
         compositionId,
         useCreativeDirector: true,

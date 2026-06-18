@@ -5,6 +5,17 @@ import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
+/** Same-origin server→server calls into guarded production BFF routes (auto-produce, retry-render). */
+export function buildInternalProductionHeaders(workspaceId?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Internal-Api-Key': INTERNAL_KEY,
+  };
+  const ws = String(workspaceId ?? '').trim();
+  if (ws) headers['X-Tenant-Id'] = ws;
+  return headers;
+}
+
 export function isTrustedInternalRequest(req: NextRequest): boolean {
   const internal = req.headers.get('X-Internal-Api-Key')?.trim();
   return Boolean(internal && internal === INTERNAL_KEY);

@@ -40,6 +40,7 @@ import type { StoryCompositionId } from '@/remotion/types';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
 import type { NexusClient } from './nexus-client';
+import { buildInternalProductionHeaders } from '@/lib/tenant-production-guard';
 
 // ─── Candidate types ──────────────────────────────────────────────────────────
 
@@ -677,7 +678,7 @@ export async function runRemotionPostPhase(ctx: RemotionRenderPhaseContext): Pro
 
     fetch(`${ctx.routeBaseUrl}/api/remotion/render`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildInternalProductionHeaders(ctx.workspaceId),
       body: JSON.stringify({
         compositionId,
         useCreativeDirector: true,

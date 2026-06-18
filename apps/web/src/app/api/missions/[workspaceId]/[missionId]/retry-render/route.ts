@@ -3,7 +3,7 @@
  * Re-triggers Remotion for all failed/stale story + designed-post bundles in one mission.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
+import { assertPathTenantMatchesRequest, buildInternalProductionHeaders } from '@/lib/tenant-production-guard';
 import { filterMissionRenderRetryArtifacts } from '@/lib/mission-render-retry';
 
 export const runtime = 'nodejs';
@@ -50,7 +50,7 @@ export async function POST(
   for (const art of targets.slice(0, 12)) {
     const res = await fetch(`${BASE_URL}/api/production-bundle/${art.id}/retry-render`, {
       method: 'POST',
-      headers: { 'X-Tenant-Id': workspaceId },
+      headers: buildInternalProductionHeaders(workspaceId),
       signal: AbortSignal.timeout(15_000),
     }).catch(() => null);
     results.push({ artifactId: art.id, status: res?.status ?? 0 });

@@ -4,6 +4,7 @@
 import { persistRemotionVideoOutput } from '@/lib/remotion-video-persist';
 import { normalizePhotoUrlForRemotionRender, probeMediaUrl } from '@/lib/media-url';
 import { GRAFIKER_HARD_FLOOR, GRAFIKER_PASS_THRESHOLD } from '@/lib/remotion-quality';
+import { buildInternalProductionHeaders } from '@/lib/tenant-production-guard';
 
 export interface RemotionRenderApiResult {
   ok: boolean;
@@ -24,11 +25,13 @@ export async function callRemotionRenderApi(
   baseUrl: string,
   body: Record<string, unknown>,
   timeoutMs = 360_000,
+  workspaceId?: string,
 ): Promise<RemotionRenderApiResult> {
+  const tenantId = String(workspaceId ?? body.workspaceId ?? '').trim();
   try {
     const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/remotion/render`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: buildInternalProductionHeaders(tenantId || undefined),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });

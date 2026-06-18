@@ -13,6 +13,7 @@ import {
   resolveBrandedPostUrl,
   resolvePosterUrl,
 } from '@/lib/production-bundle';
+import { detectArtifactPackageFormat } from '@/lib/weekly-publish-package';
 
 export function missionArtifactNeedsRenderRetry(artifact: OutputArtifact): boolean {
   const missionId = parseArtifactMissionId(artifact);
@@ -35,6 +36,11 @@ export function missionArtifactNeedsRenderRetry(artifact: OutputArtifact): boole
     const branded = resolveBrandedPostUrl(artifact);
     const poster = resolvePosterUrl(artifact);
     if (branded && poster && branded !== poster) return false;
+    return isBundleFailed(artifact) || isBundleStaleRendering(artifact);
+  }
+
+  if (detectArtifactPackageFormat(artifact) === 'reel') {
+    if (resolveStoryVideoUrl(artifact)) return false;
     return isBundleFailed(artifact) || isBundleStaleRendering(artifact);
   }
 
