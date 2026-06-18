@@ -740,17 +740,23 @@ export function evaluateFeedDirectorProductionGate(input: {
     ),
   );
   if (hasFdPayload && input.rawAssignmentCount === 0) {
-    return {
-      allowed: false,
-      warnOnly: false,
-      warnings: [],
-      code: 'fd_no_assignments',
-      message: 'Feed Art Director raporu var ama slot ataması (production_assignments) eksik.',
-      coveragePct: effectiveCoverage,
-      assignmentCount: 0,
-      requiredSlots: input.validation.requiredSlots,
-      filledRequired: input.validation.filledRequired,
-    };
+    if (missionRelaxed && input.assignments.length > 0) {
+      warnings.push(
+        'Feed Art Director slot ataması eksik — manifest heuristic routing kullanıldı',
+      );
+    } else {
+      return {
+        allowed: false,
+        warnOnly: false,
+        warnings: [],
+        code: 'fd_no_assignments',
+        message: 'Feed Art Director raporu var ama slot ataması (production_assignments) eksik.',
+        coveragePct: effectiveCoverage,
+        assignmentCount: 0,
+        requiredSlots: input.validation.requiredSlots,
+        filledRequired: input.validation.filledRequired,
+      };
+    }
   }
 
   const organicTarget = input.validation.requiredSlots;
