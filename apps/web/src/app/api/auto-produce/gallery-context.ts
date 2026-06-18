@@ -107,7 +107,7 @@ export async function fetchGalleryContext(
   // ── Parallel: health check + usage + template history ──────────────────
   const [health, usage, recentTemplateIds] = await Promise.all([
     candidates.length > 0
-      ? filterReachableGalleryUrls(candidates, { maxProbe: 40, concurrency: 8 })
+      ? filterReachableGalleryUrls(candidates, { maxProbe: 40, concurrency: 12 })
       : Promise.resolve({ urls: candidates, rejected: [] }),
     fetchUsedGalleryImages(workspaceId),
     fetchRecentTemplateIds(workspaceId),
@@ -183,55 +183,59 @@ export async function ensureGalleryAnalysisForProduction(
   const baseUrl = getNextjsInternalOrigin();
   const internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 
+  // Non-blocking: fire analyze-coverage in background and use what we already have.
+  // The 240 s blocking call was the main cause of feed-produce timeouts.
+  // On the next reproduce-feed call the freshly-persisted analysis will be used.
+  console.log(
+    `[gallery-context:${workspaceId}] analysis coverage ${stats.analyzed}/${stats.total} — triggering background analyze-coverage`,
+  );
+  fetch(`${baseUrl}/api/gallery-intelligence/${workspaceId}/analyze-coverage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Key': internalKey,
+      'X-Tenant-Id': workspaceId,
+    },
+    body: JSON.stringify({ tier: 'standard', maxImages: 30 }),
+    signal: AbortSignal.timeout(280_000),
+  }).then(async (res) => {
+    if (res.ok) {
+      console.log(`[gallery-context:${workspaceId}] background analyze-coverage completed`);
+    } else {
+      console.warn(`[gallery-context:${workspaceId}] background analyze-coverage failed: ${res.status}`);
+    }
+  }).catch((err) => {
+    console.warn(`[gallery-context:${workspaceId}] background analyze-coverage error`, err);
+  });
+
+  // Try to fetch already-persisted analysis to unblock this request immediately
   try {
-    console.log(
-      `[gallery-context:${workspaceId}] analysis coverage ${stats.analyzed}/${stats.total} — running analyze-coverage`,
-    );
-    const res = await fetch(`${baseUrl}/api/gallery-intelligence/${workspaceId}/analyze-coverage`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Api-Key': internalKey,
-        'X-Tenant-Id': workspaceId,
-      },
-      body: JSON.stringify({ tier: 'standard', maxImages: 30 }),
-      signal: AbortSignal.timeout(240_000),
-    });
-    if (!res.ok) {
-      return {
-        meta: enriched,
-        blocked: 'Galeri analizi tamamlanamadı — caption eşleşmesi için önce galeriyi analiz edin',
-      };
-    }
-    const data = (await res.json()) as {
-      analysis?: Record<string, GalleryPhotoMeta>;
-      newlyAnalyzed?: number;
-      complete?: boolean;
-    };
     const persisted = await fetchPersistedGalleryAnalysis(workspaceId);
-    const merged = {
-      ...((galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>),
-      ...persisted,
-      ...(data.analysis ?? {}),
-    };
-    enriched = enrichGalleryAnalysis(merged);
-    stats = galleryAnalysisCoverageStats(photos, enriched);
-    if (!stats.sufficient) {
-      return {
-        meta: enriched,
-        blocked:
-          `Galeri analizi yetersiz (${stats.analyzed}/${stats.total} foto etiketli). ` +
-          'Marka → Galeri Analizi çalıştırın, sonra tekrar üretin.',
+    if (Object.keys(persisted).length > 0) {
+      const merged = {
+        ...((galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>),
+        ...persisted,
       };
+      enriched = enrichGalleryAnalysis(merged);
+      stats = galleryAnalysisCoverageStats(photos, enriched);
+      if (stats.sufficient) {
+        return { meta: enriched };
+      }
     }
+  } catch { /* non-fatal */ }
+
+  // Proceed with partial analysis — production uses SKU conflict + token overlap
+  // even without full coverage; better a partial result than a timeout.
+  if (stats.analyzed > 0) {
     return { meta: enriched };
-  } catch (err) {
-    console.warn(`[gallery-context:${workspaceId}] analyze-coverage failed`, err);
-    return {
-      meta: enriched,
-      blocked: 'Galeri analizi zaman aşımı — caption eşleşmesi için analiz gerekli',
-    };
   }
+
+  return {
+    meta: enriched,
+    blocked:
+      `Galeri analizi başlatıldı (${stats.analyzed}/${stats.total} foto etiketli). ` +
+      'Birkaç dakika sonra tekrar üretin.',
+  };
 }
 
 /** Trigger background gallery analysis (fire-and-forget, non-blocking). */

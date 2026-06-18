@@ -236,7 +236,7 @@ export async function fetchProductionContext(
       workspaceId,
       crewBaseUrl: CREW_BACKEND,
       internalApiKey: INTERNAL_KEY,
-      timeoutMs: 20_000,
+      timeoutMs: 10_000,
     }).catch(() => null),
     fetchTenantLearningSnapshot(workspaceId),
     overrides?.productionSnapshot

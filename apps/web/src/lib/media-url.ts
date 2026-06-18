@@ -319,42 +319,71 @@ export async function probeGalleryImageUrl(url: string, timeoutMs = 10_000): Pro
 }
 
 /**
+ * Trusted CDN prefixes — skip network probe entirely.
+ * These domains never return stale/expired URLs in production.
+ */
+const TRUSTED_GALLERY_PREFIXES = [
+  'https://pub-',               // Cloudflare R2 public bucket
+  'r2.cloudflarestorage.com',  // R2 private endpoint
+  'r2.dev',                     // R2 custom domain
+  'imagedelivery.net',          // Cloudflare Images
+  'cdn.smartagency',            // our own CDN
+  '/api/media',                 // internal relative media route
+];
+
+function isTrustedGalleryUrl(url: string): boolean {
+  const u = url.trim();
+  return TRUSTED_GALLERY_PREFIXES.some((prefix) => u.includes(prefix));
+}
+
+/**
  * Drop structurally invalid + unreachable URLs before auto-produce / Remotion.
- * Trusted CDNs with obvious image paths skip network when list is large.
+ * - R2 / Cloudflare CDN URLs are trusted without probe — no extra latency.
+ * - External URLs use a short 4 s timeout and higher concurrency.
+ * - Unsplash seeds always get probed (they expire).
  */
 export async function filterReachableGalleryUrls(
   urls: string[],
   opts: { maxProbe?: number; concurrency?: number } = {},
 ): Promise<{ urls: string[]; rejected: { url: string; reason: string }[] }> {
   const maxProbe = opts.maxProbe ?? 48;
-  const concurrency = opts.concurrency ?? 8;
+  const concurrency = opts.concurrency ?? 12;
   const structural = filterUsableGalleryPhotoUrls(urls);
   const rejected: { url: string; reason: string }[] = [];
   const hasUnsplash = structural.some(
     (u) => u.includes('images.unsplash.com') || u.includes('plus.unsplash.com'),
   );
-  // Unsplash IDs expire — never skip reachability checks for synthetic gallery seeds.
-  const toProbe = hasUnsplash
+
+  // Trusted URLs never need a network probe
+  const trusted = hasUnsplash ? [] : structural.filter(isTrustedGalleryUrl);
+  const needProbe = hasUnsplash
     ? structural
-    : structural.slice(0, maxProbe);
-  const trustedWithoutProbe = hasUnsplash ? [] : structural.slice(maxProbe);
+    : structural.filter((u) => !isTrustedGalleryUrl(u)).slice(0, maxProbe);
+  const overProbe = hasUnsplash ? [] : structural.filter((u) => !isTrustedGalleryUrl(u)).slice(maxProbe);
 
   const reachable: string[] = [];
   let idx = 0;
 
+  // Faster timeout for gallery probes — 4 s is enough for a HEAD response
+  const PROBE_TIMEOUT = 4_000;
+
   async function worker() {
-    while (idx < toProbe.length) {
+    while (idx < needProbe.length) {
       const i = idx++;
-      const url = toProbe[i]!;
-      const ok = await probeGalleryImageUrl(url);
+      const url = needProbe[i]!;
+      const ok = await probeGalleryImageUrl(url, PROBE_TIMEOUT);
       if (ok) reachable.push(url);
       else rejected.push({ url, reason: 'unreachable' });
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, toProbe.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(concurrency, needProbe.length || 1) }, () => worker()));
 
-  const merged = [...reachable, ...trustedWithoutProbe.filter((u) => isUsableGalleryPhotoUrl(u))];
+  const merged = [
+    ...trusted,
+    ...reachable,
+    ...overProbe.filter((u) => isUsableGalleryPhotoUrl(u)),
+  ];
   const seen = new Set<string>();
   const urlsOut: string[] = [];
   for (const u of merged) {
