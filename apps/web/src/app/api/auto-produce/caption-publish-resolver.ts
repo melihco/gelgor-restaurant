@@ -2,6 +2,7 @@ import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import {
   type PostTypeBucket,
   type UsedGalleryUsage,
+  isGalleryUrlUsedInBatch,
   markGalleryUrlUsedForPostType,
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
@@ -177,6 +178,59 @@ export function pickGalleryPhotoForIdea(
     ?? tryPick(typeExcludeUrls, true)
     ?? tryPick(batchExcludeUrls, true)
   );
+}
+
+/** Re-pick when the same gallery source was already used for this post type in the mission batch. */
+export function repickGalleryIfDuplicateForType(input: {
+  referenceUrl: string | null;
+  caption: string;
+  headline: string;
+  mood: string;
+  galleryAnalysis: Record<string, GalleryPhotoMeta>;
+  candidateUrls: string[];
+  typeExcludeUrls: string[];
+  batchExcludeUrls: string[];
+  postType: PostTypeBucket;
+  galleryUsage: UsedGalleryUsage;
+  batchUsedByType: Record<PostTypeBucket, string[]>;
+  businessType?: string;
+  ideaIndex?: number;
+}): string | null {
+  const { referenceUrl, postType } = input;
+  if (!referenceUrl || !isUsableGalleryPhotoUrl(referenceUrl)) return referenceUrl;
+
+  if (!isGalleryUrlUsedInBatch(
+    input.galleryUsage,
+    input.batchUsedByType,
+    referenceUrl,
+    postType,
+  )) {
+    return referenceUrl;
+  }
+
+  const repicked = pickGalleryPhotoForIdea(
+    input.caption,
+    input.headline,
+    input.mood,
+    input.galleryAnalysis,
+    input.candidateUrls,
+    [...input.typeExcludeUrls, referenceUrl],
+    [...input.batchExcludeUrls, referenceUrl],
+    postType,
+    null,
+    input.businessType,
+    false,
+    input.ideaIndex,
+  );
+
+  if (repicked && normalizeGalleryUrl(repicked) !== normalizeGalleryUrl(referenceUrl)) {
+    console.warn(
+      `[auto-produce] duplicate ${postType} gallery photo — repicked for "${input.headline.slice(0, 48)}"`,
+    );
+    return repicked;
+  }
+
+  return referenceUrl;
 }
 
 /** Pick 1–2 extra gallery photos for multi-photo story layouts (excludes primary). */

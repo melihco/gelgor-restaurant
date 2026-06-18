@@ -11,14 +11,17 @@ import { mobileQueryDefaults } from './mobile-query';
 /** Default list cap — full history on Outputs uses a higher screen-specific limit. */
 export const MOBILE_ARTIFACT_LIST_LIMIT = 100;
 
-/** Feed / home: pending cards only need the recent window. */
-export const MOBILE_ARTIFACT_FEED_LIMIT = 80;
+/** Feed first paint — small payload for fast TTFB. */
+export const MOBILE_ARTIFACT_FEED_INITIAL = 40;
+
+/** Feed full scroll window — loaded in background after initial paint. */
+export const MOBILE_ARTIFACT_FEED_LIMIT = 120;
 
 /** Outputs archive: slightly larger window when that tab is active. */
 export const MOBILE_ARTIFACT_OUTPUTS_LIMIT = 150;
 
 export function mobileArtifactsListLimitForScreen(screen: string): number {
-  if (screen === 'feed') return MOBILE_ARTIFACT_FEED_LIMIT;
+  if (screen === 'feed') return MOBILE_ARTIFACT_FEED_INITIAL;
   if (screen === 'outputs') return MOBILE_ARTIFACT_OUTPUTS_LIMIT;
   return MOBILE_ARTIFACT_LIST_LIMIT;
 }

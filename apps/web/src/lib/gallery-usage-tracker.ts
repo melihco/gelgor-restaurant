@@ -186,6 +186,32 @@ export function markGalleryUrlUsedForPostType(
   }
 }
 
+/** Seed in-flight batch tracker from persisted artifact usage (same mission re-runs). */
+export function seedBatchUsedByTypeFromUsage(
+  usage: UsedGalleryUsage,
+  batchUsedByType: Record<PostTypeBucket, string[]>,
+): void {
+  for (const type of ['feed', 'story', 'reel', 'carousel'] as PostTypeBucket[]) {
+    for (const url of usage.byType[type]) {
+      const base = normalizeGalleryUrl(url);
+      if (!batchUsedByType[type].some((u) => normalizeGalleryUrl(u) === base)) {
+        batchUsedByType[type].push(url);
+      }
+    }
+  }
+}
+
+export function isGalleryUrlUsedInBatch(
+  usage: UsedGalleryUsage,
+  batchUsedByType: Record<PostTypeBucket, string[]>,
+  url: string,
+  postType: PostTypeBucket,
+): boolean {
+  const base = normalizeGalleryUrl(url);
+  if (isGalleryUrlUsedForPostType(usage, url, postType)) return true;
+  return batchUsedByType[postType].some((u) => normalizeGalleryUrl(u) === base);
+}
+
 export async function fetchUsedGalleryImages(
   workspaceId: string,
   nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),

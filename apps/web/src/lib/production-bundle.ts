@@ -388,6 +388,25 @@ export function dedupeProductionBundles(artifacts: OutputArtifact[]): OutputArti
   return dedupeByKey(artifacts, getProductionDedupeKey);
 }
 
+/**
+ * Feed scroll — keep every production run (reproduce, backfill, new missions).
+ * Only drops exact duplicate rows by artifact id (API/cache glitches).
+ * Mission checklist / slot counts still use dedupeProductionBundles.
+ */
+export function dedupeFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
+  const seen = new Set<string>();
+  const out: OutputArtifact[] = [];
+  const sorted = [...artifacts].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  for (const artifact of sorted) {
+    if (!artifact?.id || seen.has(artifact.id)) continue;
+    seen.add(artifact.id);
+    out.push(artifact);
+  }
+  return out;
+}
+
 /** Story bubble bar — one ring per idea/slot, not per headline text. */
 export function dedupeStoryBarArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   return dedupeByKey(artifacts, getStoryBarDedupeKey);

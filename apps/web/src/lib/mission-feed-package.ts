@@ -18,6 +18,7 @@ import {
 export type { ProductionBundleStatus } from '@/lib/production-bundle';
 export {
   canRetryStoryRender,
+  dedupeFeedDisplayArtifacts,
   dedupeProductionBundles,
   dedupeStoryBarArtifacts,
   filterConsumerStoryBar,

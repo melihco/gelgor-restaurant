@@ -2887,11 +2887,18 @@ function MissionPublishPackageCard({
     if (!workspaceId || !missionId) return;
     setRetryingAll(true);
     try {
-      await fetch(`/api/missions/${workspaceId}/${missionId}/retry-render`, {
+      const res = await fetch(`/api/missions/${workspaceId}/${missionId}/retry-render`, {
         method: 'POST',
         headers: { 'X-Tenant-Id': workspaceId },
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
+        console.warn('[MissionHub] retry-render failed:', body.error ?? res.status);
+        return;
+      }
       onRefresh?.();
+    } catch (err) {
+      console.warn('[MissionHub] retry-render unreachable:', err);
     } finally {
       setRetryingAll(false);
     }

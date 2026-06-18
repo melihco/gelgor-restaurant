@@ -1,5 +1,6 @@
 import { parseArtifactContent, resolveCarouselUrls } from '@/app/mobile/_components/artifact-utils';
 import {
+  dedupeFeedDisplayArtifacts,
   dedupeProductionBundles,
   getProductionBundleStatus,
   isBundleFailed,
@@ -468,6 +469,27 @@ export function filterFeedPublishableArtifacts(artifacts: OutputArtifact[]): Out
     );
 }
 
+/** Feed UI — show every distinct production run, not just the latest per headline/slot. */
+export function filterFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
+  return dedupeFeedDisplayArtifacts(artifacts)
+    .filter(isArtifactFeedReady)
+    .sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+}
+
+/**
+ * Mission-scoped Feed — all publish-ready outputs for this mission (includes reproduce runs).
+ */
+export function filterMissionFeedArtifacts(
+  artifacts: OutputArtifact[],
+  missionId: string,
+): OutputArtifact[] {
+  return filterFeedDisplayArtifacts(
+    artifacts.filter((a) => parseArtifactMissionId(a) === missionId),
+  );
+}
+
 function normalizeHeadline(raw: unknown): string {
   return String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -819,6 +841,7 @@ export function isPrimaryPublishArtifact(
 
 /**
  * Mission-scoped Feed — one publish-ready artifact per manifest assignment (max ~7).
+ * @deprecated Feed UI uses filterMissionFeedArtifacts to show all production runs.
  */
 export function filterMissionPrimaryFeedArtifacts(
   artifacts: OutputArtifact[],

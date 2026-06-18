@@ -20,7 +20,9 @@ import {
 } from '@/lib/production-headline-quality';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
-import { buildSlotGalleryMatchInput } from '@/lib/gallery-first-production';
+import { buildSlotGalleryMatchInput, assignmentPostType } from '@/lib/gallery-first-production';
+import type { UsedGalleryUsage } from '@/lib/gallery-usage-tracker';
+import { getExcludeUrlsForPostType } from '@/lib/gallery-usage-tracker';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -56,6 +58,8 @@ export interface GalleryOrchestrationInput {
   hasRealBrandPhotos: boolean;
   brandDescription?: string;
   creativeBrief?: string;
+  /** Already-used gallery URLs from existing artifacts — seeded into batch matcher. */
+  galleryUsage?: UsedGalleryUsage;
 }
 
 /**
@@ -76,7 +80,12 @@ export function buildMissionGalleryAssignments(
     return result;
   }
 
-  const assignItems: Array<{ key: string; input: MatchPhotoInput; storyIndex: number }> = [];
+  const assignItems: Array<{
+    key: string;
+    input: MatchPhotoInput;
+    storyIndex: number;
+    postType: import('@/lib/gallery-usage-tracker').PostTypeBucket;
+  }> = [];
   let storyOrdinal = 0;
 
   for (const queueItem of input.productionLoop) {
@@ -120,16 +129,26 @@ export function buildMissionGalleryAssignments(
       key: missionGallerySlotKey(queueItem.ideaIndex, String(queueItem.assignment.slot_role)),
       input: matchInput,
       storyIndex,
+      postType: assignmentPostType(queueItem.assignment),
     });
   }
 
   if (assignItems.length === 0) return result;
 
+  const seedExclude = input.galleryUsage
+    ? [
+      ...getExcludeUrlsForPostType(input.galleryUsage, 'feed'),
+      ...getExcludeUrlsForPostType(input.galleryUsage, 'story'),
+      ...getExcludeUrlsForPostType(input.galleryUsage, 'reel'),
+      ...getExcludeUrlsForPostType(input.galleryUsage, 'carousel'),
+    ]
+    : [];
+
   const batchAssigned = assignPhotosToContents(
-    assignItems.map(({ key, input: matchIn }) => ({ key, input: matchIn })),
+    assignItems.map(({ key, input: matchIn, postType }) => ({ key, input: matchIn, postType })),
     input.galleryPhotos,
     input.galleryMeta,
-    { minScore: MIN_ACCEPT_SCORE },
+    { minScore: MIN_ACCEPT_SCORE, excludeUrls: seedExclude },
   );
 
   for (const [key, val] of batchAssigned) {

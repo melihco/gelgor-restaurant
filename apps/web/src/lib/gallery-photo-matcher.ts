@@ -12,7 +12,7 @@
  */
 
 import { captionPhotoConflictPenalty } from '@/lib/caption-photo-alignment';
-import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import { normalizeGalleryUrl, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
 
@@ -1006,9 +1006,9 @@ export function matchPhotoToContent(
   return null;
 }
 
-/** Greedy 1:1 assignment across multiple ideas — avoids reusing photos in one batch. */
+/** Greedy 1:1 assignment — no duplicate photos within the same post-type bucket per batch. */
 export function assignPhotosToContents(
-  items: Array<{ key: string; input: MatchPhotoInput }>,
+  items: Array<{ key: string; input: MatchPhotoInput; postType?: PostTypeBucket }>,
   candidateUrls: string[],
   galleryAnalysis: Record<string, GalleryPhotoMeta>,
   options?: {
@@ -1021,14 +1021,22 @@ export function assignPhotosToContents(
   const lookup = buildGalleryLookup(galleryAnalysis, options?.displayUrls ?? candidateUrls);
   const minScore = options?.minScore ?? MIN_ACCEPT_SCORE;
   const assigned = new Map<string, PhotoMatchResult | null>();
-  const usedBases = new Set(excludeBases);
+  const usedGlobal = new Set(excludeBases);
+  const usedByType: Record<PostTypeBucket, Set<string>> = {
+    feed: new Set(excludeBases),
+    story: new Set(excludeBases),
+    reel: new Set(excludeBases),
+    carousel: new Set(excludeBases),
+  };
 
-  for (const { key, input } of items) {
+  for (const { key, input, postType } of items) {
+    const usedBases = postType ? usedByType[postType] : usedGlobal;
     const ranked = rankPhotosForContent(input, candidateUrls, lookup, usedBases, galleryAnalysis);
     const best = ranked[0];
     if (best && best.score >= minScore) {
       assigned.set(key, best);
-      usedBases.add(normalizeGalleryUrl(best.url));
+      const base = normalizeGalleryUrl(best.url);
+      usedBases.add(base);
     } else {
       assigned.set(key, null);
     }

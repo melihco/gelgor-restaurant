@@ -21,6 +21,7 @@ import {
   kindToPostType,
   markGalleryUrlUsedForPostType,
   normalizeGalleryUrl,
+  seedBatchUsedByTypeFromUsage,
 } from '@/lib/gallery-usage-tracker';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
 import {
@@ -263,6 +264,7 @@ import {
   markSourceGalleryUsed,
   isCampaignContentIdea,
   buildEventCanvasPrompt,
+  repickGalleryIfDuplicateForType,
 } from './caption-publish-resolver';
 import {
   generateVibeImage,
@@ -558,6 +560,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const hasRealBrandPhotos = gctx.hasRealPhotos;
   const galleryUsage = gctx.usage;
   const batchUsedByType = gctx.batchUsedByType;
+  if (missionId) {
+    seedBatchUsedByTypeFromUsage(galleryUsage, batchUsedByType);
+  }
   const syncUsedTemplateIds: string[] = [...gctx.recentTemplateIds];
   /** Strategist — avoid same venue photo across slots in one mission run. */
   const batchUsedGalleryMission = new Set<string>();
@@ -630,6 +635,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     hasRealBrandPhotos,
     brandDescription: String(brandCtx.description ?? ''),
     creativeBrief: creativeBrief ?? undefined,
+    galleryUsage,
   });
 
   const missionSessionCaptions: string[] = [];
@@ -789,6 +795,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       slotBackfillPass,
       assignment,
     })) {
+      const gallerySlotKey = missionGallerySlotKey(ideaIndex, String(assignment.slot_role));
+      const batchAssignedPhoto = missionGalleryAssignments.get(gallerySlotKey)?.url ?? null;
       const gf = await resolveGalleryFirstForSlot({
         assignment,
         storyIndex,
@@ -807,6 +815,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         slotBackfillPass,
         ideaIndex,
         forceRewrite: Boolean(slotBackfillPass),
+        forcedPhotoUrl: batchAssignedPhoto,
       });
       if (gf?.applied) {
         preassignedGalleryUrl = gf.photoUrl;
@@ -1157,7 +1166,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         brandBusinessType,
         false,
         ideaIndex,
-      ) ?? galleryPhotos[ideaIndex % galleryPhotos.length] ?? null;
+      ) ?? pickGalleryPhotoForIdea(
+        ideationCaption,
+        ideationHeadline,
+        mood,
+        galleryMeta,
+        galleryPhotos,
+        missionGalleryExclude,
+        batchExclude,
+        postType,
+        typeof agentUrl === 'string' && (agentUrl.startsWith('http') || agentUrl.startsWith('/api/'))
+          ? agentUrl
+          : null,
+        brandBusinessType,
+        false,
+        ideaIndex,
+      ) ?? null;
       if (referenceUrl) {
         referenceIsStock = isStockGalleryPhotoUrl(referenceUrl);
         galleryMatchScore = scoreIdeationPhotoMatch({
@@ -1270,6 +1294,29 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     if (referenceUrl) {
       referenceUrl = normalizeExternalPhotoUrl(referenceUrl) ?? referenceUrl;
+    }
+
+    if (referenceUrl && hasGallery && !captionDrivenGenerated) {
+      referenceUrl = repickGalleryIfDuplicateForType({
+        referenceUrl,
+        caption: ideationCaption,
+        headline: ideationHeadline,
+        mood,
+        galleryAnalysis: galleryMeta,
+        candidateUrls: galleryPhotos,
+        typeExcludeUrls: missionGalleryExclude,
+        batchExcludeUrls: batchExclude,
+        postType,
+        galleryUsage,
+        batchUsedByType,
+        businessType: brandBusinessType,
+        ideaIndex,
+      });
+      if (referenceUrl) {
+        referenceUrl = normalizeExternalPhotoUrl(referenceUrl) ?? referenceUrl;
+        markSourceGalleryUsed(galleryUsage, batchUsedByType, referenceUrl, postType);
+        batchUsedGalleryMission.add(normalizeGalleryUrl(referenceUrl));
+      }
     }
 
     if (!referenceUrl || !(await probeMediaUrlReliable(referenceUrl))) {

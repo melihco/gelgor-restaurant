@@ -22,7 +22,7 @@ import { resolveArtifact, parseArtifactContent, normalizeHashtags as normalizeHa
 import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline } from '@/lib/feed-display-caption';
 import { SafeCoverImage } from '../SafeCoverImage';
 import {
-  dedupeProductionBundles,
+  dedupeFeedDisplayArtifacts,
   dedupeStoryBarArtifacts,
   filterConsumerStoryBar,
   isBundleRendering,
@@ -42,8 +42,8 @@ import {
   resolveStoryVideoClientUrl,
 } from '@/lib/mission-feed-package';
 import {
-  filterFeedPublishableArtifacts,
-  filterMissionPrimaryFeedArtifacts,
+  filterFeedDisplayArtifacts,
+  filterMissionFeedArtifacts,
   isArtifactFeedPublishable,
 } from '@/lib/weekly-publish-package';
 import {
@@ -61,7 +61,11 @@ import {
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
-import { MOBILE_ARTIFACT_FEED_LIMIT } from '../../_lib/mobile-artifacts';
+import {
+  MOBILE_ARTIFACT_FEED_INITIAL,
+  MOBILE_ARTIFACT_FEED_LIMIT,
+} from '../../_lib/mobile-artifacts';
+import { FeedLazyPostList } from '../FeedLazyPostList';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
 import {
   adChannelFromArtifact,
@@ -1824,22 +1828,35 @@ export function PlatformFeed() {
   }, [tenantId]);
 
   const {
-    data: rawArtifacts = [],
-    isLoading,
-    isFetching,
+    data: initialArtifacts = [],
+    isLoading: initialLoading,
     isError: artifactsError,
     refetch: refetchArtifacts,
   } = useMobileArtifacts({
     subscribeOnly: true,
-    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
+    params: { limit: MOBILE_ARTIFACT_FEED_INITIAL },
   });
 
-  // Galeri (approved) görünümü için tam geçmiş — limit olmadan bir kez yüklenir
-  const { data: allHistoryArtifacts = [] } = useMobileArtifacts({
-    subscribeOnly: false,
-    params: { limit: 500 },
-    enabled: showApproved,
+  const {
+    data: extendedArtifacts,
+    isFetching: extendedFetching,
+  } = useMobileArtifacts({
+    subscribeOnly: true,
+    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
+    enabled: !initialLoading,
   });
+
+  const rawArtifacts = extendedArtifacts ?? initialArtifacts;
+
+  const dedupedRaw = React.useMemo(
+    () => dedupeFeedDisplayArtifacts(rawArtifacts as OutputArtifact[]),
+    [rawArtifacts],
+  );
+
+  const dedupedFull = dedupedRaw;
+  const loadMoreArtifacts = React.useCallback(() => {
+    /* extended pool loads automatically; hook reserved for future pagination */
+  }, []);
 
   const { data: usageCost } = useQuery({
     queryKey: ['usage-cost', tenantId],
@@ -1865,19 +1882,6 @@ export function PlatformFeed() {
     (usageCost.remaining_today_usd ?? 1) <= 0.001
     || (usageCost.token_wallet?.enabled === true
       && (usageCost.token_wallet.remaining_tokens ?? 0) <= 0)
-  );
-
-  const dedupedRaw = React.useMemo(
-    () => dedupeProductionBundles(rawArtifacts as OutputArtifact[]),
-    [rawArtifacts],
-  );
-
-  // Galeri modunda tam geçmişi (limit=500) kullan, pending modunda hızlı pencereyi
-  const dedupedFull = React.useMemo(
-    () => showApproved && allHistoryArtifacts.length > dedupedRaw.length
-      ? dedupeProductionBundles(allHistoryArtifacts as OutputArtifact[])
-      : dedupedRaw,
-    [showApproved, allHistoryArtifacts, dedupedRaw],
   );
 
   const hasRenderingBundles = React.useMemo(
@@ -1981,16 +1985,12 @@ export function PlatformFeed() {
         .filter((a) => a.status === 'approved')
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
-    const publishable = filterFeedPublishableArtifacts(sourcePool);
-    if (missionFilterId && filteredMissionProg?.nodes?.length) {
-      return filterMissionPrimaryFeedArtifacts(
-        sourcePool,
-        missionFilterId,
-        filteredMissionProg.nodes,
-      );
+    const publishable = filterFeedDisplayArtifacts(sourcePool);
+    if (missionFilterId) {
+      return filterMissionFeedArtifacts(sourcePool, missionFilterId);
     }
     return publishable;
-  }, [dedupedFull, showApproved, missionFilterId, filteredMissionProg?.nodes]);
+  }, [dedupedFull, showApproved, missionFilterId]);
 
   const rawPendingCount = React.useMemo(
     () => dedupedRaw.filter((a) => a.status === 'pending_review').length,
@@ -2288,8 +2288,10 @@ export function PlatformFeed() {
       return true;
     })
     .filter(a => artifactMatchesSlotFilter(a, slotFilter, detectKind))
-    // Galeri modunda tüm geçmişi göster; pending modunda 100 ile sınırla
-    .slice(0, showApproved ? 500 : 100), [allArtifacts, showApproved, missionFilterId, filter, slotFilter, operatorMode]);
+    // Lazy list handles viewport rendering; cap filtered pool to API window.
+    .slice(0, MOBILE_ARTIFACT_FEED_LIMIT),
+    [allArtifacts, showApproved, missionFilterId, filter, slotFilter, operatorMode],
+  );
 
   const artifacts = useMemo(
     () => sortFeedArtifactsForDisplay(filteredFeedArtifacts, {
@@ -2360,7 +2362,7 @@ export function PlatformFeed() {
     setSlotFilter('all');
   }, [filter]);
 
-  const feedBootstrapping = !operatorMode && (isLoading || isFetching) && dedupedRaw.length === 0;
+  const feedBootstrapping = !operatorMode && initialLoading && dedupedRaw.length === 0;
 
   if (feedBootstrapping) {
     return (
@@ -2736,7 +2738,7 @@ export function PlatformFeed() {
       )}
 
       {/* ── Mission hazırlanıyor banner — pipeline tetiklendi, içerik henüz gelmedi ── */}
-      {pipelineStatus === 'running' && pendingCount === 0 && !isLoading && !showApproved && (
+      {pipelineStatus === 'running' && pendingCount === 0 && !initialLoading && !showApproved && (
         <div style={{
           margin: '10px 16px 4px',
           padding: '12px 14px',
@@ -3173,9 +3175,7 @@ export function PlatformFeed() {
       )}
 
       {/* Feed */}
-      {feedBootstrapping ? (
-        <FeedLoadingSkeleton message="Feed yükleniyor…" />
-      ) : artifacts.length === 0 ? (
+      {artifacts.length === 0 ? (
         !operatorMode ? (
           <div className="feed-empty">
             <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.35 }}>📸</div>
@@ -3314,35 +3314,45 @@ export function PlatformFeed() {
         )
       ) : (
         <div style={{ background: feedBg }}>
-          {artifacts.map((artifact, idx) => {
-            const isApproving   = approveMutation.isPending   && approveMutation.variables?.id === artifact.id;
-            const isRevisioning = revisionMutation.isPending  && revisionMutation.variables  === artifact.id;
-
-            return (
-              <div
-                key={artifact.id}
-                style={{
-                  animation: `cardEnter 280ms cubic-bezier(0.22,1,0.36,1) both`,
-                  animationDelay: `${Math.min(idx * 40, 320)}ms`,
-                }}
-              >
-                <NativeFeedCard
-                  artifact={artifact}
-                  platform={operatorMode ? platformView : 'instagram'}
-                  workspaceId={tenantId ?? undefined}
-                  t={t}
-                  approving={isApproving}
-                  revisioning={isRevisioning}
-                  retryingRender={retryingStoryId === artifact.id}
-                  onApprove={handleApproveById}
-                  onRevision={handleRevisionById}
-                  onRetryRender={handleRetryRenderById}
-                  onOpenMetaAd={handleOpenMetaAdById}
-                  onOpenGoogleAd={handleOpenGoogleAd}
-                />
-              </div>
-            );
-          })}
+          <FeedLazyPostList
+            items={artifacts}
+            itemKey={(artifact) => artifact.id}
+            onNearEnd={loadMoreArtifacts}
+            renderItem={(artifact, idx) => {
+              const isApproving = approveMutation.isPending && approveMutation.variables?.id === artifact.id;
+              const isRevisioning = revisionMutation.isPending && revisionMutation.variables === artifact.id;
+              return (
+                <div
+                  style={{
+                    animation: idx < 6
+                      ? `cardEnter 280ms cubic-bezier(0.22,1,0.36,1) both`
+                      : undefined,
+                    animationDelay: idx < 6 ? `${Math.min(idx * 40, 240)}ms` : undefined,
+                  }}
+                >
+                  <NativeFeedCard
+                    artifact={artifact}
+                    platform={operatorMode ? platformView : 'instagram'}
+                    workspaceId={tenantId ?? undefined}
+                    t={t}
+                    approving={isApproving}
+                    revisioning={isRevisioning}
+                    retryingRender={retryingStoryId === artifact.id}
+                    onApprove={handleApproveById}
+                    onRevision={handleRevisionById}
+                    onRetryRender={handleRetryRenderById}
+                    onOpenMetaAd={handleOpenMetaAdById}
+                    onOpenGoogleAd={handleOpenGoogleAd}
+                  />
+                </div>
+              );
+            }}
+          />
+          {extendedFetching && artifacts.length > 0 && (
+            <div style={{ padding: '8px 16px 24px', textAlign: 'center', fontSize: 11, opacity: 0.4, color: '#fff' }}>
+              Arşiv güncelleniyor…
+            </div>
+          )}
         </div>
       )}
       {Object.keys(publishErrors).length > 0 && (

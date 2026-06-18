@@ -7,11 +7,13 @@ import {
   RELAXED_MATCH_SCORE,
   buildGalleryLookup,
   rankPhotosForContent,
+  rankPhotosForContentSeeded,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
   type PhotoMatchResult,
 } from '@/lib/gallery-photo-matcher';
-import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import { kindToPostType, normalizeGalleryUrl, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { buildInstagramCaptionFromGalleryMeta } from '@/lib/feed-display-caption';
 import { scoreIdeationPhotoMatch } from '@/lib/caption-photo-alignment';
 import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator';
@@ -45,7 +47,7 @@ const SLOT_FORMAT: Partial<Record<ProductionSlotRole, SlotFormat>> = {
   paid_ad_google_creative: 'post',
 };
 
-function slotFormatFromAssignment(assignment: ProductionAssignment): SlotFormat {
+export function slotFormatFromAssignment(assignment: ProductionAssignment): SlotFormat {
   const role = assignment.slot_role;
   if (role && SLOT_FORMAT[role]) return SLOT_FORMAT[role]!;
   const pipeline = String(assignment.pipeline ?? '');
@@ -59,6 +61,11 @@ function storySequenceRole(storyIndex: number): MatchPhotoInput['storySequenceRo
   if (storyIndex <= 0) return 'hook';
   if (storyIndex === 1) return 'proof';
   return 'cta';
+}
+
+/** Maps a production slot to the gallery dedupe bucket (feed/story/reel/carousel). */
+export function assignmentPostType(assignment: ProductionAssignment): PostTypeBucket {
+  return kindToPostType(formatToContentType(slotFormatFromAssignment(assignment)));
 }
 
 function formatToContentType(format: SlotFormat): string {
@@ -160,13 +167,22 @@ export function pickGalleryPhotoForSlot(input: {
   const minScore = input.slotBackfillPass ? RELAXED_MATCH_SCORE : MIN_ACCEPT_SCORE;
   const lookup = buildGalleryLookup(input.galleryMeta, input.galleryPhotos);
 
-  const ranked = rankPhotosForContent(
-    matchInput,
-    input.galleryPhotos,
-    lookup,
-    usedBases,
-    input.galleryMeta,
-  );
+  const ranked = input.tieBreakSeed != null
+    ? rankPhotosForContentSeeded(
+      matchInput,
+      input.galleryPhotos,
+      lookup,
+      input.tieBreakSeed,
+      usedBases,
+      input.galleryMeta,
+    )
+    : rankPhotosForContent(
+      matchInput,
+      input.galleryPhotos,
+      lookup,
+      usedBases,
+      input.galleryMeta,
+    );
 
   const best = ranked[0];
   if (best && best.score >= minScore) return best;
@@ -216,15 +232,36 @@ export async function resolveGalleryFirstForSlot(input: {
   slotBackfillPass?: boolean;
   ideaIndex?: number;
   forceRewrite?: boolean;
+  /** Pre-assigned photo from mission batch matcher — caption still generated for this URL. */
+  forcedPhotoUrl?: string | null;
 }): Promise<GalleryFirstSlotResult | null> {
   const ideationCaption = String(input.ideationCaption ?? '').trim();
   const ideationHeadline = String(input.ideationHeadline ?? '').trim();
+  const tieBreakSeed = input.ideaIndex;
 
-  const pick = pickGalleryPhotoForSlot({
-    ...input,
-    ideationCaption,
-    ideationHeadline,
-  });
+  let pick: PhotoMatchResult | null = null;
+  const forced = String(input.forcedPhotoUrl ?? '').trim();
+  if (forced && isUsableGalleryPhotoUrl(forced)) {
+    const forcedBase = normalizeGalleryUrl(forced);
+    const excluded = new Set(input.excludeUrls.map(normalizeGalleryUrl));
+    if (!excluded.has(forcedBase)) {
+      pick = {
+        url: forced,
+        score: MIN_ACCEPT_SCORE,
+        reason: 'mission_batch_assign',
+        confidence: 1,
+      };
+    }
+  }
+
+  if (!pick?.url) {
+    pick = pickGalleryPhotoForSlot({
+      ...input,
+      ideationCaption,
+      ideationHeadline,
+      tieBreakSeed,
+    });
+  }
 
   if (!pick?.url) {
     return null;
