@@ -1388,7 +1388,17 @@ async def persist_discovery_result(
     if wi_kit.get("confidence", 0) >= 25:
         apply_website_brand_kit(ctx, wi_kit, fill_empty_only=True)
 
-    provision_synthetic_gallery(ctx)
+    saved_refs = _parse_reference_image_urls(ctx.reference_image_urls)
+    # Never pad with Unsplash when the brand supplied a website — empty gallery means
+    # crawl needs a retry from Marka Analizi, not stock photos.
+    if not website_url and not (ctx.website_url or "").strip():
+        provision_synthetic_gallery(ctx)
+    elif len(saved_refs) == 0 and website_url:
+        logger.warning(
+            "website_gallery_empty_skip_synthetic",
+            workspace_id=str(workspace_id),
+            website_url=website_url[:120],
+        )
 
     await db.flush()
     return ctx

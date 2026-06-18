@@ -133,7 +133,7 @@ async function finalizeProductionReadiness(
 
   const provisionRes = await postJson<{ provisioned?: number }>(
     `${origin}/api/brand-context/${tenantId}/provision-gallery`,
-    {},
+    { analyze: true, allowSynthetic: false },
     headers,
     180_000,
   );
@@ -358,12 +358,17 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   }).catch(() => null);
   steps.push({ id: 'brand_kit', ok: true });
 
-  // 2b. Provision gallery FIRST so CDN-mirrored URLs are available for vision analysis.
-  // Instagram/website CDN images are often inaccessible via direct URL; provision mirrors
-  // them to S3 before analyze-coverage calls GPT vision on them.
-  const earlyProvisionRes = await postJson<{ provisioned?: number }>(
+  // 2b. Vision analysis on real gallery URLs only — do not inject Unsplash when website was provided.
+  const refUrlsFromAnalysis = (() => {
+    const raw = brandAnalysis?.reference_image_urls;
+    if (Array.isArray(raw)) return raw.filter((u): u is string => typeof u === 'string');
+    return [];
+  })();
+  const allowSyntheticGallery = !websiteUrl && refUrlsFromAnalysis.length === 0;
+
+  const earlyProvisionRes = await postJson<{ provisioned?: number; usableCount?: number }>(
     `${origin}/api/brand-context/${tenantId}/provision-gallery`,
-    {},
+    { analyze: true, allowSynthetic: allowSyntheticGallery },
     headers,
     180_000,
   );

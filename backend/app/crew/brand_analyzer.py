@@ -65,6 +65,10 @@ _IMAGE_SKIP_SUBSTR = (
     "cdninstagram.com", # Instagram photo CDN
     "fbcdn.net",        # Facebook CDN (same expiry behaviour)
     "instagram.fcdn",   # Another Instagram CDN pattern
+    "pinterest.com/pin",
+    "pin/create/button",
+    "addthis.com",
+    "share.php",
 )
 # Sub-pages worth crawling for images — ordered by priority
 _CRAWL_PATH_HINTS = (
@@ -1196,8 +1200,14 @@ async def analyze_brand(
         # Website: try Apify deep crawl first; fall back to deep direct HTTP on failure/limit
         if website_url:
             website_data = await fetch_website_apify(website_url, api_key, timeout)
-            if not website_data.get("raw_fetch_ok"):
-                logger.info("apify_website_failed_using_direct_http", url=website_url)
+            apify_images = len(website_data.get("image_urls") or [])
+            if not website_data.get("raw_fetch_ok") or apify_images < 8:
+                logger.info(
+                    "apify_website_insufficient_using_direct_http",
+                    url=website_url,
+                    raw_fetch_ok=website_data.get("raw_fetch_ok"),
+                    apify_images=apify_images,
+                )
                 website_data = await fetch_website_deep(website_url)
         else:
             website_data = await _empty_dict()

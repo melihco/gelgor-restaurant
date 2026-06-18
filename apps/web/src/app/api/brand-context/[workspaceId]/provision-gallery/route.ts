@@ -58,8 +58,9 @@ export async function POST(
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { analyze?: boolean };
+  const body = (await req.json().catch(() => ({}))) as { analyze?: boolean; allowSynthetic?: boolean };
   const shouldAnalyze = body.analyze !== false;
+  const allowSynthetic = body.allowSynthetic !== false;
 
   const ctxRes = await fetchCrewBackendJson<{
     reference_image_urls?: unknown;
@@ -77,13 +78,13 @@ export async function POST(
   const usable = filterUsableGalleryPhotoUrls(
     existing.filter((u) => !logo || u !== logo),
   );
-  const target = resolveSyntheticGalleryTarget(ctx.business_type, usable.length);
+  const target = allowSynthetic
+    ? resolveSyntheticGalleryTarget(ctx.business_type, usable.length)
+    : usable.length;
 
-  const { urls: mergedUrls, added, provisioned } = mergeSectorGallerySeed(
-    usable,
-    ctx.business_type,
-    target,
-  );
+  const { urls: mergedUrls, added, provisioned } = allowSynthetic
+    ? mergeSectorGallerySeed(usable, ctx.business_type, target)
+    : { urls: usable, added: 0, provisioned: false };
 
   let urls = mergedUrls;
   const hasUnsplash = mergedUrls.some(
