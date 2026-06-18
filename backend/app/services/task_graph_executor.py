@@ -1944,6 +1944,7 @@ async def _run_feed_art_director_report(
     mission_ctx: dict[str, str] | None = None,
 ) -> dict:
     """Run Feed Art Director crew and persist report node. Returns report dict."""
+    import asyncio
     import json as _json
 
     from app.crew.crews.feed_art_director_crew import run_feed_art_director
@@ -1979,7 +1980,8 @@ async def _run_feed_art_director_report(
     if brief and brief not in weekly_theme:
         weekly_theme = f"{weekly_theme} | {brief[:120]}".strip(" |")
 
-    report = run_feed_art_director(
+    report = await asyncio.to_thread(
+        run_feed_art_director,
         brand=brand,
         content_ideas_json=output_summary[:15000],
         weekly_theme=weekly_theme,
