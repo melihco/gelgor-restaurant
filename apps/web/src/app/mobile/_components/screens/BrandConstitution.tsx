@@ -36,6 +36,7 @@ import {
   type MotionStyle,
 } from '@/lib/brand-motion-profile';
 import { StoryAudioSettingsPanel } from '@/components/brand/StoryAudioSettingsPanel';
+import { ReelMotionSettingsPanel } from '@/components/brand/ReelMotionSettingsPanel';
 import { MertcafeIntegrationsCard } from '../MertcafeIntegrationsCard';
 import {
   deriveBrandTemplateLibrary,
@@ -3386,6 +3387,20 @@ export function BrandConstitution() {
                 </SCard>
               );
             })()}
+
+            {tenantId && (
+              <SCard t={t} title="Reel Motion (Runway)">
+                <ReelMotionSettingsPanel
+                  tenantId={tenantId}
+                  theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
+                  sector={normalizeSectorId(String(p.industry ?? ''))}
+                  t={t}
+                  onSaved={() => {
+                    queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+                  }}
+                />
+              </SCard>
+            )}
 
             {tenantId && (
               <SCard t={t} title="Story Ses Ayarları">

@@ -354,7 +354,7 @@ class ApiClient {
   }
 
   // Artifacts & Review
-  async getArtifacts(params?: GetArtifactsParams): Promise<OutputArtifact[]> {
+  async getArtifacts(params?: GetArtifactsParams, tenantId?: string): Promise<OutputArtifact[]> {
     const qs = new URLSearchParams();
     if (params?.agentRunId) qs.set('agentRunId', params.agentRunId);
     if (params?.status) qs.set('status', params.status);
@@ -363,8 +363,9 @@ class ApiClient {
     if (params?.since) qs.set('since', params.since);
     if (params?.missionId) qs.set('missionId', params.missionId);
     const endpoint = `/api/artifacts${qs.toString() ? `?${qs.toString()}` : ''}`;
+    const scopedHeaders = tenantId ? getTenantBffHeaders(tenantId) : undefined;
     try {
-      const artifacts = await this.request<any[]>(endpoint);
+      const artifacts = await this.request<any[]>(endpoint, { headers: scopedHeaders });
       return artifacts.map((artifact) => this.mapArtifact(artifact));
     } catch (error) {
       if (error instanceof ApiRequestError && (error.status === 404 || error.status === 429)) {
@@ -876,8 +877,10 @@ class ApiClient {
   }
 
   // ── Setup ──
-  async getCompanyProfile(): Promise<CompanyProfile> {
-    return this.request('/api/setup/profile');
+  async getCompanyProfile(tenantId?: string): Promise<CompanyProfile> {
+    return this.request('/api/setup/profile', {
+      headers: tenantId ? getTenantBffHeaders(tenantId) : undefined,
+    });
   }
 
   async saveCompanyProfile(data: SaveCompanyProfileRequest): Promise<CompanyProfile> {
@@ -1623,8 +1626,8 @@ class ApiClient {
   async reproduceMissionFeed(
     workspaceId: string,
     missionId: string,
-    opts?: { productionPackage?: string },
-  ): Promise<{ message?: string; produced?: number; publishReady?: number; total?: number }> {
+    opts?: { productionPackage?: string; force?: boolean },
+  ): Promise<{ message?: string; produced?: number; publishReady?: number; rendering?: number; total?: number }> {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/reproduce-feed`, {
       method: 'PUT',
       headers: {
@@ -1633,6 +1636,7 @@ class ApiClient {
       },
       body: JSON.stringify({
         productionPackage: opts?.productionPackage,
+        force: opts?.force === true,
       }),
       signal: AbortSignal.timeout(600_000),
     });
@@ -1648,7 +1652,10 @@ class ApiClient {
         body.error || body.detail || body.message || `Feed üretimi başarısız (${res.status})`,
       );
     }
-    if ((body.produced ?? 0) <= 0) {
+    const produced = body.produced ?? 0;
+    const publishReady = (body as { publishReady?: number }).publishReady ?? 0;
+    const rendering = (body as { rendering?: number }).rendering ?? 0;
+    if (produced <= 0 && publishReady <= 0 && rendering <= 0) {
       throw new Error(body.error || body.message || 'Feed\'e kaydedilen içerik yok');
     }
     return body;

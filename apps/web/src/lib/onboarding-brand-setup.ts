@@ -367,11 +367,9 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     if (Array.isArray(raw)) return raw.filter((u): u is string => typeof u === 'string');
     return [];
   })();
-  const allowSyntheticGallery = !websiteUrl && refUrlsFromAnalysis.length === 0;
-
   const earlyProvisionRes = await postJson<{ provisioned?: number; usableCount?: number }>(
     `${origin}/api/brand-context/${tenantId}/provision-gallery`,
-    { analyze: true, allowSynthetic: allowSyntheticGallery },
+    { analyze: true, allowSynthetic: false },
     headers,
     180_000,
   );

@@ -1,5 +1,7 @@
 import { apiClient } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
+import { clearSessionScopedQueries } from '@/lib/query-client-bridge';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 
 /**
  * HttpOnly `sa_session` çerezini güvenilir şekilde silmek için önce Next BFF,
@@ -7,6 +9,8 @@ import { setSessionToken } from '@/lib/session-token';
  */
 export async function logoutFromBrowser(): Promise<void> {
   setSessionToken(null);
+  clearSessionScopedQueries();
+  useWorkspaceStore.getState().clearWorkspaceSession();
   const bffRes = await fetch('/api/auth/logout-bff', {
     method: 'POST',
     credentials: 'include',

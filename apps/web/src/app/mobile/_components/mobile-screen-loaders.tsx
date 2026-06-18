@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { ScreenSkeleton } from './ScreenSkeleton';
+import { BrandLoadingScreen } from './BrandLoadingScreen';
 
 /** Dev hot-reload / stale .next → ChunkLoadError: one automatic full reload per session key. */
 function importWithChunkRetry<T extends Record<string, unknown>>(
@@ -51,8 +52,9 @@ export const AIActivity = dynamic(
   { loading: () => <ScreenSkeleton /> },
 );
 export const BrandConstitution = dynamic(
-  () => import('./screens/BrandConstitution').then((m) => ({ default: m.BrandConstitution })),
-  { loading: () => <ScreenSkeleton /> },
+  importWithChunkRetry('BrandConstitution', () =>
+    import('./screens/BrandConstitution').then((m) => ({ default: m.BrandConstitution }))),
+  { loading: () => <ScreenSkeleton />, ssr: false },
 );
 export const Templates = dynamic(
   () => import('./screens/Templates').then((m) => ({ default: m.Templates })),
@@ -137,4 +139,16 @@ export const PlatformPreviewStudio = dynamic(
 export const ReelsStudio = dynamic(
   () => import('./screens/ReelsStudio').then((m) => ({ default: m.ReelsStudio })),
   { loading: () => <ScreenSkeleton /> },
+);
+
+export const LoginScreen = dynamic(
+  importWithChunkRetry('LoginScreen', () =>
+    import('./screens/LoginScreen').then((m) => ({ default: m.LoginScreen }))),
+  { loading: () => <BrandLoadingScreen />, ssr: false },
+);
+
+export const OnboardingFlow = dynamic(
+  importWithChunkRetry('OnboardingFlow', () =>
+    import('./screens/OnboardingFlow').then((m) => ({ default: m.OnboardingFlow }))),
+  { loading: () => <BrandLoadingScreen />, ssr: false },
 );

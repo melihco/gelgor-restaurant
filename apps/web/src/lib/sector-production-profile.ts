@@ -704,7 +704,7 @@ const SECTOR_ALIASES: Record<string, string> = {
 const FALLBACK_PROFILE: SectorProductionProfile = PROFILE_MAP.get('general_business')!;
 
 /** Normalize a raw sector string to a canonical profile key. */
-function normalizeSector(sector: string | null | undefined): string {
+export function normalizeSectorId(sector: string | null | undefined): string {
   if (!sector) return 'general_business';
   const key = sector.toLowerCase().replace(/[\s-]+/g, '_').trim();
   return SECTOR_ALIASES[key] ?? key;
@@ -715,7 +715,7 @@ function normalizeSector(sector: string | null | undefined): string {
  * Never throws — falls back to general_business profile.
  */
 export function getSectorProfile(sector: string | null | undefined): SectorProductionProfile {
-  const key = normalizeSector(sector);
+  const key = normalizeSectorId(sector);
   return PROFILE_MAP.get(key) ?? FALLBACK_PROFILE;
 }
 

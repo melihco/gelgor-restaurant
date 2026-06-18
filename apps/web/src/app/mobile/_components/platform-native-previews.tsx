@@ -256,7 +256,25 @@ export function InstagramFeedNative({ content, handle, logoUrl, isPending, timeL
           <img src={current} alt="" referrerPolicy="no-referrer"
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
-          <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg,#1a1a2e,#16213e)' }} />
+          <div style={{
+            width: '100%', height: '100%',
+            background: isPending
+              ? 'linear-gradient(135deg, #141820 0%, #0a0c12 100%)'
+              : 'linear-gradient(135deg, #1a1a2e, #16213e)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+          }}>
+            {isPending && (
+              <>
+                <div className="feed-skel-shimmer" style={{
+                  width: '72%', height: '58%', borderRadius: 4,
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>
+                  Görsel hazırlanıyor…
+                </span>
+              </>
+            )}
+          </div>
         )}
         {images.length > 1 && (
           <>

@@ -49,7 +49,9 @@ import {
   isCaptionDrivenDefault,
   getSectorColorGrade,
   isNonVenueSectorProfile,
+  normalizeSectorId,
 } from '@/lib/sector-production-profile';
+import { resolveBrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
 import { harmonizeCaptionAndCta, normalizeBrandLanguagesInput } from '@/lib/cta-localization';
 import {
@@ -1636,6 +1638,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       source: 'runway' | 'runway_multi_photo' | 'kling' | 'luma' | 'fal_video';
       strategy?: string;
       photoCount?: number;
+      cameraMotion?: string;
+      reelPace?: string;
+      sectorId?: string;
     } | null = null;
     let reelHookScore: { score: number; pass: boolean; reasons: string[] } | null = null;
 
@@ -1866,6 +1871,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryMeta,
         normalizeGalleryUrl,
       );
+      const reelSectorId = normalizeSectorId(brandBusinessType);
+      const brandReel = resolveBrandReelProductionParams(motionProfile, reelSectorId);
       const reelStrategy = resolveRunwayReelStrategy({
         photoCount: reelPhotoInputs.length,
         transitionStyle: (reelSpec as Record<string, unknown> | undefined)?.transition_style as string | undefined,
@@ -1873,6 +1880,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         templateUseCase,
         mood,
         contentType: 'reel',
+        reelPacing: brandReel.reelPacing,
+        strategyOverride: brandReel.strategy,
       });
       const reelCostUsd = estimateRunwayReelCostUsd(reelStrategy, reelPhotoInputs.length);
 
@@ -1890,9 +1899,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
       const runwayBudget = !runwayGalleryWeak && await canAffordRunway(workspaceId, reelCostUsd);
       if (runwayBudget && runwayBudget.allowed) {
-        const reelMood = (reelSpec as Record<string, unknown> | undefined)?.pace
+        const reelPace = String(
+          (reelSpec as Record<string, unknown> | undefined)?.pace
           || (reelSpec as Record<string, unknown> | undefined)?.audio_mood
-          || mood;
+          || '',
+        ).trim();
+        const reelMood = reelPace || mood;
         const cameraHint = (reelSpec as Record<string, unknown> | undefined)?.camera_movement as string | undefined;
         const normalizedCameraHint = normalizeCameraMotion(cameraHint);
         // Sprint 4 — Brief Split: use typed ReelSceneBrief for richer Runway direction.
@@ -1933,7 +1945,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           );
         }
 
-        const runway = await generateRunwayReel({
+        const runwayResult = await generateRunwayReel({
           workspaceId,
           headline,
           caption,
@@ -1941,6 +1953,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           location:     brandLocation,
           businessType: brandBusinessType,
           mood: reelMood as string,
+          reelPace: reelPace || undefined,
           cameraMotion: normalizedCameraHint,
           agentImageEditPrompt: imageEditPromptForReel,
           referenceImageUrl: referenceUrl,
@@ -1970,21 +1983,33 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           strategicPurpose: String(idea.strategic_purpose ?? ''),
           productType: String(idea.product_type ?? idea.subject ?? getField(idea, 'product_type', 'subject')),
           isHeroReel: true,
+          motionProfile,
         });
-        if (runway) {
-          videoUrl = runway;
+        if (runwayResult) {
+          videoUrl = runwayResult.videoUrl;
           imageUrl = referenceUrl;
           incrementReelCount(workspaceId);
           runwayReelsProducedInMission += 1;
           costEstimate += reelCostUsd;
+          const runwayTelemetry = {
+            cameraMotion: runwayResult.cameraMotion,
+            reelPace: runwayResult.reelPace,
+            sectorId: runwayResult.sectorId,
+            hookScore: runwayResult.hookScore,
+            strategy: runwayResult.strategy,
+          };
           if (reelStrategy !== 'single' && reelPhotoInputs.length >= 2) {
             runwayProduceMeta = {
+              ...runwayTelemetry,
               source: 'runway_multi_photo',
               strategy: reelStrategy === 'sequential' ? 'sequential' : 'multi_ref',
               photoCount: Math.min(reelPhotoInputs.length, maxPhotosForStrategy(reelStrategy)),
             };
           } else {
-            runwayProduceMeta = { source: 'runway' };
+            runwayProduceMeta = {
+              ...runwayTelemetry,
+              source: 'runway',
+            };
           }
         } else if (process.env.FAL_API_KEY && referenceUrl) {
           console.log('[auto-produce] Runway failed — trying fal.ai video fallback');
@@ -2571,6 +2596,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         runway_source: runwayProduceMeta.source,
         runway_strategy: runwayProduceMeta.strategy,
         runway_photo_count: runwayProduceMeta.photoCount,
+        camera_motion: runwayProduceMeta.cameraMotion ?? null,
+        reel_pace: runwayProduceMeta.reelPace ?? null,
+        sector_id: runwayProduceMeta.sectorId ?? normalizeSectorId(brandBusinessType),
       } : {}),
       ...(reelHookScore ? {
         reel_hook_score: reelHookScore.score,

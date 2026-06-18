@@ -60,8 +60,6 @@ import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   NON_VENUE_SECTORS,
-  SYNTHETIC_GALLERY_MIN,
-  resolveSyntheticGalleryTarget,
 } from '@/lib/sector-gallery-seed';
 import {
   buildMultiReelPhotoInputs,
@@ -3660,20 +3658,24 @@ export function MissionContentFactory() {
   const galleryProvisionedRef = useRef(false);
   useEffect(() => {
     if (!tenantId || galleryProvisionedRef.current) return;
-    const usable = allBrandImages.filter(isUsableGalleryPhotoUrl);
-    const sector = mainBrandCtx?.business_type ?? tenantBrand.businessType ?? 'general_business';
-    const target = resolveSyntheticGalleryTarget(sector, usable.length);
-    if (usable.length >= target) return;
+    const hasStock = allBrandImages.some((u) =>
+      u.includes('unsplash.com') || u.includes('pexels.com') || u.includes('pixabay.com'),
+    );
+    if (!hasStock) return;
     galleryProvisionedRef.current = true;
-    fetch(`/api/brand-context/${tenantId}/provision-gallery`, { method: 'POST' })
+    fetch(`/api/brand-context/${tenantId}/provision-gallery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ analyze: false, allowSynthetic: false }),
+    })
       .then((r) => r.json())
-      .then((d: { provisioned?: boolean }) => {
-        if (d.provisioned) {
+      .then((d: { stockRemoved?: number }) => {
+        if ((d.stockRemoved ?? 0) > 0) {
           queryClient.invalidateQueries({ queryKey: ['production-context-snapshot', tenantId] });
         }
       })
       .catch(() => { galleryProvisionedRef.current = false; });
-  }, [tenantId, allBrandImages.length, queryClient]);
+  }, [tenantId, allBrandImages, queryClient]);
 
   useEffect(() => {
     setCurrentIdx(0);

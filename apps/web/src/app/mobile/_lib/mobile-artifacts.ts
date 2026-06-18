@@ -46,7 +46,7 @@ export function getMobileArtifactsQueryOptions(
   };
   return {
     queryKey: mobileArtifactsQueryKey(tenantId, merged),
-    queryFn: () => apiClient.getArtifacts(merged),
+    queryFn: () => apiClient.getArtifacts(merged, tenantId),
     staleTime: 15_000,
     retry: 1,
     ...mobileQueryDefaults,

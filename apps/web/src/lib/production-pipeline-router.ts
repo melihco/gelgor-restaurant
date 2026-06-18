@@ -740,9 +740,11 @@ export function evaluateFeedDirectorProductionGate(input: {
     ),
   );
   if (hasFdPayload && input.rawAssignmentCount === 0) {
-    if (missionRelaxed && input.assignments.length > 0) {
+    if (missionRelaxed && input.ideasCount > 0) {
       warnings.push(
-        'Feed Art Director slot ataması eksik — manifest heuristic routing kullanıldı',
+        input.assignments.length > 0
+          ? 'Feed Art Director slot ataması eksik — manifest heuristic routing kullanıldı'
+          : 'Feed Art Director slot ataması eksik — manifest slot map ile devam ediliyor',
       );
     } else {
       return {

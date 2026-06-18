@@ -7,6 +7,20 @@ import { CLIENT_NAV_TABS, isMobileOperatorMode } from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 
+/** Hover prefetch — stale dev chunks after HMR must not surface as runtime errors. */
+function safePrefetch(importer: () => Promise<unknown>) {
+  void importer().catch((err) => {
+    const msg = String(err instanceof Error ? err.message : err);
+    const isChunk =
+      msg.includes('ChunkLoadError')
+      || msg.includes('Loading chunk')
+      || msg.includes('Failed to fetch dynamically imported module');
+    if (!isChunk) {
+      console.warn('[MobileNav] prefetch failed:', msg);
+    }
+  });
+}
+
 /**
  * Floating pill nav — minimal, Apple-grade restraint.
  * One accent color, no glow rings, no labels except active.
@@ -58,11 +72,11 @@ export function MobileNav() {
             onClick={() => setTab(tab.id)}
             onPointerEnter={() => {
               if (tab.id === 'missions') {
-                void import('./screens/MissionHub');
+                safePrefetch(() => import('./screens/MissionHub'));
               } else if (tab.id === 'feed') {
-                void import('./screens/PlatformFeed');
+                safePrefetch(() => import('./screens/PlatformFeed'));
               } else if (tab.id === 'brand') {
-                void import('./screens/BrandConstitution');
+                safePrefetch(() => import('./screens/BrandConstitution'));
               }
             }}
             aria-label={tab.label}

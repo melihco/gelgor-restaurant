@@ -22,8 +22,14 @@ import {
   type MultiReelPhotoInput,
   type RunwayReelStrategy,
 } from '@/lib/reel-multi-production';
-import { normalizeCameraMotion } from '@/lib/camera-motion';
-import { resolveRunwayCameraMotionForFidelity } from '@/lib/runway-reel-fidelity';
+import { normalizeCameraMotion, type UnifiedCameraMotion } from '@/lib/camera-motion';
+import {
+  resolveEffectiveReelPace,
+  resolveRunwayCameraMotionForFidelity,
+} from '@/lib/runway-reel-fidelity';
+import { getSectorReelPacing, normalizeSectorId } from '@/lib/sector-production-profile';
+import type { BrandMotionProfile } from '@/lib/brand-motion-profile';
+import { resolveBrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
 import {
   buildReelGenerateReelRequest,
   reelDirectorExtrasFromIdeaRecord,
@@ -429,6 +435,15 @@ export async function renderEventCardFromPayload(
   }
 }
 
+export type RunwayReelProduceResult = {
+  videoUrl: string;
+  cameraMotion: UnifiedCameraMotion;
+  reelPace: string;
+  sectorId: string;
+  hookScore: number;
+  strategy: RunwayReelStrategy;
+};
+
 export async function generateRunwayReel(opts: {
   workspaceId: string;
   headline: string;
@@ -437,6 +452,8 @@ export async function generateRunwayReel(opts: {
   location?: string;
   businessType?: string;
   mood?: string;
+  /** reel_motion_spec.pace from ideation */
+  reelPace?: string;
   cameraMotion?: string;
   agentImageEditPrompt?: string;
   referenceImageUrl?: string;
@@ -464,9 +481,20 @@ export async function generateRunwayReel(opts: {
   strategicPurpose?: string;
   productType?: string;
   isHeroReel?: boolean;
-}): Promise<string | null> {
+  motionProfile?: BrandMotionProfile;
+}): Promise<RunwayReelProduceResult | null> {
   try {
     const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+    const sectorId = normalizeSectorId(opts.businessType);
+    const brandReel = opts.motionProfile
+      ? resolveBrandReelProductionParams(opts.motionProfile, sectorId)
+      : null;
+    const sectorReelPacing = brandReel?.reelPacing ?? getSectorReelPacing(sectorId);
+    const effectiveReelPace = resolveEffectiveReelPace({
+      reelPace: opts.reelPace ?? opts.mood,
+      brandReelPace: brandReel?.reelPace,
+      sector: sectorId,
+    });
 
     const photoInputs: MultiReelPhotoInput[] = opts.photos?.length
       ? opts.photos
@@ -485,15 +513,21 @@ export async function generateRunwayReel(opts: {
       templateUseCase: opts.templateUseCase,
       mood: opts.mood,
       contentType: 'reel',
+      reelPacing: sectorReelPacing,
+      strategyOverride: brandReel?.strategy,
     });
 
     const vibeEarly = opts.vibeProfile ?? {};
     const vibeMotionEarly = (vibeEarly.motion as Record<string, string> | undefined) ?? {};
     const cameraMotion = resolveRunwayCameraMotionForFidelity({
       agentCamera: opts.cameraMotion,
+      brandCameraMotion: brandReel?.cameraMotion,
       vibeCamera: vibeMotionEarly.camera_movement,
       mood: opts.mood,
-      pace: vibeMotionEarly.pace,
+      reelPace: opts.reelPace ?? opts.mood,
+      brandReelPace: brandReel?.reelPace,
+      vibePace: vibeMotionEarly.pace,
+      sector: sectorId,
     });
     const hookScore = scoreReelHook({
       headline: opts.headline,
@@ -538,7 +572,14 @@ export async function generateRunwayReel(opts: {
       });
       if (multi.videoUrl) {
         console.log(`[auto-produce] Multi-reel produced (${multi.strategy}):`, multi.videoUrl.slice(0, 80));
-        return multi.videoUrl;
+        return {
+          videoUrl: multi.videoUrl,
+          cameraMotion,
+          reelPace: effectiveReelPace,
+          sectorId,
+          hookScore: hookScore.score,
+          strategy: runwayStrategy,
+        };
       }
       console.warn('[auto-produce] Multi-reel failed, falling back to single:', multi.error?.slice(0, 120));
     }
@@ -597,8 +638,9 @@ export async function generateRunwayReel(opts: {
       const directorExtras = reelDirectorExtrasFromIdeaRecord(
         productionIdeaToRecord(opts.productionIdea),
         {
-          sector: opts.businessType,
+          sector: sectorId,
           businessType: opts.businessType,
+          cameraMotion: opts.cameraMotion,
           sceneBrief: opts.sceneBrief,
           aiVisualStandard: opts.aiVisualStandard,
           brandContextForVisual: opts.brandContextForVisual,
@@ -607,6 +649,7 @@ export async function generateRunwayReel(opts: {
           workspaceId: opts.workspaceId,
           strategicPurpose: opts.strategicPurpose,
           isHeroReel: opts.isHeroReel,
+          brandReel: brandReel ?? undefined,
         },
       );
       if (opts.agentImageEditPrompt) {
@@ -709,8 +752,16 @@ export async function generateRunwayReel(opts: {
     const videoUrl = (data.videoUrl ?? data.outputUrls?.[0]) as string | undefined;
     if (videoUrl) {
       console.log('[auto-produce] Runway reel produced:', videoUrl.slice(0, 80));
+      return {
+        videoUrl,
+        cameraMotion,
+        reelPace: effectiveReelPace,
+        sectorId,
+        hookScore: hookScore.score,
+        strategy: runwayStrategy,
+      };
     }
-    return videoUrl ?? null;
+    return null;
   } catch (err) {
     console.warn('[auto-produce] Runway reel error', err);
     return null;

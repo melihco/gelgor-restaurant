@@ -22,12 +22,11 @@ import {
   filterUsableGalleryPhotoUrls,
   isStockGalleryPhotoUrl,
   isUsableGalleryPhotoUrl,
+  stripStockGalleryUrls,
 } from '@/lib/media-url';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
-import { mergeSectorGallerySeed, SYNTHETIC_GALLERY_MIN } from '@/lib/sector-gallery-seed';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
-import { GIS_PROPOSE_THRESHOLD } from '@/lib/gallery-intelligence';
 
 const GALLERY_EXCLUDE_PATTERNS = [
   'logo', 'icon', 'banner', 'footer', 'menu.', 'harita', 'map', 'franchise',
@@ -115,15 +114,12 @@ export async function fetchGalleryContext(
   const hasRealPhotos =
     refsBeforeSeed.some((u) => !isStockGalleryPhotoUrl(u))
     || analysisBeforeSeed.some((u) => !isStockGalleryPhotoUrl(u));
-  const gisHigh =
-    opts?.gisScore != null && opts.gisScore >= GIS_PROPOSE_THRESHOLD;
 
-  // GIS ≥ 70 + brand crawl photos → never pad with Unsplash sector seeds.
-  if (gisHigh && brandCrawlPhotos.length > 0) {
+  // Never pad with Unsplash — only crawl + manual uploads.
+  if (brandCrawlPhotos.length > 0) {
     candidates = brandCrawlPhotos;
-  } else if (candidates.length < SYNTHETIC_GALLERY_MIN) {
-    const { urls } = mergeSectorGallerySeed(candidates, brandBusinessType, SYNTHETIC_GALLERY_MIN);
-    candidates = urls;
+  } else {
+    candidates = stripStockGalleryUrls(candidates);
   }
 
   // ── Parallel: health check + usage + template history ──────────────────

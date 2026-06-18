@@ -1,8 +1,8 @@
 'use client';
 
-import { BrandLoadingScreen } from './BrandLoadingScreen';
+import { FeedLoadingSkeleton } from './FeedLoadingSkeleton';
 
 /** Lightweight placeholder while lazy-loaded mobile screens load. */
 export function ScreenSkeleton() {
-  return <BrandLoadingScreen compact fillViewport={false} />;
+  return <FeedLoadingSkeleton includeHeader message="Sayfa yükleniyor…" />;
 }

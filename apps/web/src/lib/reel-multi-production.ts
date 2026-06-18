@@ -4,6 +4,7 @@
  */
 
 import { sanitizePhotoDescriptionForRunway } from '@/lib/runway-scene-from-gallery';
+import type { ReelPacing } from '@/lib/sector-production-profile';
 
 export type RunwayReelStrategy = 'single' | 'multi_ref' | 'sequential';
 
@@ -31,16 +32,32 @@ export function resolveRunwayReelStrategy(input: {
   templateUseCase?: string;
   mood?: string;
   contentType?: string;
+  /** Sector profile pacing — fast_cut biases sequential montage. */
+  reelPacing?: ReelPacing | string;
+  /** Brand-level override — single | sequential | multi_ref */
+  strategyOverride?: RunwayReelStrategy;
 }): RunwayReelStrategy {
+  if (input.strategyOverride) return input.strategyOverride;
   if (input.photoCount < 2) return 'single';
 
+  const pacing = String(input.reelPacing ?? '').toLowerCase();
   const trans = (input.transitionStyle ?? '').toLowerCase();
   const ctx = [
     input.treatment ?? '',
     input.templateUseCase ?? '',
     input.mood ?? '',
     input.contentType ?? '',
+    pacing,
   ].join(' ').toLowerCase();
+
+  // Slow-burn sectors: prefer one continuous clip unless montage explicitly requested.
+  if (
+    (pacing === 'slow_burn' || /\bslow\b/.test(pacing))
+    && !/montage|sequential|hard.?cut|multi.?clip/.test(trans)
+    && input.photoCount >= 2
+  ) {
+    return 'single';
+  }
 
   // Explicit opt-in to legacy multi_ref (gen4_turbo only uses the first image anyway).
   if (/multi_ref|blend_only|single_frame_blend/.test(trans)) {
@@ -51,6 +68,10 @@ export function resolveRunwayReelStrategy(input: {
     return 'sequential';
   }
 
+  if (pacing === 'fast_cut' && input.photoCount >= 2) {
+    return 'sequential';
+  }
+
   if (
     input.photoCount >= 2
     && /behind|menu|gallery|recap|tour|service|product|spotlight|ugc|social.?proof|carousel|multi/.test(ctx)
@@ -58,7 +79,7 @@ export function resolveRunwayReelStrategy(input: {
     return 'sequential';
   }
 
-  if (input.photoCount >= 2 && /energetic|dynamic|night|event|dj|party/.test(ctx)) {
+  if (input.photoCount >= 2 && /energetic|dynamic|night|event|dj|party|fast_cut/.test(ctx)) {
     return 'sequential';
   }
 

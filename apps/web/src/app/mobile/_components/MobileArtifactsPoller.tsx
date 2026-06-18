@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSessionTenantId } from '@/lib/runtime-config';
-import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import { useMobileStore } from './mobile-store';
 import { resolveClientScreen } from './mobile-client-config';
 import type { OutputArtifact } from '@/types';
@@ -21,19 +20,7 @@ import {
  */
 export function MobileArtifactsPoller() {
   const screen = resolveClientScreen(useMobileStore((s) => s.screen));
-  const storeTenantId = useWorkspaceStore((s) => s.tenantId);
-  const [sessionTenantId, setSessionTenantId] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? getSessionTenantId() : null,
-  );
-
-  useEffect(() => {
-    const sync = () => setSessionTenantId(getSessionTenantId());
-    sync();
-    window.addEventListener('smartagency-auth-changed', sync);
-    return () => window.removeEventListener('smartagency-auth-changed', sync);
-  }, []);
-
-  const tenantId = sessionTenantId || storeTenantId;
+  const tenantId = useActiveTenantId();
   const poll = shouldPollArtifactsForScreen(screen);
 
   // Track consecutive polls where artifact count didn't change → drive backoff.

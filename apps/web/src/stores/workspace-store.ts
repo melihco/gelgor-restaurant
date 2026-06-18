@@ -14,6 +14,8 @@ export interface WorkspaceState {
   setOfficeId: (officeId: string) => void;
   setTenantFromSession: (tenantId: string) => void;
   setWorkspace: (tenantId: string, officeId: string) => void;
+  /** Logout / account switch — drop persisted tenant context. */
+  clearWorkspaceSession: () => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -30,14 +32,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           tenantId: tenantId.trim() || DEFAULT_TENANT_ID,
           officeId: officeId.trim() || DEFAULT_OFFICE_ID,
         }),
+      clearWorkspaceSession: () =>
+        set({
+          tenantId: DEFAULT_TENANT_ID,
+          officeId: DEFAULT_OFFICE_ID,
+        }),
     }),
     {
       name: 'smartagency-workspace',
-      // Persist both tenantId and officeId so that on page reload the correct
-      // tenant is used immediately — without waiting for getCurrentUserSecurity().
-      // AppShell still calls setTenantFromSession() after auth check to catch
-      // any tenant changes (e.g., after switching accounts).
-      partialize: (state) => ({ tenantId: state.tenantId, officeId: state.officeId }),
+      // officeId only — tenantId always comes from JWT via useActiveTenantId / AppShell.
+      partialize: (state) => ({ officeId: state.officeId }),
     },
   ),
 );

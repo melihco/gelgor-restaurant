@@ -1,9 +1,8 @@
 /**
  * POST /api/brand-context/{workspaceId}/provision-gallery
  *
- * Fills reference_image_urls with sector-curated stock photos when the tenant
- * has no own photos (typical for SaaS / digital brands). Targets 100 images
- * for full gallery intelligence; 8 minimum for BRS readiness gates.
+ * Analyzes gallery vision coverage. Does NOT inject stock/Unsplash photos unless
+ * allowSynthetic=true is explicitly passed (legacy opt-in only).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCrewBackendJson, proxyToCrewBackend } from '@/lib/crew-proxy';
@@ -12,7 +11,12 @@ import {
   resolveSyntheticGalleryTarget,
 } from '@/lib/sector-gallery-seed';
 import { parseStringOrArray } from '@/lib/brand-readiness';
-import { filterReachableGalleryUrls, filterUsableGalleryPhotoUrls } from '@/lib/media-url';
+import {
+  filterReachableGalleryUrls,
+  filterUsableGalleryPhotoUrls,
+  isStockGalleryPhotoUrl,
+  stripStockGalleryUrls,
+} from '@/lib/media-url';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -58,9 +62,12 @@ export async function POST(
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { analyze?: boolean; allowSynthetic?: boolean };
+  const body = (await req.json().catch(() => ({}))) as {
+    analyze?: boolean;
+    allowSynthetic?: boolean;
+  };
   const shouldAnalyze = body.analyze !== false;
-  const allowSynthetic = body.allowSynthetic !== false;
+  const allowSynthetic = body.allowSynthetic === true;
 
   const ctxRes = await fetchCrewBackendJson<{
     reference_image_urls?: unknown;
@@ -75,9 +82,15 @@ export async function POST(
   const ctx = ctxRes.data;
   const existing = parseStringOrArray(ctx.reference_image_urls);
   const logo = (ctx.logo_url ?? '').trim();
-  const usable = filterUsableGalleryPhotoUrls(
+  let usable = filterUsableGalleryPhotoUrls(
     existing.filter((u) => !logo || u !== logo),
   );
+
+  const stockRemoved = usable.length - stripStockGalleryUrls(usable).length;
+  if (stockRemoved > 0 || !allowSynthetic) {
+    usable = stripStockGalleryUrls(usable);
+  }
+
   const target = allowSynthetic
     ? resolveSyntheticGalleryTarget(ctx.business_type, usable.length)
     : usable.length;
@@ -87,53 +100,39 @@ export async function POST(
     : { urls: usable, added: 0, provisioned: false };
 
   let urls = mergedUrls;
-  const hasUnsplash = mergedUrls.some(
-    (u) => u.includes('images.unsplash.com') || u.includes('plus.unsplash.com'),
-  );
+  const hasUnsplash = mergedUrls.some((u) => isStockGalleryPhotoUrl(u));
   if (hasUnsplash && mergedUrls.length > 0) {
     const health = await filterReachableGalleryUrls(mergedUrls, { maxProbe: 120, concurrency: 10 });
     if (health.rejected.length > 0) {
       console.warn(
-        `[provision-gallery] Dropped ${health.rejected.length} unreachable Unsplash URLs for ${workspaceId}`,
+        `[provision-gallery] Dropped ${health.rejected.length} unreachable stock URLs for ${workspaceId}`,
       );
     }
     urls = health.urls;
   }
 
-  const prunedExisting = !provisioned && hasUnsplash && urls.length < usable.length;
+  if (!allowSynthetic) {
+    urls = stripStockGalleryUrls(urls);
+  }
 
-  if (!provisioned) {
-    if (prunedExisting) {
-      const patchRes = await proxyToCrewBackend(
-        `/api/v1/brand-context/${workspaceId}`,
-        {
-          method: 'PATCH',
-          body: { reference_image_urls: JSON.stringify(urls) },
-          workspaceId,
-          timeoutMs: 15_000,
-        },
-      );
-      if (!patchRes.ok) {
-        const err = await patchRes.text().catch(() => '');
-        return NextResponse.json({ error: err || 'PATCH failed' }, { status: patchRes.status });
-      }
-    }
+  const galleryChanged = provisioned
+    || stockRemoved > 0
+    || urls.length !== existing.filter((u) => !logo || u !== logo).length;
+
+  if (!galleryChanged) {
     let analyzeSummary = null;
     if (shouldAnalyze && urls.length > 0) {
-      const origin = req.nextUrl.origin;
-      analyzeSummary = await runGalleryAnalyzeCoverage(origin, workspaceId);
+      analyzeSummary = await runGalleryAnalyzeCoverage(req.nextUrl.origin, workspaceId);
     }
     return NextResponse.json({
       provisioned: false,
-      prunedDeadUrls: prunedExisting,
+      stockRemoved,
       usableCount: urls.length,
       target,
       analyze: analyzeSummary,
-      message: prunedExisting
-        ? `${usable.length - urls.length} süresi dolmuş Unsplash görseli galeriden temizlendi.`
-        : urls.length >= target
-          ? 'Galeri yeterli — sentetik foto eklenmedi.'
-          : 'Galeri hedefi karşılandı veya sektör uygun değil.',
+      message: urls.length > 0
+        ? 'Galeri yeterli — yalnızca marka fotoğrafları kullanılıyor.'
+        : 'Galeri boş — web sitesinden analiz veya manuel yükleme gerekli.',
     });
   }
 
@@ -153,17 +152,22 @@ export async function POST(
   }
 
   let analyzeSummary = null;
-  if (shouldAnalyze) {
+  if (shouldAnalyze && urls.length > 0) {
     analyzeSummary = await runGalleryAnalyzeCoverage(req.nextUrl.origin, workspaceId);
   }
 
   return NextResponse.json({
-    provisioned: true,
+    provisioned: provisioned || stockRemoved > 0,
     added,
+    stockRemoved,
     usableCount: urls.length,
     target,
     sector: ctx.business_type ?? 'general_business',
     analyze: analyzeSummary,
-    message: `${added} sektör görseli galeriye eklendi (hedef: ${target}).`,
+    message: stockRemoved > 0 && !provisioned
+      ? `${stockRemoved} stok görseli galeriden kaldırıldı.`
+      : provisioned
+        ? `${added} sektör görseli galeriye eklendi (legacy allowSynthetic).`
+        : 'Galeri güncellendi.',
   });
 }

@@ -22,6 +22,136 @@ import type { MissionNodeProgress } from '@/types';
 
 export type PackageFormat = 'story' | 'post' | 'reel' | 'carousel';
 
+export type FormatDistribution = Record<PackageFormat, number>;
+
+/** Map FD slot_role → weekly package format bucket. */
+export function slotRoleToPackageFormat(role: string): PackageFormat {
+  const r = role.toLowerCase();
+  if (r.includes('reel')) return 'reel';
+  if (r === 'organic_carousel') return 'carousel';
+  if (r.includes('story')) return 'story';
+  if (r.includes('post') || r.includes('ad')) return 'post';
+  return 'post';
+}
+
+/** Authoritative plan counts — derived from production_assignments, not LLM format_distribution. */
+export function deriveFormatDistributionFromAssignments(
+  assignments: Array<{ slot_role?: string }> | null | undefined,
+): FormatDistribution {
+  const dist: FormatDistribution = { post: 0, story: 0, reel: 0, carousel: 0 };
+  if (!assignments?.length) return dist;
+  for (const a of assignments) {
+    const role = String(a.slot_role ?? '').trim();
+    if (!role) continue;
+    dist[slotRoleToPackageFormat(role)] += 1;
+  }
+  return dist;
+}
+
+function distributionsMatch(a: FormatDistribution, b: Partial<FormatDistribution>): boolean {
+  return (['post', 'story', 'reel', 'carousel'] as const).every(
+    (k) => (a[k] ?? 0) === (b[k] ?? 0),
+  );
+}
+
+/** Drop cohesion notes that contradict a full weekly slot plan. */
+export function filterCohesionNotesForAssignments(
+  notes: string[],
+  planned: FormatDistribution,
+): string[] {
+  const hasPosts = planned.post > 0;
+  const hasReels = planned.reel > 0;
+  const hasCarousels = planned.carousel > 0;
+  const hasFullVariety = hasPosts && hasReels && hasCarousels;
+
+  return notes.filter((note) => {
+    const lower = note.toLowerCase();
+    if (
+      /lack of posts|no posts|missing posts|without posts|0 post/i.test(lower)
+      && hasPosts
+    ) {
+      return false;
+    }
+    if (
+      /lack of reels|no reels|missing reels|without reels|0 reel|critically lacks.*reel/i.test(lower)
+      && hasReels
+    ) {
+      return false;
+    }
+    if (
+      /lack of carousel|no carousel|missing carousel|without carousel|0 carousel/i.test(lower)
+      && hasCarousels
+    ) {
+      return false;
+    }
+    if (
+      /lack of posts.*reels|posts, reels, and carousels|posts.*reels.*carousels weakens|critically lacks posts/i.test(lower)
+      && hasFullVariety
+    ) {
+      return false;
+    }
+    if (/reduces format variety|weakens format variety/i.test(lower) && hasFullVariety) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/** When LLM verdict contradicts assignments, prefer assignment-based summary. */
+export function reconcileArtDirectorVerdict(
+  verdict: string,
+  planned: FormatDistribution,
+  assignmentCount: number,
+): string {
+  const v = verdict.trim();
+  if (!v) return v;
+  const lacksFormats = /critically lacks|lack of posts|reduces format variety|weakens format variety/i.test(v);
+  const plannedTotal = planned.post + planned.story + planned.reel + planned.carousel;
+  if (
+    lacksFormats
+    && assignmentCount >= MISSION_WEEKLY_PACKAGE_COUNTS.total
+    && planned.post > 0
+    && planned.reel > 0
+    && planned.carousel > 0
+  ) {
+    return [
+      `Haftalık paket ${assignmentCount} slot ile planlandı`,
+      `(${planned.story} story · ${planned.post} post · ${planned.carousel} carousel · ${planned.reel} reel).`,
+      'Üretim durumu Feed sekmesinde takip edilir.',
+    ].join(' ');
+  }
+  if (lacksFormats && plannedTotal > 0 && !distributionsMatch(planned, {})) {
+    return v;
+  }
+  return v;
+}
+
+export function resolveFeedDirectorFormatDistribution(
+  report: FeedArtDirectorReport | Record<string, unknown> | null | undefined,
+): FormatDistribution {
+  const assignments = (report?.production_assignments ?? []) as Array<{ slot_role?: string }>;
+  const fromAssignments = deriveFormatDistributionFromAssignments(assignments);
+  if (assignments.length > 0) return fromAssignments;
+  const raw = (report?.format_distribution ?? {}) as Record<string, number>;
+  return {
+    post: Number(raw.post ?? 0),
+    story: Number(raw.story ?? 0),
+    reel: Number(raw.reel ?? 0),
+    carousel: Number(raw.carousel ?? 0),
+  };
+}
+
+export function countPublishScheduleEntries(
+  schedule: Record<string, unknown[]> | null | undefined,
+): number {
+  if (!schedule || typeof schedule !== 'object') return 0;
+  let n = 0;
+  for (const items of Object.values(schedule)) {
+    if (Array.isArray(items)) n += items.length;
+  }
+  return n;
+}
+
 export interface FeedArtDirectorReport {
   feed_score?: number;
   theme_coherence?: number;
@@ -720,10 +850,45 @@ export function formatWeeklyPackageTarget(): string {
 
 export function formatWeeklyPackageSummary(selection: WeeklyPublishSelection): string {
   const parts: string[] = [];
-  if (selection.slots.stories.length > 0) parts.push(`${selection.slots.stories.length} story`);
-  if (selection.slots.posts.length > 0) parts.push(`${selection.slots.posts.length} post`);
-  if (selection.slots.reels.length > 0) parts.push(`${selection.slots.reels.length} reel`);
-  if (selection.slots.carousels.length > 0) parts.push(`${selection.slots.carousels.length} carousel`);
+  let motionStories = 0;
+  let stillStories = 0;
+  let posts = 0;
+  let designed = 0;
+  let carousels = 0;
+  let reels = 0;
+
+  for (const a of selection.primary) {
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    const role = String(meta.production_role ?? '');
+    if (role === 'campaign_story_motion') motionStories += 1;
+    else if (role === 'organic_story_still') stillStories += 1;
+    else if (role === 'organic_post') posts += 1;
+    else if (role === 'designed_post') designed += 1;
+    else if (role === 'organic_carousel') carousels += 1;
+    else if (role.includes('reel')) reels += 1;
+    else {
+      const fmt = detectArtifactPackageFormat(a);
+      if (fmt === 'story') motionStories += 1;
+      else if (fmt === 'reel') reels += 1;
+      else if (fmt === 'carousel') carousels += 1;
+      else posts += 1;
+    }
+  }
+
+  const storyTotal = motionStories + stillStories;
+  if (storyTotal > 0) parts.push(`${storyTotal} story`);
+  if (posts > 0) parts.push(`${posts} post`);
+  if (designed > 0) parts.push(`${designed} tasarım`);
+  if (carousels > 0) parts.push(`${carousels} carousel`);
+  if (reels > 0) parts.push(`${reels} reel`);
+
+  if (parts.length === 0) {
+    if (selection.slots.stories.length > 0) parts.push(`${selection.slots.stories.length} story`);
+    if (selection.slots.posts.length > 0) parts.push(`${selection.slots.posts.length} post`);
+    if (selection.slots.reels.length > 0) parts.push(`${selection.slots.reels.length} reel`);
+    if (selection.slots.carousels.length > 0) parts.push(`${selection.slots.carousels.length} carousel`);
+  }
+
   const produced = selection.primary.length;
   const summary = parts.join(' · ') || 'Paket seçiliyor…';
   if (produced > 0 && produced < MISSION_WEEKLY_PACKAGE_COUNTS.total) {

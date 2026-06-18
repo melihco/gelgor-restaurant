@@ -24,7 +24,7 @@ export function useTenantBrand(workspaceId?: string | null): TenantBrandContext 
     queryKey: ['company-profile', tenantId],
     queryFn: async () => {
       try {
-        return await apiClient.getCompanyProfile();
+        return await apiClient.getCompanyProfile(tenantId ?? undefined);
       } catch {
         return null;
       }

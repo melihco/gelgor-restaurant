@@ -36,11 +36,7 @@ import {
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
-import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
-import {
-  mergeSectorGallerySeed,
-  SYNTHETIC_GALLERY_MIN,
-} from '@/lib/sector-gallery-seed';
+import { isUsableGalleryPhotoUrl, stripStockGalleryUrls } from '@/lib/media-url';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { productionIdeaFromRecord } from '@/lib/production-idea-parse';
 import {
@@ -424,17 +420,16 @@ export function AutoProductionFeed({
   // Filter usable images: no logos/icons AND not already used in a saved artifact.
   // Upscale CDN thumbnails so they render sharp at full mobile width.
   const photoPool = (() => {
-    const filtered = brandRefImages
-      .filter(u => isUsableGalleryPhotoUrl(u))
-      .filter(u => {
-        const l = u.toLowerCase();
-        if (['logo','icon','banner','footer','-150x','-300x'].some(p => l.includes(p))) return false;
-        return !usedPreviouslyBases.has(u.split('?')[0] as string);
-      })
-      .map(upscaleCdnUrl);
-    if (filtered.length >= SYNTHETIC_GALLERY_MIN) return filtered;
-    const { urls } = mergeSectorGallerySeed(filtered, resolvedSector, SYNTHETIC_GALLERY_MIN);
-    return urls.map(upscaleCdnUrl);
+    const filtered = stripStockGalleryUrls(
+      brandRefImages
+        .filter(u => isUsableGalleryPhotoUrl(u))
+        .filter(u => {
+          const l = u.toLowerCase();
+          if (['logo','icon','banner','footer','-150x','-300x'].some(p => l.includes(p))) return false;
+          return !usedPreviouslyBases.has(u.split('?')[0] as string);
+        }),
+    );
+    return filtered.map(upscaleCdnUrl);
   })();
 
   const { library: storyTemplateLibrary, isLocked: storyLibraryLocked } = useBrandStoryTemplates(tenantId, resolvedSector);

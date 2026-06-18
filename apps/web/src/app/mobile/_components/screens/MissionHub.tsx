@@ -56,10 +56,16 @@ import {
 import { summarizeAiEnhanceItems } from '@/lib/ai-enhance-ui-labels';
 import {
   buildWeeklySelectionFromMissionNodes,
+  filterCohesionNotesForAssignments,
+  countPublishScheduleEntries,
   filterFeedPublishableArtifacts,
   formatWeeklyPackageSummary,
   formatWeeklyPackageTarget,
+  reconcileArtDirectorVerdict,
+  resolveFeedDirectorFormatDistribution,
+  slotRoleToPackageFormat,
   type WeeklyPublishSelection,
+  type FormatDistribution,
 } from '@/lib/weekly-publish-package';
 import { parseArtifactMissionId } from '@/lib/mission-feed-package';
 import { MISSION_WEEKLY_PACKAGE_COUNTS } from '@/lib/mission-production-manifest';
@@ -152,7 +158,7 @@ const TASK_META: Record<string, { label: string; icon: string; color: string; re
   ads_budget_optimization: { label: 'Reklam Bütçesi',              icon: '💰',  color: '#10B981', resultNoun: 'öneri' },
   mission_planning:        { label: 'Misyon Planlaması',            icon: '🚀',  color: '#8AABBD', resultNoun: 'plan' },
   workspace_intelligence:  { label: 'İş Zekâsı Raporu',           icon: '🧠',  color: '#3B82F6', resultNoun: 'rapor' },
-  feed_cohesion_review:    { label: 'Feed uyumu ve slot planı',      icon: '🎬',  color: '#10B981', resultNoun: 'rapor' },
+  feed_cohesion_review:    { label: 'Feed uyumu ve slot planı',      icon: '🎬',  color: '#10B981', resultNoun: 'slot' },
   product_scene_brief:     { label: 'Ürün Sahne Yönetmeni',        icon: '📸',  color: '#8AABBD', resultNoun: 'brief' },
 };
 
@@ -172,6 +178,13 @@ function displayNodeTitle(node: MissionNodeProgress): string {
 
 /** Count ideas / items inside a node output for the result badge */
 function countNodeResults(node: MissionNodeProgress): number | null {
+  if (node.task_type === 'feed_cohesion_review') {
+    const report = nodeOutputObject(node);
+    const assignments = report?.production_assignments;
+    if (Array.isArray(assignments) && assignments.length > 0) {
+      return assignments.length;
+    }
+  }
   return countPlanningNodeResults(node);
 }
 
@@ -1792,18 +1805,102 @@ function CampaignOutputView({ data, t }: { data: Record<string, unknown>; t: T }
 }
 
 // ── Feed Cohesion Report view ─────────────────────────────────────────────────
-function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: ReturnType<typeof useTheme>['t'] }) {
+function FormatDistributionChips({
+  dist,
+  t,
+  label,
+}: {
+  dist: FormatDistribution;
+  t: ReturnType<typeof useTheme>['t'];
+  label?: string;
+}) {
+  const fmtColors: Record<string, string> = {
+    post: '#3B82F6', story: '#8AABBD', reel: '#EC4899', carousel: '#F59E0B',
+  };
+  return (
+    <div>
+      {label && (
+        <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>
+          {label}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {(['post', 'story', 'reel', 'carousel'] as const).map((fmt) => {
+          const count = dist[fmt] ?? 0;
+          return (
+            <div key={fmt} style={{ padding: '6px 12px', borderRadius: 20,
+              background: fmtColors[fmt] + '18', border: `0.5px solid ${fmtColors[fmt]}40` }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: fmtColors[fmt] }}>{count}</span>
+              <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 4, textTransform: 'capitalize' }}>{fmt}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function deriveReadyFormatDistributionFromChecklist(
+  checklist: MissionSlotChecklist | null | undefined,
+): FormatDistribution | null {
+  if (!checklist?.items.length) return null;
+  const dist: FormatDistribution = { post: 0, story: 0, reel: 0, carousel: 0 };
+  for (const item of checklist.items) {
+    if (item.status !== 'ready') continue;
+    dist[slotRoleToPackageFormat(item.role)] += 1;
+  }
+  const total = dist.post + dist.story + dist.reel + dist.carousel;
+  return total > 0 ? dist : null;
+}
+
+function FeedCohesionOutputView({
+  node,
+  t,
+  missionId,
+  missionArtifacts,
+  missionInFlight,
+}: {
+  node: MissionNodeProgress;
+  t: ReturnType<typeof useTheme>['t'];
+  missionId?: string;
+  missionArtifacts?: OutputArtifact[];
+  missionInFlight?: boolean;
+}) {
   const report = nodeOutputObject(node);
   if (!report) return null;
 
   const feedScore = typeof report.feed_score === 'number' ? report.feed_score : null;
-  const dist = (report.format_distribution ?? {}) as Record<string, number>;
-  const notes = Array.isArray(report.cohesion_notes) ? report.cohesion_notes as string[] : [];
-  const verdict = String(report.art_director_verdict ?? '');
-  const schedule = (report.publish_schedule ?? {}) as Record<string, unknown[]>;
+  const rawDist = (report.format_distribution ?? {}) as Record<string, number>;
   const assignments = Array.isArray(report.production_assignments)
     ? report.production_assignments as Array<Record<string, unknown>>
     : [];
+  const plannedDist = resolveFeedDirectorFormatDistribution(report);
+  const distMismatch = assignments.length > 0 && (
+    (rawDist.post ?? 0) !== plannedDist.post
+    || (rawDist.story ?? 0) !== plannedDist.story
+    || (rawDist.reel ?? 0) !== plannedDist.reel
+    || (rawDist.carousel ?? 0) !== plannedDist.carousel
+  );
+  const slotChecklist = missionId && missionArtifacts
+    ? buildMissionSlotChecklist({
+      missionId,
+      assignments,
+      artifacts: missionArtifacts,
+      missionInFlight,
+    })
+    : null;
+  const producedDist = deriveReadyFormatDistributionFromChecklist(slotChecklist);
+  const notes = filterCohesionNotesForAssignments(
+    Array.isArray(report.cohesion_notes) ? report.cohesion_notes as string[] : [],
+    plannedDist,
+  );
+  const verdict = reconcileArtDirectorVerdict(
+    String(report.art_director_verdict ?? ''),
+    plannedDist,
+    assignments.length,
+  );
+  const schedule = (report.publish_schedule ?? {}) as Record<string, unknown[]>;
+  const scheduleCount = countPublishScheduleEntries(schedule);
   const manifestCov = typeof report.manifest_coverage_pct === 'number'
     ? report.manifest_coverage_pct
     : null;
@@ -1886,15 +1983,31 @@ function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: Ret
             {assignments.slice(0, 12).map((a, i) => {
               const role = String(a.slot_role ?? '');
               const idx = a.idea_index;
+              const checklistItem = slotChecklist?.items.find((it) => it.assignmentIndex === i);
+              const statusColor = checklistItem?.status === 'ready'
+                ? '#10B981'
+                : checklistItem?.status === 'rendering'
+                  ? '#F59E0B'
+                  : checklistItem?.status === 'failed'
+                    ? '#EF4444'
+                    : t.textMuted;
               return (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
                   padding: '6px 10px', borderRadius: 8,
                   background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}>
-                  <span style={{ fontWeight: 800, color: t.textMuted, minWidth: 20 }}>#{typeof idx === 'number' ? idx : i}</span>
+                  <span style={{ fontWeight: 800, color: t.textMuted, minWidth: 36 }}>Slot {i + 1}</span>
                   <span style={{ fontWeight: 700, color: t.textPrimary, flex: 1 }}>
                     {ROLE_TR[role] ?? role}
                   </span>
+                  {typeof idx === 'number' && (
+                    <span style={{ fontSize: 9, color: t.textMuted }}>fikir #{idx}</span>
+                  )}
                   <span style={{ fontSize: 9, color: t.textMuted }}>{String(a.pipeline ?? '')}</span>
+                  {checklistItem && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: statusColor }}>
+                      {slotStatusLabel(checklistItem.status)}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -1902,25 +2015,27 @@ function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: Ret
         </div>
       )}
 
-      {/* Format distribution */}
-      {Object.keys(dist).length > 0 && (
+      {/* Format distribution — assignments are authoritative */}
+      {(plannedDist.post + plannedDist.story + plannedDist.reel + plannedDist.carousel) > 0 && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            Format Dağılımı
+            Format Dağılımı (Plan)
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {(['post', 'story', 'reel', 'carousel'] as const).map(fmt => {
-              const count = dist[fmt] ?? 0;
-              const fmtColors: Record<string, string> = { post: '#3B82F6', story: '#8AABBD', reel: '#EC4899', carousel: '#F59E0B' };
-              return (
-                <div key={fmt} style={{ padding: '6px 12px', borderRadius: 20,
-                  background: fmtColors[fmt] + '18', border: `0.5px solid ${fmtColors[fmt]}40` }}>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: fmtColors[fmt] }}>{count}</span>
-                  <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 4, textTransform: 'capitalize' }}>{fmt}</span>
-                </div>
-              );
-            })}
-          </div>
+          <FormatDistributionChips dist={plannedDist} t={t} />
+          {producedDist && (
+            <div style={{ marginTop: 10 }}>
+              <FormatDistributionChips
+                dist={producedDist}
+                t={t}
+                label={`Feed'de hazır (${slotChecklist?.readyTotal ?? 0}/${assignments.length || slotChecklist?.items.length || 0})`}
+              />
+            </div>
+          )}
+          {distMismatch && isMobileOperatorMode() && (
+            <div style={{ fontSize: 10, color: t.textMuted, marginTop: 6, lineHeight: 1.45 }}>
+              LLM format_distribution düzeltildi — kaynak: üretim atamaları.
+            </div>
+          )}
         </div>
       )}
 
@@ -1942,8 +2057,15 @@ function FeedCohesionOutputView({ node, t }: { node: MissionNodeProgress; t: Ret
       {/* Publish schedule mini-grid */}
       {Object.keys(schedule).length > 0 && (
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            Yayın Takvimi
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              Yayın Takvimi
+            </div>
+            {assignments.length > 0 && scheduleCount < assignments.length && (
+              <span style={{ fontSize: 9, color: t.textMuted }}>
+                {scheduleCount}/{assignments.length} slot zamanlandı
+              </span>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
             {DAYS.map(day => {
@@ -2013,7 +2135,15 @@ function NodeOutputView({
 
   // feed_cohesion_review — art director report with score + schedule
   if (node.task_type === 'feed_cohesion_review') {
-    return <FeedCohesionOutputView node={node} t={t} />;
+    return (
+      <FeedCohesionOutputView
+        node={node}
+        t={t}
+        missionId={missionId}
+        missionArtifacts={missionArtifacts}
+        missionInFlight={missionInFlight}
+      />
+    );
   }
 
   // content_strategy — custom structured view
@@ -3067,6 +3197,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const reproduceFeedMutation = useMutation({
     mutationFn: () => apiClient.reproduceMissionFeed(workspaceId, mission.id, {
       productionPackage: hubProductionPackage,
+      force: Boolean(prog?.performance_summary?.production_error),
     }),
     onSuccess: (data) => {
       setReproduceFeedError(null);
@@ -3206,7 +3337,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             </div>
           )}
           <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
-            {mission.completed_nodes}/{mission.total_nodes} görev · {timeAgo(mission.completed_at)}
+            {mission.completed_nodes}/{mission.total_nodes} plan adımı · {timeAgo(mission.completed_at)}
           </div>
         </div>
 
@@ -3358,6 +3489,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               productionError?.status_code === 429
               || errMsg.includes('bütçe') || errMsg.includes('budget') || errMsg.includes('limit')
             );
+            const productionFailed = Boolean(productionError?.message) && !isStillProcessing && !isBudget;
             const ideationNode = prog?.nodes?.find(n => n.task_type === 'content_ideation' && n.status === 'completed');
 
             return (
@@ -3371,13 +3503,17 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                     ? 'Görsel tasarım önerileri bekleniyor'
                     : calendarPending
                       ? 'Yayın takvimi hazırlanıyor'
-                      : isStillProcessing ? 'Görseller hazırlanıyor' : 'Feed görselleri henüz yok'}
+                      : productionFailed
+                        ? 'Feed üretimi tamamlanamadı'
+                        : isStillProcessing ? 'Görseller hazırlanıyor' : 'Feed görselleri henüz yok'}
                 </div>
                 <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
                   {visualDesignPending
                     ? 'Ajans tasarım kartları tamamlanınca Feed üretimi otomatik başlayacak.'
                     : calendarPending
                       ? 'Plan satırları (format, tarih, başlık) hazır olunca her biri için Feed çıktısı üretilir.'
+                      : productionFailed
+                        ? String(productionError?.message ?? 'Feed üretimi başarısız oldu. Aşağıdan tekrar deneyin.')
                       : isStillProcessing
                     ? 'Görseller hazırlanıyor — gönderiler geldikçe Feed sekmesinde görünür.'
                     : isBudget
@@ -3401,7 +3537,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                   >
                     ↻ Yenile
                   </button>
-                  {debugMode && !isStillProcessing && (
+                  {!isStillProcessing && ideationNode && (productionFailed || debugMode) && (
                     <button
                       type="button"
                       onClick={() => reproduceFeedMutation.mutate()}
@@ -3414,8 +3550,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                       }}
                     >
                       {(kickFeedMutation.isPending || reproduceFeedMutation.isPending)
-                        ? 'Arka planda üretiliyor…'
-                        : 'Feed üretimini başlat →'}
+                        ? 'Üretiliyor…'
+                        : productionFailed ? 'Feed üretimini tekrar dene →' : 'Feed üretimini başlat →'}
                     </button>
                   )}
                   {debugMode && !isStillProcessing && ideationNode && (

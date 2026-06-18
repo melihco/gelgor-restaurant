@@ -58,8 +58,8 @@ import {
   artifactMatchesSlotFilter,
   type FeedSlotFilter,
 } from '@/lib/feed-slot-filter';
-import { useWorkspaceStore } from '@/stores/workspace-store';
-import { getRequestContextHeaders } from '@/lib/runtime-config';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
+import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { MOBILE_ARTIFACT_FEED_LIMIT } from '../../_lib/mobile-artifacts';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
@@ -80,7 +80,7 @@ import { VisualReviewBadge } from '../VisualReviewSheet';
 import { useTenantBrandContext } from '../TenantBrandProvider';
 import { isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
 import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
-import { BrandLoadingScreen } from '../BrandLoadingScreen';
+import { FeedLoadingSkeleton } from '../FeedLoadingSkeleton';
 import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { resolveMertcafePublishAuth } from '@/lib/mertcafe-publish-auth';
@@ -1724,12 +1724,13 @@ export function PlatformFeed() {
   const debugMode = isDebugUiMode();
   // navigate and openApproval already destructured above
   const queryClient = useQueryClient();
-  const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const tenantId = useActiveTenantId();
   const { data: brandAlignment } = useQuery<BrandAlignmentData>({
     queryKey: ['brand-alignment', tenantId],
     queryFn: async () => {
-      const res = await fetch(`/api/brand-alignment/${tenantId}`, {
-        headers: getRequestContextHeaders(),
+      const id = tenantId!;
+      const res = await fetch(`/api/brand-alignment/${id}`, {
+        headers: getTenantBffHeaders(id),
       });
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
@@ -1795,7 +1796,7 @@ export function PlatformFeed() {
     setAutoTriggerReason(null);
     fetch(`/api/missions/${tenantId}/auto-trigger`, {
       method: 'POST',
-      headers: getRequestContextHeaders(),
+      headers: getTenantBffHeaders(tenantId),
     })
       .then(r => r.json())
       .then((data: { triggered?: boolean; skipped?: boolean; reason?: string; detail?: string }) => {
@@ -1822,7 +1823,13 @@ export function PlatformFeed() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
-  const { data: rawArtifacts = [], isLoading, isError: artifactsError, isFetching: artifactsFetching, refetch: refetchArtifacts } = useMobileArtifacts({
+  const {
+    data: rawArtifacts = [],
+    isLoading,
+    isFetching,
+    isError: artifactsError,
+    refetch: refetchArtifacts,
+  } = useMobileArtifacts({
     subscribeOnly: true,
     params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
   });
@@ -1839,7 +1846,7 @@ export function PlatformFeed() {
     queryFn: async () => {
       if (!tenantId) return null;
       const res = await fetch(`/api/usage-cost/${tenantId}?days=1`, {
-        headers: getRequestContextHeaders(),
+        headers: getTenantBffHeaders(tenantId),
       });
       if (!res.ok) return null;
       return res.json() as Promise<{
@@ -1882,7 +1889,7 @@ export function PlatformFeed() {
     if (!tenantId || !hasRenderingBundles) return;
     fetch('/api/production-bundle/reconcile-stale', {
       method: 'POST',
-      headers: { ...getRequestContextHeaders(), 'X-Tenant-Id': tenantId },
+      headers: getTenantBffHeaders(tenantId),
     })
       .then(() => refetchArtifacts())
       .catch(() => undefined);
@@ -1896,7 +1903,7 @@ export function PlatformFeed() {
     try {
       const res = await fetch(`/api/production-bundle/${artifactId}/retry-render`, {
         method: 'POST',
-        headers: { 'X-Tenant-Id': tenantId },
+        headers: getTenantBffHeaders(tenantId),
       });
       const data = await res.json().catch(() => ({})) as { error?: string; status?: string };
       if (!res.ok && res.status !== 202) {
@@ -2353,18 +2360,13 @@ export function PlatformFeed() {
     setSlotFilter('all');
   }, [filter]);
 
-  if (isLoading && !operatorMode) {
+  const feedBootstrapping = !operatorMode && (isLoading || isFetching) && dedupedRaw.length === 0;
+
+  if (feedBootstrapping) {
     return (
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 40,
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#000',
-      }}>
+      <div style={{ minHeight: '100dvh', background: '#000', paddingBottom: 104 }}>
         <div style={{
-          flexShrink: 0,
+          position: 'sticky', top: 0, zIndex: 30,
           background: 'rgba(0,0,0,0.96)',
           backdropFilter: 'blur(32px) saturate(200%)',
           WebkitBackdropFilter: 'blur(32px) saturate(200%)',
@@ -2379,7 +2381,7 @@ export function PlatformFeed() {
             onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
           />
         </div>
-        <BrandLoadingScreen fillViewport={false} fillParent />
+        <FeedLoadingSkeleton message="Feed yükleniyor…" />
       </div>
     );
   }
@@ -3168,17 +3170,75 @@ export function PlatformFeed() {
       )}
 
       {/* Feed */}
-      {isLoading ? (
-        operatorMode ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: 200, flexDirection: 'column', gap: 12 }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%',
-              border: `2px solid ${t.separator}`, borderTop: `2px solid ${t.accent}`,
-              animation: 'spinSlow 1s linear infinite' }} />
-            <span style={{ fontSize: 13, color: t.textMuted }}>Yükleniyor…</span>
-          </div>
-        ) : null
+      {feedBootstrapping ? (
+        <FeedLoadingSkeleton message="Feed yükleniyor…" />
       ) : artifacts.length === 0 ? (
+        !operatorMode ? (
+          <div className="feed-empty">
+            <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.35 }}>📸</div>
+            <div className="feed-empty-title">
+              {showApproved ? 'Galeri boş' : 'Yeni içerik yok'}
+            </div>
+            <div className="feed-empty-body">
+              {showApproved
+                ? 'Onaylanan içerikler burada görünür.'
+                : rawPendingCount > pendingPublishableCount
+                  ? `${rawPendingCount - pendingPublishableCount} içerik hazırlanıyor — render bitince Feed'e düşecek.`
+                  : pipelineStatus === 'running'
+                    ? 'Kampanya hazırlanıyor — strateji, içerik fikirleri ve tasarım kartları oluşturuluyor.'
+                    : brandAlignment && !brandAlignment.canAutoProduce
+                      ? 'Marka profilinizi tamamlayın — ardından yeni kampanyalar otomatik başlar.'
+                      : 'Haftalık plandan onayladığınız kampanyalar hazır olunca burada görünür.'}
+            </div>
+            {!showApproved && missionFilterId && rawPendingCount > 0 && artifacts.length === 0 && (
+              <button
+                onClick={() => setMissionFilterId(null)}
+                style={{
+                  marginBottom: 12, padding: '10px 18px', borderRadius: 20, border: 'none',
+                  background: 'rgba(59,130,246,0.2)', color: '#60A5FA', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Tüm plan içeriklerini göster
+              </button>
+            )}
+            {showApproved && pendingCount > 0 && (
+              <button
+                onClick={() => setShowApproved(false)}
+                style={{
+                  padding: '11px 22px', borderRadius: 22, border: 'none',
+                  background: 'linear-gradient(135deg, #4D7088, #5A82A0)',
+                  color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Yeni üretimler ({pendingCount})
+              </button>
+            )}
+            {!showApproved && approvedCount > 0 && (
+              <button
+                onClick={() => setShowApproved(true)}
+                style={{
+                  padding: '11px 22px', borderRadius: 22, border: 'none',
+                  background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Galeriyi gör ({approvedCount})
+              </button>
+            )}
+            {!showApproved && (
+              <button
+                onClick={() => navigate('missions')}
+                style={{
+                  padding: '11px 22px', borderRadius: 22, border: 'none',
+                  background: 'linear-gradient(135deg, #4D7088, #5A82A0)',
+                  color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  marginTop: approvedCount > 0 ? 10 : 0,
+                }}
+              >
+                Haftalık plana git
+              </button>
+            )}
+          </div>
+        ) : (
         <div style={{ padding: '60px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.15 }}>📸</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
@@ -3248,6 +3308,7 @@ export function PlatformFeed() {
             </button>
           )}
         </div>
+        )
       ) : (
         <div style={{ background: feedBg }}>
           {artifacts.map((artifact, idx) => {

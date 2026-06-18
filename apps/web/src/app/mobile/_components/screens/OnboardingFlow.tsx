@@ -74,7 +74,6 @@ function extractDomain(url: string): string {
 
 // ─── URL Step ─────────────────────────────────────────────────────────
 function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUrl: string) => void; onLogin: () => void }) {
-  const { t } = useTheme();
   const [url, setUrl]     = useState('');
   const [ig, setIg]       = useState('');
   const [menuUrl, setMenuUrl] = useState('');
@@ -82,7 +81,7 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
   const [mode, setMode]   = useState<'web' | 'social'>('web');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 400); }, []);
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 400); }, [mode]);
 
   function handleSubmit() {
     const cleanIg = stripHandle(ig);
@@ -108,174 +107,107 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
   const hasMenuInput = menuUrl.trim().length > 0;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: '#04040A', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif' }}>
-      {/* Top glow */}
-      <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: '140%', height: 280, background: 'radial-gradient(ellipse at 50% 0%, rgba(77,112,136,0.16) 0%, transparent 65%)', pointerEvents: 'none' }} />
+    <div className="onboarding-shell">
+      <div className="onboarding-ambient" aria-hidden />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 28px' }}>
-        {/* Logo */}
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <div style={{ margin: '0 auto 18px', width: 68, height: 68, borderRadius: 18, overflow: 'hidden', boxShadow: '0 0 40px rgba(77,112,136,0.35)' }}>
-            <SmartAgencyLogo variant="markOnly" priority className="!h-[68px] !w-[68px] !rounded-[18px]" />
-          </div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#F4F4F8', letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 8 }}>
-            Markanızı analiz edelim
-          </h1>
-          <p style={{ fontSize: 14, color: 'rgba(160,160,180,0.6)', lineHeight: 1.6 }}>
-            Web sitesi veya Instagram ile başlayın,<br />AI ekibimiz markanızı tanısın.
-          </p>
-        </div>
+      <header className="onboarding-header">
+        <SmartAgencyLogo
+          variant="full"
+          priority
+          className="onboarding-logo !h-auto !w-[min(248px,78vw)] !max-w-none"
+        />
+        <h1 className="onboarding-title">Markanızı tanıyalım</h1>
+        <p className="onboarding-lead">
+          Web siteniz ve sosyal profilinizden marka kimliğinizi çıkarıyoruz.
+        </p>
+      </header>
 
-        {/* Mode toggle */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20, background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 4, border: '0.5px solid rgba(255,255,255,0.08)' }}>
+      <main className="onboarding-main">
+        <div className="onboarding-segment">
           {([
-            { key: 'web',    icon: '🌐', label: 'Web Sitesi' },
-            { key: 'social', icon: '📸', label: 'Sadece Instagram' },
-          ] as const).map(opt => (
+            { key: 'web' as const, label: 'Web sitesi' },
+            { key: 'social' as const, label: 'Instagram' },
+          ]).map((opt) => (
             <button
               key={opt.key}
+              type="button"
               onClick={() => { setMode(opt.key); setError(''); }}
-              style={{
-                flex: 1, padding: '10px 8px', borderRadius: 11, border: 'none', cursor: 'pointer',
-                background: mode === opt.key ? 'rgba(77,112,136,0.22)' : 'transparent',
-                color: mode === opt.key ? '#C4B5FD' : 'rgba(148,163,184,0.45)',
-                fontSize: 13, fontWeight: mode === opt.key ? 700 : 500,
-                boxShadow: mode === opt.key ? 'inset 0 0 0 0.5px rgba(77,112,136,0.5)' : 'none',
-                transition: 'all 180ms',
-              }}
+              className={`onboarding-segment-btn${mode === opt.key ? ' onboarding-segment-btn--on' : ''}`}
             >
-              {opt.icon} {opt.label}
+              {opt.label}
             </button>
           ))}
         </div>
 
         {mode === 'web' ? (
-          <>
-            {/* Website URL */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Web Siteniz</div>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'rgba(148,163,184,0.4)', pointerEvents: 'none' }}>🌐</div>
-                <input
-                  ref={inputRef}
-                  value={url}
-                  onChange={e => { setUrl(e.target.value); setError(''); }}
-                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                  placeholder="siteniz.com"
-                  type="url"
-                  autoComplete="url"
-                  style={{
-                    width: '100%', padding: '16px 16px 16px 44px', borderRadius: 16, outline: 'none', boxSizing: 'border-box',
-                    fontSize: 17, letterSpacing: '-0.01em',
-                    background: 'rgba(255,255,255,0.06)',
-                    border: error ? '1px solid rgba(239,68,68,0.5)' : `1px solid ${hasWebInput ? 'rgba(77,112,136,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                    color: '#F4F4F8',
-                    boxShadow: hasWebInput ? '0 0 0 3px rgba(77,112,136,0.12)' : 'none',
-                    transition: 'border 200ms, box-shadow 200ms',
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* QR / digital menu optional */}
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>QR Menü / Dijital Menü (opsiyonel)</div>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: 'rgba(148,163,184,0.3)', pointerEvents: 'none' }}>📋</div>
-                <input
-                  value={menuUrl}
-                  onChange={e => { setMenuUrl(e.target.value); setError(''); }}
-                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                  placeholder="menu.siteniz.com veya QR menü linki"
-                  type="url"
-                  style={{
-                    width: '100%', padding: '13px 16px 13px 34px', borderRadius: 14, outline: 'none', boxSizing: 'border-box',
-                    fontSize: 15,
-                    background: 'rgba(255,255,255,0.04)',
-                    border: `0.5px solid ${hasMenuInput ? 'rgba(77,112,136,0.25)' : 'rgba(255,255,255,0.08)'}`,
-                    color: '#F4F4F8',
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Instagram optional */}
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Instagram (opsiyonel)</div>
-              <div style={{ position: 'relative' }}>
-                <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: 'rgba(148,163,184,0.3)', pointerEvents: 'none' }}>@</div>
-                <input
-                  value={ig}
-                  onChange={e => { setIg(e.target.value); setError(''); }}
-                  onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                  placeholder="instagram_handle"
-                  style={{
-                    width: '100%', padding: '13px 16px 13px 34px', borderRadius: 14, outline: 'none', boxSizing: 'border-box',
-                    fontSize: 15,
-                    background: 'rgba(255,255,255,0.04)',
-                    border: `0.5px solid ${hasIgInput ? 'rgba(77,112,136,0.25)' : 'rgba(255,255,255,0.08)'}`,
-                    color: '#F4F4F8',
-                  }}
-                />
-              </div>
-            </div>
-          </>
+          <div className="onboarding-fields">
+            <label className="onboarding-field">
+              <span className="onboarding-field-label">Web siteniz</span>
+              <input
+                ref={inputRef}
+                value={url}
+                onChange={(e) => { setUrl(e.target.value); setError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                placeholder="siteniz.com"
+                type="url"
+                autoComplete="url"
+                className={`onboarding-input${hasWebInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
+              />
+            </label>
+            <label className="onboarding-field">
+              <span className="onboarding-field-label onboarding-field-label--muted">Menü linki · opsiyonel</span>
+              <input
+                value={menuUrl}
+                onChange={(e) => { setMenuUrl(e.target.value); setError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                placeholder="menu.siteniz.com"
+                type="url"
+                className={`onboarding-input${hasMenuInput ? ' onboarding-input--filled' : ''}`}
+              />
+            </label>
+            <label className="onboarding-field">
+              <span className="onboarding-field-label onboarding-field-label--muted">Instagram · opsiyonel</span>
+              <input
+                value={ig}
+                onChange={(e) => { setIg(e.target.value); setError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                placeholder="@markaniz"
+                className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}`}
+              />
+            </label>
+          </div>
         ) : (
-          /* Instagram-only mode */
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Instagram Kullanıcı Adı</div>
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'rgba(157,190,206,0.5)', pointerEvents: 'none' }}>@</div>
+          <div className="onboarding-fields">
+            <label className="onboarding-field">
+              <span className="onboarding-field-label">Instagram kullanıcı adı</span>
               <input
                 ref={inputRef}
                 value={ig}
-                onChange={e => { setIg(e.target.value); setError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-                placeholder="markaniniz"
+                onChange={(e) => { setIg(e.target.value); setError(''); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                placeholder="markaniz"
                 autoCapitalize="none"
-                style={{
-                  width: '100%', padding: '16px 16px 16px 40px', borderRadius: 16, outline: 'none', boxSizing: 'border-box',
-                  fontSize: 18, letterSpacing: '-0.01em',
-                  background: 'rgba(255,255,255,0.06)',
-                  border: error ? '1px solid rgba(239,68,68,0.5)' : `1px solid ${hasIgInput ? 'rgba(77,112,136,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                  color: '#F4F4F8',
-                  boxShadow: hasIgInput ? '0 0 0 3px rgba(77,112,136,0.12)' : 'none',
-                  transition: 'border 200ms, box-shadow 200ms',
-                }}
+                className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
               />
-            </div>
-            <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 12, background: 'rgba(157,190,206,0.08)', border: '0.5px solid rgba(157,190,206,0.18)', fontSize: 12, color: 'rgba(157,190,206,0.7)', lineHeight: 1.5 }}>
-              📸 Profil, son gönderiler ve hashtagler analiz edilecek. Web sitesi olmayan markalar için ideal.
-            </div>
+            </label>
           </div>
         )}
 
-        {error && <div style={{ marginBottom: 12, fontSize: 12, color: '#EF4444' }}>{error}</div>}
+        {error && <p className="onboarding-error">{error}</p>}
 
-        {/* CTA */}
-        <button onClick={handleSubmit} style={{
-          width: '100%', padding: '17px', borderRadius: 18,
-          background: 'linear-gradient(135deg,#4D7088,#5A82A0)',
-          border: 'none', color: '#fff', fontSize: 16, fontWeight: 800,
-          letterSpacing: '-0.01em',
-          boxShadow: '0 6px 32px rgba(77,112,136,0.45)',
-          cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        }}>
-          ✦ Analizi Başlat
+        <div className="onboarding-actions">
+          <button type="button" onClick={handleSubmit} className="onboarding-cta">
+            Analizi Başlat
+          </button>
+          <p className="onboarding-note">Kayıt olmadan deneyebilirsiniz</p>
+        </div>
+      </main>
+
+      <footer className="onboarding-footer">
+        <button type="button" onClick={onLogin} className="onboarding-login-link">
+          Zaten hesabınız var mı? <span>Giriş Yap</span>
         </button>
-
-        <p style={{ textAlign: 'center', marginTop: 14, fontSize: 13, color: 'rgba(148,163,184,0.4)' }}>
-          Kayıt olmadan analiz yapabilirsiniz
-        </p>
-      </div>
-
-      {/* Bottom login link */}
-      <div style={{ padding: '0 28px', paddingBottom: 'max(32px, env(safe-area-inset-bottom))', textAlign: 'center' }}>
-        <button onClick={onLogin} style={{ fontSize: 14, color: 'rgba(148,163,184,0.5)', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Zaten hesabınız var mı? <span style={{ color: '#9DBECE', fontWeight: 600 }}>Giriş Yap</span>
-        </button>
-      </div>
+      </footer>
     </div>
   );
 }

@@ -102,16 +102,10 @@ export async function POST(
     return pyRes;
   }
   try {
-    const analyzeData = await pyRes.clone().json() as Record<string, unknown>;
-    const refUrls = analyzeData.reference_image_urls;
-    const refCount = Array.isArray(refUrls) ? refUrls.length : 0;
-    const hasWebsite = Boolean(normalized.website_url);
-    const allowSynthetic = !hasWebsite && refCount === 0;
-
     const provisionRes = await fetch(`${request.nextUrl.origin}/api/brand-context/${workspaceId}/provision-gallery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ analyze: true, allowSynthetic }),
+      body: JSON.stringify({ analyze: true, allowSynthetic: false }),
     });
     if (provisionRes.ok) {
       const prov = await provisionRes.json() as { provisioned?: boolean; usableCount?: number };

@@ -100,6 +100,24 @@ def _idea_content_format(idea: dict[str, Any]) -> str:
     return "post"
 
 
+def _format_distribution_from_assignments(assignments: list[dict[str, Any]]) -> dict[str, int]:
+    """Derive format_distribution from production_assignments (authoritative)."""
+    dist = {"post": 0, "story": 0, "reel": 0, "carousel": 0}
+    for a in assignments:
+        role = str(a.get("slot_role") or "").lower()
+        if not role:
+            continue
+        if "reel" in role:
+            dist["reel"] += 1
+        elif role == "organic_carousel":
+            dist["carousel"] += 1
+        elif "story" in role:
+            dist["story"] += 1
+        elif "post" in role or "ad" in role:
+            dist["post"] += 1
+    return dist
+
+
 def _normalize_production_assignments(
     report: dict[str, Any],
     idea_count: int,
@@ -298,6 +316,7 @@ def _normalize_production_assignments(
         final_assignments.append(entry)
 
     report["production_assignments"] = final_assignments
+    report["format_distribution"] = _format_distribution_from_assignments(final_assignments)
     required_counts = _manifest_required_counts(production_profile)
     assigned_counts: dict[str, int] = {}
     for a in report["production_assignments"]:
@@ -456,6 +475,9 @@ def run_feed_art_director(
                     f"Feed Art Director schema: expected {_WEEKLY_PACKAGE_TOTAL} production_assignments, "
                     f"got {len(assignments) if isinstance(assignments, list) else 0}",
                 )
+        raw_assign = report.get("production_assignments")
+        if isinstance(raw_assign, list) and raw_assign:
+            report["format_distribution"] = _format_distribution_from_assignments(raw_assign)
 
         report["production_package"] = production_package
         report["_token_usage"] = usage

@@ -6,10 +6,13 @@
  */
 
 import type { StoryCompositionId } from '@/remotion/types';
+import type { RunwayReelStrategy } from './reel-multi-production';
+import type { ReelPacing } from './sector-production-profile';
 import { storyMusicLabel } from './story-audio-catalog';
 import { resolveStoryAudioMood } from './story-audio-mood';
 import { resolveStoryTtsVoiceId, storyVoiceLabel } from './story-voice-catalog';
 import { resolveTemplateId } from './remotion-template-registry';
+import { MOTION_STYLE_REEL_DEFAULTS } from './brand-reel-motion-profile';
 
 export type MotionStyle = 'minimal' | 'editorial' | 'luxury' | 'bold' | 'playful';
 export type TextDensity = 'minimal' | 'medium' | 'dense';
@@ -82,6 +85,12 @@ export interface BrandMotionProfile {
   learning?: MotionLearningHints;
   /** Set when operator overrides auto-derived defaults */
   operatorOverride?: boolean;
+  /** Runway reel default pace — `auto` or unset uses motion style / sector */
+  reelPace?: ReelPacing | 'auto' | string;
+  /** Runway default camera — `auto` or unset uses motion style / fidelity rules */
+  reelCameraMotion?: string;
+  /** Force single | sequential | multi_ref when set */
+  reelStrategy?: RunwayReelStrategy | 'auto';
 }
 
 export const STORY_COMPOSITION_IDS: StoryCompositionId[] = [
@@ -301,6 +310,9 @@ export function deriveMotionProfile(options: {
     storyVoiceId: existing?.storyVoiceId ?? DEFAULT_PROFILE.storyVoiceId,
     learning: existing?.learning,
     operatorOverride: Boolean(existing?.operatorOverride),
+    reelPace: existing?.reelPace,
+    reelCameraMotion: existing?.reelCameraMotion,
+    reelStrategy: existing?.reelStrategy,
   };
 
   return normalizeMotionProfile(derived);
@@ -311,6 +323,9 @@ function parseRawMotionProfile(raw: Record<string, unknown> | null | undefined):
   const weights = (raw.composition_weights ?? raw.compositionWeights) as CompositionWeights | undefined;
   const media = (raw.media_policy ?? raw.mediaPolicy) as Record<string, unknown> | undefined;
   const learning = raw.learning as MotionLearningHints | undefined;
+  const reelPaceRaw = String(raw.reel_pace ?? raw.reelPace ?? '').trim();
+  const reelCameraRaw = String(raw.reel_camera_motion ?? raw.reelCameraMotion ?? '').trim();
+  const reelStrategyRaw = String(raw.reel_strategy ?? raw.reelStrategy ?? '').trim();
   return {
     motionStyle: (raw.motion_style ?? raw.motionStyle) as MotionStyle | undefined,
     locale: raw.locale as string | undefined,
@@ -333,6 +348,11 @@ function parseRawMotionProfile(raw: Record<string, unknown> | null | undefined):
     storyVoiceId: String(raw.story_voice_id ?? raw.storyVoiceId ?? '').trim() || undefined,
     learning,
     operatorOverride: Boolean(raw.operator_override ?? raw.operatorOverride),
+    reelPace: reelPaceRaw && reelPaceRaw !== 'auto' ? reelPaceRaw : undefined,
+    reelCameraMotion: reelCameraRaw && reelCameraRaw !== 'auto' ? reelCameraRaw : undefined,
+    reelStrategy: reelStrategyRaw === 'single' || reelStrategyRaw === 'sequential' || reelStrategyRaw === 'multi_ref'
+      ? reelStrategyRaw
+      : undefined,
   };
 }
 
@@ -416,6 +436,9 @@ export function motionProfileToThemeJson(profile: BrandMotionProfile): Record<st
     story_audio_mode: profile.storyAudioMode ?? 'music_and_voice',
     story_voice_id: profile.storyVoiceId ?? 'nova',
     operator_override: profile.operatorOverride ?? true,
+    reel_pace: profile.reelPace ?? 'auto',
+    reel_camera_motion: profile.reelCameraMotion ?? 'auto',
+    reel_strategy: profile.reelStrategy ?? 'auto',
   };
 }
 
@@ -424,12 +447,15 @@ export function applyMotionStylePreset(
   style: MotionStyle,
 ): BrandMotionProfile {
   const preset = MOTION_STYLE_PRESETS[style];
+  const reelPreset = MOTION_STYLE_REEL_DEFAULTS[style];
   return normalizeMotionProfile({
     ...profile,
     motionStyle: style,
     textDensity: preset.textDensity,
     preferPurePhotoStories: preset.preferPurePhotoStories,
     compositionWeights: { ...preset.compositionWeights },
+    reelPace: reelPreset.reelPacing,
+    reelCameraMotion: reelPreset.cameraMotion,
     operatorOverride: true,
   });
 }

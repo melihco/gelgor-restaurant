@@ -15,6 +15,7 @@ import type { ProductionIdea, ProductionRenderer } from '@/types/production-idea
 import type { ProductionPipeline } from '@/lib/mission-production-manifest';
 import { productionIdeaToRecord } from '@/lib/production-idea-parse';
 import { resolveRunwayCameraMotionForFidelity } from './runway-reel-fidelity';
+import { normalizeSectorId } from './sector-production-profile';
 
 /** Minimum PIS before auto-produce runs a slot (Foundation S4 / APO-3). */
 export const PIS_PRODUCTION_MIN_SCORE = 70;
@@ -79,12 +80,17 @@ export function buildReelPayload(
   idea: ProductionIdea,
   brand: RendererBrandContext,
   gallery: RendererGalleryMeta,
-  opts?: { cameraMotion?: string },
+  opts?: { cameraMotion?: string; reelPace?: string; sector?: string },
 ): ReelPayload {
-  const vibeMotion = (brand.vibeProfile as { motion?: { camera_movement?: string } } | undefined)?.motion;
+  const vibeMotion = (brand.vibeProfile as { motion?: { camera_movement?: string; pace?: string } } | undefined)?.motion;
+  const sectorId = normalizeSectorId(opts?.sector ?? brand.businessType);
   const defaultCamera = resolveRunwayCameraMotionForFidelity({
+    agentCamera: opts?.cameraMotion,
     vibeCamera: vibeMotion?.camera_movement,
     mood: brand.visualStyle,
+    reelPace: opts?.reelPace,
+    vibePace: vibeMotion?.pace,
+    sector: sectorId,
   });
   const vibeClause = brand.themeGrading
     ? `Visual style: ${brand.themeGrading.look ?? ''}. Palette: ${brand.themeGrading.paletteDescription ?? ''}. ${brand.themeGrading.lutDirective ?? ''}.`.trim()

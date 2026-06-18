@@ -6,6 +6,7 @@ import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useMobileStore } from '../mobile-store';
 import { useAuthStore } from '../auth-store';
 import { apiClient } from '@/lib/api-client';
+import { logoutFromBrowser } from '@/lib/browser-logout';
 import { buildMoreMenuGroups } from '../mobile-client-config';
 import { summarizeMobileIntegrations } from '@/lib/mobile-integration-status';
 import { IcoLogout } from '../Icons';
@@ -61,7 +62,11 @@ export function MoreMenu() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
-    try { await apiClient.logout(); } finally { setUser(null); }
+    try {
+      await logoutFromBrowser();
+    } finally {
+      setUser(null);
+    }
   };
 
   const displayName = user?.displayName ?? tenantBrand.brandName ?? 'İşletme';

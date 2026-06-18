@@ -586,11 +586,6 @@ async def seed_missing_brand_fields(db: AsyncSession, ctx: BrandContext) -> Bran
         updates["campaign_goals"] = derived_goals
         ctx.campaign_goals = derived_goals
 
-    # ── Synthetic gallery: only when empty (never expand on every GET) ──
-    existing_gallery = _parse_reference_image_urls(ctx.reference_image_urls)
-    if len(existing_gallery) == 0 and provision_synthetic_gallery(ctx):
-        updates["reference_image_urls"] = ctx.reference_image_urls
-
     # ── Persist all updates in one write ─────────────────────────────────
     if updates:
         from sqlalchemy import update
@@ -1389,15 +1384,11 @@ async def persist_discovery_result(
         apply_website_brand_kit(ctx, wi_kit, fill_empty_only=True)
 
     saved_refs = _parse_reference_image_urls(ctx.reference_image_urls)
-    # Never pad with Unsplash when the brand supplied a website — empty gallery means
-    # crawl needs a retry from Marka Analizi, not stock photos.
-    if not website_url and not (ctx.website_url or "").strip():
-        provision_synthetic_gallery(ctx)
-    elif len(saved_refs) == 0 and website_url:
+    if len(saved_refs) == 0 and (website_url or (ctx.website_url or "").strip()):
         logger.warning(
-            "website_gallery_empty_skip_synthetic",
+            "website_gallery_empty_no_synthetic",
             workspace_id=str(workspace_id),
-            website_url=website_url[:120],
+            website_url=(website_url or ctx.website_url or "")[:120],
         )
 
     await db.flush()

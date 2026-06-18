@@ -89,6 +89,7 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
       await apiClient.logout();
     } finally {
       clearSessionScopedQueries();
+      useWorkspaceStore.getState().clearWorkspaceSession();
       setUser(null);
       onClose();
     }

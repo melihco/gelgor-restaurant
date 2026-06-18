@@ -1,5 +1,4 @@
 'use client';
-import dynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMobileStore } from './_components/mobile-store';
@@ -40,19 +39,12 @@ import {
   PlatformFeed,
   PlatformPreviewStudio,
   ReelsStudio,
+  LoginScreen,
+  OnboardingFlow,
 } from './_components/mobile-screen-loaders';
 import { MobileArtifactsPoller } from './_components/MobileArtifactsPoller';
 import { TenantBrandProvider } from './_components/TenantBrandProvider';
 import { resolveClientScreen } from './_components/mobile-client-config';
-
-const LoginScreen = dynamic(
-  () => import('./_components/screens/LoginScreen').then((m) => ({ default: m.LoginScreen })),
-  { loading: () => <BrandLoadingScreen /> },
-);
-const OnboardingFlow = dynamic(
-  () => import('./_components/screens/OnboardingFlow').then((m) => ({ default: m.OnboardingFlow })),
-  { loading: () => <BrandLoadingScreen /> },
-);
 
 /* ─── Mobile-scoped CSS ──────────────────────────────────────────────
  * IMPORTANT: All rules MUST be scoped to .sa-mobile to avoid leaking
@@ -183,6 +175,7 @@ const CSS = `
     perspective: 900px;
   }
   .sa-mobile .brand-laser-stage--md { width: min(390px, 94vw); height: min(360px, 86vw); }
+  .sa-mobile .brand-laser-stage--onboarding { width: min(220px, 58vw); height: min(200px, 52vw); margin: 0 auto -12px; }
   .sa-mobile .brand-laser-stage--sm { width: min(285px, 84vw); height: min(250px, 74vw); }
   .sa-mobile .brand-laser-stage--lg { width: min(450px, 96vw); height: min(410px, 90vw); }
 
@@ -329,6 +322,352 @@ const CSS = `
     animation-delay: calc(var(--scan-i) * 0.12s);
   }
   .sa-mobile .brand-laser-scan--sm .brand-laser-scan-dot { width: 4px; height: 4px; }
+
+  /* ── Onboarding — editorial / studio welcome ── */
+  .sa-mobile .onboarding-shell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    height: 100dvh;
+    overflow: hidden;
+    background: #0A0A0E;
+    font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
+    color: #F2F2F6;
+  }
+  .sa-mobile .onboarding-ambient {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 90% 55% at 50% -5%, rgba(77,112,136,0.14) 0%, transparent 58%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201,169,110,0.06) 0%, transparent 55%);
+    pointer-events: none;
+  }
+  .sa-mobile .onboarding-header {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 28px)
+      28px
+      20px;
+    text-align: center;
+  }
+  .sa-mobile .onboarding-logo {
+    display: block;
+    margin: 0 auto 28px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 24px rgba(0,0,0,0.35));
+  }
+  .sa-mobile .onboarding-title {
+    margin: 0 0 10px;
+    font-size: clamp(28px, 7vw, 34px);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.12;
+    color: #F4F4F8;
+  }
+  .sa-mobile .onboarding-lead {
+    margin: 0 auto;
+    max-width: 320px;
+    font-size: 15px;
+    line-height: 1.55;
+    font-weight: 400;
+    color: rgba(160,160,180,0.72);
+  }
+  .sa-mobile .onboarding-main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 28px;
+    overflow-y: auto;
+  }
+  .sa-mobile .onboarding-segment {
+    display: flex;
+    gap: 0;
+    margin-bottom: 22px;
+    border-radius: 12px;
+    padding: 3px;
+    background: rgba(255,255,255,0.05);
+    border: 0.5px solid rgba(255,255,255,0.08);
+  }
+  .sa-mobile .onboarding-segment-btn {
+    flex: 1;
+    padding: 11px 12px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(148,163,184,0.55);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transition: background 180ms ease, color 180ms ease;
+  }
+  .sa-mobile .onboarding-segment-btn--on {
+    background: rgba(255,255,255,0.1);
+    color: #F4F4F8;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .sa-mobile .onboarding-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+  }
+  .sa-mobile .onboarding-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .sa-mobile .onboarding-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(160,160,180,0.55);
+  }
+  .sa-mobile .onboarding-field-label--muted {
+    color: rgba(160,160,180,0.38);
+  }
+  .sa-mobile .onboarding-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 15px 16px;
+    border-radius: 12px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: #F4F4F8;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    outline: none;
+    transition: border-color 160ms ease, background 160ms ease;
+  }
+  .sa-mobile .onboarding-input::placeholder {
+    color: rgba(148,163,184,0.35);
+  }
+  .sa-mobile .onboarding-input:focus {
+    border-color: rgba(138,171,189,0.45);
+    background: rgba(255,255,255,0.06);
+  }
+  .sa-mobile .onboarding-input--filled {
+    border-color: rgba(77,112,136,0.35);
+  }
+  .sa-mobile .onboarding-input--error {
+    border-color: rgba(239,68,68,0.45);
+  }
+  .sa-mobile .onboarding-error {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #F87171;
+    font-weight: 500;
+  }
+  .sa-mobile .onboarding-actions {
+    margin-top: auto;
+    padding-top: 28px;
+    flex-shrink: 0;
+  }
+  .sa-mobile .onboarding-cta {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 14px;
+    background: #4D7088;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    cursor: pointer;
+    transition: background 160ms ease, transform 100ms ease;
+  }
+  .sa-mobile .onboarding-cta:active {
+    transform: scale(0.99);
+    background: #456678;
+  }
+  .sa-mobile .onboarding-note {
+    margin: 0 0 8px;
+    text-align: center;
+    font-size: 12px;
+    color: rgba(148,163,184,0.38);
+  }
+  .sa-mobile .onboarding-footer {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    padding: 12px 28px max(24px, env(safe-area-inset-bottom));
+    text-align: center;
+  }
+  .sa-mobile .onboarding-login-link {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: rgba(148,163,184,0.45);
+    padding: 8px;
+  }
+  .sa-mobile .onboarding-login-link span {
+    color: #8AABBD;
+    font-weight: 600;
+  }
+
+  /* ── Feed loading skeleton (Instagram layout) ── */
+  .sa-mobile .feed-skel {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    background: #000;
+    padding-bottom: 24px;
+  }
+  .sa-mobile .feed-skel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 10px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.96);
+  }
+  .sa-mobile .feed-skel-header-spacer { width: 52px; }
+  .sa-mobile .feed-skel-header-logo {
+    font-family: 'Billabong', 'Brush Script MT', 'Segoe Script', cursive;
+    font-size: 36px;
+    line-height: 1;
+    color: #fff;
+  }
+  .sa-mobile .feed-skel-header-icons {
+    display: flex;
+    gap: 16px;
+    width: 52px;
+    justify-content: flex-end;
+  }
+  .sa-mobile .feed-skel-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.08);
+  }
+  .sa-mobile .feed-skel-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255,255,255,0.06) 0%,
+      rgba(255,255,255,0.16) 45%,
+      rgba(255,255,255,0.06) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmerSlide 1.6s ease-in-out infinite;
+  }
+  .sa-mobile .feed-skel-stories {
+    display: flex;
+    gap: 14px;
+    padding: 14px 16px;
+    overflow: hidden;
+    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+  }
+  .sa-mobile .feed-skel-story {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 68px;
+  }
+  .sa-mobile .feed-skel-story-ring {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    padding: 2.5px;
+    background: linear-gradient(135deg, rgba(77,112,136,0.5), rgba(201,169,110,0.35));
+  }
+  .sa-mobile .feed-skel-story-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 2px solid #000;
+  }
+  .sa-mobile .feed-skel-story-label {
+    width: 48px;
+    height: 8px;
+    border-radius: 4px;
+  }
+  .sa-mobile .feed-skel-post {
+    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+    margin-bottom: 2px;
+  }
+  .sa-mobile .feed-skel-post-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  .sa-mobile .feed-skel-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .sa-mobile .feed-skel-post-meta { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .sa-mobile .feed-skel-line {
+    height: 10px;
+    border-radius: 5px;
+  }
+  .sa-mobile .feed-skel-line--sm { width: 42%; height: 8px; }
+  .sa-mobile .feed-skel-line--md { width: 58%; }
+  .sa-mobile .feed-skel-line--lg { width: 88%; }
+  .sa-mobile .feed-skel-media {
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    background-color: rgba(255,255,255,0.07);
+  }
+  .sa-mobile .feed-skel-actions {
+    display: flex;
+    gap: 12px;
+    padding: 12px 14px 8px;
+  }
+  .sa-mobile .feed-skel-action {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+  }
+  .sa-mobile .feed-skel-caption {
+    padding: 0 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sa-mobile .feed-skel-message {
+    margin: 16px 0 8px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.55);
+    letter-spacing: 0.01em;
+  }
+
+  .sa-mobile .feed-empty {
+    min-height: 42vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 28px 48px;
+    text-align: center;
+  }
+  .sa-mobile .feed-empty-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .sa-mobile .feed-empty-body {
+    font-size: 14px;
+    line-height: 1.55;
+    color: rgba(255,255,255,0.55);
+    max-width: 300px;
+    margin-bottom: 20px;
+  }
+
   @keyframes shimmerSlide {
     0%   { background-position: 200% 0; }
     100% { background-position: -200% 0; }
@@ -505,12 +844,7 @@ function AppShell() {
     if (showLogin) {
       return (
         <div style={base}>
-          <LoginScreen />
-          <div style={{ position: 'fixed', bottom: 32, left: 0, right: 0, textAlign: 'center', zIndex: 10 }}>
-            <button onClick={() => setShowLogin(false)} style={{ fontSize: 13, color: 'rgba(148,163,184,0.4)', background: 'none', border: 'none', cursor: 'pointer' }}>
-              ← Yeni hesap oluştur
-            </button>
-          </div>
+          <LoginScreen onSignup={() => setShowLogin(false)} />
         </div>
       );
     }

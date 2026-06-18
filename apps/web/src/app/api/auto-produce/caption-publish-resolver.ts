@@ -14,7 +14,7 @@ import {
   filterUsableGalleryPhotoUrls,
   isUsableGalleryPhotoUrl,
 } from '@/lib/media-url';
-import { mergeSectorGallerySeed, SYNTHETIC_GALLERY_MIN } from '@/lib/sector-gallery-seed';
+import { stripStockGalleryUrls } from '@/lib/media-url';
 
 export interface ParsedIdea {
   headline?: string;
@@ -114,11 +114,7 @@ export function parseBrandGalleryPhotos(
   const analysisKeys = Object.keys(meta).filter(u => u.startsWith('http') && isUsableGalleryPhotoUrl(u));
   let candidateUrls = refs.length > 0 ? refs : analysisKeys;
 
-  const sector = String(brandCtx.business_type ?? brandCtx.industry ?? '');
-  if (candidateUrls.length < SYNTHETIC_GALLERY_MIN) {
-    const { urls } = mergeSectorGallerySeed(candidateUrls, sector, SYNTHETIC_GALLERY_MIN);
-    candidateUrls = urls;
-  }
+  candidateUrls = stripStockGalleryUrls(candidateUrls);
 
   return { candidateUrls, meta };
 }

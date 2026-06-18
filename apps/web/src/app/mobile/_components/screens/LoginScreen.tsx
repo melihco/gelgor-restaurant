@@ -8,7 +8,11 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 
-export function LoginScreen() {
+interface LoginScreenProps {
+  onSignup?: () => void;
+}
+
+export function LoginScreen({ onSignup }: LoginScreenProps) {
   const { t } = useTheme();
   const { setUser } = useAuthStore();
   const { setWorkspace, setTenantFromSession } = useWorkspaceStore();
@@ -53,6 +57,7 @@ export function LoginScreen() {
 
   return (
     <div style={{
+      position: 'relative',
       height: '100dvh', background: t.bg,
       display: 'flex', flexDirection: 'column',
       justifyContent: 'center', alignItems: 'center',
@@ -186,9 +191,36 @@ export function LoginScreen() {
       </div>
 
       {/* Footer */}
-      <p style={{ position: 'absolute', bottom: 32, fontSize: 11, color: t.textMuted, textAlign: 'center' }}>
-        SmartAgency AI · v2.4.1
-      </p>
+      <div style={{
+        position: 'absolute',
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+        left: 0,
+        right: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 10,
+      }}>
+        {onSignup && (
+          <button
+            type="button"
+            onClick={onSignup}
+            style={{
+              fontSize: 13,
+              color: 'rgba(148,163,184,0.55)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px 8px',
+            }}
+          >
+            ← Yeni hesap oluştur
+          </button>
+        )}
+        <p style={{ margin: 0, fontSize: 11, color: t.textMuted, textAlign: 'center' }}>
+          SmartAgency AI · v2.4.1
+        </p>
+      </div>
     </div>
   );
 }

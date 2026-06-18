@@ -38,6 +38,11 @@ export function isStockGalleryPhotoUrl(url: string): boolean {
   );
 }
 
+/** Remove stock/seed URLs — gallery should only keep crawl + manual uploads. */
+export function stripStockGalleryUrls(urls: string[]): string[] {
+  return urls.filter((u) => !isStockGalleryPhotoUrl(u));
+}
+
 export function isR2StorageKeyPath(path: string): boolean {
   const p = path.startsWith('/') ? path : `/${path}`;
   return R2_KEY_PATH.test(p);

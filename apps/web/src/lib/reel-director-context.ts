@@ -17,8 +17,14 @@ import {
   type RendererBrandContext,
   type RendererGalleryMeta,
 } from '@/lib/renderer-payload';
-import { resolveRunwayCameraMotionForFidelity } from '@/lib/runway-reel-fidelity';
+import {
+  reelPacingDirectorHint,
+  resolveEffectiveReelPace,
+  resolveRunwayCameraMotionForFidelity,
+} from '@/lib/runway-reel-fidelity';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 import { firstStr } from '@/lib/production-idea-parse';
+import type { BrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
 
 export interface ReelDirectorExtras {
   cameraMotion?: string;
@@ -37,6 +43,8 @@ export interface ReelDirectorExtras {
   workspaceId?: string;
   /** Mission hero reel slot — enables Runway gen4.5 */
   isHeroReel?: boolean;
+  /** Tenant reel defaults from brand_theme.motion_profile */
+  brandReel?: BrandReelProductionParams;
 }
 
 /** English-safe slice for Runway director (identity + scene blocks stay server-side in GPT user msg). */
@@ -125,6 +133,11 @@ export function buildReelAgentVisualDirection(
   }
   if (extras.sector?.trim()) {
     parts.push(`Sector: ${extras.sector.trim().slice(0, 80)}`);
+    parts.push(reelPacingDirectorHint({
+      sector: extras.sector,
+      reelPace: String(extras.reelMotionSpec?.pace ?? '').trim() || undefined,
+      brandReelPace: extras.brandReel?.reelPace,
+    }));
   }
 
   return parts.join(' | ').slice(0, 900);
@@ -171,13 +184,19 @@ export function buildReelGenerateReelRequest(
   extras: ReelDirectorExtras = {},
 ): Record<string, unknown> {
   const vibeMotion = (extras.vibeProfile?.motion as Record<string, string> | undefined) ?? {};
+  const sectorId = normalizeSectorId(extras.sector ?? extras.businessType);
+  const reelPace = String(extras.reelMotionSpec?.pace ?? extras.reelMotionSpec?.audio_mood ?? '').trim();
   const cameraMotion = resolveRunwayCameraMotionForFidelity({
     agentCamera:
       extras.cameraMotion
       ?? String(extras.reelMotionSpec?.camera_movement ?? ''),
+    brandCameraMotion: extras.brandReel?.cameraMotion,
     vibeCamera: vibeMotion.camera_movement,
     mood: extras.reelMotionSpec?.pace as string | undefined,
-    pace: vibeMotion.pace,
+    reelPace: reelPace || undefined,
+    brandReelPace: extras.brandReel?.reelPace,
+    vibePace: vibeMotion.pace,
+    sector: sectorId,
   });
 
   const agentVisualDirection = buildReelAgentVisualDirection(idea, brand, gallery, extras);
@@ -194,7 +213,11 @@ export function buildReelGenerateReelRequest(
       : brand.themeGrading,
   };
 
-  const reel: ReelPayload = buildReelPayload(idea, enrichedBrand, gallery, { cameraMotion });
+  const reel: ReelPayload = buildReelPayload(idea, enrichedBrand, gallery, {
+    cameraMotion,
+    reelPace: reelPace || undefined,
+    sector: sectorId,
+  });
   reel.concept = buildReelConceptFromIdea(idea, enrichedBrand, gallery, extras);
 
   const body: Record<string, unknown> = {
@@ -231,7 +254,15 @@ export function buildReelGenerateReelRequest(
     sceneMetadata: {
       ...reel.sceneMetadata,
       businessType: extras.businessType ?? extras.sector,
-      sector: extras.sector,
+      sector: sectorId,
+      sector_id: sectorId,
+      reel_pace: resolveEffectiveReelPace({
+        reelPace,
+        brandReelPace: extras.brandReel?.reelPace,
+        vibePace: vibeMotion.pace,
+        sector: sectorId,
+      }),
+      camera_motion: cameraMotion,
       productType: extras.productType,
       strategicPurpose: extras.strategicPurpose,
       missionBrief: brand.missionBrief,
@@ -259,6 +290,7 @@ export function reelDirectorExtrasFromIdeaRecord(
     workspaceId?: string;
     cameraMotion?: string;
     isHeroReel?: boolean;
+    brandReel?: BrandReelProductionParams;
   } = {},
 ): ReelDirectorExtras {
   const reelSpec = (rec.reel_motion_spec ?? rec.reelMotionSpec) as Record<string, unknown> | undefined;
@@ -285,5 +317,6 @@ export function reelDirectorExtrasFromIdeaRecord(
     productType: firstStr(rec, 'product_type', 'productType', 'subject'),
     workspaceId: opts.workspaceId,
     isHeroReel: opts.isHeroReel,
+    brandReel: opts.brandReel,
   };
 }
