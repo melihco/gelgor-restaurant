@@ -42,6 +42,7 @@ import {
   isStockGalleryPhotoUrl,
   probeMediaUrl,
   probeMediaUrlReliable,
+  isUsableGalleryPhotoUrl,
 } from '@/lib/media-url';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
@@ -551,7 +552,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // Brief'ten gelen kullanıcı fotoğraflarını galeri yoksa inject et (hasGallery ve PIS için)
   const briefPhotoUrls: string[] = ideas
     .map((idea) => (idea as Record<string, unknown>).selected_gallery_url)
-    .filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+    .filter((u): u is string => typeof u === 'string' && isUsableGalleryPhotoUrl(u));
   if (briefPhotoUrls.length > 0 && !gctx.hasPhotos) {
     galleryPhotos = [...new Set([...briefPhotoUrls, ...galleryPhotos])];
   }
@@ -854,7 +855,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ?? null;
     const pisRenderer = resolveProductionRenderer(assignment.pipeline, prodIdea);
     const pisGalleryUrl =
-      (typeof agentUrlEarly === 'string' && agentUrlEarly.startsWith('http') ? agentUrlEarly : null)
+      (typeof agentUrlEarly === 'string' && isUsableGalleryPhotoUrl(agentUrlEarly) ? agentUrlEarly : null)
       ?? (galleryPhotos[0] ?? null);
     const pisBrand: RendererBrandContext = {
       brandName: resolvedBrandName,
@@ -1012,7 +1013,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const captionDrivenSlot = shouldUseCaptionDrivenVisual(aiVisualStandard, kind, assignment);
 
     // Brief'ten gelen fotoğraf her zaman öncelik alır — marka galerisi seçimini override et
-    if (!referenceUrl && typeof agentUrl === 'string' && agentUrl.startsWith('http')) {
+    if (!referenceUrl && typeof agentUrl === 'string' && isUsableGalleryPhotoUrl(agentUrl)) {
       referenceUrl = agentUrl;
       console.log(`[auto-produce] brief photo override: "${headline.slice(0, 50)}"`);
     }
@@ -1932,7 +1933,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ? galleryPhotos
               .filter(u =>
                 u !== referenceUrl &&
-                u.startsWith('http') &&
+                isUsableGalleryPhotoUrl(u) &&
                 !isGalleryUrlUsedForPostType(galleryUsage, u, 'reel'),
               )
               .map(u => {

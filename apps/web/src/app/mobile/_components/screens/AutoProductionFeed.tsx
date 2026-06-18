@@ -265,7 +265,7 @@ function buildIdeaMatchInput(idea: Record<string, unknown>, item?: {
 function extractAgentGalleryUrl(idea: Record<string, unknown>): string | null {
   const vps = idea.visual_production_spec as Record<string, unknown> | undefined;
   const url = vps?.selected_gallery_url;
-  if (typeof url !== 'string' || !url.startsWith('http')) return null;
+  if (typeof url !== 'string') return null;
   return isUsableGalleryPhotoUrl(url) ? url : null;
 }
 
@@ -411,7 +411,7 @@ export function AutoProductionFeed({
       const meta = a.metadata as Record<string, unknown> | undefined;
       if (typeof meta?.imageUrl === 'string') urls.push(meta.imageUrl);
       for (const u of urls) {
-        if (u.startsWith('http')) bases.add(u.split('?')[0] as string);
+        if (isUsableGalleryPhotoUrl(u)) bases.add(u.split('?')[0] as string);
       }
     }
     return bases;

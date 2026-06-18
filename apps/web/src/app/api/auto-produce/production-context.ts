@@ -28,6 +28,7 @@ import { resolveKitForSector } from '@/lib/remotion-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { resolveProductionLogoUrl } from '@/lib/brand-logo-production';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
+import { filterBrandGalleryUrls } from '@/lib/gallery-upload';
 import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
 import { resolveAnnouncementBrandKit } from '@/lib/announcement-brand-kit';
 import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
@@ -242,9 +243,9 @@ export async function fetchProductionContext(
   ]);
   const brandSnapshot: BrandProfileSnapshot | null = productionSnapshot?.brand ?? null;
 
-  const snapshotGalleryUrls = brandSnapshot?.gallery
-    .map((item) => String(item.url ?? '').trim())
-    .filter((url) => url.startsWith('http://') || url.startsWith('https://')) ?? [];
+  const snapshotGalleryUrls = filterBrandGalleryUrls(
+    brandSnapshot?.gallery.map((item) => String(item.url ?? '').trim()) ?? [],
+  );
   const raw: Record<string, unknown> = brandSnapshot
     ? {
         ...rawBase,

@@ -2,6 +2,7 @@
  * Tracks which brand gallery photos are already used per Instagram post type.
  * Source of truth: Nexus OutputArtifacts (pending + approved, not rejected).
  */
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
 export type PostTypeBucket = 'feed' | 'story' | 'reel' | 'carousel';
 
@@ -56,7 +57,7 @@ function parseJsonRecord(raw: unknown): Record<string, unknown> {
 }
 
 function pushUrl(set: Set<string>, url: unknown): void {
-  if (typeof url !== 'string' || !url.startsWith('http')) return;
+  if (typeof url !== 'string' || !isUsableGalleryPhotoUrl(url)) return;
   set.add(normalizeGalleryUrl(url));
 }
 
@@ -177,7 +178,7 @@ export function markGalleryUrlUsedForPostType(
   url: string,
   postType: PostTypeBucket,
 ): void {
-  if (!url.startsWith('http')) return;
+  if (!isUsableGalleryPhotoUrl(url)) return;
   const base = normalizeGalleryUrl(url);
   const bucket = usage.byType[postType];
   if (!bucket.some(u => normalizeGalleryUrl(u) === base)) {

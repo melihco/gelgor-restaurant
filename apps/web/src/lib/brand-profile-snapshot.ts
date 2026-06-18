@@ -1,4 +1,5 @@
 import type { BrandProfileSnapshot } from '@smartagency/contracts';
+import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
 
 type BrandProfileCoreSnapshot = {
   tenantId?: string;
@@ -27,24 +28,7 @@ type BrandProfileCoreSnapshot = {
 };
 
 function parseReferenceImageUrlList(raw: unknown): string[] {
-  if (Array.isArray(raw)) {
-    return raw
-      .map((u) => String(u).trim())
-      .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
-  }
-  if (typeof raw === 'string' && raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((u) => String(u).trim())
-          .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  return [];
+  return parseBrandReferenceUrls(raw);
 }
 
 type BrandContextIntelligenceSnapshot = {

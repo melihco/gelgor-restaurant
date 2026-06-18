@@ -1,6 +1,7 @@
 /**
  * Gallery display URL helpers — upgrade CDN thumbnails to full-resolution for UI.
  */
+import { resolveClientMediaUrl } from '@/lib/media-url';
 
 
 const WP_SIZE_SUFFIX = new RegExp(String.raw`-\d+x\d+(?=\.(?:jpe?g|png|webp|gif|avif)$)`, 'i');
@@ -72,13 +73,21 @@ export function prepareGalleryDisplayUrls(urls: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of urls) {
-    if (typeof raw !== 'string' || !raw.startsWith('http')) continue;
-    if (!raw.startsWith('http')) continue;
-    const display = upscaleCdnUrl(raw);
+    if (typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('http') && !trimmed.startsWith('/api/media')) continue;
+    const display = trimmed.startsWith('http') ? upscaleCdnUrl(trimmed) : trimmed;
     const key = display.split('?')[0] ?? display;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(display);
   }
   return out;
+}
+
+/** Browser `<img src>` for gallery grid — /api/media direct, external via proxy when needed. */
+export function resolveGalleryImageSrc(url: string): string {
+  const trimmed = url.trim();
+  const prepared = trimmed.startsWith('http') ? upscaleCdnUrl(trimmed) : trimmed;
+  return resolveClientMediaUrl(prepared) ?? prepared;
 }

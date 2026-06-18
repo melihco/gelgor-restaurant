@@ -56,7 +56,7 @@ import {
 import {
   resolveAnnouncementBrandKit,
 } from '@/lib/announcement-brand-kit';
-import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { isUsableGalleryPhotoUrl, resolveBrowserImageSrc } from '@/lib/media-url';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   NON_VENUE_SECTORS,
@@ -136,7 +136,7 @@ async function makeThumbnail(imageUrl: string, isVertical: boolean): Promise<str
   const TH_H = isVertical ? 140 : 80;
 
   // For remote URLs, proxy them; data: URLs are used directly
-  const src = imageUrl.startsWith('data:') ? imageUrl : `/api/media-proxy?url=${encodeURIComponent(imageUrl)}`;
+  const src = resolveBrowserImageSrc(imageUrl);
 
   try {
     const res = await fetch(src);
@@ -267,7 +267,7 @@ async function drawLogoOnCanvas(
 ): Promise<void> {
   if (!logoUrl) return;
   try {
-    const src = logoUrl.startsWith('data:') ? logoUrl : `/api/media-proxy?url=${encodeURIComponent(logoUrl)}`;
+    const src = resolveBrowserImageSrc(logoUrl);
     const res = await fetch(src);
     if (!res.ok) return;
     const blob = await res.blob();
@@ -368,7 +368,7 @@ export async function composeBrandPhotoCard(params: {
 
   await ensureDesignFonts();
 
-  const proxyUrl = `/api/media-proxy?url=${encodeURIComponent(photoUrl)}`;
+  const proxyUrl = resolveBrowserImageSrc(photoUrl);
   const res = await fetch(proxyUrl);
   if (!res.ok) throw new Error(`skip:${res.status}`);
   // Expired Instagram CDN URLs — proxy returns 1×1 transparent GIF with X-Proxy-Status: expired
@@ -574,7 +574,7 @@ export async function composeAgencyDesignCard(params: {
   const SUB_WEIGHT = typoStyle === 'clean_sans' ? '400' : '400';
 
   // ── Fetch image via server-side media proxy (avoids CORS taint) ────────────
-  const proxyUrl = `/api/media-proxy?url=${encodeURIComponent(photoUrl)}`;
+  const proxyUrl = resolveBrowserImageSrc(photoUrl);
   const res = await fetch(proxyUrl);
   if (!res.ok) throw new Error(`skip:${res.status}`);
   if (res.headers.get('X-Proxy-Status') === 'expired') throw new Error('skip:expired');
@@ -915,7 +915,7 @@ function IdeaCard({
   const vps = (idea as any)?.visual_production_spec as Record<string, unknown> | undefined;
   const agentGalleryUrlRaw: string | null = (() => {
     const url = vps?.selected_gallery_url as string | undefined;
-    if (url && url.startsWith('http')) return url;
+    if (url && isUsableGalleryPhotoUrl(url)) return url;
     return null;
   })();
   const agentEditPrompt: string = (vps?.image_edit_prompt as string) || imagePrompt || visualDir || '';
@@ -1093,8 +1093,7 @@ function IdeaCard({
     }
     return urls
       .filter((u: unknown): u is string => {
-        if (typeof u !== 'string' || !u.startsWith('http')) return false;
-        if (!isUsableGalleryPhotoUrl(u)) return false;
+        if (typeof u !== 'string' || !isUsableGalleryPhotoUrl(u)) return false;
         const lower = u.toLowerCase();
         return !EXCLUDE_PATTERNS.some(p => lower.includes(p));
       })
@@ -1637,9 +1636,7 @@ function IdeaCard({
   // ── "Reel Üret" — auto montaj when 2+ gallery photos, else single Runway ──
   async function produceMultiPhotoReel(explicitStrategy?: 'multi_ref' | 'sequential') {
     const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
-    const nonCdnPhotos = brandRefImages.filter(
-      (u) => !CDN_HOSTS.some((h) => u.includes(h)) && u.startsWith('http'),
-    );
+    const nonCdnPhotos = brandRefImages.filter(isUsableReelPhotoUrl);
     const promptImage =
       (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) ||
       agentGalleryUrl ||
@@ -1752,9 +1749,7 @@ function IdeaCard({
     setReelError(null);
     try {
       const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
-      const nonCdnPhotos = brandRefImages.filter(
-        (u) => !CDN_HOSTS.some((h) => u.includes(h)) && u.startsWith('http'),
-      );
+      const nonCdnPhotos = brandRefImages.filter(isUsableReelPhotoUrl);
       const promptImage =
         (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) ||
         agentGalleryUrl ||
@@ -1894,7 +1889,7 @@ function IdeaCard({
 
       // Pick best promptImage (non-CDN)
       const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
-      const nonCdnPhotos = brandRefImages.filter(u => !CDN_HOSTS.some(h => u.includes(h)) && u.startsWith('http'));
+      const nonCdnPhotos = brandRefImages.filter(isUsableReelPhotoUrl);
       const baseImage = (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) || nonCdnPhotos[0] || agentGalleryUrl;
 
       let agencyStillUrl: string | null = null;
@@ -2008,7 +2003,7 @@ function IdeaCard({
     return (
       (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) ||
       agentGalleryUrl ||
-      brandRefImages.find((u) => !CDN_HOSTS.some((h) => u.includes(h)) && u.startsWith('http')) ||
+      brandRefImages.find(isUsableReelPhotoUrl) ||
       null
     );
   }
@@ -2016,7 +2011,11 @@ function IdeaCard({
   async function resolvePhotoUrlForApi(photoUrl: string): Promise<string> {
     if (!photoUrl.includes('/api/media') || !photoUrl.includes('key=')) return photoUrl;
     try {
-      const metaRes = await fetch(`/api/media-proxy?url=${encodeURIComponent(photoUrl)}&meta=1`).catch(() => null);
+      const metaRes = await fetch(
+        photoUrl.startsWith('/api/media')
+          ? `${photoUrl}${photoUrl.includes('?') ? '&' : '?'}meta=1`
+          : `/api/media-proxy?url=${encodeURIComponent(photoUrl)}&meta=1`,
+      ).catch(() => null);
       if (metaRes?.ok) {
         const meta = await metaRes.json().catch(() => null);
         if (meta?.presignedUrl) return meta.presignedUrl as string;
@@ -3103,7 +3102,7 @@ function IdeaCard({
                           border: `0.5px solid ${t.separator}`, flexShrink: 0,
                         }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={bgPhoto.startsWith('data:') ? bgPhoto : `/api/media-proxy?url=${encodeURIComponent(bgPhoto)}`}
+                          <img src={resolveBrowserImageSrc(bgPhoto)}
                             alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         </div>
                         <div style={{ flex: 1 }}>
@@ -3631,7 +3630,7 @@ export function MissionContentFactory() {
 
     const seen = new Set<string>();
     return [...ctxUrls, ...profileUrls].filter((u): u is string => {
-      if (typeof u !== 'string' || !u.startsWith('http')) return false;
+      if (typeof u !== 'string' || !isUsableGalleryPhotoUrl(u)) return false;
       const base = u.split('?')[0] as string;
       if (seen.has(base)) return false;
       seen.add(base);

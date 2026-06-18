@@ -426,6 +426,14 @@ export function resolveClientMediaUrl(url: string | null | undefined): string | 
   return null;
 }
 
+/** Browser `<img>` / canvas fetch — internal /api/media direct, external via proxy when needed. */
+export function resolveBrowserImageSrc(url: string | null | undefined): string {
+  if (!url?.trim()) return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('data:')) return trimmed;
+  return resolveClientMediaUrl(trimmed) ?? `/api/media-proxy?url=${encodeURIComponent(trimmed)}`;
+}
+
 /** Feed / Mission Hub — artifact has a previewable media URL (http, /api/, /generated/, data:image). */
 export function isPublishableMediaUrl(url: string | null | undefined): boolean {
   const u = String(url ?? '').trim();

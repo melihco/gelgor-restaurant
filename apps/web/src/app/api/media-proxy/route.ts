@@ -15,9 +15,49 @@ const ALLOWED_HOSTS = [
   // Add brand domains as needed
 ];
 
+function unwrapInternalMediaPath(url: string): string | null {
+  const trimmed = url.trim();
+  if (trimmed.startsWith('/api/media')) return trimmed;
+  try {
+    let decoded = decodeURIComponent(trimmed);
+    if (decoded.startsWith('/api/media')) return decoded;
+    if (decoded.includes('%2F') || decoded.includes('%3F') || decoded.includes('%3D')) {
+      decoded = decodeURIComponent(decoded);
+      if (decoded.startsWith('/api/media')) return decoded;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
   if (!url) return NextResponse.json({ error: 'url param required' }, { status: 400 });
+
+  const internalMedia = unwrapInternalMediaPath(url);
+  if (internalMedia) {
+    try {
+      const origin = req.nextUrl.origin;
+      const mediaRes = await fetch(`${origin}${internalMedia}`, {
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!mediaRes.ok) {
+        return NextResponse.json({ error: 'internal media not found' }, { status: mediaRes.status });
+      }
+      const buf = await mediaRes.arrayBuffer();
+      return new NextResponse(buf, {
+        status: 200,
+        headers: {
+          'Content-Type': mediaRes.headers.get('content-type') ?? 'image/jpeg',
+          'Cache-Control': 'public, max-age=3600',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 502 });
+    }
+  }
 
   let parsed: URL;
   try { parsed = new URL(url); }

@@ -21,12 +21,15 @@ import {
   filterReachableGalleryUrls,
   filterUsableGalleryPhotoUrls,
   isStockGalleryPhotoUrl,
-  isUsableGalleryPhotoUrl,
   stripStockGalleryUrls,
 } from '@/lib/media-url';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
+import {
+  filterGalleryAnalysisKeys,
+  parseBrandReferenceUrls,
+} from '@/lib/gallery-upload';
 
 const GALLERY_EXCLUDE_PATTERNS = [
   'logo', 'icon', 'banner', 'footer', 'menu.', 'harita', 'map', 'franchise',
@@ -66,25 +69,6 @@ export interface GalleryContext {
  * - Enriches metadata with NLP tags
  * - Fills with sector seeds when real gallery is small
  */
-function parseBrandReferenceUrls(raw: unknown): string[] {
-  if (Array.isArray(raw)) {
-    return raw
-      .map((u) => String(u).trim())
-      .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
-  }
-  if (typeof raw === 'string' && raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map((u) => String(u).trim())
-          .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
-      }
-    } catch { /* ignore */ }
-  }
-  return [];
-}
-
 export async function fetchGalleryContext(
   workspaceId: string,
   brandCtxRaw: Record<string, unknown>,
@@ -96,9 +80,7 @@ export async function fetchGalleryContext(
   const metaRaw = (galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>;
   let refs: string[] = parseBrandReferenceUrls(brandCtxRaw.reference_image_urls);
 
-  const analysisKeys = Object.keys(metaRaw).filter(
-    (u) => u.startsWith('http') && isUsableGalleryPhotoUrl(u),
-  );
+  const analysisKeys = filterGalleryAnalysisKeys(metaRaw as Record<string, unknown>);
   let candidates = refs.length > 0 ? refs : analysisKeys;
 
   // Remove known non-photo patterns (logos, maps, etc.)

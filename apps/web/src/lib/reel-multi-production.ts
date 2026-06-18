@@ -20,6 +20,7 @@ export const RUNWAY_CLIP_COST_USD = 0.25;
 
 export function isUsableReelPhotoUrl(url: string): boolean {
   const u = url.trim();
+  if (u.startsWith('/api/media')) return true;
   if (!u.startsWith('http')) return false;
   return !CDN_HOSTS.some((h) => u.includes(h));
 }

@@ -15,6 +15,10 @@ import {
   isUsableGalleryPhotoUrl,
 } from '@/lib/media-url';
 import { stripStockGalleryUrls } from '@/lib/media-url';
+import {
+  filterGalleryAnalysisKeys,
+  parseBrandReferenceUrls,
+} from '@/lib/gallery-upload';
 
 export interface ParsedIdea {
   headline?: string;
@@ -94,24 +98,13 @@ export function parseBrandGalleryPhotos(
   galleryAnalysis: Record<string, unknown>,
 ): { candidateUrls: string[]; meta: Record<string, GalleryPhotoMeta> } {
   const meta = galleryAnalysis as Record<string, GalleryPhotoMeta>;
-  let refs: string[] = [];
-  const raw = brandCtx.reference_image_urls;
-  if (Array.isArray(raw)) {
-    refs = raw.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
-  } else if (typeof raw === 'string' && raw.trim()) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        refs = parsed.filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
-      }
-    } catch { /* ignore */ }
-  }
+  let refs = parseBrandReferenceUrls(brandCtx.reference_image_urls);
 
   refs = filterUsableGalleryPhotoUrls(
     refs.filter(u => !GALLERY_EXCLUDE_PATTERNS.some(p => u.toLowerCase().includes(p))),
   );
 
-  const analysisKeys = Object.keys(meta).filter(u => u.startsWith('http') && isUsableGalleryPhotoUrl(u));
+  const analysisKeys = filterGalleryAnalysisKeys(meta as Record<string, unknown>);
   let candidateUrls = refs.length > 0 ? refs : analysisKeys;
 
   candidateUrls = stripStockGalleryUrls(candidateUrls);
@@ -229,7 +222,7 @@ export function markSourceGalleryUsed(
   url: string | null | undefined,
   postType: PostTypeBucket,
 ): void {
-  if (!url?.startsWith('http')) return;
+  if (!url || !isUsableGalleryPhotoUrl(url)) return;
   markGalleryUrlUsedForPostType(usage, url, postType);
   const base = normalizeGalleryUrl(url);
   if (!batchUsedByType[postType].some((u) => normalizeGalleryUrl(u) === base)) {

@@ -23,6 +23,7 @@ public class ArtifactsController : ControllerBase
     private readonly NexusDbContext _db;
     private readonly IRequestContext _requestContext;
     private readonly IPermissionService _permissionService;
+    private readonly IWorkspaceMirrorService _workspaceMirror;
 
     public ArtifactsController(
         IArtifactService artifactService,
@@ -30,7 +31,8 @@ public class ArtifactsController : ControllerBase
         IHubContext<OfficeHub, IOfficeHubClient> hubContext,
         NexusDbContext db,
         IRequestContext requestContext,
-        IPermissionService permissionService)
+        IPermissionService permissionService,
+        IWorkspaceMirrorService workspaceMirror)
     {
         _artifactService = artifactService;
         _reviewService = reviewService;
@@ -38,22 +40,26 @@ public class ArtifactsController : ControllerBase
         _db = db;
         _requestContext = requestContext;
         _permissionService = permissionService;
+        _workspaceMirror = workspaceMirror;
     }
 
     // ── Helper: get or auto-create a default task for the tenant ──────────
-    private async Task<Guid> GetOrCreateDefaultTaskIdAsync(CancellationToken ct)
+    private async Task<(Guid TaskId, Guid ActorUserId)> GetOrCreateDefaultTaskIdAsync(CancellationToken ct)
     {
+        var mirror = await _workspaceMirror.EnsureAsync(_requestContext.TenantId, ct);
+        var actorUserId = _requestContext.UserId == Guid.Empty || _requestContext.UserId == Guid.Parse("00000000-0000-0000-0000-000000000001")
+            ? mirror.SystemUserId
+            : _requestContext.UserId;
+
         var taskId = await _db.TaskItems
             .Where(t => t.TenantId == _requestContext.TenantId && !t.IsDeleted)
             .Select(t => t.Id)
             .FirstOrDefaultAsync(ct);
 
-        if (taskId != Guid.Empty) return taskId;
+        if (taskId != Guid.Empty) return (taskId, actorUserId);
 
         // No task exists — create a default Brief + TaskItem so artifacts can be saved
-        var userId = _requestContext.UserId == Guid.Empty
-            ? Guid.Parse("00000000-0000-0000-0000-000000000001")
-            : _requestContext.UserId;
+        var userId = actorUserId;
         var brief = new Brief
         {
             TenantId        = _requestContext.TenantId,
@@ -79,7 +85,7 @@ public class ArtifactsController : ControllerBase
         _db.TaskItems.Add(task);
         await _db.SaveChangesAsync(ct);
 
-        return task.Id;
+        return (task.Id, actorUserId);
     }
 
     // ── POST /api/artifacts/video ──────────────────────────────────────────
@@ -98,7 +104,7 @@ public class ArtifactsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Title))
             return BadRequest(new { error = "title is required" });
 
-        var taskId = await GetOrCreateDefaultTaskIdAsync(ct);
+        var (taskId, actorUserId) = await GetOrCreateDefaultTaskIdAsync(ct);
 
         var metadata = request.Metadata != null
             ? JsonSerializer.Serialize(request.Metadata)
@@ -114,25 +120,32 @@ public class ArtifactsController : ControllerBase
             ContentUrl = request.ContentUrl,
             Metadata = metadata,
             ReviewStatus = ReviewStatus.Pending,
-            CreatedBy = _requestContext.UserId,
-            UpdatedBy = _requestContext.UserId,
+            CreatedBy = actorUserId,
+            UpdatedBy = actorUserId,
         };
 
         _db.OutputArtifacts.Add(artifact);
         await _db.SaveChangesAsync(ct);
 
         // Notify dashboard via SignalR
-        await _hubContext.NotifyNewNotification(
-            _requestContext.TenantId,
-            _requestContext.OfficeId,
-            new NewNotificationEvent
-            {
-                NotificationId = Guid.NewGuid(),
-                Type = NotificationType.TaskCompleted,
-                Title = "Reel hazır",
-                Message = $"'{request.Title}' videosu oluşturuldu, onay bekliyor.",
-                CreatedAt = DateTime.UtcNow
-            });
+        try
+        {
+            await _hubContext.NotifyNewNotification(
+                _requestContext.TenantId,
+                _requestContext.OfficeId,
+                new NewNotificationEvent
+                {
+                    NotificationId = Guid.NewGuid(),
+                    Type = NotificationType.TaskCompleted,
+                    Title = "Reel hazır",
+                    Message = $"'{request.Title}' videosu oluşturuldu, onay bekliyor.",
+                    CreatedAt = DateTime.UtcNow
+                });
+        }
+        catch
+        {
+            // Non-fatal — artifact is already persisted.
+        }
 
         return Ok(new
         {
@@ -160,7 +173,7 @@ public class ArtifactsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Title))
             return BadRequest(new { error = "title is required" });
 
-        var taskId = await GetOrCreateDefaultTaskIdAsync(ct);
+        var (taskId, actorUserId) = await GetOrCreateDefaultTaskIdAsync(ct);
 
         var metadata = request.Metadata != null
             ? JsonSerializer.Serialize(request.Metadata)
@@ -176,24 +189,42 @@ public class ArtifactsController : ControllerBase
             ContentUrl = request.ContentUrl,
             Metadata = metadata,
             ReviewStatus = ReviewStatus.Pending,
-            CreatedBy = _requestContext.UserId,
-            UpdatedBy = _requestContext.UserId,
+            CreatedBy = actorUserId,
+            UpdatedBy = actorUserId,
         };
 
         _db.OutputArtifacts.Add(artifact);
-        await _db.SaveChangesAsync(ct);
-
-        await _hubContext.NotifyNewNotification(
-            _requestContext.TenantId,
-            _requestContext.OfficeId,
-            new NewNotificationEvent
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            return StatusCode(500, new
             {
-                NotificationId = Guid.NewGuid(),
-                Type = NotificationType.TaskCompleted,
-                Title = "Creative hazır",
-                Message = $"'{request.Title}' görseli oluşturuldu, onay bekliyor.",
-                CreatedAt = DateTime.UtcNow
+                error = "Artifact could not be saved.",
+                detail = ex.InnerException?.Message ?? ex.Message,
             });
+        }
+
+        try
+        {
+            await _hubContext.NotifyNewNotification(
+                _requestContext.TenantId,
+                _requestContext.OfficeId,
+                new NewNotificationEvent
+                {
+                    NotificationId = Guid.NewGuid(),
+                    Type = NotificationType.TaskCompleted,
+                    Title = "Creative hazır",
+                    Message = $"'{request.Title}' görseli oluşturuldu, onay bekliyor.",
+                    CreatedAt = DateTime.UtcNow
+                });
+        }
+        catch
+        {
+            // Non-fatal — artifact is already persisted.
+        }
 
         return Ok(new
         {

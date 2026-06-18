@@ -1,4 +1,5 @@
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
 export const CAROUSEL_MIN_SLIDES = 3;
 export const CAROUSEL_TARGET_SLIDES = 4;
@@ -54,10 +55,10 @@ export function attachReelPhotoRefs(
   const allPhotoUrls = [
     referenceImageUrl,
     ...(additionalPhotoUrls ?? []),
-  ].filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+  ].filter((u): u is string => typeof u === 'string' && isUsableGalleryPhotoUrl(u));
   if (allPhotoUrls.length >= 2) {
     body.promptImages = allPhotoUrls.slice(0, 4);
-  } else if (typeof body.promptImage === 'string' && body.promptImage.startsWith('http')) {
+  } else if (typeof body.promptImage === 'string' && isUsableGalleryPhotoUrl(body.promptImage)) {
     /* keep single promptImage */
   } else if (referenceImageUrl) {
     body.promptImage = referenceImageUrl;

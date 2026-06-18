@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
-import { API_BASE_URL } from '@/lib/runtime-config';
+import { API_BASE_URL, getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { shouldPreserveVenuePhotos } from '@/lib/venue-photo-policy';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import {
   getSectorProfile,
   getSectorBackgroundScenePrompt,
@@ -263,7 +264,11 @@ const FETCH_HEADERS = {
 
 async function fetchUrlAsOpenAIUpload(imageUrl: string): Promise<Awaited<ReturnType<typeof toFile>> | null> {
   try {
-    const res = await fetch(imageUrl, {
+    const trimmed = imageUrl.trim();
+    const fetchTarget = trimmed.startsWith('/api/')
+      ? `${getNextjsInternalOrigin()}${trimmed}`
+      : trimmed;
+    const res = await fetch(fetchTarget, {
       signal: AbortSignal.timeout(25_000),
       headers: FETCH_HEADERS,
     });
@@ -812,7 +817,12 @@ async function enhanceWithOpenAI(
   const openai = new OpenAI({ apiKey });
 
   const file = await fetchUrlAsOpenAIUpload(referenceImageUrl);
-  if (!file) throw new Error(`Mekan fotoğrafı indirilemedi (${new URL(referenceImageUrl).hostname}). Fotoğrafı Brand Hub → Assets bölümünden yükleyin.`);
+  if (!file) {
+    const host = referenceImageUrl.trim().startsWith('http')
+      ? new URL(referenceImageUrl).hostname
+      : 'media';
+    throw new Error(`Mekan fotoğrafı indirilemedi (${host}). Fotoğrafı Brand Hub → Assets bölümünden yükleyin.`);
+  }
 
   const size = sizeFor(contentType, model) as '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
 
@@ -851,7 +861,7 @@ async function generateWithOpenAI(
 
   const validUrls = (referenceImageUrls ?? [])
     .map((u) => String(u).trim())
-    .filter((u) => u.startsWith('http') && !EXPIRING_CDN.some(h => u.toLowerCase().includes(h)));
+    .filter((u) => isUsableGalleryPhotoUrl(u) && !EXPIRING_CDN.some(h => u.toLowerCase().includes(h)));
 
   // When gallery photos are provided, attempt images.edit for venue-consistent output.
   // If edit fails (e.g. model doesn't support it), fall through to generate with prompt context.
@@ -967,17 +977,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const contentType = input.contentType ?? 'post';
   const referenceImageUrls = Array.isArray(input.referenceImageUrls)
-    ? input.referenceImageUrls.filter((u): u is string => typeof u === 'string' && u.startsWith('http'))
+    ? input.referenceImageUrls.filter((u): u is string => typeof u === 'string' && isUsableGalleryPhotoUrl(u))
     : undefined;
 
   // ── Product background replacement mode ─────────────────────────────────
   if (input.productBgMode) {
-    const validUrls = (referenceImageUrls ?? []).filter(u => {
-      if (!u.startsWith('http')) return false;
-      // Skip expired Instagram CDN URLs — they return 403
-      if (EXPIRING_CDN.some(h => u.toLowerCase().includes(h))) return false;
-      return true;
-    });
+    const validUrls = (referenceImageUrls ?? []).filter(u =>
+      isUsableGalleryPhotoUrl(u) && !EXPIRING_CDN.some(h => u.toLowerCase().includes(h)),
+    );
     if (!validUrls.length) {
       return NextResponse.json({
         error: 'Kullanılabilir fotoğraf bulunamadı. Instagram CDN URL\'leri süresi dolmuş olabilir. Brand Hub\'dan fotoğrafları yeniden yükleyin.',
@@ -1021,7 +1028,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // minimal, agency-grade event announcement overlay on top.
   // The photo background stays >60% visible — only bottom gradient + text.
   if (input.eventOverlayMode) {
-    const validOverlayUrls = (referenceImageUrls ?? []).filter(u => u.startsWith('http'));
+    const validOverlayUrls = (referenceImageUrls ?? []).filter(isUsableGalleryPhotoUrl);
     if (!validOverlayUrls.length) {
       return NextResponse.json({ error: 'eventOverlayMode requires at least one referenceImageUrl' }, { status: 400 });
     }
@@ -1180,7 +1187,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (input.enhanceMode) {
-    const validEnhanceUrls = (referenceImageUrls ?? []).filter(u => u.startsWith('http'));
+    const validEnhanceUrls = (referenceImageUrls ?? []).filter(isUsableGalleryPhotoUrl);
     if (!validEnhanceUrls.length) {
       return NextResponse.json({ error: 'enhanceMode requires at least one referenceImageUrl' }, { status: 400 });
     }

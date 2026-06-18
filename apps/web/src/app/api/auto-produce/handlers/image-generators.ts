@@ -6,6 +6,7 @@ import {
 } from '@/lib/gallery-photo-matcher';
 import { MIN_ACCEPT_SCORE } from '@/lib/gallery-photo-matcher';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import {
   buildEventCardPayload,
   gatePromptIntegrity,
@@ -155,7 +156,7 @@ export async function generateDesignedImageFromMissionCard(opts: {
   extraReferenceImageUrls?: string[];
 }): Promise<string | null> {
   const prompt = String(opts.card.image_generation_prompt ?? '').trim();
-  if (!prompt || !opts.referenceImageUrl?.startsWith('http')) return null;
+  if (!prompt || !isUsableGalleryPhotoUrl(opts.referenceImageUrl)) return null;
   try {
     const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
     const referenceImageUrls = [
@@ -212,7 +213,7 @@ export async function generateEventOverlayImage(opts: {
     ctaText?: string;
   };
 }): Promise<string | null> {
-  if (!opts.referenceImageUrl.startsWith('http')) return null;
+  if (!isUsableGalleryPhotoUrl(opts.referenceImageUrl)) return null;
   try {
     const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
     const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
@@ -400,7 +401,7 @@ export async function renderEventCardFromPayload(
 ): Promise<string | null> {
   const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
   const payload = buildEventCardPayload(prodIdea, brand, gallery, { workspaceId: opts.workspaceId });
-  if (!payload.photoUrl?.startsWith('http')) return null;
+  if (!isUsableGalleryPhotoUrl(payload.photoUrl)) return null;
   try {
     const res = await fetch(`${baseUrl}/api/generate-event-card`, {
       method: 'POST',
@@ -669,7 +670,7 @@ export async function generateRunwayReel(opts: {
       const allPhotoUrlsForBody = [
         opts.referenceImageUrl,
         ...(opts.additionalPhotoUrls ?? []),
-      ].filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+      ].filter((u): u is string => typeof u === 'string' && isUsableGalleryPhotoUrl(u));
       if (allPhotoUrlsForBody.length >= 2) {
         body.promptImages = allPhotoUrlsForBody.slice(0, 4);
       } else if (typeof body.promptImage !== 'string' && opts.referenceImageUrl) {
@@ -725,7 +726,7 @@ export async function generateRunwayReel(opts: {
       const allPhotoUrls = [
         opts.referenceImageUrl,
         ...(opts.additionalPhotoUrls ?? []),
-      ].filter((u): u is string => typeof u === 'string' && u.startsWith('http'));
+      ].filter((u): u is string => typeof u === 'string' && isUsableGalleryPhotoUrl(u));
 
       if (allPhotoUrls.length >= 2) {
         body.promptImages = allPhotoUrls.slice(0, 4);

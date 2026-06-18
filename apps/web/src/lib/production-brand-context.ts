@@ -4,6 +4,7 @@ import type {
   ProductionGalleryAnalysisEntry,
   ProductionVisualContext,
 } from '@smartagency/contracts';
+import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
 
 function parseStringList(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
@@ -86,8 +87,7 @@ export function mergeProductionBrandContextSnapshot(input: {
     contentPillars: parseStringList(brandContext.content_pillars),
     defaultCtas: parseStringList(brandContext.default_ctas),
     customRules: String(brandContext.custom_rules ?? ''),
-    referenceImageUrls: parseStringList(brandContext.reference_image_urls)
-      .filter((url) => typeof url === 'string' && url.startsWith('http')),
+    referenceImageUrls: parseBrandReferenceUrls(brandContext.reference_image_urls),
   };
   return {
     workspaceId: input.workspaceId,

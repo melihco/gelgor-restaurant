@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { computeAnalysisQuality } from '@/lib/gallery-intelligence';
+import {
+  probeGalleryPhotoAccessible,
+  resolveVisionImageUrl,
+} from '@/lib/gallery-upload';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -87,6 +92,7 @@ async function analyzePhoto(
   // DEV_COST_MODE=true overrides hero to mini (cheaper during development).
   const devCostMode = process.env.GALLERY_ANALYSIS_DEV_MODE === 'true';
   const isHero = tier === 'hero' && !devCostMode;
+  const visionUrl = await resolveVisionImageUrl(url);
   const response = await openai.chat.completions.create({
     model: isHero ? 'gpt-4o' : 'gpt-4o-mini',
     max_tokens: isHero ? 700 : 500,
@@ -98,7 +104,7 @@ async function analyzePhoto(
         role: 'user',
         content: [
           { type: 'text', text: 'Analyze this brand photo:' },
-          { type: 'image_url', image_url: { url, detail: isHero ? 'high' : 'low' } },
+          { type: 'image_url', image_url: { url: visionUrl, detail: isHero ? 'high' : 'low' } },
         ],
       },
     ],
@@ -158,7 +164,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const EPHEMERAL_CDN = /scontent-|cdninstagram\.com|fbcdn\.net|instagram\.fcdn/i;
 
   const urls = (body.assetUrls ?? []).filter(
-    (u): u is string => typeof u === 'string' && u.startsWith('http') && !EPHEMERAL_CDN.test(u),
+    (u): u is string => typeof u === 'string'
+      && isUsableGalleryPhotoUrl(u)
+      && !EPHEMERAL_CDN.test(u),
   );
 
   if (urls.length === 0) {
@@ -167,37 +175,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const openai = new OpenAI({ apiKey });
 
-  // Pre-validate URLs — skip ones that can't be fetched (broken, expired, blocked)
-  const FETCH_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'image/*,*/*;q=0.8',
-  };
-
-  async function isAccessible(url: string): Promise<boolean> {
-    // Brand website direct image URLs — skip local fetch check; OpenAI Vision fetches remotely
-    if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(url.split('?')[0] ?? url)) {
-      return true;
-    }
-    try {
-      const r = await fetch(url, {
-        method: 'HEAD',
-        signal: AbortSignal.timeout(8_000),
-        headers: FETCH_HEADERS,
-      });
-      if (r.ok) return true;
-      // Try GET if HEAD is blocked
-      const r2 = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(10_000), headers: FETCH_HEADERS });
-      const mime = r2.headers.get('content-type') ?? '';
-      return r2.ok && mime.startsWith('image/');
-    } catch {
-      return false;
-    }
-  }
-
   // Check accessibility in parallel before spending tokens on analysis
   const accessible = await Promise.all(urls.slice(0, 100).map(async (url) => ({
     url,
-    ok: await isAccessible(url),
+    ok: await probeGalleryPhotoAccessible(url),
   })));
 
   const validUrls = accessible.filter((a) => a.ok).map((a) => a.url);

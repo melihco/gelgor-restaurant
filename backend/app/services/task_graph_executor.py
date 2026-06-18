@@ -2421,6 +2421,13 @@ async def _trigger_auto_produce(
                 pis_skipped=(data.get("pis") or {}).get("skipped"),
             )
             return data
+        if resp.status_code == 409:
+            logger.info(
+                "auto_produce_deferred_conflict",
+                mission_id=str(mission_id),
+                node_key=node_key,
+            )
+            return {"produced": 0, "skipped": True, "reason": "production_in_flight"}
         else:
             err_body = resp.text[:500]
             logger.warning(

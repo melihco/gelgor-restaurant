@@ -177,6 +177,7 @@ builder.Services.AddHttpClient<IActionProviderExecutor, ActionProviderExecutor>(
     client.DefaultRequestHeaders.Add("X-API-Key", OrchestrationApiKey(configuration));
 });
 builder.Services.AddScoped<ISetupService, SetupService>();
+builder.Services.AddScoped<IWorkspaceMirrorService, WorkspaceMirrorService>();
 builder.Services.AddScoped<ITenantOperatingPolicyService, TenantOperatingPolicyService>();
 builder.Services.AddScoped<IPackageService, PackageService>();
 builder.Services.AddScoped<IIntegrationService, IntegrationService>();
