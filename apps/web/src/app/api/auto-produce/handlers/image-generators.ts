@@ -571,6 +571,7 @@ export async function generateRunwayReel(opts: {
         productType: opts.productType,
         strategicPurpose: opts.strategicPurpose,
         missionBrief: opts.tenantLearningBrief,
+        productSpotlightReel: opts.motionProfile?.productSpotlightReel,
       });
       if (multi.videoUrl) {
         console.log(`[auto-produce] Multi-reel produced (${multi.strategy}):`, multi.videoUrl.slice(0, 80));
@@ -707,6 +708,7 @@ export async function generateRunwayReel(opts: {
           location: opts.location,
           businessType: opts.businessType,
           workspaceId: opts.workspaceId,
+          productSpotlightReel: opts.motionProfile?.productSpotlightReel,
           ...(opts.agentImageEditPrompt
             ? { agentVisualDirection: opts.agentImageEditPrompt.slice(0, 400) }
             : {}),

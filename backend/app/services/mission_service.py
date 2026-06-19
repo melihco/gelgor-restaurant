@@ -302,7 +302,7 @@ async def ensure_feed_cohesion_review_persisted_node(
     existing = await db.execute(
         select(MissionTaskNode).where(
             MissionTaskNode.mission_id == mission_id,
-            MissionTaskNode.task_type == "feed_cohesion_review",
+            MissionTaskNode.node_key == "feed_cohesion_review",
         )
     )
     node = existing.scalar_one_or_none()
@@ -322,7 +322,10 @@ async def ensure_feed_cohesion_review_persisted_node(
     if not ideation_rows:
         return None
 
-    depends_on = [str(row[0]) for row in ideation_rows if row[0]]
+    depends_on = [
+        str(row[0]) for row in ideation_rows
+        if row[0] and str(row[0]) != "feed_cohesion_review"
+    ]
     phase_index = max(int(row[1] or 0) for row in ideation_rows) + 1
     node = MissionTaskNode(
         id=uuid.uuid4(),
@@ -338,8 +341,25 @@ async def ensure_feed_cohesion_review_persisted_node(
         status=TaskNodeStatus.PENDING.value,
         retry_count=0,
     )
-    db.add(node)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(node)
+            await db.flush()
+    except Exception as exc:
+        from sqlalchemy.exc import IntegrityError
+
+        if not isinstance(exc, IntegrityError):
+            raise
+        re_check = await db.execute(
+            select(MissionTaskNode).where(
+                MissionTaskNode.mission_id == mission_id,
+                MissionTaskNode.node_key == "feed_cohesion_review",
+            )
+        )
+        node = re_check.scalar_one_or_none()
+        if node:
+            return node
+        raise
     logger.info(
         "feed_cohesion_review_node_created",
         mission_id=str(mission_id),
@@ -515,6 +535,27 @@ async def list_blocking_missions(
     )
     r = await db.execute(q)
     return list(r.scalars().all())
+
+
+async def list_missions_for_hub(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    limit: int = 35,
+) -> list[Mission]:
+    """
+    Hub list: recent missions plus any proposed/approved/in_flight that would
+    fall outside the recency window (e.g. buried under rejected rows).
+    """
+    recent = await list_missions(db, workspace_id, status=None, limit=limit)
+    blocking = await list_blocking_missions(db, workspace_id)
+    seen = {m.id for m in recent}
+    merged = list(recent)
+    for mission in blocking:
+        if mission.id not in seen:
+            merged.append(mission)
+            seen.add(mission.id)
+    merged.sort(key=lambda m: m.created_at, reverse=True)
+    return merged
 
 
 async def list_missions(

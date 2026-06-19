@@ -375,6 +375,78 @@ STRICT OUTPUT RULES:
 - NEVER mention brand names or location names (these cause generation errors)
 - Describe what IS in the photo; do not invent additions`;
 
+const PRODUCT_SPOTLIGHT_DIRECTOR_ADDENDUM = `
+PRODUCT SPOTLIGHT MODE (overrides hook taxonomy):
+- NO pull-back, NO wide reveal, NO invented rustic setting or new scenery.
+- ONE camera move only: gentle dolly-in toward product label/texture (max 5% frame change).
+- Beats: macro detail shimmer (0-2s) → subtle focus on packaging (2-4s) → hold hero frame (4-5s).
+- Max 90 words. English only.`;
+
+function directorSystemPrompt(ctx: Pick<DirectorPromptContext, 'productSpotlightReel'>): string {
+  if (ctx.productSpotlightReel) {
+    return `${DIRECTOR_SYSTEM_PROMPT}\n${PRODUCT_SPOTLIGHT_DIRECTOR_ADDENDUM}`;
+  }
+  return DIRECTOR_SYSTEM_PROMPT;
+}
+
+function sanitizePromptAscii(text: string): string {
+  const CHAR_MAP: Record<string, string> = {
+    'ç': 'c', 'Ç': 'C', 'ğ': 'g', 'Ğ': 'G', 'ü': 'u', 'Ü': 'U',
+    'ş': 's', 'Ş': 'S', 'ö': 'o', 'Ö': 'O', 'ı': 'i', 'İ': 'I',
+    'â': 'a', 'Â': 'A', 'î': 'i', 'Î': 'I', 'û': 'u', 'Û': 'U',
+    '\u2014': ' - ', '\u2013': ' - ', '\u2018': "'", '\u2019': "'",
+    '\u201C': '"', '\u201D': '"', '\u2026': '...', '\u00B7': '.',
+  };
+  return text
+    .replace(/[^\x00-\x7F]/g, (ch) => CHAR_MAP[ch] ?? ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** Strip guardrail blocks appended for full-reel prompts — sequential clips add their own. */
+export function stripEmbeddedGuardrailBlocks(prompt: string): string {
+  return prompt
+    .replace(/\s*PRODUCT SPOTLIGHT TVC \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*VENUE ATMOSPHERE \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*DIGITAL EDITORIAL \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*REFERENCE FIDELITY \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*FIDELITY:[\s\S]*/i, '')
+    .trim();
+}
+
+/** Short per-photo creative core for sequential Runway clips (no guardrails). */
+export function buildDirectorPromptCreativeCore(ctx: DirectorPromptContext, maxLen = 240): string {
+  const gradingLook = ctx.brandThemeGrading?.look ?? ctx.vibeProfile?.grading?.look ?? 'warm golden';
+  const camera = ctx.cameraMotion ?? ctx.vibeProfile?.motion?.camera_movement ?? '';
+  const grounded = buildPhotoGroundedRunwayCore(ctx, gradingLook);
+
+  let core: string;
+  if (grounded) {
+    core = grounded;
+  } else {
+    const kind = ctx.contentKind in ATMOSPHERE_TEMPLATES ? ctx.contentKind : 'venue';
+    const photoDesc = ctx.photoDescription ?? ctx.headline ?? '';
+    const photoTags = [...(ctx.photoTags ?? []), ...(ctx.photoPairingKeywords ?? [])];
+    core = ATMOSPHERE_TEMPLATES[kind]?.(
+      photoDesc,
+      photoTags,
+      ctx.brandName,
+      ctx.brandLocation ?? '',
+      gradingLook,
+      ctx.caption ?? ctx.headline ?? '',
+    ) ?? `${photoDesc.slice(0, 180)} in warm cinematic light.`;
+  }
+
+  if (ctx.productSpotlightReel) {
+    core = `${core} Gentle dolly-in on product label only. No pull-back, no new setting.`
+      .replace(/\s{2,}/g, ' ');
+  } else if (camera) {
+    core = `${core} Camera: ${camera}.`;
+  }
+
+  return sanitizePromptAscii(core).slice(0, maxLen).trim();
+}
+
 export interface DirectorPromptContext {
   headline: string;
   caption: string;
@@ -409,6 +481,10 @@ export interface DirectorPromptContext {
   mood?: string;
   /** VPS image_edit_prompt / scene brief — visual direction for this clip */
   agentVisualDirection?: string;
+  /** Product TVC mode — no pull-back, dolly-in only */
+  productSpotlightReel?: boolean;
+  /** Explicit camera for this clip (dolly_in, static, etc.) */
+  cameraMotion?: string;
 }
 
 // ── Content-kind cinematic templates ─────────────────────────────────────
@@ -645,7 +721,7 @@ export async function buildDirectorPromptWithAI(
       max_tokens: 280,
       temperature: 0.65,
       messages: [
-        { role: 'system', content: DIRECTOR_SYSTEM_PROMPT },
+        { role: 'system', content: directorSystemPrompt(ctx) },
         { role: 'user', content: userPrompt },
       ],
     });

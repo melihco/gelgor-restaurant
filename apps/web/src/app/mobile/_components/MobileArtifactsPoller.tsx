@@ -31,12 +31,13 @@ export function MobileArtifactsPoller() {
   const screen = resolveClientScreen(useMobileStore((s) => s.screen));
   const tenantId = useActiveTenantId();
 
+  // MissionHub already polls missions — subscribe only to avoid duplicate listMissions calls.
   const { data: missions = [] } = useQuery({
     queryKey: ['missions', tenantId],
     queryFn: () => apiClient.listMissionsForHub(tenantId!),
     enabled: Boolean(tenantId),
-    staleTime: 25_000,
-    refetchInterval: 30_000,
+    staleTime: 45_000,
+    refetchInterval: false,
     ...mobileQueryDefaults,
   });
 

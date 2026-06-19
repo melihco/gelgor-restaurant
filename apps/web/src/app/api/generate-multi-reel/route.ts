@@ -33,12 +33,15 @@ import { getRunwayVideoService } from '@/lib/runway/services/runway-video.servic
 import {
   buildDirectorPromptWithAI,
   buildDirectorPromptTemplate,
+  buildDirectorPromptCreativeCore,
   inferContentKind,
+  type DirectorPromptContext,
 } from '@/lib/runway/builders/reel-prompt.builder';
 import {
-  applyFidelityToDirectorPrompt,
   buildSequentialClipDirectorPrompt,
 } from '@/lib/runway-reel-fidelity';
+import { applyRunwayDirectorPromptGuardrails } from '@/lib/tenant-reel-motion-seed';
+import { generateStorageKey, isR2Configured, uploadToR2 } from '@/lib/r2-storage';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -47,6 +50,8 @@ interface PhotoInput {
   url: string;
   description?: string;
   tags?: string[];
+  microMotions?: string[];
+  sceneMoment?: string;
 }
 
 interface MultiReelRequest {
@@ -67,6 +72,7 @@ interface MultiReelRequest {
   productType?: string;
   strategicPurpose?: string;
   missionBrief?: string;
+  productSpotlightReel?: boolean;
 }
 
 const RUNWAY_MAX_BYTES = 7 * 1024 * 1024;
@@ -133,26 +139,48 @@ async function generateMultiRef(
 
 async function generateSequential(
   body: MultiReelRequest,
-  directorPrompt: string,
-): Promise<{ videoUrl: string | null; clipUrls: string[]; error?: string }> {
+  promptCtx: DirectorPromptContext,
+): Promise<{ videoUrl: string | null; clipUrls: string[]; clipPrompts: string[]; error?: string }> {
   const service = getRunwayVideoService();
   const photos = body.photos.slice(0, 3); // max 3 clips for cost control (~$0.30 total)
   const clipUrls: string[] = [];
+  const clipPrompts: string[] = [];
+
+  const guardrails = {
+    workspaceId: body.workspaceId,
+    sector: body.businessType,
+    productSpotlightReel: body.productSpotlightReel,
+  };
 
   // Generate one Runway clip per photo
   for (let i = 0; i < photos.length; i++) {
     const photo = photos[i]!;
+    const creativeBrief = buildDirectorPromptCreativeCore({
+      ...promptCtx,
+      photoDescription: photo.description,
+      photoTags: photo.tags,
+      photoSceneMoment: photo.sceneMoment,
+      photoMicroMotions: photo.microMotions,
+      cameraMotion: body.cameraMotion,
+    });
+
     const subPrompt = buildSequentialClipDirectorPrompt({
-      basePrompt: directorPrompt,
       clipIndex: i,
       totalClips: photos.length,
       photo: {
         url: photo.url,
         description: photo.description,
         tags: photo.tags,
+        microMotions: photo.microMotions,
+        sceneMoment: photo.sceneMoment,
       },
       caption: body.caption,
+      cameraMotion: body.cameraMotion,
+      guardrails,
+      creativeBrief,
     });
+    clipPrompts.push(subPrompt);
+    console.log(`[multi-reel] clip ${i + 1} prompt: ${subPrompt.slice(0, 140)}…`);
 
     const base64 = await fetchAsBase64(photo.url);
     if (!base64) {
@@ -179,27 +207,68 @@ async function generateSequential(
     if (result.success && result.outputUrls[0]) {
       clipUrls.push(result.outputUrls[0]);
     } else {
-      console.warn(`[multi-reel] Clip ${i + 1} failed: ${result.error?.slice(0, 100)}`);
+      const errMsg = result.error ?? 'unknown';
+      console.warn(`[multi-reel] Clip ${i + 1} failed: ${errMsg.slice(0, 240)}`);
+      // One retry — Runway occasionally fails the first task under load.
+      await new Promise((r) => setTimeout(r, 4_000));
+      const retry = await service.generateReelVideo({
+        title: `${body.headline} — clip ${i + 1} retry`,
+        concept: body.caption,
+        platform: 'instagram',
+        contentType: 'reel',
+        promptText: subPrompt,
+        promptImage: base64,
+        ratio: (body.ratio ?? '720:1280') as '720:1280',
+        duration: 5,
+        sceneMetadata: {
+          brandName: body.brandName,
+          location: body.brandLocation,
+          workspaceId: body.workspaceId,
+        },
+      });
+      if (retry.success && retry.outputUrls[0]) {
+        clipUrls.push(retry.outputUrls[0]);
+        console.log(`[multi-reel] Clip ${i + 1} succeeded on retry`);
+      } else {
+        console.warn(`[multi-reel] Clip ${i + 1} retry failed: ${(retry.error ?? 'unknown').slice(0, 240)}`);
+      }
     }
   }
 
   if (clipUrls.length === 0) {
-    return { videoUrl: null, clipUrls: [], error: 'All Runway clips failed' };
+    return { videoUrl: null, clipUrls: [], clipPrompts, error: 'All Runway clips failed' };
   }
 
   if (clipUrls.length === 1) {
     // Only one clip succeeded — return it directly
-    return { videoUrl: clipUrls[0]!, clipUrls };
+    return { videoUrl: clipUrls[0]!, clipUrls, clipPrompts };
   }
 
   // Stitch clips with FFmpeg
   try {
     const stitched = await stitchClipsWithFFmpeg(clipUrls, body.workspaceId, body.brandName);
-    return { videoUrl: stitched, clipUrls };
+    return { videoUrl: stitched, clipUrls, clipPrompts };
   } catch (err) {
     console.warn('[multi-reel] FFmpeg stitch failed, returning first clip:', err);
-    return { videoUrl: clipUrls[0]!, clipUrls, error: 'Stitch failed, returning first clip' };
+    return { videoUrl: clipUrls[0]!, clipUrls, clipPrompts, error: 'Stitch failed, returning first clip' };
   }
+}
+
+async function runFfmpeg(
+  ffmpegBin: string,
+  args: string[],
+): Promise<void> {
+  const { spawn } = await import('child_process');
+  return new Promise((resolve, reject) => {
+    let stderr = '';
+    const ff = spawn(ffmpegBin, args);
+    ff.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    ff.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-600)}`));
+    });
+    ff.on('error', reject);
+  });
 }
 
 async function stitchClipsWithFFmpeg(
@@ -207,8 +276,7 @@ async function stitchClipsWithFFmpeg(
   workspaceId: string,
   brandName: string,
 ): Promise<string | null> {
-  const { spawn } = await import('child_process');
-  const { writeFile, unlink, mkdtemp } = await import('fs/promises');
+  const { writeFile, unlink, mkdtemp, readFile } = await import('fs/promises');
   const { join } = await import('path');
   const { tmpdir } = await import('os');
 
@@ -228,62 +296,59 @@ async function stitchClipsWithFFmpeg(
         fetchUrl = `${origin}${url}`;
       }
 
-      const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(30_000) });
+      const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(60_000) });
       if (!res.ok) throw new Error(`Failed to download clip ${i}: ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
       await writeFile(localPath, buf);
       localPaths.push(localPath);
     }
 
-    // Write FFmpeg concat list
+    // Write FFmpeg concat list — escape single quotes in paths
     const concatList = join(tmpDir, 'list.txt');
-    const listContent = localPaths.map(p => `file '${p}'`).join('\n');
+    const listContent = localPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
     await writeFile(concatList, listContent);
 
-    // Run FFmpeg concat — resolve binary from common macOS/Linux paths
     const ffmpegBin = [
-      '/opt/homebrew/bin/ffmpeg',   // Apple Silicon Mac (Homebrew default)
-      '/usr/local/bin/ffmpeg',      // Intel Mac (Homebrew)
-      '/usr/bin/ffmpeg',            // Linux
-      'ffmpeg',                     // PATH fallback
+      '/opt/homebrew/bin/ffmpeg',
+      '/usr/local/bin/ffmpeg',
+      '/usr/bin/ffmpeg',
+      'ffmpeg',
     ].find(p => {
       try { require('fs').accessSync(p); return true; } catch { return false; }
     }) ?? 'ffmpeg';
 
     const outputPath = join(tmpDir, 'stitched.mp4');
-    await new Promise<void>((resolve, reject) => {
-      const ff = spawn(ffmpegBin, [
+    console.log(`[multi-reel] FFmpeg stitch: ${localPaths.length} clips via ${ffmpegBin}`);
+
+    try {
+      await runFfmpeg(ffmpegBin, [
         '-f', 'concat', '-safe', '0', '-i', concatList,
         '-c', 'copy',
         '-y', outputPath,
       ]);
-      ff.on('close', code => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`)));
-      ff.on('error', reject);
-    });
-
-    // Upload stitched video to R2
-    const { isR2Configured, generateStorageKey, uploadImageFromUrl } = await import('@/lib/r2-storage');
-    if (!isR2Configured()) {
-      // Return local file as base64 data URI (fallback for dev without R2)
-      const { readFile } = await import('fs/promises');
-      const buf = await readFile(outputPath);
-      return `data:video/mp4;base64,${buf.toString('base64')}`;
+    } catch (copyErr) {
+      console.warn('[multi-reel] FFmpeg copy concat failed, re-encoding:', copyErr);
+      await runFfmpeg(ffmpegBin, [
+        '-f', 'concat', '-safe', '0', '-i', concatList,
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y', outputPath,
+      ]);
     }
 
-    const key = generateStorageKey(brandName, 'reel-multi', 'mp4');
-    // Read file and upload via buffer
-    // Use uploadImageFromUrl with a file:// protocol doesn't work — write temp workaround
-    const r2Result = await uploadImageFromUrl(
-      `file://${outputPath}`, // local file protocol
-      key,
-    ).catch(() => null);
+    const stitchedBuf = await readFile(outputPath);
+    if (!stitchedBuf.length) throw new Error('Stitched output empty');
 
-    if (r2Result) return r2Result.url;
+    if (!isR2Configured()) {
+      return `data:video/mp4;base64,${stitchedBuf.toString('base64')}`;
+    }
 
-    // If R2 upload failed, return first clip as fallback
-    return null;
+    const key = generateStorageKey(workspaceId || brandName, 'reel-multi', 'mp4');
+    const uploaded = await uploadToR2(stitchedBuf, key, 'video/mp4');
+    console.log(`[multi-reel] Stitched reel uploaded: ${uploaded.key} (${uploaded.size} bytes)`);
+    return uploaded.url;
   } finally {
-    // Cleanup temp files
     for (const p of localPaths) await unlink(p).catch(() => {});
     await unlink(join(tmpDir, 'list.txt')).catch(() => {});
     await unlink(join(tmpDir, 'stitched.mp4')).catch(() => {});
@@ -323,60 +388,52 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     productType: body.productType,
   });
 
+  const promptCtx: DirectorPromptContext = {
+    headline,
+    caption: caption.slice(0, 300),
+    contentKind,
+    brandName,
+    brandLocation,
+    businessType: body.businessType,
+    productType: body.productType,
+    strategicPurpose: body.strategicPurpose,
+    missionBrief: body.missionBrief,
+    photoDescription: combinedDesc.slice(0, 300),
+    photoTags: combinedTags,
+    vibeProfile: vibeProfile as DirectorPromptContext['vibeProfile'],
+    brandThemeGrading,
+    mood: body.cameraMotion ?? '',
+    agentVisualDirection: body.agentVisualDirection?.slice(0, 400),
+    productSpotlightReel: body.productSpotlightReel,
+    cameraMotion: body.cameraMotion,
+  };
+
   let directorPrompt: string;
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey) {
-    const ai = await buildDirectorPromptWithAI(
-      {
-        headline,
-        caption: caption.slice(0, 300),
-        contentKind,
-        brandName,
-        brandLocation,
-        businessType: body.businessType,
-        productType: body.productType,
-        strategicPurpose: body.strategicPurpose,
-        missionBrief: body.missionBrief,
-        photoDescription: combinedDesc.slice(0, 300),
-        photoTags: combinedTags,
-        vibeProfile: vibeProfile as Parameters<typeof buildDirectorPromptWithAI>[0]['vibeProfile'],
-        brandThemeGrading,
-        mood: body.cameraMotion ?? '',
-        agentVisualDirection: body.agentVisualDirection?.slice(0, 400),
-      },
-      openaiKey,
-    );
-    directorPrompt = ai ?? buildDirectorPromptTemplate({
-      headline, caption: caption.slice(0, 300), contentKind,
-      brandName, brandLocation,
-      photoDescription: combinedDesc.slice(0, 300),
-      photoTags: combinedTags,
-      vibeProfile: vibeProfile as Parameters<typeof buildDirectorPromptTemplate>[0]['vibeProfile'],
-      brandThemeGrading,
-    });
+    const ai = await buildDirectorPromptWithAI(promptCtx, openaiKey);
+    directorPrompt = ai ?? buildDirectorPromptTemplate(promptCtx);
   } else {
-    directorPrompt = buildDirectorPromptTemplate({
-      headline, caption: caption.slice(0, 300), contentKind,
-      brandName, brandLocation,
-      photoDescription: combinedDesc.slice(0, 300),
-      photoTags: combinedTags,
-      vibeProfile: vibeProfile as Parameters<typeof buildDirectorPromptTemplate>[0]['vibeProfile'],
-      brandThemeGrading,
-    });
+    directorPrompt = buildDirectorPromptTemplate(promptCtx);
   }
 
-  directorPrompt = applyFidelityToDirectorPrompt(directorPrompt);
+  directorPrompt = applyRunwayDirectorPromptGuardrails(directorPrompt, {
+    workspaceId: body.workspaceId,
+    sector: body.businessType,
+    productSpotlightReel: body.productSpotlightReel,
+  });
 
   console.log(`[multi-reel] strategy=${strategy}, photos=${photos.length}, kind=${contentKind}`);
   console.log(`[multi-reel] prompt: ${directorPrompt.slice(0, 120)}…`);
 
   if (strategy === 'sequential') {
-    const result = await generateSequential(body, directorPrompt);
+    const result = await generateSequential(body, promptCtx);
     return NextResponse.json({
       strategy: 'sequential',
       videoUrl: result.videoUrl,
       clipUrls: result.clipUrls,
-      promptText: directorPrompt,
+      clipPrompts: result.clipPrompts,
+      promptText: result.clipPrompts[0] ?? directorPrompt,
       photoCount: photos.length,
       error: result.error,
     });

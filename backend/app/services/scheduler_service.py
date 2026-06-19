@@ -970,6 +970,16 @@ async def _semi_auto_proposal_job() -> None:
                     brand_for_signals = await build_brand_info_fn(db, ws_id)
                     context_signals_str: str | None = None
                     if brand_for_signals:
+                        # Inject recent mission titles for diversity directive
+                        recent_titles_q = await db.execute(
+                            select(Mission.title).where(
+                                Mission.workspace_id == ws_id,
+                                Mission.status.in_(["completed", "in_progress"]),
+                            ).order_by(Mission.created_at.desc()).limit(8)
+                        )
+                        brand_for_signals._recent_mission_titles = [
+                            r[0] for r in recent_titles_q.fetchall() if r[0]
+                        ]
                         context_signals_str = build_python_context_signals(brand_for_signals)
 
                     missions = await propose_missions_for_workspace(

@@ -124,12 +124,129 @@ def _get_weekday_signal(today: date, business_type: str = "") -> str:
     return f"Bugün {day_name} — Haftanın ortası: eğitici ve değer sunan içerikler etkileşim alır."
 
 
+def _resolve_sector_pack(business_type: str, description: str = "") -> str:
+    """Map business_type to a sector pack ID (mirrors TS resolveSectorPack)."""
+    bt = business_type.lower().strip()
+    exact: dict[str, str] = {
+        "beach_club": "beach_hospitality", "beach_resort": "beach_hospitality",
+        "beach_bar": "beach_hospitality",
+        "nightclub": "nightlife", "night_club": "nightlife", "bar": "nightlife",
+        "lounge_bar": "nightlife",
+        "restaurant": "urban_restaurant", "restaurant_cafe": "urban_restaurant",
+        "cafe": "urban_restaurant", "coffee_shop": "urban_restaurant", "bistro": "urban_restaurant",
+        "hotel": "hotel", "boutique_hotel": "hotel", "resort": "hotel",
+        "beauty_salon": "wellness", "hair_salon": "wellness", "spa": "wellness",
+        "gym": "wellness", "fitness": "wellness",
+        "clinic": "clinic", "healthcare_clinic": "clinic", "dental_clinic": "clinic",
+        "local_products_shop": "local_artisan", "local_products": "local_artisan",
+        "artisan": "local_artisan", "local_food": "local_artisan",
+        "local_service_business": "professional_service", "consulting": "professional_service",
+        "retail": "retail", "ecommerce": "retail", "fashion": "retail",
+    }
+    for slug, pack_id in exact.items():
+        if bt == slug or bt.startswith(slug + "_"):
+            return pack_id
+    combined = f"{business_type} {description}".lower()
+    if any(k in combined for k in ("beach", "sahil", "plaj", "coastal")):
+        return "beach_hospitality"
+    if any(k in combined for k in ("nightclub", "gece")):
+        return "nightlife"
+    if any(k in combined for k in ("hotel", "otel", "resort")):
+        return "hotel"
+    if any(k in combined for k in ("restoran", "restaurant", "cafe", "kafe", "coffee")):
+        return "urban_restaurant"
+    if any(k in combined for k in ("beauty", "güzellik", "kuaför", "spa", "wellness")):
+        return "wellness"
+    if any(k in combined for k in ("clinic", "klinik", "sağlık", "dental")):
+        return "clinic"
+    if any(k in combined for k in ("yöresel", "yoresel", "artisan", "handcraft", "local_products")):
+        return "local_artisan"
+    if any(k in combined for k in ("consulting", "hizmet", "agency", "danışmanlık")):
+        return "professional_service"
+    return "generic"
+
+
+def _sector_pack_signals(pack_id: str, today: date, btype: str) -> list[str]:
+    """Emit sector-specific content hooks (mirrors TS sectorPackSignals)."""
+    m = today.month
+    is_summer = m in (6, 7, 8)
+    is_spring = m in (3, 4, 5)
+    is_weekend = today.weekday() in (5, 6)
+    hints: list[str] = []
+
+    if pack_id == "beach_hospitality":
+        if is_summer:
+            hints.append("Yaz zirvesi — plaj/havuz günü, serinletici kokteyl & meze içerikleri")
+        if is_spring:
+            hints.append("Sezon açılışı — yeni sezon duyurusu, ilk güneşli hafta sonu daveti")
+        if is_weekend:
+            hints.append("Gün batımı seansı — sunset DJ / golden hour manzara içeriği")
+    elif pack_id == "nightlife":
+        if is_weekend:
+            hints.append("Hafta sonu lineup — DJ kadrosu, masa rezervasyon çağrısı")
+    elif pack_id == "urban_restaurant":
+        if today.weekday() == 6:
+            hints.append("Pazar brunch menüsü daveti — aile masası, geç kahvaltı")
+        if today.weekday() == 4:
+            hints.append("Hafta sonu rezervasyon çağrısı — şefin özel menüsü")
+        hints.append("Günün tabağı / şef önerisi — story/post fırsatı")
+    elif pack_id == "hotel":
+        if is_summer:
+            hints.append("Yüksek sezon — son dakika konaklama, havuz & spa deneyimi")
+        else:
+            hints.append("Sezon dışı spa & wellness paketi — hafta sonu kaçamağı")
+    elif pack_id == "wellness":
+        if is_spring:
+            hints.append("Bahara hazırlık bakım paketi — bahar cilt/vücut bakımı")
+        if is_summer:
+            hints.append("Yaza hazırlık — vücut bakımı, bronzlaşma bakım serisi")
+    elif pack_id == "local_artisan":
+        if is_spring or is_summer:
+            hints.append("Sezon ürünleri — yeni hasat, taze stok, el yapımı koleksiyon tanıtımı")
+        if is_weekend:
+            hints.append("Hafta sonu yerel pazar — butik vitrin, sipariş al / kapıda teslim")
+    elif pack_id == "professional_service":
+        if is_weekend:
+            hints.append("Sektöre özel haftalık bilgi paylaşımı — müşteri başarı hikayesi")
+        if is_spring:
+            hints.append("Yeni çeyrek / sezon strateji ipuçları")
+    elif pack_id == "retail":
+        if is_weekend:
+            hints.append("Hafta sonu kampanyası — yeni koleksiyon vitrin")
+    elif pack_id == "clinic":
+        season = _get_current_season(today)
+        hints.append(f"{season} dönemine özel sağlık tavsiyesi")
+
+    return hints
+
+
+def _build_diversity_directive(brand: "BrandInfo") -> str:
+    """
+    Build diversity directive from recent missions (mirrors TS buildDiversityDirective).
+    Ensures scheduler paths get the same anti-repeat guidance as Hub proposals.
+    """
+    recent_missions = getattr(brand, "_recent_mission_titles", None) or []
+    if not recent_missions:
+        return ""
+    lines = [
+        "=== ÇEŞİTLİLİK DİREKTİFİ ===",
+        "Son/aktif misyonlar (tekrarlamaktan kaçın, farklı format & stratejik açı seç):",
+    ]
+    for title in recent_missions[:8]:
+        lines.append(f"- {title}")
+    lines.append("Yeni öneriler bu açılardan FARKLI olmalı; format ve içerik türünü çeşitlendir.")
+    return "\n".join(lines)
+
+
 def build_python_context_signals(brand: "BrandInfo") -> str:
     """
     Build a context-signals markdown block for use in scheduler auto-proposals.
 
     This is the Python counterpart of the TypeScript Context Signal Engine.
     Called from `_semi_auto_proposal_job` when no frontend session is available.
+
+    Sprint N: Now includes sector-specific signals and diversity directive
+    to reach parity with the TS engine used in browser sessions.
     """
     import json as _json
 
@@ -137,21 +254,22 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
     today = now.date()
     location = getattr(brand, "location", None) or getattr(brand, "city", None) or ""
     btype = brand.business_type or ""
+    description = getattr(brand, "description", "") or ""
 
     lines: list[str] = [
-        "=== BAĞLAM SİNYALLERİ (Otomatik) ===",
+        "=== BAĞLAM SİNYALLERİ (deterministik, gerçek tarih/astronomi) ===",
         f"Tarih: {today.isoformat()} | Sezon: {_get_current_season(today, location)}" +
         (f" | Lokasyon: {location}" if location else ""),
     ]
 
     # Weekday rhythm
     weekday_signal = _get_weekday_signal(today, btype)
-    lines.append(f"Haftanın günü: {weekday_signal}")
+    lines.append(f"✓doğrulanmış | Haftanın günü: {weekday_signal}")
 
     # Upcoming holidays
     holidays = _get_upcoming_holidays(today, horizon_days=21)
     if holidays:
-        lines.append("Yaklaşan tatiller/bayramlar: " + " | ".join(holidays))
+        lines.append("✓doğrulanmış | Yaklaşan tatiller/bayramlar: " + " | ".join(holidays))
     else:
         lines.append("Yaklaşan 21 günde belirgin tatil/bayram yok.")
 
@@ -166,15 +284,42 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
             key_msg = phase.get("key_message") or phase.get("content_theme") or ""
             upcoming = cal.get("upcoming_triggers") or []
             if phase_name:
-                lines.append(f"Sektör takvimi aktif fazı: {phase_name}" + (f" (Aciliyet: {urgency})" if urgency else ""))
+                lines.append(f"~çıkarım | Sektör takvimi aktif fazı: {phase_name}" + (f" (Aciliyet: {urgency})" if urgency else ""))
             if key_msg:
-                lines.append(f"Kilit mesaj: {key_msg}")
+                lines.append(f"  Kilit mesaj: {key_msg}")
             if upcoming and isinstance(upcoming, list):
                 next_triggers = [t.get("name") or str(t) for t in upcoming[:3] if t]
                 if next_triggers:
-                    lines.append("Yaklaşan sektör tetikleyicileri: " + ", ".join(next_triggers))
+                    lines.append("  Yaklaşan sektör tetikleyicileri: " + ", ".join(next_triggers))
         except Exception:
             pass
 
+    # Sector-specific signals (new — mirrors TS sector-packs.ts)
+    pack_id = _resolve_sector_pack(btype, description)
+    sector_hints = _sector_pack_signals(pack_id, today, btype)
+    if sector_hints:
+        pack_labels = {
+            "beach_hospitality": "Beach / Sahil",
+            "nightlife": "Gece Hayatı",
+            "urban_restaurant": "Restoran / Kafe",
+            "hotel": "Otel / Resort",
+            "wellness": "Wellness / Güzellik",
+            "clinic": "Klinik / Sağlık",
+            "retail": "Perakende",
+            "local_artisan": "Yerel Ürünler / Butik",
+            "professional_service": "Profesyonel Hizmet",
+            "generic": "Genel",
+        }
+        lines.append(f"~çıkarım | Sektör paketi: {pack_labels.get(pack_id, pack_id)}")
+        for hint in sector_hints:
+            lines.append(f"  → {hint}")
+
+    # Diversity directive (new — mirrors TS buildDiversityDirective)
+    diversity = _build_diversity_directive(brand)
+    if diversity:
+        lines.append("")
+        lines.append(diversity)
+
+    lines.append("")
     lines.append("Bu sinyallere dayanarak misyon önerisini tarih ve sektör dinamiklerine göre özelleştir.")
     return "\n".join(lines)

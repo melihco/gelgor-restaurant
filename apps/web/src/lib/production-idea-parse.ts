@@ -62,6 +62,23 @@ export function productionIdeaFromArtifact(
   if (!canvaFieldCopy.headline && headline) canvaFieldCopy.headline = headline;
   if (!canvaFieldCopy.cta && idea.cta) canvaFieldCopy.cta = idea.cta;
 
+  const artPc = (idea.visualProductionSpec as Record<string, unknown> | undefined)?.premiumComposition as Record<string, unknown> | undefined;
+  const artPremium = artPc && typeof artPc.compositionType === 'string'
+    ? {
+        compositionType: artPc.compositionType as string,
+        visualPriority: artPc.visualPriority as string | undefined,
+        typographyApproach: artPc.typographyApproach as string | undefined,
+        objectTreatment: artPc.objectTreatment as string | undefined,
+        graphicElements: artPc.graphicElements as string[] | undefined,
+        layoutStrategy: artPc.layoutStrategy as string | undefined,
+        compositionDescription: artPc.compositionDescription as string | undefined,
+        creativeDirection: artPc.creativeDirection as string | undefined,
+        premiumScore: artPc.premiumScore as number | undefined,
+        visualStory: artPc.visualStory as string | undefined,
+        motionApproach: artPc.motionApproach as string | undefined,
+      }
+    : undefined;
+
   return {
     id: `${missionId ?? 'idea'}-${index}`,
     missionId,
@@ -79,6 +96,7 @@ export function productionIdeaFromArtifact(
       imageEditPrompt: idea.visualProductionSpec?.imageEditPrompt ?? idea.visualDirection ?? '',
       shotType: undefined,
       includePeople: undefined,
+      premiumComposition: artPremium ?? null,
     },
     canvaFieldCopy,
     eventDetails: idea.eventDate
@@ -170,6 +188,25 @@ export function productionIdeaFromRecord(
     ? str(vpsRaw.image_edit_prompt) || str(vpsRaw.imageEditPrompt)
     : '') || firstStr(rec, 'visual_direction', 'image_prompt');
 
+  const pcRaw = vpsRaw?.premium_composition as Record<string, unknown> | undefined;
+  const premiumComposition = pcRaw && typeof pcRaw.composition_type === 'string'
+    ? {
+        compositionType: pcRaw.composition_type as string,
+        visualPriority: str(pcRaw.visual_priority) || undefined,
+        typographyApproach: str(pcRaw.typography_approach) || undefined,
+        objectTreatment: str(pcRaw.object_treatment) || undefined,
+        graphicElements: Array.isArray(pcRaw.graphic_elements)
+          ? (pcRaw.graphic_elements as string[])
+          : undefined,
+        layoutStrategy: str(pcRaw.layout_strategy) || undefined,
+        compositionDescription: str(pcRaw.composition_description) || undefined,
+        creativeDirection: str(pcRaw.creative_direction) || undefined,
+        premiumScore: typeof pcRaw.premium_score === 'number' ? pcRaw.premium_score : undefined,
+        visualStory: str(pcRaw.visual_story) || undefined,
+        motionApproach: str(pcRaw.motion_approach) || undefined,
+      }
+    : undefined;
+
   return {
     id: `${missionId ?? 'idea'}-${index}`,
     missionId,
@@ -185,6 +222,7 @@ export function productionIdeaFromRecord(
       treatment,
       selectedGalleryUrl: selectedGalleryUrl || null,
       imageEditPrompt,
+      premiumComposition: premiumComposition ?? null,
     },
     canvaFieldCopy,
     eventDetails: eventDate ? { eventDate, location: location || undefined } : undefined,
@@ -222,6 +260,21 @@ export function productionIdeaToRecord(idea: ProductionIdea): Record<string, unk
           treatment: vps.treatment,
           selected_gallery_url: vps.selectedGalleryUrl ?? undefined,
           image_edit_prompt: vps.imageEditPrompt || undefined,
+          ...(vps.premiumComposition ? {
+            premium_composition: {
+              composition_type: vps.premiumComposition.compositionType,
+              visual_priority: vps.premiumComposition.visualPriority,
+              typography_approach: vps.premiumComposition.typographyApproach,
+              object_treatment: vps.premiumComposition.objectTreatment,
+              graphic_elements: vps.premiumComposition.graphicElements,
+              layout_strategy: vps.premiumComposition.layoutStrategy,
+              composition_description: vps.premiumComposition.compositionDescription,
+              creative_direction: vps.premiumComposition.creativeDirection,
+              premium_score: vps.premiumComposition.premiumScore,
+              visual_story: vps.premiumComposition.visualStory,
+              motion_approach: vps.premiumComposition.motionApproach,
+            },
+          } : {}),
         }
       : undefined,
     selected_gallery_url: vps?.selectedGalleryUrl ?? undefined,

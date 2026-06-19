@@ -584,7 +584,8 @@ def create_content_ideation_task(
             "caption_draft_alt, caption_hook_type, caption_alt_hook_type, engagement_prediction,\n"
             "tokens_hint, hashtags, posting_time_suggestion, strategic_purpose,\n"
             "asset_recommendation, production_notes, brand_confidence, missing_questions,\n"
-            "visual_production_spec (with treatment, selected_gallery_url, image_edit_prompt, text_layers, reel_motion_spec).\n"
+            "visual_production_spec (with treatment, selected_gallery_url, image_edit_prompt, text_layers, reel_motion_spec,\n"
+            "  and premium_composition object for at least 3 premium ideas).\n"
             "Output ONLY the JSON array — no markdown, no explanation."
         ),
         agent=agent,

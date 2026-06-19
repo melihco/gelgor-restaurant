@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertWorkspaceMatchesRequestTenant } from '@/lib/tenant-production-guard';
 import {
   isBundleStaleRendering,
+  expectsRemotionStoryVideo,
   resolveGalleryPhotoForRender,
   resolvePosterUrl,
 } from '@/lib/production-bundle';
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest) {
     } as unknown as import('@/types').OutputArtifact;
 
     if (!isBundleStaleRendering(stub)) continue;
+    if (expectsRemotionStoryVideo(stub)) continue;
 
     const poster = resolveGalleryPhotoForRender(stub) || resolvePosterUrl(stub);
     if (!poster) continue;

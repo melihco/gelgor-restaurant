@@ -15,9 +15,11 @@ export async function GET(
 
   const status = req.nextUrl.searchParams.get('status');
   const limit  = req.nextUrl.searchParams.get('limit');
+  const hub    = req.nextUrl.searchParams.get('hub');
   const qs     = new URLSearchParams();
   if (status) qs.set('status', status);
   if (limit)  qs.set('limit', limit);
+  if (hub)    qs.set('hub', hub);
   const query = qs.toString() ? `?${qs}` : '';
   return proxyToCrewBackend(`/api/v1/missions/${workspaceId}${query}`);
 }

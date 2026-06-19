@@ -383,6 +383,90 @@ def _from_visual_dna(visual_dna: str, sector_data: dict) -> tuple[ThemePalette, 
     return palette, grading
 
 
+_DEFAULT_REEL_MOTION: dict = {
+    "reel_pace": "mid_tempo",
+    "reel_camera_motion": "slow_pan",
+    "reel_strategy": "sequential",
+    "product_spotlight_reel": False,
+    "prefer_pure_photo_stories": 0.72,
+    "story_audio_mode": "music_and_voice",
+}
+
+_SECTOR_REEL_MOTION_DEFAULTS: dict[str, dict] = {
+    "local_products_shop": {
+        "motion_style": "luxury",
+        "reel_pace": "slow_burn",
+        "reel_camera_motion": "dolly_in",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": True,
+        "prefer_pure_photo_stories": 0.62,
+        "story_audio_mode": "music_and_voice",
+    },
+    "handmade_product_brand": {
+        "motion_style": "luxury",
+        "reel_pace": "slow_burn",
+        "reel_camera_motion": "dolly_in",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": True,
+        "prefer_pure_photo_stories": 0.65,
+        "story_audio_mode": "music_and_voice",
+    },
+    "ecommerce_retail": {
+        "motion_style": "bold",
+        "reel_pace": "mid_tempo",
+        "reel_camera_motion": "dolly_in",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": True,
+        "prefer_pure_photo_stories": 0.55,
+        "story_audio_mode": "music_and_voice",
+    },
+    "beach_club": {
+        "motion_style": "bold",
+        "reel_pace": "mid_tempo",
+        "reel_camera_motion": "slow_pan",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": False,
+        "prefer_pure_photo_stories": 0.82,
+        "story_audio_mode": "music_only",
+    },
+    "restaurant_cafe": {
+        "reel_pace": "mid_tempo",
+        "reel_camera_motion": "dolly_in",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": False,
+        "prefer_pure_photo_stories": 0.75,
+        "story_audio_mode": "music_and_voice",
+    },
+    "agency_services": {
+        "motion_style": "minimal",
+        "reel_pace": "mid_tempo",
+        "reel_camera_motion": "static",
+        "reel_strategy": "single",
+        "product_spotlight_reel": False,
+        "prefer_pure_photo_stories": 0.38,
+        "story_audio_mode": "music_and_voice",
+    },
+    "real_estate": {
+        "motion_style": "luxury",
+        "reel_pace": "slow_burn",
+        "reel_camera_motion": "dolly_in",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": False,
+        "prefer_pure_photo_stories": 0.74,
+        "story_audio_mode": "music_and_voice",
+    },
+    "nightclub": {
+        "motion_style": "bold",
+        "reel_pace": "fast_cut",
+        "reel_camera_motion": "tracking",
+        "reel_strategy": "sequential",
+        "product_spotlight_reel": False,
+        "prefer_pure_photo_stories": 0.68,
+        "story_audio_mode": "music_only",
+    },
+}
+
+
 def _derive_motion_profile(
     sector: str,
     languages: str | None,
@@ -403,7 +487,7 @@ def _derive_motion_profile(
         "beauty_wellness": "minimal",
         "healthcare_clinic": "minimal",
         "ecommerce_retail": "bold",
-        "local_products_shop": "editorial",
+        "local_products_shop": "luxury",
         "real_estate": "luxury",
         "agency_services": "minimal",
         "hotel_resort": "luxury",
@@ -435,18 +519,21 @@ def _derive_motion_profile(
         "agency_services": ThemeMediaPolicy(require_gallery=False, fallback="logo_hero", min_match_score=40),
     }
 
-    motion_style = (existing or {}).get("motion_style") or style_map.get(sector_key, "editorial")
+    reel_defaults = {**_DEFAULT_REEL_MOTION, **_SECTOR_REEL_MOTION_DEFAULTS.get(sector_key, {})}
+    motion_style = (existing or {}).get("motion_style") or reel_defaults.get("motion_style") or style_map.get(sector_key, "editorial")
     locale = (existing or {}).get("locale") or (languages or "tr").split(",")[0].strip().lower() or "tr"
     text_transform = (existing or {}).get("text_transform") or (
         "uppercase" if locale.startswith(("tr", "de")) else "sentence"
     )
 
-    return ThemeMotionProfile(
+    profile = ThemeMotionProfile(
         motion_style=motion_style,
         locale=locale,
         text_density=(existing or {}).get("text_density") or text_overlay_density or "medium",
         text_transform=text_transform,
-        prefer_pure_photo_stories=float((existing or {}).get("prefer_pure_photo_stories") or 0.72),
+        prefer_pure_photo_stories=float(
+            (existing or {}).get("prefer_pure_photo_stories") or reel_defaults["prefer_pure_photo_stories"],
+        ),
         composition_weights=(existing or {}).get("composition_weights") or weights_by_style.get(motion_style, weights_by_style["editorial"]),
         blocked_compositions=(existing or {}).get("blocked_compositions") or blocked_by_sector.get(sector_key, []),
         media_policy=ThemeMediaPolicy.model_validate(
@@ -454,10 +541,20 @@ def _derive_motion_profile(
         ),
         audio_mood_pool=(existing or {}).get("audio_mood_pool") or ["ambient chill", "lounge jazz", "acoustic folk"],
         story_audio_mood=(existing or {}).get("story_audio_mood"),
-        story_audio_mode=(existing or {}).get("story_audio_mode") or "music_and_voice",
+        story_audio_mode=(existing or {}).get("story_audio_mode") or reel_defaults["story_audio_mode"],
         story_voice_id=(existing or {}).get("story_voice_id") or "nova",
         operator_override=bool((existing or {}).get("operator_override")),
+        reel_pace=(existing or {}).get("reel_pace") or reel_defaults["reel_pace"],
+        reel_camera_motion=(existing or {}).get("reel_camera_motion") or reel_defaults["reel_camera_motion"],
+        reel_strategy=(existing or {}).get("reel_strategy") or reel_defaults["reel_strategy"],
+        product_spotlight_reel=(
+            (existing or {}).get("product_spotlight_reel")
+            if (existing or {}).get("product_spotlight_reel") is not None
+            else reel_defaults["product_spotlight_reel"]
+        ),
     )
+
+    return profile
 
 
 # ── Main derivation function ──────────────────────────────────────────────────

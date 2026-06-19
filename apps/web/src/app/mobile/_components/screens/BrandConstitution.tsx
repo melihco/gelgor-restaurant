@@ -3289,7 +3289,7 @@ export function BrandConstitution() {
 
               const saveMotionStyle = async (style: MotionStyle) => {
                 if (!tenantId) return;
-                const base = parseMotionProfileFromTheme(currentTheme, { sector: sectorNorm });
+                const base = parseMotionProfileFromTheme(currentTheme, { sector: sectorNorm, tenantId: tenantId ?? undefined });
                 const next = applyMotionStylePreset(base, style);
                 const kitId = resolveKitForSector(sectorNorm, tenantKitSeed(tenantId ?? undefined));
                 const library = ensureBrandTemplateLibrary(currentTheme, { sector: sectorNorm, kitId, motionStyle: style, tenantId: tenantId ?? undefined });

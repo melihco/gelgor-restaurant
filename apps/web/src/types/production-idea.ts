@@ -29,6 +29,20 @@ export type VisualTreatment =
   | 'feed_text_overlay'
   | 'event_announcement';
 
+export interface PremiumCompositionSpec {
+  compositionType: string;
+  visualPriority?: string;
+  typographyApproach?: string;
+  objectTreatment?: string;
+  graphicElements?: string[];
+  layoutStrategy?: string;
+  compositionDescription?: string;
+  creativeDirection?: string;
+  premiumScore?: number;
+  visualStory?: string;
+  motionApproach?: string;
+}
+
 export interface ProductionVisualSpec {
   treatment: VisualTreatment;
   /** Gallery photo chosen by the matcher; null = generate new image. */
@@ -39,6 +53,8 @@ export interface ProductionVisualSpec {
   matchScore?: number;
   shotType?: string;
   includePeople?: boolean;
+  /** Premium Creative Composition metadata — present for art-directed ideas. */
+  premiumComposition?: PremiumCompositionSpec | null;
 }
 
 export interface ProductionEventDetails {

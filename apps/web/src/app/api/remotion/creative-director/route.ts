@@ -24,6 +24,7 @@ import {
 import {
   buildPosterCreativeDirectorPrompt,
   buildPosterCreativeDirectorUserHints,
+  type PremiumCompositionHint,
 } from '@/lib/poster-creative-director-prompt';
 import {
   buildStoryCreativeDirectorPrompt,
@@ -229,6 +230,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     retryAttempt?: number;
     /** Sprint 6 — Luxury photo gate: photo quality below luxury floor → prefer overlay-safe families. */
     preferSafeOverlay?: boolean;
+    /** Premium Creative Composition metadata from content ideation */
+    premiumComposition?: PremiumCompositionHint | null;
   };
 
   try {
@@ -264,6 +267,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     grafikerScore,
     retryAttempt,
     preferSafeOverlay,
+    premiumComposition,
   } = body;
 
   if (!headline || !brandName) {
@@ -351,6 +355,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             grafikerFeedback,
             retryAttempt,
             grafikerScore,
+            premiumComposition: premiumComposition ?? null,
           })
         : '',
       !isPosterRender && isAgencySector(String(sector ?? businessType ?? ''))
@@ -360,7 +365,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ? 'LOGISTICS: prefer location_pin, split_panel, campaign_hero stories; designed posts → editorial_date not promo_split.'
         : '',
       !isPosterRender
-        ? buildStoryCreativeDirectorUserHints(String(sector ?? businessType ?? ''))
+        ? buildStoryCreativeDirectorUserHints(String(sector ?? businessType ?? ''), premiumComposition ?? null)
         : '',
       '',
       isPosterRender
@@ -452,6 +457,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })
       : null;
 
+    let resolvedHeadlineScale = Math.max(0.75, Math.min(1.2, Number(parsed.headlineScale) || 1.0));
+    let resolvedHeadlineWeight: number = [700, 800, 900].includes(Number(parsed.headlineWeight))
+      ? Number(parsed.headlineWeight)
+      : 800;
+    const resolvedOverrides = { ...premium.layoutOverrides };
+
+    if (premiumComposition) {
+      if (premiumComposition.compositionType === 'oversized_typography') {
+        resolvedHeadlineScale = Math.max(resolvedHeadlineScale, 1.15);
+        resolvedHeadlineWeight = 900;
+        resolvedOverrides.heroUppercase = true;
+        resolvedOverrides.heroTracking = Math.max(Number(resolvedOverrides.heroTracking) || 0, 0.08);
+      }
+      if (premiumComposition.compositionType === 'luxury_minimalism') {
+        resolvedOverrides.fontPersonality = resolvedOverrides.fontPersonality || 'serif_editorial';
+        resolvedOverrides.vignette = resolvedOverrides.vignette || 'soft';
+      }
+      if (premiumComposition.compositionType === 'editorial_layout') {
+        resolvedOverrides.fontPersonality = resolvedOverrides.fontPersonality || 'serif_editorial';
+        resolvedOverrides.accentLine = resolvedOverrides.accentLine || 'above';
+      }
+      if (premiumComposition.compositionType === 'poster_design') {
+        resolvedHeadlineWeight = 900;
+        resolvedOverrides.heroUppercase = true;
+      }
+      if (premiumComposition.compositionType === 'graphic_layering') {
+        resolvedOverrides.frame = resolvedOverrides.frame || 'thin';
+      }
+    }
+
     const spec: CreativeDirectorSpec = {
       layoutFamily,
       variantIndex,
@@ -466,11 +501,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       displaySubtitle: posterCopy?.subtitle
         ?? String(parsed.displaySubtitle ?? caption?.slice(0, 60) ?? ''),
       overlayOpacity: premium.overlayOpacity,
-      headlineWeight: [700, 800, 900].includes(Number(parsed.headlineWeight))
-        ? Number(parsed.headlineWeight)
-        : 800,
-      headlineScale: Math.max(0.75, Math.min(1.2, Number(parsed.headlineScale) || 1.0)),
-      layoutOverrides: premium.layoutOverrides,
+      headlineWeight: resolvedHeadlineWeight,
+      headlineScale: resolvedHeadlineScale,
+      layoutOverrides: resolvedOverrides,
       rationale: String(parsed.rationale ?? '').slice(0, 240),
       designScore: Math.max(1, Math.min(10, Number(parsed.designScore) || 8)),
     };

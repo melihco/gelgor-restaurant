@@ -109,19 +109,79 @@ fontPersonality: brand|serif_editorial|sans_modern|display_bold
 }`;
 }
 
-export function buildStoryCreativeDirectorUserHints(sector?: string): string {
+import type { PremiumCompositionHint } from './poster-creative-director-prompt';
+export type { PremiumCompositionHint };
+
+import type { RemotionLayoutFamily } from './remotion-template-types';
+
+const PREMIUM_STORY_LAYOUT_MAP: Record<string, RemotionLayoutFamily[]> = {
+  hero_object: ['magazine_cover', 'minimal_luxury', 'split_panel'],
+  oversized_typography: ['bold_impact', 'campaign_hero', 'cinematic_center'],
+  editorial_layout: ['asymmetric_editorial', 'magazine_cover', 'editorial_left', 'mosaic_pinterest'],
+  visual_metaphor: ['cinematic_center', 'noir_editorial', 'vibe_fullscreen'],
+  luxury_minimalism: ['minimal_luxury', 'frosted_glass', 'cinematic_center'],
+  poster_design: ['bold_impact', 'campaign_hero', 'neon_night'],
+  graphic_layering: ['bento_story', 'mosaic_pinterest', 'asymmetric_editorial', 'diptych_collage'],
+};
+
+function buildPremiumStoryHints(pc: PremiumCompositionHint): string {
+  const parts: string[] = ['PREMIUM CREATIVE COMPOSITION — Canva Pro / Pinterest Editorial level required:'];
+  const families = PREMIUM_STORY_LAYOUT_MAP[pc.compositionType];
+  if (families?.length) {
+    parts.push(`Preferred layout families: ${families.join(', ')}`);
+  }
+  if (pc.compositionType === 'oversized_typography') {
+    parts.push('Typography dominates canvas (40-80%). Text IS the design. headlineScale: 1.2–1.4.');
+  }
+  if (pc.compositionType === 'hero_object') {
+    parts.push('Hero object fills center. Photo may overlap text and UI elements.');
+  }
+  if (pc.compositionType === 'luxury_minimalism') {
+    parts.push('Maximum negative space. Few elements. Serif font. Low overlay. Premium silence.');
+  }
+  if (pc.compositionType === 'editorial_layout') {
+    parts.push('Magazine cover energy. Strong grid. Editorial serif or modern sans. Clean hierarchy.');
+  }
+  if (pc.compositionType === 'poster_design') {
+    parts.push('Poster-quality bold composition. Print-worthy contrast and scale.');
+  }
+  if (pc.compositionType === 'graphic_layering') {
+    parts.push('Layer circles, lines, geometric shapes, grain textures over the photo. Modern and dynamic.');
+  }
+  if (pc.compositionType === 'visual_metaphor') {
+    parts.push('Object as metaphor — unexpected composition. Cinematic mood. Avoid standard layouts.');
+  }
+  if (pc.compositionDescription) {
+    parts.push(`Blueprint: ${pc.compositionDescription.slice(0, 300)}`);
+  }
+  if (pc.creativeDirection) {
+    parts.push(`Art direction: ${pc.creativeDirection.slice(0, 200)}`);
+  }
+  parts.push(`Target designScore: ${Math.max(9, Math.ceil((pc.premiumScore ?? 85) / 10))}/10`);
+  return parts.join('\n');
+}
+
+export function buildStoryCreativeDirectorUserHints(
+  sector?: string,
+  premiumComposition?: PremiumCompositionHint | null,
+): string {
+  const parts: string[] = [];
+
+  if (premiumComposition) {
+    parts.push(buildPremiumStoryHints(premiumComposition));
+    parts.push('');
+  }
+
   const s = String(sector ?? '').toLowerCase();
   if (/beauty|güzellik|guzellik|spa|wellness|salon|estetik/.test(s)) {
-    return 'Sector hint: beauty — prefer Frosted Quote Card, Before/After Diptych, or Magazine Cover Drop archetypes.';
+    parts.push('Sector hint: beauty — prefer Frosted Quote Card, Before/After Diptych, or Magazine Cover Drop archetypes.');
+  } else if (/beach|marina|pool|yacht|plaj/.test(s)) {
+    parts.push('Sector hint: beach — prefer Cinematic Full Bleed or Split Feature Panel archetypes.');
+  } else if (/night|club|dj|rooftop/.test(s)) {
+    parts.push('Sector hint: nightlife — prefer Neon Night Promo or Event Ticket Stub archetypes.');
+  } else if (/nakliyat|logistics|lojistik|freight/.test(s)) {
+    parts.push('Sector hint: logistics — prefer Location Pin or Split Feature trust panel; no promo hero unless hard discount.');
   }
-  if (/beach|marina|pool|yacht|plaj/.test(s)) {
-    return 'Sector hint: beach — prefer Cinematic Full Bleed or Split Feature Panel archetypes.';
-  }
-  if (/night|club|dj|rooftop/.test(s)) {
-    return 'Sector hint: nightlife — prefer Neon Night Promo or Event Ticket Stub archetypes.';
-  }
-  if (/nakliyat|logistics|lojistik|freight/.test(s)) {
-    return 'Sector hint: logistics — prefer Location Pin or Split Feature trust panel; no promo hero unless hard discount.';
-  }
-  return '';
+
+  return parts.join('\n');
 }

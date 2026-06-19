@@ -2948,23 +2948,37 @@ export function PlatformFeed() {
                 }}>✕</button>
               </div>
 
-              {/* Story content — video or image (contain = full frame visible) */}
+              {/* Story content — full-bleed 9:16 cover (IG-style, no side bars) */}
               {(() => {
                 const art = storyArtifacts[storyViewIdx!]!;
                 const vid = resolveStoryVideo(art);
                 const poster = resolveStoryPoster(art);
                 const mediaStyle: React.CSSProperties = {
-                  position: 'relative',
-                  width: '100%', height: '100%',
-                  maxWidth: '100%', maxHeight: '100%',
-                  objectFit: 'contain', objectPosition: 'center',
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
                 };
                 return (
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    overflow: 'hidden',
-                  }}>
+                  <>
+                    {poster ? (
+                      <div
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          inset: -24,
+                          backgroundImage: `url(${poster})`,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          filter: 'blur(36px) brightness(0.35)',
+                          transform: 'scale(1.08)',
+                        }}
+                      />
+                    ) : null}
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      overflow: 'hidden',
+                    }}>
                     {vid ? (
                       <StoryPreviewVideo
                         key={vid}
@@ -2987,6 +3001,7 @@ export function PlatformFeed() {
                       <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={nextStory} aria-hidden />
                     </div>
                   </div>
+                  </>
                 );
               })()}
             </div>

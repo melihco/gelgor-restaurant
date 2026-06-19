@@ -333,6 +333,39 @@ async def _load_recent_mission_context(
     except Exception:
         pass
 
+    # Weekly themes from previous strategy executions — prevents the strategist
+    # from re-proposing the same thematic angle at proposal time.
+    try:
+        import re as _re
+        from app.models.task import TaskNode as _TaskNode
+        r3 = await db.execute(
+            _select(_TaskNode.output_summary)
+            .where(
+                _TaskNode.workspace_id == workspace_id,
+                _TaskNode.task_type == "content_strategy",
+                _TaskNode.status == "completed",
+                _TaskNode.completed_at >= cutoff,
+                _TaskNode.output_summary.isnot(None),
+            )
+            .order_by(_TaskNode.completed_at.desc())
+            .limit(8)
+        )
+        themes: list[str] = []
+        for (summary,) in r3.all():
+            if not summary:
+                continue
+            m = _re.search(r'"weekly_theme"\s*:\s*"([^"]{5,120})"', summary)
+            if m and m.group(1) not in themes:
+                themes.append(m.group(1))
+        if themes:
+            lines.append("### DAHA ÖNCE KULLANILAN HAFTALIK TEMALAR (YENİ TEMA SEÇ):")
+            for t in themes:
+                lines.append(f"- {t}")
+            lines.append("→ Yeni öneri farklı bir tematik çerçeve kullanmalı.")
+            lines.append("")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 

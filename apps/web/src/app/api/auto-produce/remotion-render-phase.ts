@@ -44,6 +44,18 @@ import { buildInternalProductionHeaders } from '@/lib/tenant-production-guard';
 
 // ─── Candidate types ──────────────────────────────────────────────────────────
 
+export type PremiumCompositionMeta = {
+  compositionType: string;
+  visualPriority?: string;
+  typographyApproach?: string;
+  objectTreatment?: string;
+  graphicElements?: string[];
+  layoutStrategy?: string;
+  compositionDescription?: string;
+  creativeDirection?: string;
+  premiumScore?: number;
+};
+
 export type StoryCandidate = {
   headline: string;
   caption: string;
@@ -67,6 +79,8 @@ export type StoryCandidate = {
   storySequenceRole?: StorySequenceRole;
   /** Gallery match score (0–100). Used by the luxury photo quality gate. */
   galleryMatchScore?: number | null;
+  /** Premium Creative Composition metadata from ideation */
+  premiumComposition?: PremiumCompositionMeta | null;
 };
 
 export type PostCandidate = {
@@ -80,6 +94,8 @@ export type PostCandidate = {
   mood?: string;
   templateUseCase?: string;
   event_details?: Record<string, string>;
+  /** Premium Creative Composition metadata from ideation */
+  premiumComposition?: PremiumCompositionMeta | null;
 };
 
 // ─── Context interface ────────────────────────────────────────────────────────
@@ -155,6 +171,7 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
 
   // Collect produced headlines for sibling similarity check in rubric.
   const producedHeadlines: string[] = [];
+  const renderTasks: Promise<void>[] = [];
 
   for (let ci = 0; ci < creatomateStoryCandidates.length; ci++) {
     const candidate = creatomateStoryCandidates[ci]!;
@@ -354,9 +371,10 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       kenBurnsIntensity: motionLaneSpec.kenBurnsIntensity,
       // Sprint 6 — Luxury photo quality gate: signal CD to prefer overlay-safe family.
       preferSafeOverlay: photoQualityBelowLuxuryFloor || undefined,
+      premiumComposition: candidate.premiumComposition ?? undefined,
     };
 
-    void (async () => {
+    renderTasks.push((async () => {
       const baseRenderBody = {
         compositionId,
         brandTemplateLocked: storyPick.libraryLocked || templateLibrary.locked,
@@ -475,21 +493,8 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
 
       if (grafikerScore != null && grafikerScore < GRAFIKER_HARD_FLOOR) {
         console.warn(
-          `[auto-produce] Story Grafiker HARD FLOOR: ${grafikerScore}/10 — gallery still: "${candidate.headline.slice(0, 40)}"`,
+          `[auto-produce] Story Grafiker below hard floor (${grafikerScore}/10) — attaching video anyway: "${candidate.headline.slice(0, 40)}"`,
         );
-        await ctx.nexusClient.markBundleFailed({
-          workspaceId: ctx.workspaceId,
-          artifactId: existingArtifactId,
-          error: `Grafiker hard floor ${grafikerScore}/10 — render discarded`,
-          posterUrl: candidate.photoUrl,
-          contentType: 'instagram_story',
-          pipeline: 'remotion_story',
-          slotRole: candidate.slotRole,
-          attachGalleryStill: true,
-          toFeedPreviewUrl,
-          probeMediaUrl,
-        });
-        return;
       }
 
       if (grafikerScore != null && !grafikerPass) {
@@ -518,6 +523,11 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         grafikerPass,
         renderMs: data.durationMs,
         extraMeta: {
+          templateId: finalTemplateId,
+          storyTemplateId: finalTemplateId,
+          kitId: production.kitId,
+          library_slot_key: production.slot.key,
+          brandTemplateLocked: storyPick.libraryLocked || templateLibrary.locked,
           rubric_score: rubric.score,
           rubric_pass: rubric.pass,
           rubric_caution: rubric.caution,
@@ -550,9 +560,17 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         toFeedPreviewUrl,
         probeMediaUrl,
       });
-    });
+    }));
 
     console.log(`[auto-produce] Remotion ${compositionId} (${templateId}) triggered: "${candidate.headline.slice(0,40)}"`);
+  }
+
+  if (renderTasks.length > 0) {
+    const settled = await Promise.allSettled(renderTasks);
+    const failed = settled.filter((r) => r.status === 'rejected').length;
+    if (failed > 0) {
+      console.warn(`[auto-produce] Remotion story phase: ${failed}/${renderTasks.length} render task(s) rejected`);
+    }
   }
 }
 
@@ -669,6 +687,7 @@ export async function runRemotionPostPhase(ctx: RemotionRenderPhaseContext): Pro
       logoUrl: resolveSlotLogoForRender(brandLogoUrl, production.slot),
       sector: brandBusinessType,
       businessType: brandBusinessType,
+      premiumComposition: candidate.premiumComposition ?? undefined,
     }, brandTokens, {
       headingFont: posterSlotTypo.headingFont,
       bodyFont: posterSlotTypo.bodyFont,
@@ -704,7 +723,7 @@ export async function runRemotionPostPhase(ctx: RemotionRenderPhaseContext): Pro
           contentType: 'instagram_post',
           pipeline: 'remotion_poster',
           slotRole: 'designed_post',
-          attachGalleryStill: false,
+          attachGalleryStill: true,
           toFeedPreviewUrl,
           probeMediaUrl,
         });
@@ -732,7 +751,7 @@ export async function runRemotionPostPhase(ctx: RemotionRenderPhaseContext): Pro
           contentType: 'instagram_post',
           pipeline: 'remotion_poster',
           slotRole: 'designed_post',
-          attachGalleryStill: false,
+          attachGalleryStill: true,
           toFeedPreviewUrl,
           probeMediaUrl,
         });

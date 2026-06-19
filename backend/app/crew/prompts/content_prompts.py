@@ -253,6 +253,68 @@ From {count} concepts, aim for this distribution:
 - When count ≥ 5 (standard weekly mission): deliver EXACTLY — 2 story + 2 post + 1 reel (5 total).
 - Otherwise: ~40%% post / ~30%% story / ~20%% reel / ~10%% carousel; minimum 1 reel with reel_motion_spec.
 
+🎨 PREMIUM CREATIVE COMPOSITION RULE (MANDATORY — at least 3 of {count}):
+At least 3 ideas MUST be Premium Creative Compositions — portfolio-quality, art-directed designs.
+For these ideas, think like an Art Director at a creative agency, NOT a Social Media Manager.
+The goal is NOT engagement-only. The goal is creating visually exceptional content that looks
+professionally art directed — comparable to Canva Pro templates, Pinterest editorial designs,
+luxury brand campaigns, and creative advertising agency portfolios.
+
+Premium ideas MUST set treatment to "feed_text_overlay" (posts) or "story_event" (stories) —
+NEVER "pure_photo" — because these require designed composition with typography and layout.
+
+PREMIUM COMPOSITION TYPES — pick from these visual principles for each premium idea:
+
+  HERO_OBJECT:
+    Large isolated product/object as visual focus. Object may overlap text and layout elements.
+    Best for: product_highlight, menu_share. Shot: close-up or flat_lay.
+
+  OVERSIZED_TYPOGRAPHY:
+    Typography occupies 40-80%% of the canvas. Text acts as a background design element.
+    Best for: campaign_offer, event_announcement. Bold display or condensed impact fonts.
+
+  EDITORIAL_LAYOUT:
+    Magazine-style composition. Strong hierarchy. Minimal but premium typography.
+    Best for: behind_the_scenes, educational_post. Clean grid, generous margins.
+
+  VISUAL_METAPHOR:
+    Object is used creatively to communicate the message. Avoid standard promotional layouts.
+    Best for: social_proof, brand storytelling. Unexpected composition.
+
+  LUXURY_MINIMALISM:
+    Few elements. Large negative space. Premium feeling.
+    Best for: product_highlight, daily_story. Restrained palette, serif fonts.
+
+  POSTER_DESIGN:
+    Create poster-quality concepts rather than standard social media posts.
+    Best for: event_announcement, campaign_offer. Bold, graphic, high contrast.
+
+  GRAPHIC_LAYERING:
+    Use circles, lines, geometric elements, grain, paper textures, gradients, abstract shapes.
+    Best for: educational_post, lead_generation. Modern, layered, dynamic.
+
+For each Premium Composition idea, include a "premium_composition" object INSIDE visual_production_spec:
+  - "composition_type": "hero_object" | "oversized_typography" | "editorial_layout" | "visual_metaphor" | "luxury_minimalism" | "poster_design" | "graphic_layering"
+  - "visual_story": what the composition communicates visually (1 sentence)
+  - "composition_description": the art-directed layout blueprint (2-3 sentences describing exact placement of photo, text, shapes)
+  - "creative_direction": specific art direction notes for the renderer
+  - "visual_priority": "hero_object" | "typography" | "negative_space" | "metaphor" — what should dominate the canvas
+  - "typography_approach": how text functions — "background_element" | "minimal_overlay" | "bold_display" | "editorial_serif" | "condensed_impact" | "whisper_light"
+  - "object_treatment": how the hero object is handled — "isolated_center" | "overlapping_text" | "oversized_bleed" | "cropped_dramatic" | "floating_shadow" | "none"
+  - "graphic_elements": list of graphic devices to use — e.g. ["circle_frame", "accent_line", "grain_texture", "gradient_wash", "geometric_shape", "paper_texture"]
+  - "layout_strategy": "asymmetric" | "centered_minimal" | "magazine_grid" | "poster_stack" | "split_editorial" | "full_bleed_type"
+  - "motion_approach": if reel — how motion serves the composition; if still — "static"
+  - "premium_score": 1-100 quality confidence — target 80+ for all premium ideas
+
+For NON-premium ideas, omit the "premium_composition" field entirely (or set to null).
+
+PREMIUM QUALITY CHECKLIST (verify before outputting each premium idea):
+  ✓ Would this design look at home in a Canva Pro premium template gallery?
+  ✓ Does it have a clear visual hierarchy with intentional negative space?
+  ✓ Is the typography treatment deliberate (not just slapping text on a photo)?
+  ✓ Could this be printed as a poster and still look premium?
+  ✓ Is the composition_type clearly reflected in the image_edit_prompt?
+
 ⚠️ STORY TEXT OVERLAY RULE:
 Stories are FULL-SCREEN 9:16 visual experiences — the photo IS the content.
 - For every 3 stories produced, at most 1 may have text overlay ("story_event" treatment).

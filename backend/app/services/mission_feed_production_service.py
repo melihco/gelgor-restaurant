@@ -135,6 +135,8 @@ async def prepare_feed_production(
     if not ideation_nodes:
         raise FeedProductionError(400, "Bu misyonda content_ideation görevi yok.")
     await ensure_feed_cohesion_review_persisted_node(db, mission_id, workspace_id)
+    # Reload after ensure — rollback on duplicate insert invalidates cached node rows.
+    nodes = await load_mission_nodes(db, mission_id)
     return mission, req, nodes
 
 
@@ -227,6 +229,7 @@ async def kick_feed_production(
     body: MissionFeedProductionRequest | None = None,
 ) -> dict[str, Any]:
     """Non-blocking: schedule background ensure pipeline."""
+    from app.debug_session_log import debug_log
 
     _, _, nodes = await prepare_feed_production(
         db, workspace_id, mission_id, body,
@@ -235,6 +238,18 @@ async def kick_feed_production(
     has_ideation_output = any(
         n.status == TaskNodeStatus.COMPLETED.value and node_has_output(n)
         for n in ideation_nodes
+    )
+    debug_log(
+        "H3",
+        "mission_feed_production_service.py:kick_feed_production",
+        "kick prepared",
+        {
+            "mission_id": str(mission_id),
+            "workspace_id": str(workspace_id),
+            "ideation_count": len(ideation_nodes),
+            "has_ideation_output": has_ideation_output,
+            "node_keys": [n.node_key for n in nodes],
+        },
     )
     if not has_ideation_output:
         raise FeedProductionError(
@@ -334,7 +349,22 @@ async def ensure_mission_feed_production(
         mission_type,
         hub_production_package=str(perf.get("hub_production_package") or ""),
     )
-    if _mission_feed_package_complete(perf, package_total=package_total):
+    from app.debug_session_log import debug_log
+
+    package_complete = _mission_feed_package_complete(perf, package_total=package_total)
+    debug_log(
+        "H2",
+        "mission_feed_production_service.py:ensure_mission_feed_production",
+        "ensure entry",
+        {
+            "mission_id": str(mission_id),
+            "package_complete": package_complete,
+            "package_total": package_total,
+            "prior_produced": _mission_feed_publish_ready_count(perf),
+            "hub_package": str(perf.get("hub_production_package") or ""),
+        },
+    )
+    if package_complete:
         return
 
     ideation_raw = await _load_content_ideation_nodes(mission_id)
@@ -345,6 +375,16 @@ async def ensure_mission_feed_production(
         mission_type=mission_type or None,
     )
     if not ideas:
+        debug_log(
+            "H3",
+            "mission_feed_production_service.py:ensure_mission_feed_production",
+            "skip no ideas",
+            {
+                "mission_id": str(mission_id),
+                "ideation_nodes": len(ideation_raw),
+                "calendar_nodes": len(calendar_raw),
+            },
+        )
         logger.warning(
             "ensure_mission_feed_skip_no_ideation",
             mission_id=str(mission_id),
@@ -368,6 +408,18 @@ async def ensure_mission_feed_production(
             node_key=node_key,
             output_summary=summary,
             force=False,
+        )
+        debug_log(
+            "H4",
+            "mission_feed_production_service.py:ensure_mission_feed_production",
+            "pipeline result",
+            {
+                "mission_id": str(mission_id),
+                "produced": int((produce_data or {}).get("produced") or 0),
+                "skipped": bool((produce_data or {}).get("skipped")),
+                "reason": str((produce_data or {}).get("reason") or ""),
+                "withheld": int((produce_data or {}).get("withheld") or 0),
+            },
         )
         if produce_data and produce_data.get("skipped"):
             reason = str(produce_data.get("reason") or "")

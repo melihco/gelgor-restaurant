@@ -356,6 +356,7 @@ export async function fetchProductionContext(
     sector: brandBusinessType,
     languages: raw.languages ?? undefined,
     textOverlayDensity: typographyDensity,
+    tenantId: workspaceId,
   });
 
   // ── Mission brief ──────────────────────────────────────────────────────

@@ -78,6 +78,78 @@ heroScale: 0.92–1.08; accentLine: above|left_bar for hierarchy
 }`;
 }
 
+export interface PremiumCompositionHint {
+  compositionType: string;
+  visualPriority?: string;
+  typographyApproach?: string;
+  objectTreatment?: string;
+  graphicElements?: string[];
+  layoutStrategy?: string;
+  compositionDescription?: string;
+  creativeDirection?: string;
+  premiumScore?: number;
+}
+
+const PREMIUM_POSTER_LAYOUT_MAP: Record<string, PosterLayoutFamily[]> = {
+  hero_object: ['restaurant_feature', 'editorial_date'],
+  oversized_typography: ['promo_split', 'event_masthead'],
+  editorial_layout: ['editorial_date', 'restaurant_feature'],
+  visual_metaphor: ['editorial_date', 'art_deco'],
+  luxury_minimalism: ['gala_invite', 'editorial_date', 'restaurant_feature'],
+  poster_design: ['event_masthead', 'promo_split', 'art_deco'],
+  graphic_layering: ['editorial_date', 'promo_split'],
+};
+
+const PREMIUM_FONT_MAP: Record<string, string> = {
+  background_element: 'condensed_impact',
+  minimal_overlay: 'serif_editorial',
+  bold_display: 'condensed_impact',
+  editorial_serif: 'serif_editorial',
+  condensed_impact: 'condensed_impact',
+  whisper_light: 'serif_editorial',
+};
+
+export function buildPremiumPosterHints(pc: PremiumCompositionHint): string {
+  const parts: string[] = ['PREMIUM CREATIVE COMPOSITION — art-director-level output required:'];
+  const families = PREMIUM_POSTER_LAYOUT_MAP[pc.compositionType];
+  if (families?.length) {
+    parts.push(`Preferred layout families: ${families.join(', ')}`);
+  }
+  if (pc.compositionType === 'oversized_typography') {
+    parts.push('Typography MUST dominate 40-80% of canvas. Text as design element, not just label.');
+    parts.push('headlineScale: 1.15–1.35, headlineWeight: 900, heroUppercase: true.');
+  }
+  if (pc.compositionType === 'hero_object') {
+    parts.push('Hero object must be the visual focus — large, isolated, may overlap text elements.');
+    parts.push('Reduce overlayOpacity to let the product shine. Object-first composition.');
+  }
+  if (pc.compositionType === 'luxury_minimalism') {
+    parts.push('Few elements. Large negative space. Premium feeling. Serif fonts preferred.');
+    parts.push('overlayOpacity: low (0.15–0.35). gradientStart: high (0.7+). Restrained palette.');
+  }
+  if (pc.compositionType === 'editorial_layout') {
+    parts.push('Magazine-style grid. Strong type hierarchy. Clean margins. Editorial serif font.');
+  }
+  if (pc.compositionType === 'poster_design') {
+    parts.push('Poster-quality bold composition. High contrast. Graphic confidence. Print-worthy.');
+  }
+  if (pc.compositionType === 'graphic_layering') {
+    parts.push('Layer geometric elements, grain textures, gradients, abstract shapes over the photo.');
+  }
+  if (pc.compositionDescription) {
+    parts.push(`Composition blueprint: ${pc.compositionDescription.slice(0, 300)}`);
+  }
+  if (pc.creativeDirection) {
+    parts.push(`Art direction: ${pc.creativeDirection.slice(0, 200)}`);
+  }
+  const font = PREMIUM_FONT_MAP[pc.typographyApproach ?? ''];
+  if (font) {
+    parts.push(`fontPersonality: ${font}`);
+  }
+  parts.push(`Target designScore: ${Math.max(9, Math.ceil((pc.premiumScore ?? 85) / 10))}/10`);
+  return parts.join('\n');
+}
+
 export function buildPosterCreativeDirectorUserHints(input: {
   sector?: string;
   businessType?: string;
@@ -87,9 +159,15 @@ export function buildPosterCreativeDirectorUserHints(input: {
   grafikerFeedback?: string;
   retryAttempt?: number;
   grafikerScore?: number;
+  premiumComposition?: PremiumCompositionHint | null;
 }): string {
   const sector = String(input.sector ?? input.businessType ?? '').toLowerCase();
   const lines: string[] = [];
+
+  if (input.premiumComposition) {
+    lines.push(buildPremiumPosterHints(input.premiumComposition));
+    lines.push('');
+  }
 
   if (/nakliyat|nakliye|lojistik|logistics|freight|taşımac|tasimac|transport|kargo/.test(sector)) {
     lines.push(

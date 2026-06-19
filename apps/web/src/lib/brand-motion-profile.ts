@@ -13,6 +13,7 @@ import { resolveStoryAudioMood } from './story-audio-mood';
 import { resolveStoryTtsVoiceId, storyVoiceLabel } from './story-voice-catalog';
 import { resolveTemplateId } from './remotion-template-registry';
 import { MOTION_STYLE_REEL_DEFAULTS } from './brand-reel-motion-profile';
+import { applySectorReelMotionDefaults } from './sector-reel-motion-standard';
 
 export type MotionStyle = 'minimal' | 'editorial' | 'luxury' | 'bold' | 'playful';
 export type TextDensity = 'minimal' | 'medium' | 'dense';
@@ -91,6 +92,8 @@ export interface BrandMotionProfile {
   reelCameraMotion?: string;
   /** Force single | sequential | multi_ref when set */
   reelStrategy?: RunwayReelStrategy | 'auto';
+  /** TVC-style Runway reels on real product gallery frames (tenant seed or explicit) */
+  productSpotlightReel?: boolean;
 }
 
 export const STORY_COMPOSITION_IDS: StoryCompositionId[] = [
@@ -313,6 +316,7 @@ export function deriveMotionProfile(options: {
     reelPace: existing?.reelPace,
     reelCameraMotion: existing?.reelCameraMotion,
     reelStrategy: existing?.reelStrategy,
+    productSpotlightReel: existing?.productSpotlightReel,
   };
 
   return normalizeMotionProfile(derived);
@@ -353,21 +357,30 @@ function parseRawMotionProfile(raw: Record<string, unknown> | null | undefined):
     reelStrategy: reelStrategyRaw === 'single' || reelStrategyRaw === 'sequential' || reelStrategyRaw === 'multi_ref'
       ? reelStrategyRaw
       : undefined,
+    productSpotlightReel: (raw.product_spotlight_reel != null || raw.productSpotlightReel != null)
+      ? Boolean(raw.product_spotlight_reel ?? raw.productSpotlightReel)
+      : undefined,
   };
 }
 
 export function parseMotionProfileFromTheme(
   theme: Record<string, unknown> | null | undefined,
-  fallback?: { sector?: string; languages?: unknown; textOverlayDensity?: TextDensity },
+  fallback?: {
+    sector?: string;
+    languages?: unknown;
+    textOverlayDensity?: TextDensity;
+    tenantId?: string;
+  },
 ): BrandMotionProfile {
   const rawRecord = (theme?.motion_profile ?? theme?.motionProfile) as Record<string, unknown> | undefined;
   const parsed = parseRawMotionProfile(rawRecord);
-  return deriveMotionProfile({
+  const derived = deriveMotionProfile({
     sector: fallback?.sector,
     languages: fallback?.languages,
     textOverlayDensity: fallback?.textOverlayDensity,
     existing: parsed,
   });
+  return applySectorReelMotionDefaults(fallback?.sector, derived);
 }
 
 export function normalizeMotionProfile(profile: BrandMotionProfile): BrandMotionProfile {
@@ -439,6 +452,7 @@ export function motionProfileToThemeJson(profile: BrandMotionProfile): Record<st
     reel_pace: profile.reelPace ?? 'auto',
     reel_camera_motion: profile.reelCameraMotion ?? 'auto',
     reel_strategy: profile.reelStrategy ?? 'auto',
+    product_spotlight_reel: profile.productSpotlightReel ?? false,
   };
 }
 

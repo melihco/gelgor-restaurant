@@ -11,6 +11,18 @@ import { mobileQueryDefaults } from './mobile-query';
 /** Default list cap — full history on Outputs uses a higher screen-specific limit. */
 export const MOBILE_ARTIFACT_LIST_LIMIT = 100;
 
+/** Shared pool for mission hub, nav badges, and detail sheets — must match MobileArtifactsPoller on missions screen. */
+export const MOBILE_ARTIFACT_MISSION_POOL_LIMIT = MOBILE_ARTIFACT_LIST_LIMIT;
+
+export function invalidateMobileArtifactPool(
+  queryClient: { invalidateQueries: (opts: { queryKey: readonly unknown[] }) => void },
+  tenantId: string,
+) {
+  queryClient.invalidateQueries({
+    queryKey: mobileArtifactsQueryKey(tenantId, { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT }),
+  });
+}
+
 /** Feed first paint — small payload for fast TTFB. */
 export const MOBILE_ARTIFACT_FEED_INITIAL = 40;
 
@@ -120,8 +132,13 @@ export function mobileArtifactsPollIntervalMs(
   }
 
   if (screen === 'missions' || screen === 'mission-factory') {
+    const deduped = dedupeProductionBundles(artifacts ?? []);
+    const hasRendering = deduped.some(
+      (a) => isBundleRendering(a) && !resolveStoryVideoUrl(a),
+    );
+    if (hasRendering) return 12_000;
     const backoffStep = Math.min(Math.floor(unchangedPolls / 3), 3);
-    return Math.min(12_000 * Math.pow(2, backoffStep), 60_000);
+    return Math.min(20_000 * Math.pow(2, backoffStep), 90_000);
   }
 
   if (screen === 'outputs') return 60_000;

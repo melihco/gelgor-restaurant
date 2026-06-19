@@ -419,6 +419,7 @@ export function StoryCoverImage({ src, style }: {
   src: string;
   style?: React.CSSProperties;
 }) {
+  const { objectFit: _ignored, ...rest } = style ?? {};
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -428,7 +429,7 @@ export function StoryCoverImage({ src, style }: {
       style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%',
         objectFit: 'cover', objectPosition: 'center',
-        ...style,
+        ...rest,
       }}
     />
   );
@@ -442,14 +443,26 @@ export function StoryPreviewVideo({ src, poster, style }: {
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [videoFailed, setVideoFailed] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+
+  useEffect(() => {
+    setVideoFailed(false);
+    setVideoReady(false);
+  }, [src]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el || videoFailed) return;
 
+    const tryPlay = () => {
+      void el.play().catch(() => undefined);
+    };
+
+    tryPlay();
+
     const syncPlayback = (inView: boolean) => {
       if (inView) {
-        void el.play().catch(() => undefined);
+        tryPlay();
       } else {
         el.pause();
       }
@@ -458,13 +471,32 @@ export function StoryPreviewVideo({ src, poster, style }: {
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return;
-        syncPlayback(entry.isIntersecting && entry.intersectionRatio >= 0.25);
+        syncPlayback(entry.isIntersecting && entry.intersectionRatio >= 0.1);
       },
-      { threshold: [0, 0.25, 0.5] },
+      { threshold: [0, 0.1, 0.25, 0.5] },
     );
     obs.observe(el);
-    return () => obs.disconnect();
-  }, [src, videoFailed]);
+
+    const failTimer = window.setTimeout(() => {
+      if (!videoReady && el.readyState < 2) {
+        setVideoFailed(true);
+      }
+    }, 8000);
+
+    return () => {
+      window.clearTimeout(failTimer);
+      obs.disconnect();
+    };
+  }, [src, videoFailed, videoReady]);
+
+  const confirmVideoReady = () => {
+    const v = ref.current;
+    if (!v || v.videoWidth <= 0 || v.videoHeight <= 0) {
+      setVideoFailed(true);
+      return;
+    }
+    setVideoReady(true);
+  };
 
   if (videoFailed) {
     if (poster) {
@@ -485,24 +517,61 @@ export function StoryPreviewVideo({ src, poster, style }: {
       </div>
     );
   }
+
   return (
-    // eslint-disable-next-line jsx-a11y/media-has-caption
-    <video
-      ref={ref}
-      src={src}
-      poster={poster}
-      muted
-      playsInline
-      preload="metadata"
-      onError={() => setVideoFailed(true)}
-      onEnded={() => {
-        const v = ref.current;
-        if (!v || !Number.isFinite(v.duration)) return;
-        v.pause();
-        v.currentTime = Math.max(0, v.duration - 0.04);
-      }}
-      style={style}
-    />
+    <div style={{
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden',
+      ...style,
+    }}>
+      {poster ? (
+        <StoryCoverImage
+          src={poster}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            zIndex: 0,
+          }}
+        />
+      ) : null}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video
+        ref={ref}
+        src={src}
+        poster={poster}
+        muted
+        playsInline
+        autoPlay
+        preload="auto"
+        crossOrigin="anonymous"
+        onError={() => setVideoFailed(true)}
+        onLoadedData={confirmVideoReady}
+        onCanPlay={confirmVideoReady}
+        onPlaying={confirmVideoReady}
+        onEnded={() => {
+          const v = ref.current;
+          if (!v || !Number.isFinite(v.duration)) return;
+          v.pause();
+          v.currentTime = Math.max(0, v.duration - 0.04);
+        }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          objectPosition: 'center',
+          zIndex: 1,
+          opacity: videoReady ? 1 : 0,
+          transition: 'opacity 180ms ease',
+        }}
+      />
+    </div>
   );
 }
 

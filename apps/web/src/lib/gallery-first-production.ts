@@ -19,7 +19,8 @@ import { scoreIdeationPhotoMatch } from '@/lib/caption-photo-alignment';
 import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator';
 import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
-import { isVisionAnalysisDescription } from '@/lib/vision-text-guard';
+import { isVisionAnalysisDescription, isGalleryTagHeadline } from '@/lib/vision-text-guard';
+import { sanitizeProductionHeadline } from '@/lib/production-headline-quality';
 
 export type GalleryFirstCaptionSource = 'ideation_aligned' | 'gallery_meta' | 'gallery_gpt';
 
@@ -338,6 +339,14 @@ export async function resolveGalleryFirstForSlot(input: {
   if (!headline.trim()) {
     headline = caption.slice(0, 72) || input.brandName;
   }
+
+  headline = sanitizeProductionHeadline({
+    headline,
+    ideationHeadline: input.ideationHeadline,
+    caption,
+    brandName: input.brandName,
+    maxLen: 72,
+  });
 
   const finalScore = scoreIdeationPhotoMatch({
     caption,

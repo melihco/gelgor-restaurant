@@ -11,6 +11,7 @@ import {
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import { deriveBrandTemplateLibrary } from '@/lib/brand-template-library';
+import { ensureSectorReelMotionInTheme } from '@/lib/sector-reel-motion-standard';
 
 export interface DeepBrandSetupInput {
   origin: string;
@@ -94,12 +95,14 @@ async function finalizeProductionReadiness(
   const library = deriveBrandTemplateLibrary({ sector, tenantId });
   library.locked = true;
 
+  const themeWithReelMotion = ensureSectorReelMotionInTheme(currentTheme, sector);
+
   const themePut = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
     method: 'PUT',
     headers: { ...JSON_HEADERS, ...headers },
     body: JSON.stringify({
       theme: {
-        ...currentTheme,
+        ...themeWithReelMotion,
         template_library: { ...library, locked: true },
       },
     }),
@@ -109,6 +112,14 @@ async function finalizeProductionReadiness(
     id: 'template_library_lock',
     ok: themePut.ok,
     detail: themePut.ok ? `5 slot locked (${library.kitId})` : `HTTP ${themePut.status}`,
+  });
+
+  out.push({
+    id: 'reel_motion_standard_seed',
+    ok: themePut.ok,
+    detail: themePut.ok
+      ? `sector=${sector} reel motion saved`
+      : `HTTP ${themePut.status}`,
   });
 
   const aiRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme/ai-settings`, {
@@ -475,6 +486,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   const productionCritical = new Set([
     'theme_derive',
     'template_library_lock',
+    'reel_motion_standard_seed',
     'ai_production_defaults',
   ]);
   // gallery_provision is non-blocking (done early at step 2b; step 7 repeat ensures freshness)

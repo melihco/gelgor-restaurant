@@ -80,6 +80,11 @@ class ThemeMotionProfile(BaseModel):
     story_audio_mode: str = "music_and_voice"  # music_only | music_and_voice
     story_voice_id: str | None = "nova"  # OpenAI TTS: nova, shimmer, onyx, echo, alloy, fable
     operator_override: bool = False
+    reel_pace: str | None = None
+    reel_camera_motion: str | None = None
+    reel_strategy: str | None = None
+    product_spotlight_reel: bool | None = None
+    reel_motion_standard_version: int | None = None
 
 
 class BrandTheme(BaseModel):

@@ -761,14 +761,20 @@ const CSS = `
   @media (min-width: 768px) {
     .ig-story-viewer-backdrop {
       align-items: center;
+      justify-content: center;
       background: rgba(0, 0, 0, 0.96) !important;
     }
     .ig-story-viewer-column {
-      width: min(420px, 100%);
+      width: min(100vw, calc(100dvh * 9 / 16), 480px);
+      height: 100dvh;
+      max-height: 100dvh;
       box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
     }
     .ig-story-viewer-stage {
       border-radius: 12px 12px 0 0;
+      aspect-ratio: 9 / 16;
+      flex: 1 1 auto;
+      max-height: calc(100dvh - 120px);
     }
     .ig-story-viewer-dock {
       width: 100%;

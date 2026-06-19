@@ -1505,9 +1505,14 @@ class ApiClient {
     return res.json();
   }
 
-  /** Hub list: single fetch — proposed/active/completed all share one ordered list. */
+  /** Hub list: recent missions + any blocking rows outside the recency window. */
   async listMissionsForHub(workspaceId: string): Promise<MissionSummary[]> {
-    return this.listMissions(workspaceId, undefined, 35);
+    const qs = new URLSearchParams({ limit: '35', hub: 'true' });
+    const res = await fetch(`/api/missions/${workspaceId}?${qs}`, {
+      headers: getTenantBffHeaders(workspaceId),
+    });
+    if (!res.ok) throw new Error(`Missions list failed (${res.status})`);
+    return res.json();
   }
 
   async proposeMissions(

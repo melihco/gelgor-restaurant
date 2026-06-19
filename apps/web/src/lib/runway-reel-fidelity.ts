@@ -9,6 +9,9 @@ import {
   type ReelPacing,
 } from './sector-production-profile';
 import type { MultiReelPhotoInput } from './reel-multi-production';
+import type { RunwayDirectorGuardrailOptions } from './tenant-reel-motion-seed';
+import { resolveRunwayDirectorVariant } from './sector-reel-motion-standard';
+import { stripEmbeddedGuardrailBlocks } from './runway/builders/reel-prompt.builder';
 
 /** Appended to director prompts when not already present. */
 export const RUNWAY_FIDELITY_DIRECTOR_RULES = `
@@ -95,6 +98,7 @@ const SLOW_PACE_ALLOWED: Partial<Record<string, ReadonlySet<UnifiedCameraMotion>
   nightclub: new Set(['tracking', 'slow_pan', 'handheld']),
   local_service_business: new Set(['dolly_in', 'slow_pan', 'orbit']),
   ecommerce_retail: new Set(['dolly_in', 'slow_pan', 'orbit']),
+  local_products_shop: new Set(['dolly_in', 'slow_pan', 'static']),
 };
 
 function resolveEffectivePaceBlob(input: RunwayCameraFidelityInput): string {
@@ -195,24 +199,127 @@ export function resolveEffectiveReelPace(input: {
   return getSectorReelPacing(input.sector);
 }
 
-/** Per-photo prompt for sequential montage (each clip = one real gallery frame). */
+export const RUNWAY_CLIP_PROMPT_MAX = 950;
+
+function sanitizeClipCaption(text: string): string {
+  return text
+    .replace(/[^\x00-\x7F]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** Compact guardrails for sequential clips — rules first, always preserved. */
+export function buildCompactSequentialGuardrailPrefix(
+  opts: RunwayDirectorGuardrailOptions,
+  cameraMotion?: string,
+): string {
+  const variant = resolveRunwayDirectorVariant({
+    sector: opts.sector,
+    productSpotlightReel: opts.productSpotlightReel,
+  });
+  const cam = String(cameraMotion ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+  const camLine = variant === 'product_tvc' || cam === 'dolly_in'
+    ? 'Camera: gentle dolly-in toward hero subject, max 5% frame change. NO pull-back.'
+    : cam
+      ? `Camera: ${cam.replace(/_/g, ' ')}, max 5% drift.`
+      : 'Camera: locked-off or very slow drift, max 5% frame change.';
+
+  const parts: string[] = [];
+  if (variant === 'product_tvc') {
+    parts.push(
+      'PRODUCT TVC (mandatory): locked hero product in reference frame only. '
+      + 'Micro-motion: shimmer, pour, steam, condensation. NO scene change, NO invented setting. Label sharp.',
+    );
+  } else if (variant === 'venue_atmosphere') {
+    parts.push(
+      'VENUE (mandatory): animate reference venue only. Ambient shimmer, breeze, water ripple. '
+      + 'NO invented crowds, NO architecture morph.',
+    );
+  } else if (variant === 'digital_editorial') {
+    parts.push(
+      'DIGITAL (mandatory): pixel-stable layout. Micro glow or parallax only. NO scene rebuild.',
+    );
+  }
+  parts.push(camLine);
+  parts.push(
+    'FIDELITY: animate ONLY the attached reference frame. No new objects, people, logos, or scenery.',
+  );
+  return parts.join(' ');
+}
+
+function scrubInventedSceneLanguage(text: string): string {
+  return text
+    .replace(/\b(pull(s)? back|pulling back|reveals? (the |a )?(rustic|wider|full|entire|surrounding))/gi, 'holds on')
+    .replace(/\b(rustic setting|new scenery|surrounding context|wider scene|establishing shot)\b/gi, 'hero frame')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+export function fitRunwayPromptText(text: string, maxLen = RUNWAY_CLIP_PROMPT_MAX): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return `${trimmed.slice(0, maxLen - 1).trimEnd()}…`;
+}
+
+/** Per-photo prompt for sequential montage — guardrails first, photo-grounded creative last. */
 export function buildSequentialClipDirectorPrompt(input: {
-  basePrompt: string;
   clipIndex: number;
   totalClips: number;
-  photo?: MultiReelPhotoInput;
+  photo?: MultiReelPhotoInput & {
+    microMotions?: string[];
+    sceneMoment?: string;
+  };
   caption?: string;
+  cameraMotion?: string;
+  guardrails?: RunwayDirectorGuardrailOptions;
+  /** Short photo-specific creative line (no guardrail blocks) */
+  creativeBrief?: string;
 }): string {
-  const parts = [
-    `Clip ${input.clipIndex + 1} of ${input.totalClips}.`,
-    'This clip must match ONLY the attached reference frame.',
-    input.photo?.description ? `Frame shows: ${input.photo.description.slice(0, 220)}.` : '',
-    input.photo?.tags?.length ? `Tags: ${input.photo.tags.slice(0, 8).join(', ')}.` : '',
-    input.caption ? `Story context: ${input.caption.slice(0, 120)}.` : '',
-    applyFidelityToDirectorPrompt(input.basePrompt.slice(0, 520)),
-  ].filter(Boolean);
+  const guardrails = input.guardrails ?? {};
+  const prefix = buildCompactSequentialGuardrailPrefix(guardrails, input.cameraMotion);
 
-  return parts.join(' ').slice(0, 960);
+  const clipMeta = `Clip ${input.clipIndex + 1} of ${input.totalClips}. Match ONLY the attached reference frame.`;
+
+  const frameDesc = (input.photo?.sceneMoment?.trim()
+    || input.photo?.description?.trim()
+    || '').replace(/\s{2,}/g, ' ');
+  const isGenericFrame = !frameDesc
+    || /^artisan product hero frame$/i.test(frameDesc)
+    || frameDesc.length < 12;
+  const frameLine = !isGenericFrame
+    ? `Frame shows: ${frameDesc.slice(0, 200)}.`
+    : input.photo?.tags?.length
+      ? `Frame tags: ${input.photo.tags.slice(0, 8).join(', ')}.`
+      : '';
+
+  const micro = input.photo?.microMotions?.filter(Boolean).slice(0, 3).join(', ');
+  const microLine = micro ? `Allowed micro-motion: ${micro}.` : '';
+
+  let creative = stripEmbeddedGuardrailBlocks(input.creativeBrief ?? '');
+  creative = scrubInventedSceneLanguage(creative);
+  if (/product spotlight tvc|product tvc/i.test(prefix)) {
+    creative = scrubInventedSceneLanguage(creative);
+  }
+
+  const captionLine = input.caption
+    ? `Context: ${sanitizeClipCaption(input.caption).slice(0, 90)}.`
+    : '';
+
+  const fixedLen = [prefix, clipMeta, frameLine, microLine, captionLine]
+    .filter(Boolean)
+    .join(' ').length;
+  const creativeBudget = Math.max(80, RUNWAY_CLIP_PROMPT_MAX - fixedLen - 12);
+  if (creative.length > creativeBudget) {
+    const cut = creative.slice(0, creativeBudget);
+    const lastPeriod = cut.lastIndexOf('.');
+    creative = (lastPeriod > 50 ? cut.slice(0, lastPeriod + 1) : cut).trim();
+  }
+
+  const assembled = [prefix, clipMeta, frameLine, microLine, creative, captionLine]
+    .filter(Boolean)
+    .join(' ');
+
+  return fitRunwayPromptText(assembled, RUNWAY_CLIP_PROMPT_MAX);
 }
 
 export type { ReelPacing };

@@ -12,6 +12,8 @@ export interface MultiReelPhotoInput {
   url: string;
   description?: string;
   tags?: string[];
+  microMotions?: string[];
+  sceneMoment?: string;
 }
 
 const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
@@ -184,6 +186,7 @@ export interface GenerateMultiReelRequest {
   productType?: string;
   strategicPurpose?: string;
   missionBrief?: string;
+  productSpotlightReel?: boolean;
 }
 
 export async function callGenerateMultiReel(

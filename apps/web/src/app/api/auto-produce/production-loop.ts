@@ -195,9 +195,11 @@ import {
 import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
+  sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
-import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
+import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import { isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import { getRemotionTemplate } from '@/lib/remotion-template-catalog';
 import {
@@ -287,11 +289,41 @@ import {
 import {
   type StoryCandidate,
   type PostCandidate,
+  type PremiumCompositionMeta,
   runRemotionStoryPhase,
   runRemotionPostPhase,
 } from './remotion-render-phase';
 
 const nexusClient = createDefaultNexusClient();
+
+function extractPremiumComposition(idea: ParsedIdea): PremiumCompositionMeta | null {
+  const raw = idea as Record<string, unknown>;
+  const vpsSnake = raw.visual_production_spec as Record<string, unknown> | undefined;
+  const vpsCamel = raw.visualProductionSpec as Record<string, unknown> | undefined;
+  const pcSnake = vpsSnake?.premium_composition as Record<string, unknown> | undefined;
+  const pcCamel = (vpsCamel?.premiumComposition ?? vpsSnake?.premiumComposition) as Record<string, unknown> | undefined;
+  const pc = pcSnake ?? pcCamel;
+  if (!pc) return null;
+
+  const compType = (pc.composition_type ?? pc.compositionType) as string | undefined;
+  if (typeof compType !== 'string') return null;
+
+  return {
+    compositionType: compType,
+    visualPriority: String(pc.visual_priority ?? pc.visualPriority ?? '') || undefined,
+    typographyApproach: String(pc.typography_approach ?? pc.typographyApproach ?? '') || undefined,
+    objectTreatment: String(pc.object_treatment ?? pc.objectTreatment ?? '') || undefined,
+    graphicElements: Array.isArray(pc.graphic_elements ?? pc.graphicElements)
+      ? (pc.graphic_elements ?? pc.graphicElements) as string[]
+      : undefined,
+    layoutStrategy: String(pc.layout_strategy ?? pc.layoutStrategy ?? '') || undefined,
+    compositionDescription: String(pc.composition_description ?? pc.compositionDescription ?? '') || undefined,
+    creativeDirection: String(pc.creative_direction ?? pc.creativeDirection ?? '') || undefined,
+    premiumScore: typeof (pc.premium_score ?? pc.premiumScore) === 'number'
+      ? (pc.premium_score ?? pc.premiumScore) as number
+      : undefined,
+  };
+}
 
 
 // ─── Core production engine ────────────────────────────────────────────────────
@@ -741,7 +773,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       })();
     const kind = resolveContentKindForAssignment(ideaRecord, assignment);
     const storyIndex = assignmentImpliesStoryFormat(assignment.slot_role) ? slotStoryCount : 0;
-    const galleryOnlyVisual = !productionProfile.requireRemotionGrafiker
+    const hasPremiumComposition = Boolean(
+      (idea.visual_production_spec as Record<string, unknown> | undefined)?.premium_composition,
+    );
+    const galleryOnlyVisual = !hasPremiumComposition
+      && !productionProfile.requireRemotionGrafiker
       && isGalleryOnlyVisualPolicy(assignment, ideaRecord);
     const slotRole = String(assignment.slot_role);
     const slotPipeline = String(assignment.pipeline);
@@ -779,7 +815,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const fmt = kind.replace('instagram_', '');
     const mood = idea.mood || '';
     const strategicPurpose = idea.strategic_purpose || '';
-    const treatmentLower = ((idea.treatment ?? idea.visual_production_spec?.treatment) || '').toLowerCase();
+    const ideaPremiumComposition = extractPremiumComposition(idea);
+    let treatmentLower = ((idea.treatment ?? idea.visual_production_spec?.treatment) || '').toLowerCase();
+    if (ideaPremiumComposition && treatmentLower === 'pure_photo') {
+      treatmentLower = kind === 'instagram_story' ? 'story_event' : 'feed_text_overlay';
+      console.log(
+        `[auto-produce] Premium composition: overriding pure_photo → ${treatmentLower} for "${String(idea.headline || idea.concept_title || '').slice(0, 40)}"`,
+      );
+    }
     const templateUseCase = String(idea.template_use_case || '');
     const typeExclude = getExcludeUrlsForPostType(galleryUsage, postType, batchUsedByType[postType]);
     const missionGalleryExclude = [
@@ -830,8 +873,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           missionSessionCaptions.push(gf.caption);
         }
         if (gf.headline.trim()) {
-          headline = gf.headline;
-          ideationHeadline = gf.headline;
+          headline = sanitizeProductionHeadline({
+            headline: gf.headline,
+            ideationHeadline,
+            caption: ideationCaption || caption,
+            brandName: resolvedBrandName,
+            conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
+            businessType: brandBusinessType,
+            maxLen: 72,
+          });
         }
         if (gf.hashtags.length) {
           hashtags = gf.hashtags;
@@ -1356,14 +1406,64 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!referenceUrl || referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl))) {
-      console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
-      results.push({
-        title: headline,
-        imageUrl: '',
-        error: 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin',
-      });
-      continue;
+    if (!referenceUrl?.trim()) {
+      // FD or batch assign may leave an empty URL — try a fresh gallery pick before skipping.
+      const emptyFallback = galleryPhotos.length
+        ? pickGalleryPhotoForIdea(
+            ideationCaption,
+            ideationHeadline,
+            mood,
+            galleryMeta,
+            galleryPhotos,
+            missionGalleryExclude,
+            batchExclude,
+            postType,
+            null,
+            brandBusinessType,
+            false,
+            ideaIndex,
+          )
+        : null;
+      if (emptyFallback) {
+        console.log(`[auto-produce] empty gallery URL — fallback pick: ${emptyFallback.slice(0, 80)}`);
+        referenceUrl = emptyFallback;
+        referenceIsStock = isStockGalleryPhotoUrl(emptyFallback);
+      }
+    }
+
+    if (!referenceUrl || (referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 })))) {
+      const brokenInternal = referenceUrl?.startsWith('/api/');
+      const internalFallback = brokenInternal && galleryPhotos.length
+        ? pickGalleryPhotoForIdea(
+            ideationCaption,
+            ideationHeadline,
+            mood,
+            galleryMeta,
+            galleryPhotos,
+            missionGalleryExclude,
+            batchExclude,
+            postType,
+            null,
+            brandBusinessType,
+            false,
+            ideaIndex,
+          )
+        : null;
+      if (internalFallback && internalFallback !== referenceUrl) {
+        console.log(`[auto-produce] broken internal URL — fallback pick: ${internalFallback.slice(0, 80)}`);
+        referenceUrl = internalFallback;
+        referenceIsStock = isStockGalleryPhotoUrl(internalFallback);
+      } else {
+        console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
+        results.push({
+          title: headline,
+          imageUrl: '',
+          error: brokenInternal
+            ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
+            : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+        });
+        continue;
+      }
     }
 
     let resolvedReferenceUrl = referenceUrl;
@@ -2684,6 +2784,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       continue;
     }
 
+    const publishHeadline = sanitizeProductionHeadline({
+      headline,
+      ideationHeadline,
+      caption: publishCaption || caption,
+      brandName: resolvedBrandName,
+      conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
+      businessType: brandBusinessType,
+      maxLen: 72,
+    });
+    headline = publishHeadline;
+    if (
+      !ideationHeadline
+      || isGalleryTagHeadline(ideationHeadline)
+    ) {
+      ideationHeadline = publishHeadline;
+    }
+
     const contentJson = JSON.stringify({
       kind: effectiveKind,
       contentType: effectiveFmt,
@@ -2697,8 +2814,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       carousel_urls: carouselUrls.length ? carouselUrls : undefined,
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,
       ...(carouselGalleryUrls.length >= 2 ? { carousel_multi_photo: true } : {}),
-      headline: ideationHeadline || headline,
-      ideation_headline: ideationHeadline || headline,
+      headline: publishHeadline,
+      ideation_headline: publishHeadline,
       idea_index: ideaIndex,
       mission_id: missionId || undefined,
       node_key: nodeKey || undefined,
@@ -2713,12 +2830,46 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const ideaCostUsd = Math.round((costEstimate - ideaCostBefore) * 1000) / 1000;
 
+    let remotionStoryMeta: Record<string, unknown> = {};
+    if (willRemotionStoryRender) {
+      const storyIntent = resolveContentIntent({
+        treatment,
+        templateUseCase: String(idea.template_use_case || ideaRecord?.template_use_case || ''),
+        mood,
+        headline,
+      });
+      const storySlotKey = assignment.library_slot_key
+        ?? missionStoryLibrarySlotKey(templateLibrary, storyIndex);
+      const storyPick = resolveBrandStoryProductionTemplate({
+        library: templateLibrary,
+        sector: brandBusinessType,
+        intent: storyIntent,
+        treatment,
+        ideaIndex,
+        headline,
+        caption: publishCaption || caption,
+        slotRole: assignment.slot_role,
+        templateUseCase: String(idea.template_use_case || ''),
+        hasEventDetails,
+        librarySlotKey: storySlotKey,
+      });
+      remotionStoryMeta = {
+        library_slot_key: storySlotKey,
+        remotion_mission_story: true,
+        templateId: storyPick.storyTemplateId,
+        storyTemplateId: storyPick.storyTemplateId,
+        compositionId: storyPick.compositionId,
+        kitId: storyPick.kitId,
+        brandTemplateLocked: storyPick.libraryLocked || templateLibrary.locked,
+      };
+    }
+
     const metadata: Record<string, unknown> = {
       cost_usd_estimate: ideaCostUsd,
       contentType: effectiveFmt,
       kind: effectiveKind,
       platform: 'instagram',
-      headline: ideationHeadline || headline,
+      headline: publishHeadline,
       caption: publishCaption.slice(0, 2200),
       cta,
       hashtags: publishHashtags,
@@ -2730,7 +2881,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...(galleryMatchScore != null && galleryMatchScore >= MIN_ACCEPT_SCORE
         ? { gallery_match_score: galleryMatchScore }
         : {}),
-      ...(ideationHeadline ? { ideation_headline: ideationHeadline.slice(0, 120) } : {}),
+      ...(publishHeadline ? { ideation_headline: publishHeadline.slice(0, 120) } : {}),
       ...(ideationCaption ? { ideation_caption: ideationCaption.slice(0, 500) } : {}),
       ...(galleryFirstSource ? {
         gallery_first_caption: true,
@@ -2865,6 +3016,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         visual_design_card_prompt_used: missionVisualDesignRendered,
       } : {}),
       layout_family_hint: assignment.layout_family_hint ?? layoutFamilyHint ?? null,
+      ...(ideaPremiumComposition ? {
+        premium_composition: true,
+        premium_composition_type: ideaPremiumComposition.compositionType,
+        premium_score: ideaPremiumComposition.premiumScore ?? null,
+        production_tier: 'premium' as const,
+      } : {}),
       ...(willRemotionRender || bundleReadyNow ? {
         production_bundle: true,
         bundle_status: bundleReadyNow ? 'ready' : 'rendering',
@@ -2872,11 +3029,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         poster_url: galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl,
         posterUrl: galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl,
       } : {}),
-      ...(willRemotionStoryRender ? {
-        library_slot_key: assignment.library_slot_key
-          ?? missionStoryLibrarySlotKey(templateLibrary, storyIndex),
-        remotion_mission_story: true,
-      } : {}),
+      ...remotionStoryMeta,
     };
 
     const title = headline || `${resolvedBrandName} — ${effectiveFmt}`;
@@ -2926,7 +3079,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       designedPostSnapshot = {
         imageUrl: persistContentUrl,
         referencePhotoUrl: referenceUrl,
-        headline: ideationHeadline || headline,
+        headline: publishHeadline,
         caption: publishCaption,
         cta,
         hashtags: publishHashtags,
@@ -2998,19 +3151,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         event_details: (idea.event_details as Record<string, string> | undefined),
         artifactId: saved.id,
         ideaId,
-        // Sprint 4 — Brief Split: prefer typed StorySceneBrief when available so
-        // the Creative Director gets panel-narrative + color-grade hints.
         sceneBriefBlock: buildSceneBriefPromptBlock(missionStoryBrief ?? sceneBrief),
         preferredLayoutFamily: layoutFamilyHint,
         slotRole: assignment.slot_role,
         publishChannel: assignment.publish_channel,
         ideaIndex,
-        // FD-assigned library slot key takes priority over rotation-based fallback.
         librarySlotKey: assignment.library_slot_key
           ?? missionStoryLibrarySlotKey(templateLibrary, storyIndex),
-        // Sprint 6 — Luxury photo quality gate: pass match score so render phase
-        // can detect full-bleed families used with low-quality photos.
         galleryMatchScore: galleryMatchScore ?? null,
+        premiumComposition: ideaPremiumComposition,
       });
     }
 
@@ -3026,6 +3175,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         artifactId: saved.id,
         ideaId,
         ideaIndex,
+        premiumComposition: ideaPremiumComposition,
       });
     }
   }
@@ -3322,23 +3472,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
   releaseAllProductionLocks(workspaceId, missionId);
 
-  // Slot backfill disabled — stable 5-slot package; no extra AI spend chasing missing slots.
   const backfillAttempted = false;
   const mergedResults = results;
   const mergedSaved = saved;
   const mergedPublishReady = publishReady;
   const mergedRendering = rendering;
   const mergedWithheld = withheld;
-
-  /* legacy backfill (7-slot era) — re-enable when package target increases
-  if (
-    missionId
-    && !slotBackfillPass
-    && rendering === 0
-  ) {
-    ...
-  }
-  */
 
   const productionTelemetry = buildMissionProductionTelemetry({
     profileTier: productionProfile.tier,

@@ -90,6 +90,9 @@ export function getProductionBundleStatus(artifact: OutputArtifact): ProductionB
   const looksRendering = raw === 'rendering'
     || (raw === '' && hasProductionBundleFlag(artifact) && !resolveStoryVideoUrl(artifact));
   if (looksRendering && isRenderingTimedOut(artifact)) {
+    if (expectsRemotionStoryVideo(artifact) && !resolveStoryVideoUrl(artifact)) {
+      return 'failed';
+    }
     const poster = resolvePosterUrl(artifact);
     const url = String(artifact.contentUrl ?? '').trim();
     const hasStill = Boolean(poster || (url && !/\.(mp4|mov|webm)(\?|$)/i.test(url)));
@@ -97,7 +100,17 @@ export function getProductionBundleStatus(artifact: OutputArtifact): ProductionB
     return 'failed';
   }
 
-  if (raw === 'rendering' || raw === 'ready' || raw === 'failed') return raw;
+  if (raw === 'rendering' || raw === 'ready' || raw === 'failed') {
+    if (
+      raw === 'ready'
+      && expectsRemotionStoryVideo(artifact)
+      && !resolveStoryVideoUrl(artifact)
+    ) {
+      const galleryOnly = Boolean(meta.gallery_only ?? meta.galleryOnly ?? content.gallery_only);
+      if (!galleryOnly) return 'failed';
+    }
+    return raw;
+  }
   if (role === 'organic_story_still' && resolvePosterUrl(artifact)) return 'ready';
   if (isPostKind(artifact) && hasProductionBundleFlag(artifact)) {
     const branded = resolveBrandedPostUrl(artifact);
@@ -343,6 +356,7 @@ function bundlePriority(artifact: OutputArtifact): number {
   const status = getProductionBundleStatus(artifact);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const hasVideo = Boolean(resolveStoryVideoUrl(artifact));
+  if (expectsRemotionStoryVideo(artifact) && !hasVideo) return 8;
   if (status === 'ready' && hasVideo) return 100;
   if (String(meta.source || '') === 'remotion' && hasVideo) return 90;
   if (status === 'rendering' && isProductionBundle(artifact)) return 70;
@@ -431,6 +445,7 @@ export function filterConsumerStoryBar(
   const maxRings = opts?.maxRings ?? 4;
   let pool = dedupeStoryBarArtifacts(artifacts).filter((a) => {
     if (isBundleFailed(a) && !resolveStoryVideoUrl(a) && !resolvePosterUrl(a)) return false;
+    if (isBundleFailed(a) && !resolveStoryVideoUrl(a) && expectsRemotionStoryVideo(a)) return false;
     if (isBundleStaleRendering(a)) return false;
     return true;
   });
@@ -467,6 +482,17 @@ export function filterConsumerStoryBar(
 }
 
 /** Feed story bar + story tab: production bundle with poster and/or Remotion video. */
+/** Story slot that must ship a Remotion MP4 (not gallery-only still). */
+export function expectsRemotionStoryVideo(artifact: OutputArtifact): boolean {
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const content = parseArtifactContent(artifact.content);
+  const pipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
+  if (pipeline === 'remotion_story') return true;
+  if (meta.remotion_mission_story === true) return true;
+  const role = String(meta.production_role ?? content.production_role ?? '').trim();
+  return role === 'campaign_story_motion';
+}
+
 export function isProductionBundleStory(artifact: OutputArtifact): boolean {
   if (!isStoryKind(artifact)) return false;
   const status = getProductionBundleStatus(artifact);

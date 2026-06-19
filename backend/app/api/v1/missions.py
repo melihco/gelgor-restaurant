@@ -40,6 +40,7 @@ from app.services.mission_service import (
     get_ready_nodes,
     list_blocking_missions,
     list_missions,
+    list_missions_for_hub,
     normalize_hub_production_package,
     persist_hub_production_package,
     reject_mission,
@@ -258,13 +259,17 @@ async def list_workspace_missions(
     workspace_id: uuid.UUID,
     status: str | None = Query(None, description="Filter by status (proposed/approved/in_flight/completed/rejected)"),
     limit: int = Query(20, ge=1, le=100),
+    hub: bool = Query(False, description="Mission Hub: always include blocking (proposed/approved/in_flight) missions"),
     db: AsyncSession = Depends(get_db),
 ):
     """
     List missions for a workspace, newest first.
     Includes per-mission node completion counts for the Mission Hub cards.
     """
-    missions = await list_missions(db, workspace_id, status=status, limit=limit)
+    if hub and not status:
+        missions = await list_missions_for_hub(db, workspace_id, limit=limit)
+    else:
+        missions = await list_missions(db, workspace_id, status=status, limit=limit)
 
     items = []
     for m in missions:

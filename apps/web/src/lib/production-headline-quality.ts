@@ -3,7 +3,7 @@
  * (e.g. "Kaçta Info'yu") and recover a punchy line from ideation caption.
  */
 import { enforceDisplayHeadline } from './remotion-quality';
-import { isVisionAnalysisDescription } from './vision-text-guard';
+import { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
 import { isNonVenueSector } from './sector-gallery-seed';
 import { isNonVenueSectorProfile } from './sector-production-profile';
 
@@ -168,4 +168,46 @@ export function resolveMeaningfulProductionHeadline(input: {
     replaced: true,
     reason: 'brand_echo_generic',
   };
+}
+
+/** Overlay / publish headline — never gallery tag lists or vision dumps. */
+export function sanitizeProductionHeadline(input: {
+  headline: string;
+  ideationHeadline?: string;
+  caption?: string;
+  brandName: string;
+  conceptTitle?: string;
+  businessType?: string;
+  maxLen?: number;
+}): string {
+  const maxLen = input.maxLen ?? 72;
+  const brandName = input.brandName.trim();
+  const tryHeadline = (raw: string) => {
+    const t = raw.trim();
+    if (!t || isVisionAnalysisDescription(t) || isGalleryTagHeadline(t)) return '';
+    const resolved = resolveMeaningfulProductionHeadline({
+      headline: t,
+      caption: input.caption,
+      brandName,
+      conceptTitle: input.conceptTitle,
+      businessType: input.businessType,
+      maxLen,
+    });
+    if (isGalleryTagHeadline(resolved.headline)) return '';
+    return resolved.headline;
+  };
+
+  for (const candidate of [input.ideationHeadline, input.headline]) {
+    const ok = tryHeadline(candidate ?? '');
+    if (ok) return ok;
+  }
+
+  return resolveMeaningfulProductionHeadline({
+    headline: '',
+    caption: input.caption,
+    brandName,
+    conceptTitle: input.conceptTitle,
+    businessType: input.businessType,
+    maxLen,
+  }).headline;
 }

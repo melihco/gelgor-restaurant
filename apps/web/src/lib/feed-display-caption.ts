@@ -3,7 +3,7 @@
  * Vision description stays in metadata.gallery_photo_description for prompts.
  */
 
-import { isVisionAnalysisDescription } from './vision-text-guard';
+import { isVisionAnalysisDescription, isGalleryTagHeadline, resolveProductHeadlineFromGalleryTags } from './vision-text-guard';
 import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
@@ -25,7 +25,7 @@ const MOOD_TR: Record<string, string> = {
   dramatic: 'Etkileyici bir atmosfer.',
 };
 
-export { isVisionAnalysisDescription } from './vision-text-guard';
+export { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
 
 function pickStr(...vals: unknown[]): string {
   for (const v of vals) {
@@ -81,7 +81,7 @@ export function buildInstagramCaptionFromGalleryMeta(
   } else if (tags.length) {
     const line = tags.join(' · ');
     bodyParts.push(line);
-    headline = line.slice(0, 72);
+    headline = resolveProductHeadlineFromGalleryTags(tags, brandName);
   }
 
   const moodLine = moodLineTr(mood);
@@ -158,6 +158,7 @@ export function resolveFeedDisplayHeadline(input: FeedCaptionInput): string {
     const t = pickStr(raw);
     if (!t) continue;
     if (isVisionAnalysisDescription(t)) continue;
+    if (isGalleryTagHeadline(t)) continue;
     const isStoredIdeation = raw === meta.ideation_headline || raw === content.ideation_headline;
     if (
       isStoredIdeation

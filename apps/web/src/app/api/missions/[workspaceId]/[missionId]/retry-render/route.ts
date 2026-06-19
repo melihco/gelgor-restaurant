@@ -21,7 +21,7 @@ export async function POST(
   const tenantGuard = assertPathTenantMatchesRequest(req, workspaceId);
   if (tenantGuard) return tenantGuard;
 
-  const listRes = await fetch(`${NEXUS_API}/api/artifacts?limit=120`, {
+  const listRes = await fetch(`${NEXUS_API}/api/artifacts?limit=200`, {
     headers: {
       'X-Tenant-Id': workspaceId,
       'X-Internal-Api-Key': INTERNAL_KEY,
@@ -46,15 +46,28 @@ export async function POST(
     return NextResponse.json({ ok: true, queued: 0, message: 'Yeniden render gerektiren bundle yok' });
   }
 
+  const storyFirst = [...targets].sort((a, b) => {
+    const metaA = (a.metadata ?? {}) as Record<string, unknown>;
+    const metaB = (b.metadata ?? {}) as Record<string, unknown>;
+    const storyA = String(metaA.production_role ?? '').includes('story')
+      || String(metaA.pipeline ?? '') === 'remotion_story';
+    const storyB = String(metaB.production_role ?? '').includes('story')
+      || String(metaB.pipeline ?? '') === 'remotion_story';
+    if (storyA === storyB) return 0;
+    return storyA ? -1 : 1;
+  });
+
   const results: Array<{ artifactId: string; status: number }> = [];
-  for (const art of targets.slice(0, 12)) {
-    const res = await fetch(`${BASE_URL}/api/production-bundle/${art.id}/retry-render`, {
-      method: 'POST',
-      headers: buildInternalProductionHeaders(workspaceId),
-      signal: AbortSignal.timeout(15_000),
-    }).catch(() => null);
-    results.push({ artifactId: art.id, status: res?.status ?? 0 });
-  }
+  await Promise.allSettled(
+    storyFirst.slice(0, 12).map(async (art) => {
+      const res = await fetch(`${BASE_URL}/api/production-bundle/${art.id}/retry-render`, {
+        method: 'POST',
+        headers: buildInternalProductionHeaders(workspaceId),
+        signal: AbortSignal.timeout(15_000),
+      }).catch(() => null);
+      results.push({ artifactId: art.id, status: res?.status ?? 0 });
+    }),
+  );
 
   return NextResponse.json({
     ok: true,

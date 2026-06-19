@@ -246,8 +246,7 @@ async function materializeImageAsJpegForHeadlessRender(url: string): Promise<str
       headers: { Accept: 'image/*,*/*;q=0.8' },
     });
     if (!res.ok) {
-      console.warn('[remotion] image materialize failed:', res.status, trimmed.slice(0, 80));
-      return trimmed;
+      throw new Error(`image materialize failed: HTTP ${res.status} for ${trimmed.slice(0, 80)}`);
     }
     const raw = Buffer.from(await res.arrayBuffer());
     const jpegBuffer = await sharp(raw).jpeg({ quality: 92 }).toBuffer();
@@ -256,8 +255,9 @@ async function materializeImageAsJpegForHeadlessRender(url: string): Promise<str
     fs.writeFileSync(filePath, jpegBuffer);
     return await remotionLocalAssetHttpUrl(filePath);
   } catch (err) {
-    console.warn('[remotion] image materialize error:', (err as Error).message?.slice(0, 80));
-    return trimmed;
+    const msg = (err as Error).message?.slice(0, 120) ?? 'unknown';
+    console.warn('[remotion] image materialize error:', msg);
+    throw err instanceof Error ? err : new Error(msg);
   }
 }
 
@@ -811,6 +811,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           storySequenceTotal: extProps.storySequenceTotal,
           recentLayoutFamilies: extProps.recentLayoutFamilies,
           ctaText: extProps.cta,
+          premiumComposition: extProps.premiumComposition ?? undefined,
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -1191,6 +1192,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               grafikerFeedback: (grafikerReview.issues ?? []).join('; '),
               grafikerScore: grafikerReview.score,
               retryAttempt: attempt + 1,
+              premiumComposition: ext.premiumComposition ?? undefined,
             }),
             signal: AbortSignal.timeout(18_000),
           });

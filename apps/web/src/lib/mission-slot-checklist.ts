@@ -138,8 +138,7 @@ function resolveArtifactSlotStatus(
 
   if (role === 'campaign_story_motion' || (role.includes('story') && isProductionBundleStory(artifact))) {
     if (resolveStoryVideoUrl(artifact)) return 'ready';
-    if (bundle === 'ready') return 'ready';
-    return bundle ? 'rendering' : 'missing';
+    return 'missing';
   }
 
   if (role === 'designed_post') {

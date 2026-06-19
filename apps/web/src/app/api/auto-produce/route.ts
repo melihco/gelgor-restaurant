@@ -155,7 +155,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ) as ParsedIdea[];
     }
 
-    return await runProduction({
+    const response = await runProduction({
       workspaceId, missionId, nodeKey, ideas: mergedIdeas,
       visualDesignCards: visualDesignCards ?? [],
       galleryAnalysis: galleryAnalysis ?? null,
@@ -170,6 +170,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       creativeBrief: creativeBrief ?? null,
       skipArtifactDedupe: skipArtifactDedupe === true,
     });
+    // #region agent log
+    try {
+      const summary = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
+      fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '343d1c' },
+        body: JSON.stringify({
+          sessionId: '343d1c',
+          hypothesisId: 'H5',
+          location: 'auto-produce/route.ts:POST',
+          message: 'auto-produce response',
+          data: {
+            missionId,
+            status: response.status,
+            produced: summary?.produced,
+            withheld: summary?.withheld,
+            rendering: summary?.rendering,
+            publishReady: summary?.publishReady,
+            error: summary?.error,
+          },
+          timestamp: Date.now(),
+          runId: 'pre-fix',
+        }),
+      }).catch(() => {});
+    } catch { /* noop */ }
+    // #endregion
+    return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Auto-produce failed';
     console.error('[auto-produce] Unhandled error:', message);

@@ -35,7 +35,24 @@ export interface ParsedIdea {
   content_type?: string;
   content_kind?: string;
   selected_gallery_url?: string;
-  visual_production_spec?: { selected_gallery_url?: string; image_edit_prompt?: string; treatment?: string };
+  visual_production_spec?: {
+    selected_gallery_url?: string;
+    image_edit_prompt?: string;
+    treatment?: string;
+    premium_composition?: {
+      composition_type?: string;
+      visual_story?: string;
+      composition_description?: string;
+      creative_direction?: string;
+      visual_priority?: string;
+      typography_approach?: string;
+      object_treatment?: string;
+      graphic_elements?: string[];
+      layout_strategy?: string;
+      motion_approach?: string;
+      premium_score?: number;
+    };
+  };
   reel_motion_spec?: { camera_movement?: string; pace?: string; transition_style?: string; audio_mood?: string };
   treatment?: string;
   product_type?: string;

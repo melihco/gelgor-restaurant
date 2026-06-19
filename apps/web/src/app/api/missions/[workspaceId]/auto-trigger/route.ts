@@ -135,11 +135,29 @@ export async function POST(
   //    Best-effort — proposal proceeds even if context signals are unavailable.
   const contextSignals = await fetchContextSignals(workspaceId, req);
 
-  // 4. Propose new missions — inject context signals if available
+  // 3b. Build diversity directive from recent missions so auto-trigger proposals
+  //     don't repeat themes (previously only injected via Mission Hub UI).
+  const diversityBlock = (() => {
+    const recent = missions.filter(
+      (m) => m.status !== 'rejected' && m.status !== 'cancelled',
+    ).slice(0, 8);
+    if (recent.length === 0) return '';
+    const lines = [
+      '=== ÇEŞİTLİLİK DİREKTİFİ ===',
+      'Son/aktif misyonlar (tekrarlamaktan kaçın, farklı format & stratejik açı seç):',
+      ...recent.map((m) => `- ${m.id.slice(0, 8)}`),
+      'Yeni öneriler bu açılardan FARKLI olmalı; format ve içerik türünü çeşitlendir.',
+    ];
+    return lines.join('\n');
+  })();
+
+  const proposeBlock = [contextSignals, diversityBlock].filter(Boolean).join('\n\n');
+
+  // 4. Propose new missions — inject context signals + diversity directive
   const proposeRes = await proxyToCrewBackend(
     `/api/v1/missions/${workspaceId}/propose`,
     {
-      body: contextSignals ? { context_signals: contextSignals } : {},
+      body: proposeBlock ? { context_signals: proposeBlock } : {},
       timeoutMs: 110_000,
     },
   );

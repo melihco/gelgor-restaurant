@@ -101,10 +101,14 @@ import {
   collectMissionPreviewArtifacts,
   MissionFeedPreviewGrid,
 } from '../MissionFeedPreviewGrid';
-import { filterMissionRenderRetryArtifacts } from '@/lib/mission-render-retry';
+import { filterMissionRenderRetryArtifacts, filterMissionRemotionStoryRetryArtifacts } from '@/lib/mission-render-retry';
 import type { OutputArtifact } from '@/types';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
-import { mobileArtifactsQueryKey } from '../../_lib/mobile-artifacts';
+import { useMissionProgress } from '../../_hooks/use-mission-progress';
+import {
+  invalidateMobileArtifactPool,
+  MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
+} from '../../_lib/mobile-artifacts';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
 import {
   linkCalendarItemsToArtifacts,
@@ -411,9 +415,9 @@ function NodeRows({ nodes }: { nodes: MissionProgress['nodes'] }) {
   );
 }
 
-// ── InFlightCard — polls /progress every 5s ───────────────────────────────────
+// ── InFlightCard — progress via shared useMissionProgress (single poll owner) ──
 
-function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedProduction, onTapCompleted, isRestarting, isKickingFeed }: {
+function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedProduction, onTapCompleted, isRestarting, isKickingFeed, detailOpen }: {
   mission: MissionSummary;
   workspaceId: string;
   onCancel: (id: string) => void;
@@ -422,20 +426,22 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
   onTapCompleted?: () => void;
   isRestarting?: boolean;
   isKickingFeed?: boolean;
+  /** Detail sheet open for this mission — card subscribes only, no duplicate /progress polls. */
+  detailOpen?: boolean;
 }) {
   const { t } = useTheme();
   const debugMode = isDebugUiMode();
   const pColor = PRIORITY_COLOR[mission.priority] ?? t.accent;
-  const queryClient = useQueryClient();
   const feedTarget = MISSION_WEEKLY_PACKAGE_COUNTS.total;
 
-  const { data: prog } = useQuery({
-    queryKey: ['mission-progress', mission.id],
-    queryFn: () => apiClient.getMissionProgress(workspaceId, mission.id),
-    enabled: mission.status === 'in_flight' || mission.status === 'approved',
-    refetchInterval: mission.status === 'in_flight' ? 20_000 : false,
-    staleTime: 12_000,
-    refetchIntervalInBackground: true,
+  const missionActive = mission.status === 'in_flight' || mission.status === 'approved';
+
+  const { data: prog } = useMissionProgress({
+    workspaceId,
+    missionId: mission.id,
+    missionStatus: mission.status,
+    enabled: missionActive,
+    poll: missionActive && !detailOpen,
   });
 
   const ideationDone = (prog?.nodes ?? []).some(
@@ -457,8 +463,8 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
     );
   const feedPrepPending = visualDesignPending || calendarPending;
 
-  const { data: artifactPool = [], refetch: refetchMissionArtifacts } = useMobileArtifacts({
-    params: { limit: 80 },
+  const { data: artifactPool = [] } = useMobileArtifacts({
+    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     enabled: ideationDone,
     subscribeOnly: true,
   });
@@ -498,12 +504,12 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
   const feedProductionLockActive = isFeedProductionLockActive(
     prog?.performance_summary as Record<string, unknown> | undefined,
   );
+  const feedBackgroundActive = feedProductionLockActive || Boolean(isKickingFeed);
   const manifestGap = (inFlightSlotChecklist.readyRequired ?? 0)
     < (inFlightSlotChecklist.requiredTotal ?? feedTarget);
   const feedPackageComplete = feedPublishableCount >= feedTarget && !manifestGap;
 
   const autoKickRef = useRef(false);
-  const feedBackgroundActive = Boolean(isKickingFeed);
 
   useEffect(() => {
     if (!ideationDone || !onKickFeedProduction || feedPackageComplete) return;
@@ -520,16 +526,6 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
     feedPackageComplete,
     mission.id,
   ]);
-
-  useEffect(() => {
-    if (!feedBackgroundActive) return;
-    const id = setInterval(() => {
-      void refetchMissionArtifacts();
-      void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
-      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-    }, 12_000);
-    return () => clearInterval(id);
-  }, [feedBackgroundActive, mission.id, queryClient, refetchMissionArtifacts]);
 
   const pct      = prog?.completion_pct ?? mission.completion_pct;
   const nodes    = prog?.nodes ?? [];
@@ -2867,38 +2863,53 @@ function MissionPublishPackageCard({
   t: T;
 }) {
   const [retryingAll, setRetryingAll] = useState(false);
-  const autoRetriedRef = useRef(false);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
-  const failedRenderCount = useMemo(() => {
-    if (!missionId) return 0;
-    return filterMissionRenderRetryArtifacts(previewArtifacts, missionId).length;
+  const failedRenderTargets = useMemo(() => {
+    if (!missionId) return [];
+    return filterMissionRenderRetryArtifacts(previewArtifacts, missionId);
   }, [previewArtifacts, missionId]);
 
-  useEffect(() => {
-    if (!workspaceId || !missionId || autoRetriedRef.current || failedRenderCount === 0) return;
-    autoRetriedRef.current = true;
-    void fetch(`/api/missions/${workspaceId}/${missionId}/retry-render`, {
-      method: 'POST',
-      headers: { 'X-Tenant-Id': workspaceId },
-    }).then(() => onRefresh?.()).catch(() => undefined);
-  }, [workspaceId, missionId, failedRenderCount, onRefresh]);
+  const failedStoryCount = useMemo(() => {
+    if (!missionId) return 0;
+    return filterMissionRemotionStoryRetryArtifacts(previewArtifacts, missionId).length;
+  }, [previewArtifacts, missionId]);
+
+  const failedRenderCount = failedRenderTargets.length;
 
   const retryAllRenders = async () => {
     if (!workspaceId || !missionId) return;
     setRetryingAll(true);
+    setRetryMessage(null);
     try {
       const res = await fetch(`/api/missions/${workspaceId}/${missionId}/retry-render`, {
         method: 'POST',
         headers: { 'X-Tenant-Id': workspaceId },
       });
+      const body = await res.json().catch(() => ({})) as {
+        error?: string;
+        message?: string;
+        queued?: number;
+        total?: number;
+      };
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
-        console.warn('[MissionHub] retry-render failed:', body.error ?? res.status);
+        setRetryMessage(body.message || body.error || 'Remotion yeniden başlatılamadı');
         return;
       }
+      const queued = Number(body.queued ?? 0);
+      const total = Number(body.total ?? failedRenderCount);
+      if (queued <= 0) {
+        setRetryMessage('Yeniden render kuyruğa alınamadı — birkaç saniye sonra tekrar deneyin.');
+        return;
+      }
+      const storyNote = failedStoryCount > 0
+        ? `${failedStoryCount} Remotion story`
+        : `${queued} içerik`;
+      setRetryMessage(`${storyNote} yeniden üretiliyor (~2 dk). Feed otomatik güncellenecek.`);
       onRefresh?.();
     } catch (err) {
       console.warn('[MissionHub] retry-render unreachable:', err);
+      setRetryMessage('Remotion servisine ulaşılamadı');
     } finally {
       setRetryingAll(false);
     }
@@ -3000,21 +3011,34 @@ function MissionPublishPackageCard({
         </div>
       )}
       {failedRenderCount > 0 && workspaceId && missionId && (
+        <>
         <button
           type="button"
           onClick={() => void retryAllRenders()}
           disabled={retryingAll}
           style={{
             width: '100%', padding: '10px 14px', borderRadius: 12, border: 'none',
-            cursor: retryingAll ? 'default' : 'pointer', marginBottom: 12,
+            cursor: retryingAll ? 'default' : 'pointer', marginBottom: retryMessage ? 8 : 12,
             background: 'rgba(245,158,11,0.15)', color: '#F59E0B',
             fontSize: 12, fontWeight: 800,
           }}
         >
           {retryingAll
             ? 'Remotion yeniden başlatılıyor…'
-            : `${failedRenderCount} eksik video/poster — yeniden üret`}
+            : failedStoryCount > 0
+              ? `${failedStoryCount} Remotion story — yeniden üret`
+              : `${failedRenderCount} eksik video/poster — yeniden üret`}
         </button>
+        {retryMessage && (
+          <div style={{
+            fontSize: 11, color: t.textSecondary, marginBottom: 12, lineHeight: 1.45,
+            padding: '8px 10px', borderRadius: 10,
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+          }}>
+            {retryMessage}
+          </div>
+        )}
+        </>
       )}
       {previewArtifacts.length > 0 && (
         <MissionFeedPreviewGrid
@@ -3056,10 +3080,16 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const openArtifactPreview = (artifactId: string) => openPlatformPreview(artifactId);
   const [expandedNode, setExpandedNode] = useState<string | null>(null);
 
-  const { data: prog, isLoading } = useQuery({
-    queryKey: ['mission-progress', mission.id],
-    queryFn: () => apiClient.getMissionProgress(workspaceId, mission.id),
-    staleTime: 30_000,
+  const isCompleted = mission.status === 'completed';
+  const showFeedPackage = isCompleted || mission.status === 'in_flight';
+  const missionInFlight = mission.status === 'in_flight' || mission.status === 'approved';
+
+  const { data: prog, isLoading } = useMissionProgress({
+    workspaceId,
+    missionId: mission.id,
+    missionStatus: mission.status,
+    enabled: true,
+    poll: missionInFlight,
   });
 
   const { data: brandThemePayload } = useQuery({
@@ -3081,11 +3111,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     return describeStoryAudioPolicy(parseMotionProfileFromTheme(theme));
   }, [brandThemePayload]);
 
-  const isCompleted = mission.status === 'completed';
-  const showFeedPackage = isCompleted || mission.status === 'in_flight';
-  const missionInFlight = mission.status === 'in_flight' || mission.status === 'approved';
   const { data: feedArtifactPool = [], isLoading: feedPkgLoading, refetch: refetchMissionArtifacts } = useMobileArtifacts({
-    params: { limit: 80 },
+    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     subscribeOnly: true,
     enabled: showFeedPackage,
   });
@@ -3094,14 +3121,6 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     [feedArtifactPool, mission.id],
   );
 
-  useEffect(() => {
-    if (!showFeedPackage) return;
-    const awaitingArtifacts = isCompleted && (feedArtifacts?.length ?? 0) === 0;
-    if (!missionInFlight && !awaitingArtifacts) return;
-    const intervalMs = missionInFlight ? 30_000 : 12_000;
-    const id = setInterval(() => { void refetchMissionArtifacts(); }, intervalMs);
-    return () => clearInterval(id);
-  }, [showFeedPackage, missionInFlight, isCompleted, feedArtifacts?.length, refetchMissionArtifacts]);
   const weeklySelection = useMemo(() => {
     if (!feedArtifacts || !prog?.nodes?.length) return null;
     return buildWeeklySelectionFromMissionNodes(feedArtifacts, mission.id, prog.nodes);
@@ -3229,10 +3248,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
 
   const queryClient = useQueryClient();
   const refreshFeedPackage = () => {
-    void queryClient.invalidateQueries({
-      queryKey: mobileArtifactsQueryKey(workspaceId, { missionId: mission.id, limit: 80 }),
-    });
-    void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+    invalidateMobileArtifactPool(queryClient, workspaceId);
   };
 
   const [reproduceFeedError, setReproduceFeedError] = useState<string | null>(null);
@@ -3252,7 +3268,6 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       );
       refreshFeedPackage();
       void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
-      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     },
     onError: (err: Error) => {
       setReproduceFeedOk(null);
@@ -3276,7 +3291,6 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       );
       refreshFeedPackage();
       void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
-      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     },
     onError: (err: Error) => {
       setReproduceFeedOk(null);
@@ -3663,7 +3677,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               workspaceId={workspaceId}
               missionId={mission.id}
               onRefresh={() => {
-                void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+                invalidateMobileArtifactPool(queryClient, workspaceId);
                 void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
               }}
               t={t}
@@ -4479,7 +4493,7 @@ export function MissionHub() {
     }),
     onSuccess: (data, missionId) => {
       setProposeError(null);
-      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      invalidateMobileArtifactPool(queryClient, wsId);
       queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
       queryClient.invalidateQueries({ queryKey: ['mission-progress', missionId] });
     },
@@ -4499,7 +4513,7 @@ export function MissionHub() {
       } else {
         setProposeError(data?.message?.trim() || 'Feed\'e kaydedilen içerik yok.');
       }
-      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      invalidateMobileArtifactPool(queryClient, wsId);
       queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
       queryClient.invalidateQueries({ queryKey: ['mission-progress', missionId] });
     },
@@ -4985,6 +4999,7 @@ export function MissionHub() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {failedCompleted.map(m => (
                 <InFlightCard key={m.id} mission={m} workspaceId={wsId}
+                  detailOpen={detailMission?.id === m.id}
                   onCancel={() => {}}
                   onRestart={(id) => restartMutation.mutate(id)}
                   onKickFeedProduction={(id) => kickFeedMutation.mutate(id)}
@@ -5015,6 +5030,7 @@ export function MissionHub() {
                   key={m.id}
                   mission={m}
                   workspaceId={wsId}
+                  detailOpen={detailMission?.id === m.id}
                   onCancel={(id) => cancelMutation.mutate(id)}
                   onRestart={(id) => restartMutation.mutate(id)}
                   onKickFeedProduction={(id) => kickFeedMutation.mutate(id)}

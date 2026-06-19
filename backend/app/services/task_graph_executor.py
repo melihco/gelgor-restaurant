@@ -1542,9 +1542,22 @@ def _schedule_ensure_mission_feed(
     Coalesce duplicate Feed production triggers into one debounced ensure run.
     Prevents content_ideation + calendar + feed_cohesion from racing (409 / cut-off).
     """
+    from app.debug_session_log import debug_log
+
     key = str(mission_id)
     existing = _scheduled_ensure_tasks.get(key)
-    if existing is not None and not existing.done():
+    skipped = existing is not None and not existing.done()
+    debug_log(
+        "H1",
+        "task_graph_executor.py:_schedule_ensure_mission_feed",
+        "schedule ensure",
+        {
+            "mission_id": str(mission_id),
+            "delay_sec": delay_sec,
+            "skipped_duplicate": skipped,
+        },
+    )
+    if skipped:
         return
 
     async def _run() -> None:
@@ -1624,6 +1637,14 @@ async def _trigger_content_production_pipeline(
     with the report so layout rotation, hero reel, and flagged ideas apply.
     """
     if not force and await _other_ideation_nodes_pending(mission_id, node_key):
+        from app.debug_session_log import debug_log
+
+        debug_log(
+            "H4",
+            "task_graph_executor.py:_trigger_content_production_pipeline",
+            "deferred",
+            {"mission_id": str(mission_id), "reason": "awaiting_other_ideation", "node_key": node_key},
+        )
         await _reset_feed_cohesion_review_pending(
             mission_id,
             workspace_id,
@@ -1698,6 +1719,14 @@ async def _trigger_content_production_pipeline(
         return {"produced": int((perf.get("last_feed_produce") or {}).get("produced") or 0), "skipped": True}
 
     if not await _acquire_feed_production_lock(mission_id, force=force):
+        from app.debug_session_log import debug_log
+
+        debug_log(
+            "H5",
+            "task_graph_executor.py:_trigger_content_production_pipeline",
+            "skip in flight",
+            {"mission_id": str(mission_id), "node_key": node_key},
+        )
         logger.info(
             "auto_produce_skip_in_flight",
             mission_id=str(mission_id),
@@ -1797,6 +1826,21 @@ async def _run_content_production_pipeline_locked(
             await _persist_feed_cohesion_report(mission_id, workspace_id, report)
 
     produced_n = int((produce_data or {}).get("produced") or 0)
+    from app.debug_session_log import debug_log
+
+    debug_log(
+        "H4",
+        "task_graph_executor.py:_run_content_production_pipeline_locked",
+        "auto-produce finished",
+        {
+            "mission_id": str(mission_id),
+            "produced": produced_n,
+            "withheld": int((produce_data or {}).get("withheld") or 0),
+            "rendering": int((produce_data or {}).get("rendering") or 0),
+            "fd_fallback": bool(report.get("_fallback")),
+            "fd_assignments": len(report.get("production_assignments") or []),
+        },
+    )
     publish_ready_n = int((produce_data or {}).get("publishReady") or 0)
     rendering_n = int((produce_data or {}).get("rendering") or 0)
     manifest_obj = (produce_data or {}).get("manifest") or {}

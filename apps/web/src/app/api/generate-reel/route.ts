@@ -40,8 +40,23 @@ import {
   buildDirectorPromptTemplate,
   inferContentKind,
 } from '@/lib/runway/builders/reel-prompt.builder';
-import { applyFidelityToDirectorPrompt } from '@/lib/runway-reel-fidelity';
+import { applyRunwayDirectorPromptGuardrails, type RunwayDirectorGuardrailOptions } from '@/lib/tenant-reel-motion-seed';
 import { API_BASE_URL } from '@/lib/runtime-config';
+
+function runwayGuardrailOptions(
+  sceneMeta: Record<string, unknown> | null | undefined,
+): RunwayDirectorGuardrailOptions {
+  const workspaceId = String(sceneMeta?.workspaceId ?? '').trim() || undefined;
+  const sector = String(sceneMeta?.businessType ?? sceneMeta?.sector ?? '').trim() || undefined;
+  const raw = sceneMeta?.productSpotlightReel ?? sceneMeta?.product_spotlight_reel;
+  if (raw === true || raw === 'true') {
+    return { workspaceId, sector, productSpotlightReel: true };
+  }
+  if (raw === false || raw === 'false') {
+    return { workspaceId, sector, productSpotlightReel: false };
+  }
+  return { workspaceId, sector };
+}
 
 /** OpenAI image API max prompt length (leave margin below 4000). */
 const DALLE_IMAGE_PROMPT_MAX = 3800;
@@ -449,7 +464,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           // Runway gen4_turbo promptText limit: 1000 UTF-16 code units
           // Truncate at sentence boundary to avoid mid-word cuts
           const RUNWAY_PROMPT_LIMIT = 950; // conservative margin
-          const fidelityPrompt = applyFidelityToDirectorPrompt(directorPrompt);
+          const fidelityPrompt = applyRunwayDirectorPromptGuardrails(
+            directorPrompt,
+            runwayGuardrailOptions(sceneMeta),
+          );
           const safePrompt = fidelityPrompt.length > RUNWAY_PROMPT_LIMIT
             ? fidelityPrompt.slice(0, RUNWAY_PROMPT_LIMIT).replace(/\. [^.]*$/, '.').slice(0, RUNWAY_PROMPT_LIMIT)
             : fidelityPrompt;
@@ -478,7 +496,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               reelInput.agentVisualDirection ?? input.sceneMetadata?.agentVisualDirection ?? '',
             ).trim().slice(0, 400) || undefined,
           });
-          input.promptText = applyFidelityToDirectorPrompt(templatePrompt).slice(0, 950);
+          input.promptText = applyRunwayDirectorPromptGuardrails(
+            templatePrompt,
+            runwayGuardrailOptions(input.sceneMetadata),
+          ).slice(0, 950);
           console.log('[generate-reel] Template director prompt:', templatePrompt.slice(0, 120) + '…');
         }
       } catch (err) {
@@ -505,7 +526,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             vibeProfile: reelInput.vibeProfile,
             brandThemeGrading: reelInput.brandThemeGrading,
           });
-          input.promptText = templatePrompt.slice(0, 950);
+          input.promptText = applyRunwayDirectorPromptGuardrails(
+            templatePrompt,
+            runwayGuardrailOptions(input.sceneMetadata),
+          ).slice(0, 950);
         } catch { /* keep original prompt */ }
       }
     }

@@ -5,6 +5,7 @@ import { useTheme } from './theme-context';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { CLIENT_NAV_TABS, isMobileOperatorMode } from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
+import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT } from '../_lib/mobile-artifacts';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 
 /** Hover prefetch — stale dev chunks after HMR must not surface as runtime errors. */
@@ -31,7 +32,7 @@ export function MobileNav() {
   const { t } = useTheme();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
   const { data: artifacts = [] } = useMobileArtifacts({
-    params: { limit: 80 },
+    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     enabled: Boolean(tenantId),
     subscribeOnly: true,
   });

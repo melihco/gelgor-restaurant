@@ -11,6 +11,7 @@ import {
   REEL_CAMERA_OPTIONS,
   REEL_PACE_OPTIONS,
 } from '@/lib/brand-reel-motion-profile';
+import { describeSectorReelMotionStandard } from '@/lib/sector-reel-motion-standard';
 import type { RunwayReelStrategy } from '@/lib/reel-multi-production';
 import type { ReelPacing } from '@/lib/sector-production-profile';
 import type { T } from '@/app/mobile/_components/theme-context';
@@ -37,7 +38,8 @@ export function ReelMotionSettingsPanel({
   t: T;
   onSaved?: () => void;
 }) {
-  const profile = parseMotionProfileFromTheme(theme, { sector });
+  const profile = parseMotionProfileFromTheme(theme, { sector, tenantId });
+  const sectorStandardHint = describeSectorReelMotionStandard(sector);
   const [saving, setSaving] = useState(false);
 
   const activePace = profile.reelPace && profile.reelPace !== 'auto'
@@ -49,12 +51,13 @@ export function ReelMotionSettingsPanel({
   const activeStrategy = profile.reelStrategy && profile.reelStrategy !== 'auto'
     ? profile.reelStrategy
     : 'auto';
+  const productSpotlightOn = profile.productSpotlightReel === true;
 
   const save = async (patch: Partial<BrandMotionProfile>) => {
     if (!tenantId) return;
     setSaving(true);
     try {
-      const base = parseMotionProfileFromTheme(theme, { sector });
+      const base = parseMotionProfileFromTheme(theme, { sector, tenantId });
       const next = { ...base, ...patch, operatorOverride: true };
       const motion_profile = motionProfileToThemeJson(next);
       await fetch(`/api/brand-context/${tenantId}/theme`, {
@@ -93,6 +96,37 @@ export function ReelMotionSettingsPanel({
       </div>
       <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 16 }}>
         Aktif politika: {describeBrandReelPolicy(profile, sector ?? '')}
+        {sectorStandardHint ? (
+          <span style={{ display: 'block', marginTop: 6, color: t.textMuted }}>
+            Sektör standardı: {sectorStandardHint}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Ürün reklam filmi (Runway)
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {([
+          { on: true, label: 'Açık', desc: 'Gerçek ürün galeri karelerinde TVC tarzı dolly-in ve macro motion' },
+          { on: false, label: 'Kapalı', desc: 'Standart venue/fidelity kuralları — ürün TVC director prompt yok' },
+        ] as const).map(({ on, label, desc }) => {
+          const active = productSpotlightOn === on;
+          return (
+            <button
+              key={label}
+              type="button"
+              disabled={saving}
+              onClick={() => void save({ productSpotlightReel: on })}
+              style={chipStyle(active)}
+            >
+              <div style={{ fontSize: 13, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>
+                {label}
+              </div>
+              <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{desc}</div>
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
