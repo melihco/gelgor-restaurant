@@ -284,6 +284,7 @@ export function shouldProduceRunwayForIdea(
   if (produced >= max) return false;
 
   const role = opts?.slotRole;
+  if (role === 'fal_reel_motion' || role === 'fal_only_reel') return false;
   const hasOrganic = opts?.hasOrganicReelAssignment !== false;
 
   if (role === 'campaign_reel_motion') {

@@ -6,16 +6,20 @@
  * (story before reel, Canva/canvas hints, ad detection) — do not simplify further.
  */
 import { detectPreviewMode, artifactToNativeContent } from '@/app/mobile/_components/platform-native-previews';
+import { parseArtifactContent, parseArtifactMetadata, resolveCarouselUrls } from '@/lib/artifact-utils';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 import {
-  parseArtifactContent,
-  resolveCarouselUrls,
-} from '@/app/mobile/_components/artifact-utils';
+  isFalDesignPipeline,
+  isFalOnlyPipeline,
+  isFalVideoPipeline,
+} from '@/lib/pipeline-registry';
 import { adChannelFromArtifact, adPlatformShortLabel, isPaidAdArtifact } from '@/lib/ad-publish-utils';
 import { formatPublishScheduleLabel } from '@/lib/feed-publish-schedule';
 import {
   canRetryStoryRender,
   getProductionBundleStatus,
   isBundleRendering,
+  resolveStoryVideoClientUrl,
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
 import { buildProductionQualityScorecard, type ProductionQualityScorecard } from '@/lib/production-quality-scorecard';
@@ -42,6 +46,11 @@ export interface FeedArtifactViewModel {
   carouselUrls: string[];
 }
 
+export interface FeedProducedMedia {
+  imageUrl: string | null;
+  videoUrl: string | null;
+}
+
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
@@ -53,7 +62,7 @@ function readRecord(value: unknown): Record<string, unknown> {
 export function detectFeedArtifactKind(artifact: OutputArtifact): FeedArtifactKind {
   if (isPaidAdArtifact(artifact)) return 'ad';
 
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
   const content = parseArtifactContent(artifact.content);
   const renderedPreview = readRecord(content.renderedPreview);
 
@@ -126,8 +135,140 @@ export function detectFeedArtifactKind(artifact: OutputArtifact): FeedArtifactKi
   return 'post';
 }
 
-export function buildFeedArtifactViewModel(artifact: OutputArtifact): FeedArtifactViewModel {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+function isPlayableVideoUrl(url: string | null | undefined): boolean {
+  return Boolean(url && /\.(mp4|mov|webm)(\?|$)/i.test(url));
+}
+
+function isFalProducedArtifact(meta: Record<string, unknown>): boolean {
+  const pipeline = String(meta.pipeline ?? '').trim();
+  if (isFalDesignPipeline(pipeline) || isFalOnlyPipeline(pipeline) || isFalVideoPipeline(pipeline)) {
+    return true;
+  }
+  if (meta.fal_designer_produced === true || meta.fal_only === true || meta.fal_video_produced === true) {
+    return true;
+  }
+  return String(meta.production_track ?? '').trim() === 'fal_ai';
+}
+
+function isPersistedR2ExportUrl(url: string): boolean {
+  const u = url.trim();
+  if (!u) return false;
+  if (u.includes('/api/media?key=') || u.includes('/api/media?Key=')) return true;
+  if (u.startsWith('/api/media/')) return true;
+  return false;
+}
+
+export function isGalleryProxyPreviewUrl(url: string | null | undefined): boolean {
+  return String(url ?? '').trim().includes('/api/media-proxy');
+}
+
+function artifactUsesGalleryProxyPreview(artifact: OutputArtifact): boolean {
+  const content = parseArtifactContent(artifact.content);
+  const meta = parseArtifactMetadata(artifact.metadata);
+  const candidates = [
+    content.imageUrl,
+    meta.imageUrl,
+    meta.feed_preview_url,
+    content.feed_preview_url,
+    content.posterUrl,
+    meta.poster_url,
+    meta.posterUrl,
+  ];
+  return candidates.some((candidate) => isGalleryProxyPreviewUrl(String(candidate ?? '')));
+}
+
+function shouldPreferContentUrlExport(artifact: OutputArtifact, contentUrl: string): boolean {
+  const meta = parseArtifactMetadata(artifact.metadata);
+  if (isFalProducedArtifact(meta)) return true;
+  if (artifactUsesGalleryProxyPreview(artifact)) return true;
+  if (isPlayableVideoUrl(contentUrl)) return true;
+  if (resolveStoryVideoUrl(artifact)) return true;
+  if (meta.bundle_status === 'ready') return true;
+  return false;
+}
+
+/**
+ * Feed preview only — map persisted `contentUrl` export to still/video preview fields.
+ * Covers fal posts/stories/reels and ready Remotion/Runway bundles.
+ */
+export function resolveFeedProducedMedia(
+  artifact: OutputArtifact,
+  kind?: FeedArtifactKind,
+): FeedProducedMedia {
+  const empty: FeedProducedMedia = { imageUrl: null, videoUrl: null };
+  const contentUrl = String(artifact.contentUrl ?? '').trim();
+  if (!contentUrl || !isPersistedR2ExportUrl(contentUrl)) return empty;
+  if (!shouldPreferContentUrlExport(artifact, contentUrl)) return empty;
+
+  const resolvedKind = kind ?? detectFeedArtifactKind(artifact);
+  const resolved = resolveClientMediaUrl(contentUrl) ?? contentUrl;
+  if (isPlayableVideoUrl(resolved)) {
+    return { videoUrl: resolved, imageUrl: null };
+  }
+  // Reels preview video-only — never surface a PNG export as reel media.
+  if (resolvedKind === 'reel') return empty;
+  return { imageUrl: resolved, videoUrl: null };
+}
+
+/**
+ * Feed preview only — prefer the fal/R2 export in `contentUrl` over gallery proxy stills
+ * stored in `content.imageUrl` / `metadata.imageUrl`.
+ */
+export function resolveFeedProducedStillUrl(artifact: OutputArtifact): string | null {
+  return resolveFeedProducedMedia(artifact, detectFeedArtifactKind(artifact)).imageUrl;
+}
+
+/** Feed story/reel viewer — prefer produced export video, then bundle video fields. */
+export function resolveFeedPreviewVideoUrl(artifact: OutputArtifact): string | null {
+  const produced = resolveFeedProducedMedia(artifact).videoUrl;
+  if (produced) return produced;
+  return resolveStoryVideoClientUrl(artifact);
+}
+
+function applyFeedPreviewMediaOverride(
+  artifact: OutputArtifact,
+  native: ReturnType<typeof artifactToNativeContent>,
+  kind: FeedArtifactKind,
+): ReturnType<typeof artifactToNativeContent> {
+  const produced = resolveFeedProducedMedia(artifact, kind);
+
+  if (kind === 'reel') {
+    const videoUrl = produced.videoUrl ?? (isPlayableVideoUrl(native.videoUrl) ? native.videoUrl : null);
+    const posterUrl = videoUrl
+      && native.imageUrl
+      && !isGalleryProxyPreviewUrl(native.imageUrl)
+      ? native.imageUrl
+      : null;
+    return {
+      ...native,
+      imageUrl: posterUrl,
+      videoUrl,
+    };
+  }
+
+  if (!produced.imageUrl && !produced.videoUrl) return native;
+
+  const videoUrl = produced.videoUrl ?? (isPlayableVideoUrl(native.videoUrl) ? native.videoUrl : null);
+  let imageUrl = produced.imageUrl ?? native.imageUrl;
+  if (videoUrl && isGalleryProxyPreviewUrl(imageUrl)) {
+    imageUrl = produced.imageUrl ?? null;
+  }
+  if (produced.imageUrl) {
+    imageUrl = produced.imageUrl;
+  }
+
+  return {
+    ...native,
+    imageUrl: imageUrl ?? null,
+    videoUrl,
+  };
+}
+
+export function buildFeedArtifactViewModel(
+  artifact: OutputArtifact,
+  missionIdeationLookup?: ReadonlyMap<string, string>,
+): FeedArtifactViewModel {
+  const meta = parseArtifactMetadata(artifact.metadata);
   const content = parseArtifactContent(artifact.content);
   const kind = detectFeedArtifactKind(artifact);
   const previewMode = detectPreviewMode(artifact, kind);
@@ -143,14 +284,18 @@ export function buildFeedArtifactViewModel(artifact: OutputArtifact): FeedArtifa
   return {
     artifact,
     meta,
-    content: artifactToNativeContent(artifact),
+    content: applyFeedPreviewMediaOverride(
+      artifact,
+      artifactToNativeContent(artifact, missionIdeationLookup),
+      kind,
+    ),
     kind,
     previewMode,
     quality,
     bundleStatus,
     isRendering,
     canRetryRender: canRetryStoryRender(artifact),
-    scheduleLabel: formatPublishScheduleLabel(meta),
+    scheduleLabel: formatPublishScheduleLabel(meta, { kind }),
     isAdCreative,
     adBadge: isAdCreative ? adPlatformShortLabel(adChannel) : null,
     isDesignedPost,

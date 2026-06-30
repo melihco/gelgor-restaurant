@@ -34,10 +34,7 @@ from app.crew.registry import get_agent_roles
 from app.models.agent_config import AgentInstance, AgentDefinition
 from app.models.task import Task, Suggestion, ActionLog
 from app.services.brand_context_service import build_brand_info
-from app.services.tenant_learning_service import (
-    build_tenant_learning_snapshot,
-    build_learning_context_prompt,
-)
+from app.services.brand_execution_context import apply_learning_context
 
 logger = structlog.get_logger()
 AGENT_ROLES = get_agent_roles()
@@ -129,12 +126,16 @@ async def execute_agent(
     # Build a snapshot of approved/rejected content history and inject it
     # into brand context so agents learn from past feedback.
     # Content-producing tasks benefit most; skip for analytics/ads.
+    # Narrower than brand_execution_context.LEARNING_TASK_TYPES on purpose:
+    # this direct path does not inject learning for visual_design_cards.
     content_tasks = {"content_ideation", "content_calendar", "content_strategy",
                      "single_review_response", "review_analysis"}
     if task_type in content_tasks:
         tenant_id = str(workspace_id)  # adjust if tenant_id differs from workspace_id
-        learning_snapshot = await build_tenant_learning_snapshot(db, tenant_id)
-        brand.learning_context = build_learning_context_prompt(learning_snapshot)
+        # set_when_empty=True preserves this path's always-assign semantics.
+        learning_snapshot = await apply_learning_context(
+            db, brand, tenant_id, set_when_empty=True
+        )
         logger.info(
             "tenant_learning_injected",
             workspace_id=str(workspace_id),

@@ -1,4 +1,4 @@
-import type { UseQueryOptions } from '@tanstack/react-query';
+import { keepPreviousData, type UseQueryOptions } from '@tanstack/react-query';
 import { apiClient, type GetArtifactsParams } from '@/lib/api-client';
 import type { OutputArtifact } from '@/types';
 import {
@@ -23,10 +23,19 @@ export function invalidateMobileArtifactPool(
   });
 }
 
-/** Feed first paint — small payload for fast TTFB. */
-export const MOBILE_ARTIFACT_FEED_INITIAL = 40;
+/**
+ * Feed first paint — small payload for instant TTFB (Instagram-style first page).
+ * The feed grows this window in `MOBILE_ARTIFACT_FEED_PAGE` steps on scroll.
+ */
+export const MOBILE_ARTIFACT_FEED_INITIAL = 10;
 
-/** Feed full scroll window — loaded in background after initial paint. */
+/** Grow step when the user scrolls near the end of the loaded window. */
+export const MOBILE_ARTIFACT_FEED_PAGE = 10;
+
+/** Cards rendered per scroll sentinel (DOM lazy paint within the loaded API window). */
+export const MOBILE_ARTIFACT_FEED_RENDER_PAGE = 5;
+
+/** Feed full scroll window — upper bound for progressive loading. */
 export const MOBILE_ARTIFACT_FEED_LIMIT = 120;
 
 /** Outputs archive: slightly larger window when that tab is active. */
@@ -65,6 +74,9 @@ export function getMobileArtifactsQueryOptions(
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     retry: 1,
+    // Keep showing the current page while a larger window (grown limit) loads —
+    // prevents an empty-feed flash during Instagram-style progressive loading.
+    placeholderData: keepPreviousData,
     ...mobileQueryDefaults,
   };
 }
@@ -85,13 +97,9 @@ export function shouldPollArtifactsForScreen(screen: string): boolean {
   return ARTIFACT_POLL_SCREENS.has(screen);
 }
 
-/** Poll on any screen while a mission is producing (global production awareness). */
-export function shouldPollArtifactsGlobally(
-  screen: string,
-  opts?: { activeMissionProduction?: boolean },
-): boolean {
-  if (shouldPollArtifactsForScreen(screen)) return true;
-  return Boolean(opts?.activeMissionProduction);
+/** Poll only on artifact-heavy screens — no background fetch on Brand/More/Settings. */
+export function shouldPollArtifactsGlobally(screen: string): boolean {
+  return shouldPollArtifactsForScreen(screen);
 }
 
 /**
@@ -107,18 +115,8 @@ export function mobileArtifactsPollIntervalMs(
   screen: string,
   artifacts: OutputArtifact[] | undefined,
   unchangedPolls = 0,
-  opts?: { globalMissionPoll?: boolean },
 ): number | false {
-  if (!shouldPollArtifactsForScreen(screen) && !opts?.globalMissionPoll) return false;
-
-  if (opts?.globalMissionPoll && !shouldPollArtifactsForScreen(screen)) {
-    const deduped = dedupeProductionBundles(artifacts ?? []);
-    const hasRendering = deduped.some(
-      (a) => isBundleRendering(a) && !resolveStoryVideoUrl(a),
-    );
-    if (hasRendering) return 10_000;
-    return 15_000;
-  }
+  if (!shouldPollArtifactsForScreen(screen)) return false;
 
   if (screen === 'feed') {
     const deduped = dedupeProductionBundles(artifacts ?? []);

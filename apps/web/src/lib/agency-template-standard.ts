@@ -168,6 +168,9 @@ export const AGENCY_FEATURED_STORY_TEMPLATE_IDS = [
   'remotion_neon_night_02',
   'remotion_quote_card_05',
   'remotion_location_pin_01',
+  'remotion_luxury_kinetic_type_01',
+  'remotion_glassmorphism_showcase_01',
+  'remotion_editorial_product_stage_01',
 ] as const;
 
 const FEATURED_SET = new Set<string>(AGENCY_FEATURED_STORY_TEMPLATE_IDS);

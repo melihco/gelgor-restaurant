@@ -10,7 +10,7 @@ public interface IAgentService
     Task<AgentType?> TryGetTenantAgentTypeAsync(Guid agentId, Guid tenantId, CancellationToken cancellationToken = default);
     Task<AgentDetailDto?> GetAgentDetailAsync(Guid agentId, Guid tenantId, CancellationToken cancellationToken = default);
     Task<AgentDto> UpdateAgentStateAsync(Guid agentId, Guid tenantId, AgentState newState, CancellationToken cancellationToken = default);
-    Task<AgentExecutionDto> ExecuteAgentAsync(Guid agentId, ExecuteAgentRequest request, CancellationToken cancellationToken = default);
+    Task<AgentExecutionDto> ExecuteAgentAsync(Guid agentId, Guid tenantId, ExecuteAgentRequest request, CancellationToken cancellationToken = default);
     Task<CancelStuckExecutionResultDto> CancelStuckAgentExecutionAsync(
         Guid agentId,
         Guid tenantId,

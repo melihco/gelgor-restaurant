@@ -2,7 +2,7 @@
  * content_calendar plan satırları ↔ mission artifact eşlemesi (APO-2 / P2).
  */
 import type { OutputArtifact } from '@/types';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent } from '@/lib/artifact-utils';
 import {
   artifactProductionRole,
   type ProductionSlotRole,
@@ -12,8 +12,11 @@ import {
   isBundleFailed,
   isBundleRendering,
   parseArtifactMissionId,
+  resolveBrandedPostUrl,
+  resolvePosterUrl,
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 import { publishScheduleFromMetadata } from '@/lib/feed-publish-schedule';
 
 export type CalendarDeliveryStatus =
@@ -179,6 +182,76 @@ function matchArtifactToCalendarItem(
   }
 
   return null;
+}
+
+/** Mission Hub planning cards — thumbnail for linked produced artifact. */
+export function resolveArtifactHubPreviewUrl(artifact: OutputArtifact): string | null {
+  const content = parseArtifactContent(artifact.content) as Record<string, unknown>;
+  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const isVideoUrl = (url: string) => /\.(mp4|mov|webm)(\?|$)/i.test(url);
+
+  const branded = resolveBrandedPostUrl(artifact);
+  const poster = resolvePosterUrl(artifact);
+  const video = resolveStoryVideoUrl(artifact);
+  const contentUrl = String(artifact.contentUrl ?? '').trim();
+
+  const stillCandidates = [
+    branded,
+    poster,
+    meta.imageUrl,
+    content.imageUrl,
+    meta.feed_preview_url,
+    content.feed_preview_url,
+    meta.reference_photo_url,
+    content.reference_photo_url,
+    !video && contentUrl && !isVideoUrl(contentUrl) ? contentUrl : null,
+  ];
+
+  for (const candidate of stillCandidates) {
+    const url = String(candidate ?? '').trim();
+    if (!url || isVideoUrl(url)) continue;
+    return resolveClientMediaUrl(url) ?? url;
+  }
+
+  if (video) {
+    return resolveClientMediaUrl(video) ?? video;
+  }
+
+  return null;
+}
+
+export function planningItemReferenceUrl(item: Record<string, unknown>): string | null {
+  const raw = String(
+    item.photo_url
+    ?? item.background_reference_url
+    ?? item.reference_photo_url
+    ?? '',
+  ).trim();
+  if (!raw || /\.(mp4|mov|webm)(\?|$)/i.test(raw)) return null;
+  return resolveClientMediaUrl(raw) ?? raw;
+}
+
+export function planningItemHeadline(item: Record<string, unknown>, fallbackIndex: number): string {
+  return String(
+    item.concept_title
+    ?? item.conceptTitle
+    ?? item.idea_title
+    ?? item.title
+    ?? item.headline
+    ?? item.event_name
+    ?? item.theme
+    ?? `Plan ${fallbackIndex + 1}`,
+  ).trim();
+}
+
+/** content_ideation / visual_design_cards ↔ produced artifact (same matcher as calendar). */
+export function linkPlanningItemsToArtifacts(
+  items: unknown[],
+  artifacts: OutputArtifact[],
+  missionId: string,
+  opts?: { missionInFlight?: boolean },
+): CalendarItemLink[] {
+  return linkCalendarItemsToArtifacts(items, artifacts, missionId, opts);
 }
 
 export function linkCalendarItemsToArtifacts(

@@ -23,7 +23,7 @@ import {
 import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
-import { HeadlineStack, headlineSize, stablePx, stableScale, stableTextOpacity } from './shared/story-primitives';
+import { HeadlineStack, headlineSize, stablePx, stableScale, stableTextOpacity, cinematicGradeFilter, CinematicLightLayer, FilmGrainOverlay } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 
 export const EditorialStory: React.FC<StoryProps> = ({
@@ -90,8 +90,11 @@ export const EditorialStory: React.FC<StoryProps> = ({
         transform: `scale(${photoScale}) translate3d(0, ${photoYpx}px, 0)`,
         transformOrigin: '40% 60%',
       }}>
-        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinematicGradeFilter('subtle') }} />
       </AbsoluteFill>
+
+      {/* ── Cinematic light bloom — adds dimensionality to flat photos ── */}
+      <CinematicLightLayer warmth="warm" intensity={0.75} origin="40% 22%" />
 
       {/* ── Layer 1: Radial edge vignette (photo atmosphere) ── */}
       <AbsoluteFill style={{
@@ -114,12 +117,14 @@ export const EditorialStory: React.FC<StoryProps> = ({
         )`,
       }} />
 
+      <FilmGrainOverlay opacity={0.05} fine />
+
       <StoryLogoTopCenter
         logoUrl={logoUrl}
         brandName={brandName}
         fontFamily={hero}
         opacity={brandOp}
-        paddingTop="3.8%"
+        paddingTop="6.5%"
       />
 
       {/* ── BOTTOM CONTENT ZONE — LEFT ALIGNED ── */}
@@ -166,8 +171,8 @@ export const EditorialStory: React.FC<StoryProps> = ({
           </div>
         )}
 
-        {/* Headline — left-aligned, dramatic weight, spring slam-up */}
-        <div style={{ overflow: 'hidden', marginBottom: subtitle ? 16 : 24 }}>
+        {/* Headline — left-aligned, dramatic weight */}
+        <div style={{ overflow: 'visible', marginBottom: subtitle ? 16 : 24, paddingTop: '0.08em' }}>
           <HeadlineStack
             headline={headlineText}
             fontFamily={hero}

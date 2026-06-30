@@ -2,6 +2,7 @@
  * Meta Ads + Google Ads — artifact detection, platform labels, publish readiness.
  */
 import type { OutputArtifact } from '@/types';
+import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-utils';
 
 export type AdPublishChannel = 'meta_ads' | 'google_ads';
 
@@ -14,16 +15,8 @@ export const MISSION_AD_PAIR_COUNTS = {
 
 /** Meta/Google clones of designed_post — same image, separate artifact rows. */
 export function isDerivedAdCreative(artifact: OutputArtifact): boolean {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
-  const content = (() => {
-    try {
-      const raw = artifact.content;
-      if (typeof raw === 'string') return JSON.parse(raw) as Record<string, unknown>;
-      return (raw ?? {}) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  })();
+  const meta = parseArtifactMetadata(artifact.metadata);
+  const content = parseArtifactContent(artifact.content);
   return meta.derived_from === 'designed_post'
     || content.derived_from === 'designed_post'
     || (isPaidAdArtifact(artifact) && meta.publish_priority === 'extended');
@@ -35,7 +28,7 @@ export function isOrganicFeedArtifact(artifact: OutputArtifact): boolean {
 }
 
 export function isPaidAdArtifact(artifact: OutputArtifact): boolean {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
   const role = String(meta.production_role ?? '');
   const pipeline = String(meta.pipeline ?? '');
   const channel = String(meta.publish_channel ?? '');
@@ -49,7 +42,7 @@ export function isPaidAdArtifact(artifact: OutputArtifact): boolean {
 }
 
 export function adChannelFromArtifact(artifact: OutputArtifact): AdPublishChannel | null {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
   const channel = String(meta.publish_channel ?? '').trim();
   if (channel === 'google_ads' || meta.ad_platform === 'google_ads') return 'google_ads';
   if (channel === 'meta_ads' || meta.ad_platform === 'meta_ads') return 'meta_ads';

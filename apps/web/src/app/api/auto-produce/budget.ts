@@ -11,25 +11,23 @@
 
 import { NEXUS_API, INTERNAL_KEY } from './nexus-client';
 import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
+import { serverConfig } from '@/lib/server-config';
 
 const CREW_BACKEND = getCrewBackendBaseUrl();
 /** Operator ceiling for daily artifact count — package limits apply first. */
-const AUTO_PRODUCE_MAX_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_DAILY || '200', 10);
+const AUTO_PRODUCE_MAX_DAILY = serverConfig.autoProduce.maxDaily;
 /** Mission → Feed may produce 5–7 slots in one run; must not share the manual daily cap. */
-const MISSION_AUTO_PRODUCE_MAX_PER_RUN = parseInt(
-  process.env.MISSION_AUTO_PRODUCE_MAX_PER_RUN || '24',
-  10,
-);
-const DAILY_BUDGET_USD = parseFloat(process.env.AUTO_PRODUCE_DAILY_BUDGET_USD || '50');
+const MISSION_AUTO_PRODUCE_MAX_PER_RUN = serverConfig.autoProduce.maxPerRun;
+const DAILY_BUDGET_USD = serverConfig.autoProduce.dailyBudgetUsd;
 /** Runway cost per 5s clip (gen4_turbo API) */
 const RUNWAY_COST_USD = 0.25;
 /**
  * Runway reels are ON by default — full quality production includes video.
  * Disable with AUTO_PRODUCE_RUNWAY=false if Runway API key is not configured.
  */
-const AUTO_PRODUCE_RUNWAY = process.env.AUTO_PRODUCE_RUNWAY !== 'false';
+const AUTO_PRODUCE_RUNWAY = serverConfig.autoProduce.runwayEnabled;
 /** Operator ceiling for daily reels — package monthly reel limit applies first. */
-const AUTO_PRODUCE_MAX_REELS_DAILY = parseInt(process.env.AUTO_PRODUCE_MAX_REELS_DAILY || '15', 10);
+const AUTO_PRODUCE_MAX_REELS_DAILY = serverConfig.autoProduce.maxReelsDaily;
 
 // ── Package-aware limit resolution ────────────────────────────────────────────
 
@@ -216,7 +214,7 @@ export async function canProduce(
   estimatedBatchCostUsd = 0,
   options?: CanProduceOptions,
 ): Promise<BudgetCheckResult> {
-  if (process.env.AUTO_PRODUCE_ENABLE === 'false') {
+  if (!serverConfig.autoProduce.enabled) {
     return { allowed: false, remaining: 0, reason: 'Auto-produce disabled' };
   }
 

@@ -22,6 +22,7 @@ const PASSWORD = 'DatcamSmoke2026!';
 const COMPANY = 'Datçam';
 const WEBSITE = 'https://www.datcam.com.tr';
 const IG = 'datcamtr';
+const ALLOW_REVIEW_READY = process.env.ONBOARDING_SMOKE_ALLOW_REVIEW_READY === '1';
 
 function decodeJwt(token) {
   const part = token.split('.')[1];
@@ -239,8 +240,27 @@ async function main() {
   }
 
   section('Summary');
-  const pass = setup.data.ok && (brs.data?.score ?? 0) >= 50;
-  console.log(pass ? 'PASS — Datçam smoke tenant ready for review' : 'PARTIAL — check steps above');
+  const galleryAnalyzed = Number(setup.data.gallery?.analyzed ?? 0);
+  const brsScore = Number(brs.data?.score ?? 0);
+  const canAutoProduce = brs.data?.canAutoProduce === true;
+  const proposeOk = propose.ok && Number(propose.data?.proposals_created ?? 0) > 0;
+  const strictPass = setup.data.ok && brsScore >= 70 && canAutoProduce && galleryAnalyzed > 0 && proposeOk;
+  const reviewReadyPass = setup.data.ok && brsScore >= 50;
+  const pass = strictPass || (ALLOW_REVIEW_READY && reviewReadyPass);
+  if (strictPass) {
+    console.log('PASS — Datçam onboarding is production-ready');
+  } else if (ALLOW_REVIEW_READY && reviewReadyPass) {
+    console.log('PARTIAL — Datçam tenant ready for review (strict release gate not met)');
+  } else {
+    console.log('FAIL — Datçam onboarding is not production-ready');
+  }
+  console.log({
+    strictPass,
+    brsScore,
+    canAutoProduce,
+    galleryAnalyzed,
+    proposeOk,
+  });
   console.log({ tenantId, email: EMAIL, password: PASSWORD });
   process.exit(pass ? 0 : 2);
 }

@@ -86,6 +86,7 @@ def _seasonal_task_graph(
     business_name: str,
     content_posture: str,
     business_type: str = "",
+    plan_slug: str | None = None,
 ) -> list[TaskNodeCreate]:
     """
     Adaptive task graph for a seasonal campaign mission.
@@ -133,25 +134,32 @@ def _seasonal_task_graph(
         phase0_keys.append("review_analysis")
 
     reel_suffix = profile["reel_brief_suffix"]
-    weekly_count = 5  # 2 story + 2 post + 1 reel — stable weekly Feed package
+    from app.services.package_weekly_geometry import (
+        format_mix_label,
+        resolve_weekly_package_geometry,
+    )
+
+    weekly_geo = resolve_weekly_package_geometry(plan_slug)
+    weekly_count = weekly_geo["total"]
 
     nodes.append(TaskNodeCreate(
         node_key="weekly_content_ideation",
         phase_index=1,
-        title=f"{phase_name} — Haftalık İçerik Paketi ({weekly_count} parça)",
+        title=f"{phase_name} — Haftalık İçerik Paketi ({weekly_count} fikir / slot başına caption)",
         task_type="content_ideation",
         agent_role="content_agent",
         input_data={
             "count": weekly_count,
             "time_period": phase_name,
-            "format_mix": "2 story, 2 post, 1 reel",
+            "format_mix": format_mix_label(weekly_geo),
             "reel_story_brief": reel_suffix,
         },
         depends_on=["content_strategy"],
     ))
 
-    # content_calendar omitted when weekly_content_ideation already delivers the 5-piece
-    # Feed package — saves ~$0.30–0.50/misyon LLM without reducing publishable output.
+    # content_calendar omitted when weekly_content_ideation already delivers the
+    # 10-piece buffered Feed package — saves ~$0.30–0.50/misyon LLM without
+    # reducing the 7-day publishable output goal.
 
     return nodes
 
@@ -240,6 +248,80 @@ def create_seasonal_mission_from_phase_change(
         ],
         priority=priority,
         confidence=confidence,
+        task_nodes=task_nodes,
+    )
+
+
+def create_special_day_mission(
+    workspace_id: uuid.UUID,
+    business_name: str,
+    special_day_name: str,
+    theme_hint: str,
+    days_until: int,
+    business_type: str = "",
+) -> MissionCreate:
+    """
+    Build a MissionCreate for an upcoming locale special day (e.g. Babalar Günü).
+
+    Called by _detect_special_days_job() ~7 days ahead of the occasion. The
+    mission is persisted with status='proposed' so the operator approves it from
+    the Mission Hub. Production picks the brand's `event_special` design template
+    for brand-consistent special-day creatives.
+    """
+    timeline_days = max(3, min(days_until, 10))
+
+    creative_brief = (
+        f"ÖZEL GÜN KAMPANYASI: {special_day_name}\n\n"
+        f"Tema: {theme_hint}\n\n"
+        f"{business_name} için {special_day_name} gününe özel, markanın kurumsal "
+        f"renkleri, logosu ve tarzıyla tutarlı kutlama içerikleri üret. Markanın "
+        f"onboarding'de oluşturulan 'Özel Gün' tasarım şablonunu temel al. Genel "
+        f"kutlama değil — markanın sesini ve görsel kimliğini taşıyan özgün bir "
+        f"paylaşım olsun."
+    )
+
+    content_posture = f"{special_day_name} kutlaması — marka tonuna sadık, sıcak"
+    task_nodes = _seasonal_task_graph(
+        special_day_name, business_name, content_posture, business_type,
+    )
+    node_keys_set = {n.node_key for n in task_nodes}
+
+    phase0_keys = [k for k in ["content_strategy", "review_analysis"] if k in node_keys_set]
+    phase1_keys = [
+        k for k in ["weekly_content_ideation", "post_ideation", "reel_ideation"]
+        if k in node_keys_set
+    ]
+    phase2_keys = [k for k in ["content_calendar"] if k in node_keys_set]
+
+    phases = [
+        MissionPhase(index=0, name="Strateji & Analiz",
+                     description="Özel gün içerik stratejisi",
+                     node_keys=phase0_keys),
+        MissionPhase(index=1, name="İçerik Üretimi",
+                     description=f"{special_day_name} içerik fikirleri",
+                     node_keys=phase1_keys),
+        MissionPhase(index=2, name="Yayın Planı",
+                     description="İçerik takvimi",
+                     node_keys=phase2_keys),
+    ]
+
+    return MissionCreate(
+        title=f"{special_day_name} — {business_name}",
+        type=MissionType.SEASONAL,
+        trigger_signal="special_day",
+        trigger_evidence=f"{special_day_name} ({days_until} gün kaldı)",
+        objective=(
+            f"{special_day_name} gününde marka görünürlüğünü artır, "
+            f"özel güne uygun marka-tutarlı içerik üret."
+        ),
+        timeline_days=timeline_days,
+        creative_brief=creative_brief,
+        phases=phases,
+        assigned_agent_roles=[
+            "content_strategy_agent", "content_agent", "review_agent"
+        ],
+        priority=MissionPriority.HIGH,
+        confidence=0.92,
         task_nodes=task_nodes,
     )
 

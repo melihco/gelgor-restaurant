@@ -51,7 +51,16 @@ def create_content_agent(
     degrade gracefully (return "not_configured") when keys are missing.
     """
     settings = get_settings()
-    brand_context_block = build_brand_context_prompt(brand)
+    # Faz 1.2 — ideation task'ı zengin gallery scene block taşır; flag açıkken
+    # backstory'deki kaba gallery envanteri kopyasını çıkararak input token tasarrufu.
+    # Varsayılan: mevcut davranış (envanter dahil).
+    import os as _os
+    _dedup_gallery = (
+        for_ideation and _os.getenv("DEDUP_GALLERY_BACKSTORY") == "true"
+    )
+    brand_context_block = build_brand_context_prompt(
+        brand, include_gallery_inventory=not _dedup_gallery
+    )
 
     lang_map = {"en": "English", "tr": "Turkish", "de": "German", "fr": "French", "es": "Spanish"}
     raw_lang = (brand.languages or "tr").split(",")[0].strip().lower()

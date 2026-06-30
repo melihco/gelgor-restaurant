@@ -21,6 +21,12 @@ import http from 'http';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { mediaUrlForKey } from '@/lib/media-url';
+import { isSafeHttpHost } from '@/lib/trusted-media-hosts';
+import { acquireDistributedSlot, releaseDistributedSlot } from '@/lib/redis-semaphore';
+import {
+  resolveRemotionMaxConcurrentRenders,
+  resolveRemotionRenderConcurrency,
+} from '@/lib/production-throughput';
 import { getRemotionTemplate } from '@/lib/remotion-template-catalog';
 import {
   resolveTemplateFromDirector,
@@ -34,7 +40,7 @@ import {
   type ContentIntent,
 } from '@/lib/brand-motion-profile';
 import { resolveShowcasePhotoForRender } from '@/lib/brand-showcase-presets';
-import { isUsableGalleryPhotoUrl, normalizePhotoUrlForRemotionRender, probeMediaUrl } from '@/lib/media-url';
+import { isUsableGalleryPhotoUrl, normalizePhotoUrlForRemotionRender, probeMediaUrlReliable } from '@/lib/media-url';
 import {
   buildDirectorLayoutSpecPatch,
   buildGrafikerRetryPatch,
@@ -48,6 +54,7 @@ import {
   fetchBrandProductionTokensForWorkspace,
   fetchBrandThemeForWorkspace,
 } from '@/lib/brand-production-tokens';
+import { resolveLibrarySlotRenderBinding } from '@/lib/remotion-template-binding';
 import { buildBrandTextOverlayLayoutPatch } from '@/lib/brand-text-overlay-prefs';
 import { resolveStoryAudioMood } from '@/lib/story-audio-mood';
 import { resolveStoryMusicUrl } from '@/lib/story-audio-catalog';
@@ -62,10 +69,12 @@ import {
   pruneStaleRemotionTempDirs,
   removeRemotionBundleDir,
 } from '@/lib/remotion-temp-cleanup';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
-const RENDER_BASE_URL = (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
+const RENDER_BASE_URL = getNextjsInternalOrigin();
 const RENDER_ASSET_DIR = '/tmp/remotion-serve';
 
 let remotionAssetServer: http.Server | null = null;
@@ -239,16 +248,49 @@ async function materializeImageAsJpegForHeadlessRender(url: string): Promise<str
     fetchUrl = `${RENDER_BASE_URL}${trimmed}`;
   }
 
-  try {
-    const sharp = (await import('sharp')).default;
-    const res = await fetch(fetchUrl, {
-      signal: AbortSignal.timeout(45_000),
-      headers: { Accept: 'image/*,*/*;q=0.8' },
-    });
-    if (!res.ok) {
-      throw new Error(`image materialize failed: HTTP ${res.status} for ${trimmed.slice(0, 80)}`);
+  const sharp = (await import('sharp')).default;
+
+  // Render time is the most failure-prone step: external brand/Wix CDNs are slow
+  // or hotlink-protected, and a single timed-out fetch fails the whole bundle.
+  // Try a direct fetch with retry, then fall back to fetchExternalImageBuffer
+  // (proper Referer + 403 handling) before giving up.
+  const fetchRaw = async (): Promise<Buffer> => {
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const res = await fetch(fetchUrl, {
+          signal: AbortSignal.timeout(45_000),
+          headers: {
+            Accept: 'image/*,*/*;q=0.8',
+            'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+          },
+          redirect: 'follow',
+        });
+        if (!res.ok) {
+          throw new Error(`image materialize failed: HTTP ${res.status} for ${trimmed.slice(0, 80)}`);
+        }
+        return Buffer.from(await res.arrayBuffer());
+      } catch (err) {
+        lastErr = err;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
+      }
     }
-    const raw = Buffer.from(await res.arrayBuffer());
+    // Last resort: proven external fetcher (Referer/hotlink-aware) for http(s) URLs.
+    if (/^https?:\/\//i.test(fetchUrl)) {
+      try {
+        const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
+        const buf = await fetchExternalImageBuffer(fetchUrl, 30_000);
+        if (buf && buf.length > 0) return buf;
+      } catch {
+        /* fall through to throw */
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('image materialize failed');
+  };
+
+  try {
+    const raw = await fetchRaw();
     const jpegBuffer = await sharp(raw).jpeg({ quality: 92 }).toBuffer();
     const filePath = path.join(RENDER_ASSET_DIR, `render-asset-${randomUUID()}.jpg`);
     fs.mkdirSync(RENDER_ASSET_DIR, { recursive: true });
@@ -263,23 +305,7 @@ async function materializeImageAsJpegForHeadlessRender(url: string): Promise<str
 
 function isHeadlessRenderSafeHttpUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url) || isLocalDevOrigin(url)) return false;
-  const lower = url.toLowerCase();
-  const safeHosts = [
-    'oaidalleapiprodscus.blob.core',
-    'fal-cdn',
-    'storage.googleapis',
-    'images.unsplash.com',
-    'plus.unsplash.com',
-    'r2.dev',
-    'r2.cloudflarestorage.com',
-    'cloudflarestorage.com',
-    'amazonaws.com',
-    'cloudfront.net',
-    'export-download.canva.com',
-    'cdninstagram.com',
-    'fbcdn.net',
-  ];
-  return safeHosts.some((host) => lower.includes(host));
+  return isSafeHttpHost(url);
 }
 
 /** Remotion headless browser — never pass CORS-blocked external URLs; materialize locally. */
@@ -315,33 +341,21 @@ async function resolveMediaUrlForHeadlessRender(url: string): Promise<string> {
   return materializeImageAsJpegForHeadlessRender(showcaseUrl);
 }
 
-const GRAFIKER_SYSTEM_PROMPT = `You are a senior art director reviewing an Instagram story frame for a premium hospitality brand.
-
-━━━ LAYOUT TYPES — UNDERSTAND BEFORE EVALUATING ━━━
-EDITORIAL / FROSTED: Text in BOTTOM zone on dark gradient — bright photo above is INTENTIONAL.
-SPLIT PANEL: Text on SOLID brand panel — must be perfectly legible.
-CINEMATIC / CAMPAIGN: Text centered — evaluate center contrast only.
-MAGAZINE COVER: Giant headline lower-left — evaluate left text zone only.
-
-━━━ EVALUATION (strict — client-ready bar is 8+) ━━━
-1. TEXT IN ZONE: crystal clear in its designated area?
-2. TEXT OVERLAP: any overlap between elements?
-3. HIERARCHY: headline dominates?
-4. PREMIUM FEEL: intentional, agency-grade?
-
-pass = true ONLY if score ≥ 8 AND legibility clear AND no overlap.
-
-Respond ONLY with JSON:
-{"score":1-10,"pass":true/false,"text_overlap":true/false,"text_legibility":"clear|partial|poor","overlay_sufficient":true/false,"hierarchy_ok":true/false,"issues":[],"verdict":"..."}`;
-
 async function runGrafikerReview(
   composition: { durationInFrames: number; fps: number },
   serveUrl: string,
   inputProps: Record<string, unknown>,
   compositionId: string,
+  telemetry?: { attempt?: number; missionId?: string | null; slotKey?: string | null },
+  tier?: string,
 ): Promise<GrafikerReviewResult | null> {
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const openaiKey = serverConfig.openai.apiKey;
   if (!openaiKey) return null;
+
+  // Faz 2.2 — Grafiker-lite: küçük thumbnail (≈768px) + ucuz model. Premium korunur.
+  // Tier yalnızca açıkça economy/agency ise lite; eksikse tam kalite (premium-güvenli).
+  const lite = serverConfig.remotion.grafikerLite && (tier === 'economy' || tier === 'agency');
+  const reviewScale = lite ? 0.4 : 1.0; // 1920 → ~768px
 
   try {
     const os = await import('os');
@@ -357,46 +371,17 @@ async function runGrafikerReview(
       inputProps,
       frame: reviewFrame,
       imageFormat: 'jpeg',
-      jpegQuality: 92,
-      scale: 1.0,
+      jpegQuality: lite ? 80 : 92,
+      scale: reviewScale,
     });
 
     if (!fsModule.default.existsSync(thumbFile)) return null;
 
-    const thumbB64 = fsModule.default.readFileSync(thumbFile).toString('base64');
+    const thumbBuffer = fsModule.default.readFileSync(thumbFile);
     fsModule.default.unlinkSync(thumbFile);
 
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey: openaiKey });
-    const reviewResp = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 400,
-      temperature: 0.05,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: GRAFIKER_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: `Review frame for ${compositionId}. Reject amateur overlap, weak contrast, cramped type.` },
-            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${thumbB64}`, detail: 'high' } },
-          ],
-        },
-      ],
-    });
-
-    const reviewRaw = reviewResp.choices[0]?.message?.content?.trim() ?? '{}';
-    const review = JSON.parse(reviewRaw.match(/\{[\s\S]*\}/)?.[0] ?? reviewRaw) as GrafikerReviewResult;
-    return {
-      score: review.score ?? null,
-      pass: review.pass === true,
-      text_overlap: review.text_overlap,
-      text_legibility: review.text_legibility,
-      overlay_sufficient: review.overlay_sufficient,
-      hierarchy_ok: review.hierarchy_ok,
-      issues: review.issues,
-      verdict: review.verdict,
-    };
+    const { runGrafikerVisionReview } = await import('@/lib/grafiker-review-service');
+    return runGrafikerVisionReview(thumbBuffer, compositionId, 'story', telemetry, tier);
   } catch {
     return null;
   }
@@ -451,12 +436,52 @@ export type RemotionRenderRequest = {
   workspaceId?: string;
   /** P2-1 — profile-aware Grafiker retry cap (0–2) */
   grafikerMaxRetries?: number;
+  /** Faz 2.2 — production tier; premium preserves full Grafiker (gpt-4o high) */
+  profileTier?: 'economy' | 'agency' | 'premium';
 };
 
 // Bundle is created once and cached between requests (Next.js module cache)
 let _bundleUrl: string | null = null;
 let _bundling = false;
 const BUNDLE_VERSION = '26';
+
+// ── Idempotency cache ─────────────────────────────────────────────────────────
+// Prevents duplicate renders when retries hit within a short window.
+const _idempotencyCache = new Map<string, { body: string; status: number; expiresAt: number }>();
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// ── Global render queue ───────────────────────────────────────────────────────
+// Remotion renders spawn a headless Chromium + ffmpeg that saturate every CPU
+// core. When auto-produce fires several story/post renders via Promise.all, the
+// host event loop starves and unrelated API calls (/theme, mission progress,
+// /mobile) balloon to 90–140s, while concurrent renders also race on the shared
+// webpack bundle dir ("getStaticCompositions undefined"). Admission control keeps
+// the box responsive; default allows 2 parallel renders on 8+ core hosts.
+const MAX_CONCURRENT_RENDERS_DEFAULT = resolveRemotionMaxConcurrentRenders();
+const RENDER_CPU_CONCURRENCY_DEFAULT = resolveRemotionRenderConcurrency(MAX_CONCURRENT_RENDERS_DEFAULT);
+
+let _activeRenders = 0;
+const _renderWaiters: Array<() => void> = [];
+
+async function acquireRenderSlot(
+  maxConcurrent = MAX_CONCURRENT_RENDERS_DEFAULT,
+): Promise<void> {
+  if (_activeRenders < maxConcurrent) {
+    _activeRenders += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => _renderWaiters.push(resolve));
+  // Slot ownership is handed off by releaseRenderSlot without decrementing.
+}
+
+function releaseRenderSlot(): void {
+  const next = _renderWaiters.shift();
+  if (next) {
+    next();
+  } else {
+    _activeRenders = Math.max(0, _activeRenders - 1);
+  }
+}
 
 function resolveRemotionWebRoot(): string {
   const candidates = [
@@ -633,6 +658,80 @@ async function getBundleUrl(): Promise<string> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const idempotencyKey = req.headers.get('x-idempotency-key');
+  if (idempotencyKey) {
+    const cached = _idempotencyCache.get(idempotencyKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return new NextResponse(cached.body, {
+        status: cached.status,
+        headers: { 'content-type': 'application/json', 'x-idempotent-replay': '1' },
+      });
+    }
+  }
+
+  const rawBody = await req.text();
+  let admissionTheme: Record<string, unknown> | null = null;
+  try {
+    const peek = JSON.parse(rawBody) as { workspaceId?: string };
+    if (peek.workspaceId) {
+      admissionTheme = await fetchBrandThemeForWorkspace(peek.workspaceId).catch(() => null);
+    }
+  } catch {
+    // renderHandler returns 400 for invalid JSON
+  }
+
+  const maxConcurrent = resolveRemotionMaxConcurrentRenders(admissionTheme);
+
+  // Distributed render gate: cap concurrent renders GLOBALLY across all Next.js
+  // instances (in addition to the per-instance in-process gate below). Self-heals
+  // via TTL; no-ops when REDIS_URL is unset. Default global cap = 8, env override.
+  const globalRenderCap = serverConfig.remotion.globalMaxConcurrentRenders;
+  const distToken = await acquireDistributedSlot({
+    key: 'remotion_render',
+    max: globalRenderCap,
+    ttlMs: 10 * 60 * 1000,
+    waitTimeoutMs: 8 * 60 * 1000,
+  });
+
+  await acquireRenderSlot(maxConcurrent);
+  try {
+    const replayReq = new NextRequest(req.url, {
+      method: 'POST',
+      headers: req.headers,
+      body: rawBody,
+    });
+    const response = await renderHandler(replayReq, {
+      renderCpuConcurrency: resolveRemotionRenderConcurrency(maxConcurrent),
+    });
+
+    if (idempotencyKey && response.ok) {
+      const responseBody = await response.clone().text();
+      _idempotencyCache.set(idempotencyKey, {
+        body: responseBody,
+        status: response.status,
+        expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+      });
+      // Evict stale entries periodically
+      if (_idempotencyCache.size > 50) {
+        const now = Date.now();
+        for (const [k, v] of _idempotencyCache) {
+          if (v.expiresAt < now) _idempotencyCache.delete(k);
+        }
+      }
+    }
+
+    return response;
+  } finally {
+    releaseRenderSlot();
+    await releaseDistributedSlot('remotion_render', distToken);
+  }
+}
+
+async function renderHandler(
+  req: NextRequest,
+  opts?: { renderCpuConcurrency?: number },
+): Promise<NextResponse> {
+  const renderCpuConcurrency = opts?.renderCpuConcurrency ?? RENDER_CPU_CONCURRENCY_DEFAULT;
   let body: RemotionRenderRequest;
   try {
     body = await req.json();
@@ -652,8 +751,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     motionStyle,
     locale,
     grafikerMaxRetries: bodyGrafikerRetries,
+    profileTier,
   } = body;
   const grafikerMaxRetries = resolveGrafikerMaxRetries(bodyGrafikerRetries);
+  // Faz 2.3 — CD-lite: economy/agency'de Grafiker-fail retry'ındaki ekstra CD
+  // çağrısını atla (deterministik retry patch'i korunur) + CD route ucuz modele düşer.
+  // Premium / tier-bilinmiyor → tam davranış. Default OFF.
+  const cdLite = serverConfig.remotion.cdLite
+    && (profileTier === 'economy' || profileTier === 'agency');
   if (workspaceId) {
     const tenantGuard = assertWorkspaceMatchesRequestTenant(req, workspaceId);
     if (tenantGuard) return tenantGuard;
@@ -668,7 +773,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   const photoUrlForProbe = normalizePhotoUrlForRemotionRender(reqProps.photoUrl);
-  if (!(await probeMediaUrl(photoUrlForProbe))) {
+  let photoReachable = await probeMediaUrlReliable(photoUrlForProbe, { timeoutMs: 8_000, retries: 2 });
+  if (!photoReachable) {
+    // Probe is stricter than the render-time fetch (no Referer/hotlink handling).
+    // Confirm with the proven external fetcher before failing the whole render —
+    // this is the difference between a usable Wix/brand-CDN photo and a false 422.
+    const rawHttp = reqProps.photoUrl.trim();
+    if (/^https?:\/\//i.test(rawHttp)) {
+      try {
+        const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
+        const buf = await fetchExternalImageBuffer(rawHttp, 12_000);
+        photoReachable = Boolean(buf && buf.length > 0);
+      } catch {
+        photoReachable = false;
+      }
+    }
+  }
+  if (!photoReachable) {
     return NextResponse.json(
       { error: 'Photo URL is not reachable (expired, blocked, or not an image)' },
       { status: 422 },
@@ -680,6 +801,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     photoUrl: photoUrlForProbe,
   };
   let brandTheme: Record<string, unknown> | null = null;
+  let workspaceTokens: Awaited<ReturnType<typeof fetchBrandProductionTokensForWorkspace>> | undefined;
+  let slotTypography: {
+    headingFont?: string;
+    bodyFont?: string;
+    fontPersonality?: string;
+    honorTemplateTypography?: boolean;
+  } | undefined;
   let effectiveBrandTemplateLocked = brandTemplateLocked;
   let effectiveMotionStyle = motionStyle;
   let effectiveLocale = locale;
@@ -695,16 +823,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }),
       fetchBrandThemeForWorkspace(workspaceId),
     ]);
+    workspaceTokens = tokens;
 
-    let slotTypography: {
-      headingFont?: string;
-      bodyFont?: string;
-      fontPersonality?: string;
-      honorTemplateTypography?: boolean;
-    } | undefined;
     const librarySlotKey = String(extReq.librarySlotKey ?? '').trim();
-    const incomingTpl = String(extReq.templateId ?? '').trim();
-    if (librarySlotKey && incomingTpl) {
+    const requestedFormat = (
+      reqCompositionId.startsWith('SpecPoster')
+      || String(extReq.posterTemplateId ?? '').trim()
+    ) ? 'post' as const : 'story' as const;
+    const incomingTpl = String(
+      requestedFormat === 'post'
+        ? (extReq.posterTemplateId ?? extReq.templateId ?? '')
+        : (extReq.templateId ?? ''),
+    ).trim();
+    if (librarySlotKey) {
       const { ensureBrandTemplateLibrary } = await import('@/lib/brand-template-library');
       const { resolveKitForSector } = await import('@/lib/remotion-template-registry');
       const { tenantKitSeed } = await import('@/lib/tenant-template-seed');
@@ -716,20 +847,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         kitId,
         tenantId: workspaceId,
       });
-      const slot = library.slots.find((s) => s.key === librarySlotKey);
+      const binding = resolveLibrarySlotRenderBinding({
+        library,
+        librarySlotKey,
+        requestedFormat,
+        incomingTemplateId: incomingTpl,
+      });
+      const slot = binding.slot;
       if (slot) {
+        if (binding.effectiveTemplateId) {
+          extReq.templateId = binding.effectiveTemplateId;
+          if (requestedFormat === 'post') {
+            extReq.posterTemplateId = binding.effectivePosterTemplateId ?? binding.effectiveTemplateId;
+          }
+        }
         const slotTypo = resolveSlotRenderTypography({
           slot: {
             fontMode: slot.fontMode,
             fontPersonality: slot.fontPersonality,
             headingFont: slot.headingFont,
             bodyFont: slot.bodyFont,
-            format: 'story',
+            format: requestedFormat,
             storyTemplateId: slot.storyTemplateId,
             posterTemplateId: slot.posterTemplateId,
           },
-          templateId: incomingTpl,
-          format: 'story',
+          templateId: binding.effectiveTemplateId || incomingTpl,
+          format: requestedFormat,
           brandHeadingFont: tokens.headingFont,
           brandBodyFont: tokens.bodyFont,
           sector: sectorHint,
@@ -742,6 +885,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         };
         if (extReq.logoUrl) {
           extReq.logoUrl = resolveSlotLogoForRender(String(extReq.logoUrl), slot);
+        }
+        if (library.locked) {
+          effectiveBrandTemplateLocked = true;
         }
       }
     }
@@ -780,7 +926,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (useCreativeDirector && reqProps.headline && reqProps.brandName) {
     try {
-      const cdBase = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+      const cdBase = getNextjsInternalOrigin();
       const currentTpl = incomingTemplateId ? getRemotionTemplate(incomingTemplateId) : undefined;
       const cdRes = await fetch(`${cdBase}/api/remotion/creative-director`, {
         method: 'POST',
@@ -812,6 +958,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           recentLayoutFamilies: extProps.recentLayoutFamilies,
           ctaText: extProps.cta,
           premiumComposition: extProps.premiumComposition ?? undefined,
+          profileTier,
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -924,6 +1071,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     };
   }
 
+  if (workspaceTokens) {
+    props = applyBrandTokensToRenderProps(
+      props as Record<string, unknown>,
+      workspaceTokens,
+      slotTypography ?? (
+        (props as Record<string, unknown>).honorTemplateTypography
+          ? {
+              headingFont: String((props as Record<string, unknown>).fontFamily ?? workspaceTokens.headingFont),
+              bodyFont: String((props as Record<string, unknown>).bodyFont ?? workspaceTokens.bodyFont),
+              fontPersonality: String((props as Record<string, unknown>).fontPersonality ?? ''),
+              honorTemplateTypography: (props as Record<string, unknown>).honorTemplateTypography === true,
+            }
+          : undefined
+      ),
+    ) as typeof props;
+  }
+
   const extResolved = props as Record<string, unknown>;
   props = {
     ...props,
@@ -983,35 +1147,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         cta: ext.cta as string | undefined,
         primaryColor: props.primaryColor,
         accentColor: props.accentColor,
+        headlineColor: ext.headlineColor as string | undefined,
+        textColor: (ext.textColor as string | undefined) ?? (ext.subtitleColor as string | undefined),
         fontFamily: props.fontFamily,
         bodyFont: ext.bodyFont as string | undefined,
-        textColor: ext.headlineColor as string | undefined,
         brandKit: posterBrandKit,
         brandTheme: (body as { brandTheme?: Record<string, unknown> }).brandTheme ?? null,
         logoUrl: ext.logoUrl as string | undefined,
         lineupArtists: ext.lineupArtists as string[] | undefined,
         sector: String(ext.sector ?? ext.businessType ?? ''),
+        profileTier,
       });
       const durationMs = Date.now() - t0;
       console.log(
         `[remotion] ${compositionId} agency poster via ${announcementTemplateId} in ${durationMs}ms (${(pngBuffer.length / 1024).toFixed(0)} KB)`,
       );
 
-      if (uploadToR2 && workspaceId && process.env.R2_BUCKET_NAME) {
+      if (uploadToR2 && workspaceId && serverConfig.r2.configured) {
         try {
           const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+          const { accessKeyId, secretAccessKey } = serverConfig.r2.requireCredentials();
           const s3 = new S3Client({
             region: 'auto',
-            endpoint: process.env.R2_ENDPOINT,
-            credentials: {
-              accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
-              secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
-            },
+            endpoint: serverConfig.r2.endpoint,
+            credentials: { accessKeyId, secretAccessKey },
           });
           const slug = `${workspaceId.slice(0, 8)}-${compositionId.toLowerCase()}-${Date.now()}`;
           const key = `${workspaceId}/posts/${slug}.png`;
           await s3.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
+            Bucket: serverConfig.r2.bucket,
             Key: key,
             Body: pngBuffer,
             ContentType: 'image/png',
@@ -1096,13 +1260,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.log(`[remotion] ${compositionId} still rendered in ${durationMs}ms (${(pngBuffer.length / 1024).toFixed(0)} KB)`);
 
       // Upload or return base64
-      if (uploadToR2 && workspaceId && process.env.R2_BUCKET_NAME) {
+      if (uploadToR2 && workspaceId && serverConfig.r2.configured) {
         try {
           const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
-          const s3 = new S3Client({ region: 'auto', endpoint: process.env.R2_ENDPOINT, credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '', secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '' } });
+          const { accessKeyId, secretAccessKey } = serverConfig.r2.requireCredentials();
+          const s3 = new S3Client({ region: 'auto', endpoint: serverConfig.r2.endpoint, credentials: { accessKeyId, secretAccessKey } });
           const slug = `${workspaceId.slice(0, 8)}-${compositionId.toLowerCase()}-${Date.now()}`;
           const key = `${workspaceId}/posts/${slug}.png`;
-          await s3.send(new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key, Body: pngBuffer, ContentType: 'image/png' }));
+          await s3.send(new PutObjectCommand({ Bucket: serverConfig.r2.bucket, Key: key, Body: pngBuffer, ContentType: 'image/png' }));
           const imageUrl = mediaUrlForKey(key);
           return NextResponse.json({ imageUrl, compositionId, durationMs, bytes: pngBuffer.length, isStill: true });
         } catch { /* fall through to base64 */ }
@@ -1120,35 +1285,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let grafikerReview: GrafikerReviewResult | null = null;
     let videoBuffer: Buffer | null = null;
 
+    // Quality convergence runs on a single still per attempt (cheap), and the full
+    // MP4 is rendered once after the layout passes Grafiker (or retries run out).
+    // Previously every attempt rendered the entire video, tripling render time on
+    // retries (≈128s for a 3-attempt story → ≈45s).
     for (let attempt = 0; attempt <= grafikerMaxRetries; attempt++) {
-      await renderMedia({
-        composition: activeComposition,
-        serveUrl,
-        codec: 'h264',
-        outputLocation: tmpFile,
-        inputProps: renderProps,
-        onProgress: ({ progress }) => {
-          const pct = Math.round(progress * 100);
-          if (pct % 20 === 0) console.log(`[remotion] ${compositionId}: ${pct}%`);
-        },
-        jpegQuality: 95,
-        scale: 1.0,
-      });
-
-      if (!fsModule.default.existsSync(tmpFile)) {
-        return NextResponse.json({ error: 'Render produced no output file' }, { status: 500 });
-      }
-
-      videoBuffer = fsModule.default.readFileSync(tmpFile);
-      fsModule.default.unlinkSync(tmpFile);
-      console.log(`[remotion] rendered ${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB (attempt ${attempt + 1})`);
-
-      grafikerReview = await runGrafikerReview(activeComposition, serveUrl, renderProps, compositionId);
+      grafikerReview = await runGrafikerReview(activeComposition, serveUrl, renderProps, compositionId, { attempt }, profileTier);
       if (grafikerReview) {
         const overlap = grafikerReview.text_overlap ? '⚠ OVERLAP' : '✓ no overlap';
         console.log(
-          `[remotion] Grafiker: ${grafikerReview.score}/10 pass=${grafikerReview.pass} | ${overlap} | ${grafikerReview.verdict ?? ''}`,
+          `[remotion] Grafiker (still ${attempt + 1}): ${grafikerReview.score}/10 pass=${grafikerReview.pass} | ${overlap} | ${grafikerReview.verdict ?? ''}`,
         );
+        try {
+          const { emitQualityEvent } = await import('@/lib/ai-cost-telemetry');
+          emitQualityEvent({
+            event: 'grafiker',
+            pass: grafikerMeetsBar(grafikerReview),
+            score: grafikerReview.score,
+            attempt,
+            label: `story:${compositionId}`,
+          });
+        } catch { /* telemetri üretimi bozmamalı */ }
         if (grafikerReview.issues?.length) {
           console.log(`[remotion] Grafiker issues: ${grafikerReview.issues.join(' | ')}`);
         }
@@ -1158,7 +1315,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         break;
       }
 
-      if (useCreativeDirector && attempt === 0 && reqProps.headline && reqProps.brandName) {
+      if (useCreativeDirector && !cdLite && attempt === 0 && reqProps.headline && reqProps.brandName) {
         try {
           const ext = renderProps as Record<string, unknown>;
           const cdRes = await fetch(`${RENDER_BASE_URL}/api/remotion/creative-director`, {
@@ -1193,6 +1350,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               grafikerScore: grafikerReview.score,
               retryAttempt: attempt + 1,
               premiumComposition: ext.premiumComposition ?? undefined,
+              profileTier,
             }),
             signal: AbortSignal.timeout(18_000),
           });
@@ -1247,6 +1405,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
+    // Single full-video render with the Grafiker-approved (or best-effort) props.
+    await renderMedia({
+      composition: activeComposition,
+      serveUrl,
+      codec: 'h264',
+      outputLocation: tmpFile,
+      inputProps: renderProps,
+      concurrency: renderCpuConcurrency,
+      onProgress: ({ progress }) => {
+        const pct = Math.round(progress * 100);
+        if (pct % 20 === 0) console.log(`[remotion] ${compositionId}: ${pct}%`);
+      },
+      jpegQuality: 95,
+      scale: 1.0,
+    });
+    if (!fsModule.default.existsSync(tmpFile)) {
+      return NextResponse.json({ error: 'Render produced no output file' }, { status: 500 });
+    }
+    videoBuffer = fsModule.default.readFileSync(tmpFile);
+    fsModule.default.unlinkSync(tmpFile);
+    console.log(`[remotion] rendered ${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB`);
+
     props = renderProps as typeof props;
     const grafikerScore = grafikerReview?.score ?? null;
     const grafikerPass = grafikerReview ? grafikerMeetsBar(grafikerReview) : true;
@@ -1255,23 +1435,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.log(`[remotion] ${compositionId} rendered in ${durationMs}ms, ${videoBuffer!.length} bytes`);
 
     // 4a. Upload to R2 if requested and configured
-    if (uploadToR2 && workspaceId && process.env.R2_BUCKET_NAME) {
+    if (uploadToR2 && workspaceId && serverConfig.r2.configured) {
       try {
         const slug = `${workspaceId.slice(0, 8)}-${compositionId.toLowerCase().replace('story', '')}-${Date.now()}`;
         const key = `${workspaceId}/stories/${slug}.mp4`;
 
         const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+        const { accessKeyId, secretAccessKey } = serverConfig.r2.requireCredentials();
         const s3 = new S3Client({
           region: 'auto',
-          endpoint: process.env.R2_ENDPOINT,
-          credentials: {
-            accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
-            secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
-          },
+          endpoint: serverConfig.r2.endpoint,
+          credentials: { accessKeyId, secretAccessKey },
         });
 
         await s3.send(new PutObjectCommand({
-          Bucket: process.env.R2_BUCKET_NAME,
+          Bucket: serverConfig.r2.bucket,
           Key: key,
           Body: videoBuffer!,
           ContentType: 'video/mp4',

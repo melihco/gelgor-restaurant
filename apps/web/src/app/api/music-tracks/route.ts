@@ -16,6 +16,7 @@ import {
   getMusicTrack,
   type MusicMood,
 } from '@/lib/music-catalog';
+import { serverConfig } from '@/lib/server-config';
 
 const PIXABAY_MUSIC_API = 'https://pixabay.com/api/videos/music/';
 
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
   const mood = (req.nextUrl.searchParams.get('mood') ?? 'cinematic') as MusicMood;
 
   // First try Pixabay API if configured
-  const pixabayKey = process.env.PIXABAY_API_KEY;
+  const pixabayKey = serverConfig.pixabay.apiKey;
   if (pixabayKey) {
     const catalogEntry = getMusicTrack(mood);
     const category = catalogEntry?.pixabayCategory ?? 'cinematic';

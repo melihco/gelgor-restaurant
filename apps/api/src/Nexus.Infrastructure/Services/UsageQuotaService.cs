@@ -61,7 +61,9 @@ public class UsageQuotaService : IUsageQuotaService
                 plan.MonthlyMissions,
                 plan.MonthlySocialContent,
                 plan.MonthlyGalleryAnalysis,
-                plan.MonthlyReels);
+                plan.MonthlyReels,
+                plan.MonthlyMetaAdCreatives,
+                plan.MonthlyGoogleAdCreatives);
 
         return new UsageQuotaSummaryDto(
             subscription?.Id,

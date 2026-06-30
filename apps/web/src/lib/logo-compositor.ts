@@ -11,7 +11,14 @@
 
 import sharp from 'sharp';
 
-export type LogoPlacement = 'bottom_right' | 'bottom_left' | 'top_right' | 'top_left' | 'none';
+export type LogoPlacement =
+  | 'bottom_right'
+  | 'bottom_left'
+  | 'top_right'
+  | 'top_left'
+  | 'top_center'
+  | 'bottom_center'
+  | 'none';
 
 export interface LogoCompositorOptions {
   /** Enhanced product photo as Buffer or base64 data URL */
@@ -142,12 +149,20 @@ export async function compositeLogoOnPhoto(
         left = padding;
         top = padding;
         break;
+      case 'top_center':
+        left = Math.round((baseW - logoW) / 2);
+        top = padding;
+        break;
       case 'top_right':
         left = baseW - logoW - padding;
         top = padding;
         break;
       case 'bottom_left':
         left = padding;
+        top = baseH - logoH - padding;
+        break;
+      case 'bottom_center':
+        left = Math.round((baseW - logoW) / 2);
         top = baseH - logoH - padding;
         break;
       case 'bottom_right':

@@ -17,8 +17,9 @@ function buildFallbackIdeaQueue(input: {
   toProcess: Record<string, unknown>[];
   feedDirectorReport: Record<string, unknown> | null;
   brandBusinessType: string;
+  adHocBrief?: boolean;
 }): ManifestProductionQueueItem[] {
-  const { toProcess, feedDirectorReport, brandBusinessType } = input;
+  const { toProcess, feedDirectorReport, brandBusinessType, adHocBrief } = input;
   let slotPostCount = 0;
   let slotStoryCount = 0;
   let slotReelCount = 0;
@@ -37,6 +38,7 @@ function buildFallbackIdeaQueue(input: {
       storyIndex,
       reelIndex,
       sector: brandBusinessType,
+      adHocBrief,
     });
     if (pkgFmt === 'post' || pkgFmt === 'carousel') slotPostCount += 1;
     else if (pkgFmt === 'story') slotStoryCount += 1;
@@ -58,7 +60,8 @@ export function buildAutoProduceProductionQueue(input: {
   brandBusinessType: string;
   maxIdeas: number;
   productionProfile: ProductionProfile;
-  packageSlug: string;
+  packageSlug?: string | null;
+  adHocBrief?: boolean;
 }): ManifestProductionQueueItem[] {
   const {
     missionId,
@@ -68,8 +71,10 @@ export function buildAutoProduceProductionQueue(input: {
     brandBusinessType,
     maxIdeas,
     productionProfile,
-    packageSlug,
+    packageSlug: packageSlugInput,
+    adHocBrief,
   } = input;
+  const packageSlug = packageSlugInput ?? '';
 
   if (!toProcess.length) return [];
 
@@ -92,6 +97,7 @@ export function buildAutoProduceProductionQueue(input: {
     toProcess,
     feedDirectorReport,
     brandBusinessType,
+    adHocBrief,
   });
 }
 

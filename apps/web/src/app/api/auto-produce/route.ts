@@ -12,8 +12,8 @@ import {
   assertWorkspaceMatchesRequestTenant,
 } from '@/lib/tenant-production-guard';
 import {
+  mergeCalendarPlansForProduction,
   ensureWeeklyFormatCoverage,
-  mergeIdeationWithCalendarPlans,
 } from '@/lib/mission-production-plan';
 import type { FeedArtDirectorReport } from '@/lib/weekly-publish-package';
 import type { MissionProductionManifest } from '@/lib/mission-production-manifest';
@@ -54,6 +54,12 @@ interface AutoProduceRequest {
   creativeBrief?: string;
   /** Operator force reproduce — skip Feed dedupe against existing mission artifacts. */
   skipArtifactDedupe?: boolean;
+  /** Durable Production Factory — produce only specific manifest slots. */
+  slotBackfillPass?: boolean;
+  /** Slot keys `${ideaIndex}:${slot_role}` to produce on a backfill pass. */
+  backfillSlotKeys?: string[];
+  /** New Brief form — fal.ai art-director pipelines. */
+  adHocBrief?: boolean;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -84,6 +90,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     missionTitle,
     creativeBrief,
     skipArtifactDedupe,
+    slotBackfillPass,
+    backfillSlotKeys,
+    adHocBrief,
   } = body;
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
@@ -97,14 +106,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Operator force reproduce — clear stale in-process locks before retrying.
   if (skipArtifactDedupe) {
-    releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId);
   }
 
   // Per-workspace concurrent production lock.
   // Two simultaneous auto-produce calls for the same brand would pick the same
   // gallery photos and templates → duplicate artifacts in the feed.
-  const lockAcquired = acquireProductionLock(workspaceId);
+  const lockAcquired = await acquireProductionLock(workspaceId);
   if (!lockAcquired) {
+    // #region agent log
+    fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c5a590' }, body: JSON.stringify({ sessionId: 'c5a590', hypothesisId: 'H1', location: 'auto-produce/route.ts:409-workspace', message: 'workspace production lock denied', data: { workspaceId, missionId: missionId ?? null }, timestamp: Date.now(), runId: 'pre-fix' }) }).catch(() => {});
+    // #endregion
     return NextResponse.json(
       { error: 'Bu marka için içerik üretimi zaten devam ediyor. Lütfen bekleyin.', code: 'production_in_progress' },
       { status: 409 },
@@ -112,8 +124,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (missionId) {
-    if (!acquireMissionProductionLock(missionId)) {
-      releaseProductionLock(workspaceId);
+    if (!(await acquireMissionProductionLock(missionId))) {
+      await releaseProductionLock(workspaceId);
+      // #region agent log
+      fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c5a590' }, body: JSON.stringify({ sessionId: 'c5a590', hypothesisId: 'H1', location: 'auto-produce/route.ts:409-mission', message: 'mission production lock denied', data: { workspaceId, missionId }, timestamp: Date.now(), runId: 'pre-fix' }) }).catch(() => {});
+      // #endregion
       return NextResponse.json(
         { error: 'Bu misyon için Feed üretimi zaten devam ediyor.', code: 'mission_production_in_progress', produced: 0 },
         { status: 409 },
@@ -124,39 +139,39 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       skipForInternal: true,
     });
     if (missionGuard) {
-      releaseAllProductionLocks(workspaceId, missionId);
+      await releaseAllProductionLocks(workspaceId, missionId);
       return missionGuard;
     }
   }
 
   try {
-    const alreadyCalendarMerged = Array.isArray(ideas)
-      && ideas.some((row) => String((row as Record<string, unknown>).source_node ?? '') === 'content_calendar');
-    let mergedIdeas: ParsedIdea[] | undefined = calendarPlans.length > 0 && ideas?.length && !alreadyCalendarMerged
-      ? mergeIdeationWithCalendarPlans(
+    const alreadyScheduleOverlay = Array.isArray(ideas)
+      && ideas.some((row) => (row as Record<string, unknown>).publish_schedule_day != null);
+    let productionIdeas: ParsedIdea[] = calendarPlans.length > 0 && ideas?.length && !alreadyScheduleOverlay
+      ? mergeCalendarPlansForProduction(
         ideas as Record<string, unknown>[],
         calendarPlans,
       ) as ParsedIdea[]
-      : (ideas as ParsedIdea[] | undefined);
+      : ((ideas as ParsedIdea[] | undefined)?.map((idea, index) => ({
+        ...idea,
+        idea_index: typeof idea.idea_index === 'number' ? idea.idea_index : index,
+        source_node: String(idea.source_node ?? 'content_ideation'),
+      })) ?? []);
 
-    if (!mergedIdeas?.length) {
+    if (!productionIdeas?.length) {
       return NextResponse.json({ error: 'No ideas provided' }, { status: 400 });
     }
 
-    // Mission Feed: reproduce-feed ile aynı 2S+2P+1R normalizasyonu (Python path dahil).
-    if (missionId) {
-      const ideaPool = [
-        ...(Array.isArray(ideas) ? ideas as Record<string, unknown>[] : []),
-        ...calendarPlans,
-      ];
-      mergedIdeas = ensureWeeklyFormatCoverage(
-        mergedIdeas as Record<string, unknown>[],
-        ideaPool.length > 0 ? ideaPool : mergedIdeas as Record<string, unknown>[],
+    // Mission Feed: format coverage when calendar merge was not applied above.
+    if (missionId && (calendarPlans.length === 0 || alreadyScheduleOverlay || !ideas?.length)) {
+      productionIdeas = ensureWeeklyFormatCoverage(
+        productionIdeas as Record<string, unknown>[],
+        productionIdeas as Record<string, unknown>[],
       ) as ParsedIdea[];
     }
 
     const response = await runProduction({
-      workspaceId, missionId, nodeKey, ideas: mergedIdeas,
+      workspaceId, missionId, nodeKey, ideas: productionIdeas,
       visualDesignCards: visualDesignCards ?? [],
       galleryAnalysis: galleryAnalysis ?? null,
       brandNameOverride: brandName ?? null,
@@ -169,16 +184,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       missionTitle: missionTitle ?? null,
       creativeBrief: creativeBrief ?? null,
       skipArtifactDedupe: skipArtifactDedupe === true,
+      slotBackfillPass: slotBackfillPass === true,
+      backfillSlotKeys: Array.isArray(backfillSlotKeys) ? backfillSlotKeys : undefined,
+      adHocBrief: adHocBrief === true,
     });
     // #region agent log
     try {
       const summary = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
+      const results = Array.isArray(summary?.results) ? summary.results as Array<Record<string, unknown>> : [];
       fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '343d1c' },
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c5a590' },
         body: JSON.stringify({
-          sessionId: '343d1c',
-          hypothesisId: 'H5',
+          sessionId: 'c5a590',
+          hypothesisId: 'H2',
           location: 'auto-produce/route.ts:POST',
           message: 'auto-produce response',
           data: {
@@ -188,7 +207,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             withheld: summary?.withheld,
             rendering: summary?.rendering,
             publishReady: summary?.publishReady,
-            error: summary?.error,
+            slotKeys: results.map((r) => r.slotKey).filter(Boolean),
+            errors: results.filter((r) => r.error).map((r) => ({ slotKey: r.slotKey, error: String(r.error).slice(0, 120) })),
           },
           timestamp: Date.now(),
           runId: 'pre-fix',
@@ -203,6 +223,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: message, code: 'auto_produce_internal_error' }, { status: 500 });
   } finally {
     // Always release — even if runProduction throws or times out
-    releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId);
   }
 }

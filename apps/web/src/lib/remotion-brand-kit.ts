@@ -18,6 +18,8 @@ import { resolvePosterOverlayCopy } from './poster-copy';
 import { resolveSlotRenderTypography } from './brand-template-slot-typography';
 import { resolveSlotLogoForRender } from './brand-logo-production';
 import { buildInternalProductionHeaders } from './tenant-production-guard';
+import type { RemotionFalTemplateAlignment } from './brand-design-template-production';
+import type { ContentIntent } from './brand-motion-profile';
 
 export interface RemotionBrandStillInput {
   workspaceId: string;
@@ -46,6 +48,10 @@ export interface RemotionBrandStillInput {
   grafikerMaxRetries?: number;
   librarySlotKey?: string;
   slotRole?: string;
+  /** Phase 2 — fal onboarding template color/vibe/layout hints (Remotion variety preserved). */
+  falTemplateAlignment?: RemotionFalTemplateAlignment | null;
+  /** Faz 2.2/2.3 — production tier; premium preserves full Grafiker/CD (gpt-4o) */
+  profileTier?: 'economy' | 'agency' | 'premium';
 }
 
 async function resolvePhotoUrlForRender(photoUrl: string, baseUrl?: string): Promise<string> {
@@ -77,6 +83,13 @@ export interface RemotionBrandStillResult {
   imageUrl: string;
   grafikerScore: number | null;
   grafikerPass: boolean;
+  templateId?: string;
+  posterTemplateId?: string;
+  librarySlotKey?: string;
+  kitId?: string;
+  brandDesignTemplateId?: string;
+  brandDesignTemplateType?: string;
+  brandDesignTemplateName?: string;
 }
 
 /** Server or client — returns PNG URL + Grafiker QA from SpecPoster* still render. */
@@ -98,7 +111,8 @@ export async function renderRemotionBrandStillResult(
       tenantId: input.workspaceId,
     });
 
-    const intent = resolveContentIntent({
+    const intent: ContentIntent = input.falTemplateAlignment?.contentIntent
+      ?? resolveContentIntent({
       treatment: input.treatment,
       templateUseCase: input.templateUseCase,
       mood: input.mood,
@@ -156,6 +170,15 @@ export async function renderRemotionBrandStillResult(
           brandName: input.brandName,
         });
 
+    const primaryColor =
+      input.falTemplateAlignment?.primaryColor
+      ?? input.primaryColor
+      ?? tokens.primaryColor;
+    const accentColor =
+      input.falTemplateAlignment?.accentColor
+      ?? input.accentColor
+      ?? tokens.accentColor;
+
     const compositionId = isPost ? 'SpecPosterPost' : 'SpecPosterStory';
     const renderPolicy = resolveBrandRemotionRenderPolicy(input.brandTheme ?? null, { sector });
     const templateLocked = Boolean(library.locked);
@@ -180,6 +203,7 @@ export async function renderRemotionBrandStillResult(
         uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
         workspaceId: input.workspaceId,
         grafikerMaxRetries: input.grafikerMaxRetries,
+        profileTier: input.profileTier,
         props: {
           templateId: posterTemplateId,
           posterTemplateId,
@@ -190,8 +214,8 @@ export async function renderRemotionBrandStillResult(
           subtitle: overlay.subtitle || (input.caption ?? '').trim().slice(0, 120),
           brandName: input.brandName,
           location: overlay.venueArea ?? '',
-          primaryColor: tokens.primaryColor,
-          accentColor: tokens.accentColor,
+          primaryColor,
+          accentColor,
           fontFamily: slotTypo.headingFont,
           bodyFont: slotTypo.bodyFont,
           fontPersonality: slotTypo.fontPersonality,
@@ -206,6 +230,9 @@ export async function renderRemotionBrandStillResult(
           format: isPost ? '1:1' : 'story',
           sector: input.sector,
           businessType: input.sector,
+          contentIntent: intent,
+          sceneBrief: input.falTemplateAlignment?.sceneBrief ?? '',
+          mood: input.falTemplateAlignment?.typographyVibe ?? input.mood,
         },
       }),
       signal: AbortSignal.timeout(120_000),
@@ -222,6 +249,13 @@ export async function renderRemotionBrandStillResult(
       imageUrl: data.imageUrl,
       grafikerScore: data.grafikerScore ?? null,
       grafikerPass: data.grafikerPass !== false,
+      templateId: posterTemplateId,
+      posterTemplateId,
+      librarySlotKey: production.slot.key,
+      kitId: production.kitId,
+      brandDesignTemplateId: input.falTemplateAlignment?.matched.id,
+      brandDesignTemplateType: input.falTemplateAlignment?.matched.templateType,
+      brandDesignTemplateName: input.falTemplateAlignment?.matched.templateName,
     };
   } catch {
     return null;

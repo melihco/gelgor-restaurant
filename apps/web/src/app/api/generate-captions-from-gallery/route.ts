@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -16,7 +17,7 @@ interface CaptionGenRequest {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!serverConfig.openai.configured) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 });
   }
 

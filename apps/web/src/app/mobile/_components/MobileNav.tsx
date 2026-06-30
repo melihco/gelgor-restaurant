@@ -1,12 +1,14 @@
 'use client';
 import { useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMobileStore } from './mobile-store';
 import { useTheme } from './theme-context';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { CLIENT_NAV_TABS, isMobileOperatorMode } from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
-import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT } from '../_lib/mobile-artifacts';
-import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT, invalidateMobileArtifactPool } from '../_lib/mobile-artifacts';
+import { filterFeedDisplayArtifacts } from '@/lib/weekly-publish-package';
+import { prefetchMobileScreen } from './mobile-screen-loaders';
 
 /** Hover prefetch — stale dev chunks after HMR must not surface as runtime errors. */
 function safePrefetch(importer: () => Promise<unknown>) {
@@ -31,13 +33,14 @@ export function MobileNav() {
   const { activeTab, setTab } = useMobileStore();
   const { t } = useTheme();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const queryClient = useQueryClient();
   const { data: artifacts = [] } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     enabled: Boolean(tenantId),
     subscribeOnly: true,
   });
   const pendingApprovalCount = useMemo(
-    () => filterFeedPublishableArtifacts(artifacts).filter((a) => a.status === 'pending_review').length,
+    () => filterFeedDisplayArtifacts(artifacts).filter((a) => a.status === 'pending_review').length,
     [artifacts],
   );
   const showAllLabels = !isMobileOperatorMode();
@@ -70,7 +73,12 @@ export function MobileNav() {
         return (
           <button
             key={tab.id}
-            onClick={() => setTab(tab.id)}
+            onClick={() => {
+              if (tenantId && (tab.id === 'feed' || tab.id === 'missions')) {
+                invalidateMobileArtifactPool(queryClient, tenantId);
+              }
+              setTab(tab.id);
+            }}
             onPointerEnter={() => {
               if (tab.id === 'missions') {
                 safePrefetch(() => import('./screens/MissionHub'));
@@ -78,6 +86,9 @@ export function MobileNav() {
                 safePrefetch(() => import('./screens/PlatformFeed'));
               } else if (tab.id === 'brand') {
                 safePrefetch(() => import('./screens/BrandConstitution'));
+              } else if (tab.id === 'more') {
+                safePrefetch(() => prefetchMobileScreen('MoreMenu', () =>
+                  import('./screens/MoreMenu').then((m) => ({ default: m.MoreMenu }))));
               }
             }}
             aria-label={tab.label}

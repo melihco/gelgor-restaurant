@@ -163,7 +163,8 @@ export async function GET(
       && (isNonEmptyObject(themeObj.palette) || isNonEmptyObject(themeObj.typography)),
   );
   const library = parseBrandTemplateLibraryFromTheme(themeObj);
-  const hasTemplateLibrary = Boolean(library?.locked && library.slots.length === 5);
+  const enabledTemplateSlots = library?.slots.filter((slot) => slot.enabled !== false) ?? [];
+  const hasTemplateLibrary = Boolean(library?.locked && enabledTemplateSlots.length >= 5);
 
   const briefsData = briefsRes.ok && briefsRes.data
     ? briefsRes.data

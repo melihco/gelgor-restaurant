@@ -1,7 +1,8 @@
 /**
  * External media proxy for Canvas CORS issues.
- * Used when brand venue photos from external domains (e.g. yulabodrum.com)
+ * Used when a tenant's brand/venue photos from their own external domain
  * can't be loaded directly due to CORS restrictions in canvas.drawImage().
+ * Tenant-agnostic: works for any http(s) image host so every brand is covered.
  *
  * Only proxies image content types — rejects non-image responses.
  */
@@ -9,11 +10,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 15;
-
-const ALLOWED_HOSTS = [
-  'yulabodrum.com', 'sarnıc.com', 'localhost', '127.0.0.1',
-  // Add brand domains as needed
-];
 
 function unwrapInternalMediaPath(url: string): string | null {
   const trimmed = url.trim();
@@ -116,9 +112,25 @@ export async function GET(req: NextRequest) {
       || urlLower.endsWith('.jpg') || urlLower.endsWith('.jpeg')
       || urlLower.endsWith('.png') || urlLower.endsWith('.webp')
       || urlLower.endsWith('.avif');
+    const looksLikeVideo = ct.startsWith('video/')
+      || urlLower.endsWith('.mp4') || urlLower.endsWith('.webm') || urlLower.endsWith('.mov');
+
+    if (looksLikeVideo) {
+      const buf = await upstream.arrayBuffer();
+      const videoContentType = ct.startsWith('video/') ? ct : 'video/mp4';
+      return new NextResponse(buf, {
+        status: 200,
+        headers: {
+          'Content-Type': videoContentType,
+          'Cache-Control': 'public, max-age=86400',
+          'Access-Control-Allow-Origin': '*',
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
 
     if (!looksLikeImage) {
-      return NextResponse.json({ error: 'not an image' }, { status: 400 });
+      return NextResponse.json({ error: 'not an image or video' }, { status: 400 });
     }
 
     const buf = await upstream.arrayBuffer();

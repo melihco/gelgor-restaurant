@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine
+from app.middleware.correlation import correlation_id_middleware
 from app.models.base import Base
 
 logger = structlog.get_logger()
@@ -37,6 +38,9 @@ async def lifespan(app: FastAPI):
         from app.seed import run_seed
         await run_seed()
 
+        from app.services.special_days_seed import seed_special_days
+        await seed_special_days()
+
     if settings.enable_public_api:
         logger.warning(
             "public_api_enabled",
@@ -44,15 +48,20 @@ async def lifespan(app: FastAPI):
         )
 
     # ── Sprint C: CEO Intelligence Scheduler ────────────────────────────
-    from app.services.scheduler_service import start_scheduler, startup_warm_cache
-    from app.services.task_graph_executor import recover_mission_graph_on_startup
-    start_scheduler()
-    await startup_warm_cache()
-    # Do not block HTTP — recovery can trigger slow feed-production backfills.
-    asyncio.create_task(
-        recover_mission_graph_on_startup(),
-        name="mission_graph_startup_recovery",
-    )
+    # In dev, SCHEDULER_ENABLED=false should also skip startup recovery; otherwise
+    # heavy mission backfills can monopolize the event loop before the API responds.
+    if settings.scheduler_enabled:
+        from app.services.scheduler_service import start_scheduler, startup_warm_cache
+        from app.services.task_graph_executor import recover_mission_graph_on_startup
+        start_scheduler()
+        await startup_warm_cache()
+        # Do not block HTTP — recovery can trigger slow feed-production backfills.
+        asyncio.create_task(
+            recover_mission_graph_on_startup(),
+            name="mission_graph_startup_recovery",
+        )
+    else:
+        logger.info("scheduler_and_startup_recovery_disabled")
 
     yield
 
@@ -82,9 +91,11 @@ if settings.enable_public_api:
         allow_headers=["*"],
     )
 
+app.middleware("http")(correlation_id_middleware)
+
 # ── Route registration ───────────────────────────────────
-from app.api.v1.router import api_router  # noqa: E402
 from app.api.internal.router import internal_router  # noqa: E402
+from app.api.v1.router import api_router  # noqa: E402
 
 if settings.enable_public_api:
     app.include_router(api_router, prefix="/api/v1")

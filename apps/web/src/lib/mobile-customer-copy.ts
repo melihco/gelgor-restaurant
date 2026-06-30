@@ -45,8 +45,9 @@ export function missionFeedStatusLabel(opts: {
   productionTarget: number;
   hasPreviewContent: boolean;
   rate: number;
+  feedProductionActive?: boolean;
 }): { title: string; subtitle?: string } {
-  const { publishReady, productionTarget, hasPreviewContent, rate } = opts;
+  const { publishReady, productionTarget, hasPreviewContent, rate, feedProductionActive } = opts;
   if (rate < 80) {
     return { title: `Planınız %${rate} tamamlandı`, subtitle: 'AI ekibiniz çalışmaya devam ediyor.' };
   }
@@ -59,9 +60,15 @@ export function missionFeedStatusLabel(opts: {
       subtitle: 'Kalan gönderiler birkaç dakika içinde eklenecek.',
     };
   }
+  if (feedProductionActive) {
+    return {
+      title: 'Görseller üretiliyor',
+      subtitle: 'Gönderiler hazır oldukça İçerik sekmesinde görünür.',
+    };
+  }
   return {
     title: 'Planınız tamamlandı',
-    subtitle: 'Görseller hazırlanıyor — kısa süre içinde İçerik sekmesinde görünür.',
+    subtitle: 'Görselleri üret\'e dokunarak haftalık paketi oluşturun.',
   };
 }
 

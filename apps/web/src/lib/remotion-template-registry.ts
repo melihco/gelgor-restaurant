@@ -186,18 +186,103 @@ export function listRegistrySummary() {
   };
 }
 
-export function resolveKitForSector(sector: string, seed = 0): string {
+/**
+ * Canonical business sectors → concrete kit sector (one of the 50 AGENCY_BRAND_KITS
+ * sectors). Covers the hospitality/retail slugs that onboarding produces but that
+ * do NOT fuzzy-match a kit sector (e.g. `restaurant_bar`, `local_products_shop`),
+ * which previously fell through to a random kit over all 50 — the root cause of a
+ * beach bar being locked to `kit_36_vegan_cafe`.
+ */
+const EXPLICIT_SECTOR_TO_KIT_SECTOR: Record<string, string> = {
+  beach_club: 'beach_club',
+  beach_club_bar: 'beach_club',
+  beach_bar: 'beach_club',
+  restaurant_bar: 'cocktail_bar',
+  restaurant_cafe: 'cafe_bakery',
+  restaurant: 'mediterranean',
+  bistro: 'mediterranean',
+  fine_dining: 'fine_dining',
+  steakhouse: 'steakhouse',
+  seafood: 'seafood',
+  sushi: 'sushi',
+  rooftop_bar: 'rooftop_bar',
+  cocktail_bar: 'cocktail_bar',
+  wine_bar: 'wine_bar',
+  nightclub: 'nightclub',
+  cafe: 'cafe_bakery',
+  cafe_bakery: 'cafe_bakery',
+  patisserie: 'patisserie',
+  brunch: 'brunch',
+  hotel_hospitality: 'boutique_hotel',
+  hospitality: 'boutique_hotel',
+  boutique_hotel: 'boutique_hotel',
+  fashion_boutique: 'fashion_retail',
+  fashion_retail: 'fashion_retail',
+  local_products_shop: 'fashion_retail',
+  beauty_wellness: 'beauty_salon',
+  fitness_gym: 'fitness',
+  healthcare_clinic: 'dental',
+};
+
+/**
+ * Versatile, sector-neutral kits used when a sector matches no kit at all. Bounded
+ * to upscale/editorial identities so the worst case stays brand-appropriate (never
+ * a wildly mismatched kit like vegan_cafe / pet_spa / kids_play for a bar).
+ */
+const NEUTRAL_FALLBACK_KIT_SECTORS = ['cafe_bakery', 'fine_dining', 'mediterranean', 'boutique_hotel', 'art_gallery'];
+
+/**
+ * Kits a sector may legitimately resolve to, in priority order:
+ *   1) explicit canonical kit (single kit), else
+ *   2) vibe + fuzzy matched kits.
+ * Empty array means the sector is not confidently mappable to any kit family
+ * (callers then use a neutral fallback and must NOT treat a locked kit as wrong).
+ */
+function candidateKitsForSector(sector: string): AgencyBrandKit[] {
+  const norm = (sector ?? '').toLowerCase().replace(/\s+/g, '_');
+  if (!norm) return [];
+
+  const explicit = EXPLICIT_SECTOR_TO_KIT_SECTOR[norm];
+  if (explicit) {
+    const exactKit = AGENCY_BRAND_KITS.find((k) => k.sector === explicit);
+    if (exactKit) return [exactKit];
+  }
+
   const kitSector = resolveKitSectorForVibe(sector).toLowerCase().replace(/\s+/g, '_');
-  const norm = sector.toLowerCase().replace(/\s+/g, '_');
-  const matches = AGENCY_BRAND_KITS.filter(
+  return AGENCY_BRAND_KITS.filter(
     (k) => k.sector === kitSector
       || k.sector.includes(kitSector)
       || kitSector.includes(k.sector)
       || k.sector.includes(norm)
       || norm.includes(k.sector.split('_')[0]!),
   );
-  const pool = matches.length ? matches : AGENCY_BRAND_KITS;
+}
+
+export function resolveKitForSector(sector: string, seed = 0): string {
+  const candidates = candidateKitsForSector(sector);
+  if (candidates.length) return candidates[seed % candidates.length]!.id;
+
+  // No confident match — pick from a safe neutral pool (deterministic per seed),
+  // never the full 50-kit pool which yields absurd sector mismatches.
+  const neutral = AGENCY_BRAND_KITS.filter((k) => NEUTRAL_FALLBACK_KIT_SECTORS.includes(k.sector));
+  const pool = neutral.length ? neutral : AGENCY_BRAND_KITS;
   return pool[seed % pool.length]!.id;
+}
+
+/**
+ * Is a locked/saved kit still compatible with an authoritative sector?
+ * Returns true when the sector is unmappable (cannot judge → don't churn) or when
+ * the kit belongs to one of the sector's candidate kit families. Used to auto-heal
+ * a kit that was locked while the business was misclassified (e.g. a beach bar
+ * locked to vegan_cafe before its sector was corrected to restaurant/beach).
+ */
+export function kitMatchesSector(kitId: string | undefined | null, sector: string): boolean {
+  if (!kitId) return false;
+  const kit = getBrandKit(kitId);
+  if (!kit) return true; // unknown kit id — don't churn
+  const candidates = candidateKitsForSector(sector);
+  if (candidates.length === 0) return true; // sector not confidently mappable
+  return candidates.some((k) => k.sector === kit.sector);
 }
 
 export { AGENCY_BRAND_KITS, REMOTION_TEMPLATE_CATALOG, getRemotionTemplate, getBrandKit };

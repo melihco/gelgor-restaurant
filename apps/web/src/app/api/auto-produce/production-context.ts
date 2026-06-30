@@ -13,6 +13,7 @@
  */
 
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+import { serverConfig } from '@/lib/server-config';
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import { ensureBrandTemplateLibrary } from '@/lib/brand-template-library';
 import { applyAgencyProductionThemeDefaults } from '@/lib/agency-production-defaults';
@@ -41,8 +42,8 @@ import {
   type TenantLearningSnapshot,
 } from '@/lib/mission-production-telemetry';
 
-const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const CREW_BACKEND = serverConfig.crewBackend.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 // ─── Core type ────────────────────────────────────────────────────────────────
 

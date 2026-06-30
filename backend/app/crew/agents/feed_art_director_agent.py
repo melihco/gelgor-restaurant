@@ -58,11 +58,11 @@ Brand context:
 def create_feed_art_director_agent(brand: BrandInfo, llm: LLM | None = None) -> Agent:
     """
     Create the Feed Art Director agent with brand DNA in backstory.
-    Uses 'review' profile — brand identity + sector context.
+    Uses 'full' profile — market intel, calendar, and tenant learning for slot routing.
     """
     settings = get_settings()
 
-    brand_context_block = build_brand_context_prompt(brand, profile="review")
+    brand_context_block = build_brand_context_prompt(brand, profile="full")
 
     backstory = FEED_ART_DIRECTOR_BACKSTORY.format(
         business_name=brand.business_name,

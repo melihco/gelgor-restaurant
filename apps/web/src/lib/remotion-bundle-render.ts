@@ -91,9 +91,7 @@ export async function persistStoryVideo(
 
 export async function verifyPersistedVideo(url: string): Promise<boolean> {
   if (!url) return false;
-  const bytes = 0;
-  if (bytes <= 0) return probeMediaUrl(url);
-  return true;
+  return probeMediaUrl(url);
 }
 
 /** Build a safer second-pass render payload when luxury/full-bleed fails. */

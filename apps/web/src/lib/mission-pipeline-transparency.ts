@@ -10,6 +10,7 @@ import {
   parseArtifactMissionId,
 } from '@/lib/production-bundle';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { buildMissionPlanningDisplayIdeas } from '@/lib/mission-production-plan';
 import type { MissionSlotChecklist } from '@/lib/mission-slot-checklist';
 import type { OutputArtifact } from '@/types';
 import {
@@ -35,6 +36,23 @@ type MissionNodeLike = {
 /** Count items inside a completed mission node (planlama katmanı). */
 export function countPlanningNodeResults(node: MissionNodeLike): number | null {
   if (!nodeHasOutput(node)) return null;
+
+  // content_strategy is one weekly document (theme + brief + pillars), not N strategies.
+  if (node.task_type === 'content_strategy') {
+    const obj = nodeOutputObject(node);
+    if (
+      obj
+      && (
+        String(obj.weekly_theme ?? obj.theme ?? '').trim()
+        || String(obj.mission_brief ?? obj.brief ?? '').trim()
+        || Array.isArray(obj.pillar_mix)
+      )
+    ) {
+      return 1;
+    }
+    return null;
+  }
+
   const ideas = parseProductionIdeas(node.output_summary ?? '');
   if (ideas.length > 0) return ideas.length;
   const arr = nodeOutputArray(node, ['plans', 'calendar', 'items', 'content_calendar', 'schedule', 'ideas']);
@@ -72,6 +90,13 @@ export function summarizeMissionPlanningOutputs(nodes: MissionNodeLike[]): Missi
     if (node.task_type === 'feed_cohesion_review' && nodeHasOutput(node)) {
       slotPlanReady = true;
     }
+  }
+
+  const uniqueIdeation = buildMissionPlanningDisplayIdeas({
+    nodes: nodes as Parameters<typeof buildMissionPlanningDisplayIdeas>[0]['nodes'],
+  });
+  if (uniqueIdeation.length > 0) {
+    ideas = uniqueIdeation.length;
   }
 
   return {

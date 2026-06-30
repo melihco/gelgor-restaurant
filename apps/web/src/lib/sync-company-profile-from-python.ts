@@ -1,4 +1,8 @@
 import type { SaveCompanyProfileRequest } from '@/types';
+import {
+  resolveAuthoritativeIndustry,
+  shouldRefreshIndustryFromPython,
+} from '@/lib/canonical-sector';
 
 /** Map Python brand_tone text → Setup Wizard preset value. */
 export function pythonToneToPreset(tone: string): string {
@@ -44,7 +48,8 @@ function parseJsonList(raw: unknown): string[] {
 
 /**
  * Fill empty Nexus CompanyProfile fields from Python brand_context (discovery).
- * Never overwrites non-empty profile values.
+ * Overwrites weak industry values (e.g. general_business) when service profile
+ * has a confident canonical category.
  */
 export function buildCompanyProfilePatchFromPython(
   profile: Record<string, unknown>,
@@ -52,8 +57,11 @@ export function buildCompanyProfilePatchFromPython(
 ): Partial<SaveCompanyProfileRequest> | null {
   const patch: Partial<SaveCompanyProfileRequest> = {};
 
-  if (!str(profile.industry) && str(py.business_type)) {
-    patch.industry = industryFromPythonBusinessType(str(py.business_type));
+  const authoritativeIndustry = resolveAuthoritativeIndustry(py);
+  if (authoritativeIndustry && shouldRefreshIndustryFromPython(profile, py)) {
+    patch.industry = authoritativeIndustry;
+  } else if (!str(profile.industry) && authoritativeIndustry) {
+    patch.industry = authoritativeIndustry;
   }
   if (!str(profile.location) && str(py.location)) {
     patch.location = str(py.location);

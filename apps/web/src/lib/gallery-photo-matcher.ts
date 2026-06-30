@@ -12,7 +12,7 @@
  */
 
 import { captionPhotoConflictPenalty } from '@/lib/caption-photo-alignment';
-import { normalizeGalleryUrl, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
+import { normalizeGalleryUrl, GALLERY_USAGE_COUNT_PENALTY, getGlobalGalleryUsageCount, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
 
@@ -49,6 +49,8 @@ export interface MatchPhotoInput {
    * a bonus so hook → atmospheric/wide, proof → detail/process, cta → outcome.
    */
   storySequenceRole?: 'hook' | 'proof' | 'cta';
+  /** Cross-type gallery usage — penalize over-used photos to spread diversity. */
+  globalUsageCounts?: ReadonlyMap<string, number>;
 }
 
 export interface PhotoMatchResult {
@@ -118,6 +120,17 @@ export const LOCAL_PRODUCT_SKU_CLUSTERS: ReadonlyArray<{
   { id: 'pastırma', terms: ['pastırma', 'pastirma', 'cured beef', 'basturma'] },
   { id: 'zeytin_ezmesi', terms: ['zeytin ezmesi', 'zeytin ezme', 'olive tapenade', 'olive spread'] },
   { id: 'ot', terms: ['kuru ot', 'dried herb', 'dağ otu', 'dag otu', 'wild herb', 'foraged herb', 'mixed herbs'] },
+  { id: 'çam_kozalağı', terms: ['çam kozalağı', 'cam kozalagi', 'çam kozalak', 'cam kozalak', 'pine cone', 'pine cone extract', 'çam kozalak özü', 'cam kozalak ozu', 'kozalak', 'çam balı', 'cam bali', 'pine honey'] },
+  { id: 'keçiboynuzu', terms: ['keçiboynuzu', 'keciboynuzu', 'carob', 'harnup', 'keçiboynuzu özü', 'keciboynuzu ozu', 'keçiboynuzu pekmezi', 'carob syrup', 'carob extract', 'keçiboynuzu tozu', 'carob powder'] },
+  { id: 'lavanta', terms: ['lavanta', 'lavender', 'lavanta yağı', 'lavanta yagi', 'lavender oil', 'lavanta çiçeği', 'lavanta sabunu', 'lavender soap', 'lavanta şurubu'] },
+  { id: 'propolis', terms: ['propolis', 'arı sütü', 'ari sutu', 'royal jelly', 'arı poleni', 'ari poleni', 'bee pollen', 'arı ürünü', 'ari urunu'] },
+  { id: 'susam', terms: ['susam', 'sesame', 'susam yağı', 'susam yagi', 'sesame oil', 'siyah susam', 'black sesame', 'susam kraker'] },
+  { id: 'kurutulmuş_meyve', terms: ['kurutulmuş meyve', 'kurutulmus meyve', 'dried fruit', 'kuru meyve', 'fruit chips', 'meyve cipsi', 'meyve kurusu'] },
+  { id: 'macun', terms: ['macun', 'mesir macunu', 'paste', 'bitkisel macun', 'herbal paste', 'karışım macun', 'karisim macun'] },
+  { id: 'sirke', terms: ['sirke', 'vinegar', 'elma sirkesi', 'apple cider vinegar', 'üzüm sirkesi', 'uzum sirkesi', 'nar sirkesi', 'grape vinegar'] },
+  { id: 'sabun', terms: ['sabun', 'soap', 'doğal sabun', 'dogal sabun', 'natural soap', 'zeytinyağlı sabun', 'olive oil soap', 'bıttım sabunu', 'bittim sabunu', 'defne sabunu', 'laurel soap'] },
+  { id: 'baharat_karışım', terms: ['baharat', 'spice', 'spice mix', 'baharat karışımı', 'baharat karisimi', 'mixed spice', 'yedi baharat', 'ras el hanout', 'curry'] },
+  { id: 'bulgur', terms: ['bulgur', 'cracked wheat', 'ince bulgur', 'pilavlık bulgur', 'pilavlik bulgur', 'köftelik bulgur', 'koftelik bulgur'] },
   { id: 'şölen', terms: ['şölen', 'solen', 'feast', 'atıştırmalık', 'atistirmalik', 'snack mix', 'natural snack', 'celebration spread'] },
 ] as const;
 
@@ -148,7 +161,23 @@ function detectLocalProductClusters(text: string): Set<number> {
 function productPhotoConflictPenalty(captionText: string, photoSearchable: string): number {
   const cap = detectLocalProductClusters(captionText);
   const photo = detectLocalProductClusters(photoSearchable);
-  if (cap.size === 0 || photo.size === 0) return 0;
+  if (cap.size === 0) return 0;
+  // Caption mentions a specific product — photo must match the same cluster
+  if (photo.size === 0) {
+    // Photo has no recognized product cluster but caption does.
+    // Check if photo text contains terms from a DIFFERENT cluster than caption's.
+    const photoLower = photoSearchable.toLowerCase();
+    const capLower = captionText.toLowerCase();
+    let conflict = false;
+    LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
+      if (conflict) return;
+      if (cap.has(idx)) return;
+      if (cluster.terms.some((t) => photoLower.includes(t.toLowerCase()) && !capLower.includes(t.toLowerCase()))) {
+        conflict = true;
+      }
+    });
+    return conflict ? 52 : 0;
+  }
   for (const idx of cap) {
     if (photo.has(idx)) return 0;
   }
@@ -261,6 +290,29 @@ function scoreUrlPath(url: string, input: MatchPhotoInput): number {
   }
   for (const w of tokenize(text)) {
     if (path.includes(w)) score += 2;
+  }
+  // Product cluster match via URL path (file names often contain product names)
+  for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
+    const captionHit = cluster.terms.some((t) => text.includes(t.toLowerCase()));
+    const pathHit = cluster.terms.some((t) => path.includes(t.toLowerCase().replace(/\s+/g, '_')) || path.includes(t.toLowerCase().replace(/\s+/g, '')));
+    if (captionHit && pathHit) { score += 18; break; }
+    if (captionHit && !pathHit && cluster.terms.some((t) => path.includes(t.toLowerCase().replace(/\s+/g, '').slice(0, 5)))) { score += 6; break; }
+  }
+  // Cross-product penalty: caption mentions product A, URL path mentions product B
+  const captionClusters = detectLocalProductClusters(text);
+  if (captionClusters.size > 0) {
+    let pathConflict = false;
+    LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
+      if (pathConflict) return;
+      if (captionClusters.has(idx)) return;
+      if (cluster.terms.some((t) => {
+        const normalized = t.toLowerCase().replace(/\s+/g, '');
+        return normalized.length >= 4 && path.includes(normalized);
+      })) {
+        pathConflict = true;
+      }
+    });
+    if (pathConflict) score -= 40;
   }
   return score;
 }
@@ -1021,7 +1073,14 @@ export function rankPhotosForContent(
     const meta = entry?.meta ?? {};
     const { score, reasons } = scorePhotoForContent(meta, input);
     const pathScore = scoreUrlPath(url, input);
-    const totalScore = score + pathScore;
+    let totalScore = score + pathScore;
+
+    const usageCount = getGlobalGalleryUsageCount(input.globalUsageCounts, base);
+    if (usageCount > 0) {
+      const penalty = GALLERY_USAGE_COUNT_PENALTY * usageCount;
+      totalScore -= penalty;
+      reasons.push(`usage:-${penalty}`);
+    }
 
     if (totalScore <= 0 && !entry) continue;
 
@@ -1117,21 +1176,25 @@ export function matchPhotoToContent(
 
   if (options?.bestEffort) {
     if (best && best.score >= RELAXED_MATCH_SCORE) return best;
-    const fallbackUrl = usableCandidates.find(u => !excludeBases.has(normalizeGalleryUrl(u)));
-    if (fallbackUrl) {
-      return {
-        url: fallbackUrl,
-        score: best?.score ?? 0,
-        reason: best?.reason ?? 'gallery pool',
-        confidence: best?.confidence ?? 0.1,
-      };
-    }
+    return null;
   }
 
   return null;
 }
 
-/** Greedy 1:1 assignment — no duplicate photos within the same post-type bucket per batch. */
+/**
+ * Greedy 1:1 assignment — no duplicate photos within the same post-type bucket
+ * per batch.
+ *
+ * Strength-first ordering: instead of assigning in input order (where a weak
+ * idea processed early could claim a photo that is a much stronger match for a
+ * later idea in the same bucket — "starvation"), each round we evaluate every
+ * still-unassigned idea's best available photo and commit the single strongest
+ * (idea, photo) pair. Ties resolve by original input order for determinism.
+ * Cross-bucket ideas never contend for the same dedup pool, so this only
+ * reorders contention within a bucket. The returned Map preserves the original
+ * `items` order so callers that iterate it are unaffected.
+ */
 export function assignPhotosToContents(
   items: Array<{ key: string; input: MatchPhotoInput; postType?: PostTypeBucket }>,
   candidateUrls: string[],
@@ -1153,21 +1216,48 @@ export function assignPhotosToContents(
     reel: new Set(excludeBases),
     carousel: new Set(excludeBases),
   };
+  const poolFor = (postType?: PostTypeBucket) =>
+    postType ? usedByType[postType] : usedGlobal;
 
-  for (const { key, input, postType } of items) {
-    const usedBases = postType ? usedByType[postType] : usedGlobal;
-    const ranked = rankPhotosForContent(input, candidateUrls, lookup, usedBases, galleryAnalysis);
-    const best = ranked[0];
-    if (best && best.score >= minScore) {
-      assigned.set(key, best);
-      const base = normalizeGalleryUrl(best.url);
-      usedBases.add(base);
-    } else {
-      assigned.set(key, null);
+  const pending = items.map((item, order) => ({ ...item, order }));
+
+  while (pending.length > 0) {
+    let pick: {
+      listIndex: number;
+      key: string;
+      result: PhotoMatchResult;
+      pool: Set<string>;
+      order: number;
+    } | null = null;
+
+    for (let i = 0; i < pending.length; i += 1) {
+      const { key, input, postType, order } = pending[i]!;
+      const pool = poolFor(postType);
+      const top = rankPhotosForContent(input, candidateUrls, lookup, pool, galleryAnalysis)[0];
+      if (!top || top.score < minScore) continue;
+      const better =
+        !pick
+        || top.score > pick.result.score
+        || (top.score === pick.result.score && order < pick.order);
+      if (better) {
+        pick = { listIndex: i, key, result: top, pool, order };
+      }
     }
+
+    // No remaining idea clears minScore — the rest stay unassigned.
+    if (!pick) break;
+
+    assigned.set(pick.key, pick.result);
+    pick.pool.add(normalizeGalleryUrl(pick.result.url));
+    pending.splice(pick.listIndex, 1);
   }
 
-  return assigned;
+  // Preserve original items order; ideas with no acceptable match resolve to null.
+  const ordered = new Map<string, PhotoMatchResult | null>();
+  for (const { key } of items) {
+    ordered.set(key, assigned.get(key) ?? null);
+  }
+  return ordered;
 }
 
 /** Pick up to `count` carousel slides — each must clear minScore; no unscored padding. */

@@ -26,6 +26,42 @@ export function missionProgressPollIntervalMs(
   return Math.min(35_000 * 2 ** backoffStep, 120_000);
 }
 
+/** Poll interval while a completed mission's feed package is being produced. */
+export function completedMissionFeedPollIntervalMs(unchangedPolls = 0): number {
+  const backoffStep = Math.min(Math.floor(unchangedPolls / 4), 4);
+  return Math.min(15_000 * 2 ** backoffStep, 60_000);
+}
+
+export function isMissionFeedProductionActive(opts: {
+  kickPending?: boolean;
+  reproducePending?: boolean;
+  slotRendering?: boolean;
+  feedProductionLockActive?: boolean;
+  productionState?: string;
+  userKicked?: boolean;
+}): boolean {
+  const state = String(opts.productionState ?? '').toLowerCase();
+  return Boolean(
+    opts.kickPending
+    || opts.reproducePending
+    || opts.slotRendering
+    || opts.feedProductionLockActive
+    || state === 'draining'
+    || state === 'queued'
+    || opts.userKicked,
+  );
+}
+
+export function shouldPollCompletedMissionFeed(opts: {
+  missionStatus: string;
+  feedPackageIncomplete: boolean;
+  feedProductionActive: boolean;
+}): boolean {
+  if (opts.missionStatus !== 'completed') return false;
+  if (!opts.feedPackageIncomplete) return false;
+  return opts.feedProductionActive;
+}
+
 type MissionProgressQueryOpts = {
   workspaceId: string;
   missionId: string;
@@ -49,7 +85,12 @@ export function getMissionProgressQueryOptions({
 > {
   return {
     queryKey: missionProgressQueryKey(missionId),
-    queryFn: () => apiClient.getMissionProgress(workspaceId, missionId),
+    // includePayload: structured node output (e.g. content_ideation ideas) is read
+    // from output_payload — output_summary is truncated server-side (~12k chars) and a
+    // 10-idea ideation array overflows that cap, yielding invalid JSON the Hub can't
+    // parse ("İçerik fikri bulunamadı"). Shares the cache key with the other surfaces
+    // that already request the payload (MissionContentFactory / PlatformFeed).
+    queryFn: () => apiClient.getMissionProgress(workspaceId, missionId, { includePayload: true }),
     enabled: enabled && Boolean(workspaceId && missionId),
     staleTime: poll ? 25_000 : 60_000,
     gcTime: 5 * 60_000,

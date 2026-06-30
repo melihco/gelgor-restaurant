@@ -3,9 +3,10 @@ import {
   type WeeklyPublishSelection,
 } from '@/lib/weekly-publish-package';
 import type { OutputArtifact } from '@/types';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent } from '@/lib/artifact-utils';
 import {
   artifactProductionRole,
+  MISSION_WEEKLY_PACKAGE_COUNTS,
 } from '@/lib/mission-production-manifest';
 import {
   dedupeProductionBundles,
@@ -61,6 +62,26 @@ export interface MissionFeedPackage {
   storyStills: number;
   storyMotion: number;
   carousels: number;
+}
+
+/** Slot progress for Mission Hub — factory queue is source of truth when present. */
+export function resolveMissionSlotProgress(input: {
+  factoryReady?: number | null;
+  factoryTotal?: number | null;
+  pkg?: MissionFeedPackage | null;
+  selection?: WeeklyPublishSelection | null;
+}): { ready: number; target: number } {
+  const manifestTarget = MISSION_WEEKLY_PACKAGE_COUNTS.total;
+  const factoryTotal = input.factoryTotal ?? 0;
+  const factoryReady = input.factoryReady ?? 0;
+  if (factoryTotal > 0) {
+    return {
+      ready: factoryReady,
+      target: Math.max(manifestTarget, factoryTotal),
+    };
+  }
+  const fallback = input.pkg?.primaryCount ?? input.selection?.primary.length ?? 0;
+  return { ready: fallback, target: manifestTarget };
 }
 
 /** Remotion MP4 story — video must be present (legacy + bundle-ready). */

@@ -17,7 +17,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { apiClient } from '@/lib/api-client';
 import { MobileArtifactView, signalFromArtifact } from '../MobileArtifactView';
 import { parseAgentSummary } from '../activity-parser';
-import { resolveArtifact, parseArtifactContent, findScheduledForArtifact } from '../artifact-utils';
+import { resolveArtifact, parseArtifactContent, findScheduledForArtifact } from '@/lib/artifact-utils';
 import { mergeMobilePlanSignal } from '../mobile-plan-signal';
 import { BoostPostSheet } from '../BoostPostSheet';
 import { ScheduleSheet } from '../ScheduleSheet';

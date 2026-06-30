@@ -10,6 +10,7 @@ using Nexus.Infrastructure.Data.Configurations;
 using Nexus.Domain.Entities;
 using Nexus.Domain.Enums;
 using Nexus.Api.Services;
+using Nexus.Api.Infrastructure;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -189,6 +190,8 @@ builder.Services.AddScoped<IIntegrationTokenService, IntegrationTokenService>();
 builder.Services.AddScoped<IUsageQuotaService, UsageQuotaService>();
 builder.Services.AddDataProtection();
 builder.Services.AddHttpClient<IImageGenerationService, OpenAiImageGenerationService>();
+builder.Services.AddScoped<IActionPreviewBuilder, ActionPreviewBuilder>();
+builder.Services.AddSingleton<IActionContractCatalog, ActionContractCatalog>();
 builder.Services.AddHttpClient("CrewService", client =>
 {
     var baseUrl = NormalizeHttpBaseUrl(configuration["OrchestrationService:BaseUrl"]);
@@ -222,6 +225,19 @@ else
     });
 }
 
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        if (context.HttpContext.Items.TryGetValue("CorrelationId", out var correlationId)
+            && correlationId is string id
+            && !string.IsNullOrWhiteSpace(id))
+        {
+            context.ProblemDetails.Extensions["correlationId"] = id;
+        }
+    };
+});
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -244,6 +260,9 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
         Description = "Backend API for the AI Agent Office OS SaaS Platform"
     });
+    // Mark non-nullable reference types as required so generated TS clients
+    // (openapi-typescript) emit non-optional fields instead of all-optional.
+    options.SupportNonNullableReferenceTypes();
 });
 
 var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[] { "http://localhost:3000" };
@@ -320,6 +339,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseRateLimiter();
@@ -669,17 +689,17 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
 
     var packagePricePatches = new[]
     {
-        new { Slug = "starter", MonthlyPrice = 2528m, YearlyPrice = 25280m },
-        new { Slug = "growth", MonthlyPrice = 4768m, YearlyPrice = 47680m },
-        new { Slug = "performance", MonthlyPrice = 7968m, YearlyPrice = 79680m },
-        new { Slug = "executive", MonthlyPrice = 15968m, YearlyPrice = 159680m }
+        new { Slug = "starter", MonthlyPrice = 4992m, YearlyPrice = 49920m },
+        new { Slug = "growth", MonthlyPrice = 9984m, YearlyPrice = 99840m },
+        new { Slug = "performance", MonthlyPrice = 23008m, YearlyPrice = 230080m },
+        new { Slug = "executive", MonthlyPrice = 49984m, YearlyPrice = 499840m }
     };
 
     var packageQuotaPatches = new[]
     {
-        new { Slug = "starter", TaskLimit = 14, Features = "[\"14 misyon/ay\",\"98 organik içerik\",\"14 Meta + 14 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
-        new { Slug = "growth", TaskLimit = 28, Features = "[\"28 misyon/ay\",\"196 sosyal içerik\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"4 reel\",\"Blog + SEO\"]" },
-        new { Slug = "performance", TaskLimit = 65, Features = "[\"65 misyon/ay\",\"455 sosyal içerik\",\"40.000 SA Kredi\",\"250 galeri analizi\",\"8 Runway reel\",\"Growth Recovery\"]" },
+        new { Slug = "starter", TaskLimit = 14, Features = "[\"14 misyon/ay\",\"168 organik içerik + 56 reel\",\"14 Meta + 14 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
+        new { Slug = "growth", TaskLimit = 28, Features = "[\"28 misyon/ay\",\"336 organik içerik + 112 reel\",\"28 Meta + 28 Google reklam\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"Blog + SEO\"]" },
+        new { Slug = "performance", TaskLimit = 65, Features = "[\"65 misyon/ay\",\"780 organik içerik + 260 reel\",\"65 Meta + 65 Google reklam\",\"40.000 SA Kredi\",\"250 galeri analizi\",\"Growth Recovery\"]" },
         new { Slug = "executive", TaskLimit = -1, Features = "[\"Sınırsız misyon & içerik\",\"150.000 SA Kredi\",\"Tüm agentlar\",\"AI CEO\",\"Öncelikli destek\"]" },
     };
 

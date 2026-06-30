@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -48,7 +49,7 @@ public class PackageService : IPackageService
     {
         var package = await _context.PackageDefinitions
             .FirstOrDefaultAsync(p => p.Id == request.PackageId && p.IsActive, cancellationToken)
-            ?? throw new InvalidOperationException("Package not found");
+            ?? throw new NotFoundException("Package not found");
 
         var existing = await _context.TenantSubscriptions
             .Include(s => s.AddOnAgents)

@@ -12,6 +12,7 @@ export type ProductionRunResultRow = {
   error?: string;
   publishReady?: boolean;
   rendering?: boolean;
+  slotKey?: string;
   metadata?: Record<string, unknown>;
 };
 

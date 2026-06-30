@@ -45,6 +45,9 @@ const FAMILY_DEMO: Record<RemotionLayoutFamily, ShowcaseDemoProps> = {
   neon_night: { headline: 'NEON\nHOURS', subtitle: 'Doors 22:00 · VIP', categoryLabel: 'LIVE', eventDate: 'Cuma', eventTime: '22:00', cta: 'Liste' },
   quote_card: { headline: 'Unutulmaz\ngeldi', subtitle: '— Ayşe K. · Google ★★★★★', categoryLabel: 'REVIEWS' },
   location_pin: { headline: 'Find\nUs', subtitle: 'Her gün · 10:00 – 02:00', categoryLabel: 'LOCATION', cta: 'Yol tarifi' },
+  luxury_kinetic_type: { headline: 'Premium\nLaunch', subtitle: 'Ajans seviyesi motion story', categoryLabel: 'PREMIUM', cta: 'Discover' },
+  glassmorphism_showcase: { headline: 'Soft\nGlow', subtitle: 'Modern glass card showcase', categoryLabel: 'STUDIO' },
+  editorial_product_stage: { headline: 'Editor\'s\nStage', subtitle: 'Hero product / venue focus', categoryLabel: 'FEATURE', cta: 'Reserve' },
 };
 
 const SLOT_DEMO: Record<string, ShowcaseDemoProps> = {

@@ -32,6 +32,25 @@ export function isGalleryTagHeadline(text: string): boolean {
   return false;
 }
 
+/** Gallery tag line + mood/location — not mission ideation copy. */
+export function isGalleryDerivedCaption(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (isGalleryTagHeadline(t)) return true;
+
+  const lines = t.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const tagLine = lines[0] ?? t;
+  const taggy = (tagLine.match(/ · /g) ?? []).length >= 2;
+  const hasMood = /atmosfer/i.test(t) || /\b(warm|cozy|elegant|festive|romantic|energetic)\b/i.test(t);
+  const hasLocationPin = /📍/.test(t);
+  if (taggy && (hasMood || hasLocationPin)) return true;
+
+  const sepCount = (t.match(/ · /g) ?? []).length;
+  if (sepCount >= 2 && (hasMood || hasLocationPin)) return true;
+
+  return false;
+}
+
 /** Pick a product-facing headline from gallery contentTags (prefer Turkish product name). */
 export function resolveProductHeadlineFromGalleryTags(
   tags: string[],

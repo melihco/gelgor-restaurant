@@ -27,7 +27,11 @@ from app.services.brand_context_service import (
     enrich_brand_operating_policy,
     merge_dotnet_brand_with_python_db,
 )
-from app.services.tenant_learning_service import build_tenant_learning_snapshot, build_learning_context_prompt
+from app.services.brand_execution_context import (
+    LEARNING_TASK_TYPES,
+    apply_gallery_usage,
+    apply_learning_context,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.internal import (
     InternalAgentExecutionRequest,
@@ -39,8 +43,9 @@ logger = structlog.get_logger()
 router = APIRouter(dependencies=[Depends(verify_internal_api_key)])
 
 # Per-tenant content agent serialization — delegate to the shared lock registry
-# so the TaskGraphExecutor and the HTTP orchestration path share the same locks.
-from app.services.execution_locks import get_content_lock as _get_tenant_content_lock  # noqa: E402
+# so the TaskGraphExecutor and the HTTP orchestration path share the same locks
+# (in-process asyncio.Lock + cross-replica Redis distributed lock).
+from app.services.execution_locks import content_agent_lock as _content_agent_lock  # noqa: E402
 
 
 async def _run_crew_engine_in_thread(
@@ -162,27 +167,14 @@ async def execute_internal_agent(
     enrich_brand_operating_policy(brand)
 
     # ── Learning context ──────────────────────────────────────────────────
-    content_tasks = {
-        "content_ideation", "content_calendar", "content_strategy",
-        "visual_design_cards", "single_review_response", "review_analysis",
-    }
-    if request.task_type in content_tasks:
+    if request.task_type in LEARNING_TASK_TYPES:
         try:
-            from app.services.gallery_usage_service import (
-                apply_gallery_usage_to_brand,
-                fetch_gallery_usage_by_type,
-            )
-
-            usage = await fetch_gallery_usage_by_type(request.tenant_id)
-            apply_gallery_usage_to_brand(brand, usage)
+            await apply_gallery_usage(brand, request.tenant_id)
         except Exception as exc:
             logger.warning("gallery_usage_load_failed", error=str(exc)[:200])
 
         try:
-            learning_snapshot = await build_tenant_learning_snapshot(db, request.tenant_id)
-            learning_text = build_learning_context_prompt(learning_snapshot)
-            if learning_text:
-                brand.learning_context = learning_text
+            await apply_learning_context(db, brand, request.tenant_id)
         except Exception as exc:
             logger.warning("learning_context_load_failed", error=str(exc))
 
@@ -208,7 +200,6 @@ async def execute_internal_agent(
 
     try:
         if request.agent_role == "content_agent":
-            tenant_lock = await _get_tenant_content_lock(request.tenant_id)
             logger.info(
                 "content_agent_serialize",
                 phase="awaiting_lock",
@@ -216,7 +207,7 @@ async def execute_internal_agent(
                 task_type=request.task_type,
                 correlation_id=request.correlation_id,
             )
-            async with tenant_lock:
+            async with _content_agent_lock(request.tenant_id):
                 logger.info(
                     "content_agent_serialize",
                     phase="lock_acquired",
@@ -298,22 +289,17 @@ async def execute_internal_agent(
     # .NET reads auto_approved to decide whether to skip the human review queue.
     cd_review: dict = {}
     try:
-        from app.crew.crews.creative_director_crew import (
-            REVIEWABLE_TASK_TYPES,
-            run_brand_safety_review,
-        )
         if (
-            effective_task_type in REVIEWABLE_TASK_TYPES
+            engine.is_brand_safety_reviewable(effective_task_type)
             and content
             and not used_fallback
         ):
             cd_review = await asyncio.to_thread(
-                run_brand_safety_review,
+                engine.run_brand_safety_review,
                 brand,
                 content,
                 effective_task_type,
                 effective_agent_role,
-                engine.get_llm_for_task(effective_task_type, brand=brand),
             )
             tokens_used += cd_review.get("tokens_used", 0)
             logger.info(

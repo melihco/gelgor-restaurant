@@ -92,6 +92,84 @@ export interface BrandThemeLayout {
   defaultLayoutId: LayoutId;
 }
 
+export interface BrandPostDesignDefaults {
+  font_preset: 'poster_3d' | 'sticker_pop' | 'condensed_impact' | 'elegant_serif' | 'clean_sans';
+  text_effect: 'extrude_3d' | 'neon_3d' | 'editorial_outline' | 'gradient_stack' | 'soft_shadow';
+  logo_position: 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right';
+  accent_color?: string;
+  default_template_id?: string;
+  defaultTemplateId?: string;
+}
+
+// ── AI Typography Design System ──────────────────────────────────────────────
+
+export type TypographyVibe =
+  | 'bubble_3d'
+  | 'chrome_gradient'
+  | 'neon_glow'
+  | 'editorial_serif'
+  | 'street_bold'
+  | 'handwritten'
+  | 'retro_poster'
+  | 'minimal_modern'
+  | 'warm_coastal';
+
+export type TypographyBackgroundStyle = 'photo_overlay' | 'solid_brand' | 'gradient_mesh' | 'transparent';
+export type LogoTreatment = 'watermark' | 'badge' | 'inline' | 'none';
+
+export interface BrandDesignTypographyConfig {
+  vibe: TypographyVibe;
+  text_effect: BrandPostDesignDefaults['text_effect'];
+  accent_color?: string;
+  background_style: TypographyBackgroundStyle;
+  logo_treatment: LogoTreatment;
+  /**
+   * Optional tenant override — limits fal.ai / Canva archetype rotation to these layout ids.
+   * When empty, routing uses canonical sector playbook (multi-tenant default).
+   */
+  preferred_canva_archetypes?: string[];
+  preferredCanvaArchetypes?: string[];
+}
+
+export interface BrandProductShowcaseConfig {
+  enabled: boolean;
+  /** Number of post-format showcases per mission (default 2) */
+  posts_per_mission: number;
+  /** Number of story-format showcases per mission (default 2) */
+  stories_per_mission: number;
+  /** Background style preference */
+  background_style: 'venue_location' | 'lifestyle_scene' | 'studio_clean' | 'auto';
+  /** Gallery tag filter for product photos (e.g. "product", "packaging", "merchandise") */
+  product_gallery_tags?: string[];
+  /** Explicit product photo URLs (overrides gallery matching) */
+  product_photo_urls?: string[];
+}
+
+export const TYPOGRAPHY_VIBE_LABELS: Record<TypographyVibe, { tr: string; en: string; emoji: string }> = {
+  bubble_3d: { tr: 'Balon 3D', en: 'Bubble 3D', emoji: '🫧' },
+  chrome_gradient: { tr: 'Krom Gradient', en: 'Chrome Gradient', emoji: '✨' },
+  neon_glow: { tr: 'Neon Glow', en: 'Neon Glow', emoji: '💡' },
+  editorial_serif: { tr: 'Editöryal Serif', en: 'Editorial Serif', emoji: '📰' },
+  street_bold: { tr: 'Sokak Kalın', en: 'Street Bold', emoji: '🏋️' },
+  handwritten: { tr: 'El Yazısı', en: 'Handwritten', emoji: '✍️' },
+  retro_poster: { tr: 'Retro Poster', en: 'Retro Poster', emoji: '🎨' },
+  minimal_modern: { tr: 'Minimal Modern', en: 'Minimal Modern', emoji: '◻️' },
+  warm_coastal: { tr: 'Sahil & Deniz', en: 'Warm Coastal', emoji: '🌊' },
+};
+
+export function defaultTypographyVibeForSector(sector: string): TypographyVibe {
+  const s = sector.toLowerCase();
+  if (s.includes('beach') || s.includes('marina') || s.includes('yacht') || s.includes('coastal')) return 'warm_coastal';
+  if (s.includes('night') || s.includes('club') || s.includes('bar') || s.includes('lounge')) return 'neon_glow';
+  if (s.includes('cafe') || s.includes('bakery') || s.includes('restaurant') || s.includes('food')) return 'retro_poster';
+  if (s.includes('beauty') || s.includes('spa') || s.includes('wellness')) return 'handwritten';
+  if (s.includes('fashion') || s.includes('retail') || s.includes('boutique')) return 'street_bold';
+  if (s.includes('hotel') || s.includes('resort')) return 'chrome_gradient';
+  if (s.includes('fine_dining') || s.includes('luxury')) return 'editorial_serif';
+  if (s.includes('tech') || s.includes('saas') || s.includes('agency')) return 'minimal_modern';
+  return 'retro_poster';
+}
+
 /**
  * All supported layout identifiers.
  * Each maps to a React component in LayoutEngine.tsx.
@@ -159,6 +237,29 @@ export interface BrandTheme {
   /** 5-slot brand template library — Mission Hub production source */
   templateLibrary?: import('@/lib/brand-template-library').BrandTemplateLibrary;
   template_library?: import('@/lib/brand-template-library').BrandTemplateLibrary;
+
+  /** Deterministic post/card typography standard used by MissionContentFactory. */
+  post_design_defaults?: BrandPostDesignDefaults;
+  postDesignDefaults?: BrandPostDesignDefaults;
+
+  /** AI typography design configuration — Ideogram V4 creative text generation. */
+  typography_design?: BrandDesignTypographyConfig;
+  typographyDesign?: BrandDesignTypographyConfig;
+
+  /**
+   * Product showcase production — AI background replacement for product photos.
+   * Generates post + story variants with product on scenic brand-relevant backgrounds.
+   */
+  product_showcase?: BrandProductShowcaseConfig;
+  productShowcase?: BrandProductShowcaseConfig;
+
+  /** Runway / Remotion / FAL engine routing — story & reel quality controls */
+  production_engines?: import('@/lib/brand-production-engines').BrandProductionEnginesConfig;
+  productionEngines?: import('@/lib/brand-production-engines').BrandProductionEnginesConfig;
+
+  /** fal.ai designer photo vs typography balance — per channel (story / reel / post). */
+  fal_design_intensity?: import('@/lib/fal-design-intensity').BrandFalDesignIntensityConfig;
+  falDesignIntensity?: import('@/lib/fal-design-intensity').BrandFalDesignIntensityConfig;
 }
 
 // ── Safe fonts list — must be Google Fonts or OFL licensed ───────────────────
@@ -184,6 +285,7 @@ export const SAFE_FONTS: readonly string[] = [
   'Allura',
   'Anton',
   'Bebas Neue',
+  'Bangers',
 ] as const;
 
 // ── Sector default palettes (cold-start fallback) ─────────────────────────────

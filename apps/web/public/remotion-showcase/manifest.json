@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-17T10:56:40.305Z",
-  "count": 172,
+  "generatedAt": "2026-06-22T06:15:38.742Z",
+  "count": 177,
   "items": [
     {
       "id": "BrandedFeedPortrait",
@@ -2142,6 +2142,73 @@
       "collection": "Agency",
       "durationMs": 68186,
       "bytes": 2268725
+    },
+    {
+      "id": "poster_event_masthead_01_post",
+      "kind": "still",
+      "url": "/remotion-showcase/poster_event_masthead_01_post.png",
+      "templateId": "poster_event_masthead_01",
+      "kitId": "kit_31_theater",
+      "mediaKind": "poster",
+      "format": "post",
+      "headline": "SUMMER\nOFFER",
+      "announcementTemplateId": "agency_top_masthead_01",
+      "renderEngine": "agency-svg",
+      "durationMs": 8774,
+      "bytes": 396835
+    },
+    {
+      "id": "kit_01_beach_club_remotion_editorial_product_stage_01",
+      "kind": "video",
+      "url": "/remotion-showcase/remotion_editorial_product_stage_01.mp4",
+      "templateId": "remotion_editorial_product_stage_01",
+      "kitId": "kit_01_beach_club",
+      "mediaKind": "story",
+      "headline": "Editor's\nStage",
+      "collection": "Agency",
+      "durationMs": 184043,
+      "bytes": 1090163
+    },
+    {
+      "id": "4278d8e0_daily_story",
+      "kind": "video",
+      "url": "/remotion-showcase/4278d8e0_daily_story.mp4",
+      "templateId": "remotion_glassmorphism_showcase_01",
+      "kitId": "kit_06_cafe_bakery",
+      "slotKey": "daily_story",
+      "mediaKind": "story",
+      "headline": "Good\nMorning",
+      "collection": "Agency",
+      "durationMs": 38818,
+      "bytes": 2898460
+    },
+    {
+      "id": "poster_editorial_date_04_post",
+      "kind": "still",
+      "url": "/remotion-showcase/poster_editorial_date_04_post.png",
+      "templateId": "poster_editorial_date_04",
+      "kitId": "kit_06_cafe_bakery",
+      "mediaKind": "poster",
+      "format": "post",
+      "headline": "Weekend\nDeal",
+      "announcementTemplateId": "agency_magazine_date_04",
+      "renderEngine": "agency-svg",
+      "durationMs": 12675,
+      "bytes": 427504
+    },
+    {
+      "id": "poster_promo_split_02_post",
+      "kind": "still",
+      "url": "/remotion-showcase/poster_promo_split_02_post.png",
+      "templateId": "poster_promo_split_02",
+      "kitId": "kit_06_cafe_bakery",
+      "mediaKind": "poster",
+      "format": "post",
+      "headline": "Weekend\nDeal",
+      "announcementTemplateId": "agency_promo_banner_02",
+      "renderEngine": "agency-svg",
+      "durationMs": 9016,
+      "bytes": 357450
     }
   ]
 }

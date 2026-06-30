@@ -9,17 +9,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
 function getClient() {
+  const { accessKeyId, secretAccessKey } = serverConfig.r2.requireCredentials();
   return new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_ENDPOINT ?? `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
+    endpoint: serverConfig.r2.endpoint,
+    credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: true,
   });
 }
@@ -85,7 +84,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const client = getClient();
-    const bucket = process.env.R2_BUCKET_NAME ?? 'smartagency-media';
+    const bucket = serverConfig.r2.bucket;
     const rangeHeader = request.headers.get('range');
 
     const command = new GetObjectCommand({

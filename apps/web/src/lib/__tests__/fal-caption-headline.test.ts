@@ -1,0 +1,243 @@
+import { describe, it, expect } from 'vitest';
+import {
+  correctTurkishSpelling,
+  resolveFalDisplayHeadline,
+  resolveFalVideoHeadline,
+  resolveFalSubtitle,
+  sanitizeFalOverlayText,
+  isMeaningfulFalOverlayText,
+  ensureMeaningfulFalOverlayText,
+  formatFalOnImageHeadlineDirective,
+  clampFalOverlayHeadlineForCanvas,
+  isInternalStrategyBriefing,
+  isIncompleteOverlayPhrase,
+  stripDanglingOverlayTail,
+  resolveFalProductionOverlayHeadline,
+  buildFalOnCanvasTextContract,
+  buildFalLogoPlacementContract,
+} from '../fal-caption-headline';
+
+describe('correctTurkishSpelling', () => {
+  it('fixes "Koketyl" → "Kokteyl"', () => {
+    expect(correctTurkishSpelling('Yaz Koketyl Gecesi')).toBe('Yaz Kokteyl Gecesi');
+  });
+
+  it('fixes "KOKETYL" → "KOKTEYL" (preserves uppercase)', () => {
+    expect(correctTurkishSpelling('YAZ KOKETYL GECESİ')).toBe('YAZ KOKTEYL GECESİ');
+  });
+
+  it('fixes "haftasonu" → "Hafta Sonu"', () => {
+    expect(correctTurkishSpelling('haftasonu İndirimi')).toBe('hafta sonu İndirimi');
+  });
+
+  it('preserves already-correct text', () => {
+    expect(correctTurkishSpelling('Yaz Kokteyl Gecesi')).toBe('Yaz Kokteyl Gecesi');
+  });
+});
+
+describe('resolveFalDisplayHeadline', () => {
+  it('extracts a unique hook from caption (not the mission title)', () => {
+    const result = resolveFalDisplayHeadline({
+      caption: 'Bu yazın en lezzetli kokteylleri nerede? Yula Bodrum sahne alıyor!',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+    });
+    expect(result.source).not.toBe('mission_title');
+    expect(result.headline).not.toBe('Yaz Kokteyl Gecesi');
+  });
+
+  it('extracts action hook from caption', () => {
+    const result = resolveFalDisplayHeadline({
+      caption: 'Müşterilerimiz bu yazın lezzetlerine bayılıyor! Macera dolu akşamlar için Yula Bodrum\'da yerini al!',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+    });
+    expect(result.source).not.toBe('mission_title');
+    expect(result.headline).not.toBe('Yaz Kokteyl Gecesi');
+  });
+
+  it('falls back to mission title (with spellcheck) when caption is empty', () => {
+    const result = resolveFalDisplayHeadline({
+      caption: '',
+      missionTitle: 'Yaz Koketyl Gecesi',
+      brandName: 'Yula Bodrum',
+    });
+    expect(result.source).toBe('mission_title');
+    expect(result.headline).toBe('Yaz Kokteyl Gecesi');
+  });
+
+  it('uses CTA when caption has no good hook', () => {
+    const result = resolveFalDisplayHeadline({
+      caption: 'Yula Bodrum güzel bir mekan.',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+      cta: 'Yerinizi Ayırtın',
+    });
+    expect(result.headline).toBe('Yerinizi Ayırtın');
+    expect(result.source).toBe('caption_cta');
+  });
+
+  it('avoids brand name in headline', () => {
+    const result = resolveFalDisplayHeadline({
+      caption: 'Yula Bodrum bu yaz çok güzel etkinlikler hazırladı.',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+    });
+    expect(result.headline.toLowerCase()).not.toContain('yula bodrum');
+  });
+
+  it('produces different headlines for different captions', () => {
+    const r1 = resolveFalDisplayHeadline({
+      caption: 'Yenilikleri keşfetmek için davetlisiniz! Enerjik bir atmosfer sizi bekliyor.',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+    });
+    const r2 = resolveFalDisplayHeadline({
+      caption: 'Hafta sonu indirimi başlıyor! Tüm kokteyllerde %20 indirim.',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+    });
+    expect(r1.headline).not.toBe(r2.headline);
+  });
+});
+
+describe('resolveFalSubtitle', () => {
+  it('returns a line from caption that differs from headline', () => {
+    const result = resolveFalSubtitle({
+      caption: 'Lezzet dolu akşamlar. Enerjik atmosferde eğlence garantisi. Yerinizi şimdi ayırtın!',
+      headline: 'Lezzet Dolu Akşamlar',
+      brandName: 'Yula Bodrum',
+    });
+    expect(result).toBeDefined();
+    expect(result!.toLowerCase()).not.toContain('lezzet dolu akşamlar');
+  });
+
+  it('returns undefined when no meaningful subtitle exists', () => {
+    const result = resolveFalSubtitle({
+      caption: 'Yaz.',
+      headline: 'Yaz Kokteyl',
+    });
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('resolveFalVideoHeadline', () => {
+  it('compresses long caption-derived hooks into video-safe text', () => {
+    const result = resolveFalVideoHeadline({
+      caption: 'Bu yaz serinletici kokteyllerimizi tatmaya gelin ve Bodrum mandalinasinin ferahligini kesfedin.',
+      missionTitle: 'Yaz Kokteyl Gecesi',
+      brandName: 'Yula Bodrum',
+      cta: 'Yerini ayirt',
+    });
+    expect(result.headline.length).toBeLessThanOrEqual(22);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.toLowerCase()).not.toContain('yula bodrum');
+  });
+});
+
+describe('sanitizeFalOverlayText', () => {
+  it('strips instruction leak words', () => {
+    expect(sanitizeFalOverlayText('EXACTLY')).toBe('');
+    expect(sanitizeFalOverlayText('reads exactly Yaz Lezzetleri')).toBe('Yaz Lezzetleri');
+  });
+
+  it('rejects non-meaningful overlay copy', () => {
+    expect(isMeaningfulFalOverlayText('EXACTLY')).toBe(false);
+    expect(isMeaningfulFalOverlayText('Yaz Lezzetleri')).toBe(true);
+  });
+
+  it('prompt directive avoids the word EXACTLY', () => {
+    const line = formatFalOnImageHeadlineDirective('Yaz Lezzetleri', 'bold serif');
+    expect(line.toLowerCase()).not.toMatch(/\bexactly "${/);
+    expect(line).toContain('«Yaz Lezzetleri»');
+  });
+
+  it('ensureMeaningfulFalOverlayText falls back to caption sentence', () => {
+    const result = ensureMeaningfulFalOverlayText('EXACTLY', ['Serinletici kokteyller sizi bekliyor'], 28);
+    expect(result.toLowerCase()).not.toBe('exactly');
+    expect(result.length).toBeGreaterThan(6);
+  });
+});
+
+describe('clampFalOverlayHeadlineForCanvas', () => {
+  it('shortens long reel headlines to ≤3 words / 22 chars', () => {
+    const result = clampFalOverlayHeadlineForCanvas(
+      'What Our Happy Excellent Customers Are Saying',
+      'reel',
+    );
+    expect(result.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.length).toBeLessThanOrEqual(22);
+  });
+
+  it('preserves short Turkish hooks', () => {
+    expect(clampFalOverlayHeadlineForCanvas('Yaz Lezzetleri', 'reel')).toBe('Yaz Lezzetleri');
+  });
+
+  it('rejects internal strategy briefing and dangling "and"', () => {
+    expect(
+      clampFalOverlayHeadlineForCanvas('Highlight the exclusivity and premium menu', 'feed_post'),
+    ).toBe('');
+    expect(isInternalStrategyBriefing('Highlight the exclusivity and')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Highlight the exclusivity and')).toBe(true);
+    expect(stripDanglingOverlayTail('Deniz Lezzetleri ve')).toBe('Deniz Lezzetleri');
+  });
+
+  it('ensureMeaningfulFalOverlayText returns empty when all candidates are invalid', () => {
+    expect(ensureMeaningfulFalOverlayText('Highlight the exclusivity and', [], 32)).toBe('');
+  });
+
+  it('resolveFalProductionOverlayHeadline returns empty for briefing fragments', () => {
+    expect(
+      resolveFalProductionOverlayHeadline(
+        'Highlight the exclusivity and premium positioning',
+        ['Taze deniz ürünleri menüsü'],
+        'feed_post',
+      ),
+    ).toMatch(/deniz|Taze/);
+    expect(
+      resolveFalProductionOverlayHeadline('Highlight the exclusivity and', [], 'feed_post'),
+    ).toBe('');
+  });
+});
+
+describe('buildFalOnCanvasTextContract', () => {
+  it('lists explicit headline words and forbids gibberish', () => {
+    const contract = buildFalOnCanvasTextContract({
+      headline: 'Sunset Session',
+      subtitle: 'Rezervasyon açık',
+      brandName: 'Sarnıç Beach',
+    });
+    expect(contract).toContain('HEADLINE: "Sunset Session"');
+    expect(contract).toContain('1="Sunset"');
+    expect(contract).toContain('SUBTITLE');
+    expect(contract).toContain('FORBIDDEN on canvas: gibberish');
+  });
+
+  it('omits text wordmark when logo is provided', () => {
+    const contract = buildFalOnCanvasTextContract({
+      headline: 'Sunset Session',
+      brandName: 'Sarnıç Beach',
+      logoProvided: true,
+    });
+    expect(contract).not.toContain('BRAND MARK');
+  });
+});
+
+describe('buildFalLogoPlacementContract', () => {
+  it('requires reserved logo zone and forbids AI-drawn marks', () => {
+    const contract = buildFalLogoPlacementContract({
+      logoProvided: true,
+      brandName: 'Sarnıç Beach',
+      channel: 'feed_post',
+    });
+    expect(contract).toContain('BRAND LOGO CONTRACT');
+    expect(contract).toContain('DO NOT draw, generate');
+    expect(contract).toContain('RESERVED LOGO ZONE');
+    expect(contract).toContain('Photo hero rule');
+    expect(contract).toContain('never over the dish');
+  });
+
+  it('returns empty string when no logo', () => {
+    expect(buildFalLogoPlacementContract({ logoProvided: false })).toBe('');
+  });
+});

@@ -26,6 +26,11 @@ import {
   textShadowEditorial,
   textShadowAmbient,
   FilmGrainOverlay,
+  CinematicLightLayer,
+  EditorialKicker,
+  AccentRule,
+  EditorialMetaRow,
+  CornerTicks,
 } from './shared/story-primitives';
 import { StoryFontProvider, useStoryFonts } from './shared/useRemotionFonts';
 import {
@@ -54,6 +59,11 @@ import {
   LocationPinLayout,
   QuoteCardLayout,
 } from './SocialStoryLayouts';
+import {
+  EditorialProductStageLayout,
+  GlassmorphismShowcaseLayout,
+  LuxuryKineticTypeLayout,
+} from './PremiumStoryLayouts';
 import { brandPanelGradientCss, cinematicScrimCss } from '../lib/brand-panel-gradient';
 
 export interface StoryLayoutEngineProps extends StoryProps {
@@ -103,6 +113,12 @@ export const StoryLayoutEngine: React.FC<StoryLayoutEngineProps> = (props) => {
       return <QuoteCardLayout {...props} layoutSpec={spec} />;
     case 'location_pin':
       return <LocationPinLayout {...props} layoutSpec={spec} />;
+    case 'luxury_kinetic_type':
+      return <LuxuryKineticTypeLayout {...props} layoutSpec={spec} />;
+    case 'glassmorphism_showcase':
+      return <GlassmorphismShowcaseLayout {...props} layoutSpec={spec} />;
+    case 'editorial_product_stage':
+      return <EditorialProductStageLayout {...props} layoutSpec={spec} />;
     case 'cinematic_center':
       return <CinematicCenterLayout {...props} spec={spec} />;
     case 'noir_editorial':
@@ -205,6 +221,7 @@ function SplitPanelLayout({
   return (
     <AbsoluteFill style={{ background: '#000' }}>
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={24} />
+      <CinematicLightLayer warmth="warm" intensity={0.7} origin="50% 18%" />
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0, height: gradientH,
         background: brandPanelGradientCss(panelBg, 0.96),
@@ -223,12 +240,14 @@ function SplitPanelLayout({
           <div style={{ width: 48, height: 3, background: accentColor, marginBottom: 16 }} />
         ) : null}
         {categoryLabel ? (
-          <span style={{
-            fontFamily: fonts.body, fontSize: 11, letterSpacing: trackingToLetterSpacing(spec.categoryTracking),
-            textTransform: 'uppercase',             color: spec.accentOnCategory ? accentColor : textColors.category, marginBottom: 10,
-          }}>
-            {categoryLabel}
-          </span>
+          <EditorialKicker
+            label={categoryLabel}
+            accent={accentColor}
+            fontFamily={fonts.body}
+            color={spec.accentOnCategory ? accentColor : textColors.category}
+            align={spec.align === 'left' ? 'left' : 'center'}
+            opacity={headOp}
+          />
         ) : null}
         <div style={{ maxWidth: '95%', ...stableTextLayerStyle }}>
           <HeadlineStack
@@ -249,7 +268,7 @@ function SplitPanelLayout({
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 20, fontStyle: spec.subtitleItalic ? 'italic' : 'normal',
+            fontFamily: fonts.body, fontSize: 28, fontStyle: spec.subtitleItalic ? 'italic' : 'normal',
             color: textColors.subtitle, marginTop: 12, opacity: headOp,
           }}>
             {subtitle}
@@ -289,26 +308,32 @@ function EditorialBottomLayout(props: LayoutProps) {
   const gradEnd = Math.round(spec.gradientEnd * 100);
   const overlayOp = props.overlayOpacity ?? spec.overlayOpacity;
   const sidePad = spec.align === 'center' ? 48 : 52;
-  const barH = interpolate(frame, [4, 22], [0, 100], { extrapolateRight: 'clamp' });
+  const kicker = stableTextOpacity(frame, 8, 24);
+  const ruleProgress = interpolate(frame, [14, 34], [0, 1], { extrapolateRight: 'clamp' });
   const headOp = stableTextOpacity(frame, 22, 38);
+  const metaOp = stableTextOpacity(frame, 40, 56);
+  const align = spec.align === 'right' ? 'left' : spec.align;
 
   return (
     <AbsoluteFill style={{ background: '#000' }}>
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={12} />
       <DuotoneWash spec={spec} primary={primaryColor} accent={accentColor} />
+      {/* Cinematic grade — depth + soft top light so the photo reads "graded" not raw */}
+      <CinematicLightLayer warmth="warm" intensity={0.85} />
       <VignetteLayer spec={spec} />
       <AbsoluteFill style={{
         background: `linear-gradient(to bottom, transparent ${gradStart}%, rgba(0,0,0,${overlayOp}) ${gradEnd}%)`,
       }} />
+      {/* Subtle brand-tinted bottom anchor under the gradient for color cohesion */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: '34%',
+        background: `linear-gradient(to top, ${primaryColor}3a 0%, transparent 100%)`,
+        mixBlendMode: 'multiply', pointerEvents: 'none',
+      }} />
+      <FilmGrainOverlay opacity={0.05} fine />
       <FrameLayer spec={spec} accent={accentColor} />
+      <CornerTicks color={`${accentColor}cc`} inset={30} length={26} opacity={0.55} corners={['tl', 'tr']} />
       <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.85} />
-
-      {spec.accentLine === 'left_bar' || spec.accentLine === 'both' ? (
-        <div style={{
-          position: 'absolute', left: sidePad - 20, bottom: '14%', width: 4, height: `${Math.round(barH * 0.55)}%`,
-          background: accentColor, borderRadius: 2,
-        }} />
-      ) : null}
 
       <AbsoluteFill style={{
         display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
@@ -316,14 +341,19 @@ function EditorialBottomLayout(props: LayoutProps) {
         padding: `0 ${sidePad}px 10%`, textAlign: spec.align,
       }}>
         {categoryLabel ? (
-          <span style={{
-            fontFamily: fonts.body, fontSize: 11, letterSpacing: trackingToLetterSpacing(spec.categoryTracking),
-            textTransform: 'uppercase', color: spec.accentOnCategory ? accentColor : textColors.category,
-            marginBottom: 12, textShadow: textShadowEditorial,
-          }}>
-            {categoryLabel}
-          </span>
-        ) : null}
+          <EditorialKicker
+            label={categoryLabel}
+            accent={accentColor}
+            fontFamily={fonts.body}
+            color={spec.accentOnCategory ? accentColor : textColors.category}
+            align={align}
+            opacity={kicker}
+          />
+        ) : (
+          <div style={{ marginBottom: 14 }}>
+            <AccentRule accent={accentColor} progress={ruleProgress} align={align} opacity={kicker} />
+          </div>
+        )}
         <div style={{ maxWidth: '95%', ...stableTextLayerStyle }}>
           <HeadlineStack
             headline={headline}
@@ -344,17 +374,24 @@ function EditorialBottomLayout(props: LayoutProps) {
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 20, fontStyle: spec.subtitleItalic ? 'italic' : 'normal',
+            fontFamily: fonts.body, fontSize: 28, fontStyle: spec.subtitleItalic ? 'italic' : 'normal',
             color: textColors.subtitle, marginTop: 14, opacity: headOp, textShadow: textShadowAmbient,
             lineHeight: 1.52, maxWidth: '92%', display: 'block',
           }}>
             {subtitle}
           </span>
         ) : null}
-        {spec.showLocation && location ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 15, color: textColors.location, marginTop: 16, letterSpacing: 2, textTransform: 'uppercase' }}>
-            {location}
-          </span>
+        {spec.showLocation && (location || brandName) ? (
+          <div style={{ marginTop: 18 }}>
+            <EditorialMetaRow
+              items={[brandName, location]}
+              fontFamily={fonts.body}
+              color={textColors.location}
+              accent={accentColor}
+              align={align}
+              opacity={metaOp}
+            />
+          </div>
         ) : null}
       </AbsoluteFill>
     </AbsoluteFill>
@@ -378,6 +415,7 @@ function FrostedLayout(props: LayoutProps) {
   return (
     <AbsoluteFill style={{ background: '#000' }}>
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={20} />
+      <CinematicLightLayer warmth="neutral" intensity={0.7} origin="50% 20%" />
       <VignetteLayer spec={spec} />
       {/* Upgraded: smooth cinematic scrim instead of hard gradient stop */}
       <AbsoluteFill style={{
@@ -403,12 +441,13 @@ function FrostedLayout(props: LayoutProps) {
           textAlign: spec.align,
         }}>
           {categoryLabel ? (
-            <span style={{
-              fontFamily: fonts.body, fontSize: 10, letterSpacing: 7, textTransform: 'uppercase',
-              color: accentColor, display: 'block', marginBottom: 10,
-            }}>
-              {categoryLabel}
-            </span>
+            <EditorialKicker
+              label={categoryLabel}
+              accent={accentColor}
+              fontFamily={fonts.body}
+              color={accentColor}
+              align={spec.align === 'center' ? 'center' : 'left'}
+            />
           ) : null}
           <div style={{ marginTop: 8 }}>
             <HeadlineStack
@@ -429,7 +468,7 @@ function FrostedLayout(props: LayoutProps) {
           </div>
           {subtitle ? (
             <span style={{
-              fontFamily: fonts.body, fontSize: 19, color: textColors.subtitle, marginTop: 12,
+              fontFamily: fonts.body, fontSize: 28, color: textColors.subtitle, marginTop: 12,
               display: 'block', fontStyle: spec.subtitleItalic ? 'italic' : 'normal', lineHeight: 1.5,
             }}>
               {subtitle}

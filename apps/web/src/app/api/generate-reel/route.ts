@@ -42,6 +42,7 @@ import {
 } from '@/lib/runway/builders/reel-prompt.builder';
 import { applyRunwayDirectorPromptGuardrails, type RunwayDirectorGuardrailOptions } from '@/lib/tenant-reel-motion-seed';
 import { API_BASE_URL } from '@/lib/runtime-config';
+import { serverConfig } from '@/lib/server-config';
 
 function runwayGuardrailOptions(
   sceneMeta: Record<string, unknown> | null | undefined,
@@ -89,7 +90,7 @@ async function translateToEnglishIfNeeded(
     const openai = new OpenAI({ apiKey });
     const lines = toTranslate.map(([k, v]) => `${k}: ${v}`).join('\n');
     const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: serverConfig.ai.chatModel('standard'),
       max_tokens: 300,
       messages: [
         {
@@ -118,7 +119,7 @@ async function translateToEnglishIfNeeded(
 
 // ── OpenAI image generation (used as Runway input frame) ───────────────────
 async function generateStillImageForReel(input: Partial<ReelGenerationInput>): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) return null;
 
   try {
@@ -407,7 +408,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Uses GPT-4o to generate a shot-by-shot cinematic prompt using brand DNA,
     // gallery photo description, and content-specific cinematography templates.
     // This replaces the generic template-based buildReelPrompt() for all Reels.
-    const openaiKey = process.env.OPENAI_API_KEY;
+    const openaiKey = serverConfig.openai.apiKey;
     if (openaiKey && !input.promptText) {
       try {
         const reelInput = input as ReelGenerationInput;

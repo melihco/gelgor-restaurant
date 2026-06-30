@@ -1,0 +1,89 @@
+{
+  "$comment": "Single source of truth (SSOT) for the .NET <-> Python internal orchestration contract. Field names are the wire format (snake_case). The .NET side serializes CrewExecutionRequest/CrewBrandContext with JsonNamingPolicy.SnakeCaseLower; the Python side defines them as Pydantic models in backend/app/schemas/internal.py. Parity tests on both runtimes assert their models match this manifest so schema drift becomes a CI failure instead of silently dropped fields. Update this file in the same PR whenever either model changes.",
+  "models": {
+    "InternalBrandContext": {
+      "fields": [
+        "business_name",
+        "business_type",
+        "description",
+        "brand_tone",
+        "visual_style",
+        "target_audience",
+        "location",
+        "languages",
+        "campaign_goals",
+        "competitors",
+        "custom_rules",
+        "keywords",
+        "asset_descriptions",
+        "content_pillars",
+        "default_ctas",
+        "risk_rules",
+        "instagram_top_hashtags",
+        "website_summary",
+        "instagram_bio",
+        "discovery_confidence",
+        "brand_constitution_confirmed",
+        "reference_image_urls",
+        "google_rating",
+        "google_review_count",
+        "google_review_signals",
+        "learning_context",
+        "visual_dna",
+        "competitor_brief",
+        "trend_brief",
+        "tripadvisor_reviews",
+        "location_posts",
+        "google_trends",
+        "gallery_analysis",
+        "operating_capabilities",
+        "gallery_policy"
+      ],
+      "dotnetForwards": [
+        "business_name",
+        "business_type",
+        "description",
+        "brand_tone",
+        "visual_style",
+        "target_audience",
+        "location",
+        "languages",
+        "campaign_goals",
+        "competitors",
+        "custom_rules",
+        "keywords",
+        "asset_descriptions",
+        "content_pillars",
+        "risk_rules",
+        "operating_capabilities",
+        "gallery_policy"
+      ]
+    },
+    "InternalAgentExecutionRequest": {
+      "fields": [
+        "tenant_id",
+        "office_id",
+        "agent_role",
+        "task_type",
+        "input_data",
+        "brand_context",
+        "correlation_id"
+      ]
+    },
+    "InternalAgentExecutionResponse": {
+      "fields": [
+        "status",
+        "agent_role",
+        "task_type",
+        "artifact_type",
+        "artifact_title",
+        "content",
+        "summary",
+        "metadata",
+        "correlation_id",
+        "action_payload",
+        "tokens_used"
+      ]
+    }
+  }
+}

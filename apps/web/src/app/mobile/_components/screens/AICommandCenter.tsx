@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth-store';
 import { ProfileSheet } from '../ProfileSheet';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { apiClient } from '@/lib/api-client';
-import { resolveArtifact } from '../artifact-utils';
+import { resolveArtifact } from '@/lib/artifact-utils';
 import { resolvePosterUrl } from '@/lib/production-bundle';
 import { SafeCoverImage } from '../SafeCoverImage';
 import { resolveClientMediaUrl } from '@/lib/media-url';

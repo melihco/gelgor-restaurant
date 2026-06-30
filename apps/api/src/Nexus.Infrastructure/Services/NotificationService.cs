@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -58,11 +59,11 @@ public class NotificationService : INotificationService
         return MapToDto(notification);
     }
 
-    public async Task<NotificationDto> MarkAsReadAsync(Guid notificationId, CancellationToken cancellationToken = default)
+    public async Task<NotificationDto> MarkAsReadAsync(Guid notificationId, Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
     {
         var notification = await _dbContext.Notifications
-            .FirstOrDefaultAsync(n => n.Id == notificationId, cancellationToken)
-            ?? throw new InvalidOperationException("Notification not found");
+            .FirstOrDefaultAsync(n => n.Id == notificationId && n.TenantId == tenantId && n.UserId == userId, cancellationToken)
+            ?? throw new NotFoundException("Notification not found");
 
         notification.IsRead = true;
         notification.UpdatedBy = Guid.Empty;

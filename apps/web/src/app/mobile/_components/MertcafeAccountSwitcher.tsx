@@ -44,6 +44,9 @@ export function MertcafeAccountSwitcher({
   const [newId, setNewId] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [existingApiKey, setExistingApiKey] = useState('');
+  const [showLinkKeyForm, setShowLinkKeyForm] = useState(false);
+  const [oauthUrlBroken, setOauthUrlBroken] = useState(false);
 
   const { data: status, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['mertcafe-status', workspaceId],
@@ -65,6 +68,7 @@ export function MertcafeAccountSwitcher({
   const provisionMutation = useMutation({
     mutationFn: (force?: boolean) => apiClient.provisionMertcafeTenant(workspaceId, { force }),
     onSuccess: async (data) => {
+      setOauthUrlBroken(false);
       await invalidate();
       const result = data as { message?: string; connect_ready?: boolean };
       flash(
@@ -77,6 +81,19 @@ export function MertcafeAccountSwitcher({
     },
     onError: (e: unknown) => {
       flash(e instanceof Error ? e.message : 'Tenant kaydı başarısız', false);
+    },
+  });
+
+  const linkKeyMutation = useMutation({
+    mutationFn: () => apiClient.linkMertcafeApiKey(workspaceId, existingApiKey.trim()),
+    onSuccess: async (data) => {
+      setExistingApiKey('');
+      setShowLinkKeyForm(false);
+      await invalidate();
+      flash(data.message || 'Mevcut Mertcafe hesabınız bağlandı.');
+    },
+    onError: (e: unknown) => {
+      flash(e instanceof Error ? e.message : 'API anahtarı bağlanamadı', false);
     },
   });
 
@@ -148,11 +165,13 @@ export function MertcafeAccountSwitcher({
     mutationFn: () => apiClient.getMertcafeInstagramConnectUrl(workspaceId),
     onSuccess: (data) => {
       if (data.auth_url) {
+        setOauthUrlBroken(false);
         window.open(data.auth_url, '_blank', 'noopener,noreferrer');
         flash('Instagram OAuth açıldı. Farklı hesapla giriş yapın, sonra durumu yenileyin.');
       }
     },
     onError: (e: unknown) => {
+      setOauthUrlBroken(true);
       flash(e instanceof Error ? e.message : 'OAuth URL alınamadı', false);
     },
   });
@@ -259,38 +278,168 @@ export function MertcafeAccountSwitcher({
             </div>
           )}
 
-          {(!hasApiKey || !igOk) && !isLoading && (
+          {hasApiKey && accounts.length > 0 && igOk && !status?.use_oauth_account && (
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(129,140,248,0.08)', border: '0.5px solid rgba(129,140,248,0.25)',
+              fontSize: 11, color: t.textSecondary, lineHeight: 1.45 }}>
+              Manuel yayın hesabı aktif. Paylaşım hatası alırsanız Mertcafe panelindeki API anahtarının
+              seçili hesaba ait olduğundan emin olun — «Mevcut Mertcafe hesabımı bağla» ile güncelleyin.
+            </div>
+          )}
+
+          {oauthUrlBroken && hasApiKey && (
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(239,68,68,0.08)', border: '0.5px solid rgba(239,68,68,0.25)',
+              fontSize: 11, color: '#f87171', lineHeight: 1.45 }}>
+              OAuth URL alınamadı — mevcut API anahtarı Instagram bağlantısı için uygun değil.
+              Aşağıdan «API anahtarını yenile» ile sıfırlayıp yeni Instagram hesabı bağlayın.
+            </div>
+          )}
+
+          {!isLoading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
               {!hasApiKey && (
-                <button
-                  type="button"
-                  disabled={provisionMutation.isPending}
-                  onClick={() => provisionMutation.mutate(false)}
-                  style={{
-                    width: '100%', padding: '12px 14px', borderRadius: 12, border: 'none', cursor: 'pointer',
-                    background: '#4f46e5', color: '#fff', fontSize: 14, fontWeight: 700,
-                  }}
-                >
-                  {provisionMutation.isPending ? 'Kayıt oluşturuluyor…' : 'Bu tenant için Mertcafe kaydı oluştur'}
-                </button>
+                <>
+                  {showLinkKeyForm ? (
+                    <div style={{ padding: '12px', borderRadius: 12, border: `0.5px solid ${t.separator}` }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
+                        Mevcut Mertcafe hesabım var
+                      </div>
+                      <p style={{ fontSize: 11, color: t.textMuted, margin: '0 0 10px', lineHeight: 1.45 }}>
+                        Mertcafe panelinizdeki API anahtarını yapıştırın. Yeni kayıt oluşturulmaz.
+                      </p>
+                      <input
+                        value={existingApiKey}
+                        onChange={(e) => setExistingApiKey(e.target.value)}
+                        placeholder="Mertcafe API anahtarı"
+                        autoComplete="off"
+                        style={inputStyle(t)}
+                      />
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button
+                          type="button"
+                          disabled={existingApiKey.trim().length < 8 || linkKeyMutation.isPending}
+                          onClick={() => linkKeyMutation.mutate()}
+                          style={{
+                            flex: 1, padding: '12px 14px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                            background: '#4f46e5', color: '#fff', fontSize: 14, fontWeight: 700,
+                          }}
+                        >
+                          {linkKeyMutation.isPending ? 'Bağlanıyor…' : 'Hesabımı bağla'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowLinkKeyForm(false)}
+                          style={{
+                            padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
+                            background: 'transparent', border: `0.5px solid ${t.separator}`,
+                            color: t.textMuted, fontSize: 12,
+                          }}
+                        >
+                          Gizle
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkKeyForm(true)}
+                      style={{
+                        width: '100%', padding: '12px 14px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                        background: '#4f46e5', color: '#fff', fontSize: 14, fontWeight: 700,
+                      }}
+                    >
+                      Mevcut Mertcafe hesabımı bağla
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={provisionMutation.isPending}
+                    onClick={() => provisionMutation.mutate(false)}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
+                      background: 'transparent', border: `0.5px solid ${t.separator}`,
+                      color: t.textTertiary, fontSize: 13,
+                    }}
+                  >
+                    {provisionMutation.isPending ? 'Oluşturuluyor…' : 'Yeni Mertcafe API anahtarı oluştur (ilk kez)'}
+                  </button>
+                </>
               )}
               {hasApiKey && (
-                <button
-                  type="button"
-                  disabled={provisionMutation.isPending}
-                  onClick={() => {
-                    if (window.confirm('Mevcut API anahtarı OAuth için çalışmıyorsa yeni anahtar üretilir. Devam?')) {
-                      provisionMutation.mutate(true);
-                    }
-                  }}
-                  style={{
-                    width: '100%', padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
-                    background: 'rgba(245,158,11,0.12)', border: '0.5px solid rgba(245,158,11,0.35)',
-                    color: '#F59E0B', fontSize: 13, fontWeight: 700,
-                  }}
-                >
-                  {provisionMutation.isPending ? 'Yenileniyor…' : 'API anahtarını yenile (authUrl hatası)'}
-                </button>
+                <>
+                  {!showLinkKeyForm ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkKeyForm(true)}
+                      style={{
+                        width: '100%', padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
+                        background: 'transparent', border: `0.5px solid ${t.separator}`,
+                        color: t.textSecondary, fontSize: 13, fontWeight: 600,
+                      }}
+                    >
+                      Mevcut Mertcafe API anahtarımı bağla
+                    </button>
+                  ) : (
+                    <div style={{ padding: '12px', borderRadius: 12, border: `0.5px solid ${t.separator}` }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
+                        Mertcafe API anahtarını güncelle
+                      </div>
+                      <input
+                        value={existingApiKey}
+                        onChange={(e) => setExistingApiKey(e.target.value)}
+                        placeholder="Mertcafe API anahtarı"
+                        autoComplete="off"
+                        style={inputStyle(t)}
+                      />
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button
+                          type="button"
+                          disabled={existingApiKey.trim().length < 8 || linkKeyMutation.isPending}
+                          onClick={() => linkKeyMutation.mutate()}
+                          style={{
+                            flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                            background: '#4f46e5', color: '#fff', fontSize: 13, fontWeight: 700,
+                          }}
+                        >
+                          {linkKeyMutation.isPending ? 'Bağlanıyor…' : 'Anahtarı kaydet'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowLinkKeyForm(false)}
+                          style={{
+                            padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                            background: 'transparent', border: `0.5px solid ${t.separator}`,
+                            color: t.textMuted, fontSize: 12,
+                          }}
+                        >
+                          İptal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={provisionMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm(
+                        'Mevcut API anahtarı ve kayıtlı Instagram hesapları silinir, yeni Mertcafe kaydı oluşturulur. Devam?',
+                      )) {
+                        provisionMutation.mutate(true);
+                      }
+                    }}
+                    style={{
+                      width: '100%', padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+                      background: oauthUrlBroken
+                        ? 'rgba(245,158,11,0.18)'
+                        : 'rgba(245,158,11,0.12)',
+                      border: '0.5px solid rgba(245,158,11,0.35)',
+                      color: '#F59E0B', fontSize: 13, fontWeight: 700,
+                    }}
+                  >
+                    {provisionMutation.isPending ? 'Yenileniyor…' : 'API anahtarını yenile (yeni IG bağlantısı)'}
+                  </button>
+                </>
               )}
             </div>
           )}

@@ -5,7 +5,7 @@
  */
 import React, { useRef, useState, useEffect } from 'react';
 import type { OutputArtifact } from '@/types';
-import { parseArtifactContent, resolveArtifact, resolveCarouselUrls, normalizeHashtags } from './artifact-utils';
+import { parseArtifactContent, resolveArtifact, resolveCarouselUrls, normalizeHashtags } from '@/lib/artifact-utils';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import {
   resolveBrandedPostUrl,
@@ -13,6 +13,8 @@ import {
   resolveStoryVideoUrl,
   resolveStoryVideoClientUrl,
 } from '@/lib/production-bundle';
+import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline } from '@/lib/feed-display-caption';
+import { useStoryBackgroundAudio } from './StoryBackgroundAudio';
 
 export type PreviewPlatform = 'instagram' | 'tiktok' | 'x';
 export type PreviewMode = 'feed' | 'reel' | 'story' | 'carousel';
@@ -50,10 +52,15 @@ function VisibilityGatedVideo({
   onEnded?: () => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || failed) return;
 
     const syncPlayback = (inView: boolean) => {
       if (inView) {
@@ -72,7 +79,11 @@ function VisibilityGatedVideo({
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [src]);
+  }, [src, failed]);
+
+  if (failed && poster) {
+    return <StoryCoverImage src={poster} style={style} />;
+  }
 
   return (
     // eslint-disable-next-line jsx-a11y/media-has-caption
@@ -84,23 +95,38 @@ function VisibilityGatedVideo({
       muted
       playsInline
       preload="metadata"
-      onError={onError}
+      onError={() => {
+        setFailed(true);
+        onError?.();
+      }}
       onEnded={onEnded}
       style={style}
     />
   );
 }
 
-export function artifactToNativeContent(artifact: OutputArtifact): NativeContentData {
+export function artifactToNativeContent(
+  artifact: OutputArtifact,
+  missionIdeationLookup?: ReadonlyMap<string, string>,
+): NativeContentData {
   const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
   const c = parseArtifactContent(artifact.content);
   const m = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const captionInput = {
+    content: c as Record<string, unknown>,
+    metadata: m,
+    title: artifact.title,
+  };
 
-  const videoUrl = resolveStoryVideoUrl(artifact)
-    ?? resolveClientMediaUrl(
+  const rawVideoUrl = resolveStoryVideoUrl(artifact)
+    ?? (String(
       (c.videoUrl as string) || (m.videoUrl as string) || (m.video_url as string)
-      || (artifact.contentUrl?.match(/\.(mp4|webm|mov)/i) ? artifact.contentUrl : null),
-    );
+      || (artifact.contentUrl?.match(/\.(mp4|webm|mov)/i) ? artifact.contentUrl : '')
+      || '',
+    ).trim() || null);
+  const videoUrl = rawVideoUrl
+    ? (resolveClientMediaUrl(rawVideoUrl) ?? rawVideoUrl)
+    : null;
 
   const branded = resolveClientMediaUrl(resolveBrandedPostUrl(artifact));
   const poster = resolveClientMediaUrl(resolvePosterUrl(artifact));
@@ -109,15 +135,23 @@ export function artifactToNativeContent(artifact: OutputArtifact): NativeContent
     .map((u) => resolveClientMediaUrl(u) ?? u)
     .filter(Boolean);
 
+  const isVideoMediaUrl = (url: string | null | undefined): boolean =>
+    Boolean(url && /\.(mp4|mov|webm)(\?|$)/i.test(url));
+
   let imageUrl = branded ?? poster;
   if (!imageUrl) {
-    imageUrl = resolveClientMediaUrl(resolved?.imageUrl)
-      ?? resolveClientMediaUrl((c.imageUrl as string) || (m.imageUrl as string))
-      ?? resolveClientMediaUrl(
-        !videoUrl && artifact.contentUrl && !/\.(mp4|webm|mov)(\?|$)/i.test(artifact.contentUrl)
-          ? artifact.contentUrl
-          : null,
-      );
+    const stillCandidates = [
+      resolved?.imageUrl,
+      c.imageUrl as string,
+      m.imageUrl as string,
+      !videoUrl ? artifact.contentUrl : null,
+    ];
+    for (const candidate of stillCandidates) {
+      const url = String(candidate ?? '').trim();
+      if (!url || isVideoMediaUrl(url)) continue;
+      imageUrl = resolveClientMediaUrl(url) ?? url;
+      break;
+    }
   }
   if (videoUrl && poster) imageUrl = poster;
   if (carouselUrls.length >= 2) imageUrl = carouselUrls[0] ?? imageUrl;
@@ -127,10 +161,11 @@ export function artifactToNativeContent(artifact: OutputArtifact): NativeContent
   return {
     imageUrl,
     videoUrl,
-    caption: String(resolved?.caption || c.caption || m.caption || ''),
+    caption: resolveFeedDisplayCaption(captionInput, missionIdeationLookup),
     hashtags,
     cta: String(resolved?.cta || c.cta || m.cta || ''),
-    headline: String(resolved?.headline || c.headline || m.headline || artifact.title || ''),
+    headline: resolveFeedDisplayHeadline(captionInput)
+      || String(resolved?.headline || c.headline || m.headline || artifact.title || ''),
     kind: String(resolved?.contentType || c.kind || c.contentType || m.kind || ''),
     music: String(m.music || c.music || ''),
     location: String(m.location || c.location || ''),
@@ -345,14 +380,20 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
       {content.videoUrl ? (
         <VisibilityGatedVideo
           src={content.videoUrl}
+          poster={content.imageUrl ?? undefined}
           loop
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
-      ) : content.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-      ) : null}
+      ) : (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: '#0a0a0a',
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.42)' }}>
+            Video hazırlanıyor
+          </span>
+        </div>
+      )}
       <div style={{ position: 'absolute', inset: 0,
         background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 50%, rgba(0,0,0,0.35) 100%)' }} />
 
@@ -436,26 +477,50 @@ export function StoryCoverImage({ src, style }: {
 }
 
 // Story preview: play once then hold last frame — looping re-triggers intro text motion (jitter).
-export function StoryPreviewVideo({ src, poster, style }: {
+export function StoryPreviewVideo({ src, poster, style, backgroundMusicUrl }: {
   src: string;
   poster?: string;
   style?: React.CSSProperties;
+  /** Brand-selected story BGM from Marka → Arka plan müziği */
+  backgroundMusicUrl?: string | null;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const ref = useRef<HTMLVideoElement>(null);
   const [videoFailed, setVideoFailed] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [muted, setMuted] = useState(Boolean(backgroundMusicUrl));
+  const [needsSoundTap, setNeedsSoundTap] = useState(false);
+
+  const { needsUserTap: needsMusicTap, enableSound: enableMusic } = useStoryBackgroundAudio({
+    src: backgroundMusicUrl ?? '',
+    enabled: Boolean(backgroundMusicUrl),
+    containerRef,
+  });
 
   useEffect(() => {
     setVideoFailed(false);
     setVideoReady(false);
-  }, [src]);
+    setMuted(Boolean(backgroundMusicUrl));
+    setNeedsSoundTap(false);
+  }, [src, backgroundMusicUrl]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el || videoFailed) return;
 
-    const tryPlay = () => {
-      void el.play().catch(() => undefined);
+    const tryPlay = async () => {
+      try {
+        el.muted = muted;
+        await el.play();
+        if (!muted) setNeedsSoundTap(false);
+      } catch {
+        // Browsers often block autoplay with audio. Keep the visual preview
+        // moving muted, then expose a one-tap sound control.
+        el.muted = true;
+        setMuted(true);
+        setNeedsSoundTap(true);
+        void el.play().catch(() => undefined);
+      }
     };
 
     tryPlay();
@@ -487,7 +552,27 @@ export function StoryPreviewVideo({ src, poster, style }: {
       window.clearTimeout(failTimer);
       obs.disconnect();
     };
-  }, [src, videoFailed, videoReady]);
+  }, [src, videoFailed, videoReady, muted]);
+
+  const enableSound = async () => {
+    if (backgroundMusicUrl) {
+      await enableMusic();
+      return;
+    }
+    const el = ref.current;
+    if (!el) return;
+    try {
+      el.muted = false;
+      el.volume = 1;
+      setMuted(false);
+      await el.play();
+      setNeedsSoundTap(false);
+    } catch {
+      setNeedsSoundTap(true);
+    }
+  };
+
+  const showSoundButton = needsSoundTap || needsMusicTap;
 
   const confirmVideoReady = () => {
     const v = ref.current;
@@ -519,7 +604,9 @@ export function StoryPreviewVideo({ src, poster, style }: {
   }
 
   return (
-    <div style={{
+    <div
+      ref={containerRef}
+      style={{
       position: 'absolute',
       inset: 0,
       width: '100%',
@@ -544,7 +631,7 @@ export function StoryPreviewVideo({ src, poster, style }: {
         ref={ref}
         src={src}
         poster={poster}
-        muted
+        muted={muted}
         playsInline
         autoPlay
         preload="auto"
@@ -571,26 +658,91 @@ export function StoryPreviewVideo({ src, poster, style }: {
           transition: 'opacity 180ms ease',
         }}
       />
+      {showSoundButton && (
+        <button
+          type="button"
+          onClick={enableSound}
+          style={{
+            position: 'absolute',
+            right: 14,
+            bottom: 86,
+            zIndex: 3,
+            border: 'none',
+            borderRadius: 999,
+            padding: '9px 12px',
+            background: 'rgba(0,0,0,0.62)',
+            color: '#fff',
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            backdropFilter: 'blur(6px)',
+          }}
+        >
+          {backgroundMusicUrl ? 'Müziği aç' : 'Sesi aç'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Story still (poster only) with brand background music */
+export function StoryStillPreview({ src, style, backgroundMusicUrl }: {
+  src: string;
+  style?: React.CSSProperties;
+  backgroundMusicUrl?: string | null;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { needsUserTap, enableSound } = useStoryBackgroundAudio({
+    src: backgroundMusicUrl ?? '',
+    enabled: Boolean(backgroundMusicUrl),
+    containerRef,
+  });
+
+  return (
+    <div ref={containerRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', ...style }}>
+      <StoryCoverImage src={src} />
+      {needsUserTap && (
+        <button
+          type="button"
+          onClick={() => void enableSound()}
+          style={{
+            position: 'absolute', right: 14, bottom: 86, zIndex: 12,
+            border: 'none', borderRadius: 999, padding: '9px 12px',
+            background: 'rgba(0,0,0,0.62)', color: '#fff', fontSize: 12, fontWeight: 800,
+            cursor: 'pointer', backdropFilter: 'blur(6px)',
+          }}
+        >
+          Müziği aç
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── Instagram Story (image + Remotion video) ─────────────────────────────────
-export function InstagramStoryNative({ content, handle, logoUrl, isPending }: {
+export function InstagramStoryNative({ content, handle, logoUrl, isPending, backgroundMusicUrl }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean;
+  backgroundMusicUrl?: string | null;
 }) {
   const h = handle.startsWith('@') ? handle : `@${handle}`;
+  const containerRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div style={{ position: 'relative', background: '#000', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
+    <div
+      ref={containerRef}
+      style={{ position: 'relative', background: '#000', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
       {content.videoUrl ? (
         <StoryPreviewVideo
           src={content.videoUrl}
           poster={content.imageUrl ?? undefined}
+          backgroundMusicUrl={backgroundMusicUrl}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : content.imageUrl ? (
-        <StoryCoverImage src={content.imageUrl} />
+        <StoryStillPreview
+          src={content.imageUrl}
+          backgroundMusicUrl={backgroundMusicUrl}
+        />
       ) : (
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,#3a1040,#0d0515)' }} />
       )}
@@ -656,9 +808,9 @@ export function TikTokNative({ content, handle, logoUrl, isPending }: {
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : content.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={content.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        // Designed poster / non-9:16 still → contain + blur backdrop so the FULL
+        // post is visible (objectFit:cover would crop the top/bottom).
+        <StoryFullscreenImage src={content.imageUrl} />
       ) : null}
       <div style={{ position: 'absolute', inset: 0,
         background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.2) 40%, rgba(0,0,0,0.3) 100%)' }} />
@@ -741,6 +893,7 @@ export function PlatformNativePreview({
   logoUrl,
   isPending,
   timeLabel,
+  backgroundMusicUrl,
 }: {
   platform: PreviewPlatform;
   mode: PreviewMode;
@@ -749,6 +902,8 @@ export function PlatformNativePreview({
   logoUrl?: string;
   isPending?: boolean;
   timeLabel?: string;
+  /** Brand story BGM — Marka → Arka plan müziği seçimi */
+  backgroundMusicUrl?: string | null;
 }) {
   if (platform === 'tiktok') {
     return <TikTokNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
@@ -757,7 +912,17 @@ export function PlatformNativePreview({
     return <XNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
   }
   if (mode === 'reel') return <InstagramReelNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
-  if (mode === 'story') return <InstagramStoryNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
+  if (mode === 'story') {
+    return (
+      <InstagramStoryNative
+        content={content}
+        handle={handle}
+        logoUrl={logoUrl}
+        isPending={isPending}
+        backgroundMusicUrl={backgroundMusicUrl}
+      />
+    );
+  }
   return <InstagramFeedNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} timeLabel={timeLabel} />;
 }
 

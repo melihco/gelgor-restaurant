@@ -18,6 +18,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 45;
@@ -96,7 +97,7 @@ Return JSON only. No markdown.`;
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 503 });
   }
@@ -169,7 +170,7 @@ export async function POST(req: NextRequest) {
   try {
     const openai = new OpenAI({ apiKey });
     const resp = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: serverConfig.ai.chatModel('creative'),
       messages: [
         { role: 'system', content: buildSystemPrompt(context) },
         {

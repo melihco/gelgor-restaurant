@@ -23,6 +23,8 @@ import {
   HeadlineStack,
   KenBurnsPhoto,
   MeshGradientLayer,
+  CinematicLightLayer,
+  EditorialKicker,
   headlineSize,
   staggerOpacity,
   stableTextLayerStyle,
@@ -113,12 +115,13 @@ export function QuoteCardLayout({
     <AbsoluteFill style={{ background: primaryColor }}>
       <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.4} />
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={1.06} origin="50% 35%" driftY={14} />
+      <CinematicLightLayer warmth="warm" intensity={0.7} />
       <AbsoluteFill style={{
         background: `linear-gradient(to bottom, ${primaryColor}cc 0%, transparent 32%, rgba(0,0,0,0.82) 100%)`,
       }} />
       <StoryLogoWatermark logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} position="center" opacity={0.1} />
       <FilmGrainOverlay opacity={0.09} />
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.95} paddingTop="4%" />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.95} paddingTop="6.5%" />
 
       <AbsoluteFill style={{
         display: 'flex',
@@ -128,12 +131,14 @@ export function QuoteCardLayout({
         padding: '0 36px 8%',
       }}>
         {categoryLabel ? (
-          <span style={{
-            fontFamily: fonts.body, fontSize: 13, letterSpacing: 12, textTransform: 'uppercase',
-            color: textColors.category, marginBottom: 16, opacity: staggerOpacity(frame, 8, 20),
-          }}>
-            {categoryLabel}
-          </span>
+          <EditorialKicker
+            label={categoryLabel}
+            accent={accentColor}
+            fontFamily={fonts.body}
+            color={textColors.category}
+            align="center"
+            opacity={staggerOpacity(frame, 8, 20)}
+          />
         ) : null}
 
         <div style={{
@@ -235,12 +240,13 @@ export function LocationPinLayout({
     <AbsoluteFill style={{ background: primaryColor }}>
       <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.35} />
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin="50% 40%" driftY={18} />
+      <CinematicLightLayer warmth="warm" intensity={0.7} />
       <AbsoluteFill style={{
         background: `linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 35%, rgba(0,0,0,0.75) 100%)`,
       }} />
       <FilmGrainOverlay opacity={0.05} />
       <StoryLogoWatermark logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} position="bottom-right" opacity={0.16} />
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="3.8%" />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="6.5%" />
 
       <AbsoluteFill style={{
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
@@ -250,12 +256,12 @@ export function LocationPinLayout({
       }}>
         <div style={{ opacity: headOp, ...stableTextLayerStyle }}>
           {categoryLabel ? (
-            <span style={{
-              fontFamily: fonts.body, fontSize: 13, letterSpacing: 12, textTransform: 'uppercase',
-              color: textColors.category, marginBottom: 12, display: 'block',
-            }}>
-              {categoryLabel}
-            </span>
+            <EditorialKicker
+              label={categoryLabel}
+              accent={accentColor}
+              fontFamily={fonts.body}
+              color={textColors.category}
+            />
           ) : null}
           <HeadlineStack
             headline={headline}

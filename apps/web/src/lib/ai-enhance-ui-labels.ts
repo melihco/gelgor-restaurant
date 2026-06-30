@@ -13,6 +13,7 @@ const SKIP_LABEL_PROD: Record<GptEnhanceSkipCode, string> = {
   gallery_match_ok: 'Galeri yeterli — atlandı',
   stock_only: 'Stok görsel',
   non_venue_saas: 'Mekan dışı işletme — atlandı',
+  remotion_grade: 'Remotion grade uygulandı — atlandı',
 };
 
 const SKIP_LABEL_DEBUG: Record<GptEnhanceSkipCode, string> = {
@@ -23,6 +24,7 @@ const SKIP_LABEL_DEBUG: Record<GptEnhanceSkipCode, string> = {
   gallery_match_ok: 'Policy: galeri skoru yeterli',
   stock_only: 'Stok galeri',
   non_venue_saas: 'Policy: non_venue_saas (sektör venue dışı)',
+  remotion_grade: 'Policy: remotion_grade (render-time grade)',
 };
 
 export function labelAiEnhanceSkip(

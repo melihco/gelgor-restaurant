@@ -3,37 +3,96 @@
  * NEW BRIEF — Real brief creation connected to Nexus API.
  * Creates a brief via /api/briefs, then submits it to decompose into tasks.
  */
-import { useState, useMemo, useRef } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useBriefs } from '@/hooks/use-briefs';
+import {
+  mergeRecentBriefDrafts,
+  saveRecentBriefDraft,
+  loadRecentBriefDrafts,
+  formatBriefDraftAge,
+  outputTypeLabel,
+  type RecentBriefDraft,
+  type BriefOutputType,
+  type BriefPriority,
+} from '@/lib/recent-brief-history';
 import type { Brief, BriefDecomposedResponse } from '@/types';
+import { invalidateMobileArtifactPool } from '../../_lib/mobile-artifacts';
 
 const MAX_PHOTOS = 5;
 
 type OutputType = 'story' | 'reel' | 'post' | 'caption' | 'ad' | 'report';
 type Priority = 'normal' | 'high' | 'urgent';
 
-// These output types go to the direct production pipeline (brief-produce)
 const VISUAL_OUTPUT_TYPES = new Set<OutputType>(['story', 'post', 'reel']);
+const TEXT_OUTPUT_TYPES = new Set<OutputType>(['caption', 'ad', 'report']);
 
-const OUTPUT_TYPES: { id: OutputType; label: string; icon: string; desc: string }[] = [
-  { id: 'story',   label: 'Story',   icon: '▋', desc: 'Instagram story seti'  },
-  { id: 'reel',    label: 'Reel',    icon: '▶', desc: 'Video reel içeriği'    },
-  { id: 'post',    label: 'Gönderi', icon: '■', desc: 'Feed paylaşımı'         },
-  { id: 'caption', label: 'Caption', icon: 'T', desc: 'Metin & hashtag seti'  },
-  { id: 'ad',      label: 'Reklam',  icon: '◈', desc: 'Google / Meta reklam'  },
-  { id: 'report',  label: 'Rapor',   icon: '↗', desc: 'Performans analizi'    },
+const VISUAL_OUTPUT_TYPES_LIST: {
+  id: OutputType;
+  label: string;
+  icon: string;
+  desc: string;
+  format: string;
+}[] = [
+  {
+    id: 'story',
+    label: 'Story',
+    icon: '▋',
+    desc: '9:16 dikey tasarım + hareket',
+    format: '9:16',
+  },
+  {
+    id: 'reel',
+    label: 'Reel',
+    icon: '▶',
+    desc: 'Tasarımlı kapak + video animasyon',
+    format: '9:16 video',
+  },
+  {
+    id: 'post',
+    label: 'Gönderi',
+    icon: '■',
+    desc: 'Feed için marka tasarımlı görsel',
+    format: '1:1 / 4:5',
+  },
 ];
 
-const COUNTS = ['1', '3', '5', '10'];
+const TEXT_OUTPUT_TYPES_LIST: {
+  id: OutputType;
+  label: string;
+  icon: string;
+  desc: string;
+}[] = [
+  { id: 'caption', label: 'Caption', icon: 'T', desc: 'Metin & hashtag seti' },
+  { id: 'ad', label: 'Reklam', icon: '◈', desc: 'Google / Meta reklam brief\'i' },
+  { id: 'report', label: 'Rapor', icon: '↗', desc: 'Performans analizi talebi' },
+];
+
+const VISUAL_COUNTS = ['1', '2', '3', '5'];
+const TEXT_COUNTS = ['1', '3', '5', '10'];
+
+const PRODUCTION_STEPS = [
+  'Marka yaratıcı direktörü brief\'i yorumluyor',
+  'Galeriden en uygun fotoğraf seçiliyor',
+  'Logo + marka renkleriyle tasarım oluşturuluyor',
+  'Story/Reel için video animasyonu ekleniyor',
+];
 
 export function NewBrief() {
   const { t } = useTheme();
   const { goBack, navigate } = useMobileStore();
   const { officeId, tenantId } = useWorkspaceStore();
+  const queryClient = useQueryClient();
+
+  function refreshFeedArtifacts() {
+    if (!tenantId) return;
+    invalidateMobileArtifactPool(queryClient, tenantId);
+    void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+  }
 
   const { data: missionsData } = useQuery({
     queryKey: ['missions-brief-select', tenantId],
@@ -41,6 +100,28 @@ export function NewBrief() {
     enabled: Boolean(tenantId),
     staleTime: 60_000,
   });
+
+  const { data: apiBriefs = [] } = useBriefs(officeId);
+  const [localDrafts, setLocalDrafts] = useState<RecentBriefDraft[]>([]);
+  const [appliedDraftId, setAppliedDraftId] = useState<string | null>(null);
+
+  const { data: brandCtx } = useQuery({
+    queryKey: ['brand-context-brief', tenantId],
+    queryFn: () => apiClient.getBrandContextData(tenantId!),
+    enabled: Boolean(tenantId),
+    staleTime: 120_000,
+  });
+
+  const brandName = brandCtx?.business_name ?? null;
+
+  useEffect(() => {
+    if (tenantId) setLocalDrafts(loadRecentBriefDrafts(tenantId));
+  }, [tenantId]);
+
+  const recentDrafts = useMemo(
+    () => mergeRecentBriefDrafts(apiBriefs, localDrafts, 12),
+    [apiBriefs, localDrafts],
+  );
 
   const campaignOptions = useMemo(() => {
     const missions = (missionsData as { missions?: { title?: string }[] } | undefined)?.missions ?? [];
@@ -50,10 +131,10 @@ export function NewBrief() {
 
   const [title, setTitle]           = useState('');
   const [description, setDescription] = useState('');
-  const [outputType, setOutputType] = useState<OutputType | null>(null);
+  const [outputType, setOutputType] = useState<OutputType | null>('story');
   const [campaign, setCampaign]     = useState('');
   const [priority, setPriority]     = useState<Priority>('normal');
-  const [count, setCount]           = useState('3');
+  const [count, setCount]           = useState('1');
   const [photos, setPhotos]         = useState<{ dataUrl: string; uploadedUrl?: string; uploading?: boolean }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +143,35 @@ export function NewBrief() {
   const [step, setStep] = useState<'form' | 'submitting' | 'producing' | 'done' | 'error'>('form');
   const [errorMsg, setErrorMsg] = useState('');
   const [producedCount, setProducedCount] = useState(0);
+  const [brandInterpretation, setBrandInterpretation] = useState<string | null>(null);
+  const [productionStepIdx, setProductionStepIdx] = useState(0);
+  const [directionLoading, setDirectionLoading] = useState(false);
+  const [directionError, setDirectionError] = useState('');
+
+  const isVisualOutput = outputType !== null && VISUAL_OUTPUT_TYPES.has(outputType);
+  const countOptions = isVisualOutput ? VISUAL_COUNTS : TEXT_COUNTS;
+
+  useEffect(() => {
+    if (!outputType) return;
+    if (VISUAL_OUTPUT_TYPES.has(outputType) && !VISUAL_COUNTS.includes(count)) {
+      setCount('1');
+    }
+    if (TEXT_OUTPUT_TYPES.has(outputType) && !TEXT_COUNTS.includes(count)) {
+      setCount('3');
+    }
+  }, [outputType, count]);
+
+  useEffect(() => {
+    if (step !== 'producing') {
+      setProductionStepIdx(0);
+      return;
+    }
+    const maxStep = outputType === 'post' ? 2 : 3;
+    const timer = setInterval(() => {
+      setProductionStepIdx((prev) => (prev < maxStep ? prev + 1 : prev));
+    }, 18_000);
+    return () => clearInterval(timer);
+  }, [step, outputType]);
 
   // Upload a single photo file to the server, return its final URL
   async function uploadPhoto(file: File): Promise<string> {
@@ -115,6 +225,72 @@ export function NewBrief() {
     setPhotos((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  async function suggestDirection() {
+    if (!tenantId || !title.trim() || !isVisualOutput || !outputType) return;
+    setDirectionLoading(true);
+    setDirectionError('');
+    try {
+      const res = await fetch('/api/brief-suggest-direction', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tenantId ? { 'X-Tenant-Id': tenantId } : {}),
+        },
+        body: JSON.stringify({
+          workspaceId: tenantId,
+          title: title.trim(),
+          outputType,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const data = await res.json() as { ok?: boolean; direction?: string; error?: string };
+      if (!res.ok || !data.direction) {
+        setDirectionError(data.error ?? 'Öneri oluşturulamadı');
+        return;
+      }
+      setDescription(data.direction);
+    } catch {
+      setDirectionError('Öneri alınamadı — tekrar deneyin');
+    } finally {
+      setDirectionLoading(false);
+    }
+  }
+
+  const persistCurrentDraft = useCallback(() => {
+    if (!tenantId || !title.trim()) return;
+    const draftId = appliedDraftId ?? crypto.randomUUID();
+    saveRecentBriefDraft(tenantId, {
+      id: draftId,
+      title: title.trim(),
+      extraDirection: description.trim(),
+      outputType,
+      count,
+      campaign: campaign || undefined,
+      priority,
+      photoUrls: photos.map((p) => p.uploadedUrl).filter(Boolean) as string[],
+      savedAt: new Date().toISOString(),
+    });
+    setLocalDrafts(loadRecentBriefDrafts(tenantId));
+    setAppliedDraftId(draftId);
+  }, [tenantId, title, description, outputType, count, campaign, priority, photos, appliedDraftId]);
+
+  function applyDraft(draft: RecentBriefDraft) {
+    setTitle(draft.title);
+    setDescription(draft.extraDirection ?? '');
+    if (draft.outputType) setOutputType(draft.outputType as OutputType);
+    if (draft.count) setCount(draft.count);
+    setCampaign(draft.campaign ?? '');
+    if (draft.priority) setPriority(draft.priority as Priority);
+    if (draft.photoUrls?.length) {
+      setPhotos(
+        draft.photoUrls.map((url) => ({ dataUrl: url, uploadedUrl: url })),
+      );
+    } else {
+      setPhotos([]);
+    }
+    setAppliedDraftId(draft.id);
+  }
+
   // Build full description from form fields
   function buildDescription(): string {
     const parts: string[] = [];
@@ -135,27 +311,57 @@ export function NewBrief() {
     if (!tenantId) { setErrorMsg('Workspace bulunamadı'); setStep('error'); return; }
     setStep('producing');
     try {
-      const readyPhotoUrls = photos.map((p) => p.uploadedUrl).filter(Boolean) as string[];
+      const readyPhotoUrls = photos
+        .filter((p) => p.uploadedUrl && !p.uploading)
+        .map((p) => p.uploadedUrl!) as string[];
+      if (photos.some((p) => p.uploading)) {
+        setErrorMsg('Fotoğraflar hâlâ yükleniyor — lütfen bekleyin.');
+        setStep('error');
+        return;
+      }
+      if (photos.length > 0 && readyPhotoUrls.length === 0) {
+        setErrorMsg('Yüklenen fotoğraflar kullanılamadı — lütfen tekrar yükleyin.');
+        setStep('error');
+        return;
+      }
       const res = await fetch('/api/brief-produce', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tenantId ? { 'X-Tenant-Id': tenantId } : {}),
+        },
         body: JSON.stringify({
           workspaceId: tenantId,
-          title: title.trim() || `${outputType} — ${count} adet`,
-          description: buildDescription(),
+          title: title.trim(),
+          extraDirection: description.trim(),
           outputType,
-          count: parseInt(count) || 3,
+          count: parseInt(count) || 1,
           photoUrls: readyPhotoUrls,
         }),
         signal: AbortSignal.timeout(280_000),
       });
-      const data = await res.json() as { ok?: boolean; produced?: number; error?: string; code?: string };
+      const data = await res.json() as {
+        ok?: boolean;
+        produced?: number;
+        error?: string;
+        code?: string;
+        brandInterpretation?: string | null;
+      };
       if (!res.ok || !data.ok) {
         setErrorMsg(data.error ?? 'İçerik üretimi başarısız.');
         setStep('error');
         return;
       }
-      setProducedCount(data.produced ?? 0);
+      const produced = data.produced ?? 0;
+      if (produced === 0) {
+        setErrorMsg(data.error ?? 'İçerik üretilemedi. Galeri fotoğrafı veya API limitlerini kontrol edin.');
+        setStep('error');
+        return;
+      }
+      persistCurrentDraft();
+      refreshFeedArtifacts();
+      setProducedCount(produced);
+      setBrandInterpretation(data.brandInterpretation ?? null);
       setStep('done');
     } catch (err: any) {
       setErrorMsg(err?.message ?? 'İstek zaman aşımına uğradı. İçerik arka planda üretilebilir.');
@@ -171,6 +377,7 @@ export function NewBrief() {
     }),
     onSuccess: async (brief) => {
       setCreatedBrief(brief);
+      persistCurrentDraft();
       setStep('submitting');
       try {
         const decomposedResult = await apiClient.submitBrief(brief.id);
@@ -188,6 +395,7 @@ export function NewBrief() {
 
   function handleSubmit() {
     if (!canSubmit || isLoading) return;
+    persistCurrentDraft();
     if (outputType && VISUAL_OUTPUT_TYPES.has(outputType)) {
       startVisualProduction();
     } else {
@@ -200,16 +408,45 @@ export function NewBrief() {
 
   // ── Producing state ─────────────────────────────────────────────────
   if (step === 'producing') {
+    const activeSteps = outputType === 'post'
+      ? PRODUCTION_STEPS.slice(0, 3)
+      : PRODUCTION_STEPS;
     return (
       <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
         <div style={{ width: 72, height: 72, borderRadius: '50%', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(157,190,206,0.08)', border: '1px solid rgba(157,190,206,0.2)' }}>
           <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid rgba(157,190,206,0.2)', borderTop: '3px solid #9DBECE', animation: 'spinSlow 1s linear infinite' }} />
         </div>
         <div style={{ fontSize: 20, fontWeight: 800, color: '#f8fafc', marginBottom: 10, letterSpacing: '-0.02em', textAlign: 'center' }}>
-          İçerik üretiliyor
+          {brandName ? `${brandName} için üretiliyor` : 'Tasarım üretiliyor'}
         </div>
-        <div style={{ fontSize: 13, color: 'rgba(148,163,184,0.5)', textAlign: 'center', lineHeight: 1.65, maxWidth: 260 }}>
-          AI ekibiniz {count} adet {outputType} üretiyor. Bu işlem birkaç dakika sürebilir, lütfen ekranda kalın.
+        <div style={{ fontSize: 13, color: 'rgba(148,163,184,0.5)', textAlign: 'center', lineHeight: 1.65, maxWidth: 280, marginBottom: 24 }}>
+          &ldquo;{title.trim()}&rdquo; brief&apos;i marka DNA&apos;nıza göre {count} adet {outputType === 'story' ? 'story' : outputType === 'reel' ? 'reel' : 'gönderi'} olarak tasarlanıyor.
+        </div>
+        <div style={{ width: '100%', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {activeSteps.map((label, idx) => {
+            const done = idx < productionStepIdx;
+            const active = idx === productionStepIdx;
+            return (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: idx > productionStepIdx + 1 ? 0.35 : 1 }}>
+                <div style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontWeight: 700,
+                  background: done ? 'rgba(157,190,206,0.2)' : active ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${done || active ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                  color: done ? '#9DBECE' : active ? '#9DBECE' : 'rgba(148,163,184,0.4)',
+                }}>
+                  {done ? '✓' : idx + 1}
+                </div>
+                <div style={{ fontSize: 12, color: active ? '#e2e8f0' : done ? 'rgba(157,190,206,0.7)' : 'rgba(148,163,184,0.45)' }}>
+                  {label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 28, fontSize: 11, color: 'rgba(148,163,184,0.35)', textAlign: 'center' }}>
+          Bu işlem 1–3 dakika sürebilir
         </div>
       </div>
     );
@@ -229,9 +466,14 @@ export function NewBrief() {
         </div>
         <div style={{ fontSize: 14, color: 'rgba(148,163,184,0.55)', textAlign: 'center', lineHeight: 1.65, marginBottom: 6 }}>
           {isVisual
-            ? `${producedCount} içerik feed'e eklendi.`
+            ? `${producedCount} tasarım feed'e eklendi.`
             : 'Talebiniz alındı — AI ekibiniz 24 saat içinde haftalık plana ekleyecek.'}
         </div>
+        {isVisual && brandInterpretation && (
+          <div style={{ fontSize: 12, color: 'rgba(157,190,206,0.75)', textAlign: 'center', lineHeight: 1.55, maxWidth: 300, marginBottom: 20, padding: '10px 14px', borderRadius: 12, background: 'rgba(157,190,206,0.06)', border: '0.5px solid rgba(157,190,206,0.15)' }}>
+            {brandInterpretation}
+          </div>
+        )}
         {!isVisual && taskCount > 0 && (
           <div style={{ fontSize: 13, color: '#9DBECE', fontWeight: 600, marginBottom: 36 }}>
             {taskCount} görev oluşturuldu
@@ -251,7 +493,7 @@ export function NewBrief() {
           <button onClick={goBack} style={{ flex: 1, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.09)', color: 'rgba(226,232,240,0.65)', fontSize: 13, fontWeight: 500 }}>
             Kapat
           </button>
-          <button onClick={() => navigate(isVisual ? 'feed' : 'missions')} style={{ flex: 2, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(157,190,206,0.12)', border: '0.5px solid rgba(157,190,206,0.25)', color: '#9DBECE', fontSize: 13, fontWeight: 700 }}>
+          <button onClick={() => { refreshFeedArtifacts(); navigate(isVisual ? 'feed' : 'missions'); }} style={{ flex: 2, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(157,190,206,0.12)', border: '0.5px solid rgba(157,190,206,0.25)', color: '#9DBECE', fontSize: 13, fontWeight: 700 }}>
             {isVisual ? "Feed'e git →" : 'İçerik planına git →'}
           </button>
         </div>
@@ -264,7 +506,9 @@ export function NewBrief() {
     return (
       <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
         <div style={{ fontSize: 32, marginBottom: 16 }}>⚠</div>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#fb7185', marginBottom: 8 }}>Brief Oluşturulamadı</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#fb7185', marginBottom: 8 }}>
+          {outputType && VISUAL_OUTPUT_TYPES.has(outputType) ? 'Üretim Başarısız' : 'Brief Oluşturulamadı'}
+        </div>
         <div style={{ fontSize: 13, color: 'rgba(148,163,184,0.5)', textAlign: 'center', lineHeight: 1.6, marginBottom: 32 }}>{errorMsg}</div>
         <button onClick={() => setStep('form')} style={{ padding: '13px 28px', borderRadius: 30, cursor: 'pointer', background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
           Tekrar Dene
@@ -284,85 +528,196 @@ export function NewBrief() {
         </button>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>Yeni Brief</div>
-          <div style={{ fontSize: 11, color: 'rgba(148,163,184,0.4)', marginTop: 1 }}>AI ekibine yeni görev ver</div>
+          <div style={{ fontSize: 11, color: 'rgba(148,163,184,0.4)', marginTop: 1 }}>
+            {brandName
+              ? `${brandName} · marka DNA + galeri ile tasarla`
+              : 'Brief\'i markanıza özel yorumla → tasarla & üret'}
+          </div>
         </div>
       </div>
 
       {/* Scrollable form */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px', paddingBottom: 130 }}>
 
+        {/* Previous briefs */}
+        {recentDrafts.length > 0 && (
+          <div style={{ marginBottom: 22 }}>
+            <Label text="Önceki Briefler" />
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, margin: '0 -4px', scrollbarWidth: 'none' }}>
+              {recentDrafts.map((draft) => {
+                const selected = appliedDraftId === draft.id;
+                return (
+                  <button
+                    key={draft.id}
+                    type="button"
+                    onClick={() => applyDraft(draft)}
+                    style={{
+                      flexShrink: 0,
+                      width: 168,
+                      padding: '12px 13px',
+                      borderRadius: 14,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      background: selected ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.04)',
+                      border: `0.5px solid ${selected ? 'rgba(157,190,206,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                      transition: 'all 140ms',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 700, color: selected ? '#9DBECE' : '#f8fafc', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {draft.title}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'rgba(148,163,184,0.45)', marginBottom: 6, display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span>{outputTypeLabel(draft.outputType as BriefOutputType | null)}</span>
+                      {draft.count && <span>· {draft.count} adet</span>}
+                    </div>
+                    {draft.extraDirection && (
+                      <div style={{ fontSize: 10, color: 'rgba(148,163,184,0.35)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 6 }}>
+                        {draft.extraDirection}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 9, color: 'rgba(148,163,184,0.28)' }}>
+                      {formatBriefDraftAge(draft.savedAt)}
+                      {draft.source === 'api' ? ' · API' : ''}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+              Daha önce gönderdiğiniz brief&apos;lerden birini seçerek formu otomatik doldurun.
+            </div>
+          </div>
+        )}
+
         {/* Title */}
         <div style={{ marginBottom: 22 }}>
-          <Label text="Brief Başlığı" />
+          <Label text="Ne üretmek istiyorsunuz?" />
           <input value={title} onChange={e => setTitle(e.target.value)}
-            placeholder="örn. Yaz kampanyası için 5 story seti"
+            placeholder="örn. Full Moon, Yaz Menüsü, Cuma Gecesi DJ"
             style={{ width: '100%', padding: '14px 16px', borderRadius: 14, outline: 'none', boxSizing: 'border-box', fontSize: 15, background: 'rgba(255,255,255,0.05)', border: `0.5px solid ${title ? 'rgba(157,190,206,0.3)' : 'rgba(255,255,255,0.09)'}`, color: '#f8fafc', transition: 'border-color 150ms' }}
           />
+          <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+            Kısa bir konu yeterli — marka yaratıcı direktörünüz bunu sektörünüze ve marka dilinize göre yorumlar.
+          </div>
         </div>
 
-        {/* Output type */}
+        {/* Visual output types */}
         <div style={{ marginBottom: 22 }}>
-          <Label text="Çıktı Tipi" />
+          <Label text="Tasarım Formatı" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-            {OUTPUT_TYPES.map(ot => {
+            {VISUAL_OUTPUT_TYPES_LIST.map(ot => {
               const sel = outputType === ot.id;
               return (
                 <button key={ot.id} onClick={() => setOutputType(ot.id)} style={{ padding: '14px 10px', borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`, transition: 'all 140ms' }}>
                   <div style={{ fontSize: 20, marginBottom: 6, color: sel ? '#9DBECE' : 'rgba(255,255,255,0.35)' }}>{ot.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: sel ? 700 : 500, color: sel ? '#9DBECE' : 'rgba(148,163,184,0.6)' }}>{ot.label}</div>
                   <div style={{ fontSize: 10, color: sel ? 'rgba(157,190,206,0.6)' : 'rgba(148,163,184,0.3)', marginTop: 2 }}>{ot.desc}</div>
+                  <div style={{ fontSize: 9, color: sel ? 'rgba(157,190,206,0.45)' : 'rgba(148,163,184,0.25)', marginTop: 4 }}>{ot.format}</div>
                 </button>
               );
             })}
           </div>
         </div>
 
+        {/* Pipeline explainer — visible when visual type selected */}
+        {isVisualOutput && (
+          <div style={{ marginBottom: 22, padding: '14px 16px', borderRadius: 14, background: 'rgba(157,190,206,0.05)', border: '0.5px solid rgba(157,190,206,0.12)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(157,190,206,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+              Nasıl çalışır?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                'Brief markanıza özel headline, caption ve vibe ile yorumlanır',
+                'Marka galerisinden en uygun fotoğraf seçilir',
+                'Logo + renkler + sektör tasarım diliyle görsel oluşturulur',
+                outputType !== 'post' ? 'Story/Reel için hareket animasyonu eklenir' : null,
+              ].filter(Boolean).map((line, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 11, color: 'rgba(157,190,206,0.5)', flexShrink: 0, marginTop: 1 }}>{i + 1}.</span>
+                  <span style={{ fontSize: 12, color: 'rgba(148,163,184,0.55)', lineHeight: 1.45 }}>{line}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Text output types — secondary */}
+        <div style={{ marginBottom: 22 }}>
+          <Label text="Metin & Analiz (opsiyonel)" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+            {TEXT_OUTPUT_TYPES_LIST.map(ot => {
+              const sel = outputType === ot.id;
+              return (
+                <button key={ot.id} onClick={() => setOutputType(ot.id)} style={{ padding: '12px 8px', borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`, transition: 'all 140ms' }}>
+                  <div style={{ fontSize: 18, marginBottom: 5, color: sel ? '#9DBECE' : 'rgba(255,255,255,0.35)' }}>{ot.icon}</div>
+                  <div style={{ fontSize: 11, fontWeight: sel ? 700 : 500, color: sel ? '#9DBECE' : 'rgba(148,163,184,0.6)' }}>{ot.label}</div>
+                  <div style={{ fontSize: 9, color: sel ? 'rgba(157,190,206,0.6)' : 'rgba(148,163,184,0.3)', marginTop: 2 }}>{ot.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+          {!isVisualOutput && outputType && (
+            <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+              Bu tip AI ekibine görev olarak atanır — anında görsel üretilmez.
+            </div>
+          )}
+        </div>
+
         {/* Count */}
         <div style={{ marginBottom: 22 }}>
-          <Label text="Adet" />
+          <Label text={isVisualOutput ? 'Kaç tasarım?' : 'Adet'} />
           <div style={{ display: 'flex', gap: 8 }}>
-            {COUNTS.map(n => (
+            {countOptions.map(n => (
               <button key={n} onClick={() => setCount(n)} style={{ flex: 1, padding: '12px', borderRadius: 12, cursor: 'pointer', fontSize: 16, fontWeight: 600, background: count === n ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${count === n ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`, color: count === n ? '#9DBECE' : 'rgba(148,163,184,0.5)' }}>
                 {n}
               </button>
             ))}
           </div>
+          {isVisualOutput && (
+            <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)' }}>
+              Her adet farklı galeri fotoğrafı ve tasarım diliyle üretilir.
+            </div>
+          )}
         </div>
 
-        {/* Campaign */}
-        <div style={{ marginBottom: 22 }}>
-          <Label text="Kampanya (opsiyonel)" />
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-            {campaignOptions.map(c => {
-              const sel = campaign === c;
-              return (
-                <button key={c} onClick={() => setCampaign(sel ? '' : c)} style={{ padding: '7px 13px', borderRadius: 30, cursor: 'pointer', fontSize: 12, fontWeight: sel ? 600 : 400, background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.3)' : 'rgba(255,255,255,0.08)'}`, color: sel ? '#9DBECE' : 'rgba(148,163,184,0.5)' }}>
-                  {sel ? '✓ ' : ''}{c}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* Campaign & Priority — only for text flow */}
+        {!isVisualOutput && outputType && (
+          <>
+            <div style={{ marginBottom: 22 }}>
+              <Label text="Kampanya (opsiyonel)" />
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {campaignOptions.map(c => {
+                  const sel = campaign === c;
+                  return (
+                    <button key={c} onClick={() => setCampaign(sel ? '' : c)} style={{ padding: '7px 13px', borderRadius: 30, cursor: 'pointer', fontSize: 12, fontWeight: sel ? 600 : 400, background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.3)' : 'rgba(255,255,255,0.08)'}`, color: sel ? '#9DBECE' : 'rgba(148,163,184,0.5)' }}>
+                      {sel ? '✓ ' : ''}{c}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-        {/* Priority */}
-        <div style={{ marginBottom: 22 }}>
-          <Label text="Öncelik" />
-          <div style={{ display: 'flex', gap: 8 }}>
-            {([
-              { id: 'normal'  as Priority, label: 'Normal',  color: '#60a5fa' },
-              { id: 'high'    as Priority, label: 'Yüksek',  color: '#f59e0b' },
-              { id: 'urgent'  as Priority, label: 'Acil',    color: '#fb7185' },
-            ]).map(p => (
-              <button key={p.id} onClick={() => setPriority(p.id)} style={{ flex: 1, padding: '11px', borderRadius: 12, cursor: 'pointer', fontSize: 12, fontWeight: priority === p.id ? 700 : 400, background: priority === p.id ? `${p.color}14` : 'rgba(255,255,255,0.04)', border: `0.5px solid ${priority === p.id ? p.color + '35' : 'rgba(255,255,255,0.08)'}`, color: priority === p.id ? p.color : 'rgba(148,163,184,0.5)' }}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
+            <div style={{ marginBottom: 22 }}>
+              <Label text="Öncelik" />
+              <div style={{ display: 'flex', gap: 8 }}>
+                {([
+                  { id: 'normal'  as Priority, label: 'Normal',  color: '#60a5fa' },
+                  { id: 'high'    as Priority, label: 'Yüksek',  color: '#f59e0b' },
+                  { id: 'urgent'  as Priority, label: 'Acil',    color: '#fb7185' },
+                ]).map(p => (
+                  <button key={p.id} onClick={() => setPriority(p.id)} style={{ flex: 1, padding: '11px', borderRadius: 12, cursor: 'pointer', fontSize: 12, fontWeight: priority === p.id ? 700 : 400, background: priority === p.id ? `${p.color}14` : 'rgba(255,255,255,0.04)', border: `0.5px solid ${priority === p.id ? p.color + '35' : 'rgba(255,255,255,0.08)'}`, color: priority === p.id ? p.color : 'rgba(148,163,184,0.5)' }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Photos */}
+        {/* Photos — only for visual flow */}
+        {isVisualOutput && (
         <div style={{ marginBottom: 22 }}>
-          <Label text={`Fotoğraflar (opsiyonel, maks ${MAX_PHOTOS})`} />
+          <Label text={`Referans Fotoğraf (opsiyonel, maks ${MAX_PHOTOS})`} />
 
           {/* Thumbnail row */}
           {photos.length > 0 && (
@@ -420,26 +775,69 @@ export function NewBrief() {
               </button>
               {photos.length === 0 && (
                 <div style={{ marginTop: 7, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
-                  Ürün, mekan veya etkinlik fotoğrafları ekleyin. AI içerik üretiminde bu görselleri kullanır.
+                  Eklemezseniz marka galerisinden otomatik seçilir. Yüklediğiniz fotoğraflar galeri yerine doğrudan tasarımda kullanılır — her üretim için bir fotoğraf (5 fotoğraf + 5 adet = her biri ayrı görsel).
+                </div>
+              )}
+              {photos.length > 0 && (
+                <div style={{ marginTop: 7, fontSize: 11, color: 'rgba(157,190,206,0.55)', lineHeight: 1.5 }}>
+                  {photos.filter((p) => p.uploadedUrl).length}/{photos.length} fotoğraf hazır — marka galerisi devre dışı, yalnızca bu görseller kullanılacak.
                 </div>
               )}
             </>
           )}
         </div>
+        )}
 
         {/* Additional direction */}
         <div>
-          <Label text="Ek Yönlendirme (opsiyonel)" />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <Label text={isVisualOutput ? 'Vibe & Yönlendirme (opsiyonel)' : 'Ek Yönlendirme (opsiyonel)'} />
+            {isVisualOutput && (
+              <button
+                type="button"
+                onClick={suggestDirection}
+                disabled={!title.trim() || directionLoading}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 20,
+                  cursor: !title.trim() || directionLoading ? 'not-allowed' : 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: 'rgba(157,190,206,0.12)',
+                  border: '0.5px solid rgba(157,190,206,0.25)',
+                  color: !title.trim() || directionLoading ? 'rgba(148,163,184,0.35)' : '#9DBECE',
+                  opacity: directionLoading ? 0.7 : 1,
+                }}
+              >
+                {directionLoading ? 'Öneriliyor…' : '✦ Markaya göre öner'}
+              </button>
+            )}
+          </div>
           <textarea value={description} onChange={e => setDescription(e.target.value)}
-            placeholder="Ton, görsel yön, özel istekler, referans..."
+            placeholder={isVisualOutput
+              ? 'örn. mistik ve sıcak bir vibe, neon gece atmosferi, samimi akşam...'
+              : 'Ton, görsel yön, özel istekler, referans...'}
             rows={3}
             style={{ width: '100%', padding: '13px 15px', borderRadius: 14, resize: 'none', outline: 'none', boxSizing: 'border-box', fontSize: 14, lineHeight: 1.55, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.08)', color: '#f8fafc' }}
           />
+          {isVisualOutput && (
+            <div style={{ marginTop: 8, fontSize: 11, color: directionError ? '#fb7185' : 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+              {directionError || (title.trim()
+                ? `"${title.trim()}" konusunu markanızın DNA'sına göre 4–5 cümleyle otomatik doldurmak için öner butonunu kullanın.`
+                : 'Önce brief konusunu yazın, ardından markaya özel vibe önerisi alın.')}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Submit */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 20px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', background: 'rgba(5,5,8,0.96)', backdropFilter: 'blur(24px)', borderTop: '0.5px solid rgba(255,255,255,0.07)' }}>
+
+        {isVisualOutput && title.trim() && (
+          <div style={{ marginBottom: 10, fontSize: 11, color: 'rgba(148,163,184,0.4)', textAlign: 'center', lineHeight: 1.45 }}>
+            {brandName ? `${brandName} · ` : ''}{count} adet {outputType === 'story' ? 'story' : outputType === 'reel' ? 'reel' : 'gönderi'} · galeri + logo + marka DNA
+          </div>
+        )}
 
         {/* Submitting progress indicator */}
         {step === 'submitting' && (
@@ -471,7 +869,7 @@ export function NewBrief() {
               {step === 'submitting' ? 'Görevler Oluşturuluyor...' : 'Brief Oluşturuluyor...'}
             </>
           ) : (
-            <>⚡ {outputType && VISUAL_OUTPUT_TYPES.has(outputType) ? 'İçerik Üret' : 'AI Ekibine Gönder'}</>
+            <>⚡ {isVisualOutput ? 'Tasarla & Üret' : 'AI Ekibine Gönder'}</>
           )}
         </button>
       </div>

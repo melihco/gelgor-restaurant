@@ -26,7 +26,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setOfficeId: (officeId) =>
         set({ officeId: officeId.trim() || DEFAULT_OFFICE_ID }),
       setTenantFromSession: (tenantId) =>
-        set({ tenantId: tenantId.trim() || DEFAULT_TENANT_ID }),
+        set((state) => {
+          const next = tenantId.trim() || DEFAULT_TENANT_ID;
+          if (state.tenantId === next) return state;
+          return { tenantId: next };
+        }),
       setWorkspace: (tenantId, officeId) =>
         set({
           tenantId: tenantId.trim() || DEFAULT_TENANT_ID,
@@ -42,6 +46,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       name: 'smartagency-workspace',
       // officeId only — tenantId always comes from JWT via useActiveTenantId / AppShell.
       partialize: (state) => ({ officeId: state.officeId }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as Partial<WorkspaceState>),
+        tenantId: current.tenantId,
+      }),
     },
   ),
 );

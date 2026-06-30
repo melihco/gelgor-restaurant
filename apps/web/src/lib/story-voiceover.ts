@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import OpenAI from 'openai';
+import { serverConfig } from '@/lib/server-config';
 import {
   resolveStoryTtsVoiceId,
   storyVoicePreviewScript,
@@ -212,7 +213,7 @@ function defaultTtsModel(): string {
 
 export function isStoryVoiceoverEnabled(): boolean {
   if (process.env.STORY_VOICEOVER_ENABLE === 'false') return false;
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
+  return serverConfig.openai.configured;
 }
 
 /**
@@ -228,7 +229,7 @@ async function synthesizeSpeechMp3(input: {
   const script = prepareScriptForNaturalSpeech(input.script);
   if (!script || !isStoryVoiceoverEnabled()) return null;
 
-  const apiKey = process.env.OPENAI_API_KEY!.trim();
+  const apiKey = serverConfig.openai.requireApiKey();
   const openai = new OpenAI({ apiKey });
   const speed = resolveTtsSpeed();
 

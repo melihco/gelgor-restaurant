@@ -16,7 +16,7 @@ import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { useArtifactDecision } from '../../_hooks/use-artifact-decision';
 import { signalFromArtifact, MobileArtifactView } from '../MobileArtifactView';
-import { resolveArtifact, contentTypeLabel, type ResolvedArtifact } from '../artifact-utils';
+import { resolveArtifact, contentTypeLabel, type ResolvedArtifact } from '@/lib/artifact-utils';
 import type { ArtifactSignal } from '../MobileArtifactView';
 import type { OutputArtifact } from '@/types';
 

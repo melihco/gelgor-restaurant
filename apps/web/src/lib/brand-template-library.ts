@@ -1,5 +1,5 @@
 /**
- * Brand Template Library — her markanın 5 standart tasarım slotu.
+ * Brand Template Library — her markanın story + post standart tasarım slotları.
  *
  * Mission Hub / auto-produce bu kütüphaneden seçim yapar.
  * Showcase marka bazlı 5 tasarım gösterir.
@@ -22,7 +22,7 @@ import {
   getRemotionTemplate,
 } from './remotion-template-catalog';
 import type { FontPersonality, RemotionLayoutFamily } from './remotion-template-types';
-import { resolveKitForSector } from './remotion-template-registry';
+import { kitMatchesSector, resolveKitForSector } from './remotion-template-registry';
 import { diversificationSeed, hashTenantSeed, tenantKitSeed } from './tenant-template-seed';
 import { resolveTextOverlayPrefs } from './brand-text-overlay-prefs';
 import { rankPosterFamiliesForSector } from './poster-quality';
@@ -74,6 +74,8 @@ export interface BrandTemplateLibrary {
   locked: boolean;
   /** Tenant that owns this derivation — re-derive when tenant changes */
   tenantId?: string;
+  /** Authoritative sector this library was derived for — re-derive when it changes */
+  sector?: string;
 }
 
 interface SlotSpec {
@@ -98,7 +100,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Daily Story',
     format: 'story',
     useCase: 'daily',
-    storyFamilies: ['editorial_bottom', 'minimal_luxury', 'asymmetric_editorial', 'frosted_glass', 'location_pin', 'polaroid_single', 'polaroid_stack', 'vibe_fullscreen', 'cinematic_center', 'quote_card'],
+    storyFamilies: ['glassmorphism_showcase', 'luxury_kinetic_type', 'editorial_bottom', 'minimal_luxury', 'asymmetric_editorial', 'frosted_glass', 'location_pin', 'polaroid_single', 'polaroid_stack', 'vibe_fullscreen', 'cinematic_center', 'quote_card'],
     intents: ['daily_moment', 'product_spotlight', 'educational'],
     treatments: ['pure_photo', 'daily', 'menu'],
   },
@@ -109,7 +111,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Event Story',
     format: 'story',
     useCase: 'event',
-    storyFamilies: ['event_ticket', 'campaign_hero', 'bold_impact', 'neon_night', 'bento_story'],
+    storyFamilies: ['luxury_kinetic_type', 'event_ticket', 'campaign_hero', 'bold_impact', 'neon_night', 'bento_story'],
     legacyComposition: 'SpecStory',
     intents: ['event', 'invitation', 'announcement'],
     treatments: ['story_event', 'event', 'event_announcement', 'dj'],
@@ -121,7 +123,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Campaign Post',
     format: 'post',
     useCase: 'campaign',
-    posterFamilies: ['promo_split', 'restaurant_feature', 'editorial_date', 'event_masthead', 'gala_invite'],
+    posterFamilies: ['promo_split', 'event_masthead', 'restaurant_feature', 'editorial_date', 'gala_invite'],
     intents: ['campaign_offer'],
     treatments: ['campaign_offer', 'promo', 'offer'],
   },
@@ -132,7 +134,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Editorial Story',
     format: 'story',
     useCase: 'editorial',
-    storyFamilies: ['split_panel', 'magazine_cover', 'minimal_luxury', 'noir_editorial', 'asymmetric_editorial', 'editorial_left', 'cinematic_center'],
+    storyFamilies: ['editorial_product_stage', 'glassmorphism_showcase', 'split_panel', 'magazine_cover', 'minimal_luxury', 'noir_editorial', 'asymmetric_editorial', 'editorial_left', 'cinematic_center'],
     intents: ['announcement', 'product_spotlight'],
     treatments: ['feature', 'editorial', 'chef', 'spotlight'],
   },
@@ -143,7 +145,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Social Proof',
     format: 'story',
     useCase: 'social_proof',
-    storyFamilies: ['gallery_series', 'diptych_collage', 'mosaic_pinterest', 'polaroid_single', 'polaroid_stack', 'quote_card', 'editorial_bottom', 'bento_story', 'location_pin'],
+    storyFamilies: ['glassmorphism_showcase', 'editorial_product_stage', 'gallery_series', 'diptych_collage', 'mosaic_pinterest', 'polaroid_single', 'polaroid_stack', 'quote_card', 'editorial_bottom', 'bento_story', 'location_pin'],
     legacyComposition: 'GallerySeriesStory',
     intents: ['social_proof'],
     treatments: ['social_proof', 'review', 'ugc'],
@@ -155,7 +157,7 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Social Proof Post',
     format: 'post',
     useCase: 'social_proof',
-    posterFamilies: ['editorial_date', 'restaurant_feature', 'gala_invite', 'art_deco', 'event_masthead'],
+    posterFamilies: ['restaurant_feature', 'editorial_date', 'event_masthead', 'gala_invite', 'art_deco'],
     intents: ['social_proof'],
     treatments: ['social_proof', 'review', 'ugc', 'testimonial'],
   },
@@ -166,11 +168,60 @@ export const BRAND_LIBRARY_SLOT_SPECS: SlotSpec[] = [
     labelEn: 'Ad Creative',
     format: 'post',
     useCase: 'campaign',
-    posterFamilies: ['editorial_date', 'restaurant_feature', 'gala_invite', 'art_deco', 'event_masthead'],
+    posterFamilies: ['promo_split', 'event_masthead', 'restaurant_feature', 'editorial_date', 'art_deco'],
     intents: [],
     treatments: ['ad_creative', 'ad'],
   },
 ];
+
+export const STANDARD_REMOTION_STORY_SLOT_ORDER = [
+  'event_story',
+  'editorial_story',
+  'social_proof',
+  'daily_story',
+] as const;
+
+export const STANDARD_REMOTION_POST_SLOT_ORDER = [
+  'campaign_post',
+  'social_proof_post',
+] as const;
+
+export type StandardRemotionStorySlotKey = typeof STANDARD_REMOTION_STORY_SLOT_ORDER[number];
+export type StandardRemotionPostSlotKey = typeof STANDARD_REMOTION_POST_SLOT_ORDER[number] | 'ad_creative_post';
+
+/**
+ * Global Remotion standard:
+ * every brand uses the same Brand Template Library slot routing for Remotion
+ * story/post production, while the chosen template/font differs per brand.
+ */
+export function resolveStandardRemotionLibrarySlotKey(input: {
+  slotRole?: ProductionSlotRole | string;
+  pipeline?: string | null;
+  storyOrdinal?: number;
+  posterOrdinal?: number;
+}): StandardRemotionStorySlotKey | StandardRemotionPostSlotKey | undefined {
+  const role = String(input.slotRole ?? '').trim().toLowerCase();
+  const pipeline = String(input.pipeline ?? '').trim().toLowerCase();
+
+  if (role === 'campaign_story_motion' || pipeline === 'remotion_story') {
+    const idx = Math.max(0, input.storyOrdinal ?? 0) % STANDARD_REMOTION_STORY_SLOT_ORDER.length;
+    return STANDARD_REMOTION_STORY_SLOT_ORDER[idx]!;
+  }
+
+  if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') {
+    return 'ad_creative_post';
+  }
+
+  if (role === 'designed_post') return 'campaign_post';
+  if (role === 'designed_typography') return 'social_proof_post';
+
+  if (pipeline === 'remotion_poster' || role === 'designed_post' || role === 'designed_typography') {
+    const idx = Math.max(0, input.posterOrdinal ?? 0) % STANDARD_REMOTION_POST_SLOT_ORDER.length;
+    return STANDARD_REMOTION_POST_SLOT_ORDER[idx]!;
+  }
+
+  return undefined;
+}
 
 function sectorMatchesTemplate(sector: string, templateSectors: string[]): boolean {
   const norm = sector.toLowerCase().replace(/\s+/g, '_');
@@ -320,6 +371,7 @@ export function deriveBrandTemplateLibrary(input: {
       posterTemplateId,
       legacyComposition: spec.legacyComposition,
       enabled: true,
+      fontMode: 'brand',
     };
   });
 
@@ -330,6 +382,7 @@ export function deriveBrandTemplateLibrary(input: {
     derivedAt: new Date().toISOString(),
     locked: false,
     tenantId: input.tenantId,
+    sector: input.sector,
   };
 }
 
@@ -387,6 +440,13 @@ export function ensureBrandTemplateLibrary(
   const baseline = deriveBrandTemplateLibrary(input);
   const existing = parseBrandTemplateLibraryFromTheme(theme);
   if (existing?.locked) {
+    // Auto-heal: a library locked while the business was misclassified (e.g. a beach
+    // bar locked to vegan_cafe before the sector was corrected) must not stay stuck on
+    // the wrong kit. When an explicit kitId is requested we honour it; otherwise, if the
+    // locked kit is incompatible with the authoritative sector, re-derive from baseline.
+    if (!input.kitId && input.sector && !kitMatchesSector(existing.kitId, input.sector)) {
+      return validateLibrarySlotIds(baseline);
+    }
     return validateLibrarySlotIds(mergeTemplateLibraryWithBaseline(existing, baseline));
   }
   if (
@@ -601,7 +661,7 @@ export function getSlotSpec(slotKey: string) {
   return BRAND_LIBRARY_SLOT_SPECS.find((s) => s.key === slotKey);
 }
 
-/** Map mission slot / intent → brand library story slot key (Marka Detayı 5'li kütüphane). */
+/** Map mission slot / intent → reusable brand library slot key. */
 export function mapProductionContextToLibrarySlotKey(input: {
   slotRole?: ProductionSlotRole | string;
   intent?: ContentIntent;
@@ -612,26 +672,27 @@ export function mapProductionContextToLibrarySlotKey(input: {
   const treatment = (input.treatment ?? '').toLowerCase();
   const useCase = (input.templateUseCase ?? '').toLowerCase();
   const role = String(input.slotRole ?? '').toLowerCase();
+  const isPostCreative = role === 'designed_post'
+    || role === 'paid_ad_creative'
+    || role === 'paid_ad_google_creative';
 
-  if (input.hasEventDetails) return 'event_story';
+  if (input.hasEventDetails) return isPostCreative ? 'campaign_post' : 'event_story';
   if (input.intent === 'event' || input.intent === 'invitation' || input.intent === 'announcement') {
-    return 'event_story';
+    return isPostCreative ? 'campaign_post' : 'event_story';
   }
   if (
     input.intent === 'social_proof'
     || /social_proof|review|ugc|testimonial/.test(treatment)
     || /social_proof|review|testimonial/.test(useCase)
   ) {
-    if (role === 'designed_post' || role === 'paid_ad_creative' || role === 'paid_ad_google_creative') {
-      return 'social_proof_post';
-    }
+    if (isPostCreative) return 'social_proof_post';
     return 'social_proof';
   }
   if (input.intent === 'campaign_offer' || /campaign|promo|offer/.test(useCase)) {
-    return 'event_story';
+    return isPostCreative ? 'campaign_post' : 'event_story';
   }
   if (input.intent === 'product_spotlight' || /editorial|feature|chef|spotlight/.test(treatment)) {
-    return 'editorial_story';
+    return isPostCreative ? 'campaign_post' : 'editorial_story';
   }
   return undefined;
 }
@@ -772,11 +833,19 @@ export interface TemplateOption {
 }
 
 const STORY_FAMILY_GROUP_TR: Partial<Record<RemotionLayoutFamily, string>> = {
+  luxury_kinetic_type: 'Premium · kinetic type',
+  glassmorphism_showcase: 'Premium · glass showcase',
+  editorial_product_stage: 'Premium · product stage',
   polaroid_single: 'Polaroid · tek foto',
   polaroid_stack: 'Polaroid · 2–3 foto',
 };
 
 const STORY_FAMILY_BADGE_TR: Partial<Record<RemotionLayoutFamily, string>> = {
+  luxury_kinetic_type: 'Premium',
+  glassmorphism_showcase: 'Premium',
+  editorial_product_stage: 'Premium',
+  campaign_hero: 'Premium',
+  magazine_cover: 'Premium',
   polaroid_single: 'tek foto',
   polaroid_stack: '2–3 foto',
 };
@@ -900,7 +969,7 @@ export function validateLibrarySlotIds(library: BrandTemplateLibrary): BrandTemp
       return {
         ...slot,
         ...typoBackfill,
-        fontMode: slot.fontMode ?? 'template',
+        fontMode: slot.fontMode ?? 'brand',
         showLogo: slot.showLogo ?? true,
         storyTemplateId,
         posterTemplateId,

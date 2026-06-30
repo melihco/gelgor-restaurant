@@ -35,7 +35,7 @@ public class OfficeController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<OfficeDetailDto>> GetOfficeDetail(Guid id, CancellationToken cancellationToken)
     {
-        var office = await _officeService.GetOfficeDetailAsync(id, cancellationToken);
+        var office = await _officeService.GetOfficeDetailAsync(id, _requestContext.TenantId, cancellationToken);
         if (office == null)
             return NotFound();
 

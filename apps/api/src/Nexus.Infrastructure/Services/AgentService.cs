@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Events;
 using Nexus.Contracts.Dtos;
@@ -107,7 +108,7 @@ public class AgentService : IAgentService
     {
         var agent = await _dbContext.Agents
             .FirstOrDefaultAsync(a => a.Id == agentId && a.TenantId == tenantId, cancellationToken)
-            ?? throw new InvalidOperationException("Agent not found");
+            ?? throw new NotFoundException("Agent not found");
 
         agent.State = newState;
         agent.UpdatedBy = SystemUserId;
@@ -118,45 +119,6 @@ public class AgentService : IAgentService
     }
 
     private static readonly Guid SystemUserId = new("00000000-0000-0000-0000-000000000001");
-
-    private static bool ResolveApprovalRequired(bool crewApprovalRequired, ApprovalMode? defaultApprovalMode)
-    {
-        return defaultApprovalMode switch
-        {
-            ApprovalMode.AutoExecute => false,
-            ApprovalMode.SuggestOnly or ApprovalMode.SuggestAndWait => true,
-            _ => crewApprovalRequired
-        };
-    }
-
-    private static IntegrationProvider? ResolveIntegrationProvider(string provider, string actionType)
-    {
-        var normalizedProvider = provider.Trim().ToLowerInvariant();
-        var normalizedAction = actionType.Trim().ToLowerInvariant();
-
-        return normalizedProvider switch
-        {
-            "google_business" => IntegrationProvider.GoogleBusiness,
-            "instagram" => IntegrationProvider.Instagram,
-            "google_ads" => IntegrationProvider.GoogleAds,
-            "google_analytics" or "analytics" => IntegrationProvider.GoogleAnalytics,
-            "search_console" => IntegrationProvider.SearchConsole,
-            "system" => ResolveSystemActionProvider(normalizedAction),
-            _ => ResolveSystemActionProvider(normalizedAction)
-        };
-    }
-
-    private static IntegrationProvider? ResolveSystemActionProvider(string actionType)
-    {
-        return actionType switch
-        {
-            "reply_to_google_review" => IntegrationProvider.GoogleBusiness,
-            "create_instagram_content_plan" or "schedule_instagram_posts" or "create_weekly_content_strategy" => IntegrationProvider.Instagram,
-            "apply_campaign_recommendations" or "create_ad_creatives" or "apply_budget_optimization" => IntegrationProvider.GoogleAds,
-            "log_analytics_report" => IntegrationProvider.GoogleAnalytics,
-            _ => null
-        };
-    }
 
     /// <summary>
     /// Cancels the crew heartbeat and waits for it to exit. Capped so a stuck ExecuteUpdate/broadcast
@@ -192,16 +154,19 @@ public class AgentService : IAgentService
         }
     }
 
-    public async Task<AgentExecutionDto> ExecuteAgentAsync(Guid agentId, ExecuteAgentRequest request, CancellationToken cancellationToken = default)
+    public async Task<AgentExecutionDto> ExecuteAgentAsync(Guid agentId, Guid tenantId, ExecuteAgentRequest request, CancellationToken cancellationToken = default)
     {
+        // Tenant-scoped load: never execute an agent that does not belong to the
+        // caller's tenant (defense-in-depth against IDOR; the controller also
+        // pre-checks but the service must not rely on that).
         var agent = await _dbContext.Agents
             .Include(a => a.Office)
-            .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken)
-            ?? throw new InvalidOperationException("Agent not found");
+            .FirstOrDefaultAsync(a => a.Id == agentId && a.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Agent not found");
 
         var tenant = await _dbContext.Tenants
             .FirstOrDefaultAsync(t => t.Id == agent.TenantId, cancellationToken)
-            ?? throw new InvalidOperationException("Tenant not found");
+            ?? throw new NotFoundException("Tenant not found");
 
         var brandMemories = await _dbContext.BrandMemoryDocuments
             .Where(b => b.TenantId == agent.TenantId)
@@ -219,17 +184,17 @@ public class AgentService : IAgentService
             agent.TenantId,
             cancellationToken);
 
-        var resolvedTaskType = ResolveTaskType(agent.AgentType, request.TaskType);
+        var resolvedTaskType = AgentTaskMapper.ResolveTaskType(agent.AgentType, request.TaskType);
         var inputJson = request.InputData?.GetRawText() ?? "{}";
         var now = DateTime.UtcNow;
-        var estimatedDurationMinutes = EstimateTaskDurationMinutes(agent.AgentType, resolvedTaskType);
+        var estimatedDurationMinutes = AgentTaskMapper.EstimateTaskDurationMinutes(agent.AgentType, resolvedTaskType);
 
         var brief = new Brief
         {
             TenantId = agent.TenantId,
             CreatedByUserId = SystemUserId,
-            Title = BuildBriefTitle(agent, request.InputData),
-            Description = BuildTaskDescription(agent, resolvedTaskType),
+            Title = AgentTaskMapper.BuildBriefTitle(agent, request.InputData),
+            Description = AgentTaskMapper.BuildTaskDescription(agent, resolvedTaskType),
             RawContent = inputJson,
             Status = BriefStatus.InProgress,
             SubmittedAt = now,
@@ -244,8 +209,8 @@ public class AgentService : IAgentService
         {
             BriefId = brief.Id,
             TenantId = agent.TenantId,
-            Title = BuildTaskTitle(agent, resolvedTaskType),
-            Description = BuildTaskDescription(agent, resolvedTaskType),
+            Title = AgentTaskMapper.BuildTaskTitle(agent, resolvedTaskType),
+            Description = AgentTaskMapper.BuildTaskDescription(agent, resolvedTaskType),
             AgentType = agent.AgentType,
             Status = TaskStatus.InProgress,
             Priority = TaskPriority.High,
@@ -307,11 +272,11 @@ public class AgentService : IAgentService
                 {
                     TenantId = agent.TenantId,
                     OfficeId = agent.OfficeId,
-                    AgentRole = MapAgentRole(agent.AgentType),
+                    AgentRole = AgentTaskMapper.MapAgentRole(agent.AgentType),
                     TaskType = resolvedTaskType,
                     InputData = request.InputData,
                     CorrelationId = run.Id,
-                    BrandContext = BuildBrandContext(
+                    BrandContext = CrewBrandContextFactory.Build(
                         tenant,
                         agent.Office,
                         brandMemories,
@@ -330,8 +295,8 @@ public class AgentService : IAgentService
             // finally'de de kalp atışı sonsuza dek beklenmesin.
             await StopCrewHeartbeatAsync(heartbeatCts, heartbeatTask);
 
-            var artifactType = MapArtifactType(agent.AgentType, orchestrationResponse.ArtifactType);
-            var artifactContent = BuildArtifactContentFallback(
+            var artifactType = AgentTaskMapper.MapArtifactType(agent.AgentType, orchestrationResponse.ArtifactType);
+            var artifactContent = AgentTaskMapper.BuildArtifactContentFallback(
                 orchestrationResponse.Content,
                 agent,
                 resolvedTaskType);
@@ -343,7 +308,7 @@ public class AgentService : IAgentService
                 AgentRunId = run.Id,
                 ArtifactType = artifactType,
                 Title = string.IsNullOrWhiteSpace(orchestrationResponse.ArtifactTitle)
-                    ? BuildTaskTitle(agent, resolvedTaskType)
+                    ? AgentTaskMapper.BuildTaskTitle(agent, resolvedTaskType)
                     : orchestrationResponse.ArtifactTitle,
                 Content = artifactContent,
                 Metadata = JsonSerializer.Serialize(orchestrationResponse.Metadata),
@@ -369,7 +334,7 @@ public class AgentService : IAgentService
                     ? pl.GetRawText()
                     : "{}";
 
-                var integrationProvider = ResolveIntegrationProvider(providerStr, actionType);
+                var integrationProvider = AgentTaskMapper.ResolveIntegrationProvider(providerStr, actionType);
 
                 // Tenant'a bağlı uygun IntegrationConnection'ı bul (varsa)
                 Guid? connectionId = null;
@@ -382,7 +347,7 @@ public class AgentService : IAgentService
                     if (conn != Guid.Empty) connectionId = conn;
                 }
 
-                var approvalRequired = ResolveApprovalRequired(crewApprovalRequired, companyProfile?.DefaultApprovalMode);
+                var approvalRequired = AgentTaskMapper.ResolveApprovalRequired(crewApprovalRequired, companyProfile?.DefaultApprovalMode);
                 if (integrationProvider.HasValue && !connectionId.HasValue)
                     approvalRequired = true;
 
@@ -619,7 +584,7 @@ public class AgentService : IAgentService
     {
         var agent = await _dbContext.Agents
             .FirstOrDefaultAsync(a => a.Id == agentId && a.TenantId == tenantId, cancellationToken)
-            ?? throw new InvalidOperationException("Agent not found");
+            ?? throw new NotFoundException("Agent not found");
 
         var minAge = Math.Clamp(minAgeMinutes, 0, 24 * 60);
 
@@ -732,7 +697,7 @@ public class AgentService : IAgentService
     {
         var office = await _dbContext.Offices
             .FirstOrDefaultAsync(o => o.TenantId == tenantId, cancellationToken)
-            ?? throw new InvalidOperationException("Office not found");
+            ?? throw new NotFoundException("Office not found");
 
         var agents = await _dbContext.Agents
             .Where(a => a.TenantId == tenantId)
@@ -923,286 +888,6 @@ public class AgentService : IAgentService
             agent.IsEnabled,
             agent.CreatedAt,
             agent.UpdatedAt);
-    }
-
-    private static string MapAgentRole(AgentType agentType)
-    {
-        return agentType switch
-        {
-            AgentType.CustomerReviewResponder or AgentType.ChatbotManager => "review_agent",
-            AgentType.ContentStrategy => "content_strategy_agent",
-            AgentType.BlogWriter or AgentType.SocialMediaDesigner or AgentType.InstagramContentGenerator
-                or AgentType.SeoSpecialist or AgentType.UiUxDesigner or AgentType.VideoEditor => "content_agent",
-            AgentType.AnalyticsAnalyst => "analytics_agent",
-            AgentType.GoogleAdsAnalyst or AgentType.AiStrategist or AgentType.AiCeo => "ads_agent",
-            _ => throw new InvalidOperationException($"Agent type '{agentType}' is not mapped to a CrewAI role yet.")
-        };
-    }
-
-    private static string ResolveTaskType(AgentType agentType, string? requestedTaskType)
-    {
-        if (!string.IsNullOrWhiteSpace(requestedTaskType))
-        {
-            return requestedTaskType;
-        }
-
-        return agentType switch
-        {
-            AgentType.CustomerReviewResponder or AgentType.ChatbotManager => "single_review_response",
-            AgentType.ContentStrategy => "content_strategy",
-            AgentType.BlogWriter or AgentType.SocialMediaDesigner or AgentType.InstagramContentGenerator
-                or AgentType.SeoSpecialist or AgentType.UiUxDesigner or AgentType.VideoEditor => "content_ideation",
-            AgentType.AnalyticsAnalyst => "traffic_analysis",
-            AgentType.GoogleAdsAnalyst or AgentType.AiStrategist or AgentType.AiCeo => "campaign_analysis",
-            _ => "single_review_response"
-        };
-    }
-
-    private static string BuildTaskTitle(Agent agent, string taskType)
-    {
-        return $"{agent.DisplayName}: {taskType.Replace("_", " ")}";
-    }
-
-    private static string BuildTaskDescription(Agent agent, string taskType)
-    {
-        return $"Delegated {taskType.Replace("_", " ")} execution through the internal CrewAI orchestration service for agent {agent.DisplayName}.";
-    }
-
-    private static int EstimateTaskDurationMinutes(AgentType agentType, string taskType)
-    {
-        if (taskType.Contains("video", StringComparison.OrdinalIgnoreCase) ||
-            taskType.Contains("reel", StringComparison.OrdinalIgnoreCase))
-            return 12;
-
-        if (taskType.Contains("content", StringComparison.OrdinalIgnoreCase) ||
-            taskType.Contains("instagram", StringComparison.OrdinalIgnoreCase))
-            return 8;
-
-        if (agentType == AgentType.GoogleAdsAnalyst || agentType == AgentType.AnalyticsAnalyst)
-            return 7;
-
-        if (agentType == AgentType.CustomerReviewResponder)
-            return 4;
-
-        return 6;
-    }
-
-    private static string BuildArtifactContentFallback(string? content, Agent agent, string taskType)
-    {
-        if (!string.IsNullOrWhiteSpace(content))
-        {
-            return content;
-        }
-
-        return
-            $"# {agent.DisplayName} Execution Report\n\n" +
-            $"The `{taskType}` execution completed without model content.\n\n" +
-            "A fallback artifact was created so the task, run, and approval workflow remain traceable. " +
-            "Check the CrewAI service logs, integration data availability, and task input before re-running this agent.";
-    }
-
-    private static string BuildBriefTitle(Agent agent, JsonElement? inputData)
-    {
-        if (inputData.HasValue &&
-            inputData.Value.ValueKind == JsonValueKind.Object &&
-            inputData.Value.TryGetProperty("reviewerName", out var reviewerName))
-        {
-            return $"Review response for {reviewerName.GetString()}";
-        }
-
-        return $"{agent.DisplayName} execution";
-    }
-
-    private static CrewBrandContext BuildBrandContext(
-        Tenant tenant,
-        Office? office,
-        List<BrandMemoryDocument> brandMemories,
-        CompanyProfile? profile,
-        string promptEnrichment)
-    {
-        var customRules = profile?.CustomRules ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(promptEnrichment))
-            customRules = string.IsNullOrWhiteSpace(customRules) ? promptEnrichment : $"{customRules}\n\n{promptEnrichment}";
-
-        // Inject brand analysis from connected accounts (Instagram, Google Business)
-        var assetDescriptions = brandMemories
-            .Where(m =>
-                m.DocumentType.StartsWith("brand_profile:") ||
-                m.DocumentType.StartsWith("executed_action:") ||
-                m.DocumentType == "approved_pattern")
-            .Take(8)
-            .Select(m => $"{m.DocumentType}: {m.Title}")
-            .ToList();
-
-        if (!string.IsNullOrWhiteSpace(profile?.InstagramHandle))
-            assetDescriptions.Insert(0, $"Instagram hesabı: @{profile.InstagramHandle}");
-
-        if (!string.IsNullOrWhiteSpace(profile?.GoogleBusinessUrl))
-            assetDescriptions.Insert(0, $"Google Business: {profile.GoogleBusinessUrl}");
-
-        if (!string.IsNullOrWhiteSpace(profile?.BrandImageUrls))
-        {
-            var urls = profile.BrandImageUrls.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            foreach (var url in urls.Take(5))
-                assetDescriptions.Add($"Marka görseli: {url}");
-        }
-
-        // Brand analysis from automatic account scan — inject as high-priority context
-        if (!string.IsNullOrWhiteSpace(profile?.BrandAnalysis))
-        {
-            customRules = $"## Otomatik Marka Analizi (Hesap Verilerinden)\n{profile.BrandAnalysis}\n\n" + customRules;
-        }
-
-        return new CrewBrandContext
-        {
-            BusinessName = profile?.BrandName ?? office?.Name ?? tenant.Name,
-            BusinessType = profile?.Industry ?? "Digital Agency Client Workspace",
-            Description = profile?.Description ?? office?.Description ?? $"Managed workspace for {tenant.Name}",
-            BrandTone = profile?.BrandTone ?? "professional and warm",
-            VisualStyle = profile?.VisualStyle ?? "modern, premium, digitally native",
-            TargetAudience = profile?.TargetAudience ?? "local customers and agency-managed growth audiences",
-            Location = profile?.Location ?? office?.Name ?? tenant.Name,
-            Languages = profile?.Languages ?? "tr",
-            CampaignGoals = BuildCampaignGoals(profile),
-            Competitors = profile?.Competitors ?? string.Empty,
-            CustomRules = customRules,
-            Keywords = BuildKeywords(tenant, profile),
-            AssetDescriptions = assetDescriptions,
-            ContentPillars = ParseJsonStringList(profile?.ContentNeeds),
-            RiskRules = ParseJsonStringDictionary(profile?.RiskRules),
-            OperatingCapabilities = ParseJsonStringList(profile?.OperatingCapabilities),
-            GalleryPolicy = ParseJsonObjectDictionary(profile?.GalleryPolicy),
-        };
-    }
-
-    private static List<string> ParseJsonStringList(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        try
-        {
-            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json)?
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Select(s => s.Trim())
-                .ToList() ?? new();
-        }
-        catch
-        {
-            return new();
-        }
-    }
-
-    private static Dictionary<string, string> ParseJsonStringDictionary(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        try
-        {
-            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json)
-                   ?? new Dictionary<string, string>();
-        }
-        catch
-        {
-            return new();
-        }
-    }
-
-    private static Dictionary<string, object?> ParseJsonObjectDictionary(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return new();
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            var dict = new Dictionary<string, object?>();
-            foreach (var prop in doc.RootElement.EnumerateObject())
-            {
-                dict[prop.Name] = prop.Value.ValueKind switch
-                {
-                    System.Text.Json.JsonValueKind.String => prop.Value.GetString(),
-                    System.Text.Json.JsonValueKind.Number => prop.Value.TryGetInt32(out var i) ? i : prop.Value.GetDouble(),
-                    System.Text.Json.JsonValueKind.True => true,
-                    System.Text.Json.JsonValueKind.False => false,
-                    _ => prop.Value.GetRawText(),
-                };
-            }
-            return dict;
-        }
-        catch
-        {
-            return new();
-        }
-    }
-
-    private static string BuildCampaignGoals(CompanyProfile? profile)
-    {
-        var baseGoals = profile?.CampaignGoals;
-        if (string.IsNullOrWhiteSpace(baseGoals))
-        {
-            baseGoals = "Protect reputation, improve response quality, and create actionable agency workflows.";
-        }
-
-        var additions = new List<string>();
-        if (!string.IsNullOrWhiteSpace(profile?.TargetAudience))
-            additions.Add($"Target audience focus: {profile.TargetAudience}");
-        if (!string.IsNullOrWhiteSpace(profile?.Competitors))
-            additions.Add($"Competitor awareness: {profile.Competitors}");
-        if (!string.IsNullOrWhiteSpace(profile?.WebsiteUrl))
-            additions.Add($"Website: {profile.WebsiteUrl}");
-
-        return additions.Count == 0
-            ? baseGoals
-            : $"{baseGoals}\n{string.Join("\n", additions)}";
-    }
-
-    private static string BuildKeywords(Tenant tenant, CompanyProfile? profile)
-    {
-        var keywords = new List<string> { tenant.Plan };
-        if (!string.IsNullOrWhiteSpace(profile?.Industry)) keywords.Add(profile.Industry);
-        if (!string.IsNullOrWhiteSpace(profile?.Location)) keywords.Add(profile.Location);
-        if (!string.IsNullOrWhiteSpace(profile?.Competitors)) keywords.Add(profile.Competitors);
-        return string.Join(", ", keywords.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct());
-    }
-
-    private static ArtifactType MapArtifactType(AgentType agentType, string artifactType)
-    {
-        var normalized = artifactType.Replace("_", string.Empty, StringComparison.OrdinalIgnoreCase);
-        var explicitType = normalized.ToLowerInvariant() switch
-        {
-            "reviewresponse" => ArtifactType.ReviewResponse,
-            "blogpost" => ArtifactType.BlogPost,
-            "socialmediagraphic" => ArtifactType.SocialMediaGraphic,
-            "instagramcaption" => ArtifactType.InstagramCaption,
-            "seoreport" => ArtifactType.SeoReport,
-            "adcopy" => ArtifactType.AdCopy,
-            "videoedit" => ArtifactType.VideoEdit,
-            "uimockup" => ArtifactType.UiMockup,
-            "strategydocument" => ArtifactType.StrategyDocument,
-            "chatbotflow" => ArtifactType.ChatbotFlow,
-            "genericdocument" => ArtifactType.GenericDocument,
-            _ => (ArtifactType?)null
-        };
-
-        if (explicitType.HasValue)
-        {
-            return explicitType.Value;
-        }
-
-        if (Enum.TryParse<ArtifactType>(artifactType, true, out var parsed))
-        {
-            return parsed;
-        }
-
-        return agentType switch
-        {
-            AgentType.CustomerReviewResponder or AgentType.ChatbotManager => ArtifactType.ReviewResponse,
-            AgentType.BlogWriter or AgentType.SeoSpecialist => ArtifactType.BlogPost,
-            AgentType.SocialMediaDesigner => ArtifactType.SocialMediaGraphic,
-            AgentType.InstagramContentGenerator => ArtifactType.InstagramCaption,
-            AgentType.UiUxDesigner => ArtifactType.UiMockup,
-            AgentType.VideoEditor => ArtifactType.VideoEdit,
-            AgentType.GoogleAdsAnalyst => ArtifactType.AdCopy,
-            AgentType.AnalyticsAnalyst => ArtifactType.StrategyDocument,
-            AgentType.ContentStrategy or AgentType.AiStrategist or AgentType.AiCeo => ArtifactType.StrategyDocument,
-            _ => ArtifactType.GenericDocument
-        };
     }
 
     private async Task<bool> TableExistsAsync(string tableName, CancellationToken cancellationToken)

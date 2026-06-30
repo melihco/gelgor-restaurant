@@ -5,7 +5,7 @@
  * via `metadata.production_role` + `metadata.idea_index` + `metadata.mission_id`.
  */
 import type { OutputArtifact } from '@/types';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-utils';
 import type { GptEnhanceSkipCode } from '@/lib/gpt-enhance-policy';
 import {
   labelAiEnhanceStatus,
@@ -61,13 +61,22 @@ export interface MissionSlotChecklist {
 export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   organic_post: 'Organik post',
   designed_post: 'Tasarım post',
+  designed_typography: 'AI Tipografi post',
+  fal_designed_post: 'fal.ai tasarım post',
+  fal_only_story: 'fal.ai sinematik reel (legacy)',
+  fal_only_post: 'fal.ai editorial post',
+  fal_only_reel: 'fal.ai sinematik reel',
   organic_story_still: 'Story (galeri)',
-  campaign_story_motion: 'Kampanya story',
-  organic_reel: 'Organik reel',
-  campaign_reel_motion: 'Kampanya reel',
+  campaign_story_motion: 'Kampanya story (Remotion)',
+  organic_reel: 'Organik reel (Runway)',
+  campaign_reel_motion: 'Kampanya reel (Runway)',
+  fal_story_motion: 'fal.ai designer reel (legacy)',
+  fal_reel_motion: 'fal.ai designer reel',
   organic_carousel: 'Carousel',
   paid_ad_creative: 'Meta reklam kreatifi',
   paid_ad_google_creative: 'Google Ads kreatifi',
+  product_showcase_post: 'Ürün showcase post',
+  product_showcase_story: 'Ürün showcase story',
 };
 
 const STATUS_TR: Record<SlotDeliveryStatus, string> = {
@@ -142,7 +151,7 @@ function resolveArtifactSlotStatus(
   }
 
   if (role === 'designed_post') {
-    const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+    const meta = parseArtifactMetadata(artifact.metadata);
     if (meta.grafiker_pass === false) return 'failed';
     if (isBundleRendering(artifact)) return 'rendering';
     const url = String(artifact.contentUrl ?? '').trim();
@@ -213,7 +222,7 @@ function matchArtifactForAssignment(
   const candidates = artifacts.filter((a) => {
     if (usedIds.has(a.id)) return false;
     if (parseArtifactMissionId(a) !== missionId) return false;
-    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    const meta = parseArtifactMetadata(a.metadata);
     const content = parseArtifactContent(a.content);
     const metaIdx = meta.idea_index ?? content.idea_index;
     if (typeof ideaIdx === 'number' && ideaIdx >= 0 && typeof metaIdx === 'number') {
@@ -296,7 +305,7 @@ export function buildMissionSlotChecklist(input: {
         status = 'pending';
       }
 
-      const meta = (artifact?.metadata ?? {}) as Record<string, unknown>;
+      const meta = parseArtifactMetadata(artifact?.metadata);
       const content = artifact ? parseArtifactContent(artifact.content) : {};
       const headline = String(
         meta.headline || content.headline || artifact?.title || '',
@@ -317,10 +326,17 @@ export function buildMissionSlotChecklist(input: {
     });
   }
 
-  // FD < 7 slot atasa bile manifest zorunlu rolleri göster (pending).
-  const coveredRoles = new Set(items.map((i) => i.role));
+  // FD hedef slot sayısından az atasa bile manifest zorunlu slotlarını göster (pending).
+  const coveredRoles = new Map<ProductionSlotRole, number>();
+  for (const item of items) {
+    coveredRoles.set(item.role, (coveredRoles.get(item.role) ?? 0) + 1);
+  }
   for (const slot of manifest.slots.filter((s) => s.required)) {
-    if (coveredRoles.has(slot.role)) continue;
+    const covered = coveredRoles.get(slot.role) ?? 0;
+    if (covered > 0) {
+      coveredRoles.set(slot.role, covered - 1);
+      continue;
+    }
     items.push({
       assignmentIndex: items.length,
       ideaIndex: null,
@@ -332,13 +348,12 @@ export function buildMissionSlotChecklist(input: {
       artifactId: null,
       headline: null,
     });
-    coveredRoles.add(slot.role);
   }
 
   if (items.length === 0) {
     for (const slot of manifest.slots.filter((s) => s.required)) {
       const artifact = missionArtifacts.find((a) => {
-        const role = artifactProductionRole((a.metadata ?? {}) as Record<string, unknown>);
+        const role = artifactProductionRole(parseArtifactMetadata(a.metadata));
         return role === slot.role && !usedIds.has(a.id);
       });
       if (artifact) usedIds.add(artifact.id);

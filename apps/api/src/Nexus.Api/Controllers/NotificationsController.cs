@@ -28,7 +28,7 @@ public class NotificationsController : ControllerBase
     [HttpPut("{id}/mark-read")]
     public async Task<ActionResult<NotificationDto>> MarkAsRead(Guid id, CancellationToken cancellationToken)
     {
-        var notification = await _notificationService.MarkAsReadAsync(id, cancellationToken);
+        var notification = await _notificationService.MarkAsReadAsync(id, _requestContext.TenantId, _requestContext.UserId, cancellationToken);
         return Ok(notification);
     }
 }

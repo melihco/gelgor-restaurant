@@ -39,12 +39,53 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
 
+    # ── Distributed orchestration (Celery) ──────────────────
+    # Which orchestrator drives periodic production work:
+    #   "apscheduler" — in-process AsyncIOScheduler (default, single-process).
+    #   "celery"      — Celery Beat + workers (horizontally scalable, multi-replica).
+    # When "celery", the in-process APScheduler periodic production jobs are skipped
+    # so the two orchestrators never double-fire. Celery Beat owns the schedule.
+    production_orchestrator: Literal["apscheduler", "celery"] = "apscheduler"
+    # Broker / result backend. Default to the shared Redis (db 1 to avoid colliding
+    # with the cache/lock keyspace on db 0).
+    celery_broker_url: str = ""
+    celery_result_backend: str = ""
+
+    @property
+    def effective_celery_broker_url(self) -> str:
+        return self.celery_broker_url or self.redis_url.rsplit("/", 1)[0] + "/1"
+
+    @property
+    def effective_celery_result_backend(self) -> str:
+        return self.celery_result_backend or self.redis_url.rsplit("/", 1)[0] + "/2"
+
+    @property
+    def use_celery_orchestrator(self) -> bool:
+        return self.production_orchestrator == "celery"
+
+    # How claimed slot batches are executed by the production factory:
+    #   "http"   — Python awaits a synchronous POST to /api/auto-produce (default).
+    #   "bullmq" — Python enqueues to the Next.js BullMQ queue; a worker executes
+    #              the pipeline and calls back to mark jobs ready/failed.
+    production_executor: Literal["http", "bullmq"] = "http"
+
+    @property
+    def use_bullmq_executor(self) -> bool:
+        return self.production_executor == "bullmq"
+
     # ── LLM ──────────────────────────────────────────────
+    # Tier: starter (default, lowest cost) | agency | premium — mirrors web AI_MODEL_TIER
+    ai_model_tier: Literal["starter", "agency", "premium", "economy"] = "starter"
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o"           # primary model for creative/strategic tasks
-    openai_content_model: str = ""          # if set, content tasks use this model (e.g. gpt-4o)
+    openai_model: str = "gpt-4o-mini"        # primary model (starter default)
+    openai_content_model: str = ""          # if set, content tasks use this model
     openai_lite_model: str = "gpt-4o-mini" # cheap model for analytics, structured data, reports
     crewai_llm_provider: Literal["openai", "anthropic", "ollama"] = "openai"
+
+    # Faz 3.2: route structured/planning tasks to the lite model (on by default for starter).
+    lite_structural_tasks_enabled: bool = True
+    # Faz 3.3: hard cap on LLM completion tokens. 8192 for starter; set 0 to disable.
+    llm_max_tokens_cap: int = 8192
 
     # Anthropic Claude — best for creative content (brand voice, captions, copy)
     anthropic_api_key: str = ""
@@ -169,14 +210,24 @@ class Settings(BaseSettings):
     # ── Auto-produce (Mission → Feed pipeline) ──────────
     nextjs_internal_url: str = "http://localhost:3000"
     nexus_api_url: str = "http://localhost:5050"
+    # When False (recommended for dev): mission graph never auto-triggers Feed / fal.ai.
+    # Manual only via Mission Hub kick-feed-production or reproduce-feed.
+    auto_feed_production_enabled: bool = False
 
     # ── Auto-content (fully autonomous daily content loop) ─
-    auto_content_enabled: bool = True
+    auto_content_enabled: bool = False
     auto_content_hour: int = 9       # UTC (TR 12:00) — kept for env override; scheduler now runs every 6h
     auto_content_max_daily: int = 12  # max auto-missions per workspace per day (pilot testing)
     workspace_daily_budget_usd: float = 50.0  # full-quality runs (Runway + Remotion + GPT enhance)
     # Varsayılan kapalı kota; AUTO_PRODUCE_BYPASS_LIMITS=false ile günlük USD limiti açılır
     auto_produce_bypass_limits: bool = True
+    # Max missions draining concurrently per workspace (serial queue = 1)
+    production_max_concurrent_per_workspace: int = 1
+
+    # Autonomous mission cadence — when True, scheduler proposes missions based on plan quota
+    autonomous_mission_cadence_enabled: bool = False
+    # Scheduler mission proposals (semi-auto Mon/Thu, opportunity, seasonal, special days)
+    auto_mission_proposal_enabled: bool = False
 
     # ── Token billing (SA Kredi) ─────────────────────────
     # Customer price = API cost × TOKEN_MARKUP_MULTIPLIER (default 10×)

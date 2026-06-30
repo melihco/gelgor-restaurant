@@ -17,7 +17,7 @@ import {
 import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
-import { HeadlineStack, headlineSize, stableScale, stableTextOpacity } from './shared/story-primitives';
+import { HeadlineStack, headlineSize, stableScale, stableTextOpacity, cinematicGradeFilter, CinematicLightLayer, FilmGrainOverlay } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 
 /** Photo share of frame height — panel gets the rest for headline/subtitle/CTA */
@@ -81,8 +81,10 @@ export const LuxurySplitStory: React.FC<StoryProps> = ({
           width: '100%',
           height: '100%',
         }}>
-          <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinematicGradeFilter('subtle') }} />
         </div>
+        <CinematicLightLayer warmth="neutral" intensity={0.65} origin="50% 16%" />
+        <FilmGrainOverlay opacity={0.05} fine />
         {/* Fade photo into panel — no text here */}
         <div style={{
           position: 'absolute',
@@ -100,7 +102,7 @@ export const LuxurySplitStory: React.FC<StoryProps> = ({
         brandName={brandName}
         fontFamily={hero}
         opacity={metaOpacity}
-        paddingTop="4%"
+        paddingTop="6.5%"
       />
 
       {/* Accent separator at panel top */}

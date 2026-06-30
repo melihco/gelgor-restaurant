@@ -10,6 +10,7 @@ import { resolveTextOverlayPrefs } from '@/lib/brand-text-overlay-prefs';
 import { resolveSectorColorPreset } from '@/lib/sector-color-presets';
 import { resolveProductionStoryFonts } from '@/lib/premium-font-registry';
 import type { FontPersonality } from '@/lib/remotion-template-types';
+import { resolveTemplateColorProps } from '@/lib/template-color-policy';
 
 export interface BrandProductionTokens {
   headingFont: string;
@@ -46,6 +47,29 @@ function readTypography(obj: Record<string, unknown> | undefined) {
   const headlineColor = parseHex(typo.headline_color ?? typo.headlineColor);
   if (!heading && !body && !headlineColor) return null;
   return { heading, body, headlineColor };
+}
+
+function readPostDesignFontPreset(theme: Record<string, unknown> | undefined): { heading?: string; body?: string; source?: string } {
+  const raw = (theme?.post_design_defaults ?? theme?.postDesignDefaults) as Record<string, unknown> | undefined;
+  const preset = typeof raw?.font_preset === 'string'
+    ? raw.font_preset
+    : typeof raw?.fontPreset === 'string'
+      ? raw.fontPreset
+      : '';
+  switch (preset) {
+    case 'poster_3d':
+      return { heading: 'Anton', body: 'Inter', source: 'theme.post_design_defaults.poster_3d' };
+    case 'sticker_pop':
+      return { heading: 'Bangers', body: 'Nunito', source: 'theme.post_design_defaults.sticker_pop' };
+    case 'condensed_impact':
+      return { heading: 'Bebas Neue', body: 'Inter', source: 'theme.post_design_defaults.condensed_impact' };
+    case 'elegant_serif':
+      return { heading: 'Playfair Display', body: 'Lora', source: 'theme.post_design_defaults.elegant_serif' };
+    case 'clean_sans':
+      return { heading: 'Inter', body: 'DM Sans', source: 'theme.post_design_defaults.clean_sans' };
+    default:
+      return {};
+  }
 }
 
 function readOverlay(theme: Record<string, unknown> | undefined) {
@@ -164,6 +188,7 @@ export function resolveBrandProductionTokens(input: {
   const vibePalette = readPalette(vibe);
   const themeTypo = readTypography(theme ?? undefined);
   const vibeTypo = readTypography(vibe);
+  const postDesignTypo = readPostDesignFontPreset(theme ?? undefined);
   const overlay = readOverlay(theme ?? undefined);
   const textPrefs = resolveTextOverlayPrefs(theme ?? undefined);
 
@@ -214,16 +239,19 @@ export function resolveBrandProductionTokens(input: {
   if (accentIsSameAsPrimary) sources.push('accent.derived');
 
   const headingRaw =
-    themeTypo?.heading
+    postDesignTypo.heading
+    ?? themeTypo?.heading
     ?? vibeTypo?.heading
     ?? ctxFont
     ?? undefined;
   const bodyRaw =
-    themeTypo?.body
+    postDesignTypo.body
+    ?? themeTypo?.body
     ?? vibeTypo?.body
     ?? undefined;
 
-  if (themeTypo?.heading) sources.push('theme.typography.heading');
+  if (postDesignTypo.source) sources.push(postDesignTypo.source);
+  else if (themeTypo?.heading) sources.push('theme.typography.heading');
   else if (vibeTypo?.heading) sources.push('vibe.typography.heading');
   else if (ctxFont) sources.push('brand_context.brand_font_family');
 
@@ -296,6 +324,11 @@ export function applyBrandTokensToRenderProps(
   const headingFont = slotTypography?.headingFont ?? tokens.headingFont;
   const bodyFont = slotTypography?.bodyFont ?? tokens.bodyFont;
   const forceTemplateFonts = slotTypography?.honorTemplateTypography === true;
+  const templateColors = resolveTemplateColorProps({
+    templateId: typeof props.templateId === 'string' ? props.templateId : undefined,
+    posterTemplateId: typeof props.posterTemplateId === 'string' ? props.posterTemplateId : undefined,
+    tokens,
+  });
   return {
     ...props,
     fontFamily:       forceTemplateFonts ? headingFont : (props.fontFamily ?? headingFont),
@@ -308,10 +341,12 @@ export function applyBrandTokensToRenderProps(
       : {}),
     primaryColor:     props.primaryColor     ?? tokens.primaryColor,
     accentColor:      props.accentColor      ?? tokens.accentColor,
-    headlineColor:    props.headlineColor    ?? tokens.headlineColor,
-    subtitleColor:    props.subtitleColor    ?? tokens.subtitleColor,
+    headlineColor:    props.headlineColor    ?? templateColors.headlineColor ?? tokens.headlineColor,
+    subtitleColor:    props.subtitleColor    ?? templateColors.subtitleColor ?? tokens.subtitleColor,
+    categoryColor:    props.categoryColor    ?? templateColors.categoryColor,
+    textColor:        props.textColor        ?? templateColors.textColor,
     overlayOpacity:   props.overlayOpacity   ?? tokens.overlayOpacity,
-    overlayColor:     props.overlayColor     ?? tokens.overlayColor,
+    overlayColor:     props.overlayColor     ?? templateColors.overlayColor ?? tokens.overlayColor,
     // Typography quality tokens — set if not already specified by template
     headlineFontWeight: props.headlineFontWeight ?? 900,
     bodyFontWeight:     props.bodyFontWeight     ?? 400,

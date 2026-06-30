@@ -34,6 +34,9 @@ import {
   stableTextLayerStyle,
   stableTextOpacity,
   textShadowHeavy,
+  cinematicGradeFilter,
+  CinematicLightLayer,
+  FilmGrainOverlay,
 } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 import { brandPanelGradientCss } from '../lib/brand-panel-gradient';
@@ -83,8 +86,11 @@ export const CinematicStory: React.FC<StoryProps> = ({
         transform: `scale(${photoScale})`,
         transformOrigin: 'center center',
       }}>
-        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinematicGradeFilter('subtle') }} />
       </AbsoluteFill>
+
+      {/* Cinematic light bloom — soft dimensional glow */}
+      <CinematicLightLayer warmth="warm" intensity={0.7} origin="50% 26%" />
 
       {/* Full-frame base overlay — scales with photo brightness */}
       <AbsoluteFill style={{
@@ -113,12 +119,14 @@ export const CinematicStory: React.FC<StoryProps> = ({
         pointerEvents: 'none',
       }} />
 
+      <FilmGrainOverlay opacity={0.05} fine />
+
       <StoryLogoTopCenter
         logoUrl={logoUrl}
         brandName={brandName}
         fontFamily={hero}
         opacity={logoOpacity}
-        paddingTop="4%"
+        paddingTop="6.5%"
       />
 
       {/* Center accent separator — thin line above headline */}

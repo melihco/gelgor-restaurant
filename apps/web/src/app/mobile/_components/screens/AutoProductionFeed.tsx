@@ -20,7 +20,7 @@ import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { apiClient } from '@/lib/api-client';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent } from '@/lib/artifact-utils';
 import type { OutputArtifact } from '@/types';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 
@@ -39,6 +39,7 @@ import {
 import { isUsableGalleryPhotoUrl, stripStockGalleryUrls } from '@/lib/media-url';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { productionIdeaFromRecord } from '@/lib/production-idea-parse';
+import { resolveApprovalQualityGateFromMeta } from '@/lib/approval-quality-gate';
 import {
   auditRendererPayload,
   type RendererBrandContext,
@@ -116,6 +117,9 @@ interface ProducedItem {
   strategicPurpose: string;
   postingTime: string;
   matchScore: number | null;
+  grafikerScore?: number | null;
+  grafikerPass?: boolean | null;
+  typographyTextValid?: boolean | null;
   status: 'producing' | 'ready' | 'approved' | 'skipped' | 'error';
   error?: string;
 }
@@ -1870,11 +1874,23 @@ export function AutoProductionFeed({
                   const hasVisual = fmtNorm === 'reel'
                     ? Boolean(item.reelUrl) && !item.reelBuilding
                     : Boolean(item.brandKitUrl || item.imageUrl) && !item.brandKitBuilding;
-                  // Block approve when gallery photo has a rejected match score.
-                  // matchScore == null means AI-generated (no gallery needed) → allow.
-                  const matchRejected = item.matchScore != null
-                    && classifyMatch(item.matchScore).quality === 'rejected';
-                  const canApprove = hasVisual && !matchRejected;
+                  // Block approve on gallery mismatch, Grafiker fail, or invalid canvas text.
+                  const qualityGate = resolveApprovalQualityGateFromMeta({
+                    ...(item.matchScore != null ? { gallery_match_score: item.matchScore } : {}),
+                    ...(item.grafikerScore != null ? { grafiker_score: item.grafikerScore } : {}),
+                    ...(item.grafikerPass != null ? { grafiker_pass: item.grafikerPass } : {}),
+                    ...(item.typographyTextValid != null
+                      ? { typography_text_valid: item.typographyTextValid }
+                      : {}),
+                  });
+                  const canApprove = hasVisual && !qualityGate.hardBlock;
+                  const approveBlockedLabel = qualityGate.hardBlockReason?.includes('Grafiker')
+                    ? '⚠ Kalite düşük'
+                    : qualityGate.hardBlockReason?.includes('metin')
+                      ? '⚠ Metin hatalı'
+                      : item.matchScore != null && classifyMatch(item.matchScore).quality === 'rejected'
+                        ? '⚠ Eşleşme yok'
+                        : '⚠ Onay kapalı';
                   const isAdCreative = Boolean(item.adChannel);
                   const adLabel = item.adChannel === 'google_ads' ? 'Google Ads\'e Gönder' : 'Meta Ads\'e Gönder';
                   const adColor = item.adChannel === 'google_ads' ? '#4285F4' : '#1877F2';
@@ -1883,12 +1899,12 @@ export function AutoProductionFeed({
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => approve(item)}
                         disabled={saveMutation.isPending || !canApprove}
-                        title={matchRejected ? 'Fotoğraf içerikle eşleşmiyor — fotoğrafı değiştirin veya galeri analizini çalıştırın' : undefined}
+                        title={qualityGate.hardBlockReason ?? undefined}
                         style={{ flex: 2, padding: '12px 0', borderRadius: 14, border: 'none', cursor: canApprove ? 'pointer' : 'not-allowed',
                           background: canApprove ? 'rgba(16,185,129,0.85)' : t.elevated,
                           color: canApprove ? '#fff' : t.textMuted,
                           fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                        {saveMutation.isPending ? <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Kaydediliyor</> : matchRejected ? '⚠ Eşleşme yok' : '✓ Onayla'}
+                        {saveMutation.isPending ? <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Kaydediliyor</> : !canApprove ? approveBlockedLabel : '✓ Onayla'}
                       </button>
                       <button
                         disabled={uploadingIdx === item.ideaIndex}

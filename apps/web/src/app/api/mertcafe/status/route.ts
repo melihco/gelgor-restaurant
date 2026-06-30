@@ -48,8 +48,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
     const oauthAccountId = extractMertcafeOAuthAccountId(data);
     const instagramConnected = Boolean(data.instagram_connected);
-    // OAuth bağlıyken yayın her zaman bağlı IG hesabına gider (eski account_id kullanılmaz).
-    const useOAuth = instagramConnected || Boolean(tenant.useOAuthAccount);
+    const manualPublishId = String(tenant.publishAccountId ?? '').trim();
+    // Manuel hesap seçildiyse OAuth bayrağını ezme; aksi halde IG bağlıysa OAuth varsayılan.
+    const useOAuth = tenant.useOAuthAccount
+      ? true
+      : manualPublishId
+        ? false
+        : instagramConnected;
 
     const instagramUsername = String(
       data.instagram_username ?? data.username ?? data.ig_username ?? '',

@@ -222,7 +222,7 @@ export function ReelsStudio() {
 
     Promise.all(
       completedOrActive.map(m =>
-        apiClient.getMissionProgress(tenantId, m.id).then(prog => ({ m, prog })).catch(() => null)
+        apiClient.getMissionProgress(tenantId, m.id, { includePayload: true }).then(prog => ({ m, prog })).catch(() => null)
       )
     ).then(results => {
       const all: ReelBrief[] = [];

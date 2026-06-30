@@ -109,7 +109,19 @@ def build_mission_context_block(memory: MissionMemory) -> str:
         for out in memory.completed_outputs:
             title    = out.get("title", out.get("node_key", "?"))
             task     = out.get("task_type", "")
-            summary  = (out.get("output_summary") or "").strip()[:200]
+            raw_summary = (out.get("output_summary") or "").strip()
+            if task == "content_strategy" and raw_summary:
+                from app.services.content_strategy_brief import (
+                    STRATEGY_MEMORY_PREVIEW_MAX_CHARS,
+                    build_strategy_brief_for_downstream,
+                )
+
+                summary = build_strategy_brief_for_downstream(
+                    raw_summary,
+                    max_chars=STRATEGY_MEMORY_PREVIEW_MAX_CHARS,
+                )
+            else:
+                summary = raw_summary[:200]
             entry    = f"- **{title}** ({task})"
             if summary:
                 entry += f": {summary}"

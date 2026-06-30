@@ -194,12 +194,13 @@ export function createNexusClient(config: NexusClientConfig) {
 }
 
 import { resolveServerApiBaseUrl } from '@/lib/backend-origin';
+import { serverConfig } from '@/lib/server-config';
 
 export type NexusClient = ReturnType<typeof createNexusClient>;
 
 // Runtime Nexus base URL (Render: NEXUS_API_URL / BACKEND_ORIGIN — not build-time NEXT_PUBLIC).
 export const NEXUS_API = resolveServerApiBaseUrl();
-export const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+export const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 export function createDefaultNexusClient(): NexusClient {
   return createNexusClient({ nexusApi: NEXUS_API, internalKey: INTERNAL_KEY });

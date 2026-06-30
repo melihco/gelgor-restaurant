@@ -122,19 +122,21 @@ export function firstStr(rec: Record<string, unknown>, ...keys: string[]): strin
 /**
  * Planning title from mission ideation — matches Mission Hub cards and feeds
  * Remotion stories, posters, and feed overlay copy (not caption CTA hooks).
+ * Prefers `headline` over `concept_title` because headlines are more likely
+ * to be complete marketing sentences suitable for story overlays.
  */
 export function resolveIdeationHeadline(rec: Record<string, unknown>): string {
+  // strategic_purpose is internal agent briefing — never use as display headline.
   return firstStr(
     rec,
+    'headline',
+    'hook',
     'concept_title',
     'conceptTitle',
     'idea_title',
     'ideaTitle',
     'title',
-    'headline',
-    'hook',
     'subline',
-    'strategic_purpose',
   );
 }
 

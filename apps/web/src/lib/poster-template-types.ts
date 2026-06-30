@@ -3,6 +3,7 @@
  */
 
 import type { StoryCompositionId } from '@/remotion/types';
+import type { TemplateColorPolicy } from './remotion-template-types';
 
 export type PosterLayoutFamily =
   | 'lineup_tiered'
@@ -66,6 +67,7 @@ export interface PosterLayoutSpec {
   showDateBadge: boolean;
   showCta: boolean;
   panelUsesPrimary: boolean;
+  colorPolicy?: TemplateColorPolicy;
 }
 
 export interface PosterTemplateDefinition {

@@ -47,6 +47,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (force) {
     themePatch.mertcafe_instagram_account_id = '';
     themePatch.mertcafe_use_oauth_account = false;
+    themePatch.mertcafe_instagram_accounts = [];
   }
 
   const patchRes = await fetchCrewBackendJson<{ theme?: Record<string, unknown> | null }>(

@@ -4,22 +4,8 @@
  */
 import { buildFamilyCatalogForPrompt } from './creative-director-routing';
 
-/** Canva story archetypes → Remotion layout family (agency routing hints). */
-export const CANVA_STORY_ARCHETYPES = `
-CANVA-LEVEL STORY ARCHETYPES (pick the closest — then map to layoutFamily):
-1. Frosted Quote Card — soft glass panel, serif headline, minimal copy → frosted_glass | quote_card
-2. Magazine Cover Drop — bold cover line, issue/date stamp, photo bleed → magazine_cover | asymmetric_editorial
-3. Split Feature Panel — photo left + brand color panel right, CTA pill → split_panel | minimal_luxury
-4. Cinematic Full Bleed — horizon/sky/sea, tiny centered type, film grain → cinematic_center | vibe_fullscreen
-5. Campaign Hero Block — offer/launch, high-contrast type block, urgency → campaign_hero | bold_impact (ONLY real promos)
-6. Event Ticket Stub — date/time/lineup, perforated edge, RSVP CTA → event_ticket | neon_night
-7. Gallery Carousel Tease — 2–4 photos, swipe energy, social proof → gallery_series | bento_story | mosaic_pinterest
-8. Before/After Diptych — transformation proof, beauty/service → diptych_collage | polaroid_stack
-9. Location Pin Card — map pin, hours, directions CTA → location_pin
-10. Neon Night Promo — club/DJ, electric accent, bold sans → neon_night | bold_impact
-11. Polaroid Memory — casual daily, handwritten vibe → polaroid_single | polaroid_stack
-12. Noir Editorial — dark luxury, high contrast, moody wash → noir_editorial | asymmetric_editorial
-`.trim();
+/** Canva story archetypes — shared catalog (see canva-archetype-catalog.ts). */
+export { CANVA_STORY_ARCHETYPES } from './canva-archetype-catalog';
 
 const SECTOR_STORY_ROUTING = `
 ━━━ SECTOR ROUTING (Canva agency patterns) ━━━

@@ -27,6 +27,7 @@ export const GOOGLE_FONT_SPECS: Record<string, string> = {
   'Poppins': 'Poppins:wght@300;400;500;600;700;800',
   'Anton': 'Anton:wght@400',
   'Archivo Black': 'Archivo+Black:wght@400',
+  'Bangers': 'Bangers:wght@400',
   'Oswald': 'Oswald:wght@400;500;600;700',
   'Bebas Neue': 'Bebas+Neue:wght@400',
   'Barlow Condensed': 'Barlow+Condensed:wght@400;600;700;800',

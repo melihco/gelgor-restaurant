@@ -12,6 +12,8 @@ import {
 } from '@/lib/gallery-photo-matcher';
 import { deriveBrandTemplateLibrary } from '@/lib/brand-template-library';
 import { ensureSectorReelMotionInTheme } from '@/lib/sector-reel-motion-standard';
+import { fetchCrewBackendJson } from '@/lib/crew-proxy';
+import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 
 export interface DeepBrandSetupInput {
   origin: string;
@@ -44,6 +46,8 @@ export interface DeepBrandSetupResult {
   brandDnaRichness: string | null;
   productionReady: boolean;
   errors: string[];
+  /** Canonical sector after service-profile derive (for Nexus + template kit). */
+  authoritativeSector?: string;
 }
 
 function resolveSectorFromAnalysis(brand: PythonBrandAnalyzeResponse | null): string {
@@ -204,10 +208,9 @@ async function runGalleryCoverage(
   let complete = false;
 
   const rounds: Array<{ maxImages: number; tier: 'hero' | 'standard' }> = [
-    { maxImages: 12, tier: 'hero' },
-    { maxImages: 25, tier: 'standard' },
-    { maxImages: 25, tier: 'standard' },
-    { maxImages: 25, tier: 'standard' },
+    { maxImages: 8, tier: 'hero' },
+    { maxImages: 50, tier: 'standard' },
+    { maxImages: 50, tier: 'standard' },
   ];
 
   for (const round of rounds) {
@@ -459,6 +462,28 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   }
   steps.push({ id: 'constitution', ok: constitutionConfirmed });
 
+  // 6c. Validated service profile — authoritative sector for template kit + prompts
+  let authoritativeSector = resolveSectorFromAnalysis(brandAnalysis);
+  if (constitutionConfirmed) {
+    const spRes = await fetchCrewBackendJson<Record<string, unknown>>(
+      `/api/v1/brand-context/${tenantId}/service-profile/derive`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 90_000 },
+    );
+    steps.push({
+      id: 'service_profile',
+      ok: spRes.ok,
+      detail: spRes.ok
+        ? String((spRes.data?.brand_service_profile as Record<string, unknown> | undefined)?.category ?? 'derived')
+        : spRes.error ?? `HTTP ${spRes.status}`,
+    });
+    if (spRes.ok && spRes.data) {
+      const resolved = resolveAuthoritativeIndustry(spRes.data);
+      if (resolved) authoritativeSector = resolved;
+    }
+  } else {
+    steps.push({ id: 'service_profile', ok: false, detail: 'constitution_not_confirmed' });
+  }
+
   // 6b. Brand DNA synthesis (living anayasa prose) — non-fatal if slow/fails
   const dnaRes = await postJson<{ data_richness?: string }>(
     `${origin}/api/brand-context/${tenantId}/brand-dna`,
@@ -478,7 +503,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   }
 
   // 7. Production readiness — theme, locked templates, AI defaults, gallery URLs
-  const sector = resolveSectorFromAnalysis(brandAnalysis);
+  const sector = authoritativeSector;
   const productionSteps = constitutionConfirmed
     ? await finalizeProductionReadiness(origin, tenantId, sector, headers)
     : [];
@@ -494,6 +519,31 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     && productionSteps.filter((s) => productionCritical.has(s.id)).every((s) => s.ok)
     && earlyProvisionRes.ok;
 
+  // 8. Brand design templates — Fal.ai-generated, brand-consistent design set
+  //    grounded on real gallery photos + corporate colors + logo. Non-blocking:
+  //    a failure here never blocks onboarding completion.
+  if (productionReady) {
+    const designRes = await postJson<{ generated?: number; failed?: number }>(
+      `${origin}/api/brand-context/${tenantId}/generate-design-templates`,
+      { locale: 'tr' },
+      headers,
+      290_000,
+    );
+    steps.push({
+      id: 'design_templates',
+      ok: designRes.ok,
+      detail: designRes.ok
+        ? `${designRes.data?.generated ?? 0} template üretildi`
+        : designRes.error,
+    });
+  } else {
+    steps.push({
+      id: 'design_templates',
+      ok: false,
+      detail: 'production_not_ready',
+    });
+  }
+
   // DNA failure is non-blocking once constitution is confirmed
   const ok = errors.length === 0 && Boolean(brandAnalysis?.success) && constitutionConfirmed;
 
@@ -506,5 +556,6 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     brandDnaRichness,
     productionReady,
     errors,
+    authoritativeSector,
   };
 }

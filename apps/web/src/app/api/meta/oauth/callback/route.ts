@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
-const CREW_API = process.env.CREW_BACKEND_URL ?? 'http://localhost:8000';
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const CREW_API = serverConfig.crewBackend.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams, origin } = request.nextUrl;

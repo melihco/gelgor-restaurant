@@ -33,6 +33,18 @@ def _brand_ctx_cache_key(workspace_id: uuid.UUID) -> str:
     return f"brand_ctx:{workspace_id}"
 
 
+async def invalidate_brand_info_cache(workspace_id: uuid.UUID) -> None:
+    """Call after any brand context update to bust the Redis cache."""
+    await _cache.delete(_brand_ctx_cache_key(workspace_id))
+    _brand_info_memory_cache.pop(str(workspace_id), None)
+
+
+import time as _time
+
+_brand_info_memory_cache: dict[str, tuple[float, "BrandInfo"]] = {}
+_BRAND_INFO_MEMORY_TTL = 120  # 2 minutes (covers same mission wave)
+
+
 # ── Pinterest field extractor ─────────────────────────────────────────────
 
 def _extract_pinterest_fields(visual_inspiration_json: str | None) -> dict:
@@ -133,10 +145,8 @@ async def update_brand_context(
                     after=len(pruned),
                 )
     await db.flush()
+    _brand_info_memory_cache.pop(str(workspace_id), None)
     return ctx
-
-
-# ── Location inference ─────────────────────────────────────────────────────
 
 def _extract_location_from_sources(instagram: dict, google: dict) -> str:
     """
@@ -600,7 +610,75 @@ async def seed_missing_brand_fields(db: AsyncSession, ctx: BrandContext) -> Bran
     return ctx
 
 
-async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandInfo | None:
+async def persist_brand_service_profile(
+    db: AsyncSession, workspace_id: uuid.UUID,
+) -> "BrandContext | None":
+    """
+    Derive the validated Brand Service Profile from discovery data and persist it.
+
+    Authoritative positioning (category, signature offerings, CTA style,
+    seasonality, guardrails) that the mission engine reads over the brittle
+    `business_type` string. Safe to call repeatedly (idempotent overwrite).
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    from app.services.brand_service_profile_service import derive_brand_service_profile
+
+    ctx = await get_brand_context(db, workspace_id)
+    if ctx is None:
+        return None
+
+    brand_ctx_dict = {
+        "business_name": ctx.business_name,
+        "business_type": ctx.business_type,
+        "description": ctx.description,
+        "website_summary": ctx.website_summary,
+        "instagram_bio": ctx.instagram_bio,
+        "visual_style": ctx.visual_style,
+        "location": ctx.location,
+        "gallery_analysis": ctx.gallery_analysis,
+    }
+    profile = derive_brand_service_profile(brand_ctx_dict)
+    ctx.brand_service_profile = profile
+    ctx.brand_service_profile_updated_at = _dt.now(_tz.utc)
+
+    from app.services.brand_service_profile_service import context_updates_from_service_profile
+
+    for field, value in context_updates_from_service_profile(profile).items():
+        setattr(ctx, field, value)
+
+    await db.commit()
+    await db.refresh(ctx)
+    await invalidate_brand_info_cache(workspace_id)
+    logger.info(
+        "brand_service_profile_persisted",
+        workspace_id=str(workspace_id),
+        category=profile.get("category"),
+        confidence=profile.get("category_confidence"),
+        source=profile.get("source"),
+    )
+    return ctx
+
+
+async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID, *, skip_cache: bool = False) -> "BrandInfo | None":
+    """
+    Convert the database BrandContext + BrandAssets into a BrandInfo dataclass.
+
+    Uses a short-lived in-memory cache to avoid redundant DB loads within the same
+    mission wave (multiple nodes executing in parallel for the same workspace).
+    """
+    cache_key = str(workspace_id)
+    if not skip_cache:
+        cached = _brand_info_memory_cache.get(cache_key)
+        if cached and (_time.time() - cached[0]) < _BRAND_INFO_MEMORY_TTL:
+            return cached[1]
+
+    result = await _build_brand_info_uncached(db, workspace_id)
+    if result is not None:
+        _brand_info_memory_cache[cache_key] = (_time.time(), result)
+    return result
+
+
+async def _build_brand_info_uncached(db: AsyncSession, workspace_id: uuid.UUID) -> BrandInfo | None:
     """
     Convert the database BrandContext + BrandAssets into a BrandInfo dataclass.
 
@@ -633,6 +711,18 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
             return False
         return bool(_re.match(r"^[A-Z][a-z]+[A-Z]", n))
 
+    def _resolve_canonical_business_type(ctx: BrandContext) -> str:
+        sp = getattr(ctx, "brand_service_profile", None) or {}
+        if isinstance(sp, dict):
+            from app.services.brand_service_profile_service import canonical_sector_from_category
+
+            category = str(sp.get("category") or "").strip()
+            if category:
+                mapped = canonical_sector_from_category(category)
+                if mapped:
+                    return mapped
+        return str(ctx.business_type or "general_business").strip() or "general_business"
+
     def _resolve_canonical_business_name(ctx: BrandContext) -> str:
         """Prefer operator-quality names over scraped nav labels (e.g. BerberRandevu → kacta.info)."""
         name = _clean_brand_name(ctx.business_name or "")
@@ -655,7 +745,7 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
 
     return BrandInfo(
         business_name=canonical_name,
-        business_type=ctx.business_type,
+        business_type=_resolve_canonical_business_type(ctx),
         description=ctx.description or "",
         brand_tone=ctx.brand_tone or "professional",
         visual_style=ctx.visual_style or "",
@@ -687,6 +777,7 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
         market_opportunity_ideas=getattr(ctx, "market_opportunity_ideas", None) or "",
         industry_calendar=getattr(ctx, "industry_calendar", None) or "",
         brand_dna=getattr(ctx, "brand_dna", None) or "",
+        brand_dna_updated_at=str(getattr(ctx, "brand_dna_updated_at", None) or ""),
         social_signals=getattr(ctx, "social_signals", None) or "",
         tripadvisor_reviews=getattr(ctx, "tripadvisor_reviews", None) or "",
         location_posts=getattr(ctx, "location_posts", None) or "",
@@ -694,9 +785,13 @@ async def build_brand_info(db: AsyncSession, workspace_id: uuid.UUID) -> BrandIn
         gallery_analysis=getattr(ctx, "gallery_analysis", None) or "",
         brand_vibe_profile=getattr(ctx, "brand_vibe_profile", None) or None,
         brand_theme=ctx.brand_theme if isinstance(getattr(ctx, "brand_theme", None), dict) else None,
+        brand_theme_updated_at=str(getattr(ctx, "brand_theme_updated_at", None) or ""),
         website_intelligence=getattr(ctx, "website_intelligence", None) or None,
+        service_profile=getattr(ctx, "brand_service_profile", None) or None,
         preferred_llm_provider=getattr(ctx, "llm_provider", None) or None,
         preferred_llm_model=getattr(ctx, "llm_model", None) or None,
+        tenant_id=str(ctx.workspace_id),
+        workspace_id=str(ctx.workspace_id),
         instagram_recent_captions=_parse_json_list(getattr(ctx, "instagram_recent_captions", None)),
         instagram_intelligence=getattr(ctx, "instagram_intelligence", None) or None,
         **_extract_pinterest_fields(getattr(ctx, "visual_inspiration", None)),
@@ -746,12 +841,16 @@ def build_brand_info_from_internal(ctx: InternalBrandContext) -> BrandInfo:
         market_opportunity_ideas=getattr(ctx, "market_opportunity_ideas", None) or "",
         industry_calendar=getattr(ctx, "industry_calendar", None) or "",
         brand_dna=getattr(ctx, "brand_dna", None) or "",
+        brand_dna_updated_at=str(getattr(ctx, "brand_dna_updated_at", None) or ""),
         tripadvisor_reviews=getattr(ctx, "tripadvisor_reviews", None) or "",
         location_posts=getattr(ctx, "location_posts", None) or "",
         google_trends=getattr(ctx, "google_trends", None) or "",
         gallery_analysis=getattr(ctx, "gallery_analysis", None) or "",
         operating_capabilities=list(getattr(ctx, "operating_capabilities", None) or []),
         gallery_policy=dict(getattr(ctx, "gallery_policy", None) or {}),
+        brand_theme_updated_at=str(getattr(ctx, "brand_theme_updated_at", None) or ""),
+        tenant_id=getattr(ctx, "tenant_id", "") or "",
+        workspace_id=getattr(ctx, "tenant_id", "") or "",
     )
 
 
@@ -1275,6 +1374,22 @@ async def persist_discovery_result(
         if inferred_location:
             ctx.location = inferred_location
             logger.info("location_inferred", workspace_id=str(ctx.workspace_id), location=inferred_location)
+
+    # country_code — resolve from location/languages so the brand gets the right
+    # national special-day calendar (drives onboarding event templates).
+    if not getattr(ctx, "country_code", None):
+        try:
+            from app.services.special_day_service import resolve_country_code
+            ctx.country_code = resolve_country_code(
+                location=ctx.location, languages=ctx.languages,
+            )
+            logger.info(
+                "country_code_resolved",
+                workspace_id=str(ctx.workspace_id),
+                country_code=ctx.country_code,
+            )
+        except Exception:
+            ctx.country_code = "TR"
     new_summary = report.get("website_summary", "")
     # Filter out JS/tracking noise before saving
     if new_summary:
@@ -1295,6 +1410,14 @@ async def persist_discovery_result(
         ctx.website_summary = new_summary
     if instagram.get("bio"):
         ctx.instagram_bio = instagram["bio"][:500]
+
+    # Brand logo — captured from the website during onboarding. Only fill when
+    # empty so a user-uploaded logo is never overwritten by a scraped one.
+    if not (ctx.logo_url or "").strip():
+        discovered_logo = (website.get("logo_url") or "").strip()
+        if discovered_logo.startswith(("http://", "https://")) and len(discovered_logo) <= 512:
+            ctx.logo_url = discovered_logo
+            logger.info("logo_url_discovered", workspace_id=str(ctx.workspace_id), logo_url=discovered_logo[:120])
     # Only update languages from analysis if the user has NOT explicitly set it
     # via the language selector (set-language endpoint). We detect "explicitly set"
     # by checking if languages is already non-default (i.e. not 'tr' from a previous
@@ -1302,9 +1425,10 @@ async def persist_discovery_result(
     # The safest rule: only set languages if it's currently unset or still the same
     # as the newly inferred value (i.e. don't override a deliberate user choice).
     inferred = analysis_result.get("inferred_language")
-    if inferred and not ctx.languages:
-        # No language set yet — use inferred
+    if inferred and (not ctx.languages or ctx.languages == "en"):
         ctx.languages = inferred
+    elif not ctx.languages:
+        ctx.languages = "tr"
 
     # Google Business signals — always refresh
     gb_rating = google.get("rating") or google.get("totalScore")

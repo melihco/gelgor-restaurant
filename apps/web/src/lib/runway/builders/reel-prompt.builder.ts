@@ -15,6 +15,7 @@
 import { normalizeCameraMotion } from '@/lib/camera-motion';
 import { buildReelArchetypePromptBlock } from '@/lib/reel-canva-archetypes';
 import { applyFidelityToDirectorPrompt } from '@/lib/runway-reel-fidelity';
+import { serverConfig } from '@/lib/server-config';
 import type {
   CameraMotion,
   PromptBuilderContext,
@@ -717,7 +718,7 @@ export async function buildDirectorPromptWithAI(
     // gpt-4o-mini is 15x cheaper than gpt-4o for this task and produces identical quality
     // for short atmospheric descriptions (180 words max). GPT-4o adds no value here.
     const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: serverConfig.ai.chatModel('standard'),
       max_tokens: 280,
       temperature: 0.65,
       messages: [

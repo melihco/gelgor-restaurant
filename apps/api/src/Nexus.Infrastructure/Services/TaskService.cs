@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -29,28 +30,28 @@ public class TaskService : ITaskService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<List<TaskDto>> GetTasksByBriefAsync(Guid briefId, CancellationToken cancellationToken = default)
+    public async Task<List<TaskDto>> GetTasksByBriefAsync(Guid briefId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         return await _dbContext.TaskItems
-            .Where(t => t.BriefId == briefId)
+            .Where(t => t.BriefId == briefId && t.TenantId == tenantId)
             .OrderBy(t => t.CreatedAt)
             .Select(t => MapToDto(t))
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<TaskDto?> GetTaskByIdAsync(Guid taskId, CancellationToken cancellationToken = default)
+    public async Task<TaskDto?> GetTaskByIdAsync(Guid taskId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var task = await _dbContext.TaskItems
-            .FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TenantId == tenantId, cancellationToken);
 
         return task != null ? MapToDto(task) : null;
     }
 
-    public async Task<TaskDto> UpdateTaskStatusAsync(Guid taskId, TaskStatus newStatus, CancellationToken cancellationToken = default)
+    public async Task<TaskDto> UpdateTaskStatusAsync(Guid taskId, Guid tenantId, TaskStatus newStatus, CancellationToken cancellationToken = default)
     {
         var task = await _dbContext.TaskItems
-            .FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken)
-            ?? throw new InvalidOperationException("Task not found");
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Task not found");
 
         task.Status = newStatus;
         task.UpdatedBy = Guid.Empty;
@@ -70,15 +71,15 @@ public class TaskService : ITaskService
         return MapToDto(task);
     }
 
-    public async Task<TaskDto> AssignTaskAsync(Guid taskId, Guid agentId, CancellationToken cancellationToken = default)
+    public async Task<TaskDto> AssignTaskAsync(Guid taskId, Guid tenantId, Guid agentId, CancellationToken cancellationToken = default)
     {
         var task = await _dbContext.TaskItems
-            .FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken)
-            ?? throw new InvalidOperationException("Task not found");
+            .FirstOrDefaultAsync(t => t.Id == taskId && t.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Task not found");
 
         var agent = await _dbContext.Agents
-            .FirstOrDefaultAsync(a => a.Id == agentId, cancellationToken)
-            ?? throw new InvalidOperationException("Agent not found");
+            .FirstOrDefaultAsync(a => a.Id == agentId && a.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Agent not found");
 
         var existingAssignment = await _dbContext.TaskAssignments
             .FirstOrDefaultAsync(ta => ta.TaskId == taskId && ta.AgentId == agentId, cancellationToken);

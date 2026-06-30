@@ -1,11 +1,8 @@
 /**
  * Visual overlay policy — when to keep gallery photos clean vs designed layers.
- * Beach club / lifestyle brands (e.g. Sarnıç) should not get canvas/Marky text on hero photos.
+ * Multi-tenant: driven by slot role, pipeline, and idea use-case — not tenant UUID or brand name.
  */
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
-
-/** Pilot + docs reference — Sarnıç Beach Bodrum */
-export const SARNIC_BEACH_WORKSPACE_ID = '431b2901-a2dc-4df6-abe3-3670d9844851';
 
 const LIFESTYLE_USE_CASES = new Set([
   'social_proof',

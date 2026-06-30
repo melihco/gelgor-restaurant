@@ -153,18 +153,46 @@ export function useKenBurns(scaleMax = 1.08, origin = '40% 60%', driftY = 36) {
   return { scale, y, origin };
 }
 
+/**
+ * Cinematic photo grade — subtle CSS colour grade so every photo reads
+ * "art-directed" rather than a raw camera snapshot. The single biggest cheap
+ * signal that separates agency content from a stock template fill.
+ */
+export type PhotoGrade = 'none' | 'subtle' | 'warm' | 'cool' | 'mono' | 'vivid';
+
+export function cinematicGradeFilter(grade: PhotoGrade = 'subtle'): string | undefined {
+  switch (grade) {
+    case 'none':
+      return undefined;
+    case 'warm':
+      return 'contrast(1.08) saturate(1.14) brightness(1.01) sepia(0.07)';
+    case 'cool':
+      return 'contrast(1.08) saturate(1.06) brightness(1.0) hue-rotate(-6deg)';
+    case 'mono':
+      return 'grayscale(1) contrast(1.14) brightness(1.03)';
+    case 'vivid':
+      return 'contrast(1.12) saturate(1.22) brightness(1.0)';
+    case 'subtle':
+    default:
+      return 'contrast(1.05) saturate(1.09) brightness(1.005)';
+  }
+}
+
 export const KenBurnsPhoto: React.FC<{
   photoUrl: string;
   scaleMax?: number;
   origin?: string;
   driftY?: number;
   driftX?: number;
-}> = ({ photoUrl, scaleMax = 1.08, origin = '40% 60%', driftY = 36, driftX = 0 }) => {
+  /** Cinematic colour grade applied to the photo (default subtle). */
+  grade?: PhotoGrade;
+}> = ({ photoUrl, scaleMax = 1.08, origin = '40% 60%', driftY = 36, driftX = 0, grade = 'subtle' }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   const scale = stableScale(interpolate(frame, [0, durationInFrames], [1.0, scaleMax], { extrapolateRight: 'clamp' }));
   const y = stablePx(interpolate(frame, [0, durationInFrames], [driftY, -driftY], { extrapolateRight: 'clamp' }));
   const x = stablePx(interpolate(frame, [0, durationInFrames], [0, driftX], { extrapolateRight: 'clamp' }));
+  const filter = cinematicGradeFilter(grade);
 
   useEffect(() => {
     if (!photoUrl?.trim()) return;
@@ -180,7 +208,7 @@ export const KenBurnsPhoto: React.FC<{
   return (
     <AbsoluteFill style={{ transform: `scale(${scale}) translate3d(${x}px, ${y}px, 0)`, transformOrigin: origin }}>
       {photoUrl?.trim() ? (
-        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter }} />
       ) : (
         <AbsoluteFill style={{ background: 'linear-gradient(160deg, #1a1a2e 0%, #0d0d14 100%)' }} />
       )}
@@ -262,6 +290,24 @@ export function splitHeadlineLines(headline: string, maxLines = 3, maxChars = 16
   return merged.filter((line) => line.trim().length > 0 && !/^\d{1,2}$/.test(line.trim()));
 }
 
+/** Minimum line-height for display/script headlines — prevents ascender clipping in MP4 export. */
+export function resolveHeadlineLineHeight(lineGap: number, fontWeight: number): number {
+  const base = Number.isFinite(lineGap) && lineGap > 0 ? lineGap : 1.08;
+  const weightFloor = fontWeight >= 900 ? 1.12 : fontWeight >= 800 ? 1.1 : 1.06;
+  return Math.max(base, weightFloor);
+}
+
+/** Per-line wrapper — ascender/descender room for script & gradient display type. */
+export function headlineLineBoxStyle(isLast: boolean): React.CSSProperties {
+  return {
+    display: 'block',
+    overflow: 'visible',
+    paddingTop: '0.1em',
+    paddingBottom: '0.04em',
+    marginBottom: isLast ? 0 : '0.08em',
+  };
+}
+
 /** Multi-line hero — opacity-only entrance, single compositor layer. */
 export const HeadlineStack: React.FC<{
   headline: string;
@@ -316,8 +362,8 @@ export const HeadlineStack: React.FC<{
       {lines.map((line, i) => {
         // More dramatic hierarchy: 1st line full, 2nd 88%, 3rd 76% — premium editorial feel
         const lineSize = i === 0 ? fontSize : Math.round(fontSize * (i === 1 ? 0.88 : 0.76));
-        // Tighter line-height for heavy display type
-        const lineH = isGraphic ? 1.12 : fontWeight >= 800 ? Math.min(lineGap, 0.90) : lineGap;
+        const lineH = resolveHeadlineLineHeight(isGraphic ? Math.max(lineGap, 1.12) : lineGap, fontWeight);
+        const lineBox = headlineLineBoxStyle(i >= lines.length - 1);
         const baseStyle: React.CSSProperties = {
           fontFamily,
           fontWeight,
@@ -337,7 +383,7 @@ export const HeadlineStack: React.FC<{
 
         if (headlineTreatment === 'bubble') {
           return (
-            <span key={`${line}-${i}`} style={{ display: 'block', marginBottom: '0.2em' }}>
+            <span key={`${line}-${i}`} style={lineBox}>
               <span style={{
                 ...baseStyle,
                 display: 'inline-block',
@@ -358,7 +404,7 @@ export const HeadlineStack: React.FC<{
           return (
             <span
               key={`${line}-${i}`}
-              style={{ display: 'block', marginBottom: '0.26em', transform: `rotate(${rot}deg)` }}
+              style={{ ...lineBox, transform: `rotate(${rot}deg)` }}
             >
               <span style={{
                 ...baseStyle,
@@ -379,23 +425,27 @@ export const HeadlineStack: React.FC<{
         const lineStyle: React.CSSProperties = {
           ...baseStyle,
           ...(gradientStyle ?? { color }),
-          ...(gradientStyle && textShadow
-            ? { filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.55))' }
-            : {}),
+          ...(gradientStyle
+            ? {
+              filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.92)) drop-shadow(0 6px 18px rgba(0,0,0,0.72))',
+            }
+            : textShadow
+              ? {}
+              : {}),
         };
 
         // Gradyan inline-block'a uygulanmalı — block + center align tüm satır
         // genişliğine gradyan yayar ve sol harfler koyu primary ile kaybolur.
         if (gradientStyle) {
           return (
-            <span key={`${line}-${i}`} style={{ display: 'block', marginBottom: i < lines.length - 1 ? '0.06em' : 0 }}>
+            <span key={`${line}-${i}`} style={lineBox}>
               <span style={{ ...lineStyle, display: 'inline-block' }}>{line}</span>
             </span>
           );
         }
 
         return (
-          <span key={`${line}-${i}`} style={{ ...lineStyle, display: 'block' }}>
+          <span key={`${line}-${i}`} style={{ ...lineStyle, ...lineBox }}>
             {line}
           </span>
         );
@@ -464,3 +514,220 @@ export function neonGlowStyle(color: string, intensity = 1): string {
   const b = Math.round(80 * intensity);
   return `0 0 ${a}px ${color}, 0 0 ${b}px ${color}88, 0 0 ${b * 2}px ${color}44`;
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Premium editorial primitives — shared "designer" detailing that lifts plain
+ * photo+gradient layouts to magazine / agency quality. All decoration layers
+ * are pointer-safe, sit below text, and use brand colours (multi-tenant safe).
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Cinematic light — soft directional top bloom + corner falloff that adds
+ * dimensionality to flat photo backgrounds. The #1 cheap signal of a "graded"
+ * cinematic frame vs a raw snapshot. Pure CSS, sits above the photo, below text.
+ */
+export const CinematicLightLayer: React.FC<{
+  warmth?: 'warm' | 'cool' | 'neutral';
+  intensity?: number;
+  origin?: string;
+}> = ({ warmth = 'neutral', intensity = 1, origin = '50% -8%' }) => {
+  const tint =
+    warmth === 'warm' ? '255,222,176' : warmth === 'cool' ? '178,206,255' : '255,255,255';
+  const bloom = (0.18 * intensity).toFixed(3);
+  return (
+    <>
+      <AbsoluteFill
+        style={{
+          pointerEvents: 'none',
+          zIndex: 1,
+          mixBlendMode: 'soft-light',
+          background: `radial-gradient(ellipse 130% 78% at ${origin}, rgba(${tint},${bloom}) 0%, rgba(${tint},0) 52%)`,
+        }}
+      />
+      <AbsoluteFill
+        style={{
+          pointerEvents: 'none',
+          zIndex: 1,
+          background: `radial-gradient(ellipse 118% 92% at 50% 42%, transparent 46%, rgba(0,0,0,${(
+            0.42 * intensity
+          ).toFixed(3)}) 100%)`,
+        }}
+      />
+    </>
+  );
+};
+
+/**
+ * Editorial kicker — refined eyebrow row: short accent rule + dot + tracked
+ * label. Replaces bare uppercase category spans for a print-magazine signature.
+ */
+export const EditorialKicker: React.FC<{
+  label: string;
+  accent: string;
+  fontFamily: string;
+  color?: string;
+  align?: 'left' | 'center';
+  opacity?: number;
+  fontSize?: number;
+}> = ({ label, accent, fontFamily, color, align = 'left', opacity = 1, fontSize = 12 }) => {
+  if (!label?.trim()) return null;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: align === 'center' ? 'center' : 'flex-start',
+        gap: 10,
+        opacity,
+        marginBottom: 14,
+        ...stableTextLayerStyle,
+      }}
+    >
+      <span style={{ width: 26, height: 2, background: accent, borderRadius: 1 }} />
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: accent }} />
+      <span
+        style={{
+          fontFamily,
+          fontSize,
+          letterSpacing: 6,
+          textTransform: 'uppercase',
+          fontWeight: 600,
+          color: color ?? accent,
+          textShadow: textShadowEditorial,
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+};
+
+/**
+ * Corner registration ticks — L-shaped marks at the frame corners, a magazine /
+ * print signature that frames the composition without a heavy border.
+ */
+export const CornerTicks: React.FC<{
+  color: string;
+  inset?: number;
+  length?: number;
+  thickness?: number;
+  opacity?: number;
+  corners?: Array<'tl' | 'tr' | 'bl' | 'br'>;
+}> = ({
+  color,
+  inset = 34,
+  length = 30,
+  thickness = 2,
+  opacity = 0.85,
+  corners = ['tl', 'tr', 'bl', 'br'],
+}) => {
+  const h = { position: 'absolute' as const, height: thickness, width: length, background: color };
+  const v = { position: 'absolute' as const, width: thickness, height: length, background: color };
+  return (
+    <AbsoluteFill style={{ pointerEvents: 'none', opacity, zIndex: 6 }}>
+      {corners.includes('tl') && (
+        <>
+          <div style={{ ...h, top: inset, left: inset }} />
+          <div style={{ ...v, top: inset, left: inset }} />
+        </>
+      )}
+      {corners.includes('tr') && (
+        <>
+          <div style={{ ...h, top: inset, right: inset }} />
+          <div style={{ ...v, top: inset, right: inset }} />
+        </>
+      )}
+      {corners.includes('bl') && (
+        <>
+          <div style={{ ...h, bottom: inset, left: inset }} />
+          <div style={{ ...v, bottom: inset, left: inset }} />
+        </>
+      )}
+      {corners.includes('br') && (
+        <>
+          <div style={{ ...h, bottom: inset, right: inset }} />
+          <div style={{ ...v, bottom: inset, right: inset }} />
+        </>
+      )}
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * Accent rule — animated hairline with a heavier leading tick. Use to separate
+ * kicker / headline / meta blocks with an editorial cadence.
+ */
+export const AccentRule: React.FC<{
+  accent: string;
+  progress?: number;
+  width?: number;
+  align?: 'left' | 'center';
+  opacity?: number;
+}> = ({ accent, progress = 1, width = 64, align = 'left', opacity = 1 }) => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 0,
+      justifyContent: align === 'center' ? 'center' : 'flex-start',
+      opacity,
+    }}
+  >
+    <span style={{ width: 8, height: 3, background: accent, borderRadius: 1 }} />
+    <span
+      style={{
+        width: Math.round(width * Math.max(0, Math.min(1, progress))),
+        height: 1,
+        background: `linear-gradient(to right, ${accent}, ${accent}22)`,
+      }}
+    />
+  </div>
+);
+
+/**
+ * Editorial meta row — bottom byline with dot separators (brand · location ·
+ * index). Anchors the composition and fills "dead" bottom space gracefully.
+ */
+export const EditorialMetaRow: React.FC<{
+  items: Array<string | undefined>;
+  fontFamily: string;
+  color?: string;
+  accent?: string;
+  align?: 'left' | 'center';
+  opacity?: number;
+}> = ({ items, fontFamily, color = 'rgba(255,255,255,0.6)', accent, align = 'left', opacity = 1 }) => {
+  const parts = items.filter((x): x is string => Boolean(x && x.trim()));
+  if (!parts.length) return null;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: align === 'center' ? 'center' : 'flex-start',
+        gap: 9,
+        opacity,
+        ...stableTextLayerStyle,
+      }}
+    >
+      {parts.map((p, i) => (
+        <React.Fragment key={`${p}-${i}`}>
+          {i > 0 && (
+            <span style={{ width: 3, height: 3, borderRadius: '50%', background: accent ?? color }} />
+          )}
+          <span
+            style={{
+              fontFamily,
+              fontSize: 12,
+              letterSpacing: 2.5,
+              textTransform: 'uppercase',
+              color,
+              textShadow: textShadowAmbient,
+            }}
+          >
+            {p}
+          </span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};

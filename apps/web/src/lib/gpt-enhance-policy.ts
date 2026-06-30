@@ -25,6 +25,10 @@ export interface GptEnhancePolicyInput {
   designedPosterSync?: boolean;
   /** Photo-quality-only enhance for designed_post background before Remotion overlay. */
   designedPostPhotoEnhance?: boolean;
+  /** Faz 1.4 — render-zamanı cinematic grade güçlü galeri fotoğraflarında designed_post
+   * arka-plan enhance'ini gereksiz kılar. Flag (SKIP_ENHANCE_FOR_REMOTION_GRADE) açıkken
+   * ve fotoğraf güçlü bir marka-galeri eşleşmesiyse enhance atlanır. */
+  skipEnhanceForRemotionGrade?: boolean;
   productionProfile?: ProductionProfile | null;
 }
 
@@ -36,9 +40,25 @@ export type GptEnhanceSkipCode =
   | 'format_excluded'
   | 'remotion_story'
   | 'remotion_post'
+  | 'remotion_grade'
   | 'gallery_match_ok'
   | 'stock_only'
   | 'non_venue_saas';
+
+/**
+ * Faz 1.4 — designed_post arka-plan enhance'i, fotoğraf güçlü bir marka-galeri
+ * eşleşmesiyse (stok değil) render-zamanı cinematic grade ile karşılanabilir.
+ */
+function canSkipDesignedPostEnhanceForGrade(input: GptEnhancePolicyInput): boolean {
+  return Boolean(
+    input.skipEnhanceForRemotionGrade
+    && input.designedPostPhotoEnhance
+    && input.pickedFromBrandGallery
+    && !input.referenceIsStock
+    && input.galleryMatchScore != null
+    && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE,
+  );
+}
 
 function isGalleryRevisionMode(standard: GptEnhancePolicyInput['visualStandard']): boolean {
   return standard.enabled && standard.enhanceGallerySelected;
@@ -61,6 +81,9 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
   }
 
   if (input.referenceIsStock) return null;
+
+  // Faz 1.4 — güçlü galeri fotoğrafında designed_post arka-plan enhance'i atla (flag).
+  if (canSkipDesignedPostEnhanceForGrade(input)) return 'remotion_grade';
 
   const pipeline = input.assignment.pipeline;
   const role = input.assignment.slot_role;
@@ -132,6 +155,9 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
   if (input.referenceIsStock) {
     return true;
   }
+
+  // Faz 1.4 — güçlü galeri fotoğrafında designed_post arka-plan enhance'i atla (flag).
+  if (canSkipDesignedPostEnhanceForGrade(input)) return false;
 
   const pipeline = input.assignment.pipeline;
   const role = input.assignment.slot_role;
@@ -214,6 +240,7 @@ export function shouldSkipProductionForWeakGallery(input: {
 }): boolean {
   if (input.adaptiveScene && !input.captionServiceConflict) return false;
   if (!input.missionProduction) return false;
+  if (input.pipeline.startsWith('fal_only_')) return false;
   if (!input.hasReference) return true;
   if (input.referenceIsStock) return false;
   if (!input.pickedFromBrandGallery) return false;

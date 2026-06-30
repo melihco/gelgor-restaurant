@@ -14,6 +14,30 @@ const EMPTY_USAGE: UsedGalleryUsage = {
   byType: { feed: [], story: [], reel: [], carousel: [] },
 };
 
+export const GALLERY_USAGE_COUNT_PENALTY = 4;
+
+/** Cross post-type usage counts — drives matcher diversity (multi-tenant). */
+export function buildGlobalGalleryUsageCounts(
+  usage: UsedGalleryUsage,
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const bucket of Object.values(usage.byType)) {
+    for (const url of bucket) {
+      const base = normalizeGalleryUrl(url);
+      counts.set(base, (counts.get(base) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+export function getGlobalGalleryUsageCount(
+  counts: ReadonlyMap<string, number> | undefined,
+  url: string,
+): number {
+  if (!counts || !url) return 0;
+  return counts.get(normalizeGalleryUrl(url)) ?? 0;
+}
+
 export function normalizeGalleryUrl(url: string): string {
   return (url.split('?')[0] ?? url).trim();
 }

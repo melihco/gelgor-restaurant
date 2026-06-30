@@ -31,6 +31,9 @@ import {
   stableScale,
   stableTextLayerStyle,
   stableTextOpacity,
+  cinematicGradeFilter,
+  CinematicLightLayer,
+  FilmGrainOverlay,
 } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 
@@ -102,8 +105,11 @@ export const EventAnnouncementStory: React.FC<EventStoryProps> = ({
 
       {/* ── Photo — Ken Burns, fills full frame ── */}
       <AbsoluteFill style={{ transform: `scale(${photoScale})`, transformOrigin: 'center 40%' }}>
-        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinematicGradeFilter('subtle') }} />
       </AbsoluteFill>
+
+      {/* ── Cinematic light bloom — premium dimensionality ── */}
+      <CinematicLightLayer warmth="warm" intensity={0.8} origin="50% 28%" />
 
       {/* ── DIRECTIONAL GRADIENT: photo breathes in top 55%, dark only in bottom zone ── */}
       {/* Layer 1: very subtle vignette only (not a blackout) */}
@@ -126,13 +132,15 @@ export const EventAnnouncementStory: React.FC<EventStoryProps> = ({
         background: 'linear-gradient(to bottom, rgba(0,0,0,0.30) 0%, transparent 14%)',
       }} />
 
+      <FilmGrainOverlay opacity={0.06} fine />
+
       {/* ── TOP: Logo top-center (shared agency standard) ── */}
       <StoryLogoTopCenter
         logoUrl={logoUrl}
         brandName={brandName}
         fontFamily={hero}
         opacity={brandOpacity}
-        paddingTop="4%"
+        paddingTop="6.5%"
       />
 
       {/* ── BOTTOM COLUMN: single flexbox — mathematical no-overlap guarantee ── */}
@@ -170,7 +178,8 @@ export const EventAnnouncementStory: React.FC<EventStoryProps> = ({
           marginBottom: hasSubtitle ? 14 : hasDate ? 24 : 28,
           width: '100%',
           textAlign: 'center',
-          overflow: 'hidden',
+          overflow: 'visible',
+          paddingTop: '0.08em',
         }}>
           <HeadlineStack
             headline={headlineText}

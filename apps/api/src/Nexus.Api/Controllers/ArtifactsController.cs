@@ -263,7 +263,7 @@ public class ArtifactsController : ControllerBase
         if (!await ArtifactBelongsToTenantAsync(id, cancellationToken))
             return NotFound();
 
-        var artifact = await _artifactService.GetArtifactByIdAsync(id, cancellationToken);
+        var artifact = await _artifactService.GetArtifactByIdAsync(id, _requestContext.TenantId, cancellationToken);
         if (artifact == null)
         {
             return NotFound();
@@ -283,11 +283,12 @@ public class ArtifactsController : ControllerBase
 
         var decision = await _reviewService.ApproveArtifactAsync(
             id,
+            _requestContext.TenantId,
             _requestContext.UserId,
             request.Comments ?? string.Empty,
             request.FinalizedContent,
             cancellationToken);
-        var artifact = await _artifactService.GetArtifactByIdAsync(id, cancellationToken);
+        var artifact = await _artifactService.GetArtifactByIdAsync(id, _requestContext.TenantId, cancellationToken);
         if (artifact != null)
         {
             await _hubContext.NotifyNewNotification(
@@ -319,10 +320,11 @@ public class ArtifactsController : ControllerBase
             : $"ReasonCategory: {request.ReasonCategory}\n";
         var decision = await _reviewService.RejectArtifactAsync(
             id,
+            _requestContext.TenantId,
             _requestContext.UserId,
             $"{reasonBlock}{request.Comments ?? string.Empty}".Trim(),
             cancellationToken);
-        var artifact = await _artifactService.GetArtifactByIdAsync(id, cancellationToken);
+        var artifact = await _artifactService.GetArtifactByIdAsync(id, _requestContext.TenantId, cancellationToken);
         if (artifact != null)
         {
             await _hubContext.NotifyNewNotification(
@@ -349,8 +351,8 @@ public class ArtifactsController : ControllerBase
         if (!await ArtifactBelongsToTenantAsync(id, cancellationToken))
             return NotFound();
 
-        var decision = await _reviewService.RequestRevisionAsync(id, _requestContext.UserId, request.RequestedChanges, cancellationToken);
-        var artifact = await _artifactService.GetArtifactByIdAsync(id, cancellationToken);
+        var decision = await _reviewService.RequestRevisionAsync(id, _requestContext.TenantId, _requestContext.UserId, request.RequestedChanges, cancellationToken);
+        var artifact = await _artifactService.GetArtifactByIdAsync(id, _requestContext.TenantId, cancellationToken);
         if (artifact != null)
         {
             await _hubContext.NotifyNewNotification(
@@ -379,7 +381,7 @@ public class ArtifactsController : ControllerBase
         if (!await ArtifactBelongsToTenantAsync(id, ct))
             return NotFound();
 
-        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id, ct);
+        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == _requestContext.TenantId, ct);
         if (artifact == null) return NotFound();
 
         // Update ContentUrl
@@ -470,7 +472,7 @@ public class ArtifactsController : ControllerBase
         if (!await ArtifactBelongsToTenantAsync(id, ct))
             return NotFound();
 
-        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id, ct);
+        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == _requestContext.TenantId, ct);
         if (artifact == null) return NotFound();
 
         artifact.ContentUrl = request.VideoUrl;
@@ -561,7 +563,7 @@ public class ArtifactsController : ControllerBase
         if (!await ArtifactBelongsToTenantAsync(id, ct))
             return NotFound();
 
-        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id, ct);
+        var artifact = await _db.OutputArtifacts.FirstOrDefaultAsync(a => a.Id == id && a.TenantId == _requestContext.TenantId, ct);
         if (artifact == null) return NotFound();
 
         var contentObj = new System.Text.Json.Nodes.JsonObject();

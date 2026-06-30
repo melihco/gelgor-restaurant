@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const CREW_API = process.env.CREW_BACKEND_URL ?? 'http://localhost:8000';
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const CREW_API = serverConfig.crewBackend.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = await request.json().catch(() => null);

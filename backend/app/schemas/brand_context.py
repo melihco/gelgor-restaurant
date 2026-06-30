@@ -130,6 +130,10 @@ class BrandContextRead(OrmBase):
     last_brand_analysis_at: datetime | None = None
     brand_constitution_confirmed_at: datetime | None = None
     created_at: datetime
+    chatbot_profile: dict | None = None
+    chatbot_profile_updated_at: datetime | None = None
+    brand_service_profile: dict | None = None
+    brand_service_profile_updated_at: datetime | None = None
 
 
 class BrandAssetRead(OrmBase):
@@ -140,6 +144,43 @@ class BrandAssetRead(OrmBase):
     content_type: str | None
     description: str | None
     created_at: datetime
+
+
+class BrandPostTemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    format: str = Field(default="post", max_length=24)
+    status: str = Field(default="active", max_length=24)
+    template_kind: str = Field(default="canvas", max_length=32)
+    layout_spec: dict = Field(default_factory=dict)
+    thumbnail_url: str | None = None
+    example_artifact_url: str | None = None
+
+
+class BrandPostTemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    format: str | None = Field(default=None, max_length=24)
+    status: str | None = Field(default=None, max_length=24)
+    template_kind: str | None = Field(default=None, max_length=32)
+    layout_spec: dict | None = None
+    thumbnail_url: str | None = None
+    example_artifact_url: str | None = None
+    increment_usage: bool = False
+
+
+class BrandPostTemplateRead(OrmBase):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    name: str
+    format: str
+    status: str
+    template_kind: str
+    layout_spec: dict
+    thumbnail_url: str | None
+    example_artifact_url: str | None
+    usage_count: int
+    last_used_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 # ── Analysis request/response ─────────────────────────────────────────────

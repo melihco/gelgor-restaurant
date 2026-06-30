@@ -9,9 +9,10 @@
 
 import { NextResponse } from 'next/server';
 import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
+import { serverConfig } from '@/lib/server-config';
 
 const CREW_BACKEND = getCrewBackendBaseUrl();
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 // Matches a workspace UUID in the path, e.g.
 // /api/v1/brand-context/fa91b75d-0392-48e9-8cd8-2406a9d2042f/analyze
@@ -30,6 +31,35 @@ export interface ProxyOptions {
   headers?: Record<string, string>;
   /** Explicit workspaceId (skips auto-extraction). Useful when path has no UUID. */
   workspaceId?: string;
+  /**
+   * Correlation id to forward to the Python backend as X-Correlation-Id.
+   * Pass the inbound request's header to stitch browser → Next → Python traces;
+   * when omitted a fresh id is generated so the backend always logs/echoes one.
+   */
+  correlationId?: string;
+}
+
+function generateCorrelationId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && 'randomUUID' in c) return c.randomUUID();
+  return `cid-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+}
+
+/**
+ * Resolves the correlation id to forward to Python. Prefers an explicit value,
+ * then the inbound request's X-Correlation-Id (read via next/headers so no BFF
+ * route needs to thread it manually), and finally a freshly generated id.
+ */
+async function resolveCorrelationId(explicit?: string): Promise<string> {
+  if (explicit && explicit.trim()) return explicit.trim();
+  try {
+    const { headers } = await import('next/headers');
+    const inbound = (await headers()).get('x-correlation-id');
+    if (inbound && inbound.trim()) return inbound.trim();
+  } catch {
+    // Not in a request scope (e.g. background job) — fall through to a fresh id.
+  }
+  return generateCorrelationId();
 }
 
 export interface CrewBackendResult<T = unknown> {
@@ -49,12 +79,13 @@ export async function fetchCrewBackendJson<T = unknown>(
   path: string,
   options: ProxyOptions = {},
 ): Promise<CrewBackendResult<T>> {
-  const { body, timeoutMs = 15_000, method, headers: extraHeaders, workspaceId } = options;
+  const { body, timeoutMs = 15_000, method, headers: extraHeaders, workspaceId, correlationId } = options;
   const url = `${CREW_BACKEND}${path}`;
 
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   headers['X-Internal-Api-Key'] = INTERNAL_KEY;
+  headers['X-Correlation-Id'] = await resolveCorrelationId(correlationId);
 
   const tenantId = workspaceId ?? extractWorkspaceId(path);
   if (tenantId) headers['X-Tenant-Id'] = tenantId;
@@ -82,13 +113,14 @@ export async function proxyToCrewBackend(
   path: string,
   options: ProxyOptions = {},
 ): Promise<NextResponse> {
-  const { body, timeoutMs = 15_000, method, headers: extraHeaders, workspaceId } = options;
+  const { body, timeoutMs = 15_000, method, headers: extraHeaders, workspaceId, correlationId } = options;
   const url = `${CREW_BACKEND}${path}`;
 
-  // Compose headers — JSON body + tenant context + internal key.
+  // Compose headers — JSON body + tenant context + internal key + correlation.
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   headers['X-Internal-Api-Key'] = INTERNAL_KEY;
+  headers['X-Correlation-Id'] = await resolveCorrelationId(correlationId);
 
   const tenantId = workspaceId ?? extractWorkspaceId(path);
   if (tenantId) headers['X-Tenant-Id'] = tenantId;
@@ -103,7 +135,8 @@ export async function proxyToCrewBackend(
       signal: AbortSignal.timeout(timeoutMs),
     });
 
-    const data = await upstream.json();
+    const raw = await upstream.text();
+    const data = raw ? JSON.parse(raw) : null;
 
     if (!upstream.ok) {
       return NextResponse.json(
@@ -112,7 +145,11 @@ export async function proxyToCrewBackend(
       );
     }
 
-    return NextResponse.json(data, { status: 200 });
+    if (upstream.status === 204) {
+      return new NextResponse(null, { status: 204 });
+    }
+
+    return NextResponse.json(data, { status: upstream.status });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(

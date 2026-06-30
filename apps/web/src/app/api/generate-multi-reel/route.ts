@@ -42,6 +42,7 @@ import {
 } from '@/lib/runway-reel-fidelity';
 import { applyRunwayDirectorPromptGuardrails } from '@/lib/tenant-reel-motion-seed';
 import { generateStorageKey, isR2Configured, uploadToR2 } from '@/lib/r2-storage';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -409,7 +410,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   };
 
   let directorPrompt: string;
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const openaiKey = serverConfig.openai.apiKey;
   if (openaiKey) {
     const ai = await buildDirectorPromptWithAI(promptCtx, openaiKey);
     directorPrompt = ai ?? buildDirectorPromptTemplate(promptCtx);

@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { BrandTemplateLibrary, BrandTemplateLibrarySlot } from '@/lib/brand-template-library';
 import { slotTypographyPreviewLabel } from '@/lib/brand-template-slot-typography';
 import { prepareGalleryDisplayUrls } from '@/lib/gallery-display-url';
 import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
+import { TemplateColorBehaviorPreview } from '@/components/brand/TemplateColorBehaviorPreview';
 
 function parseGalleryUrls(raw: unknown): string[] {
   if (!raw) return [];
@@ -142,6 +144,7 @@ export function TemplateSlotPreviewModal({
           format: isPoster ? 'post' : undefined,
           photoUrl: selectedPhoto,
           previewLibrary: libraryWithSlot,
+          preferCachedPreview: true,
         }),
       });
       const data = await res.json();
@@ -156,9 +159,17 @@ export function TemplateSlotPreviewModal({
 
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverscroll = document.body.style.overscrollBehavior;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'contain';
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overscrollBehavior = prevBodyOverscroll;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -168,7 +179,7 @@ export function TemplateSlotPreviewModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const border = isMobile
     ? `0.5px solid ${theme?.separator ?? 'rgba(255,255,255,0.1)'}`
@@ -178,7 +189,7 @@ export function TemplateSlotPreviewModal({
   const textMuted = theme?.textMuted ?? '#94a3b8';
   const accent = theme?.accent ?? '#a78bfa';
 
-  return (
+  const modal = (
     <div
       role="dialog"
       aria-modal="true"
@@ -186,21 +197,27 @@ export function TemplateSlotPreviewModal({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: isMobile ? 0 : 16,
+        width: '100vw', height: '100dvh', overflow: 'hidden',
+        display: 'flex',
+        alignItems: isMobile ? 'flex-end' : 'center',
+        justifyContent: 'center',
+        padding: isMobile ? '12px 0 0' : 16,
         background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+        overscrollBehavior: 'contain',
       }}
     >
       <div style={{
         width: '100%', maxWidth: isMobile ? '100%' : 520,
-        maxHeight: isMobile ? '100dvh' : '92dvh', overflow: 'auto',
-        borderRadius: isMobile ? 0 : 20, background: bg,
+        maxHeight: isMobile ? 'calc(100dvh - 12px)' : '92dvh',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        borderRadius: isMobile ? '22px 22px 0 0' : 20, background: bg,
         border: isMobile ? 'none' : border, boxShadow: '0 24px 80px rgba(0,0,0,0.45)',
       }}>
         <div style={{
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12,
           padding: isMobile ? 'calc(env(safe-area-inset-top,0px) + 16px) 16px 12px' : '18px 20px 14px',
           borderBottom: border,
+          flexShrink: 0,
         }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: accent, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
@@ -219,7 +236,12 @@ export function TemplateSlotPreviewModal({
           }}>×</button>
         </div>
 
-        <div style={{ padding: isMobile ? '16px' : '18px 20px 20px' }}>
+        <div style={{
+          padding: isMobile ? '16px 16px calc(env(safe-area-inset-bottom,0px) + 16px)' : '18px 20px 20px',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+        }}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
               Galeri fotoğrafı
@@ -266,6 +288,16 @@ export function TemplateSlotPreviewModal({
                 <span title={brandPreview.accentColor} style={{ width: 18, height: 18, borderRadius: 6, background: brandPreview.accentColor, border }} />
               </div>
             )}
+            <div style={{ flexBasis: '100%' }}>
+              <TemplateColorBehaviorPreview
+                templateId={isPoster ? undefined : previewSlot.storyTemplateId}
+                posterTemplateId={isPoster ? previewSlot.posterTemplateId : undefined}
+                tokens={brandPreview ?? undefined}
+                isMobile={Boolean(isMobile)}
+                theme={theme}
+                compact
+              />
+            </div>
           </div>
 
           <button type="button" onClick={() => void runPreview()}
@@ -276,7 +308,7 @@ export function TemplateSlotPreviewModal({
               background: rendering ? '#334155' : accent, color: '#fff', fontWeight: 700, fontSize: 14,
               opacity: !templateId || !selectedPhoto ? 0.5 : 1,
             }}>
-            {rendering ? 'Render ediliyor…' : 'Bu şablonu önizle'}
+            {rendering ? 'Önizleme hazırlanıyor…' : 'Bu şablonu önizle'}
           </button>
 
           {error && <p style={{ marginTop: 12, fontSize: 12, color: '#f87171', lineHeight: 1.5 }}>{error}</p>}
@@ -286,15 +318,15 @@ export function TemplateSlotPreviewModal({
               <div style={{ fontSize: 11, color: textMuted, marginBottom: 8 }}>Önizleme — yalnızca bu slot şablonu</div>
               <div style={{
                 borderRadius: 14, overflow: 'hidden', border, background: '#0a0a0f',
-                maxHeight: isMobile ? '50dvh' : 420, display: 'flex', justifyContent: 'center',
+                maxHeight: isMobile ? '42dvh' : 420, display: 'flex', justifyContent: 'center',
               }}>
                 {isPoster || previewUrl.endsWith('.png') ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={previewUrl} alt={`${slot.labelTr} önizleme`}
-                    style={{ maxWidth: '100%', maxHeight: isMobile ? '50dvh' : 420, objectFit: 'contain' }} />
+                    style={{ maxWidth: '100%', maxHeight: isMobile ? '42dvh' : 420, objectFit: 'contain' }} />
                 ) : (
                   <video src={previewUrl.split('?')[0]} autoPlay loop muted playsInline
-                    style={{ maxWidth: '100%', maxHeight: isMobile ? '50dvh' : 420, objectFit: 'contain' }} />
+                    style={{ maxWidth: '100%', maxHeight: isMobile ? '42dvh' : 420, objectFit: 'contain' }} />
                 )}
               </div>
             </div>
@@ -303,4 +335,6 @@ export function TemplateSlotPreviewModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

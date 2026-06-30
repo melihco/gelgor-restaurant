@@ -26,7 +26,7 @@ function parseArtifactMetadata(raw: unknown): Record<string, unknown> {
   return {};
 }
 
-async function fetchMissionArtifacts(
+export async function fetchMissionArtifacts(
   workspaceId: string,
   missionId: string,
 ): Promise<OutputArtifact[]> {

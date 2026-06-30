@@ -808,6 +808,8 @@ export interface PlanMonthlyOutputs {
   socialContent: number;
   galleryAnalysis: number;
   reels: number;
+  metaAdCreatives: number;
+  googleAdCreatives: number;
 }
 
 export interface PlanUnitEconomics {

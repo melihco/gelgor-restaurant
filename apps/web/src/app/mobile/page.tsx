@@ -13,7 +13,7 @@ import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
 import { BrandLoadingScreen } from './_components/BrandLoadingScreen';
 import {
   getMobileArtifactsQueryOptions,
-  MOBILE_ARTIFACT_FEED_INITIAL,
+  MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
 } from './_lib/mobile-artifacts';
 
 import {
@@ -33,6 +33,7 @@ import {
   NewBrief,
   AdsOverview,
   MoreMenu,
+  prefetchMobileScreen,
   NotificationsScreen,
   SettingsScreen,
   VisitorsScreen,
@@ -490,13 +491,14 @@ const CSS = `
     padding: 16px;
     border: none;
     border-radius: 14px;
-    background: #4D7088;
+    background: linear-gradient(135deg, #4D7088, #5A82A0);
     color: #fff;
     font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.02em;
     cursor: pointer;
-    transition: background 160ms ease, transform 100ms ease;
+    box-shadow: 0 6px 28px rgba(77,112,136,0.4);
+    transition: background 160ms ease, transform 100ms ease, box-shadow 160ms ease;
   }
   .sa-mobile .onboarding-cta:active {
     transform: scale(0.99);
@@ -526,6 +528,317 @@ const CSS = `
   .sa-mobile .onboarding-login-link span {
     color: #8AABBD;
     font-weight: 600;
+  }
+  .sa-mobile .onboarding-header--compact {
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 18px)
+      28px
+      8px;
+  }
+  .sa-mobile .onboarding-logo--compact {
+    width: min(196px, 68vw);
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 16px;
+  }
+  .sa-mobile .onboarding-title--step {
+    margin: 0 0 8px;
+    font-size: clamp(24px, 6vw, 28px);
+    text-align: left;
+  }
+  .sa-mobile .onboarding-lead--step {
+    margin: 0 0 24px;
+    max-width: none;
+    text-align: left;
+    font-size: 14px;
+  }
+  .sa-mobile .onboarding-signup-main {
+    justify-content: flex-start;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+  .sa-mobile .onboarding-cta--loading {
+    background: rgba(255,255,255,0.08) !important;
+    box-shadow: none !important;
+    cursor: not-allowed;
+  }
+  .sa-mobile .onboarding-status {
+    margin: 14px 0 0;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.55;
+    color: rgba(148,163,184,0.58);
+  }
+
+  /* ── Onboarding — premium account-setup splash ── */
+  .sa-mobile .onboarding-setup {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 12px 28px max(28px, env(safe-area-inset-bottom));
+    text-align: center;
+    overflow-y: auto;
+  }
+  .sa-mobile .onboarding-setup-ringwrap {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    margin: 6px 0 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sa-mobile .onboarding-setup-shimmer {
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0%, rgba(157,190,206,0.22) 16%, transparent 34%);
+    animation: spinSlow 2.8s linear infinite;
+    filter: blur(6px);
+  }
+  .sa-mobile .onboarding-setup-ringcenter {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .sa-mobile .onboarding-setup-pct {
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: -0.045em;
+    line-height: 1;
+    color: #EAF1F6;
+    font-variant-numeric: tabular-nums;
+  }
+  .sa-mobile .onboarding-setup-pct span {
+    font-size: 16px;
+    color: rgba(157,190,206,0.7);
+    margin-left: 1px;
+  }
+  .sa-mobile .onboarding-setup-pctlabel {
+    margin-top: 4px;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(148,163,184,0.5);
+  }
+  .sa-mobile .onboarding-setup-brand {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: #F4F4F8;
+    margin-bottom: 4px;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sa-mobile .onboarding-setup-sub {
+    font-size: 13px;
+    color: rgba(160,160,180,0.6);
+    margin-bottom: 28px;
+  }
+  .sa-mobile .onboarding-setup-steps {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    margin-bottom: 22px;
+  }
+  .sa-mobile .onboarding-setup-step {
+    display: flex;
+    gap: 13px;
+    align-items: center;
+    padding: 9px 4px;
+    opacity: 0.4;
+    transition: opacity 320ms ease;
+  }
+  .sa-mobile .onboarding-setup-step.is-done { opacity: 0.92; }
+  .sa-mobile .onboarding-setup-step.is-active { opacity: 1; }
+  .sa-mobile .onboarding-setup-step-dot {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.3);
+  }
+  .sa-mobile .onboarding-setup-step.is-done .onboarding-setup-step-dot {
+    background: rgba(52,211,153,0.15);
+    border-color: rgba(52,211,153,0.4);
+    color: #34D399;
+  }
+  .sa-mobile .onboarding-setup-step.is-active .onboarding-setup-step-dot {
+    background: rgba(77,112,136,0.16);
+    border-color: rgba(90,130,160,0.5);
+  }
+  .sa-mobile .onboarding-setup-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(157,190,206,0.25);
+    border-top-color: #9DBECE;
+    animation: spinSlow 0.75s linear infinite;
+  }
+  .sa-mobile .onboarding-setup-step-label {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: rgba(148,163,184,0.55);
+  }
+  .sa-mobile .onboarding-setup-step.is-done .onboarding-setup-step-label { color: #E6E9F0; }
+  .sa-mobile .onboarding-setup-step.is-active .onboarding-setup-step-label { color: #F4F4F8; }
+  .sa-mobile .onboarding-setup-step-detail {
+    font-size: 12px;
+    color: rgba(148,163,184,0.5);
+    line-height: 1.4;
+    margin-top: 2px;
+  }
+  .sa-mobile .onboarding-setup-status {
+    width: 100%;
+    max-width: 360px;
+    box-sizing: border-box;
+    font-size: 12.5px;
+    line-height: 1.5;
+    font-weight: 500;
+    color: rgba(157,190,206,0.82);
+    padding: 11px 14px;
+    border-radius: 12px;
+    background: rgba(77,112,136,0.1);
+    border: 0.5px solid rgba(77,112,136,0.22);
+    margin-bottom: 10px;
+  }
+  .sa-mobile .onboarding-setup-hint {
+    font-size: 11.5px;
+    color: rgba(148,163,184,0.45);
+    line-height: 1.5;
+    max-width: 320px;
+  }
+  .sa-mobile .onboarding-shell--welcome {
+    text-align: center;
+  }
+  .sa-mobile .onboarding-ambient--success {
+    background:
+      radial-gradient(ellipse 85% 50% at 50% -8%, rgba(77,112,136,0.18) 0%, transparent 58%),
+      radial-gradient(ellipse 55% 38% at 50% 18%, rgba(52,211,153,0.12) 0%, transparent 62%);
+  }
+  .sa-mobile .onboarding-welcome-body {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 8px 24px max(28px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .sa-mobile .onboarding-success-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: 700;
+    color: #34D399;
+    background: linear-gradient(180deg, rgba(52,211,153,0.14), rgba(52,211,153,0.07));
+    border: 1px solid rgba(52,211,153,0.35);
+    box-shadow: 0 0 40px rgba(52,211,153,0.22);
+  }
+  .sa-mobile .onboarding-brand-card {
+    width: 100%;
+    max-width: 360px;
+    margin-bottom: 20px;
+    padding: 16px 14px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.045);
+    border: 0.5px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(10px);
+    text-align: left;
+  }
+  .sa-mobile .onboarding-brand-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .sa-mobile .onboarding-brand-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 800;
+    color: #C4B5FD;
+    background: linear-gradient(135deg, rgba(77,112,136,0.25), rgba(90,130,160,0.22));
+    border: 0.5px solid rgba(157,190,206,0.35);
+  }
+  .sa-mobile .onboarding-brand-meta-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #F4F4F8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sa-mobile .onboarding-brand-meta-sub {
+    margin-top: 2px;
+    font-size: 12px;
+    color: rgba(148,163,184,0.58);
+  }
+  .sa-mobile .onboarding-feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .sa-mobile .onboarding-feature-chip {
+    padding: 8px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: rgba(226,232,240,0.72);
+    background: rgba(255,255,255,0.035);
+    border: 0.5px solid rgba(255,255,255,0.08);
+  }
+  .sa-mobile .onboarding-analyze-head {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 12px)
+      28px
+      0;
+    text-align: center;
+  }
+  .sa-mobile .onboarding-results-head {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 12px)
+      24px
+      16px;
   }
 
   /* ── Feed loading skeleton (Instagram layout) ── */
@@ -838,7 +1151,8 @@ function AppShell() {
   const setUser = useAuthStore((s) => s.setUser);
   const showProfile = useAuthStore((s) => s.showProfile);
   const closeProfile = useAuthStore((s) => s.closeProfile);
-  const { setTenantFromSession, tenantId } = useWorkspaceStore();
+  const setTenantFromSession = useWorkspaceStore((s) => s.setTenantFromSession);
+  const tenantId = useWorkspaceStore((s) => s.tenantId);
   const queryClient = useQueryClient();
   const screen = useMobileStore(s => s.screen);
   const noNav = NO_NAV.has(screen);
@@ -882,14 +1196,21 @@ function AppShell() {
     const prefetch = () => {
       void import('./_components/screens/PlatformFeed');
       void import('./_components/screens/MissionHub');
+      void prefetchMobileScreen('MoreMenu', () =>
+        import('./_components/screens/MoreMenu').then((m) => ({ default: m.MoreMenu })));
       void queryClient.prefetchQuery({
         queryKey: ['missions', tenantId],
         queryFn: () => apiClient.listMissionsForHub(tenantId),
         staleTime: 45_000,
       });
       void queryClient.prefetchQuery(
-        getMobileArtifactsQueryOptions(tenantId, { limit: MOBILE_ARTIFACT_FEED_INITIAL }),
+        getMobileArtifactsQueryOptions(tenantId, { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT }),
       );
+      void queryClient.prefetchQuery({
+        queryKey: ['integrations'],
+        queryFn: () => apiClient.getIntegrations(),
+        staleTime: 60_000,
+      });
     };
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(prefetch, { timeout: 2000 });

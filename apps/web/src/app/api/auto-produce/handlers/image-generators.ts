@@ -195,6 +195,79 @@ export async function generateDesignedImageFromMissionCard(opts: {
   }
 }
 
+/**
+ * Designed feed post via GPT-image-1, grounded on the caption-matched gallery photo.
+ * The agency-style design prompt is built from the resolved typography vibe + brand
+ * colors (see buildDesignedPostDesignCardPrompt). Returns null on failure so the
+ * caller can fall back to the fal Ideogram typography track.
+ */
+export async function generateDesignedPostImage(opts: {
+  workspaceId: string;
+  designCardPrompt: string;
+  /** Reel covers use stronger Canva Pro edit directives + 9:16 sizing. */
+  designCardMode?: 'post' | 'reel';
+  headline: string;
+  caption: string;
+  referenceImageUrls: string[];
+  brandName: string;
+  format: 'post' | 'story';
+  location?: string;
+  businessType?: string;
+  logoUrl?: string;
+  logoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
+  /** Skip logo composite in generate-instagram-image — caller composites after. */
+  deferLogoComposite?: boolean;
+  overlayColor?: string;
+  backgroundIntent?: string;
+}): Promise<string | null> {
+  const refs = opts.referenceImageUrls.filter((u) => u && isUsableGalleryPhotoUrl(u)).slice(0, 2);
+  if (!opts.designCardPrompt.trim() || refs.length === 0) {
+    console.warn(
+      `[auto-produce] designed post skipped: prompt=${Boolean(opts.designCardPrompt.trim())} refs=${refs.length} ` +
+      `raw=${opts.referenceImageUrls.length}`,
+    );
+    return null;
+  }
+  try {
+    const baseUrl = getNextjsInternalOrigin();
+    const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: opts.headline.slice(0, 60),
+        caption: opts.caption,
+        contentType: opts.format === 'story' ? 'instagram_story' : 'instagram_post',
+        brandName: opts.brandName,
+        location: opts.location,
+        industry: opts.businessType,
+        workspaceId: opts.workspaceId,
+        referenceImageUrls: refs,
+        designCardPrompt: opts.designCardPrompt,
+        designCardMode: opts.designCardMode,
+        backgroundIntent: opts.backgroundIntent,
+        overlayColor: opts.overlayColor,
+        logoUrl: opts.logoUrl,
+        logoPlacement: opts.logoPlacement,
+        deferLogoComposite: opts.deferLogoComposite,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => '');
+      console.warn(
+        `[auto-produce] designed post (gpt-image) failed ${res.status} refs=${refs.map((u) => u.split('/').pop()).join(',')} ` +
+        err.slice(0, 200),
+      );
+      return null;
+    }
+    const data = await res.json().catch(() => ({})) as { imageUrl?: string };
+    return typeof data.imageUrl === 'string' ? data.imageUrl : null;
+  } catch (err) {
+    console.warn('[auto-produce] designed post (gpt-image) error', err);
+    return null;
+  }
+}
+
 export async function generateEventOverlayImage(opts: {
   workspaceId: string;
   headline: string;
@@ -768,6 +841,86 @@ export async function generateRunwayReel(opts: {
     return null;
   } catch (err) {
     console.warn('[auto-produce] Runway reel error', err);
+    return null;
+  }
+}
+
+/**
+ * Product Showcase — AI background replacement for product photos.
+ * Places the product on a scenic, brand-relevant background while strictly
+ * preserving all product labels, logos, and text.
+ */
+export async function generateProductShowcaseImage(opts: {
+  workspaceId: string;
+  productPhotoUrl: string;
+  headline: string;
+  caption: string;
+  format: 'post' | 'story';
+  brandName: string;
+  location?: string;
+  businessType?: string;
+  backgroundStyle?: 'venue_location' | 'lifestyle_scene' | 'studio_clean' | 'auto';
+  logoUrl?: string;
+  brandTone?: string;
+}): Promise<string | null> {
+  const bgStylePrompt = (() => {
+    switch (opts.backgroundStyle) {
+      case 'venue_location':
+        return `Background: scenic outdoor location of ${opts.location || 'a Mediterranean coastal town'}. Natural lighting, soft depth of field.`;
+      case 'lifestyle_scene':
+        return 'Background: lifestyle setting where this product would naturally be used. Warm ambient lighting, shallow depth of field.';
+      case 'studio_clean':
+        return 'Background: clean studio with soft gradient lighting. Minimalist, premium product photography style.';
+      default:
+        return `Background: premium ${opts.location ? `${opts.location} scenery` : 'Mediterranean coastal backdrop'}. Natural golden-hour lighting, soft bokeh background.`;
+    }
+  })();
+
+  const editPrompt = [
+    'CRITICAL RULES — READ CAREFULLY:',
+    '1. PRESERVE the product EXACTLY as it appears: every letter, logo, label, barcode, and packaging design must remain PIXEL-PERFECT and UNCHANGED.',
+    '2. DO NOT modify, blur, distort, or rewrite ANY text or branding on the product packaging.',
+    '3. DO NOT alter the product shape, color, or proportions.',
+    '4. ONLY replace the background behind/around the product.',
+    '',
+    bgStylePrompt,
+    '',
+    `Product placement: Center the product naturally in the scene.`,
+    `Lighting: Match product lighting to the new background.`,
+    `Style: Premium ${opts.businessType || 'food & beverage'} product photography for Instagram.`,
+    opts.format === 'story' ? 'Aspect ratio: 9:16 portrait, product in lower-center third.' : 'Aspect ratio: 1:1 square, product centered.',
+  ].join('\n');
+
+  try {
+    const baseUrl = getNextjsInternalOrigin();
+    const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: opts.headline,
+        caption: opts.caption,
+        contentType: opts.format === 'story' ? 'instagram_story' : 'instagram_post',
+        brandName: opts.brandName,
+        location: opts.location,
+        industry: opts.businessType,
+        workspaceId: opts.workspaceId,
+        logoUrl: opts.logoUrl,
+        referenceImageUrls: [opts.productPhotoUrl],
+        enhanceMode: true,
+        enhanceContext: editPrompt,
+        productShowcaseMode: true,
+      }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => '');
+      console.warn('[auto-produce] product showcase failed', res.status, err.slice(0, 120));
+      return null;
+    }
+    const data = await res.json();
+    return (data.imageUrl as string) ?? null;
+  } catch (err) {
+    console.warn('[auto-produce] product showcase error', err);
     return null;
   }
 }

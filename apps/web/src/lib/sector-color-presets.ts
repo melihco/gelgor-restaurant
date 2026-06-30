@@ -134,7 +134,7 @@ const SECTOR_PALETTES: Record<string, BrandColorPalette> = {
 };
 
 const SECTOR_ALIASES: Array<{ match: RegExp; key: string }> = [
-  { match: /beach|deniz|marina|yacht|bodrum|yula/i, key: 'beach_club' },
+  { match: /beach|deniz|marina|yacht/i, key: 'beach_club' },
   { match: /hotel|resort|otel|konak/i, key: 'hotel_resort' },
   { match: /fine.?dining|gourmet|steak|wine_bar/i, key: 'fine_dining' },
   { match: /restaurant|restoran|bistro|brasserie/i, key: 'restaurant' },

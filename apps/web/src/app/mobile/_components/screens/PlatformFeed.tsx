@@ -18,8 +18,8 @@ import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { nodeOutputObject } from '@/lib/mission-node-output';
-import { resolveArtifact, parseArtifactContent, normalizeHashtags as normalizeHashtagsUtil, resolveCarouselUrls } from '../artifact-utils';
-import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline } from '@/lib/feed-display-caption';
+import { resolveArtifact, parseArtifactContent, normalizeHashtags as normalizeHashtagsUtil, resolveCarouselUrls } from '@/lib/artifact-utils';
+import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline, buildMissionIdeationCaptionLookup } from '@/lib/feed-display-caption';
 import { SafeCoverImage } from '../SafeCoverImage';
 import {
   dedupeFeedDisplayArtifacts,
@@ -39,7 +39,8 @@ import {
   isAwaitingStoryVideo,
   isPostKind,
   resolveStoryVideoUrl as resolveStoryVideoUrlShared,
-  resolveStoryVideoClientUrl,
+  resolveStoryPublishVideoUrl,
+  resolveStoryPublishImageUrl,
 } from '@/lib/mission-feed-package';
 import {
   filterFeedDisplayArtifacts,
@@ -53,16 +54,25 @@ import {
 } from '@/lib/mission-pipeline-transparency';
 import { buildFeedDirectorTelemetry } from '@/lib/mission-production-telemetry';
 import { resolveApprovalQualityGate } from '@/lib/approval-quality-gate';
-import { buildFeedArtifactViewModel, detectFeedArtifactKind } from '@/lib/artifact-view-model';
+import { buildFeedArtifactViewModel, detectFeedArtifactKind, isGalleryProxyPreviewUrl, resolveFeedPreviewVideoUrl, resolveFeedProducedStillUrl } from '@/lib/artifact-view-model';
 import {
   artifactMatchesSlotFilter,
   type FeedSlotFilter,
 } from '@/lib/feed-slot-filter';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
+import { useBrandStoryAudio } from '@/hooks/useBrandStoryAudio';
+import { resolveActiveFeedTemplates, type ScheduledTemplateConfig, type ScheduledTemplateFeedItem } from '@/lib/scheduled-template-feed';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
+
+/** Story bar ring — mission artifact or brand scheduled template. */
+type StoryBarItem =
+  | { kind: 'artifact'; artifact: OutputArtifact }
+  | { kind: 'scheduled'; template: ScheduledTemplateFeedItem };
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   MOBILE_ARTIFACT_FEED_LIMIT,
+  MOBILE_ARTIFACT_FEED_RENDER_PAGE,
+  MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
 } from '../../_lib/mobile-artifacts';
 import { FeedLazyPostList } from '../FeedLazyPostList';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
@@ -87,6 +97,7 @@ import { FeedLoadingSkeleton } from '../FeedLoadingSkeleton';
 import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { resolveMertcafePublishAuth, humanizeMertcafePublishError, assertMertcafePublishReady } from '@/lib/mertcafe-publish-auth';
+import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import {
   artifactToNativeContent,
   detectPreviewMode,
@@ -94,6 +105,7 @@ import {
   PLATFORM_TABS,
   StoryCoverImage,
   StoryFullscreenImage,
+  StoryStillPreview,
   StoryPreviewVideo,
   type PreviewPlatform,
 } from '../platform-native-previews';
@@ -378,7 +390,7 @@ function InstagramHomeHeader({
 
 const NativeFeedCard = React.memo(function NativeFeedCard({
   artifact, platform, onApprove, onRevision, onRetryRender, retryingRender, approving, revisioning,
-  workspaceId, onOpenMetaAd, onOpenGoogleAd, t,
+  workspaceId, onOpenMetaAd, onOpenGoogleAd, t, storyMusicUrl, missionIdeationLookup,
 }: {
   artifact: OutputArtifact;
   platform: PreviewPlatform;
@@ -392,10 +404,15 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   onOpenMetaAd?: (artifactId: string) => void;
   onOpenGoogleAd?: () => void;
   t: ReturnType<typeof useTheme>['t'];
+  storyMusicUrl?: string | null;
+  missionIdeationLookup?: ReadonlyMap<string, string>;
 }) {
   const tenantBrand = useTenantBrandContext();
   const openApproval = useMobileStore((s) => s.openApproval);
-  const vm = React.useMemo(() => buildFeedArtifactViewModel(artifact), [artifact]);
+  const vm = React.useMemo(
+    () => buildFeedArtifactViewModel(artifact, missionIdeationLookup),
+    [artifact, missionIdeationLookup],
+  );
   const meta = vm.meta;
   const handle = resolveFeedHandle(meta, tenantBrand);
   const logoUrl = tenantBrand.logoUrl ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl) : undefined;
@@ -417,6 +434,11 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   const qualityGate = vm.quality;
   const canApproveHard = !qualityGate.hardBlock;
   const hasSoftWarnings = qualityGate.softWarnings.length > 0;
+  const hardBlockButtonLabel = qualityGate.hardBlockReason?.includes('Grafiker')
+    ? '⚠ Kalite düşük'
+    : qualityGate.hardBlockReason?.includes('metin')
+      ? '⚠ Metin hatalı'
+      : '⚠ Onay kapalı';
   const [softApproveAck, setSoftApproveAck] = React.useState(false);
 
   const handleApproveClick = () => {
@@ -489,6 +511,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           logoUrl={logoUrl}
           isPending={isPending}
           timeLabel={timeAgo(artifact.createdAt)}
+          backgroundMusicUrl={mode === 'story' && !content.videoUrl ? storyMusicUrl : undefined}
         />
 
         {(scheduleLabel || isAdCreative) && mode !== 'story' && (
@@ -560,6 +583,21 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
         </div>
       )}
 
+      {isPending && qualityGate.hardBlock && !matchRejected && qualityGate.hardBlockReason && (
+        <div style={{
+          margin: igHome ? '0 14px 8px' : '0 12px 8px',
+          padding: '10px 12px', borderRadius: 10,
+          background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#EF4444', marginBottom: 4 }}>
+            Onay engellendi
+          </div>
+          <span style={{ fontSize: 11, color: '#FCA5A5', lineHeight: 1.4 }}>
+            {qualityGate.hardBlockReason}. Yeniden üretin veya revize edin.
+          </span>
+        </div>
+      )}
+
       {isPending && matchRejected && (
         <div style={{
           margin: igHome ? '0 14px 8px' : '0 12px 8px',
@@ -621,7 +659,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
                 {approving
                   ? 'Onaylanıyor…'
                   : !canApproveHard
-                    ? '⚠ Eşleşme yok'
+                    ? hardBlockButtonLabel
                     : hasSoftWarnings && !softApproveAck
                       ? 'Onayla (uyarı)'
                       : hasSoftWarnings
@@ -695,7 +733,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
                 {approving
                   ? 'Paylaşılıyor…'
                   : !canApproveHard
-                    ? '⚠ Eşleşme yok'
+                    ? hardBlockButtonLabel
                     : hasSoftWarnings && !softApproveAck
                       ? '✓ Onayla (uyarı)'
                       : hasSoftWarnings
@@ -782,6 +820,9 @@ function resolveImg(url: string | null | undefined): string | null {
 const normalizeDisplayHashtags = (raw: unknown) => normalizeHashtagsUtil(raw, 10);
 
 function resolveArtifactImg(artifact: { contentUrl?: string | null; content?: string | null; metadata?: unknown }): string | null {
+  const falStill = resolveFeedProducedStillUrl(artifact as OutputArtifact);
+  if (falStill) return falStill;
+
   const content = (() => { try { return JSON.parse(artifact.content ?? '{}'); } catch { return {}; } })() as Record<string, unknown>;
   const rendered = (content.renderedPreview ?? {}) as Record<string, unknown>;
   const canvaDesign = (rendered.canvaDesign ?? {}) as Record<string, unknown>;
@@ -1062,7 +1103,7 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
     title: artifact.title,
   };
   const headline = resolveFeedDisplayHeadline(captionInput);
-  const caption = resolveFeedDisplayCaption(captionInput) || resolved?.caption || '';
+  const caption = resolveFeedDisplayCaption(captionInput);
   const hashtags = normalizeDisplayHashtags(content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []);
   const handle   = resolveFeedHandle(meta, tenantBrand);
   const isApproved = artifact.status === 'approved';
@@ -1494,6 +1535,9 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
 }) {
   const tenantBrand = useTenantBrandContext();
   const openApproval = useMobileStore((s) => s.openApproval);
+  const storyVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [storyMuted, setStoryMuted] = useState(false);
+  const [storyNeedsSoundTap, setStoryNeedsSoundTap] = useState(false);
   const resolved = (() => { try { return resolveArtifact(artifact); } catch { return null; } })();
   const content = parseArtifactContent(artifact.content);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
@@ -1533,6 +1577,38 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
   const isApproved = artifact.status === 'approved';
   const slotBadge = productionRoleBadge(meta);
 
+  useEffect(() => {
+    setStoryMuted(false);
+    setStoryNeedsSoundTap(false);
+  }, [storyVideoUrl]);
+
+  const tryPlayStoryVideo = useCallback(async (video: HTMLVideoElement) => {
+    try {
+      video.muted = storyMuted;
+      await video.play();
+      if (!storyMuted) setStoryNeedsSoundTap(false);
+    } catch {
+      video.muted = true;
+      setStoryMuted(true);
+      setStoryNeedsSoundTap(true);
+      void video.play().catch(() => undefined);
+    }
+  }, [storyMuted]);
+
+  const enableStorySound = useCallback(async () => {
+    const video = storyVideoRef.current;
+    if (!video) return;
+    try {
+      video.muted = false;
+      video.volume = 1;
+      setStoryMuted(false);
+      await video.play();
+      setStoryNeedsSoundTap(false);
+    } catch {
+      setStoryNeedsSoundTap(true);
+    }
+  }, []);
+
   return (
     <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}`, paddingBottom: 0 }} className="ig-vertical-media-card">
       {/* Full-width 9:16 story frame — NO caption below */}
@@ -1548,9 +1624,11 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
         {isRemotionStory && storyVideoUrl ? (
           <>
             <video
+              ref={storyVideoRef}
               src={storyVideoUrl}
               poster={storyPosterImg ?? img ?? undefined}
-              autoPlay muted playsInline
+              autoPlay muted={storyMuted} playsInline
+              onCanPlay={(e) => { void tryPlayStoryVideo(e.currentTarget); }}
               onEnded={(e) => {
                 const v = e.currentTarget;
                 if (!Number.isFinite(v.duration)) return;
@@ -1566,6 +1644,29 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
               }}
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
+            {storyNeedsSoundTap && (
+              <button
+                type="button"
+                onClick={enableStorySound}
+                style={{
+                  position: 'absolute',
+                  right: 16,
+                  bottom: artifact.status === 'pending_review' ? 86 : 18,
+                  zIndex: 7,
+                  border: 'none',
+                  borderRadius: 999,
+                  padding: '9px 12px',
+                  background: 'rgba(0,0,0,0.62)',
+                  color: '#fff',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  backdropFilter: 'blur(6px)',
+                }}
+              >
+                Sesi aç
+              </button>
+            )}
             {/* Fallback: original gallery photo when video fails */}
             {storyPosterImg && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1728,7 +1829,30 @@ export function PlatformFeed() {
   // navigate and openApproval already destructured above
   const queryClient = useQueryClient();
   const tenantId = useActiveTenantId();
+  const { storyMusicUrl } = useBrandStoryAudio(tenantId);
 
+  // Scheduled templates — recurring story/reel gallery items
+  const { data: scheduledTemplatesRaw = [] } = useQuery<ScheduledTemplateConfig[]>({
+    queryKey: ['scheduled-templates', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const res = await fetch(`/api/brand-context/${tenantId}/scheduled-templates`, {
+        headers: getTenantBffHeaders(tenantId),
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+    enabled: Boolean(tenantId),
+  });
+
+  const activeScheduledTemplates = React.useMemo(
+    () => resolveActiveFeedTemplates(scheduledTemplatesRaw),
+    [scheduledTemplatesRaw],
+  );
+
+  // Same artifact pool as nav badge / mission hub — one cache key so badge count matches feed.
+  // DOM lazy paint is handled by FeedLazyPostList (MOBILE_ARTIFACT_FEED_RENDER_PAGE).
   const {
     data: rawArtifacts = [],
     isPending: artifactsPending,
@@ -1737,7 +1861,7 @@ export function PlatformFeed() {
     refetch: refetchArtifacts,
   } = useMobileArtifacts({
     subscribeOnly: true,
-    params: { limit: MOBILE_ARTIFACT_FEED_LIMIT },
+    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
   });
 
   const mergedRawArtifacts = rawArtifacts;
@@ -1748,9 +1872,6 @@ export function PlatformFeed() {
   );
 
   const dedupedFull = dedupedRaw;
-  const loadMoreArtifacts = React.useCallback(() => {
-    void refetchArtifacts();
-  }, [refetchArtifacts]);
 
   const { data: brandAlignment } = useQuery<BrandAlignmentData>({
     queryKey: ['brand-alignment', tenantId],
@@ -1784,6 +1905,7 @@ export function PlatformFeed() {
   const [platformView, setPlatformView] = useState<PreviewPlatform>('instagram');
   // Default: show pending_review (new mission content) — users switch to approved (galeri) manually.
   const [showApproved, setShowApproved] = useState(false);
+
   const [publishErrors, setPublishErrors] = useState<Record<string, string>>({});
   const [publishSuccess, setPublishSuccess] = useState<Array<{ id: string; message: string }>>([]);
   const [pipelineStatus, setPipelineStatus] = useState<'idle' | 'running' | 'done'>('idle');
@@ -1791,6 +1913,7 @@ export function PlatformFeed() {
   const prevPendingRef = React.useRef(0);
   // Story bubble viewer state
   const [storyViewIdx, setStoryViewIdx] = useState<number | null>(null);
+  const [scheduledMediaIdx, setScheduledMediaIdx] = useState(0);
   const [storyProgress, setStoryProgress] = useState(0);
   // Auto-trigger the mission pipeline on mount (fire-and-forget).
   // Kicks off propose → approve → task_graph_executor → content_ideation
@@ -1890,8 +2013,9 @@ export function PlatformFeed() {
     fetch('/api/production-bundle/reconcile-stale', {
       method: 'POST',
       headers: getTenantBffHeaders(tenantId),
+      signal: AbortSignal.timeout(12_000),
     })
-      .then(() => refetchArtifacts())
+      .then((res) => { if (res.ok) void refetchArtifacts(); })
       .catch(() => undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, hasRenderingBundles]);
@@ -1933,6 +2057,28 @@ export function PlatformFeed() {
     staleTime: 120_000,
   });
 
+  const { data: missionIdeationLookup } = useQuery({
+    queryKey: ['mission-ideation-captions', tenantId, missionIds.join(',')],
+    queryFn: async () => {
+      const lookup = new Map<string, string>();
+      if (!tenantId) return lookup;
+      await Promise.all(missionIds.map(async (missionId) => {
+        try {
+          const prog = await apiClient.getMissionProgress(tenantId, missionId, { includePayload: true });
+          const byIndex = buildMissionIdeationCaptionLookup(missionId, prog.nodes ?? []);
+          for (const [ideaIndex, caption] of byIndex.entries()) {
+            lookup.set(`${missionId}:${ideaIndex}`, caption);
+          }
+        } catch {
+          /* skip mission if progress unavailable */
+        }
+      }));
+      return lookup;
+    },
+    enabled: Boolean(tenantId) && missionIds.length > 0,
+    staleTime: 120_000,
+  });
+
   const missionTitleById = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const m of missionList) map.set(m.id, m.title);
@@ -1941,7 +2087,7 @@ export function PlatformFeed() {
 
   const { data: filteredMissionProg } = useQuery({
     queryKey: ['mission-progress-feed', tenantId, missionFilterId],
-    queryFn: () => apiClient.getMissionProgress(tenantId!, missionFilterId!),
+    queryFn: () => apiClient.getMissionProgress(tenantId!, missionFilterId!, { includePayload: true }),
     enabled: Boolean(tenantId && missionFilterId),
     staleTime: 60_000,
   });
@@ -2024,21 +2170,22 @@ export function PlatformFeed() {
           content: content as Record<string, unknown>,
           metadata: meta,
           title: artifact.title,
-        }) || resolved?.caption || '';
+        }, missionIdeationLookup);
       const hashtags = kind === 'story'
         ? []
         : normalizeHashtagsUtil(content.hashtags ?? meta.hashtags ?? resolved?.hashtags ?? []);
       // Sprint 8 (S8.4): publish the SAME asset the preview shows (export-first).
       const imageUrl = String(
-        resolvePublishImageUrl(artifact)
+        (kind === 'story' ? resolveStoryPublishImageUrl(artifact) : null)
+        || resolvePublishImageUrl(artifact)
         || resolveArtifactImg(artifact)
         || (content.imageUrl as string) || (meta.imageUrl as string)
         || resolved?.imageUrl || artifact.contentUrl || '',
       );
       const videoUrl = String(
-        resolveStoryVideoUrlShared(artifact)
-        || (content.videoUrl as string) || (meta.videoUrl as string) || (meta.video_url as string)
-        || resolved?.videoUrl || '',
+        (kind === 'reel' || kind === 'story')
+          ? (resolveStoryPublishVideoUrl(artifact) || '')
+          : '',
       );
       // Carousel URLs — check all known field names (snake and camelCase)
       const mediaUrls = resolveCarouselUrls(content, meta);
@@ -2059,7 +2206,7 @@ export function PlatformFeed() {
           throw new Error('Carousel için en az 2 görsel gerekli. Bu içerik henüz üretilmemiş veya tek fotoğraf içeriyor.');
         }
       } else if (postType === 'story') {
-        const hasVideo = isPublishableMediaUrl(videoUrl);
+        const hasVideo = isPlayableVideoUrl(videoUrl);
         const hasImage = isPublishableMediaUrl(imageUrl);
         if (!hasVideo && !hasImage) {
           throw new Error('Story videosu veya görseli hazır değil.');
@@ -2091,8 +2238,8 @@ export function PlatformFeed() {
         publishPayload.account_id = publishAuth.accountId;
       }
       if (postType === 'story') {
-        if (publicVideoUrl) {
-          // Video story — send video only; image is preview-only in feed
+        if (isPlayableVideoUrl(publicVideoUrl)) {
+          // Video story (Remotion MP4 / fal motion) — video takes priority over image
           publishPayload.video_url = publicVideoUrl;
         } else {
           publishPayload.image_url = imageUrl;
@@ -2170,8 +2317,14 @@ export function PlatformFeed() {
   // Story bubble bar — per-idea rings (not headline-deduped feed list)
   const storyArtifacts = React.useMemo(() => {
     const pool = dedupedRaw.filter((a) => isFeedStoryItem(a) && isArtifactFeedPublishable(a));
+    const visibilityFiltered = pool.filter((a) => {
+      if (showApproved) return a.status === 'approved';
+      const m = (a.metadata ?? {}) as Record<string, unknown>;
+      const alreadyShared = Boolean(m.ig_media_id || m.post_id || m.published_at);
+      return a.status === 'pending_review' && !alreadyShared;
+    });
     if (operatorMode) {
-      const deduped = dedupeStoryBarArtifacts(pool);
+      const deduped = dedupeStoryBarArtifacts(visibilityFiltered);
       const scoped = missionFilterId
         ? deduped.filter((a) => parseArtifactMissionId(a) === missionFilterId)
         : deduped;
@@ -2183,43 +2336,99 @@ export function PlatformFeed() {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
     }
-    return filterConsumerStoryBar(pool, {
-      maxRings: 4,
+    return filterConsumerStoryBar(visibilityFiltered, {
+      maxRings: 10,
       missionId: missionFilterId,
     });
-  }, [dedupedRaw, missionFilterId, operatorMode]);
+  }, [dedupedRaw, missionFilterId, operatorMode, showApproved]);
+
+  const storyBarItems = React.useMemo((): StoryBarItem[] => [
+    ...storyArtifacts.map((artifact) => ({ kind: 'artifact' as const, artifact })),
+    ...activeScheduledTemplates.map((template) => ({ kind: 'scheduled' as const, template })),
+  ], [storyArtifacts, activeScheduledTemplates]);
 
   // Story viewer helpers
-  const resolveStoryVideo = (artifact: OutputArtifact): string | null => resolveStoryVideoClientUrl(artifact);
+  const resolveStoryVideo = (artifact: OutputArtifact): string | null => resolveFeedPreviewVideoUrl(artifact);
+  const resolveScheduledMediaUrl = (url: string): string => resolveClientMediaUrl(url) ?? url;
   const resolveStoryPoster = (artifact: OutputArtifact): string | null => {
+    const producedStill = resolveFeedProducedStillUrl(artifact);
+    if (producedStill) return producedStill;
+
     const poster = resolvePosterUrl(artifact);
-    if (poster) return resolveImg(poster);
+    if (poster) {
+      const resolved = resolveImg(poster);
+      if (resolved && !isGalleryProxyPreviewUrl(resolved)) return resolved;
+    }
+
     const c = parseArtifactContent(artifact.content);
     const m = (artifact.metadata ?? {}) as Record<string, unknown>;
     const img = String((c as any)?.imageUrl || m?.reference_photo_url || '').trim();
-    if (img && !img.endsWith('.mp4')) return resolveImg(img);
+    if (img && !img.endsWith('.mp4') && !isGalleryProxyPreviewUrl(img)) {
+      const resolved = resolveImg(img);
+      if (resolved) return resolved;
+    }
     return resolveArtifactImg(artifact);
   };
   const openStory = (idx: number) => {
     setStoryViewIdx(idx);
+    setScheduledMediaIdx(0);
     setStoryProgress(0);
   };
-  const closeStory = () => { setStoryViewIdx(null); setStoryProgress(0); };
+  const closeStory = () => {
+    setStoryViewIdx(null);
+    setScheduledMediaIdx(0);
+    setStoryProgress(0);
+  };
   const nextStory = () => {
     if (storyViewIdx === null) return;
-    if (storyViewIdx < storyArtifacts.length - 1) { setStoryViewIdx(storyViewIdx + 1); setStoryProgress(0); }
-    else closeStory();
+    const item = storyBarItems[storyViewIdx];
+    if (item?.kind === 'scheduled' && scheduledMediaIdx < item.template.media_items.length - 1) {
+      setScheduledMediaIdx((i) => i + 1);
+      setStoryProgress(0);
+      return;
+    }
+    if (storyViewIdx < storyBarItems.length - 1) {
+      setStoryViewIdx(storyViewIdx + 1);
+      setScheduledMediaIdx(0);
+      setStoryProgress(0);
+    } else {
+      closeStory();
+    }
   };
   const prevStory = () => {
-    if (storyViewIdx !== null && storyViewIdx > 0) { setStoryViewIdx(storyViewIdx - 1); setStoryProgress(0); }
+    if (storyViewIdx === null) return;
+    if (scheduledMediaIdx > 0) {
+      setScheduledMediaIdx((i) => i - 1);
+      setStoryProgress(0);
+      return;
+    }
+    if (storyViewIdx > 0) {
+      const prevIdx = storyViewIdx - 1;
+      const prevItem = storyBarItems[prevIdx];
+      setStoryViewIdx(prevIdx);
+      setScheduledMediaIdx(
+        prevItem?.kind === 'scheduled'
+          ? Math.max(0, prevItem.template.media_items.length - 1)
+          : 0,
+      );
+      setStoryProgress(0);
+    }
   };
+
+  const storySlideDurationMs = React.useCallback((item: StoryBarItem, mediaIdx: number): number => {
+    if (item.kind === 'artifact') {
+      return resolveStoryVideo(item.artifact) ? 8000 : 5000;
+    }
+    const media = item.template.media_items[mediaIdx];
+    return media?.type === 'video' ? 8000 : 5000;
+  }, []);
 
   // Story progress auto-advance (8s for video, 5s for photo)
   React.useEffect(() => {
     if (storyViewIdx === null) return;
-    const art = storyArtifacts[storyViewIdx];
-    if (!art) return;
-    const dur = resolveStoryVideo(art) ? 8000 : 5000;
+    const item = storyBarItems[storyViewIdx];
+    if (!item) return;
+    const dur = storySlideDurationMs(item, scheduledMediaIdx);
     let elapsed = 0;
     const interval = setInterval(() => {
       elapsed += 100;
@@ -2228,7 +2437,7 @@ export function PlatformFeed() {
     }, 100);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyViewIdx]);
+  }, [storyViewIdx, scheduledMediaIdx, storyBarItems]);
 
   // Auto-switch to pending view when new items arrive while user is in galeri view
   React.useEffect(() => {
@@ -2254,8 +2463,16 @@ export function PlatformFeed() {
       } catch { /* ok */ }
       return true;
     })
-    // Stories live in the bubble bar — never in the main feed scroll
+    // Stories live in the bubble bar — never in the main feed scroll (native Instagram).
     .filter(a => !isFeedStoryItem(a as any))
+    // Native-IG behaviour: once the user has shared/posted an item it leaves the
+    // working feed. Gallery view (showApproved) keeps the published history.
+    .filter(a => {
+      if (showApproved) return true;
+      const m = (a.metadata ?? {}) as Record<string, unknown>;
+      const alreadyShared = Boolean(m.ig_media_id || m.post_id || m.published_at);
+      return !alreadyShared;
+    })
     .filter(a => {
       if (missionFilterId) return parseArtifactMissionId(a) === missionFilterId;
       return true;
@@ -2271,6 +2488,7 @@ export function PlatformFeed() {
       const k = detectKind(a as any);
       if (filter === 'post') return k === 'post' || k === 'image';
       if (filter === 'reel') return k === 'reel' || k === 'video';
+      if (filter === 'story') return k === 'story';
       return true;
     })
     .filter(a => artifactMatchesSlotFilter(a, slotFilter, detectKind))
@@ -2318,7 +2536,7 @@ export function PlatformFeed() {
 
   const feedBg = !operatorMode || platformView === 'instagram' ? '#000' : (t.isDark ? '#0a0a0f' : '#f7f7f7');
 
-  // Stories are in the bubble bar — excluded from these tabs
+  // Post / reel / carousel in feed scroll; stories open from the bubble bar above.
   const TABS: { id: FeedFilter; label: string; icon?: string }[] = operatorMode
     ? [
         { id: 'all', label: 'Tümü', icon: '⊞' },
@@ -2741,7 +2959,7 @@ export function PlatformFeed() {
       )}
 
       {/* ── Story Bubble Bar — always visible, all platform views ── */}
-      {storyArtifacts.length > 0 && (
+      {(storyArtifacts.length > 0 || activeScheduledTemplates.length > 0) && (
         <div style={{
           display: 'flex', overflowX: 'auto', scrollbarWidth: 'none',
           padding: '12px 16px 14px',
@@ -2862,11 +3080,76 @@ export function PlatformFeed() {
               </div>
             );
           })}
+
+          {/* Scheduled template bubbles — recurring content */}
+          {activeScheduledTemplates.map((tpl, tplIdx) => (
+            <div
+              key={tpl.template_id}
+              role="button"
+              tabIndex={0}
+              onClick={() => openStory(storyArtifacts.length + tplIdx)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openStory(storyArtifacts.length + tplIdx);
+                }
+              }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
+                gap: 5, background: 'none', border: 'none', cursor: 'pointer',
+                flexShrink: 0, padding: 0 }}
+            >
+              <div style={{
+                width: 68, height: 68, borderRadius: '50%',
+                background: 'linear-gradient(135deg, #10b981, #34d399, #6ee7b7)',
+                padding: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <div style={{
+                  width: '100%', height: '100%', borderRadius: '50%',
+                  border: `2.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                  overflow: 'hidden', position: 'relative',
+                }}>
+                  {tpl.media_items[0]?.type === 'video' ? (
+                    <video
+                      src={tpl.media_items[0].url}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      muted
+                    />
+                  ) : tpl.media_items[0]?.url ? (
+                    <img
+                      src={tpl.media_items[0].url}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      alt={tpl.name}
+                    />
+                  ) : (
+                    <div style={{
+                      width: '100%', height: '100%',
+                      background: '#374151', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12, color: '#9ca3af',
+                    }}>
+                      {tpl.name.slice(0, 2)}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ textAlign: 'center', maxWidth: 72 }}>
+                <div style={{
+                  fontSize: 10, color: t.textPrimary, fontWeight: 600,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {tpl.name}
+                </div>
+                <div style={{ fontSize: 8, color: '#10b981', marginTop: 1 }}>
+                  {tpl.schedule_time}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* ── Story Viewer (fullscreen portal) ── */}
-      {storyViewIdx !== null && storyArtifacts[storyViewIdx] && typeof window !== 'undefined' && (
+      {storyViewIdx !== null && storyBarItems[storyViewIdx] && typeof window !== 'undefined' && (
         createPortal(
           <div className="ig-story-viewer-backdrop" style={{
             position: 'fixed', inset: 0, zIndex: 800,
@@ -2894,19 +3177,25 @@ export function PlatformFeed() {
                 display: 'flex', gap: 3,
                 padding: 'max(10px, env(safe-area-inset-top)) 10px 0',
               }}>
-                {storyArtifacts.map((_, si) => (
-                  <div key={si} style={{
-                    flex: 1, height: 2.5, borderRadius: 2,
-                    background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
-                  }}>
-                    <div style={{
-                      height: '100%', borderRadius: 2, background: '#fff',
-                      width: si < storyViewIdx! ? '100%'
-                        : si === storyViewIdx ? `${storyProgress}%` : '0%',
-                      transition: si === storyViewIdx ? 'none' : undefined,
-                    }} />
-                  </div>
-                ))}
+                {(() => {
+                  const item = storyBarItems[storyViewIdx!]!;
+                  const slideCount = item.kind === 'scheduled'
+                    ? Math.max(1, item.template.media_items.length)
+                    : 1;
+                  return Array.from({ length: slideCount }, (_, si) => (
+                    <div key={si} style={{
+                      flex: 1, height: 2.5, borderRadius: 2,
+                      background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%', borderRadius: 2, background: '#fff',
+                        width: si < scheduledMediaIdx ? '100%'
+                          : si === scheduledMediaIdx ? `${storyProgress}%` : '0%',
+                        transition: si === scheduledMediaIdx ? 'none' : undefined,
+                      }} />
+                    </div>
+                  ));
+                })()}
               </div>
 
               {/* Header */}
@@ -2917,7 +3206,38 @@ export function PlatformFeed() {
                 padding: '8px 14px',
               }}>
                 {(() => {
-                  const art = storyArtifacts[storyViewIdx!]!;
+                  const item = storyBarItems[storyViewIdx!]!;
+                  if (item.kind === 'scheduled') {
+                    const media = item.template.media_items[scheduledMediaIdx] ?? item.template.media_items[0];
+                    const thumb = media ? resolveScheduledMediaUrl(media.url) : null;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
+                          border: '1.5px solid rgba(16,185,129,0.8)' }}>
+                          {thumb ? (
+                            media?.type === 'video' ? (
+                              <video src={thumb} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
+                            ) : (
+                              <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', background: '#065f46',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 12, fontWeight: 800, color: '#fff' }}>
+                              {item.template.name.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{item.template.name}</div>
+                          <div style={{ fontSize: 10, color: 'rgba(16,185,129,0.9)' }}>
+                            Zamanlanmış · {item.template.schedule_time}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  const art = item.artifact;
                   const poster = resolveStoryPoster(art);
                   const meta = (art.metadata ?? {}) as Record<string, unknown>;
                   const brandName = String(meta.brandName || 'Story');
@@ -2950,15 +3270,67 @@ export function PlatformFeed() {
 
               {/* Story content — full-bleed 9:16 cover (IG-style, no side bars) */}
               {(() => {
-                const art = storyArtifacts[storyViewIdx!]!;
-                const vid = resolveStoryVideo(art);
-                const poster = resolveStoryPoster(art);
+                const item = storyBarItems[storyViewIdx!]!;
                 const mediaStyle: React.CSSProperties = {
                   position: 'absolute',
                   inset: 0,
                   width: '100%',
                   height: '100%',
                 };
+
+                if (item.kind === 'scheduled') {
+                  const media = item.template.media_items[scheduledMediaIdx] ?? item.template.media_items[0];
+                  const url = media ? resolveScheduledMediaUrl(media.url) : null;
+                  const poster = url;
+                  return (
+                    <>
+                      {poster ? (
+                        <div
+                          aria-hidden
+                          style={{
+                            position: 'absolute',
+                            inset: -24,
+                            backgroundImage: `url(${poster})`,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            filter: 'blur(36px) brightness(0.35)',
+                            transform: 'scale(1.08)',
+                          }}
+                        />
+                      ) : null}
+                      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+                        {url && media?.type === 'video' ? (
+                          <StoryPreviewVideo
+                            key={url}
+                            src={url}
+                            poster={poster ?? undefined}
+                            backgroundMusicUrl={undefined}
+                            style={mediaStyle}
+                          />
+                        ) : url ? (
+                          <StoryStillPreview
+                            src={url}
+                            backgroundMusicUrl={storyMusicUrl}
+                            style={mediaStyle}
+                          />
+                        ) : (
+                          <div style={{ width: '100%', height: '100%', background: '#111',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span style={{ fontSize: 40, opacity: 0.2 }}>◉</span>
+                          </div>
+                        )}
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5, pointerEvents: 'none' }}>
+                          <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={prevStory} aria-hidden />
+                          <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={nextStory} aria-hidden />
+                        </div>
+                      </div>
+                    </>
+                  );
+                }
+
+                const art = item.artifact;
+                const vid = resolveStoryVideo(art);
+                const poster = resolveStoryPoster(art);
                 return (
                   <>
                     {poster ? (
@@ -2984,10 +3356,15 @@ export function PlatformFeed() {
                         key={vid}
                         src={vid}
                         poster={poster ?? undefined}
+                        backgroundMusicUrl={undefined}
                         style={mediaStyle}
                       />
                     ) : poster ? (
-                      <StoryCoverImage src={poster} style={mediaStyle} />
+                      <StoryStillPreview
+                        src={poster}
+                        backgroundMusicUrl={storyMusicUrl}
+                        style={mediaStyle}
+                      />
                     ) : (
                       <div style={{ width: '100%', height: '100%', background: '#111',
                         display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -3015,7 +3392,33 @@ export function PlatformFeed() {
               display: 'flex', flexDirection: 'column', gap: 8,
             }}>
               {(() => {
-                const art = storyArtifacts[storyViewIdx!]!;
+                const item = storyBarItems[storyViewIdx!]!;
+                if (item.kind === 'scheduled') {
+                  const tpl = item.template;
+                  const endLabel = tpl.schedule_end_time ? ` – ${tpl.schedule_end_time}` : '';
+                  return (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 4px',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
+                          Zamanlanmış {tpl.format === 'reel' ? 'Reel' : 'Story'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(16,185,129,0.85)', marginTop: 2 }}>
+                          Her planlı günde {tpl.schedule_time}{endLabel} arası feed&apos;de görünür
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: 10, padding: '4px 10px', borderRadius: 20,
+                        background: 'rgba(16,185,129,0.2)', color: '#34d399', fontWeight: 700,
+                      }}>
+                        CANLI
+                      </span>
+                    </div>
+                  );
+                }
+                const art = item.artifact;
                 const isPending = art.status === 'pending_review';
                 const c = parseArtifactContent(art.content);
                 const m = (art.metadata ?? {}) as Record<string, unknown>;
@@ -3174,6 +3577,10 @@ export function PlatformFeed() {
             <div className="feed-empty-body">
               {showApproved
                 ? 'Onaylanan içerikler burada görünür.'
+                : !showApproved && storyBarItems.length > 0
+                  ? 'Story içerikleriniz üst şeritte. Gönderi ve reel kartları burada listelenir.'
+                : !showApproved && pendingPublishableCount > 0
+                  ? 'İçerikler yükleniyor…'
                 : rawPendingCount > pendingPublishableCount
                   ? `${rawPendingCount - pendingPublishableCount} içerik hazırlanıyor — render bitince Feed'e düşecek.`
                   : pipelineStatus === 'running'
@@ -3306,7 +3713,8 @@ export function PlatformFeed() {
           <FeedLazyPostList
             items={artifacts}
             itemKey={(artifact) => artifact.id}
-            onNearEnd={loadMoreArtifacts}
+            pageSize={MOBILE_ARTIFACT_FEED_RENDER_PAGE}
+            loadMoreLabel="Daha fazla gönderi yükleniyor…"
             renderItem={(artifact, idx) => {
               const isApproving = approveMutation.isPending && approveMutation.variables?.id === artifact.id;
               const isRevisioning = revisionMutation.isPending && revisionMutation.variables === artifact.id;
@@ -3324,6 +3732,8 @@ export function PlatformFeed() {
                     platform={operatorMode ? platformView : 'instagram'}
                     workspaceId={tenantId ?? undefined}
                     t={t}
+                    storyMusicUrl={storyMusicUrl}
+                    missionIdeationLookup={missionIdeationLookup}
                     approving={isApproving}
                     revisioning={isRevisioning}
                     retryingRender={retryingStoryId === artifact.id}

@@ -312,6 +312,16 @@ async def _daily_market_intelligence_job() -> None:
         logger.error("market_intelligence_job_failed", error=str(exc))
 
 
+async def _mission_cadence_dry_run_job() -> None:
+    """Daily cadence evaluation — logs whether each workspace should propose a mission."""
+    from app.services.mission_cadence_service import cadence_dry_run_all
+
+    try:
+        await cadence_dry_run_all()
+    except Exception as exc:
+        logger.error("mission_cadence_dry_run_failed", error=str(exc)[:300])
+
+
 async def _advance_task_graphs_job() -> None:
     """
     Advance all active mission task graphs — runs every 5 minutes.
@@ -399,6 +409,11 @@ async def _opportunity_scanner_job() -> None:
     Bu, pasif bilgi (market_opportunity_ideas) ile aktif aksiyon (mission)
     arasındaki bağı kurar. Operatör sabah Mission Hub'da hazır misyon önerileri görür.
     """
+    from app.services.production_automation import auto_mission_proposal_allowed
+
+    if not auto_mission_proposal_allowed():
+        return
+
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.models.mission import Mission
@@ -577,6 +592,11 @@ async def _detect_phase_transitions_job() -> None:
     Oluşturulan mission 'proposed' durumda bekler — operatör Mission Hub'dan
     tek tıkla onaylar veya reddeder.
     """
+    from app.services.production_automation import auto_mission_proposal_allowed
+
+    if not auto_mission_proposal_allowed():
+        return
+
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.services.mission_service import (
@@ -674,6 +694,113 @@ async def _detect_phase_transitions_job() -> None:
 
     except Exception as exc:
         logger.error("phase_transition_job_failed", error=str(exc))
+
+
+async def _detect_special_days_job() -> None:
+    """
+    Günlük özel gün dedektörü — yaklaşan (≤7 gün) locale özel günleri için
+    otomatik 'seasonal' Mission önerir (Babalar Günü, Sevgililer Günü, vb.).
+
+    Her workspace için:
+      1. locale + sektöre uygun, ≤7 gün kalan en yakın özel günü bulur.
+      2. Aynı özel gün için son 60 günde zaten bir mission yoksa, status='proposed'
+         bir Mission oluşturur (production 'event_special' tasarım şablonunu kullanır).
+      3. Üretimi, operatör Mission Hub'dan onaylar.
+    """
+    from app.services.production_automation import auto_mission_proposal_allowed
+
+    if not auto_mission_proposal_allowed():
+        return
+
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.models.mission import Mission
+    from app.services.mission_service import create_mission, create_special_day_mission
+    from app.services.special_day_service import get_special_days, resolve_country_code
+
+    logger.info("special_days_detector_start")
+    created_count = 0
+    checked_count = 0
+
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(select(BrandContext))
+            contexts = rows.scalars().all()
+
+        for ctx in contexts:
+            checked_count += 1
+            try:
+                country = resolve_country_code(
+                    country_code=getattr(ctx, "country_code", None),
+                    location=ctx.location,
+                    languages=ctx.languages,
+                )
+                sector = (ctx.business_type or "").strip()
+                async with async_session_factory() as db:
+                    upcoming = await get_special_days(
+                        db, country_code=country, sector=sector, within_days=7, limit=1,
+                    )
+                if not upcoming:
+                    continue
+
+                special_day = upcoming[0]
+
+                # Dedup: skip if a special-day mission for this occasion was
+                # already created in the last 60 days (avoids daily re-proposing
+                # within the 7-day window, while allowing next year's run).
+                since = datetime.now(timezone.utc) - timedelta(days=60)
+                async with async_session_factory() as db:
+                    existing = await db.execute(
+                        select(Mission.id).where(
+                            Mission.workspace_id == ctx.workspace_id,
+                            Mission.trigger_signal == "special_day",
+                            Mission.trigger_evidence.like(f"{special_day.name}%"),
+                            Mission.created_at >= since,
+                        ).limit(1)
+                    )
+                    if existing.scalar_one_or_none() is not None:
+                        continue
+
+                    mission_create = create_special_day_mission(
+                        workspace_id=ctx.workspace_id,
+                        business_name=ctx.business_name or "Marka",
+                        special_day_name=special_day.name,
+                        theme_hint=special_day.theme_hint,
+                        days_until=special_day.days_until,
+                        business_type=ctx.business_type or "",
+                    )
+                    await create_mission(db, ctx.workspace_id, mission_create)
+                    await db.commit()
+
+                created_count += 1
+                logger.info(
+                    "special_day_mission_proposed",
+                    workspace_id=str(ctx.workspace_id),
+                    special_day=special_day.name,
+                    days_until=special_day.days_until,
+                )
+
+                await asyncio.sleep(1)
+
+            except Exception as exc:
+                logger.error(
+                    "special_day_workspace_failed",
+                    workspace_id=str(ctx.workspace_id),
+                    error=str(exc)[:300],
+                )
+
+        logger.info(
+            "special_days_detector_complete",
+            checked=checked_count,
+            missions_created=created_count,
+        )
+
+    except Exception as exc:
+        logger.error("special_days_job_failed", error=str(exc))
 
 
 def _pick_diverse_proposal(
@@ -919,6 +1046,11 @@ async def _semi_auto_proposal_job() -> None:
     operator reviews and approves via Mission Hub.  Ensures intelligence signals
     are fresh before proposing; triggers bootstrap if signals are missing.
     """
+    from app.services.production_automation import auto_mission_proposal_allowed
+
+    if not auto_mission_proposal_allowed():
+        return
+
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.models.mission import Mission
@@ -1044,6 +1176,16 @@ def start_scheduler() -> AsyncIOScheduler:
 
     _scheduler = AsyncIOScheduler(timezone="UTC")
 
+    # When Celery owns the high-frequency production loop, APScheduler must NOT also
+    # register the overlapping periodic jobs (advance / scheduled posts / cadence),
+    # or the two orchestrators double-fire. Celery Beat owns those schedules.
+    celery_owns_production = settings.use_celery_orchestrator
+    if celery_owns_production:
+        logger.info(
+            "scheduler_production_jobs_delegated_to_celery",
+            orchestrator=settings.production_orchestrator,
+        )
+
     # 06:00 UTC — CEO health check + recommendations
     _scheduler.add_job(
         _daily_health_job,
@@ -1056,16 +1198,17 @@ def start_scheduler() -> AsyncIOScheduler:
     )
 
     # Every 5 minutes — Process scheduled posts (publish due content)
-    _scheduler.add_job(
-        _process_scheduled_posts_job,
-        trigger="interval",
-        minutes=5,
-        id="scheduled_posts_processor",
-        name="Scheduled Posts Publisher",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=120,
-    )
+    if not celery_owns_production:
+        _scheduler.add_job(
+            _process_scheduled_posts_job,
+            trigger="interval",
+            minutes=5,
+            id="scheduled_posts_processor",
+            name="Scheduled Posts Publisher",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=120,
+        )
 
     # 06:30 UTC — Social Listening (brand mentions, hashtags, competitor web)
     _scheduler.add_job(
@@ -1090,16 +1233,17 @@ def start_scheduler() -> AsyncIOScheduler:
     )
 
     # Every 5 minutes — advance active mission task graphs
-    _scheduler.add_job(
-        _advance_task_graphs_job,
-        trigger="interval",
-        minutes=5,
-        id="task_graph_executor",
-        name="Mission TaskGraph Executor",
-        replace_existing=True,
-        max_instances=1,        # never run two ticks concurrently
-        misfire_grace_time=60,
-    )
+    if not celery_owns_production:
+        _scheduler.add_job(
+            _advance_task_graphs_job,
+            trigger="interval",
+            minutes=5,
+            id="task_graph_executor",
+            name="Mission TaskGraph Executor",
+            replace_existing=True,
+            max_instances=1,        # never run two ticks concurrently
+            misfire_grace_time=60,
+        )
 
     # Every Monday 09:00 UTC — Learning promoter (scans patterns, creates BrandRule proposals)
     _scheduler.add_job(
@@ -1131,6 +1275,18 @@ def start_scheduler() -> AsyncIOScheduler:
         trigger=CronTrigger(hour=8, minute=0, timezone="UTC"),
         id="phase_transition_detector",
         name="Daily Phase Transition Detector",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+
+    # Daily 08:15 UTC — Special day detector (proposes missions ~7 days ahead
+    # of locale occasions: Mother's/Father's Day, Valentine's, national holidays)
+    _scheduler.add_job(
+        _detect_special_days_job,
+        trigger=CronTrigger(hour=8, minute=15, timezone="UTC"),
+        id="special_days_detector",
+        name="Daily Special Day Detector",
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=3600,
@@ -1184,6 +1340,19 @@ def start_scheduler() -> AsyncIOScheduler:
         max_instances=1,
         misfire_grace_time=7200,
     )
+
+    # Mission cadence dry-run — evaluates all workspaces and logs whether they
+    # should propose a new mission. Actual proposal gated by AUTONOMOUS_MISSION_CADENCE_ENABLED.
+    if not celery_owns_production:
+        _scheduler.add_job(
+            _mission_cadence_dry_run_job,
+            trigger=CronTrigger(hour=7, minute=30, timezone="UTC"),
+            id="mission_cadence_dry_run",
+            name="Mission Cadence Dry-Run (daily telemetry)",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+        )
 
     _scheduler.start()
     logger.info(

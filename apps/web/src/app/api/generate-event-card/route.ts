@@ -28,6 +28,7 @@ import {
 } from '@/lib/announcement-template-library';
 import { Resvg } from '@resvg/resvg-js';
 import { loadFontFiles, primaryFamily } from '@/lib/svg-font-loader';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -170,7 +171,7 @@ async function runGrafikerReview(
     const openai = new OpenAI({ apiKey });
     const b64 = cardBuffer.toString('base64');
     const resp = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: serverConfig.ai.chatModel('creative'),
       max_tokens: 400,
       temperature: 0.1,
       messages: [
@@ -262,7 +263,7 @@ async function renderGptText(
     const { Blob: NodeBlob } = await import('buffer');
     const blob = new NodeBlob([photoBuffer], { type: 'image/png' }) as unknown as File;
     const response = await openai.images.edit({
-      model: 'gpt-image-1',
+      model: serverConfig.imageGen.editModel,
       image: blob,
       prompt,
       size: '1024x1536',
@@ -442,14 +443,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (wantEnhance) {
     try {
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+      const openai = new OpenAI({ apiKey: serverConfig.openai.requireApiKey() });
       const { toFile } = await import('openai/uploads');
       const jpegInput = await sharp(photoBuffer).jpeg({ quality: 90 }).toBuffer();
       const file = await toFile(jpegInput, 'venue.jpg', { type: 'image/jpeg' });
       const enhancePrompt = buildEnhancePromptForEvent(input);
 
       const editRes = await openai.images.edit({
-        model: 'gpt-image-1',
+        model: serverConfig.imageGen.editModel,
         image: file,
         prompt: enhancePrompt,
         size: '1024x1024',
@@ -495,7 +496,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // GPT text-in-photo path: render text as part of the image via images.edit.
   // Returns early with the GPT-generated result (no SVG overlay needed).
-  const openaiApiKey = process.env.OPENAI_API_KEY ?? '';
+  const openaiApiKey = serverConfig.openai.apiKey ?? '';
   if (input.gptTextStyle && openaiApiKey) {
     const gptResult = await renderGptText(resized, input, input.gptTextStyle, brandKit, openaiApiKey);
     if (gptResult) {

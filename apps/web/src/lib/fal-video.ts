@@ -1,3 +1,5 @@
+import { serverConfig } from './server-config';
+
 const FAL_QUEUE_BASE = 'https://queue.fal.run';
 const FAL_AUTH_HEADER = (key: string) => ({ Authorization: `Key ${key}` });
 
@@ -90,10 +92,35 @@ async function runModel(
 export async function generateFalVideo(
   imageUrl: string,
   prompt: string,
-  opts?: { durationSecs?: number; timeoutMs?: number },
-): Promise<{ videoUrl: string; model: string }> {
-  const apiKey = process.env.FAL_API_KEY;
+  opts?: { durationSecs?: number; timeoutMs?: number; workspaceId?: string; skipReuse?: boolean },
+): Promise<{ videoUrl: string; model: string; reused?: boolean; reusedFromArtifactId?: string }> {
+  if (opts?.workspaceId && !opts.skipReuse) {
+    const { findReusableRawI2vVideo } = await import('@/lib/fal-i2v-reuse');
+    const reused = await findReusableRawI2vVideo(opts.workspaceId, imageUrl);
+    if (reused) {
+      console.log(
+        `[fal-video] reusing raw I2V from artifact ${reused.artifactId} (${reused.source}):`,
+        reused.videoUrl.slice(0, 80),
+      );
+      return {
+        videoUrl: reused.videoUrl,
+        model: 'reused_raw_i2v',
+        reused: true,
+        reusedFromArtifactId: reused.artifactId,
+      };
+    }
+  }
+
+  const apiKey = serverConfig.fal.apiKey;
   if (!apiKey) throw new Error('FAL_API_KEY not set — fal.ai video fallback unavailable');
+
+  const { resolveExternallyAccessibleUrl, isFalAccessibleMediaUrl } = await import('@/lib/media-url');
+  const resolvedImageUrl = await resolveExternallyAccessibleUrl(imageUrl);
+  if (!isFalAccessibleMediaUrl(resolvedImageUrl)) {
+    throw new Error(
+      `Image URL not accessible to fal.ai (need HTTPS or data URI): ${resolvedImageUrl.slice(0, 120)}`,
+    );
+  }
 
   const durationSecs = opts?.durationSecs ?? 5;
   const timeoutMs = opts?.timeoutMs ?? 110_000;
@@ -101,7 +128,7 @@ export async function generateFalVideo(
   for (const modelId of VIDEO_MODELS) {
     try {
       console.log(`[fal-video] trying ${modelId}`);
-      const url = await runModel(apiKey, modelId, imageUrl, prompt, durationSecs, timeoutMs);
+      const url = await runModel(apiKey, modelId, resolvedImageUrl, prompt, durationSecs, timeoutMs);
       if (url) {
         console.log(`[fal-video] success with ${modelId}:`, url.slice(0, 80));
         return { videoUrl: url, model: modelId };
@@ -111,4 +138,45 @@ export async function generateFalVideo(
     }
   }
   throw new Error('All fal.ai video models failed');
+}
+
+// Pipeline classification is owned by the canonical registry (single source of
+// truth). These thin re-exports preserve the historical import path used across
+// production-loop.ts and production-pipeline-router.ts.
+export {
+  isFalVideoPipeline,
+  isFalDesignPipeline,
+  isFalOnlyPipeline,
+  isFalOnlyVideoPipeline,
+  isFalOnlyPostPipeline,
+} from './pipeline-registry';
+
+/** Mission fal.ai slots — image-to-video from gallery reference. */
+export async function produceFalMissionVideo(input: {
+  imageUrl: string;
+  headline: string;
+  caption: string;
+  mood?: string;
+  brandBusinessType?: string;
+  pipeline: 'fal_story' | 'fal_reel';
+  workspaceId?: string;
+  skipReuse?: boolean;
+}): Promise<{ videoUrl: string; model: string; reused?: boolean; reusedFromArtifactId?: string }> {
+  const prompt = [
+    input.headline,
+    input.caption,
+    input.mood ? `Mood: ${input.mood}` : '',
+    input.brandBusinessType ? `Brand sector: ${input.brandBusinessType}` : '',
+    input.pipeline === 'fal_reel'
+      ? 'Cinematic Instagram reel, smooth camera motion, vertical 9:16, premium brand content.'
+      : 'Subtle cinematic story motion, vertical 9:16, ambient atmosphere, premium brand story.',
+  ].filter(Boolean).join('. ').slice(0, 500);
+
+  const durationSecs = input.pipeline === 'fal_reel' ? 10 : 5;
+  return generateFalVideo(input.imageUrl, prompt, {
+    durationSecs,
+    timeoutMs: input.pipeline === 'fal_reel' ? 150_000 : 120_000,
+    workspaceId: input.workspaceId,
+    skipReuse: input.skipReuse,
+  });
 }

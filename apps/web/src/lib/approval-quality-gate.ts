@@ -22,3 +22,11 @@ export function resolveApprovalQualityGate(
     softWarnings: scorecard.softWarnings,
   };
 }
+
+/** Preview / mission-factory rows without a persisted artifact id. */
+export function resolveApprovalQualityGateFromMeta(
+  meta: Record<string, unknown>,
+): ApprovalQualityGate {
+  const stub = { id: 'preview', content: '', metadata: meta } as OutputArtifact;
+  return resolveApprovalQualityGate(stub, meta);
+}

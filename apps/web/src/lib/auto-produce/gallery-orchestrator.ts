@@ -22,7 +22,7 @@ import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { buildSlotGalleryMatchInput, assignmentPostType } from '@/lib/gallery-first-production';
 import type { UsedGalleryUsage } from '@/lib/gallery-usage-tracker';
-import { getExcludeUrlsForPostType } from '@/lib/gallery-usage-tracker';
+import { buildGlobalGalleryUsageCounts, getExcludeUrlsForPostType } from '@/lib/gallery-usage-tracker';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -36,6 +36,7 @@ export function assignmentUsesGalleryPhoto(
   const pipeline = String(assignment.pipeline ?? '');
   const role = String(assignment.slot_role ?? '');
   if (pipeline === 'remotion_poster' || role === 'designed_post') return false;
+  if (pipeline.startsWith('fal_only_') || role.startsWith('fal_only_')) return false;
   if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
   if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
   return (
@@ -88,6 +89,10 @@ export function buildMissionGalleryAssignments(
   }> = [];
   let storyOrdinal = 0;
 
+  const globalUsageCounts = input.galleryUsage
+    ? buildGlobalGalleryUsageCounts(input.galleryUsage)
+    : undefined;
+
   for (const queueItem of input.productionLoop) {
     if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
 
@@ -113,7 +118,8 @@ export function buildMissionGalleryAssignments(
       || queueItem.assignment.pipeline === 'story_still';
     const storyIndex = isStory ? storyOrdinal++ : 0;
 
-    const matchInput = buildSlotGalleryMatchInput({
+    const matchInput = {
+      ...buildSlotGalleryMatchInput({
       assignment: queueItem.assignment,
       storyIndex,
       brandName: input.resolvedBrandName,
@@ -123,7 +129,9 @@ export function buildMissionGalleryAssignments(
       creativeBrief: input.creativeBrief,
       ideationCaption: caption,
       ideationHeadline: headline,
-    });
+    }),
+      ...(globalUsageCounts ? { globalUsageCounts } : {}),
+    };
 
     assignItems.push({
       key: missionGallerySlotKey(queueItem.ideaIndex, String(queueItem.assignment.slot_role)),

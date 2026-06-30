@@ -12,6 +12,10 @@ import type { CreativeIntent } from './creative-production-contracts';
 import type { ProductionProfile } from './production-profile';
 import { resolveProductionProfile } from './production-profile';
 import { getPlanSpec } from './package-plan-config';
+import {
+  resolveWeeklyPackageGeometry,
+  STARTER_WEEKLY_PACKAGE_COUNTS,
+} from './package-weekly-geometry';
 
 /** Görsel üretim hattı — birbirine karıştırılmaz. */
 export type ProductionPipeline =
@@ -19,11 +23,18 @@ export type ProductionPipeline =
   | 'remotion_poster'    // Tasarımsal post (SpecPoster / announcement SVG)
   | 'remotion_story'     // Kampanya / duyuru motion story (MP4)
   | 'story_still'        // Story: statik galeri görseli (caption feed'de yok)
-  | 'runway_reel'        // Reel video
+  | 'runway_reel'        // @deprecated — fal_reel kullan; legacy FD atamaları normalize edilir
+  | 'fal_story'          // fal.ai track — Remotion'dan bağımsız (Ideogram + I2V)
+  | 'fal_reel'           // fal.ai track — Remotion/Runway alternatifi
+  | 'fal_design'         // fal.ai/GPT-image tasarımsal feed post (Canva benzeri, galeri + tipografi)
+  | 'fal_only_story'     // Tam fal.ai story — galeri/GPT yok, Ideogram + I2V
+  | 'fal_only_post'      // Tam fal.ai post — galeri/GPT yok, Ideogram/Flux still
+  | 'fal_only_reel'      // Tam fal.ai reel — galeri/GPT yok, Ideogram + I2V
   | 'marky_event'        // Etkinlik kartı (canvas/event)
   | 'meta_ad'            // Meta reklam kreatifi
   | 'google_ad'          // Google Ads RSA / görsel kreatif
-  | 'carousel_gallery';  // Çoklu galeri slayt
+  | 'carousel_gallery'   // Çoklu galeri slayt
+  | 'product_showcase';  // Ürün vitrin (AI arka plan değişimi)
 
 /**
  * Feed'de caption/hashtag gösterilir mi?
@@ -36,6 +47,14 @@ export type ProductionSlotRole =
   | 'organic_post'
   /** Tasarımsal / şablonlu post — Remotion poster, caption feed'de aynı brief'ten */
   | 'designed_post'
+  /** AI typography designed post — Remotion poster (SVG + Sharp) */
+  | 'designed_typography'
+  /** fal.ai/GPT-image Canva-style designed post — parallel track (NOT Remotion) */
+  | 'fal_designed_post'
+  /** Product showcase post — AI background replacement for product photos */
+  | 'product_showcase_post'
+  /** Product showcase story — AI background replacement for product photos (story format) */
+  | 'product_showcase_story'
   /** Statik story (galeri) */
   | 'organic_story_still'
   /** Motion story — kampanya / duyuru / etkinlik */
@@ -44,6 +63,16 @@ export type ProductionSlotRole =
   | 'organic_reel'
   /** Kampanya / duyuru reel (aynı brief, farklı motion) */
   | 'campaign_reel_motion'
+  /** fal.ai I2V story — ayrı üretim hattı (Remotion değil) */
+  | 'fal_story_motion'
+  /** fal.ai I2V reel — ayrı üretim hattı (Runway/Remotion değil) */
+  | 'fal_reel_motion'
+  /** Tam fal.ai story — galeri/GPT/Remotion yok */
+  | 'fal_only_story'
+  /** Tam fal.ai feed post — galeri/GPT/Remotion yok */
+  | 'fal_only_post'
+  /** Tam fal.ai reel — galeri/GPT/Runway yok */
+  | 'fal_only_reel'
   /** Carousel */
   | 'organic_carousel'
   /** Meta reklam kreatifi */
@@ -71,10 +100,11 @@ export interface ProductionAssignment {
   publish_channel: 'instagram_organic' | 'instagram_campaign' | 'meta_ads' | 'google_ads';
   layout_family_hint?: string;
   /**
-   * Brand template library slot key — maps to one of the 5 brand story slots.
+   * Brand template library slot key — maps to reusable story/post design slots.
    * Set by Feed Art Director based on content intent; used by auto-produce to
-   * select the exact brand-configured story template (not rotation-based).
-   * Values: daily_story | event_story | campaign_post | editorial_story | social_proof
+   * select the exact brand-configured template (not rotation-based).
+   * Values include: daily_story | event_story | campaign_post | editorial_story
+   * | social_proof | social_proof_post | ad_creative_post
    */
   library_slot_key?: string;
   /**
@@ -84,6 +114,11 @@ export interface ProductionAssignment {
    * as required keywords, overriding generic sector affinity.
    */
   visual_subject_hint?: string;
+  /**
+   * Feed Art Director designer note for fal.ai slots (fal_designed_post, fal_reel_motion, fal_only_*).
+   * One sentence: layout + typography + graphic intent for this specific caption.
+   */
+  fal_design_hint?: string;
   rationale?: string;
 }
 
@@ -112,14 +147,51 @@ export interface MissionProductionManifest {
   version: 1;
 }
 
-/** Standard weekly mission deliverable: 2 story + 2 post + 1 reel (5 organic — stable v1) */
+/**
+ * Standard weekly mission deliverable: 16 generated slots.
+ *
+ * Post mix (6): 2 organic gallery + 2 Remotion designed + 1 fal_designed_post
+ * (galeri+GPT/fal) + 1 fal_only_post (tam fal).
+ * Story (3): Remotion motion ×2 + organic still.
+ * Reel (6): Runway ×2 + fal_reel_motion ×2 + fal_only_reel ×2 — Remotion kullanılmaz.
+ * (Story için fal.ai kullanılmaz — Remotion karşılar. Reels Runway + fal.ai.)
+ */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
-  story: 2,
-  post: 2,
-  carousel: 0,
-  reel: 1,
-  total: 5,
+  story: 3,
+  post: 6,
+  carousel: 1,
+  reel: 6,
+  total: 16,
 } as const;
+
+export type PackageGeometry = {
+  story: number;
+  post: number;
+  carousel: number;
+  reel: number;
+  total: number;
+};
+
+/**
+ * Resolve package geometry from brand theme overrides or plan tier.
+ * Falls back to the default 16-slot weekly package (6 post · 3 story · 1 carousel · 6 reel).
+ */
+export function resolvePackageGeometry(
+  brandOverride?: Partial<PackageGeometry> | null,
+  packageSlug?: string | null,
+): PackageGeometry {
+  const base = resolveWeeklyPackageGeometry(packageSlug);
+  if (!brandOverride) return base;
+  const geo: PackageGeometry = {
+    story: brandOverride.story ?? base.story,
+    post: brandOverride.post ?? base.post,
+    carousel: brandOverride.carousel ?? base.carousel,
+    reel: brandOverride.reel ?? base.reel,
+    total: 0,
+  };
+  geo.total = geo.story + geo.post + geo.carousel + geo.reel;
+  return geo;
+}
 
 /** Strategist opportunity missions — 3 acil fikir → 1 post + 1 story + 1 reel (reklam yok). */
 export const MISSION_OPPORTUNITY_PACKAGE_COUNTS = {
@@ -128,6 +200,16 @@ export const MISSION_OPPORTUNITY_PACKAGE_COUNTS = {
   reel: 1,
   total: 3,
 } as const;
+
+/**
+ * Only opportunity missions use one-slot-per-raw-idea routing.
+ * Weekly / seasonal / campaign missions use fixed package geometry (16 agency · 12 starter).
+ */
+export function isIdeaDrivenMissionProduction(
+  missionType?: MissionProductionPackageType | null,
+): boolean {
+  return (missionType ?? 'weekly_content') === 'opportunity';
+}
 
 /** Organic slot target for FD backfill / gate (excludes paid ad pair). */
 export function resolveMissionRequiredSlotCount(input: {
@@ -182,7 +264,7 @@ const OPPORTUNITY_ORGANIC: MissionProductionSlot[] = [
   },
   {
     role: 'organic_reel',
-    pipeline: 'runway_reel',
+    pipeline: 'fal_reel',
     format: 'reel',
     captionSurface: 'feed_card',
     required: true,
@@ -200,6 +282,14 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
     intentHint: 'daily_story',
   },
   {
+    role: 'organic_post',
+    pipeline: 'gallery_photo',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'social_proof',
+  },
+  {
     role: 'designed_post',
     pipeline: 'remotion_poster',
     format: 'post',
@@ -208,6 +298,30 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
     intentHint: 'brand_awareness',
   },
   {
+    role: 'designed_typography',
+    pipeline: 'remotion_poster',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'campaign_offer',
+  },
+  {
+    role: 'fal_designed_post',
+    pipeline: 'fal_design',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
+    role: 'organic_carousel',
+    pipeline: 'carousel_gallery',
+    format: 'carousel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
     role: 'campaign_story_motion',
     pipeline: 'remotion_story',
     format: 'story',
@@ -221,17 +335,182 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
+    intentHint: 'behind_the_scenes',
+  },
+  {
+    role: 'organic_story_still',
+    pipeline: 'story_still',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
     intentHint: 'daily_story',
   },
   {
     role: 'organic_reel',
-    pipeline: 'runway_reel',
+    pipeline: 'fal_reel',
     format: 'reel',
     captionSurface: 'feed_card',
     required: true,
     intentHint: 'educational_post',
   },
+  {
+    role: 'campaign_reel_motion',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'social_proof',
+  },
+  {
+    role: 'fal_reel_motion',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
+    role: 'fal_reel_motion',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'behind_the_scenes',
+  },
+  {
+    role: 'fal_only_reel',
+    pipeline: 'fal_only_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'brand_awareness',
+  },
+  {
+    role: 'fal_only_post',
+    pipeline: 'fal_only_post',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'campaign_offer',
+  },
+  {
+    role: 'fal_only_reel',
+    pipeline: 'fal_only_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
 ];
+
+/** Starter weekly organic — 4 post · 3 story · 1 carousel · 4 reel (12 slots). */
+const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
+  {
+    role: 'organic_post',
+    pipeline: 'gallery_photo',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'daily_story',
+  },
+  {
+    role: 'designed_post',
+    pipeline: 'remotion_poster',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'brand_awareness',
+  },
+  {
+    role: 'designed_typography',
+    pipeline: 'remotion_poster',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'campaign_offer',
+  },
+  {
+    role: 'fal_designed_post',
+    pipeline: 'fal_design',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
+    role: 'organic_carousel',
+    pipeline: 'carousel_gallery',
+    format: 'carousel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
+    role: 'campaign_story_motion',
+    pipeline: 'remotion_story',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
+    intentHint: 'brand_awareness',
+  },
+  {
+    role: 'campaign_story_motion',
+    pipeline: 'remotion_story',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
+    intentHint: 'behind_the_scenes',
+  },
+  {
+    role: 'organic_story_still',
+    pipeline: 'story_still',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
+    intentHint: 'daily_story',
+  },
+  {
+    role: 'organic_reel',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'educational_post',
+  },
+  {
+    role: 'campaign_reel_motion',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'social_proof',
+  },
+  {
+    role: 'fal_reel_motion',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
+    role: 'fal_reel_motion',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'behind_the_scenes',
+  },
+];
+
+export { STARTER_WEEKLY_PACKAGE_COUNTS };
+
+function weeklyOrganicSlotsForPlan(packageSlug?: string | null): MissionProductionSlot[] {
+  const geo = resolveWeeklyPackageGeometry(packageSlug);
+  return geo.total <= STARTER_WEEKLY_PACKAGE_COUNTS.total
+    ? [...WEEKLY_ORGANIC_STARTER]
+    : [...WEEKLY_ORGANIC];
+}
 
 const WEEKLY_CAMPAIGN_ADDON: MissionProductionSlot[] = [
   {
@@ -244,7 +523,7 @@ const WEEKLY_CAMPAIGN_ADDON: MissionProductionSlot[] = [
   },
   {
     role: 'campaign_reel_motion',
-    pipeline: 'runway_reel',
+    pipeline: 'fal_reel',
     format: 'reel',
     captionSurface: 'feed_card',
     required: false,
@@ -252,11 +531,11 @@ const WEEKLY_CAMPAIGN_ADDON: MissionProductionSlot[] = [
   },
 ];
 
-/** APO-6 — agency tier may require second Runway slot when theme allows. */
+/** APO-6 — agency tier campaign reel addon (fal designer video). */
 const CAMPAIGN_AGENCY_ADDON: MissionProductionSlot[] = [
   {
     role: 'campaign_reel_motion',
-    pipeline: 'runway_reel',
+    pipeline: 'fal_reel',
     format: 'reel',
     captionSurface: 'feed_card',
     required: true,
@@ -289,6 +568,50 @@ function hasCampaignIntent(intents: CreativeIntent[]): boolean {
   );
 }
 
+/** Product Showcase slots — AI background-replaced product photos (post + story). */
+function buildProductShowcaseSlots(config: {
+  posts_per_mission: number;
+  stories_per_mission: number;
+}): MissionProductionSlot[] {
+  const slots: MissionProductionSlot[] = [];
+  for (let i = 0; i < config.posts_per_mission; i += 1) {
+    slots.push({
+      role: 'product_showcase_post',
+      pipeline: 'product_showcase',
+      format: 'post',
+      captionSurface: 'feed_card',
+      required: true,
+      intentHint: 'product_highlight',
+    });
+  }
+  for (let i = 0; i < config.stories_per_mission; i += 1) {
+    slots.push({
+      role: 'product_showcase_story',
+      pipeline: 'product_showcase',
+      format: 'story',
+      captionSurface: 'visual_only',
+      required: true,
+      intentHint: 'product_highlight',
+    });
+  }
+  return slots;
+}
+
+/** Read product showcase config from brand theme. Returns null if disabled. */
+function resolveProductShowcaseConfig(
+  brandTheme?: Record<string, unknown> | null,
+): { posts_per_mission: number; stories_per_mission: number } | null {
+  if (!brandTheme) return null;
+  const config = (brandTheme.product_showcase ?? brandTheme.productShowcase) as
+    | { enabled?: boolean; posts_per_mission?: number; stories_per_mission?: number }
+    | undefined;
+  if (!config?.enabled) return null;
+  return {
+    posts_per_mission: config.posts_per_mission ?? 2,
+    stories_per_mission: config.stories_per_mission ?? 2,
+  };
+}
+
 /** P2-3 — Adjust weekly organic slots for package / production profile. */
 export function applyProductionProfileToWeeklySlots(
   slots: MissionProductionSlot[],
@@ -296,6 +619,7 @@ export function applyProductionProfileToWeeklySlots(
 ): MissionProductionSlot[] {
   let motionKept = 0;
   const trimmed: MissionProductionSlot[] = [];
+  let stillStoryCount = 0;
   for (const slot of slots) {
     if (slot.role === 'campaign_story_motion') {
       if (motionKept < profile.remotionStoryMotionSlots) {
@@ -304,7 +628,14 @@ export function applyProductionProfileToWeeklySlots(
       }
       continue;
     }
-    if (slot.role === 'organic_reel' && !profile.allowRunwayReels) {
+    if (slot.role === 'organic_story_still') {
+      stillStoryCount += 1;
+    }
+    if (
+      (slot.role === 'organic_reel' || slot.role === 'campaign_reel_motion')
+      && slot.pipeline === 'runway_reel'
+      && !profile.allowRunwayReels
+    ) {
       trimmed.push({
         role: 'organic_story_still',
         pipeline: 'story_still',
@@ -318,7 +649,8 @@ export function applyProductionProfileToWeeklySlots(
     trimmed.push(slot);
   }
 
-  for (let i = 0; i < profile.remotionStoryStillSlots; i += 1) {
+  const additionalStillSlots = Math.max(0, profile.remotionStoryStillSlots - stillStoryCount);
+  for (let i = 0; i < additionalStillSlots; i += 1) {
     trimmed.push({
       role: 'organic_story_still',
       pipeline: 'story_still',
@@ -401,7 +733,10 @@ export function buildMissionProductionManifest(input: {
     return acc;
   }, []);
 
-  const weeklySlots = applyProductionProfileToWeeklySlots([...WEEKLY_ORGANIC], profile);
+  const weeklySlots = applyProductionProfileToWeeklySlots(
+    weeklyOrganicSlotsForPlan(input.packageSlug),
+    profile,
+  );
 
   const slots: MissionProductionSlot[] = [
     ...weeklySlots,
@@ -431,8 +766,25 @@ export function slotRoleToFeedTab(role: ProductionSlotRole): 'post' | 'story' | 
   return 'post';
 }
 
+/** Legacy FD / cached assignments: runway_reel → fal_reel (Runway kapalı). */
+export function normalizeProductionPipeline(
+  pipeline: string | null | undefined,
+): ProductionPipeline {
+  const key = String(pipeline ?? '').trim();
+  if (key === 'runway_reel') return 'fal_reel';
+  return (key as ProductionPipeline) || 'gallery_photo';
+}
+
 /** Mevcut auto-produce: tüm postlar → remotion_poster. Hedef: sadece designed_post. */
 export function pipelineForSlotRole(role: ProductionSlotRole): ProductionPipeline {
+  if (role === 'designed_typography') return 'remotion_poster';
+  if (role === 'fal_designed_post') return 'fal_design';
+  // Legacy FD assignments — fal story slots artık reel pipeline kullanır
+  if (role === 'fal_story_motion') return 'fal_reel';
+  if (role === 'fal_only_story') return 'fal_only_reel';
+  if (role === 'fal_only_post') return 'fal_only_post';
+  if (role === 'fal_only_reel') return 'fal_only_reel';
+  if (role === 'product_showcase_post' || role === 'product_showcase_story') return 'product_showcase';
   const slot = [
     ...WEEKLY_ORGANIC,
     ...OPPORTUNITY_ORGANIC,

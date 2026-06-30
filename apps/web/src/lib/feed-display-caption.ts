@@ -3,7 +3,13 @@
  * Vision description stays in metadata.gallery_photo_description for prompts.
  */
 
-import { isVisionAnalysisDescription, isGalleryTagHeadline, resolveProductHeadlineFromGalleryTags } from './vision-text-guard';
+import {
+  isVisionAnalysisDescription,
+  isGalleryTagHeadline,
+  isGalleryDerivedCaption,
+  resolveProductHeadlineFromGalleryTags,
+} from './vision-text-guard';
+import { mergeMissionIdeationRecords } from './parse-ideation-summary';
 import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
@@ -25,7 +31,11 @@ const MOOD_TR: Record<string, string> = {
   dramatic: 'Etkileyici bir atmosfer.',
 };
 
-export { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
+export {
+  isVisionAnalysisDescription,
+  isGalleryTagHeadline,
+  isGalleryDerivedCaption,
+} from './vision-text-guard';
 
 function pickStr(...vals: unknown[]): string {
   for (const v of vals) {
@@ -106,6 +116,63 @@ export interface FeedCaptionInput {
   content?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   title?: string;
+  /** Resolved from mission content_ideation (mission_id + idea_index). */
+  missionIdeationCaption?: string;
+}
+
+export function pickIdeationCaptionFromIdea(idea: Record<string, unknown>): string {
+  for (const key of ['caption_draft', 'caption', 'captionDraft', 'brief', 'body', 'description', 'copy', 'text', 'script']) {
+    const v = idea[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+export function buildMissionIdeationCaptionLookup(
+  missionId: string,
+  nodes: Array<{
+    node_key?: string;
+    output_summary?: string | null;
+    output_payload?: unknown;
+    status?: string;
+    task_type?: string;
+  }>,
+): Map<number, string> {
+  const lookup = new Map<number, string>();
+  const ideas = mergeMissionIdeationRecords(nodes, missionId);
+  ideas.forEach((idea, index) => {
+    const caption = pickIdeationCaptionFromIdea(idea);
+    if (!caption || isGalleryDerivedCaption(caption)) return;
+    lookup.set(index, caption);
+    const rawIdx = idea.idea_index ?? idea.ideaIndex;
+    if (typeof rawIdx === 'number' && Number.isFinite(rawIdx)) {
+      lookup.set(rawIdx, caption);
+    }
+  });
+  return lookup;
+}
+
+function captionFromMissionLookup(
+  meta: Record<string, unknown>,
+  content: Record<string, unknown>,
+  lookup?: ReadonlyMap<string, string>,
+): string {
+  if (!lookup?.size) return '';
+  const missionId = pickStr(meta.mission_id, meta.missionId, content.mission_id, content.missionId);
+  const ideaIndex = meta.idea_index ?? meta.ideaIndex ?? content.idea_index ?? content.ideaIndex;
+  if (!missionId || ideaIndex == null || ideaIndex === '') return '';
+  const key = `${missionId}:${Number(ideaIndex)}`;
+  return pickStr(lookup.get(key));
+}
+
+function isPublishableIdeationCaption(text: string): boolean {
+  const t = pickStr(text);
+  if (!t) return false;
+  if (isVisionAnalysisDescription(t)) return false;
+  if (isGalleryDerivedCaption(t)) return false;
+  if (isGalleryTagHeadline(t)) return false;
+  if (ATMOSFER_PREFIX_RE.test(t) && t.length < 40) return false;
+  return true;
 }
 
 function hasIdeationCopy(meta: Record<string, unknown>, content: Record<string, unknown>): boolean {
@@ -188,57 +255,52 @@ export function resolveFeedDisplayHeadline(input: FeedCaptionInput): string {
 /**
  * Caption shown under Feed posts — filters vision analysis, prefers ideation copy.
  */
-export function resolveFeedDisplayCaption(input: FeedCaptionInput): string {
+export function resolveFeedDisplayCaption(
+  input: FeedCaptionInput,
+  missionIdeationLookup?: ReadonlyMap<string, string>,
+): string {
   const content = input.content ?? {};
   const meta = input.metadata ?? {};
-  const ideationLocked = hasIdeationCopy(meta, content);
+  const missionCaption = pickStr(
+    input.missionIdeationCaption,
+    captionFromMissionLookup(meta, content, missionIdeationLookup),
+  );
 
-  const candidates = [
+  const candidates: unknown[] = [
+    missionCaption,
     meta.ideation_caption,
-    meta.caption_draft,
-    meta.original_caption,
-    content.caption_draft,
     content.ideation_caption,
-    content.caption,
-    meta.caption,
+    meta.caption_draft,
+    content.caption_draft,
+    meta.original_caption,
+    content.original_caption,
   ];
+
+  const captionSource = pickStr(meta.caption_source, content.caption_source);
+  const gallerySourcedCaption = captionSource === 'gallery_meta' || captionSource === 'gallery_gpt';
+  if (!gallerySourcedCaption) {
+    candidates.push(content.caption, meta.caption);
+  }
 
   for (const raw of candidates) {
     const t = pickStr(raw);
-    if (!t) continue;
-    if (isVisionAnalysisDescription(t)) continue;
-    if (ATMOSFER_PREFIX_RE.test(t) && t.length < 40) continue;
+    if (!isPublishableIdeationCaption(t)) continue;
     return t;
   }
 
-  if (ideationLocked) {
+  if (hasIdeationCopy(meta, content) || missionCaption) {
     return '';
   }
 
   const hooks = meta.caption_hooks ?? meta.captionHooks ?? content.caption_hooks;
   const hook = pickTurkishCaptionHook(hooks);
-  if (hook) return hook;
-
-  const brandName = pickStr(meta.brand_name, content.brand_name, input.title) || '';
-  const location = pickStr(meta.location, content.location);
-  const galleryMeta = meta.gallery_photo_meta as Record<string, unknown> | undefined;
-  if (galleryMeta) {
-    const built = buildInstagramCaptionFromGalleryMeta(galleryMeta, brandName, location);
-    if (built.caption && !isVisionAnalysisDescription(built.caption)) {
-      return built.caption;
-    }
-  }
-
-  const scene = pickStr(meta.gallery_photo_description, meta.photo_scene_description);
-  if (scene && !isVisionAnalysisDescription(scene)) {
-    const first = scene.split(/[.!?]/)[0]?.trim();
-    if (first && first.length >= 12 && first.length <= 200) return first;
-  }
+  if (hook && isPublishableIdeationCaption(hook)) return hook;
 
   const rawStored = pickStr(content.caption, meta.caption);
   if (rawStored && isVisionAnalysisDescription(rawStored)) {
+    const brandName = pickStr(meta.brand_name, content.brand_name, input.title) || '';
     const salvaged = salvageCaptionFromVisionBlob(rawStored, brandName);
-    if (salvaged) return salvaged;
+    if (salvaged && isPublishableIdeationCaption(salvaged)) return salvaged;
   }
 
   return '';

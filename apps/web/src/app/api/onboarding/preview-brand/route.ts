@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
 
 const CREW = getCrewBackendBaseUrl();
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 function str(v: unknown): string {
   return String(v ?? '').trim();

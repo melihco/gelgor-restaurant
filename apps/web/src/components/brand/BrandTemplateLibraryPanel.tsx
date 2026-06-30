@@ -19,11 +19,12 @@ import {
   slotTypographyPreviewLabel,
   type SlotFontMode,
 } from '@/lib/brand-template-slot-typography';
-import { parseMotionProfileFromTheme, type MotionStyle } from '@/lib/brand-motion-profile';
+import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
+import type { MotionStyle } from '@/lib/brand-motion-profile';
 import { resolveKitForSector } from '@/lib/remotion-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
-import { getSectorVibeMeta } from '@/lib/sector-template-vibes';
 import { TemplateSlotPreviewModal } from '@/components/brand/TemplateSlotPreviewModal';
+import { TemplateColorBehaviorPreview } from '@/components/brand/TemplateColorBehaviorPreview';
 
 type Variant = 'mobile' | 'desktop';
 
@@ -69,6 +70,30 @@ export function BrandTemplateLibraryPanel({
       });
       if (!r.ok) return null;
       return r.json() as Promise<{ theme?: Record<string, unknown> | null }>;
+    },
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+  });
+
+  const { data: brandPreview } = useQuery({
+    queryKey: ['brand-template-library-preview-tokens', workspaceId],
+    queryFn: async () => {
+      if (!workspaceId) return null;
+      const [ctxRes, themeRes] = await Promise.all([
+        fetch(`/api/brand-context-data/${workspaceId}`, {
+          headers: { 'X-Tenant-Id': workspaceId },
+        }),
+        fetch(`/api/brand-context/${workspaceId}/theme`, {
+          headers: { 'X-Tenant-Id': workspaceId },
+        }),
+      ]);
+      const ctx = ctxRes.ok ? await ctxRes.json() : {};
+      const themePayload = themeRes.ok ? await themeRes.json() : {};
+      return resolveBrandProductionTokens({
+        brandContext: ctx as Record<string, unknown>,
+        brandTheme: (themePayload.theme ?? null) as Record<string, unknown> | null,
+        sector,
+      });
     },
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
@@ -152,7 +177,7 @@ export function BrandTemplateLibraryPanel({
   const content = (
     <>
       <div style={{ marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: isMobile ? t?.textTertiary : 'rgb(100,116,139)' }}>
-        Feed, story (Remotion MP4) ve kampanya post üretimi bu 5 slottan seçer. Her slot için şablon + font modu + logo göster/gizle kaydedilir; renkler Marka Paleti’nden gelir. Kaydetmeden üretime yansımaz.
+        Feed, story (Remotion MP4) ve kampanya post üretimi bu 5 slottan seçer. Font modu “Marka fontu” ise Remotion video, Marka Detayı’ndaki seçili font/post font standardıyla render alır; “Şablon fontu” seçilirse template kendi fontunu korur. Kaydetmeden üretime yansımaz.
         {draft?.locked && (
           <span style={{ display: 'block', marginTop: 6, color: isMobile ? t?.accent : '#a78bfa', fontWeight: 600 }}>
             Özel kütüphane aktif (operatör düzenlemesi)
@@ -346,6 +371,14 @@ export function BrandTemplateLibraryPanel({
                     </select>
                   )}
                 </div>
+
+                <TemplateColorBehaviorPreview
+                  templateId={slot.format === 'post' ? undefined : slot.storyTemplateId}
+                  posterTemplateId={slot.format === 'post' ? slot.posterTemplateId : undefined}
+                  tokens={brandPreview ?? undefined}
+                  isMobile={isMobile}
+                  theme={t}
+                />
 
                 <label
                   style={{

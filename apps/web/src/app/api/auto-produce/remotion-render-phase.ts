@@ -1,4 +1,5 @@
 import { resolveContentIntent, allowedCompositionsForDirector } from '@/lib/brand-motion-profile';
+import { serverConfig } from '@/lib/server-config';
 import {
   resolveBrandStoryProductionTemplate,
   resolveProductionTemplate,
@@ -26,13 +27,17 @@ import {
 } from '@/lib/story-sequence-rules';
 import { assessPremiumRubric } from '@/lib/premium-approval-rubric';
 import {
+  resolveProductionEngines,
+  isPremiumMotionFamily,
+  isTypographyFallbackFamily,
+} from '@/lib/brand-production-engines';
+import {
   buildSafeOverlayRetryProps,
   callRemotionRenderApi,
   ensureRemotionPhotoUrl,
   persistStoryVideo,
 } from '@/lib/remotion-bundle-render';
 import {
-  shouldShowLogo,
   resolveMotionLane,
   MOTION_LANE_SPECS,
 } from '@/lib/sector-premium-presets';
@@ -54,6 +59,8 @@ export type PremiumCompositionMeta = {
   compositionDescription?: string;
   creativeDirection?: string;
   premiumScore?: number;
+  visualStory?: string;
+  motionApproach?: string;
 };
 
 export type StoryCandidate = {
@@ -121,6 +128,8 @@ export interface RemotionRenderPhaseContext {
   nexusClient: NexusClient;
   grafikerMaxRetries: number;
   brandTheme: any;
+  /** Faz 2.2 — production tier; premium preserves full Grafiker */
+  profileTier?: 'economy' | 'agency' | 'premium';
 }
 
 // ─── Story phase ──────────────────────────────────────────────────────────────
@@ -146,6 +155,10 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
   if (ctx.bundleCards === false || creatomateStoryCandidates.length === 0 || !brandTokensForRender) {
     return;
   }
+
+  const productionEngines = resolveProductionEngines(ctx.brandTheme);
+  let motionPlatesUsed = 0;
+  let typographyUsed = 0;
 
   const brandTokens = brandTokensForRender;
   const { primaryColor, accentColor } = brandTokens;
@@ -299,10 +312,12 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       categoryLabel: '',
       brandName: resolvedBrandName,
       location: brandLocation || '',
-      // Logo restraint: suppress logo on hook cards for luxury sectors
-      logoUrl: shouldShowLogo(brandBusinessType, storySequenceRole, Boolean(brandLogoUrl))
-        ? resolveSlotLogoForRender(brandLogoUrl, storyPick.slot)
-        : undefined,
+      // Always surface the brand's real logo in the logo zone when one exists.
+      // (Previously sector "logo restraint" suppressed it on hook/proof cards, but
+      // the layouts then fell back to brand-name TEXT — which contradicts showing
+      // the actual brand mark. The template-library slot can still opt out via
+      // showLogo=false.)
+      logoUrl: resolveSlotLogoForRender(brandLogoUrl, storyPick.slot),
       contentIntent: intent,
       sector: brandBusinessType,
       sceneBrief: candidate.sceneBriefBlock || undefined,
@@ -372,7 +387,81 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       // Sprint 6 — Luxury photo quality gate: signal CD to prefer overlay-safe family.
       preferSafeOverlay: photoQualityBelowLuxuryFloor || undefined,
       premiumComposition: candidate.premiumComposition ?? undefined,
+      motionBackgroundUrl: undefined as string | undefined,
     };
+
+    // ── Premium Motion Plate Generation (brand-configurable via production_engines) ──
+    const isPremiumFamily = isPremiumMotionFamily(selectedFamily, ctx.brandTheme);
+    const canMotionPlate = isPremiumFamily
+      && motionPlatesUsed < productionEngines.fal.max_motion_plates_per_mission
+      && serverConfig.fal.configured
+      && serverConfig.productionFlags.storyMotionPlatesEnabled;
+    if (canMotionPlate) {
+      try {
+        const { generateStoryMotionPlate } = await import('@/lib/fal-story-motion');
+        const motionResult = await generateStoryMotionPlate({
+          imageUrl: normalizePhotoUrlForRemotionRender(candidate.photoUrl),
+          headline: candidate.headline,
+          sector: brandBusinessType,
+          brandName: resolvedBrandName,
+          mood: (candidate as any).mood,
+          timeoutMs: 130_000,
+        });
+        storyProps.motionBackgroundUrl = motionResult.videoUrl;
+        motionPlatesUsed += 1;
+        console.log(
+          `[auto-produce] Premium motion plate generated: family=${selectedFamily} ` +
+          `model=${motionResult.model} style=${motionResult.style}`,
+        );
+      } catch (motionErr) {
+        console.warn(
+          `[auto-produce] Motion plate failed (falling back to Ken Burns): ${motionErr instanceof Error ? motionErr.message : motionErr}`,
+        );
+      }
+    }
+
+    // ── Typography Design Story fallback (brand-configurable) ───────────────
+    const shouldTypographyStory =
+      !storyProps.motionBackgroundUrl
+      && isTypographyFallbackFamily(selectedFamily, ctx.brandTheme)
+      && typographyUsed < productionEngines.fal.max_typography_per_mission
+      && serverConfig.fal.configured
+      && serverConfig.productionFlags.storyTypographyEnabled
+      && candidate.headline.length <= 40
+      && ci === 0;
+
+    if (shouldTypographyStory) {
+      try {
+        const { generateTypographyDesign } = await import('@/lib/fal-typography-design');
+        const { defaultTypographyVibeForSector } = await import('@/types/brand-theme');
+        const typographyConfig = (ctx.brandTheme?.typography_design ?? ctx.brandTheme?.typographyDesign) as
+          import('@/types/brand-theme').BrandDesignTypographyConfig | undefined;
+        const vibe = typographyConfig?.vibe ?? defaultTypographyVibeForSector(brandBusinessType);
+        const typoResult = await generateTypographyDesign({
+          headline: candidate.headline.slice(0, 35),
+          vibe,
+          brandColors: {
+            primary: brandTokens.primaryColor,
+            accent: brandTokens.accentColor,
+          },
+          backgroundStyle: typographyConfig?.background_style ?? 'gradient_mesh',
+          aspectRatio: '9:16',
+          brandName: resolvedBrandName,
+        });
+        (storyProps as any).photoUrl = typoResult.imageUrl;
+        storyProps.categoryLabel = '';
+        storyProps.subtitle = '';
+        typographyUsed += 1;
+        console.log(
+          `[auto-produce] Story typography design: vibe=${vibe} model=${typoResult.model} ` +
+          `headline="${candidate.headline.slice(0, 25)}"`,
+        );
+      } catch (typoErr) {
+        console.warn(
+          `[auto-produce] Story typography failed (using gallery photo): ${typoErr instanceof Error ? typoErr.message : typoErr}`,
+        );
+      }
+    }
 
     renderTasks.push((async () => {
       const baseRenderBody = {
@@ -381,10 +470,11 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
         motionStyle: motionProfile.motionStyle,
         locale: motionProfile.locale,
         allowedCompositions: allowedCompositionsForDirector(motionProfile),
-        uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
+        uploadToR2: serverConfig.r2.configured,
         requirePersistent: true,
         workspaceId: ctx.workspaceId,
         grafikerMaxRetries: ctx.grafikerMaxRetries,
+        profileTier: ctx.profileTier,
       };
 
       let data = await callRemotionRenderApi(ctx.routeBaseUrl, {
@@ -493,8 +583,21 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
 
       if (grafikerScore != null && grafikerScore < GRAFIKER_HARD_FLOOR) {
         console.warn(
-          `[auto-produce] Story Grafiker below hard floor (${grafikerScore}/10) — attaching video anyway: "${candidate.headline.slice(0, 40)}"`,
+          `[auto-produce] Story Grafiker below hard floor (${grafikerScore}/10) — discarding video, fallback to gallery still: "${candidate.headline.slice(0, 40)}"`,
         );
+        await ctx.nexusClient.markBundleFailed({
+          workspaceId: ctx.workspaceId,
+          artifactId: existingArtifactId,
+          error: `Grafiker score ${grafikerScore}/10 below hard floor ${GRAFIKER_HARD_FLOOR}`,
+          posterUrl: candidate.photoUrl,
+          contentType: 'instagram_story',
+          pipeline: 'remotion_story',
+          slotRole: candidate.slotRole,
+          attachGalleryStill: true,
+          toFeedPreviewUrl,
+          probeMediaUrl,
+        });
+        return;
       }
 
       if (grafikerScore != null && !grafikerPass) {
@@ -542,6 +645,21 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
           `[auto-produce] ProductionBundle ready: ${existingArtifactId} | ` +
           `${finalCompositionId} | grafiker=${grafikerScore}/10 | rubric=${rubric.score}/100`,
         );
+        const {
+          REMOTION_STORY_RENDER_USD,
+          recordArtifactProductionCost,
+        } = await import('@/lib/cost-ledger-client');
+        await recordArtifactProductionCost({
+          workspaceId: ctx.workspaceId,
+          missionId: ctx.missionId ?? null,
+          artifactId: existingArtifactId,
+          amountUsd: REMOTION_STORY_RENDER_USD,
+          pipeline: 'remotion_story',
+          slotRole: candidate.slotRole,
+          ideaIndex: candidate.ideaIndex,
+          slotKey: `${candidate.ideaIndex ?? 0}:remotion_render:${finalCompositionId}`,
+          detail: `render_ms=${data.durationMs ?? 0}`,
+        });
       } else {
         console.warn(`[auto-produce] attach-video failed: ${patchResult.error}`);
       }
@@ -705,9 +823,10 @@ export async function runRemotionPostPhase(ctx: RemotionRenderPhaseContext): Pro
         motionStyle: motionProfile.motionStyle,
         locale: motionProfile.locale,
         allowedCompositions: allowedCompositionsForDirector(motionProfile),
-        uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
+        uploadToR2: serverConfig.r2.configured,
         workspaceId: ctx.workspaceId,
         grafikerMaxRetries: ctx.grafikerMaxRetries,
+        profileTier: ctx.profileTier,
         props: posterProps,
       }),
       signal: AbortSignal.timeout(120_000),

@@ -17,7 +17,7 @@ import {
 import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
-import { HeadlineStack, headlineSize, stablePx, stableScale, stableTextOpacity } from './shared/story-primitives';
+import { HeadlineStack, headlineSize, stablePx, stableScale, stableTextOpacity, cinematicGradeFilter, CinematicLightLayer, FilmGrainOverlay, CornerTicks } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 
 export const MagazineCoverStory: React.FC<StoryProps> = ({
@@ -62,9 +62,10 @@ export const MagazineCoverStory: React.FC<StoryProps> = ({
         transform: `scale(${photoScale}) translateX(${photoX}px)`,
         transformOrigin: 'center center',
       }}>
-        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinematicGradeFilter('subtle') }} />
       </AbsoluteFill>
 
+      <CinematicLightLayer warmth="neutral" intensity={0.8} origin="62% 26%" />
       <AbsoluteFill style={{
         background: `linear-gradient(105deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 45%, transparent 70%)`,
       }} />
@@ -75,6 +76,8 @@ export const MagazineCoverStory: React.FC<StoryProps> = ({
         background: `linear-gradient(to right, ${primaryColor}88 0%, transparent 35%)`,
       }} />
 
+      <FilmGrainOverlay opacity={0.06} fine />
+      <CornerTicks color={`${accentColor}cc`} inset={34} length={26} thickness={2} opacity={0.7} corners={['tl', 'tr']} />
       <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={hero} opacity={logoOp} />
 
       <AbsoluteFill style={{

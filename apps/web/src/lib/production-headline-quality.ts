@@ -2,6 +2,10 @@
  * Production headline QA — reject brand-echo / grammatical-suffix hooks
  * (e.g. "Kaçta Info'yu") and recover a punchy line from ideation caption.
  */
+import {
+  isIncompleteOverlayPhrase,
+  isInternalStrategyBriefing,
+} from './fal-caption-headline';
 import { enforceDisplayHeadline } from './remotion-quality';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
 import { isNonVenueSector } from './sector-gallery-seed';
@@ -29,6 +33,47 @@ function tokenizeForBrandCompare(text: string): string[] {
     .filter(Boolean)
     .map(stripMorphSuffix)
     .filter(Boolean);
+}
+
+/**
+ * Detects "label-style" headlines that are just 1-2 generic Turkish words —
+ * category names, section titles, or incomplete phrases that wouldn't work
+ * as standalone social media text.
+ *
+ * Examples caught: "MÜŞTERİ BAŞARI", "Günlük Story", "Doğal Ürünler", "Kampanya"
+ * Examples passed: "Lezzet Turu İçin Hazırlanın!", "Bugün Ne Yiyoruz?"
+ */
+export function isLabelStyleHeadline(headline: string): boolean {
+  const h = headline.trim();
+  if (!h) return true;
+
+  const words = h.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
+
+  if (words.length <= 1 && h.length < 15) return true;
+
+  if (words.length === 2) {
+    const lower = h.toLowerCase();
+    const labelPatterns = [
+      /^(müşteri|ürün|hizmet|kampanya|etkinlik|duyuru|tanıtım|günlük|haftalık|yeni)\s/i,
+      /\s(tanıtımı|duyurusu|etkinliği|listesi|bilgisi|yorumları|başarı|başarısı|detayı|haberi)$/i,
+      /^(social|customer|product|daily|weekly|new|event)\s/i,
+    ];
+    if (labelPatterns.some((p) => p.test(lower))) return true;
+  }
+
+  if (words.length <= 3) {
+    const lower = h.toLowerCase();
+    if (/\s(tanıtımı|duyurusu|etkinliği|listesi|bilgisi|yorumları|başarısı|detayı|haberi)$/i.test(lower)) {
+      return true;
+    }
+  }
+
+  if (words.length <= 2 && !/[!?.]$/.test(h) && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir)\b/i.test(h)) {
+    const hasTurkishVerb = /[ıiuü]yor|[aeiıoöuü]n$|[aeiıoöuü]r$|[aeiıoöuü]cak$|[dt]ı$|[dt]i$|mış$|miş$|[aeiıoöuü]lım$|[aeiıoöuü]!$/i.test(h);
+    if (!hasTurkishVerb) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -97,12 +142,13 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
 }
 
 function genericHeadlineFallback(brandName: string, businessType?: string): string {
-  if (businessType && isNonVenueSectorProfile(businessType)) return 'RANDEVU PANELİ';
+  if (businessType && isNonVenueSectorProfile(businessType)) return 'Randevunuz Hazır!';
   const sectorish = normalizeKey(brandName);
-  if (/\b(haber|medya|news|magazine|gazete)\b/.test(sectorish)) return 'BU HAFTA';
-  if (/beach|plaj|club/.test(sectorish)) return 'YAZ MODU';
-  if (/cafe|coffee|kahve/.test(sectorish)) return 'YENİ LEZZET';
-  return 'YENİ PAYLAŞIM';
+  if (/\b(haber|medya|news|magazine|gazete)\b/.test(sectorish)) return 'Bu Hafta Öne Çıkanlar';
+  if (/beach|plaj|club/.test(sectorish)) return 'Yaz Moduna Geçtik!';
+  if (/cafe|coffee|kahve/.test(sectorish)) return 'Yeni Lezzetler Keşfet';
+  if (/bal|honey|gida|food|lezzet|mutfak/.test(sectorish)) return 'Doğadan Sofranıza';
+  return 'Keşfetmeye Hazır mısın?';
 }
 
 export function resolveMeaningfulProductionHeadline(input: {
@@ -134,39 +180,46 @@ export function resolveMeaningfulProductionHeadline(input: {
     return { headline: genericHeadlineFallback(brandName, businessType), replaced: true, reason: 'generic_fallback' };
   }
 
-  if (!isMeaninglessBrandEchoHeadline(headline, brandName)) {
+  const isBadHeadline =
+    isMeaninglessBrandEchoHeadline(headline, brandName)
+    || isLabelStyleHeadline(headline)
+    || isInternalStrategyBriefing(headline)
+    || isIncompleteOverlayPhrase(headline);
+
+  if (!isBadHeadline) {
     return { headline: enforceDisplayHeadline(headline, maxLen), replaced: false };
   }
 
   const fromCaption = extractHookFromCaption(caption, brandName, maxLen);
   if (fromCaption) {
-    return { headline: fromCaption, replaced: true, reason: 'brand_echo_caption' };
+    return { headline: fromCaption, replaced: true, reason: 'label_or_echo_caption' };
   }
 
   if (
     conceptTitle
     && conceptTitle !== headline
     && !isMeaninglessBrandEchoHeadline(conceptTitle, brandName)
+    && !isLabelStyleHeadline(conceptTitle)
   ) {
     return {
       headline: enforceDisplayHeadline(conceptTitle, maxLen),
       replaced: true,
-      reason: 'brand_echo_concept',
+      reason: 'label_concept',
     };
   }
 
-  if (vdcHeadline && !isMeaninglessBrandEchoHeadline(vdcHeadline, brandName)) {
+  if (vdcHeadline && !isMeaninglessBrandEchoHeadline(vdcHeadline, brandName) && !isLabelStyleHeadline(vdcHeadline)) {
     return {
       headline: enforceDisplayHeadline(vdcHeadline, maxLen),
       replaced: true,
-      reason: 'brand_echo_visual_design_card',
+      reason: 'label_visual_design_card',
     };
   }
 
   return {
     headline: genericHeadlineFallback(brandName, businessType),
     replaced: true,
-    reason: 'brand_echo_generic',
+    reason: 'label_generic',
   };
 }
 

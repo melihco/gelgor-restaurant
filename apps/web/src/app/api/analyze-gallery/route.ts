@@ -6,6 +6,7 @@ import {
   resolveVisionImageUrl,
 } from '@/lib/gallery-upload';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -28,6 +29,9 @@ export interface GalleryPhotoAnalysis {
   qualityScore?: number;
   /** ISO timestamp when this analysis was produced (Sprint 2 GIS recency). */
   analyzedAt?: string;
+  /** Source of the analysis; metadata_fallback means no vision model was available. */
+  analysisSource?: 'vision' | 'metadata_fallback';
+  fallbackReason?: string;
 }
 
 /** Analysis tier. `hero` uses gpt-4o + detail:high for the most important photos. */
@@ -83,6 +87,76 @@ function normalizeUrlKey(url: string): string {
   return url.split('?')[0] ?? url;
 }
 
+function humanizeUrlTokens(url: string): string[] {
+  try {
+    const parsed = new URL(url);
+    const pathTokens = decodeURIComponent(parsed.pathname)
+      .split(/[\/_.\-\s]+/g)
+      .map((part) => part.trim().toLowerCase())
+      .filter((part) => part.length >= 3 && !/^\d+$/.test(part));
+    const stop = new Set([
+      'www',
+      'com',
+      'tr',
+      'jpg',
+      'jpeg',
+      'png',
+      'webp',
+      'image',
+      'images',
+      'assets',
+      'myassets',
+      'banner',
+      'pictures',
+      'uploads',
+    ]);
+    return Array.from(new Set(pathTokens.filter((part) => !stop.has(part)))).slice(0, 10);
+  } catch {
+    return [];
+  }
+}
+
+function buildMetadataFallbackAnalysis(url: string, reason: string): GalleryPhotoAnalysis {
+  const tokens = humanizeUrlTokens(url);
+  const visibleTokens = tokens.length > 0 ? tokens : ['brand photo', 'marka fotoğrafı'];
+  const tags = Array.from(new Set([
+    ...visibleTokens,
+    'brand gallery',
+    'marka galerisi',
+    'website image',
+    'web sitesi görseli',
+  ])).slice(0, 12);
+  const analysis: GalleryPhotoAnalysis = {
+    url,
+    description:
+      `Metadata fallback analysis for a brand gallery image. URL tokens suggest: ${visibleTokens.join(', ')}. ` +
+      'A real vision pass should replace this entry when provider quota is available.',
+    contentTags: tags,
+    bestFor: ['brand_background', 'feed_post', 'story_format'],
+    notGoodFor: ['logo', 'before_after'],
+    mood: 'warm',
+    hasPeople: false,
+    hasText: false,
+    isLogo: false,
+    suggestedAssetType: 'brand_background',
+    usageContext:
+      `Use as a conservative brand/gallery background when copy mentions ${visibleTokens.slice(0, 4).join(', ')}.`,
+    captionHooks: ['Markadan kareler', 'Brand gallery moment', 'Detaylarda marka hissi'],
+    pairingKeywords: tags,
+    analyzedAt: new Date().toISOString(),
+    analysisSource: 'metadata_fallback',
+    fallbackReason: reason.slice(0, 180),
+  };
+  analysis.qualityScore = Math.min(72, computeAnalysisQuality(analysis));
+  return analysis;
+}
+
+function shouldUseMetadataFallback(error: unknown): boolean {
+  if (process.env.GALLERY_ANALYSIS_METADATA_FALLBACK === 'false') return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return /429|quota|rate limit|insufficient_quota|billing|timeout|fetch failed/i.test(message);
+}
+
 async function analyzePhoto(
   url: string,
   openai: OpenAI,
@@ -95,7 +169,7 @@ async function analyzePhoto(
   const isHero = tier === 'hero' && !devCostMode;
   const visionUrl = await resolveVisionImageUrl(url);
   const response = await openai.chat.completions.create({
-    model: isHero ? 'gpt-4o' : 'gpt-4o-mini',
+    model: isHero ? serverConfig.ai.chatModel('hero') : serverConfig.ai.chatModel('standard'),
     max_tokens: isHero ? 700 : 500,
     temperature: 0.15,
     response_format: { type: 'json_object' },
@@ -135,13 +209,14 @@ async function analyzePhoto(
     captionHooks: Array.isArray(parsed.captionHooks) ? parsed.captionHooks.map(String) : [],
     pairingKeywords: Array.isArray(parsed.pairingKeywords) ? parsed.pairingKeywords.map(String) : [],
     analyzedAt: new Date().toISOString(),
+    analysisSource: 'vision',
   };
   analysis.qualityScore = computeAnalysisQuality(analysis);
   return analysis;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 });
   }
@@ -161,17 +236,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Ephemeral CDN patterns — filter before analysis
-  const EPHEMERAL_CDN = /scontent-|cdninstagram\.com|fbcdn\.net|instagram\.fcdn/i;
-
   const urls = (body.assetUrls ?? []).filter(
-    (u): u is string => typeof u === 'string'
-      && isUsableGalleryPhotoUrl(u)
-      && !EPHEMERAL_CDN.test(u),
+    (u): u is string => typeof u === 'string' && isUsableGalleryPhotoUrl(u),
   );
 
   if (urls.length === 0) {
-    return NextResponse.json({ error: 'No valid URLs provided', note: 'All URLs may have been filtered (ephemeral CDN)' }, { status: 400 });
+    return NextResponse.json({ error: 'No valid URLs provided' }, { status: 400 });
   }
 
   const openai = new OpenAI({ apiKey });
@@ -242,7 +312,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const analysis = await analyzePhoto(url, openai, tier);
         results.push(analysis);
       } catch (err) {
-        errors.push({ url, error: err instanceof Error ? err.message : 'Analysis failed' });
+        const message = err instanceof Error ? err.message : 'Analysis failed';
+        if (shouldUseMetadataFallback(err)) {
+          results.push(buildMetadataFallbackAnalysis(url, message));
+          errors.push({ url, error: `metadata_fallback_used: ${message}` });
+        } else {
+          errors.push({ url, error: message });
+        }
       }
     }
   }

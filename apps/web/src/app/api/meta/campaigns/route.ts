@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 const CREW_API = getCrewBackendBaseUrl();
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const workspaceId = request.nextUrl.searchParams.get('workspaceId');

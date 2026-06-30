@@ -13,10 +13,7 @@ import { IcoLogout } from '../Icons';
 
 // Icon paths per menu item type — premium SVG, no emoji
 const ITEM_ICONS: Record<string, string> = {
-  'Onay Akışı':        'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM9 14l2 2 4-4',
   'İçerik Planı':      'M4 22V3M4 4h14l-4 5 4 5H4',
-  'Haftalık Plan':     'M4 22V3M4 4h14l-4 5 4 5H4',
-  'Yeni İstek':        'M12 5v14M5 12h14',
   'Marka Ayarları':    'M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM12 8v4M10 12h4',
   'Performans':        'M3 20h18M5 20V12M9 20V8M13 20V4M17 20V10',
   'Entegrasyonlar':    'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',

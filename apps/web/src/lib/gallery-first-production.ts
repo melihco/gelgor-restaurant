@@ -39,6 +39,9 @@ type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
 const SLOT_FORMAT: Partial<Record<ProductionSlotRole, SlotFormat>> = {
   organic_post: 'post',
   designed_post: 'post',
+  designed_typography: 'post',
+  fal_designed_post: 'post',
+  fal_only_post: 'post',
   organic_carousel: 'carousel',
   organic_story_still: 'story',
   campaign_story_motion: 'story',
@@ -97,6 +100,7 @@ export function assignmentSupportsGalleryFirst(
   if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
   const pipeline = String(assignment.pipeline ?? '');
   if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
+  if (pipeline.startsWith('fal_only_') || role.startsWith('fal_only_')) return false;
   return true;
 }
 

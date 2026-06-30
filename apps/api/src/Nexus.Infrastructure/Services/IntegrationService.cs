@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -65,11 +66,11 @@ public class IntegrationService : IIntegrationService
             connection.CreatedAt);
     }
 
-    public async Task<IntegrationConnectionDto> UpdateConnectionAsync(Guid connectionId, UpdateIntegrationRequest request, CancellationToken cancellationToken = default)
+    public async Task<IntegrationConnectionDto> UpdateConnectionAsync(Guid connectionId, Guid tenantId, UpdateIntegrationRequest request, CancellationToken cancellationToken = default)
     {
         var connection = await _context.IntegrationConnections
-            .FirstOrDefaultAsync(c => c.Id == connectionId, cancellationToken)
-            ?? throw new InvalidOperationException("Connection not found");
+            .FirstOrDefaultAsync(c => c.Id == connectionId && c.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Connection not found");
 
         if (request.DisplayName != null) connection.DisplayName = request.DisplayName;
         if (request.AccessToken != null)
@@ -95,10 +96,10 @@ public class IntegrationService : IIntegrationService
             connection.CreatedAt);
     }
 
-    public async Task DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
+    public async Task DeleteConnectionAsync(Guid connectionId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var connection = await _context.IntegrationConnections
-            .FirstOrDefaultAsync(c => c.Id == connectionId, cancellationToken);
+            .FirstOrDefaultAsync(c => c.Id == connectionId && c.TenantId == tenantId, cancellationToken);
         if (connection != null)
         {
             _context.IntegrationConnections.Remove(connection);

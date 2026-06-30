@@ -16,9 +16,11 @@ export interface ProductionProfile {
   grafikerMaxRetries: number;
   fdFallbackPolicy: FdFallbackPolicy;
   skipAggressiveEnhance: boolean;
+  /** @deprecated Runway kapalı — reel slotları fal_reel kullanır. */
   allowRunwayReels: boolean;
+  /** @deprecated Reels never use Remotion — kept for profile shape compatibility. */
   reelRemotionMotionFallback: boolean;
-  /** Agency+Premium: Marky kapalı — post/story/reel Remotion + Grafiker zorunlu. */
+  /** Agency+Premium: Marky kapalı — post/story Remotion + Grafiker zorunlu (reel değil). */
   requireRemotionGrafiker: boolean;
 }
 
@@ -37,7 +39,7 @@ const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier
     grafikerMaxRetries: 1,
     fdFallbackPolicy: 'allow_warn',
     skipAggressiveEnhance: false,
-    reelRemotionMotionFallback: true,
+    reelRemotionMotionFallback: false,
   },
   premium: {
     remotionStoryMotionSlots: 3,
@@ -45,7 +47,7 @@ const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier
     grafikerMaxRetries: 2,
     fdFallbackPolicy: 'allow_warn',
     skipAggressiveEnhance: false,
-    reelRemotionMotionFallback: true,
+    reelRemotionMotionFallback: false,
   },
 };
 
@@ -74,7 +76,7 @@ export function resolveProductionProfile(input: {
   const slug = (input.packageSlug ?? '').trim().toLowerCase();
   const plan = getPlanSpec(slug);
   const monthlyReels = input.monthlyReels ?? plan?.outputs.reels ?? -1;
-  const allowRunwayReels = monthlyReels !== 0;
+  const allowRunwayReels = false;
 
   let tier: ProductionProfileTier = input.profileTierOverride
     ?? tierFromPackageSlug(slug);
@@ -97,7 +99,7 @@ export function resolveProductionProfile(input: {
     tier,
     ...defaults,
     allowRunwayReels,
-    reelRemotionMotionFallback: allowRunwayReels && defaults.reelRemotionMotionFallback,
+    reelRemotionMotionFallback: false,
     requireRemotionGrafiker: tier === 'agency' || tier === 'premium',
   };
 }
@@ -113,6 +115,13 @@ export function slotUsesRemotionPost(
   assignment: { pipeline: string; slot_role: string },
   contentKind: string,
 ): boolean {
+  // fal.ai/GPT-image designed posts run on their own track — never Remotion.
+  if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
+    return false;
+  }
+  if (assignment.pipeline === 'fal_only_post' || assignment.slot_role === 'fal_only_post') {
+    return false;
+  }
   if (!profile.requireRemotionGrafiker) return false;
   if (contentKind === 'instagram_reel') return false;
   if (assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post') {
@@ -128,7 +137,27 @@ export function slotUsesRemotionStory(
   assignment: { pipeline: string; slot_role: string },
   contentKind: string,
 ): boolean {
+  if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
+    return false;
+  }
+  if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
+    return false;
+  }
+  if (
+    assignment.pipeline === 'fal_only_story'
+    || assignment.pipeline === 'fal_only_reel'
+    || assignment.pipeline === 'fal_reel'
+    || assignment.pipeline === 'runway_reel'
+    || assignment.slot_role === 'fal_only_story'
+    || assignment.slot_role === 'fal_only_reel'
+    || assignment.slot_role === 'fal_reel_motion'
+    || assignment.slot_role === 'organic_reel'
+    || assignment.slot_role === 'campaign_reel_motion'
+  ) {
+    return false;
+  }
   if (!profile.requireRemotionGrafiker) return false;
+  if (contentKind === 'instagram_reel') return false;
   if (contentKind === 'instagram_story' || contentKind === 'instagram_canvas') return true;
   if (assignment.pipeline === 'remotion_story') return true;
   return assignment.slot_role === 'campaign_story_motion'

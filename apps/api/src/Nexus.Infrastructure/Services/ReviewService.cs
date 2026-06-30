@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -20,14 +21,15 @@ public class ReviewService : IReviewService
 
     public async Task<ReviewDecisionDto> ApproveArtifactAsync(
         Guid artifactId,
+        Guid tenantId,
         Guid userId,
         string comment,
         string? finalizedContent,
         CancellationToken cancellationToken = default)
     {
         var artifact = await _dbContext.OutputArtifacts
-            .FirstOrDefaultAsync(a => a.Id == artifactId, cancellationToken)
-            ?? throw new InvalidOperationException("Artifact not found");
+            .FirstOrDefaultAsync(a => a.Id == artifactId && a.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Artifact not found");
 
         if (!string.IsNullOrWhiteSpace(finalizedContent))
         {
@@ -55,11 +57,11 @@ public class ReviewService : IReviewService
         return MapToDto(decision);
     }
 
-    public async Task<ReviewDecisionDto> RejectArtifactAsync(Guid artifactId, Guid userId, string comment, CancellationToken cancellationToken = default)
+    public async Task<ReviewDecisionDto> RejectArtifactAsync(Guid artifactId, Guid tenantId, Guid userId, string comment, CancellationToken cancellationToken = default)
     {
         var artifact = await _dbContext.OutputArtifacts
-            .FirstOrDefaultAsync(a => a.Id == artifactId, cancellationToken)
-            ?? throw new InvalidOperationException("Artifact not found");
+            .FirstOrDefaultAsync(a => a.Id == artifactId && a.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Artifact not found");
 
         artifact.ReviewStatus = ReviewStatus.Rejected;
 
@@ -81,11 +83,11 @@ public class ReviewService : IReviewService
         return MapToDto(decision);
     }
 
-    public async Task<ReviewDecisionDto> RequestRevisionAsync(Guid artifactId, Guid userId, string comment, CancellationToken cancellationToken = default)
+    public async Task<ReviewDecisionDto> RequestRevisionAsync(Guid artifactId, Guid tenantId, Guid userId, string comment, CancellationToken cancellationToken = default)
     {
         var artifact = await _dbContext.OutputArtifacts
-            .FirstOrDefaultAsync(a => a.Id == artifactId, cancellationToken)
-            ?? throw new InvalidOperationException("Artifact not found");
+            .FirstOrDefaultAsync(a => a.Id == artifactId && a.TenantId == tenantId, cancellationToken)
+            ?? throw new NotFoundException("Artifact not found");
 
         artifact.ReviewStatus = ReviewStatus.RevisionRequested;
 

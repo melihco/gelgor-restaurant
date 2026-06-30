@@ -9,9 +9,12 @@ instead of generic AI content.
 
 from __future__ import annotations
 
+import structlog
 from dataclasses import dataclass, field
 
 from app.crew.cta_localization import localize_ctas, resolve_language_code, resolve_output_language
+
+_logger = structlog.get_logger()
 
 
 @dataclass
@@ -26,7 +29,7 @@ class BrandInfo:
     visual_style: str = ""
     target_audience: str = ""
     location: str = ""
-    languages: str = "en"
+    languages: str = "tr"
     campaign_goals: str = ""
     competitors: str = ""
     custom_rules: str = ""
@@ -71,6 +74,7 @@ class BrandInfo:
     social_signals: str = ""
     # ── Brand DNA (weekly synthesis of all signals — master intelligence layer) ─
     brand_dna: str = ""
+    brand_dna_updated_at: str = ""
 
     # ── Gallery intelligence — analyzed brand photos with content tags ───────
     # JSON dict: {url: {contentTags, mood, usageContext, description, suggestedAssetType}}
@@ -83,9 +87,16 @@ class BrandInfo:
 
     # Derived design tokens (Brand Hub → Ayarlar): LUT, anti_patterns, caption_voice_rules, AI enhance flags
     brand_theme: dict | None = None
+    brand_theme_updated_at: str = ""
 
     # ── Website Intelligence — menu catalog, venue/product photos from onboarding crawl ─
     website_intelligence: dict | None = None
+
+    # ── Brand Service Profile (validated positioning — migration 0026) ────
+    # Authoritative category + signature offerings + CTA style + seasonality +
+    # guardrails. Injected at the top of the Business Profile prompt block and
+    # treated as the source of truth over the brittle `business_type` string.
+    service_profile: dict | None = None
 
     # ── Extended brand intelligence (migration 0012) ───────────────────────
     # Tripadvisor reviews — JSON list of {text, rating, date}
@@ -116,9 +127,10 @@ class BrandInfo:
     preferred_llm_model: str | None = None
 
     # ── Tenant workspace ID (for logging / isolation checks) ──────────────
-    # Populated in orchestration.py from request.tenant_id.
+    # Populated from the Python workspace/Nexus tenant UUID.
     # Never used as a data key — purely for audit logging.
     tenant_id: str = ""
+    workspace_id: str = ""
 
     # ── Pinterest Visual Inspiration ───────────────────────────────────────
     # Loaded from brand_contexts.visual_inspiration (JSON).
@@ -333,7 +345,24 @@ def _build_vibe_profile_block(vibe: dict | None) -> list[str]:
     return lines
 
 
-def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
+_prompt_cache: dict[str, tuple[float, str]] = {}
+_PROMPT_CACHE_TTL = 180  # 3 minutes
+
+
+def _prompt_cache_key(brand: BrandInfo, profile: str, include_gallery_inventory: bool = True) -> str:
+    gal = "" if include_gallery_inventory else ":nogal"
+    return (
+        f"{brand.workspace_id}:{profile}:{brand.brand_dna_updated_at or ''}:"
+        f"{brand.brand_theme_updated_at or ''}{gal}"
+    )
+
+
+def build_brand_context_prompt(
+    brand: BrandInfo,
+    profile: str = "full",
+    *,
+    include_gallery_inventory: bool = True,
+) -> str:
     """
     Compose a context block that gets prepended to agent backstories.
     Order: Brand DNA (master) → identity → discovery → market → learning.
@@ -346,7 +375,31 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
       "video"    — brand identity + industry calendar + market intel + Pinterest (video production)
                    Compact: urgency signals and trending themes only, no social listening noise
       "minimal"  — brand identity only (analytics, lightweight tasks)
+
+    Uses a short TTL cache keyed on workspace+profile+dna_timestamp to avoid
+    recomputing 15-20KB prompts for parallel nodes in the same mission wave.
     """
+    import time as _t
+    ck = _prompt_cache_key(brand, profile, include_gallery_inventory)
+    cached = _prompt_cache.get(ck)
+    if cached and (_t.time() - cached[0]) < _PROMPT_CACHE_TTL and brand.mission_memory is None:
+        return cached[1]
+
+    result = _build_brand_context_prompt_inner(
+        brand, profile, include_gallery_inventory=include_gallery_inventory
+    )
+
+    if brand.mission_memory is None:
+        _prompt_cache[ck] = (_t.time(), result)
+    return result
+
+
+def _build_brand_context_prompt_inner(
+    brand: BrandInfo,
+    profile: str = "full",
+    *,
+    include_gallery_inventory: bool = True,
+) -> str:
     sections: list[str] = []
 
     # ── Output language — highest priority for all copy-generating agents ───
@@ -377,8 +430,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
             dna_prompt = build_brand_dna_prompt(dna_data)
             if dna_prompt:
                 sections += [dna_prompt, ""]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="brand_dna", error=str(_exc))
 
     # ── Today's date — injected first so agents always know the current date ──
     from datetime import datetime as _dt, timezone as _tz
@@ -394,16 +447,34 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
         "",
     ]
 
+    # Validated positioning takes precedence over the brittle business_type string.
+    _service_category = ""
+    if brand.service_profile and isinstance(brand.service_profile, dict):
+        _service_category = str(brand.service_profile.get("category") or "").strip()
+    _display_type = _service_category or brand.business_type
+
     sections += [
         "## Business Profile",
         f"- **Name**: {brand.business_name}",
-        f"- **Type**: {brand.business_type}",
+        f"- **Type**: {_display_type}",
         *(
             [f"- **Location**: {brand.location}"]
             if brand.location else []
         ),
         f"- **Languages**: {brand.languages}",
         "",
+    ]
+
+    if brand.service_profile:
+        try:
+            from app.services.brand_service_profile_service import build_service_profile_prompt
+            sp_block = build_service_profile_prompt(brand.service_profile)
+            if sp_block:
+                sections += sp_block
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="service_profile", error=str(_exc))
+
+    sections += [
         "## Brand Identity",
         f"- **Tone**: {brand.brand_tone}",
         *_tone_writing_rules(brand.brand_tone),
@@ -639,8 +710,10 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
                         "",
                     ]
 
-        # Gallery intelligence — analyzed brand photos mapped to content use-cases
-        if brand.gallery_analysis:
+        # Gallery intelligence — analyzed brand photos mapped to content use-cases.
+        # Faz 1.2 — ideation task'ı zaten zengin gallery scene block taşıdığında bu
+        # kaba envanter kopyasını backstory'den çıkararak input token tasarrufu sağlanır.
+        if brand.gallery_analysis and include_gallery_inventory:
             try:
                 import json as _json
                 gallery_data = _json.loads(brand.gallery_analysis)
@@ -698,8 +771,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
                             "Each content idea should name which scene/photo type it pairs with."
                         )
                         sections.append("")
-            except Exception:
-                pass
+            except Exception as _exc:
+                _logger.warning("brand_context_section_failed", section="gallery_analysis", error=str(_exc))
 
         if brand.discovery_confidence is not None:
             conf_label = (
@@ -730,8 +803,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
             sl_prompt = build_social_signals_prompt(sl_data)
             if sl_prompt:
                 sections += [sl_prompt, ""]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="social_signals", error=str(_exc))
 
     # Competitor Intelligence — structured competitor analysis
     if include_market_intel and brand.competitor_brief:
@@ -759,8 +832,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
                     for r in neg:
                         sections.append(f"- \"{r.get('text', '')[:100]}\"")
                 sections.append("")
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="tripadvisor_reviews", error=str(_exc))
 
     # Hyper-local Instagram — what people are posting at this location right now
     if include_market_intel and brand.location_posts:
@@ -780,8 +853,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
                         "→ Use 2-3 of these in posts for local discoverability.",
                         "",
                     ]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="location_posts", error=str(_exc))
 
     # Weekly Trend Brief — market trends and opportunities
     if include_market_intel and brand.trend_brief:
@@ -816,8 +889,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
                 linkedin_prompt = build_linkedin_prompt(linkedin_data)
                 if linkedin_prompt:
                     sections += [linkedin_prompt, ""]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="linkedin_intelligence", error=str(_exc))
 
     # Market Intelligence — daily trend + competitor pulse (highest recency priority)
     if include_market_intel and (brand.competitor_pulse or brand.market_opportunity_ideas):
@@ -841,8 +914,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
                             f"- **[{urgency.upper()}]** {title} ({fmt}) — {why}"
                         )
                     sections.append("")
-            except Exception:
-                pass
+            except Exception as _exc:
+                _logger.warning("brand_context_section_failed", section="market_opportunities", error=str(_exc))
 
     # Tenant learning context — injected just before Pinterest for high LLM attention
     # (last 25% of context = where transformer models focus most)
@@ -890,8 +963,8 @@ def build_brand_context_prompt(brand: BrandInfo, profile: str = "full") -> str:
             mission_block = build_mission_context_block(brand.mission_memory)
             if mission_block:
                 sections += [mission_block, ""]
-        except Exception:
-            pass  # never break an agent run due to mission context errors
+        except Exception as _exc:
+            _logger.warning("brand_context_section_failed", section="mission_memory", error=str(_exc))
 
     return "\n".join(sections)
 

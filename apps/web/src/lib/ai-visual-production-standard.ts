@@ -55,9 +55,30 @@ export interface AiVisualProductionStandard {
   captionDrivenVisual: boolean;
 }
 
+export type VisualSourceMode = 'gallery_only' | 'gallery_enhanced' | 'ai_generated';
+
 const DEFAULT_FORMATS: AiEnhanceFormat[] = ['post', 'story', 'carousel', 'reel'];
 
 import { normalizeBrandThemeRecord } from '@/lib/brand-theme-normalize';
+
+/**
+ * Resolve the top-level visual source mode from brand_theme.
+ * Reads `visual_source_mode` if explicitly set; otherwise infers from flags.
+ */
+export function resolveVisualSourceMode(
+  brandTheme: Record<string, unknown> | null | undefined,
+): VisualSourceMode {
+  brandTheme = normalizeBrandThemeRecord(brandTheme);
+  const explicit = brandTheme?.visual_source_mode;
+  if (explicit === 'gallery_only' || explicit === 'gallery_enhanced' || explicit === 'ai_generated') {
+    return explicit;
+  }
+  const enhance = Boolean(brandTheme?.ai_photo_enhance);
+  const captionDriven = Boolean(brandTheme?.ai_caption_driven_visual);
+  if (captionDriven && enhance) return 'ai_generated';
+  if (enhance) return 'gallery_enhanced';
+  return 'gallery_only';
+}
 
 export function resolveAiVisualProductionStandard(
   brandTheme: Record<string, unknown> | null | undefined,

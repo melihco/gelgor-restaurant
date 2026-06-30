@@ -1,13 +1,21 @@
 /**
- * Mission ideation + content_calendar → unified auto-produce plan.
- * Calendar drives format/schedule; ideation supplies headline, caption, hashtags.
+ * Mission ideation → auto-produce plan.
+ * content_ideation = caption/headline base; content_calendar enriches ALL linked plans
+ * (brief, mood, format, schedule) and orphan calendar rows enter the format-coverage pool.
  */
-import { mergeMissionIdeationRecords } from '@/lib/parse-ideation-summary';
+import {
+  collectUniqueMissionIdeationIdeas,
+  mergeMissionIdeationRecords,
+} from '@/lib/parse-ideation-summary';
 import { nodeHasOutput, nodeOutputArray } from '@/lib/mission-node-output';
 import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
 import { detectIdeaPackageFormat } from '@/lib/weekly-publish-package';
-import { MISSION_WEEKLY_PACKAGE_COUNTS } from '@/lib/mission-production-manifest';
+import { resolveWeeklyPackageGeometry } from '@/lib/package-weekly-geometry';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import {
+  buildCalendarFalSceneHint,
+  normalizeCalendarPlanToProductionIdea,
+} from '@/lib/calendar-production-pack';
 
 type MissionNode = {
   node_key?: string;
@@ -87,6 +95,33 @@ function parseCalendarPlanRecordsFromNode(node: MissionNode): Record<string, unk
   ).slice(0, 12);
 }
 
+function pickIdeationForCalendarStrict(
+  plan: Record<string, unknown>,
+  ideas: Record<string, unknown>[],
+  used: Set<number>,
+): { idea: Record<string, unknown> | null; index: number | null } {
+  const ideaIdx = typeof plan.idea_index === 'number'
+    ? plan.idea_index
+    : typeof plan.source_idea_index === 'number'
+      ? plan.source_idea_index
+      : null;
+  if (ideaIdx != null && ideaIdx >= 0 && ideaIdx < ideas.length && !used.has(ideaIdx)) {
+    return { idea: ideas[ideaIdx]!, index: ideaIdx };
+  }
+
+  const calTitle = calendarItemHeadline(plan);
+  if (calTitle) {
+    for (let i = 0; i < ideas.length; i += 1) {
+      if (used.has(i)) continue;
+      if (headlinesMatch(calTitle, ideationHeadline(ideas[i]!))) {
+        return { idea: ideas[i]!, index: i };
+      }
+    }
+  }
+
+  return { idea: null, index: null };
+}
+
 function pickIdeationForCalendar(
   plan: Record<string, unknown>,
   planIndex: number,
@@ -122,126 +157,220 @@ function pickIdeationForCalendar(
   return { idea: null, index: null };
 }
 
-function resolvePlanningCaption(
-  idea: Record<string, unknown> | null,
-  plan: Record<string, unknown>,
-): string {
-  const fromIdea = String(idea?.caption_draft ?? idea?.caption ?? '').trim();
-  if (fromIdea) return fromIdea;
-  const fromPlan = String(plan.caption_draft ?? plan.caption ?? '').trim();
-  if (fromPlan) return fromPlan;
-  const tagline = String(
-    plan.tagline ?? plan.subline ?? idea?.tagline ?? idea?.subline ?? '',
-  ).trim();
-  const brief = String(
-    plan.content_brief ?? plan.description ?? plan.brief ?? idea?.brief ?? '',
-  ).trim();
-  const parts = [tagline, brief].filter(Boolean);
-  if (parts.length) return parts.join(' — ');
-  return calendarItemHeadline(plan);
-}
-
-function mergePlanWithIdeation(
+/** Schedule-only fields from a calendar row — does not replace caption/headline. */
+export function calendarScheduleOverlayFields(
   plan: Record<string, unknown>,
   planIndex: number,
-  idea: Record<string, unknown> | null,
-  ideaIndex: number | null,
+  ideaIndex: number,
 ): Record<string, unknown> {
   const fmt = calendarItemFormat(plan);
-  const calTitle = calendarItemHeadline(plan);
   const day = normalizeCalendarDay(plan.date ?? plan.day ?? plan.publish_day ?? plan.scheduled_day);
   const time = String(plan.time ?? plan.scheduled_time ?? plan.publish_time ?? '').trim();
-  const caption = resolvePlanningCaption(idea, plan);
-  const hashtags = idea?.hashtags ?? plan.hashtags ?? plan.hashtag_set ?? [];
-  const headline = ideationHeadline(idea ?? {}) || calTitle;
-  const subline = String(
-    plan.tagline ?? plan.subline ?? idea?.tagline ?? idea?.subline ?? '',
-  ).trim();
-  const cta = String(idea?.cta ?? plan.cta_text ?? plan.cta ?? '').trim();
-  const visualDirection = String(
-    plan.visual_direction ?? plan.photo_mood ?? plan.visual_style ?? plan.visual_mood
-    ?? idea?.visual_direction ?? idea?.photo_mood ?? '',
-  ).trim();
-  const postingSuggestion = String(
-    idea?.posting_time_suggestion ?? idea?.postingTime ?? '',
-  ).trim()
-    || [plan.date, time].filter(Boolean).join(' ').trim()
-    || undefined;
+  const postingSuggestion = [plan.date, time].filter(Boolean).join(' ').trim();
 
   return {
-    ...(idea ?? {}),
+    calendar_plan_index: planIndex,
+    calendar_linked_idea_index: ideaIndex,
+    publish_schedule_day: day,
+    publish_schedule_time: time || undefined,
+    publish_schedule_format: fmt,
+    calendar_priority: plan.priority ?? plan.must_post ?? null,
+    calendar_announcement_type: plan.announcement_type ?? plan.type ?? null,
+    ...(postingSuggestion ? { posting_time_suggestion: postingSuggestion } : {}),
+  };
+}
+
+function mergeEventDetailsFromCalendar(
+  idea: Record<string, unknown>,
+  plan: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const subline = String(plan.tagline ?? plan.subline ?? '').trim();
+  const time = String(plan.time ?? plan.scheduled_time ?? plan.publish_time ?? '').trim();
+  const base = typeof idea.event_details === 'object' && idea.event_details
+    ? { ...(idea.event_details as Record<string, unknown>) }
+    : {};
+  const merged = {
+    ...base,
+    date: String(plan.date ?? base.date ?? '').trim() || undefined,
+    time: time || base.time,
+    tagline: subline || base.tagline,
+    venue_area: String(plan.venue_area ?? base.venue_area ?? '').trim() || undefined,
+  };
+  return Object.values(merged).some(Boolean) ? merged : undefined;
+}
+
+function enrichIdeationWithCalendarPlan(
+  idea: Record<string, unknown>,
+  plan: Record<string, unknown>,
+  planIndex: number,
+  ideaIndex: number,
+): Record<string, unknown> {
+  const overlay = calendarScheduleOverlayFields(plan, planIndex, ideaIndex);
+  const eventDetails = mergeEventDetailsFromCalendar(idea, plan);
+  const calHeadline = calendarItemHeadline(plan);
+  const tagline = String(plan.tagline ?? plan.subline ?? '').trim();
+  const brief = String(
+    plan.content_brief ?? plan.description ?? plan.brief ?? plan.caption ?? '',
+  ).trim();
+  const mood = String(
+    plan.photo_mood ?? plan.mood ?? plan.visual_direction ?? plan.visual_style ?? '',
+  ).trim();
+  const fmt = calendarItemFormat(plan);
+  const announcement = String(
+    plan.announcement_type ?? plan.type ?? plan.template_use_case ?? '',
+  ).trim();
+  const ideationCaption = String(idea.caption_draft ?? idea.caption ?? '').trim();
+  const caption = brief
+    || ideationCaption
+    || [tagline, calHeadline].filter(Boolean).join(' — ');
+  const headline = calHeadline || ideationHeadline(idea);
+
+  const existingVps = typeof idea.visual_production_spec === 'object' && idea.visual_production_spec
+    ? { ...(idea.visual_production_spec as Record<string, unknown>) }
+    : {};
+
+  const enriched: Record<string, unknown> = {
+    ...idea,
+    ...overlay,
+    calendar_enriched: true,
     concept_title: headline,
     headline,
     title: headline,
     caption_draft: caption,
     caption,
-    subline: subline || undefined,
-    cta: cta || undefined,
-    hashtags,
+    ...(brief ? { content_brief: brief } : {}),
+    ...(tagline ? { tagline, subline: tagline } : {}),
+    ...(mood ? { photo_mood: mood, mood, visual_direction: mood } : {}),
     content_type: calendarFormatToContentType(fmt),
     content_kind: calendarFormatToContentType(fmt),
     format: fmt,
-    calendar_plan_index: planIndex,
-    idea_index: ideaIndex ?? planIndex,
-    source_node: 'content_calendar',
-    publish_schedule_day: day,
-    publish_schedule_time: time,
-    publish_schedule_format: fmt,
-    posting_time_suggestion: postingSuggestion,
-    calendar_priority: plan.priority ?? plan.must_post ?? null,
-    calendar_announcement_type: plan.announcement_type ?? plan.type ?? null,
-    visual_direction: visualDirection || null,
-    strategic_purpose: plan.strategic_purpose ?? idea?.strategic_purpose ?? null,
-    template_use_case: plan.template_use_case ?? plan.announcement_type ?? idea?.template_use_case ?? null,
-    event_details: {
-      ...(typeof idea?.event_details === 'object' && idea?.event_details
-        ? idea.event_details as Record<string, unknown>
-        : {}),
-      date: String(plan.date ?? '').trim() || undefined,
-      time: time || undefined,
-      tagline: subline || undefined,
-      venue_area: String(plan.venue_area ?? '').trim() || undefined,
+    ...(eventDetails ? { event_details: eventDetails } : {}),
+    ...(announcement
+      ? {
+          template_use_case: idea.template_use_case ?? announcement,
+          calendar_announcement_type: announcement,
+        }
+      : {}),
+    calendar_gallery_designed: true,
+    visual_production_spec: {
+      ...existingVps,
+      treatment: existingVps.treatment ?? 'gallery_designed',
+      announcement_type: announcement || existingVps.announcement_type,
+      photo_mood: mood || existingVps.photo_mood,
+      content_brief: brief || existingVps.content_brief,
     },
-    mood: plan.photo_mood ?? idea?.mood ?? undefined,
   };
+
+  enriched.fal_design_hint = buildCalendarFalSceneHint(enriched);
+  return enriched;
 }
 
-/** Calendar-first plan: one feed output per calendar row, enriched from ideation. */
+export function isCalendarProductionDonor(idea: Record<string, unknown>): boolean {
+  return String(idea.source_track ?? '') === 'calendar'
+    || String(idea.source_node ?? '') === 'content_calendar'
+    || idea.calendar_enriched === true;
+}
+
+/**
+ * Link every calendar plan onto ideation when possible; enrich with full publish brief.
+ * Returns orphan calendar rows (no ideation match) for format-coverage pool injection.
+ */
+export function applyCalendarProductionEnrichment(
+  ideationRecords: Record<string, unknown>[],
+  calendarPlans: Record<string, unknown>[],
+): {
+  ideas: Record<string, unknown>[];
+  linkedPlanIndices: Set<number>;
+  orphanCalendarIdeas: Record<string, unknown>[];
+} {
+  const ideas = ideationRecords.map((idea, index) => ({
+    ...idea,
+    idea_index: index,
+    source_node: String(idea.source_node ?? 'content_ideation'),
+    content_type: idea.content_type ?? idea.content_kind ?? 'instagram_post',
+  }));
+
+  const linkedPlanIndices = new Set<number>();
+  const orphanCalendarIdeas: Record<string, unknown>[] = [];
+
+  if (calendarPlans.length === 0) {
+    return { ideas, linkedPlanIndices, orphanCalendarIdeas };
+  }
+
+  const usedIdeation = new Set<number>();
+  for (let planIndex = 0; planIndex < calendarPlans.length; planIndex += 1) {
+    const plan = calendarPlans[planIndex]!;
+    const { index } = pickIdeationForCalendarStrict(plan, ideas, usedIdeation);
+    if (index == null || index < 0 || index >= ideas.length) {
+      const orphan = normalizeCalendarPlanToProductionIdea(plan, planIndex);
+      if (String(orphan.headline ?? '').trim()) {
+        orphanCalendarIdeas.push(orphan);
+      }
+      continue;
+    }
+    usedIdeation.add(index);
+    linkedPlanIndices.add(planIndex);
+    ideas[index] = enrichIdeationWithCalendarPlan(ideas[index]!, plan, planIndex, index);
+  }
+
+  return { ideas, linkedPlanIndices, orphanCalendarIdeas };
+}
+
+/**
+ * Merge ideation + all calendar plans into a capped weekly production idea pool.
+ * Orphan calendar rows compete in format buckets — no extra jobs beyond package total.
+ */
+export function mergeCalendarPlansForProduction(
+  ideationRecords: Record<string, unknown>[],
+  calendarPlans: Record<string, unknown>[],
+  packageSlug?: string | null,
+): Record<string, unknown>[] {
+  const { ideas, orphanCalendarIdeas } = applyCalendarProductionEnrichment(
+    ideationRecords,
+    calendarPlans,
+  );
+  const pool = [
+    ...orphanCalendarIdeas,
+    ...ideas,
+    ...ideationRecords,
+  ];
+  if (ideas.length === 0 && orphanCalendarIdeas.length === 0) {
+    return ensureWeeklyFormatCoverage(ideationRecords, ideationRecords, packageSlug);
+  }
+  return ensureWeeklyFormatCoverage(ideas, pool, packageSlug);
+}
+
+/**
+ * @deprecated Prefer mergeCalendarPlansForProduction — schedule + brief enrichment.
+ */
+export function applyCalendarScheduleOverlay(
+  ideationRecords: Record<string, unknown>[],
+  calendarPlans: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return applyCalendarProductionEnrichment(ideationRecords, calendarPlans).ideas;
+}
+
+/**
+ * @deprecated Replaced by applyCalendarScheduleOverlay (ideation SSOT + schedule link).
+ */
 export function mergeIdeationWithCalendarPlans(
   ideationRecords: Record<string, unknown>[],
   calendarPlans: Record<string, unknown>[],
 ): Record<string, unknown>[] {
-  if (calendarPlans.length === 0) return ideationRecords;
-
-  const used = new Set<number>();
-  const merged = calendarPlans.map((plan, planIndex) => {
-    const { idea, index } = pickIdeationForCalendar(plan, planIndex, ideationRecords, used);
-    if (index != null) used.add(index);
-    return mergePlanWithIdeation(plan, planIndex, idea, index);
-  });
-
-  for (let i = 0; i < ideationRecords.length; i += 1) {
-    if (used.has(i)) continue;
-    const idea = ideationRecords[i]!;
-    merged.push({
-      ...idea,
-      idea_index: i,
-      source_node: 'content_ideation',
-      content_type: idea.content_type ?? idea.content_kind ?? 'instagram_post',
-    });
-  }
-
-  return merged;
+  return applyCalendarScheduleOverlay(ideationRecords, calendarPlans);
 }
 
 type PackageFormat = 'story' | 'post' | 'reel' | 'carousel';
 
-const FORMAT_TARGETS: Record<PackageFormat, number> = {
-  story: MISSION_WEEKLY_PACKAGE_COUNTS.story,
-  post: MISSION_WEEKLY_PACKAGE_COUNTS.post,
-  carousel: MISSION_WEEKLY_PACKAGE_COUNTS.carousel,
-  reel: MISSION_WEEKLY_PACKAGE_COUNTS.reel,
-};
+function formatTargetsForPlan(packageSlug?: string | null): Record<PackageFormat, number> {
+  const geo = resolveWeeklyPackageGeometry(packageSlug);
+  return {
+    story: geo.story,
+    post: geo.post,
+    carousel: geo.carousel,
+    reel: geo.reel,
+  };
+}
 
 function contentTypeForFormat(fmt: PackageFormat): string {
   if (fmt === 'reel') return 'instagram_reel';
@@ -274,13 +403,17 @@ function cloneIdeaForFormat(
 }
 
 /**
- * P1-5 — Ensure 2 story + 2 post + 1 reel before manifest routing.
+ * P1-5 — Ensure the weekly mission has enough ideas for the plan manifest
+ * (Starter 4+3+1+4 · Agency 6+3+1+6).
  * Calendar rows and ideation overflow backfill missing format buckets.
  */
 export function ensureWeeklyFormatCoverage(
   primary: Record<string, unknown>[],
   pool: Record<string, unknown>[],
+  packageSlug?: string | null,
 ): Record<string, unknown>[] {
+  const FORMAT_TARGETS = formatTargetsForPlan(packageSlug);
+  const packageTotal = resolveWeeklyPackageGeometry(packageSlug).total;
   const buckets: Record<PackageFormat, Record<string, unknown>[]> = {
     story: [],
     post: [],
@@ -298,10 +431,20 @@ export function ensureWeeklyFormatCoverage(
   }
 
   const pickDonor = (fmt: PackageFormat): Record<string, unknown> | null => {
+    const calendarSameFmt = pool.find(
+      (idea) => isCalendarProductionDonor(idea)
+        && detectIdeaPackageFormat(idea) === fmt
+        && !usedKeys.has(ideaTrackKey(idea)),
+    );
+    if (calendarSameFmt) return calendarSameFmt;
     const sameFmt = pool.find(
       (idea) => detectIdeaPackageFormat(idea) === fmt && !usedKeys.has(ideaTrackKey(idea)),
     );
     if (sameFmt) return sameFmt;
+    const calendarAny = pool.find(
+      (idea) => isCalendarProductionDonor(idea) && !usedKeys.has(ideaTrackKey(idea)),
+    );
+    if (calendarAny) return calendarAny;
     return pool.find((idea) => !usedKeys.has(ideaTrackKey(idea))) ?? null;
   };
 
@@ -323,34 +466,36 @@ export function ensureWeeklyFormatCoverage(
     ...buckets.carousel,
     ...buckets.reel,
   ]
-    .slice(0, MISSION_WEEKLY_PACKAGE_COUNTS.total)
+    .slice(0, packageTotal)
     .map((idea, index) => ({ ...idea, idea_index: index }));
+}
+
+/** Planning UI — one card per distinct ideation idea (no slot format backfill). */
+export function buildMissionPlanningDisplayIdeas(params: {
+  nodes: MissionNode[];
+  missionId?: string;
+}): Record<string, unknown>[] {
+  const ideationNodes = params.nodes.filter((n) => n.task_type === 'content_ideation');
+  return collectUniqueMissionIdeationIdeas(ideationNodes, params.missionId);
 }
 
 export function buildMissionProductionIdeas(params: {
   nodes: MissionNode[];
   missionId?: string;
+  packageSlug?: string | null;
 }): Record<string, unknown>[] {
   const ideationNodes = params.nodes.filter((n) => n.task_type === 'content_ideation');
   const calendarNodes = params.nodes.filter(
     (n) => n.task_type === 'content_calendar' && n.status === 'completed',
   );
 
-  const ideationRecords = mergeMissionIdeationRecords(ideationNodes, params.missionId);
+  const ideationRecords = mergeMissionIdeationRecords(
+    ideationNodes,
+    params.missionId,
+    params.packageSlug,
+  );
   const calendarPlans = calendarNodes.flatMap(parseCalendarPlanRecordsFromNode);
-  const merged = mergeIdeationWithCalendarPlans(ideationRecords, calendarPlans);
-
-  if (merged.length === 0) {
-    return ensureWeeklyFormatCoverage(ideationRecords, ideationRecords);
-  }
-
-  const pool = [
-    ...ideationRecords,
-    ...calendarPlans.map((plan, planIndex) =>
-      mergePlanWithIdeation(plan, planIndex, null, null),
-    ),
-  ];
-  return ensureWeeklyFormatCoverage(merged, pool);
+  return mergeCalendarPlansForProduction(ideationRecords, calendarPlans, params.packageSlug);
 }
 
 export function calendarNodesPending(nodes: MissionNode[]): boolean {

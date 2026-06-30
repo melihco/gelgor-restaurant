@@ -89,9 +89,14 @@ export const StoryLogoMark: React.FC<StoryLogoProps> = ({
   );
 };
 
-/** Top-center logo zone — drop into any composition. */
+/**
+ * Top-center logo zone — drop into any composition.
+ * Default paddingTop respects the 2026 Instagram story safe zone: the top ~220px
+ * (~11.5%) is overlaid by the IG profile/close UI, so brand marks sit at ~7% to
+ * stay clear of the avatar row while remaining visually anchored to the top.
+ */
 export const StoryLogoTopCenter: React.FC<StoryLogoProps & { paddingTop?: string }> = ({
-  paddingTop = '4.2%',
+  paddingTop = '7%',
   ...props
 }) => (
   <div

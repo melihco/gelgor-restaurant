@@ -57,6 +57,29 @@ jobs:
             backend/app/api/v1/provider_actions.py \
             backend/app/api/v1/router.py
 
+  python-tests:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Lint (ruff — informational)
+        working-directory: backend
+        continue-on-error: true
+        run: ruff check app tests
+      - name: Run pytest (with coverage gate)
+        working-directory: backend
+        run: pytest
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest

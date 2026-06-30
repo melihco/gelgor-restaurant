@@ -3,7 +3,7 @@ namespace Nexus.Infrastructure.Services;
 /// <summary>
 /// Single source for subscription quotas, list prices (TRY), and monthly output promises.
 /// Sync with apps/web/src/lib/package-plan-config.ts and backend token_billing_service.py.
-/// Unit economics: ~$3.03 API per full mission cycle (propose + 7-piece weekly produce).
+/// Unit economics: ~$3.48 API per full mission cycle (propose + current 16-slot weekly produce).
 /// </summary>
 internal static class PackagePlanCatalog
 {
@@ -18,6 +18,8 @@ internal static class PackagePlanCatalog
         int MonthlySocialContent,
         int MonthlyGalleryAnalysis,
         int MonthlyReels,
+        int MonthlyMetaAdCreatives,
+        int MonthlyGoogleAdCreatives,
         decimal MonthlyPriceTry);
 
     private static readonly Dictionary<string, PlanSpec> Plans = new(StringComparer.OrdinalIgnoreCase)
@@ -30,10 +32,12 @@ internal static class PackagePlanCatalog
             LlmTokenLimit: 200_000,
             MonthlyGrantTokens: 5_000,
             MonthlyMissions: 14,
-            MonthlySocialContent: 98,
+            MonthlySocialContent: 168,
             MonthlyGalleryAnalysis: 40,
-            MonthlyReels: 0,
-            MonthlyPriceTry: 2_528m),
+            MonthlyReels: 56,
+            MonthlyMetaAdCreatives: 14,
+            MonthlyGoogleAdCreatives: 14,
+            MonthlyPriceTry: 4_992m),
         ["growth"] = new(
             Slug: "growth",
             AgentRunLimit: 28,
@@ -42,10 +46,12 @@ internal static class PackagePlanCatalog
             LlmTokenLimit: 500_000,
             MonthlyGrantTokens: 15_000,
             MonthlyMissions: 28,
-            MonthlySocialContent: 196,
+            MonthlySocialContent: 336,
             MonthlyGalleryAnalysis: 120,
-            MonthlyReels: 4,
-            MonthlyPriceTry: 4_768m),
+            MonthlyReels: 112,
+            MonthlyMetaAdCreatives: 28,
+            MonthlyGoogleAdCreatives: 28,
+            MonthlyPriceTry: 9_984m),
         ["performance"] = new(
             Slug: "performance",
             AgentRunLimit: 65,
@@ -54,10 +60,12 @@ internal static class PackagePlanCatalog
             LlmTokenLimit: 1_000_000,
             MonthlyGrantTokens: 40_000,
             MonthlyMissions: 65,
-            MonthlySocialContent: 455,
+            MonthlySocialContent: 780,
             MonthlyGalleryAnalysis: 250,
-            MonthlyReels: 8,
-            MonthlyPriceTry: 7_968m),
+            MonthlyReels: 260,
+            MonthlyMetaAdCreatives: 65,
+            MonthlyGoogleAdCreatives: 65,
+            MonthlyPriceTry: 23_008m),
         ["executive"] = new(
             Slug: "executive",
             AgentRunLimit: -1,
@@ -69,7 +77,9 @@ internal static class PackagePlanCatalog
             MonthlySocialContent: -1,
             MonthlyGalleryAnalysis: -1,
             MonthlyReels: -1,
-            MonthlyPriceTry: 15_968m),
+            MonthlyMetaAdCreatives: -1,
+            MonthlyGoogleAdCreatives: -1,
+            MonthlyPriceTry: 49_984m),
     };
 
     public static PlanSpec? TryGet(string? slug)

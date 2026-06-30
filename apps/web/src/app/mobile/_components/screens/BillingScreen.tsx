@@ -39,65 +39,65 @@ interface CreditPack {
 const CREDIT_PACKS: CreditPack[] = [
   {
     id: 'pack_500',
-    credits: 500,
-    price: 79,
+    credits: 5000,
+    price: 4992,
     label: 'Başlangıç',
     note: '~14 misyon',
     breakdown: [
-      { action: 'Misyon stratejisi (Claude Sonnet)', creditsEach: 35, qty: 5  },
-      { action: 'İçerik ideasyonu (2 iterasyon)',    creditsEach: 35, qty: 5  },
-      { action: 'Galeri analizi (foto başına)',       creditsEach: 0.2, qty: 30 },
-      { action: 'Auto-produce (7 post/misyon)',       creditsEach: 2,  qty: 5  },
+      { action: 'Misyon stratejisi',                    creditsEach: 60, qty: 14 },
+      { action: 'İçerik ideasyonu',                     creditsEach: 90, qty: 14 },
+      { action: '16-slot mission üretimi',             creditsEach: 130, qty: 14 },
+      { action: 'Meta + Google reklam türevi',         creditsEach: 40, qty: 14 },
+      { action: 'Galeri analizi (foto başına)',        creditsEach: 13, qty: 40 },
     ],
     highlights: [
       '14 tam misyon döngüsü / ay',
-      '98 organik sosyal içerik',
+      '168 organik içerik + 56 reel',
       '14 Meta Ads + 14 Google Ads kreatifi',
       '40 galeri analizi + sınırsız caption',
     ],
   },
   {
     id: 'pack_2000',
-    credits: 2000,
-    price: 199,
+    credits: 15000,
+    price: 9984,
     label: 'Standart',
-    note: '~57 misyon',
+    note: '~28 misyon',
     popular: true,
     breakdown: [
-      { action: 'Misyon stratejisi (Claude Sonnet)', creditsEach: 35, qty: 22 },
-      { action: 'İçerik ideasyonu (2 iterasyon)',    creditsEach: 35, qty: 22 },
-      { action: 'Story/Carousel üretimi',            creditsEach: 4,  qty: 44 },
-      { action: 'Galeri analizi (foto başına)',       creditsEach: 0.2, qty: 80 },
-      { action: 'Auto-produce (7 post/misyon)',       creditsEach: 2,  qty: 22 },
+      { action: 'Misyon stratejisi',                    creditsEach: 70, qty: 28 },
+      { action: 'İçerik ideasyonu',                     creditsEach: 100, qty: 28 },
+      { action: '16-slot mission üretimi',             creditsEach: 220, qty: 28 },
+      { action: 'Meta + Google reklam türevi',         creditsEach: 50, qty: 28 },
+      { action: 'Galeri analizi (foto başına)',        creditsEach: 22, qty: 120 },
     ],
     highlights: [
-      '~57 tam misyon döngüsü',
-      '399 sosyal medya içeriği',
-      '80 fotoğraf galeri analizi',
-      '44 story/carousel tasarımı',
-      '~5 aylık tam otonom üretim',
+      '28 tam misyon döngüsü',
+      '336 organik içerik + 112 reel',
+      '28 Meta Ads + 28 Google Ads kreatifi',
+      '120 fotoğraf galeri analizi',
+      'Ajans kullanımına uygun büyüme paketi',
     ],
   },
   {
     id: 'pack_5000',
-    credits: 5000,
-    price: 449,
+    credits: 40000,
+    price: 23008,
     label: 'Pro',
-    note: '~142 misyon',
+    note: '~65 misyon',
     breakdown: [
-      { action: 'Misyon stratejisi (Claude Sonnet)', creditsEach: 35, qty: 52 },
-      { action: 'İçerik ideasyonu (2 iterasyon)',    creditsEach: 35, qty: 52 },
-      { action: 'Story/Carousel üretimi',            creditsEach: 4,  qty: 104},
-      { action: 'Galeri analizi (foto başına)',       creditsEach: 0.2, qty: 200},
-      { action: 'Reel (Runway Gen4 video)',           creditsEach: 50, qty: 5  },
-      { action: 'Auto-produce (7 post/misyon)',       creditsEach: 2,  qty: 52 },
+      { action: 'Misyon stratejisi',                    creditsEach: 80, qty: 65 },
+      { action: 'İçerik ideasyonu',                     creditsEach: 110, qty: 65 },
+      { action: '16-slot mission üretimi',             creditsEach: 340, qty: 65 },
+      { action: 'Meta + Google reklam türevi',         creditsEach: 60, qty: 65 },
+      { action: 'Galeri analizi (foto başına)',        creditsEach: 7, qty: 250 },
     ],
     highlights: [
-      '~142 tam misyon döngüsü',
-      '994 sosyal medya içeriği',
-      '200 fotoğraf galeri analizi',
-      '5 Runway reel videosu dahil',
-      '~12 aylık tam otonom üretim',
+      '65 tam misyon döngüsü',
+      '780 organik içerik + 260 reel',
+      '65 Meta Ads + 65 Google Ads kreatifi',
+      '250 fotoğraf galeri analizi',
+      'Yoğun ajans operasyonu için yüksek hacim',
     ],
   },
 ];
@@ -162,7 +162,7 @@ function PackDetailModal({
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
               <span style={{ fontSize: 28, fontWeight: 800, color: t.accent,
                 letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>
-                ${pack.price}
+                ₺{pack.price.toLocaleString('tr-TR')}
               </span>
               <span style={{ fontSize: 13, color: t.textMuted }}>
                 = {pack.credits.toLocaleString('tr-TR')} kredi
@@ -265,7 +265,7 @@ function PackDetailModal({
               color: '#fff',
             }}
           >
-            {pack.credits.toLocaleString('tr-TR')} Kredi Yükle — ${pack.price}
+            {pack.credits.toLocaleString('tr-TR')} Kredi Yükle — ₺{pack.price.toLocaleString('tr-TR')}
           </button>
         </div>
       </div>
@@ -486,7 +486,7 @@ export function BillingScreen() {
                   <div style={{ fontSize: 20, fontWeight: 800,
                     color: pack.popular ? t.accent : t.textPrimary,
                     letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
-                    ${pack.price}
+                    ₺{pack.price.toLocaleString('tr-TR')}
                   </div>
                   <div style={{ fontSize: 10, color: t.textMuted, marginTop: 1 }}>Detay →</div>
                 </div>

@@ -8,8 +8,19 @@
  */
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
+import { serverConfig } from '@/lib/server-config';
 export function shouldPreserveVenuePhotos(): boolean {
   return process.env.VENUE_PHOTO_PRESERVE !== 'false';
+}
+
+/**
+ * Skip OpenAI images.edit and return the original reference URL.
+ * Designed social cards are the exception: they add typography/graphic layers
+ * on top of the real photo (high input fidelity) without replacing the scene.
+ */
+export function shouldPassthroughReferencePhoto(opts?: { isDesignCard?: boolean }): boolean {
+  if (opts?.isDesignCard) return false;
+  return shouldPreserveVenuePhotos();
 }
 
 /**
@@ -41,7 +52,7 @@ export const GALLERY_MIN_DISPLAY_WIDTH = parseInt(
  * Only activates when AI image generation is configured (OPENAI_API_KEY present).
  */
 export function shouldUpscaleSmallGalleryPhoto(widthPx: number): boolean {
-  if (!process.env.OPENAI_API_KEY) return false;
+  if (!serverConfig.openai.configured) return false;
   if (!shouldPreserveVenuePhotos()) return true;
   return widthPx < GALLERY_MIN_DISPLAY_WIDTH;
 }

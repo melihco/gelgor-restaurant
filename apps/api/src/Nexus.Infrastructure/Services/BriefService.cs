@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nexus.Application.Interfaces;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -63,7 +64,7 @@ public class BriefService : IBriefService
         // Tenant filter prevents cross-tenant submission attacks.
         var brief = await _dbContext.Briefs
             .FirstOrDefaultAsync(b => b.Id == briefId && b.TenantId == tenantId, cancellationToken)
-            ?? throw new InvalidOperationException("Brief not found");
+            ?? throw new NotFoundException("Brief not found");
 
         brief.Status = BriefStatus.Decomposing;
         brief.SubmittedAt = DateTime.UtcNow;

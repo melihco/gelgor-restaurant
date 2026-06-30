@@ -39,7 +39,9 @@ public record PlanMonthlyOutputsDto(
     int Missions,
     int SocialContent,
     int GalleryAnalysis,
-    int Reels);
+    int Reels,
+    int MetaAdCreatives,
+    int GoogleAdCreatives);
 
 public record PlanUnitEconomicsDto(
     decimal MonthlyPriceTry,

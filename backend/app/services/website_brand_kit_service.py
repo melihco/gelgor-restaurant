@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urljoin, urlparse
 
 import structlog
 
@@ -428,10 +428,120 @@ def extract_brand_kit_from_html(html: str, page_url: str = "") -> dict[str, Any]
     return kit
 
 
+# Logos rendered onto dark/photo backgrounds must be real raster/vector marks,
+# not favicons. .ico is too small/low-res to use in productions.
+_LOGO_BAD_EXT = (".ico",)
+_LOGO_OK_EXT = (".svg", ".png", ".webp", ".jpg", ".jpeg")
+# Tracking pixels / sprites / placeholders we must never treat as a logo.
+_LOGO_NOISE = re.compile(
+    r"(?:1x1|pixel|spacer|blank|placeholder|sprite|loader|spinner|"
+    r"facebook|fbcdn|gtag|doubleclick|analytics)",
+    re.IGNORECASE,
+)
+
+
+def _logo_attr(tag: str, name: str) -> str:
+    m = re.search(rf'{name}\s*=\s*["\']([^"\']*)["\']', tag, re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+
+def _logo_first_srcset_url(value: str) -> str:
+    # "a.png 1x, b.png 2x" or "a.png 320w, b.png 640w" → first URL
+    first = value.split(",", 1)[0].strip()
+    return first.split()[0].strip() if first else ""
+
+
+def _logo_resolve(candidate: str, page_url: str) -> str:
+    if not candidate:
+        return ""
+    candidate = candidate.strip().strip("'\"")
+    if not candidate or candidate.startswith("data:"):
+        return ""
+    absolute = urljoin(page_url or "", candidate)
+    parsed = urlparse(absolute)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return ""
+    path_lower = parsed.path.lower()
+    if path_lower.endswith(_LOGO_BAD_EXT):
+        return ""
+    if _LOGO_NOISE.search(absolute):
+        return ""
+    return absolute
+
+
+def extract_logo_url_from_html(html: str, page_url: str = "") -> str:
+    """
+    Best-effort brand logo discovery from homepage HTML.
+
+    Priority: schema.org JSON-LD ``logo`` → header ``<img>`` whose
+    src/alt/class mentions "logo" → ``apple-touch-icon``. ``og:image`` is
+    deliberately ignored — it is a share/hero image, not a brand mark.
+    Returns an absolute URL or "" when nothing reliable is found.
+    """
+    if not html or len(html) < 200:
+        return ""
+
+    candidates: list[tuple[int, str]] = []
+
+    # 1) schema.org logo — most authoritative ("logo":"url" or {"url":"..."})
+    for m in re.finditer(r'"logo"\s*:\s*"(https?://[^"]+)"', html, re.IGNORECASE):
+        url = _logo_resolve(m.group(1), page_url)
+        if url:
+            candidates.append((100, url))
+    for m in re.finditer(r'"logo"\s*:\s*\{[^}]*?"url"\s*:\s*"(https?://[^"]+)"', html, re.IGNORECASE):
+        url = _logo_resolve(m.group(1), page_url)
+        if url:
+            candidates.append((100, url))
+
+    # 2) <img> tags mentioning "logo" in src/alt/class/id (header marks)
+    for tag in re.findall(r"<img\b[^>]*>", html, re.IGNORECASE):
+        src = (
+            _logo_attr(tag, "src")
+            or _logo_attr(tag, "data-src")
+            or _logo_attr(tag, "data-lazy-src")
+            or _logo_first_srcset_url(_logo_attr(tag, "srcset"))
+        )
+        if not src:
+            continue
+        haystack = " ".join([
+            _logo_attr(tag, "alt"), _logo_attr(tag, "class"),
+            _logo_attr(tag, "id"), src,
+        ]).lower()
+        if "logo" not in haystack:
+            continue
+        url = _logo_resolve(src, page_url)
+        if not url:
+            continue
+        # An explicit logo extension is a stronger signal than a generic path.
+        score = 90 if url.lower().rsplit("?", 1)[0].endswith(_LOGO_OK_EXT) else 78
+        candidates.append((score, url))
+
+    # 3) apple-touch-icon — square app mark, acceptable fallback
+    for tag in re.findall(r"<link\b[^>]*>", html, re.IGNORECASE):
+        rel = _logo_attr(tag, "rel").lower()
+        if "apple-touch-icon" not in rel:
+            continue
+        url = _logo_resolve(_logo_attr(tag, "href"), page_url)
+        if url:
+            candidates.append((60, url))
+
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    best = candidates[0][1]
+    logger.info("website_logo_extracted", url=best[:120], score=candidates[0][0])
+    return best
+
+
 def attach_brand_kit_to_website_result(result: dict[str, Any], homepage_html: str) -> None:
-    """Mutates website fetch result with brand_kit when HTML is available."""
+    """Mutates website fetch result with brand_kit + logo_url when HTML is available."""
     if not homepage_html:
         return
-    kit = extract_brand_kit_from_html(homepage_html, result.get("url", ""))
+    source_url = result.get("url", "")
+    kit = extract_brand_kit_from_html(homepage_html, source_url)
     if kit.get("confidence", 0) > 0:
         result["brand_kit"] = kit
+    if not result.get("logo_url"):
+        logo = extract_logo_url_from_html(homepage_html, source_url)
+        if logo:
+            result["logo_url"] = logo

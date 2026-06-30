@@ -130,14 +130,6 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
 }[] {
   const clientGroups: { title: string; items: MoreMenuItem[] }[] = [
     {
-      title: 'İçerik',
-      items: [
-        { label: 'Onay Akışı', sub: 'Üretilen post, story ve reel', iconBg: '#9DBECE', iconText: '▣', screen: 'feed' },
-        { label: 'Haftalık Plan', sub: 'Kampanya ve içerik üretim durumu', iconBg: '#4D7088', iconText: '✦', screen: 'missions' },
-        { label: 'Yeni İstek', sub: 'Ek brief veya kampanya talebi', iconBg: '#f87171', iconText: '+', screen: 'new-brief' },
-      ],
-    },
-    {
       title: 'Marka & Ayarlar',
       items: [
         { label: 'Marka Ayarları', sub: 'Logo, renkler, galeri, AI tercihleri', iconBg: '#60a5fa', iconText: '◈', screen: 'brand' },

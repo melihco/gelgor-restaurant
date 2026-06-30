@@ -20,6 +20,7 @@ import {
   HeadlineStack,
   KenBurnsPhoto,
   MeshGradientLayer,
+  CinematicLightLayer,
   headlineSize,
   neonGlowStyle,
   staggerOpacity,
@@ -57,6 +58,7 @@ export function VibeFullscreenLayout({
     <AbsoluteFill style={{ background: primaryColor }}>
       <MeshGradientLayer primary={primaryColor} accent={accentColor} />
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={1.15} origin="50% 40%" driftY={20} />
+      <CinematicLightLayer warmth="cool" intensity={0.7} />
       <AbsoluteFill style={{ background: `linear-gradient(to bottom, ${primaryColor}dd 0%, transparent 35%, ${primaryColor}ee 78%)` }} />
       <FilmGrainOverlay opacity={0.1} />
       <AbsoluteFill style={{ padding: '8% 7% 10%', display: 'flex', flexDirection: 'column' }}>
@@ -92,7 +94,7 @@ export function VibeFullscreenLayout({
           />
           {subtitle ? (
             <span style={{
-              fontFamily: fonts.body, fontSize: 20, color: textColors.subtitle, marginTop: 20,
+              fontFamily: fonts.body, fontSize: 26, color: textColors.subtitle, marginTop: 20,
               opacity: staggerOpacity(frame, 32, 48), letterSpacing: 1,
             }}>
               {subtitle.slice(0, 120)}
@@ -153,6 +155,7 @@ export function BentoStoryLayout({
           <KenBurnsPhoto photoUrl={p2} scaleMax={1.05} origin="60% 40%" driftY={8} />
         </div>
       </div>
+      <CinematicLightLayer warmth="cool" intensity={0.5} origin="42% 12%" />
       <div style={{
         marginTop: gap,
         height: bandH,
@@ -189,7 +192,7 @@ export function BentoStoryLayout({
           align={spec.align}
         />
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 16, color: textColors.subtitle, marginTop: 10 }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 24, color: textColors.subtitle, marginTop: 10 }}>
             {subtitle.slice(0, 120)}
           </span>
         ) : null}
@@ -258,7 +261,7 @@ export function NeonNightLayout({
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 16,
+            fontFamily: fonts.body, fontSize: 26, color: textColors.subtitle, marginTop: 16,
             opacity: staggerOpacity(frame, 30, 44),
           }}>
             {subtitle.slice(0, 120)}

@@ -1,0 +1,33 @@
+[tool.ruff]
+# Ready-to-use lint/format config for the Python backend.
+# Run locally: `ruff check app tests` and `ruff format app tests`.
+# CI runs ruff in informational (non-blocking) mode for now; pytest is the gate.
+target-version = "py312"
+line-length = 100
+src = ["."]
+extend-exclude = [
+    ".venv",
+    "migrations",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# Conservative rule set — focused on real bugs and import hygiene rather than
+# stylistic churn across the existing large modules.
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (undefined names, unused imports)
+    "I",   # import sorting
+    "B",   # flake8-bugbear (likely bugs)
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line length handled by formatter, not enforced here
+    "B008",  # FastAPI Depends() in defaults is idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

@@ -56,7 +56,15 @@ export function PlanUsagePanel({
 }) {
   const slug = packageSlug ?? quota?.packageSlug;
   const plan = getPlanSpec(slug);
-  const outputs = mapApiOutputs(quota?.monthlyOutputs) ?? plan?.outputs ?? null;
+  const apiOutputs = mapApiOutputs(quota?.monthlyOutputs);
+  const outputs = apiOutputs
+    ? {
+        ...(plan?.outputs ?? apiOutputs),
+        ...apiOutputs,
+        metaAdCreatives: apiOutputs.metaAdCreatives || plan?.outputs.metaAdCreatives || 0,
+        googleAdCreatives: apiOutputs.googleAdCreatives || plan?.outputs.googleAdCreatives || 0,
+      }
+    : plan?.outputs ?? null;
 
   const estimatedFullUtilCogs = plan ? estimatePlanMonthlyApiCostUsd(plan) : null;
   const estimatedFullUtilMargin = plan ? estimatePlanMarginOnRevenuePercent(plan) : null;
@@ -162,7 +170,7 @@ export function PlanUsagePanel({
           })}
         </div>
         <div style={{ marginTop: 10, fontSize: 10, color: t.textTertiary, lineHeight: 1.45 }}>
-          Giriş paketi $79/ay. Üst paketler daha yüksek kota ve SA Kredi içerir.
+          Güncel paketler 16-slot mission üretimine göre yeniden fiyatlandırıldı. Üst paketler daha yüksek kota ve üretim hacmi içerir.
         </div>
         {plan && estimatedFullUtilCogs != null && (
           <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10,
@@ -182,7 +190,7 @@ export function PlanUsagePanel({
             </div>
             <div style={{ fontSize: 10, color: t.textTertiary, marginTop: 6, lineHeight: 1.45 }}>
               Misyon ~${(PLAN_API_UNIT_COSTS.missionPropose + PLAN_API_UNIT_COSTS.missionProductionCycle).toFixed(2)}
-              {' '}(öneri + 7 parça üretim) · galeri ${PLAN_API_UNIT_COSTS.galleryVisionAnalysis.toFixed(2)}/foto
+              {' '}(öneri + güncel 16-slot üretim döngüsü) · galeri ${PLAN_API_UNIT_COSTS.galleryVisionAnalysis.toFixed(2)}/foto
             </div>
           </div>
         )}

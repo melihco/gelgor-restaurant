@@ -10,12 +10,13 @@ import {
   resolveGalleryPhotoForRender,
   resolvePosterUrl,
 } from '@/lib/production-bundle';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent } from '@/lib/artifact-utils';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const NEXUS_API = serverConfig.nexus.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 async function patchReady(
   artifactId: string,
@@ -23,21 +24,26 @@ async function patchReady(
   imageUrl: string,
   contentType: string,
 ): Promise<boolean> {
-  const res = await fetch(`${NEXUS_API}/api/artifacts/${artifactId}/attach-image`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Tenant-Id': tenantId,
-      'X-Internal-Api-Key': INTERNAL_KEY,
-    },
-    body: JSON.stringify({
-      imageUrl,
-      contentType,
-      productionBundle: true,
-      referencePhotoUrl: imageUrl,
-    }),
-  });
-  return res.ok;
+  try {
+    const res = await fetch(`${NEXUS_API}/api/artifacts/${artifactId}/attach-image`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': tenantId,
+        'X-Internal-Api-Key': INTERNAL_KEY,
+      },
+      body: JSON.stringify({
+        imageUrl,
+        contentType,
+        productionBundle: true,
+        referencePhotoUrl: imageUrl,
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -52,11 +58,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'X-Tenant-Id required' }, { status: 400 });
   }
 
-  const listRes = await fetch(`${NEXUS_API}/api/artifacts`, {
+  const listRes = await fetch(`${NEXUS_API}/api/artifacts?limit=40`, {
     headers: {
       'X-Tenant-Id': tenantId,
       'X-Internal-Api-Key': INTERNAL_KEY,
     },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(12_000),
   });
   if (!listRes.ok) {
     return NextResponse.json({ error: 'artifacts list failed' }, { status: listRes.status });
@@ -71,11 +79,21 @@ export async function POST(req: NextRequest) {
   }>;
 
   let reconciled = 0;
+  let candidates = 0;
   for (const art of artifacts) {
+    let metadata: Record<string, unknown> = {};
+    if (art.metadata) {
+      try {
+        metadata = JSON.parse(art.metadata) as Record<string, unknown>;
+      } catch {
+        metadata = {};
+      }
+    }
+
     const stub = {
       id: art.id,
       content: art.content ?? '{}',
-      metadata: art.metadata ? JSON.parse(art.metadata) : {},
+      metadata,
       contentUrl: art.contentUrl ?? '',
       createdAt: art.createdAt ?? new Date().toISOString(),
       contentType: art.contentType,
@@ -83,6 +101,8 @@ export async function POST(req: NextRequest) {
 
     if (!isBundleStaleRendering(stub)) continue;
     if (expectsRemotionStoryVideo(stub)) continue;
+    candidates += 1;
+    if (candidates > 5) break;
 
     const poster = resolveGalleryPhotoForRender(stub) || resolvePosterUrl(stub);
     if (!poster) continue;

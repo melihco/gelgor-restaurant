@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -89,7 +90,7 @@ public class SetupService : ISetupService
     {
         var profile = await _context.CompanyProfiles
             .FirstOrDefaultAsync(p => p.TenantId == tenantId, cancellationToken)
-            ?? throw new InvalidOperationException("Company profile not found");
+            ?? throw new NotFoundException("Company profile not found");
 
         profile.SetupCompleted = true;
         profile.SetupCompletedAt = DateTime.UtcNow;

@@ -37,27 +37,28 @@ export function FeedLazyPostList<T>({
   }, [items, pageSize]);
 
   useEffect(() => {
+    if (items.length === 0) return;
+    if (visibleCount < items.length - pageSize) return;
+    if (nearEndFiredRef.current) return;
+    nearEndFiredRef.current = true;
+    onNearEnd?.();
+  }, [visibleCount, items.length, pageSize, onNearEnd]);
+
+  useEffect(() => {
     const el = sentinelRef.current;
     if (!el || visibleCount >= items.length) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return;
-        setVisibleCount((prev) => {
-          const next = Math.min(prev + pageSize, items.length);
-          if (next >= items.length - pageSize && !nearEndFiredRef.current) {
-            nearEndFiredRef.current = true;
-            onNearEnd?.();
-          }
-          return next;
-        });
+        setVisibleCount((prev) => Math.min(prev + pageSize, items.length));
       },
       { rootMargin: '480px 0px', threshold: 0.01 },
     );
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [items.length, visibleCount, pageSize, onNearEnd]);
+  }, [items.length, visibleCount, pageSize]);
 
   const visible = items.slice(0, visibleCount);
   const hasMore = visibleCount < items.length;

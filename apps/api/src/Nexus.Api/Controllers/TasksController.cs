@@ -28,14 +28,14 @@ public class TasksController : ControllerBase
     [HttpGet("brief/{briefId}")]
     public async Task<ActionResult<List<TaskDto>>> GetTasksByBrief(Guid briefId, CancellationToken cancellationToken)
     {
-        var tasks = await _taskService.GetTasksByBriefAsync(briefId, cancellationToken);
+        var tasks = await _taskService.GetTasksByBriefAsync(briefId, _requestContext.TenantId, cancellationToken);
         return Ok(tasks);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<TaskDto>> GetTaskById(Guid id, CancellationToken cancellationToken)
     {
-        var task = await _taskService.GetTaskByIdAsync(id, cancellationToken);
+        var task = await _taskService.GetTaskByIdAsync(id, _requestContext.TenantId, cancellationToken);
         if (task == null)
             return NotFound();
 
@@ -45,14 +45,14 @@ public class TasksController : ControllerBase
     [HttpPut("{id}/status")]
     public async Task<ActionResult<TaskDto>> UpdateTaskStatus(Guid id, UpdateTaskStatusRequest request, CancellationToken cancellationToken)
     {
-        var task = await _taskService.UpdateTaskStatusAsync(id, request.Status, cancellationToken);
+        var task = await _taskService.UpdateTaskStatusAsync(id, _requestContext.TenantId, request.Status, cancellationToken);
         return Ok(task);
     }
 
     [HttpPost("{id}/assign")]
     public async Task<ActionResult<TaskDto>> AssignTask(Guid id, AssignTaskRequest request, CancellationToken cancellationToken)
     {
-        var task = await _taskService.AssignTaskAsync(id, request.AgentId, cancellationToken);
+        var task = await _taskService.AssignTaskAsync(id, _requestContext.TenantId, request.AgentId, cancellationToken);
         return Ok(task);
     }
 }

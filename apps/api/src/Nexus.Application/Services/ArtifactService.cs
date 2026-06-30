@@ -11,5 +11,5 @@ public interface IArtifactService
         DateTime? sinceUtc = null,
         string? missionId = null,
         CancellationToken cancellationToken = default);
-    Task<ArtifactDto?> GetArtifactByIdAsync(Guid artifactId, CancellationToken cancellationToken = default);
+    Task<ArtifactDto?> GetArtifactByIdAsync(Guid artifactId, Guid tenantId, CancellationToken cancellationToken = default);
 }

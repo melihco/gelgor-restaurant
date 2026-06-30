@@ -1,0 +1,644 @@
+/**
+ * fal.ai Caption-Aware Headline Resolution
+ *
+ * Resolves a unique, caption-specific display headline for fal typography designs.
+ * Prevents the "same mission title repeated on every visual" problem by extracting
+ * punchy, differentiated hooks from each slot's actual caption.
+ *
+ * Also applies Turkish spell-check corrections for common ideation typos.
+ */
+
+import {
+  formatFalLogoPlacementDirective,
+  type ResolvedFalLogoPlacement,
+} from './fal-logo-placement';
+
+// ── Turkish Spell-Check Dictionary ────────────────────────────────────────────
+
+const TURKISH_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
+  [/\bkoketyl\b/gi, 'Kokteyl'],
+  [/\bkokteyl\b/gi, 'Kokteyl'],
+  [/\bkoctail\b/gi, 'Kokteyl'],
+  [/\bcocktail\b/gi, 'Kokteyl'],
+  [/\brestarant\b/gi, 'Restoran'],
+  [/\brestaurant\b/gi, 'Restoran'],
+  [/\brezarvasyon\b/gi, 'Rezervasyon'],
+  [/\brezervasyon\b/gi, 'Rezervasyon'],
+  [/\bkampanya\b/gi, 'Kampanya'],
+  [/\bindrim\b/gi, 'İndirim'],
+  [/\bindirim\b/gi, 'İndirim'],
+  [/\bhaftasonu\b/gi, 'Hafta Sonu'],
+  [/\bhafta sonu\b/gi, 'Hafta Sonu'],
+  [/\bpazartsi\b/gi, 'Pazartesi'],
+  [/\bperşembe\b/gi, 'Perşembe'],
+  [/\bpersembe\b/gi, 'Perşembe'],
+  [/\bjubilesyon\b/gi, 'Jubilasyon'],
+  [/\bgurme\b/gi, 'Gurme'],
+  [/\blezzet\b/gi, 'Lezzet'],
+  [/\bdeneyim\b/gi, 'Deneyim'],
+  [/\btecrübe\b/gi, 'Tecrübe'],
+  [/\bfırsat\b/gi, 'Fırsat'],
+  [/\bfirsatlar\b/gi, 'Fırsatlar'],
+  [/\bfırsatlar\b/gi, 'Fırsatlar'],
+  [/\bgecesi\b/gi, 'Gecesi'],
+  [/\byaz\b/g, 'Yaz'],
+  [/\bkış\b/g, 'Kış'],
+  [/\bbahar\b/g, 'Bahar'],
+  [/\bsonbahar\b/g, 'Sonbahar'],
+];
+
+/**
+ * Fix common Turkish spelling errors found in AI-generated headlines.
+ * Preserves casing for first-word capitalization.
+ */
+export function correctTurkishSpelling(headline: string): string {
+  let result = headline;
+  for (const [pattern, replacement] of TURKISH_CORRECTIONS) {
+    result = result.replace(pattern, (match) => {
+      if (match === match.toUpperCase()) return replacement.toUpperCase();
+      if (match[0] === match[0]?.toUpperCase()) return replacement;
+      return replacement.toLowerCase();
+    });
+  }
+  return result;
+}
+
+// ── Caption-Derived Headline Extraction ───────────────────────────────────────
+
+const FILLER_WORDS = /\b(ve|ile|için|bu|bir|her|da|de|olan|gibi|kadar|şimdi|hemen)\b/gi;
+const EMOJI_RX = /[\u{1F600}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
+const HASHTAG_RX = /#\S+/g;
+const MENTION_RX = /@\S+/g;
+
+interface CaptionHeadlineInput {
+  /** Full caption text for this slot */
+  caption: string;
+  /** Mission-level concept title (may repeat across slots) */
+  missionTitle: string;
+  /** Brand name — avoid echoing it in the headline */
+  brandName: string;
+  /** Slot's CTA text if available */
+  cta?: string;
+  /** Max character length for the display headline */
+  maxLen?: number;
+}
+
+type FalHeadlineSource =
+  | 'caption_hook'
+  | 'caption_question'
+  | 'caption_cta'
+  | 'mission_title';
+
+/**
+ * Extract a unique, caption-derived display headline that differs from the
+ * mission title. Falls back to a shortened mission title only when no
+ * meaningful alternative exists.
+ */
+export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
+  headline: string;
+  source: FalHeadlineSource;
+} {
+  const maxLen = input.maxLen ?? 28;
+  const caption = cleanCaption(input.caption);
+  const missionTitle = input.missionTitle.trim();
+  const brandName = input.brandName.trim().toLowerCase();
+
+  // Strategy 1: Extract a question from the caption (great engagement hook)
+  const question = extractQuestion(caption, brandName, maxLen);
+  if (question && question.toLowerCase() !== missionTitle.toLowerCase()) {
+    const finalized = finalizeHeadline(question, maxLen);
+    if (finalized) return { headline: finalized.headline, source: 'caption_question' };
+  }
+
+  // Strategy 2: Extract the strongest action/benefit phrase from caption
+  const hook = extractCaptionHook(caption, missionTitle, brandName, maxLen);
+  if (hook && hook.toLowerCase() !== missionTitle.toLowerCase()) {
+    const finalized = finalizeHeadline(hook, maxLen);
+    if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
+  }
+
+  // Strategy 3: Use CTA as a differentiated headline
+  if (input.cta) {
+    const ctaClean = input.cta.trim().replace(/[!.]+$/, '').trim();
+    if (ctaClean.length >= 6 && ctaClean.length <= maxLen
+      && ctaClean.toLowerCase() !== missionTitle.toLowerCase()
+      && !ctaClean.toLowerCase().includes(brandName)) {
+      const finalized = finalizeHeadline(ctaClean, maxLen);
+      if (finalized) return { headline: finalized.headline, source: 'caption_cta' };
+    }
+  }
+
+  // Strategy 4: First meaningful caption sentence (broader fallback)
+  const captionSentence = extractCaptionHook(caption, '', brandName, maxLen + 20);
+  if (captionSentence && captionSentence.toLowerCase() !== missionTitle.toLowerCase()) {
+    const finalized = finalizeHeadline(captionSentence, maxLen);
+    if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
+  }
+
+  // Fallback: Use mission title with spell-check
+  const missionFallback = finalizeHeadline(missionTitle, maxLen);
+  return {
+    headline: missionFallback?.headline ?? correctTurkishSpelling(truncateClean(missionTitle, maxLen)),
+    source: 'mission_title',
+  };
+}
+
+/**
+ * Video-safe fal headline.
+ *
+ * Motion models are much less reliable than still-image models when preserving
+ * long typography, so video slots must use a shorter, punchier on-frame hook.
+ */
+export function resolveFalVideoHeadline(input: CaptionHeadlineInput & {
+  maxWords?: number;
+}): {
+  headline: string;
+  source: FalHeadlineSource;
+} {
+  const maxLen = input.maxLen ?? 22;
+  const maxWords = input.maxWords ?? 3;
+  const base = resolveFalDisplayHeadline({
+    ...input,
+    maxLen,
+  });
+  return {
+    headline: tightenVideoHeadline(base.headline, maxLen, maxWords),
+    source: base.source,
+  };
+}
+
+function cleanCaption(raw: string): string {
+  return raw
+    .replace(EMOJI_RX, '')
+    .replace(HASHTAG_RX, '')
+    .replace(MENTION_RX, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractQuestion(caption: string, brandName: string, maxLen: number): string | null {
+  const sentences = caption.split(/[.!?\n]+/).map((s) => s.trim()).filter(Boolean);
+  for (const s of sentences) {
+    if (!s.includes('?') && !/\b(ne|nasıl|neden|nerede|hangi|kim|kaç)\b/i.test(s)) continue;
+    const clean = s.replace(/\?+$/, '').trim();
+    if (clean.length < 8 || clean.length > maxLen) continue;
+    if (clean.toLowerCase().includes(brandName)) continue;
+    return clean + '?';
+  }
+  return null;
+}
+
+function extractCaptionHook(
+  caption: string,
+  missionTitle: string,
+  brandName: string,
+  maxLen: number,
+): string | null {
+  const missionTitleLower = missionTitle.toLowerCase();
+  const sentences = caption
+    .split(/[.!?\n]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 10 && s.length <= 80);
+
+  for (const sentence of sentences) {
+    if (sentence.toLowerCase() === missionTitleLower) continue;
+    if (sentence.toLowerCase().includes(brandName)) continue;
+    if (isInternalStrategyBriefing(sentence)) continue;
+
+    // Prefer sentences with action verbs or benefit language
+    const hasAction = /[ıiuü]yor|[aeiıoöuü]n!|hazır|keşfet|tadını|dene|gel|başla|katıl|kaçır/i.test(sentence);
+    if (!hasAction && sentences.indexOf(sentence) > 1) continue;
+
+    const hook = extractBestPhrase(sentence, maxLen);
+    if (hook && hook.length >= 8) return hook;
+  }
+
+  // Try first meaningful sentence regardless of action verb
+  for (const sentence of sentences.slice(0, 3)) {
+    if (sentence.toLowerCase() === missionTitleLower) continue;
+    if (sentence.toLowerCase().includes(brandName)) continue;
+    if (isInternalStrategyBriefing(sentence)) continue;
+    const hook = extractBestPhrase(sentence, maxLen);
+    if (hook && hook.length >= 8) return hook;
+  }
+
+  return null;
+}
+
+function extractBestPhrase(sentence: string, maxLen: number): string {
+  if (sentence.length <= maxLen) return capitalizeFirst(sentence);
+
+  // Split by comma/dash, take first clause
+  const clause = sentence.split(/[,—–\-]/)[0]?.trim() ?? sentence;
+  if (clause.length <= maxLen && clause.length >= 8) return capitalizeFirst(clause);
+
+  // Take first N words that fit
+  const words = sentence.split(/\s+/).filter(Boolean);
+  let result = '';
+  for (const word of words) {
+    const candidate = result ? `${result} ${word}` : word;
+    if (candidate.length > maxLen) break;
+    result = candidate;
+  }
+  return capitalizeFirst(result);
+}
+
+function capitalizeFirst(text: string): string {
+  if (!text) return '';
+  const turkishUpper: Record<string, string> = { 'i': 'İ', 'ı': 'I' };
+  const first = text[0]!;
+  const upper = turkishUpper[first] ?? first.toUpperCase();
+  return upper + text.slice(1);
+}
+
+function truncateClean(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const words = text.split(/\s+/);
+  let result = '';
+  for (const word of words) {
+    const candidate = result ? `${result} ${word}` : word;
+    if (candidate.length > maxLen) break;
+    result = candidate;
+  }
+  return result || text.slice(0, maxLen);
+}
+
+// ── Overlay text hygiene (prevents prompt-instruction leaks on canvas) ────────
+
+/** Words image models sometimes paint when they appear in typography prompts. */
+const PROMPT_LEAK_WORDS = new Set([
+  'exactly', 'only', 'critical', 'mandatory', 'absolutely', 'verbatim',
+  'headline', 'subtitle', 'tagline', 'placeholder', 'lorem', 'ipsum',
+  'text', 'copy', 'render', 'character', 'precisely', 'additions',
+  'omissions', 'paraphrasing', 'watermark', 'badge',
+]);
+
+const INSTRUCTION_FRAGMENT_RX =
+  /\b(exactly|verbatim|character-for-character|spell every|reads exactly|no additions|no omissions|no paraphrasing|critical text|mandatory)\b/gi;
+
+/** Agent/strategist briefing verbs — never consumer-facing overlay copy. */
+const STRATEGY_BRIEFING_START_RX =
+  /^(highlight|showcase|emphasize|emphasise|focus on|drive|leverage|establish|communicate|convey|promote|position|positioning|create awareness|build awareness|increase engagement)\b/i;
+
+const STRATEGY_BRIEFING_BODY_RX =
+  /\b(exclusivity|awareness|engagement rate|conversion funnel|brand positioning|target audience|call to action strategy|content pillar|strategic purpose|visual hierarchy goal)\b/i;
+
+/** Trailing words that indicate word-boundary truncation left an incomplete phrase. */
+const DANGLING_TAIL_RX =
+  /\b(and|or|the|a|an|for|with|to|of|in|on|at|by|from|that|this|ve|ile|için|icin|bir|bu|da|de|ya|veya)\s*$/iu;
+
+/**
+ * Strip prompt-instruction fragments and decorative quotes from text destined
+ * for on-image typography. Does NOT rewrite meaning — only removes leakage.
+ */
+export function sanitizeFalOverlayText(raw: string | undefined | null): string {
+  if (!raw) return '';
+  let text = raw
+    .replace(/[\u201C\u201D\u2018\u2019"'`«»]/g, '')
+    .replace(INSTRUCTION_FRAGMENT_RX, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Drop leading/trailing punctuation left after stripping
+  text = text.replace(/^[\s\-–—:;,.!?]+|[\s\-–—:;,.!?]+$/g, '').trim();
+
+  const lower = text.toLowerCase();
+  if (PROMPT_LEAK_WORDS.has(lower)) return '';
+  if (/^(exactly|only|critical)$/i.test(text)) return '';
+
+  return text;
+}
+
+/**
+ * Internal strategist / content-agent briefing — not valid on-image copy.
+ * e.g. "Highlight the exclusivity and premium positioning of the menu launch"
+ */
+export function isInternalStrategyBriefing(text: string): boolean {
+  const clean = sanitizeFalOverlayText(text);
+  if (!clean || clean.length < 8) return false;
+  if (STRATEGY_BRIEFING_START_RX.test(clean)) return true;
+  if (STRATEGY_BRIEFING_BODY_RX.test(clean) && !/\b(menü|menu|kokteyl|plaj|gece|lezzet|rezervasyon)\b/i.test(clean)) {
+    return true;
+  }
+  return false;
+}
+
+/** Remove trailing conjunctions/articles left after max-length word clamping. */
+export function stripDanglingOverlayTail(text: string): string {
+  let result = text.trim();
+  for (let i = 0; i < 4 && DANGLING_TAIL_RX.test(result); i += 1) {
+    result = result.replace(DANGLING_TAIL_RX, '').trim();
+  }
+  return result;
+}
+
+/** Vision/OCR readback — reject truncated or briefing text painted on canvas. */
+export function isRenderedOverlayTextIncomplete(detected: string | undefined | null): boolean {
+  if (!detected?.trim()) return false;
+  const t = detected.trim();
+  if (DANGLING_TAIL_RX.test(t)) return true;
+  if (isInternalStrategyBriefing(t)) return true;
+  if (STRATEGY_BRIEFING_START_RX.test(t)) return true;
+  return false;
+}
+
+/** Headline ends mid-thought — unsuitable for publish or fal canvas. */
+export function isIncompleteOverlayPhrase(text: string): boolean {
+  const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
+  if (!clean || clean.length < 4) return true;
+  if (DANGLING_TAIL_RX.test(text.trim())) return true;
+  if (isInternalStrategyBriefing(clean)) return true;
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
+  return false;
+}
+
+/** True when copy is long enough to be a real headline/tagline, not a prompt artifact. */
+export function isMeaningfulFalOverlayText(text: string): boolean {
+  const clean = sanitizeFalOverlayText(text);
+  if (clean.length < 6) return false;
+  if (isInternalStrategyBriefing(clean)) return false;
+  if (isIncompleteOverlayPhrase(clean)) return false;
+
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    const w = words[0]!.toLowerCase();
+    if (PROMPT_LEAK_WORDS.has(w)) return false;
+    return clean.length >= 8 && /[aeiouıöüAEIOUİÖÜ]/i.test(clean);
+  }
+
+  const meaningfulWords = words.filter((w) => !PROMPT_LEAK_WORDS.has(w.toLowerCase()));
+  return meaningfulWords.length >= 2 && meaningfulWords.join(' ').length >= 8;
+}
+
+/**
+ * Pick the first meaningful overlay string from primary + fallbacks.
+ * Used before fal/Ideogram prompts so bad ideation never becomes canvas text.
+ */
+export function ensureMeaningfulFalOverlayText(
+  primary: string,
+  fallbacks: string[] = [],
+  maxLen?: number,
+): string {
+  const candidates = [primary, ...fallbacks].map((c) => c.trim()).filter(Boolean);
+  for (const candidate of candidates) {
+    const clean = sanitizeFalOverlayText(candidate);
+    const clipped = maxLen ? truncateClean(clean, maxLen) : clean;
+    const normalized = stripDanglingOverlayTail(clipped);
+    if (isMeaningfulFalOverlayText(normalized)) {
+      return correctTurkishSpelling(normalized);
+    }
+  }
+  // Never return unvalidated copy — callers must abort or pick another source.
+  return '';
+}
+
+/**
+ * Resolved overlay headline for fal production — empty when no safe copy exists.
+ * Callers MUST NOT generate typography when this returns ''.
+ */
+export function resolveFalProductionOverlayHeadline(
+  primary: string,
+  fallbacks: string[] = [],
+  channel: 'reel' | 'feed_post' | 'story',
+): string {
+  const raw = ensureMeaningfulFalOverlayText(primary, fallbacks);
+  if (!raw) return '';
+  const clamped = clampFalOverlayHeadlineForCanvas(raw, channel);
+  return clamped && isMeaningfulFalOverlayText(clamped) ? clamped : '';
+}
+
+/** Image-model-safe headline directive — avoids "EXACTLY" and similar leak words. */
+export function formatFalOnImageHeadlineDirective(headline: string, fontDescription: string): string {
+  const safe = sanitizeFalOverlayText(headline);
+  return [
+    `Main on-image headline — render ONLY this copy: «${safe}».`,
+    `Typography style: ${fontDescription}.`,
+    'Do not paint prompt instructions or any text outside the quoted headline.',
+  ].join(' ');
+}
+
+/** Image-model-safe subtitle/tagline directive. */
+export function formatFalOnImageSubtitleDirective(subtitle: string): string {
+  const safe = sanitizeFalOverlayText(subtitle);
+  return `Secondary tagline below headline (ONLY this copy): «${safe}». Designed complement font — not plain body text.`;
+}
+
+/**
+ * Clamp overlay copy to lengths image models can spell reliably.
+ * Reels/stories: ≤3 words / 22 chars — long headlines become garbled ("Cııçogra pry").
+ */
+export function clampFalOverlayHeadlineForCanvas(
+  headline: string,
+  channel: 'reel' | 'feed_post' | 'story',
+): string {
+  const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
+  if (!clean) return '';
+  if (isInternalStrategyBriefing(clean)) return '';
+  if (channel === 'reel') return stripDanglingOverlayTail(tightenVideoHeadline(clean, 22, 3));
+  if (channel === 'story') return stripDanglingOverlayTail(tightenVideoHeadline(clean, 28, 4));
+  const words = clean.split(/\s+/).filter(Boolean);
+  let result = '';
+  for (const word of words) {
+    const candidate = result ? `${result} ${word}` : word;
+    if (candidate.length > 32) break;
+    result = candidate;
+  }
+  result = stripDanglingOverlayTail(result || clean.slice(0, 32));
+  if (!result || isIncompleteOverlayPhrase(result)) {
+    // Prefer a short complete hook (≤3 words) over a long truncated briefing fragment.
+    const shortHook = stripDanglingOverlayTail(
+      words.slice(0, 3).join(' ').slice(0, 32),
+    );
+    if (shortHook && isMeaningfulFalOverlayText(shortHook)) return shortHook;
+    return '';
+  }
+  return result;
+}
+
+/**
+ * Explicit on-canvas text contract for fal/Ideogram/GPT-image prompts.
+ * Lists the only strings that may appear as visible text — prevents gibberish output.
+ */
+export function buildFalOnCanvasTextContract(input: {
+  headline: string;
+  subtitle?: string;
+  brandName?: string;
+  logoProvided?: boolean;
+}): string {
+  const headline = sanitizeFalOverlayText(input.headline);
+  const headlineWords = headline.split(/\s+/).filter(Boolean);
+
+  const lines = [
+    'ON-CANVAS TEXT CONTRACT (mandatory — render ONLY these strings as visible text):',
+    `HEADLINE: "${headline}"`,
+  ];
+
+  if (headlineWords.length > 0) {
+    lines.push(
+      `Headline word order (${headlineWords.length} words, do not reorder or misspell): ${
+        headlineWords.map((w, i) => `${i + 1}="${w}"`).join(' · ')
+      }`,
+    );
+  }
+
+  const subtitle = input.subtitle ? sanitizeFalOverlayText(input.subtitle) : '';
+  if (subtitle && isMeaningfulFalOverlayText(subtitle)) {
+    lines.push(`SUBTITLE (second line, optional): "${subtitle}"`);
+  }
+
+  if (input.brandName?.trim() && !input.logoProvided) {
+    lines.push(`BRAND MARK (small corner wordmark only): "${input.brandName.trim()}"`);
+  }
+
+  lines.push(
+    'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, extra slogans, URLs, hashtags, dates, or any text not listed above.',
+    'If space is tight, shrink typography — never invent alternate wording.',
+  );
+
+  return lines.join(' ');
+}
+
+export type FalLogoCanvasChannel = 'feed_post' | 'reel' | 'story';
+
+/**
+ * Logo placement + integrity contract for fal/Ideogram/GPT-image designed posts.
+ *
+ * When a logo URL is configured, AI must NOT draw the mark — we composite the
+ * official file in post-production (see fal-logo-composite.ts).
+ */
+export function buildFalLogoPlacementContract(input: {
+  logoProvided: boolean;
+  brandName?: string;
+  channel?: FalLogoCanvasChannel;
+  /** When false, skip photo-hero placement hints (synthetic backgrounds). */
+  hasPhotoHero?: boolean;
+  /** Art director / archetype / brand resolved anchor. */
+  placement?: ResolvedFalLogoPlacement | null;
+}): string {
+  if (!input.logoProvided) return '';
+
+  const channel = input.channel ?? 'feed_post';
+
+  const fallbackPlacement: Record<FalLogoCanvasChannel, string> = {
+    feed_post:
+      'Reserve a clean quiet corner (top-right OR bottom-right) — no text, icons, or busy texture. Never over faces, hands, food, cutlery, glassware, or the headline block.',
+    reel:
+      'Reserve top-right (below the top 12% Instagram UI safe zone) OR bottom-right (above the bottom 15% safe zone). Keep away from the photo hero subject and headline panel.',
+    story:
+      'Reserve top-right (below safe zone) OR bottom-left. Never center over the main subject or headline stack.',
+  };
+
+  const placementLine = input.placement
+    ? formatFalLogoPlacementDirective(input.placement, channel)
+    : fallbackPlacement[channel];
+
+  const brandNote = input.brandName?.trim()
+    ? ` Brand: "${input.brandName.trim()}" — do NOT type the brand name as a substitute logo.`
+    : '';
+
+  return [
+    'BRAND LOGO CONTRACT (mandatory — highest priority after on-canvas text):',
+    'The official logo is supplied as a separate asset and will be composited in post-production — pixel-perfect, unchanged.',
+    'DO NOT draw, generate, illustrate, paint, emboss, or type any logo, emblem, monogram, mascot, sun icon, or brand mark anywhere in this image.',
+    'LOGO INTEGRITY (non-negotiable): The AI must never redraw, reimagine, simplify, cartoonify, recolor, warp, stretch, crop, or replace the official mark.',
+    'ALLOWED in the reserved zone only: leave empty quiet space (solid color, soft gradient, or uncluttered margin). Motion/video may later add subtle opacity pulse or glow on the composited logo — never on an AI-drawn substitute.',
+    `RESERVED LOGO ZONE: ${placementLine}${brandNote}`,
+    input.hasPhotoHero !== false
+      ? 'Photo hero rule: reserved logo zone must sit in a margin/corner — never over the dish, hands, knife/fork action, or primary photo subject.'
+      : '',
+    'Reserved zone size: ~8–12% of frame width, with at least 3% padding from frame edges and from headline/subtitle blocks.',
+    'FORBIDDEN: any invented icon, stylized lettering, fake watermark, or spelling the brand name instead of leaving the reserved zone empty.',
+  ].filter(Boolean).join(' ');
+}
+
+function finalizeHeadline(text: string, maxLen: number): { headline: string; source?: FalHeadlineSource } | null {
+  const clean = correctTurkishSpelling(truncateClean(sanitizeFalOverlayText(text), maxLen));
+  if (!isMeaningfulFalOverlayText(clean)) return null;
+  return { headline: clean };
+}
+
+function tightenVideoHeadline(text: string, maxLen: number, maxWords: number): string {
+  const normalized = correctTurkishSpelling(
+    text
+      .replace(/[!"'():;[\]{}]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
+  if (!normalized) return '';
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  const filtered = words.filter((word, index) => {
+    const lower = word.toLowerCase();
+    if (index === 0 && /^(yaz|kış|bahar|sonbahar)$/.test(lower)) return true;
+    FILLER_WORDS.lastIndex = 0;
+    return !FILLER_WORDS.test(lower);
+  });
+  FILLER_WORDS.lastIndex = 0;
+
+  const pool = filtered.length > 0 ? filtered : words;
+  let result = '';
+  let used = 0;
+  for (const word of pool) {
+    if (used >= maxWords) break;
+    const candidate = result ? `${result} ${word}` : word;
+    if (candidate.length > maxLen) break;
+    result = candidate;
+    used += 1;
+  }
+
+  const compact = capitalizeFirst(result || truncateClean(normalized, maxLen));
+  const sanitized = sanitizeFalOverlayText(compact.replace(/[,.!?]+$/g, '').trim());
+  return sanitized;
+}
+
+// ── Subtitle from Caption ─────────────────────────────────────────────────────
+
+/**
+ * Extract a meaningful subtitle line from caption that complements the headline.
+ * Returns a short phrase (max 50 chars) that adds context without repeating the headline.
+ */
+export function resolveFalSubtitle(input: {
+  caption: string;
+  headline: string;
+  cta?: string;
+  brandName?: string;
+  maxLen?: number;
+}): string | undefined {
+  const maxLen = input.maxLen ?? 50;
+  const caption = cleanCaption(input.caption);
+  const headlineLower = input.headline.toLowerCase();
+  const brandLower = (input.brandName ?? '').toLowerCase();
+
+  const sentences = caption
+    .split(/[.!?\n]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 8 && s.length <= 60);
+
+  for (const s of sentences) {
+    const sLower = s.toLowerCase();
+    if (sLower === headlineLower) continue;
+    if (headlineLower.includes(sLower) || sLower.includes(headlineLower)) continue;
+    if (brandLower && sLower.startsWith(brandLower)) continue;
+
+    const clean = s.replace(/[!.]+$/, '').trim();
+    if (clean.length >= 8 && clean.length <= maxLen) {
+      const sanitized = sanitizeFalOverlayText(clean);
+      if (isMeaningfulFalOverlayText(sanitized)) {
+        return correctTurkishSpelling(sanitized);
+      }
+    }
+  }
+
+  // Fallback to CTA if it's meaningful
+  if (input.cta) {
+    const ctaClean = sanitizeFalOverlayText(input.cta.trim());
+    if (ctaClean.length >= 6 && ctaClean.length <= maxLen
+      && !ctaClean.toLowerCase().includes(headlineLower)
+      && isMeaningfulFalOverlayText(ctaClean)) {
+      return ctaClean;
+    }
+  }
+
+  return undefined;
+}

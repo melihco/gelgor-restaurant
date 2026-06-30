@@ -13,6 +13,7 @@ import {
   type AdPublishChannel,
 } from '@/lib/ad-publish-utils';
 import { renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
+import { serverConfig } from '@/lib/server-config';
 import type { NexusClient } from './nexus-client';
 
 export interface DesignedPostSnapshot {
@@ -80,43 +81,69 @@ export async function deriveAdCreativesFromDesignedPost(
     const platformLabel = adPlatformLabel(channel);
 
     let adImageUrl = snapshot.imageUrl;
-    try {
-      const adRender = await renderRemotionBrandStillResult({
-        workspaceId,
-        photoUrl,
-        headline: adHeadline,
-        caption: snapshot.caption,
-        brandName,
-        location: renderCtx.brandLocation,
-        sector: renderCtx.brandBusinessType,
-        templateUseCase: 'ad_creative',
-        treatment: 'ad_creative',
-        contentType: 'post',
-        ideaIndex: snapshot.ideaIndex + (channel === 'google_ads' ? 1 : 0),
-        brandTheme: renderCtx.brandTheme,
-        logoUrl: renderCtx.brandLogoUrl,
-        primaryColor: renderCtx.primaryColor,
-        accentColor: renderCtx.accentColor,
-        usedTemplateIds,
-        baseUrl: renderCtx.routeBaseUrl,
-        cta: adCta,
-        grafikerMaxRetries: renderCtx.grafikerMaxRetries,
-        librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
-        slotRole: role,
-      });
-      if (adRender?.imageUrl) {
-        adImageUrl = adRender.imageUrl;
-        console.log(`[auto-produce] Ad creative render (${channel}): "${adHeadline.slice(0, 40)}"`);
+
+    // Faz 1.3 — Reklam türevi maliyet kısıntısı (flag arkasında, varsayılan: mevcut davranış).
+    // designed_post zaten render + CD + Grafiker'dan geçti. AD_REUSE_DESIGNED_POST_STILL=true
+    // iken reklam türevi için yeniden render/CD/Grafiker yapmayız; onaylı post still'ini
+    // yeniden kullanırız → mission başına 2 render + 2 CD + 2 Grafiker tasarrufu.
+    // NOT: Bu çıktıyı değiştirir (reklam, post görselini gösterir). Strict nötr değildir,
+    // bu yüzden opt-in'dir.
+    const reuseDesignedPostStill = serverConfig.autoProduce.reuseDesignedPostStill;
+
+    if (reuseDesignedPostStill) {
+      console.log(`[auto-produce] Ad creative reuse (${channel}): designed_post still — render atlandı`);
+    } else {
+      try {
+        const adRender = await renderRemotionBrandStillResult({
+          workspaceId,
+          photoUrl,
+          headline: adHeadline,
+          caption: snapshot.caption,
+          brandName,
+          location: renderCtx.brandLocation,
+          sector: renderCtx.brandBusinessType,
+          templateUseCase: 'ad_creative',
+          treatment: 'ad_creative',
+          contentType: 'post',
+          ideaIndex: snapshot.ideaIndex + (channel === 'google_ads' ? 1 : 0),
+          brandTheme: renderCtx.brandTheme,
+          logoUrl: renderCtx.brandLogoUrl,
+          primaryColor: renderCtx.primaryColor,
+          accentColor: renderCtx.accentColor,
+          usedTemplateIds,
+          baseUrl: renderCtx.routeBaseUrl,
+          cta: adCta,
+          grafikerMaxRetries: renderCtx.grafikerMaxRetries,
+          librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
+          slotRole: role,
+        });
+        if (adRender?.imageUrl) {
+          adImageUrl = adRender.imageUrl;
+          console.log(`[auto-produce] Ad creative render (${channel}): "${adHeadline.slice(0, 40)}"`);
+        }
+      } catch (adRenderErr) {
+        console.warn(`[auto-produce] Ad render fallback to designed_post: ${String(adRenderErr).slice(0, 80)}`);
       }
-    } catch (adRenderErr) {
-      console.warn(`[auto-produce] Ad render fallback to designed_post: ${String(adRenderErr).slice(0, 80)}`);
     }
+
+    const adDedicatedRender = adImageUrl !== snapshot.imageUrl;
+    try {
+      const { emitAiCostLine } = await import('@/lib/ai-cost-telemetry');
+      emitAiCostLine({
+        callType: 'other',
+        usd: adDedicatedRender ? 0.01 : 0.001,
+        missionId: snapshot.missionId || null,
+        workspaceId,
+        slotKey: `${snapshot.ideaIndex}:${role}`,
+        detail: `ad-derive:${channel}:${adDedicatedRender ? 'rendered' : 'reused'}`,
+      });
+    } catch { /* telemetri üretimi bozmamalı */ }
 
     const metadata: Record<string, unknown> = {
       auto_produced: true,
       source: 'auto-produce',
       derived_from: 'designed_post',
-      ad_render_dedicated: adImageUrl !== snapshot.imageUrl,
+      ad_render_dedicated: adDedicatedRender,
       derived_idea_index: snapshot.ideaIndex,
       mission_id: snapshot.missionId || undefined,
       node_key: snapshot.nodeKey || undefined,
@@ -132,7 +159,7 @@ export async function deriveAdCreativesFromDesignedPost(
       ad_cta: adCta,
       publish_package: 'primary',
       publish_priority: 'extended',
-      cost_usd_estimate: adImageUrl !== snapshot.imageUrl ? 0.01 : 0.001,
+      cost_usd_estimate: adDedicatedRender ? 0.01 : 0.001,
     };
 
     const contentJson = JSON.stringify({

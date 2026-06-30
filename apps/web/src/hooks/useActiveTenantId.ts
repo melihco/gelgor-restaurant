@@ -1,9 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_TENANT_ID, getSessionTenantId } from '@/lib/runtime-config';
-import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 
 /** Effective tenant for API + feed — JWT wins, then demo default, then store. */
 export function resolveActiveTenantId(storeTenantId?: string | null): string | null {
@@ -19,15 +17,12 @@ export function resolveActiveTenantId(storeTenantId?: string | null): string | n
 
 /**
  * Single tenant source for feed, brand, and artifact queries.
- * Keeps workspace store aligned with JWT so UI headers match API data.
+ * Read-only — workspace store sync lives in TenantBrandProvider.
  */
 export function useActiveTenantId(): string | null {
-  const storeTenantId = useWorkspaceStore((s) => s.tenantId);
-  const setTenantFromSession = useWorkspaceStore((s) => s.setTenantFromSession);
   const [sessionTenantId, setSessionTenantId] = useState<string | null>(() =>
     typeof window !== 'undefined' ? getSessionTenantId() : null,
   );
-  const prevActiveRef = useRef<string | null>(null);
 
   useEffect(() => {
     const sync = () => setSessionTenantId(getSessionTenantId());
@@ -36,26 +31,8 @@ export function useActiveTenantId(): string | null {
     return () => window.removeEventListener('smartagency-auth-changed', sync);
   }, []);
 
-  const activeTenantId =
+  return (
     sessionTenantId
     ?? (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true' ? DEFAULT_TENANT_ID : null)
-    ?? null;
-
-  // Keep workspace store aligned when session is authoritative.
-  const effectiveTenantId =
-    activeTenantId
-    ?? (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true' ? storeTenantId : null);
-
-  useEffect(() => {
-    if (!effectiveTenantId) return;
-    if (storeTenantId !== effectiveTenantId) {
-      setTenantFromSession(effectiveTenantId);
-    }
-    if (prevActiveRef.current && prevActiveRef.current !== effectiveTenantId) {
-      invalidateTenantBrandQueries(effectiveTenantId);
-    }
-    prevActiveRef.current = effectiveTenantId;
-  }, [effectiveTenantId, storeTenantId, setTenantFromSession]);
-
-  return effectiveTenantId;
+  );
 }

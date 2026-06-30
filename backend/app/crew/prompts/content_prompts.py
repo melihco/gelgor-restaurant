@@ -195,7 +195,14 @@ Every concept must be genuinely different from ALL past output for this brand.
    - Different emotion (pride → curiosity → urgency → warmth → FOMO)
    - Different content angle (behind-the-scenes → customer story → product spotlight → seasonal → trend)
 5. The anti-repeat list in Tenant Learning Intelligence must be respected strictly.
-6. If you cannot find {count} genuinely distinct angles, produce fewer but more original concepts.
+6. You MUST return EXACTLY {count} distinct concepts — never fewer. If one angle feels thin,
+   broaden the dimension instead of dropping a concept: a different sub-product / ingredient /
+   menu item, a different season or daypart, a different customer segment, a different content
+   angle (behind-the-scenes → ingredient origin → recipe/usage → customer story → educational →
+   social proof → seasonal → process/craft). Every real brand has ≥{count} facets — find them.
+7. headline, concept_title, and caption_draft hook MUST be unique across the batch — never
+   repeat the same marketing angle with only content_type/format changed. Each slot is a different
+   story, product, moment, or customer insight.
 
 ⚠️ FREE TRIAL / ÜCRETSİZ DENEME HEADLINE CAP (MANDATORY):
 Across the ENTIRE batch of {count} concepts:
@@ -203,14 +210,23 @@ Across the ENTIRE batch of {count} concepts:
 - If RECENTLY PRODUCED (last 14 days) already contains ücretsiz deneme / free trial → ZERO concepts with that angle this week. Use social_proof, educational_post, behind_the_scenes, or campaign_offer instead.
 - lead_generation is allowed once — but only ONE piece may lead with demo/trial copy; others use signup tips, feature spotlight, or customer proof without repeating trial wording.
 
-⚠️ SaaS / agency_services / berber-kuaför panel MIX (when count ≥ 7):
+⚠️ SaaS / agency_services / berber-kuaför panel MIX (when count ≥ 10):
 Deliver at least ONE concept for EACH template_use_case:
 - lead_generation (demo/signup — trial wording only once, see cap above)
 - social_proof (customer success / testimonial / review)
 - educational_post (how-to / panel tip / workflow)
 - behind_the_scenes (product build / team / salon workflow)
 - campaign_offer OR event_announcement (promo without repeating free trial)
-Plus the standard 2 story + 2 post + 1 reel format mix.
+Plus the standard 10-slot mission mix: 4 post + 3 story + 1 carousel + 2 reel.
+
+⚠️ PRODUCT SHOWCASE REQUIREMENT (when brand sells physical products):
+If the brand has physical products (food, beverages, cosmetics, retail items, handmade goods):
+- Include at LEAST 2 concepts with asset_intent="product_image" and template_use_case="product_highlight"
+- These MUST have headline that is a MARKETING SENTENCE about the product (not just the product name)
+- Example good headlines: "Doğanın Mucizesi Bir Kavanozda!", "Yerli Üretimin En Saf Hali", "Bu Lezzeti Kaçırma!"
+- Example BAD headlines: "Badem Ezmesi Tanıtımı", "Ürün Duyurusu", "Ham Bal" (these are labels, not marketing copy)
+- Set content_kind to "instagram_post" for 1 and "instagram_story" for the other
+- These will be produced with AI background replacement (product photo on scenic backdrop)
 
 ⚠️ TIMING IS EVERYTHING — CHECK THESE FIRST BEFORE GENERATING ANY IDEA:
 
@@ -246,12 +262,12 @@ Autonomy mode: {autonomy_mode}
 - If a concept needs one critical missing input, add exactly one short item in "missing_questions"; otherwise return an empty list.
 - Do not ask for information that can be inferred from brand profile, office location, default CTA, or available assets.
 
-⚠️ CONTENT FORMAT MIX RULE (agency standard):
-From {count} concepts, aim for this distribution:
-- ~40%% posts (feed_text_overlay or pure_photo treatment)
-- ~30%% stories (pure_photo dominant — see STORY RULE below)
-- When count ≥ 5 (standard weekly mission): deliver EXACTLY — 2 story + 2 post + 1 reel (5 total).
+⚠️ CONTENT FORMAT MIX RULE (agency standard — MANDATORY, not a suggestion):
+The JSON array length MUST equal {count}. Follow this EXACT format distribution:
+- When count ≥ 16 (standard weekly mission): EXACTLY 6 post + 5 story + 1 carousel + 4 reel (16 total). Each concept is ONE production slot — unique headline, caption_draft, and hashtags. A carousel is REQUIRED — do not skip it.
+- When count ≥ 10 (legacy buffer package): EXACTLY 4 post + 3 story + 1 carousel + 2 reel (10 total).
 - Otherwise: ~40%% post / ~30%% story / ~20%% reel / ~10%% carousel; minimum 1 reel with reel_motion_spec.
+Set each concept's content_type/format/content_kind to match its assigned slot so the counts above are verifiable.
 
 🎨 PREMIUM CREATIVE COMPOSITION RULE (MANDATORY — at least 3 of {count}):
 At least 3 ideas MUST be Premium Creative Compositions — portfolio-quality, art-directed designs.
@@ -329,7 +345,7 @@ For each concept, return a JSON object with:
 - "template_use_case": one of "event_announcement", "menu_share", "product_highlight", "campaign_offer", "behind_the_scenes", "social_proof", "educational_post", "daily_story", "lead_generation", "google_business_update"
 - "content_kind": "instagram_post" | "instagram_story" | "instagram_reel"
 - "headline": campaign/marketing hook from the mission brief — max 60 characters. MUST NOT describe what is visible in a photo (no "sunset view", "cocktail on table", "interior shot"). Write the message first; the platform picks a gallery photo that fits this headline.
-  NEVER use the brand name alone as headline — and NEVER use the brand name with Turkish grammatical suffixes (e.g. "Kaçta Info'yu", "Marka'yı", "Venue'yu"). Headline must be a standalone marketing hook (e.g. "BU HAFTA", "YENİ BÖLÜM", "CEVAP BURADA") — not a sentence fragment about the brand.
+  NEVER use the brand name alone as headline — and NEVER use the brand name with Turkish grammatical suffixes (e.g. "Kaçta Info'yu", "Marka'yı", "Venue'yu"). Headline must be a COMPLETE, MEANINGFUL SENTENCE or question that works as standalone social media copy. Good examples: "Doğanın Mucizesi Bir Kavanozda!", "Bu Yaz Keşfetmeye Hazır mısın?", "Lezzetin Sırrını Paylaşıyoruz", "Müşterilerimiz Ne Diyor?". BAD examples (NEVER use these): "MÜŞTERİ BAŞARI", "Ürün Tanıtım", "Yeni Sezon", "Günlük Story" — these are category labels, not marketing copy.
 - "subline": supporting line below headline — max 120 characters. Empty string "" if not needed.
 - "bullets": optional array of 2–4 key points, each max 80 chars — for carousel/educational posts; empty array [] for others
 - "event_date": event/campaign/publish date if relevant, otherwise ""
@@ -337,7 +353,7 @@ For each concept, return a JSON object with:
 - "cta": short call to action in {output_language} ONLY — max 40 chars. Must match caption language (e.g. English caption → "Book now", not "Rezervasyon Yap")
 - "shot_type": "close-up" | "wide_environmental" | "flat_lay" | "portrait" | "aerial" — directs the image gen composition
 - "asset_intent": one of "product_image", "artist_photo", "venue_photo", "team_or_process_photo", "brand_background", "generated_visual"
-- "concept_title": short descriptive title
+- "concept_title": short descriptive title for internal planning (NOT displayed on the post — use headline for display text)
 - "idea_title": same as concept_title — required for CanvasOutput
 - "visual_direction": what the image/video should show (prefer using real business assets)
 - "caption_draft": the PRIMARY caption — conversational, brand-voice, ends with CTA. Written for the core audience.

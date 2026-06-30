@@ -4,6 +4,7 @@
  * Shows ALL analysis fields. Every section editable from mobile.
  */
 import React, { useState, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
 
 // Tone seçenekleri — Setup Wizard ile aynı değerler
 const TONE_OPTIONS = [
@@ -21,6 +22,7 @@ import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { fetchTenantBff } from '@/lib/bff-fetch';
 import { filterBrandGalleryUrls } from '@/lib/gallery-upload';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/types';
 import type { T } from '../theme-context';
 import { normalizeSectorId } from '@/lib/announcement-template-library';
@@ -28,6 +30,7 @@ import {
   buildCompanyProfilePatchFromPython,
   isCompanyProfileSparse,
 } from '@/lib/sync-company-profile-from-python';
+import { shouldRefreshIndustryFromPython } from '@/lib/canonical-sector';
 import { TENANT_INDUSTRY_PLAYBOOKS } from '@/lib/tenant-operating-policy';
 import {
   MOTION_STYLE_OPTIONS,
@@ -38,7 +41,8 @@ import {
 } from '@/lib/brand-motion-profile';
 import { StoryAudioSettingsPanel } from '@/components/brand/StoryAudioSettingsPanel';
 import { ReelMotionSettingsPanel } from '@/components/brand/ReelMotionSettingsPanel';
-import { MertcafeIntegrationsCard } from '../MertcafeIntegrationsCard';
+import { BrandProductShowcasePanel } from '@/components/brand/BrandProductShowcasePanel';
+import { BrandProductionEnginesPanel } from '@/components/brand/BrandProductionEnginesPanel';
 import {
   deriveBrandTemplateLibrary,
   ensureBrandTemplateLibrary,
@@ -53,14 +57,65 @@ import { resolveKitForSector } from '@/lib/remotion-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
 import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePicker';
+import { BrandFalDesignIntensityPanel } from '@/components/brand/BrandFalDesignIntensityPanel';
+import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
+import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrategyPanel';
+import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
 import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
 import { isCanvaEnabledClient } from '@/lib/canva-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl } from '@/lib/gallery-display-url';
-import { themeFlag, themeString, themeStringArray } from '@/lib/brand-theme-ai-settings';
+import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
+import type { VisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import { invalidateBrandContextWriteQueries } from '@/lib/query-client-bridge';
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { BrandSectionIntro } from '../BrandSectionIntro';
+import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
+import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
+
+const BrandChatbotProfileCard = dynamic(
+  () => import('../BrandChatbotProfileCard').then((m) => ({ default: m.BrandChatbotProfileCard })),
+  { ssr: false },
+);
+
+const BrandScheduledTemplatesPanel = dynamic(
+  () => import('@/components/brand/BrandScheduledTemplatesPanel').then((m) => ({ default: m.BrandScheduledTemplatesPanel })),
+  { ssr: false },
+);
+
+const POST_FONT_OPTIONS: Array<{ id: BrandPostDesignDefaults['font_preset']; label: string; desc: string; functionText: string }> = [
+  { id: 'poster_3d', label: 'Poster 3D', desc: 'Kalın, kampanya afişi gibi', functionText: 'Post ve story ara görsellerinde büyük headline için Anton/Archivo tabanlı poster yazısı kullanır.' },
+  { id: 'sticker_pop', label: 'Sticker Pop', desc: 'Daha eğlenceli ve sosyal', functionText: 'Bangers tarzı daha organik, etiket/sticker hissi veren yazı dili üretir.' },
+  { id: 'condensed_impact', label: 'Condensed', desc: 'Dar, güçlü, satış odaklı', functionText: 'Dar ve yüksek harflerle daha fazla vurgu sağlar; kampanya ve duyuru postlarına uygundur.' },
+  { id: 'elegant_serif', label: 'Editorial', desc: 'Premium ve dergi hissi', functionText: 'Playfair tabanlı serif başlıkla lüks, restoran ve lifestyle içeriklerini daha editorial gösterir.' },
+  { id: 'clean_sans', label: 'Clean Sans', desc: 'Sade, kurumsal, minimal', functionText: 'Inter tabanlı sade başlık kullanır; klinik, kurumsal ve minimal markalar için daha güvenlidir.' },
+];
+
+const POST_EFFECT_OPTIONS: Array<{ id: BrandPostDesignDefaults['text_effect']; label: string; desc: string; functionText: string }> = [
+  { id: 'extrude_3d', label: '3D Extrude', desc: 'Derinlikli, dikkat çekici başlık', functionText: 'Canvas render sırasında başlığı çok katmanlı gölge ve stroke ile gerçek 3D derinlikli çizer.' },
+  { id: 'gradient_stack', label: 'Gradient Stack', desc: 'Renk geçişli poster yazısı', functionText: 'Başlıkta beyazdan marka aksan rengine inen gradient ve derinlik katmanı uygular.' },
+  { id: 'neon_3d', label: 'Neon Glow', desc: 'Gece/story enerjisi', functionText: 'Başlığa parlama/glow uygular; gece etkinliği, bar, beach club ve story/reel girişleri için daha çarpıcıdır.' },
+  { id: 'editorial_outline', label: 'Outline', desc: 'Lüks, ince konturlu başlık', functionText: 'Başlık etrafına zarif kontur ve kontrollü gölge verir; premium ama sakin görünür.' },
+  { id: 'soft_shadow', label: 'Soft Shadow', desc: 'Daha sakin okunabilirlik', functionText: 'Sadece yumuşak okunabilirlik gölgesi kullanır; daha az agresif ve güvenli üretim modudur.' },
+];
+
+const POST_LOGO_OPTIONS: Array<{ id: BrandPostDesignDefaults['logo_position']; label: string; desc: string; functionText: string }> = [
+  { id: 'top_left', label: 'Sol üst', desc: 'Feed için güvenli klasik alan', functionText: 'Logo gerçek dosya olarak canvas üstüne çizilir; Instagram UI ve metin alanıyla en az çakışan varsayılan konumdur.' },
+  { id: 'top_center', label: 'Üst orta', desc: 'Story/reel girişlerinde güçlü', functionText: 'Logo üst merkezde yer alır; story açılış kartlarında marka imzası gibi çalışır.' },
+  { id: 'top_right', label: 'Sağ üst', desc: 'Sol başlık alanı boş kalır', functionText: 'Başlık sola yaslandığında logoyu sağ üstte tutarak kompozisyon dengesini korur.' },
+  { id: 'bottom_right', label: 'Sağ alt', desc: 'Minimal ve editorial işler', functionText: 'Logo daha az baskın görünür; minimal postlarda fotoğrafı bozmadan marka imzası bırakır.' },
+];
+
+interface BrandPostTemplateSummary {
+  id: string;
+  name: string;
+  format: string;
+  template_kind: string;
+  layout_spec?: Record<string, unknown>;
+  thumbnail_url?: string | null;
+  example_artifact_url?: string | null;
+  usage_count?: number;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 function ChevronRight({ color }: { color: string }) {
@@ -167,6 +222,568 @@ function InfoRow({ t, label, value, color }: { t: T; label: string; value: strin
   );
 }
 
+function ParameterHelpModal({
+  t,
+  title,
+  body,
+  bullets,
+  onClose,
+}: {
+  t: T;
+  title: string;
+  body: string;
+  bullets: string[];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 80,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.48)',
+        padding: 14,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 430,
+          borderRadius: 24,
+          padding: 18,
+          background: t.isDark ? '#111827' : '#ffffff',
+          border: `0.5px solid ${t.separator}`,
+          boxShadow: '0 24px 70px rgba(0,0,0,0.34)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5 }}>
+              Üretim Parametresi
+            </div>
+            <div style={{ fontSize: 18, color: t.textPrimary, fontWeight: 800, letterSpacing: '-0.02em' }}>{title}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              border: 'none',
+              cursor: 'pointer',
+              color: t.textSecondary,
+              background: t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+              fontSize: 18,
+              lineHeight: '32px',
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.6, color: t.textMuted }}>{body}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {bullets.map((item) => (
+            <div
+              key={item}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 14,
+                background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                color: t.textSecondary,
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParameterGroupHeader({
+  t,
+  title,
+  subtitle,
+  onHelp,
+}: {
+  t: T;
+  title: string;
+  subtitle: string;
+  onHelp: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.01em' }}>{title}</div>
+        <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3, lineHeight: 1.35 }}>{subtitle}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onHelp}
+        aria-label={`${title} açıklaması`}
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          border: `0.5px solid ${t.accentBorder}`,
+          background: t.accentDim,
+          color: t.accent,
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: 800,
+          lineHeight: '22px',
+          flexShrink: 0,
+        }}
+      >
+        ?
+      </button>
+    </div>
+  );
+}
+
+function ParameterOptionCard({
+  t,
+  active,
+  label,
+  desc,
+  functionText,
+  onClick,
+}: {
+  t: T;
+  active: boolean;
+  label: string;
+  desc?: string;
+  functionText?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        textAlign: 'left',
+        padding: '12px',
+        borderRadius: 16,
+        cursor: 'pointer',
+        border: `0.5px solid ${active ? t.accentBorder : t.separator}`,
+        background: active
+          ? (t.isDark ? 'linear-gradient(135deg, rgba(77,112,136,0.22), rgba(77,112,136,0.08))' : 'linear-gradient(135deg, rgba(77,112,136,0.13), rgba(77,112,136,0.04))')
+          : (t.isDark ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.025)'),
+        boxShadow: active ? '0 12px 28px rgba(0,0,0,0.12)' : 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: desc ? 5 : 0 }}>
+        <span style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          background: active ? t.accent : t.separator,
+          boxShadow: active ? `0 0 0 4px ${t.accentDim}` : 'none',
+          flexShrink: 0,
+        }} />
+        <div style={{ fontSize: 13, fontWeight: 800, color: active ? t.accent : t.textPrimary }}>{label}</div>
+      </div>
+      {desc ? <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.35, marginLeft: 16 }}>{desc}</div> : null}
+      {functionText ? <div style={{ fontSize: 10, color: t.textTertiary, lineHeight: 1.35, marginLeft: 16, marginTop: 6 }}>{functionText}</div> : null}
+    </button>
+  );
+}
+
+/**
+ * Katlanabilir grup — gelişmiş / teknik kartları varsayılan kapalı gösterir.
+ * Kullanıcı yalnızca ilgilendiği grubu açar; ekran karmaşası dramatik düşer.
+ */
+function CollapsibleGroup({
+  t,
+  title,
+  subtitle,
+  defaultOpen = false,
+  accent,
+  children,
+}: {
+  t: T;
+  title: string;
+  subtitle?: string;
+  defaultOpen?: boolean;
+  accent?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section style={{ marginBottom: open ? 24 : 12 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '14px 16px',
+          borderRadius: 16,
+          cursor: 'pointer',
+          textAlign: 'left',
+          background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+          border: `0.5px solid ${open ? (accent ? accent + '55' : t.accentBorder) : t.separator}`,
+          transition: 'border-color 180ms ease',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{title}</div>
+          {subtitle ? (
+            <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 3, lineHeight: 1.4 }}>{subtitle}</div>
+          ) : null}
+        </div>
+        <span
+          aria-hidden
+          style={{
+            flexShrink: 0,
+            display: 'inline-flex',
+            transform: open ? 'rotate(90deg)' : 'none',
+            transition: 'transform 200ms ease',
+          }}
+        >
+          <ChevronRight color={accent ?? t.textMuted} />
+        </span>
+      </button>
+      {open ? <div style={{ marginTop: 14 }}>{children}</div> : null}
+    </section>
+  );
+}
+
+function PostDesignDefaultsPanel({
+  t,
+  workspaceId,
+  theme,
+  onSave,
+}: {
+  t: T;
+  workspaceId?: string | null;
+  theme: Record<string, unknown>;
+  onSave: (next: BrandPostDesignDefaults) => void;
+}) {
+  const raw = (theme.post_design_defaults ?? theme.postDesignDefaults ?? {}) as Partial<BrandPostDesignDefaults>;
+  const active: BrandPostDesignDefaults = {
+    font_preset: raw.font_preset ?? 'poster_3d',
+    text_effect: raw.text_effect ?? 'extrude_3d',
+    logo_position: raw.logo_position ?? 'top_left',
+    accent_color: raw.accent_color,
+    default_template_id: raw.default_template_id ?? raw.defaultTemplateId,
+  };
+  const savePatch = (patch: Partial<BrandPostDesignDefaults>) => onSave({ ...active, ...patch });
+  const { data: postTemplates = [] } = useQuery<BrandPostTemplateSummary[]>({
+    queryKey: ['brandPostTemplates', workspaceId],
+    queryFn: async () => {
+      if (!workspaceId) return [];
+      const res = await fetchTenantBff(`/api/brand-context/${workspaceId}/post-templates`, workspaceId, {
+        headers: { 'X-Tenant-Id': workspaceId },
+      });
+      if (!res.ok) return [];
+      return await res.json() as BrandPostTemplateSummary[];
+    },
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+  });
+  const [helpTopic, setHelpTopic] = useState<'template' | 'font' | 'effect' | 'logo' | null>(null);
+  const selectedFont = POST_FONT_OPTIONS.find((opt) => opt.id === active.font_preset) ?? POST_FONT_OPTIONS[0]!;
+  const selectedEffect = POST_EFFECT_OPTIONS.find((opt) => opt.id === active.text_effect) ?? POST_EFFECT_OPTIONS[0]!;
+  const selectedLogo = POST_LOGO_OPTIONS.find((opt) => opt.id === active.logo_position) ?? POST_LOGO_OPTIONS[0]!;
+  const selectedTemplate = postTemplates.find((tmpl) => tmpl.id === active.default_template_id) ?? null;
+  const helpCopy = {
+    template: {
+      title: 'Varsayılan Post Template',
+      body: 'Bu seçim markanın post üretiminde hangi kayıtlı şablonun önce kullanılacağını belirler.',
+      bullets: [
+        'Otomatik seçilirse sistem sadece marka font/efekt/logo standardını kullanır ve içerik tipine göre tasarım seçer.',
+        'Bir template seçilirse MissionContentFactory o şablonun canvas/agency spec değerlerini varsayılan üretim davranışına taşır.',
+        'Template kütüphanesi, onaylanan post tasarımlarından büyür; iyi çalışan tasarımları kaydettikçe marka standardı güçlenir.',
+      ],
+    },
+    font: {
+      title: 'Yazı Karakteri',
+      body: 'Bu seçim markanın post ve story ara görsellerindeki headline karakterini belirler. Üretim sırasında Canvas renderer bu preset’i gerçek font ailesine çevirir.',
+      bullets: [
+        'MissionContentFactory post, carousel ve story→reel ara kartlarında varsayılan font olarak kullanılır.',
+        'Kayıtlı bir post şablonu kendi fontunu taşıyorsa şablon değeri marka standardının önüne geçer.',
+        'Amaç her firmanın postlarında story şablonları gibi tutarlı bir tipografi imzası oluşturmak.',
+      ],
+    },
+    effect: {
+      title: 'Yazı Efekti',
+      body: 'Bu seçim başlığın Canvas üzerinde nasıl çizileceğini belirler: 3D derinlik, glow, outline, gradient veya sade gölge.',
+      bullets: [
+        'AI prompt’a bırakılmaz; gerçek render katmanları Canvas içinde deterministik çizilir.',
+        '3D Extrude ve Gradient Stack daha kampanya/poster odaklıdır; Outline ve Soft Shadow daha premium/minimaldir.',
+        'Reel için Runway’e giden prompt image da bu yazı efektini taşıdığı için hareketli içerik standardını etkiler.',
+      ],
+    },
+    logo: {
+      title: 'Logo Alanı',
+      body: 'Bu seçim gerçek marka logosunun post/story canvasında hangi güvenli alana yerleşeceğini belirler.',
+      bullets: [
+        'Logo URL varsa dosya olarak çizilir; modelin logoyu hayal etmesine bırakılmaz.',
+        'Top-left feed için en güvenli default; top-center story girişlerinde daha güçlü marka imzası verir.',
+        'Minimal postlarda bottom-right daha az baskın ve daha editorial görünür.',
+      ],
+    },
+  } as const;
+
+  return (
+    <SCard t={t} title="Post Tasarım Standardı" accent={t.accent}>
+      <div style={{ padding: 14 }}>
+        <div style={{
+          borderRadius: 18,
+          padding: 14,
+          marginBottom: 14,
+          background: t.isDark ? 'rgba(77,112,136,0.13)' : 'rgba(77,112,136,0.07)',
+          border: `0.5px solid ${t.accentBorder}`,
+        }}>
+          <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Aktif Marka Standardı
+          </div>
+          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 750, lineHeight: 1.45 }}>
+            {selectedFont.label} · {selectedEffect.label} · Logo: {selectedLogo.label}
+          </div>
+          <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
+            Template: {selectedTemplate?.name ?? 'Otomatik'} · Bu standart post, carousel ve story→reel ara görsellerinde üretim karakterini belirler.
+          </div>
+        </div>
+
+        <ParameterGroupHeader
+          t={t}
+          title="Varsayılan Post Template"
+          subtitle="Mission üretiminde önce kullanılacak kayıtlı post şablonu"
+          onHelp={() => setHelpTopic('template')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+          <ParameterOptionCard
+            t={t}
+            active={!active.default_template_id}
+            label="Otomatik"
+            desc="İçeriğe göre en uygun tasarım seçilsin"
+            functionText={!active.default_template_id ? 'Mission üretimi mevcut marka font/efekt standardını kullanır, sabit bir template zorlamaz.' : undefined}
+            onClick={() => savePatch({ default_template_id: undefined, defaultTemplateId: undefined })}
+          />
+          {postTemplates.slice(0, 7).map((tmpl) => {
+            const spec = tmpl.layout_spec ?? {};
+            const isActive = active.default_template_id === tmpl.id;
+            return (
+              <ParameterOptionCard
+                key={tmpl.id}
+                t={t}
+                active={isActive}
+                label={tmpl.name || 'Post Template'}
+                desc={`${tmpl.template_kind || spec.source || 'canvas'} · ${tmpl.format || spec.contentType || 'post'}`}
+                functionText={isActive ? 'Bu template, MissionContentFactory içinde varsayılan tasarım şablonu olarak uygulanır.' : undefined}
+                onClick={() => savePatch({ default_template_id: tmpl.id, defaultTemplateId: tmpl.id })}
+              />
+            );
+          })}
+        </div>
+        {!postTemplates.length && (
+          <div style={{
+            padding: '11px 12px',
+            borderRadius: 14,
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            color: t.textMuted,
+            fontSize: 11,
+            lineHeight: 1.45,
+            marginBottom: 14,
+          }}>
+            Henüz kayıtlı post template yok. Mission ekranında bir tasarımı çıktılara kaydedince burada varsayılan olarak seçilebilir.
+          </div>
+        )}
+
+        <ParameterGroupHeader
+          t={t}
+          title="Yazı Karakteri"
+          subtitle="Markanın headline font imzası"
+          onHelp={() => setHelpTopic('font')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+          {POST_FONT_OPTIONS.map((opt) => (
+            <ParameterOptionCard
+              key={opt.id}
+              t={t}
+              active={active.font_preset === opt.id}
+              label={opt.label}
+              desc={opt.desc}
+              functionText={active.font_preset === opt.id ? opt.functionText : undefined}
+              onClick={() => savePatch({ font_preset: opt.id })}
+            />
+          ))}
+        </div>
+
+        <ParameterGroupHeader
+          t={t}
+          title="Yazı Efekti"
+          subtitle="3D, glow, outline ve okunabilirlik davranışı"
+          onHelp={() => setHelpTopic('effect')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+          {POST_EFFECT_OPTIONS.map((opt) => (
+            <ParameterOptionCard
+              key={opt.id}
+              t={t}
+              active={active.text_effect === opt.id}
+              label={opt.label}
+              desc={opt.desc}
+              functionText={active.text_effect === opt.id ? opt.functionText : undefined}
+              onClick={() => savePatch({ text_effect: opt.id })}
+            />
+          ))}
+        </div>
+
+        <ParameterGroupHeader
+          t={t}
+          title="Logo Alanı"
+          subtitle="Gerçek logo dosyasının güvenli yerleşimi"
+          onHelp={() => setHelpTopic('logo')}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {POST_LOGO_OPTIONS.map((opt) => (
+            <ParameterOptionCard
+              key={opt.id}
+              t={t}
+              active={active.logo_position === opt.id}
+              label={opt.label}
+              desc={opt.desc}
+              functionText={active.logo_position === opt.id ? opt.functionText : undefined}
+              onClick={() => savePatch({ logo_position: opt.id })}
+            />
+          ))}
+        </div>
+      </div>
+      {helpTopic && (
+        <ParameterHelpModal
+          t={t}
+          title={helpCopy[helpTopic].title}
+          body={helpCopy[helpTopic].body}
+          bullets={[...helpCopy[helpTopic].bullets]}
+          onClose={() => setHelpTopic(null)}
+        />
+      )}
+    </SCard>
+  );
+}
+
+// ─── Typography Design Panel ─────────────────────────────────────────────
+
+const TYPOGRAPHY_VIBE_OPTIONS: Array<{ id: TypographyVibe; label: string; desc: string; emoji: string }> = [
+  { id: 'bubble_3d', label: 'Balon 3D', desc: 'Şişirilmiş 3D harfler, Gen Z, eğlenceli', emoji: '🫧' },
+  { id: 'chrome_gradient', label: 'Krom Gradient', desc: 'Metalik yansıma, premium lüks', emoji: '✨' },
+  { id: 'neon_glow', label: 'Neon Glow', desc: 'Neon tüp aydınlatma, gece hayatı', emoji: '💡' },
+  { id: 'editorial_serif', label: 'Editöryal Serif', desc: 'Dergi stili, dramatik boyut', emoji: '📰' },
+  { id: 'street_bold', label: 'Sokak Kalın', desc: 'Kentsel, sıkıştırılmış, güçlü', emoji: '🏋️' },
+  { id: 'handwritten', label: 'El Yazısı', desc: 'Fırça kaligrafi, doğal sıcaklık', emoji: '✍️' },
+  { id: 'retro_poster', label: 'Retro Poster', desc: 'Vintage poster yazısı, nostalji', emoji: '🎨' },
+  { id: 'minimal_modern', label: 'Minimal Modern', desc: 'Ultra-temiz sans, İsviçre tasarım', emoji: '◻️' },
+];
+
+const BACKGROUND_STYLE_OPTIONS: Array<{ id: BrandDesignTypographyConfig['background_style']; label: string }> = [
+  { id: 'gradient_mesh', label: 'Gradient Mesh' },
+  { id: 'photo_overlay', label: 'Fotoğraf Üzeri' },
+  { id: 'solid_brand', label: 'Düz Marka Rengi' },
+  { id: 'transparent', label: 'Transparan' },
+];
+
+function TypographyDesignPanel({
+  t,
+  theme,
+  sector,
+  onSave,
+}: {
+  t: T;
+  theme: Record<string, unknown>;
+  sector: string;
+  onSave: (next: BrandDesignTypographyConfig) => void;
+}) {
+  const raw = (theme.typography_design ?? theme.typographyDesign ?? {}) as Partial<BrandDesignTypographyConfig>;
+  const suggestedVibe = defaultTypographyVibeForSector(sector);
+  const active: BrandDesignTypographyConfig = {
+    vibe: raw.vibe ?? suggestedVibe,
+    text_effect: raw.text_effect ?? 'gradient_stack',
+    accent_color: raw.accent_color,
+    background_style: raw.background_style ?? 'gradient_mesh',
+    logo_treatment: raw.logo_treatment ?? 'watermark',
+  };
+  const savePatch = (patch: Partial<BrandDesignTypographyConfig>) => onSave({ ...active, ...patch });
+
+  return (
+    <SCard t={t} title="AI Tipografi Tasarımı" accent={t.accent}>
+      <div style={{ padding: 14 }}>
+        <div style={{
+          borderRadius: 18,
+          padding: 14,
+          marginBottom: 14,
+          background: t.isDark ? 'rgba(120,80,200,0.10)' : 'rgba(120,80,200,0.06)',
+          border: `0.5px solid ${t.accentBorder}`,
+        }}>
+          <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Aktif Tipografi Stili
+          </div>
+          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 750, lineHeight: 1.45 }}>
+            {TYPOGRAPHY_VIBE_LABELS[active.vibe].emoji} {TYPOGRAPHY_VIBE_LABELS[active.vibe].tr} · {active.background_style}
+          </div>
+          <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
+            Sektör önerisi: {TYPOGRAPHY_VIBE_LABELS[suggestedVibe].tr} · AI (Ideogram V4) ile üretilen sosyal medya tipografi postları bu stili kullanır.
+          </div>
+        </div>
+
+        <ParameterGroupHeader
+          t={t}
+          title="Tipografi Stili"
+          subtitle="AI tasarım postlarında kullanılacak yazı efekti"
+          onHelp={() => {}}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+          {TYPOGRAPHY_VIBE_OPTIONS.map((opt) => (
+            <ParameterOptionCard
+              key={opt.id}
+              t={t}
+              active={active.vibe === opt.id}
+              label={`${opt.emoji} ${opt.label}`}
+              desc={opt.desc}
+              onClick={() => savePatch({ vibe: opt.id })}
+            />
+          ))}
+        </div>
+
+        <ParameterGroupHeader
+          t={t}
+          title="Arka Plan Stili"
+          subtitle="Tasarım postlarının arka plan tipi"
+          onHelp={() => {}}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {BACKGROUND_STYLE_OPTIONS.map((opt) => (
+            <ParameterOptionCard
+              key={opt.id}
+              t={t}
+              active={active.background_style === opt.id}
+              label={opt.label}
+              desc=""
+              onClick={() => savePatch({ background_style: opt.id })}
+            />
+          ))}
+        </div>
+      </div>
+    </SCard>
+  );
+}
+
 // ─── Section card (iOS grouped list) ───────────────────────────────────
 function SCard({ t, title, children, accent }: { t: T; title: string; children: React.ReactNode; accent?: string }) {
   const items = React.Children.toArray(children);
@@ -199,7 +816,7 @@ function TagChip({ text, color, t }: { text: string; color: string; t: T }) {
   );
 }
 
-type Tab = 'identity' | 'content' | 'visual' | 'production' | 'gallery';
+type Tab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 
 // ─── Brand Kit Tab ───────────────────────────────────────────────────────────
 
@@ -1624,11 +2241,177 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
   );
 }
 
+// ─── Advanced Visual Settings (collapsible sub-component) ───────────────
+function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseIdentity, aiBriefDrives, aiEmbedLogo, aiSubject, aiCaptionDriven: _aiCaptionDriven, aiAdaptiveScene, aiAdaptiveMode, aiFormats, currentTheme, saveAiSetting, toggleFormat }: {
+  t: T; aiEnabled: boolean; aiLevel: string; aiGalleryRevise: boolean;
+  aiUseIdentity: boolean; aiBriefDrives: boolean; aiEmbedLogo: boolean;
+  aiSubject: string; aiCaptionDriven: boolean; aiAdaptiveScene: boolean;
+  aiAdaptiveMode: string; aiFormats: Set<string>;
+  currentTheme: Record<string, unknown>;
+  saveAiSetting: (patch: Record<string, unknown>) => void;
+  toggleFormat: (fmt: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: `0.5px solid ${t.separator}`, paddingTop: 12, marginTop: 4 }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 0', background: 'transparent', border: 'none', cursor: 'pointer',
+        }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: t.textSecondary }}>İleri Ayarlar</span>
+        <span style={{ fontSize: 14, color: t.textMuted, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>{'\u25BC'}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 14px', borderRadius: 14, marginBottom: 12,
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            border: `0.5px solid ${aiEnabled ? (t as any).accentBorder ?? t.accent : t.separator}`,
+          }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>AI Fotoğraf İyileştirme</div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                {aiEnabled ? 'Aktif' : 'Kapalı — ham galeri / passthrough'}
+              </div>
+            </div>
+            <button
+              onClick={() => saveAiSetting({ ai_photo_enhance: !aiEnabled, ai_enhance_gallery_selected: !aiEnabled })}
+              style={{ width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer', background: aiEnabled ? t.accent : t.separator, position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', left: aiEnabled ? 25 : 3, transition: 'left 0.2s' }} />
+            </button>
+          </div>
+
+          {aiEnabled && (
+            <div>
+              <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>Geliştirme Seviyesi</div>
+              {[
+                { level: 'subtle', label: 'Hafif', desc: 'Işık ve renk iyileştirmesi' },
+                { level: 'moderate', label: 'Orta', desc: 'Sahne atmosferi güçlendirme' },
+                { level: 'full', label: 'Tam', desc: 'Tam sahne değişimi' },
+              ].map(({ level, label, desc }) => {
+                const isActive = aiLevel === level;
+                return (
+                  <button key={level} onClick={() => saveAiSetting({ ai_photo_enhance_level: level })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', marginBottom: 6, background: isActive ? (t as any).accentDim ?? 'rgba(139,171,189,0.1)' : 'transparent', border: `0.5px solid ${isActive ? t.accent : t.separator}` }}>
+                    <div style={{ fontSize: 13, fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : t.textPrimary }}>{label}</div>
+                    <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
+                  </button>
+                );
+              })}
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 14, margin: '14px 0 8px', background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `0.5px solid ${aiGalleryRevise ? t.accent : t.separator}` }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Galeri fotoğrafını düzelt</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{aiGalleryRevise ? 'GPT images.edit ile iyileştirilir' : 'Kapalı'}</div>
+                </div>
+                <button onClick={() => saveAiSetting({ ai_enhance_gallery_selected: !aiGalleryRevise })}
+                  style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: aiGalleryRevise ? '#10B981' : t.separator, position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', left: aiGalleryRevise ? 21 : 3, transition: 'left 0.2s' }} />
+                </button>
+              </div>
+
+              <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '16px 0 10px' }}>Görsel standardı</div>
+              {[
+                { key: 'ai_use_brand_identity', on: aiUseIdentity, title: 'Marka kimliği' },
+                { key: 'ai_brief_drives_scene', on: aiBriefDrives, title: 'Brief sahneyi yönetir' },
+                { key: 'ai_embed_logo', on: aiEmbedLogo, title: 'Logo yerleştir' },
+              ].map(({ key, on, title }) => (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 12, marginBottom: 6, border: `0.5px solid ${t.separator}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{title}</div>
+                  <button onClick={() => saveAiSetting({ [key]: !on })}
+                    style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: on ? t.accent : t.separator, position: 'relative' }}>
+                    <div style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', left: on ? 21 : 3, transition: 'left 0.2s' }} />
+                  </button>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '12px 0 8px' }}>Görsel konu</div>
+              {[
+                { id: 'auto', label: 'Otomatik' },
+                { id: 'venue_ambiance', label: 'Mekan / ambiyans' },
+                { id: 'product_hero', label: 'Ürün hero' },
+              ].map(({ id, label }) => {
+                const active = aiSubject === id;
+                return (
+                  <button key={id} onClick={() => saveAiSetting({ ai_visual_subject: id })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', marginBottom: 6, background: active ? (t as any).accentDim ?? 'rgba(139,171,189,0.1)' : 'transparent', border: `0.5px solid ${active ? t.accent : t.separator}` }}>
+                    <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? t.accent : t.textPrimary }}>{label}</div>
+                  </button>
+                );
+              })}
+
+              <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '16px 0 10px' }}>AI Sahne Uyarlama</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 14, marginBottom: 10, background: t.isDark ? 'rgba(77,112,136,0.08)' : 'rgba(77,112,136,0.06)', border: `0.5px solid ${aiAdaptiveScene ? 'rgba(77,112,136,0.35)' : t.separator}` }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Caption&apos;a uygun sahne</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{aiAdaptiveScene ? 'Aktif' : 'Kapalı'}</div>
+                </div>
+                <button onClick={() => saveAiSetting({ ai_adaptive_scene: !aiAdaptiveScene })}
+                  style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: aiAdaptiveScene ? '#4D7088' : t.separator, position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', left: aiAdaptiveScene ? 21 : 3, transition: 'left 0.2s' }} />
+                </button>
+              </div>
+              {aiAdaptiveScene && (
+                <div style={{ marginBottom: 12 }}>
+                  {[
+                    { id: 'auto', label: 'Otomatik' },
+                    { id: 'venue_context', label: 'Mekan / operasyon' },
+                    { id: 'product_showcase', label: 'Ürün vitrin' },
+                    { id: 'lifestyle_composite', label: 'Lifestyle kompozit' },
+                  ].map(({ id, label }) => {
+                    const active = aiAdaptiveMode === id;
+                    return (
+                      <button key={id} onClick={() => saveAiSetting({ ai_adaptive_scene_mode: id })}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', marginBottom: 6, background: active ? 'rgba(77,112,136,0.12)' : 'transparent', border: `0.5px solid ${active ? 'rgba(77,112,136,0.35)' : t.separator}` }}>
+                        <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? '#4D7088' : t.textPrimary }}>{label}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '12px 0 8px' }}>AI formatları</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {(['post', 'story', 'carousel', 'reel'] as const).map((fmt) => {
+                  const on = aiFormats.has(fmt);
+                  const labels = { post: 'Post', story: 'Story', carousel: 'Carousel', reel: 'Reel' };
+                  return (
+                    <button key={fmt} onClick={() => toggleFormat(fmt)} style={{ padding: '8px 12px', borderRadius: 20, border: `0.5px solid ${on ? t.accent : t.separator}`, background: on ? (t as any).accentDim ?? 'rgba(139,171,189,0.1)' : 'transparent', fontSize: 12, fontWeight: on ? 700 : 500, color: on ? t.accent : t.textMuted, cursor: 'pointer' }}>
+                      {labels[fmt]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `0.5px solid ${t.separator}` }}>
+            <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Visual Production Director</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 14, background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `0.5px solid ${themeFlag(currentTheme, 'enable_visual_production_director') ? t.accent : t.separator}` }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Crew görsel direktör</div>
+                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{themeFlag(currentTheme, 'enable_visual_production_director') ? 'Açık' : 'Kapalı'}</div>
+              </div>
+              <button onClick={() => saveAiSetting({ enable_visual_production_director: !themeFlag(currentTheme, 'enable_visual_production_director') })}
+                style={{ width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer', background: themeFlag(currentTheme, 'enable_visual_production_director') ? t.accent : t.separator, position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', left: themeFlag(currentTheme, 'enable_visual_production_director') ? 25 : 3, transition: 'left 0.2s' }} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main component ────────────────────────────────────────────────────
 export function BrandConstitution() {
   const { t } = useTheme();
   const queryClient = useQueryClient();
-  const { tenantId } = useWorkspaceStore();
+  const { tenantId: storeTenantId } = useWorkspaceStore();
+  const tenantId = useActiveTenantId() ?? storeTenantId;
   const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
   const [tab, setTab] = useState<Tab>('identity');
   const [saved, setSaved] = useState(false);
@@ -1769,12 +2552,14 @@ export function BrandConstitution() {
 
   useEffect(() => {
     if (hydratedFromPythonRef.current || !tenantId || !profile || hydrateMutation.isPending) return;
-    if (!isCompanyProfileSparse(profile as unknown as Record<string, unknown>)) return;
+    const profileRec = profile as unknown as Record<string, unknown>;
+    const needsIndustrySync = Boolean(
+      pyCtx && !pyCtxLoadFailed
+      && shouldRefreshIndustryFromPython(profileRec, pyCtx as Record<string, unknown>),
+    );
+    if (!isCompanyProfileSparse(profileRec) && !needsIndustrySync) return;
     if (pyCtx && !pyCtxLoadFailed) {
-      const patch = buildCompanyProfilePatchFromPython(
-        profile as unknown as Record<string, unknown>,
-        pyCtx as Record<string, unknown>,
-      );
+      const patch = buildCompanyProfilePatchFromPython(profileRec, pyCtx as Record<string, unknown>);
       if (patch) {
         hydratedFromPythonRef.current = true;
         saveMutation.mutate(patch);
@@ -1783,7 +2568,7 @@ export function BrandConstitution() {
     }
     hydratedFromPythonRef.current = true;
     hydrateMutation.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydrate when profile sparse
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydrate when profile sparse or sector stale
   }, [tenantId, profile, pyCtx, pyCtxLoadFailed]);
 
   const brandKitEnrichedRef = useRef(false);
@@ -2042,9 +2827,9 @@ export function BrandConstitution() {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'identity', label: 'Kimlik' },
     { id: 'content', label: 'İçerik' },
-    { id: 'visual', label: 'Görsel' },
-    { id: 'production', label: 'Üretim' },
+    { id: 'design', label: 'Tasarım' },
     { id: 'gallery', label: 'Galeri' },
+    { id: 'chatbot', label: 'Chatbot' },
   ];
   const constitutionConfirmedAt = (pyCtx as { brand_constitution_confirmed_at?: string | null } | undefined)
     ?.brand_constitution_confirmed_at;
@@ -2386,6 +3171,35 @@ export function BrandConstitution() {
               <Field t={t} label="Hedefler" value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''} onSave={save('campaignGoals')} multiline hint="Ne başarmak istiyoruz?" />
             </SCard>
 
+            {tenantId && (
+              <SCard t={t} title="İçerik Stratejisi" accent={t.accent}>
+                <BrandContentStrategyPanel
+                  tenantId={tenantId}
+                  t={t}
+                  pyCtx={pyCtx as Record<string, unknown> | undefined}
+                  sector={industrySlug || 'restaurant_cafe'}
+                  onSaved={() => {
+                    void queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+                    void queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
+                  }}
+                />
+              </SCard>
+            )}
+
+            {tenantId && (
+              <SCard t={t} title="Özel Günler">
+                <BrandSpecialDaysPanel tenantId={tenantId} t={t} />
+              </SCard>
+            )}
+
+            {tenantId && (
+              <BrandScheduledTemplatesPanel
+                tenantId={tenantId}
+                t={t}
+                sector={industrySlug || 'restaurant'}
+              />
+            )}
+
             <SCard t={t} title="Rakipler">
               {(() => {
                 const confirmedRaw = p.competitors || (pyCtx as any)?.competitors || '';
@@ -2490,12 +3304,12 @@ export function BrandConstitution() {
           </>
         )}
 
-        {tab === 'visual' && (
+        {tab === 'design' && (
           <>
             <BrandSectionIntro
               t={t}
-              title="Görsel"
-              description="Renk paleti, tipografi, şablon kütüphanesi ve marka DNA. Remotion story/reel tasarımları buradan beslenir."
+              title="Görünüm"
+              description="Renk paleti, tipografi ve şablon kütüphanesi. Story / Reel / Post tasarımlarının görünümü buradan gelir. Üretim kontrolleri (görsel kaynağı, onay modu, motorlar) bu sayfanın altındadır."
             />
 
             <SCard t={t} title="Görsel Dil">
@@ -2518,6 +3332,80 @@ export function BrandConstitution() {
               }}
             />
 
+            {tenantId && (
+              <SCard t={t} title="fal.ai Şablon Galerisi" accent={t.accent}>
+                <BrandFalTemplateGalleryPanel
+                  tenantId={tenantId}
+                  sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
+                  t={t}
+                />
+              </SCard>
+            )}
+
+            {tenantId && (
+              <SCard t={t} title="Tasarım Yoğunluğu (fal.ai)" accent={t.accent}>
+                <BrandFalDesignIntensityPanel
+                  tenantId={tenantId}
+                  theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
+                  t={t}
+                  onSaved={() => {
+                    queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+                  }}
+                />
+              </SCard>
+            )}
+
+            <CollapsibleGroup
+              t={t}
+              title="Yazı tipi & başlık stili"
+              subtitle="Başlık fontu, 3D/efekt, logo konumu, tipografi vibe'ı ve ana/ikincil fontlar"
+            >
+            {tenantId && (
+              <PostDesignDefaultsPanel
+                t={t}
+                workspaceId={tenantId}
+                theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
+                onSave={async (next) => {
+                  const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
+                  await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+                    body: JSON.stringify({
+                      theme: {
+                        ...currentTheme,
+                        post_design_defaults: next,
+                        postDesignDefaults: next,
+                      },
+                    }),
+                  }).catch(() => {/* non-fatal */});
+                  queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+                }}
+              />
+            )}
+
+            {tenantId && (
+              <TypographyDesignPanel
+                t={t}
+                theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
+                sector={normalizeSectorId(p.sector || (pyCtx as any)?.business_type || '')}
+                onSave={async (next) => {
+                  const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
+                  await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+                    body: JSON.stringify({
+                      theme: {
+                        ...currentTheme,
+                        typography_design: next,
+                        typographyDesign: next,
+                      },
+                    }),
+                  }).catch(() => {/* non-fatal */});
+                  queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+                }}
+              />
+            )}
+
             <SCard t={t} title="Tipografi">
               <Field t={t} label="Ana Font"
                 value={String(
@@ -2535,6 +3423,7 @@ export function BrandConstitution() {
                 )}
                 onSave={save('secondaryFont')} hint="örn: Lato, Inter" />
             </SCard>
+            </CollapsibleGroup>
 
             <SCard t={t} title="Renk Paleti" accent={t.accent}>
               <BrandColorPalettePicker
@@ -2559,17 +3448,28 @@ export function BrandConstitution() {
               />
             </SCard>
 
+            <CollapsibleGroup
+              t={t}
+              title="Marka DNA & görsel dil"
+              subtitle="Marka karakterini özetleyen görsel DNA ve vibe analizi"
+            >
             <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
+            </CollapsibleGroup>
           </>
         )}
 
-        {tab === 'production' && (
+        {tab === 'design' && (
           <>
             <BrandSectionIntro
               t={t}
               title="Üretim"
-              description="AI ayarları, onay modu, entegrasyonlar ve analiz. Mission → Feed hattının teknik kontrol paneli."
+              description="Günlük kullanımda yalnızca iki ayar önemli: Görsel Kaynağı ve Onay Modu. Gelişmiş tasarım motorları, kurallar ve analiz verileri aşağıdaki katlanabilir gruplarda toplanır."
             />
+            <CollapsibleGroup
+              t={t}
+              title="Kurallar, yetenekler & şablonlar"
+              subtitle="Özel kurallar, risk sınırları, işletme yetenekleri ve Canva şablonları"
+            >
             <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
                 Post ve story görselleri Remotion ile otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
@@ -2656,6 +3556,7 @@ export function BrandConstitution() {
                 ))}
               </SCard>
             )}
+            </CollapsibleGroup>
             {/* Re-analyze button */}
             <button
               onClick={() => analyzeMutation.mutate()}
@@ -2681,6 +3582,11 @@ export function BrandConstitution() {
               </div>
             )}
 
+            <CollapsibleGroup
+              t={t}
+              title="Analiz & performans"
+              subtitle="AI değerlendirmesi, sistem analizi, ham veriler ve Meta reklam özeti"
+            >
             <SCard t={t} title="AI Değerlendirmesi" accent={t.accent}>
               <InfoRow t={t} label="Tamamlanma Skoru" value={`${score}%`} color={t.accent} />
               {(p as any).customerVisibleSummary && (
@@ -2837,6 +3743,7 @@ export function BrandConstitution() {
                 </div>
               )}
             </SCard>
+            </CollapsibleGroup>
 
             <SCard t={t} title="Onay Modu" accent={t.warning}>
               <div style={{ marginBottom: 10 }}>
@@ -2866,39 +3773,7 @@ export function BrandConstitution() {
               </div>
             </SCard>
 
-            {tenantId && (
-              <MertcafeIntegrationsCard
-                t={t}
-                workspaceId={tenantId}
-                brandName={brandNameDisplay}
-                businessMenu={String((p as Record<string, unknown>).menu ?? (pyCtx as Record<string, unknown>)?.website_summary ?? '').slice(0, 500) || undefined}
-                businessHours={String((p as Record<string, unknown>).hours ?? '09:00 - 22:00')}
-                businessAddress={String(p.location ?? (pyCtx as Record<string, unknown>)?.location ?? '')}
-                businessPhone={String((p as Record<string, unknown>).phone ?? '')}
-                saveThemePatch={async (patch) => {
-                  const prev = brandThemePayload?.theme ?? null;
-                  const optimistic = { ...(prev ?? {}), ...patch };
-                  queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: optimistic });
-                  try {
-                    const res = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/ai-settings`, tenantId, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
-                      body: JSON.stringify(patch),
-                    });
-                    if (!res.ok) {
-                      queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
-                      return;
-                    }
-                    const data = await res.json() as { theme?: Record<string, unknown> | null };
-                    if (data.theme) {
-                      queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: data.theme });
-                    }
-                  } catch {
-                    queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
-                  }
-                }}
-              />
-            )}
+            {/* Mertcafe entegrasyonu → Chatbot sekmesine taşındı */}
 
             {/* ── AI Görsel Geliştirme ── */}
             {(() => {
@@ -2967,316 +3842,134 @@ export function BrandConstitution() {
               };
 
               return (
-                <SCard t={t} title="AI Görsel Geliştirme" accent={t.accent}>
+                <SCard t={t} title="Görsel Kaynak Tercihi" accent={t.accent}>
                   <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-                      Varsayılan: galeri fotoğrafı seçilir ve isteğe bağlı GPT ile iyileştirilir.
-                      <strong style={{ color: t.textSecondary }}> Sıfırdan üretim</strong> ayrı bir anahtardır — marka açmadan
-                      caption&apos;tan yeni görsel üretilmez. Story/reel tasarımı Remotion ile devam eder.
+                    <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 16 }}>
+                      Üretimde kullanılacak görsel kaynağını seçin. Galeri boşsa AI görseller otomatik üretilir.
                     </div>
 
-                    {/* Toggle */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '12px 14px', borderRadius: 14, marginBottom: 12,
-                      background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                      border: `0.5px solid ${aiEnabled ? t.accentBorder : t.separator}`,
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>AI Fotoğraf İyileştirme</div>
-                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                          {aiEnabled ? 'Aktif — Mission Hub üretimleri bu standardı kullanır' : 'Kapalı — ham galeri / passthrough'}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => saveAiSetting({
-                          ai_photo_enhance: !aiEnabled,
-                          ai_enhance_gallery_selected: !aiEnabled ? true : false,
-                        })}
-                        style={{
-                          width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer',
-                          background: aiEnabled ? t.accent : t.separator,
-                          position: 'relative', transition: 'background 0.2s',
-                        }}>
-                        <div style={{
-                          position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%',
-                          background: '#fff',
-                          left: aiEnabled ? 25 : 3,
-                          transition: 'left 0.2s',
-                        }} />
-                      </button>
-                    </div>
-
-                    {/* Enhancement level */}
-                    {aiEnabled && (
-                      <div>
-                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                          textTransform: 'uppercase', marginBottom: 10 }}>Geliştirme Seviyesi</div>
-                        {[
-                          { level: 'subtle', label: 'Hafif', desc: 'Işık ve renk iyileştirmesi — arka plan korunur' },
-                          { level: 'moderate', label: 'Orta', desc: 'Bağlamsal arka plan + profesyonel ışık' },
-                          { level: 'full', label: 'Tam', desc: 'Tam sahne değişimi — ürün orijinal kalır' },
-                        ].map(({ level, label, desc }) => {
-                          const isActive = aiLevel === level;
-                          return (
-                            <button key={level}
-                              onClick={() => saveAiSetting({ ai_photo_enhance_level: level })}
-                              style={{
-                                width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                                textAlign: 'left', marginBottom: 6,
-                                background: isActive ? t.accentDim : 'transparent',
-                                border: `0.5px solid ${isActive ? t.accentBorder : t.separator}`,
-                              }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <div style={{ width: 14, height: 14, borderRadius: '50%',
-                                  border: `2px solid ${isActive ? t.accent : t.textMuted}`,
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                  {isActive && <div style={{ width: 7, height: 7, borderRadius: '50%', background: t.accent }} />}
-                                </div>
-                                <div>
-                                  <span style={{ fontSize: 13, fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : t.textPrimary }}>
-                                    {label}
-                                  </span>
-                                  <span style={{ fontSize: 11, color: t.textMuted, marginLeft: 6 }}>{desc}</span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '12px 14px', borderRadius: 14, margin: '14px 0 12px',
-                          background: t.isDark ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.06)',
-                          border: `0.5px solid ${aiGalleryRevise ? 'rgba(16,185,129,0.35)' : t.separator}`,
-                        }}>
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Galeri fotoğrafını iyileştir</div>
-                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.45 }}>
-                              {aiGalleryRevise
-                                ? 'Matcher\'ın seçtiği galeri fotoğrafı GPT images.edit ile iyileştirilir — Remotion üstüne biner'
-                                : 'Kapalı — galeri skoru yüksekse veya poster slotunda enhance atlanabilir'}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => saveAiSetting({ ai_enhance_gallery_selected: !aiGalleryRevise })}
-                            disabled={!aiEnabled}
-                            style={{
-                              width: 44, height: 26, borderRadius: 13, border: 'none',
-                              cursor: aiEnabled ? 'pointer' : 'not-allowed',
-                              background: aiGalleryRevise && aiEnabled ? '#10B981' : t.separator,
-                              position: 'relative', opacity: aiEnabled ? 1 : 0.45,
-                            }}>
-                            <div style={{
-                              position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%',
-                              background: '#fff', left: aiGalleryRevise && aiEnabled ? 21 : 3, transition: 'left 0.2s',
-                            }} />
-                          </button>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '12px 14px', borderRadius: 14, margin: '14px 0 12px',
-                          background: t.isDark ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.06)',
-                          border: `0.5px solid ${aiCaptionDriven && aiEnabled ? 'rgba(59,130,246,0.35)' : t.separator}`,
-                        }}>
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Sıfırdan görsel üret</div>
-                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.45 }}>
-                              {aiCaptionDriven && aiEnabled
-                                ? 'Feed postları galeri yerine caption + marka DNA ile sıfırdan üretilir — Remotion story/reel ayrı kalır'
-                                : 'Kapalı — galeri matcher + (isteğe bağlı) galeri iyileştirme kullanılır; sıfırdan üretim için bu anahtarı açın'}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => saveAiSetting({ ai_caption_driven_visual: !aiCaptionDriven })}
-                            disabled={!aiEnabled}
-                            style={{
-                              width: 44, height: 26, borderRadius: 13, border: 'none',
-                              cursor: aiEnabled ? 'pointer' : 'not-allowed',
-                              background: aiCaptionDriven && aiEnabled ? '#3B82F6' : t.separator,
-                              position: 'relative', opacity: aiEnabled ? 1 : 0.45,
-                            }}>
-                            <div style={{
-                              position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%',
-                              background: '#fff', left: aiCaptionDriven && aiEnabled ? 21 : 3, transition: 'left 0.2s',
-                            }} />
-                          </button>
-                        </div>
-
-                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                          textTransform: 'uppercase', margin: '16px 0 10px' }}>Görsel standardı</div>
-
-                        {[
-                          { key: 'ai_use_brand_identity', on: aiUseIdentity, title: 'Marka kimliği', desc: 'Logo, hikaye, işletme, vibe — her üretimde' },
-                          { key: 'ai_brief_drives_scene', on: aiBriefDrives, title: 'Brief sahneyi yönetir', desc: 'Caption & headline ışık/mood/props karar verir' },
-                          { key: 'ai_embed_logo', on: aiEmbedLogo, title: 'Logo yerleştir', desc: 'Geliştirilmiş fotoğrafa marka logosu' },
-                        ].map(({ key, on, title, desc }) => (
-                          <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '10px 12px', borderRadius: 12, marginBottom: 6,
-                            border: `0.5px solid ${t.separator}`,
-                          }}>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{title}</div>
-                              <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
-                            </div>
-                            <button
-                              onClick={() => saveAiSetting({ [key]: !on })}
-                              style={{
-                                width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                                background: on ? t.accent : t.separator, position: 'relative',
-                              }}>
-                              <div style={{
-                                position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%',
-                                background: '#fff', left: on ? 21 : 3, transition: 'left 0.2s',
-                              }} />
-                            </button>
-                          </div>
-                        ))}
-
-                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                          textTransform: 'uppercase', margin: '12px 0 8px' }}>Görsel konu</div>
-                        {[
-                          { id: 'auto', label: 'Otomatik', desc: 'Sektöre göre mekan veya ürün' },
-                          { id: 'venue_ambiance', label: 'Mekan / ambiyans', desc: 'Berber, restoran, otel — mekan korunur' },
-                          { id: 'product_hero', label: 'Ürün hero', desc: 'Ambalaj ve ürün etiketi korunur' },
-                        ].map(({ id, label, desc }) => {
-                          const active = aiSubject === id;
-                          return (
-                            <button key={id}
-                              onClick={() => saveAiSetting({ ai_visual_subject: id })}
-                              style={{
-                                width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                                textAlign: 'left', marginBottom: 6,
-                                background: active ? t.accentDim : 'transparent',
-                                border: `0.5px solid ${active ? t.accentBorder : t.separator}`,
-                              }}>
-                              <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? t.accent : t.textPrimary }}>{label}</div>
-                              <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
-                            </button>
-                          );
-                        })}
-
-                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                          textTransform: 'uppercase', margin: '16px 0 10px' }}>AI Sahne Uyarlama</div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '12px 14px', borderRadius: 14, marginBottom: 10,
-                          background: t.isDark ? 'rgba(77,112,136,0.08)' : 'rgba(77,112,136,0.06)',
-                          border: `0.5px solid ${aiAdaptiveScene ? 'rgba(77,112,136,0.35)' : t.separator}`,
-                        }}>
-                          <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Caption&apos;a uygun sahne</div>
-                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.45 }}>
-                              {aiAdaptiveScene
-                                ? 'Galeri zayıf veya stok ise sıfırdan sahne üretimi — caption + sektör kompoziti'
-                                : 'Kapalı — galeri iyileştirme veya ham foto + Remotion katmanı'}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => saveAiSetting({ ai_adaptive_scene: !aiAdaptiveScene })}
-                            style={{
-                              width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                              background: aiAdaptiveScene ? '#4D7088' : t.separator, position: 'relative',
-                            }}>
-                            <div style={{
-                              position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%',
-                              background: '#fff', left: aiAdaptiveScene ? 21 : 3, transition: 'left 0.2s',
-                            }} />
-                          </button>
-                        </div>
-                        {aiAdaptiveScene && (
-                          <div style={{ marginBottom: 12 }}>
-                            {[
-                              { id: 'auto', label: 'Otomatik', desc: 'Sektör + caption (nakliyat→mekan, zeytinyağı→ürün/lifestyle)' },
-                              { id: 'venue_context', label: 'Mekan / operasyon', desc: 'Depo, rota, salon, mutfak — caption mekanını yansıtır' },
-                              { id: 'product_showcase', label: 'Ürün vitrin', desc: 'Kolye, ambalaj, kozmetik — Instagram ürün tanıtımı' },
-                              { id: 'lifestyle_composite', label: 'Lifestyle kompozit', desc: 'Zeytin ağacı, atölye, doğal ortam — tek fotoğraf hissi' },
-                            ].map(({ id, label, desc }) => {
-                              const active = aiAdaptiveMode === id;
-                              return (
-                                <button key={id}
-                                  onClick={() => saveAiSetting({ ai_adaptive_scene_mode: id })}
-                                  style={{
-                                    width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                                    textAlign: 'left', marginBottom: 6,
-                                    background: active ? 'rgba(77,112,136,0.12)' : 'transparent',
-                                    border: `0.5px solid ${active ? 'rgba(77,112,136,0.35)' : t.separator}`,
-                                  }}>
-                                  <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? '#4D7088' : t.textPrimary }}>{label}</div>
-                                  <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                          textTransform: 'uppercase', margin: '12px 0 8px' }}>AI formatları</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {(['post', 'story', 'carousel', 'reel'] as const).map((fmt) => {
-                            const on = aiFormats.has(fmt);
-                            const labels = { post: 'Post', story: 'Story', carousel: 'Carousel', reel: 'Reel' };
+                    {/* ── 3-mode radio cards ── */}
+                    {(() => {
+                      const currentMode = resolveVisualSourceMode(currentTheme);
+                      const modes: { id: VisualSourceMode; icon: string; title: string; desc: string }[] = [
+                        { id: 'gallery_only', icon: '\u{1F4F7}', title: 'Mekan fotoğrafları', desc: 'Galeri / Instagram\'dan gelen gerçek mekan görselleri' },
+                        { id: 'gallery_enhanced', icon: '\u2728', title: 'Mekan foto + AI düzeltme', desc: 'Gerçek fotoğraflara ışık, mood ve sahne düzeltmesi' },
+                        { id: 'ai_generated', icon: '\u{1F916}', title: 'AI üretimi', desc: 'Caption\'dan sıfırdan yapay zeka görseli oluştur' },
+                      ];
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                          {modes.map(({ id, icon, title, desc }) => {
+                            const active = currentMode === id;
                             return (
-                              <button key={fmt} onClick={() => toggleFormat(fmt)} style={{
-                                padding: '8px 12px', borderRadius: 20, border: `0.5px solid ${on ? t.accentBorder : t.separator}`,
-                                background: on ? t.accentDim : 'transparent', fontSize: 12,
-                                fontWeight: on ? 700 : 500, color: on ? t.accent : t.textMuted, cursor: 'pointer',
-                              }}>
-                                {labels[fmt]}
+                              <button key={id}
+                                onClick={() => saveAiSetting({ visual_source_mode: id })}
+                                style={{
+                                  width: '100%', padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
+                                  textAlign: 'left', display: 'flex', alignItems: 'center', gap: 14,
+                                  background: active
+                                    ? (t.isDark ? 'rgba(139,171,189,0.12)' : 'rgba(59,130,246,0.06)')
+                                    : 'transparent',
+                                  border: `1.5px solid ${active ? t.accent : t.separator}`,
+                                  transition: 'all 0.2s',
+                                }}>
+                                <div style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>{icon}</div>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 14, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>{title}</div>
+                                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
+                                </div>
+                                <div style={{
+                                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                                  border: `2px solid ${active ? t.accent : t.separator}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {active && <div style={{ width: 10, height: 10, borderRadius: '50%', background: t.accent }} />}
+                                </div>
                               </button>
                             );
                           })}
+                          {currentMode === 'gallery_enhanced' && (
+                            <div style={{ fontSize: 10, color: t.textMuted, padding: '0 4px', lineHeight: 1.5 }}>
+                              Varsayılan mod — galeri fotoğrafları GPT images.edit ile iyileştirilir.
+                            </div>
+                          )}
+                          {(currentMode === 'gallery_only' || currentMode === 'gallery_enhanced') && (() => {
+                            const rawRefs = (pyCtx as any)?.reference_image_urls;
+                            const hasGallery = Array.isArray(rawRefs) ? rawRefs.length > 0 : Boolean(rawRefs);
+                            if (hasGallery) return null;
+                            return (
+                              <div style={{
+                                padding: '10px 14px', borderRadius: 12, marginTop: 8,
+                                background: t.isDark ? 'rgba(251,191,36,0.08)' : 'rgba(251,191,36,0.06)',
+                                border: '0.5px solid rgba(251,191,36,0.3)',
+                                display: 'flex', alignItems: 'flex-start', gap: 10,
+                              }}>
+                                <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{'\u26A0\uFE0F'}</span>
+                                <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
+                                  Henüz mekan fotoğrafınız yok. <strong>Galeri</strong> sekmesinden yükleyin —
+                                  o zamana kadar AI görseller otomatik üretilir.
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
-                    {/* Info banner */}
-                    <div style={{ padding: '10px 12px', borderRadius: 10, marginTop: 8,
-                      background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-                      fontSize: 11, color: t.textMuted, lineHeight: 1.55 }}>
-                      Kimlik + brief → enhance prompt; format chip hangi slotlarda edit yapılır.
-                      Sahne uyarlama açıkken zayıf galeri eşleşmesi de AI ile düzeltilir (Mission Hub).
-                      Gerçek işletme fotoğrafı yükleyin — stok tek başına zayıf eşleşir. Maliyet: ~$0.21/görsel.
-                    </div>
+                    {/* ── İleri Ayarlar (collapsible) ── */}
+                    <AdvancedVisualSettings
+                      t={t}
+                      aiEnabled={aiEnabled}
+                      aiLevel={aiLevel}
+                      aiGalleryRevise={aiGalleryRevise}
+                      aiUseIdentity={aiUseIdentity}
+                      aiBriefDrives={aiBriefDrives}
+                      aiEmbedLogo={aiEmbedLogo}
+                      aiSubject={aiSubject}
+                      aiCaptionDriven={aiCaptionDriven}
+                      aiAdaptiveScene={aiAdaptiveScene}
+                      aiAdaptiveMode={aiAdaptiveMode}
+                      aiFormats={aiFormats}
+                      currentTheme={currentTheme}
+                      saveAiSetting={saveAiSetting}
+                      toggleFormat={toggleFormat}
+                    />
 
-                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `0.5px solid ${t.separator}` }}>
-                      <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                        textTransform: 'uppercase', marginBottom: 8 }}>Deneme — Visual Production Director</div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '12px 14px', borderRadius: 14,
-                        background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                        border: `0.5px solid ${themeFlag(currentTheme, 'enable_visual_production_director') ? t.accentBorder : t.separator}`,
-                      }}>
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Crew görsel direktör</div>
-                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.45 }}>
-                            {themeFlag(currentTheme, 'enable_visual_production_director')
-                              ? 'Açık — Mission üretiminde ek VPS zenginleştirme'
-                              : 'Kapalı — mevcut üretim (değişiklik yok)'}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => saveAiSetting({
-                            enable_visual_production_director: !themeFlag(currentTheme, 'enable_visual_production_director'),
-                          })}
-                          style={{
-                            width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer',
-                            background: themeFlag(currentTheme, 'enable_visual_production_director') ? t.accent : t.separator,
-                            position: 'relative',
-                          }}>
-                          <div style={{
-                            position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%',
-                            background: '#fff',
-                            left: themeFlag(currentTheme, 'enable_visual_production_director') ? 25 : 3,
-                            transition: 'left 0.2s',
-                          }} />
-                        </button>
-                      </div>
-                      <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8, lineHeight: 1.5 }}>
-                        İçerik ideasyonundaki görsel spec korunur; sadece boş alanlar doldurulur. Hata olursa üretim eskisi gibi devam eder.
-                      </div>
-                    </div>
                   </div>
                 </SCard>
               );
             })()}
+
+            <CollapsibleGroup
+              t={t}
+              title="Tasarım motorları & hareket"
+              subtitle="Ürün vitrini, Remotion · FAL · Runway, motion stili, reel hareketi, story sesi ve logo kuralları"
+              accent="#8B5CF6"
+            >
+            {tenantId && (
+              <SCard t={t} title="Ürün Vitrin (Product Showcase)" accent="#10B981">
+                <BrandProductShowcasePanel
+                  tenantId={tenantId}
+                  theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
+                  t={t}
+                  onSaved={() => {
+                    queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+                  }}
+                />
+              </SCard>
+            )}
+
+            {tenantId && (
+              <SCard t={t} title="Üretim Motorları (Remotion · FAL · Runway)" accent="#8B5CF6">
+                <BrandProductionEnginesPanel
+                  tenantId={tenantId}
+                  theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
+                  t={t}
+                  onSaved={() => {
+                    queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+                  }}
+                />
+              </SCard>
+            )}
 
             {(() => {
               const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
@@ -3389,6 +4082,44 @@ export function BrandConstitution() {
                 <InfoRow t={t} label="Platform Profilleri" value={parseArr((p as any).platformProfiles).join(', ') || 'Bağlı değil'} />
               </SCard>
             )}
+            </CollapsibleGroup>
+          </>
+        )}
+
+        {tab === 'chatbot' && tenantId && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Instagram Chatbot"
+              description="DM chatbot ve ilerideki agent/voice aramaları için marka bilgisi. Analiz sonucu veritabanında saklanır."
+            />
+            <BrandChatbotProfileCard
+              t={t}
+              workspaceId={tenantId}
+              brandName={brandNameDisplay}
+              saveThemePatch={async (patch) => {
+                const prev = brandThemePayload?.theme ?? null;
+                const optimistic = { ...(prev ?? {}), ...patch };
+                queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: optimistic });
+                try {
+                  const res = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/ai-settings`, tenantId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+                    body: JSON.stringify(patch),
+                  });
+                  if (!res.ok) {
+                    queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                    return;
+                  }
+                  const data = await res.json() as { theme?: Record<string, unknown> | null };
+                  if (data.theme) {
+                    queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: data.theme });
+                  }
+                } catch {
+                  queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                }
+              }}
+            />
           </>
         )}
 

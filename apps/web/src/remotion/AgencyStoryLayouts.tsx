@@ -20,6 +20,8 @@ import {
   FilmGrainOverlay,
   HeadlineStack,
   MeshGradientLayer,
+  CinematicLightLayer,
+  EditorialKicker,
   headlineSize,
   stableTextLayerStyle,
   stableTextOpacity,
@@ -185,6 +187,7 @@ export function EventTicketLayout({
     <AbsoluteFill style={{ background: primaryColor }}>
       <MeshGradientLayer primary={primaryColor} accent={accentColor} opacity={0.45} />
       <KenBurnsPhoto photoUrl={photoUrl} scaleMax={spec.kenBurnsScale} origin={spec.kenBurnsOrigin} driftY={18} />
+      <CinematicLightLayer warmth="warm" intensity={0.65} />
       <AbsoluteFill style={{
         background: `linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 28%, rgba(0,0,0,${spec.overlayOpacity}) 100%)`,
       }} />
@@ -197,7 +200,7 @@ export function EventTicketLayout({
         boxShadow: `inset 0 0 0 6px ${primaryColor}, inset 0 0 0 8px ${accentColor}55`,
       }} />
       <FilmGrainOverlay opacity={0.06} />
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="5.5%" />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="6.5%" />
       <AbsoluteFill style={{
         display: 'flex',
         flexDirection: 'column',
@@ -209,12 +212,7 @@ export function EventTicketLayout({
         ...stableTextLayerStyle,
       }}>
         {categoryLabel ? (
-          <span style={{
-            fontFamily: fonts.body, fontSize: 13, letterSpacing: 14, textTransform: 'uppercase',
-            color: textColors.category, marginBottom: 12, opacity: headOp,
-          }}>
-            {categoryLabel}
-          </span>
+          <EditorialKicker label={categoryLabel} accent={accentColor} fontFamily={fonts.body} color={textColors.category} align="center" opacity={headOp} />
         ) : null}
         <div style={{ ...stableTextLayerStyle }}>
           <HeadlineStack
@@ -236,7 +234,7 @@ export function EventTicketLayout({
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 20, color: textColors.subtitle, marginTop: 12,
+            fontFamily: fonts.body, fontSize: 28, color: textColors.subtitle, marginTop: 12,
             fontStyle: spec.subtitleItalic ? 'italic' : 'normal', opacity: metaOp,
           }}>
             {subtitle.slice(0, 120)}
@@ -285,8 +283,9 @@ export function DiptychCollageLayout({
       <FilmGrainOverlay opacity={0.05} />
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: photoH, display: 'flex', gap: 6, padding: 6, boxSizing: 'border-box', zIndex: 2 }}>
         {photos.slice(0, 2).map((url, i) => (
-          <div key={url + i} style={{ flex: 1, overflow: 'hidden', borderRadius: 10 }}>
+          <div key={url + i} style={{ flex: 1, overflow: 'hidden', borderRadius: 10, position: 'relative' }}>
             <KenBurnsPhoto photoUrl={url} scaleMax={1.06 + i * 0.01} origin={i === 0 ? '30% 50%' : '70% 50%'} driftY={12} />
+            <CinematicLightLayer warmth="neutral" intensity={0.55} origin="50% 12%" />
           </div>
         ))}
       </div>
@@ -325,7 +324,7 @@ export function DiptychCollageLayout({
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 10, opacity: headOp }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 26, color: textColors.subtitle, marginTop: 10, opacity: headOp }}>
             {subtitle.slice(0, 120)}
           </span>
         ) : null}
@@ -391,13 +390,7 @@ export function MinimalLuxuryLayout({
         alignItems: spec.align === 'center' ? 'center' : 'flex-start',
       }}>
         {categoryLabel ? (
-          <span style={{
-            fontFamily: fonts.body, fontSize: 11, letterSpacing: 8, textTransform: 'uppercase',
-            color: textColors.category, marginBottom: 18, opacity: headOp,
-            textShadow: textShadowAmbient,
-          }}>
-            {categoryLabel}
-          </span>
+          <EditorialKicker label={categoryLabel} accent={accentColor} fontFamily={fonts.body} color={textColors.category} align={spec.align === 'center' ? 'center' : 'left'} opacity={headOp} />
         ) : null}
         {/* Thinner, more refined hairline */}
         <div style={{ width: 40, height: 1, background: accentColor, marginBottom: 22, opacity: headOp }} />
@@ -420,7 +413,7 @@ export function MinimalLuxuryLayout({
         </div>
         {subtitle ? (
           <span style={{
-            fontFamily: fonts.body, fontSize: 20, fontStyle: 'italic',
+            fontFamily: fonts.body, fontSize: 28, fontStyle: 'italic',
             color: textColors.subtitle, marginTop: 14, opacity: headOp,
           }}>
             {subtitle.slice(0, 120)}
@@ -479,6 +472,7 @@ export function MosaicPinterestLayout({
           </div>
         </div>
       </div>
+      <CinematicLightLayer warmth="warm" intensity={0.55} origin="34% 14%" />
       <FilmGrainOverlay opacity={0.07} />
       <div style={{
         position: 'absolute', bottom: 0, left: 0, right: 0, height: bandH + Math.round(height * 0.1),
@@ -509,7 +503,7 @@ export function MosaicPinterestLayout({
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 17, color: 'rgba(255,255,255,0.78)', marginTop: 8, opacity: headOp }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 26, color: 'rgba(255,255,255,0.78)', marginTop: 8, opacity: headOp }}>
             {subtitle.slice(0, 120)}
           </span>
         ) : null}
@@ -599,12 +593,7 @@ export function AsymmetricEditorialLayout({
         boxShadow: `-24px 0 48px ${primaryColor}55`,
       }}>
         {categoryLabel ? (
-          <span style={{
-            fontFamily: fonts.body, fontSize: 13, letterSpacing: 10, textTransform: 'uppercase',
-            color: textColors.category, marginBottom: 12,
-          }}>
-            {categoryLabel}
-          </span>
+          <EditorialKicker label={categoryLabel} accent={accentColor} fontFamily={fonts.body} color={textColors.category} opacity={headOp} />
         ) : null}
         <div style={{ opacity: headOp, ...stableTextLayerStyle }}>
           <HeadlineStack
@@ -623,7 +612,7 @@ export function AsymmetricEditorialLayout({
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 12, opacity: headOp }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 26, color: textColors.subtitle, marginTop: 12, opacity: headOp }}>
             {subtitle.slice(0, 120)}
           </span>
         ) : null}
@@ -662,7 +651,7 @@ export function PolaroidSingleLayout({
   return (
     <AbsoluteFill style={{ background: primaryColor }}>
       <BrandStoryBackdrop primaryColor={primaryColor} accentColor={accentColor} />
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="4.5%" />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={fonts.hero} opacity={0.92} paddingTop="6.5%" />
       <div
         style={{
           position: 'absolute',
@@ -694,20 +683,7 @@ export function PolaroidSingleLayout({
         }}
       >
         {categoryLabel ? (
-          <span
-            style={{
-              fontFamily: fonts.body,
-              fontSize: 13,
-              letterSpacing: 10,
-              textTransform: 'uppercase',
-              color: textColors.category,
-              marginBottom: 10,
-              opacity: headOp,
-              ...stableTextLayerStyle,
-            }}
-          >
-            {categoryLabel}
-          </span>
+          <EditorialKicker label={categoryLabel} accent={accentColor} fontFamily={fonts.body} color={textColors.category} opacity={headOp} />
         ) : null}
         <div style={{ opacity: headOp, ...stableTextLayerStyle }}>
           <HeadlineStack
@@ -878,7 +854,7 @@ export function PolaroidStackLayout({
             />
           </div>
           {subtitle ? (
-            <span style={{ fontFamily: fonts.body, fontSize: 18, color: textColors.subtitle, marginTop: 10, opacity: headOp }}>
+            <span style={{ fontFamily: fonts.body, fontSize: 26, color: textColors.subtitle, marginTop: 10, opacity: headOp }}>
               {subtitle.slice(0, 120)}
             </span>
           ) : null}

@@ -13,6 +13,7 @@ import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { generateStorageKey, isR2Configured, uploadToR2 } from '@/lib/r2-storage';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -21,7 +22,7 @@ function isAlreadyHosted(url: string): boolean {
   const u = url.trim();
   if (!u) return true;
   if (u.startsWith('/api/media')) return true;
-  const r2Public = process.env.R2_PUBLIC_URL?.trim();
+  const r2Public = serverConfig.r2.publicUrl;
   if (r2Public && u.startsWith(r2Public)) return true;
   return false;
 }

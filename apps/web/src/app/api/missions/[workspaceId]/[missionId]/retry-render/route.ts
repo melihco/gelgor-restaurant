@@ -5,13 +5,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertPathTenantMatchesRequest, buildInternalProductionHeaders } from '@/lib/tenant-production-guard';
 import { filterMissionRenderRetryArtifacts } from '@/lib/mission-render-retry';
+import { serverConfig } from '@/lib/server-config';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-const BASE_URL = (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const BASE_URL = getNextjsInternalOrigin();
+const NEXUS_API = serverConfig.nexus.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 export async function POST(
   req: NextRequest,

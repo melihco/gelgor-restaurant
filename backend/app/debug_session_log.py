@@ -1,12 +1,12 @@
-"""Debug-mode NDJSON logger for session 343d1c (mission production)."""
+"""Debug-mode NDJSON logger for session c5a590 (mission production)."""
 from __future__ import annotations
 
 import json
 import time
 from typing import Any
 
-_LOG_PATH = "/Users/melihtasoglan/Desktop/smart-agency/.cursor/debug-343d1c.log"
-_SESSION = "343d1c"
+_LOG_PATH = "/Users/melihtasoglan/Desktop/smart-agency/.cursor/debug-c5a590.log"
+_SESSION = "c5a590"
 
 
 def debug_log(

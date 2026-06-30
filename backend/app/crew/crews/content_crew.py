@@ -20,7 +20,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 from app.crew.agents.content_agent import create_content_agent
 from app.crew.context import BrandInfo
-from app.crew.token_usage import total_tokens_from_crew
+from app.crew.token_usage import total_tokens_from_crew, log_crew_token_usage
 from app.crew.tasks.content_tasks import (
     create_content_ideation_task,
     create_content_calendar_task,
@@ -32,6 +32,7 @@ from app.services.pillar_coverage_service import (
 )
 from app.crew.cta_localization import harmonize_content_concepts, resolve_output_language
 from app.services.output_summary_parser import extract_object_array_from_output_summary
+from app.services.mission_ideation_merge import dedupe_ideation_by_headline, headlines_match
 
 
 # ─── Post-ideation scope & hallucination validator ───────────────────────────
@@ -479,8 +480,8 @@ def _enforce_free_trial_headline_cap(concepts: list) -> list:
 
 
 def _enforce_saas_use_case_mix(concepts: list, brand: BrandInfo) -> list:
-    """When count ≥ 7 on SaaS/agency brands, ensure strategist use-case diversity."""
-    if not _is_saas_brand(brand) or len(concepts) < 7:
+    """When count ≥ 10 on SaaS/agency brands, ensure strategist use-case diversity."""
+    if not _is_saas_brand(brand) or len(concepts) < 10:
         return concepts
 
     present = {
@@ -519,11 +520,8 @@ def _enforce_saas_use_case_mix(concepts: list, brand: BrandInfo) -> list:
 
 
 def _enforce_strategist_idea_diversity(concepts: list, brand: BrandInfo, target_count: int) -> list:
-    """Expand thin batches + promo / SaaS mix enforcement (deterministic)."""
-    if target_count >= 7 and len(concepts) < target_count:
-        from app.services.mission_ideation_merge import ensure_weekly_format_coverage
-
-        concepts = ensure_weekly_format_coverage(concepts, concepts)
+    """Promo / SaaS mix enforcement — never clone-pad thin batches (production layer handles slots)."""
+    _ = target_count
     concepts = _enforce_free_trial_headline_cap(concepts)
     concepts = _enforce_saas_use_case_mix(concepts, brand)
     return concepts
@@ -600,7 +598,161 @@ def _run_single_ideation(
     )
     result = crew.kickoff()
     raw = result.raw if hasattr(result, "raw") and result.raw else str(result)
-    return raw, total_tokens_from_crew(crew)
+    tokens = log_crew_token_usage(crew, task_type="content_ideation", mission_id=mission_id)
+    return raw, tokens
+
+
+_FORMAT_TARGETS_16 = {"post": 6, "story": 5, "carousel": 1, "reel": 4}
+_FORMAT_TARGETS_12 = {"post": 4, "story": 4, "carousel": 1, "reel": 3}
+
+
+def _idea_format(item: dict) -> str:
+    blob = " ".join(
+        str(item.get(k) or "") for k in ("content_type", "format", "content_kind")
+    ).lower()
+    if "reel" in blob:
+        return "reel"
+    if "carousel" in blob:
+        return "carousel"
+    if "story" in blob:
+        return "story"
+    return "post"
+
+
+def _norm_title(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def _missing_format_breakdown(concepts: list, count: int) -> tuple[dict[str, int], int]:
+    """Return (missing-by-format, total_gap) needed to reach `count`."""
+    have: dict[str, int] = {}
+    valid = [c for c in concepts if isinstance(c, dict)]
+    for c in valid:
+        f = _idea_format(c)
+        have[f] = have.get(f, 0) + 1
+    total_gap = max(0, count - len(valid))
+    if total_gap <= 0:
+        return {}, 0
+    missing: dict[str, int] = {}
+    if count >= 16:
+        targets = _FORMAT_TARGETS_16
+    elif count >= 12:
+        targets = _FORMAT_TARGETS_12
+    elif count >= 10:
+        targets = _FORMAT_TARGETS_12
+    else:
+        targets = {}
+    for fmt, target in targets.items():
+        gap = target - have.get(fmt, 0)
+        if gap > 0:
+            missing[fmt] = gap
+    assigned = sum(missing.values())
+    if assigned < total_gap:
+        missing["post"] = missing.get("post", 0) + (total_gap - assigned)
+    return missing, total_gap
+
+
+def _idea_headline(item: dict) -> str:
+    for field in ("headline", "concept_title", "idea_title", "title"):
+        val = str(item.get(field) or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def _ensure_distinct_ideation_batch(
+    brand: BrandInfo,
+    concepts: list,
+    count: int,
+    time_period: str,
+    content_pillars: list[str] | None,
+    autonomy_mode: bool,
+    llm: Any,
+    mission_id: str | None,
+    *,
+    max_topups: int = 2,
+) -> tuple[list, int]:
+    """
+    Dedupe near-duplicate headlines, then LLM top-up until `count` unique ideas
+    or top-up attempts exhausted. Never clone-pad with repeated headlines.
+    """
+    tokens = 0
+    batch = dedupe_ideation_by_headline([c for c in concepts if isinstance(c, dict)])
+
+    for _ in range(max_topups):
+        if len(batch) >= count or count < 3:
+            break
+        batch, topup_tokens = _topup_ideation(
+            brand, batch, count, time_period,
+            content_pillars, autonomy_mode, llm, mission_id,
+        )
+        tokens += topup_tokens
+        batch = dedupe_ideation_by_headline(batch)
+
+    if len(batch) > count:
+        batch = batch[:count]
+    return batch, tokens
+
+
+def _topup_ideation(
+    brand: BrandInfo,
+    existing: list,
+    count: int,
+    time_period: str,
+    content_pillars: list[str] | None,
+    autonomy_mode: bool,
+    llm: Any,
+    mission_id: str | None,
+) -> tuple[list, int]:
+    """
+    Generate genuinely NEW distinct concepts when the first ideation pass
+    under-delivered (LLM returned < count). Far better than cloning donors,
+    which produces duplicate-looking ideas. Only runs on a shortfall.
+    """
+    missing, total_gap = _missing_format_breakdown(existing, count)
+    if total_gap <= 0:
+        return existing, 0
+
+    existing_titles = [
+        str(c.get("headline") or c.get("concept_title") or c.get("idea_title") or "")
+        for c in existing
+        if isinstance(c, dict)
+    ]
+    mix_str = ", ".join(f"{n} {f}" for f, n in missing.items() if n > 0) or f"{total_gap} post"
+    avoid = "; ".join(t for t in existing_titles if t)[:1500]
+    topup_brief = (
+        f"GENERATE {total_gap} ADDITIONAL, COMPLETELY NEW content concepts to finish this "
+        f"week's plan. Required new formats: {mix_str}. "
+        f"These angles ALREADY EXIST — every new concept MUST be clearly different from all of "
+        f"them (different sub-product, ingredient, season, customer segment, or content angle): "
+        f"{avoid}."
+    )
+    try:
+        raw, tokens = _run_single_ideation(
+            brand, total_gap, time_period, topup_brief,
+            content_pillars, autonomy_mode, llm, mission_id=mission_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — top-up is best-effort
+        logger.warning("ideation_topup_failed: error=%s", str(exc)[:200])
+        return existing, 0
+
+    extra = extract_object_array_from_output_summary(raw) or []
+    merged = dedupe_ideation_by_headline([c for c in existing if isinstance(c, dict)])
+    for e in extra:
+        if not isinstance(e, dict):
+            continue
+        headline = _idea_headline(e)
+        if headline and any(headlines_match(headline, _idea_headline(m)) for m in merged):
+            continue
+        merged.append(e)
+        if len(merged) >= count:
+            break
+    logger.info(
+        "ideation_topup: had=%d gap=%d added=%d final=%d tenant=%s",
+        len(existing), total_gap, len(merged) - len(existing), len(merged),
+        getattr(brand, "tenant_id", "unknown"),
+    )
+    return merged, tokens
 
 
 def _pick_better_output(output_a: str, output_b: str, brand: BrandInfo) -> str:
@@ -636,7 +788,7 @@ def _pick_better_output(output_a: str, output_b: str, brand: BrandInfo) -> str:
 
 def run_content_ideation(
     brand: BrandInfo,
-    count: int = 7,
+    count: int = 10,
     time_period: str = "next week",
     brief: str = "",
     content_pillars: list[str] | None = None,
@@ -676,8 +828,14 @@ def run_content_ideation(
     try:
         concepts = extract_object_array_from_output_summary(raw_output)
         if concepts:
+            concepts, topup_tokens = _ensure_distinct_ideation_batch(
+                brand, concepts, count, time_period,
+                content_pillars, autonomy_mode, llm, mission_id,
+            )
+            total_tokens += topup_tokens
             concepts = harmonize_content_concepts(concepts, brand.languages)
             concepts = _enforce_idea_completeness(concepts, brand)
+            concepts = dedupe_ideation_by_headline(concepts)
             concepts = _enforce_strategist_idea_diversity(concepts, brand, count)
             # ── Hallucination & scope guard (deterministic, no LLM) ─────────
             concepts, scope_warnings = _validate_and_sanitize_ideas(concepts, brand)
@@ -722,8 +880,15 @@ def run_content_ideation(
                 if revised_output:
                     revised_concepts = extract_object_array_from_output_summary(revised_output)
                     if revised_concepts:
+                        revised_concepts, revision_topup_tokens = _ensure_distinct_ideation_batch(
+                            brand, revised_concepts, count, time_period,
+                            content_pillars, autonomy_mode, llm, mission_id,
+                            max_topups=1,
+                        )
+                        total_tokens += revision_topup_tokens
                         revised_concepts = harmonize_content_concepts(revised_concepts, brand.languages)
                         revised_concepts = _enforce_idea_completeness(revised_concepts, brand)
+                        revised_concepts = dedupe_ideation_by_headline(revised_concepts)
                         revised_concepts = _enforce_strategist_idea_diversity(revised_concepts, brand, count)
                         revised_concepts, _ = enforce_confirmed_pillar_coverage(
                             revised_concepts, pillars_for_batch,

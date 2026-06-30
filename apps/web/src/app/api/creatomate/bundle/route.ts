@@ -9,6 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'workspaceId and photoUrl required' }, { status: 400 });
   }
 
-  const creatKey = process.env.CREATOMATE_API_KEY ?? '';
+  const creatKey = serverConfig.creatomate.apiKey ?? '';
   if (!creatKey) {
     return NextResponse.json({ error: 'CREATOMATE_API_KEY not set' }, { status: 503 });
   }

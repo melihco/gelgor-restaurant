@@ -663,6 +663,9 @@ const SECTOR_ALIASES: Record<string, string> = {
   cafe: 'coffee_shop',
   restaurant: 'restaurant_cafe',
   bistro: 'restaurant_cafe',
+  restaurant_bar: 'restaurant_cafe',
+  beach_club_bar: 'beach_club',
+  restaurant_cafe: 'restaurant_cafe',
   fine_dining: 'fine_dining', // canonical
   // Hospitality family
   hotel: 'hospitality',

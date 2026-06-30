@@ -143,13 +143,21 @@ export interface InstagramImagePayload {
   assetIntent?: string;
   logoUrl?: string;
   workspaceId?: string;
+  postTemplateId?: string;
+  layoutSpec?: Record<string, unknown>;
 }
 
 export function buildInstagramImagePayload(
   idea: ProductionIdea,
   brand: RendererBrandContext,
   gallery: RendererGalleryMeta,
-  opts?: { designCard?: boolean; extraRefs?: string[]; workspaceId?: string },
+  opts?: {
+    designCard?: boolean;
+    extraRefs?: string[];
+    workspaceId?: string;
+    postTemplateId?: string;
+    layoutSpec?: Record<string, unknown>;
+  },
 ): InstagramImagePayload {
   const ct = idea.format === 'story' ? 'story' : idea.format === 'reel' ? 'reel' : 'post';
   const refs = [gallery.photoUrl, ...(opts?.extraRefs ?? [])].filter(
@@ -170,6 +178,8 @@ export function buildInstagramImagePayload(
     assetIntent: idea.assetIntent,
     logoUrl: brand.logoUrl,
     workspaceId: opts?.workspaceId,
+    postTemplateId: opts?.postTemplateId,
+    layoutSpec: opts?.layoutSpec,
   };
 }
 

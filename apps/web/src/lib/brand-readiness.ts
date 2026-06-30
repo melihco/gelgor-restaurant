@@ -78,21 +78,24 @@ export interface BrandReadinessInputs {
   defaultCtaCount: number;
 }
 
-/** Map BRS fix hints to Brand Constitution tab ids (5-tab layout). */
+/** Map BRS fix hints to Brand Constitution tab ids (6-tab layout). */
 export function brandReadinessFixToBrandTab(
   fix: string | undefined,
-): 'identity' | 'content' | 'visual' | 'production' | 'gallery' | null {
+): 'identity' | 'content' | 'design' | 'gallery' | 'chatbot' | null {
   switch (fix) {
     case 'brand-constitution':
       return 'identity';
     case 'brand-analysis':
     case 'brand-dna':
-      return 'production';
+      return 'design';
+    case 'chatbot-profile':
+    case 'mertcafe':
+      return 'chatbot';
     case 'gallery':
       return 'gallery';
     case 'brand-theme':
     case 'story-templates':
-      return 'visual';
+      return 'design';
     case 'content-pillars':
       return 'content';
     case 'brand':
@@ -256,8 +259,19 @@ export function computeBrandReadiness(input: BrandReadinessInputs): BrandReadine
   );
   const missing = checks.filter((c) => !c.passed);
   const canProposeMissions = score >= BRS_PROPOSE_THRESHOLD;
-  // Full autonomy needs BRS=100 AND gallery passes; gallery (GIS) is layered in Sprint 2.
-  const canAutoProduce = score === 100;
+  const criticalAutoChecks: BrandReadinessCheckId[] = [
+    'constitution',
+    'gallery_min_photos',
+    'gallery_coverage',
+    'brand_dna',
+    'brand_theme',
+    'content_pillars',
+    'default_ctas',
+  ];
+  const canAutoProduce = score >= 90
+    && checks
+      .filter((check) => criticalAutoChecks.includes(check.id))
+      .every((check) => check.passed);
 
   return { score, checks, canProposeMissions, canAutoProduce, missing };
 }

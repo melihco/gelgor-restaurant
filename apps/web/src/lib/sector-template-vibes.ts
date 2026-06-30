@@ -130,20 +130,20 @@ export const SECTOR_VIBE_META: Record<SectorVibeKey, SectorVibeMeta> = {
 const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlotKey, SectorSlotPreset>>> = {
   beauty_salon: {
     daily_story: {
-      storyTemplateId: 'remotion_frosted_glass_02',
-      storyFamilies: ['frosted_glass', 'minimal_luxury', 'asymmetric_editorial', 'vibe_fullscreen', 'quote_card'],
+      storyTemplateId: 'remotion_glassmorphism_showcase_01',
+      storyFamilies: ['glassmorphism_showcase', 'frosted_glass', 'minimal_luxury', 'asymmetric_editorial', 'vibe_fullscreen', 'quote_card'],
     },
     event_story: {
-      storyTemplateId: 'remotion_campaign_hero_05',
-      storyFamilies: ['campaign_hero', 'event_ticket', 'frosted_glass', 'bold_impact'],
+      storyTemplateId: 'remotion_luxury_kinetic_type_03',
+      storyFamilies: ['luxury_kinetic_type', 'campaign_hero', 'event_ticket', 'frosted_glass', 'bold_impact'],
     },
     campaign_post: {
       posterTemplateId: 'poster_editorial_date_03',
       posterFamilies: ['editorial_date', 'gala_invite', 'restaurant_feature'],
     },
     editorial_story: {
-      storyTemplateId: 'remotion_magazine_cover_07',
-      storyFamilies: ['magazine_cover', 'asymmetric_editorial', 'minimal_luxury', 'split_panel', 'noir_editorial'],
+      storyTemplateId: 'remotion_editorial_product_stage_03',
+      storyFamilies: ['editorial_product_stage', 'magazine_cover', 'asymmetric_editorial', 'minimal_luxury', 'split_panel', 'noir_editorial'],
     },
     social_proof: {
       storyTemplateId: 'remotion_diptych_collage_02',
@@ -152,8 +152,8 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
   },
   barber_salon: {
     daily_story: {
-      storyTemplateId: 'remotion_bold_impact_03',
-      storyFamilies: ['bold_impact', 'editorial_bottom', 'neon_night', 'asymmetric_editorial', 'polaroid_single'],
+      storyTemplateId: 'remotion_luxury_kinetic_type_06',
+      storyFamilies: ['luxury_kinetic_type', 'bold_impact', 'editorial_bottom', 'neon_night', 'asymmetric_editorial', 'polaroid_single'],
     },
     event_story: {
       storyTemplateId: 'remotion_event_ticket_05',
@@ -165,7 +165,7 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
     },
     editorial_story: {
       storyTemplateId: 'remotion_neon_night_01',
-      storyFamilies: ['neon_night', 'asymmetric_editorial', 'bold_impact', 'magazine_cover', 'noir_editorial'],
+      storyFamilies: ['luxury_kinetic_type', 'neon_night', 'asymmetric_editorial', 'bold_impact', 'magazine_cover', 'noir_editorial'],
     },
     social_proof: {
       storyTemplateId: 'remotion_polaroid_stack_03',
@@ -196,20 +196,20 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
   },
   retail: {
     daily_story: {
-      storyTemplateId: 'remotion_mosaic_pinterest_02',
-      storyFamilies: ['mosaic_pinterest', 'bento_story', 'asymmetric_editorial', 'minimal_luxury', 'vibe_fullscreen'],
+      storyTemplateId: 'remotion_editorial_product_stage_05',
+      storyFamilies: ['editorial_product_stage', 'mosaic_pinterest', 'bento_story', 'asymmetric_editorial', 'minimal_luxury', 'vibe_fullscreen'],
     },
     event_story: {
-      storyTemplateId: 'remotion_campaign_hero_09',
-      storyFamilies: ['campaign_hero', 'bold_impact', 'event_ticket', 'neon_night'],
+      storyTemplateId: 'remotion_luxury_kinetic_type_02',
+      storyFamilies: ['luxury_kinetic_type', 'campaign_hero', 'bold_impact', 'event_ticket', 'neon_night'],
     },
     campaign_post: {
       posterTemplateId: 'poster_promo_split_05',
       posterFamilies: ['promo_split', 'art_deco', 'gala_invite', 'editorial_date'],
     },
     editorial_story: {
-      storyTemplateId: 'remotion_asymmetric_editorial_02',
-      storyFamilies: ['asymmetric_editorial', 'magazine_cover', 'minimal_luxury', 'split_panel', 'noir_editorial'],
+      storyTemplateId: 'remotion_editorial_product_stage_01',
+      storyFamilies: ['editorial_product_stage', 'asymmetric_editorial', 'magazine_cover', 'minimal_luxury', 'split_panel', 'noir_editorial'],
     },
     social_proof: {
       storyTemplateId: 'remotion_bento_story_07',
@@ -218,8 +218,8 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
   },
   coffee_shop: {
     daily_story: {
-      storyTemplateId: 'remotion_vibe_fullscreen_04',
-      storyFamilies: ['vibe_fullscreen', 'polaroid_single', 'frosted_glass', 'editorial_bottom', 'minimal_luxury'],
+      storyTemplateId: 'remotion_glassmorphism_showcase_06',
+      storyFamilies: ['glassmorphism_showcase', 'vibe_fullscreen', 'polaroid_single', 'frosted_glass', 'editorial_bottom', 'minimal_luxury'],
     },
     event_story: {
       storyTemplateId: 'remotion_event_ticket_02',
@@ -230,8 +230,8 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
       posterFamilies: ['restaurant_feature', 'promo_split', 'editorial_date', 'gala_invite'],
     },
     editorial_story: {
-      storyTemplateId: 'remotion_minimal_luxury_01',
-      storyFamilies: ['minimal_luxury', 'magazine_cover', 'asymmetric_editorial', 'cinematic_center', 'noir_editorial'],
+      storyTemplateId: 'remotion_editorial_product_stage_06',
+      storyFamilies: ['editorial_product_stage', 'minimal_luxury', 'magazine_cover', 'asymmetric_editorial', 'cinematic_center', 'noir_editorial'],
     },
     social_proof: {
       storyTemplateId: 'remotion_mosaic_pinterest_03',
@@ -241,19 +241,19 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
   beach_club: {
     daily_story: {
       storyTemplateId: 'remotion_cinematic_center_04',
-      storyFamilies: ['cinematic_center', 'vibe_fullscreen', 'minimal_luxury', 'frosted_glass', 'location_pin'],
+      storyFamilies: ['luxury_kinetic_type', 'cinematic_center', 'vibe_fullscreen', 'minimal_luxury', 'frosted_glass', 'location_pin'],
     },
     event_story: {
-      storyTemplateId: 'remotion_campaign_hero_03',
-      storyFamilies: ['campaign_hero', 'event_ticket', 'bold_impact', 'neon_night'],
+      storyTemplateId: 'remotion_luxury_kinetic_type_08',
+      storyFamilies: ['luxury_kinetic_type', 'campaign_hero', 'event_ticket', 'bold_impact', 'neon_night'],
     },
     campaign_post: {
       posterTemplateId: 'poster_restaurant_feature_03',
       posterFamilies: ['restaurant_feature', 'editorial_date', 'gala_invite', 'promo_split'],
     },
     editorial_story: {
-      storyTemplateId: 'remotion_split_panel_02',
-      storyFamilies: ['split_panel', 'magazine_cover', 'asymmetric_editorial', 'minimal_luxury', 'noir_editorial'],
+      storyTemplateId: 'remotion_editorial_product_stage_08',
+      storyFamilies: ['editorial_product_stage', 'split_panel', 'magazine_cover', 'asymmetric_editorial', 'minimal_luxury', 'noir_editorial'],
     },
     social_proof: {
       storyTemplateId: 'remotion_gallery_series_04',
@@ -262,24 +262,24 @@ const SECTOR_VIBE_PRESETS: Record<SectorVibeKey, Partial<Record<BrandLibrarySlot
   },
   agency_services: {
     daily_story: {
-      storyTemplateId: 'remotion_minimal_luxury_04',
-      storyFamilies: ['minimal_luxury', 'split_panel', 'editorial_bottom', 'frosted_glass', 'quote_card'],
+      storyTemplateId: 'remotion_glassmorphism_showcase_02',
+      storyFamilies: ['glassmorphism_showcase', 'minimal_luxury', 'split_panel', 'editorial_bottom', 'frosted_glass', 'quote_card'],
     },
     event_story: {
-      storyTemplateId: 'remotion_event_ticket_03',
-      storyFamilies: ['event_ticket', 'campaign_hero', 'minimal_luxury', 'bold_impact'],
+      storyTemplateId: 'remotion_luxury_kinetic_type_01',
+      storyFamilies: ['luxury_kinetic_type', 'event_ticket', 'campaign_hero', 'minimal_luxury', 'bold_impact'],
     },
     campaign_post: {
       posterTemplateId: 'poster_editorial_date_03',
       posterFamilies: ['editorial_date', 'restaurant_feature', 'gala_invite', 'art_deco'],
     },
     editorial_story: {
-      storyTemplateId: 'remotion_magazine_cover_04',
-      storyFamilies: ['magazine_cover', 'minimal_luxury', 'split_panel', 'asymmetric_editorial', 'noir_editorial'],
+      storyTemplateId: 'remotion_editorial_product_stage_03',
+      storyFamilies: ['editorial_product_stage', 'magazine_cover', 'minimal_luxury', 'split_panel', 'asymmetric_editorial', 'noir_editorial'],
     },
     social_proof: {
-      storyTemplateId: 'remotion_diptych_collage_01',
-      storyFamilies: ['diptych_collage', 'quote_card', 'gallery_series', 'minimal_luxury', 'polaroid_stack'],
+      storyTemplateId: 'remotion_glassmorphism_showcase_08',
+      storyFamilies: ['glassmorphism_showcase', 'diptych_collage', 'quote_card', 'gallery_series', 'minimal_luxury', 'polaroid_stack'],
     },
     social_proof_post: {
       posterTemplateId: 'poster_editorial_date_03',

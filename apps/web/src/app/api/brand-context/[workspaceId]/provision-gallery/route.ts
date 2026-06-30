@@ -14,9 +14,82 @@ import { parseStringOrArray } from '@/lib/brand-readiness';
 import {
   filterReachableGalleryUrls,
   filterUsableGalleryPhotoUrls,
-  isStockGalleryPhotoUrl,
   stripStockGalleryUrls,
 } from '@/lib/media-url';
+import { isSafeHttpHost } from '@/lib/trusted-media-hosts';
+
+const EPHEMERAL_CDN_SNIPPETS = ['cdninstagram.com', 'fbcdn.net', 'scontent'];
+
+async function mirrorEphemeralGalleryUrls(urls: string[], workspaceId: string): Promise<string[]> {
+  const needsMirror = urls.some((u) => EPHEMERAL_CDN_SNIPPETS.some((h) => u.includes(h)));
+  if (!needsMirror) return urls;
+
+  const { isR2Configured, generateStorageKey, uploadToR2 } = await import('@/lib/r2-storage');
+  if (!isR2Configured()) return urls;
+
+  const mirrored = await Promise.all(
+    urls.map(async (url) => {
+      if (!EPHEMERAL_CDN_SNIPPETS.some((h) => url.includes(h))) return url;
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            Referer: 'https://www.instagram.com/',
+          },
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) return url;
+        const ct = res.headers.get('content-type') ?? 'image/jpeg';
+        const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg';
+        const buf = await res.arrayBuffer();
+        const key = generateStorageKey(`${workspaceId}/gallery`, 'image', ext);
+        const result = await uploadToR2(
+          `data:${ct};base64,${Buffer.from(buf).toString('base64')}`,
+          key,
+          ct,
+        );
+        return result.url || url;
+      } catch {
+        return url;
+      }
+    }),
+  );
+
+  return mirrored.filter(Boolean);
+}
+
+/** Website hotlink URLs often 403 HEAD without referer — mirror or keep if host is safe. */
+async function prepareGalleryUrlsForPersistence(
+  urls: string[],
+  workspaceId: string,
+): Promise<string[]> {
+  const mirrored = await mirrorEphemeralGalleryUrls(urls, workspaceId);
+  const beforeHealth = mirrored.length;
+  const health = await filterReachableGalleryUrls(mirrored, {
+    maxProbe: 120,
+    concurrency: 10,
+    strict: true,
+  });
+  if (health.rejected.length > 0) {
+    console.warn(
+      `[provision-gallery] Dropped ${health.rejected.length} unreachable gallery URLs for ${workspaceId}`,
+    );
+  }
+  // Keep safe CDN URLs that failed probe (often 403 hotlink) — production uses media-proxy.
+  const rejectedSafe = health.rejected
+    .filter((r) => isSafeHttpHost(r.url))
+    .map((r) => r.url);
+  const merged = [...health.urls];
+  for (const u of rejectedSafe) {
+    if (!merged.includes(u)) merged.push(u);
+  }
+  if (merged.length < beforeHealth && rejectedSafe.length > 0) {
+    console.warn(
+      `[provision-gallery] Retained ${rejectedSafe.length} hotlink-protected CDN URLs for ${workspaceId}`,
+    );
+  }
+  return merged;
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -100,24 +173,23 @@ export async function POST(
     : { urls: usable, added: 0, provisioned: false };
 
   let urls = mergedUrls;
-  const hasUnsplash = mergedUrls.some((u) => isStockGalleryPhotoUrl(u));
-  if (hasUnsplash && mergedUrls.length > 0) {
-    const health = await filterReachableGalleryUrls(mergedUrls, { maxProbe: 120, concurrency: 10 });
-    if (health.rejected.length > 0) {
-      console.warn(
-        `[provision-gallery] Dropped ${health.rejected.length} unreachable stock URLs for ${workspaceId}`,
-      );
-    }
-    urls = health.urls;
+  let unreachableRemoved = 0;
+  if (urls.length > 0) {
+    const beforeHealth = urls.length;
+    urls = await prepareGalleryUrlsForPersistence(urls, workspaceId);
+    unreachableRemoved = beforeHealth - urls.length;
   }
 
   if (!allowSynthetic) {
     urls = stripStockGalleryUrls(urls);
   }
 
+  const normalizedExisting = existing.filter((u) => !logo || u !== logo);
   const galleryChanged = provisioned
     || stockRemoved > 0
-    || urls.length !== existing.filter((u) => !logo || u !== logo).length;
+    || unreachableRemoved > 0
+    || urls.length !== normalizedExisting.length
+    || urls.some((u, i) => u !== normalizedExisting[i]);
 
   if (!galleryChanged) {
     let analyzeSummary = null;
@@ -127,12 +199,17 @@ export async function POST(
     return NextResponse.json({
       provisioned: false,
       stockRemoved,
+      unreachableRemoved,
       usableCount: urls.length,
       target,
       analyze: analyzeSummary,
       message: urls.length > 0
-        ? 'Galeri yeterli — yalnızca marka fotoğrafları kullanılıyor.'
-        : 'Galeri boş — web sitesinden analiz veya manuel yükleme gerekli.',
+        ? unreachableRemoved > 0
+          ? `${unreachableRemoved} kırık görsel çıkarıldı — ${urls.length} fotoğraf kullanılabilir.`
+          : 'Galeri yeterli — yalnızca marka fotoğrafları kullanılıyor.'
+        : unreachableRemoved > 0
+          ? `${unreachableRemoved} kırık görsel çıkarıldı — geçerli fotoğraf kalmadı.`
+          : 'Galeri boş — web sitesinden analiz veya manuel yükleme gerekli.',
     });
   }
 
@@ -157,17 +234,20 @@ export async function POST(
   }
 
   return NextResponse.json({
-    provisioned: provisioned || stockRemoved > 0,
+    provisioned: provisioned || stockRemoved > 0 || unreachableRemoved > 0,
     added,
     stockRemoved,
+    unreachableRemoved,
     usableCount: urls.length,
     target,
     sector: ctx.business_type ?? 'general_business',
     analyze: analyzeSummary,
-    message: stockRemoved > 0 && !provisioned
-      ? `${stockRemoved} stok görseli galeriden kaldırıldı.`
-      : provisioned
-        ? `${added} sektör görseli galeriye eklendi (legacy allowSynthetic).`
-        : 'Galeri güncellendi.',
+    message: unreachableRemoved > 0
+      ? `${unreachableRemoved} kırık görsel çıkarıldı — ${urls.length} fotoğraf kaydedildi.`
+      : stockRemoved > 0 && !provisioned
+        ? `${stockRemoved} stok görseli galeriden kaldırıldı.`
+        : provisioned
+          ? `${added} sektör görseli galeriye eklendi (legacy allowSynthetic).`
+          : 'Galeri güncellendi.',
   });
 }

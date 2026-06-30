@@ -3,11 +3,14 @@
  */
 import {
   resolveAiVisualProductionStandard,
+  resolveVisualSourceMode,
   type AiVisualProductionStandard,
+  type VisualSourceMode,
 } from '@/lib/ai-visual-production-standard';
 import { normalizeBrandThemeRecord } from '@/lib/brand-theme-normalize';
 
 export { normalizeBrandThemeRecord } from '@/lib/brand-theme-normalize';
+export { resolveVisualSourceMode, type VisualSourceMode } from '@/lib/ai-visual-production-standard';
 
 function themeKeyVariants(snake: string): string[] {
   const camel = snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase());

@@ -38,6 +38,11 @@ const BASE: PosterLayoutSpec = {
   showDateBadge: true,
   showCta: true,
   panelUsesPrimary: true,
+  colorPolicy: {
+    headline: 'text',
+    text: 'text',
+    overlay: 'primary',
+  },
 };
 
 type FamilyMeta = {
@@ -106,6 +111,7 @@ const FAMILIES: FamilyMeta[] = [
       family: 'dj_night', collection: 'Nightlife', posterMode: 'dj_set',
       neonGlow: true, duotoneWash: 'accent', duotoneOpacity: 0.48, vignette: 'noir',
       posterFooter: 'pill_row', heroWeight: 900,
+      colorPolicy: { headline: 'accent', text: 'text', overlay: 'accent' },
     },
     variants: [
       { suffix: 'Neon Classic', suffixTr: 'Neon', patch: {} },
@@ -153,6 +159,7 @@ const FAMILIES: FamilyMeta[] = [
       family: 'gala_invite', collection: 'Luxury', posterMode: 'gala_centered',
       fontPersonality: 'serif_editorial', heroWeight: 400, heroUppercase: false,
       posterHeader: 'outline_bar', frame: 'thin', showDateBadge: true,
+      colorPolicy: { headline: 'accent', text: 'text', overlay: 'primary' },
     },
     variants: [
       { suffix: 'Classic', suffixTr: 'Klasik', patch: {} },
@@ -196,6 +203,7 @@ const FAMILIES: FamilyMeta[] = [
     base: {
       family: 'event_masthead', collection: 'Event', posterMode: 'masthead',
       posterHeader: 'knockout_bar', posterFooter: 'solid_bar', photoRatio: 0.48,
+      colorPolicy: { headline: 'accent', text: 'text', overlay: 'primary' },
     },
     variants: [
       { suffix: 'Knockout', suffixTr: 'Knockout', patch: {} },
@@ -240,6 +248,7 @@ const FAMILIES: FamilyMeta[] = [
       family: 'neon_club', collection: 'Nightlife', posterMode: 'dj_set',
       neonGlow: true, duotoneWash: 'accent', photoRatio: 0.38,
       fontPersonality: 'display_bold', heroScale: 1.2, vignette: 'noir',
+      colorPolicy: { headline: 'accent', text: 'text', overlay: 'accent' },
     },
     variants: [
       { suffix: 'Full Neon', suffixTr: 'Full Neon', patch: {} },
@@ -262,6 +271,7 @@ const FAMILIES: FamilyMeta[] = [
       family: 'art_deco', collection: 'Luxury', posterMode: 'gala_centered',
       frame: 'double', fontPersonality: 'serif_editorial',
       posterHeader: 'outline_bar', accentLine: 'both', heroUppercase: true,
+      colorPolicy: { headline: 'accent', text: 'text', overlay: 'primary' },
     },
     variants: [
       { suffix: 'Gala', suffixTr: 'Gala', patch: {} },

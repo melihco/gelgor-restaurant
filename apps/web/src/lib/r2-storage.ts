@@ -13,18 +13,19 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { mediaUrlForKey } from './media-url';
 import { fetchExternalImageBuffer } from './external-image-fetch';
+import { serverConfig } from './server-config';
 
-const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID!;
-const BUCKET = process.env.R2_BUCKET_NAME ?? 'smartagency-media';
-const PUBLIC_URL = process.env.R2_PUBLIC_URL ?? ''; // optional: set if bucket has public access
+const BUCKET = serverConfig.r2.bucket;
+const PUBLIC_URL = serverConfig.r2.publicUrl; // optional: set if bucket has public access
 
 function getClient(): S3Client {
+  const credentials = serverConfig.r2.requireCredentials();
   return new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_ENDPOINT ?? `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    endpoint: serverConfig.r2.endpoint,
     credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+      accessKeyId: credentials.accessKeyId,
+      secretAccessKey: credentials.secretAccessKey,
     },
     forcePathStyle: true, // Required for R2 — generates accessible path-style URLs
   });
@@ -140,9 +141,5 @@ export async function deleteFromR2(key: string): Promise<void> {
 }
 
 export function isR2Configured(): boolean {
-  return !!(
-    process.env.CLOUDFLARE_ACCOUNT_ID &&
-    process.env.R2_ACCESS_KEY_ID &&
-    process.env.R2_SECRET_ACCESS_KEY
-  );
+  return serverConfig.r2.configured;
 }

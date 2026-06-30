@@ -25,12 +25,14 @@ import {
 } from '@/lib/brand-production-tokens';
 import { resolveProductionLogoUrl, resolveSlotLogoForRender } from '@/lib/brand-logo-production';
 import type { BrandTemplateLibrary, BrandTemplateLibrarySlot } from '@/lib/brand-template-library';
+import { serverConfig } from '@/lib/server-config';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 const OUT_DIR = path.join(process.cwd(), 'public/remotion-showcase');
-const BASE_URL = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+const BASE_URL = getNextjsInternalOrigin();
 
 const STORY_PHOTOS = [
   'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1080&q=85',
@@ -51,6 +53,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     workspace?: string;
     photoUrl?: string;
     previewLibrary?: BrandTemplateLibrary;
+    /** Fast UI preview: return an existing showcase asset when available. */
+    preferCachedPreview?: boolean;
+    /** Bypass cache and force a new render. */
+    forceRender?: boolean;
   };
   try {
     body = await req.json();
@@ -59,6 +65,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const isPoster = body.kind === 'poster' || (body.templateId ?? '').startsWith('poster_');
+  if (body.preferCachedPreview && !body.forceRender) {
+    const cached = findCachedShowcasePreview({
+      templateId: body.templateId,
+      kind: isPoster ? 'poster' : 'story',
+      format: body.format,
+    });
+    if (cached) {
+      return NextResponse.json({
+        ok: true,
+        url: `${String(cached.url)}?cached=1`,
+        templateId: cached.templateId ?? body.templateId,
+        kind: isPoster ? 'poster' : 'story',
+        format: cached.format ?? body.format,
+        cached: true,
+        durationMs: cached.durationMs ?? null,
+      });
+    }
+    if (!isPoster && body.templateId) {
+      const template = getRemotionTemplate(body.templateId);
+      if (template) {
+        const cachedFamily = findCachedShowcasePreview({
+          templateId: body.templateId,
+          kind: 'story',
+          family: template.family,
+        });
+        if (cachedFamily) {
+          return NextResponse.json({
+            ok: true,
+            url: `${String(cachedFamily.url)}?cached=1`,
+            templateId: cachedFamily.templateId ?? body.templateId,
+            requestedTemplateId: body.templateId,
+            kind: 'story',
+            cached: true,
+            approximate: cachedFamily.templateId !== body.templateId,
+            durationMs: cachedFamily.durationMs ?? null,
+          });
+        }
+      }
+    }
+  }
+
   const workspaceId = (body.workspaceId ?? body.workspace)?.trim();
   const presetKey = (body.presetKey ?? body.preset)?.trim();
   const workspaceLoad = workspaceId
@@ -199,6 +246,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const librarySlot = resolveLibrarySlot(library, body.slotKey, storyTemplateId, 'story');
   const template = getRemotionTemplate(storyTemplateId);
   if (!template) return NextResponse.json({ error: 'Unknown templateId' }, { status: 404 });
+  if (body.preferCachedPreview && !body.forceRender) {
+    const cachedFamily = findCachedShowcasePreview({
+      templateId: storyTemplateId,
+      kind: 'story',
+      family: template.family,
+    });
+    if (cachedFamily) {
+      return NextResponse.json({
+        ok: true,
+        url: `${String(cachedFamily.url)}?cached=1`,
+        templateId: cachedFamily.templateId ?? storyTemplateId,
+        requestedTemplateId: storyTemplateId,
+        kind: 'story',
+        cached: true,
+        approximate: cachedFamily.templateId !== storyTemplateId,
+        durationMs: cachedFamily.durationMs ?? null,
+      });
+    }
+  }
 
   const compositionId = librarySlot?.legacyComposition ?? 'SpecStory';
   const manifestId = librarySlot?.key ? `${manifestScope}_${librarySlot.key}` : `${manifestScope}_${template.id}`;
@@ -327,6 +393,42 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({ ok: true, url: publicUrl, templateId: template.id, kind: 'story', slotKey: librarySlot?.key });
 }
 
+function findCachedShowcasePreview(input: {
+  templateId?: string;
+  kind: 'story' | 'poster';
+  format?: string;
+  family?: string;
+}): Record<string, unknown> | null {
+  const templateId = input.templateId?.trim();
+  if (!templateId && !input.family) return null;
+  const manifestPath = path.join(OUT_DIR, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+      items?: Array<Record<string, unknown>>;
+    };
+    const items = Array.isArray(manifest.items) ? manifest.items : [];
+    const mediaKind = input.kind === 'poster' ? 'poster' : 'story';
+    const matches = (item: Record<string, unknown>, exact: boolean) => {
+      if (exact && item.templateId !== templateId) return false;
+      if (!exact) {
+        if (!input.family) return false;
+        if (item.collection !== input.family && !String(item.templateId ?? '').includes(input.family)) return false;
+      }
+      if (item.mediaKind && item.mediaKind !== mediaKind) return false;
+      if (input.kind === 'story' && item.kind !== 'video') return false;
+      if (input.kind === 'poster' && item.kind !== 'still') return false;
+      if (input.format && item.format && item.format !== input.format) return false;
+      return typeof item.url === 'string' && item.url.length > 0;
+    };
+    return items.find((item) => matches(item, true))
+      ?? items.find((item) => matches(item, false))
+      ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveLibrarySlot(
   library: BrandTemplateLibrary,
   slotKey: string | undefined,
@@ -341,8 +443,8 @@ function resolveLibrarySlot(
 }
 
 async function fetchWorkspaceLogoUrl(workspaceId: string): Promise<string> {
-  const crew = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
-  const key = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+  const crew = serverConfig.crewBackend.baseUrl;
+  const key = serverConfig.internal.apiKey;
   try {
     const res = await fetch(`${crew}/api/v1/brand-context/${workspaceId}`, {
       headers: { 'X-Internal-Api-Key': key, 'X-Tenant-Id': workspaceId },

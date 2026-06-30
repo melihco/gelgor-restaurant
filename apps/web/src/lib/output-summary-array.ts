@@ -57,32 +57,97 @@ function scanJsonArrayCandidates(text: string): Record<string, unknown>[][] {
   return candidates;
 }
 
-export function extractObjectArrayFromSummary(
+/**
+ * Recover complete top-level objects from a JSON array that may be truncated
+ * (no closing `]`). The server truncates output_summary, so a large array can
+ * arrive without its terminating bracket — `scanJsonArrayCandidates` then finds
+ * no balanced array and returns nothing. This walks the elements directly under
+ * the first `[` and parses every complete `{…}` it can, ignoring the partial
+ * trailing element. Never throws.
+ */
+function recoverTruncatedArrayObjects(text: string): Record<string, unknown>[] {
+  const firstBracket = text.indexOf('[');
+  if (firstBracket === -1) return [];
+
+  const objects: Record<string, unknown>[] = [];
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  let objStart = -1;
+
+  for (let i = firstBracket + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inStr) { escape = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{') {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        try {
+          const parsed = JSON.parse(text.slice(objStart, i + 1)) as unknown;
+          if (isObjectRecord(parsed)) objects.push(parsed);
+        } catch {
+          /* skip malformed element */
+        }
+        objStart = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+export interface ParseResult {
+  ideas: Record<string, unknown>[];
+  parseError?: string;
+  truncated?: boolean;
+}
+
+export function extractObjectArrayFromSummaryWithDiag(
   outputSummary: string | null | undefined,
   rootArrayKeys: string[] = ['ideas', 'content_ideas', 'contentIdeas'],
-): Record<string, unknown>[] {
-  if (!outputSummary?.trim()) return [];
+): ParseResult {
+  if (!outputSummary?.trim()) return { ideas: [], parseError: 'empty_input' };
   const trimmed = stripCodeFences(outputSummary);
 
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (Array.isArray(parsed)) {
-      return filterObjectArray(parsed);
+      return { ideas: filterObjectArray(parsed) };
     }
     if (isObjectRecord(parsed)) {
       for (const key of rootArrayKeys) {
         const value = parsed[key];
         if (Array.isArray(value)) {
           const objects = filterObjectArray(value);
-          if (objects.length > 0) return objects;
+          if (objects.length > 0) return { ideas: objects };
         }
       }
     }
   } catch {
-    /* fall through */
+    /* fall through to recovery */
   }
 
   const candidates = scanJsonArrayCandidates(trimmed);
-  if (candidates.length === 0) return [];
-  return candidates.sort((a, b) => b.length - a.length)[0] ?? [];
+  if (candidates.length > 0) {
+    return { ideas: candidates.sort((a, b) => b.length - a.length)[0] ?? [] };
+  }
+
+  const recovered = recoverTruncatedArrayObjects(trimmed);
+  if (recovered.length > 0) {
+    return { ideas: recovered, truncated: true };
+  }
+
+  return { ideas: [], parseError: 'no_valid_json_array', truncated: trimmed.length > 1000 };
+}
+
+export function extractObjectArrayFromSummary(
+  outputSummary: string | null | undefined,
+  rootArrayKeys: string[] = ['ideas', 'content_ideas', 'contentIdeas'],
+): Record<string, unknown>[] {
+  return extractObjectArrayFromSummaryWithDiag(outputSummary, rootArrayKeys).ideas;
 }

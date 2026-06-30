@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { API_BASE_URL, getNextjsInternalOrigin } from '@/lib/runtime-config';
-import { shouldPreserveVenuePhotos } from '@/lib/venue-photo-policy';
+import { serverConfig } from '@/lib/server-config';
+import { shouldPassthroughReferencePhoto, shouldPreserveVenuePhotos } from '@/lib/venue-photo-policy';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import {
   getSectorProfile,
@@ -11,6 +12,9 @@ import {
   getSectorSceneLockSubject,
   sectorMenuIsServiceList,
 } from '@/lib/sector-production-profile';
+import { buildFalLogoPlacementContract } from '@/lib/fal-caption-headline';
+import { compositeOfficialLogoOnFrameUrl } from '@/lib/fal-logo-composite';
+import type { ResolvedFalLogoPlacement } from '@/lib/fal-logo-placement';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -44,6 +48,8 @@ type InstagramImageInput = {
    * Used by visual_design_cards task output.
    */
   designCardPrompt?: string;
+  /** Reel vs feed post — reel uses Canva Pro creator edit directives. */
+  designCardMode?: 'post' | 'reel';
   /** Background treatment from visual design card spec */
   backgroundIntent?: string;
   /** Overlay color hex from visual design card spec */
@@ -56,6 +62,11 @@ type InstagramImageInput = {
   enhanceMode?: boolean;
   /** When true with 2+ referenceImageUrls, enhance up to 4 photos (carousel / story / reel). */
   multiPhotoEnhance?: boolean;
+  /**
+   * Product showcase mode — replaces background while preserving product labels/logos/text.
+   * Overrides the normal product-photo passthrough so AI can composite a new background.
+   */
+  productShowcaseMode?: boolean;
   /** Context hint for the enhancement (content type, mood) */
   enhanceContext?: string;
   /**
@@ -64,8 +75,12 @@ type InstagramImageInput = {
    * Other values → venue/ambiance enhancement.
    */
   assetIntent?: string;
-  /** Brand logo URL — when provided, prompt includes logo placement instruction */
+  /** Brand logo URL — composited in post-production when provided (not AI-redrawn). */
   logoUrl?: string;
+  /** Art director / brand resolved logo anchor for post-production compositing. */
+  logoPlacement?: ResolvedFalLogoPlacement | null;
+  /** When true, caller composites the logo after generation (avoids double composite). */
+  deferLogoComposite?: boolean;
   /** Optional metadata per referenceImageUrl for text-based selection */
   photoMetadata?: Array<{ tags?: string; description?: string; assetType?: string }>;
   /**
@@ -154,15 +169,14 @@ function isDalleModel(model: string) {
 }
 
 function sizeFor(contentType: string, model: string) {
-  if (isDalleModel(model)) return contentType === 'story' ? '1024x1536' : '1024x1024';
-  // gpt-image-2 supports higher resolutions
-  if (model === 'gpt-image-2') return contentType === 'story' ? '1024x1536' : '1024x1024';
-  // gpt-image-1 fallback
-  return contentType === 'story' ? '1024x1536' : '1024x1024';
+  const isStory = contentType === 'story' || contentType.includes('story');
+  if (isDalleModel(model)) return isStory ? '1024x1536' : '1024x1024';
+  if (model === 'gpt-image-2') return isStory ? '1024x1536' : '1024x1024';
+  return isStory ? '1024x1536' : '1024x1024';
 }
 
 function aspectRatioFor(contentType: string) {
-  return contentType === 'story' ? '9:16' : '1:1';
+  return contentType === 'story' || contentType.includes('story') ? '9:16' : '1:1';
 }
 
 function cleanTheme(value: string) {
@@ -307,7 +321,7 @@ async function pickBestGalleryPhoto(
     }).join('\n');
 
     const res = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: serverConfig.ai.chatModel('standard'),
       max_tokens: 10,
       temperature: 0,
       messages: [
@@ -493,17 +507,52 @@ function buildProductBackgroundPrompt(params: {
   ].filter(Boolean));
 }
 
-function buildReferenceEditDirective(basePrompt: string, isDesignCard = false): string {
-  if (isDesignCard) {
+function buildReferenceEditDirective(
+  basePrompt: string,
+  isDesignCard = false,
+  isVideoReel = false,
+): string {
+  if (isDesignCard && isVideoReel) {
     return compactLines([
-      'You are given a REAL PHOTOGRAPH of the actual business venue.',
-      'Your task: use this photograph as the visual foundation and produce the DESIGNED SOCIAL MEDIA CARD described below.',
-      'The real photo should appear prominently — as a full-bleed background, left panel, or blurred backdrop depending on the design spec.',
-      'Apply the text overlays, color blocks, typography, and CTA exactly as described.',
-      'The final output is a complete designed social media graphic, not just a photo.',
-      'Maintain the authentic feel of the venue photograph — do not make it look stock or artificial.',
+      '═══ ABSOLUTE TEXT FIDELITY RULE ═══',
+      'Render ONLY the text listed in the ON-CANVAS TEXT CONTRACT below. Do NOT translate, paraphrase, or invent slogans. Zero tolerance for gibberish or misspelled words.',
+      'If an official brand logo is configured, follow BRAND LOGO CONTRACT — leave the reserved logo zone empty; the exact logo file is composited after generation. Do NOT draw or reinterpret the mark.',
+      '',
+      'You are the in-house ART DIRECTOR. You are given a REAL PHOTOGRAPH from the brand\'s actual venue.',
+      'Transform it into a hand-crafted 9:16 Instagram Story/Reel cover — premium social design, NOT a generic template.',
+      'MUST ADD visible design layers ON TOP of the photo: large stacked headline typography, brand color blocks, accent bars, decorative cues from the brand world.',
+      'PHOTO HERO ZONE (CRITICAL): keep the lower 45–55% as the natural, recognizable venue photo — do NOT replace, blur, or globally recolor it.',
+      'DESIGN ZONE: upper area or diagonal split gets bold branded graphics and text exactly as specified below.',
+      'SAFE ZONE (MANDATORY): All text and design elements must stay inside the inner 85% of the frame. Keep minimum 8% margin from top edge, 15% from bottom edge (Instagram UI). Nothing should be cropped or cut off at any edge.',
+      'Apply headline, subtitle, shapes, and brand colors exactly as described.',
       '',
       basePrompt,
+      '',
+      '═══ FINAL CHECK ═══',
+      'Before finishing: verify every visible word matches the ON-CANVAS TEXT CONTRACT character-for-character. Remove any text not explicitly listed there.',
+    ]);
+  }
+
+  if (isDesignCard) {
+    return compactLines([
+      '═══ ABSOLUTE TEXT FIDELITY RULE ═══',
+      'Render ONLY the text listed in the ON-CANVAS TEXT CONTRACT below. Do NOT translate, paraphrase, or invent slogans. Zero tolerance for gibberish or misspelled words.',
+      'If an official brand logo is configured, follow BRAND LOGO CONTRACT — leave the reserved logo zone empty; the exact logo file is composited after generation. Do NOT draw or reinterpret the mark.',
+      '',
+      'You are given a REAL PHOTOGRAPH of the actual business venue.',
+      'Your task: add designed social-media graphic layers ON TOP of this photo — typography, color blocks, localized scrims.',
+      'PHOTO PRESERVATION (CRITICAL): Do NOT replace, re-render, blur, or globally recolor the photograph.',
+      'Keep the original photo pixels authentic: same people, lighting, colors, and venue details.',
+      'Brand colors belong on text and graphic blocks only — never as a full-image filter.',
+      'If the layout uses a diagonal or split design, one zone stays the untouched photo; the other is a flat brand color block with headline text.',
+      'Apply the text overlays, color blocks, typography, and CTA exactly as described.',
+      'SAFE ZONE (MANDATORY): All text, logos, and design elements must remain inside the inner 85% of the frame with at least 7.5% margin from every edge. Nothing should be cropped or cut off.',
+      'The final output is a complete designed social media graphic where the real photo is still clearly recognizable.',
+      '',
+      basePrompt,
+      '',
+      '═══ FINAL CHECK ═══',
+      'Before finishing: verify every visible word matches the ON-CANVAS TEXT CONTRACT character-for-character. Remove any text not explicitly listed there.',
     ]);
   }
 
@@ -521,13 +570,13 @@ function buildReferenceEditDirective(basePrompt: string, isDesignCard = false): 
 }
 
 async function maybeExpandImageScenePrompt(basePrompt: string): Promise<string> {
-  if (process.env.SMART_AGENCY_IMAGE_EXPAND_SCENE !== 'true') return basePrompt;
-  const apiKey = process.env.OPENAI_API_KEY;
+  if (!serverConfig.imageGen.expandScene) return basePrompt;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) return basePrompt;
   try {
     const openai = new OpenAI({ apiKey });
     const chat = await openai.chat.completions.create({
-      model: process.env.SMART_AGENCY_IMAGE_EXPAND_MODEL ?? 'gpt-4o-mini',
+      model: serverConfig.imageGen.expandModel,
       messages: [
         {
           role: 'system',
@@ -611,7 +660,7 @@ function buildSectorSceneLock(
 
 function buildPrompt(input: InstagramImageInput) {
   const contentType = input.contentType ?? 'post';
-  const isStory = contentType === 'story';
+  const isStory = contentType === 'story' || contentType.includes('story');
   const format = isStory
     ? 'Vertical 9:16 raw photograph. Keep important subjects inside a safe center area, but do not create any social media interface or designed story layout.'
     : 'Square 1:1 raw photograph. Strong editorial composition, balanced subject placement and premium crop, but no designed feed layout.';
@@ -665,14 +714,12 @@ function buildPrompt(input: InstagramImageInput) {
   ]);
 
   const logoSection = clean(input.logoUrl)
-    ? compactLines([
-        'BRAND LOGO',
-        `The brand has an official logo. Place it as a small, clean overlay in the corner of the image.`,
-        `Logo reference URL: ${input.logoUrl}`,
-        'Position: top-left corner (or top-right if the composition demands it). Scale: no larger than 15% of image width.',
-        'Style: full opacity if the background is dark/coloured; slightly transparent (80%) if placed over a light area.',
-        'Do NOT distort, recolour, or reimagine the logo — render it as-is, faithful to the original.',
-      ])
+    ? buildFalLogoPlacementContract({
+        logoProvided: true,
+        brandName: input.brandName,
+        channel: input.contentType === 'story' ? 'story' : 'feed_post',
+        hasPhotoHero: true,
+      })
     : undefined;
 
   // Pinterest visual intelligence — inject trending aesthetics into the prompt
@@ -757,12 +804,12 @@ function buildPrompt(input: InstagramImageInput) {
 }
 
 async function generateWithFlux(prompt: string, contentType: string) {
-  const apiKey = process.env.FAL_API_KEY;
+  const apiKey = serverConfig.fal.apiKey;
   if (!apiKey) {
     throw new Error('fal.ai image generation is not configured. Set FAL_API_KEY.');
   }
 
-  const model = process.env.FAL_IMAGE_MODEL ?? 'fal-ai/flux-pro/v1.1-ultra';
+  const model = serverConfig.imageGen.falModel;
   const response = await fetch(`https://fal.run/${model}`, {
     method: 'POST',
     headers: {
@@ -808,12 +855,12 @@ async function enhanceWithOpenAI(
   contentType: string,
   enhancePrompt: string,
 ): Promise<GeneratedImage> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) throw new Error('OpenAI API key not configured.');
 
-  const model = process.env.SMART_AGENCY_IMAGE_MODEL ?? process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
+  const model = serverConfig.imageGen.model;
   // Default: high — full quality production
-  const quality = process.env.SMART_AGENCY_IMAGE_QUALITY ?? 'high';
+  const quality = serverConfig.imageGen.quality;
   const openai = new OpenAI({ apiKey });
 
   const file = await fetchUrlAsOpenAIUpload(referenceImageUrl);
@@ -827,7 +874,7 @@ async function enhanceWithOpenAI(
   const size = sizeFor(contentType, model) as '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
 
   // Enhance only — uses the configured model, never falls back to pure generation.
-  const editModel = process.env.SMART_AGENCY_IMAGE_MODEL ?? 'gpt-image-2';
+  const editModel = serverConfig.imageGen.editModel;
   const editedRaw = await openai.images.edit({
     model: editModel,
     image: file,
@@ -848,15 +895,17 @@ async function generateWithOpenAI(
   contentType: string,
   referenceImageUrls?: string[],
   isDesignCard = false,
+  designCardMode: 'post' | 'reel' = 'post',
+  logoUrl?: string,
 ) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     throw new Error('OpenAI image generation is not configured. Set OPENAI_API_KEY.');
   }
 
-  const model = process.env.SMART_AGENCY_IMAGE_MODEL ?? process.env.OPENAI_IMAGE_MODEL ?? 'gpt-image-2';
+  const model = serverConfig.imageGen.model;
   // Default: high — full quality production
-  const quality = process.env.SMART_AGENCY_IMAGE_QUALITY ?? 'high';
+  const quality = serverConfig.imageGen.quality;
   const openai = new OpenAI({ apiKey });
 
   const validUrls = (referenceImageUrls ?? [])
@@ -869,8 +918,8 @@ async function generateWithOpenAI(
     ? await pickBestGalleryPhoto(validUrls, prompt.slice(0, 600), openai)
     : validUrls[0];
 
-  // Venue/gallery photos: never run through images.edit — use the original file.
-  if (refUrl && shouldPreserveVenuePhotos()) {
+  // Venue/gallery photos: passthrough unless this is a designed card overlay edit.
+  if (refUrl && shouldPassthroughReferencePhoto({ isDesignCard })) {
     return {
       imageUrl: refUrl,
       provider: 'original',
@@ -887,15 +936,23 @@ async function generateWithOpenAI(
         // Design card prompts are detailed (fonts, positions, colors) — never truncate below 4000.
         // gpt-image-2 supports up to 32 000 chars; gpt-image-1 was safe to 4000.
         const promptLimit = isDesignCard ? 4000 : 1500;
-        const editPrompt = buildReferenceEditDirective(prompt, isDesignCard).slice(0, promptLimit);
-        const editedRaw2 = await openai.images.edit({
+        const isVideoReel = isDesignCard && designCardMode === 'reel';
+        const editPrompt = buildReferenceEditDirective(prompt, isDesignCard, isVideoReel).slice(0, promptLimit);
+
+        // Logo is composited in post-production (sharp) — never as a GPT edit reference
+        // (models tend to redraw/morph the mark instead of copying pixels faithfully).
+        const imageInput: unknown = file;
+
+        const editPayload = {
           model: editModel,
-          image: file,
+          image: imageInput as Parameters<typeof openai.images.edit>[0]['image'],
           prompt: editPrompt,
           n: 1,
           size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024',
           quality,
-        } as Parameters<typeof openai.images.edit>[0]);
+          ...(isDesignCard ? { input_fidelity: 'high' as const } : {}),
+        } satisfies Parameters<typeof openai.images.edit>[0];
+        const editedRaw2 = await openai.images.edit(editPayload);
         const editedR = editedRaw2 as { data?: Array<{ url?: string; b64_json?: string }> };
         const ed = editedR.data?.[0];
         const imageUrl = ed?.url ?? (ed?.b64_json ? `data:image/png;base64,${ed.b64_json}` : undefined);
@@ -903,10 +960,30 @@ async function generateWithOpenAI(
           return { imageUrl, provider: 'openai' as const, model: editModel, quality } satisfies GeneratedImage;
         }
       } catch (err) {
-        console.warn('[generate-instagram-image] images.edit failed, falling back to generate:', err);
+        console.warn('[generate-instagram-image] images.edit failed:', err);
+        if (isDesignCard) {
+          throw err instanceof Error ? err : new Error(String(err));
+        }
+        try {
+          const { emitQualityEvent } = await import('@/lib/ai-cost-telemetry');
+          emitQualityEvent({
+            event: 'fallback',
+            transition: 'edit->generate',
+            reason: err instanceof Error ? err.message : String(err),
+            label: contentType,
+          });
+        } catch { /* telemetri üretimi bozmamalı */ }
       }
     }
   }
+
+  // Designed cards must be grounded on the gallery photo — never synthetic text-only generate.
+  if (isDesignCard && refUrl) {
+    throw new Error(
+      'Gallery-grounded design edit failed — designed cards require images.edit on the brand photo.',
+    );
+  }
+
   const image = await openai.images.generate(
     isDalleModel(model)
       ? ({
@@ -957,8 +1034,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Caller may also pass brandVibeProfile inline to skip the DB roundtrip.
   if (!input.brandVibeProfile && input.workspaceId) {
     try {
-      const CREW = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
-      const KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+      const CREW = serverConfig.crewBackend.baseUrl;
+      const KEY = serverConfig.internal.apiKey;
       const r = await fetch(`${CREW}/api/v1/brand-context/${input.workspaceId}/vibe`, {
         headers: { 'X-Internal-Api-Key': KEY, 'X-Tenant-Id': input.workspaceId },
         signal: AbortSignal.timeout(5_000),
@@ -1036,7 +1113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Preserve venue pixels: Sharp + SVG overlay only (no GPT repaint).
     if (shouldPreserveVenuePhotos()) {
       try {
-        const baseUrl = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+        const baseUrl = getNextjsInternalOrigin();
         const ev = input.eventDetails ?? {};
         const vibe = input.brandVibeProfile ?? {};
         const res = await fetch(`${baseUrl}/api/generate-event-card`, {
@@ -1112,7 +1189,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ev.artistName ? `HERO TEXT (largest element): "${ev.artistName}"` : `HERO TEXT: "${input.title ?? ''}"`,
       ev.date || ev.time ? `Detail line below: ${[ev.date, ev.time].filter(Boolean).join(' · ')}` : '',
       ev.venueArea ? `Venue area badge (small, above hero text): "${ev.venueArea}"` : '',
-      `Brand anchor (bottom center, smallest): "${ev.venueName ?? input.brandName ?? 'YULA BODRUM'}"`,
+      (ev.venueName || input.brandName)
+        ? `Brand anchor (bottom center, smallest): "${ev.venueName ?? input.brandName}"`
+        : '',
       ev.tagline ? `Optional tagline (italic, small): "${ev.tagline}"` : '',
       ``,
       `══ TYPOGRAPHY STYLE ══`,
@@ -1129,7 +1208,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ].filter(Boolean).join('\n');
 
     try {
-      const openaiForOverlay = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+      const openaiForOverlay = new OpenAI({ apiKey: serverConfig.openai.requireApiKey() });
       const photoUrl = validOverlayUrls[0]!;
 
       // Fetch and convert the photo to buffer for GPT-image-1
@@ -1147,7 +1226,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const file = await toFile(jpegBuffer, 'venue.jpg', { type: 'image/jpeg' });
 
       const editResponse = await openaiForOverlay.images.edit({
-        model: 'gpt-image-1',
+        model: serverConfig.imageGen.editModel,
         image: file,
         prompt: overlayPrompt,
         size: contentType === 'story' ? '1024x1536' : '1024x1024',
@@ -1175,8 +1254,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         prompt: overlayPrompt,
         contentType,
         provider: 'openai',
-        model: 'gpt-image-1',
-        quality: 'high',
+        model: serverConfig.imageGen.editModel,
+        quality: serverConfig.imageGen.quality,
         eventOverlay: true,
       });
     } catch (error) {
@@ -1193,7 +1272,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const isProduct = isProductContent(input.assetIntent, input.enhanceContext, input.industry);
-    const openaiForSelect = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+    const openaiForSelect = new OpenAI({ apiKey: serverConfig.openai.requireApiKey() });
     const contentBrief = [input.enhanceContext, input.title, input.caption].filter(Boolean).join('. ');
     const useMultiEnhance = validEnhanceUrls.length >= 2
       && (contentType === 'carousel' || Boolean(input.multiPhotoEnhance));
@@ -1216,7 +1295,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return out;
     };
 
-    if (isProduct || shouldPreserveVenuePhotos()) {
+    if ((isProduct || shouldPreserveVenuePhotos()) && !input.productShowcaseMode) {
       const urls = await selectUrlsForEnhance();
       let imageUrls = await Promise.all(
         urls.map(async (photoUrl) => {
@@ -1313,13 +1392,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Designed card mode: the visual design agent already wrote the full prompt.
   const isDesignedCard = Boolean(input.designCardPrompt);
+  const designCardMode = input.designCardMode ?? (input.contentType?.includes('story') ? 'reel' : 'post');
   const prompt = isDesignedCard
     ? input.designCardPrompt!
     : await maybeExpandImageScenePrompt(buildPrompt(input));
 
   const preferredProvider: ImageProvider = isDesignedCard || input.captionDrivenMode
     ? 'openai'
-    : ((process.env.SMART_AGENCY_IMAGE_PROVIDER ?? 'flux') as ImageProvider);
+    : (serverConfig.imageProvider as ImageProvider);
 
   const scratchReferenceUrls = input.captionDrivenMode
     ? undefined
@@ -1329,17 +1409,45 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let generated: GeneratedImage;
     try {
       generated = preferredProvider === 'openai'
-        ? await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard)
+        ? await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl)
         : await generateWithFlux(prompt, contentType);
     } catch (primaryError) {
       if (preferredProvider === 'openai') throw primaryError;
       console.warn('[/api/generate-instagram-image] Flux failed, falling back to OpenAI:', primaryError);
-      generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard);
+      try {
+        const { emitQualityEvent } = await import('@/lib/ai-cost-telemetry');
+        emitQualityEvent({
+          event: 'fallback',
+          transition: 'flux->openai',
+          reason: primaryError instanceof Error ? primaryError.message : String(primaryError),
+          label: contentType,
+        });
+      } catch { /* telemetri üretimi bozmamalı */ }
+      generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl);
     }
 
     // Upload to R2 for permanent storage (required for Meta API publishing)
     const r2Url = await uploadToR2IfConfigured(generated.imageUrl, input.brandName);
-    const persistedImageUrl = r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : await materializeImageUrl(generated.imageUrl);
+    let persistedImageUrl = r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : await materializeImageUrl(generated.imageUrl);
+
+    if (isDesignedCard && input.logoUrl?.trim() && !input.deferLogoComposite) {
+      const logoChannel = designCardMode === 'reel' || contentType.includes('story')
+        ? 'reel'
+        : 'feed_post';
+      const composited = await compositeOfficialLogoOnFrameUrl({
+        frameUrl: persistedImageUrl,
+        logoUrl: input.logoUrl,
+        placement: input.logoPlacement ?? null,
+        channel: logoChannel,
+        workspaceId: input.workspaceId,
+      });
+      if (composited.logoApplied) {
+        const compositedR2 = await uploadToR2IfConfigured(composited.imageUrl, input.brandName);
+        persistedImageUrl = compositedR2.startsWith('http') || compositedR2.startsWith('/api/media')
+          ? compositedR2
+          : await materializeImageUrl(composited.imageUrl);
+      }
+    }
 
     persistCreativeArtifact({
       title: input.title,

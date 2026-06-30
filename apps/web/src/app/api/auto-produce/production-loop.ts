@@ -9,6 +9,8 @@ import {
   fetchPackageLimits,
 } from './budget';
 import { isWeakGalleryMatch, shouldSkipProductionForWeakGallery } from '@/lib/gpt-enhance-policy';
+import { serverConfig } from '@/lib/server-config';
+import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { MIN_ACCEPT_SCORE, RUNWAY_GALLERY_MIN_SCORE } from '@/lib/gallery-photo-matcher';
 // matchPhotoToContent, resolveBestGalleryUrl, pickScoredCarouselSlides, MatchPhotoInput → caption-publish-resolver / image-generators
 import { slotNeedsSceneBrief } from '@/lib/scene-brief-policy';
@@ -22,11 +24,13 @@ import {
   markGalleryUrlUsedForPostType,
   normalizeGalleryUrl,
   seedBatchUsedByTypeFromUsage,
+  buildGlobalGalleryUsageCounts,
 } from '@/lib/gallery-usage-tracker';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
 import {
   enrichGalleryAnalysis,
   assignPhotosToContents,
+  resolveBestGalleryUrl,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import { scoreIdeationPhotoMatch } from '@/lib/caption-photo-alignment';
@@ -70,7 +74,7 @@ import {
 import { resolveVisualSubject, shouldUseCaptionDrivenVisual } from '@/lib/ai-visual-production-standard';
 import { missionTemplateIdeaIndex } from '@/lib/mission-remotion-story';
 import { missionStoryLibrarySlotKey } from '@/lib/mission-story-template';
-import { normalizeHashtags, resolveCarouselUrls } from '@/app/mobile/_components/artifact-utils';
+import { normalizeHashtags, resolveCarouselUrls } from '@/lib/artifact-utils';
 import {
   detectIdeaPackageFormat,
   type FeedArtDirectorReport,
@@ -112,6 +116,7 @@ import {
   countArtifactsWithScheduleLabel,
 } from '@/lib/mission-production-telemetry';
 import type { MissionProductionManifest, ProductionSlotRole } from '@/lib/mission-production-manifest';
+import { normalizeProductionPipeline } from '@/lib/mission-production-manifest';
 import { resolveManifestMissionType } from '@/lib/mission-production-prefs';
 import {
   adPipelineForChannel,
@@ -122,6 +127,7 @@ import {
 } from '@/lib/ad-publish-utils';
 import {
   productionIdeasFromParsed,
+  productionIdeaFromRecord,
   productionIdeaToRecord,
 } from '@/lib/production-idea-parse';
 import {
@@ -159,6 +165,7 @@ import {
 import { fetchRejectedLayoutFamilies } from '@/lib/layout-family-learning';
 import {
   buildIdeaProductionDedupeKey,
+  fetchMissionArtifacts,
   loadMissionAutoArtifactDedupeKeys,
 } from '@/lib/mission-production-guard';
 import {
@@ -167,7 +174,6 @@ import {
 } from '@/lib/mission-visual-design-cards';
 import {
   ensureWeeklyFormatCoverage,
-  mergeIdeationWithCalendarPlans,
 } from '@/lib/mission-production-plan';
 import {
   acquireMissionProductionLock,
@@ -194,11 +200,13 @@ import {
 } from '@/lib/brand-template-library';
 import {
   isMeaninglessBrandEchoHeadline,
+  isLabelStyleHeadline,
   resolveMeaningfulProductionHeadline,
   sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import { resolveProductionEngines } from '@/lib/brand-production-engines';
 import { isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import { getRemotionTemplate } from '@/lib/remotion-template-catalog';
@@ -206,7 +214,14 @@ import {
   applyBrandTokensToRenderProps,
   resolveBrandProductionTokens,
 } from '@/lib/brand-production-tokens';
+import { resolveFalDesignPromptContext, readAgentFalDesignBrief, readBrandLogoPosition, readTenantPreferredCanvaArchetypes } from '@/lib/fal-design-brief';
+import { resolveSlotRenderTypography } from '@/lib/brand-template-slot-typography';
 import { renderRemotionBrandStill, renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
+import {
+  alignRemotionPosterWithFalTemplate,
+  isRemotionFalAlignedSlot,
+  type RemotionFalTemplateAlignment,
+} from '@/lib/brand-design-template-production';
 import { resolveSlotLogoForRender } from '@/lib/brand-logo-production';
 import { persistRemotionVideoOutput } from '@/lib/remotion-video-persist';
 import {
@@ -234,6 +249,12 @@ import {
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
 import {
+  buildCalendarFalSceneHint,
+  calendarGalleryMatchCaption,
+  CALENDAR_GALLERY_DESIGN_INTENSITY,
+  isCalendarProductionIdea,
+} from '@/lib/calendar-production-pack';
+import {
   resolveGalleryFirstForSlot,
   shouldUseGalleryFirstMission,
   type GalleryFirstCaptionSource,
@@ -251,6 +272,7 @@ import {
   type DesignedPostSnapshot,
   type AdDeriveRenderContext,
 } from './ad-derive';
+import { deriveStoriesFromPostsForEmptySlots } from './post-story-adapt';
 import {
   type ParsedIdea,
   NEXUS_CONTENT_URL_MAX,
@@ -278,7 +300,13 @@ import {
   generateRunwayReel,
 } from './handlers/image-generators';
 import { scoreReelHook } from '@/lib/reel-hook-score';
-import { generateFalVideo } from '@/lib/fal-video';
+import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
+import { falVideoHandler } from './pipelines/fal-video-pipeline';
+import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
+import { falOnlyHandler } from './pipelines/fal-only-pipeline';
+import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
+import { runPipelineStages } from './pipelines/pipeline-types';
+import type { SlotProductionContext } from './pipelines/pipeline-types';
 import {
   CAROUSEL_MIN_SLIDES,
   CAROUSEL_TARGET_SLIDES,
@@ -322,6 +350,8 @@ function extractPremiumComposition(idea: ParsedIdea): PremiumCompositionMeta | n
     premiumScore: typeof (pc.premium_score ?? pc.premiumScore) === 'number'
       ? (pc.premium_score ?? pc.premiumScore) as number
       : undefined,
+    visualStory: String(pc.visual_story ?? pc.visualStory ?? '') || undefined,
+    motionApproach: String(pc.motion_approach ?? pc.motionApproach ?? '') || undefined,
   };
 }
 
@@ -351,6 +381,8 @@ export interface RunProductionParams {
   slotBackfillPass?: boolean;
   /** Internal — keys `${ideaIndex}:${slot_role}` to re-run on backfill pass. */
   backfillSlotKeys?: string[];
+  /** New Brief form — fal.ai art-director pipelines, no Remotion bundle. */
+  adHocBrief?: boolean;
 }
 
 export async function runProduction(params: RunProductionParams): Promise<NextResponse> {
@@ -364,6 +396,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandThemeOverride,
     slotBackfillPass = false,
     backfillSlotKeys,
+    adHocBrief = false,
   } = params;
   const brandName = brandNameOverride ?? undefined;
   const pipelineRun = createProductionPipelineRun({ workspaceId, missionId });
@@ -403,7 +436,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const brandBusinessType = pctx.brandBusinessType;
   const brandLogoUrl = pctx.brandLogoUrl;
   const brandTheme = pctx.brandTheme;
+  const brandTokens = pctx.tokens;
   const templateLibrary = pctx.templateLibrary;
+  const hasReusablePostTemplates = templateLibrary.slots.some(
+    (s) => s.enabled && s.format === 'post' && Boolean(s.posterTemplateId),
+  );
   const brandKitId = pctx.kitId;
   const aiPhotoEnhance = pctx.aiPhotoEnhanceEnabled;
   const aiPhotoEnhanceLevel = pctx.aiPhotoEnhanceLevel;
@@ -468,6 +505,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     workspaceId,
     missionId,
     ideas: ideas as import('@/lib/auto-produce/plan-phase').ParsedIdeaLike[],
+    calendarOnlySlotPass: false,
+    calendarIdeasCount: 0,
     feedDirectorReport,
     productionPackage,
     strategistMissionType,
@@ -479,7 +518,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   });
 
   if (planOutcome.status === 'blocked') {
-    releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId);
     if (planOutcome.httpStatus === 429) {
       console.warn(
         `[auto-produce] Budget blocked workspace=${workspaceId} mission=${missionId ?? 'none'}: ${planOutcome.body.error}`,
@@ -573,7 +612,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ),
     );
     if (analysisGate?.blocked) {
-      releaseAllProductionLocks(workspaceId, missionId);
+      await releaseAllProductionLocks(workspaceId, missionId);
       return NextResponse.json(
         attachPipelineTrace({ error: analysisGate.blocked }, pipelineRun),
         { status: 422 },
@@ -601,6 +640,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const syncUsedTemplateIds: string[] = [...gctx.recentTemplateIds];
   /** Strategist — avoid same venue photo across slots in one mission run. */
   const batchUsedGalleryMission = new Set<string>();
+  const globalGalleryUsageCounts = buildGlobalGalleryUsageCounts(galleryUsage);
+  const pickMissionGallery: typeof pickGalleryPhotoForIdea = (...args) =>
+    pickGalleryPhotoForIdea(...args, globalGalleryUsageCounts);
 
   // galleryMetaRaw alias for code that still references it directly
   const galleryMetaRaw = (galleryAnalysis ?? {}) as Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta>;
@@ -612,6 +654,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     error?: string;
     publishReady?: boolean;
     rendering?: boolean;
+    /** `${ideaIndex}:${slot_role}` — lets the durable drainer map a batched
+     * multi-slot result back to the exact production_jobs row it satisfied. */
+    slotKey?: string;
     metadata?: Record<string, unknown>;
   }[] = [];
   let costEstimate = 0;
@@ -622,7 +667,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // designed_post     → Remotion agency poster (SVG+Sharp)
   // organic_story_still → static gallery story
   // campaign_story_motion → Remotion MP4
-  // organic_reel / campaign_reel_motion → Runway (hero budget)
+  // organic_reel / campaign_reel_motion → fal_reel (fal designer video; Runway kapalı)
   // ─────────────────────────────────────────────────────────────────────────
   const creatomateStoryCandidates: StoryCandidate[] = [];
   const remotionPostCandidates: PostCandidate[] = [];
@@ -639,14 +684,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandBusinessType,
     maxIdeas,
     productionProfile,
-    packageSlug: pkgLimits.packageSlug ?? 'weekly',
+    packageSlug: pkgLimits.packageSlug,
+    adHocBrief,
   });
 
+  const fullProductionQueue = manifestQueue;
+
+  if (adHocBrief) {
+    console.log(
+      `[auto-produce] Ad-hoc New Brief → fal.ai art-director track (${manifestQueue.length} slots)`,
+    );
+  }
+
   const productionLoop: ManifestProductionQueueItem[] = slotBackfillPass && backfillSlotKeys?.length
-    ? manifestQueue.filter((item) =>
+    ? fullProductionQueue.filter((item) =>
         backfillSlotKeys.includes(`${item.ideaIndex}:${item.assignment.slot_role}`),
       )
-    : manifestQueue;
+    : fullProductionQueue;
 
   if (missionId && !slotBackfillPass) {
     console.log(
@@ -674,6 +728,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   });
 
   const missionSessionCaptions: string[] = [];
+  /** Track Canva archetypes used by fal slots in this mission — prevents one layout dominating. */
+  const missionFalArchetypesUsed: string[] = [];
 
   for (const queueItem of productionLoop) {
     const ideaCostBefore = costEstimate;
@@ -686,13 +742,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       : ideaIndex;
     const ideaId = missionId ? `${missionId}-${resolvedIdeaIndex}` : randomUUID();
     let caption = getField(idea, 'caption_draft', 'caption');
+    const originalIdeationCaption = caption;
     const rawIdeationHeadline = resolveIdeationHeadline(idea as Record<string, unknown>);
     let ideationHeadline = rawIdeationHeadline;
     let headline = rawIdeationHeadline;
 
     const isDesignedPostSlotForHeadline =
       queueItem.assignment.pipeline === 'remotion_poster'
-      || queueItem.assignment.slot_role === 'designed_post';
+      || queueItem.assignment.slot_role === 'designed_post'
+      || queueItem.assignment.slot_role === 'designed_typography';
+    const isTypographyDesignSlot = queueItem.assignment.slot_role === 'designed_typography';
     let slotVisualDesignCard: MissionVisualDesignCard | null = null;
     let slotVisualDesignCardIndex: number | null = null;
     if (isDesignedPostSlotForHeadline && visualDesignCards.length) {
@@ -713,7 +772,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       slotVisualDesignCard?.headline ?? slotVisualDesignCard?.concept_title ?? '',
     ).trim();
 
-    if (!rawIdeationHeadline || isMeaninglessBrandEchoHeadline(rawIdeationHeadline, resolvedBrandName)) {
+    if (!rawIdeationHeadline || isMeaninglessBrandEchoHeadline(rawIdeationHeadline, resolvedBrandName) || isLabelStyleHeadline(rawIdeationHeadline)) {
       const headlineFix = resolveMeaningfulProductionHeadline({
         headline: rawIdeationHeadline,
         caption,
@@ -738,9 +797,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
     // service terms (e.g. "tırnak, manikür, nail art") as primary selection signals.
     const fdVisualHint = (assignment?.visual_subject_hint ?? '').trim();
-    let ideationCaption = fdVisualHint
-      ? `${caption} ${fdVisualHint}`.trim()
-      : caption;
+    const isCalendarSlot = isCalendarProductionIdea(ideaRecord);
+    let ideationCaption = isCalendarSlot
+      ? calendarGalleryMatchCaption(ideaRecord)
+      : fdVisualHint
+        ? `${caption} ${fdVisualHint}`.trim()
+        : caption;
+    // BCD scene_hint enriches gallery matching so the photo picker understands
+    // the actual visual scene (e.g. "moonlit beach party, DJ, crowd dancing")
+    // rather than just the headline text.
+    if (adHocBrief && (idea as ParsedIdea).scene_hint) {
+      ideationCaption = `${ideationCaption} ${String((idea as ParsedIdea).scene_hint).slice(0, 200)}`.trim();
+    }
+    // Brief-aware scene hint for fal-only / fal-designed prompts: combines the Feed
+    // Art Director's specific subject keywords with the mission visual brief so the
+    // AI-generated background reflects the post's topic instead of a generic gradient.
+    const falSceneHint = isCalendarProductionIdea(ideaRecord)
+      ? buildCalendarFalSceneHint(ideaRecord)
+      : adHocBrief
+        ? [String(idea.scene_hint ?? idea.visual_direction ?? '').trim(), fdVisualHint].filter(Boolean).join(' — ').slice(0, 260)
+        : [fdVisualHint, String(idea.visual_direction ?? '').trim(), missionVisualBrief]
+          .map((s) => (s ?? '').trim())
+          .filter(Boolean)
+          .join(' — ')
+          .slice(0, 160);
     let hashtags = normalizeHashtags(idea.hashtags);
     let cta = getField(idea, 'cta', 'call_to_action');
     if (caption && cta) {
@@ -753,7 +833,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       cta = harmonized.cta;
     }
     const pkgFmt = detectIdeaPackageFormat(ideaRecord);
-    const usesManifestQueue = Boolean(missionId && manifestQueue.length > 0);
+    const usesManifestQueue = Boolean(missionId && fullProductionQueue.length > 0) || adHocBrief;
     assignment = usesManifestQueue
       ? queueItem.assignment
       : (() => {
@@ -769,9 +849,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           storyIndex: storyIndexForResolve,
           reelIndex,
           sector: brandBusinessType,
+          adHocBrief,
         });
       })();
-    const kind = resolveContentKindForAssignment(ideaRecord, assignment);
+    // New Brief: kullanıcı story seçtiyse fal_reel pipeline olsa da feed'de story olarak etiketle.
+    const kind = adHocBrief && pkgFmt === 'story'
+      ? 'instagram_story'
+      : adHocBrief && pkgFmt === 'reel'
+        ? 'instagram_reel'
+        : resolveContentKindForAssignment(ideaRecord, assignment);
     const storyIndex = assignmentImpliesStoryFormat(assignment.slot_role) ? slotStoryCount : 0;
     const hasPremiumComposition = Boolean(
       (idea.visual_production_spec as Record<string, unknown> | undefined)?.premium_composition,
@@ -797,6 +883,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     else if (slotRoleFmt === 'story') slotStoryCount += 1;
     else if (slotRoleFmt === 'reel') slotReelCount += 1;
 
+    const slotKey = `${ideaIndex}:${String(assignment.slot_role)}`;
+    try {
+
     const ideaDedupeKey = buildIdeaProductionDedupeKey(
       missionId,
       idea as Record<string, unknown>,
@@ -807,13 +896,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       console.warn(
         `[auto-produce] skip duplicate idea ${ideaIndex} "${headline.slice(0, 40)}" (already in Feed)`,
       );
-      results.push({ title: headline, imageUrl: '', error: 'duplicate_skipped' });
+      results.push({ title: headline, imageUrl: '', error: 'duplicate_skipped', slotKey });
       continue;
     }
 
     const postType = kindToPostType(kind);
     const fmt = kind.replace('instagram_', '');
-    const mood = idea.mood || '';
+    const mood = String(
+      idea.mood ?? idea.photo_mood ?? idea.visual_direction ?? '',
+    ).trim();
     const strategicPurpose = idea.strategic_purpose || '';
     const ideaPremiumComposition = extractPremiumComposition(idea);
     let treatmentLower = ((idea.treatment ?? idea.visual_production_spec?.treatment) || '').toLowerCase();
@@ -868,8 +959,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryFirstSource = gf.source;
         galleryMatchScoreEarly = gf.matchScore;
         if (gf.caption.trim()) {
-          caption = gf.caption;
-          ideationCaption = gf.caption;
+          if (!originalIdeationCaption.trim()) {
+            caption = gf.caption;
+          }
           missionSessionCaptions.push(gf.caption);
         }
         if (gf.headline.trim()) {
@@ -894,7 +986,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     if (!caption && !headline && !preassignedGalleryUrl) {
-      results.push({ title: '(empty idea)', imageUrl: '', error: 'No caption or headline' });
+      results.push({ title: '(empty idea)', imageUrl: '', error: 'No caption or headline', slotKey });
       continue;
     }
 
@@ -902,11 +994,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       missionProduction: Boolean(missionId),
     })) {
       console.warn(`[auto-produce] Feed Art Director skip (error flag): idea ${resolvedIdeaIndex} "${headline.slice(0, 40)}"`);
-      results.push({ title: headline, imageUrl: '', error: 'Feed Art Director flagged (error)' });
+      results.push({ title: headline, imageUrl: '', error: 'Feed Art Director flagged (error)', slotKey });
       continue;
     }
 
-    const prodIdea = productionIdeas[ideaIndex]!;
+    const prodIdea = productionIdeas[ideaIndex]
+      ?? productionIdeaFromRecord(ideaRecord as Record<string, unknown>, ideaIndex, missionId);
     const agentUrlEarly =
       prodIdea.visualProductionSpec.selectedGalleryUrl
       ?? idea.visual_production_spec?.selected_gallery_url
@@ -955,6 +1048,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           title: headline,
           imageUrl: '',
           error: `PIS ${pisGate.score}% — eksik: ${pisGate.missing.slice(0, 3).join(', ')}`,
+          slotKey,
         });
         continue;
       }
@@ -989,7 +1083,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const isStoryIdeaForBrief = kind === 'instagram_story' || kind === 'instagram_canvas';
     const organicStillForBrief = assignment.slot_role === 'organic_story_still';
     const designedPostForBrief =
-      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post';
+      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography' || assignment.slot_role === 'fal_designed_post';
     const willRemotionStoryForBrief = bundleCards !== false
       && isStoryIdeaForBrief
       && !organicStillForBrief
@@ -1066,25 +1160,59 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let enhancedGallerySet: string[] = [];
     let galleryMatchScore: number | null = galleryMatchScoreEarly;
 
+    const attachedPhotoUrls = Array.isArray(idea.attached_photo_urls)
+      ? idea.attached_photo_urls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+      : [];
+    const forceAttachedPhotos = Boolean(adHocBrief && idea.force_attached_photos && attachedPhotoUrls.length > 0);
+
     const agentUrl = idea.visual_production_spec?.selected_gallery_url || idea.selected_gallery_url || null;
     const batchExclude = batchUsedByType[postType];
     /** Brand Hub → Sıfırdan görsel üret: galeri olsa bile feed postlarında matcher atlanır. */
     const captionDrivenSlot = shouldUseCaptionDrivenVisual(aiVisualStandard, kind, assignment);
 
-    // Brief'ten gelen fotoğraf her zaman öncelik alır — marka galerisi seçimini override et
-    if (!referenceUrl && typeof agentUrl === 'string' && isUsableGalleryPhotoUrl(agentUrl)) {
-      referenceUrl = agentUrl;
-      console.log(`[auto-produce] brief photo override: "${headline.slice(0, 50)}"`);
+    // New Brief user uploads — always lock to attached photos, never repick from gallery
+    if (forceAttachedPhotos) {
+      referenceUrl = attachedPhotoUrls[ideaIndex % attachedPhotoUrls.length] ?? attachedPhotoUrls[0] ?? null;
+      if (referenceUrl) {
+        console.log(
+          `[auto-produce] user-attached photo locked (${attachedPhotoUrls.length} total): "${headline.slice(0, 50)}" → ${referenceUrl.split('/').pop()?.slice(0, 40)}`,
+        );
+      }
     }
 
-    if (!referenceUrl && preassignedGalleryUrl && !captionDrivenSlot) {
+    // Ideasyon selected_gallery_url — validate semantic score before override (multi-tenant).
+    if (!referenceUrl && typeof agentUrl === 'string' && isUsableGalleryPhotoUrl(agentUrl) && hasGallery) {
+      const ideationPick = resolveBestGalleryUrl(
+        {
+          caption: ideationCaption,
+          headline: ideationHeadline,
+          mood,
+          contentType: postType,
+          businessType: brandBusinessType,
+          globalUsageCounts: globalGalleryUsageCounts,
+        },
+        galleryPhotos,
+        galleryMeta,
+        agentUrl,
+        { excludeUrls: missionGalleryExclude, tieBreakSeed: ideaIndex },
+      );
+      if (ideationPick) {
+        referenceUrl = ideationPick.url;
+        galleryMatchScore = ideationPick.score;
+        console.log(
+          `[auto-produce] ideation gallery pick score=${ideationPick.score}: "${headline.slice(0, 50)}"`,
+        );
+      }
+    }
+
+    if (!referenceUrl && preassignedGalleryUrl && !captionDrivenSlot && !forceAttachedPhotos) {
       referenceUrl = preassignedGalleryUrl;
       console.log(
         `[auto-produce] gallery-first photo: "${headline.slice(0, 48)}" → ${preassignedGalleryUrl.slice(0, 72)}`,
       );
     }
 
-    if (captionDrivenSlot && !referenceUrl) {
+    if (captionDrivenSlot && !referenceUrl && !forceAttachedPhotos) {
       const aiFromCaption = await generateVibeImage({
         workspaceId,
         headline,
@@ -1114,7 +1242,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!referenceUrl && !captionDrivenGenerated && hasGallery) {
+    if (!referenceUrl && !captionDrivenGenerated && hasGallery && !forceAttachedPhotos) {
       const agentGalleryUrl =
         typeof agentUrl === 'string' && (agentUrl.startsWith('http') || agentUrl.startsWith('/api/'))
           ? agentUrl
@@ -1138,7 +1266,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           const missionFallbackStrict = captionHasExplicitBeautyService(
             ideationCaption, ideationHeadline,
           );
-          referenceUrl = pickGalleryPhotoForIdea(
+          referenceUrl = pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
@@ -1158,7 +1286,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             galleryMatchScore = scoreIdeationPhotoMatch({
               caption: ideationCaption,
               headline: ideationHeadline,
-              photoUrl: referenceUrl,
+              photoUrl: referenceUrl ?? '',
               galleryAnalysis: galleryMeta,
               businessType: brandBusinessType,
               mood,
@@ -1167,7 +1295,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           }
         }
       } else {
-        referenceUrl = pickGalleryPhotoForIdea(
+        referenceUrl = pickMissionGallery(
           ideationCaption,
           ideationHeadline,
           mood,
@@ -1182,7 +1310,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ideaIndex,
         );
         if (!referenceUrl && !missionId) {
-          referenceUrl = pickGalleryPhotoForIdea(
+          referenceUrl = pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
@@ -1204,7 +1332,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     // AI kapalıyken galeri/stock fotoğrafı kullan — scratch GPT üretimine düşme.
     if (!referenceUrl && hasGallery && galleryPhotos.length && !aiVisualStandard.enabled) {
-      referenceUrl = pickGalleryPhotoForIdea(
+      referenceUrl = pickMissionGallery(
         ideationCaption,
         ideationHeadline,
         mood,
@@ -1219,7 +1347,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         brandBusinessType,
         false,
         ideaIndex,
-      ) ?? pickGalleryPhotoForIdea(
+      ) ?? pickMissionGallery(
         ideationCaption,
         ideationHeadline,
         mood,
@@ -1240,7 +1368,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
           headline: ideationHeadline,
-          photoUrl: referenceUrl,
+          photoUrl: referenceUrl ?? '',
           galleryAnalysis: galleryMeta,
           businessType: brandBusinessType,
           mood,
@@ -1256,7 +1384,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (hasRealBrandPhotos && galleryPhotos.length && !captionDrivenGenerated) {
       const venuePhotos = galleryPhotos.filter((u) => !isStockGalleryPhotoUrl(u));
       if (venuePhotos.length && (!referenceUrl || referenceIsStock)) {
-        const venuePick = pickGalleryPhotoForIdea(
+        const venuePick = pickMissionGallery(
           ideationCaption,
           ideationHeadline,
           mood,
@@ -1271,7 +1399,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           brandBusinessType,
           true,
           ideaIndex,
-        ) ?? (missionId ? null : pickGalleryPhotoForIdea(
+        ) ?? (missionId ? null : pickMissionGallery(
           ideationCaption,
           ideationHeadline,
           mood,
@@ -1337,7 +1465,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       });
       if (!aiGenerated) {
         console.warn(`[auto-produce] AI image generation failed for: "${headline.slice(0, 50)}"`);
-        results.push({ title: headline, imageUrl: '', error: 'Galeri boş ve AI görsel üretimi başarısız oldu' });
+        results.push({ title: headline, imageUrl: '', error: 'Galeri boş ve AI görsel üretimi başarısız oldu', slotKey });
         continue;
       }
       referenceUrl = aiGenerated;
@@ -1349,7 +1477,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       referenceUrl = normalizeExternalPhotoUrl(referenceUrl) ?? referenceUrl;
     }
 
-    if (referenceUrl && hasGallery && !captionDrivenGenerated) {
+    if (referenceUrl && hasGallery && !captionDrivenGenerated && !forceAttachedPhotos) {
       referenceUrl = repickGalleryIfDuplicateForType({
         referenceUrl,
         caption: ideationCaption,
@@ -1372,11 +1500,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (referenceUrl && !referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))) {
+    if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))) {
       // External URL is broken — attempt fallback to a fresh gallery pick before aborting.
       console.warn(`[auto-produce] broken external gallery URL — attempting fallback pick: ${referenceUrl.slice(0, 100)}`);
       const fallback = galleryPhotos.length
-        ? pickGalleryPhotoForIdea(
+        ? pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
@@ -1401,15 +1529,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           title: headline,
           imageUrl: '',
           error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+          slotKey,
         });
         continue;
       }
     }
 
-    if (!referenceUrl?.trim()) {
+    if (!forceAttachedPhotos && !referenceUrl?.trim()) {
       // FD or batch assign may leave an empty URL — try a fresh gallery pick before skipping.
       const emptyFallback = galleryPhotos.length
-        ? pickGalleryPhotoForIdea(
+        ? pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
@@ -1431,10 +1560,28 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!referenceUrl || (referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 })))) {
+    if (
+      forceAttachedPhotos
+      && referenceUrl
+      && referenceUrl.startsWith('/api/')
+      && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 6_000, retries: 5 }))
+    ) {
+      try {
+        const { resolveExternallyAccessibleUrl } = await import('@/lib/media-url');
+        referenceUrl = await resolveExternallyAccessibleUrl(referenceUrl);
+        console.log(`[auto-produce] user-attached photo resolved for external access: ${referenceUrl.slice(0, 80)}`);
+      } catch (resolveErr) {
+        console.warn('[auto-produce] user-attached photo resolve failed:', resolveErr);
+      }
+    }
+
+    if (
+      !forceAttachedPhotos
+      && (!referenceUrl || (referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))))
+    ) {
       const brokenInternal = referenceUrl?.startsWith('/api/');
       const internalFallback = brokenInternal && galleryPhotos.length
-        ? pickGalleryPhotoForIdea(
+        ? pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
@@ -1461,6 +1608,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           error: brokenInternal
             ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
             : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+          slotKey,
         });
         continue;
       }
@@ -1472,12 +1620,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let selectedVisualDesignCardIndex: number | null = slotVisualDesignCardIndex;
     let missionVisualDesignRendered = false;
 
+    const normalizedResolvedReferenceUrl = resolvedReferenceUrl ?? '';
     let pickedFromBrandGallery = galleryPhotos.some(
-      (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(resolvedReferenceUrl),
+      (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
     );
-    let photoMetaForCaption = galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
+    let photoMetaForCaption = galleryMeta[normalizeGalleryUrl(normalizedResolvedReferenceUrl)]
       ?? Object.entries(galleryMeta).find(
-        ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl),
+        ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
       )?.[1];
     const galleryPhotoDescription = String(
       (photoMetaForCaption as GalleryPhotoMeta | undefined)?.description ?? '',
@@ -1494,10 +1643,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         contentType: postType,
       });
 
-      galleryMatchScore = scorePhoto(resolvedReferenceUrl);
+      galleryMatchScore = scorePhoto(normalizedResolvedReferenceUrl);
 
       if (galleryMatchScore < MIN_ACCEPT_SCORE) {
-        let bestUrl = resolvedReferenceUrl;
+        let bestUrl = resolvedReferenceUrl ?? '';
         let bestScore = galleryMatchScore;
         for (const candidate of galleryPhotos) {
           if (typeExclude.some((u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(candidate))) {
@@ -1516,22 +1665,26 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           resolvedReferenceUrl = bestUrl;
           galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
           galleryMatchScore = bestScore;
-          photoMetaForCaption = galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
+          photoMetaForCaption = galleryMeta[normalizeGalleryUrl(bestUrl)]
             ?? Object.entries(galleryMeta).find(
-              ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl),
+              ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(bestUrl),
             )?.[1];
           console.log(
             `[auto-produce] gallery re-picked for headline (score ${bestScore}): "${ideationHeadline.slice(0, 48)}"`,
           );
         } else if (!missionId) {
-          const altUrl = pickGalleryPhotoForIdea(
+          const altUrl = pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
             galleryMeta,
             galleryPhotos,
-            [...missionGalleryExclude, resolvedReferenceUrl],
-            [...batchUsedByType[postType], resolvedReferenceUrl],
+            resolvedReferenceUrl
+              ? [...missionGalleryExclude, resolvedReferenceUrl]
+              : missionGalleryExclude,
+            resolvedReferenceUrl
+              ? [...batchUsedByType[postType], resolvedReferenceUrl]
+              : batchUsedByType[postType],
             postType,
             null,
             brandBusinessType,
@@ -1547,9 +1700,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
                 resolvedReferenceUrl = normalizedAlt;
                 galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
                 galleryMatchScore = altScore;
-                photoMetaForCaption = galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
+                photoMetaForCaption = galleryMeta[normalizeGalleryUrl(normalizedAlt)]
                   ?? Object.entries(galleryMeta).find(
-                    ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl),
+                    ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(normalizedAlt),
                   )?.[1];
                 console.log(
                   `[auto-produce] gallery fallback re-pick (score ${altScore}): "${ideationHeadline.slice(0, 48)}"`,
@@ -1616,6 +1769,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           title: headline,
           imageUrl: galleryPreviewUrl ?? '',
           error: `Zayıf galeri eşleşmesi — marka solid üretimi başarısız (${galleryMatchScore}/${MIN_ACCEPT_SCORE})`,
+          slotKey,
         });
         continue;
       }
@@ -1647,8 +1801,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       results.push({
         title: headline,
-        imageUrl: galleryPreviewUrl,
+        imageUrl: galleryPreviewUrl ?? '',
         error: `Galeri–başlık eşleşmesi yetersiz (${galleryMatchScore}/${MIN_ACCEPT_SCORE}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
+        slotKey,
       });
       continue;
     }
@@ -1656,7 +1811,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const isStoryIdeaForEnhance = kind === 'instagram_story' || kind === 'instagram_canvas';
     const isOrganicStoryStillSlot = assignment.slot_role === 'organic_story_still';
     const isDesignedPostSlotEarly =
-      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post';
+      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography' || assignment.slot_role === 'fal_designed_post';
     const willRemotionStoryForEnhance = bundleCards !== false
       && isStoryIdeaForEnhance
       && Boolean(resolvedReferenceUrl)
@@ -1686,16 +1841,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         mood,
         galleryMeta,
         galleryPhotos,
-        referenceUrl,
+        referenceUrl ?? '',
         batchUsedByType[postType],
         extraCount,
         postType,
       );
-      enhancedGallerySet = [referenceUrl, ...extras].map(
+      enhancedGallerySet = (referenceUrl ? [referenceUrl, ...extras] : extras).map(
         (u) => normalizeExternalPhotoUrl(u) ?? u,
       );
     } else {
-      enhancedGallerySet = [referenceUrl];
+      enhancedGallerySet = referenceUrl ? [referenceUrl] : [];
     }
 
     const sourceGalleryUrlsForSlot = enhancedGallerySet.map(
@@ -1752,6 +1907,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           willRemotionPost: false,
           designedPosterSync: false,
           designedPostPhotoEnhance: true,
+          skipEnhanceForRemotionGrade: serverConfig.productionFlags.skipEnhanceForRemotionGrade,
           productionProfile,
         },
       });
@@ -1768,10 +1924,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // ────────────────────────────────────────────────────────────────────────
 
     if (!captionDrivenGenerated && !isDesignedPostSlotEarly) {
+    // Faz 2.4 — Carousel hero-only enhance (flag-gated, premium korunur).
+    // Yalnız kapak fotoğrafına GPT enhance; kalan slide'lar galeriden gelir
+    // (Remotion/sharp render-time grade). Default OFF: davranış değişmez.
+    const carouselHeroOnly = isCarouselAssignment(kind, assignment)
+      && serverConfig.productionFlags.carouselHeroEnhanceOnly
+      && productionProfile.tier !== 'premium'
+      && enhancedGallerySet.length >= 2;
+    const preEnhanceGallerySet = [...enhancedGallerySet];
     const enhanceResult = await runGptImageEnhanceForIdea({
       baseUrl: routeBaseUrl,
       workspaceId,
-      photoUrls: enhancedGallerySet,
+      photoUrls: carouselHeroOnly ? enhancedGallerySet.slice(0, 1) : enhancedGallerySet,
       brandName: resolvedBrandName,
       businessType: brandBusinessType,
       level: aiPhotoEnhanceLevel,
@@ -1790,9 +1954,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       logoUrl: brandLogoUrl || undefined,
       referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
       productType: idea.product_type || idea.subject || '',
-      maxPhotos: pkgFmt === 'story'
-        ? storyGalleryPhotoTarget({ assignment, contentKind: kind, templateFamily: slotStoryTemplateFamily })
-        : gallerySequencePhotoTarget(assignment, kind),
+      maxPhotos: carouselHeroOnly
+        ? 1
+        : (pkgFmt === 'story'
+          ? storyGalleryPhotoTarget({ assignment, contentKind: kind, templateFamily: slotStoryTemplateFamily })
+          : gallerySequencePhotoTarget(assignment, kind)),
       missionId: missionId ?? undefined,
       enhancePolicy: {
         businessType: brandBusinessType,
@@ -1806,8 +1972,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       },
     });
     if (enhanceResult.applied && enhanceResult.photoUrls.length) {
-      enhancedGallerySet = enhanceResult.photoUrls;
-      referenceUrl = enhanceResult.photoUrls[0]!;
+      if (carouselHeroOnly && enhanceResult.photoUrls[0]) {
+        // Enhanced hero + remaining raw gallery slides (carousel shape korunur).
+        enhancedGallerySet = [enhanceResult.photoUrls[0], ...preEnhanceGallerySet.slice(1)];
+        console.log(
+          `[auto-produce] carousel hero-only enhance: 1/${preEnhanceGallerySet.length} enhanced — "${headline.slice(0, 40)}"`,
+        );
+      } else {
+        enhancedGallerySet = enhanceResult.photoUrls;
+      }
+      referenceUrl = enhancedGallerySet[0]!;
       aiEnhanceApplied = true;
       // GPT enhance USD recorded by /api/enhance-product-photo → gpt_image_enhance category
       console.log(
@@ -1899,6 +2073,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Carousel     → 3-4 gallery photos enhanced with vibe DNA → media_urls
     // Reel         → Runway Gen4 Turbo image-to-video (~$0.10/5s)
     // Post/Story   → gpt-image-2 (AI ayar açık) → Remotion motion/still (marka token + şablon)
+    // Reel         → Runway Gen4 / fal.ai designer (Remotion kullanılmaz)
     let imageUrl: string | null = null;
     let videoUrl: string | null = null;
     let carouselUrls: string[] = [];
@@ -1909,11 +2084,186 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       cameraMotion?: string;
       reelPace?: string;
       sectorId?: string;
+      i2vReused?: boolean;
+      reusedFromArtifactId?: string;
     } | null = null;
     let reelHookScore: { score: number; pass: boolean; reasons: string[] } | null = null;
 
+    // ── Product Showcase pipeline (AI background replacement) ───────
+    const isProductShowcase = assignment.pipeline === 'product_showcase'
+      || assignment.slot_role === 'product_showcase_post'
+      || assignment.slot_role === 'product_showcase_story';
+    const isFalMissionVideo = isFalVideoPipeline(assignment.pipeline);
+    const isFalDesignPost = isFalDesignPipeline(assignment.pipeline);
+    const isFalOnlyPost = isFalOnlyPostPipeline(assignment.pipeline);
+    const isFalOnlyVideo = isFalOnlyVideoPipeline(assignment.pipeline);
+    const usesFalDesignerTrack = isFalMissionVideo || isFalDesignPost || isFalOnlyPost || isFalOnlyVideo;
+    const falBriefFormat: 'post' | 'reel' | 'story' = isCalendarSlot
+      ? (pkgFmt === 'story' ? 'story' : 'post')
+      : isFalDesignPost || isFalOnlyPost
+        ? 'post'
+        : assignment.slot_role === 'fal_only_story'
+          ? 'story'
+          : 'reel';
+    const falDesignCtx = usesFalDesignerTrack && !adHocBrief
+      ? resolveFalDesignPromptContext({
+          caption,
+          headline,
+          mood,
+          strategicPurpose,
+          templateUseCase,
+          format: falBriefFormat,
+          slotRole: assignment.slot_role,
+          sceneHint: falSceneHint,
+          layoutFamilyHint: assignment.layout_family_hint,
+          falDesignHint: assignment.fal_design_hint,
+          referencePhotoUrl: referenceUrl || undefined,
+          premiumComposition: extractPremiumComposition(idea),
+          agentFalDesignBrief: readAgentFalDesignBrief(idea as Record<string, unknown>),
+          sector: brandBusinessType,
+          usedArchetypeIds: missionFalArchetypesUsed,
+          falSlotOrdinal: missionFalArchetypesUsed.length,
+          tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(brandTheme),
+          brandLogoPosition: readBrandLogoPosition(brandTheme),
+        })
+      : null;
+    if (falDesignCtx?.brief.canvaArchetypeId) {
+      missionFalArchetypesUsed.push(falDesignCtx.brief.canvaArchetypeId);
+      console.log(
+        `[auto-produce] [fal-design] archetype=${falDesignCtx.brief.canvaArchetypeId} ` +
+        `slot=${assignment.slot_role} used_in_mission=[${missionFalArchetypesUsed.join(', ')}]`,
+      );
+    }
+    let falGrafikerScore: number | null = null;
+    let falGrafikerPass = true;
+    let falDesignEngine: string | null = null;
+    let brandDesignTemplateId: string | null = null;
+    let brandDesignTemplateType: string | null = null;
+    let brandDesignTemplateName: string | null = null;
+
+    const falCalendarSubtitle = isCalendarSlot
+      ? String(
+        ideaRecord.tagline ?? ideaRecord.subline
+        ?? (idea.event_details as Record<string, unknown> | undefined)?.tagline
+        ?? '',
+      ).trim() || undefined
+      : undefined;
+    const falTypoSlot = assignment.library_slot_key
+      ? templateLibrary.slots.find((s) => s.key === assignment.library_slot_key)
+      : undefined;
+    const falSlotTypography = usesFalDesignerTrack
+      ? resolveSlotRenderTypography({
+        slot: {
+          fontMode: falTypoSlot?.fontMode,
+          fontPersonality: falTypoSlot?.fontPersonality,
+          headingFont: falTypoSlot?.headingFont,
+          bodyFont: falTypoSlot?.bodyFont,
+          format: falBriefFormat === 'story' ? 'story' : 'post',
+          storyTemplateId: falTypoSlot?.storyTemplateId,
+          posterTemplateId: falTypoSlot?.posterTemplateId,
+        },
+        templateId: falTypoSlot?.storyTemplateId ?? falTypoSlot?.posterTemplateId,
+        format: falBriefFormat === 'story' ? 'story' : 'post',
+        brandHeadingFont: brandTokens.headingFont,
+        brandBodyFont: brandTokens.bodyFont,
+        sector: brandBusinessType,
+      })
+      : null;
+
+    // ── FAL pipeline tracks (handler dispatch — b2b) ──────────────────────────
+    // The fal_video (designer video + raw I2V fallback), fal_design (Canva-like
+    // designed feed post) and fal_only (pure fal.ai) branches are now
+    // ProductionPipelineHandlers. The dispatch runs them in the original order,
+    // with the same guards, mutating a shared slot state seeded from — and written
+    // back to — the loop locals. Behavior is identical to the previous inline blocks.
+    {
+      const slotCtx: SlotProductionContext = {
+        inputs: {
+          workspaceId,
+          pipeline: assignment.pipeline,
+          slotRole: assignment.slot_role,
+          ideaIndex,
+          librarySlotKey: assignment.library_slot_key,
+          brandTheme,
+          templateLibrary,
+          brandTokens,
+          brandBusinessType,
+          brandTone: String(brandCtx.brand_tone ?? ''),
+          resolvedBrandName,
+          brandLocation,
+          brandLogoUrl,
+          brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
+          visualDna: String(brandCtx.visual_dna ?? ''),
+          brandDescription: String(brandCtx.description ?? ''),
+          caption,
+          headline,
+          cta,
+          mood,
+          referenceUrl: referenceUrl || null,
+          sceneHint: falSceneHint || undefined,
+          grafikerMaxRetries,
+          designBriefDirectives: falDesignCtx?.promptDirectives,
+          designerMotionCue: falDesignCtx?.brief.motionCue || (adHocBrief ? String((idea as ParsedIdea).motion_cue ?? '') : undefined),
+          artDirection: adHocBrief ? String((idea as ParsedIdea).visual_direction ?? '').trim() || undefined : undefined,
+          falLogoPlacement: falDesignCtx?.brief.logoPlacement,
+          isFalMissionVideo,
+          isFalDesignPost,
+          isFalOnlyPost,
+          isFalOnlyVideo,
+          isProductShowcase,
+          adHocBrief,
+          falAspectRatio: isCalendarSlot && pkgFmt === 'story' ? '9:16' : undefined,
+          requireGroundedGallery: isCalendarSlot || adHocBrief,
+          falDesignIntensityOverride: isCalendarSlot ? CALENDAR_GALLERY_DESIGN_INTENSITY : undefined,
+          captionAwareHeadline: isCalendarSlot ? false : undefined,
+          falSubtitle: falCalendarSubtitle,
+          falFontPersonality: falSlotTypography?.fontPersonality,
+          falHeadingFont: falSlotTypography?.headingFont,
+          falBodyFont: falSlotTypography?.bodyFont,
+        },
+        state: {
+          imageUrl,
+          videoUrl,
+          falGrafikerScore,
+          falGrafikerPass,
+          falDesignEngine,
+          runwayProduceMeta,
+          costDelta: 0,
+        },
+      };
+      await runPipelineStages(slotCtx, [
+        falVideoHandler,
+        falDesignHandler,
+        falOnlyHandler,
+        productShowcaseHandler,
+      ]);
+      imageUrl = slotCtx.state.imageUrl;
+      videoUrl = slotCtx.state.videoUrl;
+      if (videoUrl && !isPlayableVideoUrl(videoUrl)) {
+        console.warn(
+          `[auto-produce] rejecting non-MP4 videoUrl (fal still_fallback guard): ${videoUrl.slice(0, 120)}`,
+        );
+        videoUrl = null;
+      }
+      falGrafikerScore = slotCtx.state.falGrafikerScore;
+      falGrafikerPass = slotCtx.state.falGrafikerPass;
+      falDesignEngine = slotCtx.state.falDesignEngine;
+      brandDesignTemplateId = slotCtx.state.brandDesignTemplateId ?? null;
+      brandDesignTemplateType = slotCtx.state.brandDesignTemplateType ?? null;
+      brandDesignTemplateName = slotCtx.state.brandDesignTemplateName ?? null;
+      runwayProduceMeta = slotCtx.state.runwayProduceMeta;
+      costEstimate += slotCtx.state.costDelta;
+    }
+
     // Event / canvas — announcement card (buildEventCardPayload) → Remotion fallback
-    if (isCanvas || (hasEventDetails && !isReel && !isCarousel)) {
+    // Calendar fal_designed_post slots already have a gallery-grounded fal output — do not overwrite.
+    if (
+      !isProductShowcase
+      && !isFalMissionVideo
+      && !isCalendarSlot
+      && !(isFalDesignPost && imageUrl)
+      && (isCanvas || (hasEventDetails && !isReel && !isCarousel))
+    ) {
       const evDet = idea.event_details;
       const contentTypeFmt = kind === 'instagram_story' ? 'story' : 'post';
       const eventBrand: RendererBrandContext = {
@@ -1930,7 +2280,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       if (!cardUrl && productionProfile.requireRemotionGrafiker) {
         const eventPoster = await renderRemotionBrandStillResult({
           workspaceId,
-          photoUrl: referenceUrl,
+          photoUrl: referenceUrl ?? '',
           headline,
           caption,
           brandName: resolvedBrandName,
@@ -1949,6 +2299,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           baseUrl: routeBaseUrl,
           cta,
           grafikerMaxRetries,
+          profileTier: productionProfile.tier,
         });
         cardUrl = eventPoster?.imageUrl ?? null;
       } else if (!cardUrl && shouldUseMarkyLayer(productionProfile)) {
@@ -1961,7 +2312,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           businessType: brandBusinessType,
           mood,
           vibeProfile,
-          referenceImageUrl: referenceUrl,
+          referenceImageUrl: referenceUrl ?? '',
           contentTypeFmt,
           templateUseCase: idea.template_use_case as string | undefined,
           strategicPurpose,
@@ -2072,7 +2423,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
       imageUrl = carouselUrls[0] ?? referenceUrl;
 
-    } else if (isReel && isHeroReel) {
+    } else if (
+      isReel
+      && isHeroReel
+      && !isFalMissionVideo
+      && assignment.pipeline === 'runway_reel'
+      && serverConfig.autoProduce.runwayEnabled
+    ) {
+      const productionEngines = resolveProductionEngines(brandTheme);
+      if (!productionEngines.runway.enabled) {
+        reelFailureReason = 'Runway marka ayarlarında kapalı';
+        console.warn(`[auto-produce] Runway disabled in brand settings — reel skipped: "${headline.slice(0, 40)}"`);
+      }
       // Runway hero reel — only the Feed Art Director hero slot (budget-controlled)
       // reel_motion_spec can live at top level OR inside visual_production_spec (agent prompt puts it in VPS)
       const reelSpec = (idea.visual_production_spec as Record<string, unknown> | undefined)?.reel_motion_spec
@@ -2141,7 +2503,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       const reelSectorId = normalizeSectorId(brandBusinessType);
       const brandReel = resolveBrandReelProductionParams(motionProfile, reelSectorId);
-      const reelStrategy = resolveRunwayReelStrategy({
+      let reelStrategy = resolveRunwayReelStrategy({
         photoCount: reelPhotoInputs.length,
         transitionStyle: (reelSpec as Record<string, unknown> | undefined)?.transition_style as string | undefined,
         treatment: treatmentLower,
@@ -2151,6 +2513,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         reelPacing: brandReel.reelPacing,
         strategyOverride: brandReel.strategy,
       });
+      // Faz 3.4 — video kapsamı tier-aware. economy/agency'de çok-klipli Runway montajı
+      // (sequential / multi_ref → 2-3 ayrı klip) tek klipli üretime indirilir; her klip
+      // ayrı Runway çağrısı olduğundan maliyeti ciddi düşürür. premium tam montajı korur.
+      // Flag VIDEO_TIER_SCOPE kapalıyken (varsayılan) davranış birebir aynıdır.
+      if (
+        serverConfig.productionFlags.videoTierScope
+        && reelStrategy !== 'single'
+        && (productionProfile.tier === 'economy' || productionProfile.tier === 'agency')
+      ) {
+        console.log(
+          `[auto-produce] Faz3.4 video scope: tier=${productionProfile.tier} reel strategy ${reelStrategy}→single (cost trim)`,
+        );
+        reelStrategy = 'single';
+      }
       const reelCostUsd = estimateRunwayReelCostUsd(reelStrategy, reelPhotoInputs.length);
 
       // Runway quality gate: if the gallery photo is a weak semantic match for the caption,
@@ -2165,7 +2541,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         reelFailureReason = `Galeri eşleşme skoru çok düşük (${galleryMatchScore}/${RUNWAY_GALLERY_MIN_SCORE}) — Reel atlandı`;
       }
 
-      const runwayBudget = !runwayGalleryWeak && await canAffordRunway(workspaceId, reelCostUsd);
+      const runwayBudget = productionEngines.runway.enabled
+        && !runwayGalleryWeak
+        && await canAffordRunway(workspaceId, reelCostUsd);
       if (runwayBudget && runwayBudget.allowed) {
         const reelPace = String(
           (reelSpec as Record<string, unknown> | undefined)?.pace
@@ -2224,7 +2602,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           reelPace: reelPace || undefined,
           cameraMotion: normalizedCameraHint,
           agentImageEditPrompt: imageEditPromptForReel,
-          referenceImageUrl: referenceUrl,
+          referenceImageUrl: referenceUrl ?? undefined,
           additionalPhotoUrls,
           photos: reelPhotoInputs,
           galleryMeta,
@@ -2279,15 +2657,40 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               source: 'runway',
             };
           }
-        } else if (process.env.FAL_API_KEY && referenceUrl) {
+        } else if (serverConfig.fal.configured && referenceUrl) {
           console.log('[auto-produce] Runway failed — trying fal.ai video fallback');
           try {
+            const { emitQualityEvent } = await import('@/lib/ai-cost-telemetry');
+            emitQualityEvent({
+              event: 'fallback',
+              transition: 'runway->fal_video',
+              reason: reelFailureReason || 'runway_failed',
+              missionId: missionId ?? null,
+              slotKey: `${ideaIndex}:${assignment.slot_role}`,
+            });
+          } catch { /* telemetri üretimi bozmamalı */ }
+          try {
             const falPrompt = [caption, headline, brandBusinessType].filter(Boolean).join('. ').slice(0, 500);
-            const fal = await generateFalVideo(referenceUrl, falPrompt, { durationSecs: 5, timeoutMs: 110_000 });
+            const fal = await generateFalVideo(referenceUrl, falPrompt, {
+              durationSecs: 5,
+              timeoutMs: 110_000,
+              workspaceId,
+            });
             videoUrl = fal.videoUrl;
             imageUrl = referenceUrl;
-            runwayProduceMeta = { source: fal.model.includes('kling') ? 'kling' : fal.model.includes('luma') ? 'luma' : 'fal_video' };
-            console.log('[auto-produce] fal.ai video fallback success:', fal.model);
+            runwayProduceMeta = {
+              source: fal.reused
+                ? 'fal_video'
+                : fal.model.includes('kling')
+                  ? 'kling'
+                  : fal.model.includes('luma')
+                    ? 'luma'
+                    : 'fal_video',
+              ...(fal.reused ? { i2vReused: true, reusedFromArtifactId: fal.reusedFromArtifactId } : {}),
+            };
+            console.log(
+              `[auto-produce] fal.ai video fallback success: ${fal.model}${fal.reused ? ' (reused)' : ''}`,
+            );
           } catch (falErr) {
             reelFailureReason = 'Runway + fal.ai video üretilemedi';
             console.warn('[auto-produce] fal.ai fallback also failed:', falErr instanceof Error ? falErr.message : falErr);
@@ -2300,7 +2703,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         reelFailureReason = runwayBudget.reason ?? 'Runway bütçe yetersiz';
         console.log('[auto-produce] Runway skipped:', runwayBudget.reason);
       }
-    } else if (isReel && !isHeroReel) {
+    } else if (isReel && !isHeroReel && !isFalMissionVideo) {
       reelFailureReason = runwayReelsProducedInMission >= maxRunwayReelsPerMission
         ? `Mission reel limiti (${maxRunwayReelsPerMission})`
         : 'Hero reel slot assigned to another idea — publish as story';
@@ -2314,7 +2717,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const isStoryIdeaEarly = kind === 'instagram_story' || kind === 'instagram_canvas';
     const isOrganicStoryStill = assignment.slot_role === 'organic_story_still';
     const isDesignedPostSlot =
-      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post';
+      assignment.pipeline === 'remotion_poster'
+      || assignment.slot_role === 'designed_post'
+      || assignment.slot_role === 'designed_typography';
     if (isDesignedPostSlot) {
       if (!selectedVisualDesignCard && visualDesignCards.length) {
         const chosen = pickMissionVisualDesignCard({
@@ -2332,7 +2737,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
     const willRemotionStorySoon = bundleCards !== false && isStoryIdeaEarly && Boolean(referenceUrl)
-      && !isOrganicStoryStill && !isDesignedPostSlot;
+      && !isOrganicStoryStill && !isDesignedPostSlot && !isFalMissionVideo && !isFalOnlyVideo;
     const skipMarkyLayer = Boolean(videoUrl) || isReel || (isCarousel && carouselUrls.length >= 2)
       || willRemotionStorySoon
       || (isOrganicStoryStill && isStoryIdeaEarly && !productionProfile.requireRemotionGrafiker)
@@ -2351,7 +2756,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           businessType: brandBusinessType,
           mood,
           vibeProfile,
-          referenceImageUrl: referenceUrl,
+          referenceImageUrl: referenceUrl ?? undefined,
           contentTypeFmt,
           templateUseCase: idea.template_use_case as string | undefined,
           strategicPurpose,
@@ -2404,7 +2809,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDna:    String(brandCtx.visual_dna ?? ''),
           vibeProfile:  hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
           logoUrl:      brandLogoUrl || undefined,
-          referenceImageUrl: referenceUrl,
+          referenceImageUrl: referenceUrl ?? undefined,
           referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
           agentImageEditPrompt: idea.visual_production_spec?.image_edit_prompt,
           lutDirective:  brandLutDirective || undefined,
@@ -2427,7 +2832,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let designedPosterSyncUrl: string | null = null;
     let designedPosterGrafikerScore: number | null = null;
     let designedPosterGrafikerPass = true;
-    const isCampaignDesignedPost = isDesignedPostSlot
+    let designedPosterTemplateMeta: Record<string, unknown> = {};
+
+    let remotionFalAlignment: RemotionFalTemplateAlignment | null = null;
+    if (isRemotionFalAlignedSlot(assignment) && !adHocBrief) {
+      remotionFalAlignment = await alignRemotionPosterWithFalTemplate({
+        workspaceId,
+        slotRole: assignment.slot_role,
+        librarySlotKey: assignment.library_slot_key,
+        caption,
+        brandColors: { primary: syncPrimaryColor ?? '', accent: syncAccentColor ?? '' },
+        brandVibe: null,
+        logoUrl: brandLogoUrl || undefined,
+        adHocBrief,
+      });
+      if (remotionFalAlignment) {
+        console.log(
+          `[auto-produce] [remotion-fal-align] "${remotionFalAlignment.matched.templateName}" ` +
+          `(${remotionFalAlignment.matched.templateType}) → ${assignment.slot_role}`,
+        );
+      }
+    }
+
+    const isCampaignDesignedPost = !isFalMissionVideo
+      && isDesignedPostSlot
       && !isReel
       && !isCarousel
       && (assignment.publish_channel === 'instagram_campaign' || hasEventDetails || isCampaignContentIdea(ideaRecord));
@@ -2467,6 +2895,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && !videoUrl
       && (!imageUrl || imageUrl === referenceUrl)
       && !designedPosterSyncUrl
+      && !hasReusablePostTemplates
     ) {
       const posterFmt: 'post' | 'story' = isStoryIdeaEarly ? 'story' : 'post';
       const cardImageUrl = await generateDesignedImageFromMissionCard({
@@ -2492,7 +2921,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
     }
-    if (isDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
+    if (!isFalMissionVideo && isDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
       const posterFmt: 'post' | 'story' = isStoryIdeaEarly ? 'story' : 'post';
       const treatmentForPoster = String(
         idea.visual_production_spec?.treatment || idea.treatment || '',
@@ -2522,10 +2951,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         grafikerMaxRetries,
         slotRole: assignment.slot_role,
         librarySlotKey: assignment.library_slot_key,
+        profileTier: productionProfile.tier,
+        falTemplateAlignment: remotionFalAlignment,
       });
       designedPosterSyncUrl = posterResult?.imageUrl ?? null;
       designedPosterGrafikerScore = posterResult?.grafikerScore ?? null;
       designedPosterGrafikerPass = posterResult?.grafikerPass ?? true;
+      if (posterResult?.posterTemplateId || posterResult?.librarySlotKey) {
+        designedPosterTemplateMeta = {
+          templateId: posterResult.templateId ?? posterResult.posterTemplateId,
+          posterTemplateId: posterResult.posterTemplateId,
+          library_slot_key: posterResult.librarySlotKey,
+          kitId: posterResult.kitId,
+          brandTemplateLocked: templateLibrary.locked,
+          reusable_post_template: true,
+          ...(posterResult.brandDesignTemplateId
+            ? {
+              brand_design_template_id: posterResult.brandDesignTemplateId,
+              brand_design_template_type: posterResult.brandDesignTemplateType,
+              brand_design_template_name: posterResult.brandDesignTemplateName,
+              fal_template_alignment: true,
+            }
+            : {}),
+        };
+      }
       if (!designedPosterSyncUrl) {
         const fallbackBrand: RendererBrandContext = {
           brandName: resolvedBrandName,
@@ -2568,6 +3017,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           error: designedPosterGrafikerScore != null
             ? `Grafiker ${designedPosterGrafikerScore}/10 — tasarım postu yayına alınmadı`
             : 'Tasarım postu üretilemedi',
+          slotKey,
         });
         continue;
       }
@@ -2597,7 +3047,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ).toLowerCase();
       const aiPoster = await renderRemotionBrandStillResult({
         workspaceId,
-        photoUrl: referenceUrl,
+        photoUrl: referenceUrl ?? '',
         headline,
         caption,
         brandName: resolvedBrandName,
@@ -2616,6 +3066,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         baseUrl: routeBaseUrl,
         cta,
         grafikerMaxRetries,
+        profileTier: productionProfile.tier,
+        slotRole: assignment.slot_role,
+        librarySlotKey: assignment.library_slot_key,
+        falTemplateAlignment: isRemotionFalAlignedSlot(assignment) ? remotionFalAlignment : null,
       });
       if (aiPoster?.imageUrl) {
         const grafikerFail = aiPoster.grafikerScore != null
@@ -2636,6 +3090,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               title: headline,
               imageUrl: '',
               error: `Grafiker ${aiPoster.grafikerScore}/10 — poster yayına alınmadı`,
+              slotKey,
             });
             continue;
           }
@@ -2644,6 +3099,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           designedPosterSyncUrl = aiPoster.imageUrl;
           designedPosterGrafikerScore = aiPoster.grafikerScore ?? designedPosterGrafikerScore;
           designedPosterGrafikerPass = aiPoster.grafikerPass ?? designedPosterGrafikerPass;
+          if (aiPoster.posterTemplateId || aiPoster.librarySlotKey) {
+            designedPosterTemplateMeta = {
+              templateId: aiPoster.templateId ?? aiPoster.posterTemplateId,
+              posterTemplateId: aiPoster.posterTemplateId,
+              library_slot_key: aiPoster.librarySlotKey,
+              kitId: aiPoster.kitId,
+              brandTemplateLocked: templateLibrary.locked,
+              reusable_post_template: true,
+            };
+          }
           costEstimate += 0.01;
           console.log(
             `[auto-produce] Remotion branded post (organic): "${headline.slice(0, 40)}"`,
@@ -2658,6 +3123,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             title: headline,
             imageUrl: '',
             error: 'Remotion poster üretilemedi (mission designed_post)',
+            slotKey,
           });
           continue;
         }
@@ -2668,6 +3134,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           title: headline,
           imageUrl: '',
           error: 'Remotion poster üretilemedi (Grafiker zorunlu profil)',
+          slotKey,
         });
         continue;
       } else {
@@ -2677,20 +3144,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    // Reels: Runway MP4 preferred; Remotion motion fallback when Runway fails (credits/down)
-    const reelRemotionFallback = isReel && !videoUrl && Boolean(referenceUrl) && bundleCards !== false
-      && (productionProfile.reelRemotionMotionFallback || Boolean(missionId));
-    if (isReel && !videoUrl && !reelRemotionFallback) {
+    // Reels: Runway/fal MP4 only — never fall back to Remotion story motion.
+    if (isReel && !videoUrl) {
       console.warn(`[auto-produce] reel skip (no video): ${headline.slice(0, 50)} — ${reelFailureReason ?? 'unknown'}`);
       results.push({
         title: headline,
         imageUrl: referenceUrl ?? '',
-        error: reelFailureReason ?? 'Runway reel üretilemedi',
+        error: reelFailureReason ?? 'Reel videosu üretilemedi (Runway/fal.ai)',
+        slotKey,
       });
       continue;
-    }
-    if (reelRemotionFallback) {
-      console.log(`[auto-produce] Reel → Remotion motion fallback: "${headline.slice(0, 40)}"`);
     }
 
     // Guard: skip only when there is no video, still, or gallery reference for Remotion
@@ -2700,7 +3163,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         console.warn(`[auto-produce] no contentUrl produced for "${headline.slice(0, 50)}", skipping save`);
       }
-      results.push({ title: headline, imageUrl: '', error: 'Production failed: no image or video URL' });
+      results.push({ title: headline, imageUrl: '', error: 'Production failed: no image or video URL', slotKey });
       continue;
     }
     if (missionId && !videoUrl && !imageUrl && referenceUrl) {
@@ -2717,7 +3180,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ? (eventCtaUrl
           ? `🔗 ${eventCtaText || 'Rezervasyon'} → ${eventCtaUrl}`
           : '') // event details are on the image
-      : caption;
+      : (originalIdeationCaption.trim() || caption);
     const publishHashtags = isEventStory ? [] : hashtags;
 
     const vpsRaw = (idea.visual_production_spec as Record<string, unknown> | undefined);
@@ -2737,12 +3200,26 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let effectiveFmt = (isCarousel && carouselUrls.length < 2) || carouselPublishAsFeed
       ? 'post'
       : fmt;
-    if (assignmentImpliesReel(assignment.slot_role)) {
+    if (adHocBrief && pkgFmt === 'story') {
+      effectiveKind = 'instagram_story';
+      effectiveFmt = 'story';
+    } else if (adHocBrief && pkgFmt === 'reel') {
+      effectiveKind = 'instagram_reel';
+      effectiveFmt = 'reel';
+    } else if (assignmentImpliesReel(assignment.slot_role)) {
       effectiveKind = 'instagram_reel';
       effectiveFmt = 'reel';
     } else if (assignmentImpliesStoryFormat(assignment.slot_role)) {
       effectiveKind = 'instagram_story';
       effectiveFmt = 'story';
+    } else if (
+      assignment.slot_role === 'organic_post'
+      || assignment.pipeline === 'gallery_photo'
+      || assignment.slot_role === 'designed_post'
+      || assignment.slot_role === 'designed_typography'
+    ) {
+      effectiveKind = 'instagram_post';
+      effectiveFmt = 'post';
     }
     if (isPaidAdSlot) {
       effectiveKind = 'ad_creative';
@@ -2755,9 +3232,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const willRemotionStoryRender = bundleCards !== false
       && Boolean(referenceUrl)
       && !designedPosterReady
+      && effectiveKind !== 'instagram_reel'
+      && !isReel
       && (
-        reelRemotionFallback
-        || shouldRenderRemotionStory(assignment, { forceEvent: hasEventDetails || isCanvas })
+        shouldRenderRemotionStory(assignment, { forceEvent: hasEventDetails || isCanvas })
         || slotUsesRemotionStory(productionProfile, assignment, effectiveKind)
       );
     const willRemotionPostRender = bundleCards !== false
@@ -2780,7 +3258,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       : (videoUrl ?? imageUrl ?? galleryPreviewUrl ?? '');
     if (!nexusPrimaryContentUrl) {
       console.warn(`[auto-produce] no nexus contentUrl for "${headline.slice(0, 50)}", skipping save`);
-      results.push({ title: headline, imageUrl: '', error: 'Production failed: no persistable content URL' });
+      results.push({ title: headline, imageUrl: '', error: 'Production failed: no persistable content URL', slotKey });
       continue;
     }
 
@@ -2801,16 +3279,38 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ideationHeadline = publishHeadline;
     }
 
+    const isVideoMediaUrl = (url: string | null | undefined): boolean =>
+      Boolean(url && /\.(mp4|mov|webm)(\?|$)/i.test(url));
+    const pickStillPreviewUrl = (...candidates: Array<string | null | undefined>): string | null => {
+      for (const candidate of candidates) {
+        const url = String(candidate ?? '').trim();
+        if (url && !isVideoMediaUrl(url)) return url;
+      }
+      return null;
+    };
+    const falDesignedStillUrl = (isFalMissionVideo || isFalOnlyVideo) && imageUrl && !isVideoMediaUrl(imageUrl)
+      ? imageUrl
+      : null;
+    const previewStillUrl = pickStillPreviewUrl(
+      designedPosterSyncUrl,
+      falDesignedStillUrl,
+      willRemotionStoryRender ? storyPosterUrl : null,
+      markyBranded ? imageUrl : null,
+      willRemotionPostRender ? postPlaceholderUrl : null,
+      galleryPreviewUrl,
+    );
+
     const contentJson = JSON.stringify({
       kind: effectiveKind,
       contentType: effectiveFmt,
       caption: publishCaption,
+      caption_draft: originalIdeationCaption || undefined,
+      ideation_caption: originalIdeationCaption || undefined,
       hashtags: publishHashtags,
       cta,
-      imageUrl: designedPosterSyncUrl
-        ?? (willRemotionStoryRender ? storyPosterUrl : (markyBranded ? imageUrl : willRemotionPostRender ? postPlaceholderUrl : (videoUrl ?? imageUrl))),
-      posterUrl: galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl ?? designedPosterSyncUrl ?? undefined,
-      videoUrl: willRemotionRender ? null : videoUrl,
+      imageUrl: previewStillUrl ?? undefined,
+      posterUrl: previewStillUrl ?? galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl ?? designedPosterSyncUrl ?? undefined,
+      videoUrl: willRemotionRender ? null : (isPlayableVideoUrl(videoUrl) ? videoUrl : null),
       carousel_urls: carouselUrls.length ? carouselUrls : undefined,
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,
       ...(carouselGalleryUrls.length >= 2 ? { carousel_multi_photo: true } : {}),
@@ -2829,6 +3329,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     });
 
     const ideaCostUsd = Math.round((costEstimate - ideaCostBefore) * 1000) / 1000;
+
+    if (ideaCostUsd > 0) {
+      const { emitAiCostLine } = await import('@/lib/ai-cost-telemetry');
+      emitAiCostLine({
+        callType: 'other',
+        usd: ideaCostUsd,
+        missionId: missionId ?? null,
+        workspaceId,
+        slotKey: `${ideaIndex}:${assignment.slot_role}`,
+        detail: `slot-rollup:${assignment.pipeline ?? assignment.slot_role}`,
+      });
+    }
 
     let remotionStoryMeta: Record<string, unknown> = {};
     if (willRemotionStoryRender) {
@@ -2865,6 +3377,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const metadata: Record<string, unknown> = {
+      ...(brandDesignTemplateId
+        ? {
+          brand_design_template_id: brandDesignTemplateId,
+          brand_design_template_type: brandDesignTemplateType,
+          brand_design_template_name: brandDesignTemplateName,
+        }
+        : {}),
       cost_usd_estimate: ideaCostUsd,
       contentType: effectiveFmt,
       kind: effectiveKind,
@@ -2875,6 +3394,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       hashtags: publishHashtags,
       strategic_purpose: strategicPurpose,
       auto_produced: true,
+      ...(adHocBrief ? { ad_hoc_brief: true } : {}),
       gallery_sourced: !captionDrivenGenerated,
       gallery_only: GALLERY_ONLY,
       ...(captionDrivenGenerated ? { caption_driven_visual: true } : {}),
@@ -2882,7 +3402,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ? { gallery_match_score: galleryMatchScore }
         : {}),
       ...(publishHeadline ? { ideation_headline: publishHeadline.slice(0, 120) } : {}),
-      ...(ideationCaption ? { ideation_caption: ideationCaption.slice(0, 500) } : {}),
+      ...(originalIdeationCaption ? { ideation_caption: originalIdeationCaption.slice(0, 500) } : {}),
+      ...(originalIdeationCaption ? { caption_draft: originalIdeationCaption.slice(0, 500) } : {}),
       ...(galleryFirstSource ? {
         gallery_first_caption: true,
         caption_source: galleryFirstSource,
@@ -2898,7 +3419,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         : {}),
       renderer_executed: (() => {
         if (captionDrivenGenerated) return 'caption_driven_ai';
-        if (videoUrl) return 'runway_reel';
+        if (videoUrl && isFalOnlyVideo) return assignment.pipeline === 'fal_only_reel' ? 'fal_only_reel' : 'fal_only_story';
+        if (videoUrl && isFalMissionVideo) {
+          const rawFalI2v = runwayProduceMeta
+            && (runwayProduceMeta.source === 'kling'
+              || runwayProduceMeta.source === 'luma'
+              || runwayProduceMeta.source === 'fal_video')
+            && !falDesignEngine;
+          return rawFalI2v ? 'fal_raw_i2v' : 'fal_designer_video';
+        }
+        if (isFalOnlyPost && imageUrl && falDesignEngine) return 'fal_only_post';
+        if (isFalDesignPost && imageUrl && falDesignEngine) {
+          return falDesignEngine === 'gpt_image_designed'
+            ? 'gpt_image_designed_post'
+            : 'fal_designer_post';
+        }
+        if (videoUrl) return normalizeProductionPipeline(assignment.pipeline) === 'fal_reel' ? 'fal_reel' : 'runway_reel';
         if (willRemotionStoryRender) return 'remotion_story_async';
         if (missionVisualDesignRendered) return 'mission_visual_design_card';
         if (designedPosterSyncUrl) return 'remotion_poster_sync';
@@ -2912,13 +3448,44 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         if (assignment.pipeline === 'gallery_photo') return 'gallery_raw';
         return assignment.pipeline;
       })(),
-      ...(productionProfile.requireRemotionGrafiker
-        ? { production_route: 'remotion_grafiker', marky_disabled: true }
-        : {}),
+      ...(isFalMissionVideo
+        ? {
+          production_route: 'fal_ai',
+          production_track: 'fal_ai',
+          marky_disabled: true,
+          ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+          typography_text_valid: falGrafikerPass !== false,
+        }
+        : (isFalOnlyPost || isFalOnlyVideo) && (imageUrl || videoUrl)
+          ? {
+            production_route: 'fal_only',
+            production_track: 'fal_ai',
+            fal_only: true,
+            marky_disabled: true,
+            fal_design_engine: falDesignEngine ?? 'fal_ideogram_only',
+            ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+            typography_text_valid: falGrafikerPass !== false,
+          }
+        : isFalDesignPost && imageUrl && falDesignEngine
+          ? {
+            production_route: 'fal_ai',
+            production_track: 'fal_ai',
+            marky_disabled: true,
+            fal_designer_produced: true,
+            fal_design_engine: falDesignEngine,
+            ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+            typography_text_valid: true,
+          }
+        : productionProfile.requireRemotionGrafiker
+          ? { production_route: 'remotion_grafiker', marky_disabled: true }
+          : {}),
       flux_used: false,
       agency_defaults_forced: agencyProductionForced,
-      agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0),
-      runway_produced: Boolean(videoUrl),
+      agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)),
+      runway_produced: Boolean(videoUrl) && !isFalMissionVideo && !isFalOnlyVideo,
+      fal_video_produced: isPlayableVideoUrl(videoUrl) && (isFalMissionVideo || isFalOnlyVideo),
+      fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo)) || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine)),
+      ...(isFalMissionVideo && runwayProduceMeta ? { fal_video_model: runwayProduceMeta.source } : {}),
       ...(runwayProduceMeta ? {
         runway_source: runwayProduceMeta.source,
         runway_strategy: runwayProduceMeta.strategy,
@@ -2926,7 +3493,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         camera_motion: runwayProduceMeta.cameraMotion ?? null,
         reel_pace: runwayProduceMeta.reelPace ?? null,
         sector_id: runwayProduceMeta.sectorId ?? normalizeSectorId(brandBusinessType),
+        ...(runwayProduceMeta.i2vReused ? {
+          i2v_reused: true,
+          i2v_reused_from_artifact_id: runwayProduceMeta.reusedFromArtifactId ?? null,
+        } : {}),
       } : {}),
+      ...(isPlayableVideoUrl(videoUrl)
+        && runwayProduceMeta
+        && (runwayProduceMeta.source === 'kling'
+          || runwayProduceMeta.source === 'luma'
+          || runwayProduceMeta.source === 'fal_video')
+        ? {
+          i2v_source_image_url: pickedGallerySourceUrl ?? referenceUrl ?? null,
+          i2v_motion_type: 'raw_gallery',
+        }
+        : {}),
       ...(reelHookScore ? {
         reel_hook_score: reelHookScore.score,
         reel_hook_pass: reelHookScore.pass,
@@ -2937,7 +3518,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,
       ...(carouselGalleryUrls.length >= 2 ? { carousel_multi_photo: true } : {}),
       ...(carouselPublishAsFeed ? { carousel_publish_as: 'feed' } : {}),
-      source: 'auto-produce',
+      source: adHocBrief ? 'new_brief' : 'auto-produce',
       mission_id: missionId || null,
       node_key: nodeKey || null,
       mood,
@@ -2950,9 +3531,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           formatHint: effectiveFmt,
         }),
       ),
-      imageUrl: designedPosterSyncUrl
-        ?? (willRemotionStoryRender ? storyPosterUrl : (markyBranded ? imageUrl : willRemotionPostRender ? postPlaceholderUrl : (videoUrl ?? imageUrl))),
-      videoUrl: willRemotionRender ? null : videoUrl,
+      imageUrl: previewStillUrl ?? undefined,
+      videoUrl: willRemotionRender ? null : (isPlayableVideoUrl(videoUrl) ? videoUrl : null),
       reference_photo_url: pickedGallerySourceUrl ?? referenceUrl,
       ...(pickedGallerySourceUrl && referenceUrl !== pickedGallerySourceUrl
         ? { enhanced_photo_url: referenceUrl }
@@ -2987,9 +3567,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       copy_bundle_id: assignment.copy_bundle_id,
       publish_channel: assignment.publish_channel,
       assignment_rationale: assignment.rationale ?? null,
-      ...(String(nodeKey ?? '').includes('calendar')
-        ? { calendar_plan_index: ideaIndex, source_node: 'content_calendar' as const }
-        : {}),
+      ...(isCalendarProductionIdea(ideaRecord)
+        ? {
+          calendar_plan_index: typeof ideaRecord.calendar_plan_index === 'number'
+            ? ideaRecord.calendar_plan_index
+            : resolvedIdeaIndex - 1000,
+          source_node: 'content_calendar' as const,
+          source_track: 'calendar' as const,
+          calendar_announcement_type: ideaRecord.calendar_announcement_type ?? null,
+        }
+        : String(nodeKey ?? '').includes('calendar')
+          ? { calendar_plan_index: ideaIndex, source_node: 'content_calendar' as const }
+          : {}),
       ...(isPaidAdSlot ? {
         ad_creative: true,
         ad_platform: assignment.publish_channel,
@@ -3004,7 +3593,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...(designedPosterGrafikerScore != null ? {
         grafiker_score: designedPosterGrafikerScore,
         grafiker_pass: designedPosterGrafikerPass,
+        typography_text_valid: designedPosterGrafikerPass,
       } : {}),
+      ...(Object.keys(designedPosterTemplateMeta).length ? designedPosterTemplateMeta : {}),
       ...(selectedVisualDesignCard ? {
         visual_design_card_source: 'mission_graph',
         visual_design_card_index: selectedVisualDesignCardIndex,
@@ -3063,11 +3654,26 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       error: saved.error,
       publishReady: publishReadyNow,
       rendering: Boolean(saved.id && !saved.error && willRemotionRender),
+      slotKey,
       metadata,
     });
 
     if (saved.id && !saved.error) {
       existingArtifactKeys.add(ideaDedupeKey);
+    }
+
+    if (saved.id && !saved.error && ideaCostUsd > 0) {
+      const { recordArtifactProductionCost } = await import('@/lib/cost-ledger-client');
+      await recordArtifactProductionCost({
+        workspaceId,
+        missionId: missionId ?? null,
+        artifactId: saved.id,
+        amountUsd: ideaCostUsd,
+        pipeline: String(assignment.pipeline ?? ''),
+        slotRole: assignment.slot_role,
+        ideaIndex: resolvedIdeaIndex,
+        slotKey: `${ideaIndex}:${assignment.slot_role}`,
+      });
     }
 
     if (
@@ -3078,7 +3684,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     ) {
       designedPostSnapshot = {
         imageUrl: persistContentUrl,
-        referencePhotoUrl: referenceUrl,
+        referencePhotoUrl: referenceUrl ?? undefined,
         headline: publishHeadline,
         caption: publishCaption,
         cta,
@@ -3095,7 +3701,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (willRemotionRender && saved.id && storyPosterUrl) {
       let gallerySeriesUrls: string[] = enhancedGallerySet.length >= 2
         ? [...enhancedGallerySet]
-        : [referenceUrl];
+        : (referenceUrl ? [referenceUrl] : []);
       const gallerySeqTarget = storyGalleryPhotoTarget({
         assignment,
         contentKind: kind,
@@ -3115,7 +3721,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             mood,
             galleryMeta,
             galleryPhotos,
-            referenceUrl,
+            referenceUrl ?? '',
             batchUsedByType[postType],
             gallerySeqTarget - 1,
             postType,
@@ -3138,7 +3744,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         headline,
         caption: (idea.caption_draft ?? idea.caption ?? '') as string,
         voiceoverCaption: publishCaption || caption,
-        photoUrl: referenceUrl,
+        photoUrl: referenceUrl ?? '',
         galleryPhotoUrls,
         galleryLayout: galleryPhotoUrls
           ? (prefersGallerySequenceStory(assignment, ideaRecord, galleryPhotoUrls.length)
@@ -3165,18 +3771,55 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     if (willRemotionPostRender && !designedPosterReady && saved.id && postPlaceholderUrl) {
       remotionPostCandidates.push({
-        headline,
-        caption: (idea.caption_draft ?? idea.caption ?? '') as string,
-        photoUrl: postPlaceholderUrl,
-        treatment,
-        mood: (idea.mood || '') as string,
-        templateUseCase: String(idea.template_use_case || ''),
-        event_details: (idea.event_details as Record<string, string> | undefined),
-        artifactId: saved.id,
-        ideaId,
-        ideaIndex,
-        premiumComposition: ideaPremiumComposition,
+          headline,
+          caption: (idea.caption_draft ?? idea.caption ?? '') as string,
+          photoUrl: postPlaceholderUrl,
+          treatment,
+          mood: (idea.mood || '') as string,
+          templateUseCase: String(idea.template_use_case || ''),
+          event_details: (idea.event_details as Record<string, string> | undefined),
+          artifactId: saved.id,
+          ideaId,
+          ideaIndex,
+          premiumComposition: ideaPremiumComposition,
       });
+    }
+    } catch (slotErr) {
+      const message = slotErr instanceof Error ? slotErr.message : String(slotErr);
+      console.error(`[auto-produce] slot failed (continuing): slotKey=${slotKey}`, slotErr);
+      results.push({
+        title: headline || '(slot failed)',
+        imageUrl: '',
+        error: message,
+        slotKey,
+      });
+    }
+  }
+
+  // Boş story slotları — üretilmiş post'lardan format adaptasyonu (aynı brief, farklı format).
+  let postStoryAdaptAttempted = false;
+  if (missionId && !adHocBrief && !slotBackfillPass && fullProductionQueue.length > 0) {
+    const persistedMissionArtifacts = await fetchMissionArtifacts(workspaceId, missionId);
+    const postStoryAdapt = await deriveStoriesFromPostsForEmptySlots({
+      workspaceId,
+      missionId,
+      nodeKey,
+      queue: fullProductionQueue,
+      runResults: results,
+      persistedArtifacts: persistedMissionArtifacts,
+      templateLibrary,
+      brandBusinessType,
+      brandName: resolvedBrandName,
+      nexusClient,
+    });
+    if (postStoryAdapt.attempted) {
+      postStoryAdaptAttempted = true;
+      results.push(...postStoryAdapt.results);
+      creatomateStoryCandidates.push(...postStoryAdapt.storyCandidates);
+      costEstimate += postStoryAdapt.costEstimate;
+      console.log(
+        `[auto-produce] Post→story adaptation: ${postStoryAdapt.adapted} story slot(s) filled`,
+      );
     }
   }
 
@@ -3197,6 +3840,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   if (
     bundleCards !== false
     && missionId
+    && !slotBackfillPass
     && creatomateStoryCandidates.length === 0
     && hasGallery
     && brandTokensForRender
@@ -3209,7 +3853,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const caption = getField(idea, 'caption_draft', 'caption');
       const mood = (idea.mood as string | undefined) || '';
       const postType = kindToPostType(detectContentKind(idea));
-      const referenceUrl = pickGalleryPhotoForIdea(
+      const referenceUrl = pickMissionGallery(
         caption,
         headline,
         mood,
@@ -3405,6 +4049,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     nexusClient,
     grafikerMaxRetries,
     brandTheme,
+    profileTier: productionProfile.tier,
   });
 
   // ── Remotion feed post renders — agency SVG posters (Canva replacement) ───
@@ -3429,6 +4074,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     nexusClient,
     grafikerMaxRetries,
     brandTheme,
+    profileTier: productionProfile.tier,
   });
 
   if (designedPostSnapshot && manifestMissionType !== 'ads_focus') {
@@ -3470,9 +4116,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  releaseAllProductionLocks(workspaceId, missionId);
+  await releaseAllProductionLocks(workspaceId, missionId);
 
-  const backfillAttempted = false;
+  const backfillAttempted = postStoryAdaptAttempted;
   const mergedResults = results;
   const mergedSaved = saved;
   const mergedPublishReady = publishReady;

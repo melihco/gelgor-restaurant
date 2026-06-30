@@ -23,6 +23,9 @@ import {
   stableScale,
   stableTextOpacity,
   useStableTextReveal,
+  cinematicGradeFilter,
+  CinematicLightLayer,
+  FilmGrainOverlay,
 } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 
@@ -65,9 +68,10 @@ export const CampaignHeroStory: React.FC<StoryProps> = ({
     <AbsoluteFill style={{ background: '#000', overflow: 'hidden' }}>
       <StoryAudioLayer audioMood={audioMood} voiceoverUrl={voiceoverUrl} />
       <AbsoluteFill style={{ transform: `scale(${photoScale})`, transformOrigin: 'center center' }}>
-        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Img src={photoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: cinematicGradeFilter('subtle') }} />
       </AbsoluteFill>
 
+      <CinematicLightLayer warmth="warm" intensity={0.85} origin="50% 32%" />
       <AbsoluteFill style={{ background: `rgba(0,0,0,${dynamicOverlay * 0.55})` }} />
       <AbsoluteFill style={{
         background: `radial-gradient(ellipse at 50% 42%, rgba(0,0,0,${dynamicOverlay * 0.5}) 0%, transparent 68%)`,
@@ -79,6 +83,7 @@ export const CampaignHeroStory: React.FC<StoryProps> = ({
         background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 18%, transparent 62%, rgba(0,0,0,0.65) 100%)',
       }} />
 
+      <FilmGrainOverlay opacity={0.06} fine />
       <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={hero} opacity={logoOp} />
 
       {/* Center hero stack */}

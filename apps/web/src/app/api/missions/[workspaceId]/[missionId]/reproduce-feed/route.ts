@@ -35,9 +35,9 @@ export async function POST(
   const tenantGuard = assertPathTenantMatchesRequest(req, workspaceId);
   if (tenantGuard) return tenantGuard;
 
-  let requestBody: { productionPackage?: string; force?: boolean } = {};
+  let requestBody: { productionPackage?: string; force?: boolean; cleanSlate?: boolean } = {};
   try {
-    requestBody = (await req.json()) as { productionPackage?: string; force?: boolean };
+    requestBody = (await req.json()) as { productionPackage?: string; force?: boolean; cleanSlate?: boolean };
   } catch {
     /* PUT/empty body */
   }
@@ -45,9 +45,10 @@ export async function POST(
   const force = req.nextUrl.searchParams.get('force') === '1'
     || req.nextUrl.searchParams.get('force') === 'true'
     || requestBody.force === true;
+  const cleanSlate = requestBody.cleanSlate !== false && (force || requestBody.cleanSlate === true);
 
   if (force) {
-    releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId);
   }
 
   const productionPackage =
@@ -71,6 +72,7 @@ export async function POST(
         production_package: productionPackage,
         production_profile_tier: productionProfile.tier,
         force,
+        clean_slate: cleanSlate,
       },
     },
   );

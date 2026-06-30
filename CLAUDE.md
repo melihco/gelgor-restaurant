@@ -190,6 +190,22 @@ Reference image URLs from `brand_context.reference_image_urls` are passed to `im
 
 `backend/app/services/tenant_learning_service.py` queries `suggestions` table for approved/rejected entries and builds a `TenantLearningSnapshot`. `build_learning_context_prompt()` serialises it to a markdown block injected at the end of every agent's brand context prompt (highest LLM priority position). This is loaded automatically in the internal `/execute` endpoint for content and review task types.
 
+### Multi-Tenant Development
+
+**Pilot test ≠ special code.** Sarnıç Beach and other pilots are used to validate quality; shipped logic must serve all tenants, sectors, and brands.
+
+| Do | Don't |
+|----|-------|
+| Drive behavior from `business_type` → sector pack, brand context, slot role, pipeline | `if (tenantId === '<uuid>')` in production paths |
+| Add `resolveX({ sector, businessType, brandTheme, ... })` policies | Hardcode brand names in prompts or UI |
+| Test with 2+ sectors in unit tests | Ship Sarnıç-only hacks to fix matcher/quality issues |
+
+**SSOT:** `tenant-brand-context.ts`, `sector-production-profile.ts`, `gallery-photo-matcher.ts`, `visual-overlay-policy.ts`, `agency-production-defaults.ts`.
+
+Pilot tenant UUIDs belong in `scripts/`, `docs/`, and QA audits only — not in `apps/web`, `apps/api`, or `backend/app` production logic.
+
+See also: `.cursor/rules/multi-tenant-development.mdc`.
+
 ### Key Architectural Constraints
 
 - **Content agent serialisation**: Two parallel `content_agent` executions would deadlock. An `asyncio.Lock` (`_content_agent_execution_lock`) in the internal orchestration endpoint serialises them.

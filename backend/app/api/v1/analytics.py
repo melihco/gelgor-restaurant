@@ -137,3 +137,56 @@ async def roi_attribution(date_range: str = Query("LAST_30_DAYS")):
     """Cross-channel ROI report combining Ads spend + GA4 conversions."""
     report = generate_roi_report(date_range=date_range)
     return report.to_dict()
+
+
+# ── Production Health Telemetry ──────────────────────────────────────────────
+
+
+@router.get("/production-health")
+async def production_health(workspace_id: str | None = Query(None)):
+    """Aggregate production health metrics — success rates, avg render time, failure reasons.
+
+    When workspace_id is provided, scopes to that brand only.
+    """
+    import uuid as _uuid
+    from sqlalchemy import text
+    from app.database import async_session_factory
+
+    ws_filter = ""
+    params: dict = {}
+    if workspace_id:
+        ws_filter = "WHERE workspace_id = :ws"
+        params["ws"] = str(_uuid.UUID(workspace_id))
+
+    async with async_session_factory() as db:
+        sql = f"""
+            SELECT
+                COUNT(*) as total_jobs,
+                COUNT(*) FILTER (WHERE status = 'ready') as succeeded,
+                COUNT(*) FILTER (WHERE status = 'exhausted') as exhausted,
+                COUNT(*) FILTER (WHERE status = 'failed') as failed_retryable,
+                COUNT(*) FILTER (WHERE status = 'running') as in_progress,
+                AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) * 1000)
+                    FILTER (WHERE status = 'ready') as avg_completion_ms,
+                json_agg(DISTINCT last_error) FILTER (WHERE last_error IS NOT NULL) as failure_reasons
+            FROM production_jobs
+            {ws_filter}
+        """
+        r = await db.execute(text(sql), params)
+        row = r.mappings().one_or_none()
+
+    if not row:
+        return {"total_jobs": 0}
+
+    total = int(row["total_jobs"] or 0)
+    succeeded = int(row["succeeded"] or 0)
+    return {
+        "total_jobs": total,
+        "succeeded": succeeded,
+        "exhausted": int(row["exhausted"] or 0),
+        "failed_retryable": int(row["failed_retryable"] or 0),
+        "in_progress": int(row["in_progress"] or 0),
+        "success_rate": round(succeeded / total, 3) if total > 0 else None,
+        "avg_completion_ms": int(row["avg_completion_ms"]) if row["avg_completion_ms"] else None,
+        "failure_reasons": (row["failure_reasons"] or [])[:10],
+    }

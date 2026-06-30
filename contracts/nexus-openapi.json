@@ -1,0 +1,6254 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Nexus AI Agent Office API",
+    "description": "Backend API for the AI Agent Office OS SaaS Platform",
+    "version": "v1"
+  },
+  "paths": {
+    "/api/actions": {
+      "get": {
+        "tags": [
+          "Actions"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/actions/{id}": {
+      "get": {
+        "tags": [
+          "Actions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/actions/support-matrix": {
+      "get": {
+        "tags": [
+          "Actions"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/actions/{id}/approve": {
+      "post": {
+        "tags": [
+          "Actions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/actions/{id}/reject": {
+      "post": {
+        "tags": [
+          "Actions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectActionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectActionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/actions/{id}/execute": {
+      "post": {
+        "tags": [
+          "Actions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Agents/{id}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Agents/{id}/state": {
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentStateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentStateRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentStateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Agents/{id}/execute": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteAgentRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteAgentRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentExecutionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentExecutionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentExecutionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Agents/{id}/cancel-stuck-execution": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "agentRunId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "minAgeMinutes",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelStuckAgentExecutionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelStuckAgentExecutionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelStuckAgentExecutionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelStuckExecutionResultDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelStuckExecutionResultDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelStuckExecutionResultDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Agents/workflows/growth-recovery/start": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowStartResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowStartResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowStartResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Agents/office/{officeId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "parameters": [
+          {
+            "name": "officeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Artifacts/video": {
+      "post": {
+        "tags": [
+          "Artifacts"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoArtifactRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoArtifactRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Artifacts/creative": {
+      "post": {
+        "tags": [
+          "Artifacts"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeArtifactRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeArtifactRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreativeArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Artifacts": {
+      "get": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "agentRunId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "missionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}": {
+      "get": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}/approve": {
+      "post": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactCommentRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactCommentRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactCommentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}/reject": {
+      "post": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRejectRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRejectRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}/request-revision": {
+      "post": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRevisionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRevisionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}/attach-image": {
+      "patch": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachImageRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachImageRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachImageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}/attach-video": {
+      "patch": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachVideoRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachVideoRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Artifacts/{id}/bundle-status": {
+      "patch": {
+        "tags": [
+          "Artifacts"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BundleStatusRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BundleStatusRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BundleStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/brand-context/assets": {
+      "get": {
+        "tags": [
+          "BrandContext"
+        ],
+        "parameters": [
+          {
+            "name": "officeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "assetType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantMediaAssetDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantMediaAssetDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantMediaAssetDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BrandContext"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertTenantMediaAssetRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertTenantMediaAssetRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertTenantMediaAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantMediaAssetDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantMediaAssetDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantMediaAssetDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/brand-context/assets/{id}": {
+      "put": {
+        "tags": [
+          "BrandContext"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertTenantMediaAssetRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertTenantMediaAssetRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertTenantMediaAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantMediaAssetDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantMediaAssetDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantMediaAssetDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/brand-context/office-profiles": {
+      "get": {
+        "tags": [
+          "BrandContext"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfficeBrandProfileDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfficeBrandProfileDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfficeBrandProfileDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BrandContext"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertOfficeBrandProfileRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertOfficeBrandProfileRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertOfficeBrandProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeBrandProfileDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeBrandProfileDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeBrandProfileDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/brand-context/canva-templates": {
+      "get": {
+        "tags": [
+          "BrandContext"
+        ],
+        "parameters": [
+          {
+            "name": "officeId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "includeDisabled",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanvaTemplateAssignmentDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanvaTemplateAssignmentDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanvaTemplateAssignmentDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BrandContext"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCanvaTemplateAssignmentRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCanvaTemplateAssignmentRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertCanvaTemplateAssignmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvaTemplateAssignmentDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvaTemplateAssignmentDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvaTemplateAssignmentDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Briefs": {
+      "get": {
+        "tags": [
+          "Briefs"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BriefDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BriefDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BriefDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Briefs"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBriefRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBriefRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBriefRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Briefs/{id}": {
+      "get": {
+        "tags": [
+          "Briefs"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Briefs/{id}/submit": {
+      "post": {
+        "tags": [
+          "Briefs"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Integrations": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationConnectionDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationConnectionDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationConnectionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntegrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Integrations/{id}": {
+      "put": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIntegrationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIntegrationRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIntegrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Integrations/mappings": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderAccountMappingDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderAccountMappingDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderAccountMappingDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Integrations"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProviderMappingRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProviderMappingRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProviderMappingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccountMappingDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccountMappingDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderAccountMappingDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Integrations/google/auth-url": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "scopes",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "ads,analytics,search_console"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleAuthUrlResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleAuthUrlResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleAuthUrlResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Integrations/google/callback": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Integrations/ads/campaigns": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "dateRange",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "LAST_30_DAYS"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Integrations/analytics/summary": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "dateRange",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "LAST_30_DAYS"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Integrations/analytics/dashboard": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "parameters": [
+          {
+            "name": "dateRange",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "30daysAgo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Integrations/canva/token": {
+      "get": {
+        "tags": [
+          "Integrations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvaTokenStoreResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvaTokenStoreResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvaTokenStoreResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Integrations"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvaTokenStoreRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvaTokenStoreRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvaTokenStoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Nexus.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": [
+          "Nexus.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "Nexus.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Notifications/{id}/mark-read": {
+      "put": {
+        "tags": [
+          "Notifications"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Office": {
+      "get": {
+        "tags": [
+          "Office"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfficeDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfficeDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfficeDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Office/default": {
+      "get": {
+        "tags": [
+          "Office"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Office/{id}": {
+      "get": {
+        "tags": [
+          "Office"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeDetailDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeDetailDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeDetailDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/operations/summary": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/operations/reconcile-stale-agent-runs": {
+      "post": {
+        "tags": [
+          "Operations"
+        ],
+        "parameters": [
+          {
+            "name": "minAgeMinutes",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Packages": {
+      "get": {
+        "tags": [
+          "Packages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PackageDefinitionDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PackageDefinitionDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PackageDefinitionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Packages/subscription": {
+      "get": {
+        "tags": [
+          "Packages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Packages/usage": {
+      "get": {
+        "tags": [
+          "Packages"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageQuotaSummaryDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageQuotaSummaryDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageQuotaSummaryDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Packages/entitlements/{feature}": {
+      "get": {
+        "tags": [
+          "Packages"
+        ],
+        "parameters": [
+          {
+            "name": "feature",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Packages/subscribe": {
+      "post": {
+        "tags": [
+          "Packages"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectPackageRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectPackageRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectPackageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSubscriptionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Reviews/approve": {
+      "post": {
+        "tags": [
+          "Reviews"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveArtifactRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveArtifactRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Reviews/reject": {
+      "post": {
+        "tags": [
+          "Reviews"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectArtifactRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectArtifactRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectArtifactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Reviews/request-revision": {
+      "post": {
+        "tags": [
+          "Reviews"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestRevisionRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestRevisionRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/register": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/login": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/logout": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/security/me": {
+      "get": {
+        "tags": [
+          "Security"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserSecurityDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserSecurityDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUserSecurityDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/users": {
+      "get": {
+        "tags": [
+          "Security"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserAdminDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserAdminDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserAdminDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/invites": {
+      "post": {
+        "tags": [
+          "Security"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteUserRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteUserRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/users/{id}/role": {
+      "put": {
+        "tags": [
+          "Security"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRoleRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRoleRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/security/users/{id}/active": {
+      "put": {
+        "tags": [
+          "Security"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserActiveRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserActiveRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserActiveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/profile": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Setup"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCompanyProfileRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCompanyProfileRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCompanyProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/snapshot-core": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandProfileCoreSnapshotDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandProfileCoreSnapshotDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandProfileCoreSnapshotDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/complete": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/onboarding-status": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Setup/brand-style-score": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Setup/industry-playbooks": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IndustryPlaybookDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IndustryPlaybookDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IndustryPlaybookDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/tenant-capabilities": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "parameters": [
+          {
+            "name": "industry",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantCapabilityDefinitionDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantCapabilityDefinitionDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantCapabilityDefinitionDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/operating-profile": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantOperatingProfileDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantOperatingProfileDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantOperatingProfileDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/evaluate-capability": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateCapabilityRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateCapabilityRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateCapabilityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyEvaluationResultDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyEvaluationResultDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyEvaluationResultDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/evaluate-gallery-asset": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateGalleryAssetRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateGalleryAssetRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateGalleryAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalleryAssetPolicyResultDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalleryAssetPolicyResultDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GalleryAssetPolicyResultDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/vector-memory/reindex": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandMemoryReindexResult"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandMemoryReindexResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandMemoryReindexResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/brand-discovery": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandDiscoveryRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandDiscoveryRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandDiscoveryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandDiscoveryResultDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandDiscoveryResultDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandDiscoveryResultDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/vector-memory/status": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/VectorMemoryStatus"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VectorMemoryStatus"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VectorMemoryStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Setup/analyze-brand": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/Tasks": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 80
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Tasks/brief/{briefId}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "briefId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Tasks/{id}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Tasks/{id}/status": {
+      "put": {
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskStatusRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskStatusRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/Tasks/{id}/assign": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignTaskRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignTaskRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentCapabilityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AgentDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AgentState"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "currentTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentCapabilityDto"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AgentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string"
+          },
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AgentState"
+          },
+          "isEnabled": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AgentExecutionDto": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentRunId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "officeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "taskTitle": {
+            "type": "string"
+          },
+          "artifactTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "artifactType": {
+            "$ref": "#/components/schemas/ArtifactType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AgentState": {
+        "enum": [
+          "Idle",
+          "Working",
+          "Collaborating",
+          "Blocked",
+          "Completed",
+          "Error",
+          "Offline"
+        ],
+        "type": "string"
+      },
+      "AgentType": {
+        "enum": [
+          "AiCeo",
+          "BlogWriter",
+          "SocialMediaDesigner",
+          "InstagramContentGenerator",
+          "UiUxDesigner",
+          "VideoEditor",
+          "SeoSpecialist",
+          "GoogleAdsAnalyst",
+          "CustomerReviewResponder",
+          "ChatbotManager",
+          "AiStrategist",
+          "AnalyticsAnalyst",
+          "ContentStrategy"
+        ],
+        "type": "string"
+      },
+      "ApprovalMode": {
+        "enum": [
+          "SuggestOnly",
+          "SuggestAndWait",
+          "AutoExecute"
+        ],
+        "type": "string"
+      },
+      "ApproveArtifactRequest": {
+        "type": "object",
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "finalizedContent": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArtifactCommentRequest": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "string",
+            "nullable": true
+          },
+          "finalizedContent": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArtifactDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentRunId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "artifactType": {
+            "$ref": "#/components/schemas/ArtifactType"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "string"
+          },
+          "reviewStatus": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contentUrl": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArtifactRejectRequest": {
+        "type": "object",
+        "properties": {
+          "comments": {
+            "type": "string",
+            "nullable": true
+          },
+          "reasonCategory": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArtifactRevisionRequest": {
+        "type": "object",
+        "properties": {
+          "requestedChanges": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArtifactType": {
+        "enum": [
+          "BlogPost",
+          "SocialMediaGraphic",
+          "InstagramCaption",
+          "SeoReport",
+          "AdCopy",
+          "VideoEdit",
+          "UiMockup",
+          "StrategyDocument",
+          "ReviewResponse",
+          "ChatbotFlow",
+          "GenericDocument"
+        ],
+        "type": "string"
+      },
+      "AssignTaskRequest": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttachImageRequest": {
+        "type": "object",
+        "properties": {
+          "imageUrl": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "productionBundle": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "compositionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "posterTemplateId": {
+            "type": "string",
+            "nullable": true
+          },
+          "referencePhotoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "renderMs": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AttachVideoRequest": {
+        "type": "object",
+        "properties": {
+          "videoUrl": {
+            "type": "string"
+          },
+          "posterUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "compositionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "grafikerScore": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "grafikerPass": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "renderMs": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AuthSessionDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserAdminDto"
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "officeId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrandDiscoveryRequest": {
+        "type": "object",
+        "properties": {
+          "websiteUrl": {
+            "type": "string"
+          },
+          "instagramHandle": {
+            "type": "string"
+          },
+          "googleBusinessUrl": {
+            "type": "string"
+          },
+          "tikTokUrl": {
+            "type": "string"
+          },
+          "youTubeUrl": {
+            "type": "string"
+          },
+          "linkedInUrl": {
+            "type": "string"
+          },
+          "primaryGoal": {
+            "type": "string"
+          },
+          "applyToProfile": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrandDiscoveryResultDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/BrandIntelligenceReportDto"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/CompanyProfileDto"
+          },
+          "analysisText": {
+            "type": "string"
+          },
+          "inferredLanguage": {
+            "type": "string"
+          },
+          "fetchOk": {
+            "type": "boolean"
+          },
+          "analyzedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrandIntelligenceReportDto": {
+        "type": "object",
+        "properties": {
+          "brandName": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "targetAudience": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "brandTone": {
+            "type": "string"
+          },
+          "visualStyle": {
+            "type": "string"
+          },
+          "primaryGoals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "contentPillars": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultCtas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "templateNeeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assetRecommendations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missingQuestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "websiteSummary": {
+            "type": "string"
+          },
+          "topHashtags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "playbookId": {
+            "type": "string"
+          },
+          "preferredChannels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "riskRules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "approvalRequiredFor": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrandMemoryReindexResult": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "totalDocuments": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "embeddedDocuments": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "skippedDocuments": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BrandProfileCoreSnapshotDto": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "brandName": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "brandTone": {
+            "type": "string"
+          },
+          "targetAudience": {
+            "type": "string"
+          },
+          "visualStyle": {
+            "type": "string"
+          },
+          "campaignGoals": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "instagramHandle": {
+            "type": "string"
+          },
+          "googleBusinessUrl": {
+            "type": "string"
+          },
+          "brandImageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "primaryFont": {
+            "type": "string"
+          },
+          "secondaryFont": {
+            "type": "string"
+          },
+          "brandColors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "accentColors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "customerVisibleSummary": {
+            "type": "string"
+          },
+          "systemIntelligence": {
+            "type": "string"
+          },
+          "discoveryConfidence": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "creativeProfileConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BriefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BriefStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decomposedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BriefStatus": {
+        "enum": [
+          "Draft",
+          "Submitted",
+          "Decomposing",
+          "Decomposed",
+          "InProgress",
+          "Completed",
+          "Failed"
+        ],
+        "type": "string"
+      },
+      "BundleStatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CancelStuckAgentExecutionRequest": {
+        "type": "object",
+        "properties": {
+          "agentRunId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CancelStuckExecutionResultDto": {
+        "type": "object",
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "agentRunId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "officeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "taskTitle": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CanvaTemplateAssignmentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "officeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "canvaTemplateId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "contentKinds": {
+            "type": "string"
+          },
+          "useCases": {
+            "type": "string"
+          },
+          "templateFamilyId": {
+            "type": "string"
+          },
+          "allowedIntents": {
+            "type": "string"
+          },
+          "allowedChannels": {
+            "type": "string"
+          },
+          "requiredAssetIntents": {
+            "type": "string"
+          },
+          "riskTier": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "manualApprovalRequired": {
+            "type": "boolean"
+          },
+          "lastReviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastReviewedBy": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aspectRatio": {
+            "type": "string"
+          },
+          "datasetContract": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "brandFitScore": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CanvaTokenStoreRequest": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresIn": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scope": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CanvaTokenStoreResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "nullable": true
+          },
+          "tokenType": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scope": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CompanyProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "brandName": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "brandTone": {
+            "type": "string"
+          },
+          "targetAudience": {
+            "type": "string"
+          },
+          "visualStyle": {
+            "type": "string"
+          },
+          "campaignGoals": {
+            "type": "string"
+          },
+          "competitors": {
+            "type": "string"
+          },
+          "customRules": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "primaryFont": {
+            "type": "string"
+          },
+          "secondaryFont": {
+            "type": "string"
+          },
+          "brandColors": {
+            "type": "string"
+          },
+          "accentColors": {
+            "type": "string"
+          },
+          "socialTemplateStyle": {
+            "type": "string"
+          },
+          "logoUsageRules": {
+            "type": "string"
+          },
+          "defaultApprovalMode": {
+            "$ref": "#/components/schemas/ApprovalMode"
+          },
+          "setupCompleted": {
+            "type": "boolean"
+          },
+          "setupCompletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "instagramHandle": {
+            "type": "string"
+          },
+          "googleBusinessUrl": {
+            "type": "string"
+          },
+          "brandImageUrls": {
+            "type": "string"
+          },
+          "brandAnalysis": {
+            "type": "string"
+          },
+          "brandAnalyzedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "platformProfiles": {
+            "type": "string"
+          },
+          "contentNeeds": {
+            "type": "string"
+          },
+          "operatingCapabilities": {
+            "type": "string"
+          },
+          "galleryPolicy": {
+            "type": "string"
+          },
+          "templateFamilies": {
+            "type": "string"
+          },
+          "riskRules": {
+            "type": "string"
+          },
+          "customerVisibleSummary": {
+            "type": "string"
+          },
+          "systemIntelligence": {
+            "type": "string"
+          },
+          "discoveryConfidence": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "creativeProfileConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateBriefRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "rawContent": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateIntegrationRequest": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/IntegrationProvider"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreativeArtifactRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "contentUrl": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "nullable": true
+          },
+          "platform": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": { },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CurrentUserSecurityDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenantName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isDemoFallback": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EvaluateCapabilityRequest": {
+        "type": "object",
+        "properties": {
+          "capabilityId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EvaluateGalleryAssetRequest": {
+        "type": "object",
+        "properties": {
+          "assetType": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExecuteAgentRequest": {
+        "type": "object",
+        "properties": {
+          "taskType": {
+            "type": "string",
+            "nullable": true
+          },
+          "inputData": {
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GalleryAssetPolicyResultDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "assetType": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forceUnapproved": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GoogleAuthUrlResponse": {
+        "type": "object",
+        "properties": {
+          "authUrl": {
+            "type": "string"
+          },
+          "requestedScopes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IndustryPlaybookDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "defaultContentNeeds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "riskySignals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "approvalRequiredFor": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preferredChannels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "IntegrationConnectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/IntegrationProvider"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IntegrationStatus"
+          },
+          "scopes": {
+            "type": "string"
+          },
+          "tokenExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastHealthCheck": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "IntegrationProvider": {
+        "enum": [
+          "GoogleBusiness",
+          "Instagram",
+          "GoogleAds",
+          "Facebook",
+          "SearchConsole",
+          "GoogleAnalytics",
+          "WhatsAppBusiness",
+          "Canva"
+        ],
+        "type": "string"
+      },
+      "IntegrationStatus": {
+        "enum": [
+          "Connected",
+          "Expired",
+          "Error",
+          "Disconnected"
+        ],
+        "type": "string"
+      },
+      "InviteUserRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NotificationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/NotificationType"
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "isRead": {
+            "type": "boolean"
+          },
+          "relatedEntityId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "relatedEntityType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NotificationType": {
+        "enum": [
+          "TaskAssigned",
+          "TaskCompleted",
+          "TaskFailed",
+          "ApprovalRequired",
+          "ApprovalDecision",
+          "AgentStateChanged",
+          "BriefDecomposed",
+          "SystemAlert"
+        ],
+        "type": "string"
+      },
+      "OfficeBrandProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "officeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "brandColors": {
+            "type": "string"
+          },
+          "accentColors": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string"
+          },
+          "reservationUrl": {
+            "type": "string"
+          },
+          "socialTemplateStyle": {
+            "type": "string"
+          },
+          "defaultCta": {
+            "type": "string"
+          },
+          "configuration": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OfficeDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OfficeZoneDto"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentDto"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OfficeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OfficeZoneDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "zoneType": {
+            "$ref": "#/components/schemas/OfficeZoneType"
+          },
+          "name": {
+            "type": "string"
+          },
+          "positionX": {
+            "type": "number",
+            "format": "double"
+          },
+          "positionY": {
+            "type": "number",
+            "format": "double"
+          },
+          "positionZ": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "number",
+            "format": "double"
+          },
+          "depth": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OfficeZoneType": {
+        "enum": [
+          "CommandCenter",
+          "ContentStudio",
+          "DesignLab",
+          "MediaBay",
+          "AnalyticsFloor",
+          "CommunicationHub"
+        ],
+        "type": "string"
+      },
+      "PackageDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "monthlyPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "yearlyPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "taskLimitPerMonth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "includedAgentTypes": {
+            "type": "string"
+          },
+          "features": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "isPopular": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanMonthlyOutputsDto": {
+        "type": "object",
+        "properties": {
+          "missions": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "socialContent": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "galleryAnalysis": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reels": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "metaAdCreatives": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "googleAdCreatives": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanUnitEconomicsDto": {
+        "type": "object",
+        "properties": {
+          "monthlyPriceTry": {
+            "type": "number",
+            "format": "double"
+          },
+          "revenueUsdEstimate": {
+            "type": "number",
+            "format": "double"
+          },
+          "monthCostUsd": {
+            "type": "number",
+            "format": "double"
+          },
+          "monthBilledUsd": {
+            "type": "number",
+            "format": "double"
+          },
+          "costProfitRatio": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "effectiveTokenMarginPercent": {
+            "type": "number",
+            "format": "double"
+          },
+          "targetTokenMarginPercent": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PolicyEvaluationResultDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProviderAccountMappingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "integrationConnectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "integrationDisplayName": {
+            "type": "string"
+          },
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "tenantName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RejectActionRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RejectArtifactRequest": {
+        "type": "object",
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RequestRevisionRequest": {
+        "type": "object",
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReviewDecisionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReviewStatus": {
+        "enum": [
+          "Pending",
+          "Approved",
+          "Rejected",
+          "RevisionRequested"
+        ],
+        "type": "string"
+      },
+      "SaveCompanyProfileRequest": {
+        "type": "object",
+        "properties": {
+          "brandName": {
+            "type": "string"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "brandTone": {
+            "type": "string"
+          },
+          "targetAudience": {
+            "type": "string"
+          },
+          "visualStyle": {
+            "type": "string"
+          },
+          "campaignGoals": {
+            "type": "string"
+          },
+          "competitors": {
+            "type": "string"
+          },
+          "customRules": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "defaultApprovalMode": {
+            "$ref": "#/components/schemas/ApprovalMode"
+          },
+          "instagramHandle": {
+            "type": "string"
+          },
+          "googleBusinessUrl": {
+            "type": "string"
+          },
+          "brandImageUrls": {
+            "type": "string"
+          },
+          "primaryFont": {
+            "type": "string"
+          },
+          "secondaryFont": {
+            "type": "string"
+          },
+          "brandColors": {
+            "type": "string"
+          },
+          "accentColors": {
+            "type": "string"
+          },
+          "socialTemplateStyle": {
+            "type": "string"
+          },
+          "logoUsageRules": {
+            "type": "string"
+          },
+          "platformProfiles": {
+            "type": "string"
+          },
+          "contentNeeds": {
+            "type": "string"
+          },
+          "operatingCapabilities": {
+            "type": "string"
+          },
+          "galleryPolicy": {
+            "type": "string"
+          },
+          "templateFamilies": {
+            "type": "string"
+          },
+          "riskRules": {
+            "type": "string"
+          },
+          "customerVisibleSummary": {
+            "type": "string"
+          },
+          "systemIntelligence": {
+            "type": "string"
+          },
+          "discoveryConfidence": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "creativeProfileConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "SelectPackageRequest": {
+        "type": "object",
+        "properties": {
+          "packageId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetProviderMappingRequest": {
+        "type": "object",
+        "properties": {
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "integrationConnectionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionAgentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "isIncluded": {
+            "type": "boolean"
+          },
+          "isAddOn": {
+            "type": "boolean"
+          },
+          "monthlyPrice": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubscriptionStatus": {
+        "enum": [
+          "Trial",
+          "Active",
+          "PastDue",
+          "Cancelled",
+          "Expired"
+        ],
+        "type": "string"
+      },
+      "TaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "briefId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/TaskPriority"
+          },
+          "estimatedDurationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "actualDurationMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "TaskPriority": {
+        "enum": [
+          "Low",
+          "Normal",
+          "High",
+          "Urgent",
+          "Critical"
+        ],
+        "type": "string"
+      },
+      "TaskStatus": {
+        "enum": [
+          "Pending",
+          "Queued",
+          "InProgress",
+          "WaitingForDependency",
+          "WaitingForApproval",
+          "Approved",
+          "Rejected",
+          "RevisionRequested",
+          "Completed",
+          "Failed",
+          "Cancelled"
+        ],
+        "type": "string"
+      },
+      "TenantCapabilityDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "industries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultEnabled": {
+            "type": "boolean"
+          },
+          "riskSignals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredAssetIntents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "TenantGalleryPolicyDto": {
+        "type": "object",
+        "properties": {
+          "allowedAssetIntents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clientPhotoPolicy": {
+            "type": "string"
+          },
+          "beforeAfterPolicy": {
+            "type": "string"
+          },
+          "maxGalleryPhotos": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requireConsentMetadata": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TenantMediaAssetDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "officeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assetType": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "storageKey": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "usageContext": {
+            "type": "string"
+          },
+          "isApproved": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TenantOperatingProfileDto": {
+        "type": "object",
+        "properties": {
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "industry": {
+            "type": "string"
+          },
+          "playbookId": {
+            "type": "string"
+          },
+          "enabledCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "galleryPolicy": {
+            "$ref": "#/components/schemas/TenantGalleryPolicyDto"
+          },
+          "riskRules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "customRules": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TenantSubscriptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "packageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "packageName": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubscriptionStatus"
+          },
+          "currentPeriodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currentPeriodEnd": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tasksUsedThisPeriod": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "taskLimit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "addOnAgents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionAgentDto"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateAgentStateRequest": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "newState": {
+            "$ref": "#/components/schemas/AgentState"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateIntegrationRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "accessToken": {
+            "type": "string",
+            "nullable": true
+          },
+          "refreshToken": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateTaskStatusRequest": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateUserActiveRequest": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateUserRoleRequest": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpsertCanvaTemplateAssignmentRequest": {
+        "type": "object",
+        "properties": {
+          "officeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "canvaTemplateId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "contentKinds": {
+            "type": "string"
+          },
+          "useCases": {
+            "type": "string"
+          },
+          "templateFamilyId": {
+            "type": "string"
+          },
+          "allowedIntents": {
+            "type": "string"
+          },
+          "allowedChannels": {
+            "type": "string"
+          },
+          "requiredAssetIntents": {
+            "type": "string"
+          },
+          "riskTier": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "manualApprovalRequired": {
+            "type": "boolean"
+          },
+          "aspectRatio": {
+            "type": "string"
+          },
+          "datasetContract": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "brandFitScore": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpsertOfficeBrandProfileRequest": {
+        "type": "object",
+        "properties": {
+          "officeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string"
+          },
+          "brandColors": {
+            "type": "string"
+          },
+          "accentColors": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string"
+          },
+          "reservationUrl": {
+            "type": "string"
+          },
+          "socialTemplateStyle": {
+            "type": "string"
+          },
+          "defaultCta": {
+            "type": "string"
+          },
+          "configuration": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpsertTenantMediaAssetRequest": {
+        "type": "object",
+        "properties": {
+          "officeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assetType": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "storageKey": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "usageContext": {
+            "type": "string"
+          },
+          "isApproved": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UsageQuotaMetricDto": {
+        "type": "object",
+        "properties": {
+          "used": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "percentUsed": {
+            "type": "number",
+            "format": "double"
+          },
+          "isUnlimited": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UsageQuotaSummaryDto": {
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "packageName": {
+            "type": "string"
+          },
+          "packageSlug": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "currentPeriodStart": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "currentPeriodEnd": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "agentRuns": {
+            "$ref": "#/components/schemas/UsageQuotaMetricDto"
+          },
+          "providerActions": {
+            "$ref": "#/components/schemas/UsageQuotaMetricDto"
+          },
+          "liveProviderActions": {
+            "$ref": "#/components/schemas/UsageQuotaMetricDto"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/UsageQuotaMetricDto"
+          },
+          "monthlyOutputs": {
+            "$ref": "#/components/schemas/PlanMonthlyOutputsDto"
+          },
+          "unitEconomics": {
+            "$ref": "#/components/schemas/PlanUnitEconomicsDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserAdminDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "lastLoginAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "invitedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "inviteAcceptedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "VectorMemoryStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "qdrantReachable": {
+            "type": "boolean"
+          },
+          "embeddingProviderConfigured": {
+            "type": "boolean"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VideoArtifactRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "contentUrl": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": { },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkflowStartResponse": {
+        "type": "object",
+        "properties": {
+          "briefId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workflowType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStepDto"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkflowStepDto": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "agentType": {
+            "$ref": "#/components/schemas/AgentType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "dependsOnTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +16,7 @@ const SCOPES = [
 ].join(',');
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const appId = process.env.META_APP_ID;
+  const appId = serverConfig.meta.appId;
   if (!appId) {
     return NextResponse.json({ error: 'META_APP_ID is not configured' }, { status: 503 });
   }

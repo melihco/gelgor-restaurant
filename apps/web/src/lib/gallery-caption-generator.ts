@@ -3,6 +3,7 @@
  */
 import OpenAI from 'openai';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
+import { serverConfig } from '@/lib/server-config';
 
 export interface GalleryCaptionSuggestion {
   photoUrl: string;
@@ -39,7 +40,7 @@ export async function generateGalleryCaptionsWithGpt(input: {
   language?: string;
   slotHint?: string;
 }): Promise<GalleryCaptionSuggestion[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey || !input.photoUrls.length) return [];
 
   const photosToProcess = input.photoUrls
@@ -78,7 +79,7 @@ export async function generateGalleryCaptionsWithGpt(input: {
   try {
     const openai = new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: serverConfig.ai.chatModel('standard'),
       max_tokens: 2000,
       temperature: 0.75,
       response_format: { type: 'json_object' },

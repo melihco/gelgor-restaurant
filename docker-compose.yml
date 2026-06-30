@@ -82,6 +82,108 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Celery worker (distributed production orchestration) ─
+  # Enabled when PRODUCTION_ORCHESTRATOR=celery. Drains/advances missions across
+  # replicas instead of the in-process APScheduler. Scale with --scale celery-worker=N.
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app worker -Q drain,advance,content --concurrency=${CELERY_CONCURRENCY:-4} -n worker@%h
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_dev_2024}@postgres:5432/${POSTGRES_DB:-nexus_db}
+      REDIS_URL: redis://redis:6379/0
+      PRODUCTION_ORCHESTRATOR: ${PRODUCTION_ORCHESTRATOR:-apscheduler}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-smartagency-internal-dev-key}
+      NEXTJS_INTERNAL_URL: ${NEXTJS_INTERNAL_URL:-http://web:3000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      CREWAI_LLM_PROVIDER: ${CREWAI_LLM_PROVIDER:-openai}
+    volumes:
+      - ./backend:/app
+      - backend_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Celery beat (periodic schedule) — run exactly ONE instance ───
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus_dev_2024}@postgres:5432/${POSTGRES_DB:-nexus_db}
+      REDIS_URL: redis://redis:6379/0
+      PRODUCTION_ORCHESTRATOR: ${PRODUCTION_ORCHESTRATOR:-apscheduler}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Flower (Celery monitoring dashboard) — http://localhost:5555 ───
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app flower --port=5555 --broker_api=redis://redis:6379/1
+    ports:
+      - "5555:5555"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── BullMQ production worker (Next.js slot execution) ───
+  # Enabled when PRODUCTION_EXECUTOR=bullmq. Consumes production:slots, executes the
+  # pipeline via the web service's /api/auto-produce, and calls back to Python.
+  # Scale horizontally: docker compose up --scale production-worker=N.
+  production-worker:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      target: build
+    working_dir: /repo/apps/web
+    command: npm run worker:production
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      WEB_BASE_URL: http://web:3000
+      CREW_BACKEND_URL: http://backend:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-smartagency-internal-dev-key}
+      PRODUCTION_WORKER_CONCURRENCY: ${PRODUCTION_WORKER_CONCURRENCY:-2}
+      PRODUCTION_WORKER_RATE_MAX: ${PRODUCTION_WORKER_RATE_MAX:-10}
+      PRODUCTION_WORKER_RATE_DURATION_MS: ${PRODUCTION_WORKER_RATE_DURATION_MS:-60000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+
+  # ── Bull Board (BullMQ queue dashboard) — http://localhost:3100/queues ───
+  bull-board:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      target: build
+    working_dir: /repo/apps/web
+    command: npm run dashboard:queues
+    ports:
+      - "3100:3100"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      BULL_BOARD_PORT: "3100"
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # ── Customer-facing .NET App API ────────────────────────
   api:
     build:
@@ -137,8 +239,11 @@ services:
       NEXT_PUBLIC_SIGNALR_URL: ${NEXT_PUBLIC_SIGNALR_URL:-http://localhost:5000}
       NEXT_PUBLIC_TENANT_ID: ${DEMO_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       NEXT_PUBLIC_OFFICE_ID: ${DEMO_OFFICE_ID:-00000000-0000-0000-0000-000000000002}
+      # Shared Redis for distributed production locks + BullMQ workers
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     depends_on:
       - api
+      - redis
 
 volumes:
   postgres_data:

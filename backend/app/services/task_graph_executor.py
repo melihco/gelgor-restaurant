@@ -40,6 +40,7 @@ engine.execute() — the same lock used by the HTTP orchestration path.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 import json
 from datetime import datetime, timezone, timedelta
@@ -55,15 +56,16 @@ from app.models.mission import Mission, MissionTaskNode
 from app.schemas.mission import MissionStatus, TaskNodeStatus
 from app.services.brand_context_service import build_brand_info, get_brand_context
 from app.services.trend_intelligence_service import ensure_fresh_trend_brief_for_propose
-from app.services.execution_locks import get_content_lock
+from app.services.execution_locks import content_agent_lock
 from app.services.mission_service import (
     ensure_feed_cohesion_review_persisted_node,
     get_ready_nodes,
 )
 from app.services.output_summary_parser import extract_structured_payload_from_output_summary
-from app.services.tenant_learning_service import (
-    build_learning_context_prompt,
-    build_tenant_learning_snapshot,
+from app.services.brand_execution_context import (
+    LEARNING_TASK_TYPES,
+    apply_gallery_usage,
+    apply_learning_context,
 )
 
 logger = structlog.get_logger()
@@ -78,17 +80,17 @@ ORPHAN_NODE_MIN_ELAPSED_SECONDS = 45
 # Debounced Feed ensure — coalesce feed_cohesion / mission-complete / calendar triggers.
 _scheduled_ensure_tasks: dict[str, asyncio.Task] = {}
 
-# Task types that require per-tenant serialization (content_agent crews)
+# Task types that require per-tenant serialization (content_agent crews).
+# content_strategy uses a DIFFERENT agent (content_strategy_agent) with its own
+# tools (Perplexity, Apify) and does NOT share CrewAI runtime state — no lock needed.
 _SERIALIZED_TASK_TYPES = frozenset({
-    "content_ideation", "content_calendar", "content_strategy",
+    "content_ideation", "content_calendar",
     "visual_design_cards",
 })
 
-# Task types that benefit from tenant learning context injection
-_LEARNING_TASK_TYPES = frozenset({
-    "content_ideation", "content_calendar", "content_strategy",
-    "single_review_response", "review_analysis", "visual_design_cards",
-})
+# Task types that benefit from tenant learning context injection.
+# Shared with the internal orchestrator via the canonical constant.
+_LEARNING_TASK_TYPES = LEARNING_TASK_TYPES
 
 
 # ── Session factory helper ─────────────────────────────────────────────────────
@@ -157,15 +159,20 @@ async def _check_and_complete_mission(
     prev_row = r.one_or_none()
     prev = dict(prev_row[0] or {}) if prev_row else {}
 
-    summary = {
+    # Faz 4.3 — completion must MERGE, not replace. Previously this wiped the whole
+    # summary (keeping only production_error), losing ai_cost_breakdown, last_feed_produce,
+    # production_path, last_production_telemetry, production_profile_tier, etc. — so cost
+    # visibility vanished the moment a mission completed. Preserve all durable keys; only
+    # drop the transient ones that no longer make sense on a completed mission.
+    _TRANSIENT_KEYS = {"production_status", "feed_production_lock"}
+    summary = {k: v for k, v in prev.items() if k not in _TRANSIENT_KEYS}
+    summary.update({
         "total_nodes":     total,
         "completed_nodes": completed,
         "failed_nodes":    failed,
         "skipped_nodes":   skipped,
         "completion_rate": round(completed / total, 2) if total else 0,
-    }
-    if prev.get("production_error"):
-        summary["production_error"] = prev["production_error"]
+    })
 
     await db.execute(
         update(Mission)
@@ -349,30 +356,52 @@ async def _execute_node_body(
     engine,
     ws_str: str,
 ) -> None:
-    # Feed Art Director is modeled as a placeholder mission node so Mission Hub
-    # can display lifecycle + report state, but execution itself happens inside
-    # the production orchestrator rather than via engine.execute().
+    # Feed Art Director — real execution via engine.execute().
+    # Loads merged ideation output, builds input_data, and runs FD LLM crew.
+    # Once completed, production pipeline reads the persisted output_summary directly.
     if task_type == "feed_cohesion_review":
         async with factory() as db:
             await ensure_feed_cohesion_review_persisted_node(db, mission_id, workspace_id)
-            await db.execute(
-                update(MissionTaskNode)
-                .where(MissionTaskNode.id == node_id)
-                .execution_options(synchronize_session=False)
-                .values(
-                    status=TaskNodeStatus.RUNNING.value,
-                    started_at=datetime.now(timezone.utc),
-                    completed_at=None,
-                    error_message=None,
-                )
+
+        # Build FD input from completed ideation + calendar nodes
+        merged_summary = await _resolve_merged_ideation_summary(mission_id, "")
+        if not merged_summary or len(merged_summary.strip()) < 10:
+            await _fail_node(
+                factory, mission_id, workspace_id, node_id, node_key,
+                "No content ideation output available for Feed Art Director",
+                current_retry=0,
             )
-            await db.commit()
-        _schedule_ensure_mission_feed(
-            mission_id,
-            workspace_id,
-            delay_sec=5,
-        )
-        return
+            return
+
+        mission_ctx = await _load_mission_production_context(mission_id)
+        ctx = mission_ctx or {}
+        from app.crew.tasks.feed_art_director_tasks import FD_CONTENT_IDEAS_INPUT_MAX_CHARS
+
+        weekly_theme = ""
+        try:
+            import json as _fd_json
+            clean = merged_summary.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+            ideas = _fd_json.loads(clean) if clean.startswith("[") else []
+            if ideas:
+                weekly_theme = str(ideas[0].get("strategic_purpose", "") or "")[:100]
+        except Exception:
+            pass
+        brief = (ctx.get("creative_brief") or "").strip()
+        title = (ctx.get("mission_title") or "").strip()
+        if brief and brief not in weekly_theme:
+            weekly_theme = f"{weekly_theme} | {brief[:120]}".strip(" |")
+
+        input_data = {
+            **(input_data or {}),
+            "content_ideas_json": merged_summary[:FD_CONTENT_IDEAS_INPUT_MAX_CHARS],
+            "weekly_theme": weekly_theme,
+            "mission_type": ctx.get("mission_type") or "",
+            "mission_title": title,
+            "creative_brief": brief,
+            "production_package": ctx.get("production_package") or None,
+            "production_profile": ctx.get("production_profile") or None,
+        }
+        # Fall through to standard execution path (Step 2+)
 
     # ── Step 2: Load brand + inject learning context ───────────────────────────
     async with factory() as db:
@@ -387,23 +416,14 @@ async def _execute_node_body(
 
         if task_type in _LEARNING_TASK_TYPES:
             try:
-                snapshot = await build_tenant_learning_snapshot(db, ws_str)
-                lc = build_learning_context_prompt(snapshot)
-                if lc:
-                    brand.learning_context = lc
+                await apply_learning_context(db, brand, ws_str)
             except Exception as lc_exc:
                 logger.warning("node_learning_load_failed", node_key=node_key,
                                error=str(lc_exc)[:200])
 
         if task_type == "content_ideation":
             try:
-                from app.services.gallery_usage_service import (
-                    apply_gallery_usage_to_brand,
-                    fetch_gallery_usage_by_type,
-                )
-
-                usage = await fetch_gallery_usage_by_type(ws_str)
-                apply_gallery_usage_to_brand(brand, usage)
+                await apply_gallery_usage(brand, ws_str)
             except Exception as gu_exc:
                 logger.warning("node_gallery_usage_load_failed", node_key=node_key,
                                error=str(gu_exc)[:200])
@@ -423,6 +443,15 @@ async def _execute_node_body(
     # MissionMemory object and attaches it to brand.mission_memory.
     # build_brand_context_prompt() will append the Mission Context block.
     # Failures here are non-fatal — agent still runs, just without campaign context.
+    resolved_profile_tier: str | None = None
+    resolved_subscription_plan_slug: str | None = None
+    try:
+        from app.services.subscription_plan_service import resolve_workspace_plan_slug
+
+        resolved_subscription_plan_slug = await resolve_workspace_plan_slug(ws_str)
+    except Exception:
+        resolved_subscription_plan_slug = None
+
     try:
         async with factory() as db:
             from sqlalchemy import select as _select
@@ -433,6 +462,21 @@ async def _execute_node_body(
             r_m = await db.execute(_select(_Mission).where(_Mission.id == mission_id))
             _mission = r_m.scalar_one_or_none()
             if _mission:
+                # Faz 2.1 — resolve production tier (economy/agency/premium) for
+                # tier-aware behaviour (e.g. content_ideation iterations).
+                try:
+                    from app.services.production_profile_service import (
+                        resolve_production_profile_tier,
+                    )
+
+                    _summary = dict(getattr(_mission, "performance_summary", None) or {})
+                    resolved_profile_tier = resolve_production_profile_tier(
+                        package_slug=resolved_subscription_plan_slug,
+                        profile_tier_override=str(_summary.get("production_profile_tier") or "") or None,
+                    )
+                except Exception:
+                    resolved_profile_tier = None
+
                 completed_outputs = await get_completed_node_outputs(db, mission_id)
 
                 # Derive phases metadata for current_phase name
@@ -474,6 +518,29 @@ async def _execute_node_body(
     if task_type == "content_ideation" and "mission_id" not in effective_input:
         effective_input["mission_id"] = str(mission_id)
 
+    # Package-aware ideation count + CREWAI_CONTENT_ITERATIONS parity.
+    if task_type == "content_ideation":
+        from app.services.package_weekly_geometry import (
+            format_mix_label,
+            resolve_content_ideation_iterations,
+            resolve_weekly_package_geometry,
+        )
+
+        weekly_geo = resolve_weekly_package_geometry(resolved_subscription_plan_slug)
+        effective_input["count"] = weekly_geo["total"]
+        effective_input.setdefault("format_mix", format_mix_label(weekly_geo))
+        if "iterations" not in effective_input:
+            effective_input["iterations"] = resolve_content_ideation_iterations(
+                resolved_subscription_plan_slug,
+            )
+        logger.info(
+            "content_ideation_package_geometry",
+            node_key=node_key,
+            plan_slug=resolved_subscription_plan_slug,
+            count=weekly_geo["total"],
+            iterations=effective_input["iterations"],
+        )
+
     # Inject recently used weekly_themes into content_strategy so it avoids repeating them.
     if task_type == "content_strategy":
         async with factory() as _theme_db:
@@ -503,7 +570,11 @@ async def _execute_node_body(
                 if o.get("task_type") == "content_strategy" and o.get("output_summary")
             ]
             if strategy_outputs:
-                strategy_brief = strategy_outputs[-1]["output_summary"][:2500]
+                from app.services.content_strategy_brief import build_strategy_brief_for_downstream
+
+                strategy_brief = build_strategy_brief_for_downstream(
+                    strategy_outputs[-1]["output_summary"],
+                )
                 existing_brief = effective_input.get("brief", "")
                 effective_input["brief"] = (
                     "=== CONTENT STRATEGY (read first — weekly theme, pillar mix, format targets) ===\n"
@@ -523,8 +594,7 @@ async def _execute_node_body(
 
     try:
         if task_type in _SERIALIZED_TASK_TYPES:
-            lock = await get_content_lock(ws_str)
-            async with lock:
+            async with content_agent_lock(ws_str):
                 result = await asyncio.wait_for(
                     asyncio.to_thread(engine.execute, agent_role, task_type, brand, effective_input),
                     timeout=timeout,
@@ -598,13 +668,16 @@ async def _execute_node_body(
             has_artifact=bool(output_artifact_id),
         )
 
-        if task_type in ("content_strategy", "content_ideation"):
+        if task_type in ("content_strategy", "content_ideation", "feed_cohesion_review"):
             try:
                 from app.services.ai_cost_service import record_mission_task_ai_cost
 
+                _tokens = int(result.get("tokens_used") or 0)
+                _model = str(result.get("model", "") or "")
                 async with factory() as cost_db:
                     await record_mission_task_ai_cost(
                         cost_db, workspace_id, mission_id, task_type,
+                        tokens_used=_tokens, model=_model,
                     )
             except Exception as cost_exc:
                 logger.warning(
@@ -614,8 +687,15 @@ async def _execute_node_body(
                     error=str(cost_exc)[:200],
                 )
 
-        # Feed production runs once via feed_cohesion_review + mission-complete ensure.
-        # Early ideation trigger caused 409 races and incomplete calendar merges.
+        # Feed production runs once via feed_cohesion_review completion.
+        # When FD completes as a real node, kick the production pipeline immediately.
+        if task_type == "feed_cohesion_review" and output_summary:
+            logger.info(
+                "feed_cohesion_review_complete_trigger_production",
+                mission_id=str(mission_id),
+                node_key=node_key,
+            )
+            _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=5)
 
         if task_type == "visual_design_cards" and output_summary:
             _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=45)
@@ -743,6 +823,42 @@ async def _advance_after_node(mission_id: uuid.UUID, workspace_id: uuid.UUID) ->
 
 # ── Graph advancement ──────────────────────────────────────────────────────────
 
+def trigger_advance_mission(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    delay_sec: float = 0.0,
+) -> None:
+    """Fire-and-forget mission advance, routed by orchestrator.
+
+    Celery mode: dispatch to the durable ``advance`` queue (runs on a worker).
+    APScheduler mode: schedule an in-process asyncio task on the app loop.
+    """
+    from app.config import get_settings
+
+    if get_settings().use_celery_orchestrator:
+        try:
+            from app.tasks.advance_tasks import advance_mission as _advance_task
+
+            _advance_task.apply_async(
+                args=[str(mission_id), str(workspace_id)],
+                countdown=max(0.0, float(delay_sec)),
+                queue="advance",
+            )
+            return
+        except Exception as exc:  # pragma: no cover - fall back if broker down
+            logger.warning(
+                "trigger_advance.celery_dispatch_failed_fallback_asyncio",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+
+    asyncio.create_task(
+        advance_mission(mission_id, workspace_id),
+        name=f"advance_mission_{mission_id}",
+    )
+
+
 async def advance_mission(
     mission_id: uuid.UUID,
     workspace_id: uuid.UUID,
@@ -783,7 +899,17 @@ async def advance_mission(
 
         mission_brief = mission.creative_brief
 
+    # Under Celery, _execute_node must run to completion within this task's event
+    # loop (run_until_complete) — fire-and-forget create_task would be orphaned.
+    # The completion chain (_execute_node → _advance_after_node → advance_mission)
+    # is awaited, so gathering the first wave drains the whole subtree. In the
+    # in-process (APScheduler) path we keep fire-and-forget so callers return fast.
+    from app.config import get_settings
+
+    gather_nodes = get_settings().use_celery_orchestrator
+
     launched = 0
+    node_coros = []
     for node in ready_nodes:
         logger.info(
             "node_scheduling",
@@ -791,22 +917,26 @@ async def advance_mission(
             node_key=node.node_key,
             task_type=node.task_type,
         )
-        asyncio.create_task(
-            _execute_node(
-                mission_id=mission_id,
-                workspace_id=workspace_id,
-                node_key=node.node_key,
-                task_type=node.task_type,
-                agent_role=node.agent_role,
-                input_data=dict(node.input_data or {}),
-                mission_brief=mission_brief,
-                node_id=node.id,
-                node_title=node.title,
-                node_phase_index=node.phase_index,
-            ),
-            name=f"node_{mission_id}_{node.node_key}",
+        coro = _execute_node(
+            mission_id=mission_id,
+            workspace_id=workspace_id,
+            node_key=node.node_key,
+            task_type=node.task_type,
+            agent_role=node.agent_role,
+            input_data=dict(node.input_data or {}),
+            mission_brief=mission_brief,
+            node_id=node.id,
+            node_title=node.title,
+            node_phase_index=node.phase_index,
         )
+        if gather_nodes:
+            node_coros.append(coro)
+        else:
+            asyncio.create_task(coro, name=f"node_{mission_id}_{node.node_key}")
         launched += 1
+
+    if gather_nodes and node_coros:
+        await asyncio.gather(*node_coros, return_exceptions=True)
 
     logger.info(
         "mission_advanced",
@@ -979,10 +1109,32 @@ async def advance_all_active_missions() -> dict[str, int]:
             )
 
     reconciled_feed = 0
-    try:
-        reconciled_feed = await _reconcile_completed_missions_missing_feed()
-    except Exception as exc:
-        logger.warning("reconcile_missing_feed_failed", error=str(exc)[:200])
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if auto_feed_production_allowed():
+        try:
+            reconciled_feed = await _reconcile_completed_missions_missing_feed()
+        except Exception as exc:
+            logger.warning("reconcile_missing_feed_failed", error=str(exc)[:200])
+
+    # Durable Production Factory — resume draining any mission with runnable jobs
+    # (restart-safe: claimed-but-orphaned jobs are reclaimed via the stale window),
+    # then re-enqueue manifest gaps for completed missions (guaranteed 16/16).
+    drained_factory = 0
+    reconciled_factory = 0
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if auto_feed_production_allowed():
+        try:
+            from app.services.production_factory_service import drain_all_open_missions
+
+            drained_factory = await drain_all_open_missions()
+        except Exception as exc:
+            logger.warning("production_factory_tick_failed", error=str(exc)[:200])
+        try:
+            reconciled_factory = await _reconcile_production_factory_gaps()
+        except Exception as exc:
+            logger.warning("production_factory_reconcile_failed", error=str(exc)[:200])
 
     logger.info(
         "advance_all_complete",
@@ -990,12 +1142,16 @@ async def advance_all_active_missions() -> dict[str, int]:
         nodes_launched=total_launched,
         stale_recovered=stale_recovered,
         reconciled_feed=reconciled_feed,
+        drained_factory=drained_factory,
+        reconciled_factory=reconciled_factory,
     )
     return {
         "checked":          len(active_missions),
         "launched_total":    total_launched,
         "stale_recovered":   stale_recovered,
         "reconciled_feed":   reconciled_feed,
+        "drained_factory":   drained_factory,
+        "reconciled_factory": reconciled_factory,
     }
 
 
@@ -1400,14 +1556,24 @@ async def _resolve_merged_ideation_summary(
     fallback_summary: str,
 ) -> str:
     from app.services.mission_ideation_merge import merge_mission_production_ideas_from_nodes
+    from app.services.subscription_plan_service import resolve_workspace_plan_slug
 
     mission_type = await _load_mission_type(mission_id)
     ideation_nodes = await _load_content_ideation_nodes(mission_id)
     calendar_nodes = await _load_content_calendar_nodes(mission_id)
     nodes = [*ideation_nodes, *calendar_nodes]
+
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(select(Mission.workspace_id).where(Mission.id == mission_id))
+        row = r.one_or_none()
+    workspace_id = str(row[0]) if row else ""
+    plan_slug = await resolve_workspace_plan_slug(workspace_id) if workspace_id else None
+
     pool_json, ideas = merge_mission_production_ideas_from_nodes(
         nodes,
         mission_type=mission_type or None,
+        subscription_plan_slug=plan_slug,
     )
     if ideas:
         logger.info(
@@ -1537,11 +1703,23 @@ def _schedule_ensure_mission_feed(
     workspace_id: uuid.UUID,
     *,
     delay_sec: float = 20,
+    operator_initiated: bool = False,
 ) -> None:
     """
     Coalesce duplicate Feed production triggers into one debounced ensure run.
     Prevents content_ideation + calendar + feed_cohesion from racing (409 / cut-off).
     """
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if not auto_feed_production_allowed(operator_initiated=operator_initiated):
+        logger.info(
+            "auto_feed_production_skipped",
+            mission_id=str(mission_id),
+            reason="auto_feed_production_disabled",
+            operator_initiated=operator_initiated,
+        )
+        return
+
     from app.debug_session_log import debug_log
 
     key = str(mission_id)
@@ -1560,11 +1738,37 @@ def _schedule_ensure_mission_feed(
     if skipped:
         return
 
+    # Celery mode: dispatch to the durable ``advance`` queue (cross-replica) instead
+    # of an in-process asyncio task that would be orphaned when run under a Celery
+    # worker's run_until_complete loop.
+    from app.config import get_settings
+
+    if get_settings().use_celery_orchestrator:
+        try:
+            from app.tasks.advance_tasks import ensure_mission_feed
+
+            ensure_mission_feed.apply_async(
+                args=[str(mission_id), str(workspace_id)],
+                countdown=max(0.0, float(delay_sec)),
+                queue="advance",
+            )
+            return
+        except Exception as exc:  # pragma: no cover - fall back if broker down
+            logger.warning(
+                "schedule_ensure_feed.celery_dispatch_failed_fallback_asyncio",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+
     async def _run() -> None:
         try:
             if delay_sec > 0:
                 await asyncio.sleep(delay_sec)
-            await _ensure_mission_feed_production(mission_id, workspace_id)
+            await _ensure_mission_feed_production(
+                mission_id,
+                workspace_id,
+                operator_initiated=operator_initiated,
+            )
         finally:
             _scheduled_ensure_tasks.pop(key, None)
 
@@ -1577,11 +1781,28 @@ def _schedule_ensure_mission_feed(
 async def _ensure_mission_feed_production(
     mission_id: uuid.UUID,
     workspace_id: uuid.UUID,
+    *,
+    operator_initiated: bool = False,
 ) -> None:
     """Delegate to Sprint 2 mission feed orchestrator (lazy import avoids cycles)."""
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if not auto_feed_production_allowed(operator_initiated=operator_initiated):
+        logger.info(
+            "auto_feed_production_skipped",
+            mission_id=str(mission_id),
+            reason="auto_feed_production_disabled",
+            operator_initiated=operator_initiated,
+        )
+        return
+
     from app.services.mission_feed_production_service import ensure_mission_feed_production
 
-    await ensure_mission_feed_production(mission_id, workspace_id)
+    await ensure_mission_feed_production(
+        mission_id,
+        workspace_id,
+        operator_initiated=operator_initiated,
+    )
 
 
 async def _reconcile_completed_missions_missing_feed() -> int:
@@ -1600,11 +1821,21 @@ async def _reconcile_completed_missions_missing_feed() -> int:
 
     for mission_id, workspace_id, perf_raw, mission_type in rows:
         perf = dict(perf_raw or {})
+        from app.services.subscription_plan_service import resolve_workspace_plan_slug
+
+        plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
         package_total = resolve_feed_package_total(
             str(mission_type or ""),
             hub_production_package=str(perf.get("hub_production_package") or ""),
+            subscription_plan_slug=plan_slug,
         )
         if _mission_feed_package_complete(perf, package_total=package_total):
+            continue
+        # Factory already owns this mission — drain/resume only, never re-run ensure pipeline.
+        from app.services import production_job_service as pj
+
+        job_summary = await pj.mission_job_summary(mission_id)
+        if int(job_summary.get("total") or 0) > 0:
             continue
         nodes = await _load_content_ideation_nodes(mission_id)
         if not any(
@@ -1623,6 +1854,73 @@ async def _reconcile_completed_missions_missing_feed() -> int:
     return reconciled
 
 
+async def _reconcile_production_factory_gaps() -> int:
+    """Bounded guaranteed-fill: requeue exhausted slots at most once per 6h per mission.
+
+    Prevents scheduler ticks from repeatedly hammering fal.ai on missions that already
+    failed all slot attempts. Operators can still use POST requeue-factory-jobs."""
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if not auto_feed_production_allowed():
+        return 0
+
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select, update
+
+    from app.models.mission import Mission
+    from app.services import production_job_service as pj
+    from app.services.production_factory_service import schedule_drain
+
+    missions = await pj.list_missions_with_exhausted_incomplete(limit=10)
+    count = 0
+    factory = _get_session_factory()
+    cooldown = timedelta(hours=6)
+    now = datetime.now(timezone.utc)
+
+    for mission_id_s, workspace_id_s in missions:
+        try:
+            mission_id = uuid.UUID(mission_id_s)
+            async with factory() as db:
+                r = await db.execute(
+                    select(Mission.performance_summary).where(Mission.id == mission_id)
+                )
+                row = r.first()
+                perf = dict(row[0] or {}) if row else {}
+            last_at_raw = (perf.get("factory_reconcile_at") or {}).get("at")
+            if last_at_raw:
+                try:
+                    last_at = datetime.fromisoformat(str(last_at_raw).replace("Z", "+00:00"))
+                    if last_at.tzinfo is None:
+                        last_at = last_at.replace(tzinfo=timezone.utc)
+                    if now - last_at < cooldown:
+                        continue
+                except ValueError:
+                    pass
+
+            requeued = await pj.requeue_exhausted(mission_id)
+            if requeued:
+                async with factory() as db:
+                    perf["factory_reconcile_at"] = {"at": now.isoformat(), "requeued": requeued}
+                    await db.execute(
+                        update(Mission)
+                        .where(Mission.id == mission_id)
+                        .values(performance_summary=perf)
+                    )
+                    await db.commit()
+                schedule_drain(mission_id, uuid.UUID(workspace_id_s), delay_sec=0.0)
+                count += 1
+                if count >= 2:
+                    break
+        except Exception as exc:
+            logger.warning(
+                "production_factory_requeue_failed",
+                mission_id=mission_id_s,
+                error=str(exc)[:200],
+            )
+    return count
+
+
 async def _trigger_content_production_pipeline(
     workspace_id: uuid.UUID,
     mission_id: uuid.UUID,
@@ -1631,11 +1929,22 @@ async def _trigger_content_production_pipeline(
     brand: Any,
     *,
     force: bool = False,
+    operator_initiated: bool = False,
 ) -> dict | None:
     """
     Production Stack entry point: Feed Art Director review FIRST, then auto-produce
     with the report so layout rotation, hero reel, and flagged ideas apply.
     """
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if not force and not auto_feed_production_allowed(operator_initiated=operator_initiated):
+        logger.info(
+            "auto_produce_skipped",
+            mission_id=str(mission_id),
+            reason="auto_feed_production_disabled",
+        )
+        return {"produced": 0, "skipped": True, "reason": "auto_feed_production_disabled"}
+
     if not force and await _other_ideation_nodes_pending(mission_id, node_key):
         from app.debug_session_log import debug_log
 
@@ -1650,6 +1959,7 @@ async def _trigger_content_production_pipeline(
             workspace_id,
             error_message="Awaiting other content ideation nodes",
         )
+        await _record_production_blocked(mission_id, reason="awaiting_other_ideation")
         logger.info(
             "auto_produce_deferred",
             mission_id=str(mission_id),
@@ -1664,6 +1974,7 @@ async def _trigger_content_production_pipeline(
             workspace_id,
             error_message="Awaiting visual_design_cards",
         )
+        await _record_production_blocked(mission_id, reason="awaiting_visual_design_cards")
         logger.info(
             "auto_produce_deferred",
             mission_id=str(mission_id),
@@ -1682,6 +1993,7 @@ async def _trigger_content_production_pipeline(
             workspace_id,
             error_message="Awaiting content_calendar",
         )
+        await _record_production_blocked(mission_id, reason="awaiting_content_calendar")
         logger.info(
             "auto_produce_deferred",
             mission_id=str(mission_id),
@@ -1705,10 +2017,13 @@ async def _trigger_content_production_pipeline(
         perf = dict(row[0] or {}) if row else {}
         mission_type = str(row[1] or "").strip() if row else ""
     from app.services.mission_ideation_merge import resolve_feed_package_total
+    from app.services.subscription_plan_service import resolve_workspace_plan_slug
 
+    plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
     package_total = resolve_feed_package_total(
         mission_type,
         hub_production_package=str(perf.get("hub_production_package") or ""),
+        subscription_plan_slug=plan_slug,
     )
     if not force and _recent_feed_produce_skip(perf, package_total=package_total):
         logger.info(
@@ -1742,6 +2057,7 @@ async def _trigger_content_production_pipeline(
             output_summary=output_summary,
             brand=brand,
             force=force,
+            operator_initiated=operator_initiated,
         )
     finally:
         await _release_feed_production_lock(mission_id)
@@ -1755,11 +2071,15 @@ async def _run_content_production_pipeline_locked(
     brand: Any,
     *,
     force: bool = False,
+    operator_initiated: bool = False,
 ) -> dict | None:
     mission_ctx = await _load_mission_production_context(mission_id)
     await _refresh_trend_brief_if_stale(workspace_id, brand)
     await _refresh_extended_intel_if_stale(workspace_id, brand)
     report: dict = {}
+
+    # P2: FD now runs as a real graph node — report is persisted on feed_cohesion_review
+    # node output_summary. Read it directly instead of re-running the LLM crew.
     cached = None if force else await _load_cached_feed_director_report(mission_id)
     hub_pkg = str((mission_ctx or {}).get("production_package") or "").strip().lower()
     if cached and hub_pkg:
@@ -1780,6 +2100,8 @@ async def _run_content_production_pipeline_locked(
             assignments=len(cached.get("production_assignments") or []),
         )
     else:
+        # Fallback: if FD node hasn't completed yet (e.g. reproduce-feed before FD ran),
+        # run inline (legacy path). This should be rare after P2.
         try:
             report = await _run_feed_art_director_report(
                 workspace_id=workspace_id,
@@ -1809,16 +2131,95 @@ async def _run_content_production_pipeline_locked(
             assignments_generated=len(report.get("production_assignments") or []),
         )
 
-    produce_data = await _trigger_auto_produce(
-        workspace_id=workspace_id,
-        mission_id=mission_id,
-        node_key=node_key,
-        output_summary=output_summary,
-        brand=brand,
-        feed_director_report=report or None,
-        mission_ctx=mission_ctx,
-        skip_artifact_dedupe=force,
-    )
+    # ── Durable Production Factory ──────────────────────────────────────────
+    # Instead of one blocking /api/auto-produce that best-effort renders all 10
+    # slots (and silently drops carousel/reel on failure), plan the manifest into
+    # durable per-slot jobs and drain them one slot at a time. The feed is fed
+    # incrementally and the manifest is guaranteed to reach 16/16 via retries +
+    # the reconciler. Restart-safe: claimed jobs resume on the next scheduler tick.
+    produce_data: dict | None = None
+    try:
+        from app.services.production_factory_service import (
+            enqueue_mission_jobs,
+            schedule_drain,
+        )
+
+        enqueued = await enqueue_mission_jobs(
+            workspace_id=workspace_id,
+            mission_id=mission_id,
+            node_key=node_key,
+            output_summary=output_summary,
+            brand=brand,
+            feed_director_report=report or None,
+            mission_ctx=mission_ctx,
+        )
+        schedule_drain(
+            mission_id,
+            workspace_id,
+            delay_sec=2.0,
+            force=operator_initiated,
+        )
+        produce_data = {
+            "produced": 0,
+            "enqueued": enqueued,
+            "skipped": True,
+            "reason": "enqueued_to_factory",
+            "factory": True,
+        }
+        logger.info(
+            "production_factory.dispatch",
+            mission_id=str(mission_id),
+            node_key=node_key,
+            enqueued=enqueued,
+        )
+        await _record_production_path(mission_id, path="factory")
+    except Exception as exc:
+        # When PRODUCTION_FACTORY_REQUIRE is set, the durable factory is the only
+        # sanctioned path: an enqueue failure must surface loudly instead of silently
+        # degrading to the legacy single-shot renderer. Default (unset/false) keeps the
+        # current behaviour — fall back to legacy inline production — so this flag is a
+        # zero-impact opt-in until operators are ready to retire the legacy path.
+        _require_factory = os.getenv("PRODUCTION_FACTORY_REQUIRE", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if _require_factory:
+            logger.error(
+                "production_factory.enqueue_failed_require_mode",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+            await _record_production_path(
+                mission_id, path="factory_failed", detail=str(exc)
+            )
+            await _record_mission_production_failure(
+                mission_id,
+                status_code=500,
+                error=f"Üretim fabrikası kuyruğa alamadı: {str(exc)[:160]}",
+            )
+            produce_data = None
+        else:
+            # Fallback to the legacy single-shot path if the factory fails to enqueue.
+            logger.warning(
+                "production_factory.enqueue_failed_fallback_inline",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+            await _record_production_path(
+                mission_id, path="legacy_fallback", detail=str(exc)
+            )
+            produce_data = await _trigger_auto_produce(
+                workspace_id=workspace_id,
+                mission_id=mission_id,
+                node_key=node_key,
+                output_summary=output_summary,
+                brand=brand,
+                feed_director_report=report or None,
+                mission_ctx=mission_ctx,
+                skip_artifact_dedupe=force,
+            )
     if produce_data and report:
         pis = produce_data.get("pis")
         if pis:
@@ -1882,6 +2283,12 @@ async def _run_content_production_pipeline_locked(
             async with factory() as cost_db:
                 await append_mission_ai_cost(
                     cost_db, mission_id, "auto_produce", cost_est,
+                    source_system="next_auto_produce",
+                    source_ref=f"produced={produced_n},rendering={rendering_n}",
+                    idempotency_key=(
+                        f"auto_produce_batch:{mission_id}:{produced_n}:"
+                        f"{publish_ready_n}:{round(cost_est, 4)}"
+                    ),
                 )
         except Exception as cost_exc:
             logger.warning(
@@ -2024,10 +2431,12 @@ async def _run_feed_art_director_report(
     if brief and brief not in weekly_theme:
         weekly_theme = f"{weekly_theme} | {brief[:120]}".strip(" |")
 
+    from app.crew.tasks.feed_art_director_tasks import FD_CONTENT_IDEAS_INPUT_MAX_CHARS
+
     report = await asyncio.to_thread(
         run_feed_art_director,
         brand=brand,
-        content_ideas_json=output_summary[:15000],
+        content_ideas_json=output_summary[:FD_CONTENT_IDEAS_INPUT_MAX_CHARS],
         weekly_theme=weekly_theme,
         mission_type=ctx.get("mission_type") or "",
         mission_title=title,
@@ -2183,6 +2592,7 @@ async def _record_mission_feed_produce_success(
             last_feed["enhance_trace"] = enhance_trace
         summary["last_feed_produce"] = last_feed
         summary.pop("production_error", None)
+        summary.pop("production_status", None)
         await db.execute(
             update(Mission)
             .where(Mission.id == mission_id)
@@ -2190,6 +2600,89 @@ async def _record_mission_feed_produce_success(
             .values(performance_summary=summary),
         )
         await db.commit()
+
+
+# Machine reason → operator-facing awaiting-node labels (Mission Hub banner).
+_PRODUCTION_BLOCK_LABELS: dict[str, str] = {
+    "awaiting_other_ideation": "İçerik fikirleri (content_ideation)",
+    "awaiting_visual_design_cards": "Görsel tasarım kartları (visual_design_cards)",
+    "awaiting_content_calendar": "İçerik takvimi (content_calendar)",
+}
+
+
+async def _record_production_blocked(
+    mission_id: uuid.UUID,
+    *,
+    reason: str,
+) -> None:
+    """Surface *why* feed production is waiting so Mission Hub can explain the delay.
+
+    Writes ``performance_summary.production_status`` with a machine ``reason`` and a
+    human-readable ``awaiting_nodes`` list. Cleared on the next successful produce.
+    """
+    label = _PRODUCTION_BLOCK_LABELS.get(reason)
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(
+            select(Mission.performance_summary).where(Mission.id == mission_id)
+        )
+        row = r.one_or_none()
+        summary = dict(row[0] or {}) if row else {}
+        summary["production_status"] = {
+            "state": "awaiting_dependencies",
+            "reason": reason,
+            "awaiting_nodes": [label] if label else [],
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(performance_summary=summary),
+        )
+        await db.commit()
+
+
+async def _record_production_path(
+    mission_id: uuid.UUID,
+    *,
+    path: str,
+    detail: str | None = None,
+) -> None:
+    """Record which production path actually ran (durable factory vs legacy inline).
+
+    Purely additive observability: writes ``performance_summary.production_path``
+    without touching control flow. ``path='factory'`` is the healthy case;
+    ``path='legacy_fallback'`` means the durable factory enqueue raised and we
+    degraded to the single-shot path — the ``detail`` carries the truncated error.
+    This is the signal operators need before the legacy path can be retired.
+    """
+    factory = _get_session_factory()
+    try:
+        async with factory() as db:
+            r = await db.execute(
+                select(Mission.performance_summary).where(Mission.id == mission_id)
+            )
+            row = r.one_or_none()
+            summary = dict(row[0] or {}) if row else {}
+            summary["production_path"] = {
+                "path": path,
+                "detail": (detail or "")[:200] or None,
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.execute(
+                update(Mission)
+                .where(Mission.id == mission_id)
+                .execution_options(synchronize_session=False)
+                .values(performance_summary=summary),
+            )
+            await db.commit()
+    except Exception as exc:  # telemetry must never break production
+        logger.warning(
+            "production_factory.record_path_failed",
+            mission_id=str(mission_id),
+            error=str(exc)[:200],
+        )
 
 
 async def _record_mission_production_failure(
@@ -2220,280 +2713,16 @@ async def _record_mission_production_failure(
         await db.commit()
 
 
-async def _trigger_auto_produce(
-    workspace_id: uuid.UUID,
-    mission_id: uuid.UUID,
-    node_key: str,
-    output_summary: str,
-    brand: Any,
-    feed_director_report: dict | None = None,
-    mission_ctx: dict[str, str] | None = None,
-    *,
-    skip_artifact_dedupe: bool = False,
-) -> dict | None:
+async def _trigger_auto_produce(*args: Any, **kwargs: Any) -> dict | None:
+    """Backward-compatible shim — implementation moved to ``production_trigger`` (b1b).
+
+    Kept so the legacy inline-fallback call site in this module (and any lazy
+    importers) keep working while the orchestration logic lives in its own
+    module behind :mod:`production_bridge`.
     """
-    Non-blocking call to Next.js /api/auto-produce after content_ideation completes.
-    Parses the raw_output into ideas, attaches gallery analysis, and lets the BFF
-    create pending_review artifacts in .NET.
-    """
-    import json as _json
-    import re as _re
-    import httpx
+    from app.services.production_trigger import trigger_auto_produce as _impl
 
-    settings = get_settings()
-    nextjs_url = settings.nextjs_internal_url
-
-    if not mission_ctx:
-        mission_ctx = await _load_mission_production_context(mission_id)
-
-    try:
-        # ── Parse ideas from output_summary ─────────────────────────────────
-        from app.crew.canvas_output_parser import parse_ideation_output
-        # Priority 0: merged weekly package JSON from _resolve_merged_ideation_summary
-        # (calendar + ideation + ensure_weekly_format_coverage — TS parity).
-        ideas: list = []
-        stripped_summary = output_summary.strip()
-        if stripped_summary.startswith("["):
-            try:
-                raw_list = _json.loads(stripped_summary)
-                if isinstance(raw_list, list) and raw_list:
-                    ideas = raw_list
-            except Exception:
-                ideas = []
-
-        # Priority 1: extract JSON array from mixed output
-        if not ideas:
-            json_match = _re.search(r"\[.*\]", output_summary, _re.DOTALL)
-            if json_match:
-                try:
-                    raw_list = _json.loads(json_match.group())
-                    ideas = raw_list if isinstance(raw_list, list) else []
-                except Exception:
-                    ideas = []
-
-        # Priority 2: canvas parser — only if raw parse failed or returned nothing
-        if not ideas:
-            canvas_ideas = parse_ideation_output(output_summary)
-            if canvas_ideas:
-                for c in canvas_ideas:
-                    vb = c.get("visualBrief") or {}
-                    ideas.append({
-                        **c,
-                        "concept_title":        c.get("ideaTitle") or c.get("headline", ""),
-                        "caption_draft":        c.get("caption", ""),
-                        "content_kind":         "instagram_" + c.get("format", "post").replace("feed", "post"),
-                        "selected_gallery_url": vb.get("galleryUrl"),
-                        # Preserve as much VPS as canvas output carries
-                        "visual_production_spec": {
-                            "treatment":            vb.get("treatment") or "pure_photo",
-                            "selected_gallery_url": vb.get("galleryUrl"),
-                            "image_edit_prompt":    vb.get("imageEditPrompt") or vb.get("editPrompt", ""),
-                            "text_layers":          vb.get("textLayers") or {},
-                            "reel_motion_spec":     vb.get("reelMotionSpec") or {},
-                        },
-                    })
-                logger.info(
-                    "canvas_output_parsed_for_auto_produce",
-                    mission_id=str(mission_id),
-                    idea_count=len(ideas),
-                )
-            else:
-                logger.warning("auto_produce_skip_no_json", mission_id=str(mission_id), node_key=node_key)
-                return
-
-        if not ideas:
-            return
-
-        # Experimental Visual Production Director (opt-in — failures are non-fatal)
-        try:
-            from app.services.visual_production_director_service import (
-                maybe_enrich_ideas_with_visual_director,
-            )
-
-            factory = _get_session_factory()
-            async with factory() as _vpd_db:
-                ideas = await maybe_enrich_ideas_with_visual_director(
-                    _vpd_db,
-                    workspace_id,
-                    brand,
-                    ideas,
-                    mission_ctx=mission_ctx,
-                    feed_director_report=feed_director_report,
-                )
-        except Exception as _vpd_exc:
-            logger.warning(
-                "visual_production_director.hook_failed",
-                mission_id=str(mission_id),
-                error=str(_vpd_exc)[:200],
-            )
-
-        gallery = {}
-        if brand and brand.gallery_analysis:
-            try:
-                gallery = _json.loads(brand.gallery_analysis)
-            except Exception:
-                pass
-
-        # Auto-analyze gallery for new tenants: if reference photos exist but gallery
-        # has never been analyzed, trigger background analysis so matching works correctly.
-        # Fire-and-forget — doesn't block production.
-        ref_urls_raw = brand.reference_image_urls if brand else None
-        ref_count = 0
-        if ref_urls_raw:
-            try:
-                ref_urls = _json.loads(ref_urls_raw) if isinstance(ref_urls_raw, str) else ref_urls_raw
-                ref_count = len(ref_urls) if isinstance(ref_urls, list) else 0
-            except Exception:
-                pass
-        if ref_count > 0 and not gallery:
-            try:
-                nextjs_url_for_analyze = (
-                    getattr(settings, "nextjs_url", "http://localhost:3000").rstrip("/")
-                    if hasattr(settings, "nextjs_url") else "http://localhost:3000"
-                )
-                async with httpx.AsyncClient(timeout=5.0) as _ac:
-                    await _ac.post(
-                        f"{nextjs_url_for_analyze}/api/gallery-intelligence/{workspace_id}/analyze-coverage",
-                        json={"tier": "standard", "maxPhotos": 20},
-                    )
-                logger.info("auto_gallery_analysis_triggered", workspace_id=str(workspace_id))
-            except Exception as _age:
-                logger.warning("auto_gallery_analysis_trigger_failed",
-                               workspace_id=str(workspace_id), error=str(_age)[:100])
-
-        calendar_nodes = await _load_content_calendar_nodes(mission_id)
-        calendar_plans = _parse_calendar_plans_from_nodes(calendar_nodes)
-
-        from app.services.mission_visual_design_parse import (
-            parse_visual_design_cards_from_nodes,
-        )
-
-        visual_design_nodes = await _load_visual_design_nodes(mission_id)
-        visual_design_cards = parse_visual_design_cards_from_nodes(visual_design_nodes)
-
-        ctx = mission_ctx or {}
-        payload = {
-            "workspaceId": str(workspace_id),
-            "missionId": str(mission_id),
-            "nodeKey": node_key,
-            "ideas": ideas,
-            "galleryAnalysis": gallery,
-            "brandName": brand.business_name if brand else "",
-            "bundleCards": True,
-            "missionType": ctx.get("mission_type") or None,
-            "missionTitle": ctx.get("mission_title") or None,
-            "creativeBrief": ctx.get("creative_brief") or None,
-        }
-        if calendar_plans:
-            payload["calendarPlans"] = calendar_plans
-        if visual_design_cards:
-            payload["visualDesignCards"] = visual_design_cards
-            logger.info(
-                "auto_produce_visual_design_cards",
-                mission_id=str(mission_id),
-                card_count=len(visual_design_cards),
-            )
-        if feed_director_report:
-            payload["feedDirectorReport"] = feed_director_report
-        brand_theme = getattr(brand, "brand_theme", None) if brand else None
-        if isinstance(brand_theme, dict) and brand_theme:
-            payload["brandTheme"] = brand_theme
-        pkg = (mission_ctx or {}).get("production_package")
-        if not isinstance(pkg, str) or not pkg.strip():
-            if feed_director_report:
-                pkg = feed_director_report.get("production_package")
-        if isinstance(pkg, str) and pkg.strip():
-            payload["productionPackage"] = pkg.strip()
-            if feed_director_report and isinstance(feed_director_report, dict):
-                feed_director_report["production_package"] = pkg.strip()
-        if skip_artifact_dedupe:
-            payload["skipArtifactDedupe"] = True
-
-        # 320s matches Next.js route maxDuration=300s plus startup buffer.
-        # Runway reels can take 3+ minutes, so 30s was timing out before artifacts
-        # were created. Fire-and-forget: caller ignores the timeout warning.
-        internal_key = getattr(settings, "internal_api_key", None) or ""
-        # X-Tenant-Id is always required — Nexus saves artifact under this tenant.
-        headers: dict[str, str] = {"X-Tenant-Id": str(workspace_id)}
-        if internal_key:
-            headers["X-Internal-Api-Key"] = internal_key
-
-        # connect_timeout: fast (local) — just confirm the POST is accepted.
-        # read_timeout: generous (360s) — Runway reels + Remotion stories take 3-5 min.
-        # RemoteProtocolError / ReadTimeout are treated as fire-and-forget below:
-        # the Next.js route keeps running in background even if Python disconnects.
-        _timeout = httpx.Timeout(connect=15.0, read=580.0, write=30.0, pool=5.0)
-        async with httpx.AsyncClient(timeout=_timeout) as client:
-            resp = await client.post(
-                f"{nextjs_url}/api/auto-produce",
-                json=payload,
-                headers=headers or None,
-            )
-
-        if resp.status_code < 300:
-            data = resp.json()
-            logger.info(
-                "auto_produce_success",
-                mission_id=str(mission_id),
-                node_key=node_key,
-                produced=data.get("produced", 0),
-                total=data.get("total", 0),
-                idea_count=data.get("ideaCount", 0),
-                pis_avg=(data.get("pis") or {}).get("avg"),
-                pis_skipped=(data.get("pis") or {}).get("skipped"),
-            )
-            return data
-        if resp.status_code == 409:
-            logger.info(
-                "auto_produce_deferred_conflict",
-                mission_id=str(mission_id),
-                node_key=node_key,
-            )
-            return {"produced": 0, "skipped": True, "reason": "production_in_flight"}
-        else:
-            err_body = resp.text[:500]
-            logger.warning(
-                "auto_produce_failed",
-                mission_id=str(mission_id),
-                status=resp.status_code,
-                body=err_body,
-            )
-            try:
-                err_json = resp.json()
-                err_msg = str(err_json.get("error") or err_body)[:400]
-            except Exception:
-                err_msg = err_body[:400]
-            await _record_mission_production_failure(
-                mission_id,
-                status_code=resp.status_code,
-                error=err_msg,
-            )
-    except Exception as exc:
-        import httpx as _httpx
-        # ReadTimeout / RemoteProtocolError = route is still running in the background
-        # (fire-and-forget scenario: connection dropped but Next.js continues producing).
-        # Do NOT record these as production failures — artifacts will appear later.
-        _is_timeout = isinstance(exc, (_httpx.ReadTimeout, _httpx.ConnectTimeout))
-        _is_disconnect = isinstance(exc, _httpx.RemoteProtocolError)
-        if _is_timeout or _is_disconnect:
-            logger.info(
-                "auto_produce_fire_and_forget",
-                mission_id=str(mission_id),
-                reason="route_still_running",
-                exc=str(exc)[:120],
-            )
-        else:
-            logger.warning(
-                "auto_produce_error",
-                mission_id=str(mission_id),
-                error=str(exc)[:300],
-            )
-            await _record_mission_production_failure(
-                mission_id,
-                status_code=0,
-                error=str(exc)[:400],
-            )
-    return None
+    return await _impl(*args, **kwargs)
 
 
 # ── Intel auto-refresh helpers ─────────────────────────────────────────────────

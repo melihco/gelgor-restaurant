@@ -1,4 +1,5 @@
 import type { OutputArtifact } from '@/types';
+import { parseArtifactMetadata } from '@/lib/artifact-utils';
 import { isRemotionVideoStoryArtifact } from '@/lib/mission-feed-package';
 import { resolveStoryVideoUrl } from '@/lib/production-bundle';
 
@@ -17,7 +18,7 @@ export function artifactMatchesSlotFilter(
 ): boolean {
   if (slot === 'all') return true;
 
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
   const role = String(meta.production_role ?? '').trim();
   const pipeline = String(meta.pipeline ?? '').trim();
   const kind = detectKind(artifact);
@@ -37,8 +38,13 @@ export function artifactMatchesSlotFilter(
   if (slot === 'designed') {
     return (
       role === 'designed_post'
+      || role === 'fal_designed_post'
+      || role === 'fal_only_post'
+      || role === 'designed_typography'
       || role === 'paid_ad_creative'
       || pipeline === 'remotion_poster'
+      || pipeline === 'fal_design'
+      || pipeline === 'fal_only'
       || pipeline === 'meta_ad'
     );
   }

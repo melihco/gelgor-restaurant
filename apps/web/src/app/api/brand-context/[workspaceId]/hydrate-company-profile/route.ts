@@ -6,11 +6,12 @@ import {
 } from '@/lib/tenant-production-guard';
 import { readBrandContextFromDb } from '@/lib/brand-context-db-fallback';
 import { buildCompanyProfilePatchFromPython } from '@/lib/sync-company-profile-from-python';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
+const NEXUS_API = serverConfig.nexus.baseUrl;
 
 export async function POST(
   req: NextRequest,

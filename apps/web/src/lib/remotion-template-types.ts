@@ -28,7 +28,10 @@ export type RemotionLayoutFamily =
   | 'bento_story'
   | 'neon_night'
   | 'quote_card'
-  | 'location_pin';
+  | 'location_pin'
+  | 'luxury_kinetic_type'
+  | 'glassmorphism_showcase'
+  | 'editorial_product_stage';
 
 export type RemotionTextZone =
   | 'bottom_left'
@@ -70,6 +73,17 @@ export type FontPersonality =
 export type HeadlineTreatment = 'flat' | 'bubble' | 'sticker';
 
 export type BackgroundMode = 'photo_full' | 'split_panel' | 'duotone_wash' | 'solid_panel';
+
+export type TemplateColorToken = 'primary' | 'accent' | 'text' | 'headline' | 'overlay';
+
+export interface TemplateColorPolicy {
+  headline?: TemplateColorToken;
+  subtitle?: TemplateColorToken;
+  category?: TemplateColorToken;
+  overlay?: Extract<TemplateColorToken, 'primary' | 'accent' | 'overlay'>;
+  /** Poster body/detail copy */
+  text?: Extract<TemplateColorToken, 'primary' | 'accent' | 'text' | 'headline'>;
+}
 
 /** Parametric layout knobs — consumed by StoryLayoutEngine */
 export interface RemotionLayoutSpec {
@@ -116,6 +130,7 @@ export interface RemotionLayoutSpec {
   panelUsesPrimary: boolean;
   accentOnCategory: boolean;
   textOnPhoto: boolean;
+  colorPolicy?: TemplateColorPolicy;
 }
 
 export interface RemotionTemplateDefinition {

@@ -21,6 +21,7 @@ import {
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
 import { resolveClientMediaUrl } from '@/lib/media-url';
+import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge';
 import { listMissionProducedArtifacts } from '@/lib/mission-pipeline-transparency';
 import { SafeCoverImage } from './SafeCoverImage';
 
@@ -147,6 +148,7 @@ function MissionFeedPreviewTile({
   const bundleStatus = getProductionBundleStatus(artifact);
   const headline = String(meta.headline || native.headline || artifact.title || '').slice(0, 40);
   const pending = artifact.status === 'pending_review';
+  const productionBadge = resolveArtifactProductionBadge(artifact);
 
   const bundleIssueLabel = (() => {
     if (rendering) return 'Render…';
@@ -219,11 +221,33 @@ function MissionFeedPreviewTile({
 
       <div style={{
         position: 'absolute', top: 6, left: 6,
-        fontSize: 9, fontWeight: 800, padding: '3px 7px', borderRadius: 8,
-        background: 'rgba(0,0,0,0.55)', color: FORMAT_COLOR[fmt],
-        backdropFilter: 'blur(4px)',
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4,
+        maxWidth: 'calc(100% - 20px)', pointerEvents: 'none',
       }}>
-        {FORMAT_LABEL[fmt]}
+        <span style={{
+          fontSize: 9, fontWeight: 800, padding: '3px 7px', borderRadius: 8,
+          background: 'rgba(0,0,0,0.55)', color: FORMAT_COLOR[fmt],
+          backdropFilter: 'blur(4px)',
+        }}>
+          {FORMAT_LABEL[fmt]}
+        </span>
+        <span style={{
+          fontSize: 8, fontWeight: 800, padding: '2px 6px', borderRadius: 7,
+          background: 'rgba(0,0,0,0.62)', color: productionBadge.engineColor,
+          backdropFilter: 'blur(4px)', letterSpacing: '0.02em',
+        }}>
+          {productionBadge.engine}
+        </span>
+        {productionBadge.slotRole && (
+          <span style={{
+            fontSize: 7, fontWeight: 700, padding: '2px 5px', borderRadius: 6,
+            background: 'rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.88)',
+            backdropFilter: 'blur(4px)', maxWidth: '100%',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {productionBadge.slot}
+          </span>
+        )}
       </div>
 
       {pending && (

@@ -3,7 +3,7 @@
 **Amaç:** Bir pilot tenant'ı (ör. beach restaurant / nightlife) baştan sona doğrulamak.
 Otonom üretim (S10) **yalnızca** bu checklist tam geçtikten ve BAS=100 olduktan sonra açılır.
 
-**Pilot tenant:** `431b2901-a2dc-4df6-abe3-3670d9844851` (Sarnıç Beach) — kod: `SARNIC_BEACH_WORKSPACE_ID` in `apps/web/src/lib/visual-overlay-policy.ts`  
+**Pilot tenant:** `431b2901-a2dc-4df6-abe3-3670d9844851` (Sarnıç Beach) — QA/scripts only; production logic is multi-tenant (see `.cursor/rules/multi-tenant-development.mdc`)  
 **Tarih:** 2026-05-31  
 **Yapan:** Faz-1 audit (otomatik + manuel)  
 **Detay rapor:** [`pilot-qa-sarnic-results.md`](./pilot-qa-sarnic-results.md)  

@@ -55,15 +55,18 @@ export interface AgencyPosterRenderInput {
   cta?: string;
   primaryColor?: string;
   accentColor?: string;
+  headlineColor?: string;
+  textColor?: string;
   fontFamily?: string;
   bodyFont?: string;
-  textColor?: string;
   logoUrl?: string;
   lineupArtists?: string[];
   sector?: string;
   /** Pre-resolved kit (Marka Detayı tokens) — wins over inline colors/fonts */
   brandKit?: AnnouncementBrandKit;
   brandTheme?: Record<string, unknown> | null;
+  /** Faz 2.2 — production tier; premium preserves full Grafiker (gpt-4o high) */
+  profileTier?: 'economy' | 'agency' | 'premium';
 }
 
 async function rasterizeOverlayWithFonts(
@@ -132,12 +135,14 @@ async function renderAgencyPosterOnce(
       brandName: input.brandName,
       primaryColor: input.primaryColor,
       accentColor: input.accentColor,
+      ...(input.headlineColor ? { headlineColor: input.headlineColor } : {}),
       ...(input.textColor ? { textColor: input.textColor } : {}),
     },
   });
   const brandKit = mergeBrandKit(baseKit, {
     ...(input.fontFamily ? { headingFontStack: fontNameToStack(input.fontFamily, true) } : {}),
     ...(input.bodyFont ? { bodyFontStack: fontNameToStack(input.bodyFont, false) } : {}),
+    ...(input.headlineColor ? { headlineColor: input.headlineColor } : {}),
     ...(input.textColor ? { textColor: input.textColor } : {}),
     ...(input.logoUrl ? { logoUrl: input.logoUrl } : {}),
   });
@@ -242,7 +247,21 @@ export async function renderAgencyPoster(input: AgencyPosterRenderInput): Promis
     grafikerReview = await runGrafikerReviewOnImageBuffer(
       last.buffer,
       `SpecPoster:${input.format}`,
+      { attempt },
+      input.profileTier,
     );
+    if (grafikerReview) {
+      try {
+        const { emitQualityEvent } = await import('@/lib/ai-cost-telemetry');
+        emitQualityEvent({
+          event: 'grafiker',
+          pass: grafikerMeetsBar(grafikerReview),
+          score: grafikerReview.score,
+          attempt,
+          label: `poster:${input.format}`,
+        });
+      } catch { /* telemetri üretimi bozmamalı */ }
+    }
     if (!grafikerReview || grafikerMeetsBar(grafikerReview)) break;
 
     const clipped = (grafikerReview.issues ?? []).some((i) =>

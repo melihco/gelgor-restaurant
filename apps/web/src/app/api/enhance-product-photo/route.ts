@@ -59,6 +59,7 @@ import {
 import { recordWorkspaceUsageCost } from '@/lib/usage-cost-client';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -227,8 +228,8 @@ async function getSceneBrief(opts: {
   // Try Python CrewAI Scene Director (only if workspaceId provided and backend reachable)
   if (workspaceId) {
     try {
-      const CREW = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
-      const INTERNAL_KEY = process.env.INTERNAL_API_KEY || '';
+      const CREW = serverConfig.crewBackend.baseUrl;
+      const INTERNAL_KEY = serverConfig.internal.apiKey;
       const res = await fetch(`${CREW}/api/v1/product-visual/scene-brief`, {
         method: 'POST',
         headers: {
@@ -261,11 +262,11 @@ async function getSceneBrief(opts: {
 
   // Fallback: inline GPT-4o mini for rapid scene brief
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = serverConfig.openai.apiKey;
     if (apiKey) {
       const openai = new OpenAI({ apiKey });
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: serverConfig.ai.chatModel('standard'),
         temperature: 0.7,
         max_tokens: 600,
         response_format: { type: 'json_object' },
@@ -489,7 +490,7 @@ function resolveSceneBriefForRequest(input: {
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 });
   }

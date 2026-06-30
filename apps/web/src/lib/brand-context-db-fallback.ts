@@ -41,10 +41,11 @@ from app.database import async_session_factory
 COLS = (
     "business_name, business_type, location, description, brand_tone, "
     "target_audience, campaign_goals, visual_style, logo_url, website_url, "
-    "instagram_handle, google_business_url, content_pillars, brand_primary_color, "
-    "brand_accent_color, brand_font_family, competitors, website_summary, "
-    "reference_image_urls, brand_constitution_confirmed_at, languages, visual_dna, "
-    "discovery_confidence, gallery_analysis, brand_dna, brand_theme"
+    "instagram_handle, google_business_url, content_pillars, default_ctas, "
+    "brand_primary_color, brand_accent_color, brand_font_family, competitors, "
+    "website_summary, reference_image_urls, brand_constitution_confirmed_at, "
+    "languages, visual_dna, discovery_confidence, gallery_analysis, brand_dna, "
+    "brand_theme"
 )
 
 async def main():

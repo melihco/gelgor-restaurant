@@ -11,13 +11,23 @@ import {
   parseMertcafeErrorBody,
 } from '@/lib/mertcafe-api';
 import { appendMertcafeAccountToPayload } from '@/lib/mertcafe-config';
-import { resolveMertcafePublishAuth } from '@/lib/mertcafe-publish-auth';
+import {
+  isNonRetryableMertcafePublishError,
+  resolveMertcafePublishAuth,
+} from '@/lib/mertcafe-publish-auth';
 import { assertTenantMertcafeReady, requireMertcafeWorkspaceId } from '@/lib/mertcafe-tenant';
+import { serverConfig } from '@/lib/server-config';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
 const BASE_URL = process.env.MERTCAFE_BASE_URL ?? 'https://web-production-02d278.up.railway.app';
+
+/** Server-side fetches — never use dead/expired NEXT_PUBLIC_SITE_URL (ngrok). */
+function internalAppOrigin(): string {
+  return getNextjsInternalOrigin().replace('://localhost', '://127.0.0.1');
+}
 
 type PostType = 'feed' | 'story' | 'reels' | 'carousel';
 
@@ -76,19 +86,42 @@ async function resolveMediaProxyForPublish(
 async function resolveToPublicR2Url(url: string): Promise<string> {
   if (!url.includes('/api/media') || !url.includes('key=')) return url;
   try {
-    const { getPresignedUrl } = await import('@/lib/r2-storage');
-    // Extract the key from ?key=... or /api/media?key=...
     const keyMatch = url.match(/[?&]key=([^&]+)/);
     const rawKey = keyMatch?.[1];
     if (!rawKey) return url;
     const key = decodeURIComponent(rawKey);
-    const presigned = await getPresignedUrl(key, 3 * 3600); // 3 hours
+    const publicBase = serverConfig.r2.publicUrl?.replace(/\/$/, '');
+    if (publicBase) {
+      return `${publicBase}/${key.replace(/^\//, '')}`;
+    }
+    const { getPresignedUrl } = await import('@/lib/r2-storage');
+    const presigned = await getPresignedUrl(key, 3 * 3600);
     console.log('[mertcafe/post] Resolved R2 key to presigned URL:', key.slice(0, 60));
     return presigned;
   } catch (err) {
     console.warn('[mertcafe/post] R2 presign failed, using original URL:', err);
     return url;
   }
+}
+
+async function mirrorAppMediaToR2(url: string, postType: PostType): Promise<string> {
+  const internal = internalAppOrigin();
+  let fetchUrl = url;
+  if (fetchUrl.startsWith('/')) {
+    fetchUrl = `${internal}${fetchUrl}`;
+  } else if (fetchUrl.includes('/api/media') || fetchUrl.includes('/api/media-proxy')) {
+    try {
+      const parsed = new URL(fetchUrl, internal);
+      fetchUrl = `${internal}${parsed.pathname}${parsed.search}`;
+    } catch {
+      fetchUrl = `${internal}${fetchUrl.startsWith('/') ? fetchUrl : `/${fetchUrl}`}`;
+    }
+  }
+  const fetched = await fetchImageBuffer(fetchUrl);
+  if (!fetched) {
+    throw new Error('Görsel sunucudan okunamadı — R2 yükleme başarısız.');
+  }
+  return uploadNormalizedFeedImage(fetched.buffer);
 }
 
 /** R2 object key stored as /{workspaceId}/stories/file.mp4 (no /api/media prefix). */
@@ -103,7 +136,7 @@ async function resolveRemotionLocalVideo(rawUrl: string, workspaceId?: string): 
   const filePath = path.join('/tmp/remotion-serve', filename);
   if (!fs.existsSync(filePath)) return undefined;
 
-  if (process.env.R2_BUCKET_NAME && workspaceId) {
+  if (serverConfig.r2.bucketConfigured && workspaceId) {
     try {
       const buffer = fs.readFileSync(filePath);
       const key = `${workspaceId}/stories/publish-${filename}`;
@@ -120,7 +153,6 @@ async function resolveRemotionLocalVideo(rawUrl: string, workspaceId?: string): 
 
 async function resolveVideoUrlForPublish(
   rawUrl: string | undefined,
-  origin: string,
   workspaceId?: string,
 ): Promise<string | undefined> {
   if (!rawUrl?.trim()) return undefined;
@@ -143,8 +175,14 @@ async function resolveVideoUrlForPublish(
     }
   }
 
-  let url = toPublicUrl(trimmed, origin);
-  if (!url) return undefined;
+  let url: string;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    url = trimmed;
+  } else if (trimmed.startsWith('/')) {
+    url = `${internalAppOrigin()}${trimmed}`;
+  } else {
+    url = `${internalAppOrigin()}/${trimmed}`;
+  }
   return resolveToPublicR2Url(url);
 }
 
@@ -172,6 +210,52 @@ async function assertMediaReachable(url: string, kind: 'image' | 'video'): Promi
   } catch (err) {
     return `${kind} URL check failed: ${err instanceof Error ? err.message : 'unknown error'}`;
   }
+}
+
+/** Resolve any app/R2/gallery URL to a publicly reachable HTTPS URL for Mertcafe. */
+async function prepareImageUrlForPublish(
+  raw: string | undefined,
+  postType: PostType,
+): Promise<string | undefined> {
+  if (!raw?.trim()) return undefined;
+  let url = raw.trim();
+
+  // Presign R2 proxy paths before prefixing with (possibly dead) public tunnel URL.
+  if (url.includes('/api/media') && url.includes('key=')) {
+    url = await resolveToPublicR2Url(url);
+  }
+
+  const keyMatch = url.match(R2_KEY_BARE) ?? url.match(R2_KEY_NO_SLASH);
+  const storageKey = keyMatch?.[1];
+  if (storageKey && !url.startsWith('http')) {
+    try {
+      const publicBase = serverConfig.r2.publicUrl?.replace(/\/$/, '');
+      if (publicBase) {
+        url = `${publicBase}/${storageKey}`;
+      } else {
+        const { getPresignedUrl } = await import('@/lib/r2-storage');
+        url = await getPresignedUrl(storageKey, 3 * 3600);
+      }
+    } catch (err) {
+      console.warn('[mertcafe/post] bare R2 key presign failed:', err);
+    }
+  }
+
+  if (url.startsWith('/')) {
+    url = `${internalAppOrigin()}${url}`;
+  }
+
+  if (url.includes('/api/media-proxy') || (url.includes('/api/media?') && url.includes('key='))) {
+    url = await resolveMediaProxyForPublish(url, internalAppOrigin(), postType);
+    url = await resolveToPublicR2Url(url);
+  }
+
+  if (url.includes('/api/media') || url.includes('/api/media-proxy') || url.includes('127.0.0.1') || url.includes('localhost')) {
+    url = await mirrorAppMediaToR2(url, postType);
+  }
+
+  url = await normalizeImageForInstagram(url, postType);
+  return url;
 }
 
 async function fetchImageBuffer(url: string): Promise<{ buffer: Buffer; contentType: string } | null> {
@@ -284,12 +368,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     ? extractMertcafeOAuthAccountId(statusProbe.data)
     : undefined;
 
+  const explicitOAuth =
+    body.use_oauth_account === true || body.account_id === 'oauth';
+  const explicitManual = body.use_oauth_account === false;
   const publishAuth = resolveMertcafePublishAuth({
     instagram_connected: instagramConnected,
-    use_oauth_account:
-      body.use_oauth_account === true
-      || tenant.useOAuthAccount === true
-      || body.account_id === 'oauth',
+    use_oauth_account: explicitOAuth
+      ? true
+      : explicitManual
+        ? false
+        : tenant.useOAuthAccount,
     publish_account_id: body.account_id ?? tenant.publishAccountId ?? null,
     oauth_account_id: oauthAccountId ?? null,
   });
@@ -315,7 +403,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const postType = body.post_type ?? 'feed';
   const hashtags = Array.isArray(body.hashtags) ? body.hashtags.map(String) : [];
-  const origin = (process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin).replace(/\/$/, '');
   const payload: Record<string, unknown> = { api_key: tenant.apiKey };
   if (!useOAuth) {
     appendMertcafeAccountToPayload(
@@ -333,29 +420,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (postType === 'story') {
-    const videoCandidate = await resolveVideoUrlForPublish(body.video_url, origin, body.workspaceId);
+    let videoCandidate = await resolveVideoUrlForPublish(body.video_url, body.workspaceId);
 
     if (videoCandidate) {
-      // Video story (Remotion MP4) — video takes priority over image
-      const mediaError = await assertMediaReachable(videoCandidate, 'video');
-      if (mediaError) {
+      let mediaError = await assertMediaReachable(videoCandidate, 'video');
+      if (mediaError && /content-type is invalid \(image\//i.test(mediaError)) {
+        console.warn('[mertcafe/post] video_url is a still image — publishing as image story:', videoCandidate.slice(0, 100));
+        videoCandidate = undefined;
+      } else if (mediaError) {
         return NextResponse.json(
           { error: `Video story publish blocked: ${mediaError}. Upload to R2 or set NEXT_PUBLIC_SITE_URL.` },
           { status: 422 },
         );
       }
+    }
+
+    if (videoCandidate) {
       payload.video_url = videoCandidate;
       payload.post_type = 'story';
     } else {
-      let imageUrl = toPublicUrl(body.image_url, origin);
+      let imageUrl: string | undefined;
+      try {
+        imageUrl = await prepareImageUrlForPublish(body.image_url, postType);
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : 'Story görseli hazırlanamadı.' },
+          { status: 422 },
+        );
+      }
       if (!imageUrl) return NextResponse.json({ error: 'image_url or video_url is required for story posts' }, { status: 400 });
-      imageUrl = await resolveMediaProxyForPublish(imageUrl, origin, postType);
-      imageUrl = await resolveToPublicR2Url(imageUrl);
-      imageUrl = toPublicUrl(await normalizeImageForInstagram(imageUrl, postType), origin) ?? imageUrl;
       const mediaError = await assertMediaReachable(imageUrl, 'image');
       if (mediaError) {
         return NextResponse.json(
-          { error: `Story publish blocked: ${mediaError}. Check NEXT_PUBLIC_SITE_URL/public tunnel.` },
+          { error: `Story publish blocked: ${mediaError}. Görsel R2'ye yüklenemedi veya erişilemiyor.` },
           { status: 422 },
         );
       }
@@ -363,7 +460,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       payload.post_type = 'story';
     }
   } else if (postType === 'reels') {
-    let videoUrl = await resolveVideoUrlForPublish(body.video_url, origin, body.workspaceId);
+    let videoUrl = await resolveVideoUrlForPublish(body.video_url, body.workspaceId);
     if (!videoUrl) return NextResponse.json({ error: 'video_url is required for reels posts' }, { status: 400 });
     const mediaError = await assertMediaReachable(videoUrl, 'video');
     if (mediaError) {
@@ -378,16 +475,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     payload.content = body.content ?? '';
     if (hashtags.length) payload.hashtags = hashtags;
   } else if (postType === 'carousel') {
-    const mediaUrls = Array.isArray(body.media_urls)
-      ? body.media_urls.map((u) => toPublicUrl(String(u), origin)).filter(Boolean)
-      : [];
+    const rawUrls = Array.isArray(body.media_urls) ? body.media_urls.map(String) : [];
+    if (rawUrls.length < 2) return NextResponse.json({ error: 'media_urls must contain at least 2 URLs for carousel posts' }, { status: 400 });
+    const mediaUrls: string[] = [];
+    for (const raw of rawUrls) {
+      try {
+        const prepared = await prepareImageUrlForPublish(raw, postType);
+        if (prepared) mediaUrls.push(prepared);
+      } catch (err) {
+        return NextResponse.json(
+          { error: err instanceof Error ? err.message : 'Carousel görseli hazırlanamadı.' },
+          { status: 422 },
+        );
+      }
+    }
     if (mediaUrls.length < 2) return NextResponse.json({ error: 'media_urls must contain at least 2 URLs for carousel posts' }, { status: 400 });
-    for (const mediaUrl of mediaUrls as string[]) {
+    for (const mediaUrl of mediaUrls) {
       const kind: 'image' | 'video' = /\.(mp4|mov|webm|avi)(\?|$)/i.test(mediaUrl) ? 'video' : 'image';
       const mediaError = await assertMediaReachable(mediaUrl, kind);
       if (mediaError) {
         return NextResponse.json(
-          { error: `Carousel publish blocked: ${mediaError}. URL: ${mediaUrl}` },
+          { error: `Carousel publish blocked: ${mediaError}. URL: ${mediaUrl.slice(0, 120)}` },
           { status: 422 },
         );
       }
@@ -397,22 +505,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     payload.content = body.content ?? '';
     if (hashtags.length) payload.hashtags = hashtags;
   } else {
-    let imageUrl = toPublicUrl(body.image_url, origin);
-    if (!imageUrl) return NextResponse.json({ error: 'image_url is required for feed posts' }, { status: 400 });
-    imageUrl = await resolveMediaProxyForPublish(imageUrl, origin, postType);
-    imageUrl = await resolveToPublicR2Url(imageUrl);
+    let imageUrl: string | undefined;
     try {
-      imageUrl = await normalizeImageForInstagram(imageUrl, postType);
+      imageUrl = await prepareImageUrlForPublish(body.image_url, postType);
     } catch (err) {
       return NextResponse.json(
         { error: err instanceof Error ? err.message : 'Feed görseli Instagram oranına uyarlanamadı.' },
         { status: 422 },
       );
     }
+    if (!imageUrl) return NextResponse.json({ error: 'image_url is required for feed posts' }, { status: 400 });
     const mediaError = await assertMediaReachable(imageUrl, 'image');
     if (mediaError) {
       return NextResponse.json(
-        { error: `Feed publish blocked: ${mediaError}. Check NEXT_PUBLIC_SITE_URL/public tunnel.` },
+        { error: `Feed publish blocked: ${mediaError}. Görsel R2'ye yüklenemedi veya erişilemiyor.` },
         { status: 422 },
       );
     }
@@ -422,48 +528,64 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const callWithRetry = async (): Promise<Response> => {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const res = await fetch(`${BASE_URL}/api/post`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(110_000),
-        });
-        if (res.ok || ![502, 503, 504].includes(res.status) || attempt === 2) return res;
-        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-      }
-      return fetch(`${BASE_URL}/api/post`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    };
-
-    const upstream = await callWithRetry();
-
-    const rawBody = await upstream.text();
+    let upstreamStatus = 0;
     let data: Record<string, unknown> = {};
-    if (rawBody) {
-      try {
-        const parsed = JSON.parse(rawBody);
-        if (parsed && typeof parsed === 'object') data = parsed as Record<string, unknown>;
-      } catch {
-        data = { raw: rawBody };
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const res = await fetch(`${BASE_URL}/api/post`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(110_000),
+      });
+      upstreamStatus = res.status;
+
+      const rawBody = await res.text();
+      data = {};
+      if (rawBody) {
+        try {
+          const parsed = JSON.parse(rawBody);
+          if (parsed && typeof parsed === 'object') data = parsed as Record<string, unknown>;
+        } catch {
+          data = { raw: rawBody };
+        }
       }
+
+      if (res.ok) break;
+
+      const errorMessage = parseMertcafeErrorBody(data)
+        || String(data.error || data.message || data.raw || '');
+      if (isNonRetryableMertcafePublishError(errorMessage)) break;
+      if (![502, 503, 504].includes(res.status) || attempt === 2) break;
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
     }
 
-    if (!upstream.ok) {
+    if (upstreamStatus < 200 || upstreamStatus >= 300) {
       const errorMessage = parseMertcafeErrorBody(data)
-        || `Mertcafe publish failed (${upstream.status})`;
+        || `Mertcafe publish failed (${upstreamStatus})`;
+      console.error('[mertcafe/post] upstream failed', {
+        status: upstreamStatus,
+        error: errorMessage,
+        postType,
+        workspaceId,
+        account_id: payload.account_id ?? null,
+        use_oauth: !payload.account_id,
+      });
+      const clientStatus = isNonRetryableMertcafePublishError(errorMessage)
+        ? 422
+        : upstreamStatus;
       return NextResponse.json(
         {
           error: errorMessage,
-          upstream_status: upstream.status,
+          upstream_status: upstreamStatus,
           request_id: typeof data.request_id === 'string' ? data.request_id : undefined,
         },
-        { status: upstream.status },
+        { status: clientStatus },
       );
     }
 
     if (typeof data.post_id === 'string' && body.artifactId && body.workspaceId) {
-      const nexusBase = process.env.NEXUS_API_URL ?? 'http://localhost:5050';
+      const nexusBase = serverConfig.nexus.baseUrl;
       try {
         await fetch(`${nexusBase}/api/artifacts/${body.artifactId}/ig-media`, {
           method: 'PATCH',

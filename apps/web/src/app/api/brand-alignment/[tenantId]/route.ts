@@ -18,13 +18,14 @@ import {
   buildTenantForwardHeaders,
 } from '@/lib/tenant-production-guard';
 import { basCache } from '@/lib/server-ttl-cache';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
 // ICS: average idea-contract completeness from last 5 content_ideation nodes (Python).
 // PIS: average artifact completeness (headline + caption + image) from last 20 artifacts (Nexus).
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const NEXUS_API = serverConfig.nexus.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 async function computeIcs(tenantId: string): Promise<number | null> {
   try {

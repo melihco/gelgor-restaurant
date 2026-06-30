@@ -1,5 +1,5 @@
 import type { ArtifactIdea, ArtifactSignal } from '@/components/artifacts/artifact-preview';
-import type { ResolvedArtifact } from './artifact-utils';
+import type { ResolvedArtifact } from '@/lib/artifact-utils';
 
 /** Map resolveArtifact slot → desktop ArtifactIdea shape */
 function resolvedIdeaToArtifactIdea(r: ResolvedArtifact['ideas'][number]): ArtifactIdea {

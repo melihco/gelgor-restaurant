@@ -36,6 +36,16 @@ function readNumber(meta: Record<string, unknown>, ...keys: string[]): number | 
   return null;
 }
 
+function readBoolean(meta: Record<string, unknown>, ...keys: string[]): boolean | null {
+  for (const key of keys) {
+    const raw = meta[key];
+    if (typeof raw === 'boolean') return raw;
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+  }
+  return null;
+}
+
 export function buildProductionQualityScorecard(
   artifact: OutputArtifact,
   meta: Record<string, unknown>,
@@ -70,6 +80,14 @@ export function buildProductionQualityScorecard(
     hardBlockReason = 'Fotoğraf içerikle eşleşmiyor';
   }
 
+  const typographyTextValid = readBoolean(
+    meta,
+    'typography_text_valid',
+    'typographyTextValid',
+    'text_validated',
+    'textValidated',
+  );
+
   if (
     !hardBlock
     && (
@@ -77,9 +95,13 @@ export function buildProductionQualityScorecard(
       || (grafikerScore != null && grafikerScore < GRAFIKER_PASS_THRESHOLD && grafikerPass !== true)
     )
   ) {
-    softWarnings.push(
-      `Grafiker ${grafikerScore ?? '—'}/${GRAFIKER_PASS_THRESHOLD} — tasarım kalitesi düşük`,
-    );
+    hardBlock = true;
+    hardBlockReason = `Tasarım kalitesi yetersiz (Grafiker ${grafikerScore ?? '—'}/${GRAFIKER_PASS_THRESHOLD})`;
+  }
+
+  if (!hardBlock && typographyTextValid === false) {
+    hardBlock = true;
+    hardBlockReason = 'Görseldeki metin doğrulanamadı veya yarım kaldı';
   }
 
   if (!hardBlock && matchCls?.quality === 'weak' && (matchScore ?? 0) > 5) {

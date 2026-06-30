@@ -49,6 +49,9 @@ class BrandContext(BaseModel):
     visual_style: Mapped[str | None] = mapped_column(Text)
     target_audience: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(String(255))
+    # ISO-3166 alpha-2 country code (e.g. 'TR') resolved from location/languages.
+    # Drives which special_days calendar the brand gets (national holidays etc.).
+    country_code: Mapped[str | None] = mapped_column(String(8))
     languages: Mapped[str] = mapped_column(String(100), default="tr")
     campaign_goals: Mapped[str | None] = mapped_column(Text)
     competitors: Mapped[str | None] = mapped_column(Text)
@@ -158,6 +161,23 @@ class BrandContext(BaseModel):
         DateTime(timezone=True), nullable=True,
     )
 
+    # Instagram DM chatbot + future agent-call identity (migration 0022)
+    chatbot_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    chatbot_profile_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
+    # ── Brand Service Profile (validated positioning — migration 0026) ────
+    # Authoritative, mission-critical positioning that survives a brittle
+    # `business_type` classification: confirmed category, signature offerings,
+    # CTA style, seasonality, value props, content guardrails.
+    # Produced by brand_service_profile_service.derive_brand_service_profile()
+    # and injected at the top of the agent Business Profile prompt block.
+    brand_service_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    brand_service_profile_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
     # Official brand logo URL (from website or Instagram profile)
     logo_url: Mapped[str | None] = mapped_column(String(512))
 
@@ -219,3 +239,98 @@ class BrandAsset(BaseModel):
     tags: Mapped[str | None] = mapped_column(Text)
 
     brand_context: Mapped[BrandContext] = relationship(back_populates="assets")
+
+
+class BrandPostTemplate(BaseModel):
+    """Reusable deterministic post/story layout saved per workspace."""
+
+    __tablename__ = "brand_post_templates"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    format: Mapped[str] = mapped_column(String(24), nullable=False, default="post")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    template_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="canvas")
+    layout_spec: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    thumbnail_url: Mapped[str | None] = mapped_column(Text)
+    example_artifact_url: Mapped[str | None] = mapped_column(Text)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BrandScheduledTemplate(BaseModel):
+    """Recurring story/reel template — user-uploaded media published on a schedule."""
+
+    __tablename__ = "brand_scheduled_templates"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True,
+    )
+    slot_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    format: Mapped[str] = mapped_column(String(24), nullable=False, default="story")
+    media_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    schedule_type: Mapped[str] = mapped_column(String(24), nullable=False, default="daily")
+    schedule_days: Mapped[list | None] = mapped_column(JSONB, default=list)
+    schedule_time: Mapped[str] = mapped_column(String(5), nullable=False, default="10:00")
+    schedule_end_time: Mapped[str | None] = mapped_column(String(5))
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Europe/Istanbul")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    category: Mapped[str | None] = mapped_column(String(64))
+
+
+class BrandDesignTemplate(BaseModel):
+    """AI-generated brand-consistent design template (Fal.ai grounded design).
+
+    Produced during onboarding from the brand's real gallery photos, corporate
+    colors, logo and vibe. The ``design_spec`` captures the design recipe
+    (prompt, color/font directives, gallery reference, sample headline) so the
+    auto-produce pipeline can re-render brand-consistent variations for any
+    mission caption/headline.
+    """
+
+    __tablename__ = "brand_design_templates"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True,
+    )
+    template_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    template_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    format: Mapped[str] = mapped_column(String(24), nullable=False, default="story")
+    thumbnail_url: Mapped[str | None] = mapped_column(Text)
+    design_spec: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    sector_category: Mapped[str | None] = mapped_column(String(64))
+    locale: Mapped[str | None] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SpecialDay(BaseModel):
+    """Global reference calendar of recurring annual special days.
+
+    Country-scoped (``country_code`` = ISO-3166 alpha-2 like 'TR') plus
+    international shared rows (``country_code`` = 'INT', ``is_international`` =
+    True) that apply to every brand. Drives onboarding ``event_special`` design
+    templates and the special-day mission scheduler.
+    """
+
+    __tablename__ = "special_days"
+
+    country_code: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    day: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    name_en: Mapped[str | None] = mapped_column(String(160))
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    theme_hint: Mapped[str] = mapped_column(Text, nullable=False)
+    sectors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    importance: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    is_international: Mapped[bool] = mapped_column(default=False, nullable=False)
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)

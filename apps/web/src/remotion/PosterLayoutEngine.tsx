@@ -253,7 +253,7 @@ export const PosterLayoutEngine: React.FC<PosterLayoutProps> = ({
 
         <div style={{
           fontFamily: fonts.hero, fontWeight: spec.heroWeight, fontSize: headSize,
-          color: '#fff', lineHeight: 1.08, letterSpacing: spec.heroTracking * 100,
+          color: '#fff', lineHeight: 1.14, letterSpacing: spec.heroTracking * 100,
           textTransform: spec.heroUppercase ? 'uppercase' : 'none',
           textShadow: spec.neonGlow ? `0 0 24px ${accentColor}, 0 0 48px ${accentColor}88` : '0 4px 24px rgba(0,0,0,0.8)',
           maxWidth: '100%',

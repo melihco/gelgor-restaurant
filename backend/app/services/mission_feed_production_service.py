@@ -34,6 +34,9 @@ class MissionFeedProductionRequest(BaseModel):
     production_package: str | None = None
     production_profile_tier: str | None = None
     force: bool = False
+    operator_override: bool = False
+    """Wipe factory jobs + mission artifacts before enqueue (default on force reproduce)."""
+    clean_slate: bool = False
 
 
 class FeedProductionError(Exception):
@@ -193,8 +196,11 @@ async def run_feed_production_pipeline(
     node_key: str,
     output_summary: str,
     force: bool = False,
+    operator_initiated: bool = False,
 ) -> dict | None:
-    from app.services.task_graph_executor import _trigger_content_production_pipeline
+    from app.services.production_bridge import (
+        trigger_content_production_pipeline as _trigger_content_production_pipeline,
+    )
 
     factory = _get_session_factory()
     async with factory() as db:
@@ -210,6 +216,7 @@ async def run_feed_production_pipeline(
             output_summary=output_summary,
             brand=brand,
             force=force,
+            operator_initiated=operator_initiated,
         )
     except FeedProductionError:
         raise
@@ -230,6 +237,42 @@ async def kick_feed_production(
 ) -> dict[str, Any]:
     """Non-blocking: schedule background ensure pipeline."""
     from app.debug_session_log import debug_log
+    from app.services.mission_ideation_merge import resolve_feed_package_total
+    from app.services.production_bridge import (
+        mission_feed_package_complete as _mission_feed_package_complete,
+    )
+
+    req = body or MissionFeedProductionRequest()
+
+    # Hard gate: never re-produce a mission whose feed package is already complete.
+    # Operator can bypass with operator_override=true for intentional re-runs.
+    r = await db.execute(
+        select(Mission.performance_summary, Mission.type).where(Mission.id == mission_id)
+    )
+    row = r.one_or_none()
+    if row:
+        perf = dict(row[0] or {})
+        mission_type = str(row[1] or "").strip()
+        from app.services.subscription_plan_service import resolve_workspace_plan_slug
+
+        plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
+        package_total = resolve_feed_package_total(
+            mission_type,
+            hub_production_package=str(perf.get("hub_production_package") or ""),
+            subscription_plan_slug=plan_slug,
+        )
+        if _mission_feed_package_complete(perf, package_total=package_total):
+            if not req.operator_override:
+                logger.info(
+                    "kick_feed_production_skipped_complete",
+                    mission_id=str(mission_id),
+                )
+                return {
+                    "accepted": True,
+                    "mission_id": str(mission_id),
+                    "action": "skipped_complete",
+                    "message": "Feed paketi zaten tamamlanmış — tekrar üretim yapılmadı.",
+                }
 
     _, _, nodes = await prepare_feed_production(
         db, workspace_id, mission_id, body,
@@ -254,12 +297,62 @@ async def kick_feed_production(
     if not has_ideation_output:
         raise FeedProductionError(
             400,
-            "İçerik fikirleri henüz hazır değil — görev tamamlanınca Feed otomatik üretilir.",
+            "İçerik fikirleri henüz hazır değil — planlama tamamlanınca Feed'i manuel üretin.",
         )
 
-    from app.services.task_graph_executor import _schedule_ensure_mission_feed
+    from app.services import production_job_service as pj
+    from app.services.production_factory_service import schedule_drain
+    from app.services.production_bridge import (
+        schedule_ensure_mission_feed as _schedule_ensure_mission_feed,
+    )
 
-    _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=5)
+    # Operator kick resumes stalled factory drains (e.g. dev reload dropped the
+    # asyncio task while jobs stayed in running/claimed). Do NOT release the
+    # feed production lock here — that causes parallel auto-produce → fal.ai storms.
+    reclaimed = await pj.reclaim_stale_jobs(mission_id)
+    summary = await pj.mission_job_summary(mission_id)
+    factory_total = int(summary.get("total") or 0)
+    factory_complete = bool(summary.get("complete"))
+
+    if factory_total > 0 and not factory_complete:
+        if await pj.has_open_jobs(mission_id):
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True)
+            logger.info(
+                "kick_feed_production_factory_resume",
+                mission_id=str(mission_id),
+                reclaimed=reclaimed,
+                ready=summary.get("ready"),
+                total=factory_total,
+            )
+            return {
+                "accepted": True,
+                "mission_id": str(mission_id),
+                "resumed_factory": True,
+                "reclaimed": reclaimed,
+                "factory_ready": int(summary.get("ready") or 0),
+                "factory_total": factory_total,
+                "message": (
+                    "Eksik slot üretimi devam ediyor. Gönderiler hazır oldukça Feed'e düşer."
+                ),
+            }
+        return {
+            "accepted": True,
+            "mission_id": str(mission_id),
+            "resumed_factory": False,
+            "factory_ready": int(summary.get("ready") or 0),
+            "factory_total": factory_total,
+            "message": (
+                "Tüm slot denemeleri tükendi. Yeniden denemek için "
+                "requeue-factory-jobs endpoint'ini kullanın."
+            ),
+        }
+
+    _schedule_ensure_mission_feed(
+        mission_id,
+        workspace_id,
+        delay_sec=5,
+        operator_initiated=True,
+    )
     logger.info("kick_feed_production", mission_id=str(mission_id))
     return {
         "accepted": True,
@@ -278,6 +371,19 @@ async def reproduce_feed_production(
     mission, req, nodes = await prepare_feed_production(
         db, workspace_id, mission_id, body,
     )
+
+    reset_summary: dict[str, Any] | None = None
+    if req.force or req.clean_slate:
+        from app.services.mission_production_reset_service import (
+            reset_mission_production_state,
+        )
+
+        reset_summary = await reset_mission_production_state(
+            db,
+            workspace_id=workspace_id,
+            mission_id=mission_id,
+        )
+
     summary, primary, ideas = resolve_ideation_for_production(
         nodes,
         mission_type=str(getattr(mission, "type", "") or "") or None,
@@ -289,6 +395,7 @@ async def reproduce_feed_production(
         node_key=primary.node_key,
         output_summary=summary,
         force=req.force,
+        operator_initiated=True,
     )
 
     produced = int((produce_data or {}).get("produced") or 0)
@@ -306,6 +413,7 @@ async def reproduce_feed_production(
         "total": int((produce_data or {}).get("total") or len(ideas)),
         "results": (produce_data or {}).get("results"),
         "pis": (produce_data or {}).get("pis"),
+        "clean_slate": reset_summary,
         "message": (
             f"{produced} içerik Feed'e eklendi (onay bekliyor)."
             if produced > 0
@@ -318,19 +426,32 @@ async def reproduce_feed_production(
 async def ensure_mission_feed_production(
     mission_id: uuid.UUID,
     workspace_id: uuid.UUID,
+    *,
+    operator_initiated: bool = False,
 ) -> None:
     """
     After mission graph completes: guarantee Feed auto-produce runs if package incomplete.
+    Skipped when AUTO_FEED_PRODUCTION_ENABLED=false unless operator_initiated.
     """
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if not auto_feed_production_allowed(operator_initiated=operator_initiated):
+        logger.info(
+            "ensure_mission_feed_skipped",
+            mission_id=str(mission_id),
+            reason="auto_feed_production_disabled",
+        )
+        return
+
     from app.services.mission_ideation_merge import (
         merge_mission_production_ideas_from_nodes,
         resolve_feed_package_total,
     )
-    from app.services.task_graph_executor import (
-        _load_content_calendar_nodes,
-        _load_content_ideation_nodes,
-        _mission_feed_package_complete,
-        _mission_feed_publish_ready_count,
+    from app.services.production_bridge import (
+        load_content_calendar_nodes as _load_content_calendar_nodes,
+        load_content_ideation_nodes as _load_content_ideation_nodes,
+        mission_feed_package_complete as _mission_feed_package_complete,
+        mission_feed_publish_ready_count as _mission_feed_publish_ready_count,
     )
 
     factory = _get_session_factory()
@@ -343,11 +464,13 @@ async def ensure_mission_feed_production(
             return
         perf = dict(row[0] or {})
         mission_type = str(row[1] or "").strip()
-    from app.services.mission_ideation_merge import resolve_feed_package_total
+    from app.services.subscription_plan_service import resolve_workspace_plan_slug
 
+    plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
     package_total = resolve_feed_package_total(
         mission_type,
         hub_production_package=str(perf.get("hub_production_package") or ""),
+        subscription_plan_slug=plan_slug,
     )
     from app.debug_session_log import debug_log
 
@@ -364,8 +487,44 @@ async def ensure_mission_feed_production(
             "hub_package": str(perf.get("hub_production_package") or ""),
         },
     )
+    from app.services import production_job_service as pj
+    from app.services.production_factory_service import schedule_drain
+
     if package_complete:
         return
+
+    # Cross-check: factory jobs may indicate completeness even if perf summary
+    # is stale (e.g. mission completed before telemetry wrote back).
+    job_summary = await pj.mission_job_summary(mission_id)
+    factory_total = int(job_summary.get("total") or 0)
+    factory_ready = int(job_summary.get("ready") or 0)
+    factory_active = int(job_summary.get("active") or 0)
+    if factory_total > 0 and factory_ready >= package_total and factory_active == 0:
+        logger.info(
+            "ensure_mission_feed_skip_factory_complete",
+            mission_id=str(mission_id),
+            factory_ready=factory_ready,
+            factory_total=factory_total,
+            package_total=package_total,
+        )
+        return
+
+    # Fast path: durable factory jobs already exist — resume drain only (never re-enqueue).
+    if factory_total > 0 and not job_summary.get("complete"):
+        await pj.reclaim_stale_jobs(mission_id)
+        if await pj.has_open_jobs(mission_id):
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True)
+            debug_log(
+                "H2",
+                "mission_feed_production_service.py:ensure_mission_feed_production",
+                "factory drain resumed",
+                {
+                    "mission_id": str(mission_id),
+                    "ready": job_summary.get("ready"),
+                    "total": job_summary.get("total"),
+                },
+            )
+            return
 
     ideation_raw = await _load_content_ideation_nodes(mission_id)
     calendar_raw = await _load_content_calendar_nodes(mission_id)
@@ -408,6 +567,7 @@ async def ensure_mission_feed_production(
             node_key=node_key,
             output_summary=summary,
             force=False,
+            operator_initiated=operator_initiated,
         )
         debug_log(
             "H4",
@@ -424,7 +584,9 @@ async def ensure_mission_feed_production(
         if produce_data and produce_data.get("skipped"):
             reason = str(produce_data.get("reason") or "")
             if reason == "production_in_flight":
-                from app.services.task_graph_executor import _schedule_ensure_mission_feed
+                from app.services.production_bridge import (
+        schedule_ensure_mission_feed as _schedule_ensure_mission_feed,
+    )
 
                 _schedule_ensure_mission_feed(
                     mission_id, workspace_id, delay_sec=90,
@@ -434,7 +596,9 @@ async def ensure_mission_feed_production(
                 "awaiting_visual_design_cards",
                 "awaiting_content_calendar",
             ):
-                from app.services.task_graph_executor import _schedule_ensure_mission_feed
+                from app.services.production_bridge import (
+        schedule_ensure_mission_feed as _schedule_ensure_mission_feed,
+    )
 
                 _schedule_ensure_mission_feed(
                     mission_id, workspace_id, delay_sec=120,
@@ -454,6 +618,6 @@ async def ensure_mission_feed_production(
 
 
 def _get_session_factory():
-    from app.services.task_graph_executor import _get_session_factory as get_factory
+    from app.services.production_bridge import get_session_factory
 
-    return get_factory()
+    return get_session_factory()

@@ -34,8 +34,14 @@ public class ArtifactService : IArtifactService
               AND (
                 ""Metadata""->>'mission_id' = {mid}
                 OR ""Metadata""->>'missionId' = {mid}
-                OR (""Content""::jsonb->>'mission_id') = {mid}
-                OR (""Content""::jsonb->>'missionId') = {mid}
+                OR (
+                  ""Content"" IS NOT NULL
+                  AND ""Content"" ~ '^[\s]*[\{{\[]'
+                  AND (
+                    (""Content""::jsonb->>'mission_id') = {mid}
+                    OR (""Content""::jsonb->>'missionId') = {mid}
+                  )
+                )
               )
                 ")
                 .AsNoTracking();
@@ -90,10 +96,10 @@ public class ArtifactService : IArtifactService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<ArtifactDto?> GetArtifactByIdAsync(Guid artifactId, CancellationToken cancellationToken = default)
+    public async Task<ArtifactDto?> GetArtifactByIdAsync(Guid artifactId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var artifact = await _dbContext.OutputArtifacts
-            .FirstOrDefaultAsync(a => a.Id == artifactId, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == artifactId && a.TenantId == tenantId, cancellationToken);
 
         return artifact != null ? MapToDto(artifact) : null;
     }

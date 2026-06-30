@@ -6,6 +6,7 @@ import {
   MISSION_WEEKLY_PACKAGE_COUNTS,
   resolveMissionRequiredSlotCount,
   pipelineForSlotRole,
+  normalizeProductionPipeline,
   type MissionProductionManifest,
   type ProductionAssignment,
   type ProductionPipeline,
@@ -15,7 +16,10 @@ import { isPromoOfferCopy } from './poster-quality';
 import {
   applyMissionRemotionStoryAssignment,
 } from './mission-remotion-story';
-import { mapProductionContextToLibrarySlotKey } from './brand-template-library';
+import {
+  mapProductionContextToLibrarySlotKey,
+  resolveStandardRemotionLibrarySlotKey,
+} from './brand-template-library';
 import { isAgencyServiceSector } from './agency-production-defaults';
 import {
   detectIdeaPackageFormat,
@@ -120,10 +124,10 @@ export function inferProductionAssignment(
   if (fmt === 'story') {
     const base: ProductionAssignment = {
       idea_index: ideaIndex,
-      slot_role: campaign ? 'campaign_story_motion' : 'campaign_story_motion',
+      slot_role: campaign ? 'campaign_story_motion' : 'organic_story_still',
       pipeline: 'remotion_story',
       copy_bundle_id: bundleId,
-      publish_channel: publishChannelForRole(campaign ? 'campaign_story_motion' : 'campaign_story_motion'),
+      publish_channel: publishChannelForRole(campaign ? 'campaign_story_motion' : 'organic_story_still'),
       rationale: campaign ? 'heuristic_campaign_story' : 'heuristic_story_remotion',
     };
     return applyMissionRemotionStoryAssignment(base, storyIndex);
@@ -167,6 +171,46 @@ export function inferProductionAssignment(
   };
 }
 
+/**
+ * Ad-hoc "New Brief" → fal.ai art-director track (designed post / designed reel).
+ * Uses brand DNA + user intent; skips Remotion/Runway heuristics.
+ */
+export function inferAdHocBriefAssignment(
+  ideaIndex: number,
+  idea: Record<string, unknown>,
+  missionId: string,
+): ProductionAssignment {
+  const fmt = detectIdeaPackageFormat(idea);
+  const bundleId = defaultCopyBundleId(missionId);
+  const sceneHint = String(
+    idea.visual_direction ?? idea.visual_subject_hint ?? idea.visual_direction_hint ?? '',
+  ).trim();
+
+  if (fmt === 'reel' || fmt === 'story') {
+    const role: ProductionSlotRole = 'fal_reel_motion';
+    const pipeline = fmt === 'story' ? 'fal_story' : 'fal_reel';
+    return {
+      idea_index: ideaIndex,
+      slot_role: role,
+      pipeline,
+      copy_bundle_id: bundleId,
+      publish_channel: publishChannelForRole(role),
+      visual_subject_hint: sceneHint || undefined,
+      rationale: fmt === 'story' ? 'ad_hoc_brief_fal_story' : 'ad_hoc_brief_fal_reel',
+    };
+  }
+
+  return {
+    idea_index: ideaIndex,
+    slot_role: 'fal_designed_post',
+    pipeline: pipelineForSlotRole('fal_designed_post'),
+    copy_bundle_id: bundleId,
+    publish_channel: publishChannelForRole('fal_designed_post'),
+    visual_subject_hint: sceneHint || undefined,
+    rationale: 'ad_hoc_brief_fal_designed_post',
+  };
+}
+
 export function parseProductionAssignments(
   report: FeedArtDirectorReport | null | undefined,
 ): ProductionAssignment[] {
@@ -191,18 +235,26 @@ export function parseProductionAssignments(
       library_slot_key: (item as ProductionAssignment).library_slot_key
         ? String((item as ProductionAssignment).library_slot_key)
         : undefined,
+      visual_subject_hint: (item as ProductionAssignment).visual_subject_hint
+        ? String((item as ProductionAssignment).visual_subject_hint)
+        : undefined,
+      fal_design_hint: (item as ProductionAssignment).fal_design_hint
+        ? String((item as ProductionAssignment).fal_design_hint)
+        : undefined,
       rationale: (item as ProductionAssignment).rationale,
     });
   }
   return out;
 }
 
-function enrichAssignment(
-  assignment: ProductionAssignment,
-  idea: Record<string, unknown>,
-): ProductionAssignment {
-  // FD-assigned slot wins — do not override with heuristics.
-  if (assignment.library_slot_key) return assignment;
+function resolveDeterministicRemotionLibrarySlotKey(input: {
+  assignment: ProductionAssignment;
+  idea: Record<string, unknown>;
+  storyOrdinal?: number;
+  posterOrdinal?: number;
+}): string | undefined {
+  const { assignment, idea } = input;
+  if (assignment.library_slot_key) return assignment.library_slot_key;
 
   const hasEventDetails = Boolean(
     (idea.event_details as Record<string, unknown> | undefined)?.artist_name
@@ -210,13 +262,7 @@ function enrichAssignment(
     || (idea.event_details as Record<string, unknown> | undefined)?.event_date,
   );
 
-  // Weekly mission stories rotate Marka Detayı slots in auto-produce unless this
-  // idea is a real event (date/artist) — avoid pinning every promo to event_story.
-  if (assignment.slot_role === 'campaign_story_motion' && !hasEventDetails) {
-    return assignment;
-  }
-
-  const librarySlotKey = mapProductionContextToLibrarySlotKey({
+  const mappedKey = mapProductionContextToLibrarySlotKey({
     slotRole: assignment.slot_role,
     intent: resolveContentIntent({
       templateUseCase: String(idea.template_use_case || ''),
@@ -235,7 +281,64 @@ function enrichAssignment(
     ),
     hasEventDetails,
   });
+
+  const standardKey = resolveStandardRemotionLibrarySlotKey({
+    slotRole: assignment.slot_role,
+    pipeline: assignment.pipeline,
+    storyOrdinal: input.storyOrdinal,
+    posterOrdinal: input.posterOrdinal,
+  });
+  if (standardKey) {
+    // Standard wins for Remotion roles so every brand follows the same
+    // slot-to-template contract from Brand Settings.
+    return standardKey;
+  }
+
+  if (shouldRenderRemotionStory(assignment) || shouldRenderRemotionPoster(assignment)) {
+    return mappedKey;
+  }
+
+  return undefined;
+}
+
+function enrichAssignment(
+  assignment: ProductionAssignment,
+  idea: Record<string, unknown>,
+  opts?: {
+    storyOrdinal?: number;
+    posterOrdinal?: number;
+  },
+): ProductionAssignment {
+  const librarySlotKey = resolveDeterministicRemotionLibrarySlotKey({
+    assignment,
+    idea,
+    storyOrdinal: opts?.storyOrdinal,
+    posterOrdinal: opts?.posterOrdinal,
+  });
   return librarySlotKey ? { ...assignment, library_slot_key: librarySlotKey } : assignment;
+}
+
+/**
+ * Story ihtiyacı Remotion'da; eski FD/manifest fal story slotlarını reel'e yönlendir.
+ */
+export function normalizeVideoTrackAssignment(assignment: ProductionAssignment): ProductionAssignment {
+  if (assignment.slot_role === 'fal_story_motion' || assignment.pipeline === 'fal_story') {
+    return {
+      ...assignment,
+      slot_role: 'fal_reel_motion',
+      pipeline: 'fal_reel',
+      publish_channel: publishChannelForRole('fal_reel_motion'),
+    };
+  }
+  if (assignment.slot_role === 'fal_only_story' || assignment.pipeline === 'fal_only_story') {
+    return {
+      ...assignment,
+      slot_role: 'fal_only_reel',
+      pipeline: 'fal_only_reel',
+      publish_channel: publishChannelForRole('fal_only_reel'),
+    };
+  }
+  return assignment;
 }
 
 export function resolveProductionAssignment(input: {
@@ -247,19 +350,26 @@ export function resolveProductionAssignment(input: {
   storyIndex: number;
   reelIndex: number;
   sector?: string;
+  /** New Brief form — route to fal.ai art-director pipelines. */
+  adHocBrief?: boolean;
 }): ProductionAssignment {
   const fromReport = parseProductionAssignments(input.report).find(
     (a) => a.idea_index === input.ideaIndex,
   );
   let assignment: ProductionAssignment;
   if (fromReport?.slot_role) {
-    const pipeline = fromReport.pipeline || pipelineForSlotRole(fromReport.slot_role);
+    const pipeline = normalizeProductionPipeline(fromReport.pipeline || pipelineForSlotRole(fromReport.slot_role));
     assignment = enrichAssignment({
       ...fromReport,
       pipeline,
       copy_bundle_id: fromReport.copy_bundle_id || defaultCopyBundleId(input.missionId),
       publish_channel: fromReport.publish_channel || publishChannelForRole(fromReport.slot_role),
-    }, input.idea);
+    }, input.idea, {
+      storyOrdinal: input.storyIndex,
+      posterOrdinal: input.postIndex,
+    });
+  } else if (input.adHocBrief) {
+    assignment = inferAdHocBriefAssignment(input.ideaIndex, input.idea, input.missionId);
   } else {
     assignment = inferProductionAssignment(
       input.ideaIndex,
@@ -271,12 +381,20 @@ export function resolveProductionAssignment(input: {
       input.sector,
     );
   }
-  assignment = enrichAssignment(assignment, input.idea);
+  assignment = enrichAssignment(assignment, input.idea, {
+    storyOrdinal: input.storyIndex,
+    posterOrdinal: input.postIndex,
+  });
+  assignment = normalizeVideoTrackAssignment(assignment);
+  // Ad-hoc brief stays on fal.ai — never downgrade to Remotion story.
+  if (input.adHocBrief) {
+    return assignment;
+  }
   // FD slot drives pipeline — idea format may be "post" while assignment is campaign_story_motion.
   if (shouldRenderRemotionStory(assignment)) {
     return applyMissionRemotionStoryAssignment(assignment, input.storyIndex);
   }
-  if (detectIdeaPackageFormat(input.idea) === 'story') {
+  if (detectIdeaPackageFormat(input.idea) === 'story' && assignmentImpliesStoryFormat(assignment.slot_role)) {
     return applyMissionRemotionStoryAssignment(assignment, input.storyIndex);
   }
   return assignment;
@@ -284,12 +402,16 @@ export function resolveProductionAssignment(input: {
 
 /** Reel production follows FD slot, not only content_kind=instagram_reel. */
 export function assignmentImpliesReel(role: ProductionSlotRole): boolean {
-  return role === 'organic_reel' || role === 'campaign_reel_motion';
+  return role === 'organic_reel'
+    || role === 'campaign_reel_motion'
+    || role === 'fal_reel_motion'
+    || role === 'fal_only_reel';
 }
 
 export function assignmentImpliesStoryFormat(role: ProductionSlotRole): boolean {
   return role === 'campaign_story_motion'
     || role === 'organic_story_still'
+    || role === 'product_showcase_story'
     || role === 'paid_ad_creative'
     || role === 'paid_ad_google_creative';
 }
@@ -309,6 +431,23 @@ export function shouldRenderRemotionStory(
   assignment: ProductionAssignment,
   _opts?: { forceEvent?: boolean },
 ): boolean {
+  if (
+    assignment.pipeline === 'runway_reel'
+    || assignment.pipeline === 'fal_reel'
+    || assignment.pipeline === 'fal_only_reel'
+    || assignment.slot_role === 'organic_reel'
+    || assignment.slot_role === 'campaign_reel_motion'
+    || assignment.slot_role === 'fal_reel_motion'
+    || assignment.slot_role === 'fal_only_reel'
+  ) {
+    return false;
+  }
+  if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
+    return false;
+  }
+  if (assignment.pipeline === 'fal_only_story' || assignment.slot_role === 'fal_only_story') {
+    return false;
+  }
   if (assignment.pipeline === 'remotion_story') return true;
   return REMOTION_STORY_ROLES.has(assignment.slot_role);
 }
@@ -343,7 +482,7 @@ function findUnusedIdeaIndex(used: Set<number>, ideasLen: number): number {
   return -1;
 }
 
-/** 7 slot için fikir havuzu yetersizse round-robin (aynı fikir farklı formatta). */
+/** Manifest slotları için fikir havuzu yetersizse round-robin (aynı fikir farklı formatta). */
 function resolveIdeaIndexForSlot(
   slotOrdinal: number,
   used: Set<number>,
@@ -425,7 +564,7 @@ function backfillAssignmentsFromManifest(
   return result;
 }
 
-/** FD veya manifest ataması 7'den kısaysa eksik rolleri manifest'ten tamamla. */
+/** FD veya manifest ataması hedef slot sayısından kısaysa eksik rolleri manifest'ten tamamla. */
 function expandAssignmentsToWeeklyTotal(
   assignments: ProductionAssignment[],
   missionId: string,
@@ -501,31 +640,134 @@ function expandAssignmentsToWeeklyTotal(
   return expanded.slice(0, slotTarget);
 }
 
-/**
- * P1-4 — Drive auto-produce from manifest slots (7) instead of all merged ideas.
- */
-export function buildManifestProductionQueue(input: {
+export interface FinalMissionAssignment {
+  ideaIndex: number;
+  assignment: ProductionAssignment;
+}
+
+export interface ResolveFinalAssignmentsInput {
   missionId: string;
   ideas: Record<string, unknown>[];
   report?: FeedArtDirectorReport | null;
   manifestMissionType: MissionProductionManifest['missionType'];
   sector?: string;
-  maxSlots?: number;
   requireCampaignReel?: boolean;
   productionProfile?: ProductionProfile | null;
   packageSlug?: string | null;
-}): ManifestProductionQueueItem[] {
+}
+
+function enrichResolvedAssignment(
+  raw: ProductionAssignment,
+  ideaIdx: number,
+  idea: Record<string, unknown>,
+  missionId: string,
+  counters: { storyOrdinal: number; posterOrdinal: number },
+): ProductionAssignment {
+  let assignment = enrichAssignment({
+    ...raw,
+    idea_index: ideaIdx,
+    pipeline: normalizeProductionPipeline(raw.pipeline || pipelineForSlotRole(raw.slot_role)),
+    copy_bundle_id: raw.copy_bundle_id || defaultCopyBundleId(missionId),
+    publish_channel: raw.publish_channel || publishChannelForRole(raw.slot_role),
+  }, idea, {
+    storyOrdinal: counters.storyOrdinal,
+    posterOrdinal: counters.posterOrdinal,
+  });
+
+  if (shouldRenderRemotionPoster(assignment)) {
+    counters.posterOrdinal += 1;
+  }
+
+  if (shouldRenderRemotionStory(assignment)) {
+    assignment = applyMissionRemotionStoryAssignment(assignment, counters.storyOrdinal);
+    counters.storyOrdinal += 1;
+  }
+
+  return assignment;
+}
+
+/** One production slot per ideation idea — no manifest expansion to 16. */
+function resolveIdeaDrivenFinalAssignments(
+  input: ResolveFinalAssignmentsInput,
+): FinalMissionAssignment[] {
+  const rawAssignments = parseProductionAssignments(input.report);
+  let normalized = input.productionProfile
+    ? normalizeAssignmentsForProductionProfile(rawAssignments, input.productionProfile)
+    : rawAssignments;
+
+  const fdByIdea = new Map<number, ProductionAssignment>();
+  for (const assignment of normalized) {
+    const idx = assignment.idea_index;
+    if (Number.isFinite(idx) && idx >= 0 && idx < input.ideas.length && !fdByIdea.has(idx)) {
+      fdByIdea.set(idx, assignment);
+    }
+  }
+
+  const result: FinalMissionAssignment[] = [];
+  const counters = { storyOrdinal: 0, posterOrdinal: 0 };
+  let postIdx = 0;
+  let storyIdx = 0;
+  let reelIdx = 0;
+
+  for (let ideaIdx = 0; ideaIdx < input.ideas.length; ideaIdx++) {
+    const idea = input.ideas[ideaIdx]!;
+    const fmt = detectIdeaPackageFormat(idea);
+    const postIndex = fmt === 'post' || fmt === 'carousel' ? postIdx : 0;
+    const storyIndex = fmt === 'story' ? storyIdx : 0;
+    const reelIndex = fmt === 'reel' ? reelIdx : 0;
+    if (fmt === 'post' || fmt === 'carousel') postIdx += 1;
+    else if (fmt === 'story') storyIdx += 1;
+    else if (fmt === 'reel') reelIdx += 1;
+
+    const base = fdByIdea.get(ideaIdx) ?? inferProductionAssignment(
+      ideaIdx,
+      idea,
+      input.missionId,
+      postIndex,
+      storyIndex,
+      reelIndex,
+      input.sector,
+    );
+
+    result.push({
+      ideaIndex: ideaIdx,
+      assignment: enrichResolvedAssignment(
+        { ...base, idea_index: ideaIdx },
+        ideaIdx,
+        idea,
+        input.missionId,
+        counters,
+      ),
+    });
+  }
+
+  return result;
+}
+
+/**
+ * SSOT — produce the final, fully-enriched mission assignment list.
+ *
+ * This is the *single* place that resolves FD assignments → manifest backfill →
+ * heuristic → idea-index assignment → `enrichAssignment` (library slot) →
+ * `applyMissionRemotionStoryAssignment` (story rotation). Both the production
+ * queue (`buildManifestProductionQueue`) and the gate/stack-context prep
+ * (`prepareMissionFdAssignments`) consume this so the gate validates exactly what
+ * is produced. Extracted behaviour-identical from the queue builder — golden
+ * tests in `production-pipeline-router.test.ts` pin the output.
+ */
+export function resolveFinalMissionAssignments(
+  input: ResolveFinalAssignmentsInput,
+): FinalMissionAssignment[] {
+  if (!input.missionId || input.ideas.length === 0) return [];
+
   const organicTarget = resolveMissionRequiredSlotCount({
     missionType: input.manifestMissionType,
     requireCampaignReel: input.requireCampaignReel,
     productionProfile: input.productionProfile,
     packageSlug: input.packageSlug,
   });
-  const maxSlots = Math.min(
-    input.maxSlots ?? organicTarget,
-    organicTarget,
-  );
-  if (!input.missionId || input.ideas.length === 0) return [];
+  // Legacy manifest path: fixed weekly package geometry (opportunity / ads_focus).
+  const maxSlots = organicTarget;
 
   let assignments = parseProductionAssignments(input.report);
   if (input.productionProfile) {
@@ -550,6 +792,8 @@ export function buildManifestProductionQueue(input: {
       missionType: input.manifestMissionType,
       includeAds: input.manifestMissionType === 'ads_focus',
       requireCampaignReel: input.requireCampaignReel,
+        productionProfile: input.productionProfile,
+        packageSlug: input.packageSlug,
     });
     const required = manifest.slots.filter((s) => s.required);
     let postIdx = 0;
@@ -572,17 +816,18 @@ export function buildManifestProductionQueue(input: {
     });
   }
 
-  const queue: ManifestProductionQueueItem[] = [];
+  const result: FinalMissionAssignment[] = [];
   const usedSlotKeys = new Set<string>();
   let storyOrdinal = 0;
+  let posterOrdinal = 0;
 
   for (const raw of assignments) {
-    if (queue.length >= maxSlots) break;
+    if (result.length >= maxSlots) break;
     let ideaIdx = raw.idea_index;
     if (!Number.isFinite(ideaIdx) || ideaIdx < 0 || ideaIdx >= input.ideas.length) {
       ideaIdx = resolveIdeaIndexForSlot(
-        queue.length,
-        new Set(queue.map((q) => q.ideaIndex)),
+        result.length,
+        new Set(result.map((q) => q.ideaIndex)),
         input.ideas.length,
       );
     }
@@ -596,41 +841,80 @@ export function buildManifestProductionQueue(input: {
     let assignment = enrichAssignment({
       ...raw,
       idea_index: ideaIdx,
-      pipeline: raw.pipeline || pipelineForSlotRole(raw.slot_role),
+      pipeline: normalizeProductionPipeline(raw.pipeline || pipelineForSlotRole(raw.slot_role)),
       copy_bundle_id: raw.copy_bundle_id || defaultCopyBundleId(input.missionId),
       publish_channel: raw.publish_channel || publishChannelForRole(raw.slot_role),
-    }, idea);
+    }, idea, {
+      storyOrdinal,
+      posterOrdinal,
+    });
+
+    if (shouldRenderRemotionPoster(assignment)) {
+      posterOrdinal += 1;
+    }
 
     if (shouldRenderRemotionStory(assignment)) {
       assignment = applyMissionRemotionStoryAssignment(assignment, storyOrdinal);
       storyOrdinal += 1;
     }
 
-    queue.push({
-      queueIndex: queue.length,
-      ideaIndex: ideaIdx,
-      idea,
-      assignment,
-    });
+    result.push({ ideaIndex: ideaIdx, assignment });
   }
 
-  return queue;
+  return result;
 }
 
-/** P3 — Economy: FD organic_reel → organic_story_still when Runway quota is 0. */
+/**
+ * P1-4 — Drive auto-produce from manifest slots instead of all merged ideas.
+ * Thin wrapper over {@link resolveFinalMissionAssignments} that attaches the idea
+ * record to each slot for the production loop.
+ */
+export function buildManifestProductionQueue(input: {
+  missionId: string;
+  ideas: Record<string, unknown>[];
+  report?: FeedArtDirectorReport | null;
+  manifestMissionType: MissionProductionManifest['missionType'];
+  sector?: string;
+  maxSlots?: number;
+  requireCampaignReel?: boolean;
+  productionProfile?: ProductionProfile | null;
+  packageSlug?: string | null;
+}): ManifestProductionQueueItem[] {
+  const finalAssignments = resolveFinalMissionAssignments({
+    missionId: input.missionId,
+    ideas: input.ideas,
+    report: input.report,
+    manifestMissionType: input.manifestMissionType,
+    sector: input.sector,
+    requireCampaignReel: input.requireCampaignReel,
+    productionProfile: input.productionProfile,
+    packageSlug: input.packageSlug,
+  });
+
+  return finalAssignments.map((item, queueIndex) => ({
+    queueIndex,
+    ideaIndex: item.ideaIndex,
+    idea: input.ideas[item.ideaIndex]!,
+    assignment: item.assignment,
+  }));
+}
+
+/** Runway kapalıyken legacy FD `runway_reel` → `fal_reel`; mevcut fal reel slotları korunur. */
 export function normalizeAssignmentsForProductionProfile(
   assignments: ProductionAssignment[],
   profile: ProductionProfile,
 ): ProductionAssignment[] {
   if (profile.allowRunwayReels) return assignments;
   return assignments.map((a) => {
-    if (a.slot_role !== 'organic_reel') return a;
+    if (a.slot_role !== 'organic_reel' && a.slot_role !== 'campaign_reel_motion') return a;
+    if (String(a.pipeline ?? '').trim() !== 'runway_reel') return a;
     return {
       ...a,
-      slot_role: 'organic_story_still',
-      pipeline: 'story_still',
-      publish_channel: publishChannelForRole('organic_story_still'),
-      rationale: a.rationale ? `${a.rationale}; economy_reel_swap` : 'economy_reel_swap',
+      pipeline: 'fal_reel',
+      publish_channel: publishChannelForRole(a.slot_role),
+      rationale: a.rationale
+        ? `${a.rationale}; runway_to_fal_reel`
+        : 'runway_to_fal_reel',
     };
   });
 }
@@ -640,8 +924,38 @@ export function resolveContentKindForAssignment(
   idea: Record<string, unknown>,
   assignment: ProductionAssignment,
 ): string {
+  // Manifest slot role wins over stale ideation content_type (e.g. story idea → organic_post slot).
+  if (assignment.slot_role === 'organic_post' || assignment.pipeline === 'gallery_photo') {
+    return 'instagram_post';
+  }
+  if (
+    assignment.pipeline === 'remotion_poster'
+    || assignment.slot_role === 'designed_post'
+    || assignment.slot_role === 'designed_typography'
+  ) {
+    return 'instagram_post';
+  }
   if (assignment.pipeline === 'carousel_gallery' || assignment.slot_role === 'organic_carousel') {
     return 'instagram_carousel';
+  }
+  if (assignment.pipeline === 'fal_reel' || assignment.slot_role === 'fal_reel_motion') {
+    return 'instagram_reel';
+  }
+  // Legacy fal story → reel (normalizeVideoTrackAssignment handles new assignments)
+  if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
+    return 'instagram_reel';
+  }
+  if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
+    return 'instagram_post';
+  }
+  if (assignment.pipeline === 'fal_only_post' || assignment.slot_role === 'fal_only_post') {
+    return 'instagram_post';
+  }
+  if (assignment.pipeline === 'fal_only_story' || assignment.slot_role === 'fal_only_story') {
+    return 'instagram_reel';
+  }
+  if (assignment.pipeline === 'fal_only_reel' || assignment.slot_role === 'fal_only_reel') {
+    return 'instagram_reel';
   }
   if (assignmentImpliesStoryFormat(assignment.slot_role)) return 'instagram_story';
   if (assignmentImpliesReel(assignment.slot_role)) return 'instagram_reel';
@@ -768,7 +1082,10 @@ export function evaluateFeedDirectorProductionGate(input: {
     && input.assignments.length < organicTarget
   ) {
     const msg = `FD atamaları eksik (${input.assignments.length}/${organicTarget})`;
-    if (hardBlockIncomplete) {
+    const assignRatio = organicTarget > 0
+      ? input.assignments.length / organicTarget
+      : 0;
+    if (hardBlockIncomplete && assignRatio < 0.75) {
       return {
         allowed: false,
         warnOnly: false,
@@ -786,7 +1103,10 @@ export function evaluateFeedDirectorProductionGate(input: {
 
   if (input.validation.filledRequired < input.validation.requiredSlots) {
     const msg = `Manifest slotları eksik (${input.validation.filledRequired}/${input.validation.requiredSlots})`;
-    if (hardBlockIncomplete) {
+    const fillRatio = input.validation.requiredSlots > 0
+      ? input.validation.filledRequired / input.validation.requiredSlots
+      : 0;
+    if (hardBlockIncomplete && fillRatio < 0.75) {
       return {
         allowed: false,
         warnOnly: false,
@@ -857,7 +1177,12 @@ export function prepareMissionFdAssignments(input: {
   productionProfile: ProductionProfile;
   packageSlug?: string | null;
   requireCampaignReel?: boolean;
-  /** Cross-mission dedupe — headlines produced in last 14 days. */
+  /**
+   * @deprecated No longer used. Cross-mission headline dedupe is applied upstream
+   * to the idea pool (`applyCrossMissionHeadlineDedupe` in plan-phase); the gate now
+   * resolves assignments via the shared `resolveFinalMissionAssignments` producer,
+   * which never consumed this. Kept for call-site compatibility.
+   */
   blockedHeadlineKeys?: Set<string>;
 }): {
   assignments: ProductionAssignment[];
@@ -866,71 +1191,36 @@ export function prepareMissionFdAssignments(input: {
   gate: FeedDirectorProductionGate;
 } {
   const raw = parseProductionAssignments(input.report);
-  let assignments = normalizeAssignmentsForProductionProfile(raw, input.productionProfile);
+  // SSOT: on the mission path the gate must validate exactly what the production
+  // queue will render, so we resolve the same enriched assignment list the queue
+  // consumes (`resolveFinalMissionAssignments`) instead of recomputing a parallel,
+  // less-enriched list here. The non-mission (workspace) path keeps its original
+  // behaviour: profile-normalised raw FD assignments, no manifest expansion.
+  let assignments: ProductionAssignment[];
   if (input.missionId && input.ideas.length > 0) {
-    if (assignments.length > 0) {
-      assignments = expandAssignmentsToWeeklyTotal(
-        assignments,
-        input.missionId,
-        input.manifestMissionType,
-        input.ideas,
-        input.sector,
-        {
-          requireCampaignReel: input.requireCampaignReel,
-          productionProfile: input.productionProfile,
-          packageSlug: input.packageSlug,
-        },
-      );
-    } else {
-      const manifest = buildMissionProductionManifest({
-        missionId: input.missionId,
-        missionType: input.manifestMissionType,
-        includeAds: input.manifestMissionType === 'ads_focus',
-        requireCampaignReel: input.requireCampaignReel,
-        productionProfile: input.productionProfile,
-        packageSlug: input.packageSlug,
-      });
-      const required = manifest.slots.filter((s) => s.required);
-      const usedIdeas = new Set<number>();
-      const usedHeadlines = new Set<string>(input.blockedHeadlineKeys ?? []);
-      const organicTarget = resolveMissionRequiredSlotCount({
-    missionType: input.manifestMissionType,
-    requireCampaignReel: input.requireCampaignReel,
-    productionProfile: input.productionProfile,
-    packageSlug: input.packageSlug,
-  });
-      assignments = required.slice(0, organicTarget).map((slot, slotIdx) => {
-        const ideaIdx = pickStrategistIdeaIndex(
-          input.ideas,
-          usedIdeas,
-          usedHeadlines,
-          slotIdx,
-        );
-        usedIdeas.add(ideaIdx);
-        const hk = strategistHeadlineKey(input.ideas[ideaIdx]!);
-        if (hk) usedHeadlines.add(hk);
-        return {
-          idea_index: ideaIdx,
-          slot_role: slot.role,
-          pipeline: slot.pipeline,
-          copy_bundle_id: defaultCopyBundleId(input.missionId!),
-          publish_channel: publishChannelForRole(slot.role),
-          rationale: 'manifest_slot_map',
-        };
-      });
-      assignments = normalizeAssignmentsForProductionProfile(assignments, input.productionProfile);
-    }
-  }
-  const validation = validateManifestAgainstAssignments(
-    input.missionId || 'workspace',
-    assignments,
-    input.manifestMissionType,
-    {
+    assignments = resolveFinalMissionAssignments({
+      missionId: input.missionId,
+      ideas: input.ideas,
+      report: input.report,
+      manifestMissionType: input.manifestMissionType,
+      sector: input.sector,
       requireCampaignReel: input.requireCampaignReel,
       productionProfile: input.productionProfile,
       packageSlug: input.packageSlug,
-    },
-  );
+    }).map((item) => item.assignment);
+  } else {
+    assignments = normalizeAssignmentsForProductionProfile(raw, input.productionProfile);
+  }
+  const validation = validateManifestAgainstAssignments(
+      input.missionId || 'workspace',
+      assignments,
+      input.manifestMissionType,
+      {
+        requireCampaignReel: input.requireCampaignReel,
+        productionProfile: input.productionProfile,
+        packageSlug: input.packageSlug,
+      },
+    );
   const gate = evaluateFeedDirectorProductionGate({
     missionId: input.missionId,
     report: input.report,
@@ -995,5 +1285,34 @@ export function validateManifestAgainstAssignments(
     filledRequired,
     missingRoles,
     coveragePct,
+  };
+}
+
+/** Idea-driven missions: one slot per ideation idea (0..N-1). */
+export function validateIdeaDrivenAssignments(
+  assignments: ProductionAssignment[],
+  ideasCount: number,
+): {
+  requiredSlots: number;
+  filledRequired: number;
+  missingRoles: ProductionSlotRole[];
+  coveragePct: number;
+} {
+  if (ideasCount <= 0) {
+    return { requiredSlots: 0, filledRequired: 0, missingRoles: [], coveragePct: 100 };
+  }
+  const covered = new Set<number>();
+  for (const assignment of assignments) {
+    const idx = assignment.idea_index;
+    if (Number.isFinite(idx) && idx >= 0 && idx < ideasCount) {
+      covered.add(idx);
+    }
+  }
+  const filledRequired = covered.size;
+  return {
+    requiredSlots: ideasCount,
+    filledRequired,
+    missingRoles: [],
+    coveragePct: Math.round((filledRequired / ideasCount) * 100),
   };
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
@@ -24,12 +25,12 @@ public class OfficeService : IOfficeService
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<OfficeDetailDto?> GetOfficeDetailAsync(Guid officeId, CancellationToken cancellationToken = default)
+    public async Task<OfficeDetailDto?> GetOfficeDetailAsync(Guid officeId, Guid tenantId, CancellationToken cancellationToken = default)
     {
         var office = await _dbContext.Offices
             .Include(o => o.Zones)
             .Include(o => o.Agents)
-            .FirstOrDefaultAsync(o => o.Id == officeId, cancellationToken);
+            .FirstOrDefaultAsync(o => o.Id == officeId && o.TenantId == tenantId, cancellationToken);
 
         if (office == null)
             return null;
@@ -76,7 +77,7 @@ public class OfficeService : IOfficeService
     {
         var office = await _dbContext.Offices
             .FirstOrDefaultAsync(o => o.TenantId == tenantId && o.IsDefault, cancellationToken)
-            ?? throw new InvalidOperationException("Default office not found");
+            ?? throw new NotFoundException("Default office not found");
 
         return MapToDto(office);
     }

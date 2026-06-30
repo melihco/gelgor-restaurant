@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { serverConfig } from '@/lib/server-config';
 
 const PYTHON_BASE = process.env.PYTHON_CREW_BASE_URL || 'http://localhost:8000';
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY || 'smartagency-internal-dev-key';
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 export async function GET(
   _req: NextRequest,

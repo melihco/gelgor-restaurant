@@ -86,7 +86,7 @@ import {
   type RendererGalleryMeta,
 } from '@/lib/renderer-payload';
 import { inferProductionAssignment } from '@/lib/production-pipeline-router';
-import { isGalleryOnlyVisualPolicy, SARNIC_BEACH_WORKSPACE_ID } from '@/lib/visual-overlay-policy';
+import { isGalleryOnlyVisualPolicy } from '@/lib/visual-overlay-policy';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 
 
@@ -127,6 +127,29 @@ export interface DesignTemplate {
   contentType:      string;     // 'post' | 'story' | 'reel'
   savedAt:          string;
   exampleHeadline?: string;
+  textEffect?:      TextEffectPreset;
+  fontPreset?:      DisplayFontPreset;
+  accentColor?:     string;
+  logoPosition?:    LogoPosition;
+}
+
+type LogoPosition = 'top_left' | 'top_center' | 'top_right' | 'bottom_left' | 'bottom_center' | 'bottom_right';
+type DisplayFontPreset = 'clean_sans' | 'elegant_serif' | 'condensed_impact' | 'bold_display' | 'poster_3d' | 'sticker_pop';
+type TextEffectPreset = 'soft_shadow' | 'extrude_3d' | 'neon_3d' | 'editorial_outline' | 'gradient_stack';
+
+interface SavedPostTemplateRecord {
+  id: string;
+  name: string;
+  format: string;
+  status: string;
+  template_kind: string;
+  layout_spec: Record<string, unknown>;
+  thumbnail_url?: string | null;
+  example_artifact_url?: string | null;
+  usage_count?: number;
+  last_used_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Compress a data:image URL or remote URL to a small 200px JPEG for preview storage
@@ -195,6 +218,83 @@ export function deleteDesignTemplate(id: string, tenantId?: string) {
 export interface CanvasTemplate extends DesignTemplate { styleIdx: number; headline?: string; }
 export function saveTemplate(tmpl: CanvasTemplate, tenantId?: string) { saveDesignTemplate(tmpl, tenantId); }
 
+function designTemplateToPostTemplatePayload(tmpl: DesignTemplate) {
+  return {
+    name: tmpl.name || tmpl.label || 'Post template',
+    format: tmpl.contentType || 'post',
+    status: 'active',
+    template_kind: tmpl.source,
+    layout_spec: {
+      source: tmpl.source,
+      label: tmpl.label,
+      canvasStyleIdx: tmpl.canvasStyleIdx,
+      agencyDesignSpec: tmpl.agencyDesignSpec,
+      contentType: tmpl.contentType,
+      exampleHeadline: tmpl.exampleHeadline,
+      textEffect: tmpl.textEffect,
+      fontPreset: tmpl.fontPreset,
+      accentColor: tmpl.accentColor,
+      logoPosition: tmpl.logoPosition,
+    },
+    thumbnail_url: tmpl.thumbnail || null,
+    example_artifact_url: tmpl.thumbnail?.startsWith('http') ? tmpl.thumbnail : null,
+  };
+}
+
+function postTemplateRecordToDesignTemplate(record: SavedPostTemplateRecord): DesignTemplate {
+  const spec = record.layout_spec ?? {};
+  const source = spec.source === 'agency' ? 'agency' : 'canvas';
+  return {
+    id: record.id,
+    name: record.name,
+    label: String(spec.label ?? record.name),
+    source,
+    canvasStyleIdx: typeof spec.canvasStyleIdx === 'number' ? spec.canvasStyleIdx : undefined,
+    agencyDesignSpec: typeof spec.agencyDesignSpec === 'object' && spec.agencyDesignSpec
+      ? spec.agencyDesignSpec as Record<string, unknown>
+      : undefined,
+    thumbnail: record.thumbnail_url ?? record.example_artifact_url ?? '',
+    contentType: String(spec.contentType ?? record.format ?? 'post'),
+    savedAt: record.created_at ?? new Date().toISOString(),
+    exampleHeadline: typeof spec.exampleHeadline === 'string' ? spec.exampleHeadline : undefined,
+    textEffect: normalizeTextEffectPreset(typeof spec.textEffect === 'string' ? spec.textEffect : undefined),
+    fontPreset: normalizeDisplayFontPreset(typeof spec.fontPreset === 'string' ? spec.fontPreset : undefined),
+    accentColor: typeof spec.accentColor === 'string' ? spec.accentColor : undefined,
+    logoPosition: (
+      spec.logoPosition === 'top_center' || spec.logoPosition === 'top_right'
+      || spec.logoPosition === 'bottom_left' || spec.logoPosition === 'bottom_center' || spec.logoPosition === 'bottom_right'
+        ? spec.logoPosition
+        : undefined
+    ) as LogoPosition | undefined,
+  };
+}
+
+async function createRemotePostTemplate(tenantId: string, tmpl: DesignTemplate): Promise<SavedPostTemplateRecord | null> {
+  const res = await fetch(`/api/brand-context/${tenantId}/post-templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+    body: JSON.stringify(designTemplateToPostTemplatePayload(tmpl)),
+  });
+  if (!res.ok) return null;
+  return await res.json() as SavedPostTemplateRecord;
+}
+
+async function markRemotePostTemplateUsed(tenantId: string, templateId: string): Promise<void> {
+  await fetch(`/api/brand-context/${tenantId}/post-templates/${templateId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+    body: JSON.stringify({ increment_usage: true }),
+  }).catch(() => {});
+}
+
+async function deleteRemotePostTemplate(tenantId: string, templateId: string): Promise<boolean> {
+  const res = await fetch(`/api/brand-context/${tenantId}/post-templates/${templateId}`, {
+    method: 'DELETE',
+    headers: { 'X-Tenant-Id': tenantId },
+  });
+  return res.ok;
+}
+
 // ── 4 distinct canvas layout styles ──────────────────────────────────────────
 //
 // 0: CLASSIC BOTTOM   — bottom gradient + left accent bar + headline left
@@ -255,14 +355,14 @@ export const CANVAS_STYLES: DrawStyle[] = [
 
 // Draws the brand logo onto a canvas at the given position.
 // Fetches via media-proxy so CORS doesn't taint the canvas.
-// Position: 'top_left' | 'top_center' | 'top_right'
+// Position: top/bottom logo slots used by saved deterministic templates.
 // maxWidthFraction: logo width as fraction of canvas W (e.g. 0.18 = 18%)
 async function drawLogoOnCanvas(
   ctx: CanvasRenderingContext2D,
   logoUrl: string,
   canvasW: number,
   canvasH: number,
-  position: 'top_left' | 'top_center' | 'top_right' = 'top_left',
+  position: LogoPosition = 'top_left',
   isVertical = false,
 ): Promise<void> {
   if (!logoUrl) return;
@@ -283,13 +383,15 @@ async function drawLogoOnCanvas(
         const lW = Math.round(img.width * scale);
         const lH = Math.round(img.height * scale);
 
-        // X position
-        const lX = position === 'top_center'
+        const isBottom = position.startsWith('bottom_');
+        const lX = position === 'top_center' || position === 'bottom_center'
           ? Math.round((canvasW - lW) / 2)
-          : position === 'top_right'
+          : position === 'top_right' || position === 'bottom_right'
             ? canvasW - lW - PAD
             : PAD;
-        const lY = isVertical ? 80 : 60;
+        const lY = isBottom
+          ? canvasH - lH - (isVertical ? 92 : 72)
+          : (isVertical ? 80 : 60);
 
         // Subtle background pill for contrast (especially for dark logos on dark photos)
         const pillPad = 10;
@@ -343,6 +445,10 @@ async function ensureDesignFonts(): Promise<void> {
     loadGoogleFont('Playfair Display', '700'),
     loadGoogleFont('Inter', '400'),
     loadGoogleFont('Inter', '600'),
+    loadGoogleFont('Anton', '400'),
+    loadGoogleFont('Bebas Neue', '400'),
+    loadGoogleFont('Bangers', '400'),
+    loadGoogleFont('Archivo Black', '400'),
   ]);
 }
 
@@ -355,14 +461,174 @@ export function hexToRgb(hex: string): string {
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
+function normalizeDisplayFontPreset(value?: string): DisplayFontPreset {
+  if (value === 'poster_3d' || value === 'sticker_pop' || value === 'elegant_serif'
+    || value === 'condensed_impact' || value === 'clean_sans' || value === 'bold_display') {
+    return value;
+  }
+  return 'bold_display';
+}
+
+function normalizeTextEffectPreset(value?: string): TextEffectPreset {
+  if (value === 'extrude_3d' || value === 'neon_3d' || value === 'editorial_outline' || value === 'gradient_stack') {
+    return value;
+  }
+  return 'soft_shadow';
+}
+
+function resolvePostDesignDefaults(theme?: BrandTheme | null): {
+  fontPreset: DisplayFontPreset;
+  textEffect: TextEffectPreset;
+  logoPosition: LogoPosition;
+  accentColor?: string;
+  defaultTemplateId?: string;
+} {
+  const raw = (theme?.post_design_defaults ?? theme?.postDesignDefaults ?? {}) as Record<string, unknown>;
+  return {
+    fontPreset: normalizeDisplayFontPreset(typeof raw.font_preset === 'string' ? raw.font_preset : undefined),
+    textEffect: normalizeTextEffectPreset(typeof raw.text_effect === 'string' ? raw.text_effect : undefined),
+    logoPosition: (
+      raw.logo_position === 'top_center' || raw.logo_position === 'top_right'
+      || raw.logo_position === 'bottom_left' || raw.logo_position === 'bottom_center' || raw.logo_position === 'bottom_right'
+        ? raw.logo_position
+        : 'top_left'
+    ) as LogoPosition,
+    accentColor: typeof raw.accent_color === 'string' ? raw.accent_color : theme?.palette?.accent,
+    defaultTemplateId: typeof raw.default_template_id === 'string'
+      ? raw.default_template_id
+      : typeof raw.defaultTemplateId === 'string'
+        ? raw.defaultTemplateId
+        : undefined,
+  };
+}
+
+function resolveDisplayFont(preset: DisplayFontPreset): { family: string; weight: string; lineHeight: number } {
+  switch (preset) {
+    case 'poster_3d':
+      return { family: 'Anton, "Archivo Black", Impact, sans-serif', weight: '400', lineHeight: 1.02 };
+    case 'sticker_pop':
+      return { family: 'Bangers, "Arial Black", Impact, sans-serif', weight: '400', lineHeight: 1.04 };
+    case 'condensed_impact':
+      return { family: 'Bebas Neue, Oswald, "Arial Narrow", Arial, sans-serif', weight: '400', lineHeight: 1.02 };
+    case 'elegant_serif':
+      return { family: '"Playfair Display", Georgia, "Times New Roman", serif', weight: '700', lineHeight: 1.12 };
+    case 'clean_sans':
+      return { family: 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif', weight: '400', lineHeight: 1.18 };
+    default:
+      return { family: 'Archivo Black, Inter, "Helvetica Neue", Helvetica, Arial, sans-serif', weight: '400', lineHeight: 1.06 };
+  }
+}
+
+function tintTextColor(color: string, fallback: string): string {
+  if (!color) return fallback;
+  if (color.startsWith('#')) return color;
+  if (color.startsWith('rgb')) return color;
+  return fallback;
+}
+
+function drawDisplayText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxW: number,
+  opts: {
+    size: number;
+    family: string;
+    weight: string;
+    align: CanvasTextAlign;
+    fill: string;
+    accent: string;
+    effect: TextEffectPreset;
+    tracking?: number;
+  },
+) {
+  const tracking = Math.max(0, opts.tracking ?? 0);
+  const displayText = tracking > 0
+    ? text.split('').join(String.fromCharCode(0x200A).repeat(Math.round(tracking / 2)))
+    : text;
+  const fill = tintTextColor(opts.fill, '#ffffff');
+  const accent = tintTextColor(opts.accent, '#ff2f8f');
+
+  ctx.save();
+  ctx.textAlign = opts.align;
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `${opts.weight} ${opts.size}px ${opts.family}`;
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+
+  if (opts.effect === 'extrude_3d' || opts.effect === 'gradient_stack') {
+    const depth = Math.max(8, Math.round(opts.size * 0.14));
+    ctx.shadowColor = 'rgba(0,0,0,0.25)';
+    ctx.shadowBlur = Math.round(opts.size * 0.10);
+    for (let d = depth; d >= 1; d--) {
+      const alpha = 0.26 + (d / depth) * 0.34;
+      ctx.fillStyle = `rgba(18,10,34,${alpha.toFixed(2)})`;
+      ctx.fillText(displayText, x + d, y + d, maxW);
+    }
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = Math.max(5, Math.round(opts.size * 0.07));
+    ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+    ctx.strokeText(displayText, x, y, maxW);
+    const gradient = ctx.createLinearGradient(x, y - opts.size, x, y + opts.size * 0.2);
+    gradient.addColorStop(0, '#ffffff');
+    gradient.addColorStop(0.46, fill);
+    gradient.addColorStop(1, accent);
+    ctx.fillStyle = gradient;
+    ctx.fillText(displayText, x, y, maxW);
+  } else if (opts.effect === 'neon_3d') {
+    ctx.lineWidth = Math.max(4, Math.round(opts.size * 0.05));
+    ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = Math.round(opts.size * 0.22);
+    ctx.strokeText(displayText, x, y, maxW);
+    ctx.shadowBlur = Math.round(opts.size * 0.10);
+    ctx.fillStyle = fill;
+    ctx.fillText(displayText, x, y, maxW);
+  } else if (opts.effect === 'editorial_outline') {
+    ctx.lineWidth = Math.max(3, Math.round(opts.size * 0.045));
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = Math.round(opts.size * 0.16);
+    ctx.strokeText(displayText, x, y, maxW);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = fill;
+    ctx.fillText(displayText, x, y, maxW);
+  } else {
+    const shadows = [
+      { blur: 32, off: 0, a: 0.55 },
+      { blur: 14, off: 2, a: 0.40 },
+      { blur: 4, off: 1, a: 0.60 },
+    ];
+    for (const s of shadows) {
+      ctx.shadowColor = `rgba(0,0,0,${s.a})`;
+      ctx.shadowBlur = s.blur;
+      ctx.shadowOffsetY = s.off;
+      ctx.fillStyle = fill;
+      ctx.fillText(displayText, x, y, maxW);
+    }
+  }
+
+  ctx.restore();
+}
+
 export async function composeBrandPhotoCard(params: {
   photoUrl: string;
   headline: string;
   cta: string;
   contentType: 'post' | 'story' | 'reel';
   styleIdx?: number;
+  logoUrl?: string;
+  logoPosition?: LogoPosition;
+  textEffect?: TextEffectPreset;
+  fontPreset?: DisplayFontPreset;
+  accentColor?: string;
 }): Promise<string> {
-  const { photoUrl, headline, cta, contentType, styleIdx = 0 } = params;
+  const {
+    photoUrl, headline, cta, contentType, styleIdx = 0,
+    logoUrl = '', logoPosition = 'top_left',
+    textEffect = 'extrude_3d', fontPreset = 'poster_3d', accentColor = '#ff2f8f',
+  } = params;
   const isV = contentType === 'story' || contentType === 'reel';
   const style = CANVAS_STYLES[styleIdx % CANVAS_STYLES.length]!;
 
@@ -387,11 +653,8 @@ export async function composeBrandPhotoCard(params: {
       const canvas = document.createElement('canvas');
       canvas.width = W; canvas.height = H;
       const ctx = canvas.getContext('2d')!;
-      // Use loaded web fonts; fall back to system fonts if not yet available
-      const FONT_SANS     = 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif';
-      const FONT_CONDENSED = 'Oswald, "Arial Narrow", Arial, sans-serif';
-      const FONT = style.hlWeight === '300' || style.hlWeight === '400' || style.hlWeight === '500' || style.hlWeight === '600'
-        ? FONT_SANS : FONT_CONDENSED;
+      const displayFont = resolveDisplayFont(fontPreset);
+      const bodyFont = resolveDisplayFont('clean_sans');
 
       // ── 1. Photo — full cover, photo is the hero ─────────────────────────
       const ir = img.width / img.height, cr = W / H;
@@ -424,7 +687,7 @@ export async function composeBrandPhotoCard(params: {
 
       // ── 3. Text wrap ─────────────────────────────────────────────────────
       function wrapText(text: string, size: number, weight: string, maxW: number, maxLines: number): string[] {
-        ctx.font = `${weight} ${size}px ${FONT}`;
+        ctx.font = `${weight} ${size}px ${displayFont.family}`;
         const words = text.trim().split(/\s+/);
         const lines: string[] = [];
         let line = '';
@@ -441,7 +704,6 @@ export async function composeBrandPhotoCard(params: {
       const PAD     = isV ? 80 : 64;
       const BASE_HL = isV ? 82  : 68;
       const HL_SIZE = Math.round(BASE_HL * style.hlScale);
-      const LINE_H  = style.tracking > 4 ? 1.30 : 1.22;
       const maxTW   = W - PAD * 2;
       const TEXT_X  = style.textAlign === 'center' ? W / 2 : PAD;
 
@@ -459,7 +721,7 @@ export async function composeBrandPhotoCard(params: {
       if (style.showCta && cta.trim()) {
         const ctaText = cta.trim().slice(0, 24) + ' →';
         const CTA_SIZE = Math.round(HL_SIZE * 0.42);
-        ctx.font = `400 ${CTA_SIZE}px ${FONT}`;
+        ctx.font = `400 ${CTA_SIZE}px ${bodyFont.family}`;
         // Letter-spacing via char-by-char for wider feel
         ctx.fillStyle = 'rgba(255,255,255,0.62)';
         ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 8;
@@ -470,45 +732,33 @@ export async function composeBrandPhotoCard(params: {
       }
 
       // ── 7. Headline — clean, multi-shadow for legibility without overlay ──
-      const hlLines = wrapText(headline, HL_SIZE, style.hlWeight, maxTW, isV ? 3 : 2);
-      // Apply letter-spacing via a simple workaround: spaced text
-      const spacedHl = (text: string) => style.tracking > 0
-        ? text.split('').join(String.fromCharCode(0x200A).repeat(Math.round(style.tracking / 2)))
-        : text;
-
-      ctx.font = `${style.hlWeight} ${HL_SIZE}px ${FONT}`;
-
-      const drawHlLine = (line: string, y: number) => {
-        const text = spacedHl(line);
-        // Strong readable shadow (avoids needing heavy overlay)
-        const shadows = [
-          { blur: 32, off: 0, a: 0.55 },
-          { blur: 14, off: 2, a: 0.40 },
-          { blur: 4,  off: 1, a: 0.60 },
-        ];
-        for (const s of shadows) {
-          ctx.shadowColor = `rgba(0,0,0,${s.a})`;
-          ctx.shadowBlur = s.blur;
-          ctx.shadowOffsetY = s.off;
-          ctx.fillStyle = '#fff';
-          ctx.fillText(text, TEXT_X, y, maxTW);
-        }
-        ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-      };
+      const effect = normalizeTextEffectPreset(textEffect);
+      const hlLines = wrapText(headline, HL_SIZE, displayFont.weight, maxTW, isV ? 3 : 2);
+      const drawHlLine = (line: string, y: number) => drawDisplayText(ctx, line, TEXT_X, y, maxTW, {
+        size: HL_SIZE,
+        family: displayFont.family,
+        weight: displayFont.weight,
+        align: style.textAlign as CanvasTextAlign,
+        fill: '#ffffff',
+        accent: accentColor,
+        effect,
+        tracking: style.tracking,
+      });
 
       if (style.textZone === 'top') {
         for (const line of hlLines) {
           drawHlLine(line, curY + HL_SIZE * 0.82);
-          curY += HL_SIZE * LINE_H;
+          curY += HL_SIZE * displayFont.lineHeight;
         }
       } else {
         for (let i = hlLines.length - 1; i >= 0; i--) {
-          curY -= HL_SIZE * LINE_H;
+          curY -= HL_SIZE * displayFont.lineHeight;
           drawHlLine(hlLines[i]!, curY + HL_SIZE * 0.82);
         }
       }
 
-      resolve(canvas.toDataURL('image/jpeg', 0.95));
+      drawLogoOnCanvas(ctx, logoUrl, W, H, logoPosition, isV)
+        .finally(() => resolve(canvas.toDataURL('image/jpeg', 0.95)));
     };
     img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('skip:load')); };
     img.src = objectUrl;
@@ -543,13 +793,16 @@ export async function composeAgencyDesignCard(params: {
   typoStyle:      string;
   ctaStyle:       string;
   logoUrl?:       string;
-  logoPosition?:  'top_left' | 'top_center' | 'top_right';
+  logoPosition?:  LogoPosition;
+  textEffect?:    TextEffectPreset;
+  fontPreset?:    DisplayFontPreset;
 }): Promise<string> {
   const {
     photoUrl, headline, subline, cta, contentType,
     overlayColor, overlayOpacity, bgIntent,
     textColor, ctaColor, typoStyle, ctaStyle,
     logoUrl = '', logoPosition = 'top_left',
+    textEffect = 'extrude_3d', fontPreset,
   } = params;
 
   const isV = contentType === 'story' || contentType === 'reel';
@@ -558,20 +811,12 @@ export async function composeAgencyDesignCard(params: {
   await ensureDesignFonts();
 
   // ── Typography: web fonts first, system fallbacks second ───────────────────
-  const SANS      = 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif';
-  const SERIF     = '"Playfair Display", Georgia, "Times New Roman", serif';
-  const CONDENSED = 'Oswald, "Arial Narrow", Arial, sans-serif';
-  const FONT_FAMILY = typoStyle === 'elegant_serif'
-    ? SERIF
-    : typoStyle === 'condensed_impact'
-      ? CONDENSED
-      : SANS;
-
-  const HL_WEIGHT  = typoStyle === 'clean_sans'       ? '400'
-    : typoStyle === 'elegant_serif'    ? '700'
-    : typoStyle === 'condensed_impact' ? '700'
-    : '600';
-  const SUB_WEIGHT = typoStyle === 'clean_sans' ? '400' : '400';
+  const resolvedPreset = fontPreset ?? normalizeDisplayFontPreset(typoStyle);
+  const displayFont = resolveDisplayFont(resolvedPreset);
+  const bodyFont = resolveDisplayFont('clean_sans');
+  const FONT_FAMILY = displayFont.family;
+  const HL_WEIGHT = displayFont.weight;
+  const SUB_WEIGHT = resolvedPreset === 'clean_sans' ? '400' : '400';
 
   // ── Fetch image via server-side media proxy (avoids CORS taint) ────────────
   const proxyUrl = resolveBrowserImageSrc(photoUrl);
@@ -714,21 +959,19 @@ export async function composeAgencyDesignCard(params: {
       const hlLines = wrapText(headline, HL_USED, HL_WEIGHT, FONT_FAMILY, maxTW, isV ? 3 : 2);
       ctx.font = `${HL_WEIGHT} ${HL_USED}px ${FONT_FAMILY}`;
 
+      const effect = normalizeTextEffectPreset(textEffect);
       for (let i = hlLines.length - 1; i >= 0; i--) {
-        curY -= HL_USED * LINE_H;
-        const shadows = [
-          { blur: 30, off: 0, a: 0.55 },
-          { blur: 12, off: 2, a: 0.38 },
-          { blur: 3,  off: 1, a: 0.55 },
-        ];
-        for (const s of shadows) {
-          ctx.shadowColor = `rgba(0,0,0,${s.a})`;
-          ctx.shadowBlur = s.blur;
-          ctx.shadowOffsetY = s.off;
-          ctx.fillStyle = textColor;
-          ctx.fillText(hlLines[i]!, textX, curY + HL_USED * 0.82, maxTW);
-        }
-        ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+        curY -= HL_USED * Math.min(LINE_H, displayFont.lineHeight);
+        drawDisplayText(ctx, hlLines[i]!, textX, curY + HL_USED * 0.82, maxTW, {
+          size: HL_USED,
+          family: FONT_FAMILY,
+          weight: HL_WEIGHT,
+          align: 'left',
+          fill: textColor,
+          accent: ctaColor || textColor,
+          effect,
+          tracking: resolvedPreset === 'poster_3d' || resolvedPreset === 'sticker_pop' ? 0 : 1,
+        });
       }
 
       // ── Logo — drawn last so it sits on top of everything ──────────────────
@@ -955,10 +1198,12 @@ function IdeaCard({
   const [canvasStyleIdx, setCanvasStyleIdx] = useState(0);
   const [isFavourited, setIsFavourited] = useState(false);
 
-    const [savedTemplates, setSavedTemplates] = useState<DesignTemplate[]>([]);
+  const [savedTemplates, setSavedTemplates] = useState<DesignTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [lastUsedTemplate, setLastUsedTemplate] = useState<Omit<DesignTemplate, 'id' | 'thumbnail' | 'savedAt'> | null>(null);
   const [templateSaved, setTemplateSaved] = useState(false);
+  const [activeCanvasTemplateStyle, setActiveCanvasTemplateStyle] = useState<Pick<DesignTemplate, 'textEffect' | 'fontPreset' | 'accentColor' | 'logoPosition'> | null>(null);
+  const migratedTemplateTenants = useRef<Set<string>>(new Set());
 
   // ── Unused Gallery Caption Generation ────────────────────────────────────
   const [unusedCaptionSuggestions, setUnusedCaptionSuggestions] = useState<{
@@ -976,6 +1221,19 @@ function IdeaCard({
 
   // Brand context for design card generation (reference images + visual DNA)
   const { tenantId } = useWorkspaceStore();
+  const { data: remotePostTemplates, isSuccess: remotePostTemplatesLoaded } = useQuery<SavedPostTemplateRecord[]>({
+    queryKey: ['brandPostTemplates', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const res = await fetch(`/api/brand-context/${tenantId}/post-templates`, {
+        headers: { 'X-Tenant-Id': tenantId },
+      });
+      if (!res.ok) throw new Error('Post template library could not be loaded');
+      return await res.json() as SavedPostTemplateRecord[];
+    },
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
   const { data: productionSnapshot } = useQuery<ProductionBrandContextSnapshot | null>({
     queryKey: ['production-context-snapshot', tenantId],
     queryFn: () => apiClient.getProductionBrandContextSnapshot(tenantId),
@@ -1004,6 +1262,15 @@ function IdeaCard({
     () => resolveAiVisualProductionStandard(brandTheme as Record<string, unknown> | undefined),
     [brandTheme],
   );
+  const postDesignDefaults = useMemo(
+    () => resolvePostDesignDefaults(brandTheme),
+    [brandTheme],
+  );
+  const defaultPostTemplate = useMemo(() => {
+    if (!postDesignDefaults.defaultTemplateId) return null;
+    const record = (remotePostTemplates ?? []).find((tmpl) => tmpl.id === postDesignDefaults.defaultTemplateId);
+    return record ? postTemplateRecordToDesignTemplate(record) : null;
+  }, [postDesignDefaults.defaultTemplateId, remotePostTemplates]);
   const brandCtx = useMemo(
     () => productionSnapshotToLegacyBrandContext(productionSnapshot),
     [productionSnapshot],
@@ -1030,8 +1297,64 @@ function IdeaCard({
     custom_rules: String(pyCtx?.custom_rules ?? ''),
   }), [brandName, pyCtx, sector, location]);
 
-  // Load saved templates for this brand whenever tenantId is known
-  useEffect(() => { setSavedTemplates(loadSavedTemplates(tenantId)); }, [tenantId]);
+  // Load saved templates from the persistent library, with localStorage as cache/fallback.
+  useEffect(() => {
+    if (!tenantId) {
+      setSavedTemplates([]);
+      return;
+    }
+    if (remotePostTemplatesLoaded) {
+      setSavedTemplates((remotePostTemplates ?? []).map(postTemplateRecordToDesignTemplate));
+      return;
+    }
+    setSavedTemplates(loadSavedTemplates(tenantId));
+  }, [remotePostTemplates, remotePostTemplatesLoaded, tenantId]);
+
+  useEffect(() => {
+    if (!tenantId || !remotePostTemplatesLoaded || migratedTemplateTenants.current.has(tenantId)) return;
+    migratedTemplateTenants.current.add(tenantId);
+    const localTemplates = loadSavedTemplates(tenantId);
+    if (!localTemplates.length) return;
+
+    const existingKeys = new Set(
+      (remotePostTemplates ?? []).map((record) => {
+        const spec = record.layout_spec ?? {};
+        return `${record.name}|${spec.source ?? record.template_kind}|${spec.canvasStyleIdx ?? ''}`;
+      }),
+    );
+    const toMigrate = localTemplates.filter((tmpl) => (
+      !existingKeys.has(`${tmpl.name}|${tmpl.source}|${tmpl.canvasStyleIdx ?? ''}`)
+    ));
+    if (!toMigrate.length) return;
+
+    Promise.all(toMigrate.slice(0, 20).map((tmpl) => createRemotePostTemplate(tenantId, tmpl)))
+      .then(() => queryClient.invalidateQueries({ queryKey: ['brandPostTemplates', tenantId] }))
+      .catch(() => {});
+  }, [queryClient, remotePostTemplates, remotePostTemplatesLoaded, tenantId]);
+
+  useEffect(() => {
+    if (!defaultPostTemplate) return;
+    if (defaultPostTemplate.source === 'canvas' && defaultPostTemplate.canvasStyleIdx !== undefined) {
+      setCanvasStyleIdx(defaultPostTemplate.canvasStyleIdx);
+      setActiveCanvasTemplateStyle({
+        textEffect: defaultPostTemplate.textEffect ?? postDesignDefaults.textEffect,
+        fontPreset: defaultPostTemplate.fontPreset ?? postDesignDefaults.fontPreset,
+        accentColor: defaultPostTemplate.accentColor ?? postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
+        logoPosition: defaultPostTemplate.logoPosition ?? postDesignDefaults.logoPosition,
+      });
+    } else if (defaultPostTemplate.source === 'agency' && defaultPostTemplate.agencyDesignSpec) {
+      setAgencyDesigns([defaultPostTemplate.agencyDesignSpec]);
+      setAgencyDesignIdx(0);
+      setActiveCanvasTemplateStyle(null);
+    }
+  }, [
+    defaultPostTemplate?.id,
+    postDesignDefaults.textEffect,
+    postDesignDefaults.fontPreset,
+    postDesignDefaults.logoPosition,
+    postDesignDefaults.accentColor,
+    brandCtx?.brand_accent_color,
+  ]);
 
   const [savedPrefs, setSavedPrefs] = useState(DEFAULT_ANNOUNCEMENT_PREFERENCES);
 
@@ -1137,9 +1460,8 @@ function IdeaCard({
       0,
       sector,
     );
-    if (tenantId === SARNIC_BEACH_WORKSPACE_ID && assignment.slot_role === 'organic_post') return true;
     return isGalleryOnlyVisualPolicy(assignment, ideaRecord);
-  }, [tenantId, idea, index, missionIdFromStore, sector]);
+  }, [idea, index, missionIdFromStore, sector]);
   const postTypeBucket = contentTypeToPostType(contentTypeFmt);
   const usedForThisType = getExcludeUrlsForPostType(galleryUsage, postTypeBucket);
   const isUrlUsedForCurrentType = (url: string) =>
@@ -1230,17 +1552,15 @@ function IdeaCard({
   // Track which photo was used last — rotate on retry
   const [lastPhotoIdx, setLastPhotoIdx] = useState(0);
 
-  // ── "Ajans Tasarımı" — Design Director (GPT-4o fast, 3-8s) → GPT-image-1 edit ──
+  // ── "Ajans Tasarımı" — Design Director spec → deterministic Canvas render ──
   //
   // Flow:
   //   1. POST /api/design-director/{tenantId} — GPT-4o produces 3 design variants
   //      (IMPACT / EDITORIAL / MINIMAL), each with image_edit_prompt + canvas_spec
   //   2. Pick the next variant (rotating through 3)
-  //   3. Call /api/generate-instagram-image with designCardPrompt + brand photo
-  //      → GPT-image-1 images.edit: PRESERVES the real venue photo, adds design elements
-  //   4. Canvas fallback: if no OpenAI key configured, use composeAgencyDesignCard
+  //   3. Render real venue photo + 3D headline + actual brand logo in Canvas
   //
-  // The brand photo is NEVER replaced — edit mode preserves it pixel-for-pixel.
+  // The brand photo is NEVER replaced — Canvas composes design layers above it.
   const [agencyDesigns, setAgencyDesigns] = useState<Record<string, unknown>[]>(() => prefetchedAgencyDesigns ?? []);
   const [agencyDesignIdx, setAgencyDesignIdx] = useState(() => (prefetchedAgencyDesigns?.length ? index % prefetchedAgencyDesigns.length : 0));
   const [agencyDesignLabel, setAgencyDesignLabel] = useState('');
@@ -1301,7 +1621,6 @@ function IdeaCard({
       const labels: Record<string, string> = { impact: '⚡ Impact', editorial: '📐 Editorial', minimal: '○ Minimal' };
       setAgencyDesignLabel(labels[templateName] ?? templateName);
 
-      const imageEditPrompt = (design.image_edit_prompt as string) || '';
       const canvasSpec      = (design.canvas_spec        as Record<string, unknown>) || {};
       // Agency design: 1-3 word headline only — no CTA, no subline on image
       const rawHeadline    = (design.headline as string) || headline;
@@ -1322,39 +1641,25 @@ function IdeaCard({
 
       // Resolve logo: canvas_spec may override, otherwise use cached Director logo
       const resolvedLogoUrl = (canvasSpec.logo_url as string) || directorLogoUrl || brandCtx?.logo_url || '';
-      const resolvedLogoPos = ((canvasSpec.logo_position as string) || 'top_left') as 'top_left' | 'top_center' | 'top_right';
+      const resolvedLogoPos = ((canvasSpec.logo_position as string) || postDesignDefaults.logoPosition) as LogoPosition;
 
-      // ── Path A: GPT-image-1 edit mode (highest quality, preserves venue photo) ──
-      if (imageEditPrompt) {
-        try {
-          const result = await apiClient.generateInstagramImage({
-            title:              designHeadline,
-            caption,
-            concept:            imageEditPrompt,
-            brandName,
-            location,
-            contentType:        contentTypeFmt,
-            referenceImageUrls: [photoUrl, ...pool.filter(u => u !== photoUrl).slice(0, 1)],
-            designCardPrompt:   imageEditPrompt,
-            campaignContext:    missionBrief,
-            logoUrl:            resolvedLogoUrl || undefined,
-          });
-          return { imageUrl: result.imageUrl };
-        } catch (gptErr) {
-          console.warn('[design-director] GPT-image-1 edit failed, using Canvas fallback:', gptErr);
-        }
-      }
-
-      // ── Path B: Canvas fallback ─────────────────────────────────────────────
+      // ── Deterministic template render ───────────────────────────────────────
       const overlayRgba   = (canvasSpec.overlay_rgba  as string) || `rgba(${hexToRgb(designPrimary)},0.6)`;
       const headlineColor = (canvasSpec.headline_color as string) || designAccent;
       const ctaBg         = (canvasSpec.cta_bg         as string) || designAccent;
 
-      const typoMap: Record<string, string> = {
-        impact:    'condensed_impact',
+      const typoMap: Record<string, DisplayFontPreset> = {
+        impact:    'poster_3d',
         editorial: 'elegant_serif',
         minimal:   'clean_sans',
       };
+      const effectMap: Record<string, TextEffectPreset> = {
+        impact:    'extrude_3d',
+        editorial: 'editorial_outline',
+        minimal:   'gradient_stack',
+      };
+      const resolvedFontPreset = normalizeDisplayFontPreset((canvasSpec.font_preset as string) || typoMap[templateName] || postDesignDefaults.fontPreset);
+      const resolvedTextEffect = normalizeTextEffectPreset((canvasSpec.text_effect as string) || effectMap[templateName] || postDesignDefaults.textEffect);
 
       const imageUrl = await composeAgencyDesignCard({
         photoUrl,
@@ -1367,10 +1672,12 @@ function IdeaCard({
         bgIntent:       'venue_full_bleed',
         textColor:      headlineColor,
         ctaColor:       'transparent',
-        typoStyle:      typoMap[templateName] ?? 'bold_display',
+        typoStyle:      resolvedFontPreset,
         ctaStyle:       'none',      // no CTA button rendered
         logoUrl:        resolvedLogoUrl,
         logoPosition:   resolvedLogoPos,
+        textEffect:     resolvedTextEffect,
+        fontPreset:     resolvedFontPreset,
       });
       return { imageUrl };
     },
@@ -1380,6 +1687,7 @@ function IdeaCard({
       setIsFavourited(false);
       setTemplateSaved(false);
       const usedDesign = agencyDesigns[agencyDesignIdx > 0 ? (agencyDesignIdx - 1) % Math.max(agencyDesigns.length, 1) : 0];
+      const usedCanvasSpec = (usedDesign?.canvas_spec as Record<string, unknown> | undefined) ?? {};
       setLastUsedTemplate({
         name:             `${agencyDesignLabel || '✦ Ajans'} · ${contentTypeFmt}`,
         label:            agencyDesignLabel || '✦ Ajans',
@@ -1387,6 +1695,10 @@ function IdeaCard({
         agencyDesignSpec: usedDesign,
         contentType:      contentTypeFmt,
         exampleHeadline:  headline.slice(0, 40),
+        textEffect:       normalizeTextEffectPreset(usedCanvasSpec.text_effect as string | undefined),
+        fontPreset:       normalizeDisplayFontPreset(usedCanvasSpec.font_preset as string | undefined),
+        accentColor:      (usedCanvasSpec.headline_color as string | undefined) ?? brandTheme?.palette?.accent ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
+        logoPosition:     ((usedCanvasSpec.logo_position as string | undefined) ?? postDesignDefaults.logoPosition) as LogoPosition,
       });
     },
     onError: (err: Error) => setSaveError(err.message?.slice(0, 100) ?? 'Ajans tasarımı başarısız'),
@@ -1513,6 +1825,11 @@ function IdeaCard({
             cta,
             contentType: contentTypeFmt,
             styleIdx: canvasStyleIdx,
+            logoUrl: brandCtx?.logo_url ?? '',
+            logoPosition: activeCanvasTemplateStyle?.logoPosition ?? postDesignDefaults.logoPosition,
+            textEffect: activeCanvasTemplateStyle?.textEffect ?? postDesignDefaults.textEffect,
+            fontPreset: activeCanvasTemplateStyle?.fontPreset ?? postDesignDefaults.fontPreset,
+            accentColor: activeCanvasTemplateStyle?.accentColor ?? postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
           });
           return { imageUrl };
         } catch (e) {
@@ -1534,6 +1851,10 @@ function IdeaCard({
         canvasStyleIdx: canvasStyleIdx % CANVAS_STYLES.length,
         contentType: contentTypeFmt,
         exampleHeadline: headline.slice(0, 40),
+        textEffect: activeCanvasTemplateStyle?.textEffect ?? postDesignDefaults.textEffect,
+        fontPreset: activeCanvasTemplateStyle?.fontPreset ?? postDesignDefaults.fontPreset,
+        accentColor: activeCanvasTemplateStyle?.accentColor ?? postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
+        logoPosition: activeCanvasTemplateStyle?.logoPosition ?? postDesignDefaults.logoPosition,
       });
     },
   });
@@ -1622,6 +1943,11 @@ function IdeaCard({
           cta: brief.ctaHint,
           contentType: 'post',  // carousel is always square
           styleIdx: i % CANVAS_STYLES.length,  // vary style per slide
+          logoUrl: brandCtx?.logo_url ?? '',
+          logoPosition: postDesignDefaults.logoPosition,
+          textEffect: i % 2 === 0 ? postDesignDefaults.textEffect : 'gradient_stack',
+          fontPreset: i % 2 === 0 ? postDesignDefaults.fontPreset : 'condensed_impact',
+          accentColor: postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
         });
         slides.push(url);
         setSeriesSlides([...slides]);  // show slides as they arrive
@@ -1869,7 +2195,7 @@ function IdeaCard({
     setReelError(null);
 
     try {
-      // Step 1: Produce 9:16 agency design via Design Director + GPT-image-1
+      // Step 1: Produce a deterministic 9:16 agency design with real logo + 3D display type.
       const directorRes = await fetch(`/api/design-director/${tenantId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1885,47 +2211,33 @@ function IdeaCard({
       const directorData = directorRes.ok ? await directorRes.json() : {};
       const designs: Record<string, unknown>[] = directorData?.designs ?? [];
       const design = designs[0] ?? {};
-      const imageEditPrompt = (design.image_edit_prompt as string) || `${headline}. Story format 9:16. Brand visual style.`;
+      const canvasSpec = (design.canvas_spec as Record<string, unknown> | undefined) ?? {};
 
       // Pick best promptImage (non-CDN)
       const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
       const nonCdnPhotos = brandRefImages.filter(isUsableReelPhotoUrl);
       const baseImage = (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) || nonCdnPhotos[0] || agentGalleryUrl;
 
-      let agencyStillUrl: string | null = null;
-
-      if (imageEditPrompt && baseImage) {
-        try {
-          const result = await apiClient.generateInstagramImage({
-            title:              headline,
-            caption:            caption,
-            concept:            imageEditPrompt,
-            brandName:          brandName ?? '',
-            contentType:        'story',
-            referenceImageUrls: [baseImage],
-            designCardPrompt:   imageEditPrompt,
-          });
-          agencyStillUrl = result.imageUrl ?? null;
-        } catch { /* fallback to canvas below */ }
-      }
-
-      // Canvas fallback if GPT-image-1 failed
-      if (!agencyStillUrl && baseImage) {
-        agencyStillUrl = await composeAgencyDesignCard({
-          photoUrl:       baseImage,
-          headline:       headline.split(/\s+/).slice(0, 3).join(' '),
-          subline:        '',
-          cta:            cta || '',
-          contentType:    'story',
-          overlayColor:   `rgba(28,10,7,0.55)`,
-          overlayOpacity: 0.55,
-          bgIntent:       'venue_full_bleed',
-          textColor:      brandTheme?.palette?.accent ?? '#c9813f',
-          ctaColor:       'transparent',
-          typoStyle:      'elegant_serif',
-          ctaStyle:       'none',
-        });
-      }
+      const agencyStillUrl = baseImage
+        ? await composeAgencyDesignCard({
+            photoUrl:       baseImage,
+            headline:       headline.split(/\s+/).slice(0, 3).join(' '),
+            subline:        '',
+            cta:            '',
+            contentType:    'story',
+            overlayColor:   (canvasSpec.overlay_rgba as string) || `rgba(28,10,7,0.55)`,
+            overlayOpacity: 0.55,
+            bgIntent:       'venue_full_bleed',
+            textColor:      (canvasSpec.headline_color as string) || brandTheme?.palette?.accent || '#c9813f',
+            ctaColor:       'transparent',
+            typoStyle:      (canvasSpec.font_preset as string) || 'poster_3d',
+            ctaStyle:       'none',
+            logoUrl:        (canvasSpec.logo_url as string) || directorData.logo_url || brandCtx?.logo_url || '',
+            logoPosition:   ((canvasSpec.logo_position as string) || postDesignDefaults.logoPosition) as LogoPosition,
+            textEffect:     normalizeTextEffectPreset((canvasSpec.text_effect as string) || postDesignDefaults.textEffect),
+            fontPreset:     normalizeDisplayFontPreset((canvasSpec.font_preset as string) || postDesignDefaults.fontPreset),
+          })
+        : null;
 
       if (!agencyStillUrl) throw new Error('Ajans görseli üretilemedi');
 
@@ -2185,6 +2497,11 @@ function IdeaCard({
             cta: s.ctaHint,
             contentType: 'post',
             styleIdx: i % CANVAS_STYLES.length,
+            logoUrl: brandCtx?.logo_url ?? '',
+            logoPosition: postDesignDefaults.logoPosition,
+            textEffect: i % 2 === 0 ? postDesignDefaults.textEffect : 'gradient_stack',
+            fontPreset: i % 2 === 0 ? postDesignDefaults.fontPreset : 'condensed_impact',
+            accentColor: postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
           });
           carouselSlides.push(url);
         } catch { /* skip */ }
@@ -2311,7 +2628,13 @@ function IdeaCard({
             savedAt:   new Date().toISOString(),
           };
           saveDesignTemplate(tmpl, tenantId);
-          setSavedTemplates(loadSavedTemplates(tenantId));
+          if (tenantId) {
+            createRemotePostTemplate(tenantId, tmpl)
+              .then(() => queryClient.invalidateQueries({ queryKey: ['brandPostTemplates', tenantId] }))
+              .catch(() => setSavedTemplates(loadSavedTemplates(tenantId)));
+          } else {
+            setSavedTemplates(loadSavedTemplates(tenantId));
+          }
           setTemplateSaved(true);
         }).catch(() => {/* ignore */});
       }
@@ -2711,10 +3034,22 @@ function IdeaCard({
               {savedTemplates.slice(0, 8).map(tmpl => (
                 <div key={tmpl.id} role="button" tabIndex={0}
                   onClick={() => {
+                    if (tenantId) {
+                      markRemotePostTemplateUsed(tenantId, tmpl.id)
+                        .then(() => queryClient.invalidateQueries({ queryKey: ['brandPostTemplates', tenantId] }))
+                        .catch(() => {});
+                    }
                     if (tmpl.source === 'canvas' && tmpl.canvasStyleIdx !== undefined) {
+                      setActiveCanvasTemplateStyle({
+                        textEffect: tmpl.textEffect ?? postDesignDefaults.textEffect,
+                        fontPreset: tmpl.fontPreset ?? postDesignDefaults.fontPreset,
+                        accentColor: tmpl.accentColor ?? postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
+                        logoPosition: tmpl.logoPosition ?? postDesignDefaults.logoPosition,
+                      });
                       setCanvasStyleIdx(tmpl.canvasStyleIdx);
                       setTimeout(() => brandGenerateMutation.mutate(), 30);
                     } else if (tmpl.source === 'agency' && tmpl.agencyDesignSpec) {
+                      setActiveCanvasTemplateStyle(null);
                       setAgencyDesigns([tmpl.agencyDesignSpec]);
                       setAgencyDesignIdx(0);
                       setTimeout(() => agencyDesignMutation.mutate(), 30);
@@ -2730,7 +3065,24 @@ function IdeaCard({
                   )}
                   {/* Delete span */}
                   <span role="button" tabIndex={0}
-                    onClick={e => { e.stopPropagation(); deleteDesignTemplate(tmpl.id, tenantId); setSavedTemplates(loadSavedTemplates(tenantId)); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (tenantId) {
+                        deleteRemotePostTemplate(tenantId, tmpl.id)
+                          .then((ok) => {
+                            deleteDesignTemplate(tmpl.id, tenantId);
+                            if (ok) queryClient.invalidateQueries({ queryKey: ['brandPostTemplates', tenantId] });
+                            else setSavedTemplates(loadSavedTemplates(tenantId));
+                          })
+                          .catch(() => {
+                            deleteDesignTemplate(tmpl.id, tenantId);
+                            setSavedTemplates(loadSavedTemplates(tenantId));
+                          });
+                      } else {
+                        deleteDesignTemplate(tmpl.id, tenantId);
+                        setSavedTemplates(loadSavedTemplates(tenantId));
+                      }
+                    }}
                     onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); e.currentTarget.click(); } }}
                     style={{ position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: '50%',
                       background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center',
@@ -3510,7 +3862,7 @@ function IdeaCard({
                   action: () => { generateReelVideo(); setShowOverflowSheet(false); },
                 },
                 ...(isPortrait ? [{
-                  icon: '🎬', label: 'Ajans Story → Reel', sub: 'GPT-image-1 (9:16) → Runway gen4',
+                  icon: '🎬', label: 'Ajans Story → Reel', sub: '3D logo story kartı → Runway gen4',
                   disabled: isGeneratingAgencyReel || isGeneratingReel || isGeneratingMultiReel,
                   action: () => { generateAgencyReel(); setShowOverflowSheet(false); },
                 }] : []),
@@ -3564,7 +3916,7 @@ export function MissionContentFactory() {
 
   const { data: prog } = useQuery({
     queryKey: ['mission-progress', missionId],
-    queryFn: () => apiClient.getMissionProgress(tenantId, missionId!),
+    queryFn: () => apiClient.getMissionProgress(tenantId, missionId!, { includePayload: true }),
     enabled: Boolean(missionId),
     staleTime: 60_000,
   });

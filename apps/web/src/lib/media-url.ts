@@ -57,25 +57,167 @@ export function mediaUrlForKey(key: string, publicBase = process.env.R2_PUBLIC_U
   return `/api/media?key=${encodeURIComponent(k)}`;
 }
 
-const SAFE_HTTP_HOSTS = [
-  'oaidalleapiprodscus.blob.core',
-  'fal-cdn',
-  'storage.googleapis',
-  'images.unsplash.com',
-  'plus.unsplash.com',
-  'r2.dev',
-  'r2.cloudflarestorage.com',
-  'cloudflarestorage.com',
-  'amazonaws.com',
-  'cloudfront.net',
-  'export-download.canva.com',
-  'cdninstagram.com',
-  'fbcdn.net',
-  'sarnicbeach.com',
-  'yulabodrum.com',
-  'sarnıc.com',
-  'karaman',
-];
+function isLocalOrPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return (
+    h === 'localhost'
+    || h === '127.0.0.1'
+    || h === '0.0.0.0'
+    || h === '[::1]'
+    || h.endsWith('.local')
+    || h.startsWith('10.')
+    || h.startsWith('192.168.')
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(h)
+  );
+}
+
+/** fal.ai / Kling / Luma accept HTTPS URLs or data URIs only. */
+export function isFalAccessibleMediaUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('data:')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' && !isLocalOrPrivateHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function extractMediaKeyFromUrl(url: string): string | null {
+  const keyMatch = url.match(/[?&]key=([^&]+)/);
+  return keyMatch ? decodeURIComponent(keyMatch[1]!) : null;
+}
+
+async function resolveR2KeyToPublicHttps(key: string): Promise<string> {
+  const cleanKey = key.replace(/^\//, '');
+  const publicBase = process.env.R2_PUBLIC_URL ?? '';
+  if (publicBase) {
+    return `${publicBase.replace(/\/$/, '')}/${cleanKey}`;
+  }
+
+  const { getPresignedUrl, isR2Configured } = await import('@/lib/r2-storage');
+  if (!isR2Configured()) {
+    throw new Error(`R2 not configured — cannot expose media key for external API: ${cleanKey.slice(0, 80)}`);
+  }
+  return getPresignedUrl(cleanKey, 3600);
+}
+
+async function mirrorImageBytesToR2Https(sourceUrl: string): Promise<string> {
+  const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
+  const { isR2Configured, generateStorageKey, uploadToR2, getPresignedUrl } = await import('@/lib/r2-storage');
+
+  if (!isR2Configured()) {
+    throw new Error(`Cannot mirror image for external API (R2 missing): ${sourceUrl.slice(0, 120)}`);
+  }
+
+  let fetchUrl = sourceUrl;
+  if (fetchUrl.startsWith('/')) {
+    fetchUrl = `${getNextjsInternalOriginForMedia()}${fetchUrl}`;
+  }
+
+  const buffer = await fetchExternalImageBuffer(fetchUrl, 45_000);
+  if (!buffer || buffer.length < 100) {
+    throw new Error(`Failed to fetch image for external API: ${sourceUrl.slice(0, 120)}`);
+  }
+
+  const ext =
+    sourceUrl.match(/\.(jpe?g|png|webp|gif)(\?|$)/i)?.[1]?.toLowerCase().replace('jpeg', 'jpg')
+    ?? 'jpg';
+  const tenantMatch = sourceUrl.match(/([0-9a-f-]{36})\/(?:image|posts|stories|reels)/i);
+  const tenantId = tenantMatch?.[1] ?? 'fal-motion';
+  const key = generateStorageKey(tenantId, 'image', ext);
+  const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  await uploadToR2(buffer, key, contentType);
+  return getPresignedUrl(key, 3600);
+}
+
+/**
+ * Resolve a media URL to one accessible by external services (fal.ai, Kling, Luma).
+ * - Unwraps `/api/media-proxy?url=…` (including localhost absolute wrappers) to the underlying HTTPS URL
+ * - Converts `/api/media?key=…` to R2 public URL or pre-signed HTTPS URL
+ * - Mirrors non-HTTPS / unreachable URLs to R2 when needed
+ */
+export async function resolveExternallyAccessibleUrl(url: string): Promise<string> {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  let working = trimmed;
+  for (let depth = 0; depth < 5; depth++) {
+    const proxied = unwrapMediaProxyTargetUrl(working);
+    if (!proxied || proxied === working) break;
+    working = proxied;
+  }
+
+  if (working.startsWith('/')) {
+    const mediaKey = extractMediaKeyFromUrl(working);
+    if (mediaKey && working.includes('/api/media')) {
+      return resolveR2KeyToPublicHttps(mediaKey);
+    }
+    if (working.startsWith('/api/media-proxy?')) {
+      const inner = unwrapMediaProxyTargetUrl(working);
+      if (inner) return resolveExternallyAccessibleUrl(inner);
+    }
+    if (isR2StorageKeyPath(working)) {
+      return resolveR2KeyToPublicHttps(working.replace(/^\//, ''));
+    }
+    return mirrorImageBytesToR2Https(working);
+  }
+
+  if (R2_KEY_BARE.test(working)) {
+    return resolveR2KeyToPublicHttps(working);
+  }
+
+  if (working.startsWith('http://') || working.startsWith('https://')) {
+    let parsed: URL;
+    try {
+      parsed = new URL(working);
+    } catch {
+      return working;
+    }
+
+    if (parsed.pathname.endsWith('/api/media-proxy')) {
+      const inner = parsed.searchParams.get('url');
+      if (inner) return resolveExternallyAccessibleUrl(inner);
+    }
+
+    const mediaKey = extractMediaKeyFromUrl(working);
+    if (mediaKey && parsed.pathname.endsWith('/api/media')) {
+      return resolveR2KeyToPublicHttps(mediaKey);
+    }
+
+    if (isLocalOrPrivateHost(parsed.hostname)) {
+      const proxied = unwrapMediaProxyTargetUrl(working);
+      if (proxied) return resolveExternallyAccessibleUrl(proxied);
+      if (mediaKey) return resolveR2KeyToPublicHttps(mediaKey);
+      return mirrorImageBytesToR2Https(working);
+    }
+
+    if (isFalAccessibleMediaUrl(working)) {
+      return working;
+    }
+
+    if (parsed.protocol === 'http:') {
+      const httpsVersion = working.replace(/^http:/, 'https:');
+      const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
+      const buf = await fetchExternalImageBuffer(httpsVersion, 15_000);
+      if (buf && buf.length >= 100) return httpsVersion;
+      return mirrorImageBytesToR2Https(working);
+    }
+  }
+
+  return working;
+}
+
+function getNextjsInternalOriginForMedia(): string {
+  const explicit = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (explicit) return explicit.replace(/\/$/, '');
+  const port = process.env.PORT ?? '3000';
+  return `http://localhost:${port}`;
+}
+
+import { SAFE_HTTP_HOSTS, TRUSTED_GALLERY_PREFIXES, isTrustedGalleryUrl, isSafeHttpHost } from './trusted-media-hosts';
 
 const NON_IMAGE_PATH_EXT = /\.(woff2?|ttf|otf|eot|css|js|json|html|xml|map|svg|ico|mp4|mov|webm)$/i;
 
@@ -88,8 +230,6 @@ const TRUSTED_IMAGE_HOST_SNIPPETS = [
   'cloudfront.net',
   'amazonaws.com',
   'export-download.canva.com',
-  'yulabodrum.com',
-  'sarnicbeach.com',
 ];
 
 const IMAGE_PATH_HINTS = /\/(uploads?|media|images?|galeri|gallery|photos?|assets|img|wp-content)\//i;
@@ -100,6 +240,26 @@ const FETCH_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36',
   Accept: 'image/*,*/*;q=0.8',
 };
+
+/**
+ * Hotlink-protected CDNs (Wix, many brand sites) 403 server-side fetches that
+ * lack a Referer even though the asset is perfectly valid. Sending the asset's
+ * own origin as Referer mirrors what a browser does and what
+ * fetchExternalImageBuffer already relies on — keeps probe results in sync with
+ * the actual render-time fetch so we don't false-negative reachable photos.
+ */
+function refererForUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.protocol.startsWith('http')) return null;
+    if (parsed.hostname.includes('cdninstagram.com') || parsed.hostname.includes('fbcdn.net')) {
+      return 'https://www.instagram.com/';
+    }
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
 
 /** R2 object key (from /api/media?key=...) looks like a still image. */
 function r2KeyLooksLikeImage(key: string): boolean {
@@ -132,6 +292,8 @@ export function hasLikelyImageAssetPath(url: string): boolean {
     if (path.includes('/_next/image') && !parsed.searchParams.get('url')) return false;
     if (path.includes('/_next/static/') && !/\.(jpe?g|png|webp|gif|avif)$/.test(path)) return false;
     if (path === '/_next/image' || path.endsWith('/_next/image/')) return false;
+    if (/dummy\.png$/i.test(path) || /\/dummy\./i.test(path)) return false;
+    if (/-icon[-_]/i.test(path) || /icon[-_]beyaz/i.test(path)) return false;
     if (path === '/api/media' || path.endsWith('/api/media')) {
       const key = parsed.searchParams.get('key') ?? '';
       return r2KeyLooksLikeImage(key);
@@ -211,10 +373,12 @@ async function probeHttpAssetUrl(
       headers: accept === 'image' ? FETCH_HEADERS : { Accept: 'video/*,*/*;q=0.8' },
     });
     if (!res.ok && [403, 405, 501].includes(res.status)) {
+      const referer = refererForUrl(url);
       res = await fetch(url, {
         method: 'GET',
         headers: {
           ...(accept === 'image' ? FETCH_HEADERS : { Accept: 'video/*,*/*;q=0.8' }),
+          ...(referer ? { Referer: referer } : {}),
           Range: 'bytes=0-1023',
         },
         redirect: 'follow',
@@ -302,9 +466,10 @@ export async function probeGalleryImageUrl(url: string, timeoutMs = 10_000): Pro
       headers: FETCH_HEADERS,
     });
     if (!res.ok && [403, 405].includes(res.status)) {
+      const referer = refererForUrl(url);
       res = await fetch(url, {
         method: 'GET',
-        headers: { ...FETCH_HEADERS, Range: 'bytes=0-1023' },
+        headers: { ...FETCH_HEADERS, ...(referer ? { Referer: referer } : {}), Range: 'bytes=0-1023' },
         redirect: 'follow',
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -319,24 +484,6 @@ export async function probeGalleryImageUrl(url: string, timeoutMs = 10_000): Pro
 }
 
 /**
- * Trusted CDN prefixes — skip network probe entirely.
- * These domains never return stale/expired URLs in production.
- */
-const TRUSTED_GALLERY_PREFIXES = [
-  'https://pub-',               // Cloudflare R2 public bucket
-  'r2.cloudflarestorage.com',  // R2 private endpoint
-  'r2.dev',                     // R2 custom domain
-  'imagedelivery.net',          // Cloudflare Images
-  'cdn.smartagency',            // our own CDN
-  '/api/media',                 // internal relative media route
-];
-
-function isTrustedGalleryUrl(url: string): boolean {
-  const u = url.trim();
-  return TRUSTED_GALLERY_PREFIXES.some((prefix) => u.includes(prefix));
-}
-
-/**
  * Drop structurally invalid + unreachable URLs before auto-produce / Remotion.
  * - R2 / Cloudflare CDN URLs are trusted without probe — no extra latency.
  * - External URLs use a short 4 s timeout and higher concurrency.
@@ -344,10 +491,11 @@ function isTrustedGalleryUrl(url: string): boolean {
  */
 export async function filterReachableGalleryUrls(
   urls: string[],
-  opts: { maxProbe?: number; concurrency?: number } = {},
+  opts: { maxProbe?: number; concurrency?: number; strict?: boolean } = {},
 ): Promise<{ urls: string[]; rejected: { url: string; reason: string }[] }> {
   const maxProbe = opts.maxProbe ?? 48;
   const concurrency = opts.concurrency ?? 12;
+  const strict = opts.strict === true;
   const structural = filterUsableGalleryPhotoUrls(urls);
   const rejected: { url: string; reason: string }[] = [];
   const hasUnsplash = structural.some(
@@ -379,11 +527,19 @@ export async function filterReachableGalleryUrls(
 
   await Promise.all(Array.from({ length: Math.min(concurrency, needProbe.length || 1) }, () => worker()));
 
-  const merged = [
-    ...trusted,
-    ...reachable,
-    ...overProbe.filter((u) => isUsableGalleryPhotoUrl(u)),
-  ];
+  if (strict && overProbe.length > 0) {
+    for (const url of overProbe) {
+      rejected.push({ url, reason: 'probe_limit_exceeded' });
+    }
+  }
+
+  const merged = strict
+    ? [...trusted, ...reachable]
+    : [
+      ...trusted,
+      ...reachable,
+      ...overProbe.filter((u) => isUsableGalleryPhotoUrl(u)),
+    ];
   const seen = new Set<string>();
   const urlsOut: string[] = [];
   for (const u of merged) {

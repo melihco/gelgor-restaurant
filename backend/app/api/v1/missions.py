@@ -165,7 +165,15 @@ class HubProductionPackageRequest(BaseModel):
 def _compute_node_items(
     nodes: list[MissionTaskNode],
     ready_keys: set[str],
+    *,
+    include_payload: bool = False,
+    summary_max_chars: int | None = 12_000,
 ) -> list[NodeProgressItem]:
+    def _summary(value: str | None) -> str | None:
+        if value is None or summary_max_chars is None or summary_max_chars <= 0:
+            return value
+        return value[:summary_max_chars]
+
     return [
         NodeProgressItem(
             node_key=n.node_key,
@@ -177,8 +185,8 @@ def _compute_node_items(
             status=n.status,
             is_ready=n.node_key in ready_keys,
             output_artifact_id=n.output_artifact_id,
-            output_summary=n.output_summary,
-            output_payload=n.output_payload,
+            output_summary=_summary(n.output_summary),
+            output_payload=n.output_payload if include_payload else None,
             started_at=n.started_at,
             completed_at=n.completed_at,
             error_message=n.error_message,
@@ -192,6 +200,9 @@ def _build_progress(
     mission: Mission,
     nodes: list[MissionTaskNode],
     ready_keys: set[str],
+    *,
+    include_payload: bool = False,
+    summary_max_chars: int | None = 12_000,
 ) -> MissionProgressResponse:
     total     = len(nodes)
     completed = sum(1 for n in nodes if n.status == TaskNodeStatus.COMPLETED.value)
@@ -215,7 +226,12 @@ def _build_progress(
         pending_nodes=pending,
         skipped_nodes=skipped,
         completion_pct=pct,
-        nodes=_compute_node_items(nodes, ready_keys),
+        nodes=_compute_node_items(
+            nodes,
+            ready_keys,
+            include_payload=include_payload,
+            summary_max_chars=summary_max_chars,
+        ),
         created_at=mission.created_at,
         approved_at=mission.approved_at,
         started_at=mission.started_at,
@@ -501,6 +517,8 @@ async def get_mission_detail(
 async def get_mission_progress(
     workspace_id: uuid.UUID,
     mission_id: uuid.UUID,
+    include_payload: bool = Query(False, description="Include full node output_payload fields"),
+    summary_max_chars: int = Query(12000, ge=0, le=200000),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -515,7 +533,48 @@ async def get_mission_progress(
     ready_nodes = await get_ready_nodes(db, mission_id)
     ready_keys  = {n.node_key for n in ready_nodes}
 
-    return _build_progress(mission, nodes, ready_keys)
+    return _build_progress(
+        mission,
+        nodes,
+        ready_keys,
+        include_payload=include_payload,
+        summary_max_chars=summary_max_chars,
+    )
+
+
+@router.get("/{workspace_id}/{mission_id}/production-jobs")
+async def get_mission_production_jobs(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Durable Production Factory rollup for the Mission Hub.
+
+    Returns per-slot job status (X/10, queued/producing/ready/failed) so the Hub can
+    show factory progress directly from the production_jobs queue (source of truth).
+    """
+    from app.services.production_job_service import mission_job_summary
+
+    await _load_mission_or_404(db, workspace_id, mission_id)
+    return await mission_job_summary(mission_id)
+
+
+@router.post("/{workspace_id}/{mission_id}/requeue-factory-jobs")
+async def requeue_mission_factory_jobs(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-queue exhausted factory slots (e.g. fal no_artifact) and kick the drainer."""
+    from app.services import production_job_service as pj
+    from app.services.production_factory_service import schedule_drain
+
+    await _load_mission_or_404(db, workspace_id, mission_id)
+    requeued = await pj.requeue_exhausted(mission_id)
+    if requeued or await pj.has_open_jobs(mission_id):
+        schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True)
+    summary = await pj.mission_job_summary(mission_id)
+    return {"requeued": requeued, **summary}
 
 
 @router.put("/{workspace_id}/{mission_id}/approve")
@@ -554,12 +613,8 @@ async def approve_workspace_mission(
     # Fire-and-forget: launch ready nodes right now so the operator sees progress
     # within seconds rather than waiting up to 5 minutes for the scheduler.
     try:
-        import asyncio as _asyncio
-        from app.services.task_graph_executor import advance_mission
-        _asyncio.create_task(
-            advance_mission(mission_id, workspace_id),
-            name=f"advance_on_approve_{mission_id}",
-        )
+        from app.services.task_graph_executor import trigger_advance_mission
+        trigger_advance_mission(mission_id, workspace_id)
     except Exception as _e:
         logger.warning("immediate_advance_failed", error=str(_e)[:200])
 
@@ -739,12 +794,8 @@ async def restart_workspace_mission(
     logger.info("mission_restarted_via_api", mission_id=str(mission_id))
 
     try:
-        import asyncio as _asyncio
-        from app.services.task_graph_executor import advance_mission
-        _asyncio.create_task(
-            advance_mission(mission_id, workspace_id),
-            name=f"advance_on_restart_{mission_id}",
-        )
+        from app.services.task_graph_executor import trigger_advance_mission
+        trigger_advance_mission(mission_id, workspace_id)
     except Exception as _e:
         logger.warning("immediate_advance_on_restart_failed", error=str(_e)[:200])
 
@@ -808,6 +859,22 @@ async def kick_feed_production(
         raise _feed_production_http_error(exc) from exc
 
 
+@router.post("/{workspace_id}/{mission_id}/reset-production")
+async def reset_mission_production(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Operator: wipe factory jobs + mission artifacts before a clean 16-slot reproduce."""
+    from app.services.mission_production_reset_service import reset_mission_production_state
+
+    await _load_mission_or_404(db, workspace_id, mission_id)
+    summary = await reset_mission_production_state(
+        db, workspace_id=workspace_id, mission_id=mission_id,
+    )
+    return {"ok": True, **summary}
+
+
 @router.put("/{workspace_id}/{mission_id}/reproduce-feed")
 async def reproduce_mission_feed(
     workspace_id: uuid.UUID,
@@ -826,3 +893,52 @@ async def reproduce_mission_feed(
         )
     except FeedProductionError as exc:
         raise _feed_production_http_error(exc) from exc
+
+
+@router.get("/{workspace_id}/{mission_id}/performance")
+async def get_mission_performance(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Node execution duration metrics for a single mission.
+
+    Returns per-node timing so operators can identify slow agents / prompts.
+    """
+    from app.models.mission import MissionTaskNode
+    from sqlalchemy import select as sel
+
+    mission = await _load_mission_or_404(db, workspace_id, mission_id)
+    rows = await db.execute(
+        sel(
+            MissionTaskNode.node_key,
+            MissionTaskNode.task_type,
+            MissionTaskNode.status,
+            MissionTaskNode.started_at,
+            MissionTaskNode.completed_at,
+            MissionTaskNode.retry_count,
+        ).where(MissionTaskNode.mission_id == mission.id)
+    )
+    nodes = []
+    total_duration_ms = 0
+    for row in rows.all():
+        duration_ms = None
+        if row.started_at and row.completed_at:
+            duration_ms = int((row.completed_at - row.started_at).total_seconds() * 1000)
+            total_duration_ms += duration_ms
+        nodes.append({
+            "node_key": row.node_key,
+            "task_type": row.task_type,
+            "status": row.status,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            "duration_ms": duration_ms,
+            "retries": row.retry_count,
+        })
+    nodes.sort(key=lambda n: n["duration_ms"] or 0, reverse=True)
+    return {
+        "mission_id": str(mission_id),
+        "total_pipeline_ms": total_duration_ms,
+        "nodes": nodes,
+        "slowest_node": nodes[0]["node_key"] if nodes else None,
+    }

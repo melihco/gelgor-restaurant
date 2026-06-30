@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { fetchCrewBackendJson } from '@/lib/crew-proxy';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;  // deep crawl + Apify + bounded CDN mirror
 
 const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent'];
-const MAX_CDN_MIRROR = 24;
 
 function asAnalyzePayload(data: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -52,18 +52,31 @@ export async function POST(
     brand_name: String(body.brand_name ?? body.brandName ?? body.companyName ?? '').trim(),
   };
 
-  const pyRes = await proxyToCrewBackend(`/api/v1/brand-context/${workspaceId}/analyze`, {
-    body: normalized,
-    timeoutMs: 280_000,
-  });
+  const upstream = await fetchCrewBackendJson<Record<string, unknown>>(
+    `/api/v1/brand-context/${workspaceId}/analyze`,
+    { body: normalized, timeoutMs: 280_000 },
+  );
+
+  if (!upstream.ok || !upstream.data) {
+    const detail = upstream.data as Record<string, unknown> | null;
+    return NextResponse.json(
+      {
+        success: false,
+        error: upstream.error || detail?.error || 'crew_backend_error',
+        message: detail?.message || detail?.detail || 'Marka analizi servisi yanıt vermedi.',
+      },
+      { status: upstream.status || 503 },
+    );
+  }
+
+  let analyzeData = asAnalyzePayload(upstream.data);
 
   const onboardingAnalyze = request.headers.get('x-onboarding-analyze') === '1';
   const skipCdnMirror = onboardingAnalyze || request.headers.get('x-skip-cdn-mirror') === '1';
 
   // After analysis: mirror Instagram CDN image URLs to R2 so they don't expire
   try {
-    const data = await pyRes.clone().json() as Record<string, unknown>;
-    const refUrls = data.reference_image_urls as string[] | undefined;
+    const refUrls = analyzeData.reference_image_urls as string[] | undefined;
     if (
       !skipCdnMirror
       && Array.isArray(refUrls)
@@ -76,31 +89,29 @@ export async function POST(
             try { return await mirrorToR2(url, workspaceId); } catch { return url; }
           }
           return url;
-        })
+        }),
       );
       const permanentUrls = mirrored.map((r, i) =>
-        r.status === 'fulfilled' ? r.value : (refUrls[i] ?? '')
+        r.status === 'fulfilled' ? r.value : (refUrls[i] ?? ''),
       );
 
-      // Patch the Python brand context with permanent URLs
       if (permanentUrls.some((u, i) => u !== refUrls[i])) {
-        await fetch(`${process.env.CREW_BACKEND_URL || 'http://localhost:8000'}/api/v1/brand-context/${workspaceId}`, {
+        await fetch(`${serverConfig.crewBackend.baseUrl}/api/v1/brand-context/${workspaceId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reference_image_urls: JSON.stringify(permanentUrls) }),
         }).catch(() => {/* non-fatal */});
 
-        // Return response with updated URLs
-        const updated = { ...data, reference_image_urls: permanentUrls };
-        return NextResponse.json(updated, { status: 200 });
+        analyzeData = { ...analyzeData, reference_image_urls: permanentUrls };
       }
     }
-  } catch { /* non-fatal — return original response */ }
+  } catch { /* non-fatal */ }
+
+  if (onboardingAnalyze) {
+    return NextResponse.json(analyzeData, { status: 200 });
+  }
 
   // SaaS / dijital markalar: crawl'dan foto gelmezse sektör galerisi oluştur
-  if (onboardingAnalyze) {
-    return pyRes;
-  }
   try {
     const provisionRes = await fetch(`${request.nextUrl.origin}/api/brand-context/${workspaceId}/provision-gallery`, {
       method: 'POST',
@@ -111,24 +122,20 @@ export async function POST(
       const prov = await provisionRes.json() as { provisioned?: boolean; usableCount?: number };
       if (prov.provisioned) {
         const refreshed = await fetch(
-          `${process.env.CREW_BACKEND_URL || 'http://localhost:8000'}/api/v1/brand-context/${workspaceId}`,
-          { headers: { 'X-Internal-Api-Key': process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key' } },
+          `${serverConfig.crewBackend.baseUrl}/api/v1/brand-context/${workspaceId}`,
+          { headers: { 'X-Internal-Api-Key': serverConfig.internal.apiKey } },
         );
         if (refreshed.ok) {
           const ctx = await refreshed.json() as Record<string, unknown>;
-          const analyzeData = await pyRes.clone().json() as Record<string, unknown>;
-          return NextResponse.json(
-            asAnalyzePayload({
-              ...analyzeData,
-              brand_context: ctx,
-              reference_image_urls: analyzeData.reference_image_urls,
-            }),
-            { status: 200 },
-          );
+          analyzeData = asAnalyzePayload({
+            ...analyzeData,
+            brand_context: ctx,
+            reference_image_urls: analyzeData.reference_image_urls,
+          });
         }
       }
     }
   } catch { /* non-fatal */ }
 
-  return pyRes;
+  return NextResponse.json(analyzeData, { status: 200 });
 }

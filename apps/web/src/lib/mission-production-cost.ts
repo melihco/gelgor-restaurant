@@ -53,7 +53,7 @@ export function summarizeMissionProductionCost(
 
   for (const a of missionArts) {
     const meta = (a.metadata ?? {}) as Record<string, unknown>;
-    if (meta.auto_produced !== true && meta.source !== 'auto-produce') continue;
+    if (meta.auto_produced !== true && meta.source !== 'auto-produce' && meta.source !== 'remotion') continue;
     const cost = artifactCostUsd(meta);
     if (cost <= 0) continue;
     counted += 1;

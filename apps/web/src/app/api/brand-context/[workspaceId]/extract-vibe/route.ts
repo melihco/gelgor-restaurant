@@ -15,12 +15,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 240;
 
-const CREW_BACKEND = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+const CREW_BACKEND = serverConfig.crewBackend.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
 
 const FETCH_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -187,7 +188,7 @@ export async function POST(
   { params }: { params: Promise<{ workspaceId: string }> },
 ) {
   const { workspaceId } = await params;
-  const openaiKey = process.env.OPENAI_API_KEY;
+  const openaiKey = serverConfig.openai.apiKey;
   if (!openaiKey) {
     return NextResponse.json({ error: 'OPENAI_API_KEY missing' }, { status: 503 });
   }
@@ -305,7 +306,7 @@ export async function POST(
   let visualJson: Record<string, unknown> = {};
   try {
     const visionRes = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: serverConfig.ai.chatModel('creative'),
       max_tokens: 2000,
       temperature: 0.3,
       response_format: { type: 'json_object' },
@@ -336,7 +337,7 @@ export async function POST(
   if (scrape.captions.length > 0) {
     try {
       const voiceRes = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: serverConfig.ai.chatModel('standard'),
         max_tokens: 600,
         temperature: 0.4,
         response_format: { type: 'json_object' },

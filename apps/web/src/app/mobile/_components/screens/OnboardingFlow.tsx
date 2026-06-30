@@ -10,7 +10,6 @@
  * Step 6: Welcome + brand constitution confirmed
  */
 import { useState, useEffect, useRef } from 'react';
-import { useTheme } from '../theme-context';
 import { useAuthStore } from '../auth-store';
 import { apiClient } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
@@ -18,9 +17,18 @@ import { getRequestContextHeaders } from '@/lib/runtime-config';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
+import { StoryNavigation } from '../StoryNavigation';
 
 // ─── Types ────────────────────────────────────────────────────────────
-type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'welcome';
+type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'templates_showcase' | 'welcome';
+
+interface ShowcaseTemplate {
+  id: string;
+  template_type: string;
+  template_name: string;
+  format: string;
+  thumbnail_url: string | null;
+}
 
 interface AnalysisStep {
   id: string;
@@ -54,6 +62,25 @@ const ANALYSIS_STEPS_IG: Omit<AnalysisStep, 'done' | 'active'>[] = [
 
 function getAnalysisSteps(url: string, ig: string) {
   return (!url && ig) ? ANALYSIS_STEPS_IG : ANALYSIS_STEPS_WEB;
+}
+
+/** SmartAgency wordmark — shared across all onboarding steps */
+function OnboardingLogoMark({ compact = false }: { compact?: boolean }) {
+  return (
+    <SmartAgencyLogo
+      variant="full"
+      priority
+      className={`onboarding-logo${compact ? ' onboarding-logo--compact' : ''}`}
+    />
+  );
+}
+
+function OnboardingLogoHeader({ compact = false }: { compact?: boolean }) {
+  return (
+    <header className={`onboarding-header${compact ? ' onboarding-header--compact' : ''}`}>
+      <OnboardingLogoMark compact={compact} />
+    </header>
+  );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -111,11 +138,7 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
       <div className="onboarding-ambient" aria-hidden />
 
       <header className="onboarding-header">
-        <SmartAgencyLogo
-          variant="full"
-          priority
-          className="onboarding-logo"
-        />
+        <OnboardingLogoMark />
         <h1 className="onboarding-title">Markanızı tanıyalım</h1>
         <p className="onboarding-lead">
           Web siteniz ve sosyal profilinizden marka kimliğinizi çıkarıyoruz.
@@ -217,7 +240,6 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
   url: string; ig: string; menuUrl: string;
   onDone: (result: BrandDiscoveryResult | null) => void;
 }) {
-  const { t } = useTheme();
   const baseSteps = getAnalysisSteps(url, ig);
   const [steps, setSteps] = useState<AnalysisStep[]>(
     baseSteps.map((s, i) => ({ ...s, done: false, active: i === 0 }))
@@ -290,12 +312,11 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
   const domain = extractDomain(url);
 
   return (
-    <div style={{ height: '100dvh', background: '#04040A', display: 'flex', flexDirection: 'column', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif' }}>
-      {/* Ambient glow */}
-      <div style={{ position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)', width: '150%', height: 400, background: 'radial-gradient(ellipse at 50% 0%, rgba(77,112,136,0.14) 0%, transparent 60%)', pointerEvents: 'none' }} />
+    <div className="onboarding-shell">
+      <div className="onboarding-ambient" aria-hidden />
 
-      {/* Header */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 20px) 28px 0', textAlign: 'center' }}>
+      <div className="onboarding-analyze-head">
+        <OnboardingLogoMark compact />
         <div style={{ fontSize: 13, color: 'rgba(148,163,184,0.45)', marginBottom: 6, letterSpacing: '0.04em' }}>
           Analiz ediliyor
         </div>
@@ -410,13 +431,12 @@ function ResultsStep({ result, url, ig, onNext }: {
   ] : [];
 
   return (
-    <div style={{ height: '100dvh', background: '#04040A', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif' }}>
+    <div className="onboarding-shell" style={{ overflow: 'hidden' }}>
 
-      {/* Ambient glow */}
-      <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: '140%', height: 260, background: 'radial-gradient(ellipse at 50% 0%, rgba(52,211,153,0.10) 0%, transparent 60%)', pointerEvents: 'none' }} />
+      <div className="onboarding-ambient onboarding-ambient--success" aria-hidden />
 
-      {/* Header */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 20px) 24px 16px', flexShrink: 0 }}>
+      <div className="onboarding-results-head">
+        <OnboardingLogoMark compact />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#34D399', boxShadow: '0 0 10px rgba(52,211,153,0.7)' }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: '#34D399', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
@@ -597,6 +617,112 @@ function ResultsStep({ result, url, ig, onNext }: {
   );
 }
 
+// ─── Setup Progress Overlay (premium account-creation splash) ──────────
+// Shown while the account + deep brand setup runs (can take 1–3 min). Maps the
+// SignupStep `status` string to a 5-phase journey with a living progress ring,
+// so the user always sees meaningful motion instead of a frozen button.
+const SETUP_PHASES = [
+  { id: 'account',  label: 'Hesabınız oluşturuluyor',    detail: 'Güvenli kullanıcı ve çalışma alanı hazırlanıyor' },
+  { id: 'profile',  label: 'Firma profili kaydediliyor', detail: 'Temel marka bilgileri güvene alınıyor' },
+  { id: 'analysis', label: 'Derin marka analizi',         detail: 'Web, Instagram, galeri ve marka anayasası taranıyor' },
+  { id: 'memory',   label: 'Marka hafızası işleniyor',    detail: 'AI ajanları için marka profili yazılıyor' },
+  { id: 'campaign', label: 'İlk kampanya hazırlanıyor',   detail: 'Markanıza özel haftalık plan öneriliyor' },
+] as const;
+
+// Approximate ceiling each phase eases toward — analysis is the long pole.
+const SETUP_PHASE_TARGET = [14, 30, 86, 94, 99];
+
+function setupPhaseFromStatus(status: string): number {
+  const s = (status || '').toLowerCase();
+  if (!s) return 0;
+  if (s.includes('kampanya') || s.includes('tamamlandı') || s.includes('üretim hazır') || s.includes('galeri')) return 4;
+  if (s.includes('marka hafıza')) return 3;
+  if (s.includes('derin marka') || s.includes('analiz')) return 2;
+  if (s.includes('firma profili')) return 1;
+  if (s.includes('hesap')) return 0;
+  return 0;
+}
+
+function SetupProgressOverlay({ brandName, status }: { brandName: string; status: string }) {
+  const phase = setupPhaseFromStatus(status);
+  const [pct, setPct] = useState(4);
+  const pctRef = useRef(4);
+
+  // Smooth, ever-advancing fill: each tick eases toward the active phase's
+  // ceiling so the long analysis phase still feels alive without ever lying
+  // by hitting 100% before completion.
+  useEffect(() => {
+    const target = SETUP_PHASE_TARGET[phase] ?? 99;
+    const id = setInterval(() => {
+      const cur = pctRef.current;
+      const next = Math.min(cur + (target - cur) * 0.07, target);
+      pctRef.current = next;
+      setPct(next);
+    }, 380);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  const display = Math.round(pct);
+  const hint = phase >= 2
+    ? 'Derin analiz 1–3 dakika sürebilir — bu ekranda kalabilirsiniz.'
+    : 'Birkaç saniye içinde hazır...';
+
+  return (
+    <div className="onboarding-shell">
+      <div className="onboarding-ambient" aria-hidden />
+      <div className="onboarding-setup">
+        <OnboardingLogoMark compact />
+
+        <div className="onboarding-setup-ringwrap">
+          <div className="onboarding-setup-shimmer" aria-hidden />
+          <svg width="132" height="132" style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx="66" cy="66" r="58" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="7" />
+            <circle
+              cx="66" cy="66" r="58" fill="none" stroke="url(#setupGrad)" strokeWidth="7"
+              strokeDasharray={`${(pct / 100) * 364} 364`} strokeLinecap="round"
+              style={{ transition: 'stroke-dasharray 380ms linear', filter: 'drop-shadow(0 0 10px rgba(90,130,160,0.6))' }}
+            />
+            <defs>
+              <linearGradient id="setupGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="#4D7088" />
+                <stop offset="1" stopColor="#9DBECE" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="onboarding-setup-ringcenter">
+            <div className="onboarding-setup-pct">{display}<span>%</span></div>
+            <div className="onboarding-setup-pctlabel">kuruluyor</div>
+          </div>
+        </div>
+
+        <div className="onboarding-setup-brand">{brandName || 'Markanız'}</div>
+        <div className="onboarding-setup-sub">AI ekibiniz markanız için hazırlanıyor</div>
+
+        <div className="onboarding-setup-steps">
+          {SETUP_PHASES.map((p, i) => {
+            const done = i < phase;
+            const active = i === phase;
+            return (
+              <div key={p.id} className={`onboarding-setup-step${done ? ' is-done' : ''}${active ? ' is-active' : ''}`}>
+                <div className="onboarding-setup-step-dot">
+                  {done ? '✓' : active ? <span className="onboarding-setup-spinner" /> : null}
+                </div>
+                <div className="onboarding-setup-step-text">
+                  <div className="onboarding-setup-step-label">{p.label}</div>
+                  {active && <div className="onboarding-setup-step-detail">{p.detail}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {status && <div className="onboarding-setup-status">{status}</div>}
+        <div className="onboarding-setup-hint">{hint}</div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sign Up Step ──────────────────────────────────────────────────────
 function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult, onDone }: {
   brandName: string;
@@ -604,9 +730,8 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
   igHandle: string;
   menuUrl: string;
   discoveryResult: BrandDiscoveryResult | null;
-  onDone: (companyName: string) => void;
+  onDone: (companyName: string, tenantId?: string) => void;
 }) {
-  const { t } = useTheme();
   const { setWorkspace } = useWorkspaceStore();
 
   const [email, setEmail]       = useState('');
@@ -666,6 +791,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
 
   async function persistPythonAnalysisToProfile(
     analysis: Awaited<ReturnType<typeof apiClient.analyzeBrandContext>>,
+    authoritativeSector?: string,
   ) {
     const ctx = (analysis.brand_context ?? {}) as Record<string, unknown>;
     const pillars = analysis.content_pillars?.length
@@ -684,7 +810,9 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
           }
         })();
     const brandTone = analysis.inferred_tone || String(ctx.brand_tone || '');
-    const industry = analysis.inferred_industry || String(ctx.business_type || '');
+    const industry = authoritativeSector
+      || analysis.inferred_industry
+      || String(ctx.business_type || '');
     const refUrls = parseRefUrls(analysis.reference_image_urls ?? ctx.reference_image_urls);
     const analysisText = [
       analysis.website_summary || String(ctx.website_summary || ''),
@@ -747,6 +875,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       ok?: boolean;
       errors?: string[];
       productionReady?: boolean;
+      authoritativeSector?: string;
       brandAnalysis?: Awaited<ReturnType<typeof apiClient.analyzeBrandContext>>;
       gallery?: { analyzed?: number; usable?: number; calibration?: { matched: number; tested: number } };
       steps?: Array<{ id: string; ok: boolean; detail?: string }>;
@@ -762,7 +891,11 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
 
     if (data.brandAnalysis) {
       setStatus('Firma profili ve marka hafızası kaydediliyor...');
-      await persistPythonAnalysisToProfile(data.brandAnalysis);
+      await persistPythonAnalysisToProfile(data.brandAnalysis, data.authoritativeSector);
+      await fetch(`/api/brand-context/${tenantId}/hydrate-company-profile`, {
+        method: 'POST',
+        headers: getRequestContextHeaders(),
+      }).catch(() => null);
     }
 
     const cal = data.gallery?.calibration;
@@ -836,7 +969,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       } catch {
         setStatus('Marka kurulumu tamamlandı · Haftalık Plan sekmesinden kampanya başlatabilirsiniz.');
       }
-      onDone(company.trim());
+      onDone(company.trim(), session.tenantId);
     } catch (e: any) {
       const msg = String(e?.message || '');
       setError(
@@ -852,33 +985,242 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
     }
   }
 
+  // While the account + deep brand setup runs, swap the form for a premium
+  // full-screen progress experience instead of leaving an empty dark page.
+  if (loading) {
+    return <SetupProgressOverlay brandName={company.trim() || brandName} status={status} />;
+  }
+
   return (
-    <div style={{ height: '100dvh', background: '#04040A', display: 'flex', flexDirection: 'column', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif' }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 28px' }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: '#F4F4F8', letterSpacing: '-0.03em', marginBottom: 6 }}>Hesap Oluşturun</h1>
-        <p style={{ fontSize: 14, color: 'rgba(148,163,184,0.5)', marginBottom: 32 }}>Marka analizinizi kaydedin ve AI ekibinizi aktive edin.</p>
+    <div className="onboarding-shell">
+      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingLogoHeader compact />
 
-        <FormField label="Firma Adı" value={company} onChange={setCompany} placeholder="Firma veya marka adı" />
-        <FormField label="Adınız" value={name} onChange={setName} placeholder="İsim Soyisim (opsiyonel)" />
-        <FormField label="E-posta" value={email} onChange={setEmail} placeholder="email@firma.com" type="email" />
-        <FormField label="Şifre" value={password} onChange={setPassword} placeholder="En az 8 karakter" type="password" />
+      <main className="onboarding-main onboarding-signup-main">
+        <h1 className="onboarding-title onboarding-title--step">Hesap Oluşturun</h1>
+        <p className="onboarding-lead onboarding-lead--step">
+          Marka analizinizi kaydedin ve AI ekibinizi aktive edin.
+        </p>
 
-        {error && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '0.5px solid rgba(239,68,68,0.2)', fontSize: 13, color: '#EF4444' }}>{error}</div>}
+        <div className="onboarding-fields">
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">Firma Adı</span>
+            <input
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Firma veya marka adı"
+              className={`onboarding-input${company.trim() ? ' onboarding-input--filled' : ''}`}
+            />
+          </label>
+          <label className="onboarding-field">
+            <span className="onboarding-field-label onboarding-field-label--muted">Adınız · opsiyonel</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="İsim Soyisim"
+              className={`onboarding-input${name.trim() ? ' onboarding-input--filled' : ''}`}
+            />
+          </label>
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">E-posta</span>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="email@firma.com"
+              type="email"
+              autoComplete="email"
+              className={`onboarding-input${email.trim() ? ' onboarding-input--filled' : ''}`}
+            />
+          </label>
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">Şifre</span>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="En az 8 karakter"
+              type="password"
+              autoComplete="new-password"
+              className={`onboarding-input${password.trim() ? ' onboarding-input--filled' : ''}`}
+            />
+          </label>
+        </div>
 
-        <button onClick={handleSignup} disabled={loading} style={{ width: '100%', padding: '18px', borderRadius: 18, background: loading ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg,#4D7088,#5A82A0)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 800, cursor: loading ? 'not-allowed' : 'pointer', boxShadow: loading ? 'none' : '0 6px 32px rgba(77,112,136,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          {loading ? <><div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} /> Hesap oluşturuluyor...</> : 'Devam Et →'}
-        </button>
-        {loading && status && (
-          <p style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: 'rgba(148,163,184,0.58)', lineHeight: 1.5 }}>
-            {status}
-          </p>
-        )}
-      </div>
+        {error && <p className="onboarding-error">{error}</p>}
+
+        <div className="onboarding-actions">
+          <button
+            type="button"
+            onClick={handleSignup}
+            className="onboarding-cta"
+          >
+            Devam Et →
+          </button>
+        </div>
+      </main>
     </div>
   );
 }
 
 // ─── Welcome Step ──────────────────────────────────────────────────────
+// ─── Templates Showcase Step ───────────────────────────────────────────
+const TEMPLATE_TYPE_DESCRIPTIONS: Record<string, string> = {
+  campaign_announcement: 'Kampanyalarınızı duyururken bu tasarım kullanılır.',
+  event_special: 'Özel günlerde markanıza özel kutlama tasarımı.',
+  menu_highlight: 'Ürün ve menü tanıtımlarınız için.',
+  venue_showcase: 'Mekanınızı en iyi gösteren story tasarımı.',
+  seasonal_promo: 'Sezon kampanyalarınız için hazır.',
+  social_proof: 'Müşteri yorumlarınızı paylaşırken.',
+  daily_story: 'Günlük paylaşımlarınız için sade tasarım.',
+  announcement_formal: 'Resmi duyurularınız için kurumsal tasarım.',
+  reel_cover: 'Reel videolarınızın kapak tasarımı.',
+  brand_identity: 'Marka kimliğinizi yansıtan tasarım.',
+};
+
+function TemplatesShowcaseStep({
+  brandName,
+  tenantId,
+  onDone,
+}: {
+  brandName: string;
+  tenantId: string;
+  onDone: () => void;
+}) {
+  const [templates, setTemplates] = useState<ShowcaseTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Generation runs during deep setup; templates should exist by now. Retry a
+    // couple of times in case persistence is still settling.
+    async function load(attempt = 0): Promise<void> {
+      try {
+        const res = await fetch(`/api/brand-context/${tenantId}/design-templates`, {
+          headers: getRequestContextHeaders(),
+          signal: AbortSignal.timeout(15_000),
+        });
+        const data = res.ok ? ((await res.json()) as ShowcaseTemplate[]) : [];
+        const withPreview = Array.isArray(data) ? data.filter((t) => t.thumbnail_url) : [];
+        if (cancelled) return;
+        if (withPreview.length === 0 && attempt < 2) {
+          setTimeout(() => load(attempt + 1), 2500);
+          return;
+        }
+        setTemplates(withPreview);
+        setLoading(false);
+      } catch {
+        if (cancelled) return;
+        if (attempt < 2) {
+          setTimeout(() => load(attempt + 1), 2500);
+          return;
+        }
+        setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [tenantId]);
+
+  // No templates → skip straight to welcome (never block onboarding).
+  useEffect(() => {
+    if (!loading && templates.length === 0) onDone();
+  }, [loading, templates.length, onDone]);
+
+  if (loading) {
+    return (
+      <div className="onboarding-shell">
+        <div className="onboarding-ambient" aria-hidden />
+        <main className="onboarding-welcome-body">
+          <div className="onboarding-setup-shimmer" aria-hidden />
+          <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Tasarımlarınız hazırlanıyor</h1>
+          <p className="onboarding-lead" style={{ maxWidth: 300 }}>
+            {brandName} için markanıza özel şablonlar oluşturuluyor…
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  if (templates.length === 0) return null;
+
+  const total = templates.length + 1; // +1 intro screen
+  const isIntro = index === 0;
+  const template = isIntro ? null : templates[index - 1];
+
+  return (
+    <StoryNavigation
+      count={total}
+      index={index}
+      onIndexChange={setIndex}
+      onComplete={onDone}
+      autoAdvanceMs={isIntro ? 3200 : 4200}
+      disableBack={false}
+    >
+      {isIntro ? (
+        <div className="onboarding-shell">
+          <div className="onboarding-ambient" aria-hidden />
+          <main className="onboarding-welcome-body">
+            <div className="onboarding-success-ring" aria-hidden>✦</div>
+            <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
+              Markanı tanıdık
+            </h1>
+            <p className="onboarding-lead" style={{ maxWidth: 320 }}>
+              {brandName} için kurumsal renkleriniz, logonuz ve tarzınızla
+              {` `}<strong>{templates.length} özel tasarım şablonu</strong> hazırladık.
+              Kaydırarak göz atın.
+            </p>
+          </main>
+        </div>
+      ) : (
+        <div className="template-showcase-screen">
+          <style>{`
+            .template-showcase-screen { position: absolute; inset: 0; background: #0A0A0E; }
+            .template-showcase-media { position: absolute; inset: 0; }
+            .template-showcase-media img { width: 100%; height: 100%; object-fit: cover; }
+            .template-showcase-scrim {
+              position: absolute; inset: 0;
+              background: linear-gradient(to top, rgba(8,8,12,0.92) 4%, rgba(8,8,12,0.25) 42%, rgba(8,8,12,0.55) 100%);
+            }
+            .template-showcase-caption {
+              position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
+              padding: 24px 22px calc(36px + env(safe-area-inset-bottom));
+            }
+            .template-showcase-kicker {
+              font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+              color: rgba(157,190,206,0.95); margin-bottom: 8px;
+            }
+            .template-showcase-name { font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 8px; line-height: 1.15; }
+            .template-showcase-desc { font-size: 14px; color: rgba(226,232,240,0.78); line-height: 1.45; }
+            .template-showcase-badge {
+              position: absolute; top: 54px; right: 18px; z-index: 6;
+              padding: 5px 11px; border-radius: 30px; font-size: 11px; font-weight: 600;
+              background: rgba(255,255,255,0.12); color: #fff; backdrop-filter: blur(8px);
+              text-transform: capitalize;
+            }
+          `}</style>
+          <div className="template-showcase-media">
+            {template?.thumbnail_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={template.thumbnail_url} alt={template.template_name} />
+            )}
+          </div>
+          <div className="template-showcase-scrim" aria-hidden />
+          <div className="template-showcase-badge">{template?.format?.replace('_', ' ')}</div>
+          <div className="template-showcase-caption">
+            <div className="template-showcase-kicker">
+              Şablon {index} / {templates.length}
+            </div>
+            <div className="template-showcase-name">{template?.template_name}</div>
+            <div className="template-showcase-desc">
+              {template ? (TEMPLATE_TYPE_DESCRIPTIONS[template.template_type] ?? 'Markanıza özel tasarım.') : ''}
+            </div>
+          </div>
+        </div>
+      )}
+    </StoryNavigation>
+  );
+}
+
 function WelcomeStep({
   brandName,
   websiteUrl,
@@ -900,48 +1242,46 @@ function WelcomeStep({
   const domain = extractDomain(websiteUrl || '').replace(/^www\./, '');
 
   return (
-    <div style={{ height: '100dvh', background: '#04040A', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', fontFamily: '-apple-system,"SF Pro Display",system-ui,sans-serif', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', top: '12%', left: '50%', transform: 'translateX(-50%)', width: '170%', height: 420, background: 'radial-gradient(ellipse at 50% 0%, rgba(77,112,136,0.22) 0%, rgba(52,211,153,0.10) 35%, transparent 70%)', pointerEvents: 'none' }} />
+    <div className="onboarding-shell onboarding-shell--welcome">
+      <div className="onboarding-ambient onboarding-ambient--success" aria-hidden />
+      <OnboardingLogoHeader compact />
 
-      {/* Success ring */}
-      <div style={{ width: 88, height: 88, borderRadius: '50%', background: 'linear-gradient(180deg, rgba(52,211,153,0.14), rgba(52,211,153,0.08))', border: '1px solid rgba(52,211,153,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18, fontSize: 36, color: '#34D399', boxShadow: '0 0 48px rgba(52,211,153,0.24)' }}>
-        ✓
-      </div>
+      <main className="onboarding-welcome-body">
+        <div className="onboarding-success-ring" aria-hidden>✓</div>
 
-      <h1 style={{ fontSize: 30, fontWeight: 800, color: '#F4F4F8', letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 10 }}>
-        {brandName} hazır!
-      </h1>
-      <p style={{ fontSize: 15, color: 'rgba(148,163,184,0.62)', lineHeight: 1.65, marginBottom: 24, maxWidth: 310 }}>
-        AI ekibiniz aktive edildi. Marka analiziniz tamamlandı ve ajanlar çalışmaya hazır.
-      </p>
+        <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
+          {brandName} hazır!
+        </h1>
+        <p className="onboarding-lead" style={{ marginBottom: 24, maxWidth: 310 }}>
+          AI ekibiniz aktive edildi. Marka analiziniz tamamlandı ve ajanlar çalışmaya hazır.
+        </p>
 
-      {/* Brand summary + features */}
-      <div style={{ width: '100%', maxWidth: 360, marginBottom: 18, padding: '16px 14px', borderRadius: 20, background: 'rgba(255,255,255,0.045)', border: '0.5px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, textAlign: 'left' }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg, rgba(77,112,136,0.25), rgba(90,130,160,0.22))', border: '0.5px solid rgba(157,190,206,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C4B5FD', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
-            {brandInitials || 'AI'}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#F4F4F8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {brandName}
-            </div>
-            <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.58)', marginTop: 2 }}>
-              {domain || 'Marka alanı'}{igHandle ? ` · @${igHandle}` : ''}
+        <div className="onboarding-brand-card">
+          <div className="onboarding-brand-card-head">
+            <div className="onboarding-brand-avatar">{brandInitials || 'AI'}</div>
+            <div style={{ minWidth: 0 }}>
+              <div className="onboarding-brand-meta-title">{brandName}</div>
+              <div className="onboarding-brand-meta-sub">
+                {domain || 'Marka alanı'}{igHandle ? ` · @${igHandle}` : ''}
+              </div>
             </div>
           </div>
+          <div className="onboarding-feature-grid">
+            {['✦ Marka profili', '🎨 Görsel kimlik', '📊 İçerik planı', '🤖 AI ekibi aktif'].map((f) => (
+              <div key={f} className="onboarding-feature-chip">{f}</div>
+            ))}
+          </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-          {['✦ Marka profili', '🎨 Görsel kimlik', '📊 İçerik planı', '🤖 AI ekibi aktif'].map((f) => (
-            <div key={f} style={{ padding: '8px 10px', borderRadius: 12, background: 'rgba(255,255,255,0.035)', border: '0.5px solid rgba(255,255,255,0.08)', fontSize: 12, color: 'rgba(226,232,240,0.72)' }}>
-              {f}
-            </div>
-          ))}
-        </div>
-      </div>
 
-      <button onClick={onDone} style={{ width: '100%', maxWidth: 360, padding: '18px 22px', borderRadius: 18, background: 'linear-gradient(135deg,#4D7088,#5A82A0)', border: 'none', color: '#fff', fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', cursor: 'pointer', boxShadow: '0 8px 36px rgba(77,112,136,0.48)' }}>
-        Komuta Merkezine Git ✦
-      </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="onboarding-cta"
+          style={{ maxWidth: 360 }}
+        >
+          Komuta Merkezine Git ✦
+        </button>
+      </main>
     </div>
   );
 }
@@ -961,16 +1301,6 @@ function ResultCard({ label, children }: { label: string; children: React.ReactN
 function chipStyle(color: string): React.CSSProperties {
   return { padding: '5px 12px', borderRadius: 30, fontSize: 12, fontWeight: 500, background: `${color}0d`, border: `0.5px solid ${color}22`, color, display: 'inline-block' };
 }
-function FormField({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 7 }}>{label}</div>
-      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type}
-        style={{ width: '100%', padding: '14px 15px', borderRadius: 14, outline: 'none', boxSizing: 'border-box', fontSize: 15, background: 'rgba(255,255,255,0.06)', border: '0.5px solid rgba(255,255,255,0.1)', color: '#F4F4F8' }}
-      />
-    </div>
-  );
-}
 
 // ─── MAIN ONBOARDING FLOW ─────────────────────────────────────────────
 interface Props {
@@ -985,6 +1315,7 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
   const [menuUrl, setMenuUrl]       = useState('');
   const [result, setResult]         = useState<BrandDiscoveryResult | null>(null);
   const [signupBrandName, setSignupBrandName] = useState('');
+  const [tenantId, setTenantId]     = useState('');
 
   const discoveredBrandName = result?.profile?.brandName ?? result?.report?.brandName ?? (websiteUrl ? extractDomain(websiteUrl) : igHandle ? `@${igHandle}` : 'Markanız');
   const brandName = signupBrandName || discoveredBrandName;
@@ -1018,10 +1349,18 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
           igHandle={igHandle}
           menuUrl={menuUrl}
           discoveryResult={result}
-          onDone={(companyName) => {
+          onDone={(companyName, newTenantId) => {
             setSignupBrandName(companyName);
-            setStep('welcome');
+            if (newTenantId) setTenantId(newTenantId);
+            setStep(newTenantId ? 'templates_showcase' : 'welcome');
           }}
+        />
+      )}
+      {step === 'templates_showcase' && (
+        <TemplatesShowcaseStep
+          brandName={brandName}
+          tenantId={tenantId}
+          onDone={() => setStep('welcome')}
         />
       )}
       {step === 'welcome' && (

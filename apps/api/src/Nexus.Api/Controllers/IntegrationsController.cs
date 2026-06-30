@@ -75,7 +75,7 @@ public class IntegrationsController : ControllerBase
             AccessToken = request.AccessToken == null ? null : _tokenService.Protect(request.AccessToken),
             RefreshToken = request.RefreshToken == null ? null : _tokenService.Protect(request.RefreshToken)
         };
-        var connection = await _integrationService.UpdateConnectionAsync(id, securedRequest, cancellationToken);
+        var connection = await _integrationService.UpdateConnectionAsync(id, _requestContext.TenantId, securedRequest, cancellationToken);
         return Ok(connection);
     }
 
@@ -88,7 +88,7 @@ public class IntegrationsController : ControllerBase
         if (!await ConnectionBelongsToTenantAsync(id, cancellationToken))
             return NotFound();
 
-        await _integrationService.DeleteConnectionAsync(id, cancellationToken);
+        await _integrationService.DeleteConnectionAsync(id, _requestContext.TenantId, cancellationToken);
         return NoContent();
     }
 

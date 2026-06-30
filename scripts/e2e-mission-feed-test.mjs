@@ -15,6 +15,7 @@ const CREW = (process.env.CREW_BACKEND_URL || 'http://localhost:8000').replace(/
 const NEXUS = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
 const NEXT = (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
 const KEY = process.env.INTERNAL_API_KEY || 'smartagency-internal-dev-key';
+const EXISTING_MISSION_ID = process.env.SMOKE_MISSION_ID || '';
 
 const headers = {
   'Content-Type': 'application/json',
@@ -46,6 +47,35 @@ async function nexusArtifacts() {
   const res = await fetch(`${NEXUS}/api/artifacts`, { headers });
   if (!res.ok) throw new Error(`artifacts ${res.status}`);
   return res.json();
+}
+
+async function productionJobs(missionId) {
+  const { res, data } = await crew(
+    `/api/v1/missions/${WS}/${missionId}/production-jobs`,
+    { timeoutMs: 30_000 },
+  );
+  if (!res.ok) {
+    console.warn('production jobs error', res.status, data);
+    return null;
+  }
+  return data;
+}
+
+async function kickFeedProduction(missionId) {
+  const { res, data } = await crew(
+    `/api/v1/missions/${WS}/${missionId}/kick-feed-production`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({}),
+      timeoutMs: 60_000,
+    },
+  );
+  if (!res.ok) {
+    console.warn('kick-feed-production failed', res.status, data);
+    return false;
+  }
+  console.log('   production kick accepted:', data.message ?? data.accepted);
+  return true;
 }
 
 function mapArtifact(a) {
@@ -84,6 +114,59 @@ function feedReport(artifacts, missionId) {
   };
 }
 
+async function waitForFeedArtifacts(missionId, { minPublishable = 3, timeoutMs = 18 * 60_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let kicked = false;
+  let lastReady = -1;
+  let lastPublishable = -1;
+
+  while (Date.now() < deadline) {
+    const jobs = await productionJobs(missionId);
+    const arts = await nexusArtifacts();
+    const report = feedReport(arts.map(mapArtifact), missionId);
+    const ready = Number(jobs?.ready ?? 0);
+    const total = Number(jobs?.total ?? 0);
+    const failed = Number(jobs?.failed ?? 0);
+
+    if (ready !== lastReady || report.publishable !== lastPublishable) {
+      console.log(
+        `   production: ready=${ready}/${total} failed=${failed} ` +
+        `publishable=${report.publishable}`,
+      );
+      lastReady = ready;
+      lastPublishable = report.publishable;
+    }
+
+    if (report.publishable >= minPublishable) {
+      return report;
+    }
+
+    if (!kicked && (!jobs || total === 0)) {
+      kicked = await kickFeedProduction(missionId);
+    }
+
+    await sleep(20_000);
+  }
+
+  const arts = await nexusArtifacts();
+  return feedReport(arts.map(mapArtifact), missionId);
+}
+
+async function selectExistingMission() {
+  const { res, data } = await crew(`/api/v1/missions/${WS}?hub=true&limit=20`, {
+    timeoutMs: 30_000,
+  });
+  if (!res.ok || !Array.isArray(data)) {
+    throw new Error(`Could not list existing missions after blocked proposal: ${res.status}`);
+  }
+  const priority = ['proposed', 'approved', 'in_flight'];
+  for (const status of priority) {
+    const mission = data.find((item) => item?.id && item.status === status);
+    if (mission) return mission;
+  }
+  throw new Error('Proposal was blocked, but no proposed/approved/in_flight mission was found.');
+}
+
 async function main() {
   console.log('=== Mission → Feed E2E ===');
   console.log('workspace', WS);
@@ -92,41 +175,62 @@ async function main() {
   const before = await nexusArtifacts();
   const beforeCount = before.length;
 
-  console.log('\n1) Propose mission (Strategist, ~30–90s)...');
-  const { res: propRes, data: propData } = await crew(`/api/v1/missions/${WS}/propose`, {
-    method: 'POST',
-    body: JSON.stringify({ context_signals: 'E2E feed test — weekly content package' }),
-    timeoutMs: 130_000,
-  });
-  if (!propRes.ok) {
-    console.error('PROPOSE FAILED', propRes.status, propData);
-    process.exit(1);
-  }
+  let mission;
+  if (EXISTING_MISSION_ID) {
+    console.log('\n1) Use existing mission...');
+    const { res, data } = await crew(`/api/v1/missions/${WS}/${EXISTING_MISSION_ID}`, {
+      timeoutMs: 30_000,
+    });
+    if (!res.ok || !data?.id) {
+      console.error('EXISTING MISSION FAILED', res.status, data);
+      process.exit(1);
+    }
+    mission = data;
+  } else {
+    console.log('\n1) Propose mission (Strategist, ~30–90s)...');
+    const { res: propRes, data: propData } = await crew(`/api/v1/missions/${WS}/propose`, {
+      method: 'POST',
+      body: JSON.stringify({ context_signals: 'E2E feed test — weekly content package' }),
+      timeoutMs: 130_000,
+    });
+    if (!propRes.ok) {
+      console.error('PROPOSE FAILED', propRes.status, propData);
+      process.exit(1);
+    }
 
-  const missions = propData.missions ?? propData.created ?? propData;
-  const list = Array.isArray(missions) ? missions : propData.mission ? [propData.mission] : [];
-  const mission = list[0];
-  if (!mission?.id) {
-    console.error('No mission in propose response', propData);
-    process.exit(1);
+    const missions = propData.missions ?? propData.created ?? propData;
+    const list = Array.isArray(missions) ? missions : propData.mission ? [propData.mission] : [];
+    mission = list[0];
+    if (!mission?.id && propData.skip_reason === 'blocking_missions') {
+      console.log('   proposal blocked by active missions; selecting existing mission...');
+      mission = await selectExistingMission();
+    }
+    if (!mission?.id) {
+      console.error('No mission in propose response', propData);
+      process.exit(1);
+    }
   }
   const missionId = mission.id;
-  console.log('   proposed:', mission.title, missionId);
+  console.log('   mission:', mission.title, missionId, `(${mission.status ?? 'new'})`);
 
-  console.log('\n2) Approve mission...');
-  const { res: apprRes, data: apprData } = await crew(
-    `/api/v1/missions/${WS}/${missionId}/approve`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ approved_by: 'e2e-script' }),
-      timeoutMs: 30_000,
-    },
-  );
-  if (!apprRes.ok) {
-    console.error('APPROVE FAILED', apprRes.status, apprData);
-    process.exit(1);
+  if (!mission.status || mission.status === 'proposed') {
+    console.log('\n2) Approve mission...');
+    const { res: apprRes, data: apprData } = await crew(
+      `/api/v1/missions/${WS}/${missionId}/approve`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ approved_by: 'e2e-script' }),
+        timeoutMs: 30_000,
+      },
+    );
+    if (!apprRes.ok) {
+      console.error('APPROVE FAILED', apprRes.status, apprData);
+      process.exit(1);
+    }
+    console.log('   approved:', apprData.message ?? apprData.status);
+  } else {
+    console.log('\n2) Mission already approved/in flight; skipping approve.');
   }
-  console.log('   approved:', apprData.message ?? apprData.status);
 
   console.log('\n3) Poll progress (max 12 min)...');
   const deadline = Date.now() + 12 * 60_000;
@@ -177,10 +281,12 @@ async function main() {
     await sleep(20_000);
   }
 
+  console.log('\n5) Poll production factory / Feed artifacts...');
+  const finalFeed = await waitForFeedArtifacts(missionId);
+
   const after = await nexusArtifacts();
   console.log('\n=== Results ===');
   console.log('nexus artifacts total:', after.length, '(was', beforeCount + ')');
-  const finalFeed = feedReport(after.map(mapArtifact), missionId);
   console.log('mission artifacts:', JSON.stringify(finalFeed, null, 2));
 
   const ok =

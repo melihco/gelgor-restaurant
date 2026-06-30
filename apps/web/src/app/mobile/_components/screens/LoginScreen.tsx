@@ -46,7 +46,16 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
       if (friendly.status === 401 || friendly.status === 403) {
         setError('E-posta veya şifre hatalı.');
       } else if (friendly.status === 0) {
-        setError('Bağlantı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.');
+        const detail = (friendly.detail || '').toLowerCase();
+        if (detail.includes('timed out') || detail.includes('timeout') || detail.includes('aborted')) {
+          setError('Sunucu yanıt vermiyor. Birkaç saniye bekleyip tekrar deneyin — geliştirme sunucusu yoğun olabilir.');
+        } else {
+          setError('Bağlantı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.');
+        }
+      } else if (friendly.status === 502 || friendly.status === 503 || friendly.status === 504) {
+        setError('Nexus API şu an ulaşılamıyor. Geliştirme ortamında `dotnet run` ile API’yi (port 5050) başlatın.');
+      } else if (friendly.status === 500) {
+        setError('Sunucu yanıt veremedi. Nexus API (5050) çalışıyor mu kontrol edin.');
       } else {
         setError(friendly.detail || friendly.title);
       }

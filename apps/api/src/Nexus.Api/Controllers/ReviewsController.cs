@@ -31,6 +31,7 @@ public class ReviewsController : ControllerBase
 
         var decision = await _reviewService.ApproveArtifactAsync(
             request.ArtifactId,
+            _requestContext.TenantId,
             _requestContext.UserId,
             request.Comment,
             request.FinalizedContent,
@@ -44,7 +45,7 @@ public class ReviewsController : ControllerBase
         if (!await _permissionService.HasPermissionAsync(Permissions.ArtifactsReview, cancellationToken))
             return Forbid();
 
-        var decision = await _reviewService.RejectArtifactAsync(request.ArtifactId, _requestContext.UserId, request.Comment, cancellationToken);
+        var decision = await _reviewService.RejectArtifactAsync(request.ArtifactId, _requestContext.TenantId, _requestContext.UserId, request.Comment, cancellationToken);
         return Ok(decision);
     }
 
@@ -54,7 +55,7 @@ public class ReviewsController : ControllerBase
         if (!await _permissionService.HasPermissionAsync(Permissions.ArtifactsReview, cancellationToken))
             return Forbid();
 
-        var decision = await _reviewService.RequestRevisionAsync(request.ArtifactId, _requestContext.UserId, request.Comment, cancellationToken);
+        var decision = await _reviewService.RequestRevisionAsync(request.ArtifactId, _requestContext.TenantId, _requestContext.UserId, request.Comment, cancellationToken);
         return Ok(decision);
     }
 }

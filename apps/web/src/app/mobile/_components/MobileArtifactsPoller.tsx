@@ -3,56 +3,39 @@
 import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
-import { apiClient } from '@/lib/api-client';
 import { useMobileStore } from './mobile-store';
 import { resolveClientScreen } from './mobile-client-config';
-import { mobileQueryDefaults } from '../_lib/mobile-query';
 import type { OutputArtifact } from '@/types';
 import {
   getMobileArtifactsQueryOptions,
+  MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
   mobileArtifactsListLimitForScreen,
   mobileArtifactsPollIntervalMs,
   shouldPollArtifactsGlobally,
 } from '../_lib/mobile-artifacts';
 
-function hasActiveMissionProduction(
-  missions: Array<{ status?: string }>,
-): boolean {
-  return missions.some(
-    (m) => m.status === 'in_flight' || m.status === 'approved',
-  );
-}
-
 /**
- * Single artifact poll loop for /mobile.
- * Polls on feed/mission screens AND globally while mission production runs.
+ * Single artifact poll loop for /mobile — feed/mission screens only.
+ * Brand/More/Settings do not poll (avoids 100-row fetches during background production).
  */
 export function MobileArtifactsPoller() {
   const screen = resolveClientScreen(useMobileStore((s) => s.screen));
   const tenantId = useActiveTenantId();
 
-  // MissionHub already polls missions — subscribe only to avoid duplicate listMissions calls.
-  const { data: missions = [] } = useQuery({
-    queryKey: ['missions', tenantId],
-    queryFn: () => apiClient.listMissionsForHub(tenantId!),
-    enabled: Boolean(tenantId),
-    staleTime: 45_000,
-    refetchInterval: false,
-    ...mobileQueryDefaults,
-  });
-
-  const activeMissionProduction = hasActiveMissionProduction(missions);
-  const poll = shouldPollArtifactsGlobally(screen, { activeMissionProduction });
+  const poll = shouldPollArtifactsGlobally(screen);
 
   const unchangedPollsRef = useRef(0);
   const lastArtifactCountRef = useRef<number | null>(null);
 
-  const listLimit = mobileArtifactsListLimitForScreen(screen);
-  const globalMissionPoll = activeMissionProduction && !['feed', 'missions', 'mission-factory'].includes(screen);
+  // Feed shares the mission pool cache key with MobileNav badge and PlatformFeed.
+  const listLimit = screen === 'feed'
+    ? MOBILE_ARTIFACT_MISSION_POOL_LIMIT
+    : mobileArtifactsListLimitForScreen(screen);
 
   useQuery({
     ...getMobileArtifactsQueryOptions(tenantId ?? '', { limit: listLimit }),
     enabled: Boolean(tenantId) && poll,
+    refetchOnMount: poll ? 'always' : false,
     refetchInterval: (query) => {
       if (!poll) return false;
       const artifacts = query.state.data as OutputArtifact[] | undefined;
@@ -69,7 +52,6 @@ export function MobileArtifactsPoller() {
         screen,
         artifacts,
         unchangedPollsRef.current,
-        { globalMissionPoll },
       );
     },
   });

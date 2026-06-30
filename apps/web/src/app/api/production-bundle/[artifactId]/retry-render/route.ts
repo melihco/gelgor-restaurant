@@ -4,7 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { assertWorkspaceMatchesRequestTenant } from '@/lib/tenant-production-guard';
-import { parseArtifactContent, parseArtifactMetadata } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-utils';
 import {
   getProductionBundleStatus,
   isBundleRendering,
@@ -27,13 +27,15 @@ import {
   ensureRemotionPhotoUrl,
 } from '@/lib/remotion-bundle-render';
 import { persistRemotionVideoOutput } from '@/lib/remotion-video-persist';
+import { serverConfig } from '@/lib/server-config';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
-const BASE_URL = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
+const NEXUS_API = serverConfig.nexus.baseUrl;
+const INTERNAL_KEY = serverConfig.internal.apiKey;
+const BASE_URL = getNextjsInternalOrigin();
 
 async function patchBundleStatus(
   artifactId: string,
@@ -124,9 +126,50 @@ export async function POST(
     const hadPoster = Boolean(resolveBrandedPostUrl(normalizedArtifact));
     const isPost = isPostKind(normalizedArtifact);
     const previousStatus = getProductionBundleStatus(normalizedArtifact);
+    const wasRendering = isBundleRendering(artifact);
 
     await patchBundleStatus(artifactId, tenantId, 'rendering');
 
+    // Heavy prep (brand tokens, theme, template library, render) is moved into the
+    // fire-and-forget worker so the UI gets an immediate 202 even when the host is
+    // busy rendering other stories. Returning 202 only after token/library fetches
+    // (which themselves slow under render load) was causing client 60s timeouts.
+    void (async () => {
+     try {
+      await runRetryRender({ artifactId, tenantId, artifact, content, meta, isPost, posterUrl });
+     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await patchBundleStatus(artifactId, tenantId, 'failed', msg);
+     }
+    })();
+
+    return NextResponse.json({
+      ok: true,
+      status: 'rendering',
+      artifactId,
+      hadVideo,
+      hadPoster,
+      isPost,
+      previousStatus,
+      wasRendering,
+    }, { status: 202 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'retry_render_failed';
+    console.error('[retry-render]', message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+async function runRetryRender(args: {
+  artifactId: string;
+  tenantId: string;
+  artifact: Record<string, unknown>;
+  content: Record<string, unknown>;
+  meta: Record<string, unknown>;
+  isPost: boolean;
+  posterUrl: string;
+}): Promise<void> {
+    const { artifactId, tenantId, artifact, content, meta, isPost, posterUrl } = args;
     const compositionId = String(
       meta.compositionId || content.compositionId || (isPost ? 'SpecPosterPost' : 'SpecStory'),
     );
@@ -214,109 +257,89 @@ export async function POST(
       renderProps.posterTemplateId = templateId;
     }
 
-    // Fire-and-forget — Remotion can take 1–3 min; don't block the Feed UI
-    void (async () => {
-      const baseRenderBody = {
-        compositionId,
-        workspaceId: tenantId,
-        motionStyle: String(meta.motionStyle || meta.motion_style || ''),
-        locale: String(meta.locale || meta.language || ''),
-        uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
-        requirePersistent: true,
-        brandTemplateLocked: Boolean(meta.brandTemplateLocked ?? meta.brand_template_locked),
-      };
+    // Remotion can take 1–3 min — this whole function runs in the background worker
+    // started by POST, so the awaits below never block the client response.
+    const baseRenderBody = {
+      compositionId,
+      workspaceId: tenantId,
+      motionStyle: String(meta.motionStyle || meta.motion_style || ''),
+      locale: String(meta.locale || meta.language || ''),
+      uploadToR2: serverConfig.r2.bucketConfigured,
+      requirePersistent: true,
+      brandTemplateLocked: Boolean(meta.brandTemplateLocked ?? meta.brand_template_locked),
+    };
 
-      let data = await callRemotionRenderApi(BASE_URL, {
-        ...baseRenderBody,
-        useCreativeDirector: true,
-        props: renderProps,
-      });
-
-      if (!data.ok) {
-        data = await callRemotionRenderApi(BASE_URL, {
-          ...baseRenderBody,
-          useCreativeDirector: false,
-          props: buildSafeOverlayRetryProps(renderProps as Record<string, unknown>),
-        });
-      }
-
-      if (!data.ok) {
-        await patchBundleStatus(
-          artifactId,
-          tenantId,
-          'failed',
-          data.error || `Render failed (${data.status})`,
-        );
-        return;
-      }
-
-      if (isPost) {
-        if (!data.imageUrl) {
-          await patchBundleStatus(artifactId, tenantId, 'failed', 'No poster output');
-          return;
-        }
-        const ok = await attachPoster(artifactId, tenantId, {
-          imageUrl: data.imageUrl,
-          contentType: 'instagram_post',
-          productionBundle: true,
-          compositionId: data.compositionId || compositionId,
-          posterTemplateId: templateId,
-          referencePhotoUrl: posterUrl,
-          renderMs: data.durationMs ?? null,
-        });
-        if (!ok) await patchBundleStatus(artifactId, tenantId, 'failed', 'attach_poster_failed');
-        else await patchBundleStatus(artifactId, tenantId, 'ready');
-        return;
-      }
-
-      const videoUrl = await persistRemotionVideoOutput(tenantId, {
-        videoUrl: data.videoUrl,
-        videoBase64: data.videoBase64,
-        compositionId: data.compositionId || compositionId,
-        bytes: data.bytes,
-      });
-      if (!videoUrl) {
-        await patchBundleStatus(
-          artifactId,
-          tenantId,
-          'failed',
-          data.error || 'No video output',
-        );
-        return;
-      }
-
-      const ok = await attachVideo(artifactId, tenantId, {
-        videoUrl,
-        posterUrl,
-        compositionId: data.compositionId || compositionId,
-        grafikerScore: data.grafikerScore ?? null,
-        grafikerPass: data.grafikerPass !== false,
-        renderMs: data.durationMs ?? null,
-      });
-
-      if (!ok) {
-        await patchBundleStatus(artifactId, tenantId, 'failed', 'attach_video_failed');
-      } else {
-        await patchBundleStatus(artifactId, tenantId, 'ready');
-      }
-    })().catch(async (err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      await patchBundleStatus(artifactId, tenantId, 'failed', msg);
+    let data = await callRemotionRenderApi(BASE_URL, {
+      ...baseRenderBody,
+      useCreativeDirector: true,
+      props: renderProps,
     });
 
-    return NextResponse.json({
-      ok: true,
-      status: 'rendering',
-      artifactId,
-      hadVideo,
-      hadPoster,
-      isPost,
-      previousStatus,
-      wasRendering: isBundleRendering(artifact),
-    }, { status: 202 });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'retry_render_failed';
-    console.error('[retry-render]', message);
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+    if (!data.ok) {
+      data = await callRemotionRenderApi(BASE_URL, {
+        ...baseRenderBody,
+        useCreativeDirector: false,
+        props: buildSafeOverlayRetryProps(renderProps as Record<string, unknown>),
+      });
+    }
+
+    if (!data.ok) {
+      await patchBundleStatus(
+        artifactId,
+        tenantId,
+        'failed',
+        data.error || `Render failed (${data.status})`,
+      );
+      return;
+    }
+
+    if (isPost) {
+      if (!data.imageUrl) {
+        await patchBundleStatus(artifactId, tenantId, 'failed', 'No poster output');
+        return;
+      }
+      const ok = await attachPoster(artifactId, tenantId, {
+        imageUrl: data.imageUrl,
+        contentType: 'instagram_post',
+        productionBundle: true,
+        compositionId: data.compositionId || compositionId,
+        posterTemplateId: templateId,
+        referencePhotoUrl: posterUrl,
+        renderMs: data.durationMs ?? null,
+      });
+      if (!ok) await patchBundleStatus(artifactId, tenantId, 'failed', 'attach_poster_failed');
+      else await patchBundleStatus(artifactId, tenantId, 'ready');
+      return;
+    }
+
+    const videoUrl = await persistRemotionVideoOutput(tenantId, {
+      videoUrl: data.videoUrl,
+      videoBase64: data.videoBase64,
+      compositionId: data.compositionId || compositionId,
+      bytes: data.bytes,
+    });
+    if (!videoUrl) {
+      await patchBundleStatus(
+        artifactId,
+        tenantId,
+        'failed',
+        data.error || 'No video output',
+      );
+      return;
+    }
+
+    const ok = await attachVideo(artifactId, tenantId, {
+      videoUrl,
+      posterUrl,
+      compositionId: data.compositionId || compositionId,
+      grafikerScore: data.grafikerScore ?? null,
+      grafikerPass: data.grafikerPass !== false,
+      renderMs: data.durationMs ?? null,
+    });
+
+    if (!ok) {
+      await patchBundleStatus(artifactId, tenantId, 'failed', 'attach_video_failed');
+    } else {
+      await patchBundleStatus(artifactId, tenantId, 'ready');
+    }
 }

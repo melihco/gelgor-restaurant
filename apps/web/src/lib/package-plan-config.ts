@@ -39,12 +39,17 @@ const UNLIMITED = -1;
 export const PLAN_USD_TRY_RATE = 32;
 
 /**
- * Tuned API unit costs (USD) — aligned with auto-produce/strategist telemetry + ~15% buffer.
- * @see mission-production-manifest MISSION_WEEKLY_PACKAGE_COUNTS (7 pieces/mission)
+ * Tuned API unit costs (USD) — aligned with current 16-slot mission telemetry
+ * and kept slightly conservative so list prices still target ~200% profit on cost.
+ *
+ * Current weekly mission promise:
+ * - 12 organic outputs (6 post, 5 story, 1 carousel)
+ * - 4 reels
+ * - 1 Meta ad + 1 Google ad creative derivative
  */
 export const PLAN_API_UNIT_COSTS = {
   missionPropose: 0.28,
-  missionProductionCycle: 2.75,
+  missionProductionCycle: 3.2,
   galleryVisionAnalysis: 0.04,
   standaloneReel: 0.3,
 } as const;
@@ -53,8 +58,8 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   starter: {
     slug: 'starter',
     name: 'Starter',
-    monthlyPriceUsd: 79,
-    monthlyPriceTry: 79 * PLAN_USD_TRY_RATE,
+    monthlyPriceUsd: 156,
+    monthlyPriceTry: 4_992,
     quotas: {
       agentRuns: 14,
       providerActions: 18,
@@ -64,15 +69,15 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputs: {
       missions: 14,
-      socialContent: 98,
+      socialContent: 168,
       galleryAnalysis: 40,
-      reels: 0,
+      reels: 56,
       metaAdCreatives: 14,
       googleAdCreatives: 14,
     },
     outputHighlights: [
-      '14 tam misyon döngüsü / ay (7 organik + Meta & Google reklam türevi)',
-      '98 organik sosyal içerik + 14 Meta + 14 Google reklam kreatifi',
+      '14 tam misyon döngüsü / ay',
+      '168 organik içerik + 56 reel + 14 Meta + 14 Google reklam kreatifi',
       '40 galeri fotoğraf analizi',
       '5.000 SA Kredi aylık',
     ],
@@ -80,8 +85,8 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   growth: {
     slug: 'growth',
     name: 'Growth',
-    monthlyPriceUsd: 149,
-    monthlyPriceTry: 149 * PLAN_USD_TRY_RATE,
+    monthlyPriceUsd: 312,
+    monthlyPriceTry: 9_984,
     quotas: {
       agentRuns: 28,
       providerActions: 45,
@@ -91,15 +96,16 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputs: {
       missions: 28,
-      socialContent: 196,
+      socialContent: 336,
       galleryAnalysis: 120,
-      reels: 4,
+      reels: 112,
       metaAdCreatives: 28,
       googleAdCreatives: 28,
     },
     outputHighlights: [
       '28 misyon döngüsü / ay',
-      '196 sosyal içerik · 4 Runway reel',
+      '336 organik içerik · 112 reel',
+      '28 Meta + 28 Google reklam kreatifi',
       '120 galeri analizi',
       '15.000 SA Kredi aylık',
     ],
@@ -107,8 +113,8 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   performance: {
     slug: 'performance',
     name: 'Performance',
-    monthlyPriceUsd: 249,
-    monthlyPriceTry: 249 * PLAN_USD_TRY_RATE,
+    monthlyPriceUsd: 719,
+    monthlyPriceTry: 23_008,
     quotas: {
       agentRuns: 65,
       providerActions: 140,
@@ -118,15 +124,16 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputs: {
       missions: 65,
-      socialContent: 455,
+      socialContent: 780,
       galleryAnalysis: 250,
-      reels: 8,
-      metaAdCreatives: 14,
-      googleAdCreatives: 14,
+      reels: 260,
+      metaAdCreatives: 65,
+      googleAdCreatives: 65,
     },
     outputHighlights: [
       '65 misyon döngüsü / ay',
-      '455 sosyal içerik · 8 reel',
+      '780 organik içerik · 260 reel',
+      '65 Meta + 65 Google reklam kreatifi',
       '250 galeri analizi',
       '40.000 SA Kredi aylık',
     ],
@@ -134,8 +141,8 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   executive: {
     slug: 'executive',
     name: 'Executive',
-    monthlyPriceUsd: 499,
-    monthlyPriceTry: 499 * PLAN_USD_TRY_RATE,
+    monthlyPriceUsd: 1562,
+    monthlyPriceTry: 49_984,
     quotas: {
       agentRuns: UNLIMITED,
       providerActions: UNLIMITED,
@@ -176,14 +183,10 @@ function finiteCap(value: number, cap: number): number {
 export function estimatePlanMonthlyApiCostUsd(plan: PlanSpec): number {
   const missions = finiteCap(plan.outputs.missions, 20);
   const gallery = finiteCap(plan.outputs.galleryAnalysis, 300);
-  const reels = finiteCap(plan.outputs.reels, 32);
 
   const perMission =
     PLAN_API_UNIT_COSTS.missionPropose + PLAN_API_UNIT_COSTS.missionProductionCycle;
   let cost = missions * perMission + gallery * PLAN_API_UNIT_COSTS.galleryVisionAnalysis;
-
-  const extraReels = Math.max(0, reels - Math.min(missions, reels));
-  cost += extraReels * PLAN_API_UNIT_COSTS.standaloneReel;
 
   return Math.round(cost * 100) / 100;
 }

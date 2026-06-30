@@ -41,33 +41,33 @@ GRANT_BY_PACKAGE: dict[str, int] = {
 OUTPUTS_BY_PACKAGE: dict[str, dict[str, int]] = {
     "starter": {
         "missions": 14,
-        "social_content": 98,
+        "social_content": 168,
         "gallery_analysis": 40,
-        "reels": 0,
+        "reels": 56,
         "meta_ad_creatives": 14,
         "google_ad_creatives": 14,
     },
     "studio": {
         "missions": 14,
-        "social_content": 98,
+        "social_content": 168,
         "gallery_analysis": 40,
-        "reels": 0,
+        "reels": 56,
         "meta_ad_creatives": 14,
         "google_ad_creatives": 14,
     },
-    "growth": {"missions": 28, "social_content": 196, "gallery_analysis": 120, "reels": 4},
-    "agency": {"missions": 28, "social_content": 196, "gallery_analysis": 120, "reels": 4},
-    "performance": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
-    "signature": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
-    "premium": {"missions": 65, "social_content": 455, "gallery_analysis": 250, "reels": 8},
-    "executive": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1},
-    "collective": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1},
+    "growth": {"missions": 28, "social_content": 336, "gallery_analysis": 120, "reels": 112, "meta_ad_creatives": 28, "google_ad_creatives": 28},
+    "agency": {"missions": 28, "social_content": 336, "gallery_analysis": 120, "reels": 112, "meta_ad_creatives": 28, "google_ad_creatives": 28},
+    "performance": {"missions": 65, "social_content": 780, "gallery_analysis": 250, "reels": 260, "meta_ad_creatives": 65, "google_ad_creatives": 65},
+    "signature": {"missions": 65, "social_content": 780, "gallery_analysis": 250, "reels": 260, "meta_ad_creatives": 65, "google_ad_creatives": 65},
+    "premium": {"missions": 65, "social_content": 780, "gallery_analysis": 250, "reels": 260, "meta_ad_creatives": 65, "google_ad_creatives": 65},
+    "executive": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1, "meta_ad_creatives": -1, "google_ad_creatives": -1},
+    "collective": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1, "meta_ad_creatives": -1, "google_ad_creatives": -1},
 }
 
 # Tuned API unit costs (USD) — keep in sync with apps/web/src/lib/package-plan-config.ts
 API_UNIT_COST_USD: dict[str, float] = {
     "mission_propose": 0.28,
-    "mission_production_cycle": 2.75,
+    "mission_production_cycle": 3.2,
     "gallery_vision_analysis": 0.04,
     "standalone_reel": 0.30,
 }
@@ -84,11 +84,9 @@ def estimate_monthly_api_cost_usd(package_slug: str | None) -> float | None:
 
     missions = cap(outputs["missions"], 20)
     gallery = cap(outputs["gallery_analysis"], 300)
-    reels = cap(outputs["reels"], 32)
     u = API_UNIT_COST_USD
     cost = missions * (u["mission_propose"] + u["mission_production_cycle"])
     cost += gallery * u["gallery_vision_analysis"]
-    cost += max(0, reels - min(missions, reels)) * u["standalone_reel"]
     return round(cost, 2)
 
 CATEGORY_LABELS_TR: dict[str, str] = {

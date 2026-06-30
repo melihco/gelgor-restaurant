@@ -83,7 +83,7 @@ public class AgentsController : ControllerBase
         if (!entitlement.Allowed)
             return StatusCode(StatusCodes.Status403Forbidden, entitlement);
 
-        var result = await _agentService.ExecuteAgentAsync(id, request, cancellationToken);
+        var result = await _agentService.ExecuteAgentAsync(id, _requestContext.TenantId, request, cancellationToken);
         await _usageQuotaService.RecordAgentRunAsync(_requestContext.TenantId, cancellationToken: CancellationToken.None);
 
         if (result.OfficeId != Guid.Empty)

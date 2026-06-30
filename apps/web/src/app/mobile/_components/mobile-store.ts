@@ -1,5 +1,6 @@
 'use client';
 import { create } from 'zustand';
+import { MOBILE_ARTIFACT_FEED_INITIAL } from '../_lib/mobile-artifacts';
 import { resolveClientScreen, tabForMobileScreen } from './mobile-client-config';
 
 export type MobileScreen =
@@ -47,8 +48,11 @@ interface MobileStore {
   brandReadinessFix: string | null;
   /** Mission Hub → Feed: pre-select mission filter chip */
   feedMissionFilterId: string | null;
+  /** Progressive feed window — grows on scroll. Shared so the poller refreshes the same cache key. */
+  feedListLimit: number;
 
   navigate: (screen: MobileScreen) => void;
+  setFeedListLimit: (limit: number) => void;
   openBrand: (fix?: string) => void;
   openStoryTemplates: () => void;
   clearBrandReadinessFix: () => void;
@@ -75,6 +79,9 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   missionContentNodeKey: null,
   brandReadinessFix: null,
   feedMissionFilterId: null,
+  feedListLimit: MOBILE_ARTIFACT_FEED_INITIAL,
+
+  setFeedListLimit: (limit) => set((s) => (s.feedListLimit === limit ? s : { feedListLimit: limit })),
 
   navigate: (screen) => {
     const resolved = resolveClientScreen(screen);

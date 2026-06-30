@@ -78,26 +78,43 @@ export function resolveMertcafePublishAuth(
   const publishId = String(status.publish_account_id ?? '').trim();
   const oauthId = String(status.oauth_account_id ?? '').trim();
 
-  // Instagram OAuth aktif → bağlı hesabı kullan, eski manuel ID gönderme
-  if (status.instagram_connected) {
-    if (status.use_oauth_account || !publishId) {
-      return { useOAuthAccount: true };
-    }
-    // Kayıtlı ID OAuth hesabıyla eşleşiyorsa yine OAuth yolu (account_id gereksiz)
-    if (oauthId && publishId === oauthId) {
-      return { useOAuthAccount: true };
-    }
-    // Eski / başka kullanıcıya ait account_id — OAuth'a düş
+  // Tenant kayıtlı hesap ID seçtiyse OAuth yönlendirmesini ezme.
+  if (status.use_oauth_account === false && publishId) {
+    return { useOAuthAccount: false, accountId: publishId };
+  }
+
+  if (status.use_oauth_account && status.instagram_connected) {
     return { useOAuthAccount: true };
   }
 
   if (status.use_oauth_account) {
     return { useOAuthAccount: true };
   }
+
+  // OAuth bağlı, manuel hesap yok — account_id göndermeden yayınla.
+  if (status.instagram_connected && !publishId) {
+    return { useOAuthAccount: true };
+  }
+
+  // Kayıtlı ID OAuth hesabıyla aynı — account_id gereksiz.
+  if (oauthId && publishId === oauthId) {
+    return { useOAuthAccount: true };
+  }
+
   if (publishId) {
     return { useOAuthAccount: false, accountId: publishId };
   }
-  return { useOAuthAccount: true };
+
+  return { useOAuthAccount: Boolean(status.instagram_connected) };
+}
+
+/** Upstream configuration errors — retrying will not help. */
+export function isNonRetryableMertcafePublishError(raw: string): boolean {
+  const msg = raw.trim();
+  if (!msg) return false;
+  return /do not belong to this user|invalid oauth|session has expired|authUrl alınamadı|Zernio profili|account.*not found|MISSING_PUBLISH_ACCOUNT/i.test(
+    msg,
+  );
 }
 
 /** Meta / Mertcafe hata metinlerini operatör için Türkçeleştir. */
@@ -106,8 +123,9 @@ export function humanizeMertcafePublishError(raw: string): string {
   if (!msg) return msg;
   if (/do not belong to this user/i.test(msg)) {
     return (
-      'Instagram hesabı bu API anahtarıyla eşleşmiyor. ' +
-      'Marka Ayarları → Mertcafe → OAuth senkronu yapın veya doğru yayın hesabını seçin.'
+      'Instagram hesabı bu Mertcafe API anahtarıyla eşleşmiyor. ' +
+      'Marka Ayarları → Mertcafe → «Mevcut Mertcafe hesabımı bağla» ile doğru API anahtarını girin, ' +
+      'sonra kayıtlı listeden hedef hesabı seçin veya OAuth ile yeniden bağlanın.'
     );
   }
   if (/session has expired|invalid oauth/i.test(msg)) {

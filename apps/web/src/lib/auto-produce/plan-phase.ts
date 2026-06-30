@@ -94,6 +94,9 @@ export interface AutoProducePlanInput {
   workspaceId: string;
   missionId?: string;
   ideas: ParsedIdeaLike[];
+  /** Calendar-only backfill — ideation pool empty but additive calendar slots run. */
+  calendarOnlySlotPass?: boolean;
+  calendarIdeasCount?: number;
   feedDirectorReport: Record<string, unknown> | null;
   productionPackage: string | null;
   strategistMissionType: string | null;
@@ -111,6 +114,8 @@ export async function runAutoProducePlanPhase(
     workspaceId,
     missionId,
     ideas,
+    calendarOnlySlotPass = false,
+    calendarIdeasCount = 0,
     feedDirectorReport,
     productionPackage,
     strategistMissionType,
@@ -194,7 +199,7 @@ export async function runAutoProducePlanPhase(
   if (missionId && productionIdeas.length < requiredSlotTarget) {
     console.warn(
       `[auto-produce] Mission ${missionId} has only ${productionIdeas.length}/${requiredSlotTarget} ideas — ` +
-      'Feed package may be incomplete (check ideation merge or content_ideation count).',
+      'production slot target may be incomplete (check ideation merge or content_ideation count).',
     );
   }
 
@@ -230,7 +235,11 @@ export async function runAutoProducePlanPhase(
     };
   }
 
-  if (missionId && !fdPrepared.gate.allowed) {
+  if (
+    missionId
+    && !fdPrepared.gate.allowed
+    && !(calendarOnlySlotPass && calendarIdeasCount > 0 && fdPrepared.gate.code === 'fd_no_ideas')
+  ) {
     return {
       status: 'blocked',
       httpStatus: 422,

@@ -244,7 +244,7 @@ export function mertcafeConnectErrorMessage(data: Record<string, unknown>): stri
   if (/authUrl alınamadı/i.test(raw)) {
     return (
       'Bu Mertcafe API anahtarı Instagram OAuth için hazır değil (Zernio profili eksik). ' +
-      'Marka → Ayarlar → "API anahtarını yenile" ile yeni kayıt oluşturun veya Mertcafe\'den geçerli anahtar isteyin.'
+      'Menü → Entegrasyonlar → "API anahtarını yenile" ile yeni kayıt oluşturun veya Mertcafe\'den geçerli anahtar isteyin.'
     );
   }
   return raw || 'Instagram bağlantı URL\'si alınamadı';

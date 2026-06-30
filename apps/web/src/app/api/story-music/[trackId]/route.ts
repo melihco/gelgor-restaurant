@@ -40,16 +40,42 @@ function cachePath(trackId: string): string {
 
 /** Stream a local file as a Web ReadableStream without blocking the event loop. */
 function fileToReadableStream(filePath: string, rangeStart = 0, rangeEnd?: number): ReadableStream<Uint8Array> {
+  let stream: fs.ReadStream | null = null;
+  let closed = false;
   return new ReadableStream({
     start(controller) {
-      const stream = fs.createReadStream(filePath, {
+      stream = fs.createReadStream(filePath, {
         start: rangeStart,
         end: rangeEnd,
         highWaterMark: 64 * 1024, // 64 KB chunks
       });
-      stream.on('data', (chunk) => controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-      stream.on('end', () => controller.close());
-      stream.on('error', (err) => controller.error(err));
+      stream.on('data', (chunk) => {
+        if (closed) return;
+        try {
+          controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        } catch {
+          closed = true;
+          stream?.destroy();
+        }
+      });
+      stream.on('end', () => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch { /* client already disconnected */ }
+      });
+      stream.on('error', (err) => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.error(err);
+        } catch { /* client already disconnected */ }
+      });
+    },
+    cancel() {
+      closed = true;
+      stream?.destroy();
     },
   });
 }

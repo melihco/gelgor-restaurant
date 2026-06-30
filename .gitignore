@@ -48,6 +48,14 @@ yarn-error.log*
 # ── dotnet ────────────────────────────────────────────────────────────────────
 apps/api/src/**/bin/
 apps/api/src/**/obj/
+apps/api/tests/**/bin/
+apps/api/tests/**/obj/
+apps/api/tests/**/TestResults/
+
+# ── Coverage ──────────────────────────────────────────────────────────────────
+.coverage
+coverage.xml
+htmlcov/
 
 # ── MCP config (may contain tokens) ──────────────────────────────────────────
 .mcp.json

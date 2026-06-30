@@ -9,10 +9,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
-import { resolveArtifact, parseArtifactContent } from '../artifact-utils';
+import { resolveArtifact, parseArtifactContent } from '@/lib/artifact-utils';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { resolveBrandedPostUrl, resolvePosterUrl } from '@/lib/production-bundle';
 import { useTenantBrandContext } from '../TenantBrandProvider';
+import { useBrandStoryAudio } from '@/hooks/useBrandStoryAudio';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import { BoostPostSheet } from '../BoostPostSheet';
 import type { OutputArtifact } from '@/types';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
@@ -1045,6 +1047,8 @@ export function PlatformPreviewStudio() {
   });
 
   const tenantBrand = useTenantBrandContext();
+  const tenantId = useActiveTenantId();
+  const { storyMusicUrl } = useBrandStoryAudio(tenantId);
   const handle = tenantBrand.displayHandle;
   const logoUrl = tenantBrand.logoUrl
     ? resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl
@@ -1173,6 +1177,7 @@ export function PlatformPreviewStudio() {
             handle={handle}
             logoUrl={logoUrl}
             isPending={isPending}
+            backgroundMusicUrl={previewMode === 'story' && !nativeContent.videoUrl ? storyMusicUrl : undefined}
           />
         </div>
       </div>

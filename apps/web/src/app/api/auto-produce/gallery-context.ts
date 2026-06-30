@@ -24,6 +24,7 @@ import {
   stripStockGalleryUrls,
 } from '@/lib/media-url';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+import { serverConfig } from '@/lib/server-config';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
 import {
@@ -90,6 +91,16 @@ export async function fetchGalleryContext(
     ),
   );
 
+  // Brand's own website domain is trusted — skip network probe for gallery photos
+  // that originate from the brand's verified website_url.
+  const brandWebsite = typeof brandCtxRaw.website_url === 'string' ? brandCtxRaw.website_url.trim() : '';
+  let brandDomain = '';
+  try { brandDomain = brandWebsite ? new URL(brandWebsite).hostname.replace(/^www\./, '') : ''; } catch { /* noop */ }
+  const isBrandDomainUrl = (u: string) => {
+    if (!brandDomain) return false;
+    try { return new URL(u).hostname.replace(/^www\./, '') === brandDomain; } catch { return false; }
+  };
+
   const refsBeforeSeed = [...refs];
   const analysisBeforeSeed = [...analysisKeys];
   const brandCrawlPhotos = candidates.filter((u) => !isStockGalleryPhotoUrl(u));
@@ -105,13 +116,18 @@ export async function fetchGalleryContext(
   }
 
   // ── Parallel: health check + usage + template history ──────────────────
+  // Photos from the brand's own domain are trusted (already verified during onboarding);
+  // only probe external / unknown-origin URLs to avoid probe timeouts blocking production.
+  const trustedBrandPhotos = candidates.filter(isBrandDomainUrl);
+  const needProbe = candidates.filter((u) => !isBrandDomainUrl(u));
   const [health, usage, recentTemplateIds] = await Promise.all([
-    candidates.length > 0
-      ? filterReachableGalleryUrls(candidates, { maxProbe: 40, concurrency: 12 })
-      : Promise.resolve({ urls: candidates, rejected: [] }),
+    needProbe.length > 0
+      ? filterReachableGalleryUrls(needProbe, { maxProbe: 40, concurrency: 12 })
+      : Promise.resolve({ urls: [] as string[], rejected: [] as { url: string; reason: string }[] }),
     fetchUsedGalleryImages(workspaceId),
     fetchRecentTemplateIds(workspaceId),
   ]);
+  health.urls = [...trustedBrandPhotos, ...health.urls];
 
   if (health.rejected.length > 0) {
     console.warn(
@@ -174,14 +190,30 @@ export async function ensureGalleryAnalysisForProduction(
   const { galleryAnalysisCoverageStats, enrichGalleryAnalysis } = await import(
     '@/lib/gallery-photo-matcher'
   );
-  let enriched = meta;
+  const { galleryAnalysisNeedsTagPersist, persistEnrichedGalleryAnalysis } = await import(
+    '@/lib/gallery-analysis-persist'
+  );
+  let enriched = enrichGalleryAnalysis(meta);
+  if (galleryAnalysisNeedsTagPersist(enriched)) {
+    void persistEnrichedGalleryAnalysis(workspaceId, enriched)
+      .then((result) => {
+        if (result.enriched > 0) {
+          console.log(
+            `[gallery-context:${workspaceId}] persisted ${result.enriched} rule-enriched gallery tags`,
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn(`[gallery-context:${workspaceId}] background tag persist failed`, err);
+      });
+  }
   let stats = galleryAnalysisCoverageStats(photos, enriched);
   if (stats.sufficient) {
     return { meta: enriched };
   }
 
   const baseUrl = getNextjsInternalOrigin();
-  const internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+  const internalKey = serverConfig.internal.apiKey;
 
   // Non-blocking: fire analyze-coverage in background and use what we already have.
   // The 240 s blocking call was the main cause of feed-produce timeouts.
@@ -248,7 +280,7 @@ export function triggerGalleryAnalysisIfNeeded(
   if (galleryContext.photos.length === 0 || analysisCount > 0) return;
 
   const baseUrl = getNextjsInternalOrigin();
-  const internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
+  const internalKey = serverConfig.internal.apiKey;
   fetch(`${baseUrl}/api/gallery-intelligence/${workspaceId}/analyze-coverage`, {
     method: 'POST',
     headers: {

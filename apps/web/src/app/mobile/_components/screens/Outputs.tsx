@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
-import { resolveArtifact, parseArtifactContent, findScheduledForArtifact, resolveCarouselUrls } from '../artifact-utils';
+import { resolveArtifact, parseArtifactContent, findScheduledForArtifact, resolveCarouselUrls } from '@/lib/artifact-utils';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { OutputArtifact } from '@/types';
 import type { T } from '../theme-context';
@@ -14,6 +14,8 @@ import { resolveClientMediaUrl } from '@/lib/media-url';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { buildTenantBrandContext } from '@/lib/tenant-brand-context';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { resolvePublishImageUrl, resolveStoryPublishImageUrl, resolveStoryPublishVideoUrl } from '@/lib/production-bundle';
+import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { resolveMertcafePublishAuth, assertMertcafePublishReady, humanizeMertcafePublishError } from '@/lib/mertcafe-publish-auth';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { MOBILE_ARTIFACT_OUTPUTS_LIMIT } from '../../_lib/mobile-artifacts';
@@ -1497,17 +1499,18 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
         .map(String)
         .filter(Boolean);
       const imageUrl = String(
-        (content.imageUrl as string)
+        (kindToken.includes('story') ? resolveStoryPublishImageUrl(artifact) : null)
+        || resolvePublishImageUrl(artifact)
+        || (content.imageUrl as string)
         || (meta.imageUrl as string)
         || resolved?.imageUrl
         || artifact.contentUrl
         || '',
       );
       const videoUrl = String(
-        (content.videoUrl as string)
-        || (meta.videoUrl as string)
-        || resolved?.videoUrl
-        || '',
+        (kindToken.includes('story') || kindToken.includes('reel'))
+          ? (resolveStoryPublishVideoUrl(artifact) || '')
+          : ((content.videoUrl as string) || (meta.videoUrl as string) || resolved?.videoUrl || ''),
       );
       const normalizedMediaUrls = resolveCarouselUrls(content, meta);
 
@@ -1527,7 +1530,7 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
         publishPayload.account_id = publishAuth.accountId;
       }
       if (postType === 'story') {
-        if (videoUrl) {
+        if (isPlayableVideoUrl(videoUrl)) {
           publishPayload.video_url = videoUrl;
         } else {
           publishPayload.image_url = imageUrl;

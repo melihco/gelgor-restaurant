@@ -21,7 +21,7 @@ import {
 import type { StoryProps } from './types';
 import { StoryLogoTopCenter } from './StoryLogo';
 import { useRemotionFonts } from './shared/useRemotionFonts';
-import { HeadlineStack, headlineSize, stableTextOpacity } from './shared/story-primitives';
+import { HeadlineStack, headlineSize, stableTextOpacity, cinematicGradeFilter, CinematicLightLayer } from './shared/story-primitives';
 import { StoryAudioLayer } from './shared/story-audio';
 
 const PHOTO_ZONE_RATIO = 0.54;
@@ -144,8 +144,10 @@ export const GallerySeriesStory: React.FC<StoryProps> = ({
     <AbsoluteFill style={{ background: panelBg, overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: photoZoneH, overflow: 'hidden',
+        filter: cinematicGradeFilter('subtle'),
       }}>
         {renderPhotoGrid()}
+        <CinematicLightLayer warmth="neutral" intensity={0.55} origin="50% 10%" />
         <div style={{
           position: 'absolute', left: 0, right: 0, bottom: 0, height: '18%',
           background: `linear-gradient(to bottom, transparent, ${panelBg})`,
@@ -153,7 +155,7 @@ export const GallerySeriesStory: React.FC<StoryProps> = ({
         }} />
       </div>
 
-      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={hero} opacity={0.92} paddingTop="3.5%" />
+      <StoryLogoTopCenter logoUrl={logoUrl} brandName={brandName} fontFamily={hero} opacity={0.92} paddingTop="6.5%" />
 
       <div style={{
         position: 'absolute', top: photoZoneH, left: 0, right: 0, height: panelH,

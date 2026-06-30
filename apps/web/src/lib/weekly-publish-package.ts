@@ -1,4 +1,4 @@
-import { parseArtifactContent, resolveCarouselUrls } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent, parseArtifactMetadata, resolveCarouselUrls } from '@/lib/artifact-utils';
 import {
   dedupeFeedDisplayArtifacts,
   dedupeProductionBundles,
@@ -273,7 +273,7 @@ function readArtifactPipelineRole(artifact: OutputArtifact): {
   let meta: Record<string, unknown> = {};
   try {
     content = parseArtifactContent(artifact.content) as Record<string, unknown>;
-    meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+    meta = parseArtifactMetadata(artifact.metadata);
   } catch {
     /* empty */
   }
@@ -336,7 +336,7 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
     (u) => typeof u === 'string' && isHttpMediaUrl(String(u).trim()),
   );
 
-  if (autoProduced && hasPreviewStill && (!premiumPipeline || isRemotionStoryPipeline(pipeline, role))) {
+  if (autoProduced && hasPreviewStill) {
     return true;
   }
 
@@ -344,7 +344,7 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
     if (isRemotionStoryPipeline(pipeline, role)) {
       return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
     }
-    if (premiumPipeline) return false;
+    if (premiumPipeline) return hasPreviewStill;
     return hasPreviewStill;
   }
 
@@ -352,7 +352,7 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
     if (isRemotionStoryPipeline(pipeline, role)) {
       return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
     }
-    if (premiumPipeline) return false;
+    if (premiumPipeline) return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
     return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
   }
 
@@ -362,20 +362,23 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   }
 
   if (fmt === 'reel') {
-    return Boolean(videoUrl && isHttpMediaUrl(videoUrl))
-      || Boolean(isVideoUrl && isHttpMediaUrl(contentUrl));
+    if (videoUrl && isHttpMediaUrl(videoUrl)) return true;
+    if (isVideoUrl && isHttpMediaUrl(contentUrl)) return true;
+    if (isBundleRendering(artifact) && hasPreviewStill) return true;
+    return false;
   }
 
   if (fmt === 'story') {
-    const pipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
+    const storyPipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
     if (videoUrl && isHttpMediaUrl(videoUrl)) return true;
     if (
       missionProduction
       || isProductionBundle(artifact)
-      || pipeline === 'remotion_story'
+      || storyPipeline === 'remotion_story'
       || isProductionBundleStory(artifact)
     ) {
-      return bundleStatus === 'ready' && Boolean(videoUrl && isHttpMediaUrl(videoUrl));
+      if (bundleStatus === 'ready') return Boolean(videoUrl && isHttpMediaUrl(videoUrl));
+      return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
     }
     if (posterUrl && isHttpMediaUrl(posterUrl)) return true;
     if (contentUrl && isHttpMediaUrl(contentUrl) && !isVideoUrl) return true;
@@ -446,10 +449,18 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
   if (pipeline === 'remotion_poster' || role === 'designed_post') {
     if (status === 'failed') return false;
     if (meta.grafiker_pass === false) return false;
-    if (status !== 'ready') return false;
+    if (status !== 'ready') {
+      const poster = resolvePosterUrl(artifact);
+      const contentUrl = String(artifact.contentUrl ?? '').trim();
+      const isVideoUrl = /\.(mp4|mov|webm)(\?|$)/i.test(contentUrl);
+      return storyPreviewStillReady(artifact, poster, contentUrl, isVideoUrl);
+    }
     const branded = resolveBrandedPostUrl(artifact);
     const poster = resolvePosterUrl(artifact);
-    return Boolean(branded && isHttpMediaUrl(branded) && (!poster || branded !== poster));
+    if (branded && isHttpMediaUrl(branded) && (!poster || branded !== poster)) return true;
+    const contentUrl = String(artifact.contentUrl ?? '').trim();
+    const isVideoUrl = /\.(mp4|mov|webm)(\?|$)/i.test(contentUrl);
+    return storyPreviewStillReady(artifact, poster, contentUrl, isVideoUrl);
   }
 
   return true;
@@ -469,10 +480,10 @@ export function filterFeedPublishableArtifacts(artifacts: OutputArtifact[]): Out
     );
 }
 
-/** Feed UI — show every distinct production run, not just the latest per headline/slot. */
+/** Feed UI — show every distinct production run with preview media (includes in-progress renders). */
 export function filterFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   return dedupeFeedDisplayArtifacts(artifacts)
-    .filter(isArtifactFeedReady)
+    .filter(isArtifactFeedPublishable)
     .sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
@@ -506,9 +517,32 @@ export function detectIdeaPackageFormat(idea: Record<string, unknown>): PackageF
 
 export function detectArtifactPackageFormat(artifact: OutputArtifact): PackageFormat {
   const content = parseArtifactContent(artifact.content);
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const meta = parseArtifactMetadata(artifact.metadata);
+  const role = String(meta.production_role ?? content.production_role ?? '').trim().toLowerCase();
+  if (role.includes('carousel')) return 'carousel';
+  if (role.includes('reel') || role === 'fal_reel_motion' || role === 'fal_only_reel' || role === 'organic_reel') {
+    return 'reel';
+  }
+  if (
+    role.includes('story')
+    || role === 'campaign_story_motion'
+    || role === 'organic_story_still'
+    || role === 'fal_story_motion'
+    || role === 'fal_only_story'
+  ) {
+    return 'story';
+  }
+  if (
+    role === 'organic_post'
+    || role === 'designed_post'
+    || role === 'designed_typography'
+    || role === 'fal_designed_post'
+    || role === 'fal_only_post'
+  ) {
+    return 'post';
+  }
   const kind = String(content.kind || meta.kind || '').toLowerCase();
-  const ct = String((artifact as { contentType?: string }).contentType || content.contentType || '').toLowerCase();
+  const ct = String((artifact as { contentType?: string }).contentType || content.contentType || meta.contentType || '').toLowerCase();
   if (kind.includes('story') || kind.includes('canvas') || ct.includes('story') || ct.includes('canvas')) {
     return 'story';
   }
@@ -571,16 +605,22 @@ function findArtifactForAssignment(
   const ideaIdx = assignment.idea_index;
   const role = assignment.slot_role;
 
-  const byIndex = missionArtifacts.filter((a) => {
-    if (usedIds.has(a.id)) return false;
-    const meta = (a.metadata ?? {}) as Record<string, unknown>;
-    const content = parseArtifactContent(a.content) as Record<string, unknown>;
+  const matchesRole = (artifact: OutputArtifact): boolean => {
+    if (usedIds.has(artifact.id)) return false;
+    const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+    const artifactRole = String(meta.production_role ?? '');
+    if (artifactRole !== role) return false;
+    if (typeof ideaIdx !== 'number') return true;
+    const content = parseArtifactContent(artifact.content) as Record<string, unknown>;
     const metaIdx = meta.idea_index ?? content.idea_index;
-    return typeof metaIdx === 'number' && metaIdx === ideaIdx;
-  });
-  if (byIndex.length) {
-    byIndex.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return byIndex[0];
+    return typeof metaIdx !== 'number' || metaIdx === ideaIdx;
+  };
+
+  // Prefer exact manifest slot (production_role ± idea_index) — one ideation row fans out
+  // to many slots; idea_index alone would return the wrong pipeline artifact.
+  for (const artifact of missionArtifacts) {
+    if (!matchesRole(artifact)) continue;
+    return artifact;
   }
 
   for (const artifact of missionArtifacts) {
@@ -591,6 +631,19 @@ function findArtifactForAssignment(
     if (role === 'campaign_story_motion' && isProductionBundleStory(artifact)) return artifact;
     if (role === 'organic_post' && artifactRole === 'organic_carousel') return artifact;
   }
+
+  const byIndex = missionArtifacts.filter((a) => {
+    if (usedIds.has(a.id)) return false;
+    const meta = (a.metadata ?? {}) as Record<string, unknown>;
+    const content = parseArtifactContent(a.content) as Record<string, unknown>;
+    const metaIdx = meta.idea_index ?? content.idea_index;
+    return typeof metaIdx === 'number' && typeof ideaIdx === 'number' && metaIdx === ideaIdx;
+  });
+  if (byIndex.length) {
+    byIndex.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return byIndex[0];
+  }
+
   return undefined;
 }
 
@@ -874,7 +927,10 @@ export function formatWeeklyPackageTarget(): string {
   return parts.join(' · ');
 }
 
-export function formatWeeklyPackageSummary(selection: WeeklyPublishSelection): string {
+export function formatWeeklyPackageSummary(
+  selection: WeeklyPublishSelection,
+  opts?: { producedOverride?: number; targetOverride?: number },
+): string {
   const parts: string[] = [];
   let motionStories = 0;
   let stillStories = 0;
@@ -915,10 +971,11 @@ export function formatWeeklyPackageSummary(selection: WeeklyPublishSelection): s
     if (selection.slots.carousels.length > 0) parts.push(`${selection.slots.carousels.length} carousel`);
   }
 
-  const produced = selection.primary.length;
+  const produced = opts?.producedOverride ?? selection.primary.length;
+  const target = opts?.targetOverride ?? MISSION_WEEKLY_PACKAGE_COUNTS.total;
   const summary = parts.join(' · ') || 'Paket seçiliyor…';
-  if (produced > 0 && produced < MISSION_WEEKLY_PACKAGE_COUNTS.total) {
-    return `${summary} (${produced}/${MISSION_WEEKLY_PACKAGE_COUNTS.total})`;
+  if (produced > 0 && produced < target) {
+    return `${summary} (${produced}/${target})`;
   }
   return summary || 'Paket seçiliyor…';
 }

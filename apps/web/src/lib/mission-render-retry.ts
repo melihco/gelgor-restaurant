@@ -2,7 +2,7 @@
  * Retry failed Remotion bundle renders for one mission (stories + designed posts).
  */
 import type { OutputArtifact } from '@/types';
-import { parseArtifactContent } from '@/app/mobile/_components/artifact-utils';
+import { parseArtifactContent } from '@/lib/artifact-utils';
 import { parseArtifactMissionId } from '@/lib/production-bundle';
 import {
   expectsRemotionStoryVideo,

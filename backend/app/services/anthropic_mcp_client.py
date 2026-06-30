@@ -22,6 +22,12 @@ logger = structlog.get_logger()
 ANTHROPIC_MCP_BETA = "mcp-client-2025-11-20"
 DEFAULT_TIMEOUT_SEC = 120.0
 
+# Circuit-breaker: after a billing/credit error from Anthropic, skip further
+# calls for the rest of this process lifetime. Prevents 120s timeout waste per
+# slot when the account is exhausted.
+_circuit_open = False
+_CIRCUIT_TRIP_PATTERNS = ("credit balance", "exhausted balance", "billing", "insufficient_quota")
+
 
 @dataclass
 class McpServerConfig:
@@ -95,6 +101,10 @@ async def invoke_anthropic_direct(
     system_prompt: str | None = None,
     max_tokens: int = 2048,
 ) -> dict[str, Any]:
+    global _circuit_open
+    if _circuit_open:
+        return {"ok": False, "error": "circuit-breaker: Anthropic billing exhausted (skipped)", "mode": "claude"}
+
     settings = get_settings()
     api_key = (settings.anthropic_api_key or "").strip()
     if not api_key:
@@ -127,6 +137,10 @@ async def invoke_anthropic_direct(
 
         if response.status_code >= 400:
             err = payload.get("error") if isinstance(payload, dict) else raw_text[:500]
+            err_str = str(err).lower()
+            if any(p in err_str for p in _CIRCUIT_TRIP_PATTERNS):
+                _circuit_open = True
+                logger.warning("agent_design_consult.circuit_opened", reason="billing/credit exhausted")
             return {"ok": False, "error": f"Claude {response.status_code}: {err}", "mode": "claude"}
 
         text = extract_text_from_response(payload if isinstance(payload, dict) else {})

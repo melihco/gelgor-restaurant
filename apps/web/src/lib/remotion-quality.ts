@@ -59,10 +59,10 @@ export function refineCategoryLabel(
 ): string {
   const cat = categoryLabel.trim().toUpperCase();
   const head = headline.trim().toUpperCase();
-  if (!cat) return location ? location.split(/[,·]/)[0]!.trim().slice(0, 12).toUpperCase() : 'MOMENT';
+  if (!cat) return location ? location.split(/[,·]/)[0]!.trim().slice(0, 12).toUpperCase() : '';
   if (head.includes(cat) || cat.length >= Math.min(head.length, 14)) {
     if (location) return location.split(/[,·]/)[0]!.trim().slice(0, 12).toUpperCase();
-    return 'MOMENT';
+    return '';
   }
   return cat.slice(0, 24);
 }
@@ -201,72 +201,13 @@ export function grafikerMeetsBar(review: GrafikerReviewResult): boolean {
     && !review.text_overlap;
 }
 
-const GRAFIKER_POSTER_SYSTEM_PROMPT = `You are a senior art director reviewing an Instagram feed post or story still for a premium brand.
-
-Check specifically:
-1. FULL WORDS VISIBLE — no letters cut off at left/right/top/bottom frame edges (e.g. "DİJİTAL" must not appear as "İGİTAL").
-2. NO FADED GLYPHS — left-side letters must not look pale/washed vs the rest (gradient artifact on light panels = fail).
-3. TEXT FIT — headline fits inside safe area; multi-line wrap is OK if balanced.
-4. LEGIBILITY — contrast over photo AND over color panels; no overlap between headline, subtitle, logo, CTA.
-5. HIERARCHY — headline dominates subtitle; CTA is distinct; looks agency-grade not stock template.
-6. COMPOSITION — reject amateur 50/50 photo + flat beige/tan block with centered generic type unless real discount promo.
-7. BRAND INTEGRATION — palette should feel on-brand (primary/accent), not default template beige.
-
-pass = true ONLY if score ≥ 8 AND all words fully visible AND legibility clear AND hierarchy_ok AND no template-y flat split.
-
-Respond ONLY with JSON:
-{"score":1-10,"pass":true/false,"text_overlap":true/false,"text_legibility":"clear|partial|poor","overlay_sufficient":true/false,"hierarchy_ok":true/false,"issues":[],"verdict":"..."}`;
-
 /** Vision QA on a rendered PNG/JPEG still (feed posts, agency posters). */
 export async function runGrafikerReviewOnImageBuffer(
   imageBuffer: Buffer,
   label: string,
+  telemetry?: { attempt?: number; missionId?: string | null; slotKey?: string | null },
+  tier?: string,
 ): Promise<GrafikerReviewResult | null> {
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey || imageBuffer.length < 100) return null;
-
-  try {
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey: openaiKey });
-    const thumbB64 = imageBuffer.toString('base64');
-    const mime = imageBuffer[0] === 0x89 ? 'image/png' : 'image/jpeg';
-
-    const reviewResp = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      max_tokens: 400,
-      temperature: 0.05,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: GRAFIKER_POSTER_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `Review this ${label} frame. Reject if ANY letter is clipped at the frame edge or words are truncated.`,
-            },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mime};base64,${thumbB64}`, detail: 'high' },
-            },
-          ],
-        },
-      ],
-    });
-
-    const reviewRaw = reviewResp.choices[0]?.message?.content?.trim() ?? '{}';
-    const review = JSON.parse(reviewRaw.match(/\{[\s\S]*\}/)?.[0] ?? reviewRaw) as GrafikerReviewResult;
-    return {
-      score: review.score ?? null,
-      pass: review.pass === true,
-      text_overlap: review.text_overlap,
-      text_legibility: review.text_legibility,
-      overlay_sufficient: review.overlay_sufficient,
-      hierarchy_ok: review.hierarchy_ok,
-      issues: review.issues,
-      verdict: review.verdict,
-    };
-  } catch {
-    return null;
-  }
+  const { runGrafikerVisionReview } = await import('./grafiker-review-service');
+  return runGrafikerVisionReview(imageBuffer, label, 'poster', telemetry, tier);
 }

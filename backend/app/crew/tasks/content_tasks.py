@@ -511,7 +511,7 @@ def _build_recent_titles_block(brand: BrandInfo) -> str:
 def create_content_ideation_task(
     agent: Agent,
     brand: BrandInfo,
-    count: int = 7,
+    count: int = 10,
     time_period: str = "next week",
     brief: str = "",
     content_pillars: list[str] | None = None,
@@ -578,7 +578,9 @@ def create_content_ideation_task(
     return Task(
         description=description,
         expected_output=(
-            "A JSON array of content concepts. Each item MUST include ALL of these fields:\n"
+            f"A JSON array containing EXACTLY {count} distinct content concept objects "
+            f"(array length MUST equal {count} — never fewer). "
+            "Each item MUST include ALL of these fields:\n"
             "content_type, format, template_use_case, content_kind, headline, subline, bullets,\n"
             "concept_title, idea_title, cta, shot_type, visual_direction, caption_draft,\n"
             "caption_draft_alt, caption_hook_type, caption_alt_hook_type, engagement_prediction,\n"

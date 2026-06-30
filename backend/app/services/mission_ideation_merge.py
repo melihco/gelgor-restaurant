@@ -1,7 +1,9 @@
 """
 Merge multiple content_ideation node outputs into one weekly Feed package batch.
 
-Target per mission: 2 story + 2 post + 1 reel (5 total).
+Target per mission (plan-aware):
+  Starter: 4 post · 3 story · 1 carousel · 4 reel (12)
+  Agency:  6 post · 3 story · 1 carousel · 6 reel (16)
 """
 
 from __future__ import annotations
@@ -10,16 +12,14 @@ import json
 from typing import Any
 
 from app.services.output_summary_parser import extract_object_array_from_output_summary
+from app.services.package_weekly_geometry import (
+    AGENCY_WEEKLY_GEOMETRY,
+    resolve_weekly_package_geometry,
+)
 
-# Aligns with apps/web MISSION_WEEKLY_PACKAGE_COUNTS
-MISSION_FEED_PACKAGE_TOTAL = 5
+# Aligns with apps/web MISSION_WEEKLY_PACKAGE_COUNTS (Agency default)
+MISSION_FEED_PACKAGE_TOTAL = AGENCY_WEEKLY_GEOMETRY["total"]
 MISSION_OPPORTUNITY_PACKAGE_TOTAL = 3
-FORMAT_TARGETS: dict[str, int] = {
-    "story": 2,
-    "post": 2,
-    "carousel": 0,
-    "reel": 1,
-}
 OPPORTUNITY_FORMAT_TARGETS: dict[str, int] = {
     "story": 1,
     "post": 1,
@@ -30,21 +30,29 @@ OPPORTUNITY_FORMAT_TARGETS: dict[str, int] = {
 def resolve_feed_package_total(
     mission_type: str | None = None,
     hub_production_package: str | None = None,
+    subscription_plan_slug: str | None = None,
 ) -> int:
     hub = str(hub_production_package or "").strip().lower()
     if hub == "opportunity":
         return MISSION_OPPORTUNITY_PACKAGE_TOTAL
-    if hub in {"weekly_content", "campaign", "event", "ads_focus"}:
-        return MISSION_FEED_PACKAGE_TOTAL
     if str(mission_type or "").strip().lower() == "opportunity":
         return MISSION_OPPORTUNITY_PACKAGE_TOTAL
-    return MISSION_FEED_PACKAGE_TOTAL
+    return resolve_weekly_package_geometry(subscription_plan_slug)["total"]
 
 
-def resolve_format_targets(mission_type: str | None = None) -> dict[str, int]:
+def resolve_format_targets(
+    mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
+) -> dict[str, int]:
     if str(mission_type or "").strip().lower() == "opportunity":
         return OPPORTUNITY_FORMAT_TARGETS
-    return FORMAT_TARGETS
+    geo = resolve_weekly_package_geometry(subscription_plan_slug)
+    return {
+        "story": geo["story"],
+        "post": geo["post"],
+        "carousel": geo["carousel"],
+        "reel": geo["reel"],
+    }
 
 _IDEATION_NODE_ORDER = (
     "weekly_content_ideation",
@@ -94,14 +102,53 @@ def _payload_object_array(node: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _select_diverse_ideas(
+    pool: list[dict[str, Any]],
+    target: int,
+) -> list[dict[str, Any]]:
+    """
+    Pick `target` ideas from `pool`, preferring distinct headlines over
+    near-duplicates (e.g. "Kahvaltı keyfi" vs "Kahvaltı keyfi başlıyor").
+
+    Diversity-aware but count-preserving: near-duplicates are deferred, not
+    dropped — if there are not enough distinct headlines to fill `target`, the
+    deferred ideas are added back in their original order. This never yields
+    fewer ideas than `pool[:target]` would, so the weekly package count is
+    unaffected while repetitive headlines are pushed out when alternatives exist.
+    """
+    if target <= 0 or not pool:
+        return pool[:target]
+    selected: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
+    for idea in pool:
+        if len(selected) >= target:
+            break
+        headline = _idea_headline(idea)
+        if headline and any(
+            _headlines_match(headline, _idea_headline(s)) for s in selected
+        ):
+            deferred.append(idea)
+            continue
+        selected.append(idea)
+    for idea in deferred:
+        if len(selected) >= target:
+            break
+        selected.append(idea)
+    return selected
+
+
 def merge_ideation_ideas(
     idea_lists: list[list[dict[str, Any]]],
     *,
     mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """Pick ideas across batches to hit format targets; dedupe by title."""
-    format_targets = resolve_format_targets(mission_type)
-    package_total = resolve_feed_package_total(mission_type)
+    format_targets = resolve_format_targets(mission_type, subscription_plan_slug)
+    package_total = resolve_feed_package_total(
+        mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
     buckets: dict[str, list[dict[str, Any]]] = {
         "story": [],
         "post": [],
@@ -122,7 +169,7 @@ def merge_ideation_ideas(
     merged: list[dict[str, Any]] = []
     for fmt, target in format_targets.items():
         pool = buckets.get(fmt, [])
-        merged.extend(pool[:target])
+        merged.extend(_select_diverse_ideas(pool, target))
 
     if len(merged) < package_total:
         overflow: list[dict[str, Any]] = []
@@ -181,6 +228,23 @@ def _normalize_calendar_day(raw: Any) -> str | None:
     return token
 
 
+def headlines_match(a: str, b: str) -> bool:
+    return _headlines_match(a, b)
+
+
+def dedupe_ideation_by_headline(ideas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the first idea for each distinct headline (near-duplicate aware)."""
+    selected: list[dict[str, Any]] = []
+    for idea in ideas:
+        if not isinstance(idea, dict):
+            continue
+        headline = _idea_headline(idea)
+        if headline and any(headlines_match(headline, _idea_headline(s)) for s in selected):
+            continue
+        selected.append(idea)
+    return selected
+
+
 def _headlines_match(a: str, b: str) -> bool:
     def norm(s: str) -> str:
         import re
@@ -219,6 +283,27 @@ def _resolve_planning_caption(idea: dict[str, Any] | None, plan: dict[str, Any])
     if parts:
         return " — ".join(parts)
     return _calendar_item_headline(plan) or _idea_headline(idea or {})
+
+
+def _pick_ideation_for_calendar_strict(
+    plan: dict[str, Any],
+    ideas: list[dict[str, Any]],
+    used: set[int],
+) -> tuple[dict[str, Any] | None, int | None]:
+    idea_idx = plan.get("idea_index")
+    if idea_idx is None:
+        idea_idx = plan.get("source_idea_index")
+    if isinstance(idea_idx, int) and 0 <= idea_idx < len(ideas) and idea_idx not in used:
+        return ideas[idea_idx], idea_idx
+
+    cal_title = _calendar_item_headline(plan)
+    if cal_title:
+        for i, idea in enumerate(ideas):
+            if i in used:
+                continue
+            if _headlines_match(cal_title, _idea_headline(idea)):
+                return idea, i
+    return None, None
 
 
 def _pick_ideation_for_calendar(
@@ -387,10 +472,14 @@ def ensure_weekly_format_coverage(
     pool: list[dict[str, Any]],
     *,
     mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
 ) -> list[dict[str, Any]]:
     """P1-5 — weekly or opportunity format coverage (parity with TS ensureWeeklyFormatCoverage)."""
-    format_targets = resolve_format_targets(mission_type)
-    package_total = resolve_feed_package_total(mission_type)
+    format_targets = resolve_format_targets(mission_type, subscription_plan_slug)
+    package_total = resolve_feed_package_total(
+        mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
     buckets: dict[str, list[dict[str, Any]]] = {
         "story": [],
         "post": [],
@@ -435,14 +524,219 @@ def ensure_weekly_format_coverage(
     return trimmed
 
 
+def _calendar_schedule_overlay_fields(
+    plan: dict[str, Any],
+    plan_index: int,
+    idea_index: int,
+) -> dict[str, Any]:
+    fmt = _calendar_format(plan)
+    day = _normalize_calendar_day(
+        plan.get("date") or plan.get("day") or plan.get("publish_day") or plan.get("scheduled_day")
+    )
+    time = str(plan.get("time") or plan.get("scheduled_time") or plan.get("publish_time") or "").strip()
+    posting = " ".join(
+        p for p in (str(plan.get("date") or "").strip(), time) if p
+    ).strip()
+    fields: dict[str, Any] = {
+        "calendar_plan_index": plan_index,
+        "calendar_linked_idea_index": idea_index,
+        "publish_schedule_day": day,
+        "publish_schedule_format": fmt,
+        "calendar_priority": plan.get("priority") or plan.get("must_post"),
+        "calendar_announcement_type": plan.get("announcement_type") or plan.get("type"),
+    }
+    if time:
+        fields["publish_schedule_time"] = time
+    if posting:
+        fields["posting_time_suggestion"] = posting
+    return fields
+
+
+def _merge_event_details_from_calendar(
+    idea: dict[str, Any],
+    plan: dict[str, Any],
+) -> dict[str, Any] | None:
+    subline = str(plan.get("tagline") or plan.get("subline") or "").strip()
+    time = str(plan.get("time") or plan.get("scheduled_time") or plan.get("publish_time") or "").strip()
+    base = dict(idea.get("event_details") or {}) if isinstance(idea.get("event_details"), dict) else {}
+    merged = {
+        **base,
+        "date": str(plan.get("date") or base.get("date") or "").strip() or None,
+        "time": time or base.get("time"),
+        "tagline": subline or base.get("tagline"),
+        "venue_area": str(plan.get("venue_area") or base.get("venue_area") or "").strip() or None,
+    }
+    cleaned = {k: v for k, v in merged.items() if v}
+    return cleaned or None
+
+
+def _enrich_ideation_with_calendar_plan(
+    idea: dict[str, Any],
+    plan: dict[str, Any],
+    plan_index: int,
+    idea_index: int,
+) -> dict[str, Any]:
+    overlay = _calendar_schedule_overlay_fields(plan, plan_index, idea_index)
+    event_details = _merge_event_details_from_calendar(idea, plan)
+    cal_title = _calendar_item_headline(plan)
+    tagline = str(plan.get("tagline") or plan.get("subline") or "").strip()
+    brief = str(
+        plan.get("content_brief") or plan.get("description") or plan.get("brief") or plan.get("caption") or ""
+    ).strip()
+    mood = str(
+        plan.get("photo_mood") or plan.get("mood") or plan.get("visual_direction") or plan.get("visual_style") or ""
+    ).strip()
+    fmt = _calendar_format(plan)
+    announcement = str(plan.get("announcement_type") or plan.get("type") or plan.get("template_use_case") or "").strip()
+    ideation_caption = str(idea.get("caption_draft") or idea.get("caption") or "").strip()
+    caption = brief or ideation_caption or " — ".join(p for p in (tagline, cal_title) if p)
+    headline = cal_title or _idea_headline(idea)
+    vps = dict(idea.get("visual_production_spec") or {}) if isinstance(idea.get("visual_production_spec"), dict) else {}
+
+    row: dict[str, Any] = {
+        **idea,
+        **overlay,
+        "calendar_enriched": True,
+        "concept_title": headline,
+        "headline": headline,
+        "title": headline,
+        "caption_draft": caption,
+        "caption": caption,
+        "content_type": _content_type_for_format(fmt),
+        "content_kind": _content_type_for_format(fmt),
+        "format": fmt,
+        "calendar_gallery_designed": True,
+        "visual_production_spec": {
+            **vps,
+            "treatment": vps.get("treatment") or "gallery_designed",
+            "announcement_type": announcement or vps.get("announcement_type"),
+            "photo_mood": mood or vps.get("photo_mood"),
+            "content_brief": brief or vps.get("content_brief"),
+        },
+    }
+    if brief:
+        row["content_brief"] = brief
+    if tagline:
+        row["tagline"] = tagline
+        row["subline"] = tagline
+    if mood:
+        row["photo_mood"] = mood
+        row["mood"] = mood
+        row["visual_direction"] = mood
+    if event_details:
+        row["event_details"] = event_details
+    if announcement:
+        row.setdefault("template_use_case", announcement)
+        row["calendar_announcement_type"] = announcement
+    return row
+
+
+def apply_calendar_production_enrichment(
+    ideation_records: list[dict[str, Any]],
+    calendar_plans: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    result: list[dict[str, Any]] = []
+    for index, idea in enumerate(ideation_records):
+        row = dict(idea)
+        row["idea_index"] = index
+        row["source_node"] = row.get("source_node") or "content_ideation"
+        row.setdefault("content_type", row.get("content_kind") or "instagram_post")
+        result.append(row)
+
+    orphan_ideas: list[dict[str, Any]] = []
+    if not calendar_plans:
+        return result, orphan_ideas
+
+    used: set[int] = set()
+    for plan_index, plan in enumerate(calendar_plans):
+        _, idea_index = _pick_ideation_for_calendar_strict(plan, result, used)
+        if idea_index is None or idea_index < 0 or idea_index >= len(result):
+            orphan = build_calendar_production_ideas([plan])
+            if orphan:
+                orphan_ideas.extend(orphan)
+            continue
+        used.add(idea_index)
+        result[idea_index] = _enrich_ideation_with_calendar_plan(
+            result[idea_index], plan, plan_index, idea_index,
+        )
+    return result, orphan_ideas
+
+
+def merge_calendar_plans_for_production(
+    ideation_records: list[dict[str, Any]],
+    calendar_plans: list[dict[str, Any]],
+    *,
+    mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
+) -> list[dict[str, Any]]:
+    enriched, orphan_ideas = apply_calendar_production_enrichment(ideation_records, calendar_plans)
+    pool = orphan_ideas + enriched + list(ideation_records)
+    if not enriched and not orphan_ideas:
+        return ensure_weekly_format_coverage(
+            ideation_records,
+            ideation_records,
+            mission_type=mission_type,
+            subscription_plan_slug=subscription_plan_slug,
+        )
+    return ensure_weekly_format_coverage(
+        enriched or orphan_ideas,
+        pool,
+        mission_type=mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
+
+
+def apply_calendar_schedule_overlay(
+    ideation_records: list[dict[str, Any]],
+    calendar_plans: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Compat — enriched ideation rows only (orphans handled in merge_calendar_plans_for_production)."""
+    ideas, _orphans = apply_calendar_production_enrichment(ideation_records, calendar_plans)
+    return ideas
+
+
+def _apply_calendar_schedule_overlay_legacy(
+    ideation_records: list[dict[str, Any]],
+    calendar_plans: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Legacy loose matching — kept for reference tests if needed."""
+    result: list[dict[str, Any]] = []
+    for index, idea in enumerate(ideation_records):
+        row = dict(idea)
+        row["idea_index"] = index
+        row["source_node"] = row.get("source_node") or "content_ideation"
+        row.setdefault("content_type", row.get("content_kind") or "instagram_post")
+        result.append(row)
+
+    if not calendar_plans:
+        return result
+
+    used: set[int] = set()
+    for plan_index, plan in enumerate(calendar_plans):
+        _, idea_index = _pick_ideation_for_calendar(plan, plan_index, result, used)
+        if idea_index is None or idea_index < 0 or idea_index >= len(result):
+            continue
+        used.add(idea_index)
+        overlay = _calendar_schedule_overlay_fields(plan, plan_index, idea_index)
+        event_details = _merge_event_details_from_calendar(result[idea_index], plan)
+        row = {**result[idea_index], **overlay}
+        if event_details:
+            row["event_details"] = event_details
+        template = plan.get("template_use_case") or plan.get("announcement_type")
+        if template and not row.get("template_use_case"):
+            row["template_use_case"] = template
+        result[idea_index] = row
+    return result
+
+
 def merge_mission_production_ideas_from_nodes(
     nodes: list[dict[str, Any]],
     *,
     mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """
-    Calendar + ideation merge with weekly format coverage (TS buildMissionProductionIdeas parity).
-    Calendar rows drive format/schedule; ideation supplies caption, hashtags, and headlines.
+    Ideation + full calendar enrichment (all plans) → weekly format pool (TS parity).
     """
     ideation_nodes = [n for n in nodes if n.get("task_type") == "content_ideation"]
     calendar_nodes = [
@@ -451,67 +745,126 @@ def merge_mission_production_ideas_from_nodes(
         and n.get("status") == "completed"
     ]
 
-    _, ideation_records = merged_ideation_json_from_nodes(ideation_nodes, mission_type=mission_type)
+    _, ideation_records = merged_ideation_json_from_nodes(
+        ideation_nodes,
+        mission_type=mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
     calendar_plans: list[dict[str, Any]] = []
     for node in calendar_nodes:
         calendar_plans.extend(_parse_calendar_plans_from_node(node))
 
-    if not calendar_plans:
-        covered = ensure_weekly_format_coverage(
-            ideation_records,
-            ideation_records,
-            mission_type=mission_type,
-        )
-        if not covered:
-            return "", []
-        return json.dumps(covered, ensure_ascii=False), covered
-
-    used: set[int] = set()
-    merged: list[dict[str, Any]] = []
-    for plan_index, plan in enumerate(calendar_plans):
-        idea, idea_index = _pick_ideation_for_calendar(
-            plan, plan_index, ideation_records, used,
-        )
-        if idea_index is not None:
-            used.add(idea_index)
-        merged.append(_merge_plan_with_ideation(plan, plan_index, idea, idea_index))
-
-    for idx, idea in enumerate(ideation_records):
-        if idx in used:
-            continue
-        extra = dict(idea)
-        extra["idea_index"] = idx
-        extra["source_node"] = extra.get("source_node") or "content_ideation"
-        merged.append(extra)
-
-    pool = list(ideation_records)
-    for plan_index, plan in enumerate(calendar_plans):
-        pool.append(_merge_plan_with_ideation(plan, plan_index, None, None))
-
-    covered = ensure_weekly_format_coverage(merged, pool, mission_type=mission_type)
+    covered = merge_calendar_plans_for_production(
+        ideation_records,
+        calendar_plans,
+        mission_type=mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
     if not covered:
         return "", []
     return json.dumps(covered, ensure_ascii=False), covered
 
 
 def convert_calendar_plan_to_idea(plan: dict[str, Any], slot_index: int) -> dict[str, Any]:
-    """Convert a content_calendar plan to an idea-compatible dict (pool backfill)."""
-    return _merge_plan_with_ideation(plan, slot_index, None, None)
+    """Schedule-only calendar stub (legacy pool helper — not a production idea)."""
+    return _calendar_schedule_overlay_fields(plan, slot_index, slot_index)
+
+
+CALENDAR_PRODUCTION_IDEA_INDEX_BASE = 1000
+
+
+def build_calendar_production_ideas(
+    calendar_plans: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Map content_calendar rows → additive fal production ideas (TS parity)."""
+    ideas: list[dict[str, Any]] = []
+    for plan_index, plan in enumerate(calendar_plans[:8]):
+        headline = _calendar_item_headline(plan)
+        if not headline:
+            continue
+        tagline = str(plan.get("tagline") or plan.get("subline") or "").strip()
+        content_brief = str(
+            plan.get("content_brief") or plan.get("description") or plan.get("brief") or plan.get("caption") or ""
+        ).strip()
+        caption = content_brief or " — ".join(p for p in (tagline, headline) if p)
+        photo_mood = str(
+            plan.get("photo_mood") or plan.get("visual_direction") or plan.get("visual_style") or plan.get("visual_mood") or ""
+        ).strip()
+        announcement = str(
+            plan.get("announcement_type") or plan.get("type") or plan.get("template_use_case") or ""
+        ).strip().lower()
+        fmt = _calendar_format(plan)
+        day = _normalize_calendar_day(
+            plan.get("date") or plan.get("day") or plan.get("publish_day") or plan.get("scheduled_day")
+        )
+        time = str(plan.get("time") or plan.get("scheduled_time") or plan.get("publish_time") or "").strip()
+        posting = " ".join(p for p in (str(plan.get("date") or "").strip(), time) if p)
+        event_details: dict[str, Any] = {}
+        if plan.get("date"):
+            event_details["date"] = str(plan.get("date") or "").strip()
+        if time:
+            event_details["time"] = time
+        if tagline:
+            event_details["tagline"] = tagline
+        if plan.get("venue_area"):
+            event_details["venue_area"] = str(plan.get("venue_area") or "").strip()
+
+        ideas.append({
+            "idea_index": CALENDAR_PRODUCTION_IDEA_INDEX_BASE + plan_index,
+            "calendar_plan_index": plan_index,
+            "source_node": "content_calendar",
+            "source_track": "calendar",
+            "concept_title": headline,
+            "headline": headline,
+            "title": headline,
+            "tagline": tagline or None,
+            "subline": tagline or None,
+            "caption_draft": caption,
+            "caption": caption,
+            "content_brief": content_brief or None,
+            "content_type": _content_type_for_format(fmt),
+            "content_kind": _content_type_for_format(fmt),
+            "format": fmt,
+            "mood": photo_mood or None,
+            "photo_mood": photo_mood or None,
+            "visual_direction": photo_mood or None,
+            "calendar_announcement_type": announcement or None,
+            "template_use_case": announcement or plan.get("template_use_case"),
+            "calendar_priority": plan.get("priority") or plan.get("must_post"),
+            "publish_schedule_day": day,
+            "publish_schedule_time": time or None,
+            "publish_schedule_format": fmt,
+            "posting_time_suggestion": posting or None,
+            **({"event_details": event_details} if event_details else {}),
+            "visual_production_spec": {
+                "treatment": "fal_designed",
+                "announcement_type": announcement,
+                "photo_mood": photo_mood,
+                "content_brief": content_brief,
+            },
+        })
+    return ideas
 
 
 def build_combined_idea_pool(
     nodes: list[dict[str, Any]],
     *,
     mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Alias for calendar-enriched merge — used by task_graph_executor."""
-    return merge_mission_production_ideas_from_nodes(nodes, mission_type=mission_type)
+    return merge_mission_production_ideas_from_nodes(
+        nodes,
+        mission_type=mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
 
 
 def merged_ideation_json_from_nodes(
     nodes: list[dict[str, Any]],
     *,
     mission_type: str | None = None,
+    subscription_plan_slug: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """
     nodes: {node_key, output_summary, status} dicts from mission progress.
@@ -539,7 +892,11 @@ def merged_ideation_json_from_nodes(
         (_payload_object_array(n) or parse_ideation_ideas_from_summary(str(n.get("output_summary") or "")))
         for n in completed
     ]
-    merged = merge_ideation_ideas(lists, mission_type=mission_type)
+    merged = merge_ideation_ideas(
+        lists,
+        mission_type=mission_type,
+        subscription_plan_slug=subscription_plan_slug,
+    )
     if not merged:
         return "", []
     return json.dumps(merged, ensure_ascii=False), merged

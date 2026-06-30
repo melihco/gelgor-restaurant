@@ -235,6 +235,44 @@ export function hasTelemetryAlert(telemetry: MissionProductionTelemetry): boolea
   return describeTelemetryAlerts(telemetry).length > 0;
 }
 
+/**
+ * Production block — surfaced from mission.performance_summary.production_status,
+ * written by the backend when feed production is deferred awaiting dependency nodes.
+ * Lets Mission Hub explain *why* the feed has not been produced yet.
+ */
+export interface MissionProductionBlock {
+  reason: string;
+  awaitingNodes: string[];
+  label: string;
+  at: string | null;
+}
+
+const PRODUCTION_BLOCK_HEADINGS: Record<string, string> = {
+  awaiting_other_ideation: 'İçerik fikirleri tamamlanıyor',
+  awaiting_visual_design_cards: 'Görsel tasarım kartları bekleniyor',
+  awaiting_content_calendar: 'Yayın takvimi hazırlanıyor',
+};
+
+export function parseMissionProductionBlock(
+  summary: Record<string, unknown> | null | undefined,
+): MissionProductionBlock | null {
+  const raw = summary?.production_status;
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  if (String(s.state ?? '').trim() !== 'awaiting_dependencies') return null;
+  const reason = String(s.reason ?? '').trim();
+  if (!reason) return null;
+  const awaitingNodes = Array.isArray(s.awaiting_nodes)
+    ? s.awaiting_nodes.map((n) => String(n ?? '').trim()).filter(Boolean)
+    : [];
+  return {
+    reason,
+    awaitingNodes,
+    label: PRODUCTION_BLOCK_HEADINGS[reason] ?? 'Feed üretimi bağımlılık bekliyor',
+    at: String(s.at ?? '').trim() || null,
+  };
+}
+
 export function countArtifactsWithScheduleLabel(
   artifacts: Array<{ metadata?: unknown }>,
 ): number {

@@ -55,6 +55,29 @@ import { getApiFetchUrl, getRequestContextHeaders, getTenantBffHeaders } from '@
 import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { setSessionToken } from '@/lib/session-token';
 
+/** Durable Production Factory — per-slot job status for the Mission Hub. */
+export interface MissionProductionJobSlot {
+  ideaIndex: number;
+  slotRole: string;
+  format: string;
+  pipeline: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  artifactId: string | null;
+  lastError: string | null;
+}
+
+export interface MissionProductionJobsSummary {
+  mission_id: string;
+  total: number;
+  ready: number;
+  failed: number;
+  active: number;
+  complete: boolean;
+  slots: MissionProductionJobSlot[];
+}
+
 export class ApiRequestError extends Error {
   status: number;
   statusText: string;
@@ -647,6 +670,26 @@ class ApiClient {
     return data as import('@/types/mertcafe-ads.types').MertcafeProvisionResult;
   }
 
+  async linkMertcafeApiKey(
+    workspaceId: string,
+    apiKey: string,
+  ): Promise<{
+    ok: boolean;
+    message?: string;
+    instagram_connected?: boolean;
+    oauth_account_id?: string | null;
+    theme?: Record<string, unknown> | null;
+  }> {
+    const res = await fetch('/api/mertcafe/link-api-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, apiKey }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `API anahtarı bağlanamadı (${res.status})`);
+    return data;
+  }
+
   async setMertcafeActiveAccount(
     params: import('@/types/mertcafe-ads.types').MertcafeSetActiveAccountParams,
   ): Promise<{ ok: boolean; instagram_account_id: string; theme?: Record<string, unknown> | null }> {
@@ -685,6 +728,38 @@ class ApiClient {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || `Mertcafe setup failed (${res.status})`);
     return data;
+  }
+
+  async getBrandChatbotProfile(workspaceId: string): Promise<import('@/types/brand-chatbot').BrandChatbotProfileRead> {
+    const res = await fetch(`/api/brand-context/${encodeURIComponent(workspaceId)}/chatbot-profile`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Chatbot profile fetch failed (${res.status})`);
+    return data as import('@/types/brand-chatbot').BrandChatbotProfileRead;
+  }
+
+  async patchBrandChatbotProfile(
+    workspaceId: string,
+    patch: import('@/types/brand-chatbot').BrandChatbotProfilePatch,
+  ): Promise<{ ok: boolean; profile: import('@/types/brand-chatbot').BrandChatbotProfile | null; updatedAt: string | null }> {
+    const res = await fetch(`/api/brand-context/${encodeURIComponent(workspaceId)}/chatbot-profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Chatbot profile save failed (${res.status})`);
+    return data as { ok: boolean; profile: import('@/types/brand-chatbot').BrandChatbotProfile | null; updatedAt: string | null };
+  }
+
+  async analyzeBrandChatbotProfile(
+    workspaceId: string,
+  ): Promise<{ ok: boolean; profile: import('@/types/brand-chatbot').BrandChatbotProfile | null; updatedAt: string | null }> {
+    const res = await fetch(`/api/brand-context/${encodeURIComponent(workspaceId)}/chatbot-profile/analyze`, {
+      method: 'POST',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Chatbot analysis failed (${res.status})`);
+    return data as { ok: boolean; profile: import('@/types/brand-chatbot').BrandChatbotProfile | null; updatedAt: string | null };
   }
 
   async connectMertcafeMetaAds(params: import('@/types/mertcafe-ads.types').MertcafeConnectMetaAdsParams): Promise<unknown> {
@@ -959,11 +1034,23 @@ class ApiClient {
         brand_name: data.brandName || '',
       }),
     });
-    const json = await res.json();
-    if (!res.ok) {
-      throw new Error(json?.message || json?.error || `Brand analysis failed (${res.status})`);
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    if (text.trim()) {
+      try {
+        json = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        throw new Error('Marka analizi geçersiz yanıt döndü (boş veya hatalı JSON).');
+      }
+    } else if (!res.ok) {
+      throw new Error(`Brand analysis failed (${res.status})`);
+    } else {
+      throw new Error('Marka analizi boş yanıt döndü — Python servisini kontrol edin.');
     }
-    return json as PythonBrandAnalyzeResponse;
+    if (!res.ok) {
+      throw new Error(String(json?.message || json?.error || `Brand analysis failed (${res.status})`));
+    }
+    return json as unknown as PythonBrandAnalyzeResponse;
   }
 
   /**
@@ -1286,14 +1373,14 @@ class ApiClient {
   }
 
   async getCurrentUserSecurity(): Promise<CurrentUserSecurity> {
-    return this.request('/api/security/me', { timeoutMs: 20_000 });
+    return this.request('/api/security/me', { timeoutMs: 45_000 });
   }
 
   async login(data: { email: string; password: string }): Promise<AuthSession> {
     return this.request('/api/security/login', {
       method: 'POST',
       body: JSON.stringify(data),
-      timeoutMs: 20_000,
+      timeoutMs: 45_000,
     });
   }
 
@@ -1539,14 +1626,52 @@ class ApiClient {
     return res.json();
   }
 
-  async getMissionProgress(workspaceId: string, missionId: string): Promise<MissionProgress> {
+  async getMissionProgress(
+    workspaceId: string,
+    missionId: string,
+    options: { includePayload?: boolean } = {},
+  ): Promise<MissionProgress> {
+    const params = new URLSearchParams();
+    if (options.includePayload) params.set('include_payload', 'true');
+    const query = params.toString();
     const res = await fetchWithTransientRetry(
-      `/api/missions/${workspaceId}/${missionId}/progress`,
+      `/api/missions/${workspaceId}/${missionId}/progress${query ? `?${query}` : ''}`,
       {
         headers: getTenantBffHeaders(workspaceId),
       },
     );
     if (!res.ok) throw new Error(humanizeMobileServiceError(`Mission progress failed (${res.status})`, res.status));
+    return res.json();
+  }
+
+  async getMissionProductionJobs(
+    workspaceId: string,
+    missionId: string,
+  ): Promise<MissionProductionJobsSummary> {
+    const res = await fetch(
+      `/api/missions/${workspaceId}/${missionId}/production-jobs`,
+      { headers: getTenantBffHeaders(workspaceId) },
+    );
+    if (!res.ok) {
+      throw new Error(`Production jobs failed (${res.status})`);
+    }
+    return res.json();
+  }
+
+  async requeueMissionFactoryJobs(
+    workspaceId: string,
+    missionId: string,
+  ): Promise<MissionProductionJobsSummary & { requeued: number }> {
+    const res = await fetch(
+      `/api/missions/${workspaceId}/${missionId}/requeue-factory-jobs`,
+      {
+        method: 'POST',
+        headers: getTenantBffHeaders(workspaceId),
+      },
+    );
+    if (!res.ok) {
+      throw new Error(`Factory requeue failed (${res.status})`);
+    }
     return res.json();
   }
 
@@ -1612,20 +1737,33 @@ class ApiClient {
     missionId: string,
     opts?: { productionPackage?: string },
   ): Promise<{ accepted?: boolean; message?: string }> {
-    const res = await fetchWithTransientRetry(
-      `/api/missions/${workspaceId}/${missionId}/kick-feed-production`,
-      {
-        method: 'PUT',
-        headers: {
-          ...getTenantBffHeaders(workspaceId),
-          'Content-Type': 'application/json',
+    let res: Response;
+    try {
+      res = await fetchWithTransientRetry(
+        `/api/missions/${workspaceId}/${missionId}/kick-feed-production`,
+        {
+          method: 'PUT',
+          headers: {
+            ...getTenantBffHeaders(workspaceId),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            productionPackage: opts?.productionPackage,
+          }),
+          signal: AbortSignal.timeout(90_000),
         },
-        body: JSON.stringify({
-          productionPackage: opts?.productionPackage,
-        }),
-        signal: AbortSignal.timeout(90_000),
-      },
-    );
+      );
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : (err as { name?: string } | null)?.name;
+      const message = err instanceof Error ? err.message : String(err ?? '');
+      if (name === 'AbortError' || name === 'TimeoutError' || message.toLowerCase().includes('signal timed out')) {
+        return {
+          accepted: true,
+          message: "Feed üretimi arka planda devam ediyor. Gönderiler hazır oldukça Feed'e düşer.",
+        };
+      }
+      throw err;
+    }
     const body = await res.json().catch(() => ({})) as {
       error?: string;
       detail?: string;
@@ -1646,8 +1784,8 @@ class ApiClient {
   async reproduceMissionFeed(
     workspaceId: string,
     missionId: string,
-    opts?: { productionPackage?: string; force?: boolean },
-  ): Promise<{ message?: string; produced?: number; publishReady?: number; rendering?: number; total?: number }> {
+    opts?: { productionPackage?: string; force?: boolean; cleanSlate?: boolean },
+  ): Promise<{ message?: string; produced?: number; publishReady?: number; rendering?: number; total?: number; clean_slate?: Record<string, unknown> }> {
     const res = await fetch(`/api/missions/${workspaceId}/${missionId}/reproduce-feed`, {
       method: 'PUT',
       headers: {
@@ -1657,6 +1795,7 @@ class ApiClient {
       body: JSON.stringify({
         productionPackage: opts?.productionPackage,
         force: opts?.force === true,
+        cleanSlate: opts?.cleanSlate ?? opts?.force === true,
       }),
       signal: AbortSignal.timeout(600_000),
     });

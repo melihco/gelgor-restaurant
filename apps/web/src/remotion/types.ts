@@ -81,6 +81,12 @@ export interface StoryProps {
   /** dual | triple | sequence — auto from photo count if omitted */
   galleryLayout?: 'dual' | 'triple' | 'sequence';
 
+  // ── Premium Motion Plates ───────────────────────────────────────
+  /** Pre-generated video background URL (fal.ai Kling/Luma I2V) — replaces Ken Burns */
+  motionBackgroundUrl?: string;
+  /** Motion style hint for rendering (affects overlay intensity, grain, timing) */
+  motionStyle?: 'subtle_drift' | 'steam_shimmer' | 'liquid_pour' | 'bokeh_pulse' | 'ambient_light' | 'product_hero';
+
   /** Catalog template id (SpecStory) — e.g. remotion_editorial_bottom_03 */
   templateId?: string;
   /** Agency brand kit id — e.g. kit_01_beach_club */

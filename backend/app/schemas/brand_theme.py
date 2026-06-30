@@ -63,6 +63,14 @@ class ThemeMediaPolicy(BaseModel):
     min_match_score: int = Field(55, ge=0, le=100)
 
 
+class FalDesignIntensityConfig(BaseModel):
+    """fal.ai designer photo vs typography balance — per channel."""
+
+    story: str | None = None
+    reel: str | None = None
+    post: str | None = None
+
+
 class ThemeMotionProfile(BaseModel):
     """Per-tenant Remotion routing — mirrors apps/web/src/lib/brand-motion-profile.ts"""
 
@@ -131,6 +139,9 @@ class BrandTheme(BaseModel):
     # 5-slot brand template library (Mission Hub / feed production)
     template_library: dict | None = None
 
+    # fal.ai designer intensity — story / reel / post (photo_first … bold_editorial)
+    fal_design_intensity: FalDesignIntensityConfig | None = None
+
 
 # ── Request / Response wrappers ───────────────────────────────────────────────
 
@@ -146,6 +157,9 @@ class BrandThemeSaveRequest(BaseModel):
 
 class AiThemeSettingsPatch(BaseModel):
     """Partial AI visual settings — merged into existing brand_theme JSON."""
+
+    # Top-level macro: gallery_only | gallery_enhanced | ai_generated
+    visual_source_mode: str | None = None
 
     ai_photo_enhance: bool | None = None
     ai_photo_enhance_level: str | None = None
@@ -164,3 +178,4 @@ class AiThemeSettingsPatch(BaseModel):
     mertcafe_instagram_account_id: str | None = None
     mertcafe_instagram_accounts: list[dict[str, str]] | None = None
     mertcafe_use_oauth_account: bool | None = None
+    fal_design_intensity: dict | None = None

@@ -1,4 +1,5 @@
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import { serverConfig } from '@/lib/server-config';
 import {
   type PostTypeBucket,
   type UsedGalleryUsage,
@@ -64,6 +65,17 @@ export interface ParsedIdea {
   call_to_action?: string;
   posting_time_suggestion?: string;
   mood?: string;
+  photo_mood?: string;
+  idea_index?: number;
+  source_node?: string;
+  /** BCD enriched scene description for art-director prompts. */
+  scene_hint?: string;
+  /** BCD enriched motion cue for reel/story video generation. */
+  motion_cue?: string;
+  /** User-uploaded photos from New Brief — must override gallery picker when set. */
+  attached_photo_urls?: string[];
+  /** When true, never repick from brand gallery — use attached_photo_urls only. */
+  force_attached_photos?: boolean;
   event_details?: {
     artist_name?: string;
     date?: string;
@@ -79,7 +91,7 @@ export interface ParsedIdea {
 export const NEXUS_CONTENT_URL_MAX = 1000;
 
 /** Gallery-only: never generate images from scratch in auto-produce (default true). */
-export const GALLERY_ONLY = process.env.AUTO_PRODUCE_GALLERY_ONLY !== 'false';
+export const GALLERY_ONLY = serverConfig.autoProduce.galleryOnly;
 
 export const GALLERY_EXCLUDE_PATTERNS = [
   'logo', 'icon', 'banner', 'footer', 'menu.', 'harita', 'map', 'franchise',
@@ -160,10 +172,18 @@ export function pickGalleryPhotoForIdea(
   businessType?: string,
   productionStrict = true,
   tieBreakSeed?: number,
+  globalUsageCounts?: ReadonlyMap<string, number>,
 ): string | null {
   if (!candidateUrls.length) return null;
 
-  const input = { caption, headline, mood, contentType, businessType };
+  const input = {
+    caption,
+    headline,
+    mood,
+    contentType,
+    businessType,
+    ...(globalUsageCounts ? { globalUsageCounts } : {}),
+  };
   const displayUrls = candidateUrls;
   const pickOpts = tieBreakSeed != null ? { tieBreakSeed } : {};
 

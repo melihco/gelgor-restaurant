@@ -83,7 +83,9 @@ export function getSessionTenantId(): string | null {
   if (!jwt) return null;
   const claims = decodeJwtPayload(jwt);
   if (!claims) return null;
-  const tenantId = claims['tenant_id'] || claims['tenantId'];
+  const raw = claims['tenant_id'] ?? claims['tenantId'];
+  const tenantId =
+    typeof raw === 'string' ? raw : raw != null ? String(raw) : null;
   return tenantId?.trim() || null;
 }
 

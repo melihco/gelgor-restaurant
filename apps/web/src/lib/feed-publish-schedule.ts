@@ -19,14 +19,17 @@ export interface ResolvedPublishSchedule {
   source_node?: string;
 }
 
-/** Weekly manifest slot order — 3 story, 2 post, 1 carousel, 1 reel. */
+/** Weekly manifest fallback — 10 generated slots spread across a 7-day publish goal. */
 const MANIFEST_DEFAULT_SCHEDULE: Array<{ day: string; time: string; format: string }> = [
-  { day: 'Mon', time: '09:00', format: 'story' },
-  { day: 'Tue', time: '11:00', format: 'story' },
-  { day: 'Wed', time: '18:00', format: 'story' },
-  { day: 'Thu', time: '10:00', format: 'post' },
+  { day: 'Mon', time: '09:00', format: 'post' },
+  { day: 'Mon', time: '19:00', format: 'story' },
+  { day: 'Tue', time: '11:00', format: 'post' },
+  { day: 'Wed', time: '12:00', format: 'carousel' },
+  { day: 'Thu', time: '10:00', format: 'story' },
   { day: 'Fri', time: '14:00', format: 'post' },
-  { day: 'Sat', time: '12:00', format: 'carousel' },
+  { day: 'Fri', time: '20:00', format: 'story' },
+  { day: 'Sat', time: '12:00', format: 'post' },
+  { day: 'Sat', time: '19:00', format: 'reel' },
   { day: 'Sun', time: '19:00', format: 'reel' },
 ];
 
@@ -85,7 +88,10 @@ export function resolvePublishSchedule(input: {
       source: 'feed_director',
       day: fdSlot.day,
       time: fdSlot.suggested_time || '12:00',
-      format: normalizeScheduleFormat(fdSlot.format) || ideaScheduleFormat(idea, formatHint),
+      // Actual manifest slot (formatHint / assignment) wins over FD editorial guess —
+      // one ideation row fans out to post + reel + carousel slots at the same idea_index.
+      format: ideaScheduleFormat(idea, formatHint)
+        || normalizeScheduleFormat(fdSlot.format),
     };
   }
 
@@ -142,14 +148,38 @@ export function publishScheduleFromMetadata(
   };
 }
 
+/**
+ * Display format for schedule chip — reconciles stale metadata with actual slot role.
+ * (Multiple manifest slots share one idea_index; FD/calendar format can lag assignment.)
+ */
+export function resolveScheduleDisplayFormat(
+  meta: Record<string, unknown>,
+  kind?: string,
+): string {
+  const k = String(kind ?? '').toLowerCase();
+  if (k === 'reel' || k === 'story' || k === 'carousel' || k === 'post') return k;
+
+  const role = String(meta.production_role ?? '').toLowerCase();
+  const pipeline = String(meta.pipeline ?? '').toLowerCase();
+  if (role.includes('reel') || pipeline.includes('runway_reel') || pipeline === 'fal_reel') return 'reel';
+  if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'carousel';
+  if (role.includes('story') || pipeline.includes('story')) return 'story';
+
+  return normalizeScheduleFormat(meta.publish_schedule_format) || 'post';
+}
+
 /** Human label — editorial recommendation only (Onayla = immediate Mertcafe publish). */
-export function formatPublishScheduleLabel(meta: Record<string, unknown>): string | null {
+export function formatPublishScheduleLabel(
+  meta: Record<string, unknown>,
+  opts?: { kind?: string },
+): string | null {
   const slot = publishScheduleFromMetadata(meta);
   if (!slot) return null;
   const dayTr = DAY_TR[slot.day] ?? slot.day;
+  const displayFormat = resolveScheduleDisplayFormat(meta, opts?.kind);
   const parts = ['Önerilen', dayTr];
   if (slot.time) parts.push(slot.time);
-  if (slot.format) parts.push(slot.format);
+  if (displayFormat) parts.push(displayFormat);
   return parts.join(' · ');
 }
 

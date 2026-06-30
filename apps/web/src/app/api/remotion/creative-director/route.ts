@@ -6,6 +6,9 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { serverConfig } from '@/lib/server-config';
+import { getAiModelProfile, resolveAiModelTier } from '@/lib/ai-model-tier';
+import type { ProductionProfileTier } from '@/lib/production-profile';
 import type { StoryCompositionId } from '@/remotion/types';
 import type { ContentIntent } from '@/lib/brand-motion-profile';
 import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
@@ -194,7 +197,7 @@ function fallbackSpec(
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 503 });
   }
@@ -232,6 +235,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     preferSafeOverlay?: boolean;
     /** Premium Creative Composition metadata from content ideation */
     premiumComposition?: PremiumCompositionHint | null;
+    /** Faz 2.3 — production tier; premium uses full gpt-4o */
+    profileTier?: 'economy' | 'agency' | 'premium';
   };
 
   try {
@@ -268,7 +273,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     retryAttempt,
     preferSafeOverlay,
     premiumComposition,
+    profileTier,
   } = body;
+
+  const cdProfile = getAiModelProfile(resolveAiModelTier({
+    productionTier: profileTier as ProductionProfileTier | undefined,
+  }));
+  const cdModel = cdProfile.chatCreative;
 
   if (!headline || !brandName) {
     return NextResponse.json({ error: 'headline and brandName required' }, { status: 400 });
@@ -382,7 +393,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ].filter(Boolean).join('\n');
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: cdModel,
       max_tokens: 450,
       temperature: 0.45,
       response_format: { type: 'json_object' },
@@ -395,6 +406,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         },
         { role: 'user', content: userPrompt },
       ],
+    });
+
+    const { emitOpenAiCostLine } = await import('@/lib/ai-cost-telemetry');
+    emitOpenAiCostLine({
+      callType: 'creative_director',
+      model: cdModel,
+      usage: response.usage,
+      attempt: retryAttempt ?? 0,
+      detail: `${isPosterRender ? 'poster' : 'story'}:${brandName}${cdModel.endsWith('mini') ? ':lite' : ''}`,
     });
 
     const raw = response.choices[0]?.message?.content?.trim() ?? '{}';

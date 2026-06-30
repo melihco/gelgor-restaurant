@@ -18,7 +18,7 @@ import type { T } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useAuthStore } from '../auth-store';
-import { apiClient, type WorkspaceUsageSummary } from '@/lib/api-client';
+import { apiClient, type WorkspaceUsageSummary, type MissionProductionJobsSummary } from '@/lib/api-client';
 import { AiCostBreakdownCard } from '../AiCostBreakdownCard';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import type { MissionSummary, MissionProgress, MissionNodeProgress } from '@/types';
@@ -43,6 +43,7 @@ import {
 import {
   summarizeMissionFeedPackage,
   formatMissionFeedPackageLabel,
+  resolveMissionSlotProgress,
   type MissionFeedPackage,
 } from '@/lib/mission-feed-package';
 import {
@@ -85,6 +86,7 @@ import {
   summarizeMissionProductionPipeline,
   type MissionProductionPipelineSummary,
 } from '@/lib/mission-pipeline-transparency';
+import { buildMissionPlanningDisplayIdeas } from '@/lib/mission-production-plan';
 import {
   summarizeMissionStrategistKpi,
   type MissionStrategistKpiSummary,
@@ -92,6 +94,7 @@ import {
 import {
   telemetryFromMissionProgress,
   describeTelemetryAlerts,
+  parseMissionProductionBlock,
 } from '@/lib/mission-production-telemetry';
 import {
   describeStoryAudioPolicy,
@@ -109,12 +112,23 @@ import {
   invalidateMobileArtifactPool,
   MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
 } from '../../_lib/mobile-artifacts';
+import {
+  isMissionFeedProductionActive,
+  shouldPollCompletedMissionFeed,
+} from '../../_lib/mobile-mission-progress';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
 import {
   linkCalendarItemsToArtifacts,
+  linkPlanningItemsToArtifacts,
+  resolveArtifactHubPreviewUrl,
+  planningItemReferenceUrl,
   CALENDAR_STATUS_TR,
   type CalendarItemLink,
 } from '@/lib/content-calendar-artifact-link';
+import { resolveClientMediaUrl } from '@/lib/media-url';
+import { resolveStoryVideoUrl } from '@/lib/production-bundle';
+import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge';
+import { SafeCoverImage } from '../SafeCoverImage';
 import { formatUsd } from '@/lib/ai-cost-catalog';
 import { missionFeedStatusLabel } from '@/lib/mobile-customer-copy';
 import {
@@ -182,13 +196,21 @@ function displayNodeTitle(node: MissionNodeProgress): string {
 }
 
 /** Count ideas / items inside a node output for the result badge */
-function countNodeResults(node: MissionNodeProgress): number | null {
+function countNodeResults(node: MissionNodeProgress, allNodes?: MissionNodeProgress[]): number | null {
   if (node.task_type === 'feed_cohesion_review') {
+    if (allNodes?.length) {
+      const ideationIdeas = buildMissionPlanningDisplayIdeas({ nodes: allNodes });
+      if (ideationIdeas.length > 0) return ideationIdeas.length;
+    }
     const report = nodeOutputObject(node);
     const assignments = report?.production_assignments;
     if (Array.isArray(assignments) && assignments.length > 0) {
       return assignments.length;
     }
+  }
+  if (node.task_type === 'content_ideation' && allNodes?.length) {
+    const planningIdeas = buildMissionPlanningDisplayIdeas({ nodes: allNodes });
+    if (planningIdeas.length > 0) return planningIdeas.length;
   }
   return countPlanningNodeResults(node);
 }
@@ -435,12 +457,15 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
   const feedTarget = MISSION_WEEKLY_PACKAGE_COUNTS.total;
 
   const missionActive = mission.status === 'in_flight' || mission.status === 'approved';
+  const isFailedCompletedPreview =
+    mission.status === 'completed' && (mission.failed_nodes ?? 0) > 0;
+  const shouldLoadProgress = missionActive || isFailedCompletedPreview;
 
   const { data: prog } = useMissionProgress({
     workspaceId,
     missionId: mission.id,
     missionStatus: mission.status,
-    enabled: missionActive,
+    enabled: shouldLoadProgress,
     poll: missionActive && !detailOpen,
   });
 
@@ -462,6 +487,9 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
       (n) => n.status !== 'completed' || !nodeHasOutput(n),
     );
   const feedPrepPending = visualDesignPending || calendarPending;
+  const productionBlock = parseMissionProductionBlock(
+    prog?.performance_summary as Record<string, unknown> | undefined,
+  );
 
   const { data: artifactPool = [] } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
@@ -509,23 +537,9 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
     < (inFlightSlotChecklist.requiredTotal ?? feedTarget);
   const feedPackageComplete = feedPublishableCount >= feedTarget && !manifestGap;
 
-  const autoKickRef = useRef(false);
-
-  useEffect(() => {
-    if (!ideationDone || !onKickFeedProduction || feedPackageComplete) return;
-    if (feedPrepPending) return;
-    if (feedProductionLockActive) return;
-    if (autoKickRef.current) return;
-    autoKickRef.current = true;
-    onKickFeedProduction(mission.id);
-  }, [
-    ideationDone,
-    feedPrepPending,
-    feedProductionLockActive,
-    onKickFeedProduction,
-    feedPackageComplete,
-    mission.id,
-  ]);
+  // Auto-kick removed: production is driven by the backend scheduler/factory drain.
+  // The InFlightCard should never trigger production on mount — only via explicit
+  // operator buttons (visible in debug mode).
 
   const pct      = prog?.completion_pct ?? mission.completion_pct;
   const nodes    = prog?.nodes ?? [];
@@ -536,6 +550,15 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
   const hasError = failed > 0 && running === 0;
   const isFailedCompleted =
     mission.status === 'completed' && (hasError || (mission.failed_nodes ?? 0) > 0);
+  const failedNode = nodes.find((n) => n.status === 'failed');
+  const failedReason = String(failedNode?.error_message ?? '').trim();
+  const failedReasonShort = failedReason.includes('429') || failedReason.toLowerCase().includes('quota')
+    ? 'OpenAI kotası doldu — API limitini yenileyin'
+    : failedReason.includes('insufficient_quota')
+      ? 'OpenAI kotası doldu — API limitini yenileyin'
+      : failedReason
+        ? failedReason.replace(/^\[Final\]\s*Task execution failed:\s*/i, '').slice(0, 120)
+        : 'Görev hatası — yeniden başlatmayı deneyin';
   const canRestart = hasError || pct === 0 || isFailedCompleted;
   const showFeedStatus = ideationDone && !feedPackageComplete;
   const isWaiting = mission.status === 'approved' && running === 0 && done === 0 && !hasError;
@@ -587,24 +610,26 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {mission.title}
             </div>
-            <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 3 }}>
-              {debugMode
-                ? `${done}/${total} görev tamamlandı`
-                : feedPublishableCount > 0 || feedProducedCount > 0
-                  ? `${feedPublishableCount}/${feedTarget} yayına hazır`
-                    + (feedProducedCount > feedPublishableCount
-                      ? ` · ${feedProducedCount} üretildi`
-                      : '')
-                  : runningStepLabel
-                    ? `${runningStepLabel} hazırlanıyor…`
-                    : 'İçerik planı hazırlanıyor'}
-              {mission.timeline_days ? ` · ${mission.timeline_days} gün` : ''}
+            <div style={{ fontSize: 12, color: isFailedCompleted ? '#EF4444' : t.textTertiary, marginTop: 3 }}>
+              {isFailedCompleted
+                ? failedReasonShort
+                : debugMode
+                  ? `${done}/${total} görev tamamlandı`
+                  : feedPublishableCount > 0 || feedProducedCount > 0
+                    ? `${feedPublishableCount}/${feedTarget} yayına hazır`
+                      + (feedProducedCount > feedPublishableCount
+                        ? ` · ${feedProducedCount} üretildi`
+                        : '')
+                    : runningStepLabel
+                      ? `${runningStepLabel} hazırlanıyor…`
+                      : 'İçerik planı hazırlanıyor'}
+              {!isFailedCompleted && mission.timeline_days ? ` · ${mission.timeline_days} gün` : ''}
             </div>
           </div>
 
           {(canRestart || mission.status !== 'completed') && (
             <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-              {debugMode && canRestart && (
+              {canRestart && (
                 <button
                   type="button"
                   disabled={isRestarting}
@@ -650,7 +675,7 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
         {/* ── Node rows with names + status ── */}
         {(isFailedCompleted || showFeedStatus) && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-            {debugMode && isFailedCompleted && (
+            {isFailedCompleted && (
               <button
                 type="button"
                 disabled={isRestarting}
@@ -685,9 +710,11 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
                       ? 'Görsel tasarım önerileri bekleniyor'
                       : calendarPending
                         ? 'Yayın takvimi hazırlanıyor'
-                        : feedBackgroundActive
-                          ? 'Feed arka planda üretiliyor'
-                          : 'Feed üretimi bekleniyor'}
+                        : productionBlock && !feedBackgroundActive
+                          ? productionBlock.label
+                          : feedBackgroundActive
+                            ? 'Feed arka planda üretiliyor'
+                            : 'Feed üretimi bekleniyor'}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
@@ -695,7 +722,9 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
                     ? 'Ajans tasarım kartları tamamlanınca Feed üretimi otomatik başlayacak.'
                     : calendarPending
                       ? 'Yayın planı tamamlanınca her plan satırı için Feed çıktısı üretilir.'
-                      : feedPublishableCount > 0
+                      : productionBlock && !feedBackgroundActive
+                        ? `Feed üretimi şunu bekliyor: ${productionBlock.awaitingNodes.join(', ') || productionBlock.label}. Tamamlanınca otomatik başlayacak.`
+                        : feedPublishableCount > 0
                         ? `${feedPublishableCount}/${feedTarget} yayına hazır`
                           + (feedProducedCount > feedPublishableCount
                             ? ` (${feedProducedCount} üretildi, render bekliyor olabilir)`
@@ -705,7 +734,7 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
                           ? `${feedProducedCount} çıktı üretildi — yayına hazır hale geldikçe Feed\'de görünür.`
                           : 'Gönderiler hazır oldukça Feed sekmesine düşer (story, post, carousel, reel).'}
                 </div>
-                {!feedBackgroundActive && !feedPrepPending && onKickFeedProduction && (
+                {debugMode && !feedBackgroundActive && !feedPrepPending && onKickFeedProduction && (
                   <button
                     type="button"
                     disabled={isKickingFeed}
@@ -1055,7 +1084,7 @@ function CalendarItemsView({ items, links, t, onGoToFeed, onOpenArtifact }: {
             📅 {items.length} yayın planı planlandı
           </div>
           <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3 }}>
-            Planlama çıktısı — üretimde gün, saat ve format kaynağı.
+            Tüm planlar üretime girer — brief, mood ve format; eşleşmeyenler slot havuzuna eklenir.
           </div>
         </div>
         {onGoToFeed && (
@@ -1178,11 +1207,14 @@ function CalendarItemsView({ items, links, t, onGoToFeed, onOpenArtifact }: {
   );
 }
 
-function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation' }: {
+function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', links, artifacts, onOpenArtifact }: {
   signal: ArtifactSignal;
   t: ReturnType<typeof useTheme>['t'];
   onGoToFeed?: () => void;
   planningKind?: 'ideation' | 'design';
+  links?: CalendarItemLink[];
+  artifacts?: OutputArtifact[];
+  onOpenArtifact?: (artifactId: string) => void;
 }) {
   const ideas = signal.ideas ?? [];
   if (!ideas.length && !signal.caption) {
@@ -1200,15 +1232,18 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation' }: 
     contentType: 'post',
   }];
 
-  const FMT_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
-    post:            { icon: '□', label: 'Post',    color: '#3B82F6' },
-    instagram_post:  { icon: '□', label: 'Post',    color: '#3B82F6' },
-    story:           { icon: '◉', label: 'Story',   color: '#8AABBD' },
-    instagram_story: { icon: '◉', label: 'Story',   color: '#8AABBD' },
-    reel:            { icon: '▶', label: 'Reel',    color: '#EC4899' },
-    instagram_reel:  { icon: '▶', label: 'Reel',    color: '#EC4899' },
-    carousel:        { icon: '⊞', label: 'Carousel',color: '#F59E0B' },
+  const FMT_CONFIG: Record<string, { icon: string; label: string; color: string; aspect: string }> = {
+    post:            { icon: '□', label: 'Post',    color: '#3B82F6', aspect: '4/5' },
+    instagram_post:  { icon: '□', label: 'Post',    color: '#3B82F6', aspect: '4/5' },
+    story:           { icon: '◉', label: 'Story',   color: '#8AABBD', aspect: '9/16' },
+    instagram_story: { icon: '◉', label: 'Story',   color: '#8AABBD', aspect: '9/16' },
+    reel:            { icon: '▶', label: 'Reel',    color: '#EC4899', aspect: '9/16' },
+    instagram_reel:  { icon: '▶', label: 'Reel',    color: '#EC4899', aspect: '9/16' },
+    carousel:        { icon: '⊞', label: 'Carousel',color: '#F59E0B', aspect: '1/1' },
   };
+
+  const readyPreviewCount = links?.filter((l) => l.status === 'ready').length ?? 0;
+  const renderingCount = links?.filter((l) => l.status === 'rendering' || l.status === 'pending').length ?? 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1221,11 +1256,20 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation' }: 
             {planningKind === 'design'
               ? `${items.length} tasarım kartı planlandı`
               : `${items.length} içerik fikri planlandı`}
+            {readyPreviewCount > 0 && (
+              <span style={{ color: '#8AABBD', fontWeight: 800 }}>
+                {' '}· {readyPreviewCount} görsel önizleme
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3, lineHeight: 1.4 }}>
-            {planningKind === 'design'
-              ? 'Planlama çıktısı — designed post slotunda görsel brief olarak kullanılır.'
-              : 'Planlama çıktısı — üretimde caption ve format kaynağı; Feed dosyası değildir.'}
+            {readyPreviewCount > 0
+              ? 'Üretilen görseller kartlarda önizlenir — tam boyut için Feed veya Önizle.'
+              : renderingCount > 0
+                ? 'Görseller üretiliyor — tamamlandığında kartlarda görünür.'
+                : planningKind === 'design'
+                  ? 'Planlama brief\'i — üretim sonrası fal.ai / tasarım çıktıları burada önizlenir.'
+                  : 'Planlama çıktısı — üretimde caption ve format kaynağı; Feed dosyası değildir.'}
           </div>
           {/* Story/Remotion indicator */}
           {planningKind === 'ideation' && items.some((idea: any) => {
@@ -1247,16 +1291,32 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation' }: 
         )}
       </div>
 
-      {items.slice(0, 8).map((idea, i) => {
+      {items.map((idea, i) => {
         const ia       = idea as any;
         const headline = ia.concept_title ?? ia.conceptTitle ?? ia.idea_title ?? ia.title ?? ia.headline ?? `Fikir ${i + 1}`;
-        const caption  = ia.caption ?? ia.captionDraft ?? ia.caption_draft ?? '';
+        const caption  = ia.caption ?? ia.captionDraft ?? ia.caption_draft ?? ia.subline ?? '';
         const hashtags = Array.isArray(ia.hashtags) ? ia.hashtags.slice(0, 4) : [];
-        const mood     = ia.mood ?? ia.tone ?? '';
+        const mood     = ia.mood ?? ia.tone ?? ia.visual_mood ?? '';
         const postTime = ia.posting_time_suggestion ?? ia.postingTime ?? '';
-        const fmt      = (ia.contentType ?? ia.contentKind ?? ia.content_type ?? 'post') as string;
+        const fmt      = (ia.contentType ?? ia.contentKind ?? ia.content_type ?? ia.format ?? 'post') as string;
         const fmtCfg   = FMT_CONFIG[fmt.toLowerCase()] ?? FMT_CONFIG['post']!;
         const isCalendar = 'day' in idea || ('theme' in ia && !ia.headline);
+        const link = links?.[i];
+        const linkedArtifact = link?.artifactId && artifacts?.length
+          ? artifacts.find((a) => a.id === link.artifactId)
+          : undefined;
+        const previewUrl = linkedArtifact
+          ? resolveArtifactHubPreviewUrl(linkedArtifact)
+          : planningItemReferenceUrl(ia);
+        const hasVideo = linkedArtifact ? Boolean(resolveStoryVideoUrl(linkedArtifact)) : false;
+        const productionBadge = linkedArtifact ? resolveArtifactProductionBadge(linkedArtifact) : null;
+        const status = link?.status;
+        const statusColor = status === 'ready' ? '#10B981'
+          : status === 'rendering' || status === 'pending' ? '#F59E0B'
+            : status === 'failed' ? '#EF4444'
+              : status === 'missing' ? '#94A3B8'
+                : t.textMuted;
+        const canOpenPreview = Boolean(link?.artifactId && onOpenArtifact && status === 'ready');
 
         if (isCalendar) {
           return (
@@ -1289,22 +1349,103 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation' }: 
 
             {/* Card header: format + index */}
             <div style={{ padding: '10px 14px 8px', display: 'flex', alignItems: 'center', gap: 8,
-              borderBottom: `0.5px solid ${t.separator}` }}>
+              borderBottom: previewUrl ? 'none' : `0.5px solid ${t.separator}`,
+              flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, fontWeight: 800,
                 padding: '3px 9px', borderRadius: 20,
                 background: fmtCfg.color + '18',
                 color: fmtCfg.color, letterSpacing: '0.04em' }}>
                 {fmtCfg.icon} {fmtCfg.label}
               </span>
+              {productionBadge && (
+                <span style={{
+                  fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 8,
+                  background: 'rgba(0,0,0,0.06)', color: productionBadge.engineColor,
+                }}>
+                  {productionBadge.engine}
+                </span>
+              )}
+              {link && status && status !== 'unlinked' && (
+                <span style={{
+                  fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 8,
+                  background: `${statusColor}18`, color: statusColor,
+                }}>
+                  {CALENDAR_STATUS_TR[status]}
+                </span>
+              )}
               {mood && (
                 <span style={{ fontSize: 10, color: t.textMuted, fontStyle: 'italic' }}>
                   {String(mood).slice(0, 30)}
                 </span>
               )}
+              {canOpenPreview && (
+                <button
+                  type="button"
+                  onClick={() => onOpenArtifact!(link!.artifactId!)}
+                  style={{
+                    fontSize: 9, fontWeight: 800, padding: '4px 8px', borderRadius: 8, border: 'none',
+                    cursor: 'pointer', background: 'rgba(59,130,246,0.12)', color: '#3B82F6',
+                  }}
+                >
+                  Önizle
+                </button>
+              )}
               <span style={{ marginLeft: 'auto', fontSize: 10, color: t.textMuted }}>
                 #{i + 1}
               </span>
             </div>
+
+            {previewUrl && (
+              <button
+                type="button"
+                disabled={!canOpenPreview}
+                onClick={() => { if (canOpenPreview) onOpenArtifact!(link!.artifactId!); }}
+                style={{
+                  display: 'block', width: '100%', border: 'none', padding: 0, margin: 0,
+                  cursor: canOpenPreview ? 'pointer' : 'default',
+                  background: t.isDark ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.04)',
+                  borderBottom: `0.5px solid ${t.separator}`,
+                }}
+              >
+                <div style={{
+                  position: 'relative', width: '100%', aspectRatio: fmtCfg.aspect,
+                  maxHeight: fmtCfg.aspect === '9/16' ? 320 : 280, overflow: 'hidden',
+                }}>
+                  <SafeCoverImage
+                    src={previewUrl}
+                    fallbacks={[
+                      linkedArtifact?.contentUrl
+                        ? (resolveClientMediaUrl(linkedArtifact.contentUrl) ?? linkedArtifact.contentUrl)
+                        : null,
+                    ]}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    placeholder={(
+                      <div style={{
+                        width: '100%', height: '100%', minHeight: 120,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: t.textMuted, fontSize: 11,
+                      }}>
+                        {status === 'rendering' || status === 'pending' ? 'Render…' : 'Önizleme yükleniyor…'}
+                      </div>
+                    )}
+                  />
+                  {hasVideo && (
+                    <div style={{
+                      position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', pointerEvents: 'none',
+                    }}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.5)', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <span style={{ color: '#fff', fontSize: 16, marginLeft: 2 }}>▶</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </button>
+            )}
 
             {/* Content */}
             <div style={{ padding: '12px 14px' }}>
@@ -2114,6 +2255,7 @@ function NodeOutputView({
   missionInFlight,
   onGoToFeed,
   onOpenArtifact,
+  allNodes,
 }: {
   node: MissionNodeProgress;
   t?: unknown;
@@ -2122,6 +2264,7 @@ function NodeOutputView({
   missionInFlight?: boolean;
   onGoToFeed?: () => void;
   onOpenArtifact?: (artifactId: string) => void;
+  allNodes?: MissionNodeProgress[];
 }) {
   const { t } = useTheme();
 
@@ -2188,25 +2331,44 @@ function NodeOutputView({
   if (node.task_type === 'content_calendar') {
     const calItems = nodeOutputArray(node, ['plans', 'calendar', 'items', 'content_calendar', 'schedule']);
     if (calItems && calItems.length > 0) {
-      return <CalendarItemsView items={calItems} t={t} onGoToFeed={onGoToFeed} />;
+      const calLinks = missionId && missionArtifacts?.length
+        ? linkCalendarItemsToArtifacts(calItems, missionArtifacts, missionId, { missionInFlight })
+        : undefined;
+      return (
+        <CalendarItemsView
+          items={calItems}
+          links={calLinks}
+          t={t}
+          onGoToFeed={onGoToFeed}
+          onOpenArtifact={onOpenArtifact}
+        />
+      );
     }
   }
 
-  // content_ideation / visual_design_cards — planlama görünümü (Feed dosyası değil)
+  // content_ideation / visual_design_cards — planlama + üretilmiş görsel önizleme
   if (['content_ideation', 'visual_design_cards'].includes(node.task_type)) {
     const planningKind = node.task_type === 'visual_design_cards' ? 'design' : 'ideation';
-    const ideaItems = nodeOutputArray(node);
+    const planningIdeas = node.task_type === 'content_ideation' && allNodes?.length
+      ? buildMissionPlanningDisplayIdeas({ nodes: allNodes, missionId })
+      : [];
+    const ideaItems = planningIdeas.length > 0
+      ? planningIdeas
+      : nodeOutputArray(node);
     if (ideaItems && ideaItems.length > 0) {
+      const planLinks = missionId && missionArtifacts?.length
+        ? linkPlanningItemsToArtifacts(ideaItems, missionArtifacts, missionId, { missionInFlight })
+        : undefined;
       const syntheticSignal = { ideas: ideaItems.map(item => {
         const it = item as Record<string, unknown>;
         return {
           headline:    it.concept_title ?? it.conceptTitle ?? it.idea_title ?? it.title ?? it.headline ?? '',
           concept_title: it.concept_title ?? it.conceptTitle ?? it.idea_title ?? it.title ?? it.headline ?? '',
-          caption:     it.caption_draft ?? it.caption ?? '',
-          cta:         it.cta ?? '',
-          contentType: it.content_type ?? it.content_kind ?? 'post',
+          caption:     it.caption_draft ?? it.caption ?? it.subline ?? '',
+          cta:         it.cta ?? it.cta_text ?? '',
+          contentType: it.content_type ?? it.content_kind ?? it.format ?? 'post',
           hashtags:    it.hashtags ?? [],
-          mood:        it.mood ?? it.tone ?? '',
+          mood:        it.mood ?? it.tone ?? it.visual_mood ?? '',
           posting_time_suggestion: it.posting_time_suggestion ?? '',
           ...it,
         };
@@ -2217,12 +2379,27 @@ function NodeOutputView({
           t={t}
           onGoToFeed={onGoToFeed}
           planningKind={planningKind}
+          links={planLinks}
+          artifacts={missionArtifacts}
+          onOpenArtifact={onOpenArtifact}
         />
       );
     }
     if (signal) {
+      const fallbackItems = signal.ideas ?? [];
+      const planLinks = missionId && missionArtifacts?.length && fallbackItems.length
+        ? linkPlanningItemsToArtifacts(fallbackItems, missionArtifacts, missionId, { missionInFlight })
+        : undefined;
       return (
-        <ContentIdeasView signal={signal} t={t} onGoToFeed={onGoToFeed} planningKind={planningKind} />
+        <ContentIdeasView
+          signal={signal}
+          t={t}
+          onGoToFeed={onGoToFeed}
+          planningKind={planningKind}
+          links={planLinks}
+          artifacts={missionArtifacts}
+          onOpenArtifact={onOpenArtifact}
+        />
       );
     }
   }
@@ -2323,7 +2500,7 @@ function MissionAiCostPanel({
       </div>
       {summary.isEstimate && summary.lines.length === 0 && (
         <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 8 }}>
-          Aralık: {formatUsd(summary.minUsd)} – {formatUsd(summary.maxUsd)} (tam 7 parçalık paket)
+          Aralık: {formatUsd(summary.minUsd)} – {formatUsd(summary.maxUsd)} (10 üretimlik paket)
         </div>
       )}
       {summary.lines.length > 0 && (
@@ -2343,6 +2520,36 @@ function MissionAiCostPanel({
             </div>
           ))}
         </div>
+      )}
+      {summary.feedBreakdown && summary.feedBreakdown.totalUsd > 0 && (
+        (() => {
+          const fb = summary.feedBreakdown!;
+          const buckets: Array<{ label: string; usd: number }> = [
+            { label: 'Video (Runway/fal)', usd: fb.runwayUsd },
+            { label: 'Remotion render', usd: fb.remotionUsd },
+            { label: 'Görsel/enhance', usd: fb.imageUsd },
+            { label: 'Diğer', usd: fb.otherUsd },
+          ].filter((b) => b.usd > 0);
+          if (buckets.length === 0) return null;
+          return (
+            <div style={{
+              marginTop: 10, paddingTop: 8,
+              borderTop: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.15)'}`,
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, marginBottom: 5 }}>
+                Feed üretim kırılımı · {fb.artifactCount} çıktı
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {buckets.map((b) => (
+                  <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 10.5 }}>
+                    <span style={{ color: t.textSecondary }}>{b.label}</span>
+                    <span style={{ fontWeight: 700, color: t.textPrimary, whiteSpace: 'nowrap' }}>{formatUsd(b.usd)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()
       )}
       {summary.feedBreakdown && summary.feedBreakdown.qualityTier && (
         <div style={{ fontSize: 10, color: t.textMuted, marginTop: 8 }}>
@@ -2522,6 +2729,7 @@ function MissionSlotChecklistPanel({
   onRefresh,
   onReproduceFeed,
   isReproducingFeed,
+  feedProductionActive = false,
   debugMode = false,
   t,
 }: {
@@ -2538,6 +2746,7 @@ function MissionSlotChecklistPanel({
   onRefresh: () => void;
   onReproduceFeed?: (missionId: string) => void;
   isReproducingFeed?: boolean;
+  feedProductionActive?: boolean;
   debugMode?: boolean;
   t: T;
 }) {
@@ -2571,9 +2780,25 @@ function MissionSlotChecklistPanel({
           <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
             {ready > 0
               ? 'Onay bekleyen gönderiler İçerik sekmesinde.'
-              : 'Görseller hazırlanıyor — birkaç dakika içinde görünür.'}
+              : feedProductionActive || isReproducingFeed
+                ? 'Görseller hazırlanıyor — birkaç dakika içinde görünür.'
+                : 'Planınız hazır. Görselleri üretmek için butona dokunun.'}
           </div>
-          {ready > 0 && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            {ready < total && !feedProductionActive && !isReproducingFeed && onReproduceFeed && (
+              <button
+                type="button"
+                onClick={() => onReproduceFeed(missionId)}
+                style={{
+                  flex: 1, minWidth: 140, padding: '10px', borderRadius: 10, border: 'none',
+                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                  background: t.accent, color: '#fff',
+                }}
+              >
+                Görselleri üret
+              </button>
+            )}
+            {ready > 0 && (
             <button
               type="button"
               onClick={onGoToFeed}
@@ -2586,6 +2811,7 @@ function MissionSlotChecklistPanel({
               İçeriklere git →
             </button>
           )}
+          </div>
         </div>
       );
     }
@@ -2620,7 +2846,8 @@ function MissionSlotChecklistPanel({
     const pct = checklist.coveragePct;
     const manifestReady = pipelineSummary?.manifestReady ?? ready;
     const manifestRequired = pipelineSummary?.manifestRequired ?? total;
-    const preparing = checklist.renderingCount > 0 || manifestReady < manifestRequired;
+    const packageIncomplete = manifestReady < manifestRequired;
+    const inProgress = Boolean(isReproducingFeed || feedProductionActive || checklist.renderingCount > 0);
     const displayReady = manifestReady;
     const displayTotal = manifestRequired;
 
@@ -2649,14 +2876,16 @@ function MissionSlotChecklistPanel({
           }} />
         </div>
         <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
-          {preparing
+          {inProgress
             ? 'Gönderiler hazırlandıkça İçerik sekmesinde görünür.'
-            : displayReady >= displayTotal
-              ? 'Haftalık paketiniz onaya hazır.'
-              : `${displayReady} içerik onayınızı bekliyor.`}
+            : packageIncomplete
+              ? 'Planınız hazır. Görselleri üretmek için butona dokunun.'
+              : displayReady >= displayTotal
+                ? 'Haftalık paketiniz onaya hazır.'
+                : `${displayReady} içerik onayınızı bekliyor.`}
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-          {displayReady < displayTotal && onReproduceFeed && (
+          {packageIncomplete && !inProgress && onReproduceFeed && (
             <button
               type="button"
               onClick={() => onReproduceFeed(missionId)}
@@ -2668,7 +2897,7 @@ function MissionSlotChecklistPanel({
                 opacity: isReproducingFeed ? 0.7 : 1,
               }}
             >
-              {isReproducingFeed ? 'Üretiliyor…' : 'Eksik içerikleri üret'}
+              {displayReady === 0 ? 'Görselleri üret' : 'Eksik içerikleri üret'}
             </button>
           )}
           {ready > 0 && (
@@ -2865,6 +3094,53 @@ function MissionPublishPackageCard({
   const [retryingAll, setRetryingAll] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
+  // Durable Production Factory — live per-slot job rollup.
+  const [factoryJobs, setFactoryJobs] = useState<MissionProductionJobsSummary | null>(null);
+  const factoryRequeueAttempted = useRef(false);
+  useEffect(() => {
+    if (!workspaceId || !missionId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const summary = await apiClient.getMissionProductionJobs(workspaceId, missionId);
+        if (cancelled) return;
+        setFactoryJobs(summary);
+
+        const hasExhausted = summary.slots.some((s) => s.status === 'exhausted');
+        if (
+          hasExhausted
+          && !factoryRequeueAttempted.current
+          && workspaceId
+          && missionId
+        ) {
+          factoryRequeueAttempted.current = true;
+          try {
+            await apiClient.requeueMissionFactoryJobs(workspaceId, missionId);
+            if (!cancelled) {
+              timer = setTimeout(poll, 2000);
+              return;
+            }
+          } catch {
+            factoryRequeueAttempted.current = false;
+          }
+        }
+
+        if (!summary.complete && summary.total > 0) {
+          timer = setTimeout(poll, 8000);
+        }
+      } catch {
+        // Factory rollup is best-effort — silent on transient errors.
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [workspaceId, missionId]);
+
   const failedRenderTargets = useMemo(() => {
     if (!missionId) return [];
     return filterMissionRenderRetryArtifacts(previewArtifacts, missionId);
@@ -2927,7 +3203,20 @@ function MissionPublishPackageCard({
 
   const hasContent = (pkg?.totalPublishable ?? 0) > 0 || previewArtifacts.length > 0;
   const label = pkg ? formatMissionFeedPackageLabel(pkg) : '';
-  const selectionLabel = selection ? formatWeeklyPackageSummary(selection) : label;
+  const slotProgress = resolveMissionSlotProgress({
+    factoryReady: factoryJobs?.ready,
+    factoryTotal: factoryJobs?.total,
+    pkg,
+    selection,
+  });
+  const selectionLabel = selection
+    ? formatWeeklyPackageSummary(selection, {
+        producedOverride: factoryJobs?.total ? factoryJobs.ready : undefined,
+        targetOverride: factoryJobs?.total
+          ? Math.max(MISSION_WEEKLY_PACKAGE_COUNTS.total, factoryJobs.total)
+          : undefined,
+      })
+    : label;
 
   return (
     <div style={{
@@ -2951,8 +3240,7 @@ function MissionPublishPackageCard({
       <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
         {hasContent && pkg
           ? (() => {
-              const ready = pkg.primaryCount ?? selection?.primary.length ?? 0;
-              const target = MISSION_WEEKLY_PACKAGE_COUNTS.total;
+              const { ready, target } = slotProgress;
               const progress =
                 ready > 0 && ready < target
                   ? `${ready}/${target} slot üretildi · `
@@ -2965,6 +3253,49 @@ function MissionPublishPackageCard({
             ? `${previewArtifacts.length} içerik önizlenebilir · render devam edebilir.`
             : 'Auto-produce ve Remotion render arka planda çalışıyor (1–3 dk). Biraz sonra Feed\'i yenileyin.'}
       </div>
+      {factoryJobs && factoryJobs.total > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          marginBottom: 12, padding: '8px 10px', borderRadius: 10,
+          background: t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)',
+          border: '0.5px solid rgba(16,185,129,0.28)',
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#10B981', letterSpacing: '0.04em' }}>
+            ÜRETİM HATTI {factoryJobs.ready}/{factoryJobs.total}
+          </span>
+          {factoryJobs.active > 0 && (
+            <span style={{ fontSize: 10, color: t.textSecondary }}>
+              {factoryJobs.active} üretiliyor
+            </span>
+          )}
+          {factoryJobs.failed > 0 && (
+            <span style={{ fontSize: 10, color: '#E2A03F' }}>
+              {factoryJobs.failed} slot yeniden deneniyor
+            </span>
+          )}
+          <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+            {factoryJobs.slots.map((slot) => {
+              const color = slot.status === 'ready'
+                ? '#10B981'
+                : slot.status === 'failed' || slot.status === 'exhausted'
+                  ? '#E2A03F'
+                  : slot.status === 'running' || slot.status === 'claimed'
+                    ? '#8AABBD'
+                    : t.textMuted;
+              return (
+                <span
+                  key={`${slot.ideaIndex}:${slot.slotRole}`}
+                  title={`${slot.format} · ${slot.status}`}
+                  style={{
+                    width: 8, height: 8, borderRadius: 3, background: color,
+                    opacity: slot.status === 'pending' ? 0.4 : 1,
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
       {hasContent && pkg && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {pkg.organicPosts > 0 && (
@@ -3079,6 +3410,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const { openMissionFactory, navigate, openFeedForMission, openPlatformPreview } = useMobileStore();
   const openArtifactPreview = (artifactId: string) => openPlatformPreview(artifactId);
   const [expandedNode, setExpandedNode] = useState<string | null>(null);
+  const [productionKickRequested, setProductionKickRequested] = useState(false);
+  const [pollCompletedFeed, setPollCompletedFeed] = useState(false);
 
   const isCompleted = mission.status === 'completed';
   const showFeedPackage = isCompleted || mission.status === 'in_flight';
@@ -3090,6 +3423,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     missionStatus: mission.status,
     enabled: true,
     poll: missionInFlight,
+    pollFeedProduction: pollCompletedFeed,
   });
 
   const { data: brandThemePayload } = useQuery({
@@ -3113,7 +3447,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
 
   const { data: feedArtifactPool = [], isLoading: feedPkgLoading, refetch: refetchMissionArtifacts } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
-    subscribeOnly: true,
+    subscribeOnly: !pollCompletedFeed,
+    pollMissionFeed: pollCompletedFeed,
     enabled: showFeedPackage,
   });
   const feedArtifacts = useMemo(
@@ -3256,12 +3591,12 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const hubProductionPackage =
     parseHubProductionPackage(prog?.performance_summary?.hub_production_package)
     ?? getMissionProductionPackage(workspaceId);
-  const autoFeedBootstrapRef = useRef(false);
   const kickFeedMutation = useMutation({
     mutationFn: () => apiClient.kickMissionFeedProduction(workspaceId, mission.id, {
       productionPackage: hubProductionPackage,
     }),
     onSuccess: (data) => {
+      setProductionKickRequested(true);
       setReproduceFeedError(null);
       setReproduceFeedOk(
         data?.message?.trim() || 'Feed üretimi arka planda başlatıldı.',
@@ -3273,17 +3608,16 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       setReproduceFeedOk(null);
       setReproduceFeedError(err.message?.trim() || 'Feed üretimi başlatılamadı');
     },
-    onSettled: () => {
-      autoFeedBootstrapRef.current = false;
-    },
   });
 
   const reproduceFeedMutation = useMutation({
     mutationFn: () => apiClient.reproduceMissionFeed(workspaceId, mission.id, {
       productionPackage: hubProductionPackage,
-      force: Boolean(prog?.performance_summary?.production_error),
+      force: true,
+      cleanSlate: true,
     }),
     onSuccess: (data) => {
+      setProductionKickRequested(true);
       setReproduceFeedError(null);
       setReproduceFeedOk(
         data?.message?.trim()
@@ -3329,36 +3663,51 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       (n) => n.status !== 'completed' || !nodeHasOutput(n),
     );
   const feedPrepPending = visualDesignPending || calendarPending;
+  const productionBlock = parseMissionProductionBlock(
+    prog?.performance_summary as Record<string, unknown> | undefined,
+  );
 
   const feedProductionLockActive = isFeedProductionLockActive(
     prog?.performance_summary as Record<string, unknown> | undefined,
   );
 
-  useEffect(() => {
-    if (autoFeedBootstrapRef.current || kickFeedMutation.isPending) return;
-    if (!showFeedPackage) return;
-    if (feedProductionLockActive) return;
-    const ideationDone = (prog?.nodes ?? []).some(
-      (n) => n.task_type === 'content_ideation' && n.status === 'completed',
-    );
-    if (!ideationDone || feedPrepPending) return;
-    const target = pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total;
-    const publishReady = pipelineSummary?.publishReady ?? 0;
-    const manifestGap = (slotChecklist?.readyRequired ?? 0) < (slotChecklist?.requiredTotal ?? target);
-    if (publishReady >= target && !manifestGap) return;
-    autoFeedBootstrapRef.current = true;
-    kickFeedMutation.mutate();
-  }, [
-    showFeedPackage,
-    feedPrepPending,
+  const productionState = String(
+    (prog?.performance_summary as Record<string, unknown> | undefined)?.production_state ?? '',
+  );
+  const productionTarget = pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total;
+  const manifestRequired = pipelineSummary?.manifestRequired ?? slotChecklist?.requiredTotal ?? productionTarget;
+  const manifestReady = pipelineSummary?.manifestReady ?? slotChecklist?.readyRequired ?? 0;
+  const feedPackageIncomplete = manifestReady < manifestRequired
+    || (pipelineSummary?.publishReady ?? 0) < productionTarget;
+
+  const feedProductionActive = isMissionFeedProductionActive({
+    kickPending: kickFeedMutation.isPending,
+    reproducePending: reproduceFeedMutation.isPending,
+    slotRendering,
     feedProductionLockActive,
-    pipelineSummary?.publishReady,
-    pipelineSummary?.productionTarget,
-    slotChecklist?.readyRequired,
-    slotChecklist?.requiredTotal,
-    prog?.nodes,
-    kickFeedMutation,
+    productionState,
+    userKicked: productionKickRequested,
+  });
+
+  useEffect(() => {
+    const shouldPoll = shouldPollCompletedMissionFeed({
+      missionStatus: mission.status,
+      feedPackageIncomplete,
+      feedProductionActive,
+    });
+    setPollCompletedFeed(shouldPoll);
+    if (!feedPackageIncomplete) {
+      setProductionKickRequested(false);
+    }
+  }, [
+    mission.status,
+    feedPackageIncomplete,
+    feedProductionActive,
   ]);
+
+  // Auto-kick removed: production is driven exclusively by the backend scheduler
+  // and factory drain loop — UI opening a detail sheet must never trigger fal/Remotion costs.
+  // Operator can still use explicit buttons when in debug/operatorMode.
 
   if (typeof window === 'undefined') return null;
 
@@ -3426,7 +3775,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px' }}>
-          {isLoading && (
+          {isLoading && missionInFlight && (
             <div style={{ textAlign: 'center', padding: '24px 0' }}>
               <div style={{ width: 24, height: 24, borderRadius: '50%',
                 border: `3px solid ${t.separator}`, borderTop: `3px solid ${t.accent}`,
@@ -3442,6 +3791,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               productionTarget: pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total,
               hasPreviewContent,
               rate,
+              feedProductionActive,
             });
             return (
             <div style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 16,
@@ -3535,6 +3885,34 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             <MissionAiCostPanel summary={missionAiCost} t={t} />
           )}
 
+          {debugMode && (isCompleted || mission.status === 'in_flight') && (() => {
+            const ps = prog?.performance_summary as Record<string, unknown> | undefined;
+            const state = String(ps?.production_state ?? 'unknown');
+            const slotsReady = Number(ps?.slots_ready ?? 0);
+            const slotsTotal = Number(ps?.slots_total ?? 0);
+            const lastDrain = ps?.last_drain_at ? new Date(String(ps.last_drain_at)).toLocaleTimeString('tr-TR') : '—';
+            const stateColor: Record<string, string> = {
+              complete: '#10B981', draining: '#3B82F6', queued: '#F59E0B',
+              exhausted: '#EF4444', idle: t.textMuted,
+            };
+            return (
+              <div style={{
+                padding: '10px 14px', borderRadius: 12, marginBottom: 12,
+                background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                border: `0.5px solid ${t.separator}`,
+              }}>
+                <div style={{ fontSize: 9, fontWeight: 800, color: t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Factory State
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: t.textSecondary }}>
+                  <span style={{ color: stateColor[state] ?? t.textMuted, fontWeight: 700 }}>{state}</span>
+                  <span>{slotsReady}/{slotsTotal} ready</span>
+                  <span>drain: {lastDrain}</span>
+                </div>
+              </div>
+            );
+          })()}
+
           {(isCompleted || mission.status === 'in_flight') && (
             <MissionSlotChecklistPanel
               checklist={slotChecklist}
@@ -3548,10 +3926,11 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               isLoading={feedPkgLoading}
               onGoToFeed={goToFeed}
               onRefresh={refreshFeedPackage}
-              onReproduceFeed={(pipelineSummary?.publishReady ?? 0) < (pipelineSummary?.productionTarget ?? MISSION_WEEKLY_PACKAGE_COUNTS.total)
+              onReproduceFeed={feedPackageIncomplete
                 ? () => { kickFeedMutation.mutate(); }
                 : undefined}
               isReproducingFeed={kickFeedMutation.isPending || reproduceFeedMutation.isPending}
+              feedProductionActive={feedProductionActive}
               debugMode={debugMode}
               t={t}
             />
@@ -3562,6 +3941,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             const errMsg = String(productionError?.message ?? '').toLowerCase();
             const isStillProcessing = (kickFeedMutation.isPending || reproduceFeedMutation.isPending)
               || slotRendering
+              || feedProductionLockActive
+              || feedProductionActive
               || feedPkgLoading
               || errMsg.includes('disconnected')
               || errMsg.includes('server')
@@ -3588,7 +3969,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                       ? 'Yayın takvimi hazırlanıyor'
                       : productionFailed
                         ? 'Feed üretimi tamamlanamadı'
-                        : isStillProcessing ? 'Görseller hazırlanıyor' : 'Feed görselleri henüz yok'}
+                        : productionBlock && !isStillProcessing
+                          ? productionBlock.label
+                          : isStillProcessing ? 'Görseller hazırlanıyor' : 'Feed görselleri henüz yok'}
                 </div>
                 <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
                   {visualDesignPending
@@ -3597,6 +3980,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                       ? 'Plan satırları (format, tarih, başlık) hazır olunca her biri için Feed çıktısı üretilir.'
                       : productionFailed
                         ? String(productionError?.message ?? 'Feed üretimi başarısız oldu. Aşağıdan tekrar deneyin.')
+                      : productionBlock && !isStillProcessing
+                        ? `Feed üretimi şunu bekliyor: ${productionBlock.awaitingNodes.join(', ') || productionBlock.label}. Tamamlanınca otomatik başlayacak.`
                       : isStillProcessing
                     ? 'Görseller hazırlanıyor — gönderiler geldikçe Feed sekmesinde görünür.'
                     : isBudget
@@ -3605,7 +3990,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                         : 'Bu ayki kredi limitiniz doldu. Yeni içerik yarın veya kredi yüklemesi sonrası devam eder.')
                       : (debugMode
                         ? 'Strateji ve fikirler tamam. Feed üretimi arka planda başlatılır; gerekirse aşağıdan yenileyin.'
-                        : 'Planınız hazır. Görseller arka planda üretiliyor — birkaç dakika içinde Feed\'de görünür.')}
+                        : 'Planınız hazır. Görselleri üret\'e dokunarak haftalık paketi oluşturun.')}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
@@ -3620,7 +4005,22 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                   >
                     ↻ Yenile
                   </button>
-                  {!isStillProcessing && ideationNode && (productionFailed || debugMode) && (
+                  {!isStillProcessing && ideationNode && !feedPrepPending && !productionFailed && (
+                    <button
+                      type="button"
+                      onClick={() => kickFeedMutation.mutate()}
+                      disabled={kickFeedMutation.isPending}
+                      style={{
+                        padding: '9px 14px', borderRadius: 12, cursor: 'pointer',
+                        background: t.accent, border: 'none',
+                        color: '#fff', fontSize: 12, fontWeight: 700,
+                        opacity: kickFeedMutation.isPending ? 0.7 : 1,
+                      }}
+                    >
+                      {kickFeedMutation.isPending ? 'Üretiliyor…' : 'Görselleri üret →'}
+                    </button>
+                  )}
+                  {!isStillProcessing && ideationNode && productionFailed && (
                     <button
                       type="button"
                       onClick={() => reproduceFeedMutation.mutate()}
@@ -3634,7 +4034,23 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                     >
                       {(kickFeedMutation.isPending || reproduceFeedMutation.isPending)
                         ? 'Üretiliyor…'
-                        : productionFailed ? 'Feed üretimini tekrar dene →' : 'Feed üretimini başlat →'}
+                        : 'Feed üretimini tekrar dene →'}
+                    </button>
+                  )}
+                  {debugMode && !isStillProcessing && ideationNode && !productionFailed && (
+                    <button
+                      type="button"
+                      onClick={() => reproduceFeedMutation.mutate()}
+                      disabled={reproduceFeedMutation.isPending}
+                      style={{
+                        padding: '9px 14px', borderRadius: 12, cursor: 'pointer',
+                        background: 'transparent',
+                        border: `0.5px solid ${t.accentBorder}`,
+                        color: t.accent, fontSize: 12, fontWeight: 700,
+                        opacity: reproduceFeedMutation.isPending ? 0.7 : 1,
+                      }}
+                    >
+                      {reproduceFeedMutation.isPending ? 'Üretiliyor…' : 'Feed üretimini başlat (sync) →'}
                     </button>
                   )}
                   {debugMode && !isStillProcessing && ideationNode && (
@@ -3730,7 +4146,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             const isOpen = expandedNode === node.node_key;
             const hasOutput = nodeHasOutput(node);
             const meta = taskMeta(node.task_type);
-            const resultCount = hasOutput ? countNodeResults(node) : null;
+            const resultCount = hasOutput ? countNodeResults(node, completedNodes) : null;
             const ics = node.task_type === 'content_ideation' && hasOutput
               ? computeNodeIcs(node)
               : null;
@@ -3822,6 +4238,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                       missionInFlight={mission.status === 'in_flight' || mission.status === 'approved'}
                       onGoToFeed={isContentNode ? goToFeed : undefined}
                       onOpenArtifact={openArtifactPreview}
+                      allNodes={completedNodes}
                     />
 
                     {/* Per-node action buttons */}
@@ -4232,7 +4649,11 @@ export function MissionHub() {
   });
   const missionsLoading = missionsInitialLoading && missions.length === 0;
 
-  const { data: productionSnapshot } = useQuery({
+  const {
+    data: productionSnapshot,
+    isFetching: productionSnapshotFetching,
+    isFetched: productionSnapshotFetched,
+  } = useQuery({
     queryKey: ['production-context-snapshot', wsId],
     queryFn: async () => {
       try {
@@ -4766,7 +5187,7 @@ export function MissionHub() {
           { label: 'Marka tonu',            ok: Boolean(b?.brand_tone?.trim()) },
         ].filter(f => !f.ok);
 
-        const allFilled = missingFields.length === 0;
+        const brandSnapshotReady = productionSnapshotFetched && !productionSnapshotFetching;
         const errLower = proposeError.toLowerCase();
         const isQuotaError =
           errLower.includes('kota') ||
@@ -4776,25 +5197,34 @@ export function MissionHub() {
         const isBlockingError =
           errLower.includes('bekleyen/aktif') || errLower.includes('bitirin veya reddedin');
         const blockingList = [...proposed, ...active];
-        const cardTitle = !allFilled
+        // Only surface brand-field gaps after snapshot load; never mask API errors (blocking, quota, etc.).
+        const showBrandMissing =
+          brandSnapshotReady
+          && missingFields.length > 0
+          && !isBlockingError
+          && !isQuotaError;
+        const cardTitle = showBrandMissing
           ? 'Marka verisi eksik'
           : isQuotaError
             ? 'OpenAI kotası / API hatası'
-            : 'Öneri oluşturulamadı';
-        const cardSubtitle = !allFilled
+            : isBlockingError
+              ? 'Bekleyen misyon var'
+              : 'Öneri oluşturulamadı';
+        const cardSubtitle = showBrandMissing
           ? `${missingFields.length} alan eksik, strateji üretilemiyor`
           : proposeError;
-        const accent = !allFilled ? '#F59E0B' : isQuotaError ? '#EF4444' : '#F59E0B';
+        const accent = showBrandMissing ? '#F59E0B' : isQuotaError ? '#EF4444' : '#F59E0B';
+        const cardHasBody = showBrandMissing || (isBlockingError && blockingList.length > 0);
 
         return (
           <div style={{ margin: '12px 22px 0', borderRadius: 16, overflow: 'hidden',
             background: t.isDark ? 'rgba(255,255,255,0.04)' : '#fff',
-            border: `0.5px solid ${!allFilled ? 'rgba(245,158,11,0.25)' : isQuotaError ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}` }}>
+            border: `0.5px solid ${showBrandMissing ? 'rgba(245,158,11,0.25)' : isQuotaError ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}` }}>
             <div style={{ padding: '12px 16px 10px', display: 'flex', alignItems: 'center', gap: 10,
-              borderBottom: allFilled ? 'none' : `0.5px solid ${t.separator}` }}>
+              borderBottom: cardHasBody ? `0.5px solid ${t.separator}` : 'none' }}>
               <div style={{ width: 28, height: 28, borderRadius: 8,
-                background: !allFilled ? 'rgba(245,158,11,0.1)' : isQuotaError ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
-                border: `0.5px solid ${!allFilled ? 'rgba(245,158,11,0.25)' : isQuotaError ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
+                background: showBrandMissing ? 'rgba(245,158,11,0.1)' : isQuotaError ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                border: `0.5px solid ${showBrandMissing ? 'rgba(245,158,11,0.25)' : isQuotaError ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -4858,7 +5288,7 @@ export function MissionHub() {
               </div>
             )}
 
-            {!allFilled && (
+            {showBrandMissing && (
               <div style={{ padding: '10px 16px' }}>
                 {missingFields.map((item, i) => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 8,
@@ -4876,7 +5306,7 @@ export function MissionHub() {
             )}
 
             <div style={{ padding: '10px 16px 14px', display: 'flex', gap: 8 }}>
-              {!allFilled && (
+              {showBrandMissing && (
                 <button onClick={() => openBrand()} style={{
                   flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
                   background: 'rgba(157,190,206,0.12)', border: '0.5px solid rgba(157,190,206,0.3)',
@@ -4891,13 +5321,13 @@ export function MissionHub() {
                 queryClient.invalidateQueries({ queryKey: ['production-context-snapshot', wsId] });
                 setTimeout(() => proposeMutation.mutate(), 300);
               }} disabled={hasBlockingMissions || budgetExhausted || readinessBlocks} style={{
-                flex: allFilled ? 1 : 0, padding: '10px 14px', borderRadius: 12,
+                flex: showBrandMissing ? 0 : 1, padding: '10px 14px', borderRadius: 12,
                 cursor: (hasBlockingMissions || budgetExhausted || readinessBlocks) ? 'default' : 'pointer',
                 opacity: (hasBlockingMissions || budgetExhausted || readinessBlocks) ? 0.45 : 1,
-                background: allFilled ? 'rgba(157,190,206,0.12)' : 'transparent',
-                border: allFilled ? '0.5px solid rgba(157,190,206,0.3)' : `0.5px solid ${t.separator}`,
-                fontSize: 12, fontWeight: allFilled ? 700 : 400,
-                color: allFilled ? t.accent : t.textMuted,
+                background: showBrandMissing ? 'transparent' : 'rgba(157,190,206,0.12)',
+                border: showBrandMissing ? `0.5px solid ${t.separator}` : '0.5px solid rgba(157,190,206,0.3)',
+                fontSize: 12, fontWeight: showBrandMissing ? 400 : 700,
+                color: showBrandMissing ? t.textMuted : t.accent,
               }}>
                 {hasBlockingMissions ? 'Önce bekleyen misyonları bitirin' : 'Yeniden Dene →'}
               </button>
