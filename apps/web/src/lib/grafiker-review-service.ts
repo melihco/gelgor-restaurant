@@ -129,7 +129,7 @@ export async function runGrafikerVisionReview(
         attempt: telemetry?.attempt,
         missionId: telemetry?.missionId,
         slotKey: telemetry?.slotKey,
-        detail: `${mode}:${label}${lite ? ':lite' : ''}`,
+        detail: `${mode}:${label}${imageDetail === 'low' ? ':lite' : ''}`,
       });
     } catch {
       // telemetri üretimi bozmamalı

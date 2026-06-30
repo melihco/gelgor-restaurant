@@ -4,8 +4,9 @@
  */
 import { buildFamilyCatalogForPrompt } from './creative-director-routing';
 
-/** Canva story archetypes — shared catalog (see canva-archetype-catalog.ts). */
-export { CANVA_STORY_ARCHETYPES } from './canva-archetype-catalog';
+import { CANVA_STORY_ARCHETYPES } from './canva-archetype-catalog';
+
+export { CANVA_STORY_ARCHETYPES };
 
 const SECTOR_STORY_ROUTING = `
 ━━━ SECTOR ROUTING (Canva agency patterns) ━━━

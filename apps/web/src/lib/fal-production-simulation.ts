@@ -485,8 +485,8 @@ export function compareFalFeedBeforeAfter(
   const deltas: FalFeedBeforeAfterComparison['deltas'] = [];
 
   const add = (field: string, impact: string) => {
-    const b = String((before as Record<string, unknown>)[field] ?? '');
-    const a = String((after as Record<string, unknown>)[field] ?? '');
+    const b = String((before as unknown as Record<string, unknown>)[field] ?? '');
+    const a = String((after as unknown as Record<string, unknown>)[field] ?? '');
     if (b !== a) deltas.push({ field, before: b, after: a, impact });
   };
 

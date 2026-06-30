@@ -39,6 +39,8 @@ export {
   resolveBrandedPostUrl,
   resolvePosterUrl,
   resolvePublishImageUrl,
+  resolveStoryPublishImageUrl,
+  resolveStoryPublishVideoUrl,
   resolveStoryVideoUrl,
   resolveStoryVideoClientUrl,
   storyRetryIsBusy,

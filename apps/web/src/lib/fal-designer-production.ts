@@ -674,7 +674,6 @@ export async function produceFalDesignerStill(
         artDirection: input.artDirection,
         designIntensityLevel: input.designIntensityLevel,
         occasion: input.occasion,
-        logoUrl: input.logoUrl,
         logoPlacement: input.logoPlacement,
       });
       console.log(

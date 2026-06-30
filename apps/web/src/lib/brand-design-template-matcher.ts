@@ -186,8 +186,8 @@ export async function matchDesignTemplateToSlot(
     const proximity = record.template_type === 'event_special'
       ? specialDayProximityBonus(record)
       : 0;
-    const hasPreview = Boolean(r.thumbnail_url);
-    const hasRecipe = Boolean(r.design_spec?.prompt);
+    const hasPreview = Boolean(record.thumbnail_url);
+    const hasRecipe = Boolean(record.design_spec?.prompt);
     const score =
       (typeRank >= 0 ? (candidates.length - typeRank) * 10 : 0) +
       (formatOk ? 5 : 0) +

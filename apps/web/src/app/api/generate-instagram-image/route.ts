@@ -19,6 +19,21 @@ import type { ResolvedFalLogoPlacement } from '@/lib/fal-logo-placement';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
+type OpenAiGptImageQuality = 'low' | 'high' | 'auto' | 'medium' | 'standard';
+
+function openAiEditQuality(quality: string): OpenAiGptImageQuality {
+  if (
+    quality === 'low'
+    || quality === 'high'
+    || quality === 'auto'
+    || quality === 'medium'
+    || quality === 'standard'
+  ) {
+    return quality;
+  }
+  return 'high';
+}
+
 type InstagramImageInput = {
   title: string;
   caption?: string;
@@ -881,7 +896,7 @@ async function enhanceWithOpenAI(
     prompt: enhancePrompt.slice(0, 4000),
     n: 1,
     size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024',
-    quality,
+    quality: openAiEditQuality(quality),
   } as Parameters<typeof openai.images.edit>[0]);
   const edited = editedRaw as { data?: Array<{ url?: string; b64_json?: string }> };
   const ed = edited.data?.[0];
@@ -949,7 +964,7 @@ async function generateWithOpenAI(
           prompt: editPrompt,
           n: 1,
           size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024',
-          quality,
+          quality: openAiEditQuality(quality),
           ...(isDesignCard ? { input_fidelity: 'high' as const } : {}),
         } satisfies Parameters<typeof openai.images.edit>[0];
         const editedRaw2 = await openai.images.edit(editPayload);
@@ -999,7 +1014,7 @@ async function generateWithOpenAI(
           prompt,
           n: 1,
           size: sizeFor(contentType, model),
-          quality,
+          quality: openAiEditQuality(quality),
           output_format: 'webp',
         } as any),
   );
@@ -1014,7 +1029,7 @@ async function generateWithOpenAI(
     imageUrl,
     provider: 'openai' as const,
     model,
-    quality,
+    quality: openAiEditQuality(quality),
   } satisfies GeneratedImage;
 }
 

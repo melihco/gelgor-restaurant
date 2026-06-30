@@ -25,8 +25,12 @@ export interface GalleryPhotoMeta {
   notGoodFor?: string[];
   suggestedAssetType?: string;
   isLogo?: boolean;
+  hasPeople?: boolean;
+  hasText?: boolean;
   captionHooks?: string[];
   pairingKeywords?: string[];
+  qualityScore?: number | null;
+  analyzedAt?: string | null;
 }
 
 export interface MatchPhotoInput {

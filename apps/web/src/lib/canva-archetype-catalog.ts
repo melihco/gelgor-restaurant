@@ -373,7 +373,8 @@ function scoreArchetype(
 
   const sector = normalizeSectorId(input.sector ?? '');
   const pool = CANVA_SECTOR_ARCHETYPE_HINTS[sector]
-    ?? CANVA_SECTOR_ARCHETYPE_HINTS.default;
+    ?? CANVA_SECTOR_ARCHETYPE_HINTS.default
+    ?? [];
   if (pool.includes(archetype.id)) score += 22;
 
   return score;
@@ -460,7 +461,8 @@ export function pickSectorArchetypePool(
 
   const canonical = normalizeSectorId(sector ?? '') || 'default';
   const pool = CANVA_SECTOR_ARCHETYPE_HINTS[canonical]
-    ?? CANVA_SECTOR_ARCHETYPE_HINTS.default;
+    ?? CANVA_SECTOR_ARCHETYPE_HINTS.default
+    ?? [];
   const unique = filterFormat(pool);
   if (unique.length > 0) return unique;
 

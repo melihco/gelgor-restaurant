@@ -283,7 +283,7 @@ export function applyCalendarProductionEnrichment(
   linkedPlanIndices: Set<number>;
   orphanCalendarIdeas: Record<string, unknown>[];
 } {
-  const ideas = ideationRecords.map((idea, index) => ({
+  const ideas: Record<string, unknown>[] = ideationRecords.map((idea, index) => ({
     ...idea,
     idea_index: index,
     source_node: String(idea.source_node ?? 'content_ideation'),

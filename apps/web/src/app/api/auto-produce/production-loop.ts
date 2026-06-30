@@ -641,8 +641,35 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   /** Strategist — avoid same venue photo across slots in one mission run. */
   const batchUsedGalleryMission = new Set<string>();
   const globalGalleryUsageCounts = buildGlobalGalleryUsageCounts(galleryUsage);
-  const pickMissionGallery: typeof pickGalleryPhotoForIdea = (...args) =>
-    pickGalleryPhotoForIdea(...args, globalGalleryUsageCounts);
+  const pickMissionGallery = (
+    caption: string,
+    headline: string,
+    mood: string,
+    galleryAnalysis: Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta>,
+    candidateUrls: string[],
+    typeExcludeUrls: string[],
+    batchExcludeUrls: string[],
+    contentType?: string,
+    agentUrl?: string | null,
+    businessType?: string,
+    productionStrict = true,
+    tieBreakSeed?: number,
+  ): string | null =>
+    pickGalleryPhotoForIdea(
+      caption,
+      headline,
+      mood,
+      galleryAnalysis,
+      candidateUrls,
+      typeExcludeUrls,
+      batchExcludeUrls,
+      contentType,
+      agentUrl,
+      businessType,
+      productionStrict,
+      tieBreakSeed,
+      globalGalleryUsageCounts,
+    );
 
   // galleryMetaRaw alias for code that still references it directly
   const galleryMetaRaw = (galleryAnalysis ?? {}) as Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta>;

@@ -82,7 +82,7 @@ export const AI_MODEL_PROFILES: Record<AiModelTier, AiModelProfile> = {
   },
 };
 
-function readTierEnv(): string | undefined {
+function readTierEnv(): AiModelTier | undefined {
   const raw = process.env.AI_MODEL_TIER?.trim().toLowerCase();
   if (raw === 'starter' || raw === 'agency' || raw === 'premium') return raw;
   if (raw === 'economy') return 'starter';
