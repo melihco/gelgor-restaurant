@@ -10,7 +10,7 @@ COPY apps/api/src/Nexus.Contracts/Nexus.Contracts.csproj apps/api/src/Nexus.Cont
 COPY apps/api/src/Nexus.Domain/Nexus.Domain.csproj apps/api/src/Nexus.Domain/
 COPY apps/api/src/Nexus.Infrastructure/Nexus.Infrastructure.csproj apps/api/src/Nexus.Infrastructure/
 
-RUN dotnet restore apps/api/Nexus.sln
+RUN dotnet restore apps/api/src/Nexus.Api/Nexus.Api.csproj
 
 COPY apps/api/ apps/api/
 
