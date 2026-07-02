@@ -6,6 +6,9 @@ import './globals.css';
 
 export const metadata: Metadata = buildSiteMetadata();
 
+/** Render/Docker: env vars are runtime-only — never bake localhost into SSG HTML. */
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children,
 }: {

@@ -1,6 +1,10 @@
 # Render Blueprint — Postgres + 3 servis (tek repo, GitHub bağlantısı ile otomatik)
 # Dashboard: New → Blueprint → bu repo → render.yaml
 # Docs: docs/deploy-render.md
+#
+# Canlı secret'ları güncellemek için (local .env.local ile aynı key'ler):
+#   export RENDER_API_KEY=rnd_...
+#   python3 scripts/sync-render-env-from-local.py --deploy
 
 databases:
   - name: nexus-db
@@ -12,7 +16,7 @@ envVarGroups:
   - name: smartagency-shared
     envVars:
       - key: INTERNAL_API_KEY
-        generateValue: true
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: APIFY_API_KEY
@@ -62,6 +66,22 @@ services:
           property: hostport
       - key: META_USD_TRY_RATE
         value: "32.0"
+      - key: AUTO_PRODUCE_BYPASS_LIMITS
+        value: "true"
+      - key: AUTO_FEED_PRODUCTION_ENABLED
+        value: "true"
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_CONTENT_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_LITE_MODEL
+        value: gpt-4o-mini
+      - key: AI_MODEL_TIER
+        value: starter
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CREATOMATE_API_KEY
+        sync: false
 
   - type: web
     name: smartagency-api
@@ -111,9 +131,28 @@ services:
         sync: false
       - key: RUNWAY_API_SECRET
         sync: false
+      - key: RUNWAYML_API_SECRET
+        sync: false
       - key: SMART_AGENCY_IMAGE_PROVIDER
         value: flux
-      # Instagram / Meta OAuth + Graph publish (desktop ApprovalFeedback)
+      - key: SMART_AGENCY_IMAGE_MODEL
+        value: gpt-image-1
+      - key: SMART_AGENCY_IMAGE_QUALITY
+        value: medium
+      - key: FAL_IMAGE_MODEL
+        value: fal-ai/flux/schnell
+      - key: AI_MODEL_TIER
+        value: starter
+      - key: PREFER_FAL_DESIGNED_POSTS
+        value: "true"
+      - key: GRAFIKER_LITE
+        value: "true"
+      - key: CD_LITE
+        value: "true"
+      - key: SKIP_ENHANCE_FOR_REMOTION_GRADE
+        value: "true"
+      - key: VIDEO_TIER_SCOPE
+        value: "true"
       - key: NEXT_PUBLIC_SITE_URL
         fromService:
           name: smartagency-web
@@ -125,6 +164,8 @@ services:
           type: web
           envVarKey: RENDER_EXTERNAL_URL
       - key: MERTCAFE_BASE_URL
+        sync: false
+      - key: MERTCAFE_API_KEY
         sync: false
       - key: MERTCAFE_WORKSPACE_API_KEYS
         sync: false
@@ -140,14 +181,38 @@ services:
         sync: false
       - key: R2_ENDPOINT
         sync: false
+      - key: CREATOMATE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: VENUE_PHOTO_PRESERVE
-        value: "true"
-      - key: AUTO_PRODUCE_GALLERY_ONLY
-        value: "true"
-      - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "false"
-      - key: AUTO_PRODUCE_RUNWAY
+      - key: AUTO_PRODUCE_SUBTLE_ENHANCE
+        value: "false"
+      - key: AUTO_PRODUCE_GALLERY_ONLY
+        value: "false"
+      - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "true"
+      - key: AUTO_PRODUCE_RUNWAY
+        value: "false"
+      - key: AUTO_PRODUCE_MAX_DAILY
+        value: "500"
+      - key: MISSION_AUTO_PRODUCE_MAX_PER_RUN
+        value: "5"
+      - key: AUTO_PRODUCE_DAILY_BUDGET_USD
+        value: "50"
+      - key: AUTO_PRODUCE_MAX_REELS_DAILY
+        value: "15"
+      - key: RUNWAY_MODEL
+        value: gen4_turbo
+      - key: RUNWAY_API_VERSION
+        value: "2024-11-06"
+      - key: RUNWAY_DEFAULT_DURATION
+        value: "5"
+      - key: RUNWAY_DEFAULT_RATIO
+        value: "720:1280"
+      - key: RUNWAY_TIMEOUT_MS
+        value: "240000"
       - key: NEXT_PUBLIC_API_URL
         fromService:
           name: smartagency-api
