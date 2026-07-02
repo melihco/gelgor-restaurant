@@ -222,3 +222,42 @@ class BrandAnalyzeResponse(BaseModel):
     missing_signals: list[str]
     brand_context: BrandContextRead
     reference_image_urls: list[str] = Field(default_factory=list)
+
+
+class GalleryPhotoAnalysisEntry(BaseModel):
+    """Single gallery photo vision analysis — accepts camelCase from Next.js BFF."""
+
+    model_config = {"populate_by_name": True}
+
+    url: str
+    description: str = ""
+    content_tags: list[str] = Field(default_factory=list, alias="contentTags")
+    best_for: list[str] = Field(default_factory=list, alias="bestFor")
+    not_good_for: list[str] = Field(default_factory=list, alias="notGoodFor")
+    mood: str = "ambient"
+    has_people: bool = Field(default=False, alias="hasPeople")
+    has_text: bool = Field(default=False, alias="hasText")
+    is_logo: bool = Field(default=False, alias="isLogo")
+    suggested_asset_type: str = Field(default="venue_reference", alias="suggestedAssetType")
+    usage_context: str = Field(default="", alias="usageContext")
+    caption_hooks: list[str] = Field(default_factory=list, alias="captionHooks")
+    pairing_keywords: list[str] = Field(default_factory=list, alias="pairingKeywords")
+    quality_score: float | None = Field(default=None, alias="qualityScore")
+    analyzed_at: str | None = Field(default=None, alias="analyzedAt")
+    analysis_source: str | None = Field(default=None, alias="analysisSource")
+
+
+class GalleryAnalysisSaveRequest(BaseModel):
+    results: list[GalleryPhotoAnalysisEntry] = Field(default_factory=list)
+
+
+class GalleryMatchStatsRequest(BaseModel):
+    scores: list[float] = Field(default_factory=list)
+
+
+class ReviewSubmitRequest(BaseModel):
+    review_id: uuid.UUID
+    status: str
+    notes: str | None = None
+    edited_content: str | None = None
+    reviewer_name: str | None = None

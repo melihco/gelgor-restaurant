@@ -44,6 +44,9 @@ from app.schemas.brand_context import (
     BrandPostTemplateRead,
     BrandPostTemplateUpdate,
     ConfirmConstitutionRequest,
+    GalleryAnalysisSaveRequest,
+    GalleryMatchStatsRequest,
+    ReviewSubmitRequest,
     SourceStatus,
 )
 from app.schemas.brand_theme import AiThemeSettingsPatch, BrandThemeSaveRequest

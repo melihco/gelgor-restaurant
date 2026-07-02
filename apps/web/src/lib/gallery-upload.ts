@@ -52,6 +52,8 @@ export async function resolveVisionImageUrl(url: string): Promise<string> {
 
 export async function probeGalleryPhotoAccessible(url: string): Promise<boolean> {
   if (!isBrandGalleryPersistedUrl(url)) return false;
+  // Persisted R2 media is served same-origin — skip flaky loopback probes on Render.
+  if (url.trim().startsWith('/api/media')) return true;
   if (url.startsWith('http://') || url.startsWith('https://')) {
     if (/\.(jpe?g|png|webp|gif)(\?|$)/i.test(url.split('?')[0] ?? url)) return true;
     try {
