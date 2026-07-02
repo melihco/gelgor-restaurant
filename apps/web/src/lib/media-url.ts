@@ -4,6 +4,7 @@
  */
 
 import { normalizeExternalPhotoUrl as normalizeGalleryPhotoUrl } from '@/lib/gallery-display-url';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 /** Re-export wrapper — safe under circular imports (live re-exports can be undefined). */
 export function normalizeExternalPhotoUrl(url: string | null | undefined): string | null {
@@ -211,10 +212,7 @@ export async function resolveExternallyAccessibleUrl(url: string): Promise<strin
 }
 
 function getNextjsInternalOriginForMedia(): string {
-  const explicit = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL;
-  if (explicit) return explicit.replace(/\/$/, '');
-  const port = process.env.PORT ?? '3000';
-  return `http://localhost:${port}`;
+  return getNextjsInternalOrigin();
 }
 
 import { SAFE_HTTP_HOSTS, TRUSTED_GALLERY_PREFIXES, isTrustedGalleryUrl, isSafeHttpHost } from './trusted-media-hosts';
@@ -412,7 +410,7 @@ export async function probeMediaUrl(url: string, timeoutMs = 10_000): Promise<bo
   const isVideo = isLikelyRenderedVideoUrl(trimmed);
 
   if (trimmed.startsWith('/api/')) {
-    const base = (process.env.NEXTJS_INTERNAL_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+    const base = getNextjsInternalOrigin();
     return probeHttpAssetUrl(`${base}${trimmed}`, timeoutMs, isVideo ? 'video' : 'any');
   }
 

@@ -29,7 +29,7 @@ import { resolveKitForSector } from '@/lib/remotion-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { resolveProductionLogoUrl } from '@/lib/brand-logo-production';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
-import { filterBrandGalleryUrls } from '@/lib/gallery-upload';
+import { filterBrandGalleryUrls, parseBrandReferenceUrls } from '@/lib/gallery-upload';
 import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
 import { resolveAnnouncementBrandKit } from '@/lib/announcement-brand-kit';
 import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
@@ -255,6 +255,14 @@ export async function fetchProductionContext(
   const snapshotGalleryUrls = filterBrandGalleryUrls(
     brandSnapshot?.gallery.map((item) => String(item.url ?? '').trim()) ?? [],
   );
+  const visualContextUrls = filterBrandGalleryUrls(
+    productionSnapshot?.visualContext?.referenceImageUrls ?? [],
+  );
+  const resolvedReferenceUrls = snapshotGalleryUrls.length >= 3
+    ? snapshotGalleryUrls
+    : visualContextUrls.length >= 3
+      ? visualContextUrls
+      : filterBrandGalleryUrls(parseBrandReferenceUrls(rawBase.reference_image_urls));
   const raw: Record<string, unknown> = brandSnapshot
     ? {
         ...rawBase,
@@ -269,8 +277,8 @@ export async function fetchProductionContext(
         instagram_bio: brandSnapshot.instagramBio ?? rawBase.instagram_bio ?? '',
         location: brandSnapshot.location ?? rawBase.location ?? '',
         languages: brandSnapshot.languages?.length ? brandSnapshot.languages : rawBase.languages,
-        reference_image_urls: snapshotGalleryUrls.length >= 3
-          ? snapshotGalleryUrls
+        reference_image_urls: resolvedReferenceUrls.length > 0
+          ? resolvedReferenceUrls
           : rawBase.reference_image_urls,
         logo_url:
           brandSnapshot.gallery?.find((item) => item.kind === 'logo')?.url
