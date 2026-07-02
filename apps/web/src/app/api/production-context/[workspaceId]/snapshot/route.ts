@@ -76,6 +76,7 @@ export async function GET(
     workspaceId,
     core,
     intelligence,
+    brandContext,
   });
 
   try {

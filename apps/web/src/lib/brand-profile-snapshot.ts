@@ -51,17 +51,32 @@ type BrandContextIntelligenceSnapshot = {
   brand_constitution_confirmed_at?: string | null;
 };
 
+type BrandContextGallerySnapshot = {
+  reference_image_urls?: string[];
+};
+
 export function mergeBrandProfileSnapshot(input: {
   workspaceId: string;
   core: BrandProfileCoreSnapshot;
   intelligence: BrandContextIntelligenceSnapshot;
+  /** Authoritative Python brand_context row — wins when it has a usable gallery. */
+  brandContext?: BrandContextGallerySnapshot;
 }): BrandProfileSnapshot {
   const core = input.core ?? {};
   const intelligence = input.intelligence ?? {};
   const themeAi = (intelligence.brand_theme ?? {}) as Record<string, unknown>;
+  const fromBrandContext = parseReferenceImageUrlList(input.brandContext?.reference_image_urls);
   const fromIntelligence = parseReferenceImageUrlList(intelligence.reference_image_urls);
   const fromCore = parseReferenceImageUrlList(core.brandImageUrls);
-  const galleryUrls = fromIntelligence.length ? fromIntelligence : fromCore;
+  const galleryUrls = fromBrandContext.length >= 3
+    ? fromBrandContext
+    : fromIntelligence.length >= 3
+      ? fromIntelligence
+      : fromBrandContext.length
+        ? fromBrandContext
+        : fromIntelligence.length
+          ? fromIntelligence
+          : fromCore;
   const logoUrl = String(core.logoUrl || intelligence.logo_url || '').trim();
 
   const gallery = galleryUrls.map((url, index) => ({
