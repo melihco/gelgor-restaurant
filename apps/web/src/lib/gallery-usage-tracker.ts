@@ -14,7 +14,8 @@ const EMPTY_USAGE: UsedGalleryUsage = {
   byType: { feed: [], story: [], reel: [], carousel: [] },
 };
 
-export const GALLERY_USAGE_COUNT_PENALTY = 4;
+/** Per prior-use penalty in semantic ranking — higher spreads gallery diversity. */
+export const GALLERY_USAGE_COUNT_PENALTY = 12;
 
 /** Cross post-type usage counts — drives matcher diversity (multi-tenant). */
 export function buildGlobalGalleryUsageCounts(
@@ -195,6 +196,40 @@ export function getExcludeUrlsForPostType(
   for (const u of usage.byType[postType]) seen.add(normalizeGalleryUrl(u));
   for (const u of batchUsed) seen.add(normalizeGalleryUrl(u));
   return [...seen];
+}
+
+/** All gallery URLs already used in this mission run or prior artifacts (any format). */
+export function getMissionWideExcludeUrls(
+  usage: UsedGalleryUsage,
+  batchUsedByType: Record<PostTypeBucket, string[]>,
+  batchUsedMission: Iterable<string> = [],
+): string[] {
+  const seen = new Set<string>();
+  for (const bucket of Object.values(usage.byType)) {
+    for (const u of bucket) seen.add(normalizeGalleryUrl(u));
+  }
+  for (const bucket of Object.values(batchUsedByType)) {
+    for (const u of bucket) seen.add(normalizeGalleryUrl(u));
+  }
+  for (const u of batchUsedMission) seen.add(normalizeGalleryUrl(u));
+  return [...seen];
+}
+
+export function isGalleryUrlUsedInMission(
+  usage: UsedGalleryUsage,
+  batchUsedByType: Record<PostTypeBucket, string[]>,
+  batchUsedMission: Iterable<string>,
+  url: string,
+): boolean {
+  const base = normalizeGalleryUrl(url);
+  for (const u of batchUsedMission) {
+    if (normalizeGalleryUrl(u) === base) return true;
+  }
+  for (const type of ['feed', 'story', 'reel', 'carousel'] as PostTypeBucket[]) {
+    if (isGalleryUrlUsedForPostType(usage, url, type)) return true;
+    if (batchUsedByType[type].some((u) => normalizeGalleryUrl(u) === base)) return true;
+  }
+  return false;
 }
 
 export function markGalleryUrlUsedForPostType(

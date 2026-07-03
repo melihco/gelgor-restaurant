@@ -61,6 +61,7 @@ export interface FalOnlySlotInput {
   designerMotionCue?: string;
   /** fal.ai design intensity for the slot channel. */
   designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
+  backgroundStyle?: import('@/types/brand-theme').TypographyBackgroundStyle;
   brandTemplateBinding?: import('@/lib/brand-design-template-production').BrandTemplateFalBinding | null;
   logoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
 }
@@ -135,7 +136,7 @@ export async function produceFalOnlySlot(
         brandName: input.brandName,
         brandColors,
         vibe: designVibe,
-        backgroundStyle: photoUrl ? 'photo_overlay' : 'gradient_mesh',
+        backgroundStyle: input.backgroundStyle ?? (photoUrl ? 'photo_overlay' : 'gradient_mesh'),
         referencePhotoUrl: photoUrl,
         sceneHint: input.sceneHint || undefined,
         brandDirectives: binding?.brandDirectives ?? input.brandDirectives,
@@ -248,7 +249,7 @@ export async function produceFalOnlySlot(
         brandName: input.brandName,
         brandColors,
         vibe: designVibe,
-        backgroundStyle: photoUrl ? 'photo_overlay' : 'gradient_mesh',
+        backgroundStyle: input.backgroundStyle ?? (photoUrl ? 'photo_overlay' : 'gradient_mesh'),
         aspectRatio: '4:5',
         referencePhotoUrl: photoUrl,
         sceneHint: input.sceneHint || undefined,
@@ -348,10 +349,14 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       grafikerMaxRetries: inputs.grafikerMaxRetries,
       referencePhotoUrl: templateBinding.referencePhotoUrl ?? inputs.referenceUrl ?? undefined,
       brandReferenceImageUrls: inputs.brandReferenceImageUrls,
-      brandDirectives: templateBinding.brandDirectives,
+      brandDirectives: [
+        ...templateBinding.brandDirectives,
+        ...(inputs.designBriefDirectives ?? []),
+      ],
       visualDnaTone: falBrand.visualDnaTone,
       designerMotionCue: inputs.designerMotionCue,
-      designIntensityLevel: falBrand.designIntensityLevel,
+      designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
+      backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
       brandTemplateBinding: templateBinding,
       logoPlacement: inputs.falLogoPlacement,
     });

@@ -12,9 +12,9 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { buildDiversityDirective } from '@/lib/mission-diversity';
 import {
   assertPathTenantMatchesRequest,
-  buildTenantForwardHeaders,
   fetchBrandAlignmentGate,
 } from '@/lib/tenant-production-guard';
 
@@ -40,7 +40,7 @@ async function fetchContextSignals(
 export const runtime = 'nodejs';
 export const maxDuration = 120; // propose calls StrategistAgent (~60-90s)
 
-type MissionListItem = { id: string; status: string };
+type MissionListItem = { id: string; status: string; title?: string; type?: string; objective?: string; trigger_signal?: string };
 
 function normalizeMissionList(data: unknown): MissionListItem[] {
   if (Array.isArray(data)) {
@@ -49,7 +49,13 @@ function normalizeMissionList(data: unknown): MissionListItem[] {
         const row = m as Record<string, unknown>;
         const id = String(row.id ?? row.mission_id ?? '').trim();
         const status = String(row.status ?? '').trim();
-        return id && status ? { id, status } : null;
+        const title = String(row.title ?? '').trim() || undefined;
+        const type = String(row.type ?? '').trim() || undefined;
+        const objective = String(row.objective ?? '').trim() || undefined;
+        const trigger_signal = String(row.trigger_signal ?? '').trim() || undefined;
+        return id && status
+          ? { id, status, title, type, objective, trigger_signal }
+          : null;
       })
       .filter((m): m is MissionListItem => m !== null);
   }
@@ -137,19 +143,9 @@ export async function POST(
 
   // 3b. Build diversity directive from recent missions so auto-trigger proposals
   //     don't repeat themes (previously only injected via Mission Hub UI).
-  const diversityBlock = (() => {
-    const recent = missions.filter(
-      (m) => m.status !== 'rejected' && m.status !== 'cancelled',
-    ).slice(0, 8);
-    if (recent.length === 0) return '';
-    const lines = [
-      '=== ÇEŞİTLİLİK DİREKTİFİ ===',
-      'Son/aktif misyonlar (tekrarlamaktan kaçın, farklı format & stratejik açı seç):',
-      ...recent.map((m) => `- ${m.id.slice(0, 8)}`),
-      'Yeni öneriler bu açılardan FARKLI olmalı; format ve içerik türünü çeşitlendir.',
-    ];
-    return lines.join('\n');
-  })();
+  const diversityBlock = buildDiversityDirective(
+    missions.filter((m) => m.status !== 'rejected' && m.status !== 'cancelled'),
+  );
 
   const proposeBlock = [contextSignals, diversityBlock].filter(Boolean).join('\n\n');
 

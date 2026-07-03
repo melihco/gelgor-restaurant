@@ -11,14 +11,14 @@ import {
 import { isWeakGalleryMatch, shouldSkipProductionForWeakGallery } from '@/lib/gpt-enhance-policy';
 import { serverConfig } from '@/lib/server-config';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
-import { MIN_ACCEPT_SCORE, RUNWAY_GALLERY_MIN_SCORE } from '@/lib/gallery-photo-matcher';
-// matchPhotoToContent, resolveBestGalleryUrl, pickScoredCarouselSlides, MatchPhotoInput → caption-publish-resolver / image-generators
+// matchPhotoToContent, pickScoredCarouselSlides, MatchPhotoInput → caption-publish-resolver / image-generators
 import { slotNeedsSceneBrief } from '@/lib/scene-brief-policy';
 import {
   type PostTypeBucket,
   type UsedGalleryUsage,
   fetchUsedGalleryImages,
   getExcludeUrlsForPostType,
+  getMissionWideExcludeUrls,
   isGalleryUrlUsedForPostType,
   kindToPostType,
   markGalleryUrlUsedForPostType,
@@ -31,6 +31,8 @@ import {
   enrichGalleryAnalysis,
   assignPhotosToContents,
   resolveBestGalleryUrl,
+  MIN_ACCEPT_SCORE,
+  RUNWAY_GALLERY_MIN_SCORE,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import { scoreIdeationPhotoMatch } from '@/lib/caption-photo-alignment';
@@ -272,7 +274,13 @@ import {
   type DesignedPostSnapshot,
   type AdDeriveRenderContext,
 } from './ad-derive';
-import { deriveStoriesFromPostsForEmptySlots } from './post-story-adapt';
+import { artifactToProductionRunRow, deriveStoriesFromPostsForEmptySlots } from './post-story-adapt';
+import {
+  applyCalendarBackfillToIdeas,
+  matchCalendarPlansToEmptySlots,
+  collectUsedCalendarPlanIndices,
+} from '@/lib/calendar-slot-backfill';
+import type { ProductionRunResultRow } from '@/lib/mission-slot-backfill';
 import {
   type ParsedIdea,
   NEXUS_CONTENT_URL_MAX,
@@ -307,6 +315,13 @@ import { falOnlyHandler } from './pipelines/fal-only-pipeline';
 import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
 import { runPipelineStages } from './pipelines/pipeline-types';
 import type { SlotProductionContext } from './pipelines/pipeline-types';
+import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
+import type { TypographyBackgroundStyle } from '@/types/brand-theme';
+import {
+  fetchRecentFalGridSurfaces,
+  rotateFalDesignSurfaceForGrid,
+  type FalGridSurfaceKind,
+} from '@/lib/fal-grid-surface-rotation';
 import {
   CAROUSEL_MIN_SLIDES,
   CAROUSEL_TARGET_SLIDES,
@@ -381,6 +396,14 @@ export interface RunProductionParams {
   slotBackfillPass?: boolean;
   /** Internal — keys `${ideaIndex}:${slot_role}` to re-run on backfill pass. */
   backfillSlotKeys?: string[];
+  /** Raw content_calendar plan rows — used for empty-slot backfill after main pass. */
+  calendarPlans?: Record<string, unknown>[];
+  /** Factory plan-phase gallery picks keyed by `${ideaIndex}::${slot_role}`. */
+  gallerySlotAssignments?: Record<string, { url: string; score?: number | null }>;
+  /** Internal nested calendar backfill — skip lock release (outer pass owns locks). */
+  internalNestedPass?: boolean;
+  /** Skip main slot loop — only post→story + calendar backfill + retries (factory completion). */
+  completionPassOnly?: boolean;
   /** New Brief form — fal.ai art-director pipelines, no Remotion bundle. */
   adHocBrief?: boolean;
 }
@@ -396,6 +419,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandThemeOverride,
     slotBackfillPass = false,
     backfillSlotKeys,
+    calendarPlans = [],
+    gallerySlotAssignments,
+    internalNestedPass = false,
+    completionPassOnly = false,
     adHocBrief = false,
   } = params;
   const brandName = brandNameOverride ?? undefined;
@@ -514,11 +541,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     creativeBrief,
     brandBusinessType,
     brandTheme,
+    brandName: resolvedBrandName,
+    brandLocation,
+    brandDescription: brandCtxForVisual.description ?? undefined,
     pipelineRun,
   });
 
   if (planOutcome.status === 'blocked') {
-    await releaseAllProductionLocks(workspaceId, missionId);
+    if (!internalNestedPass) {
+      await releaseAllProductionLocks(workspaceId, missionId);
+    }
     if (planOutcome.httpStatus === 429) {
       console.warn(
         `[auto-produce] Budget blocked workspace=${workspaceId} mission=${missionId ?? 'none'}: ${planOutcome.body.error}`,
@@ -612,7 +644,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ),
     );
     if (analysisGate?.blocked) {
-      await releaseAllProductionLocks(workspaceId, missionId);
+      if (!internalNestedPass) {
+        await releaseAllProductionLocks(workspaceId, missionId);
+      }
       return NextResponse.json(
         attachPipelineTrace({ error: analysisGate.blocked }, pipelineRun),
         { status: 422 },
@@ -723,13 +757,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  const productionLoop: ManifestProductionQueueItem[] = slotBackfillPass && backfillSlotKeys?.length
-    ? fullProductionQueue.filter((item) =>
-        backfillSlotKeys.includes(`${item.ideaIndex}:${item.assignment.slot_role}`),
-      )
-    : fullProductionQueue;
+  const productionLoop: ManifestProductionQueueItem[] = completionPassOnly
+    ? []
+    : slotBackfillPass && backfillSlotKeys?.length
+      ? fullProductionQueue.filter((item) =>
+          backfillSlotKeys.includes(`${item.ideaIndex}:${item.assignment.slot_role}`),
+        )
+      : fullProductionQueue;
 
-  if (missionId && !slotBackfillPass) {
+  if (completionPassOnly && missionId) {
+    console.log(
+      `[auto-produce] Completion pass only: skipping main loop (${fullProductionQueue.length} manifest slots)`,
+    );
+  } else if (missionId && !slotBackfillPass) {
     console.log(
       `[auto-produce] Manifest production queue: ${productionLoop.length} slots ` +
       `(ideas=${toProcess.length}, max=${maxIdeas}, package=${manifestMissionType})`,
@@ -742,7 +782,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
   const missionGalleryAssignments = buildMissionGalleryAssignments({
     missionId,
-    productionLoop,
+    // Always assign across the full manifest — factory drain may produce one slot per call.
+    productionLoop: fullProductionQueue,
     galleryPhotos,
     galleryMeta,
     brandBusinessType,
@@ -754,9 +795,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     galleryUsage,
   });
 
+  if (gallerySlotAssignments && Object.keys(gallerySlotAssignments).length > 0) {
+    for (const [key, entry] of Object.entries(gallerySlotAssignments)) {
+      const url = String(entry?.url ?? '').trim();
+      if (!url) continue;
+      missionGalleryAssignments.set(key, {
+        url,
+        score: typeof entry.score === 'number' ? entry.score : MIN_ACCEPT_SCORE,
+        reason: 'factory_batch_assign',
+        confidence: 1,
+      });
+    }
+    console.log(
+      `[auto-produce] Factory gallery batch assign: `
+      + `${Object.keys(gallerySlotAssignments).length} precomputed slot(s)`,
+    );
+  }
+
   const missionSessionCaptions: string[] = [];
   /** Track Canva archetypes used by fal slots in this mission — prevents one layout dominating. */
   const missionFalArchetypesUsed: string[] = [];
+  /** Recent + in-mission fal grid surfaces — prevents identical top color bands back-to-back. */
+  const missionFalGridSurfacesUsed: FalGridSurfaceKind[] = missionId
+    ? await fetchRecentFalGridSurfaces(workspaceId)
+    : [];
 
   for (const queueItem of productionLoop) {
     const ideaCostBefore = costEstimate;
@@ -943,10 +1005,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     const templateUseCase = String(idea.template_use_case || '');
     const typeExclude = getExcludeUrlsForPostType(galleryUsage, postType, batchUsedByType[postType]);
-    const missionGalleryExclude = [
-      ...typeExclude,
-      ...Array.from(batchUsedGalleryMission),
-    ];
+    const missionGalleryExclude = getMissionWideExcludeUrls(
+      galleryUsage,
+      batchUsedByType,
+      batchUsedGalleryMission,
+    );
 
     let preassignedGalleryUrl: string | null = null;
     let galleryFirstSource: GalleryFirstCaptionSource | null = null;
@@ -1517,8 +1580,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         postType,
         galleryUsage,
         batchUsedByType,
+        batchUsedMission: batchUsedGalleryMission,
         businessType: brandBusinessType,
         ideaIndex,
+        globalUsageCounts: globalGalleryUsageCounts,
       });
       if (referenceUrl) {
         referenceUrl = normalizeExternalPhotoUrl(referenceUrl) ?? referenceUrl;
@@ -2197,6 +2262,47 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       })
       : null;
 
+    let falGridRotationDirectives: string[] = [];
+    let falGridIntensityOverride: import('@/lib/fal-design-intensity').FalDesignIntensityLevel | undefined;
+    let falGridBackgroundOverride: TypographyBackgroundStyle | undefined;
+    let slotFalGridSurface: FalGridSurfaceKind | null = null;
+
+    if (usesFalDesignerTrack && !adHocBrief && !isCalendarSlot) {
+      const intensityChannel = falBriefFormat === 'post'
+        ? 'post'
+        : falBriefFormat === 'story'
+          ? 'story'
+          : 'reel';
+      const typoConfig = (brandTheme?.typography_design ?? brandTheme?.typographyDesign) as
+        | { background_style?: TypographyBackgroundStyle }
+        | undefined;
+      const baseIntensity = resolveFalDesignIntensityForChannel(brandTheme, intensityChannel);
+      const baseBackground: TypographyBackgroundStyle = referenceUrl
+        ? 'photo_overlay'
+        : (typoConfig?.background_style ?? 'gradient_mesh');
+      const gridRotation = rotateFalDesignSurfaceForGrid({
+        channel: intensityChannel,
+        baseIntensity,
+        baseBackgroundStyle: baseBackground,
+        hasReferencePhoto: Boolean(referenceUrl),
+        archetypeId: falDesignCtx?.brief.canvaArchetypeId,
+        layoutPattern: falDesignCtx?.brief.layoutPattern,
+        recentSurfaceKinds: missionFalGridSurfacesUsed,
+      });
+      if (gridRotation.rotated) {
+        console.log(
+          `[auto-produce] fal grid surface rotation: ${gridRotation.surfaceKind} ` +
+          `intensity=${gridRotation.designIntensityLevel} bg=${gridRotation.backgroundStyle} ` +
+          `(avoid repeat of ${missionFalGridSurfacesUsed[0] ?? 'none'})`,
+        );
+      }
+      falGridRotationDirectives = gridRotation.gridRotationDirectives;
+      falGridIntensityOverride = gridRotation.designIntensityLevel;
+      falGridBackgroundOverride = gridRotation.backgroundStyle;
+      slotFalGridSurface = gridRotation.surfaceKind;
+      missionFalGridSurfacesUsed.unshift(gridRotation.surfaceKind);
+    }
+
     // ── FAL pipeline tracks (handler dispatch — b2b) ──────────────────────────
     // The fal_video (designer video + raw I2V fallback), fal_design (Canva-like
     // designed feed post) and fal_only (pure fal.ai) branches are now
@@ -2229,7 +2335,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           referenceUrl: referenceUrl || null,
           sceneHint: falSceneHint || undefined,
           grafikerMaxRetries,
-          designBriefDirectives: falDesignCtx?.promptDirectives,
+          designBriefDirectives: [
+            ...(falDesignCtx?.promptDirectives ?? []),
+            ...falGridRotationDirectives,
+          ],
           designerMotionCue: falDesignCtx?.brief.motionCue || (adHocBrief ? String((idea as ParsedIdea).motion_cue ?? '') : undefined),
           artDirection: adHocBrief ? String((idea as ParsedIdea).visual_direction ?? '').trim() || undefined : undefined,
           falLogoPlacement: falDesignCtx?.brief.logoPlacement,
@@ -2241,7 +2350,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           adHocBrief,
           falAspectRatio: isCalendarSlot && pkgFmt === 'story' ? '9:16' : undefined,
           requireGroundedGallery: isCalendarSlot || adHocBrief,
-          falDesignIntensityOverride: isCalendarSlot ? CALENDAR_GALLERY_DESIGN_INTENSITY : undefined,
+          falDesignIntensityOverride: isCalendarSlot
+            ? CALENDAR_GALLERY_DESIGN_INTENSITY
+            : falGridIntensityOverride,
+          falBackgroundStyleOverride: falGridBackgroundOverride,
+          falGridSurfaceKind: slotFalGridSurface ?? undefined,
           captionAwareHeadline: isCalendarSlot ? false : undefined,
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
@@ -3634,6 +3747,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         visual_design_card_prompt_used: missionVisualDesignRendered,
       } : {}),
       layout_family_hint: assignment.layout_family_hint ?? layoutFamilyHint ?? null,
+      ...(slotFalGridSurface ? { fal_grid_surface: slotFalGridSurface } : {}),
       ...(ideaPremiumComposition ? {
         premium_composition: true,
         premium_composition_type: ideaPremiumComposition.compositionType,
@@ -3825,15 +3939,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
   // Boş story slotları — üretilmiş post'lardan format adaptasyonu (aynı brief, farklı format).
   let postStoryAdaptAttempted = false;
+  let calendarBackfillAttempted = false;
+  let persistedMissionArtifactsForBackfill: Awaited<ReturnType<typeof fetchMissionArtifacts>> = [];
   if (missionId && !adHocBrief && !slotBackfillPass && fullProductionQueue.length > 0) {
-    const persistedMissionArtifacts = await fetchMissionArtifacts(workspaceId, missionId);
+    persistedMissionArtifactsForBackfill = await fetchMissionArtifacts(workspaceId, missionId);
     const postStoryAdapt = await deriveStoriesFromPostsForEmptySlots({
       workspaceId,
       missionId,
       nodeKey,
       queue: fullProductionQueue,
       runResults: results,
-      persistedArtifacts: persistedMissionArtifacts,
+      persistedArtifacts: persistedMissionArtifactsForBackfill,
       templateLibrary,
       brandBusinessType,
       brandName: resolvedBrandName,
@@ -3848,6 +3964,103 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         `[auto-produce] Post→story adaptation: ${postStoryAdapt.adapted} story slot(s) filled`,
       );
     }
+  }
+
+  // Empty manifest slots — backfill from unused content_calendar rows (format + diversity preserved).
+  const MAX_CALENDAR_BACKFILL_ROUNDS = 2;
+  for (
+    let calendarRound = 0;
+    calendarRound < MAX_CALENDAR_BACKFILL_ROUNDS;
+    calendarRound += 1
+  ) {
+    if (
+      !(
+        missionId
+        && !adHocBrief
+        && !slotBackfillPass
+        && !internalNestedPass
+        && calendarPlans.length > 0
+        && fullProductionQueue.length > 0
+      )
+    ) {
+      break;
+    }
+
+    const persistedRows = persistedMissionArtifactsForBackfill.length
+      ? persistedMissionArtifactsForBackfill.map(artifactToProductionRunRow)
+      : (await fetchMissionArtifacts(workspaceId, missionId)).map(artifactToProductionRunRow);
+    const seenArtifactIds = new Set<string>();
+    const mergedBackfillResults: ProductionRunResultRow[] = [];
+    for (const row of [...results, ...persistedRows]) {
+      if (row.id) {
+        if (seenArtifactIds.has(row.id)) continue;
+        seenArtifactIds.add(row.id);
+      }
+      mergedBackfillResults.push(row);
+    }
+
+    const usedPlanIndices = collectUsedCalendarPlanIndices(mergedBackfillResults);
+    const calendarMatches = matchCalendarPlansToEmptySlots({
+      queue: fullProductionQueue,
+      results: mergedBackfillResults,
+      calendarPlans,
+      usedPlanIndices,
+      ideationIdeas: toProcess as Record<string, unknown>[],
+    });
+
+    if (calendarMatches.length === 0) break;
+
+    const backfillKeys = calendarMatches.map((m) => m.slotKey);
+    const patchedIdeas = applyCalendarBackfillToIdeas(
+      toProcess as Record<string, unknown>[],
+      calendarMatches,
+    ) as ParsedIdea[];
+
+    console.log(
+      `[auto-produce] Calendar slot backfill round ${calendarRound + 1}: `
+      + `${calendarMatches.length} slot(s) ← plans [${calendarMatches.map((m) => m.planIndex).join(', ')}]`,
+    );
+
+    const calendarBackfillResponse = await runProduction({
+      workspaceId,
+      missionId,
+      nodeKey,
+      ideas: patchedIdeas,
+      visualDesignCards,
+      galleryAnalysis: galleryAnalysisInput,
+      brandNameOverride,
+      productionSnapshot,
+      brandThemeOverride,
+      bundleCards,
+      feedDirectorReport,
+      strategistMissionType,
+      productionPackage,
+      missionTitle,
+      creativeBrief,
+      skipArtifactDedupe,
+      slotBackfillPass: true,
+      backfillSlotKeys: backfillKeys,
+      calendarPlans,
+      internalNestedPass: true,
+    });
+
+    calendarBackfillAttempted = true;
+    const calendarPayload = await calendarBackfillResponse.json().catch(() => ({})) as {
+      results?: ProductionRunResultRow[];
+      costEstimate?: number;
+      produced?: number;
+    };
+    if (Array.isArray(calendarPayload.results)) {
+      results.push(...calendarPayload.results);
+    }
+    if (typeof calendarPayload.costEstimate === 'number') {
+      costEstimate += calendarPayload.costEstimate;
+    }
+    console.log(
+      `[auto-produce] Calendar slot backfill round ${calendarRound + 1} complete: `
+      + `produced=${calendarPayload.produced ?? 0}`,
+    );
+    persistedMissionArtifactsForBackfill = [];
   }
 
   const vibeForTokens = hasVibe
@@ -4143,9 +4356,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  await releaseAllProductionLocks(workspaceId, missionId);
+  if (!internalNestedPass) {
+    await releaseAllProductionLocks(workspaceId, missionId);
+  }
 
-  const backfillAttempted = postStoryAdaptAttempted;
+  const backfillAttempted = postStoryAdaptAttempted || calendarBackfillAttempted;
   const mergedResults = results;
   const mergedSaved = saved;
   const mergedPublishReady = publishReady;

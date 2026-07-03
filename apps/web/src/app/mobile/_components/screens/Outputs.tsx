@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTheme } from '../theme-context';
+import { getMobilePortalRoot } from '../mobile-client-config';
 import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { resolveArtifact, parseArtifactContent, findScheduledForArtifact, resolveCarouselUrls } from '@/lib/artifact-utils';
@@ -1327,21 +1327,9 @@ function IGStoryViewer({ stories, initialIndex = 0, brandProfile, onClose, onApp
   }, []);
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      width: '100vw',
-      height: '100dvh',
-      maxHeight: '100dvh',
-      minHeight: '-webkit-fill-available',
-      zIndex: 400,
-      background: '#000',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      overscrollBehavior: 'none',
-    }}
-    >
+    <div className="ig-story-viewer-backdrop" style={{ zIndex: 400 }}>
+      <div className="ig-story-viewer-column">
+        <div className="ig-story-viewer-stage">
       {/* ── Full-screen media (background layer) ── */}
       <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
         {img ? (
@@ -1451,6 +1439,8 @@ function IGStoryViewer({ stories, initialIndex = 0, brandProfile, onClose, onApp
             </button>
           </div>
         )}
+      </div>
+        </div>
       </div>
     </div>
   );
@@ -1717,7 +1707,7 @@ function PlatformTab({ platform, artifacts, t, openApproval, openCreative, openP
             }}
             approving={approveMutation.isPending}
           />,
-          document.body,
+          getMobilePortalRoot(),
         )}
       {publishError && (
         <div style={{ padding: '10px 12px', color: '#fb7185', fontSize: 12, fontWeight: 600 }}>

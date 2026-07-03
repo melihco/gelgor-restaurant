@@ -3,6 +3,7 @@ import {
   resolveFalDesignIntensityConfig,
   resolveFalDesignIntensityDirectives,
   resolveFalDesignIntensityForChannel,
+  resolveFalDesignIntensityMode,
 } from '@/lib/fal-design-intensity';
 
 describe('resolveFalDesignIntensityConfig', () => {
@@ -41,19 +42,33 @@ describe('resolveFalDesignIntensityConfig', () => {
 
 describe('resolveFalDesignIntensityDirectives', () => {
   it('photo_first minimizes overlay language', () => {
-    const d = resolveFalDesignIntensityDirectives('photo_first', 'feed_post');
-    expect(d.photoRules.join(' ')).toMatch(/85–95%/);
-    expect(d.typographyAnchor).toMatch(/premium designed display/i);
+    const d = resolveFalDesignIntensityDirectives('photo_first', 'reel');
+    expect(d.photoRules.join(' ')).toMatch(/88–95%/);
+    expect(d.forbiddenLayouts.join(' ')).toMatch(/FORBIDDEN.*top horizontal/i);
+    expect(d.priorityBlock).toMatch(/PHOTO-FIRST/i);
   });
 
-  it('balanced keeps 50–70% photo rule for posts', () => {
-    const d = resolveFalDesignIntensityDirectives('balanced', 'feed_post');
-    expect(d.photoRules.join(' ')).toMatch(/50–70%/);
+  it('balanced keeps 52–62% photo rule for vertical', () => {
+    const d = resolveFalDesignIntensityDirectives('balanced', 'reel');
+    expect(d.photoRules.join(' ')).toMatch(/52–62%/);
+  });
+
+  it('bold_editorial forbids large photo share', () => {
+    const d = resolveFalDesignIntensityDirectives('bold_editorial', 'reel');
+    expect(d.forbiddenLayouts.join(' ')).toMatch(/more than 38%/);
+    expect(d.typographyAnchor).toMatch(/OVERSIZED/i);
   });
 
   it('channel resolver reads theme', () => {
     expect(resolveFalDesignIntensityForChannel({
       fal_design_intensity: { post: 'designed' },
     }, 'post')).toBe('designed');
+  });
+});
+
+describe('resolveFalDesignIntensityMode', () => {
+  it('uses reel rules for 9:16 story', () => {
+    expect(resolveFalDesignIntensityMode('9:16', false)).toBe('reel');
+    expect(resolveFalDesignIntensityMode('4:5', false)).toBe('feed_post');
   });
 });

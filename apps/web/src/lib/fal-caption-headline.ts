@@ -226,21 +226,19 @@ function extractCaptionHook(
 }
 
 function extractBestPhrase(sentence: string, maxLen: number): string {
-  if (sentence.length <= maxLen) return capitalizeFirst(sentence);
+  const normalized = sentence.trim();
+  if (normalized.length <= maxLen && !isIncompleteOverlayPhrase(normalized)) {
+    return capitalizeFirst(normalized);
+  }
 
   // Split by comma/dash, take first clause
-  const clause = sentence.split(/[,—–\-]/)[0]?.trim() ?? sentence;
-  if (clause.length <= maxLen && clause.length >= 8) return capitalizeFirst(clause);
-
-  // Take first N words that fit
-  const words = sentence.split(/\s+/).filter(Boolean);
-  let result = '';
-  for (const word of words) {
-    const candidate = result ? `${result} ${word}` : word;
-    if (candidate.length > maxLen) break;
-    result = candidate;
+  const clause = normalized.split(/[,—–\-]/)[0]?.trim() ?? normalized;
+  if (clause.length <= maxLen && clause.length >= 8 && !isIncompleteOverlayPhrase(clause)) {
+    return capitalizeFirst(clause);
   }
-  return capitalizeFirst(result);
+
+  const truncated = truncateAtWordBoundary(normalized, maxLen);
+  return truncated ? capitalizeFirst(truncated) : '';
 }
 
 function capitalizeFirst(text: string): string {
@@ -251,16 +249,29 @@ function capitalizeFirst(text: string): string {
   return upper + text.slice(1);
 }
 
-function truncateClean(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  const words = text.split(/\s+/);
+/** Word-boundary truncation — never slices mid-word or mid-character. */
+export function truncateAtWordBoundary(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return stripDanglingOverlayTail(text);
+  const words = text.split(/\s+/).filter(Boolean);
   let result = '';
   for (const word of words) {
     const candidate = result ? `${result} ${word}` : word;
     if (candidate.length > maxLen) break;
     result = candidate;
   }
-  return result || text.slice(0, maxLen);
+  let trimmed = stripDanglingOverlayTail(result);
+  while (trimmed && isIncompleteOverlayPhrase(trimmed)) {
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return '';
+    parts.pop();
+    trimmed = stripDanglingOverlayTail(parts.join(' '));
+  }
+  return trimmed;
+}
+
+/** @deprecated Use truncateAtWordBoundary — kept as internal alias. */
+function truncateClean(text: string, maxLen: number): string {
+  return truncateAtWordBoundary(text, maxLen);
 }
 
 // ── Overlay text hygiene (prevents prompt-instruction leaks on canvas) ────────
@@ -286,6 +297,10 @@ const STRATEGY_BRIEFING_BODY_RX =
 /** Trailing words that indicate word-boundary truncation left an incomplete phrase. */
 const DANGLING_TAIL_RX =
   /\b(and|or|the|a|an|for|with|to|of|in|on|at|by|from|that|this|ve|ile|için|icin|bir|bu|da|de|ya|veya)\s*$/iu;
+
+/** Trailing modifiers that leave a headline mid-thought (e.g. "This weekend just"). */
+const INCOMPLETE_MODIFIER_TAIL_RX =
+  /\b(just|only|even|still|already|more|so|very|really|quite|about|almost|nearly|now|then|here|there|yet|also|too)\s*$/iu;
 
 /**
  * Strip prompt-instruction fragments and decorative quotes from text destined
@@ -323,11 +338,16 @@ export function isInternalStrategyBriefing(text: string): boolean {
   return false;
 }
 
-/** Remove trailing conjunctions/articles left after max-length word clamping. */
+/** Remove trailing conjunctions/articles/modifiers left after max-length word clamping. */
 export function stripDanglingOverlayTail(text: string): string {
   let result = text.trim();
-  for (let i = 0; i < 4 && DANGLING_TAIL_RX.test(result); i += 1) {
-    result = result.replace(DANGLING_TAIL_RX, '').trim();
+  for (let i = 0; i < 6; i += 1) {
+    const before = result;
+    result = result
+      .replace(DANGLING_TAIL_RX, '')
+      .replace(INCOMPLETE_MODIFIER_TAIL_RX, '')
+      .trim();
+    if (result === before) break;
   }
   return result;
 }
@@ -337,6 +357,7 @@ export function isRenderedOverlayTextIncomplete(detected: string | undefined | n
   if (!detected?.trim()) return false;
   const t = detected.trim();
   if (DANGLING_TAIL_RX.test(t)) return true;
+  if (INCOMPLETE_MODIFIER_TAIL_RX.test(t)) return true;
   if (isInternalStrategyBriefing(t)) return true;
   if (STRATEGY_BRIEFING_START_RX.test(t)) return true;
   return false;
@@ -347,6 +368,7 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
   if (!clean || clean.length < 4) return true;
   if (DANGLING_TAIL_RX.test(text.trim())) return true;
+  if (INCOMPLETE_MODIFIER_TAIL_RX.test(text.trim())) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
@@ -435,25 +457,39 @@ export function clampFalOverlayHeadlineForCanvas(
   const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
   if (!clean) return '';
   if (isInternalStrategyBriefing(clean)) return '';
-  if (channel === 'reel') return stripDanglingOverlayTail(tightenVideoHeadline(clean, 22, 3));
-  if (channel === 'story') return stripDanglingOverlayTail(tightenVideoHeadline(clean, 28, 4));
-  const words = clean.split(/\s+/).filter(Boolean);
-  let result = '';
-  for (const word of words) {
-    const candidate = result ? `${result} ${word}` : word;
-    if (candidate.length > 32) break;
-    result = candidate;
-  }
-  result = stripDanglingOverlayTail(result || clean.slice(0, 32));
-  if (!result || isIncompleteOverlayPhrase(result)) {
-    // Prefer a short complete hook (≤3 words) over a long truncated briefing fragment.
-    const shortHook = stripDanglingOverlayTail(
-      words.slice(0, 3).join(' ').slice(0, 32),
-    );
-    if (shortHook && isMeaningfulFalOverlayText(shortHook)) return shortHook;
-    return '';
-  }
-  return result;
+  if (channel === 'reel') return tightenVideoHeadline(clean, 22, 3);
+  if (channel === 'story') return tightenVideoHeadline(clean, 28, 4);
+  const result = truncateAtWordBoundary(clean, 32);
+  if (result && isMeaningfulFalOverlayText(result)) return result;
+  const shortHook = tightenVideoHeadline(clean, 32, 3);
+  if (shortHook && isMeaningfulFalOverlayText(shortHook)) return shortHook;
+  return '';
+}
+
+/**
+ * Progressively shorten overlay copy for image-model retries.
+ * Always returns complete phrases — never character-sliced fragments.
+ */
+export function shortenFalOverlayForImageRetry(
+  headline: string,
+  attempt: number,
+  channel: 'reel' | 'feed_post' | 'story',
+): string {
+  const clean = sanitizeFalOverlayText(headline);
+  if (!clean) return '';
+  if (attempt <= 0) return clampFalOverlayHeadlineForCanvas(clean, channel) || clean;
+
+  const baseMax = channel === 'reel' ? 22 : channel === 'story' ? 28 : 32;
+  const maxLen = Math.max(10, baseMax - attempt * 5);
+  const baseWords = channel === 'reel' ? 3 : channel === 'story' ? 4 : 5;
+  const maxWords = Math.max(2, baseWords - attempt);
+
+  const shortened = channel === 'feed_post'
+    ? truncateAtWordBoundary(clean, maxLen)
+    : tightenVideoHeadline(clean, maxLen, maxWords);
+
+  const normalized = stripDanglingOverlayTail(shortened);
+  return normalized && isMeaningfulFalOverlayText(normalized) ? normalized : '';
 }
 
 /**
@@ -493,7 +529,7 @@ export function buildFalOnCanvasTextContract(input: {
 
   lines.push(
     'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, extra slogans, URLs, hashtags, dates, or any text not listed above.',
-    'If space is tight, shrink typography — never invent alternate wording.',
+    'If space is tight, shrink typography — never invent alternate wording or truncate mid-word.',
   );
 
   return lines.join(' ');
@@ -534,14 +570,15 @@ export function buildFalLogoPlacementContract(input: {
     : fallbackPlacement[channel];
 
   const brandNote = input.brandName?.trim()
-    ? ` Brand: "${input.brandName.trim()}" — do NOT type the brand name as a substitute logo.`
+    ? ` Brand: "${input.brandName.trim()}" — do NOT type, spell, or abbreviate the brand name anywhere on canvas (including headline zones); logo is composited separately.`
     : '';
 
   return [
     'BRAND LOGO CONTRACT (mandatory — highest priority after on-canvas text):',
     'The official logo is supplied as a separate asset and will be composited in post-production — pixel-perfect, unchanged.',
-    'DO NOT draw, generate, illustrate, paint, emboss, or type any logo, emblem, monogram, mascot, sun icon, or brand mark anywhere in this image.',
+    'DO NOT draw, generate, illustrate, paint, emboss, or type any logo, emblem, monogram, mascot, sun icon, location pin, map marker, or brand mark anywhere in this image.',
     'LOGO INTEGRITY (non-negotiable): The AI must never redraw, reimagine, simplify, cartoonify, recolor, warp, stretch, crop, or replace the official mark.',
+    'FORBIDDEN SUBSTITUTES: no fake wordmarks, no stylized spelling of the brand name, no pin icons, no sun badges — the reserved zone must stay visually empty.',
     'ALLOWED in the reserved zone only: leave empty quiet space (solid color, soft gradient, or uncluttered margin). Motion/video may later add subtle opacity pulse or glow on the composited logo — never on an AI-drawn substitute.',
     `RESERVED LOGO ZONE: ${placementLine}${brandNote}`,
     input.hasPhotoHero !== false
@@ -587,9 +624,16 @@ function tightenVideoHeadline(text: string, maxLen: number, maxWords: number): s
     used += 1;
   }
 
-  const compact = capitalizeFirst(result || truncateClean(normalized, maxLen));
+  let compact = capitalizeFirst(result || truncateAtWordBoundary(normalized, maxLen));
+  compact = stripDanglingOverlayTail(compact);
+  while (compact && isIncompleteOverlayPhrase(compact)) {
+    const parts = compact.split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return '';
+    parts.pop();
+    compact = capitalizeFirst(stripDanglingOverlayTail(parts.join(' ')));
+  }
   const sanitized = sanitizeFalOverlayText(compact.replace(/[,.!?]+$/g, '').trim());
-  return sanitized;
+  return sanitized && isMeaningfulFalOverlayText(sanitized) ? sanitized : '';
 }
 
 // ── Subtitle from Caption ─────────────────────────────────────────────────────

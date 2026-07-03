@@ -37,6 +37,8 @@ async def trigger_auto_produce(
     backfill_slot_keys: list[str] | None = None,
     enqueue_only: bool = False,
     factory_jobs: list[dict] | None = None,
+    completion_pass: bool = False,
+    gallery_slot_assignments: dict[str, dict] | None = None,
 ) -> dict | None:
     """
     Non-blocking call to Next.js /api/auto-produce after content_ideation completes.
@@ -225,9 +227,11 @@ async def trigger_auto_produce(
                 feed_director_report["production_package"] = pkg.strip()
         if skip_artifact_dedupe:
             payload["skipArtifactDedupe"] = True
+        if gallery_slot_assignments:
+            payload["gallerySlotAssignments"] = gallery_slot_assignments
 
         # ── Durable factory: slot planning (no render) ──────────────────────
-        if plan_only:
+        if plan_only and not completion_pass:
             internal_key = getattr(settings, "internal_api_key", None) or ""
             headers = {"X-Tenant-Id": str(workspace_id)}
             if internal_key:
@@ -256,7 +260,7 @@ async def trigger_auto_produce(
             return {"slots": [], "error": presp.text[:300]}
 
         # ── Durable factory: produce only specific backfill slots ───────────
-        if backfill_slot_keys:
+        if backfill_slot_keys and not completion_pass:
             payload["slotBackfillPass"] = True
             payload["backfillSlotKeys"] = backfill_slot_keys
             # Do NOT blindly set skipArtifactDedupe — let the production loop's
@@ -269,7 +273,7 @@ async def trigger_auto_produce(
         # Next.js BullMQ worker. Jobs stay 'running' until the worker calls back
         # to /internal/v1/production-jobs/complete (stale-claim window reclaims on
         # worker death). This decouples Python drain from execution throughput.
-        if enqueue_only:
+        if enqueue_only and not completion_pass:
             internal_key = getattr(settings, "internal_api_key", None) or ""
             headers = {"X-Tenant-Id": str(workspace_id)}
             if internal_key:
@@ -318,9 +322,14 @@ async def trigger_auto_produce(
         # RemoteProtocolError / ReadTimeout are treated as fire-and-forget below:
         # the Next.js route keeps running in background even if Python disconnects.
         _timeout = httpx.Timeout(connect=15.0, read=580.0, write=30.0, pool=5.0)
+        produce_path = (
+            f"{nextjs_url}/api/auto-produce/completion-pass"
+            if completion_pass
+            else f"{nextjs_url}/api/auto-produce"
+        )
         async with httpx.AsyncClient(timeout=_timeout) as client:
             resp = await client.post(
-                f"{nextjs_url}/api/auto-produce",
+                produce_path,
                 json=payload,
                 headers=headers or None,
             )
@@ -405,3 +414,25 @@ async def trigger_auto_produce(
                 error=str(exc)[:400],
             )
     return None
+
+
+async def trigger_mission_completion_pass(
+    workspace_id: uuid.UUID,
+    mission_id: uuid.UUID,
+    node_key: str,
+    output_summary: str,
+    brand: Any,
+    feed_director_report: dict | None = None,
+    mission_ctx: dict[str, str] | None = None,
+) -> dict | None:
+    """Post→story + calendar slot backfill after factory drain stalls."""
+    return await trigger_auto_produce(
+        workspace_id=workspace_id,
+        mission_id=mission_id,
+        node_key=node_key,
+        output_summary=output_summary,
+        brand=brand,
+        feed_director_report=feed_director_report,
+        mission_ctx=mission_ctx,
+        completion_pass=True,
+    )

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { falLogoPositionToCompositorPlacement } from '../fal-logo-composite';
+import {
+  falLogoPositionToCompositorPlacement,
+  compositeOfficialLogoOnFrameUrl,
+} from '../fal-logo-composite';
 
 describe('falLogoPositionToCompositorPlacement', () => {
   it('maps art director positions to compositor anchors', () => {

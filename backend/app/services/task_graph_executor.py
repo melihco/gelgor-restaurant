@@ -560,6 +560,30 @@ async def _execute_node_body(
                 count=len(recent_themes),
             )
 
+    # Brand dynamics — mandatory date/sector/location angles for ideation & calendar.
+    if task_type in ("content_ideation", "content_calendar", "content_strategy"):
+        try:
+            from app.services.context_signal_service import build_brand_dynamics_block
+            dynamics_block = build_brand_dynamics_block(brand)
+            if dynamics_block.strip():
+                effective_input["context_signals"] = (
+                    (effective_input.get("context_signals") or "").rstrip()
+                    + "\n\n"
+                    + dynamics_block.strip()
+                ).strip()
+                logger.info(
+                    "brand_dynamics_injected",
+                    node_key=node_key,
+                    task_type=task_type,
+                    chars=len(dynamics_block),
+                )
+        except Exception as bd_exc:
+            logger.warning(
+                "brand_dynamics_inject_failed",
+                node_key=node_key,
+                error=str(bd_exc)[:200],
+            )
+
     # Wire strategy → ideation/calendar: inject content_strategy output into brief
     # so the ideation agent sees the weekly theme, pillar_mix and format targets.
     if task_type in ("content_ideation", "content_calendar"):

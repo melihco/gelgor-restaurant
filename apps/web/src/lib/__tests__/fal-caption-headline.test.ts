@@ -15,6 +15,8 @@ import {
   resolveFalProductionOverlayHeadline,
   buildFalOnCanvasTextContract,
   buildFalLogoPlacementContract,
+  truncateAtWordBoundary,
+  shortenFalOverlayForImageRetry,
 } from '../fal-caption-headline';
 
 describe('correctTurkishSpelling', () => {
@@ -133,6 +135,17 @@ describe('resolveFalVideoHeadline', () => {
     expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
     expect(result.headline.toLowerCase()).not.toContain('yula bodrum');
   });
+
+  it('never returns dangling fragments like "This weekend just"', () => {
+    const result = resolveFalVideoHeadline({
+      caption: 'This weekend just got better — sunset sessions and fresh cocktails await.',
+      missionTitle: 'Weekend Launch',
+      brandName: 'Sarnıç Beach',
+    });
+    expect(result.headline).not.toBe('This weekend just');
+    expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
+    expect(result.headline.split(/\s+/).length).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe('sanitizeFalOverlayText', () => {
@@ -156,6 +169,28 @@ describe('sanitizeFalOverlayText', () => {
     const result = ensureMeaningfulFalOverlayText('EXACTLY', ['Serinletici kokteyller sizi bekliyor'], 28);
     expect(result.toLowerCase()).not.toBe('exactly');
     expect(result.length).toBeGreaterThan(6);
+  });
+});
+
+describe('truncateAtWordBoundary', () => {
+  it('never slices mid-word', () => {
+    expect(truncateAtWordBoundary('Sarnıç Beach Club', 12)).toBe('Sarnıç Beach');
+    expect(truncateAtWordBoundary('Sarnıç Beach Club', 12)).not.toBe('Sarnıç Be');
+  });
+
+  it('strips dangling modifiers', () => {
+    expect(truncateAtWordBoundary('This weekend just got better', 18)).toBe('This weekend');
+  });
+});
+
+describe('shortenFalOverlayForImageRetry', () => {
+  it('returns complete shorter hooks on retry attempts', () => {
+    const original = 'This weekend just got better at the beach';
+    const first = shortenFalOverlayForImageRetry(original, 0, 'reel');
+    const retry = shortenFalOverlayForImageRetry(original, 1, 'reel');
+    expect(isIncompleteOverlayPhrase(first)).toBe(false);
+    if (retry) expect(isIncompleteOverlayPhrase(retry)).toBe(false);
+    expect(first).not.toMatch(/\bjust$/i);
   });
 });
 
@@ -232,6 +267,7 @@ describe('buildFalLogoPlacementContract', () => {
     });
     expect(contract).toContain('BRAND LOGO CONTRACT');
     expect(contract).toContain('DO NOT draw, generate');
+    expect(contract).toContain('abbreviate the brand name');
     expect(contract).toContain('RESERVED LOGO ZONE');
     expect(contract).toContain('Photo hero rule');
     expect(contract).toContain('never over the dish');

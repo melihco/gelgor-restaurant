@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import { buildActiveSignals } from '@/lib/context-signals';
+import { computeBrandDynamics } from '@/lib/brand-dynamics';
 
 export const runtime = 'nodejs';
 
@@ -60,5 +61,27 @@ export async function GET(
     horizonDays: horizon,
   });
 
-  return NextResponse.json({ tenantId, ...result }, { status: 200 });
+  const brandDynamics = computeBrandDynamics({
+    date: Number.isNaN(date.getTime()) ? new Date() : date,
+    region: 'TR',
+    businessType: ctx.business_type ?? undefined,
+    brandName: ctx.business_name ?? undefined,
+    brandDescription: ctx.description ?? undefined,
+    location: ctx.location ?? undefined,
+    lat: num(sp.get('lat')),
+    lng: num(sp.get('lng')),
+    horizonDays: horizon,
+  });
+
+  return NextResponse.json({
+    tenantId,
+    ...result,
+    promptBlock: brandDynamics.strategistBlock || result.promptBlock,
+    brandDynamics: {
+      mandatoryAngles: brandDynamics.mandatoryAngles,
+      avoidThemeClusters: brandDynamics.avoidThemeClusters,
+      themeClusterCounts: brandDynamics.themeClusterCounts,
+      ideationBlock: brandDynamics.ideationBlock,
+    },
+  }, { status: 200 });
 }

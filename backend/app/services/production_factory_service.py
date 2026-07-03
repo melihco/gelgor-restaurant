@@ -28,6 +28,7 @@ so the feed is fed without one mission's slots blocking another's.
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from typing import Any
 
@@ -39,7 +40,9 @@ from app.services.production_throughput import resolve_factory_drain_batch
 
 logger = structlog.get_logger()
 
-# Debounced per-mission drain tasks (mirror _scheduled_ensure_tasks pattern).
+# Debounced per-mission completion pass (calendar + post→story after factory idle).
+_scheduled_completion_tasks: dict[str, asyncio.Task] = {}
+# Debounced per-mission factory drain tasks (in-process asyncio path).
 _scheduled_drain_tasks: dict[str, asyncio.Task] = {}
 
 # Hard cap on slots produced per drain pass (across all batches).
@@ -182,6 +185,78 @@ def schedule_drain(
     )
 
 
+def schedule_completion_pass(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    delay_sec: float = 10.0,
+) -> None:
+    """Run post→story + calendar slot backfill when factory jobs are idle but package incomplete."""
+    from app.services.production_automation import auto_feed_production_allowed
+
+    if not auto_feed_production_allowed():
+        return
+
+    key = f"completion:{mission_id}"
+    existing = _scheduled_completion_tasks.get(key)
+    if existing is not None and not existing.done():
+        return
+
+    async def _run() -> None:
+        try:
+            if delay_sec > 0:
+                await asyncio.sleep(delay_sec)
+            await run_mission_completion_pass(mission_id, workspace_id)
+        except Exception as exc:
+            logger.warning(
+                "production_factory.completion_pass_failed",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+        finally:
+            _scheduled_completion_tasks.pop(key, None)
+
+    _scheduled_completion_tasks[key] = asyncio.create_task(
+        _run(), name=f"completion_pass_{mission_id}"
+    )
+
+
+async def run_mission_completion_pass(
+    mission_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> dict | None:
+    """Calendar + post→story backfill; requeue exhausted slots and resume drain if needed."""
+    inputs = await _load_drain_inputs(workspace_id, mission_id)
+    if not inputs:
+        return None
+    brand, node_key, output_summary, feed_director_report = inputs
+
+    from app.services.production_trigger import trigger_mission_completion_pass
+
+    result = await trigger_mission_completion_pass(
+        workspace_id=workspace_id,
+        mission_id=mission_id,
+        node_key=node_key,
+        output_summary=output_summary,
+        brand=brand,
+        feed_director_report=feed_director_report,
+    )
+
+    summary = await jobs.mission_job_summary(mission_id)
+    if summary.get("complete"):
+        return result
+
+    requeued = await jobs.requeue_exhausted(mission_id)
+    if requeued > 0 and await jobs.has_open_jobs(mission_id):
+        schedule_drain(mission_id, workspace_id, delay_sec=30.0, force=True)
+        logger.info(
+            "production_factory.completion_pass_requeued",
+            mission_id=str(mission_id),
+            requeued=requeued,
+        )
+    return result
+
+
 async def _load_drain_inputs(
     workspace_id: uuid.UUID,
     mission_id: uuid.UUID,
@@ -262,6 +337,30 @@ def _succeeded_slot_map(produce_data: dict | None) -> dict[str, str | None]:
     return out
 
 
+def _gallery_assignments_from_batch(batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Map factory job payloads → Next.js gallerySlotAssignments (``ideaIndex::slot_role`` keys)."""
+    out: dict[str, dict[str, Any]] = {}
+    for job in batch:
+        payload = job.get("payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        url = str(payload.get("galleryPhotoUrl") or payload.get("gallery_photo_url") or "").strip()
+        if not url:
+            continue
+        key = f"{job['idea_index']}::{job['slot_role']}"
+        score = payload.get("galleryMatchScore")
+        out[key] = {
+            "url": url,
+            "score": score if isinstance(score, (int, float)) else None,
+        }
+    return out
+
+
 async def drain_production_jobs(
     mission_id: uuid.UUID,
     workspace_id: uuid.UUID,
@@ -298,6 +397,7 @@ async def drain_production_jobs(
             break
         claimed_total += len(batch)
         slot_keys = [f"{job['idea_index']}:{job['slot_role']}" for job in batch]
+        gallery_slot_assignments = _gallery_assignments_from_batch(batch)
         for job in batch:
             await jobs.mark_running(job["id"])
 
@@ -321,6 +421,7 @@ async def drain_production_jobs(
                     backfill_slot_keys=slot_keys,
                     enqueue_only=True,
                     factory_jobs=factory_jobs,
+                    gallery_slot_assignments=gallery_slot_assignments or None,
                 )
             except Exception as exc:
                 eq = None
@@ -348,6 +449,7 @@ async def drain_production_jobs(
                 brand=brand,
                 feed_director_report=fd_report,
                 backfill_slot_keys=slot_keys,
+                gallery_slot_assignments=gallery_slot_assignments or None,
             )
         except Exception as exc:
             for job in batch:
@@ -445,6 +547,13 @@ async def drain_production_jobs(
         # Longer delay when slots failed without artifacts — avoids fal.ai retry storms.
         delay = 120.0 if failed_total > 0 and ready_total == 0 else 45.0
         schedule_drain(mission_id, workspace_id, delay_sec=delay)
+    elif (
+        not summary_after.get("complete")
+        and int(summary_after.get("ready") or 0) < int(summary_after.get("total") or 0)
+        and int(summary_after.get("active") or 0) == 0
+    ):
+        # Factory idle but manifest incomplete — calendar/post→story completion pass.
+        schedule_completion_pass(mission_id, workspace_id, delay_sec=12.0)
 
     return {
         "claimed": claimed_total,

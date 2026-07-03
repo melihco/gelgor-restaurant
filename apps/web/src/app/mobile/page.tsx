@@ -1036,61 +1036,70 @@ const CSS = `
     }
   }
 
-  /* Story / reel kartları — IG web: ortalanmış 9:16 sütun */
-  @media (min-width: 768px) {
-    .sa-mobile .ig-vertical-media-card {
-      max-width: 420px;
-      margin-left: auto;
-      margin-right: auto;
-    }
+  /* Story / reel — edge-to-edge inside phone frame (IG mobile feed sizing) */
+  .sa-mobile .ig-vertical-media-card {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
   }
 
-  /* Story viewer portal (document.body — .sa-mobile dışında) */
+  .sa-mobile .ig-vertical-media-stage {
+    position: relative;
+    background: #000;
+    width: 100%;
+    max-width: none;
+    aspect-ratio: 9 / 16;
+    overflow: hidden;
+  }
+
+  /* Instagram home feed — full column width, no side gutters on media */
+  .sa-mobile .ig-feed-shell {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Story viewer — IG native 9:16; portal .sa-mobile-frame içinde (tam tarayıcı değil) */
   .ig-story-viewer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 800;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.96);
+    overflow: hidden;
   }
   .ig-story-viewer-column {
     display: flex;
     flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-    width: 100%;
-    height: 100%;
+    width: min(100%, calc((100dvh - 120px) * 9 / 16), 420px);
     max-height: 100dvh;
+    flex: 0 1 auto;
   }
   .ig-story-viewer-stage {
-    flex: 1 1 0;
-    min-height: 0;
     position: relative;
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    flex: 0 0 auto;
     overflow: hidden;
+    background: #000;
   }
   .ig-story-viewer-dock {
     flex-shrink: 0;
     position: relative;
     z-index: 30;
+    width: 100%;
     pointer-events: auto;
   }
   @media (min-width: 768px) {
-    .ig-story-viewer-backdrop {
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.96) !important;
-    }
     .ig-story-viewer-column {
-      width: min(100vw, calc(100dvh * 9 / 16), 480px);
-      height: 100dvh;
-      max-height: 100dvh;
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
     }
     .ig-story-viewer-stage {
       border-radius: 12px 12px 0 0;
-      aspect-ratio: 9 / 16;
-      flex: 1 1 auto;
-      max-height: calc(100dvh - 120px);
     }
     .ig-story-viewer-dock {
-      width: 100%;
       border-radius: 0 0 12px 12px;
     }
   }

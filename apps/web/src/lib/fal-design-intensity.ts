@@ -108,9 +108,13 @@ export function resolveFalDesignIntensityForChannel(
 }
 
 export interface FalDesignIntensityDirectives {
+  /** Injected near top of prompt — overrides sector defaults. */
+  priorityBlock: string;
   photoRules: string[];
   typographyAnchor: string;
   layoutNote: string;
+  /** Hard layout prohibitions for this level. */
+  forbiddenLayouts: string[];
 }
 
 /** Prompt fragments injected into fal designer cards (GPT edit + Ideogram). */
@@ -118,81 +122,136 @@ export function resolveFalDesignIntensityDirectives(
   level: FalDesignIntensityLevel,
   mode: 'feed_post' | 'reel',
 ): FalDesignIntensityDirectives {
-  const isReel = mode === 'reel';
+  const isVertical = mode === 'reel';
 
   switch (level) {
     case 'photo_first':
       return {
-        photoRules: isReel
+        priorityBlock:
+          '═══ DESIGN INTENSITY: PHOTO-FIRST (level 1/5) ═══ This output must look like a premium gallery photograph with almost NO graphic design. The venue photo is the entire story.',
+        photoRules: isVertical
           ? [
-            'PHOTO HERO (MAXIMUM): Use the provided brand photo for 85–95% of the frame — natural colors unchanged.',
-            'Typography: one small, refined caption line only — no large blocks, no heavy scrims.',
+            'PHOTO HERO (MAXIMUM): The provided brand photo must fill 88–95% of the frame — full-bleed, edge-to-edge, natural colors unchanged.',
+            'Text zone: bottom 8–12% ONLY — one small refined caption line OR omit text entirely. Photo pixels above that line stay 100% untouched.',
           ]
           : [
-            'PHOTO FIDELITY (MAXIMUM): Keep 85–95% of the frame as the ORIGINAL photograph — natural colors unchanged.',
-            'Typography: minimal corner caption or tiny brand mark only — no poster blocks.',
+            'PHOTO FIDELITY (MAXIMUM): Keep 88–95% of the frame as the ORIGINAL photograph — natural colors, exposure, and venue details unchanged.',
+            'Text zone: bottom corner or bottom 10% strip only — tiny designed caption, max 5 words.',
           ],
-        typographyAnchor: 'When text appears: premium designed display letterforms (custom type, subtle panel/scrim) — small footprint but NEVER plain system sans or default white overlay text.',
-        layoutNote: 'Editorial restraint — gallery-first, design-second — but still agency-grade social typography.',
+        typographyAnchor:
+          'Typography: ONE small tagline max — refined custom letterforms on a thin translucent scrim at the bottom edge only. Headline must NOT exceed 8% of frame height.',
+        layoutNote:
+          'Gallery-first editorial — the photograph IS the post. Design is invisible; restraint is luxury.',
+        forbiddenLayouts: [
+          'FORBIDDEN: top horizontal color band or header block covering more than 12% of frame height.',
+          'FORBIDDEN: split-screen, diagonal panels, large solid-color zones, poster layouts, or campaign cards.',
+          'FORBIDDEN: headline larger than 8% of frame height or placed in upper half of frame.',
+          'FORBIDDEN: recoloring, blurring, or replacing any part of the gallery photograph.',
+        ],
       };
     case 'elegant_light':
       return {
-        photoRules: isReel
+        priorityBlock:
+          '═══ DESIGN INTENSITY: ELEGANT / LIGHT (level 2/5) ═══ Premium minimal overlay — photo leads, typography whispers.',
+        photoRules: isVertical
           ? [
-            'PHOTO HERO: Use the brand photo for 65–75% of the frame — lower zone, natural colors preserved.',
-            'Add a soft gradient scrim behind text only — never global filters on photo pixels.',
+            'PHOTO HERO: Brand photo fills 72–82% of frame — lower two-thirds full-bleed, natural colors preserved.',
+            'Text zone: bottom 18–28% — soft gradient scrim (40–55% opacity) behind headline ONLY. No solid opaque blocks.',
           ]
           : [
-            'PHOTO FIDELITY: Keep 65–75% of the frame as the original photograph — natural exposure and colors.',
-            'Add a localized, soft scrim behind headline only — photo region stays crisp.',
+            'PHOTO FIDELITY: Keep 72–82% of the frame as the original photograph — crisp, authentic, unfiltered.',
+            'Add a localized soft gradient scrim in the lower third behind text — photo upper region stays fully visible.',
           ],
-        typographyAnchor: 'Headline on a subtle translucent panel — refined, premium, never loud.',
-        layoutNote: 'Luxury minimal layout — generous negative space, delicate hierarchy.',
+        typographyAnchor:
+          'Headline: medium-small, refined display type on translucent scrim — max 15% frame height, bottom-aligned. Premium, never loud.',
+        layoutNote:
+          'Luxury minimal — generous breathing room, delicate hierarchy, photo always wins over graphics.',
+        forbiddenLayouts: [
+          'FORBIDDEN: solid opaque color blocks covering more than 25% of frame.',
+          'FORBIDDEN: diagonal split layouts, poster-style upper bands, or neon campaign graphics.',
+          'FORBIDDEN: headline in top half of frame or larger than 15% frame height.',
+          'FORBIDDEN: multiple competing text zones or layered graphic shapes.',
+        ],
       };
     case 'designed':
       return {
-        photoRules: isReel
+        priorityBlock:
+          '═══ DESIGN INTENSITY: DESIGNED / CAMPAIGN (level 4/5) ═══ Strong designer layout — brand-color graphic zone + photo hero strip.',
+        photoRules: isVertical
           ? [
-            'PHOTO HERO ZONE: Brand photo in lower 35–50% — natural colors, faces, venue unchanged.',
-            'Upper zone: strong brand-color graphic panel with bold headline — designer campaign look.',
+            'PHOTO ZONE: Brand photo in lower 38–48% of frame — natural colors, venue unchanged, full width.',
+            'DESIGN ZONE: Upper 52–62% — solid brand-color panel with bold headline, shapes, and campaign energy.',
           ]
           : [
-            'PHOTO FIDELITY: Keep 35–50% of the frame as the original photograph — authentic colors.',
-            'Compose a strong brand-color block or diagonal panel for headline — campaign poster energy.',
+            'PHOTO FIDELITY: Photo occupies lower 38–48% — authentic colors only.',
+            'Upper zone: strong brand-color block or diagonal panel with bold headline — intentional campaign poster composition.',
           ],
-        typographyAnchor: 'Anchor headline on a solid or diagonal brand-color panel — high contrast, designer-grade.',
-        layoutNote: 'Campaign-ready layout — bold hierarchy, intentional color blocks.',
+        typographyAnchor:
+          'Headline: bold designer display type on solid brand-color panel — high contrast, 25–35% frame height, upper zone.',
+        layoutNote:
+          'Campaign-ready — clear graphic/text zone vs photo zone. Designer hierarchy, not a photo with a caption.',
+        forbiddenLayouts: [
+          'FORBIDDEN: photo occupying more than 50% of frame (photo must be supporting strip, not dominant).',
+          'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
+          'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
+        ],
       };
     case 'bold_editorial':
       return {
-        photoRules: isReel
+        priorityBlock:
+          '═══ DESIGN INTENSITY: BOLD EDITORIAL (level 5/5) ═══ Poster-first — typography dominates, photo is accent.',
+        photoRules: isVertical
           ? [
-            'PHOTO ACCENT: Brand photo as a supporting hero strip (25–40% of frame) — never recolor pixels.',
-            'Dominant designed zone: oversized typography, layered blocks, maximum editorial impact.',
+            'PHOTO ACCENT: Brand photo as a supporting strip in lower 22–35% of frame — natural colors, never recolored.',
+            'EDITORIAL ZONE: Upper 65–78% — oversized ALL-CAPS headline, layered brand-color blocks, maximum typographic impact.',
           ]
           : [
-            'PHOTO FIDELITY: Photo occupies 25–40% as a supporting visual — natural colors only.',
-            'Editorial poster treatment: oversized headline, layered shapes, maximum typographic presence.',
+            'PHOTO FIDELITY: Photo occupies 22–35% as supporting visual strip — natural colors only.',
+            'Editorial poster: oversized headline fills upper zone, layered shapes, magazine-cover energy.',
           ],
-        typographyAnchor: 'Oversized headline dominates — layered editorial blocks, poster-level impact.',
-        layoutNote: 'Bold editorial poster — typography leads, photo supports.',
+        typographyAnchor:
+          'Headline: OVERSIZED all-caps display type — 35–50% of frame height, stacked lines, poster-level impact. Typography LEADS.',
+        layoutNote:
+          'Bold editorial poster — viewer reads headline first, photo second. Maximum typographic presence.',
+        forbiddenLayouts: [
+          'FORBIDDEN: photo occupying more than 38% of frame.',
+          'FORBIDDEN: small or medium headline — must be poster-scale, dominant, upper-zone.',
+          'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
+          'FORBIDDEN: balanced 50/50 photo-text split — typography must clearly dominate.',
+        ],
       };
     case 'balanced':
     default:
       return {
-        photoRules: isReel
+        priorityBlock:
+          '═══ DESIGN INTENSITY: BALANCED (level 3/5) ═══ Gallery hero + brand graphic accent — current production standard.',
+        photoRules: isVertical
           ? [
-            'PHOTO HERO ZONE: Use the provided brand photo as the hero visual in the lower 45–55% of the frame — natural colors, faces, and venue details unchanged.',
-            'Do NOT blur, replace, or globally recolor the photo. No full-frame cinematic filters on photo pixels.',
+            'PHOTO HERO ZONE: Brand photo in lower 52–62% of frame — natural colors, faces, venue details unchanged.',
+            'GRAPHIC ZONE: Upper 38–48% — brand-color panel or rounded badge with headline. Clear zone separation.',
           ]
           : [
-            'PHOTO FIDELITY (CRITICAL): Keep 50–70% of the frame as the ORIGINAL photograph — natural colors, exposure, people, and venue details unchanged.',
-            'Do NOT recolor, blur, replace, or re-render the photo. No full-image orange/teal filters or cinematic re-grading on photo pixels.',
+            'PHOTO FIDELITY (CRITICAL): Keep 52–62% of the frame as the ORIGINAL photograph — natural colors unchanged.',
+            'Upper zone: localized brand-color block or gradient scrim for headline — photo lower zone stays crisp.',
           ],
-        typographyAnchor: isReel
-          ? 'Anchor the headline on a solid brand-color panel or diagonal block — crisp, high-contrast, designer-grade.'
-          : 'Add a localized gradient scrim or solid color block behind text only — keep the photo region crisp and authentic.',
-        layoutNote: 'Editorial layout, balanced negative space, intentional hierarchy, social-media-ready.',
+        typographyAnchor:
+          'Headline on brand-color panel in upper zone — crisp, high-contrast, 18–25% frame height. Photo and design zones clearly separated.',
+        layoutNote:
+          'Balanced editorial — intentional hierarchy: designed upper zone + authentic photo lower zone.',
+        forbiddenLayouts: [
+          'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
+          'FORBIDDEN: photo strip smaller than 45% (that is level 4–5).',
+          'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
+        ],
       };
   }
+}
+
+/** Vertical 9:16 story/reel uses reel layout rules (lower photo zone). */
+export function resolveFalDesignIntensityMode(
+  aspectRatio: string | undefined,
+  isReel: boolean,
+): 'feed_post' | 'reel' {
+  if (isReel || aspectRatio === '9:16') return 'reel';
+  return 'feed_post';
 }

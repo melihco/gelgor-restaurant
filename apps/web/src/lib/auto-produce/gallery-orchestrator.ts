@@ -22,7 +22,7 @@ import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { buildSlotGalleryMatchInput, assignmentPostType } from '@/lib/gallery-first-production';
 import type { UsedGalleryUsage } from '@/lib/gallery-usage-tracker';
-import { buildGlobalGalleryUsageCounts, getExcludeUrlsForPostType } from '@/lib/gallery-usage-tracker';
+import { buildGlobalGalleryUsageCounts, getMissionWideExcludeUrls } from '@/lib/gallery-usage-tracker';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -144,12 +144,12 @@ export function buildMissionGalleryAssignments(
   if (assignItems.length === 0) return result;
 
   const seedExclude = input.galleryUsage
-    ? [
-      ...getExcludeUrlsForPostType(input.galleryUsage, 'feed'),
-      ...getExcludeUrlsForPostType(input.galleryUsage, 'story'),
-      ...getExcludeUrlsForPostType(input.galleryUsage, 'reel'),
-      ...getExcludeUrlsForPostType(input.galleryUsage, 'carousel'),
-    ]
+    ? getMissionWideExcludeUrls(input.galleryUsage, {
+      feed: [],
+      story: [],
+      reel: [],
+      carousel: [],
+    })
     : [];
 
   const batchAssigned = assignPhotosToContents(

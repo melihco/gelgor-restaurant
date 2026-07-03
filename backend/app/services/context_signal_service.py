@@ -13,7 +13,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -220,6 +220,122 @@ def _sector_pack_signals(pack_id: str, today: date, btype: str) -> list[str]:
     return hints
 
 
+# ── Lunar phase (mirrors TS lunar.ts) ────────────────────────────────────────
+
+_SYNODIC_MONTH = 29.530588853
+_NEW_MOON_EPOCH = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
+
+
+def _moon_age_days(when: date) -> float:
+    dt = datetime(when.year, when.month, when.day, 12, 0, tzinfo=timezone.utc)
+    days = (dt - _NEW_MOON_EPOCH).total_seconds() / 86_400
+    age = days % _SYNODIC_MONTH
+    return age + _SYNODIC_MONTH if age < 0 else age
+
+
+def _next_full_moon(from_date: date) -> date:
+    age = _moon_age_days(from_date)
+    full_age = 0.5 * _SYNODIC_MONTH
+    days_ahead = full_age - age
+    if days_ahead < -0.5:
+        days_ahead += _SYNODIC_MONTH
+    return from_date + timedelta(days=days_ahead)
+
+
+def _lunar_signal_lines(today: date, horizon_days: int = 14) -> list[str]:
+    full = _next_full_moon(today)
+    days_to_full = (full - today).days
+    if days_to_full > horizon_days or days_to_full < -1:
+        return []
+    confidence = max(50, int((1 - abs(days_to_full) / (horizon_days + 1)) * 100))
+    return [
+        f"✓doğrulanmış [{confidence}%] Dolunay — {full.isoformat()} → "
+        "Dolunay temalı gece etkinliği / sahil partisi / özel menü",
+    ]
+
+
+def _build_mandatory_angles_block(
+    pack_id: str,
+    today: date,
+    location: str,
+    btype: str,
+) -> str:
+    """Deterministic mandatory diversity angles (mirrors TS brand-dynamics.ts)."""
+    lines: list[str] = []
+    angles: list[str] = []
+    m = today.month
+    is_summer = m in (6, 7, 8)
+    is_weekend = today.weekday() in (5, 6)
+    coastal = any(k in (location or "").lower() for k in (
+        "sahil", "plaj", "beach", "deniz", "coast", "marina", "bodrum", "antalya",
+    ))
+
+    lunar = _lunar_signal_lines(today)
+    if lunar and pack_id in ("beach_hospitality", "nightlife", "hotel"):
+        angles.append(lunar[0])
+
+    if pack_id == "beach_hospitality":
+        if is_summer:
+            angles.append("~çıkarım [80%] Yaz zirvesi — plaj/havuz günü → Serinletici kokteyl & meze")
+        if is_weekend:
+            angles.append("~çıkarım [70%] Gün batımı seansı → Sunset DJ / altın saat manzara")
+        if lunar and coastal:
+            angles.append("~çıkarım [90%] Full moon beach party → Dolunay sahil konsepti")
+    elif pack_id == "nightlife":
+        if is_weekend:
+            angles.append("~çıkarım [80%] Hafta sonu lineup → DJ kadrosu / masa rezervasyonu")
+        if lunar:
+            angles.append("~çıkarım [85%] Dolunay özel gece → Guest DJ / özel performans")
+    elif pack_id == "urban_restaurant":
+        if today.weekday() == 6:
+            angles.append("~çıkarım [75%] Pazar brunch → Geç kahvaltı / aile masası")
+        if today.weekday() == 4:
+            angles.append("~çıkarım [70%] Hafta sonu rezervasyon → Şefin özel menüsü")
+    elif pack_id == "hotel":
+        if is_summer:
+            angles.append("~çıkarım [75%] Yüksek sezon → Son dakika konaklama / havuz & spa")
+        else:
+            angles.append("~çıkarım [60%] Sezon dışı wellness → Hafta sonu kaçamağı")
+    elif pack_id == "wellness":
+        if is_summer:
+            angles.append("~çıkarım [70%] Yaza hazırlık → Vücut bakımı serisi")
+    elif pack_id == "local_artisan":
+        if is_summer or m in (3, 4, 5):
+            angles.append("~çıkarım [75%] Sezon ürünleri → Yeni hasat / taze stok")
+
+    if not angles:
+        return ""
+
+    lines.append("=== MARKA DİNAMİKLERİ — ZORUNLU ÇEŞİTLİLİK AÇILARI ===")
+    lines.append("Bu haftanın misyon önerisinde aşağıdaki açılardan EN AZ BİRİ ana tema olmalıdır:")
+    for i, a in enumerate(angles[:3], 1):
+        lines.append(f"{i}. {a}")
+    lines.append("→ trigger_signal ve creative_brief bu açılardan birine dayanmalı; DJ+deniz ürünü tekrarı kabul edilmez.")
+    return "\n".join(lines)
+
+
+def build_brand_dynamics_block(brand: "BrandInfo") -> str:
+    """
+    Full brand-dynamics block for Strategist / content ideation injection.
+    Combines context signals + mandatory angles + diversity directive.
+    """
+    base = build_python_context_signals(brand)
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    location = getattr(brand, "location", None) or getattr(brand, "city", None) or ""
+    btype = brand.business_type or ""
+    description = getattr(brand, "description", "") or ""
+    pack_id = _resolve_sector_pack(btype, description)
+    mandatory = _build_mandatory_angles_block(pack_id, today, location, btype)
+    parts = [base]
+    if mandatory:
+        parts.append(mandatory)
+    diversity = _build_diversity_directive(brand)
+    if diversity:
+        parts.append(diversity)
+    return "\n\n".join(p for p in parts if p.strip())
+
+
 def _build_diversity_directive(brand: "BrandInfo") -> str:
     """
     Build diversity directive from recent missions (mirrors TS buildDiversityDirective).
@@ -272,6 +388,11 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
         lines.append("✓doğrulanmış | Yaklaşan tatiller/bayramlar: " + " | ".join(holidays))
     else:
         lines.append("Yaklaşan 21 günde belirgin tatil/bayram yok.")
+
+    # Lunar / full moon (astronomical — beach & nightlife sectors)
+    lunar_lines = _lunar_signal_lines(today, horizon_days=14)
+    for ll in lunar_lines:
+        lines.append(ll)
 
     # Industry calendar phase
     industry_cal = getattr(brand, "industry_calendar", None)

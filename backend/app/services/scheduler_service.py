@@ -1098,7 +1098,7 @@ async def _semi_auto_proposal_job() -> None:
                         continue
 
                     # Build context signals from Python (no frontend session available)
-                    from app.services.context_signal_service import build_python_context_signals
+                    from app.services.context_signal_service import build_brand_dynamics_block
                     brand_for_signals = await build_brand_info_fn(db, ws_id)
                     context_signals_str: str | None = None
                     if brand_for_signals:
@@ -1112,7 +1112,7 @@ async def _semi_auto_proposal_job() -> None:
                         brand_for_signals._recent_mission_titles = [
                             r[0] for r in recent_titles_q.fetchall() if r[0]
                         ]
-                        context_signals_str = build_python_context_signals(brand_for_signals)
+                        context_signals_str = build_brand_dynamics_block(brand_for_signals)
 
                     missions = await propose_missions_for_workspace(
                         db, ws_id,

@@ -28,7 +28,7 @@ const BASE_INPUT = {
 };
 
 describe('simulateFalFeedProduction — Yula New Citrus', () => {
-  it('current mode: calendar fal slot, photo_first, inferred vibe, prompt conflicts', () => {
+  it('current mode: calendar fal slot, photo_first, inferred vibe, harmonized prompt', () => {
     const plan = simulateFalFeedProduction('current', BASE_INPUT);
 
     expect(plan.slotRole).toBe('fal_designed_post');
@@ -39,11 +39,12 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
     expect(plan.intensitySource).toContain('hardcoded');
     expect(plan.vibeSource).toBe('visual_dna.soul');
     expect(plan.resolvedVibe).toBe('handwritten');
-    expect(plan.promptConflicts.length).toBeGreaterThan(0);
+    expect(plan.promptConflicts).toHaveLength(0);
+    expect(plan.designCardPrompt).toContain('DESIGN INTENSITY: PHOTO-FIRST');
     expect(plan.productionGate.passed).toBe(true);
     expect(plan.artifactMetadata.resolved_vibe).toBeUndefined();
     expect(plan.subtitle).toBe('Taste the essence of Bodrum');
-    expect(plan.designCardPrompt).toContain('New Citrus Cocktail Launch');
+    expect(plan.designCardPrompt).toContain('New Citrus Kokteyl');
   });
 
   it('proposed mode: locked warm_coastal vibe, harmonized prompt, trace metadata', () => {
@@ -85,7 +86,7 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
     const fields = comparison.deltas.map((d) => d.field);
     expect(fields).toContain('resolvedVibe');
     expect(fields).toContain('vibeSource');
-    expect(fields).toContain('promptConflicts');
+    expect(fields).toContain('intensitySource');
   });
 });
 

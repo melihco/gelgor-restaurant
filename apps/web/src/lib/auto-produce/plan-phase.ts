@@ -9,6 +9,7 @@ import {
   applyCrossMissionHeadlineDedupe,
   fetchRecentHeadlineHistory,
 } from '@/lib/mission-headline-history';
+import { computeBrandDynamics } from '@/lib/brand-dynamics';
 import { resolveManifestMissionType } from '@/lib/mission-production-prefs';
 import type { MissionProductionManifest } from '@/lib/mission-production-manifest';
 import { resolveMissionRequiredSlotCount } from '@/lib/mission-production-manifest';
@@ -67,6 +68,7 @@ export interface AutoProducePlanContext {
   hasOrganicReelAssignment: boolean;
   rejectedLayoutFamilies: string[];
   headlineHistory: Awaited<ReturnType<typeof fetchRecentHeadlineHistory>>;
+  brandDynamics: ReturnType<typeof computeBrandDynamics> | null;
   pisScores: number[];
   pisWarnings: Array<{
     idea_index: number;
@@ -104,6 +106,9 @@ export interface AutoProducePlanInput {
   creativeBrief: string | null;
   brandBusinessType: string;
   brandTheme: Record<string, unknown> | null;
+  brandName?: string | null;
+  brandLocation?: string | null;
+  brandDescription?: string | null;
   pipelineRun?: ProductionPipelineRun;
 }
 
@@ -123,6 +128,9 @@ export async function runAutoProducePlanPhase(
     creativeBrief,
     brandBusinessType,
     brandTheme,
+    brandName,
+    brandLocation,
+    brandDescription,
     pipelineRun,
   } = input;
 
@@ -160,10 +168,23 @@ export async function runAutoProducePlanPhase(
     days: 14,
     excludeMissionId: missionId ?? undefined,
   });
+  const brandDynamics = computeBrandDynamics({
+    businessType: brandBusinessType,
+    brandName: brandName ?? undefined,
+    brandDescription: brandDescription ?? undefined,
+    location: brandLocation ?? undefined,
+    themeClusterCounts: Object.fromEntries(headlineHistory.themeClusterCounts),
+  });
   const rawSlice = applyCrossMissionHeadlineDedupe(
     ideas.slice(0, maxIdeas) as Record<string, unknown>[],
     headlineHistory,
+    { mandatoryAngles: brandDynamics.mandatoryAngles },
   );
+  if (headlineHistory.burnedThemeClusters.size > 0) {
+    console.log(
+      `[auto-produce] Cross-mission theme dedupe: burned clusters=${[...headlineHistory.burnedThemeClusters].join(', ')}`,
+    );
+  }
   if (headlineHistory.freeTrialBurned) {
     console.log(
       `[auto-produce] Cross-mission dedupe: ücretsiz deneme burned in last ${headlineHistory.days}d — rotating promo hooks`,
@@ -343,6 +364,7 @@ export async function runAutoProducePlanPhase(
       hasOrganicReelAssignment,
       rejectedLayoutFamilies,
       headlineHistory,
+      brandDynamics,
       pisScores: [],
       pisWarnings: [],
       enhanceTraces: [],

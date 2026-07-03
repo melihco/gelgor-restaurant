@@ -28,6 +28,8 @@ import {
   isMeaningfulFalOverlayText,
   sanitizeFalOverlayText,
   clampFalOverlayHeadlineForCanvas,
+  shortenFalOverlayForImageRetry,
+  truncateAtWordBoundary,
   buildFalLogoPlacementContract,
   buildFalOnCanvasTextContract,
   resolveFalProductionOverlayHeadline,
@@ -35,10 +37,11 @@ import {
 import {
   resolveFalDesignIntensityDirectives,
   resolveFalDesignIntensityForChannel,
+  resolveFalDesignIntensityMode,
   type FalDesignChannel,
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
-import { compositeOfficialLogoOnFrameUrl } from '@/lib/fal-logo-composite';
+import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 
 type AspectRatio = '9:16' | '1:1' | '4:5';
 
@@ -97,6 +100,11 @@ export interface FalDesignerInput {
   designIntensityLevel?: FalDesignIntensityLevel;
   /** Locked special-day occasion from brand template (event_special). */
   occasion?: { name: string; mood?: string };
+  /**
+   * When true, skip post-generation logo on still frames — caller composites once
+   * on the final video (fal_reel) to avoid duplicate marks after Kling motion.
+   */
+  deferLogoComposite?: boolean;
 }
 
 export interface FalDesignerStillResult {
@@ -134,10 +142,10 @@ async function reviewDesignedFrame(
 
 async function finalizeFalStillWithOfficialLogo(
   result: FalDesignerStillResult,
-  input: Pick<FalDesignerInput, 'logoUrl' | 'logoPlacement' | 'aspectRatio' | 'workspaceId'>,
+  input: Pick<FalDesignerInput, 'logoUrl' | 'logoPlacement' | 'aspectRatio' | 'workspaceId' | 'deferLogoComposite'>,
 ): Promise<FalDesignerStillResult> {
   const logoUrl = input.logoUrl?.trim();
-  if (!logoUrl || !result.imageUrl) return result;
+  if (input.deferLogoComposite || !logoUrl || !result.imageUrl) return result;
 
   const channel = input.aspectRatio === '9:16' ? 'reel' : 'feed_post';
   const composited = await compositeOfficialLogoOnFrameUrl({
@@ -148,7 +156,12 @@ async function finalizeFalStillWithOfficialLogo(
     workspaceId: input.workspaceId,
   });
 
-  if (!composited.logoApplied) return result;
+  if (!composited.logoApplied) {
+    console.warn(
+      '[fal-designer] Official logo composite failed — AI may have drawn a substitute mark; check logo URL and frame persistence',
+    );
+    return result;
+  }
 
   return {
     ...result,
@@ -301,6 +314,65 @@ export function buildPremiumSocialTypographyBlock(input: {
   return lines;
 }
 
+/** Intensity-aware typography — avoids premium headline block on photo-first levels. */
+export function buildIntensityTypographyBlock(input: {
+  level: FalDesignIntensityLevel;
+  vibe: TypographyVibe;
+  headline: string;
+  subtitle?: string;
+  fontPersonality?: string;
+  headingFont?: string;
+  bodyFont?: string;
+}): string[] {
+  const spec = getVibePromptSpec(input.vibe);
+  const safeHeadline = sanitizeFalOverlayText(input.headline);
+
+  if (input.level === 'photo_first') {
+    const lines = [
+      'TYPOGRAPHY (photo-first): Gallery photo is absolute hero — 88–95% of frame untouched.',
+      `If any text appears: ONE small tagline only, max 5 words, in ${spec.fontDescription}.`,
+      `Style: ${spec.styleDirective} — bottom-edge placement or thin scrim, never poster-scale.`,
+      'Do NOT render a large headline. No event-card layout. No upper-zone text blocks.',
+    ];
+    if (input.subtitle?.trim() && isMeaningfulFalOverlayText(input.subtitle)) {
+      lines.push(`Preferred tagline (exact, small): "${input.subtitle.trim().slice(0, 48)}"`);
+    } else if (safeHeadline) {
+      lines.push(`If text required, shrink headline to max 5 words at bottom: "${truncateAtWordBoundary(safeHeadline, 32)}"`);
+    }
+    return lines;
+  }
+
+  if (input.level === 'elegant_light') {
+    return [
+      'TYPOGRAPHY (elegant/light): Refined bottom-zone headline on soft translucent scrim only.',
+      'Reject loud poster type — medium-small display letterforms, max 15% frame height.',
+      `${formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription)} — bottom-aligned, never upper-zone.`,
+      `Style energy: ${spec.styleDirective} — delicate, premium, whisper-quiet hierarchy.`,
+    ];
+  }
+
+  if (input.level === 'bold_editorial') {
+    return [
+      'TYPOGRAPHY (bold editorial): OVERSIZED ALL-CAPS headline dominates upper zone — poster impact.',
+      'Stack headline lines large — 35–50% of frame height. Typography leads; photo supports below.',
+      `${formatFalOnImageHeadlineDirective(safeHeadline, `heavy display caps — ${spec.fontDescription}`)}`,
+      `Style energy: ${spec.styleDirective} — magazine cover, maximum typographic presence.`,
+    ];
+  }
+
+  if (input.level === 'designed') {
+    return [
+      'TYPOGRAPHY (designed campaign): Bold headline on solid brand-color upper panel — campaign poster energy.',
+      'Headline 25–35% frame height in upper graphic zone. Photo strip below stays separate.',
+      `${formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription)}`,
+      `Style energy: ${spec.styleDirective} — designer-grade, intentional color blocks.`,
+    ];
+  }
+
+  // balanced — premium social standard
+  return buildPremiumSocialTypographyBlock(input);
+}
+
 type DesignCardPromptInput = {
   vibe: TypographyVibe;
   headline: string;
@@ -356,16 +428,30 @@ export function buildDesignedVideoReelDesignCardPrompt(input: DesignCardPromptIn
  * Sector-specific design language — ensures each brand type gets a fundamentally
  * different visual approach rather than the same generic template.
  */
-function resolveSectorDesignLanguage(sector: string | undefined, isReel: boolean): string {
+function resolveSectorDesignLanguage(
+  sector: string | undefined,
+  isReel: boolean,
+  intensityLevel: FalDesignIntensityLevel = 'balanced',
+): string {
   const base = isReel
     ? 'Build a confident editorial graphic system: headline, supporting line, brand-color panel. MOTION-READY: keep design layers visually separate from the photo for parallax animation.'
     : 'Compose a hand-crafted editorial design. Composite ONLY graphic layers on top of the photo.';
 
   if (!sector) return base;
   const s = sector.toLowerCase();
+  const isPhotoLed = intensityLevel === 'photo_first' || intensityLevel === 'elegant_light';
 
   if (s.includes('beach') || s.includes('club') || s.includes('nightclub')) {
-    return `${base} SECTOR STYLE (beach/night club): Bold, confident, event-poster energy. Use diagonal cuts, neon-glow accents, large condensed sans-serif headline that dominates. Geometric shapes or wave motifs as decorative elements. High contrast — dark panels with bright headline pops. Think Ibiza party poster meets luxury editorial.`;
+    if (intensityLevel === 'photo_first') {
+      return `${base} SECTOR STYLE (beach club — photo-first): Sun-washed Aegean restraint. The venue photograph IS the design — warm natural tones, zero poster energy. NO diagonal cuts, NO neon blocks, NO event-card layout.`;
+    }
+    if (intensityLevel === 'elegant_light') {
+      return `${base} SECTOR STYLE (beach club — elegant): Warm coastal minimalism. Soft bottom scrim, refined small headline — NOT party poster, NOT split diagonal layout.`;
+    }
+    if (isPhotoLed) {
+      return `${base} SECTOR STYLE (beach club): Natural coastal warmth — photo hero, subtle brand accents only.`;
+    }
+    return `${base} SECTOR STYLE (beach/night club): Bold, confident, event-poster energy. Use brand-color panels, large condensed sans-serif headline. High contrast — dark or accent panels with bright headline pops. Think luxury beach club campaign poster.`;
   }
   if (s.includes('restaurant') || s.includes('fine_dining') || s.includes('gastro')) {
     return `${base} SECTOR STYLE (fine dining/restaurant): Elegant restraint. Use thin serif or modern didone headline, generous white/cream space, a single fine gold or copper accent line. Minimal decorative elements — let the food photography speak. Think Michelin guide meets Condé Nast Traveller ad.`;
@@ -414,6 +500,8 @@ function buildDesignedDesignCardPrompt(
   const isReel = mode === 'reel';
   const brand = input.brandName?.trim() || 'the brand';
   const sector = input.sector?.trim();
+  const intensityLevel = input.designIntensityLevel ?? 'balanced';
+  const intensityMode = resolveFalDesignIntensityMode(input.aspectRatio, isReel);
 
   const role = `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping, agency-grade social media post — hand-crafted Canva Pro / Behance quality — NOT a raw photo dump and NOT a generic template card.`;
 
@@ -429,15 +517,9 @@ function buildDesignedDesignCardPrompt(
     ? `OCCASION — ${input.occasion.name}: honour its spirit${input.occasion.mood ? ` (${input.occasion.mood.slice(0, 90)})` : ''} tastefully WOVEN INTO ${brand}'s palette and visual world — symbolic, subtle accents only. Never clashing holiday-cliché colors, literal flags, balloons, or stock holiday graphics.`
     : '';
 
-  // Sector-specific design language — drives fundamentally different visual outputs per brand type
-  const sectorDesignLanguage = resolveSectorDesignLanguage(sector, isReel);
+  const sectorDesignLanguage = resolveSectorDesignLanguage(sector, isReel, intensityLevel);
 
-  const intensityDirectives = input.designIntensityLevel
-    ? resolveFalDesignIntensityDirectives(
-        input.designIntensityLevel,
-        isReel ? 'reel' : 'feed_post',
-      )
-    : resolveFalDesignIntensityDirectives('balanced', isReel ? 'reel' : 'feed_post');
+  const intensityDirectives = resolveFalDesignIntensityDirectives(intensityLevel, intensityMode);
 
   const photoRules = intensityDirectives.photoRules;
 
@@ -481,7 +563,8 @@ function buildDesignedDesignCardPrompt(
     ? `ART DIRECTION (brief-specific): ${input.artDirection.slice(0, 250)}`
     : '';
 
-  const premiumTypography = buildPremiumSocialTypographyBlock({
+  const premiumTypography = buildIntensityTypographyBlock({
+    level: intensityLevel,
     vibe: input.vibe,
     headline: safeHeadline,
     subtitle: safeSubtitle,
@@ -496,6 +579,8 @@ function buildDesignedDesignCardPrompt(
 
   return [
     role,
+    intensityDirectives.priorityBlock,
+    ...intensityDirectives.forbiddenLayouts,
     onCanvasTextContract,
     logoBlock,
     soul,
@@ -758,9 +843,12 @@ export async function produceFalDesignerStill(
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const shortenedHeadline = attempt === 0
-      ? displayHeadline.slice(0, 40)
-      : displayHeadline.slice(0, Math.max(12, 28 - attempt * 6));
+    const canvasChannel = isVerticalVideo ? 'reel' : 'feed_post';
+    const attemptHeadline = shortenFalOverlayForImageRetry(displayHeadline, attempt, canvasChannel);
+    if (!attemptHeadline) {
+      console.warn(`[fal-designer] Ideogram retry ${attempt + 1}: no complete headline after shortening`);
+      continue;
+    }
 
     const ideogramBackground = resolveIdeogramBackgroundStyle(
       backgroundStyle,
@@ -768,7 +856,7 @@ export async function produceFalDesignerStill(
     );
 
     const typoResult = await generateTypographyDesignWithRetry({
-      headline: shortenedHeadline,
+      headline: attemptHeadline,
       subtitle: attempt === 0 ? captionSubtitle?.slice(0, 60) : undefined,
       vibe: input.vibe,
       brandColors: input.brandColors,
@@ -788,7 +876,7 @@ export async function produceFalDesignerStill(
 
     const grafiker = await reviewDesignedFrame(
       typoResult.imageUrl,
-      shortenedHeadline,
+      attemptHeadline,
       input.aspectRatio === '9:16' ? 'story' : 'poster',
     );
 
@@ -830,6 +918,7 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
     captionAwareHeadline: input.captionAwareHeadline !== false,
     backgroundStyle: resolveBackgroundStyle(input.backgroundStyle, input.referencePhotoUrl),
     backgroundOnlyPlate: false,
+    deferLogoComposite: Boolean(input.logoUrl?.trim()),
   });
 
   const motionStyle = input.pipeline === 'fal_reel'
@@ -874,9 +963,24 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
     `[fal-designer] designed video: typo=${still.typographyModel} motion=${motion.model} headline="${still.resolvedHeadline ?? input.headline}"`,
   );
 
+  let finalVideoUrl = motion.videoUrl;
+  const logoUrl = input.logoUrl?.trim();
+  if (logoUrl && motion.videoUrl.startsWith('http')) {
+    const videoWithLogo = await compositeOfficialLogoOnVideoUrl({
+      videoUrl: motion.videoUrl,
+      logoUrl,
+      placement: input.logoPlacement ?? null,
+      channel: 'reel',
+      workspaceId: input.workspaceId,
+    });
+    if (videoWithLogo.logoApplied) {
+      finalVideoUrl = videoWithLogo.videoUrl;
+    }
+  }
+
   return {
     ...still,
-    videoUrl: motion.videoUrl,
+    videoUrl: finalVideoUrl,
     motionModel: motion.model,
     motionStyle: motion.style,
   };

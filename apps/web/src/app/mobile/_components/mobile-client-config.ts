@@ -10,6 +10,14 @@ export function isMobileOperatorMode(): boolean {
   return process.env.NEXT_PUBLIC_MOBILE_OPERATOR_MODE === 'true';
 }
 
+/** Story/modal portalları — masaüstünde .sa-mobile-frame içinde kalır (tam tarayıcı değil). */
+export function getMobilePortalRoot(): HTMLElement {
+  if (typeof document === 'undefined') {
+    throw new Error('getMobilePortalRoot requires document');
+  }
+  return document.querySelector<HTMLElement>('.sa-mobile-frame') ?? document.body;
+}
+
 /** Maliyet, API dökümü ve operasyon araçları — ajans / geliştirme. */
 export function isDebugUiMode(): boolean {
   return (

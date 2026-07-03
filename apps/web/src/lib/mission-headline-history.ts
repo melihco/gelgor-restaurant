@@ -3,6 +3,15 @@
  * (e.g. "ücretsiz deneme" overuse on SaaS tenants like Kaçta).
  */
 
+import {
+  buildThemeClusterCounts,
+  detectHeadlineThemeClusters,
+  isThemeClusterBurned,
+} from '@/lib/headline-theme-clusters';
+import {
+  rotationHeadlineForAvoidedClusters,
+  type BrandDynamicsAngle,
+} from '@/lib/brand-dynamics';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { strategistHeadlineKey } from '@/lib/production-pipeline-router';
 
@@ -31,6 +40,10 @@ export interface RecentHeadlineHistory {
   recentKeys: Set<string>;
   /** True when ücretsiz deneme / free trial appeared in the window. */
   freeTrialBurned: boolean;
+  /** Semantic theme cluster use counts (dj, seafood, full moon, …). */
+  themeClusterCounts: Map<string, number>;
+  /** Cluster ids at or above burn threshold in the window. */
+  burnedThemeClusters: Set<string>;
   days: number;
 }
 
@@ -96,6 +109,7 @@ export function buildRecentHeadlineHistory(
   const days = opts?.days ?? 14;
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const recentKeys = new Set<string>();
+  const headlineTexts: string[] = [];
   let freeTrialBurned = false;
 
   for (const artifact of artifacts) {
@@ -117,9 +131,24 @@ export function buildRecentHeadlineHistory(
     const key = strategistHeadlineKey({ headline });
     if (key) recentKeys.add(key);
     if (containsFreeTrialHook(headline)) freeTrialBurned = true;
+    headlineTexts.push(headline);
+    const caption = String(
+      parseJsonRecord(artifact.content ?? artifact.Content).caption
+      ?? parseJsonRecord(artifact.metadata ?? artifact.Metadata).caption
+      ?? '',
+    ).trim();
+    if (caption) headlineTexts.push(caption);
   }
 
-  return { recentKeys, freeTrialBurned, days };
+  const themeClusterCounts = buildThemeClusterCounts(headlineTexts);
+  const burnedThemeClusters = new Set<string>();
+  for (const [clusterId, count] of themeClusterCounts) {
+    if (isThemeClusterBurned(clusterId, themeClusterCounts)) {
+      burnedThemeClusters.add(clusterId);
+    }
+  }
+
+  return { recentKeys, freeTrialBurned, themeClusterCounts, burnedThemeClusters, days };
 }
 
 export async function fetchRecentHeadlineHistory(
@@ -137,22 +166,37 @@ export async function fetchRecentHeadlineHistory(
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      return { recentKeys: new Set(), freeTrialBurned: false, days: opts?.days ?? 14 };
+      return emptyHeadlineHistory(opts?.days);
     }
     const artifacts = (await res.json()) as Record<string, unknown>[];
     return buildRecentHeadlineHistory(Array.isArray(artifacts) ? artifacts : [], opts);
   } catch {
-    return { recentKeys: new Set(), freeTrialBurned: false, days: opts?.days ?? 14 };
+    return emptyHeadlineHistory(opts?.days);
   }
 }
 
-function rotateIdeaAwayFromFreeTrial(
+function emptyHeadlineHistory(days?: number): RecentHeadlineHistory {
+  return {
+    recentKeys: new Set(),
+    freeTrialBurned: false,
+    themeClusterCounts: new Map(),
+    burnedThemeClusters: new Set(),
+    days: days ?? 14,
+  };
+}
+
+function rotateIdea(
   idea: Record<string, unknown>,
   rotationIndex: number,
+  reason: string,
+  mandatoryAngles?: BrandDynamicsAngle[],
 ): Record<string, unknown> {
+  const dynamic = mandatoryAngles?.length
+    ? rotationHeadlineForAvoidedClusters([], mandatoryAngles, rotationIndex)
+    : null;
   const idx = rotationIndex % ROTATION_USE_CASES.length;
-  const useCase = ROTATION_USE_CASES[idx]!;
-  const newHeadline = ROTATION_HEADLINES_TR[useCase] ?? 'Yeni içerik';
+  const useCase = dynamic?.useCase ?? ROTATION_USE_CASES[idx]!;
+  const newHeadline = dynamic?.headline ?? ROTATION_HEADLINES_TR[useCase] ?? 'Yeni içerik';
   const out = { ...idea };
   out.template_use_case = useCase;
   out.headline = newHeadline;
@@ -160,8 +204,19 @@ function rotateIdeaAwayFromFreeTrial(
   out.idea_title = newHeadline;
   out.title = newHeadline;
   out.cross_mission_headline_rotated = true;
-  out.rotated_from = 'free_trial_hook';
+  out.rotated_from = reason;
+  if (dynamic?.angleId) out.brand_dynamics_angle_id = dynamic.angleId;
   return out;
+}
+
+function ideaMatchesBurnedThemeCluster(
+  idea: Record<string, unknown>,
+  burned: Set<string>,
+): string[] {
+  const headline = resolveIdeationHeadline(idea);
+  const caption = String(idea.caption_draft ?? idea.caption ?? '');
+  const clusters = detectHeadlineThemeClusters(`${headline} ${caption}`);
+  return clusters.filter((c) => burned.has(c));
 }
 
 /**
@@ -171,10 +226,12 @@ function rotateIdeaAwayFromFreeTrial(
 export function applyCrossMissionHeadlineDedupe(
   ideas: Record<string, unknown>[],
   history: RecentHeadlineHistory,
+  opts?: { mandatoryAngles?: BrandDynamicsAngle[] },
 ): Record<string, unknown>[] {
   if (!ideas.length) return ideas;
 
   let freeTrialSeenInBatch = false;
+  const batchThemeCounts = new Map<string, number>();
   let rotationIdx = 0;
   const out: Record<string, unknown>[] = [];
 
@@ -184,13 +241,13 @@ export function applyCrossMissionHeadlineDedupe(
       || containsFreeTrialHook(String(idea.caption_draft ?? idea.caption ?? ''));
 
     if (history.freeTrialBurned && isTrial) {
-      out.push(rotateIdeaAwayFromFreeTrial(idea, rotationIdx++));
+      out.push(rotateIdea(idea, rotationIdx++, 'free_trial_hook', opts?.mandatoryAngles));
       continue;
     }
 
     if (isTrial) {
       if (freeTrialSeenInBatch) {
-        out.push(rotateIdeaAwayFromFreeTrial(idea, rotationIdx++));
+        out.push(rotateIdea(idea, rotationIdx++, 'free_trial_batch_dup', opts?.mandatoryAngles));
         continue;
       }
       freeTrialSeenInBatch = true;
@@ -198,8 +255,33 @@ export function applyCrossMissionHeadlineDedupe(
 
     const key = strategistHeadlineKey(idea);
     if (key && history.recentKeys.has(key)) {
-      out.push(rotateIdeaAwayFromFreeTrial(idea, rotationIdx++));
+      out.push(rotateIdea(idea, rotationIdx++, 'headline_key_dup', opts?.mandatoryAngles));
       continue;
+    }
+
+    const burnedHits = ideaMatchesBurnedThemeCluster(idea, history.burnedThemeClusters);
+    if (burnedHits.length > 0) {
+      out.push(rotateIdea(
+        idea,
+        rotationIdx++,
+        `theme_cluster:${burnedHits[0]}`,
+        opts?.mandatoryAngles,
+      ));
+      continue;
+    }
+
+    const ideaClusters = detectHeadlineThemeClusters(
+      `${headline} ${String(idea.caption_draft ?? idea.caption ?? '')}`,
+    );
+    const batchDup = ideaClusters.some(
+      (c) => (batchThemeCounts.get(c) ?? 0) >= 1,
+    );
+    if (batchDup) {
+      out.push(rotateIdea(idea, rotationIdx++, 'theme_cluster_batch_dup', opts?.mandatoryAngles));
+      continue;
+    }
+    for (const c of ideaClusters) {
+      batchThemeCounts.set(c, (batchThemeCounts.get(c) ?? 0) + 1);
     }
 
     out.push(idea);

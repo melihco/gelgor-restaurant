@@ -1187,17 +1187,14 @@ export function matchPhotoToContent(
 }
 
 /**
- * Greedy 1:1 assignment — no duplicate photos within the same post-type bucket
- * per batch.
+ * Greedy 1:1 assignment — no duplicate photos within the mission batch
+ * (mission-wide dedup across feed/story/reel/carousel).
  *
  * Strength-first ordering: instead of assigning in input order (where a weak
  * idea processed early could claim a photo that is a much stronger match for a
- * later idea in the same bucket — "starvation"), each round we evaluate every
- * still-unassigned idea's best available photo and commit the single strongest
- * (idea, photo) pair. Ties resolve by original input order for determinism.
- * Cross-bucket ideas never contend for the same dedup pool, so this only
- * reorders contention within a bucket. The returned Map preserves the original
- * `items` order so callers that iterate it are unaffected.
+ * later idea — "starvation"), each round we evaluate every still-unassigned
+ * idea's best available photo and commit the single strongest (idea, photo)
+ * pair. Ties resolve by original input order for determinism.
  */
 export function assignPhotosToContents(
   items: Array<{ key: string; input: MatchPhotoInput; postType?: PostTypeBucket }>,
@@ -1213,15 +1210,8 @@ export function assignPhotosToContents(
   const lookup = buildGalleryLookup(galleryAnalysis, options?.displayUrls ?? candidateUrls);
   const minScore = options?.minScore ?? MIN_ACCEPT_SCORE;
   const assigned = new Map<string, PhotoMatchResult | null>();
-  const usedGlobal = new Set(excludeBases);
-  const usedByType: Record<PostTypeBucket, Set<string>> = {
-    feed: new Set(excludeBases),
-    story: new Set(excludeBases),
-    reel: new Set(excludeBases),
-    carousel: new Set(excludeBases),
-  };
-  const poolFor = (postType?: PostTypeBucket) =>
-    postType ? usedByType[postType] : usedGlobal;
+  /** Mission-wide pool — one venue photo per weekly package slot. */
+  const usedMissionWide = new Set(excludeBases);
 
   const pending = items.map((item, order) => ({ ...item, order }));
 
@@ -1230,21 +1220,25 @@ export function assignPhotosToContents(
       listIndex: number;
       key: string;
       result: PhotoMatchResult;
-      pool: Set<string>;
       order: number;
     } | null = null;
 
     for (let i = 0; i < pending.length; i += 1) {
-      const { key, input, postType, order } = pending[i]!;
-      const pool = poolFor(postType);
-      const top = rankPhotosForContent(input, candidateUrls, lookup, pool, galleryAnalysis)[0];
+      const { key, input, order } = pending[i]!;
+      const top = rankPhotosForContent(
+        input,
+        candidateUrls,
+        lookup,
+        usedMissionWide,
+        galleryAnalysis,
+      )[0];
       if (!top || top.score < minScore) continue;
       const better =
         !pick
         || top.score > pick.result.score
         || (top.score === pick.result.score && order < pick.order);
       if (better) {
-        pick = { listIndex: i, key, result: top, pool, order };
+        pick = { listIndex: i, key, result: top, order };
       }
     }
 
@@ -1252,7 +1246,7 @@ export function assignPhotosToContents(
     if (!pick) break;
 
     assigned.set(pick.key, pick.result);
-    pick.pool.add(normalizeGalleryUrl(pick.result.url));
+    usedMissionWide.add(normalizeGalleryUrl(pick.result.url));
     pending.splice(pick.listIndex, 1);
   }
 

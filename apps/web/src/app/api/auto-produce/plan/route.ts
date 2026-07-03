@@ -16,8 +16,13 @@ import {
   ensureWeeklyFormatCoverage,
 } from '@/lib/mission-production-plan';
 import { fetchProductionContext } from '../production-context';
+import { fetchGalleryContext } from '../gallery-context';
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
+import {
+  buildMissionGalleryAssignments,
+  missionGallerySlotKey,
+} from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 
 export const runtime = 'nodejs';
@@ -138,6 +143,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       creativeBrief,
       brandBusinessType: pctx.brandBusinessType,
       brandTheme: pctx.brandTheme,
+      brandName: pctx.brandName,
+      brandLocation: pctx.brandLocation,
+      brandDescription: pctx.brandCtxForVisual.description ?? undefined,
     });
 
     if (planOutcome.status === 'blocked') {
@@ -160,8 +168,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       packageSlug: pkgLimits.packageSlug,
     });
 
+    const galleryAnalysis = (body as { galleryAnalysis?: Record<string, unknown> })
+      .galleryAnalysis ?? null;
+    const gctx = await fetchGalleryContext(
+      workspaceId,
+      pctx.raw,
+      galleryAnalysis as Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta> | null,
+      pctx.brandBusinessType,
+    );
+    const missionGalleryAssignments = buildMissionGalleryAssignments({
+      missionId,
+      productionLoop: manifestQueue,
+      galleryPhotos: gctx.photos,
+      galleryMeta: gctx.meta,
+      brandBusinessType: pctx.brandBusinessType,
+      resolvedBrandName: pctx.brandName,
+      hasGallery: gctx.hasPhotos,
+      hasRealBrandPhotos: gctx.hasRealPhotos,
+      brandDescription: String(pctx.raw.description ?? ''),
+      creativeBrief: creativeBrief ?? undefined,
+      galleryUsage: gctx.usage,
+    });
+
     const slots = manifestQueue.map((item) => {
       const role = item.assignment.slot_role;
+      const galleryKey = missionGallerySlotKey(item.ideaIndex, String(role));
+      const assigned = missionGalleryAssignments.get(galleryKey);
       return {
         ideaIndex: item.ideaIndex,
         slotRole: role,
@@ -170,8 +202,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         librarySlotKey: item.assignment.library_slot_key ?? null,
         backfillSlotKey: `${item.ideaIndex}:${role}`,
         sourceTrack: 'ideation',
+        payload: assigned?.url
+          ? {
+            galleryPhotoUrl: assigned.url,
+            galleryMatchScore: assigned.score ?? null,
+          }
+          : null,
       };
     });
+
+    const galleryAssignedCount = slots.filter(
+      (s) => s.payload?.galleryPhotoUrl,
+    ).length;
+    if (galleryAssignedCount > 0) {
+      console.log(
+        `[auto-produce/plan] Mission gallery batch assign: ${galleryAssignedCount}/${slots.length} slots`,
+      );
+    }
 
     return NextResponse.json({
       workspaceId,

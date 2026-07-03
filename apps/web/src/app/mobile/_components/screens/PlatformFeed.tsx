@@ -91,7 +91,7 @@ import {
 } from '@/lib/gallery-photo-matcher';
 import { VisualReviewBadge } from '../VisualReviewSheet';
 import { useTenantBrandContext } from '../TenantBrandProvider';
-import { isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
+import { getMobilePortalRoot, isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
 import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
 import { FeedLoadingSkeleton } from '../FeedLoadingSkeleton';
 import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
@@ -1339,8 +1339,7 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
   return (
     <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}` }} className="ig-vertical-media-card">
       {/* 9:16 Reel frame */}
-      <div style={{ width: '100%', aspectRatio: '9/16', maxHeight: '85vh',
-        background: '#000', position: 'relative', overflow: 'hidden' }}>
+      <div className="ig-vertical-media-stage">
         {/* Video or thumbnail */}
         {videoUrl ? (
           <video src={videoUrl} poster={thumbUrl ?? undefined}
@@ -1612,14 +1611,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
   return (
     <div style={{ margin: '0', borderBottom: `0.5px solid ${t.separator}`, paddingBottom: 0 }} className="ig-vertical-media-card">
       {/* Full-width 9:16 story frame — NO caption below */}
-      <div style={{
-        width: '100%',
-        aspectRatio: '9/16',
-        maxHeight: '85vh',
-        background: '#000',
-        position: 'relative',
-        overflow: 'hidden',
-      }}>
+      <div className="ig-vertical-media-stage">
         {/* Remotion MP4 story — plays inline; poster = original gallery photo */}
         {isRemotionStory && storyVideoUrl ? (
           <>
@@ -2572,7 +2564,10 @@ export function PlatformFeed() {
     && dedupedRaw.length === 0;
 
   return (
-    <div style={{ minHeight: '100dvh', background: feedBg, paddingBottom: 104 }}>
+    <div
+      className={!operatorMode ? 'ig-feed-shell' : undefined}
+      style={{ minHeight: '100dvh', background: feedBg, paddingBottom: 104, width: '100%' }}
+    >
 
       {/* ─── Sticky Header ─────────────────────────────────────────── */}
       <div style={{
@@ -3148,29 +3143,12 @@ export function PlatformFeed() {
         </div>
       )}
 
-      {/* ── Story Viewer (fullscreen portal) ── */}
+      {/* ── Story Viewer (IG native 9:16 — mobile frame içinde) ── */}
       {storyViewIdx !== null && storyBarItems[storyViewIdx] && typeof window !== 'undefined' && (
         createPortal(
-          <div className="ig-story-viewer-backdrop" style={{
-            position: 'fixed', inset: 0, zIndex: 800,
-            width: '100%', height: '100dvh', maxHeight: '100dvh',
-            background: '#000',
-            display: 'flex', flexDirection: 'column',
-            overflow: 'hidden',
-            animation: 'fadeIn 120ms ease both',
-          }}>
-            <div className="ig-story-viewer-column" style={{
-              display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
-              width: '100%', height: '100%', maxHeight: '100dvh',
-            }}>
-            {/* Story stage — full content visible, dock stays below */}
-            <div className="ig-story-viewer-stage" style={{
-              flex: '1 1 0', minHeight: 0, position: 'relative',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: '#000',
-              width: '100%',
-              overflow: 'hidden',
-            }}>
+          <div className="ig-story-viewer-backdrop" style={{ animation: 'fadeIn 120ms ease both' }}>
+            <div className="ig-story-viewer-column">
+            <div className="ig-story-viewer-stage">
               {/* Progress bars */}
               <div style={{
                 position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
@@ -3276,6 +3254,8 @@ export function PlatformFeed() {
                   inset: 0,
                   width: '100%',
                   height: '100%',
+                  objectFit: 'cover',
+                  objectPosition: 'center',
                 };
 
                 if (item.kind === 'scheduled') {
@@ -3560,7 +3540,7 @@ export function PlatformFeed() {
             </div>
             </div>
           </div>,
-          document.body
+          getMobilePortalRoot()
         )
       )}
 

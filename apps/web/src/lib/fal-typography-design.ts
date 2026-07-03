@@ -24,6 +24,7 @@ import {
   formatFalOnImageSubtitleDirective,
   isMeaningfulFalOverlayText,
   sanitizeFalOverlayText,
+  shortenFalOverlayForImageRetry,
 } from './fal-caption-headline';
 
 const FAL_RUN_BASE = 'https://fal.run';
@@ -213,6 +214,7 @@ function buildTypographyPrompt(input: {
       headline: safeHeadline,
       subtitle: safeSubtitle,
       brandName: input.brandName,
+      logoProvided: Boolean(input.logoUrl),
     });
     const logoLine = input.logoUrl
       ? buildFalLogoPlacementContract({
@@ -259,6 +261,7 @@ function buildTypographyPrompt(input: {
     headline: safeHeadline,
     subtitle: safeSubtitle,
     brandName: input.brandName,
+    logoProvided: Boolean(input.logoUrl),
   });
 
   const logoLine = input.logoUrl
@@ -520,15 +523,27 @@ export async function generateTypographyDesignWithRetry(
   let lastResult: TypographyDesignResult | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const canvasChannel = input.reelDesignMode && input.aspectRatio === '9:16'
+      ? 'reel'
+      : input.aspectRatio === '9:16'
+        ? 'story'
+        : 'feed_post';
     const modifiedInput = attempt === 0
       ? input
       : {
           ...input,
-          headline: sanitizeFalOverlayText(
-            input.headline.slice(0, Math.max(15, 30 - attempt * 5)),
+          headline: shortenFalOverlayForImageRetry(
+            sanitizeFalOverlayText(input.headline),
+            attempt,
+            canvasChannel,
           ),
           subtitle: undefined,
         };
+
+    if (attempt > 0 && !modifiedInput.headline) {
+      console.warn(`[fal-typography] Retry ${attempt + 1}: no complete shortened headline`);
+      continue;
+    }
 
     const result = await generateTypographyDesign(modifiedInput);
     result.retryCount = attempt;
@@ -536,7 +551,7 @@ export async function generateTypographyDesignWithRetry(
 
     if (!opts?.validateFn) return result;
 
-    const isValid = await opts.validateFn(result.imageUrl, input.headline);
+    const isValid = await opts.validateFn(result.imageUrl, modifiedInput.headline);
     if (isValid) return result;
 
     console.warn(`[fal-typography] Text validation failed (attempt ${attempt + 1}/${maxRetries + 1})`);

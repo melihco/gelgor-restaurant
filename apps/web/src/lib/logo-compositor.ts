@@ -42,13 +42,22 @@ export interface LogoCompositorResult {
   logoApplied: boolean;
 }
 
+/** Resolve R2 proxy paths and relative /api/media URLs for server-side fetch. */
+export async function resolveMediaFetchUrl(url: string): Promise<string> {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return trimmed;
+  if (trimmed.startsWith('/')) {
+    const origin = (process.env.NEXTJS_INTERNAL_URL || 'http://127.0.0.1:3000').replace(/\/$/, '');
+    return `${origin}${trimmed}`;
+  }
+  const { resolveExternallyAccessibleUrl } = await import('./media-url');
+  return resolveExternallyAccessibleUrl(trimmed);
+}
+
 async function fetchLogoBuffer(logoUrl: string): Promise<Buffer | null> {
   try {
-    const proxyBase = process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000';
-    const url = logoUrl.startsWith('http')
-      ? `${proxyBase}/api/media-proxy?url=${encodeURIComponent(logoUrl)}`
-      : logoUrl;
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const fetchUrl = await resolveMediaFetchUrl(logoUrl);
+    const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(20_000) });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   } catch {
@@ -204,7 +213,8 @@ export async function imageUrlToBuffer(imageUrl: string): Promise<Buffer | null>
     return Buffer.from(b64, 'base64');
   }
   try {
-    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(20_000) });
+    const fetchUrl = await resolveMediaFetchUrl(imageUrl);
+    const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(45_000) });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   } catch {

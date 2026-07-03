@@ -12,6 +12,7 @@ import {
   isRenderedOverlayTextIncomplete,
   isMeaningfulFalOverlayText,
 } from './fal-caption-headline';
+import { resolveExternallyAccessibleUrl } from './media-url';
 import { serverConfig } from './server-config';
 
 interface ValidationResult {
@@ -48,7 +49,8 @@ export async function validateTypographyText(
   }
 
   try {
-    const result = await callVisionValidator(apiKey, imageUrl, intendedHeadline);
+    const visionUrl = await resolveExternallyAccessibleUrl(imageUrl);
+    const result = await callVisionValidator(apiKey, visionUrl, intendedHeadline);
     console.log(
       `[typography-validate] headline="${intendedHeadline.slice(0, 25)}" ` +
       `valid=${result.valid} confidence=${result.confidence} detected="${result.detectedText?.slice(0, 30)}"`,

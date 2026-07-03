@@ -3,7 +3,9 @@ import { serverConfig } from '@/lib/server-config';
 import {
   type PostTypeBucket,
   type UsedGalleryUsage,
+  getMissionWideExcludeUrls,
   isGalleryUrlUsedInBatch,
+  isGalleryUrlUsedInMission,
   markGalleryUrlUsedForPostType,
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
@@ -217,7 +219,7 @@ export function pickGalleryPhotoForIdea(
   );
 }
 
-/** Re-pick when the same gallery source was already used for this post type in the mission batch. */
+/** Re-pick when the same gallery source was already used anywhere in this mission batch. */
 export function repickGalleryIfDuplicateForType(input: {
   referenceUrl: string | null;
   caption: string;
@@ -230,20 +232,36 @@ export function repickGalleryIfDuplicateForType(input: {
   postType: PostTypeBucket;
   galleryUsage: UsedGalleryUsage;
   batchUsedByType: Record<PostTypeBucket, string[]>;
+  batchUsedMission?: Iterable<string>;
   businessType?: string;
   ideaIndex?: number;
+  globalUsageCounts?: ReadonlyMap<string, number>;
 }): string | null {
   const { referenceUrl, postType } = input;
   if (!referenceUrl || !isUsableGalleryPhotoUrl(referenceUrl)) return referenceUrl;
 
-  if (!isGalleryUrlUsedInBatch(
+  const missionUsed = isGalleryUrlUsedInMission(
+    input.galleryUsage,
+    input.batchUsedByType,
+    input.batchUsedMission ?? [],
+    referenceUrl,
+  );
+  const typeUsed = isGalleryUrlUsedInBatch(
     input.galleryUsage,
     input.batchUsedByType,
     referenceUrl,
     postType,
-  )) {
+  );
+
+  if (!missionUsed && !typeUsed) {
     return referenceUrl;
   }
+
+  const missionExclude = getMissionWideExcludeUrls(
+    input.galleryUsage,
+    input.batchUsedByType,
+    input.batchUsedMission ?? [],
+  );
 
   const repicked = pickGalleryPhotoForIdea(
     input.caption,
@@ -251,18 +269,19 @@ export function repickGalleryIfDuplicateForType(input: {
     input.mood,
     input.galleryAnalysis,
     input.candidateUrls,
-    [...input.typeExcludeUrls, referenceUrl],
-    [...input.batchExcludeUrls, referenceUrl],
+    missionExclude,
+    missionExclude,
     postType,
     null,
     input.businessType,
     false,
     input.ideaIndex,
+    input.globalUsageCounts,
   );
 
   if (repicked && normalizeGalleryUrl(repicked) !== normalizeGalleryUrl(referenceUrl)) {
     console.warn(
-      `[auto-produce] duplicate ${postType} gallery photo — repicked for "${input.headline.slice(0, 48)}"`,
+      `[auto-produce] duplicate mission gallery photo — repicked for "${input.headline.slice(0, 48)}"`,
     );
     return repicked;
   }

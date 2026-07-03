@@ -376,7 +376,7 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
   const h = handle.startsWith('@') ? handle : `@${handle}`;
 
   return (
-    <div style={{ position: 'relative', background: '#000', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
+    <div className="ig-vertical-media-stage">
       {content.videoUrl ? (
         <VisibilityGatedVideo
           src={content.videoUrl}
@@ -730,7 +730,7 @@ export function InstagramStoryNative({ content, handle, logoUrl, isPending, back
   return (
     <div
       ref={containerRef}
-      style={{ position: 'relative', background: '#000', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
+      className="ig-vertical-media-stage">
       {content.videoUrl ? (
         <StoryPreviewVideo
           src={content.videoUrl}
@@ -800,7 +800,7 @@ export function TikTokNative({ content, handle, logoUrl, isPending }: {
   const h = handle.startsWith('@') ? handle : `@${handle}`;
 
   return (
-    <div style={{ position: 'relative', background: '#010101', aspectRatio: '9/16', maxHeight: '85vh', overflow: 'hidden' }}>
+    <div className="ig-vertical-media-stage">
       {content.videoUrl ? (
         <VisibilityGatedVideo
           src={content.videoUrl}

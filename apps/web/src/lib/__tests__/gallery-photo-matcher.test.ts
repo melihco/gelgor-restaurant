@@ -256,6 +256,22 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
     );
     const foodPlain = rankedPlain.find((r) => r.url === FOOD_PHOTO)!.score;
     const foodPenalized = rankedPenalized.find((r) => r.url === FOOD_PHOTO)!.score;
-    expect(foodPenalized).toBe(foodPlain - 20);
+    expect(foodPenalized).toBe(foodPlain - 60);
+  });
+
+  it('does not assign the same photo across post-type buckets (mission-wide)', () => {
+    const assigned = assignPhotosToContents(
+      [
+        { key: 'post', input: { caption: 'gourmet pasta food dish plate', businessType: 'restaurant' }, postType: 'feed' },
+        { key: 'story', input: { caption: 'gourmet pasta food dish plate special', businessType: 'restaurant' }, postType: 'story' },
+      ],
+      [FOOD_PHOTO, VENUE_PHOTO],
+      restaurantGallery(),
+    );
+    const urls = [...assigned.values()].filter(Boolean).map((r) => r!.url);
+    expect(urls.length).toBeGreaterThanOrEqual(1);
+    if (urls.length === 2) {
+      expect(new Set(urls).size).toBe(2);
+    }
   });
 });

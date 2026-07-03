@@ -58,6 +58,8 @@ interface AutoProduceRequest {
   slotBackfillPass?: boolean;
   /** Slot keys `${ideaIndex}:${slot_role}` to produce on a backfill pass. */
   backfillSlotKeys?: string[];
+  /** Factory plan-phase gallery picks keyed by `${ideaIndex}::${slot_role}`. */
+  gallerySlotAssignments?: Record<string, { url: string; score?: number | null }>;
   /** New Brief form — fal.ai art-director pipelines. */
   adHocBrief?: boolean;
 }
@@ -92,6 +94,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     skipArtifactDedupe,
     slotBackfillPass,
     backfillSlotKeys,
+    gallerySlotAssignments,
     adHocBrief,
   } = body;
   if (!workspaceId) {
@@ -186,6 +189,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       skipArtifactDedupe: skipArtifactDedupe === true,
       slotBackfillPass: slotBackfillPass === true,
       backfillSlotKeys: Array.isArray(backfillSlotKeys) ? backfillSlotKeys : undefined,
+      calendarPlans: calendarPlans.length > 0 ? calendarPlans : undefined,
+      gallerySlotAssignments: gallerySlotAssignments ?? undefined,
       adHocBrief: adHocBrief === true,
     });
     // #region agent log

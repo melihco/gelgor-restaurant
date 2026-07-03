@@ -83,6 +83,10 @@ export interface SlotProductionInputs {
   requireGroundedGallery?: boolean;
   /** Override brand design intensity (calendar defaults to photo_first). */
   falDesignIntensityOverride?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
+  /** Grid rotation — alternate background treatment vs previous feed tiles. */
+  falBackgroundStyleOverride?: import('@/types/brand-theme').TypographyBackgroundStyle;
+  /** Persisted on artifact metadata after fal production. */
+  falGridSurfaceKind?: import('@/lib/fal-grid-surface-rotation').FalGridSurfaceKind;
   /** When false, keep calendar headline verbatim (no caption-derived headline rewrite). */
   captionAwareHeadline?: boolean;
   /** Designed tagline/subline for fal typography (calendar tagline). */

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
+  buildIntensityTypographyBlock,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '../fal-designer-production';
@@ -54,7 +55,7 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).toContain('real rooftop sunset crowd with warm ambient light');
     expect(prompt).toContain('TYPOGRAPHY STANDARD (MANDATORY)');
     expect(prompt).toContain('Reject amateur output');
-    expect(prompt).toContain('PHOTO FIDELITY');
+    expect(prompt).toContain('PHOTO HERO ZONE');
   });
 
   it('maps Ideogram photo_overlay to gradient_mesh when a gallery reference exists', () => {
@@ -127,5 +128,51 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('Photo hero rule');
     expect(prompt).toContain('LOGO ASSET');
     expect(prompt).not.toContain('BRAND MARK (small corner wordmark');
+  });
+
+  it('photo_first story prompt forbids top bands and uses photo-first typography', () => {
+    const prompt = buildDesignedPostDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Summer Festival',
+      brandColors: { primary: '#1a1a2e', accent: '#e8c97a' },
+      brandName: 'Yula Bodrum',
+      sector: 'beach_club',
+      aspectRatio: '9:16',
+      designIntensityLevel: 'photo_first',
+    });
+
+    expect(prompt).toContain('DESIGN INTENSITY: PHOTO-FIRST');
+    expect(prompt).toContain('FORBIDDEN: top horizontal color band');
+    expect(prompt).toContain('TYPOGRAPHY (photo-first)');
+    expect(prompt).not.toContain('TYPOGRAPHY STANDARD (MANDATORY)');
+    expect(prompt).toContain('photo-first): Sun-washed Aegean restraint');
+  });
+
+  it('bold_editorial story prompt demands oversized caps headline', () => {
+    const prompt = buildDesignedPostDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Summer Festival',
+      brandColors: { primary: '#1a1a2e', accent: '#e8c97a' },
+      brandName: 'Yula Bodrum',
+      sector: 'beach_club',
+      aspectRatio: '9:16',
+      designIntensityLevel: 'bold_editorial',
+    });
+
+    expect(prompt).toContain('BOLD EDITORIAL');
+    expect(prompt).toContain('ALL-CAPS');
+    expect(prompt).toContain('TYPOGRAPHY (bold editorial)');
+  });
+});
+
+describe('buildIntensityTypographyBlock', () => {
+  it('photo_first avoids premium mandatory block', () => {
+    const lines = buildIntensityTypographyBlock({
+      level: 'photo_first',
+      vibe: 'warm_coastal',
+      headline: 'Summer Festival Launch',
+    });
+    expect(lines.join(' ')).toContain('Do NOT render a large headline');
+    expect(lines.join(' ')).not.toContain('TYPOGRAPHY STANDARD');
   });
 });
