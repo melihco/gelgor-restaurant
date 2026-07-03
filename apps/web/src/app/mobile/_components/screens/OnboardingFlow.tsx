@@ -14,6 +14,7 @@ import { useAuthStore } from '../auth-store';
 import { apiClient } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
 import { getRequestContextHeaders } from '@/lib/runtime-config';
+import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
@@ -971,13 +972,17 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       }
       onDone(company.trim(), session.tenantId);
     } catch (e: any) {
-      const msg = String(e?.message || '');
+      const status = typeof e?.status === 'number' ? e.status : undefined;
+      const body = String(e?.responseBody ?? e?.message ?? '');
+      const msg = humanizeMobileServiceError(body, status);
       setError(
-        msg.includes('409') ? 'Bu e-posta zaten kayıtlı.' :
-        msg.includes('400') ? 'Bilgiler geçersiz, tekrar kontrol edin.' :
+        status === 409 || msg.includes('409') || body.includes('already exists') ? 'Bu e-posta zaten kayıtlı.' :
+        status === 400 || msg.includes('400') ? 'Bilgiler geçersiz, tekrar kontrol edin.' :
         msg.includes('Marka') || msg.includes('analiz') || msg.includes('kaynak') || msg.includes('anayasa')
           ? msg
-          : 'Kayıt başarısız. Lütfen tekrar deneyin.'
+          : msg && msg !== body
+            ? msg
+            : 'Kayıt başarısız. Lütfen tekrar deneyin.'
       );
     } finally {
       setLoading(false);

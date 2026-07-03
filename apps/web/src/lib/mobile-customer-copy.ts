@@ -7,6 +7,25 @@ export function humanizeMobileServiceError(raw: string, status?: number): string
   const lower = msg.toLowerCase();
 
   if (
+    lower.includes('<!doctype')
+    || lower.includes('<html')
+    || lower.includes('data-next-head')
+  ) {
+    if (status === 404) {
+      return 'Kayıt servisi bu adreste bulunamadı. Uygulama yanlış projeden yayınlanmış olabilir — Vercel Root Directory: apps/web olmalı.';
+    }
+    return 'Sunucu beklenmeyen bir yanıt döndürdü. API bağlantı ayarlarını kontrol edin.';
+  }
+
+  if (
+    lower.includes('backend_not_configured')
+    || lower.includes('nexus_api_url')
+    || lower.includes('backend_origin ortam')
+  ) {
+    return 'Kayıt servisi henüz yapılandırılmadı. NEXUS_API_URL (Railway API adresi) Vercel ortam değişkenlerine eklenmeli.';
+  }
+
+  if (
     status === 503
     || lower.includes('crew_backend')
     || lower.includes('service unavailable')

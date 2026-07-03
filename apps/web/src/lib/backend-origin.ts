@@ -15,6 +15,19 @@ export function resolveServerApiBaseUrl(): string {
   return normalizeBackendOrigin(raw);
 }
 
+const LOCAL_BACKEND_RE = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/i;
+
+/** True when the web app runs in a hosted environment but still points at localhost API. */
+export function isHostedBackendMisconfigured(): boolean {
+  const hosted =
+    process.env.VERCEL === '1'
+    || Boolean(process.env.RAILWAY_ENVIRONMENT)
+    || Boolean(process.env.RENDER)
+    || process.env.NODE_ENV === 'production';
+  if (!hosted) return false;
+  return LOCAL_BACKEND_RE.test(resolveServerApiBaseUrl());
+}
+
 export function resolveServerSignalrBaseUrl(): string {
   const raw = process.env.NEXT_PUBLIC_SIGNALR_URL || process.env.NEXUS_API_URL || process.env.NEXT_PUBLIC_API_URL;
   return normalizeBackendOrigin(raw, resolveServerApiBaseUrl());

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveServerApiBaseUrl } from '@/lib/backend-origin';
+import { isHostedBackendMisconfigured, resolveServerApiBaseUrl } from '@/lib/backend-origin';
 import { isJwtExpired } from '@/lib/jwt-tenant';
 
 export const runtime = 'nodejs';
@@ -37,6 +37,17 @@ function ensureUpstreamAuth(req: NextRequest, headers: Headers): void {
 }
 
 async function proxyToNexus(req: NextRequest, pathSegments: string[]): Promise<NextResponse> {
+  if (isHostedBackendMisconfigured()) {
+    return NextResponse.json(
+      {
+        error: 'backend_not_configured',
+        message:
+          'NEXUS_API_URL veya BACKEND_ORIGIN ortam değişkeni Railway/Render API adresinize ayarlanmalı.',
+      },
+      { status: 503 },
+    );
+  }
+
   const backend = resolveServerApiBaseUrl();
   const path = pathSegments.join('/');
   const target = `${backend}/api/${path}${req.nextUrl.search}`;
