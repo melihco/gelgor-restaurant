@@ -179,7 +179,8 @@ describe('alignRemotionPosterWithFalTemplate', () => {
       brandColors: { primary: '#000', accent: '#fff' },
       brandVibe: null,
     });
-    expect(alignment?.primaryColor).toBe('#111');
+    expect(alignment?.primaryColor).toBe('#000');
+    expect(alignment?.accentColor).toBe('#fff');
     expect(alignment?.contentIntent).toBe('campaign_offer');
     expect(alignment?.sceneBrief).toContain('Kampanya Duyuru');
     expect(alignment?.typographyVibe).toBe('neon_glow');

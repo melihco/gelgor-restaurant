@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,27 @@ from app.services.redis_cache import cache as _cache
 logger = structlog.get_logger()
 
 _BRAND_CTX_TTL = 300  # 5 minutes
+
+
+def _reconcile_logo_with_website(logo_url: str, website_url: str) -> str:
+    """Rewrite scraped logo host to match the canonical website_url (e.g. Vercel deploy)."""
+    logo = (logo_url or "").strip()
+    website = (website_url or "").strip()
+    if not logo.startswith(("http://", "https://")) or not website.startswith(("http://", "https://")):
+        return logo
+    try:
+        from urllib.parse import urlparse
+
+        logo_p = urlparse(logo)
+        site_p = urlparse(website)
+        logo_host = (logo_p.hostname or "").lower().removeprefix("www.")
+        site_host = (site_p.hostname or "").lower().removeprefix("www.")
+        if not logo_host or not site_host or logo_host == site_host:
+            return logo
+        query = f"?{logo_p.query}" if logo_p.query else ""
+        return f"{site_p.scheme}://{site_p.netloc}{logo_p.path}{query}"
+    except Exception:
+        return logo
 
 
 def _brand_ctx_cache_key(workspace_id: uuid.UUID) -> str:
@@ -234,25 +255,109 @@ def _parse_reference_image_urls(value: str | None) -> list[str]:
         out: list[str] = []
         for u in parsed:
             s = str(u).strip()
-            if s.startswith("http://") or s.startswith("https://"):
+            if _is_usable_gallery_url(s):
                 out.append(s)
         return out[:120]
     except (json.JSONDecodeError, TypeError):
         return []
 
 
+def _r2_media_key_looks_like_image(key: str) -> bool:
+    kl = (key or "").strip().lower()
+    if not kl:
+        return False
+    if kl.endswith((".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp")):
+        return True
+    import re as _re
+
+    return bool(
+        _re.match(r"^[0-9a-f-]{36}/(image|images|posts|stories|reels|videos)/", kl)
+    )
+
+
 def _is_usable_gallery_url(url: str) -> bool:
     s = (url or "").strip()
-    if not s.startswith("http"):
+    if not s:
         return False
     lower = s.lower()
+    if lower.startswith("/api/media"):
+        q_idx = s.find("?")
+        if q_idx == -1:
+            return False
+        from urllib.parse import parse_qs
+
+        key = (parse_qs(s[q_idx + 1 :]).get("key") or [""])[0]
+        return _r2_media_key_looks_like_image(key)
+    if not s.startswith("http"):
+        return False
     if "/_next/static/" in lower:
         return False
     if "/_next/image" in lower:
         from urllib.parse import parse_qs, urlparse
+
         if not parse_qs(urlparse(s).query).get("url"):
             return False
     return True
+
+
+async def append_reference_image_urls(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    new_urls: list[str],
+) -> list[str]:
+    """
+    Atomically prepend new gallery URLs — avoids read-modify-write races and
+    dropped /api/media R2 proxy paths during merge.
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:wid))"),
+        {"wid": str(workspace_id)},
+    )
+    ctx = await ensure_brand_context(db, workspace_id)
+    existing = _parse_reference_image_urls(ctx.reference_image_urls)
+    seen: set[str] = set()
+    merged: list[str] = []
+    for raw in new_urls:
+        s = str(raw).strip()
+        if not _is_usable_gallery_url(s):
+            continue
+        key = _normalize_gallery_url_key(s)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(s)
+    for url in existing:
+        key = _normalize_gallery_url_key(url)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(url)
+    merged = merged[:120]
+    ctx.reference_image_urls = json.dumps(merged, ensure_ascii=False)
+
+    try:
+        gallery = json.loads(ctx.gallery_analysis or "{}")
+    except (json.JSONDecodeError, TypeError):
+        gallery = {}
+    if isinstance(gallery, dict):
+        allowed = {_normalize_gallery_url_key(u) for u in merged}
+        pruned = {
+            url: meta
+            for url, meta in gallery.items()
+            if _normalize_gallery_url_key(url) in allowed
+        }
+        if len(pruned) != len(gallery):
+            ctx.gallery_analysis = json.dumps(pruned, ensure_ascii=False)
+
+    await db.flush()
+    _brand_info_memory_cache.pop(str(workspace_id), None)
+    logger.info(
+        "gallery_urls_appended",
+        workspace_id=str(workspace_id),
+        added=len(merged) - len(existing),
+        total=len(merged),
+    )
+    return merged
 
 
 _NON_VENUE_SECTORS = frozenset({
@@ -346,8 +451,22 @@ def provision_synthetic_gallery(ctx: BrandContext, min_count: int | None = None)
 
 
 def _normalize_gallery_url_key(url: str) -> str:
-    """Stable key for pruning stale gallery analysis after gallery edits."""
-    return str(url).split("?")[0].strip()
+    """Stable key for dedupe / gallery_analysis pruning."""
+    s = str(url).strip()
+    if not s:
+        return ""
+    lower = s.lower()
+    if lower.startswith("/api/media") or "/api/media?" in lower:
+        q_idx = s.find("?")
+        if q_idx != -1:
+            from urllib.parse import parse_qs, unquote
+
+            key = (parse_qs(s[q_idx + 1 :]).get("key") or [""])[0]
+            if key:
+                return unquote(key).split("?")[0].strip().lower()
+    if s.startswith("http://") or s.startswith("https://"):
+        return s.split("?")[0].strip().lower()
+    return s.split("?")[0].strip().lower()
 
 
 def _sanitize_text_for_db(value: str | None, *, max_len: int = 4000) -> str:
@@ -1413,11 +1532,24 @@ async def persist_discovery_result(
 
     # Brand logo — captured from the website during onboarding. Only fill when
     # empty so a user-uploaded logo is never overwritten by a scraped one.
+    canonical_site = (ctx.website_url or website_url or "").strip()
     if not (ctx.logo_url or "").strip():
-        discovered_logo = (website.get("logo_url") or "").strip()
+        discovered_logo = _reconcile_logo_with_website(
+            (website.get("logo_url") or "").strip(),
+            canonical_site,
+        )
         if discovered_logo.startswith(("http://", "https://")) and len(discovered_logo) <= 512:
             ctx.logo_url = discovered_logo
             logger.info("logo_url_discovered", workspace_id=str(ctx.workspace_id), logo_url=discovered_logo[:120])
+    elif canonical_site:
+        reconciled = _reconcile_logo_with_website(ctx.logo_url or "", canonical_site)
+        if reconciled != (ctx.logo_url or ""):
+            ctx.logo_url = reconciled
+            logger.info(
+                "logo_url_reconciled_with_website",
+                workspace_id=str(ctx.workspace_id),
+                logo_url=reconciled[:120],
+            )
     # Only update languages from analysis if the user has NOT explicitly set it
     # via the language selector (set-language endpoint). We detect "explicitly set"
     # by checking if languages is already non-default (i.e. not 'tr' from a previous

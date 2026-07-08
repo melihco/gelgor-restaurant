@@ -13,6 +13,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone, date, timedelta
 from typing import TYPE_CHECKING
 
@@ -102,24 +103,81 @@ def _get_current_season(today: date, location: str = "") -> str:
     return season
 
 
-def _get_weekday_signal(today: date, business_type: str = "") -> str:
+_BREAKFAST_RX = re.compile(
+    r"kahvalt|serpme|breakfast|brunch|sabah\s*servis|köy\s*kahvalt|yöresel\s*kahvalt",
+    re.I,
+)
+_NIGHTLIFE_RX = re.compile(
+    r"nightclub|gece\s*kul|night\s*club|nightlife|after\s*dark|\bdj\b|gece\s*açık|gece\s*servis",
+    re.I,
+)
+_DAYTIME_ONLY_RX = re.compile(
+    r"sadece\s*(kahvalt|sabah)|kahvaltı\s*ağır|breakfast\s*only|akşam\s*kapalı|gece\s*kapalı|gece\s*açık\s*değil",
+    re.I,
+)
+
+
+def _resolve_operating_profile(business_type: str, description: str = "") -> dict[str, bool]:
+    """Mirrors TS resolveBrandOperatingProfile — tenant data only."""
+    btype = (business_type or "").lower()
+    blob = f"{btype} {description or ''}"
+    has_breakfast = bool(_BREAKFAST_RX.search(blob))
+    has_nightlife = bool(_NIGHTLIFE_RX.search(blob))
+    explicit_daytime = bool(_DAYTIME_ONLY_RX.search(blob))
+    nightlife_sectors = ("nightclub", "night_club", "bar", "lounge_bar", "beach_club", "beach_bar")
+    is_nightlife_sector = any(btype == s or btype.startswith(f"{s}_") for s in nightlife_sectors)
+
+    rejects_night = False
+    prefers_breakfast = False
+    if is_nightlife_sector or (has_nightlife and not has_breakfast):
+        pass
+    elif has_breakfast and (explicit_daytime or not has_nightlife):
+        rejects_night = True
+        prefers_breakfast = True
+    return {"rejects_nightlife": rejects_night, "prefers_breakfast": prefers_breakfast}
+
+
+def _operating_model_directive(profile: dict[str, bool]) -> str:
+    if not profile.get("rejects_nightlife"):
+        return ""
+    return (
+        "=== MARKA İŞLETİM MODELİ (deterministik) ===\n"
+        "Bu mekan kahvaltı / gündüz odaklı — gece hayatı, DJ veya gece yoğunluğu temaları KULLANMA.\n"
+        "Sabah, serpme kahvaltı, bahçe, aile masası, hafta sonu brunch açıları tercih et."
+    )
+
+
+def _get_weekday_signal(today: date, business_type: str = "", description: str = "") -> str:
     """Return a weekday rhythm hint relevant to the business type."""
     day_names = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
     day_name = day_names[today.weekday()]
     day_no = today.weekday()  # 0=Mon … 6=Sun
 
     btype = (business_type or "").lower()
+    profile = _resolve_operating_profile(btype, description)
 
     if day_no == 0:
         return f"Bugün {day_name} — Hafta başlangıcı: motivasyonel ve hedef odaklı içerikler iyi performans gösterir."
     if day_no == 4:
+        if profile.get("prefers_breakfast"):
+            return (
+                f"Bugün {day_name} — Hafta sonu öncesi: Cumartesi/Pazar kahvaltı ve rezervasyon daveti içerikleri."
+            )
         fomo = "restoran" in btype or "beach" in btype or "nightlife" in btype or "bar" in btype
         return (
             f"Bugün {day_name} — Haftasonu öncesi: rezervasyon ve etkinlik hatırlatma içerikleri yüksek dönüşüm sağlar."
             if fomo else
             f"Bugün {day_name} — Hafta sonu öncesi: hafif, eğlenceli içerikler dikkat çeker."
         )
-    if day_no in (5, 6):
+    if day_no == 5:
+        if profile.get("rejects_nightlife"):
+            return (
+                f"Bugün {day_name} — Hafta sonu kahvaltı: serpme kahvaltı daveti, bahçe masası, aile içeriği."
+            )
+        return f"Bugün {day_name} — Haftasonu: görsel ağırlıklı, deneyim odaklı içerikler öne çıkar."
+    if day_no == 6:
+        if profile.get("prefers_breakfast"):
+            return f"Bugün {day_name} — Pazar brunch / geç kahvaltı daveti içerikleri optimal."
         return f"Bugün {day_name} — Haftasonu: görsel ağırlıklı, deneyim odaklı içerikler öne çıkar."
     return f"Bugün {day_name} — Haftanın ortası: eğitici ve değer sunan içerikler etkileşim alır."
 
@@ -259,8 +317,10 @@ def _build_mandatory_angles_block(
     today: date,
     location: str,
     btype: str,
+    profile: dict[str, bool] | None = None,
 ) -> str:
     """Deterministic mandatory diversity angles (mirrors TS brand-dynamics.ts)."""
+    profile = profile or _resolve_operating_profile(btype, "")
     lines: list[str] = []
     angles: list[str] = []
     m = today.month
@@ -271,25 +331,27 @@ def _build_mandatory_angles_block(
     ))
 
     lunar = _lunar_signal_lines(today)
-    if lunar and pack_id in ("beach_hospitality", "nightlife", "hotel"):
+    if lunar and pack_id in ("beach_hospitality", "nightlife", "hotel") and not profile.get("rejects_nightlife"):
         angles.append(lunar[0])
 
-    if pack_id == "beach_hospitality":
+    if pack_id == "beach_hospitality" and not profile.get("rejects_nightlife"):
         if is_summer:
             angles.append("~çıkarım [80%] Yaz zirvesi — plaj/havuz günü → Serinletici kokteyl & meze")
         if is_weekend:
             angles.append("~çıkarım [70%] Gün batımı seansı → Sunset DJ / altın saat manzara")
         if lunar and coastal:
             angles.append("~çıkarım [90%] Full moon beach party → Dolunay sahil konsepti")
-    elif pack_id == "nightlife":
+    elif pack_id == "nightlife" and not profile.get("rejects_nightlife"):
         if is_weekend:
             angles.append("~çıkarım [80%] Hafta sonu lineup → DJ kadrosu / masa rezervasyonu")
         if lunar:
             angles.append("~çıkarım [85%] Dolunay özel gece → Guest DJ / özel performans")
     elif pack_id == "urban_restaurant":
-        if today.weekday() == 6:
+        if today.weekday() == 5 and profile.get("prefers_breakfast"):
+            angles.append("~çıkarım [75%] Cumartesi kahvaltı → Serpme kahvaltı / bahçe masası")
+        elif today.weekday() == 6:
             angles.append("~çıkarım [75%] Pazar brunch → Geç kahvaltı / aile masası")
-        if today.weekday() == 4:
+        if today.weekday() == 4 and not profile.get("rejects_nightlife"):
             angles.append("~çıkarım [70%] Hafta sonu rezervasyon → Şefin özel menüsü")
     elif pack_id == "hotel":
         if is_summer:
@@ -326,8 +388,12 @@ def build_brand_dynamics_block(brand: "BrandInfo") -> str:
     btype = brand.business_type or ""
     description = getattr(brand, "description", "") or ""
     pack_id = _resolve_sector_pack(btype, description)
-    mandatory = _build_mandatory_angles_block(pack_id, today, location, btype)
+    profile = _resolve_operating_profile(btype, description)
+    mandatory = _build_mandatory_angles_block(pack_id, today, location, btype, profile)
     parts = [base]
+    operating = _operating_model_directive(profile)
+    if operating:
+        parts.append(operating)
     if mandatory:
         parts.append(mandatory)
     diversity = _build_diversity_directive(brand)
@@ -379,8 +445,13 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
     ]
 
     # Weekday rhythm
-    weekday_signal = _get_weekday_signal(today, btype)
+    weekday_signal = _get_weekday_signal(today, btype, description)
     lines.append(f"✓doğrulanmış | Haftanın günü: {weekday_signal}")
+
+    operating = _operating_model_directive(_resolve_operating_profile(btype, description))
+    if operating:
+        lines.append("")
+        lines.append(operating)
 
     # Upcoming holidays
     holidays = _get_upcoming_holidays(today, horizon_days=21)

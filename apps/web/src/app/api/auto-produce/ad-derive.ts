@@ -2,7 +2,8 @@
  * Ad creative derivation for auto-produce.
  *
  * Derives Meta + Google ad artifacts from a completed designed_post snapshot.
- * Extracted from route.ts to keep ad-specific logic isolated.
+ * Primary engine: fal.ai designed still (GPT-image grounded + Ideogram fallback).
+ * Remotion is fallback only when FAL is unavailable or production fails.
  */
 
 import {
@@ -12,8 +13,22 @@ import {
   shouldDeriveWeeklyAdPair,
   type AdPublishChannel,
 } from '@/lib/ad-publish-utils';
+import {
+  bindBrandTemplateForFalProduction,
+} from '@/lib/brand-design-template-production';
+import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
+import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
+import {
+  buildBrandOperatingProfileDirective,
+  resolveBrandOperatingProfile,
+  type BrandOperatingProfile,
+} from '@/lib/brand-operating-profile';
+import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
+import { resolveFalBrandInput } from '@/lib/fal-brand-input';
+import { sanitizeProductionHeadline } from '@/lib/production-headline-quality';
 import { renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
 import { serverConfig } from '@/lib/server-config';
+import { produceFalDesignedPost } from './pipelines/fal-designed-post-pipeline';
 import type { NexusClient } from './nexus-client';
 
 export interface DesignedPostSnapshot {
@@ -35,11 +50,18 @@ export interface AdDeriveRenderContext {
   brandLocation?: string;
   brandLogoUrl?: string;
   brandTheme?: Record<string, unknown> | null;
+  brandTokens?: BrandProductionTokens;
+  templateLibrary?: BrandTemplateLibrary;
   primaryColor?: string;
   accentColor?: string;
   routeBaseUrl: string;
   grafikerMaxRetries?: number;
   usedTemplateIds?: string[];
+  brandDescription?: string;
+  visualDna?: string;
+  brandTone?: string;
+  brandReferenceImageUrls?: string[];
+  operatingProfile?: BrandOperatingProfile;
 }
 
 function adCtaForChannel(cta: string, channel: AdPublishChannel): string {
@@ -54,7 +76,151 @@ function adLibrarySlotKeyForSnapshot(_snapshot: DesignedPostSnapshot): string {
   return 'ad_creative_post';
 }
 
-/** Meta + Google ad artifacts — dedicated Remotion still (not designed_post clone). */
+function resolveAdSceneHint(snapshot: DesignedPostSnapshot): string {
+  return [snapshot.headline, snapshot.caption.slice(0, 120)]
+    .filter(Boolean)
+    .join(' — ')
+    .slice(0, 160);
+}
+
+async function renderAdCreativeWithRemotion(
+  workspaceId: string,
+  channel: AdPublishChannel,
+  snapshot: DesignedPostSnapshot,
+  adHeadline: string,
+  adCta: string,
+  brandName: string,
+  renderCtx: AdDeriveRenderContext,
+  role: string,
+): Promise<string> {
+  const photoUrl = (snapshot.referencePhotoUrl?.trim() || snapshot.imageUrl?.trim());
+  const adRender = await renderRemotionBrandStillResult({
+    workspaceId,
+    photoUrl,
+    headline: adHeadline,
+    caption: snapshot.caption,
+    brandName,
+    location: renderCtx.brandLocation,
+    sector: renderCtx.brandBusinessType,
+    templateUseCase: 'ad_creative',
+    treatment: 'ad_creative',
+    contentType: 'post',
+    ideaIndex: snapshot.ideaIndex + (channel === 'google_ads' ? 1 : 0),
+    brandTheme: renderCtx.brandTheme,
+    logoUrl: renderCtx.brandLogoUrl,
+    primaryColor: renderCtx.primaryColor,
+    accentColor: renderCtx.accentColor,
+    usedTemplateIds: renderCtx.usedTemplateIds,
+    baseUrl: renderCtx.routeBaseUrl,
+    cta: adCta,
+    grafikerMaxRetries: renderCtx.grafikerMaxRetries,
+    librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
+    slotRole: role,
+  });
+  return adRender?.imageUrl ?? snapshot.imageUrl;
+}
+
+async function renderAdCreativeWithFal(
+  workspaceId: string,
+  channel: AdPublishChannel,
+  snapshot: DesignedPostSnapshot,
+  adHeadline: string,
+  adCta: string,
+  brandName: string,
+  renderCtx: AdDeriveRenderContext,
+  role: string,
+): Promise<{ imageUrl: string; engine: string | null; costUsd: number }> {
+  const photoUrl = (snapshot.referencePhotoUrl?.trim() || snapshot.imageUrl?.trim());
+  const operatingProfile = renderCtx.operatingProfile ?? resolveBrandOperatingProfile({
+    businessType: renderCtx.brandBusinessType,
+    brandDescription: renderCtx.brandDescription,
+    visualDna: renderCtx.visualDna,
+    brandTone: renderCtx.brandTone,
+    brandTheme: renderCtx.brandTheme,
+  });
+  const tokens = renderCtx.brandTokens;
+  if (!tokens) {
+    throw new Error('Ad derive requires brandTokens in render context');
+  }
+  const brandColors = {
+    primary: renderCtx.primaryColor || tokens.primaryColor,
+    accent: renderCtx.accentColor || tokens.accentColor,
+  };
+  const falBrand = resolveFalBrandInput({
+    brandTheme: renderCtx.brandTheme,
+    templateLibrary: renderCtx.templateLibrary,
+    librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
+    tokens,
+    sector: renderCtx.brandBusinessType,
+    caption: snapshot.caption,
+    headline: adHeadline,
+    referencePhotoUrl: photoUrl,
+    sceneHint: resolveAdSceneHint(snapshot),
+    format: 'post',
+    visualDna: renderCtx.visualDna,
+    brandTone: renderCtx.brandTone,
+    brandDescription: renderCtx.brandDescription,
+    designBriefDirectives: [
+      'AD CREATIVE FORMAT: Scroll-stopping paid social unit — clear headline hierarchy, strong CTA zone, brand-safe composition for Meta/Google placement.',
+      buildBrandOperatingProfileDirective(operatingProfile),
+    ].filter((item): item is string => Boolean(item)),
+  });
+  const binding = await bindBrandTemplateForFalProduction({
+    workspaceId,
+    slotRole: role,
+    librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
+    format: 'post',
+    caption: snapshot.caption,
+    adHocBrief: false,
+    missionReferenceUrl: photoUrl,
+    baseDirectives: falBrand.promptDirectives,
+    brandColors: falBrand.brandColors,
+    logoUrl: renderCtx.brandLogoUrl,
+    brandVibe: falBrand.vibe,
+  });
+
+  const falResult = await produceFalDesignedPost({
+    isFalDesignPost: true,
+    existingImageUrl: null,
+    workspaceId,
+    referenceUrl: photoUrl,
+    brandReferenceImageUrls: renderCtx.brandReferenceImageUrls ?? [],
+    headline: adHeadline,
+    caption: snapshot.caption,
+    cta: adCta,
+    brandName,
+    brandColors: falBrand.brandColors,
+    brandVibe: falBrand.vibe,
+    backgroundStyle: falBrand.backgroundStyle,
+    sector: renderCtx.brandBusinessType,
+    location: renderCtx.brandLocation,
+    logoUrl: renderCtx.brandLogoUrl,
+    mood: undefined,
+    sceneHint: falBrand.sceneHint,
+    grafikerMaxRetries: renderCtx.grafikerMaxRetries,
+    brandDirectives: falBrand.promptDirectives,
+    visualDnaTone: falBrand.visualDnaTone,
+    designIntensityLevel: resolveFalDesignIntensityForChannel(renderCtx.brandTheme, 'post'),
+    requireGroundedGallery: Boolean(photoUrl),
+    brandTemplateBinding: binding,
+    aspectRatio: '4:5',
+    subtitle: adCta,
+    captionAwareHeadline: true,
+    logoPlacement: null,
+  });
+
+  if (!falResult?.imageUrl) {
+    throw new Error(`fal ad derive failed (${channel})`);
+  }
+
+  return {
+    imageUrl: falResult.imageUrl,
+    engine: falResult.falDesignEngine,
+    costUsd: falResult.costDelta || 0.05,
+  };
+}
+
+/** Meta + Google ad artifacts — fal.ai designed still (Remotion fallback). */
 export async function deriveAdCreativesFromDesignedPost(
   workspaceId: string,
   snapshot: DesignedPostSnapshot,
@@ -68,74 +234,102 @@ export async function deriveAdCreativesFromDesignedPost(
   const photoUrl = (snapshot.referencePhotoUrl?.trim() || snapshot.imageUrl?.trim());
   if (!photoUrl) return [];
 
+  const operatingProfile = renderCtx.operatingProfile ?? resolveBrandOperatingProfile({
+    businessType: renderCtx.brandBusinessType,
+    brandDescription: renderCtx.brandDescription,
+    visualDna: renderCtx.visualDna,
+    brandTone: renderCtx.brandTone,
+    brandTheme: renderCtx.brandTheme,
+  });
+  const sanitizedHeadline = sanitizeProductionHeadline({
+    headline: snapshot.headline,
+    caption: snapshot.caption,
+    brandName,
+    businessType: renderCtx.brandBusinessType,
+    maxLen: 72,
+  });
+
   const channels: AdPublishChannel[] = ['meta_ads', 'google_ads'];
   const derived: Array<{ id?: string; title: string; imageUrl: string; error?: string }> = [];
   const usedTemplateIds = [...(renderCtx.usedTemplateIds ?? [])];
+  const useFalPrimary = serverConfig.fal.configured;
+  const reuseDesignedPostStill = serverConfig.autoProduce.reuseDesignedPostStill;
 
   for (const channel of channels) {
     const role = adSlotRoleForChannel(channel);
     const pipeline = adPipelineForChannel(channel);
     const headlineLimit = channel === 'google_ads' ? 30 : 40;
-    const adHeadline = snapshot.headline.slice(0, headlineLimit);
+    const adHeadline = sanitizedHeadline.slice(0, headlineLimit);
     const adCta = adCtaForChannel(snapshot.cta, channel);
     const platformLabel = adPlatformLabel(channel);
 
     let adImageUrl = snapshot.imageUrl;
+    let adDedicatedRender = false;
+    let adRenderEngine: 'fal' | 'remotion' | 'reuse' = 'reuse';
+    let falDesignEngine: string | null = null;
+    let costUsd = 0.001;
 
-    // Faz 1.3 — Reklam türevi maliyet kısıntısı (flag arkasında, varsayılan: mevcut davranış).
-    // designed_post zaten render + CD + Grafiker'dan geçti. AD_REUSE_DESIGNED_POST_STILL=true
-    // iken reklam türevi için yeniden render/CD/Grafiker yapmayız; onaylı post still'ini
-    // yeniden kullanırız → mission başına 2 render + 2 CD + 2 Grafiker tasarrufu.
-    // NOT: Bu çıktıyı değiştirir (reklam, post görselini gösterir). Strict nötr değildir,
-    // bu yüzden opt-in'dir.
-    const reuseDesignedPostStill = serverConfig.autoProduce.reuseDesignedPostStill;
-
-    if (reuseDesignedPostStill) {
-      console.log(`[auto-produce] Ad creative reuse (${channel}): designed_post still — render atlandı`);
-    } else {
+    if (useFalPrimary) {
       try {
-        const adRender = await renderRemotionBrandStillResult({
+        const fal = await renderAdCreativeWithFal(
           workspaceId,
-          photoUrl,
-          headline: adHeadline,
-          caption: snapshot.caption,
+          channel,
+          snapshot,
+          adHeadline,
+          adCta,
           brandName,
-          location: renderCtx.brandLocation,
-          sector: renderCtx.brandBusinessType,
-          templateUseCase: 'ad_creative',
-          treatment: 'ad_creative',
-          contentType: 'post',
-          ideaIndex: snapshot.ideaIndex + (channel === 'google_ads' ? 1 : 0),
-          brandTheme: renderCtx.brandTheme,
-          logoUrl: renderCtx.brandLogoUrl,
-          primaryColor: renderCtx.primaryColor,
-          accentColor: renderCtx.accentColor,
-          usedTemplateIds,
-          baseUrl: renderCtx.routeBaseUrl,
-          cta: adCta,
-          grafikerMaxRetries: renderCtx.grafikerMaxRetries,
-          librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
-          slotRole: role,
-        });
-        if (adRender?.imageUrl) {
-          adImageUrl = adRender.imageUrl;
-          console.log(`[auto-produce] Ad creative render (${channel}): "${adHeadline.slice(0, 40)}"`);
-        }
+          renderCtx,
+          role,
+        );
+        adImageUrl = fal.imageUrl;
+        adDedicatedRender = true;
+        adRenderEngine = 'fal';
+        falDesignEngine = fal.engine;
+        costUsd = fal.costUsd;
+        console.log(
+          `[auto-produce] Ad creative FAL (${channel}): engine=${fal.engine ?? 'fal'} "${adHeadline.slice(0, 40)}"`,
+        );
+      } catch (falErr) {
+        console.warn(
+          `[auto-produce] Ad FAL failed (${channel}), Remotion fallback: ${String(falErr).slice(0, 100)}`,
+        );
+      }
+    }
+
+    if (!adDedicatedRender && reuseDesignedPostStill) {
+      console.log(`[auto-produce] Ad creative reuse (${channel}): designed_post still — render atlandı`);
+      adRenderEngine = 'reuse';
+      costUsd = 0.001;
+    } else if (!adDedicatedRender) {
+      try {
+        adImageUrl = await renderAdCreativeWithRemotion(
+          workspaceId,
+          channel,
+          snapshot,
+          adHeadline,
+          adCta,
+          brandName,
+          renderCtx,
+          role,
+        );
+        adDedicatedRender = adImageUrl !== snapshot.imageUrl;
+        adRenderEngine = 'remotion';
+        costUsd = adDedicatedRender ? 0.01 : 0.001;
+        console.log(`[auto-produce] Ad creative Remotion (${channel}): "${adHeadline.slice(0, 40)}"`);
       } catch (adRenderErr) {
         console.warn(`[auto-produce] Ad render fallback to designed_post: ${String(adRenderErr).slice(0, 80)}`);
       }
     }
 
-    const adDedicatedRender = adImageUrl !== snapshot.imageUrl;
     try {
       const { emitAiCostLine } = await import('@/lib/ai-cost-telemetry');
       emitAiCostLine({
         callType: 'other',
-        usd: adDedicatedRender ? 0.01 : 0.001,
+        usd: costUsd,
         missionId: snapshot.missionId || null,
         workspaceId,
         slotKey: `${snapshot.ideaIndex}:${role}`,
-        detail: `ad-derive:${channel}:${adDedicatedRender ? 'rendered' : 'reused'}`,
+        detail: `ad-derive:${channel}:${adRenderEngine}${falDesignEngine ? `:${falDesignEngine}` : ''}`,
       });
     } catch { /* telemetri üretimi bozmamalı */ }
 
@@ -144,6 +338,8 @@ export async function deriveAdCreativesFromDesignedPost(
       source: 'auto-produce',
       derived_from: 'designed_post',
       ad_render_dedicated: adDedicatedRender,
+      ad_render_engine: adRenderEngine,
+      ...(falDesignEngine ? { fal_design_engine: falDesignEngine } : {}),
       derived_idea_index: snapshot.ideaIndex,
       mission_id: snapshot.missionId || undefined,
       node_key: snapshot.nodeKey || undefined,
@@ -159,7 +355,7 @@ export async function deriveAdCreativesFromDesignedPost(
       ad_cta: adCta,
       publish_package: 'primary',
       publish_priority: 'extended',
-      cost_usd_estimate: adDedicatedRender ? 0.01 : 0.001,
+      cost_usd_estimate: costUsd,
     };
 
     const contentJson = JSON.stringify({

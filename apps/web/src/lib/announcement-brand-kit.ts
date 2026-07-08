@@ -204,7 +204,9 @@ export function resolveAnnouncementBrandKit(sources: {
     typeof ctx.logoUrl === 'string' ? ctx.logoUrl : String(ctx.logoUrl ?? ''),
     typeof profile.logoUrl === 'string' ? profile.logoUrl : String(profile.logoUrl ?? ''),
     typeof profile.logo_url === 'string' ? profile.logo_url : String(profile.logo_url ?? ''),
-  ]) || null;
+  ], {
+    websiteUrl: String(ctx.website_url ?? ctx.websiteUrl ?? profile.websiteUrl ?? profile.website_url ?? ''),
+  }) || null;
 
   const brandName = String(
     profile.brandName ?? profile.brand_name

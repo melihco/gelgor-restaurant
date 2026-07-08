@@ -36,6 +36,16 @@ describe('resolveFalLogoPlacement', () => {
     expect(placement.source).toBe('agent');
     expect(placement.zoneHint).toContain('top color panel');
   });
+
+  it('moves top-center archetype logo to bottom-right on reels with upper headline', () => {
+    const placement = resolveFalLogoPlacement({
+      canvaArchetypeId: 'campaign_hero_block',
+      layoutPattern: 'full_bleed_type — headline occupies 40–70% of canvas',
+      typographyMode: 'oversized_display — text IS the hero',
+      channel: 'reel',
+    });
+    expect(placement.position).toBe('bottom_right');
+  });
 });
 
 describe('resolveFalDesignBrief logoPlacement', () => {

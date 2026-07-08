@@ -305,6 +305,10 @@ async def kick_feed_production(
     from app.services.production_bridge import (
         schedule_ensure_mission_feed as _schedule_ensure_mission_feed,
     )
+    from app.config import get_settings
+
+    op_priority = get_settings().production_operator_job_priority
+    await pj.boost_mission_job_priority(mission_id, priority=op_priority)
 
     # Operator kick resumes stalled factory drains (e.g. dev reload dropped the
     # asyncio task while jobs stayed in running/claimed). Do NOT release the
@@ -316,7 +320,7 @@ async def kick_feed_production(
 
     if factory_total > 0 and not factory_complete:
         if await pj.has_open_jobs(mission_id):
-            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True)
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
             logger.info(
                 "kick_feed_production_factory_resume",
                 mission_id=str(mission_id),
@@ -513,7 +517,7 @@ async def ensure_mission_feed_production(
     if factory_total > 0 and not job_summary.get("complete"):
         await pj.reclaim_stale_jobs(mission_id)
         if await pj.has_open_jobs(mission_id):
-            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True)
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
             debug_log(
                 "H2",
                 "mission_feed_production_service.py:ensure_mission_feed_production",

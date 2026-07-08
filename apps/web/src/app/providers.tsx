@@ -10,6 +10,7 @@ import { isNexusBackendReachable } from '@/lib/nexus-health';
 import { initializeSignalR } from '@/lib/signalr';
 import { SidebarProvider } from '@/tailadmin/context/SidebarContext';
 import { ThemeProvider } from '@/tailadmin/context/ThemeContext';
+import { DevRuntimeGuards } from '@/lib/dev-runtime-guards';
 
 function NotificationHydration() {
   const setNotifications = useNotificationStore((s) => s.setNotifications);
@@ -116,7 +117,12 @@ export function QueryProviders({ children }: { children: ReactNode }) {
     };
   }, [queryClient]);
 
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <DevRuntimeGuards />
+      {children}
+    </QueryClientProvider>
+  );
 }
 
 /** Desk-only chrome: TailAdmin theme, sidebar, notifications + SignalR. */

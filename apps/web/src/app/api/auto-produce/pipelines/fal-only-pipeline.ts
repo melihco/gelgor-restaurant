@@ -16,7 +16,7 @@ import {
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { generateStoryMotionPlate, isPlayableVideoUrl } from '@/lib/fal-story-motion';
-import { resolveFalBrandInput } from '@/lib/fal-brand-input';
+import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
   resolveFalTemplateLockOptions,
@@ -75,6 +75,8 @@ export interface FalOnlySlotResult {
   runwayProduceMeta: FalOnlyRunwayMeta | null;
   /** Added to the running cost estimate. */
   costDelta: number;
+  /** Set when production attempted but no usable URL (for factory last_error). */
+  failureReason?: string;
 }
 
 /**
@@ -92,7 +94,16 @@ export async function produceFalOnlySlot(
     console.warn(
       `[auto-produce] FAL_API_KEY missing — fal-only slot skipped: ${input.pipeline} "${input.headline.slice(0, 40)}"`,
     );
-    return null;
+    return {
+      imageUrl: null,
+      videoUrl: null,
+      falGrafikerScore: null,
+      falGrafikerPass: false,
+      falDesignEngine: null,
+      runwayProduceMeta: null,
+      costDelta: 0,
+      failureReason: 'fal_only: FAL_API_KEY not configured',
+    };
   }
 
   // ── fal-only video (reel) — DESIGNED route first ───────────────────────────
@@ -111,7 +122,10 @@ export async function produceFalOnlySlot(
         sector: input.sector,
         brandVibe: input.brandVibe,
       });
-    const brandColors = binding?.brandColors ?? input.brandColors;
+    const brandColors = resolveFalProductionBrandColors(
+      input.brandColors,
+      binding?.brandColors,
+    );
     const photoUrl = binding?.referencePhotoUrl ?? input.referencePhotoUrl;
     const styleRefs = templateStyleReferenceUrls(
       binding ?? {
@@ -127,6 +141,7 @@ export async function produceFalOnlySlot(
       input.brandReferenceImageUrls ?? [],
     );
 
+    let designFailMsg = '';
     try {
       const designer = await produceFalDesignerVideo({
         workspaceId: input.workspaceId,
@@ -170,9 +185,10 @@ export async function produceFalOnlySlot(
         costDelta: falPipeline === 'fal_reel' ? 0.18 : 0.14,
       };
     } catch (designErr) {
+      designFailMsg = designErr instanceof Error ? designErr.message : String(designErr);
       console.warn(
         '[auto-produce] [fal-only] designed video failed, trying cinematic fallback:',
-        designErr instanceof Error ? designErr.message : designErr,
+        designFailMsg,
       );
     }
 
@@ -201,13 +217,30 @@ export async function produceFalOnlySlot(
           costDelta: 0.14,
         };
       } catch (cinematicErr) {
-        console.warn(
-          '[auto-produce] [fal-only] cinematic fallback failed:',
-          cinematicErr instanceof Error ? cinematicErr.message : cinematicErr,
-        );
+        const cinematicMsg = cinematicErr instanceof Error ? cinematicErr.message : String(cinematicErr);
+        console.warn('[auto-produce] [fal-only] cinematic fallback failed:', cinematicMsg);
+        return {
+          imageUrl: null,
+          videoUrl: null,
+          falGrafikerScore: null,
+          falGrafikerPass: false,
+          falDesignEngine: null,
+          runwayProduceMeta: null,
+          costDelta: 0,
+          failureReason: `fal_only_video: ${cinematicMsg}`.slice(0, 480),
+        };
       }
     }
-    return null;
+    return {
+      imageUrl: null,
+      videoUrl: null,
+      falGrafikerScore: null,
+      falGrafikerPass: false,
+      falDesignEngine: null,
+      runwayProduceMeta: null,
+      costDelta: 0,
+      failureReason: `fal_only_video: ${designFailMsg || 'no gallery photo for cinematic fallback'}`.slice(0, 480),
+    };
   }
 
   // ── fal-only post (still) — designed still when possible ───────────────────
@@ -226,7 +259,10 @@ export async function produceFalOnlySlot(
           sector: input.sector,
           brandVibe: input.brandVibe,
         });
-      const brandColors = binding?.brandColors ?? input.brandColors;
+      const brandColors = resolveFalProductionBrandColors(
+      input.brandColors,
+      binding?.brandColors,
+    );
       const photoUrl = binding?.referencePhotoUrl ?? input.referencePhotoUrl;
       const styleRefs = templateStyleReferenceUrls(
         binding ?? {
@@ -279,11 +315,18 @@ export async function produceFalOnlySlot(
         costDelta: 0.05,
       };
     } catch (falOnlyErr) {
-      console.warn(
-        '[auto-produce] [fal-only] post failed:',
-        falOnlyErr instanceof Error ? falOnlyErr.message : falOnlyErr,
-      );
-      return null;
+      const msg = falOnlyErr instanceof Error ? falOnlyErr.message : String(falOnlyErr);
+      console.warn('[auto-produce] [fal-only] post failed:', msg);
+      return {
+        imageUrl: null,
+        videoUrl: null,
+        falGrafikerScore: null,
+        falGrafikerPass: false,
+        falDesignEngine: null,
+        runwayProduceMeta: null,
+        costDelta: 0,
+        failureReason: `fal_only_post: ${msg}`.slice(0, 480),
+      };
     }
   }
 
@@ -339,7 +382,10 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       caption: inputs.caption,
       cta: inputs.cta,
       brandName: inputs.resolvedBrandName,
-      brandColors: templateBinding.brandColors ?? falBrand.brandColors,
+      brandColors: resolveFalProductionBrandColors(
+        falBrand.brandColors,
+        templateBinding.brandColors,
+      ),
       brandVibe: falBrand.vibe,
       sector: inputs.brandBusinessType,
       location: inputs.brandLocation,
@@ -368,6 +414,9 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       state.falDesignEngine = falOnly.falDesignEngine;
       if (falOnly.runwayProduceMeta) state.runwayProduceMeta = falOnly.runwayProduceMeta;
       state.costDelta += falOnly.costDelta;
+      if (falOnly.failureReason && !falOnly.imageUrl && !falOnly.videoUrl) {
+        state.pipelineFailureReason = falOnly.failureReason;
+      }
       if (templateBinding.matched) {
         state.brandDesignTemplateId = templateBinding.matched.id;
         state.brandDesignTemplateType = templateBinding.matched.templateType;

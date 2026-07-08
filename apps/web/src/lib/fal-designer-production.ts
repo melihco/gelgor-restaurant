@@ -33,6 +33,7 @@ import {
   buildFalLogoPlacementContract,
   buildFalOnCanvasTextContract,
   resolveFalProductionOverlayHeadline,
+  areFalOverlayTextsRedundant,
 } from '@/lib/fal-caption-headline';
 import {
   resolveFalDesignIntensityDirectives,
@@ -454,7 +455,7 @@ function resolveSectorDesignLanguage(
     return `${base} SECTOR STYLE (beach/night club): Bold, confident, event-poster energy. Use brand-color panels, large condensed sans-serif headline. High contrast — dark or accent panels with bright headline pops. Think luxury beach club campaign poster.`;
   }
   if (s.includes('restaurant') || s.includes('fine_dining') || s.includes('gastro')) {
-    return `${base} SECTOR STYLE (fine dining/restaurant): Elegant restraint. Use thin serif or modern didone headline, generous white/cream space, a single fine gold or copper accent line. Minimal decorative elements — let the food photography speak. Think Michelin guide meets Condé Nast Traveller ad.`;
+    return `${base} SECTOR STYLE (fine dining/restaurant): Elegant restraint. Use thin serif or modern didone headline, generous white/cream space, a single fine accent line in the brand accent color. Minimal decorative elements — let the food photography speak. Think Michelin guide meets Condé Nast Traveller ad.`;
   }
   if (s.includes('cafe') || s.includes('coffee') || s.includes('bakery') || s.includes('brunch')) {
     return `${base} SECTOR STYLE (café/bakery): Warm, approachable, artisanal feel. Rounded sans-serif or hand-drawn script headline, kraft/earth-tone panels, hand-illustrated decorative elements (coffee beans, leaves, doodles). Think indie café menu board meets Pinterest food blogger aesthetic.`;
@@ -526,7 +527,9 @@ function buildDesignedDesignCardPrompt(
   const canvasChannel = isReel ? 'reel' : 'feed_post';
   const safeHeadline = clampFalOverlayHeadlineForCanvas(input.headline, canvasChannel);
   const safeSubtitleRaw = input.subtitle ? sanitizeFalOverlayText(input.subtitle).slice(0, 36) : undefined;
-  const safeSubtitle = safeSubtitleRaw && isMeaningfulFalOverlayText(safeSubtitleRaw)
+  const safeSubtitle = safeSubtitleRaw
+    && isMeaningfulFalOverlayText(safeSubtitleRaw)
+    && !areFalOverlayTextsRedundant(safeHeadline, safeSubtitleRaw)
     ? safeSubtitleRaw
     : undefined;
 
@@ -659,7 +662,7 @@ export async function produceFalDesignerStill(
   }
 
   // ── Full typography still path ─────────────────────────────────────────────
-  const maxAttempts = Math.max(1, (input.grafikerMaxRetries ?? 1) + 1);
+  const maxAttempts = Math.min(2, Math.max(1, (input.grafikerMaxRetries ?? 1) + 1));
   let last: FalDesignerStillResult | null = null;
 
   // Caption-aware headline: derive unique hook from caption when available.
@@ -719,7 +722,9 @@ export async function produceFalDesignerStill(
         brandName: input.brandName,
       })
     : input.subtitle;
-  const captionSubtitle = captionSubtitleRaw && isMeaningfulFalOverlayText(captionSubtitleRaw)
+  const captionSubtitle = captionSubtitleRaw
+    && isMeaningfulFalOverlayText(captionSubtitleRaw)
+    && !areFalOverlayTextsRedundant(displayHeadline, captionSubtitleRaw)
     ? captionSubtitleRaw
     : undefined;
 

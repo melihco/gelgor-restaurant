@@ -45,6 +45,7 @@ from app.schemas.brand_context import (
     BrandPostTemplateUpdate,
     ConfirmConstitutionRequest,
     GalleryAnalysisSaveRequest,
+    GalleryAppendRequest,
     GalleryMatchStatsRequest,
     ReviewSubmitRequest,
     SourceStatus,

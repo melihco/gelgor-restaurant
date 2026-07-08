@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { MOBILE_ARTIFACT_FEED_INITIAL } from '../_lib/mobile-artifacts';
 import { resolveClientScreen, tabForMobileScreen } from './mobile-client-config';
+import type { PendingBriefJob } from '@/lib/pending-brief-job';
 
 export type MobileScreen =
   | 'home'
@@ -50,6 +51,8 @@ interface MobileStore {
   feedMissionFilterId: string | null;
   /** Progressive feed window — grows on scroll. Shared so the poller refreshes the same cache key. */
   feedListLimit: number;
+  /** Brief jobs queued from New Brief — tracked until artifacts land in feed. */
+  pendingBriefJobs: PendingBriefJob[];
 
   navigate: (screen: MobileScreen) => void;
   setFeedListLimit: (limit: number) => void;
@@ -65,6 +68,7 @@ interface MobileStore {
   openPlatformPreview: (artifactId: string) => void;
   openFeedForMission: (missionId: string | null) => void;
   clearFeedMissionFilter: () => void;
+  enqueueBriefProduction: (job: PendingBriefJob) => void;
   goBack: () => void;
 }
 
@@ -80,6 +84,7 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   brandReadinessFix: null,
   feedMissionFilterId: null,
   feedListLimit: MOBILE_ARTIFACT_FEED_INITIAL,
+  pendingBriefJobs: [],
 
   setFeedListLimit: (limit) => set((s) => (s.feedListLimit === limit ? s : { feedListLimit: limit })),
 
@@ -173,6 +178,11 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
     }),
 
   clearFeedMissionFilter: () => set({ feedMissionFilterId: null }),
+
+  enqueueBriefProduction: (job) =>
+    set((s) => ({
+      pendingBriefJobs: [...s.pendingBriefJobs.filter((j) => j.id !== job.id), job],
+    })),
 
   goBack: () => {
     const { history } = get();

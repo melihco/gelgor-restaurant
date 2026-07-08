@@ -40,7 +40,11 @@ import {
   type ContentIntent,
 } from '@/lib/brand-motion-profile';
 import { resolveShowcasePhotoForRender } from '@/lib/brand-showcase-presets';
-import { isUsableGalleryPhotoUrl, normalizePhotoUrlForRemotionRender, probeMediaUrlReliable } from '@/lib/media-url';
+import {
+  isUsableGalleryPhotoUrl,
+  normalizePhotoUrlForRemotionRender,
+  unwrapMediaProxyUrl,
+} from '@/lib/media-url';
 import {
   buildDirectorLayoutSpecPatch,
   buildGrafikerRetryPatch,
@@ -309,9 +313,32 @@ function isHeadlessRenderSafeHttpUrl(url: string): boolean {
 }
 
 /** Remotion headless browser — never pass CORS-blocked external URLs; materialize locally. */
-async function resolveMediaUrlForHeadlessRender(url: string): Promise<string> {
+async function resolveMediaUrlForHeadlessRender(
+  url: string,
+  workspaceId?: string,
+): Promise<string> {
   const trimmed = url.trim();
   if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('file://')) return trimmed;
+
+  const proxyTarget = unwrapMediaProxyUrl(trimmed);
+  if (proxyTarget) {
+    if (workspaceId) {
+      const { ensureProductionGalleryPhotoUrlServer } = await import('@/lib/gallery-mirror-server');
+      const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, proxyTarget, { timeoutMs: 18_000 });
+      if (ensured) return materializeImageAsJpegForHeadlessRender(ensured);
+    }
+    if (isHeadlessRenderSafeHttpUrl(proxyTarget)) return proxyTarget;
+    return materializeImageAsJpegForHeadlessRender(proxyTarget);
+  }
+
+  if (trimmed.startsWith('/api/media-proxy')) {
+    if (workspaceId) {
+      const { ensureProductionGalleryPhotoUrlServer } = await import('@/lib/gallery-mirror-server');
+      const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, trimmed, { timeoutMs: 18_000 });
+      if (ensured) return materializeImageAsJpegForHeadlessRender(ensured);
+    }
+    return materializeImageAsJpegForHeadlessRender(trimmed);
+  }
 
   if (trimmed.includes('/api/media') && trimmed.includes('key=')) {
     try {
@@ -434,6 +461,8 @@ export type RemotionRenderRequest = {
   requirePersistent?: boolean;
   /** Workspace ID for storage path */
   workspaceId?: string;
+  /** Alternate gallery URLs when primary photoUrl is unreachable */
+  galleryPhotoCandidates?: string[];
   /** P2-1 — profile-aware Grafiker retry cap (0–2) */
   grafikerMaxRetries?: number;
   /** Faz 2.2 — production tier; premium preserves full Grafiker (gpt-4o high) */
@@ -772,33 +801,79 @@ async function renderHandler(
       { status: 400 },
     );
   }
-  const photoUrlForProbe = normalizePhotoUrlForRemotionRender(reqProps.photoUrl);
-  let photoReachable = await probeMediaUrlReliable(photoUrlForProbe, { timeoutMs: 8_000, retries: 2 });
-  if (!photoReachable) {
-    // Probe is stricter than the render-time fetch (no Referer/hotlink handling).
-    // Confirm with the proven external fetcher before failing the whole render —
-    // this is the difference between a usable Wix/brand-CDN photo and a false 422.
-    const rawHttp = reqProps.photoUrl.trim();
-    if (/^https?:\/\//i.test(rawHttp)) {
-      try {
-        const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
-        const buf = await fetchExternalImageBuffer(rawHttp, 12_000);
-        photoReachable = Boolean(buf && buf.length > 0);
-      } catch {
-        photoReachable = false;
-      }
-    }
-  }
-  if (!photoReachable) {
-    return NextResponse.json(
-      { error: 'Photo URL is not reachable (expired, blocked, or not an image)' },
-      { status: 422 },
+  let productionPhotoUrl = reqProps.photoUrl.trim();
+  const galleryPhotoCandidates = Array.isArray(body.galleryPhotoCandidates)
+    ? body.galleryPhotoCandidates.filter((u: unknown): u is string => typeof u === 'string')
+    : [];
+  let resolvedGalleryPhotoUrls: string[] | undefined;
+  let resolvedLogoUrl: string | undefined;
+  if (workspaceId) {
+    const {
+      pickReachableProductionGalleryUrl,
+      resolveProductionGalleryUrlsForRemotion,
+      resolveRemotionLogoUrlForRender,
+    } = await import('@/lib/media-url');
+    const picked = await pickReachableProductionGalleryUrl(
+      workspaceId,
+      productionPhotoUrl,
+      galleryPhotoCandidates,
+      { timeoutMs: 28_000 },
     );
+    if (!picked) {
+      return NextResponse.json(
+        { error: 'Photo URL is not reachable (expired, blocked, or not an image)' },
+        { status: 422 },
+      );
+    }
+    if (picked.fallbackFrom) {
+      console.log(
+        `[remotion] gallery fallback: ${picked.fallbackFrom.slice(0, 80)} → ${picked.url.slice(0, 80)}`,
+      );
+    }
+    productionPhotoUrl = picked.url;
+
+    const extReqEarly = reqProps as Record<string, unknown>;
+    if (Array.isArray(extReqEarly.galleryPhotoUrls) && extReqEarly.galleryPhotoUrls.length > 0) {
+      resolvedGalleryPhotoUrls = await resolveProductionGalleryUrlsForRemotion(
+        workspaceId,
+        extReqEarly.galleryPhotoUrls as string[],
+        {
+          primaryUrl: productionPhotoUrl,
+          candidateUrls: galleryPhotoCandidates,
+          timeoutMs: 20_000,
+        },
+      );
+      extReqEarly.galleryPhotoUrls = resolvedGalleryPhotoUrls;
+    }
+    if (typeof extReqEarly.logoUrl === 'string' && extReqEarly.logoUrl.trim()) {
+      resolvedLogoUrl = await resolveRemotionLogoUrlForRender(workspaceId, extReqEarly.logoUrl, {
+        timeoutMs: 15_000,
+      });
+      extReqEarly.logoUrl = resolvedLogoUrl;
+    }
+  } else {
+    const photoUrlForProbe = normalizePhotoUrlForRemotionRender(productionPhotoUrl);
+    const { confirmGalleryPhotoReachableForRemotion } = await import('@/lib/media-url');
+    const photoReachable = await confirmGalleryPhotoReachableForRemotion(
+      productionPhotoUrl || photoUrlForProbe,
+      { timeoutMs: 28_000 },
+    );
+    if (!photoReachable) {
+      return NextResponse.json(
+        { error: 'Photo URL is not reachable (expired, blocked, or not an image)' },
+        { status: 422 },
+      );
+    }
+    productionPhotoUrl = photoUrlForProbe;
   }
 
   let propsForRender = {
     ...reqProps,
-    photoUrl: photoUrlForProbe,
+    photoUrl: normalizePhotoUrlForRemotionRender(productionPhotoUrl),
+    ...(resolvedGalleryPhotoUrls ? { galleryPhotoUrls: resolvedGalleryPhotoUrls } : {}),
+    ...(workspaceId && typeof (reqProps as Record<string, unknown>).logoUrl === 'string'
+      ? { logoUrl: resolvedLogoUrl }
+      : {}),
   };
   let brandTheme: Record<string, unknown> | null = null;
   let workspaceTokens: Awaited<ReturnType<typeof fetchBrandProductionTokensForWorkspace>> | undefined;
@@ -814,6 +889,7 @@ async function renderHandler(
   let effectiveAllowedCompositions = allowedCompositions;
 
   if (workspaceId) {
+    const { resolveRemotionLogoUrlForRender: resolveLogoForRender } = await import('@/lib/media-url');
     const extReq = reqProps as Record<string, unknown>;
     const sectorHint = String(extReq.sector ?? extReq.businessType ?? '');
     const [tokens, theme] = await Promise.all([
@@ -884,7 +960,10 @@ async function renderHandler(
           honorTemplateTypography: slotTypo.honorTemplateTypography,
         };
         if (extReq.logoUrl) {
-          extReq.logoUrl = resolveSlotLogoForRender(String(extReq.logoUrl), slot);
+          const slotLogo = resolveSlotLogoForRender(String(extReq.logoUrl), slot);
+          extReq.logoUrl = slotLogo
+            ? await resolveLogoForRender(workspaceId, slotLogo, { timeoutMs: 15_000 })
+            : undefined;
         }
         if (library.locked) {
           effectiveBrandTemplateLocked = true;
@@ -1091,14 +1170,16 @@ async function renderHandler(
   const extResolved = props as Record<string, unknown>;
   props = {
     ...props,
-    photoUrl: await resolveMediaUrlForHeadlessRender(props.photoUrl),
+    photoUrl: await resolveMediaUrlForHeadlessRender(props.photoUrl, workspaceId),
     galleryPhotoUrls: Array.isArray(extResolved.galleryPhotoUrls)
       ? await Promise.all(
-          (extResolved.galleryPhotoUrls as string[]).map(resolveMediaUrlForHeadlessRender),
+          (extResolved.galleryPhotoUrls as string[]).map((u) =>
+            resolveMediaUrlForHeadlessRender(u, workspaceId),
+          ),
         )
       : (extResolved.galleryPhotoUrls as string[] | undefined),
     ...(typeof extResolved.logoUrl === 'string'
-      ? { logoUrl: await resolveMediaUrlForHeadlessRender(extResolved.logoUrl) }
+      ? { logoUrl: await resolveMediaUrlForHeadlessRender(extResolved.logoUrl, workspaceId) }
       : {}),
   } as typeof props;
 

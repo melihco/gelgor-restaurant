@@ -51,5 +51,6 @@ async def complete_production_jobs(request: ProductionJobCompleteRequest) -> dic
         workspace_id,
         factory_jobs,
         request.produce_data,
+        http_status=request.http_status,
     )
     return {"ok": True, **result}

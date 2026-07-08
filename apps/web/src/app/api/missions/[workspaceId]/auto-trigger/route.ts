@@ -45,17 +45,16 @@ type MissionListItem = { id: string; status: string; title?: string; type?: stri
 function normalizeMissionList(data: unknown): MissionListItem[] {
   if (Array.isArray(data)) {
     return data
-      .map((m) => {
+      .map((m): MissionListItem | null => {
         const row = m as Record<string, unknown>;
         const id = String(row.id ?? row.mission_id ?? '').trim();
         const status = String(row.status ?? '').trim();
+        if (!id || !status) return null;
         const title = String(row.title ?? '').trim() || undefined;
         const type = String(row.type ?? '').trim() || undefined;
         const objective = String(row.objective ?? '').trim() || undefined;
         const trigger_signal = String(row.trigger_signal ?? '').trim() || undefined;
-        return id && status
-          ? { id, status, title, type, objective, trigger_signal }
-          : null;
+        return { id, status, title, type, objective, trigger_signal };
       })
       .filter((m): m is MissionListItem => m !== null);
   }

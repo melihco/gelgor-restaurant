@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { distillBrandSoul, resolveFalBrandInput } from '../fal-brand-input';
+import { distillBrandSoul, resolveFalBrandInput, resolveFalProductionBrandColors } from '../fal-brand-input';
 import type { BrandProductionTokens } from '../brand-production-tokens';
 import type { BrandTemplateLibrary } from '../brand-template-library';
 
@@ -122,5 +122,32 @@ describe('resolveFalBrandInput', () => {
     expect(result.promptDirectives.join(' ')).toContain('Template color behavior');
     expect(result.promptDirectives.join(' ')).toContain('display_bold');
     expect(result.promptDirectives.join(' ')).toContain('No cluttered collage');
+    expect(result.promptDirectives.join(' ')).toContain('BRAND COLOR LOCK');
+    expect(result.promptDirectives.join(' ')).toContain('#123456');
+  });
+});
+
+describe('resolveFalProductionBrandColors', () => {
+  it('always prefers live tenant tokens over stale template snapshots', () => {
+    expect(
+      resolveFalProductionBrandColors(
+        { primary: '#25d366', accent: '#1a1a1a' },
+        { primary: '#212529', accent: '#ffc107' },
+      ),
+    ).toEqual({ primary: '#25d366', accent: '#1a1a1a' });
+  });
+});
+
+describe('resolveBrandProductionTokens accent derivation', () => {
+  it('derives a tonal green accent when primary and accent are the same brand green', async () => {
+    const { resolveBrandProductionTokens } = await import('../brand-production-tokens');
+    const tokens = resolveBrandProductionTokens({
+      brandTheme: { palette: { primary: '#25d366', accent: '#25d366' } },
+      sector: 'restaurant',
+    });
+    expect(tokens.primaryColor).toBe('#25d366');
+    expect(tokens.accentColor.toLowerCase()).not.toBe('#ffc107');
+    expect(tokens.accentColor.toLowerCase()).toMatch(/^#[0-9a-f]{6}$/);
+    expect(tokens.accentColor).not.toBe(tokens.primaryColor);
   });
 });

@@ -304,14 +304,20 @@ export function resolveGalleryPhotoForRender(artifact: OutputArtifact): string |
     meta.posterUrl,
     content.posterUrl,
     content.poster_url,
-    content.imageUrl,
-    meta.imageUrl,
     meta.selected_gallery_url,
     content.selected_gallery_url,
     meta.reference_photo_url,
     content.reference_photo_url,
+    content.imageUrl,
+    meta.imageUrl,
   ];
-  for (const candidate of candidates) {
+  const isTenantMedia = (raw: string) =>
+    raw.includes('/api/media') || raw.startsWith('/api/media');
+  const ordered = [
+    ...candidates.filter((c) => isTenantMedia(String(c || ''))),
+    ...candidates.filter((c) => !isTenantMedia(String(c || ''))),
+  ];
+  for (const candidate of ordered) {
     const raw = String(candidate || '').trim();
     if (!raw || /\.(mp4|mov|webm)(\?|$)/i.test(raw)) continue;
     return upgradePhotoUrlForDisplay(raw) ?? raw;

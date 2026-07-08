@@ -8,8 +8,11 @@
  * NEW: Brand Creative Director (GPT-4o) interprets the brief through the lens
  * of the logged-in brand before production — "Full Moon" for a beach club becomes
  * "moonlit DJ party by the Aegean" rather than a generic lunar image.
+ *
+ * With `background: true`, validates quickly and returns 202; BCD + auto-produce
+ * run after the response via Next.js `after()`.
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import type { ParsedIdea } from '../auto-produce/caption-publish-resolver';
 import { resolveBriefIntent, type BriefOutputType } from '@/lib/brief-intent-resolver';
 import { interpretBriefAsBrand, type BrandCreativeDirectorOutput } from '@/lib/brand-creative-director';
@@ -18,6 +21,24 @@ import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
+
+interface BriefProduceParams {
+  workspaceId: string;
+  title: string;
+  direction: string;
+  outputType: BriefOutputType;
+  ideaCount: number;
+  photoUrls: string[];
+  tenantId: string;
+  officeId: string;
+}
+
+interface BriefProduceResult {
+  produced: number;
+  artifacts: Array<Record<string, unknown>>;
+  brandInterpretation: string | null;
+  error?: string;
+}
 
 function mapContentType(outputType: BriefOutputType): string {
   switch (outputType) {
@@ -73,6 +94,123 @@ function buildIdeas(
   });
 }
 
+async function loadBrandCreativeDirector(
+  workspaceId: string,
+  title: string,
+  direction: string,
+  outputType: BriefOutputType,
+): Promise<BrandCreativeDirectorOutput | null> {
+  try {
+    const CREW_BACKEND = serverConfig.crewBackend.baseUrl;
+    const INTERNAL_KEY = serverConfig.internal.apiKey;
+    const brandRes = await fetch(`${CREW_BACKEND}/api/v1/brand-context/${workspaceId}`, {
+      headers: {
+        'X-Internal-Api-Key': INTERNAL_KEY,
+        'X-Tenant-Id': workspaceId,
+      },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!brandRes.ok) return null;
+
+    const brandCtx = await brandRes.json() as Record<string, unknown>;
+    return await interpretBriefAsBrand({
+      title: title.trim(),
+      extraDirection: direction,
+      outputType,
+      brandName: String(brandCtx.business_name ?? brandCtx.brand_name ?? ''),
+      brandBusinessType: String(brandCtx.business_type ?? ''),
+      brandLocation: String(brandCtx.location ?? ''),
+      brandTone: String(brandCtx.brand_tone ?? ''),
+      brandDescription: String(brandCtx.description ?? ''),
+      visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+      contentPillars: Array.isArray(brandCtx.content_pillars) ? brandCtx.content_pillars.map(String) : undefined,
+      instagramBio: typeof brandCtx.instagram_bio === 'string' ? brandCtx.instagram_bio : undefined,
+      customRules: typeof brandCtx.custom_rules === 'string' ? brandCtx.custom_rules : undefined,
+      locale: typeof brandCtx.locale === 'string' ? brandCtx.locale : 'tr',
+    });
+  } catch (bcdErr) {
+    console.warn('[brief-produce] BCD brand context fetch failed, using rule-based:', bcdErr instanceof Error ? bcdErr.message : bcdErr);
+    return null;
+  }
+}
+
+async function executeBriefProduction(params: BriefProduceParams): Promise<BriefProduceResult> {
+  const {
+    workspaceId,
+    title,
+    direction,
+    outputType,
+    ideaCount,
+    photoUrls,
+    tenantId,
+    officeId,
+  } = params;
+
+  const bcd = await loadBrandCreativeDirector(workspaceId, title, direction, outputType);
+  const ideas = buildIdeas(title, direction, outputType, ideaCount, photoUrls, bcd);
+
+  const BASE = getNextjsInternalOrigin();
+  const INTERNAL_KEY = serverConfig.internal.apiKey;
+  const creativeBrief = [title.trim(), direction].filter(Boolean).join('\n');
+
+  const res = await fetch(`${BASE}/api/auto-produce`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Key': INTERNAL_KEY,
+      'X-Tenant-Id': tenantId,
+      ...(officeId ? { 'X-Office-Id': officeId } : {}),
+    },
+    body: JSON.stringify({
+      workspaceId,
+      ideas,
+      creativeBrief,
+      adHocBrief: true,
+      bundleCards: false,
+      skipArtifactDedupe: false,
+    }),
+    signal: AbortSignal.timeout(295_000),
+  });
+
+  const data = await res.json() as Record<string, unknown>;
+  if (!res.ok) {
+    const message = (data.error as string) ?? 'İçerik üretimi başarısız';
+    console.error('[brief-produce] auto-produce error:', message);
+    return {
+      produced: 0,
+      artifacts: [],
+      brandInterpretation: bcd?.brandInterpretation ?? null,
+      error: message,
+    };
+  }
+
+  const artifacts = (data.artifacts ?? []) as Array<Record<string, unknown>>;
+  const { resolveExternallyAccessibleUrl } = await import('@/lib/media-url');
+  const resolvedArtifacts = await Promise.all(
+    artifacts.map(async (art) => {
+      const imageUrl = typeof art.imageUrl === 'string' ? await resolveExternallyAccessibleUrl(art.imageUrl) : art.imageUrl;
+      const videoUrl = typeof art.videoUrl === 'string' ? await resolveExternallyAccessibleUrl(art.videoUrl) : art.videoUrl;
+      return { ...art, imageUrl, videoUrl };
+    }),
+  );
+
+  const produced = Number(data.produced ?? 0);
+  return {
+    produced,
+    artifacts: resolvedArtifacts,
+    brandInterpretation: bcd?.brandInterpretation ?? null,
+    ...(produced === 0
+      ? {
+          error: (() => {
+            const results = (data.results ?? data.errors ?? []) as Array<{ error?: string }>;
+            const first = results.find((r) => r?.error)?.error;
+            return first ?? 'İçerik üretilemedi. Galeri fotoğrafı veya API limitlerini kontrol edin.';
+          })(),
+        }
+      : {}),
+  };
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: {
     workspaceId?: string;
@@ -83,6 +221,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     outputType?: BriefOutputType;
     count?: string | number;
     photoUrls?: string[];
+    background?: boolean;
   };
   try {
     body = await req.json();
@@ -98,6 +237,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     outputType = 'post',
     count,
     photoUrls = [],
+    background = false,
   } = body;
 
   if (!workspaceId) {
@@ -112,95 +252,62 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const direction = (extraDirection ?? description).trim();
   const ideaCount = Math.min(Math.max(parseInt(String(count ?? 1), 10), 1), 10);
-
-  // ── Brand Creative Director: interpret the brief through the brand's lens ──
-  let bcd: BrandCreativeDirectorOutput | null = null;
-  try {
-    const CREW_BACKEND = serverConfig.crewBackend.baseUrl;
-    const INTERNAL_KEY = serverConfig.internal.apiKey;
-    const brandRes = await fetch(`${CREW_BACKEND}/api/v1/brand-context/${workspaceId}`, {
-      headers: {
-        'X-Internal-Api-Key': INTERNAL_KEY,
-        'X-Tenant-Id': workspaceId,
-      },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (brandRes.ok) {
-      const brandCtx = await brandRes.json() as Record<string, unknown>;
-      bcd = await interpretBriefAsBrand({
-        title: title.trim(),
-        extraDirection: direction,
-        outputType,
-        brandName: String(brandCtx.business_name ?? brandCtx.brand_name ?? ''),
-        brandBusinessType: String(brandCtx.business_type ?? ''),
-        brandLocation: String(brandCtx.location ?? ''),
-        brandTone: String(brandCtx.brand_tone ?? ''),
-        brandDescription: String(brandCtx.description ?? ''),
-        visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
-        contentPillars: Array.isArray(brandCtx.content_pillars) ? brandCtx.content_pillars.map(String) : undefined,
-        instagramBio: typeof brandCtx.instagram_bio === 'string' ? brandCtx.instagram_bio : undefined,
-        customRules: typeof brandCtx.custom_rules === 'string' ? brandCtx.custom_rules : undefined,
-        locale: typeof brandCtx.locale === 'string' ? brandCtx.locale : 'tr',
-      });
-    }
-  } catch (bcdErr) {
-    console.warn('[brief-produce] BCD brand context fetch failed, using rule-based:', bcdErr instanceof Error ? bcdErr.message : bcdErr);
-  }
-
-  const ideas = buildIdeas(title, direction, outputType, ideaCount, photoUrls, bcd);
-
-  const BASE = getNextjsInternalOrigin();
-  const INTERNAL_KEY = serverConfig.internal.apiKey;
   const tenantId = req.headers.get('X-Tenant-Id') || workspaceId;
   const officeId = req.headers.get('X-Office-Id') || '';
-  const creativeBrief = [title.trim(), direction].filter(Boolean).join('\n');
 
-  try {
-    const res = await fetch(`${BASE}/api/auto-produce`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Api-Key': INTERNAL_KEY,
-        'X-Tenant-Id': tenantId,
-        ...(officeId ? { 'X-Office-Id': officeId } : {}),
-      },
-      body: JSON.stringify({
-        workspaceId,
-        ideas,
-        creativeBrief,
-        adHocBrief: true,
-        bundleCards: false,
-        skipArtifactDedupe: false,
-      }),
-      signal: AbortSignal.timeout(295_000),
+  const productionParams: BriefProduceParams = {
+    workspaceId,
+    title: title.trim(),
+    direction,
+    outputType,
+    ideaCount,
+    photoUrls,
+    tenantId,
+    officeId,
+  };
+
+  if (background) {
+    const jobId = crypto.randomUUID();
+    after(async () => {
+      try {
+        const result = await executeBriefProduction(productionParams);
+        if (result.produced === 0) {
+          console.error('[brief-produce] background job produced 0:', jobId, result.error);
+        } else {
+          console.info('[brief-produce] background job complete:', jobId, `produced=${result.produced}`);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'background production failed';
+        console.error('[brief-produce] background job failed:', jobId, message);
+      }
     });
-
-    const data = await res.json() as Record<string, unknown>;
-    if (!res.ok) {
-      console.error('[brief-produce] auto-produce error:', data.error);
-      return NextResponse.json(
-        { error: (data.error as string) ?? 'İçerik üretimi başarısız', code: data.code },
-        { status: res.status },
-      );
-    }
-
-    // Resolve relative /api/media URLs to externally accessible absolute URLs
-    const artifacts = (data.artifacts ?? []) as Array<Record<string, unknown>>;
-    const { resolveExternallyAccessibleUrl } = await import('@/lib/media-url');
-    const resolvedArtifacts = await Promise.all(
-      artifacts.map(async (art) => {
-        const imageUrl = typeof art.imageUrl === 'string' ? await resolveExternallyAccessibleUrl(art.imageUrl) : art.imageUrl;
-        const videoUrl = typeof art.videoUrl === 'string' ? await resolveExternallyAccessibleUrl(art.videoUrl) : art.videoUrl;
-        return { ...art, imageUrl, videoUrl };
-      }),
-    );
 
     return NextResponse.json({
       ok: true,
-      produced: data.produced ?? 0,
-      artifacts: resolvedArtifacts,
+      queued: true,
+      jobId,
+      title: title.trim(),
+      outputType,
+      count: ideaCount,
+    }, { status: 202 });
+  }
+
+  try {
+    const result = await executeBriefProduction(productionParams);
+    if (result.error && result.produced === 0) {
+      return NextResponse.json(
+        { error: result.error, produced: 0, code: 'production_failed' },
+        { status: 422 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      produced: result.produced,
+      artifacts: result.artifacts,
       pipeline: 'fal_art_director',
-      brandInterpretation: bcd?.brandInterpretation ?? null,
+      brandInterpretation: result.brandInterpretation,
+      ...(result.produced === 0 ? { error: result.error } : {}),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'İçerik üretimi sırasında hata oluştu';

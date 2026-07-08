@@ -11,6 +11,11 @@ import {
 import { isWeakGalleryMatch, shouldSkipProductionForWeakGallery } from '@/lib/gpt-enhance-policy';
 import { serverConfig } from '@/lib/server-config';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
+import {
+  beginFalRequestSlot,
+  clearFalRequestSlot,
+  getCapturedFalRequests,
+} from '@/lib/fal-request-tracker';
 // matchPhotoToContent, pickScoredCarouselSlides, MatchPhotoInput → caption-publish-resolver / image-generators
 import { slotNeedsSceneBrief } from '@/lib/scene-brief-policy';
 import {
@@ -50,6 +55,7 @@ import {
   probeMediaUrl,
   probeMediaUrlReliable,
   isUsableGalleryPhotoUrl,
+  pickReachableProductionGalleryUrl,
 } from '@/lib/media-url';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
@@ -206,6 +212,7 @@ import {
   resolveMeaningfulProductionHeadline,
   sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
+import { isIncompleteOverlayPhrase, isInternalStrategyBriefing } from '@/lib/fal-caption-headline';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { resolveProductionEngines } from '@/lib/brand-production-engines';
@@ -861,7 +868,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       slotVisualDesignCard?.headline ?? slotVisualDesignCard?.concept_title ?? '',
     ).trim();
 
-    if (!rawIdeationHeadline || isMeaninglessBrandEchoHeadline(rawIdeationHeadline, resolvedBrandName) || isLabelStyleHeadline(rawIdeationHeadline)) {
+    if (
+      !rawIdeationHeadline
+      || isMeaninglessBrandEchoHeadline(rawIdeationHeadline, resolvedBrandName)
+      || isLabelStyleHeadline(rawIdeationHeadline)
+      || isIncompleteOverlayPhrase(rawIdeationHeadline)
+    ) {
       const headlineFix = resolveMeaningfulProductionHeadline({
         headline: rawIdeationHeadline,
         caption,
@@ -882,6 +894,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ideationHeadline = enforceDisplayHeadline(rawIdeationHeadline, 72);
       headline = ideationHeadline;
     }
+
     // Feed Art Director's visual_subject_hint overrides generic caption for gallery matching.
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
     // service terms (e.g. "tırnak, manikür, nail art") as primary selection signals.
@@ -921,6 +934,34 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       caption = harmonized.caption;
       cta = harmonized.cta;
     }
+
+    // Caption QA — reject truncated ideation fragments ("Kartta yeni gelen") for publish + fal overlay.
+    if (caption.trim()) {
+      const sentences = caption.split(/[.!?\n]+/).map((s) => s.trim()).filter(Boolean);
+      const goodSentences = sentences.filter(
+        (s) => s.length >= 12 && !isIncompleteOverlayPhrase(s) && !isInternalStrategyBriefing(s),
+      );
+      if (goodSentences.length > 0 && goodSentences.length < sentences.length) {
+        caption = goodSentences.join('. ').trim();
+        console.warn(
+          `[auto-produce] caption QA: dropped ${sentences.length - goodSentences.length} incomplete fragment(s)`,
+        );
+      } else if (
+        sentences.length === 1
+        && isIncompleteOverlayPhrase(sentences[0]!)
+      ) {
+        const conceptTitle = getField(idea, 'concept_title', 'idea_title', 'title').trim();
+        if (conceptTitle && !isIncompleteOverlayPhrase(conceptTitle)) {
+          caption = cta
+            ? `${conceptTitle}. ${cta}`
+            : `${conceptTitle}. ${resolvedBrandName}'de sizi bekliyoruz.`;
+          console.warn(
+            `[auto-produce] caption QA: replaced incomplete fragment with concept title`,
+          );
+        }
+      }
+    }
+
     const pkgFmt = detectIdeaPackageFormat(ideaRecord);
     const usesManifestQueue = Boolean(missionId && fullProductionQueue.length > 0) || adHocBrief;
     assignment = usesManifestQueue
@@ -974,7 +1015,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const slotKey = `${ideaIndex}:${String(assignment.slot_role)}`;
     try {
-
+    beginFalRequestSlot();
     const ideaDedupeKey = buildIdeaProductionDedupeKey(
       missionId,
       idea as Record<string, unknown>,
@@ -1595,13 +1636,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))) {
       // External URL is broken — attempt fallback to a fresh gallery pick before aborting.
       console.warn(`[auto-produce] broken external gallery URL — attempting fallback pick: ${referenceUrl.slice(0, 100)}`);
-      const fallback = galleryPhotos.length
+      const fallbackCandidates = galleryPhotos.filter((u) => u !== referenceUrl);
+      const fallback = fallbackCandidates.length
         ? pickMissionGallery(
             ideationCaption,
             ideationHeadline,
             mood,
             galleryMeta,
-            galleryPhotos.filter((u) => u !== referenceUrl),
+            fallbackCandidates,
             missionGalleryExclude,
             batchExclude,
             postType,
@@ -1703,6 +1745,47 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           slotKey,
         });
         continue;
+      }
+    }
+
+    if (referenceUrl && !referenceIsStock) {
+      try {
+        const picked = await pickReachableProductionGalleryUrl(
+          workspaceId,
+          referenceUrl,
+          galleryPhotos,
+          { timeoutMs: 12_000 },
+        );
+        if (picked) {
+          if (picked.fallbackFrom) {
+            console.log(
+              `[auto-produce] gallery production fallback: ${picked.fallbackFrom.slice(0, 80)} → ${picked.url.slice(0, 80)}`,
+            );
+          }
+          referenceUrl = picked.url;
+        } else if (!referenceUrl.startsWith('/api/media?key=')) {
+          console.warn(
+            `[auto-produce] gallery photo unreachable after mirror: ${referenceUrl.slice(0, 90)}`,
+          );
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
+            slotKey,
+          });
+          continue;
+        }
+      } catch (mirrorErr) {
+        console.warn('[auto-produce] pickReachableProductionGalleryUrl failed:', mirrorErr);
+        if (!referenceUrl.startsWith('/api/media?key=')) {
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
+            slotKey,
+          });
+          continue;
+        }
       }
     }
 
@@ -2158,6 +2241,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const vibeProfile = hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : undefined;
 
     let reelFailureReason: string | null = null;
+    let falPipelineFailureReason: string | null = null;
 
     // ── Step 2: Agency production ─────────────────────────────────────
     // Event overlay (story/post/canvas with event_details)
@@ -2369,6 +2453,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           falDesignEngine,
           runwayProduceMeta,
           costDelta: 0,
+          pipelineFailureReason: null,
         },
       };
       await runPipelineStages(slotCtx, [
@@ -2393,6 +2478,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       brandDesignTemplateName = slotCtx.state.brandDesignTemplateName ?? null;
       runwayProduceMeta = slotCtx.state.runwayProduceMeta;
       costEstimate += slotCtx.state.costDelta;
+      if (slotCtx.state.pipelineFailureReason && !reelFailureReason) {
+        reelFailureReason = slotCtx.state.pipelineFailureReason;
+      }
+      if (slotCtx.state.pipelineFailureReason) {
+        falPipelineFailureReason = slotCtx.state.pipelineFailureReason;
+      }
     }
 
     // Event / canvas — announcement card (buildEventCardPayload) → Remotion fallback
@@ -3303,7 +3394,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         console.warn(`[auto-produce] no contentUrl produced for "${headline.slice(0, 50)}", skipping save`);
       }
-      results.push({ title: headline, imageUrl: '', error: 'Production failed: no image or video URL', slotKey });
+      const pipelineErr = falPipelineFailureReason;
+      results.push({
+        title: headline,
+        imageUrl: '',
+        error: pipelineErr ?? 'Production failed: no image or video URL',
+        slotKey,
+      });
       continue;
     }
     if (missionId && !videoUrl && !imageUrl && referenceUrl) {
@@ -3516,6 +3613,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       };
     }
 
+    const slotFalRequests = getCapturedFalRequests();
     const metadata: Record<string, unknown> = {
       ...(brandDesignTemplateId
         ? {
@@ -3748,6 +3846,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } : {}),
       layout_family_hint: assignment.layout_family_hint ?? layoutFamilyHint ?? null,
       ...(slotFalGridSurface ? { fal_grid_surface: slotFalGridSurface } : {}),
+      ...(slotFalRequests.length ? {
+        fal_requests: slotFalRequests,
+        fal_request_ids: slotFalRequests
+          .map((r) => r.requestId)
+          .filter((id) => id && !id.startsWith('sync:')),
+      } : {}),
       ...(ideaPremiumComposition ? {
         premium_composition: true,
         premium_composition_type: ideaPremiumComposition.compositionType,
@@ -3927,6 +4031,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     } catch (slotErr) {
       const message = slotErr instanceof Error ? slotErr.message : String(slotErr);
+      const orphanedFal = getCapturedFalRequests();
+      if (orphanedFal.length > 0) {
+        console.warn(
+          `[auto-produce] slot ${slotKey} failed after ${orphanedFal.length} fal request(s): `
+          + orphanedFal.map((r) => `${r.model}:${r.requestId}`).join(', '),
+        );
+      }
       console.error(`[auto-produce] slot failed (continuing): slotKey=${slotKey}`, slotErr);
       results.push({
         title: headline || '(slot failed)',
@@ -3934,6 +4045,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         error: message,
         slotKey,
       });
+    } finally {
+      clearFalRequestSlot();
     }
   }
 

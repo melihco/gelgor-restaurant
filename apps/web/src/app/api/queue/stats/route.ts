@@ -7,7 +7,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getProductionQueue } from '@/lib/queue-client';
+import { productionGlobalInflightMax } from '@/lib/production-global-inflight';
 import { serverConfig } from '@/lib/server-config';
+import Redis from 'ioredis';
 
 export const runtime = 'nodejs';
 
@@ -34,15 +36,38 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'paused',
     );
     const depth = (counts.waiting ?? 0) + (counts.delayed ?? 0) + (counts.active ?? 0);
+
+    let globalInflight: number | null = null;
+    const redisUrl = process.env.REDIS_URL;
+    if (redisUrl) {
+      const r = new Redis(redisUrl, {
+        maxRetriesPerRequest: 1,
+        connectTimeout: 2_000,
+        commandTimeout: 2_000,
+      });
+      try {
+        const v = await r.get('prod_rate:global:inflight');
+        globalInflight = v != null ? Number(v) : 0;
+      } catch {
+        globalInflight = null;
+      } finally {
+        r.disconnect();
+      }
+    }
+
     return NextResponse.json({
       available: true,
       queue: queue.name,
       counts,
       depth,
+      globalInflight,
+      globalInflightMax: productionGlobalInflightMax(),
       // Simple alert hints; thresholds tunable by the caller/monitor.
       alerts: {
         backlogHigh: depth > 500,
         failuresHigh: (counts.failed ?? 0) > 100,
+        globalInflightHigh:
+          globalInflight != null && globalInflight >= productionGlobalInflightMax(),
       },
     });
   } catch (err) {

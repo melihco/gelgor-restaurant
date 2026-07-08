@@ -131,6 +131,8 @@ import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge'
 import { SafeCoverImage } from '../SafeCoverImage';
 import { formatUsd } from '@/lib/ai-cost-catalog';
 import { missionFeedStatusLabel } from '@/lib/mobile-customer-copy';
+import { missionProductionStatusCopy } from '@/lib/mission-production-status';
+import { useMissionFactoryJobs } from '../../_lib/use-mission-factory-jobs';
 import {
   buildMissionAiCostSummary,
   formatMissionAiCostRange,
@@ -293,6 +295,9 @@ function ProgressRing({ pct, color, size = 52 }: { pct: number; color: string; s
 
 function friendlyError(raw: string): string {
   const msg = raw.replace(/^\[(Final|Attempt \d+)\]\s*/, '');
+  if (msg.startsWith("Task '") || msg.startsWith("The task '")) {
+    return 'İçerik fikirleri üretilemedi (LLM görevi tamamlanamadı).';
+  }
   const human = humanizeAgentError(msg);
   if (human) {
     if (human.title === 'OpenAI kotası') return `⚡ ${human.summary}`;
@@ -556,9 +561,11 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
     ? 'OpenAI kotası doldu — API limitini yenileyin'
     : failedReason.includes('insufficient_quota')
       ? 'OpenAI kotası doldu — API limitini yenileyin'
-      : failedReason
-        ? failedReason.replace(/^\[Final\]\s*Task execution failed:\s*/i, '').slice(0, 120)
-        : 'Görev hatası — yeniden başlatmayı deneyin';
+      : failedReason.includes('Stale running state') || failedReason.includes('Deneme hakkı tükendi')
+        ? 'Görev yarıda kesildi — aşağıdaki yeniden başlat düğmesine basın'
+        : failedReason
+          ? failedReason.replace(/^\[Final\]\s*Task execution failed:\s*/i, '').slice(0, 120)
+          : 'Görev hatası — yeniden başlatmayı deneyin';
   const canRestart = hasError || pct === 0 || isFailedCompleted;
   const showFeedStatus = ideationDone && !feedPackageComplete;
   const isWaiting = mission.status === 'approved' && running === 0 && done === 0 && !hasError;
@@ -2751,6 +2758,7 @@ function MissionSlotChecklistPanel({
   t: T;
 }) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const { data: factorySummary } = useMissionFactoryJobs(workspaceId, missionId, Boolean(workspaceId && missionId));
 
   if (isLoading && !checklist) {
     return (
@@ -2847,7 +2855,16 @@ function MissionSlotChecklistPanel({
     const manifestReady = pipelineSummary?.manifestReady ?? ready;
     const manifestRequired = pipelineSummary?.manifestRequired ?? total;
     const packageIncomplete = manifestReady < manifestRequired;
-    const inProgress = Boolean(isReproducingFeed || feedProductionActive || checklist.renderingCount > 0);
+    const statusCopy = missionProductionStatusCopy(factorySummary, {
+      manifestReady,
+      manifestRequired,
+    });
+    const inProgress = Boolean(
+      isReproducingFeed
+      || feedProductionActive
+      || checklist.renderingCount > 0
+      || statusCopy.inProgress,
+    );
     const displayReady = manifestReady;
     const displayTotal = manifestRequired;
 
@@ -2877,9 +2894,9 @@ function MissionSlotChecklistPanel({
         </div>
         <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
           {inProgress
-            ? 'Gönderiler hazırlandıkça İçerik sekmesinde görünür.'
+            ? statusCopy.subtitle
             : packageIncomplete
-              ? 'Planınız hazır. Görselleri üretmek için butona dokunun.'
+              ? statusCopy.subtitle
               : displayReady >= displayTotal
                 ? 'Haftalık paketiniz onaya hazır.'
                 : `${displayReady} içerik onayınızı bekliyor.`}
@@ -3263,9 +3280,14 @@ function MissionPublishPackageCard({
           <span style={{ fontSize: 11, fontWeight: 800, color: '#10B981', letterSpacing: '0.04em' }}>
             ÜRETİM HATTI {factoryJobs.ready}/{factoryJobs.total}
           </span>
-          {factoryJobs.active > 0 && (
+          {(factoryJobs.inFlight ?? 0) > 0 && (
             <span style={{ fontSize: 10, color: t.textSecondary }}>
-              {factoryJobs.active} üretiliyor
+              {factoryJobs.inFlight} üretiliyor
+            </span>
+          )}
+          {(factoryJobs.queued ?? 0) > 0 && (
+            <span style={{ fontSize: 10, color: t.textMuted }}>
+              {factoryJobs.queued} sırada
             </span>
           )}
           {factoryJobs.failed > 0 && (
@@ -3416,6 +3438,11 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const isCompleted = mission.status === 'completed';
   const showFeedPackage = isCompleted || mission.status === 'in_flight';
   const missionInFlight = mission.status === 'in_flight' || mission.status === 'approved';
+  const { data: factoryJobsSummary } = useMissionFactoryJobs(
+    workspaceId,
+    mission.id,
+    showFeedPackage,
+  );
 
   const { data: prog, isLoading } = useMissionProgress({
     workspaceId,
@@ -3792,6 +3819,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               hasPreviewContent,
               rate,
               feedProductionActive,
+              factorySummary: factoryJobsSummary,
             });
             return (
             <div style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 16,
@@ -3955,6 +3983,12 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             );
             const productionFailed = Boolean(productionError?.message) && !isStillProcessing && !isBudget;
             const ideationNode = prog?.nodes?.find(n => n.task_type === 'content_ideation' && n.status === 'completed');
+            const factoryStatusCopy = (factoryJobsSummary?.total ?? 0) > 0
+              ? missionProductionStatusCopy(factoryJobsSummary, {
+                  manifestReady: pipelineSummary?.manifestReady ?? 0,
+                  manifestRequired: pipelineSummary?.manifestRequired ?? MISSION_WEEKLY_PACKAGE_COUNTS.total,
+                })
+              : null;
 
             return (
               <div style={{
@@ -3971,7 +4005,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                         ? 'Feed üretimi tamamlanamadı'
                         : productionBlock && !isStillProcessing
                           ? productionBlock.label
-                          : isStillProcessing ? 'Görseller hazırlanıyor' : 'Feed görselleri henüz yok'}
+                          : isStillProcessing
+                            ? (factoryStatusCopy?.title ?? 'Görseller hazırlanıyor')
+                            : 'Feed görselleri henüz yok'}
                 </div>
                 <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
                   {visualDesignPending
@@ -3983,7 +4019,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                       : productionBlock && !isStillProcessing
                         ? `Feed üretimi şunu bekliyor: ${productionBlock.awaitingNodes.join(', ') || productionBlock.label}. Tamamlanınca otomatik başlayacak.`
                       : isStillProcessing
-                    ? 'Görseller hazırlanıyor — gönderiler geldikçe Feed sekmesinde görünür.'
+                    ? (factoryStatusCopy?.subtitle ?? 'Görseller hazırlanıyor — gönderiler geldikçe Feed sekmesinde görünür.')
                     : isBudget
                       ? (debugMode
                         ? 'Bugünkü üretim kotası doldu. Yarın otomatik devam eder veya aşağıdan manuel başlatın.'
@@ -4632,7 +4668,13 @@ export function MissionHub() {
     setProductionPackageState(getMissionProductionPackage(wsId));
   }, [wsId]);
 
-  const { data: missions = [], isLoading: missionsInitialLoading } = useQuery({
+  const {
+    data: missions = [],
+    isLoading: missionsInitialLoading,
+    isError: missionsLoadError,
+    refetch: refetchMissions,
+    isFetching: missionsFetching,
+  } = useQuery({
     queryKey: ['missions', wsId],
     queryFn: () => apiClient.listMissionsForHub(wsId),
     refetchInterval: (query) => {
@@ -4643,6 +4685,7 @@ export function MissionHub() {
       return active ? 25_000 : false;
     },
     staleTime: 45_000,
+    retry: 2,
     placeholderData: keepPreviousData,
     enabled: Boolean(wsId),
     ...mobileQueryDefaults,
@@ -4734,17 +4777,22 @@ export function MissionHub() {
     enabled: Boolean(wsId) && operatorMode,
   });
 
-  // Context signals (Sprint 6) — deterministic season/full-moon/holiday/sector
-  // triggers; the promptBlock is injected into the Strategist at propose time.
+  // Context signals — season/holiday/lunar/sector triggers for every tenant;
+  // promptBlock is injected into the Strategist at propose time (client + operator).
+  const fetchContextSignals = async (): Promise<ContextSignalsData> => {
+    const res = await fetch(`/api/context-signals/${wsId}`, {
+      headers: getTenantBffHeaders(wsId),
+    });
+    if (!res.ok) throw new Error(res.statusText);
+    return res.json();
+  };
+
   const { data: contextSignals } = useQuery<ContextSignalsData>({
     queryKey: ['context-signals', wsId],
-    queryFn: async () => {
-      const res = await fetch(`/api/context-signals/${wsId}`);
-      if (!res.ok) throw new Error(res.statusText);
-      return res.json();
-    },
+    queryFn: fetchContextSignals,
     staleTime: 60_000,
-    enabled: Boolean(wsId) && operatorMode,
+    enabled: Boolean(wsId),
+    ...mobileQueryDefaults,
   });
 
   // Industry calendar freshness (Sprint 6 stale badge).
@@ -4847,11 +4895,24 @@ export function MissionHub() {
   };
 
   const proposeMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       // Brief enrichment: context signals + diversity + Hub production package.
       const directive = buildDiversityDirective(missions);
       const pkgDirective = buildProductionPackageDirective(productionPackage);
-      const block = [contextSignals?.promptBlock, pkgDirective, directive].filter(Boolean).join('\n\n');
+      let signalBlock = contextSignals?.promptBlock;
+      if (!signalBlock?.trim() && wsId) {
+        try {
+          const fresh = await queryClient.fetchQuery<ContextSignalsData>({
+            queryKey: ['context-signals', wsId],
+            queryFn: fetchContextSignals,
+            staleTime: 60_000,
+          });
+          signalBlock = fresh.promptBlock;
+        } catch {
+          /* backend still has industry_calendar + sector packs */
+        }
+      }
+      const block = [signalBlock, pkgDirective, directive].filter(Boolean).join('\n\n');
       return apiClient.proposeMissions(wsId, block || undefined, {
         productionPackage,
       });
@@ -4943,7 +5004,7 @@ export function MissionHub() {
     },
   });
 
-  const isEmpty = !missionsLoading && proposed.length === 0 && active.length === 0 && completed.length === 0 && failedCompleted.length === 0;
+  const isEmpty = !missionsLoading && !missionsLoadError && proposed.length === 0 && active.length === 0 && completed.length === 0 && failedCompleted.length === 0;
 
   return (
     <>
@@ -5341,6 +5402,34 @@ export function MissionHub() {
         {/* ── Loading ── */}
         {missionsLoading && (
           <BrandLoadingScreen compact fillViewport={false} />
+        )}
+
+        {/* ── Load error (avoid misleading empty state) ── */}
+        {missionsLoadError && !missionsLoading && missions.length === 0 && (
+          <div style={{ textAlign: 'center', paddingTop: 60 }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>⚠</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>
+              Planlar yüklenemedi
+            </div>
+            <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, marginBottom: 28, maxWidth: 280, margin: '0 auto 28px' }}>
+              Sunucu geçici olarak yanıt vermiyor. Birkaç saniye bekleyip tekrar deneyin.
+            </div>
+            <button
+              type="button"
+              onClick={() => void refetchMissions()}
+              disabled={missionsFetching}
+              style={{
+                padding: '12px 24px', borderRadius: 30, border: 'none', cursor: 'pointer',
+                background: missionsFetching
+                  ? t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
+                  : `linear-gradient(135deg, ${t.accent}, ${t.accent}cc)`,
+                color: missionsFetching ? t.textMuted : '#fff',
+                fontSize: 14, fontWeight: 700,
+              }}
+            >
+              {missionsFetching ? 'Yükleniyor…' : 'Tekrar Dene'}
+            </button>
+          </div>
         )}
 
         {/* ── Empty state ── */}

@@ -4,14 +4,23 @@
  *
  * Auth: X-Internal-Api-Key (internal service-to-service only).
  *
- * Body: { autoProduceBody, factoryJobs, missionId, workspaceId }
+ * Body: { autoProduceBody, factoryJobs, missionId, workspaceId, priority? }
  * The job is enriched with the Python callback URL so the worker can mark the
  * claimed production_jobs ready/failed after execution.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getProductionQueue, PRODUCTION_SLOTS_QUEUE, type ProductionSlotJobData } from '@/lib/queue-client';
+import {
+  getProductionQueue,
+  PRODUCTION_SLOTS_QUEUE,
+  type ProductionSlotJobData,
+} from '@/lib/queue-client';
 import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
+import {
+  ACTIVE_BULLMQ_JOB_STATES,
+  buildProductionSlotJobId,
+  resolveEnqueuePriority,
+} from '@/lib/production-queue-enqueue';
 import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
@@ -23,6 +32,7 @@ interface EnqueueBody {
   factoryJobs: { id: string; slotKey: string }[];
   missionId: string;
   workspaceId: string;
+  priority?: number;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -38,7 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { autoProduceBody, factoryJobs, missionId, workspaceId } = body;
+  const { autoProduceBody, factoryJobs, missionId, workspaceId, priority } = body;
   if (!autoProduceBody || !workspaceId) {
     return NextResponse.json({ error: 'autoProduceBody and workspaceId required' }, { status: 400 });
   }
@@ -51,23 +61,54 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Python callback so the worker can mark claimed jobs ready/failed.
   const callbackUrl = `${getCrewBackendBaseUrl()}/internal/v1/production-jobs/complete`;
 
+  const normalizedJobs = Array.isArray(factoryJobs) ? factoryJobs : [];
   const jobData: ProductionSlotJobData = {
     autoProduceBody,
-    factoryJobs: Array.isArray(factoryJobs) ? factoryJobs : [],
+    factoryJobs: normalizedJobs,
     missionId,
     workspaceId,
     callbackUrl,
   };
 
+  const jobId = buildProductionSlotJobId(missionId, normalizedJobs);
+  const jobPriority = resolveEnqueuePriority(priority);
+
   try {
+    const existing = await queue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (ACTIVE_BULLMQ_JOB_STATES.has(state)) {
+        return NextResponse.json({
+          ok: true,
+          jobId,
+          slots: jobData.factoryJobs.length,
+          deduplicated: true,
+          reason: 'already_queued',
+          state,
+        });
+      }
+      if (state === 'completed' || state === 'failed') {
+        try {
+          await existing.remove();
+        } catch {
+          /* race with worker — fall through to add */
+        }
+      }
+    }
+
     const job = await queue.add(PRODUCTION_SLOTS_QUEUE, jobData, {
-      // De-dupe identical batch enqueues within a short window via deterministic id.
-      jobId: `${missionId}:${(jobData.factoryJobs.map((j) => j.slotKey).sort().join(',')) || Date.now()}`,
+      jobId,
+      priority: jobPriority,
     });
-    return NextResponse.json({ ok: true, jobId: job.id, slots: jobData.factoryJobs.length });
+    return NextResponse.json({
+      ok: true,
+      jobId: job.id,
+      slots: jobData.factoryJobs.length,
+      deduplicated: false,
+      priority: jobPriority,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'enqueue failed';
     return NextResponse.json({ error: message, code: 'enqueue_error' }, { status: 500 });

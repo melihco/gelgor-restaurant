@@ -98,7 +98,7 @@ def build_service_env(merged: dict[str, str]) -> dict[str, dict[str, str]]:
         "AUTO_PRODUCE_SUBTLE_ENHANCE": merged.get("AUTO_PRODUCE_SUBTLE_ENHANCE", "false"),
         "AUTO_PRODUCE_GALLERY_ONLY": merged.get("AUTO_PRODUCE_GALLERY_ONLY", "false"),
         "AUTO_PRODUCE_MAX_DAILY": merged.get("AUTO_PRODUCE_MAX_DAILY", "500"),
-        "MISSION_AUTO_PRODUCE_MAX_PER_RUN": merged.get("MISSION_AUTO_PRODUCE_MAX_PER_RUN", "5"),
+        "MISSION_AUTO_PRODUCE_MAX_PER_RUN": merged.get("MISSION_AUTO_PRODUCE_MAX_PER_RUN", "24"),
         "AUTO_PRODUCE_DAILY_BUDGET_USD": merged.get("AUTO_PRODUCE_DAILY_BUDGET_USD", "50"),
         "AUTO_PRODUCE_BYPASS_LIMITS": merged.get("AUTO_PRODUCE_BYPASS_LIMITS", "true"),
         "AUTO_PRODUCE_RUNWAY": merged.get("AUTO_PRODUCE_RUNWAY", "false"),

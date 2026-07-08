@@ -526,17 +526,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const t0 = Date.now();
 
   try {
-    const sceneBrief = await resolveSceneBriefForRequest({
-      prebuilt: body.prebuiltSceneBrief,
-      postSceneBlock: body.postSceneBlock,
-      workspaceId,
-      caption: directorCaption,
-      productType,
-      level,
-      businessType,
-      brandName,
-      visualSubject,
-    });
+    const sceneBrief = await (async () => {
+      let brief = await resolveSceneBriefForRequest({
+        prebuilt: body.prebuiltSceneBrief,
+        postSceneBlock: body.postSceneBlock,
+        workspaceId,
+        caption: directorCaption,
+        productType,
+        level,
+        businessType,
+        brandName,
+        visualSubject,
+      });
+      const fingerprint = body.venueFingerprintBlock?.trim();
+      if (fingerprint) {
+        const basePrompt = String(brief.gpt_image2_prompt || '');
+        brief = {
+          ...brief,
+          gpt_image2_prompt: basePrompt
+            ? `${basePrompt}\n\n${fingerprint}`
+            : fingerprint,
+        };
+      }
+      return brief;
+    })();
 
     let quotaErrorCode: string | null = null;
     const results: GalleryEnhanceResultItem[] = await Promise.all(

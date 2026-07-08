@@ -26,7 +26,7 @@ import {
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
 

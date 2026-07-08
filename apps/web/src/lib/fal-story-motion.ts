@@ -169,6 +169,12 @@ async function runMotionModel(
   }
 
   const queued = (await enqueueRes.json()) as FalQueueSubmit;
+  const { recordFalRequestSubmitted, markFalRequestCompleted, markFalRequestFailed } = await import('./fal-request-tracker');
+  recordFalRequestSubmitted({
+    requestId: queued.request_id,
+    model: modelId,
+    kind: 'video',
+  });
   const statusUrl = queued.status_url ?? `${FAL_QUEUE_BASE}/${modelId}/requests/${queued.request_id}/status`;
   const resultUrl = queued.response_url ?? `${FAL_QUEUE_BASE}/${modelId}/requests/${queued.request_id}`;
 
@@ -186,7 +192,10 @@ async function runMotionModel(
     if (!statusRes.ok) continue;
 
     const status = (await statusRes.json()) as FalQueueStatus;
-    if (status.status === 'FAILED') throw new Error(status.error ?? 'fal story motion job failed');
+    if (status.status === 'FAILED') {
+      markFalRequestFailed(queued.request_id, status.error ?? 'fal story motion job failed');
+      throw new Error(status.error ?? 'fal story motion job failed');
+    }
     if (status.status !== 'COMPLETED') continue;
 
     const resultRes = await fetch(resultUrl, {
@@ -197,10 +206,15 @@ async function runMotionModel(
 
     const result = (await resultRes.json()) as FalVideoResult;
     const url = result.video?.url ?? result.videoUrl ?? result.output?.url;
-    if (url) return url;
+    if (url) {
+      markFalRequestCompleted(queued.request_id, url);
+      return url;
+    }
+    markFalRequestFailed(queued.request_id, 'fal story motion result has no video URL');
     throw new Error('fal story motion result has no video URL');
   }
 
+  markFalRequestFailed(queued.request_id, `fal story motion timed out after ${timeoutMs / 1000}s`);
   throw new Error(`fal story motion timed out after ${timeoutMs / 1000}s`);
 }
 

@@ -7,7 +7,7 @@ import {
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { produceFalMissionVideo } from '@/lib/fal-video';
-import { resolveFalBrandInput } from '@/lib/fal-brand-input';
+import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
   resolveFalTemplateLockOptions,
@@ -89,7 +89,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
         subtitle: inputs.cta || undefined,
         caption: inputs.caption,
         brandName: inputs.resolvedBrandName,
-        brandColors: templateBinding.brandColors ?? falBrand.brandColors,
+        brandColors: resolveFalProductionBrandColors(
+          falBrand.brandColors,
+          templateBinding.brandColors,
+        ),
         vibe: designVibe,
         backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
         referencePhotoUrl: photoUrl,
@@ -134,10 +137,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
         `grafiker=${designer.grafikerScore ?? '—'}/10`,
       );
     } catch (falErr) {
-      console.warn(
-        '[auto-produce] [fal-track] designer failed — raw I2V fallback:',
-        falErr instanceof Error ? falErr.message : falErr,
-      );
+      const falMsg = falErr instanceof Error ? falErr.message : String(falErr);
+      console.warn('[auto-produce] [fal-track] designer failed — raw I2V fallback:', falMsg);
+      state.pipelineFailureReason = `fal_video_designer: ${falMsg}`.slice(0, 480);
       try {
         const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
         const motionPrompt = [
@@ -171,7 +173,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
           ...(fal.reused ? { i2vReused: true, reusedFromArtifactId: fal.reusedFromArtifactId } : {}),
         };
       } catch (rawErr) {
-        console.warn('[auto-produce] [fal-track] raw fallback failed:', rawErr instanceof Error ? rawErr.message : rawErr);
+        const rawMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
+        console.warn('[auto-produce] [fal-track] raw fallback failed:', rawMsg);
+        state.pipelineFailureReason = `fal_video: ${rawMsg}`.slice(0, 480);
       }
     }
   },

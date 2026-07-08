@@ -16,7 +16,7 @@ import { serverConfig } from '@/lib/server-config';
 const CREW_BACKEND = getCrewBackendBaseUrl();
 /** Operator ceiling for daily artifact count — package limits apply first. */
 const AUTO_PRODUCE_MAX_DAILY = serverConfig.autoProduce.maxDaily;
-/** Mission → Feed may produce 5–7 slots in one run; must not share the manual daily cap. */
+/** Operator ceiling for per-HTTP-call mission drain batches (not ideation pool size). */
 const MISSION_AUTO_PRODUCE_MAX_PER_RUN = serverConfig.autoProduce.maxPerRun;
 const DAILY_BUDGET_USD = serverConfig.autoProduce.dailyBudgetUsd;
 /** Runway cost per 5s clip (gen4_turbo API) */
@@ -231,7 +231,8 @@ export async function canProduce(
   if (isProductionLimitsBypassed()) {
     return {
       allowed: true,
-      remaining: Math.min(batchSize, maxBatch),
+      // Mission manifest planning uses the full merged ideation pool — not maxPerRun.
+      remaining: missionProduction ? batchSize : Math.min(batchSize, maxBatch),
       spentTodayUsd: 0,
       dailyBudgetUsd: DAILY_BUDGET_USD,
       remainingUsd: DAILY_BUDGET_USD,
@@ -253,7 +254,8 @@ export async function canProduce(
   let remainingCount: number;
   if (missionProduction) {
     // Mission runs are the primary product — only USD wallet gates them.
-    remainingCount = MISSION_AUTO_PRODUCE_MAX_PER_RUN;
+    // Full ideation pool for manifest/slot planning; maxPerRun caps drain batches elsewhere.
+    remainingCount = batchSize;
   } else {
     const summary = await getUsageStats(workspaceId);
     const todayArtifacts = summary?.daily_series?.find(

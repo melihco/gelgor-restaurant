@@ -136,19 +136,26 @@ function MissionFeedPreviewTile({
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const mode = detectPreviewMode(artifact, fmt);
   const aspect = aspectForFormat(fmt, mode);
-  const thumb = native.imageUrl ?? native.videoUrl;
+  const rendering = isBundleRendering(artifact) && !resolveStoryVideoUrl(artifact);
+  const hasVideo = Boolean(native.videoUrl);
+  const posterThumb = native.imageUrl && !/\.(mp4|mov|webm)(\?|$)/i.test(native.imageUrl)
+    ? native.imageUrl
+    : null;
   const thumbFallbacks = [
     resolveClientMediaUrl(resolvePosterUrl(artifact)),
     resolveClientMediaUrl(artifact.contentUrl),
     resolveClientMediaUrl(String(meta.feed_preview_url || '')),
     resolveClientMediaUrl(String(meta.reference_photo_url || '')),
-  ].filter(Boolean);
-  const hasVideo = Boolean(native.videoUrl);
-  const rendering = isBundleRendering(artifact) && !resolveStoryVideoUrl(artifact);
+    resolveClientMediaUrl(resolveStoryVideoUrl(artifact)),
+  ].filter((u): u is string => Boolean(u));
+  const showVideoThumb = hasVideo && Boolean(native.videoUrl) && !rendering;
   const bundleStatus = getProductionBundleStatus(artifact);
   const headline = String(meta.headline || native.headline || artifact.title || '').slice(0, 40);
   const pending = artifact.status === 'pending_review';
   const productionBadge = resolveArtifactProductionBadge(artifact);
+
+  const usePoster = posterThumb && !showVideoThumb;
+  const hasPreviewMedia = showVideoThumb || usePoster;
 
   const bundleIssueLabel = (() => {
     if (rendering) return 'Render…';
@@ -156,7 +163,7 @@ function MissionFeedPreviewTile({
     if (fmt === 'story' || fmt === 'reel') return 'Video eksik';
     if (fmt === 'post' || isPostKind(artifact)) return 'Poster eksik';
     if (fmt === 'carousel') return 'Slayt eksik';
-    return thumb ? 'Medya eksik' : 'Hata';
+    return hasPreviewMedia ? 'Medya eksik' : 'Hata';
   })();
 
   return (
@@ -175,9 +182,17 @@ function MissionFeedPreviewTile({
         minHeight: 0,
       }}
     >
-      {thumb ? (
+      {showVideoThumb ? (
+        <video
+          src={native.videoUrl!}
+          muted
+          playsInline
+          preload="metadata"
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : usePoster ? (
         <SafeCoverImage
-          src={thumb}
+          src={posterThumb!}
           fallbacks={thumbFallbacks}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
@@ -264,7 +279,7 @@ function MissionFeedPreviewTile({
           padding: '2px 6px', borderRadius: 6,
           background: rendering
             ? 'rgba(59,130,246,0.85)'
-            : thumb ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.85)',
+            : hasPreviewMedia ? 'rgba(245,158,11,0.9)' : 'rgba(239,68,68,0.85)',
           color: '#fff',
         }}>
           {bundleIssueLabel}

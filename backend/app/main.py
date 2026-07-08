@@ -63,6 +63,23 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("scheduler_and_startup_recovery_disabled")
 
+    # Factory watchdog — resume open production_jobs without Celery Beat (dev + prod safety net).
+    async def _factory_watchdog_loop() -> None:
+        from app.services.production_factory_service import run_factory_watchdog_tick
+
+        interval_sec = float(get_settings().production_watchdog_interval_sec)
+        # Defer first tick so /health and mission APIs respond right after restart.
+        await asyncio.sleep(20.0)
+
+        while True:
+            try:
+                await run_factory_watchdog_tick()
+            except Exception as exc:
+                logger.warning("factory_watchdog_tick_failed", error=str(exc)[:200])
+            await asyncio.sleep(interval_sec)
+
+    asyncio.create_task(_factory_watchdog_loop(), name="factory_watchdog")
+
     yield
 
     # ── Cleanup ─────────────────────────────────────────────────────────

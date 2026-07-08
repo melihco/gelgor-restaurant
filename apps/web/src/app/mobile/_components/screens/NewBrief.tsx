@@ -22,6 +22,7 @@ import {
 } from '@/lib/recent-brief-history';
 import type { Brief, BriefDecomposedResponse } from '@/types';
 import { invalidateMobileArtifactPool } from '../../_lib/mobile-artifacts';
+import type { PendingBriefOutputType } from '@/lib/pending-brief-job';
 
 const MAX_PHOTOS = 5;
 
@@ -75,16 +76,9 @@ const TEXT_OUTPUT_TYPES_LIST: {
 const VISUAL_COUNTS = ['1', '2', '3', '5'];
 const TEXT_COUNTS = ['1', '3', '5', '10'];
 
-const PRODUCTION_STEPS = [
-  'Marka yaratıcı direktörü brief\'i yorumluyor',
-  'Galeriden en uygun fotoğraf seçiliyor',
-  'Logo + marka renkleriyle tasarım oluşturuluyor',
-  'Story/Reel için video animasyonu ekleniyor',
-];
-
 export function NewBrief() {
   const { t } = useTheme();
-  const { goBack, navigate } = useMobileStore();
+  const { goBack, navigate, enqueueBriefProduction } = useMobileStore();
   const { officeId, tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
 
@@ -140,11 +134,8 @@ export function NewBrief() {
 
   const [createdBrief, setCreatedBrief] = useState<Brief | null>(null);
   const [decomposed, setDecomposed]     = useState<BriefDecomposedResponse | null>(null);
-  const [step, setStep] = useState<'form' | 'submitting' | 'producing' | 'done' | 'error'>('form');
+  const [step, setStep] = useState<'form' | 'submitting' | 'done' | 'error'>('form');
   const [errorMsg, setErrorMsg] = useState('');
-  const [producedCount, setProducedCount] = useState(0);
-  const [brandInterpretation, setBrandInterpretation] = useState<string | null>(null);
-  const [productionStepIdx, setProductionStepIdx] = useState(0);
   const [directionLoading, setDirectionLoading] = useState(false);
   const [directionError, setDirectionError] = useState('');
 
@@ -160,18 +151,6 @@ export function NewBrief() {
       setCount('3');
     }
   }, [outputType, count]);
-
-  useEffect(() => {
-    if (step !== 'producing') {
-      setProductionStepIdx(0);
-      return;
-    }
-    const maxStep = outputType === 'post' ? 2 : 3;
-    const timer = setInterval(() => {
-      setProductionStepIdx((prev) => (prev < maxStep ? prev + 1 : prev));
-    }, 18_000);
-    return () => clearInterval(timer);
-  }, [step, outputType]);
 
   // Upload a single photo file to the server, return its final URL
   async function uploadPhoto(file: File): Promise<string> {
@@ -306,10 +285,11 @@ export function NewBrief() {
     return parts.join('\n');
   }
 
-  // Visual production path: brief → /api/brief-produce → artifacts in feed
+  // Visual production path: brief → /api/brief-produce (background) → feed polling
   async function startVisualProduction() {
     if (!tenantId) { setErrorMsg('Workspace bulunamadı'); setStep('error'); return; }
-    setStep('producing');
+    if (!outputType || !VISUAL_OUTPUT_TYPES.has(outputType)) return;
+    setStep('submitting');
     try {
       const readyPhotoUrls = photos
         .filter((p) => p.uploadedUrl && !p.uploading)
@@ -337,34 +317,34 @@ export function NewBrief() {
           outputType,
           count: parseInt(count) || 1,
           photoUrls: readyPhotoUrls,
+          background: true,
         }),
-        signal: AbortSignal.timeout(280_000),
+        signal: AbortSignal.timeout(15_000),
       });
       const data = await res.json() as {
         ok?: boolean;
-        produced?: number;
+        queued?: boolean;
+        jobId?: string;
         error?: string;
-        code?: string;
-        brandInterpretation?: string | null;
       };
-      if (!res.ok || !data.ok) {
-        setErrorMsg(data.error ?? 'İçerik üretimi başarısız.');
-        setStep('error');
-        return;
-      }
-      const produced = data.produced ?? 0;
-      if (produced === 0) {
-        setErrorMsg(data.error ?? 'İçerik üretilemedi. Galeri fotoğrafı veya API limitlerini kontrol edin.');
+      if (!res.ok || !data.ok || !data.jobId) {
+        setErrorMsg(data.error ?? 'Brief kuyruğa alınamadı.');
         setStep('error');
         return;
       }
       persistCurrentDraft();
+      enqueueBriefProduction({
+        id: data.jobId,
+        title: title.trim(),
+        outputType: outputType as PendingBriefOutputType,
+        count: parseInt(count) || 1,
+        startedAt: Date.now(),
+      });
       refreshFeedArtifacts();
-      setProducedCount(produced);
-      setBrandInterpretation(data.brandInterpretation ?? null);
-      setStep('done');
-    } catch (err: any) {
-      setErrorMsg(err?.message ?? 'İstek zaman aşımına uğradı. İçerik arka planda üretilebilir.');
+      setStep('form');
+      navigate('feed');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Brief gönderilemedi — tekrar deneyin.');
       setStep('error');
     }
   }
@@ -404,97 +384,41 @@ export function NewBrief() {
   }
 
   const canSubmit = title.trim().length > 0 && outputType !== null;
-  const isLoading = step === 'submitting' || step === 'producing' || createMutation.isPending;
+  const isLoading = step === 'submitting' || createMutation.isPending;
 
-  // ── Producing state ─────────────────────────────────────────────────
-  if (step === 'producing') {
-    const activeSteps = outputType === 'post'
-      ? PRODUCTION_STEPS.slice(0, 3)
-      : PRODUCTION_STEPS;
-    return (
-      <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
-        <div style={{ width: 72, height: 72, borderRadius: '50%', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(157,190,206,0.08)', border: '1px solid rgba(157,190,206,0.2)' }}>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', border: '3px solid rgba(157,190,206,0.2)', borderTop: '3px solid #9DBECE', animation: 'spinSlow 1s linear infinite' }} />
-        </div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#f8fafc', marginBottom: 10, letterSpacing: '-0.02em', textAlign: 'center' }}>
-          {brandName ? `${brandName} için üretiliyor` : 'Tasarım üretiliyor'}
-        </div>
-        <div style={{ fontSize: 13, color: 'rgba(148,163,184,0.5)', textAlign: 'center', lineHeight: 1.65, maxWidth: 280, marginBottom: 24 }}>
-          &ldquo;{title.trim()}&rdquo; brief&apos;i marka DNA&apos;nıza göre {count} adet {outputType === 'story' ? 'story' : outputType === 'reel' ? 'reel' : 'gönderi'} olarak tasarlanıyor.
-        </div>
-        <div style={{ width: '100%', maxWidth: 300, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {activeSteps.map((label, idx) => {
-            const done = idx < productionStepIdx;
-            const active = idx === productionStepIdx;
-            return (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: idx > productionStepIdx + 1 ? 0.35 : 1 }}>
-                <div style={{
-                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 700,
-                  background: done ? 'rgba(157,190,206,0.2)' : active ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${done || active ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`,
-                  color: done ? '#9DBECE' : active ? '#9DBECE' : 'rgba(148,163,184,0.4)',
-                }}>
-                  {done ? '✓' : idx + 1}
-                </div>
-                <div style={{ fontSize: 12, color: active ? '#e2e8f0' : done ? 'rgba(157,190,206,0.7)' : 'rgba(148,163,184,0.45)' }}>
-                  {label}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ marginTop: 28, fontSize: 11, color: 'rgba(148,163,184,0.35)', textAlign: 'center' }}>
-          Bu işlem 1–3 dakika sürebilir
-        </div>
-      </div>
-    );
-  }
-
-  // ── Done state ──────────────────────────────────────────────────────
+  // ── Done state (text/report brief flow) ─────────────────────────────
   if (step === 'done') {
-    const isVisual = outputType && VISUAL_OUTPUT_TYPES.has(outputType);
     const taskCount = decomposed?.tasks?.length ?? 0;
     return (
       <div style={{ height: '100dvh', background: '#07090F', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
         <div style={{ width: 72, height: 72, borderRadius: '50%', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(157,190,206,0.10)', border: '1px solid rgba(157,190,206,0.25)' }}>
-          <span style={{ fontSize: 28 }}>{isVisual ? '✦' : '⚡'}</span>
+          <span style={{ fontSize: 28 }}>⚡</span>
         </div>
         <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', marginBottom: 8, letterSpacing: '-0.02em', textAlign: 'center' }}>
-          {isVisual ? 'İçerik hazır!' : (createdBrief?.title ?? 'Tamamlandı')}
+          {createdBrief?.title ?? 'Tamamlandı'}
         </div>
         <div style={{ fontSize: 14, color: 'rgba(148,163,184,0.55)', textAlign: 'center', lineHeight: 1.65, marginBottom: 6 }}>
-          {isVisual
-            ? `${producedCount} tasarım feed'e eklendi.`
-            : 'Talebiniz alındı — AI ekibiniz 24 saat içinde haftalık plana ekleyecek.'}
+          Talebiniz alındı — AI ekibiniz 24 saat içinde haftalık plana ekleyecek.
         </div>
-        {isVisual && brandInterpretation && (
-          <div style={{ fontSize: 12, color: 'rgba(157,190,206,0.75)', textAlign: 'center', lineHeight: 1.55, maxWidth: 300, marginBottom: 20, padding: '10px 14px', borderRadius: 12, background: 'rgba(157,190,206,0.06)', border: '0.5px solid rgba(157,190,206,0.15)' }}>
-            {brandInterpretation}
-          </div>
-        )}
-        {!isVisual && taskCount > 0 && (
+        {taskCount > 0 && (
           <div style={{ fontSize: 13, color: '#9DBECE', fontWeight: 600, marginBottom: 36 }}>
             {taskCount} görev oluşturuldu
           </div>
         )}
-        {(!isVisual && taskCount === 0) && <div style={{ marginBottom: 36 }} />}
-        {isVisual && <div style={{ marginBottom: 36 }} />}
+        {taskCount === 0 && <div style={{ marginBottom: 36 }} />}
 
         {createdBrief && (
           <div style={{ fontSize: 10, color: 'rgba(148,163,184,0.25)', marginBottom: 36, fontFamily: 'monospace' }}>
             {createdBrief.id.slice(0, 8)}…
           </div>
         )}
-        {!createdBrief && isVisual && <div style={{ marginBottom: 36 }} />}
 
         <div style={{ display: 'flex', gap: 10, width: '100%' }}>
           <button onClick={goBack} style={{ flex: 1, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.09)', color: 'rgba(226,232,240,0.65)', fontSize: 13, fontWeight: 500 }}>
             Kapat
           </button>
-          <button onClick={() => { refreshFeedArtifacts(); navigate(isVisual ? 'feed' : 'missions'); }} style={{ flex: 2, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(157,190,206,0.12)', border: '0.5px solid rgba(157,190,206,0.25)', color: '#9DBECE', fontSize: 13, fontWeight: 700 }}>
-            {isVisual ? "Feed'e git →" : 'İçerik planına git →'}
+          <button onClick={() => navigate('missions')} style={{ flex: 2, padding: '14px', borderRadius: 14, cursor: 'pointer', background: 'rgba(157,190,206,0.12)', border: '0.5px solid rgba(157,190,206,0.25)', color: '#9DBECE', fontSize: 13, fontWeight: 700 }}>
+            İçerik planına git →
           </button>
         </div>
       </div>
@@ -835,7 +759,7 @@ export function NewBrief() {
 
         {isVisualOutput && title.trim() && (
           <div style={{ marginBottom: 10, fontSize: 11, color: 'rgba(148,163,184,0.4)', textAlign: 'center', lineHeight: 1.45 }}>
-            {brandName ? `${brandName} · ` : ''}{count} adet {outputType === 'story' ? 'story' : outputType === 'reel' ? 'reel' : 'gönderi'} · galeri + logo + marka DNA
+            {brandName ? `${brandName} · ` : ''}{count} adet {outputType === 'story' ? 'story' : outputType === 'reel' ? 'reel' : 'gönderi'} · arka planda üretilir, feed&apos;de görünür
           </div>
         )}
 
@@ -866,7 +790,7 @@ export function NewBrief() {
           {isLoading ? (
             <>
               <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTop: '2px solid #fff', animation: 'spinSlow 1s linear infinite' }} />
-              {step === 'submitting' ? 'Görevler Oluşturuluyor...' : 'Brief Oluşturuluyor...'}
+              {isVisualOutput ? 'Feed\'e yönlendiriliyor…' : step === 'submitting' ? 'Görevler Oluşturuluyor...' : 'Brief Oluşturuluyor...'}
             </>
           ) : (
             <>⚡ {isVisualOutput ? 'Tasarla & Üret' : 'AI Ekibine Gönder'}</>

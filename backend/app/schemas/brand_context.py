@@ -251,6 +251,10 @@ class GalleryAnalysisSaveRequest(BaseModel):
     results: list[GalleryPhotoAnalysisEntry] = Field(default_factory=list)
 
 
+class GalleryAppendRequest(BaseModel):
+    urls: list[str] = Field(min_length=1, max_length=24)
+
+
 class GalleryMatchStatsRequest(BaseModel):
     scores: list[float] = Field(default_factory=list)
 

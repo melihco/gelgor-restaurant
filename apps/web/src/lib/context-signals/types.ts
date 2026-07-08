@@ -1,14 +1,8 @@
 /**
  * Context Signal Engine — types (Sprint 5).
- *
- * Deterministic, LLM-free signals that describe "what is happening around the
- * brand right now" — season, day rhythm, holidays, lunar phase, golden hour, …
- * These feed the Strategist so missions are timed to real-world triggers
- * (e.g. a beach club posting a full-moon party brief).
- *
- * Full moon is just ONE signal type — the engine covers the full scenario family.
- * See docs/foundation-sprint-program.md § Sprint 5 + § "Bağlam senaryoları".
  */
+
+import type { BrandOperatingProfile } from '@/lib/brand-operating-profile';
 
 export type SignalType =
   | 'season'
@@ -62,6 +56,8 @@ export interface ContextSignalInputs {
   lng?: number;
   /** How many days ahead to surface upcoming signals (holidays, full moon). */
   horizonDays?: number;
+  /** Pre-resolved operating profile (optional — computed from brand fields when omitted). */
+  operatingProfile?: BrandOperatingProfile;
 }
 
 export interface ContextCoverageCheck {

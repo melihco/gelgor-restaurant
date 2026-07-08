@@ -9,6 +9,7 @@ import { resolveArtifact, parseArtifactContent, findScheduledForArtifact, resolv
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { OutputArtifact } from '@/types';
 import type { T } from '../theme-context';
+import { useTheme } from '../theme-context';
 import { VisualReviewBadge } from '../VisualReviewSheet';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';

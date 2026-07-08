@@ -39,6 +39,7 @@ async def trigger_auto_produce(
     factory_jobs: list[dict] | None = None,
     completion_pass: bool = False,
     gallery_slot_assignments: dict[str, dict] | None = None,
+    enqueue_priority: int | None = None,
 ) -> dict | None:
     """
     Non-blocking call to Next.js /api/auto-produce after content_ideation completes.
@@ -77,15 +78,11 @@ async def trigger_auto_produce(
             except Exception:
                 ideas = []
 
-        # Priority 1: extract JSON array from mixed output
+        # Priority 1: robust bracket scan (avoids greedy regex truncating nested arrays)
         if not ideas:
-            json_match = _re.search(r"\[.*\]", output_summary, _re.DOTALL)
-            if json_match:
-                try:
-                    raw_list = _json.loads(json_match.group())
-                    ideas = raw_list if isinstance(raw_list, list) else []
-                except Exception:
-                    ideas = []
+            from app.services.output_summary_parser import extract_object_array_from_output_summary
+
+            ideas = extract_object_array_from_output_summary(output_summary)
 
         # Priority 2: canvas parser — only if raw parse failed or returned nothing
         if not ideas:
@@ -236,7 +233,8 @@ async def trigger_auto_produce(
             headers = {"X-Tenant-Id": str(workspace_id)}
             if internal_key:
                 headers["X-Internal-Api-Key"] = internal_key
-            _plan_timeout = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=5.0)
+            # Plan route maxDuration is 300s; dev cold-compile can push wall time past 120s.
+            _plan_timeout = httpx.Timeout(connect=15.0, read=330.0, write=60.0, pool=5.0)
             async with httpx.AsyncClient(timeout=_plan_timeout) as client:
                 presp = await client.post(
                     f"{nextjs_url}/api/auto-produce/plan",
@@ -284,6 +282,8 @@ async def trigger_auto_produce(
                 "missionId": str(mission_id),
                 "workspaceId": str(workspace_id),
             }
+            if enqueue_priority is not None and int(enqueue_priority) > 0:
+                enqueue_body["priority"] = int(enqueue_priority)
             _eq_timeout = httpx.Timeout(connect=15.0, read=30.0, write=30.0, pool=5.0)
             async with httpx.AsyncClient(timeout=_eq_timeout) as client:
                 eresp = await client.post(
@@ -396,13 +396,23 @@ async def trigger_auto_produce(
         _is_timeout = isinstance(exc, (_httpx.ReadTimeout, _httpx.ConnectTimeout))
         _is_disconnect = isinstance(exc, _httpx.RemoteProtocolError)
         if _is_timeout or _is_disconnect:
+            if plan_only:
+                logger.warning(
+                    "auto_produce_plan_timeout",
+                    mission_id=str(mission_id),
+                    exc=str(exc)[:120],
+                )
+                raise
             logger.info(
                 "auto_produce_fire_and_forget",
                 mission_id=str(mission_id),
                 reason="route_still_running",
                 exc=str(exc)[:120],
             )
+            return {"reason": "production_in_flight", "code": "route_still_running"}
         else:
+            if plan_only:
+                raise
             logger.warning(
                 "auto_produce_error",
                 mission_id=str(mission_id),

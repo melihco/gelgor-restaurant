@@ -902,7 +902,7 @@ const FAMILY_CATALOG: FamilyMeta[] = [
       heroWeight: 800,
       heroUppercase: false,
       heroTracking: -0.01,
-      heroScale: 1.02,
+      heroScale: 1.1,
       gradientStart: 0.2,
       gradientEnd: 0.88,
       overlayOpacity: 0.55,

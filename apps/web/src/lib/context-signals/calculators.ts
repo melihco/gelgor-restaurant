@@ -68,10 +68,17 @@ export function dayOfWeekSignal(date: Date): SignalRecord {
   };
 }
 
+import type { BrandOperatingProfile } from '@/lib/brand-operating-profile';
+
 /** Sector-agnostic weekly rhythms (Friday night, Sunday brunch, quiet Monday). */
-export function weeklyRhythmSignals(date: Date): SignalRecord[] {
+export function weeklyRhythmSignals(
+  date: Date,
+  operatingProfile?: BrandOperatingProfile,
+): SignalRecord[] {
   const dow = date.getUTCDay();
   const out: SignalRecord[] = [];
+  const rejectsNight = operatingProfile?.rejectsNightlifeThemes === true;
+  const prefersBreakfast = operatingProfile?.prefersBreakfastBrunch === true;
   const push = (key: string, title: string, hooks: string[], confidence: number) => {
     out.push({
       id: `weekly:${key}:${isoDate(date)}`,
@@ -86,8 +93,21 @@ export function weeklyRhythmSignals(date: Date): SignalRecord[] {
       meta: { rhythm: key, dayOfWeek: dow },
     });
   };
-  if (dow === 5) push('friday_night', 'Cuma akşamı ritmi', ['Cuma akşamı / hafta sonu açılışı', 'Canlı müzik / özel program'], 0.75);
-  if (dow === 6) push('saturday_night', 'Cumartesi gece ritmi', ['Cumartesi gece yoğunluğu', 'DJ / etkinlik / özel menü'], 0.75);
+  if (dow === 5 && !rejectsNight) {
+    push('friday_night', 'Cuma akşamı ritmi', ['Cuma akşamı / hafta sonu açılışı', 'Canlı müzik / özel program'], 0.75);
+  }
+  if (dow === 6) {
+    if (prefersBreakfast || rejectsNight) {
+      push(
+        'saturday_brunch',
+        'Cumartesi kahvaltı ritmi',
+        ['Cumartesi serpme kahvaltı daveti', 'Hafta sonu aile masası / bahçe kahvaltı'],
+        0.75,
+      );
+    } else {
+      push('saturday_night', 'Cumartesi gece ritmi', ['Cumartesi gece yoğunluğu', 'DJ / etkinlik / özel menü'], 0.75);
+    }
+  }
   if (dow === 0) push('sunday_brunch', 'Pazar brunch ritmi', ['Pazar brunch daveti', 'Aile / geç kahvaltı içeriği'], 0.7);
   if (dow === 1) push('quiet_monday', 'Sakin Pazartesi', ['Pazartesi sakin atmosfer / indirim', 'Haftaya yumuşak başlangıç'], 0.5);
   return out;

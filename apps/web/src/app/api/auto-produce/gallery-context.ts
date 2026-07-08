@@ -138,6 +138,23 @@ export async function fetchGalleryContext(
 
   let photos = health.urls;
 
+  try {
+    const { prioritizeTenantStoredGalleryUrls, resolveTenantGalleryFallbackUrls } = await import(
+      '@/lib/gallery-mirror-server'
+    );
+    const r2Photos = await resolveTenantGalleryFallbackUrls(workspaceId, { maxKeys: 120 });
+    if (r2Photos.length > 0) {
+      photos = prioritizeTenantStoredGalleryUrls([...r2Photos, ...photos], workspaceId);
+      console.log(
+        `[gallery-context:${workspaceId}] merged ${r2Photos.length} tenant R2 gallery URLs (brand-site fallback)`,
+      );
+    } else {
+      photos = prioritizeTenantStoredGalleryUrls(photos, workspaceId);
+    }
+  } catch {
+    /* gallery-mirror optional in tests */
+  }
+
   // Real venue uploads win — never mix Unsplash seeds when brand has own gallery.
   if (hasRealPhotos) {
     const realOnly = photos.filter((u) => !isStockGalleryPhotoUrl(u));

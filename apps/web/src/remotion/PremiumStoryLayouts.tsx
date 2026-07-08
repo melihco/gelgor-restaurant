@@ -292,7 +292,7 @@ export function GlassmorphismShowcaseLayout({
   const { fps } = useVideoConfig();
   const fonts = useStoryFonts();
   const textColors = resolveStoryTextColors({ headlineColor, subtitleColor, categoryColor, accentColor });
-  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.08, headlineWeight ?? spec.heroWeight);
+  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.12, headlineWeight ?? spec.heroWeight);
   const cardOpacity = stableTextOpacity(frame, 12, 30);
   const textOpacity = stableTextOpacity(frame, 20, 38);
   const centered = spec.textZone === 'center';
@@ -352,7 +352,7 @@ export function GlassmorphismShowcaseLayout({
             />
           </div>
           {subtitle ? (
-            <span style={{ display: 'block', fontFamily: fonts.body, fontSize: 26, lineHeight: 1.42, color: textColors.subtitle, marginTop: 16, opacity: textOpacity }}>
+            <span style={{ display: 'block', fontFamily: fonts.body, fontSize: 30, lineHeight: 1.45, color: textColors.subtitle, marginTop: 16, opacity: textOpacity }}>
               {subtitle.slice(0, 135)}
             </span>
           ) : null}

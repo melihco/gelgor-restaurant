@@ -96,6 +96,31 @@ function parseHex(raw: unknown): string | null {
  * toward cool-teal for bright/warm primaries. This prevents the flat "same-hue" look
  * that occurs when primary === accent.
  */
+/** Darken the primary hue for accent contrast when primary === accent (same brand hex twice). */
+function deriveTonalAccent(primaryHex: string): string {
+  const h = primaryHex.replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return '#1a1a1a';
+  const factor = 0.58;
+  const toByte = (slice: string) =>
+    Math.max(0, Math.min(255, Math.round(parseInt(slice, 16) * factor)));
+  return `#${toByte(h.slice(0, 2)).toString(16).padStart(2, '0')}${toByte(h.slice(2, 4)).toString(16).padStart(2, '0')}${toByte(h.slice(4, 6)).toString(16).padStart(2, '0')}`;
+}
+
+function isSaturatedChromaticPrimary(primaryHex: string): boolean {
+  const h = primaryHex.replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return false;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === min) return false;
+  const l = (max + min) / 2;
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  return s >= 0.35;
+}
+
 function deriveComplementaryAccent(primaryHex: string): string {
   const h = primaryHex.replace('#', '').trim();
   if (!/^[0-9a-fA-F]{6}$/.test(h)) return '#c9a96e';
@@ -230,7 +255,9 @@ export function resolveBrandProductionTokens(input: {
   const accentIsSameAsPrimary = rawAccent && primaryColor
     && rawAccent.toLowerCase() === primaryColor.toLowerCase();
   const accentColor = accentIsSameAsPrimary
-    ? deriveComplementaryAccent(primaryColor)
+    ? (isSaturatedChromaticPrimary(primaryColor)
+      ? deriveTonalAccent(primaryColor)
+      : deriveComplementaryAccent(primaryColor))
     : rawAccent;
 
   if (sectorPalette?.primary && !themePalette?.primary && !ctxPrimary && !vibePalette?.primary) {

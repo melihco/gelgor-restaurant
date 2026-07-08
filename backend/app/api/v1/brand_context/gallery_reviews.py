@@ -12,6 +12,19 @@ from app.api.v1.brand_context._shared import *
 router = APIRouter()
 
 
+@router.post("/{workspace_id}/gallery/append")
+async def append_gallery_urls(
+    workspace_id: uuid.UUID,
+    req: GalleryAppendRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Atomically prepend persisted gallery URLs (R2 /api/media or HTTPS)."""
+    merged = await brand_context_service.append_reference_image_urls(
+        db, workspace_id, req.urls,
+    )
+    return {"ok": True, "urls": merged, "total": len(merged)}
+
+
 @router.post("/{workspace_id}/gallery-analysis")
 async def save_gallery_analysis(
     workspace_id: uuid.UUID,

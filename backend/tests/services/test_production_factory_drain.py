@@ -54,6 +54,31 @@ def test_succeeded_slot_map_keys_by_slotkey_skipping_errors_and_idless() -> None
     assert pfs._succeeded_slot_map(None) == {}
 
 
+def test_slot_failure_map_extracts_per_slot_errors() -> None:
+    data = {
+        "results": [
+            {"slotKey": "0:organic_post", "error": "Remotion 422: photo unreachable"},
+            {"slotKey": "1:fal_only_post", "id": "art-1"},
+            {"slotKey": "2:designed_post", "error": "withheld_quality_gate"},
+        ]
+    }
+    assert pfs._slot_failure_map(data) == {
+        "0:organic_post": "Remotion 422: photo unreachable",
+        "2:designed_post": "withheld_quality_gate",
+    }
+
+
+def test_resolve_slot_failure_reason_prefers_per_slot_error() -> None:
+    produce = {
+        "results": [{"slotKey": "0:organic_post", "error": "Galeri mirror failed"}],
+        "withheld": 1,
+        "produced": 0,
+    }
+    assert pfs._resolve_slot_failure_reason(produce, "0:organic_post", "no_artifact") == "Galeri mirror failed"
+    assert pfs._resolve_slot_failure_reason(produce, "9:other", "no_artifact") == "withheld_quality_gate"
+    assert pfs._resolve_slot_failure_reason(produce, "9:other", "production_in_flight") == "production_in_flight"
+
+
 # ── Drain flow helpers ───────────────────────────────────────────────────────
 
 
@@ -69,14 +94,11 @@ class _JobsRecorder:
         self._summary = summary
         self.ready: list[tuple[uuid.UUID, str | None]] = []
         self.failed: list[tuple[uuid.UUID, str]] = []
+        self.deferred: list[tuple[uuid.UUID, str]] = []
         self.running: list[uuid.UUID] = []
-        self._open_calls = 0
 
     async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
-        # True on the first check (start of drain), False afterwards so the
-        # inline re-kick at the end is not triggered.
-        self._open_calls += 1
-        return self._open_calls == 1
+        return not self._summary.get("complete", False)
 
     async def claim_batch(self, mission_id: uuid.UUID, *, limit: int) -> list[dict]:
         if self._claim_batches:
@@ -93,8 +115,14 @@ class _JobsRecorder:
         self.failed.append((job_id, reason))
         return "failed"
 
+    async def mark_deferred(self, job_id: uuid.UUID, reason: str, *, delay_sec: float = 45.0) -> None:
+        self.deferred.append((job_id, reason))
+
     async def mission_job_summary(self, mission_id: uuid.UUID) -> dict:
         return self._summary
+
+    async def reclaim_stale_jobs(self, mission_id: uuid.UUID, *, stale_sec: int = 600) -> int:
+        return 0
 
 
 def _install_drain_doubles(
@@ -112,7 +140,9 @@ def _install_drain_doubles(
         "mark_running",
         "mark_ready",
         "mark_failed",
+        "mark_deferred",
         "mission_job_summary",
+        "reclaim_stale_jobs",
     ):
         monkeypatch.setattr(pfs.jobs, name, getattr(jobs, name), raising=True)
 
@@ -131,6 +161,12 @@ def _install_drain_doubles(
         pfs,
         "schedule_drain",
         lambda *a, **k: rekicks.append((a, k)),
+        raising=True,
+    )
+    monkeypatch.setattr(
+        pfs,
+        "schedule_completion_pass",
+        lambda *a, **k: None,
         raising=True,
     )
 
@@ -190,7 +226,7 @@ async def test_drain_bullmq_enqueues_only_and_leaves_jobs_running(
         summary={"total": 2, "complete": False, "active": 2, "failed": 0, "ready": 0},
     )
     captured: dict = {}
-    _install_drain_doubles(
+    rekicks = _install_drain_doubles(
         monkeypatch,
         jobs=jobs,
         trigger_result={"reason": "enqueued_to_bullmq"},
@@ -207,6 +243,9 @@ async def test_drain_bullmq_enqueues_only_and_leaves_jobs_running(
     assert jobs.running == [batch[0]["id"], batch[1]["id"]]
     assert jobs.ready == []
     assert jobs.failed == []
+    # Safety-net continuation drain when BullMQ batch is enqueued but jobs stay open.
+    assert len(rekicks) == 1
+    assert rekicks[0][1].get("force") is True
     # The trigger was invoked in enqueue-only mode with the factory job refs.
     assert captured["enqueue_only"] is True
     assert captured["factory_jobs"] == [
@@ -233,7 +272,29 @@ async def test_drain_bullmq_failed_enqueue_marks_batch_failed(
 
     assert out["enqueued"] == 0
     assert out["failed"] == 1
-    assert [reason for _, reason in jobs.failed] == ["bullmq enqueue failed"]
+    assert [reason for _, reason in jobs.failed] == ["nope"]
+
+
+async def test_drain_bullmq_enqueue_lock_defers_batch(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=True)
+    batch = [_job(0, "story")]
+    jobs = _JobsRecorder(
+        claim_batches=[batch],
+        summary={"total": 1, "complete": False, "active": 1, "failed": 0, "ready": 0},
+    )
+    _install_drain_doubles(
+        monkeypatch,
+        jobs=jobs,
+        trigger_result={"reason": "enqueue_failed"},
+        brand=brand_stub,
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert out["failed"] == 0
+    assert jobs.deferred == [(batch[0]["id"], "enqueue_failed")]
 
 
 async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
@@ -278,3 +339,91 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     assert [jid for jid, _ in failed] == [j2]
     # Open jobs remain and mission is not complete → a follow-up drain is scheduled.
     assert len(rekicks) == 1
+    assert rekicks[0][1].get("force") is True
+
+
+async def test_drain_all_open_missions_schedules_with_force(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mid = uuid.uuid4()
+    wid = uuid.uuid4()
+    scheduled: list = []
+
+    async def _list_open(limit: int = 25):
+        return [str(mid)]
+
+    async def _workspace_for_mission(mission_id):
+        return wid
+
+    monkeypatch.setattr(pfs.jobs, "list_missions_with_open_jobs", _list_open, raising=True)
+    monkeypatch.setattr(pfs, "_workspace_for_mission", _workspace_for_mission, raising=True)
+    monkeypatch.setattr(
+        pfs,
+        "schedule_drain",
+        lambda *a, **k: scheduled.append((a, k)),
+        raising=True,
+    )
+
+    count = await pfs.drain_all_open_missions(limit=5)
+
+    assert count == 1
+    assert scheduled[0][1].get("force") is True
+
+
+async def test_factory_watchdog_reclaims_and_schedules_drains(
+    monkeypatch: pytest.MonkeyPatch, patch_settings
+) -> None:
+    patch_settings(use_bullmq_executor=True)
+    mid = str(uuid.uuid4())
+    reclaimed: list[str] = []
+
+    async def _list_any(limit: int = 50):
+        return [mid]
+
+    async def _reclaim(mission_id: uuid.UUID, *, stale_sec: int = 600):
+        reclaimed.append(str(mission_id))
+        return 1
+
+    async def _drain_all(limit: int = 25):
+        return 2
+
+    monkeypatch.setattr(
+        pfs.jobs, "list_mission_ids_with_any_open_jobs", _list_any, raising=True
+    )
+    monkeypatch.setattr(pfs.jobs, "reclaim_stale_jobs", _reclaim, raising=True)
+    monkeypatch.setattr(pfs, "drain_all_open_missions", _drain_all, raising=True)
+
+    out = await pfs.run_factory_watchdog_tick(reclaim_limit=10)
+
+    assert out == {"reclaimed": 1, "drained": 2}
+    assert reclaimed == [mid]
+
+
+class _JobsRecorderWithRekick(_JobsRecorder):
+    """Like _JobsRecorder but reports open jobs on every check so follow-up drain fires."""
+
+    async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
+        return True
+
+
+async def test_drain_follow_up_schedules_with_force(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=False, auto_feed_production_enabled=False)
+    batch = [_job(0, "story")]
+    jobs = _JobsRecorderWithRekick(
+        claim_batches=[batch, []],
+        summary={"total": 1, "complete": False, "active": 0, "failed": 0, "ready": 0},
+    )
+    rekicks = _install_drain_doubles(
+        monkeypatch,
+        jobs=jobs,
+        trigger_result={"results": [{"slotKey": "0:story", "id": "art-0"}]},
+        brand=brand_stub,
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert out["ready"] == 1
+    assert len(rekicks) == 1
+    assert rekicks[0][1].get("force") is True

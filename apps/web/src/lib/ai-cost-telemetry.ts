@@ -53,6 +53,9 @@ export interface AiCostLine {
   completionTokens?: number;
   cachedTokens?: number;
   detail?: string;
+  /** fal.ai queue request_id when known (grep + reconcile). */
+  falRequestId?: string | null;
+  falRequestIds?: string[] | null;
   /** When true, also persist to cost_ledger tables (default: true when workspaceId set). */
   persist?: boolean;
 }
@@ -126,6 +129,8 @@ export function emitAiCostLine(line: AiCostLine): void {
       completionTokens: line.completionTokens,
       cachedTokens: line.cachedTokens,
       detail: line.detail ? String(line.detail).slice(0, 160) : undefined,
+      falRequestId: line.falRequestId ?? undefined,
+      falRequestIds: line.falRequestIds?.length ? line.falRequestIds : undefined,
     };
     console.log('[ai-cost] ' + JSON.stringify(payload));
     void persistAiCostLine(line);

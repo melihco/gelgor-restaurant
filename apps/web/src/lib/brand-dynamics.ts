@@ -12,11 +12,15 @@ import { buildActiveSignals, buildStrategistSignalBlock } from '@/lib/context-si
 import type { SignalRecord, SignalType } from '@/lib/context-signals/types';
 import { resolveSectorPack } from '@/lib/context-signals/sector-packs';
 import {
+  resolveBrandOperatingProfile,
+  buildBrandOperatingProfileDirective,
+  type BrandOperatingProfile,
+} from '@/lib/brand-operating-profile';
+import {
   burnedThemeClusterIds,
   buildThemeClusterCounts,
   inferThemeClustersFromHook,
   themeClusterLabel,
-  type HeadlineThemeCluster,
 } from '@/lib/headline-theme-clusters';
 import type { DiversityMissionLike } from '@/lib/mission-diversity';
 
@@ -49,6 +53,9 @@ export interface BrandDynamicsInput {
   businessType?: string;
   brandName?: string;
   brandDescription?: string;
+  brandTone?: string;
+  visualDna?: string;
+  brandTheme?: Record<string, unknown> | null;
   location?: string;
   lat?: number;
   lng?: number;
@@ -60,6 +67,8 @@ export interface BrandDynamicsInput {
   themeClusterCounts?: Record<string, number>;
   /** Theme cluster burn threshold (default 2 uses in window). */
   themeBurnThreshold?: number;
+  /** Pre-resolved operating profile (optional). */
+  operatingProfile?: BrandOperatingProfile;
 }
 
 export interface BrandDynamicsResult {
@@ -190,6 +199,13 @@ function buildIdeationBlock(
 
 export function computeBrandDynamics(input: BrandDynamicsInput): BrandDynamicsResult {
   const date = input.date ?? new Date();
+  const operatingProfile = input.operatingProfile ?? resolveBrandOperatingProfile({
+    businessType: input.businessType,
+    brandDescription: input.brandDescription,
+    visualDna: input.visualDna,
+    brandTone: input.brandTone,
+    brandTheme: input.brandTheme,
+  });
   const signalResult = buildActiveSignals({
     date,
     region: input.region ?? 'TR',
@@ -200,6 +216,7 @@ export function computeBrandDynamics(input: BrandDynamicsInput): BrandDynamicsRe
     lat: input.lat,
     lng: input.lng,
     horizonDays: input.horizonDays,
+    operatingProfile,
   });
 
   const threshold = input.themeBurnThreshold ?? 2;
@@ -223,6 +240,7 @@ export function computeBrandDynamics(input: BrandDynamicsInput): BrandDynamicsRe
     avoidSet,
   );
 
+  const operatingBlock = buildBrandOperatingProfileDirective(operatingProfile);
   const baseSignals = buildStrategistSignalBlock(
     signalResult.signals,
     signalResult.sectorPack.label,
@@ -230,7 +248,9 @@ export function computeBrandDynamics(input: BrandDynamicsInput): BrandDynamicsRe
   );
   const mandatoryBlock = buildMandatoryAnglesBlock(mandatoryAngles);
   const avoidBlock = buildAvoidThemesBlock(avoidThemeClusters, countsObj);
-  const strategistBlock = [baseSignals, mandatoryBlock, avoidBlock].filter(Boolean).join('\n\n');
+  const strategistBlock = [baseSignals, operatingBlock, mandatoryBlock, avoidBlock]
+    .filter(Boolean)
+    .join('\n\n');
   const ideationBlock = buildIdeationBlock(mandatoryAngles, avoidThemeClusters);
 
   return {
@@ -261,6 +281,7 @@ export function rotationHeadlineForAvoidedClusters(
     };
   }
   const fallbacks: Record<string, { headline: string; useCase: string }> = {
+    night_weekend: { headline: 'Hafta sonu kahvaltı', useCase: 'daily_story' },
     dj_nightlife: { headline: 'Manzara & atmosfer', useCase: 'behind_the_scenes' },
     seafood_menu: { headline: 'Signature kokteyl', useCase: 'product_highlight' },
     full_moon: { headline: 'Hafta sonu deneyimi', useCase: 'campaign_offer' },

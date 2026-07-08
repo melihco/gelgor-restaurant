@@ -38,6 +38,27 @@ def resolve_content_ideation_iterations(package_slug: str | None = None) -> int:
     return 1 if is_starter_plan_slug(package_slug) else 2
 
 
+def resolve_content_ideation_agent_timeout_seconds(count: int) -> int:
+    """Per kickoff() run — scales with weekly slot count (16-slot agency needs >180s)."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    floor = int(settings.crewai_content_agent_max_execution_seconds)
+    scaled = 120 + max(1, int(count)) * 20
+    return min(max(floor, scaled), 720)
+
+
+def resolve_content_ideation_executor_timeout_seconds(count: int, iterations: int) -> int:
+    """asyncio.wait_for cap for full content_ideation (all iterations + quality gate)."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    per_run = resolve_content_ideation_agent_timeout_seconds(count)
+    total = per_run * max(1, int(iterations)) + 180
+    floor = int(settings.crew_execution_timeout_seconds)
+    return min(max(floor, total), 1200)
+
+
 def format_mix_label(geometry: dict[str, int]) -> str:
     return (
         f"{geometry['story']} story, {geometry['post']} post, "

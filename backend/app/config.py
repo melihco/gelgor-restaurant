@@ -223,6 +223,16 @@ class Settings(BaseSettings):
     auto_produce_bypass_limits: bool = True
     # Max missions draining concurrently per workspace (serial queue = 1)
     production_max_concurrent_per_workspace: int = 1
+    # Fair-share drain: one runnable mission per workspace, oldest wait first.
+    production_fair_share_enabled: bool = True
+    # Missions scheduled per watchdog / drain tick (was hardcoded 25).
+    production_drain_tick_limit: int = 50
+    # Operator kick / reproduce bumps open slot priority (claim_batch orders DESC).
+    production_operator_job_priority: int = 5
+    # Min seconds between force drain kicks per mission (watchdog/callback).
+    production_drain_force_min_interval_sec: float = 45.0
+    # Factory watchdog tick interval (seconds).
+    production_watchdog_interval_sec: float = 60.0
 
     # Autonomous mission cadence — when True, scheduler proposes missions based on plan quota
     autonomous_mission_cadence_enabled: bool = False

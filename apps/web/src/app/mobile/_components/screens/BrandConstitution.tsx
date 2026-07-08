@@ -63,7 +63,7 @@ import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrate
 import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
 import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
 import { isCanvaEnabledClient } from '@/lib/canva-config';
-import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl } from '@/lib/gallery-display-url';
+import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import type { VisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import { invalidateBrandContextWriteQueries } from '@/lib/query-client-bridge';
@@ -1581,6 +1581,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
   const [deleteMode, setDeleteMode] = useState(false);
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
   const [uploadAssetType, setUploadAssetType] = useState<'venue_photo' | 'client_photo' | 'before_after_image'>('venue_photo');
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
   const PAGE_SIZE = 18;
 
   const operatingProfile = companyProfile
@@ -1610,7 +1611,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     }
   })();
 
-  const galleryUrlKey = (u: string) => (upscaleCdnUrl(u).split('?')[0] ?? u);
+  const galleryUrlKey = galleryUrlIdentityKey;
 
   // Delete a single URL from reference_image_urls
   async function deleteImage(urlToRemove: string) {
@@ -1716,7 +1717,36 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     }
   }
 
-  // Upload one or more photos — R2 persist + gallery analysis on upload
+  // Poll gallery-analysis after background upload so tags appear without manual refresh.
+  async function pollGalleryAnalysisAfterUpload(expectedNew: number) {
+    const baseline = Object.keys(
+      (await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId)
+        .then((r) => (r.ok ? r.json() : {}))
+        .catch(() => ({}))) as Record<string, unknown>,
+    ).length;
+    const target = baseline + expectedNew;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      try {
+        const cacheRes = await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId);
+        if (!cacheRes.ok) continue;
+        const meta = await cacheRes.json() as Record<string, unknown>;
+        const count = Object.keys(meta).length;
+        if (count >= target) {
+          setAnalyzeStatus(`✓ ${expectedNew} fotoğraf yüklendi ve AI etiketleme tamamlandı.`);
+          await invalidateBrandContextWriteQueries(queryClient, tenantId, [['gallery-analysis', tenantId]]);
+          return;
+        }
+      } catch { /* keep polling */ }
+    }
+    setAnalyzeStatus((prev) =>
+      prev.includes('arka planda')
+        ? `✓ ${expectedNew} fotoğraf yüklendi. AI etiketleme sürüyor — birkaç dakika sonra "AI ile Analiz Et" ile kontrol edin.`
+        : prev,
+    );
+  }
+
+  // Upload one or more photos — R2 persist; vision analysis runs in background
   async function handleUpload(files: File | File[]) {
     if (uploadGate?.decision === 'blocked') {
       setAnalyzeStatus('Bu fotoğraf türü işletme politikanızda kapalı. Marka → Üretim → Galeri yönetimi açık olmalı.');
@@ -1739,6 +1769,8 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
         error?: string;
         uploaded?: number;
         analyzed?: number;
+        analysisPending?: boolean;
+        total?: number;
         urls?: string[];
         errors?: Array<{ url: string; error: string }>;
       };
@@ -1747,10 +1779,12 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
         throw new Error(data.error || `Yükleme başarısız (${res.status})`);
       }
 
-      const analyzed = data.analyzed ?? 0;
       const uploaded = data.uploaded ?? data.urls?.length ?? 0;
-      if (analyzed > 0) {
-        setAnalyzeStatus(`✓ ${uploaded} fotoğraf yüklendi, ${analyzed} tanesi AI ile analiz edildi.`);
+      const total = data.total ?? uploaded;
+      if (data.analysisPending && uploaded > 0) {
+        setAnalyzeStatus(`✓ ${uploaded} fotoğraf yüklendi (galeri: ${total}). AI etiketleme arka planda devam ediyor…`);
+      } else if ((data.analyzed ?? 0) > 0) {
+        setAnalyzeStatus(`✓ ${uploaded} fotoğraf yüklendi, ${data.analyzed} tanesi AI ile analiz edildi.`);
       } else if (uploaded > 0) {
         setAnalyzeStatus(`✓ ${uploaded} fotoğraf yüklendi; analiz sonucu boş — "AI ile Analiz Et" ile tekrar deneyin.`);
       } else {
@@ -1762,10 +1796,15 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
         tenantId,
         [['media-assets-mobile', tenantId], ['gallery-analysis', tenantId]],
       );
+
+      if (data.analysisPending && uploaded > 0) {
+        void pollGalleryAnalysisAfterUpload(uploaded);
+      }
     } catch (e) {
       setAnalyzeStatus(e instanceof Error ? e.message : 'Yükleme hatası');
     } finally {
       setUploading(false);
+      if (galleryFileInputRef.current) galleryFileInputRef.current.value = '';
     }
   }
 
@@ -1851,14 +1890,26 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
           </p>
         )}
         <label style={{
-          width: '100%', padding: '13px 14px', borderRadius: 14, cursor: 'pointer',
+          width: '100%', padding: '13px 14px', borderRadius: 14, cursor: uploading ? 'default' : 'pointer',
+          opacity: uploading ? 0.6 : 1,
           background: 'rgba(255,255,255,0.03)', border: `0.5px solid ${t.separator}`,
           color: t.textSecondary, fontSize: 13, fontWeight: 600,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          pointerEvents: uploading ? 'none' : 'auto',
         }}>
           {uploading ? '⏳ Yükleniyor…' : '📷 Yeni Fotoğraf Yükle'}
-          <input type="file" accept="image/*" multiple style={{ display: 'none' }}
-            onChange={e => { const fs = Array.from(e.target.files ?? []); if (fs.length > 0) handleUpload(fs); }} />
+          <input
+            ref={galleryFileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            disabled={uploading}
+            style={{ display: 'none' }}
+            onChange={e => {
+              const fs = Array.from(e.target.files ?? []);
+              if (fs.length > 0) void handleUpload(fs);
+            }}
+          />
         </label>
         <p style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', marginTop: 6 }}>
           JPG, PNG, WebP · max 10MB · yükleme sonrası otomatik AI analiz
@@ -2887,7 +2938,7 @@ export function BrandConstitution() {
             }}>
               {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
               ) : (
                 <span style={{ fontSize: 17, fontWeight: 700, color: t.accent }}>
                   {(brandNameDisplay || 'B').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
@@ -3113,7 +3164,7 @@ export function BrandConstitution() {
                   {brandImages.slice(0, 6).map((url, i) => (
                     <div key={i} style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6' }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                      <img src={resolveGalleryImageSrc(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                     </div>
                   ))}
                 </div>

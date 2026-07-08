@@ -68,6 +68,24 @@ export function normalizeExternalPhotoUrl(url: string | null | undefined): strin
   return upscaleCdnUrl(trimmed);
 }
 
+/** Stable dedupe key — /api/media uses R2 object key, not bare `/api/media`. */
+export function galleryUrlIdentityKey(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('/api/media') || lower.includes('/api/media?')) {
+    const q = trimmed.indexOf('?');
+    if (q !== -1) {
+      const key = new URLSearchParams(trimmed.slice(q + 1)).get('key');
+      if (key) return decodeURIComponent(key).split('?')[0]!.toLowerCase();
+    }
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return upscaleCdnUrl(trimmed).split('?')[0]!.toLowerCase();
+  }
+  return trimmed.split('?')[0]!.toLowerCase();
+}
+
 /** Deduped, full-resolution URLs for gallery grids. */
 export function prepareGalleryDisplayUrls(urls: string[]): string[] {
   const seen = new Set<string>();
@@ -77,7 +95,7 @@ export function prepareGalleryDisplayUrls(urls: string[]): string[] {
     const trimmed = raw.trim();
     if (!trimmed.startsWith('http') && !trimmed.startsWith('/api/media')) continue;
     const display = trimmed.startsWith('http') ? upscaleCdnUrl(trimmed) : trimmed;
-    const key = display.split('?')[0] ?? display;
+    const key = galleryUrlIdentityKey(display);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(display);

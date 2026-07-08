@@ -836,6 +836,12 @@ function buildSearchable(meta: GalleryPhotoMeta): string {
   ].join(' ').toLowerCase();
 }
 
+function isGenericFallbackGalleryDescription(description: string): boolean {
+  const text = description.toLowerCase();
+  return text.includes('metadata fallback analysis for a brand gallery image')
+    || text.includes('url tokens suggest:');
+}
+
 function scorePhotoForContent(
   meta: GalleryPhotoMeta,
   input: MatchPhotoInput,
@@ -870,6 +876,19 @@ function scorePhotoForContent(
   const contentTagsText = (meta.contentTags ?? []).join(' ').toLowerCase();
   const captionWords = tokenize(caption);
   const headlineWords = tokenize(headlineText);
+
+  if (
+    descriptionText
+    && isGenericFallbackGalleryDescription(descriptionText)
+    && (
+      headlineWords.length >= 2
+      || captionWords.length >= 5
+      || /\bdj|party|dance|crowd|cocktail|team|chef|menu|burger|pizza|pasta|fish|balık|event|concert|sunset|spa|hair|nail|lash\b/i.test(text)
+    )
+  ) {
+    score -= 18;
+    reasons.push('generic fallback meta');
+  }
 
   let descHits = 0;
   let tagHits = 0;

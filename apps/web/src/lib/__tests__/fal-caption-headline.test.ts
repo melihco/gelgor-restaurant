@@ -17,6 +17,7 @@ import {
   buildFalLogoPlacementContract,
   truncateAtWordBoundary,
   shortenFalOverlayForImageRetry,
+  areFalOverlayTextsRedundant,
 } from '../fal-caption-headline';
 
 describe('correctTurkishSpelling', () => {
@@ -233,6 +234,25 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
       resolveFalProductionOverlayHeadline('Highlight the exclusivity and', [], 'feed_post'),
     ).toBe('');
   });
+
+  it('rejects truncated Turkish participle fragments like "Kartta yeni gelen"', () => {
+    expect(isIncompleteOverlayPhrase('Kartta yeni gelen')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Kartta yeni gelen')).toBe(false);
+    expect(
+      resolveFalProductionOverlayHeadline(
+        'Kartta yeni gelen',
+        ['Gel Gör serpme kahvaltısı ile güne başlayın'],
+        'reel',
+      ),
+    ).not.toBe('Kartta yeni gelen');
+    expect(
+      resolveFalProductionOverlayHeadline(
+        'Kartta yeni gelen',
+        ['Gel Gör serpme kahvaltısı ile güne başlayın'],
+        'reel',
+      ).length,
+    ).toBeGreaterThan(0);
+  });
 });
 
 describe('buildFalOnCanvasTextContract', () => {
@@ -275,5 +295,16 @@ describe('buildFalLogoPlacementContract', () => {
 
   it('returns empty string when no logo', () => {
     expect(buildFalLogoPlacementContract({ logoProvided: false })).toBe('');
+  });
+});
+
+describe('areFalOverlayTextsRedundant', () => {
+  it('flags near-duplicate reservation hooks', () => {
+    expect(areFalOverlayTextsRedundant('Masani ayır', 'Masani ayırt')).toBe(true);
+    expect(areFalOverlayTextsRedundant('Masanızı ayırtın', 'Yerini ayırt')).toBe(true);
+  });
+
+  it('allows distinct headline and subtitle', () => {
+    expect(areFalOverlayTextsRedundant('Lezzetli Akşamlar', 'Rezervasyon için DM')).toBe(false);
   });
 });

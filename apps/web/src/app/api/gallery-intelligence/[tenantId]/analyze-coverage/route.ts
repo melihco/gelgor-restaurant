@@ -13,6 +13,7 @@ import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import { parseStringOrArray, filterUsablePhotos } from '@/lib/brand-readiness';
+import { galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import type { GalleryPhotoAnalysis } from '@/app/api/analyze-gallery/route';
 
 export const runtime = 'nodejs';
@@ -24,7 +25,7 @@ interface BrandContextRaw {
 }
 
 function normalizeKey(url: string): string {
-  return url.split('?')[0] ?? url;
+  return galleryUrlIdentityKey(url);
 }
 
 export async function POST(

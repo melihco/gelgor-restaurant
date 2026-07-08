@@ -60,6 +60,21 @@ export const HEADLINE_THEME_CLUSTERS: HeadlineThemeCluster[] = [
     patterns: [/brunch/i, /kahvaltı/i, /pazar\s*brunch/i],
   },
   {
+    id: 'night_weekend',
+    label: 'Hafta sonu gece / akşam yoğunluğu',
+    patterns: [
+      /cumartesi\s*gece/i,
+      /cuma\s*akşam/i,
+      /cuma\s*aksam/i,
+      /friday\s*night/i,
+      /saturday\s*night/i,
+      /gece\s*yoğun/i,
+      /gece\s*yogun/i,
+      /akşam\s*yoğun/i,
+      /aksam\s*yogun/i,
+    ],
+  },
+  {
     id: 'reservation_cta',
     label: 'Rezervasyon çağrısı',
     patterns: [

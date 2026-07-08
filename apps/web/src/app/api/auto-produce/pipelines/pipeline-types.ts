@@ -34,6 +34,8 @@ export interface SlotProductionState {
   brandDesignTemplateName?: string | null;
   /** Cost accrued by handlers this slot; the loop adds it to its running estimate. */
   costDelta: number;
+  /** Specific Fal/pipeline failure — surfaced on production_jobs.last_error (not generic no_artifact). */
+  pipelineFailureReason?: string | null;
 }
 
 /**

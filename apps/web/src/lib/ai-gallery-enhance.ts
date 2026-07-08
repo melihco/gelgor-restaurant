@@ -22,6 +22,10 @@ import {
 } from '@/lib/openai-error-utils';
 import type { ProductSceneBrief } from '@/lib/production-stack';
 import { sceneBriefForEnhanceApi } from '@/lib/production-stack';
+import {
+  buildVenueFingerprintPromptBlock,
+  type VenueGalleryFingerprint,
+} from '@/lib/venue-gallery-fingerprint';
 
 export {
   resolveAiVisualProductionStandard,
@@ -131,6 +135,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
   /** Mission-level brief — passed to enhance API to skip duplicate Crew scene-brief */
   sceneBrief?: ProductSceneBrief | null;
   missionId?: string;
+  venueFingerprint?: VenueGalleryFingerprint | null;
 }): Promise<string[]> {
   const urls = opts.photoUrls
     .filter((u) => typeof u === 'string' && u.trim().length > 0)
@@ -155,6 +160,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
         cta: opts.cta,
       })
     : '';
+  const venueFingerprintBlock = buildVenueFingerprintPromptBlock(opts.venueFingerprint);
   const adaptiveBlock = standard?.adaptiveScene
     ? buildAdaptiveScenePromptBlock({
         mode: resolveAdaptiveSceneMode(
@@ -165,9 +171,10 @@ export async function enhanceGalleryPhotosForIdea(opts: {
         caption: opts.caption ?? opts.contextCaption,
         headline: opts.headline ?? '',
         businessType: opts.businessType,
+        venueFingerprintBlock,
       })
     : '';
-  const sceneBlock = [postScene, adaptiveBlock, opts.directorSceneExtra?.trim()]
+  const sceneBlock = [postScene, adaptiveBlock, venueFingerprintBlock, opts.directorSceneExtra?.trim()]
     .filter(Boolean)
     .join('\n\n');
   const directorCaption = standard
@@ -194,6 +201,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
     referenceImageUrls: opts.referenceImageUrls ?? [],
     brandIdentityBlock: identityBlock || undefined,
     postSceneBlock: sceneBlock || undefined,
+    venueFingerprintBlock: venueFingerprintBlock || undefined,
     visualSubject,
     useBrandIdentity: standard?.useBrandIdentity ?? true,
     briefDrivesScene: standard?.briefDrivesScene ?? true,

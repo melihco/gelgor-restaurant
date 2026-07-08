@@ -21,5 +21,8 @@ export async function GET(
   if (limit)  qs.set('limit', limit);
   if (hub)    qs.set('hub', hub);
   const query = qs.toString() ? `?${qs}` : '';
-  return proxyToCrewBackend(`/api/v1/missions/${workspaceId}${query}`);
+  // Hub list can wait behind a saturated Python event loop; allow extra headroom vs default 15s.
+  return proxyToCrewBackend(`/api/v1/missions/${workspaceId}${query}`, {
+    timeoutMs: 45_000,
+  });
 }

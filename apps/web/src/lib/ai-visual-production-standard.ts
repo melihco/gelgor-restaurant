@@ -208,17 +208,23 @@ export function buildAdaptiveScenePromptBlock(input: {
   caption: string;
   headline: string;
   businessType: string;
+  /** Gallery-derived venue fingerprint — prevents inventing absent environments. */
+  venueFingerprintBlock?: string;
 }): string {
   const brief = [input.headline, input.caption].filter(Boolean).join(' — ').slice(0, 500);
+  const fingerprintNote = input.venueFingerprintBlock?.trim()
+    ? `\n${input.venueFingerprintBlock.trim()}`
+    : '';
   const lines = [
-    'ADAPTIVE SCENE (Mission Hub — caption drives environment; photo must feel authentically shot in-scene):',
+    'ADAPTIVE SCENE (Mission Hub — caption drives mood; venue identity stays gallery-authentic):',
   ];
   if (input.mode === 'venue_context') {
     lines.push(
-      `Place the subject in a real operational context that matches: "${brief}".`,
-      'Use warehouse, route, fleet, salon, kitchen, or venue cues from the caption — not a generic stock backdrop.',
-      'Lighting and perspective must feel like an on-location photograph taken for this post.',
-      'If the source photo is a weak match, recompose atmosphere around the caption while keeping brand-authentic details.',
+      `Adjust lighting, color grade, and atmosphere for: "${brief}".`,
+      'Keep the SAME physical venue visible in the reference photo — architecture, trees, furniture, layout.',
+      'Do NOT replace the location with a stock waterfront, generic restaurant, or different city.',
+      'If the reference photo is a weak caption match, improve mood through light and grade — not by teleporting to a new environment.',
+      fingerprintNote,
     );
   } else if (input.mode === 'digital_ui_context') {
     lines.push(
@@ -227,6 +233,7 @@ export function buildAdaptiveScenePromptBlock(input: {
       'Use clean device mockups, UI panels, or editorial office-with-laptop compositions.',
       'No invented gibberish signage, no fake barber shop exterior, no logistics fleet unless caption explicitly says so.',
       'Preserve any real UI/screenshot pixels; only upgrade lighting and framing around digital product context.',
+      fingerprintNote,
     );
   } else if (input.mode === 'product_showcase') {
     lines.push(

@@ -586,7 +586,15 @@ def _run_single_ideation(
     mission_id: str | None = None,
 ) -> tuple[str, int]:
     """Single ideation run — returns (raw_output, tokens_used)."""
-    content_agent = create_content_agent(brand, llm=llm, for_ideation=True)
+    from app.services.package_weekly_geometry import resolve_content_ideation_agent_timeout_seconds
+
+    agent_timeout = resolve_content_ideation_agent_timeout_seconds(count)
+    content_agent = create_content_agent(
+        brand,
+        llm=llm,
+        for_ideation=True,
+        max_execution_seconds=agent_timeout,
+    )
     ideation_task = create_content_ideation_task(
         content_agent, brand, count, time_period,
         brief=brief, content_pillars=content_pillars, autonomy_mode=autonomy_mode,

@@ -35,6 +35,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     '@resvg/resvg-js',
     'satori',
+    '@aws-sdk/client-s3',
+    '@aws-sdk/s3-request-presigner',
     // Remotion server-side renderer: uses native Chrome/Puppeteer binaries
     '@remotion/bundler',
     '@remotion/renderer',

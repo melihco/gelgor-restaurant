@@ -2,6 +2,9 @@
  * Customer-facing copy for mobile — hides internal service names from end users.
  */
 
+import type { MissionProductionJobsSummary } from '@/lib/api-client';
+import { missionProductionStatusCopy } from '@/lib/mission-production-status';
+
 export function humanizeMobileServiceError(raw: string, status?: number): string {
   const msg = String(raw ?? '').trim();
   const lower = msg.toLowerCase();
@@ -65,21 +68,35 @@ export function missionFeedStatusLabel(opts: {
   hasPreviewContent: boolean;
   rate: number;
   feedProductionActive?: boolean;
+  factorySummary?: Pick<
+    MissionProductionJobsSummary,
+    'total' | 'ready' | 'phase' | 'blockReason' | 'estimatedWaitMinutes' | 'inFlight' | 'queued'
+  > | null;
 }): { title: string; subtitle?: string } {
-  const { publishReady, productionTarget, hasPreviewContent, rate, feedProductionActive } = opts;
-  if (rate < 80) {
-    return { title: `Planınız %${rate} tamamlandı`, subtitle: 'AI ekibiniz çalışmaya devam ediyor.' };
+  const { publishReady, productionTarget, hasPreviewContent, rate, feedProductionActive, factorySummary } = opts;
+
+  if (factorySummary && (factorySummary.total ?? 0) > 0) {
+    const copy = missionProductionStatusCopy(factorySummary, {
+      manifestReady: publishReady,
+      manifestRequired: productionTarget,
+    });
+    return { title: copy.title, subtitle: copy.subtitle };
   }
-  if (publishReady >= productionTarget && hasPreviewContent) {
+
+  const { publishReady: pr, productionTarget: pt, hasPreviewContent: hpc, rate: r, feedProductionActive: fpa } = opts;
+  if (r < 80) {
+    return { title: `Planınız %${r} tamamlandı`, subtitle: 'AI ekibiniz çalışmaya devam ediyor.' };
+  }
+  if (pr >= pt && hpc) {
     return { title: 'Haftalık içerik paketiniz hazır', subtitle: 'Onay bekleyen gönderiler İçerik sekmesinde.' };
   }
-  if (publishReady > 0) {
+  if (pr > 0) {
     return {
-      title: `${publishReady}/${productionTarget} içerik onaya hazır`,
+      title: `${pr}/${pt} içerik onaya hazır`,
       subtitle: 'Kalan gönderiler birkaç dakika içinde eklenecek.',
     };
   }
-  if (feedProductionActive) {
+  if (fpa) {
     return {
       title: 'Görseller üretiliyor',
       subtitle: 'Gönderiler hazır oldukça İçerik sekmesinde görünür.',

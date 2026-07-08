@@ -9,7 +9,7 @@
  * R2 is S3-compatible — we use @aws-sdk/client-s3.
  */
 
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { mediaUrlForKey } from './media-url';
 import { fetchExternalImageBuffer } from './external-image-fetch';
@@ -142,4 +142,38 @@ export async function deleteFromR2(key: string): Promise<void> {
 
 export function isR2Configured(): boolean {
   return serverConfig.r2.configured;
+}
+
+/** Tenant-scoped image keys already in R2 — production fallback when brand site is down. */
+export async function listTenantImageStorageUrls(
+  tenantId: string,
+  opts?: { maxKeys?: number },
+): Promise<string[]> {
+  if (!isR2Configured() || !tenantId.trim()) return [];
+
+  const maxKeys = Math.min(Math.max(opts?.maxKeys ?? 120, 1), 500);
+  const safe = tenantId.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 40);
+  const prefix = `${safe}/image/`;
+  const client = getClient();
+  const urls: string[] = [];
+  let token: string | undefined;
+
+  while (urls.length < maxKeys) {
+    const out = await client.send(new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: prefix,
+      MaxKeys: Math.min(100, maxKeys - urls.length),
+      ContinuationToken: token,
+    }));
+    for (const obj of out.Contents ?? []) {
+      const key = obj.Key;
+      if (!key || !/\.(jpe?g|png|webp|gif)$/i.test(key)) continue;
+      urls.push(mediaUrlForKey(key, PUBLIC_URL));
+    }
+    if (!out.IsTruncated) break;
+    token = out.NextContinuationToken;
+  }
+
+  urls.sort((a, b) => b.localeCompare(a));
+  return urls.slice(0, maxKeys);
 }

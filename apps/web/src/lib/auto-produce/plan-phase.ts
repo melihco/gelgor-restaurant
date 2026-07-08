@@ -164,6 +164,7 @@ export async function runAutoProducePlanPhase(
   }
 
   const maxIdeas = budget.remaining;
+  const planIdeaPool = missionId ? ideas : ideas.slice(0, maxIdeas);
   const headlineHistory = await fetchRecentHeadlineHistory(workspaceId, {
     days: 14,
     excludeMissionId: missionId ?? undefined,
@@ -176,7 +177,7 @@ export async function runAutoProducePlanPhase(
     themeClusterCounts: Object.fromEntries(headlineHistory.themeClusterCounts),
   });
   const rawSlice = applyCrossMissionHeadlineDedupe(
-    ideas.slice(0, maxIdeas) as Record<string, unknown>[],
+    planIdeaPool as Record<string, unknown>[],
     headlineHistory,
     { mandatoryAngles: brandDynamics.mandatoryAngles },
   );

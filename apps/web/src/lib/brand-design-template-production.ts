@@ -284,8 +284,8 @@ export async function alignRemotionPosterWithFalTemplate(input: {
 
   return {
     matched: binding.matched,
-    primaryColor: binding.brandColors?.primary ?? input.brandColors.primary,
-    accentColor: binding.brandColors?.accent ?? input.brandColors.accent,
+    primaryColor: input.brandColors.primary,
+    accentColor: input.brandColors.accent,
     contentIntent: mapDesignTemplateTypeToContentIntent(binding.matched.templateType),
     sceneBrief:
       `Align with fal brand template "${binding.matched.templateName}" (${binding.matched.templateType}). ` +

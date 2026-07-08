@@ -22,7 +22,7 @@ describe('visual-overlay-policy (multi-tenant)', () => {
   });
 
   it('designed_post allows overlay layers', () => {
-    const a = assignment({ slot_role: 'designed_post', pipeline: 'fal_designed_post' });
+    const a = assignment({ slot_role: 'designed_post', pipeline: 'fal_design' });
     expect(isGalleryOnlyVisualPolicy(a, {})).toBe(false);
   });
 

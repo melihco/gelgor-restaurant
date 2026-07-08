@@ -22,7 +22,7 @@ function artifact(partial: Partial<OutputArtifact> & { metadata?: Record<string,
       pipeline: 'runway_reel',
       ...meta,
     },
-  } as OutputArtifact;
+  } as unknown as OutputArtifact;
 }
 
 describe('getProductionDedupeKey', () => {

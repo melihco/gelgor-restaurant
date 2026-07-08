@@ -108,7 +108,51 @@ function inferPositionFromLayoutPattern(layoutPattern: string): FalLogoPosition 
 }
 
 function channelFallback(channel: 'feed_post' | 'reel' | 'story'): FalLogoPosition {
-  return channel === 'reel' || channel === 'story' ? 'top_right' : 'bottom_right';
+  return channel === 'reel' || channel === 'story' ? 'bottom_right' : 'bottom_right';
+}
+
+/** Reels/stories with upper headline stacks need logo away from the type zone. */
+function adjustLogoPlacementForHeadlineZone(input: {
+  placement: ResolvedFalLogoPlacement;
+  channel: 'feed_post' | 'reel' | 'story';
+  layoutPattern?: string | null;
+  typographyMode?: string | null;
+}): ResolvedFalLogoPlacement {
+  const { placement, channel } = input;
+  if (channel !== 'reel' && channel !== 'story') return placement;
+
+  const layoutText = `${input.layoutPattern ?? ''} ${input.typographyMode ?? ''}`.toLowerCase();
+  const upperHeadline = /oversized|upper|stack|masthead|full_bleed|bold_display|campaign_hero|poster|headline|typography.*hero|editorial_display|layered_graphics/.test(
+    layoutText,
+  );
+  if (!upperHeadline || !placement.position) return placement;
+
+  const topAnchors: FalLogoPosition[] = ['top_center', 'top_left', 'top_right'];
+  if (!topAnchors.includes(placement.position)) return placement;
+
+  return {
+    ...placement,
+    position: 'bottom_right',
+    zoneHint: placement.zoneHint
+      ? `${placement.zoneHint} Keep logo bottom-right — headline occupies upper/middle frame.`
+      : 'Bottom-right above Instagram UI safe zone — never over the headline stack.',
+  };
+}
+
+function finalizeFalLogoPlacement(
+  placement: ResolvedFalLogoPlacement,
+  input: {
+    channel: 'feed_post' | 'reel' | 'story';
+    layoutPattern?: string | null;
+    typographyMode?: string | null;
+  },
+): ResolvedFalLogoPlacement {
+  return adjustLogoPlacementForHeadlineZone({
+    placement,
+    channel: input.channel,
+    layoutPattern: input.layoutPattern,
+    typographyMode: input.typographyMode,
+  });
 }
 
 export function resolveArchetypeLogoPosition(
@@ -124,54 +168,66 @@ export function resolveFalLogoPlacement(input: {
   agentLogoZone?: unknown;
   canvaArchetypeId?: string | null;
   layoutPattern?: string | null;
+  typographyMode?: string | null;
   brandLogoPosition?: FalLogoPosition | null;
   channel?: 'feed_post' | 'reel' | 'story';
 }): ResolvedFalLogoPlacement {
   const channel = input.channel ?? 'feed_post';
+  const layoutCtx = {
+    channel,
+    layoutPattern: input.layoutPattern,
+    typographyMode: input.typographyMode,
+  };
   const agentPosition = parseFalLogoPosition(input.agentLogoPosition);
   const agentZone = str(input.agentLogoZone);
 
   if (agentPosition) {
-    return {
+    return finalizeFalLogoPlacement({
       position: agentPosition,
       zoneHint: agentZone || null,
       source: 'agent',
-    };
+    }, layoutCtx);
   }
 
   if (agentZone.length >= 8) {
-    return {
+    return finalizeFalLogoPlacement({
       position: parseFalLogoPosition(agentZone) ?? inferPositionFromLayoutPattern(agentZone),
       zoneHint: agentZone,
       source: 'agent',
-    };
+    }, layoutCtx);
   }
 
   const fromArchetype = resolveArchetypeLogoPosition(input.canvaArchetypeId);
   if (fromArchetype) {
-    return { position: fromArchetype, zoneHint: null, source: 'archetype' };
+    return finalizeFalLogoPlacement(
+      { position: fromArchetype, zoneHint: null, source: 'archetype' },
+      layoutCtx,
+    );
   }
 
   const fromLayout = input.layoutPattern
     ? inferPositionFromLayoutPattern(input.layoutPattern)
     : null;
   if (fromLayout) {
-    return { position: fromLayout, zoneHint: null, source: 'archetype' };
+    return finalizeFalLogoPlacement(
+      { position: fromLayout, zoneHint: null, source: 'archetype' },
+      layoutCtx,
+    );
   }
 
   if (input.brandLogoPosition) {
-    return {
+    return finalizeFalLogoPlacement({
       position: input.brandLogoPosition,
       zoneHint: null,
       source: 'brand_default',
-    };
+    }, layoutCtx);
   }
 
-  return {
+  return finalizeFalLogoPlacement({
     position: channelFallback(channel),
     zoneHint: null,
     source: 'channel_fallback',
-  };
+  }, layoutCtx);
 }
 
 export function formatFalLogoPlacementDirective(

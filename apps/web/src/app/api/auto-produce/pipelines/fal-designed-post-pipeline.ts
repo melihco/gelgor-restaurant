@@ -18,7 +18,7 @@ import {
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
-import { resolveFalBrandInput } from '@/lib/fal-brand-input';
+import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
   pickTemplateReferenceUrls,
@@ -29,7 +29,7 @@ import {
 } from '@/lib/brand-design-template-production';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
-import { resolveFalProductionOverlayHeadline } from '@/lib/fal-caption-headline';
+import { resolveFalProductionOverlayHeadline, areFalOverlayTextsRedundant } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import { validateTypographyText } from '@/lib/typography-text-validation';
@@ -88,6 +88,7 @@ export interface FalDesignedPostResult {
   falDesignEngine: string | null;
   /** Added to the running cost estimate. */
   costDelta: number;
+  failureReason?: string;
 }
 
 async function reviewDesignedPostOutput(
@@ -137,7 +138,10 @@ export async function produceFalDesignedPost(
         sector: input.sector,
         brandVibe: input.brandVibe,
       });
-    const brandColors = binding?.brandColors ?? input.brandColors;
+    const brandColors = resolveFalProductionBrandColors(
+      input.brandColors,
+      binding?.brandColors,
+    );
     const brandDirectives = binding?.brandDirectives ?? input.brandDirectives;
     const logoUrl = binding?.logoUrl ?? input.logoUrl;
     const referenceUrl =
@@ -151,12 +155,16 @@ export async function produceFalDesignedPost(
 
     // Primary engine — GPT-image design grounded on the real gallery photo.
     if (referenceImageUrls.length > 0 && referenceImageUrls.every(isUsableGalleryPhotoUrl)) {
+      const rawSubtitle = input.subtitle || input.cta || undefined;
+      const dedupedSubtitle = rawSubtitle && !areFalOverlayTextsRedundant(input.headline, rawSubtitle)
+        ? rawSubtitle
+        : undefined;
       const designCardPrompt = (aspectRatio === '9:16'
         ? buildDesignedVideoReelDesignCardPrompt
         : buildDesignedPostDesignCardPrompt)({
         vibe: designVibe,
         headline: input.headline,
-        subtitle: input.subtitle || input.cta || undefined,
+        subtitle: dedupedSubtitle,
         caption: input.caption,
         sceneHint: input.sceneHint,
         brandColors,
@@ -294,10 +302,16 @@ export async function produceFalDesignedPost(
       `grafiker=${falGrafikerScore ?? '—'} "${input.headline.slice(0, 40)}"`,
     );
   } catch (designErr) {
-    console.warn(
-      '[auto-produce] [fal-design] designed post failed:',
-      designErr instanceof Error ? designErr.message : designErr,
-    );
+    const msg = designErr instanceof Error ? designErr.message : String(designErr);
+    console.warn('[auto-produce] [fal-design] designed post failed:', msg);
+    return {
+      imageUrl: null,
+      falGrafikerScore: null,
+      falGrafikerPass: false,
+      falDesignEngine: null,
+      costDelta: 0,
+      failureReason: `fal_design: ${msg}`.slice(0, 480),
+    };
   }
 
   return { imageUrl, falGrafikerScore, falGrafikerPass, falDesignEngine, costDelta };
@@ -360,7 +374,10 @@ export const falDesignHandler: ProductionPipelineHandler = {
       caption: inputs.caption,
       cta: inputs.cta,
       brandName: inputs.resolvedBrandName,
-      brandColors: templateBinding.brandColors ?? falBrand.brandColors,
+      brandColors: resolveFalProductionBrandColors(
+        falBrand.brandColors,
+        templateBinding.brandColors,
+      ),
       brandVibe: falBrand.vibe,
       backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
       sector: inputs.brandBusinessType,
@@ -391,6 +408,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
       state.falGrafikerPass = designed.falGrafikerPass;
       state.falDesignEngine = designed.falDesignEngine;
       state.costDelta += designed.costDelta;
+      if (designed.failureReason && !designed.imageUrl) {
+        state.pipelineFailureReason = designed.failureReason;
+      }
       if (templateBinding.matched) {
         state.brandDesignTemplateId = templateBinding.matched.id;
         state.brandDesignTemplateType = templateBinding.matched.templateType;

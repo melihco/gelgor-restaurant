@@ -8,10 +8,13 @@ export type PostTypeBucket = 'feed' | 'story' | 'reel' | 'carousel';
 
 export interface UsedGalleryUsage {
   byType: Record<PostTypeBucket, string[]>;
+  /** Real cross-mission usage frequency per normalized gallery URL. */
+  countsByUrl?: Record<string, number>;
 }
 
 const EMPTY_USAGE: UsedGalleryUsage = {
   byType: { feed: [], story: [], reel: [], carousel: [] },
+  countsByUrl: {},
 };
 
 /** Per prior-use penalty in semantic ranking — higher spreads gallery diversity. */
@@ -21,6 +24,14 @@ export const GALLERY_USAGE_COUNT_PENALTY = 12;
 export function buildGlobalGalleryUsageCounts(
   usage: UsedGalleryUsage,
 ): ReadonlyMap<string, number> {
+  if (usage.countsByUrl && Object.keys(usage.countsByUrl).length > 0) {
+    return new Map(
+      Object.entries(usage.countsByUrl).map(([url, count]) => [
+        normalizeGalleryUrl(url),
+        Number.isFinite(count) ? Number(count) : 0,
+      ]),
+    );
+  }
   const counts = new Map<string, number>();
   for (const bucket of Object.values(usage.byType)) {
     for (const url of bucket) {
@@ -159,12 +170,15 @@ export function buildGalleryUsageFromArtifacts(
     reel: new Set(),
     carousel: new Set(),
   };
+  const countsByUrl = new Map<string, number>();
 
   for (const artifact of artifacts) {
     const extracted = extractGalleryUrlsFromArtifact(artifact);
     if (!extracted) continue;
     for (const url of extracted.urls) {
-      byType[extracted.postType].add(url);
+      const base = normalizeGalleryUrl(url);
+      byType[extracted.postType].add(base);
+      countsByUrl.set(base, (countsByUrl.get(base) ?? 0) + 1);
     }
   }
 
@@ -175,6 +189,7 @@ export function buildGalleryUsageFromArtifacts(
       reel: [...byType.reel],
       carousel: [...byType.carousel],
     },
+    countsByUrl: Object.fromEntries(countsByUrl.entries()),
   };
 }
 
@@ -284,10 +299,10 @@ export async function fetchUsedGalleryImages(
       },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return { ...EMPTY_USAGE, byType: { ...EMPTY_USAGE.byType } };
+    if (!res.ok) return { ...EMPTY_USAGE, byType: { ...EMPTY_USAGE.byType }, countsByUrl: {} };
     const artifacts = (await res.json()) as Record<string, unknown>[];
     return buildGalleryUsageFromArtifacts(Array.isArray(artifacts) ? artifacts : []);
   } catch {
-    return { byType: { feed: [], story: [], reel: [], carousel: [] } };
+    return { byType: { feed: [], story: [], reel: [], carousel: [] }, countsByUrl: {} };
   }
 }

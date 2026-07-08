@@ -57,6 +57,7 @@ EXPECTED_ROUTES: frozenset[str] = frozenset(
         "POST /{workspace_id}/design-director",
         "POST /{workspace_id}/enrich-brand-kit-from-website",
         "POST /{workspace_id}/gallery-analysis",
+        "POST /{workspace_id}/gallery/append",
         "POST /{workspace_id}/gallery-match-stats",
         "POST /{workspace_id}/industry-intelligence",
         "POST /{workspace_id}/llm-config",
@@ -100,4 +101,4 @@ def test_brand_context_route_surface_is_stable() -> None:
 
 
 def test_brand_context_route_count() -> None:
-    assert len(_actual_routes()) == 64
+    assert len(_actual_routes()) == 65

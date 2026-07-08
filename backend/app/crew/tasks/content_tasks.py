@@ -576,6 +576,7 @@ def create_content_ideation_task(
         description = brand_theme_block + "\n\n---\n\n" + description
 
     return Task(
+        name="Haftalık içerik fikirleri",
         description=description,
         expected_output=(
             f"A JSON array containing EXACTLY {count} distinct content concept objects "

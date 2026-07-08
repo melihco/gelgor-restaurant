@@ -121,10 +121,15 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
   for (const chunk of chunks) {
     if (isVisionAnalysisDescription(chunk)) continue;
     if (isMeaninglessBrandEchoHeadline(chunk, brandName)) continue;
+    if (isIncompleteOverlayPhrase(chunk)) continue;
     const clause = chunk.split(/[,—–-]/)[0]?.trim() ?? chunk;
     const words = clause.split(/\s+/).filter(Boolean);
     const hook = words.length > 6 ? words.slice(0, 5).join(' ') : clause;
-    if (hook.length >= 8 && !isMeaninglessBrandEchoHeadline(hook, brandName)) {
+    if (
+      hook.length >= 8
+      && !isMeaninglessBrandEchoHeadline(hook, brandName)
+      && !isIncompleteOverlayPhrase(hook)
+    ) {
       return enforceDisplayHeadline(hook, maxLen);
     }
   }
@@ -134,6 +139,7 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
     firstClause.length >= 10
     && !isVisionAnalysisDescription(firstClause)
     && !isMeaninglessBrandEchoHeadline(firstClause, brandName)
+    && !isIncompleteOverlayPhrase(firstClause)
   ) {
     return enforceDisplayHeadline(firstClause, maxLen);
   }

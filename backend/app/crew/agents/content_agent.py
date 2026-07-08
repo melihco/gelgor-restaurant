@@ -33,6 +33,7 @@ def create_content_agent(
     *,
     for_ideation: bool = False,
     for_calendar: bool = False,
+    max_execution_seconds: int | None = None,
 ) -> Agent:
     """
     Build the Content Agent with the appropriate tool set.
@@ -134,7 +135,7 @@ def create_content_agent(
         allow_delegation=False,
         max_iter=max_iter,
         memory=False,
-        max_execution_time=settings.crewai_content_agent_max_execution_seconds,
+        max_execution_time=max_execution_seconds or settings.crewai_content_agent_max_execution_seconds,
     )
 
     if llm:

@@ -122,6 +122,7 @@ export interface GptImageEnhanceForIdeaInput {
   maxPhotos?: number;
   missionId?: string;
   enhancePolicy?: Omit<GptEnhancePolicyInput, 'visualStandard' | 'contentKind' | 'assignment'>;
+  venueFingerprint?: import('@/lib/venue-gallery-fingerprint').VenueGalleryFingerprint | null;
 }
 
 /** gpt-image-2 gallery enhance — Marka Detayı + Scene Brief ile. */
@@ -209,6 +210,7 @@ export async function runGptImageEnhanceForIdea(
     directorSceneExtra: directorSceneExtra || undefined,
     sceneBrief: input.sceneBrief,
     missionId: input.missionId,
+    venueFingerprint: input.venueFingerprint,
   });
 
   if (enhancedUrls.length) {

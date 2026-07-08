@@ -71,7 +71,7 @@ export const GallerySeriesStory: React.FC<StoryProps> = ({
   const subOp = stableTextOpacity(frame, 30, 46);
 
   const charCount = headline.length;
-  const fontSize = headlineSize(headline, headlineScale ?? 1.0);
+  const fontSize = headlineSize(headline, (headlineScale ?? 1.0) * 1.08);
   const subShort = subtitle.length > 110 ? `${subtitle.slice(0, 107)}…` : subtitle;
 
   const renderPhotoGrid = () => {
@@ -201,8 +201,8 @@ export const GallerySeriesStory: React.FC<StoryProps> = ({
 
         {subShort ? (
           <span style={{
-            fontFamily: body, fontWeight: 400, fontSize: 22, lineHeight: 1.4,
-            color: 'rgba(255,255,255,0.72)', marginTop: 14, opacity: subOp,
+            fontFamily: body, fontWeight: 400, fontSize: 28, lineHeight: 1.45,
+            color: 'rgba(255,255,255,0.82)', marginTop: 14, opacity: subOp,
             maxWidth: '92%', display: 'block',
           }}>
             {subShort}

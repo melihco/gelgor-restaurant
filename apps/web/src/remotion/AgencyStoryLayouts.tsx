@@ -453,7 +453,7 @@ export function MosaicPinterestLayout({
   const p2 = photos[2] ?? p1;
   const gridH = Math.round(height * 0.52);
   const bandH = Math.round(height * 0.28);
-  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 0.88);
+  const fontSize = headlineSize(headline, (headlineScale ?? spec.heroScale) * 1.05);
   const headOp = stableTextOpacity(frame, 22, 40);
 
   return (
@@ -503,7 +503,7 @@ export function MosaicPinterestLayout({
           />
         </div>
         {subtitle ? (
-          <span style={{ fontFamily: fonts.body, fontSize: 26, color: 'rgba(255,255,255,0.78)', marginTop: 8, opacity: headOp }}>
+          <span style={{ fontFamily: fonts.body, fontSize: 30, color: 'rgba(255,255,255,0.88)', marginTop: 10, opacity: headOp, lineHeight: 1.45 }}>
             {subtitle.slice(0, 120)}
           </span>
         ) : null}

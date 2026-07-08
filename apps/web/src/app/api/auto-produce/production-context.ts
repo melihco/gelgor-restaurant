@@ -294,7 +294,9 @@ export async function fetchProductionContext(
   const brandLogoUrl = resolveProductionLogoUrl([
     brandSnapshot?.gallery?.find((item) => item.kind === 'logo')?.url,
     typeof raw.logo_url === 'string' ? raw.logo_url : String(raw.logo_url ?? ''),
-  ]);
+  ], {
+    websiteUrl: String(raw.website_url ?? ''),
+  });
   const rawBrandName = String(
     overrides?.brandName
     ?? brandSnapshot?.brandName

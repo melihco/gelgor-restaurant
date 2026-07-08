@@ -102,6 +102,25 @@ function describeSlotTypography(input: {
   return undefined;
 }
 
+/** Live tenant palette always wins over stale onboarding template snapshots. */
+export function resolveFalProductionBrandColors(
+  live: { primary: string; accent: string },
+  _templateSnapshot?: { primary: string; accent: string } | null,
+): { primary: string; accent: string } {
+  return {
+    primary: live.primary,
+    accent: live.accent,
+  };
+}
+
+function buildBrandColorLockDirective(colors: { primary: string; accent: string }): string {
+  return (
+    `BRAND COLOR LOCK (mandatory): primary ${colors.primary}, accent ${colors.accent}. ` +
+    `These exact hex values MUST dominate panels, gradients, typography color blocks, and decorative accents. ` +
+    `Never substitute sector presets, Canva archetype defaults, template preview colors, or generic gold/yellow/amber unless accent is explicitly ${colors.accent}.`
+  );
+}
+
 function buildTemplateColorDirective(input: {
   templateId?: string;
   posterTemplateId?: string;
@@ -300,8 +319,14 @@ export function resolveFalBrandInput(input: {
     .filter(Boolean)
     .slice(0, 8);
 
+  const brandColors = {
+    primary: input.tokens.primaryColor,
+    accent: explicitAccent || input.tokens.accentColor,
+  };
+
   const promptDirectives = [
     ...(input.designBriefDirectives ?? []),
+    buildBrandColorLockDirective(brandColors),
     buildCaptionSceneDirective(input.caption),
     describeSlotTypography({
       mode: slotTypography?.fontMode,
@@ -322,10 +347,7 @@ export function resolveFalBrandInput(input: {
   ].filter((item): item is string => Boolean(item));
 
   return {
-    brandColors: {
-      primary: input.tokens.primaryColor,
-      accent: explicitAccent || input.tokens.accentColor,
-    },
+    brandColors,
     vibe,
     backgroundStyle,
     sceneHint: input.preferExplicitSceneHint

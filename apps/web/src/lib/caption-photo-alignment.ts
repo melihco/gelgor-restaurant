@@ -29,6 +29,25 @@ const DRINK_PHOTO_HINTS = [
   'kokteyl', 'içecek', 'icecek', 'glass', 'bottle', 'spirits',
 ];
 
+const NIGHTLIFE_CAPTION_HINTS = [
+  'dj', 'dj night', 'dj nights', 'party', 'beach party', 'nightlife', 'night',
+  'dance', 'dancing', 'crowd', 'live music', 'concert', 'festival', 'opening night',
+  'weekend nights', 'gece', 'geceleri', 'parti', 'dans', 'kalabalık', 'canlı müzik',
+  'etkinlik', 'organizasyon', 'sahne', 'hafta sonu',
+];
+
+const NIGHTLIFE_PHOTO_HINTS = [
+  'dj', 'stage', 'dance', 'dancing', 'crowd', 'concert', 'performance', 'party',
+  'night', 'lights', 'neon', 'festival', 'event', 'celebration', 'people',
+  'group', 'live music', 'sahne', 'dans', 'kalabalık', 'parti', 'gece',
+];
+
+const PEOPLE_EVENT_PHOTO_HINTS = [
+  'people', 'person', 'crowd', 'group', 'guest', 'guests', 'audience',
+  'dancing', 'dance', 'celebration', 'event', 'party', 'festival',
+  'insan', 'kalabalık', 'misafir', 'dans',
+];
+
 const FOOD_PHOTO_HINTS = [
   'food', 'dish', 'plate', 'meal', 'seafood', 'fish', 'cuisine', 'menu', 'chef',
   'kitchen', 'yemek', 'tabak', 'balık', 'deniz', 'platter', 'serving', 'dessert',
@@ -83,9 +102,12 @@ export function captionPhotoConflictPenalty(
   const caption = captionText.toLowerCase();
   const photo = photoSearchable.toLowerCase();
   const captionFood = textHits(caption, FOOD_CAPTION_HINTS);
+  const captionNightlife = textHits(caption, NIGHTLIFE_CAPTION_HINTS);
   const photoFood = textHits(photo, FOOD_PHOTO_HINTS);
   const photoEvent = textHits(photo, EVENT_PHOTO_HINTS);
   const photoDrink = textHits(photo, DRINK_PHOTO_HINTS);
+  const photoNightlife = textHits(photo, NIGHTLIFE_PHOTO_HINTS);
+  const photoPeopleEvent = textHits(photo, PEOPLE_EVENT_PHOTO_HINTS);
 
   if (captionFood >= 2 && photoEvent >= 1 && photoFood === 0) {
     return 48;
@@ -102,6 +124,19 @@ export function captionPhotoConflictPenalty(
     && photoFood === 0;
   if (captionFood >= 2 && emptyVenue) {
     return 22;
+  }
+
+  // Nightlife / DJ / party captions should not land on food-only hero shots.
+  const foodDominantPhoto =
+    photoFood >= 2
+    || (photoFood >= 1 && photoDrink >= 1);
+  const nightlifeProofMissing =
+    photoNightlife === 0 && photoPeopleEvent === 0 && photoEvent === 0;
+  if (captionNightlife >= 2 && foodDominantPhoto && nightlifeProofMissing) {
+    return 56;
+  }
+  if (captionNightlife >= 3 && photoDrink >= 1 && nightlifeProofMissing) {
+    return 34;
   }
 
   // ── Beauty sub-service cross-service conflict ────────────────────────────

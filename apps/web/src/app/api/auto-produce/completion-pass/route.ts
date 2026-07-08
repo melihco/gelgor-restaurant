@@ -17,7 +17,6 @@ import {
   assertMissionBelongsToWorkspace,
   assertWorkspaceMatchesRequestTenant,
 } from '@/lib/tenant-production-guard';
-import { parseCalendarPlansFromMissionNodes } from '@/lib/calendar-slot-backfill';
 import { mergeCalendarPlansForProduction } from '@/lib/mission-production-plan';
 import type { FeedArtDirectorReport } from '@/lib/weekly-publish-package';
 import type { MissionProductionManifest } from '@/lib/mission-production-manifest';
@@ -140,5 +139,3 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await releaseAllProductionLocks(workspaceId, missionId);
   }
 }
-
-export { parseCalendarPlansFromMissionNodes };

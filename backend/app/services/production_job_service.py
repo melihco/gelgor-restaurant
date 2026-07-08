@@ -31,6 +31,10 @@ _BACKOFF_BASE_SEC = 30
 _BACKOFF_CAP_SEC = 900  # 15 min
 # Stale claim reclaim: a claimed/running job whose worker died becomes claimable again.
 _STALE_CLAIM_SEC = 1800  # 30 min — Remotion renders routinely take 5-15 min
+# Proactive reclaim at each factory drain pass (shorter than _STALE_CLAIM_SEC).
+_FACTORY_DRAIN_STALE_RECLAIM_SEC = 600  # 10 min
+# BullMQ watchdog: reclaim running rows when worker callback never arrives (~max auto-produce).
+_BULLMQ_WATCHDOG_STALE_SEC = 660  # 11 min — above Next maxDuration 600s
 
 _WORKER_ID = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
 
@@ -321,7 +325,7 @@ async def mark_skipped(job_id: str | uuid.UUID, reason: str = "") -> None:
         await db.commit()
 
 
-async def mission_job_summary(mission_id: uuid.UUID) -> dict[str, Any]:
+async def mission_job_summary(mission_id: uuid.UUID, *, enrich: bool = True) -> dict[str, Any]:
     """Per-mission rollup: total/ready/active/failed counts + per-slot rows."""
     factory = _get_session_factory()
     async with factory() as db:
@@ -342,13 +346,17 @@ async def mission_job_summary(mission_id: uuid.UUID) -> dict[str, Any]:
     total = len(rows)
     ready = sum(1 for r in rows if r["status"] == "ready")
     failed = sum(1 for r in rows if r["status"] in ("failed", "exhausted"))
-    active = sum(1 for r in rows if r["status"] in ("pending", "claimed", "running"))
-    return {
+    in_flight = sum(1 for r in rows if r["status"] in ("claimed", "running"))
+    queued = sum(1 for r in rows if r["status"] in ("pending", "failed"))
+    active = in_flight + queued
+    summary = {
         "mission_id": str(mission_id),
         "total": total,
         "ready": ready,
         "failed": failed,
         "active": active,
+        "inFlight": in_flight,
+        "queued": queued,
         "complete": total > 0 and ready >= total,
         "slots": [
             {
@@ -361,10 +369,49 @@ async def mission_job_summary(mission_id: uuid.UUID) -> dict[str, Any]:
                 "maxAttempts": r["max_attempts"],
                 "artifactId": r.get("artifact_id"),
                 "lastError": r.get("last_error"),
+                "updatedAt": str(r["updated_at"]) if r.get("updated_at") else None,
             }
             for r in rows
         ],
     }
+    if enrich:
+        from app.services.production_status import enrich_mission_job_summary
+
+        return await enrich_mission_job_summary(summary)
+    return summary
+
+
+async def boost_mission_job_priority(
+    mission_id: uuid.UUID,
+    *,
+    priority: int = 5,
+) -> int:
+    """Raise priority on open slots so operator kicks jump the fair-share queue."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET priority = GREATEST(COALESCE(priority, 0), :priority),
+                    updated_at = now()
+                WHERE mission_id = CAST(:mission_id AS UUID)
+                  AND status IN ('pending', 'failed')
+                RETURNING id
+                """
+            ),
+            {"mission_id": str(mission_id), "priority": int(priority)},
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info(
+            "production_jobs.priority_boost",
+            mission_id=str(mission_id),
+            priority=priority,
+            slots=len(rows),
+        )
+    return len(rows)
 
 
 async def reclaim_stale_jobs(
@@ -486,6 +533,17 @@ async def requeue_exhausted(
 
 async def list_missions_with_open_jobs(limit: int = 50) -> list[str]:
     """Distinct mission ids that still have runnable (or stale-claimed) jobs."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if settings.production_fair_share_enabled:
+        return await list_missions_with_open_jobs_fair_share(limit=limit)
+
+    stale_sec = (
+        _BULLMQ_WATCHDOG_STALE_SEC
+        if settings.use_bullmq_executor
+        else _STALE_CLAIM_SEC
+    )
     factory = _get_session_factory()
     async with factory() as db:
         res = await db.execute(
@@ -498,7 +556,72 @@ async def list_missions_with_open_jobs(limit: int = 50) -> list[str]:
                 LIMIT :limit
                 """
             ),
-            {"stale_sec": _STALE_CLAIM_SEC, "limit": int(limit)},
+            {"stale_sec": stale_sec, "limit": int(limit)},
+        )
+        return [str(r[0]) for r in res.fetchall()]
+
+
+async def list_missions_with_open_jobs_fair_share(limit: int = 50) -> list[str]:
+    """One runnable mission per workspace, ordered by oldest waiting slot (fair-share)."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    stale_sec = (
+        _BULLMQ_WATCHDOG_STALE_SEC
+        if settings.use_bullmq_executor
+        else _STALE_CLAIM_SEC
+    )
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                WITH runnable AS (
+                    SELECT mission_id, workspace_id,
+                           MIN(COALESCE(run_after, updated_at)) AS oldest_wait,
+                           MAX(COALESCE(priority, 0)) AS max_priority
+                    FROM production_jobs
+                    WHERE (
+                        status IN ('pending', 'failed') AND run_after <= now()
+                    ) OR (
+                        status IN ('claimed', 'running')
+                        AND claimed_at < now() - make_interval(secs => :stale_sec)
+                    )
+                    GROUP BY mission_id, workspace_id
+                ),
+                ranked AS (
+                    SELECT mission_id, workspace_id, oldest_wait, max_priority,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY workspace_id
+                               ORDER BY max_priority DESC, oldest_wait ASC
+                           ) AS ws_rank
+                    FROM runnable
+                )
+                SELECT mission_id::text
+                FROM ranked
+                WHERE ws_rank = 1
+                ORDER BY max_priority DESC, oldest_wait ASC
+                LIMIT :limit
+                """
+            ),
+            {"stale_sec": stale_sec, "limit": int(limit)},
+        )
+        return [str(r[0]) for r in res.fetchall()]
+
+
+async def list_mission_ids_with_any_open_jobs(limit: int = 50) -> list[str]:
+    """Mission ids with any non-terminal job (for watchdog reclaim sweep)."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                SELECT DISTINCT mission_id FROM production_jobs
+                WHERE status IN ('pending', 'failed', 'claimed', 'running')
+                LIMIT :limit
+                """
+            ),
+            {"limit": int(limit)},
         )
         return [str(r[0]) for r in res.fetchall()]
 

@@ -302,6 +302,14 @@ const DANGLING_TAIL_RX =
 const INCOMPLETE_MODIFIER_TAIL_RX =
   /\b(just|only|even|still|already|more|so|very|really|quite|about|almost|nearly|now|then|here|there|yet|also|too)\s*$/iu;
 
+/** Turkish present/past participles without object — "kartta yeni gelen", "menüde sunulan". */
+const INCOMPLETE_TR_PARTICIPLE_TAIL_RX =
+  /\b(gelen|giden|olan|olacak|yapılan|sunulan|başlayan|bekleyen|edilen|paylaşılan|deneyebileceğiniz|keşfedebileceğiniz)\s*$/iu;
+
+/** Locative + adjective fragment with no noun — "kartta yeni", "menüde özel". */
+const INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX =
+  /\b(kartta|menüde|masada|bahçede|sofrada|rafta|vitrinde|menümüzde|tabağımızda)\s+.+\s+(yeni|taze|özel|günlük|mevsim|farklı|benzersiz|taptaze)\s*$/iu;
+
 /**
  * Strip prompt-instruction fragments and decorative quotes from text destined
  * for on-image typography. Does NOT rewrite meaning — only removes leakage.
@@ -369,6 +377,8 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (!clean || clean.length < 4) return true;
   if (DANGLING_TAIL_RX.test(text.trim())) return true;
   if (INCOMPLETE_MODIFIER_TAIL_RX.test(text.trim())) return true;
+  if (INCOMPLETE_TR_PARTICIPLE_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
@@ -663,6 +673,7 @@ export function resolveFalSubtitle(input: {
     const sLower = s.toLowerCase();
     if (sLower === headlineLower) continue;
     if (headlineLower.includes(sLower) || sLower.includes(headlineLower)) continue;
+    if (areFalOverlayTextsRedundant(input.headline, s)) continue;
     if (brandLower && sLower.startsWith(brandLower)) continue;
 
     const clean = s.replace(/[!.]+$/, '').trim();
@@ -679,10 +690,81 @@ export function resolveFalSubtitle(input: {
     const ctaClean = sanitizeFalOverlayText(input.cta.trim());
     if (ctaClean.length >= 6 && ctaClean.length <= maxLen
       && !ctaClean.toLowerCase().includes(headlineLower)
+      && !areFalOverlayTextsRedundant(input.headline, ctaClean)
       && isMeaningfulFalOverlayText(ctaClean)) {
       return ctaClean;
     }
   }
 
   return undefined;
+}
+
+function normalizeOverlayCompare(text: string): string {
+  return text
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ç/g, 'c')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function overlayEditDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const matrix: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
+  for (let i = 0; i < rows; i += 1) matrix[i]![0] = i;
+  for (let j = 0; j < cols; j += 1) matrix[0]![j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i]![j] = Math.min(
+        matrix[i - 1]![j]! + 1,
+        matrix[i]![j - 1]! + 1,
+        matrix[i - 1]![j - 1]! + cost,
+      );
+    }
+  }
+  return matrix[rows - 1]![cols - 1]!;
+}
+
+const RESERVATION_OVERLAY_RX = /\b(rezerv\w*|ayir\w*|masa\w*|yerini|book|reserve|table)\b/i;
+
+/**
+ * Detect when headline + subtitle/CTA would repeat the same reservation hook
+ * (e.g. "Masani ayır" + "Masani ayırt") on the same canvas.
+ */
+export function areFalOverlayTextsRedundant(a: string, b: string): boolean {
+  const left = normalizeOverlayCompare(sanitizeFalOverlayText(a));
+  const right = normalizeOverlayCompare(sanitizeFalOverlayText(b));
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.includes(right) || right.includes(left)) return true;
+
+  if (RESERVATION_OVERLAY_RX.test(left) && RESERVATION_OVERLAY_RX.test(right)) {
+    const leftWords = new Set(left.split(/\s+/).filter((w) => w.length > 3));
+    const shared = right.split(/\s+/).filter((w) => w.length > 3 && leftWords.has(w));
+    if (shared.length >= 1) return true;
+
+    const reservationStem = (text: string) => {
+      const match = text.match(/\b(ayirt\w*|ayir\w*|rezerv\w*)\b/);
+      return match ? match[0].slice(0, 5) : null;
+    };
+    const leftStem = reservationStem(left);
+    const rightStem = reservationStem(right);
+    if (leftStem && rightStem && leftStem === rightStem) return true;
+  }
+
+  if (left.length <= 28 && right.length <= 28) {
+    return overlayEditDistance(left, right) <= 3;
+  }
+
+  return false;
 }

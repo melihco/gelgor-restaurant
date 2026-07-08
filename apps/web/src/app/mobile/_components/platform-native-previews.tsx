@@ -154,6 +154,10 @@ export function artifactToNativeContent(
     }
   }
   if (videoUrl && poster) imageUrl = poster;
+  if (videoUrl && poster && !poster.includes('/api/media')) {
+    // Prefer R2 video thumb over dead brand-site poster URLs.
+    imageUrl = null;
+  }
   if (carouselUrls.length >= 2) imageUrl = carouselUrls[0] ?? imageUrl;
 
   const hashtags = normalizeHashtags(c.hashtags ?? m.hashtags ?? resolved?.hashtags ?? [], 10);

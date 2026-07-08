@@ -74,8 +74,18 @@ export interface MissionProductionJobsSummary {
   ready: number;
   failed: number;
   active: number;
+  /** Slots actively claimed or running in the worker */
+  inFlight?: number;
+  /** Pending / failed slots waiting for the next drain pass */
+  queued?: number;
   complete: boolean;
   slots: MissionProductionJobSlot[];
+  /** Hub status — from Python production_status.enrich_mission_job_summary */
+  phase?: 'idle' | 'queued' | 'producing' | 'partial' | 'complete' | 'blocked';
+  blockReason?: 'platform_queue' | 'brand_in_flight' | 'budget' | 'provider_quota' | 'unknown';
+  platformQueueDepth?: number | null;
+  estimatedWaitMinutes?: number | null;
+  lastActivityAt?: string | null;
 }
 
 export class ApiRequestError extends Error {

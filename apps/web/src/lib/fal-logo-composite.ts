@@ -261,7 +261,7 @@ export async function compositeOfficialLogoOnVideoUrl(input: {
       return { videoUrl, logoApplied: false };
     }
 
-    const key = generateStorageKey(workspaceId, 'reels', 'mp4');
+    const key = generateStorageKey(workspaceId, 'reel', 'mp4');
     const uploaded = await uploadToR2(outBuffer, key, 'video/mp4');
     console.log(
       `[fal-logo-composite] Official logo burned onto video (${compositorPlacement}, channel=${channel})`,

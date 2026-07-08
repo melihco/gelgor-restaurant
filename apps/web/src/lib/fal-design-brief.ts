@@ -324,6 +324,7 @@ export function resolveFalDesignBrief(input: ResolveFalDesignPromptContextInput)
     agentLogoZone: merged.logoZone,
     canvaArchetypeId: merged.canvaArchetypeId,
     layoutPattern: merged.layoutPattern,
+    typographyMode: merged.typographyMode,
     brandLogoPosition: input.brandLogoPosition ?? null,
     channel: briefChannel,
   });

@@ -572,7 +572,7 @@ async def requeue_mission_factory_jobs(
     await _load_mission_or_404(db, workspace_id, mission_id)
     requeued = await pj.requeue_exhausted(mission_id)
     if requeued or await pj.has_open_jobs(mission_id):
-        schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True)
+        schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
     summary = await pj.mission_job_summary(mission_id)
     return {"requeued": requeued, **summary}
 
@@ -767,6 +767,7 @@ async def restart_workspace_mission(
             error_message=None,
             started_at=None,
             completed_at=None,
+            retry_count=0,
         )
     )
 
@@ -786,6 +787,7 @@ async def restart_workspace_mission(
             error_message=None,
             started_at=None,
             completed_at=None,
+            retry_count=0,
         )
     )
 

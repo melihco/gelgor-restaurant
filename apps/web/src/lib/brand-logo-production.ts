@@ -2,6 +2,14 @@
  * Production / Remotion logo selection — operator profile wins over scraped site assets.
  */
 
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 /** Next.js image optimizer + legacy product marks are not reliable in headless Remotion. */
 export function isUnreliableScrapedLogoUrl(url: string | null | undefined): boolean {
   const u = String(url ?? '').trim().toLowerCase();
@@ -14,9 +22,39 @@ export function isUnreliableScrapedLogoUrl(url: string | null | undefined): bool
   );
 }
 
-export function resolveProductionLogoUrl(candidates: Array<string | null | undefined>): string {
+/**
+ * When onboarding scraped a logo from a legacy/staging domain but website_url points
+ * elsewhere (e.g. gelgorrestaurant.com vs gelgor.vercel.app), rewrite to the live site.
+ */
+export function reconcileLogoUrlWithWebsite(
+  logoUrl: string | null | undefined,
+  websiteUrl: string | null | undefined,
+): string {
+  const logo = String(logoUrl ?? '').trim();
+  const website = String(websiteUrl ?? '').trim();
+  if (!logo.startsWith('http') || !website.startsWith('http')) return logo;
+
+  const logoHost = hostnameOf(logo);
+  const siteHost = hostnameOf(website);
+  if (!logoHost || !siteHost || logoHost === siteHost) return logo;
+
+  try {
+    const logoParsed = new URL(logo);
+    const siteParsed = new URL(website);
+    return `${siteParsed.origin}${logoParsed.pathname}${logoParsed.search}`;
+  } catch {
+    return logo;
+  }
+}
+
+export function resolveProductionLogoUrl(
+  candidates: Array<string | null | undefined>,
+  opts?: { websiteUrl?: string | null },
+): string {
+  const websiteUrl = opts?.websiteUrl ?? null;
   const list = candidates.map((c) => String(c ?? '').trim()).filter(Boolean);
-  for (const url of list) {
+  for (const raw of list) {
+    const url = reconcileLogoUrlWithWebsite(raw, websiteUrl);
     if (url.startsWith('/api/media') || url.includes('r2.dev') || url.includes('cloudflarestorage.com')) {
       return url;
     }

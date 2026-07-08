@@ -32,6 +32,7 @@ export type GalleryEnhanceRequest = {
   /** Reuse mission Crew brief — skips duplicate scene-brief LLM in enhance route */
   prebuiltSceneBrief?: Record<string, unknown>;
   missionId?: string;
+  venueFingerprintBlock?: string;
 };
 
 export const GPT_IMAGE_ENHANCE_COST_USD = 0.21;

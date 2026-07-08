@@ -51,6 +51,8 @@ const h = vi.hoisted(() => ({
     grafikerMaxRetries: 2,
     captionAwareHeadline: true,
   })),
+  resolveFalProductionOverlayHeadline: vi.fn((_headline: string) => _headline),
+  validateTypographyText: vi.fn(async () => true),
 }));
 
 vi.mock('@/lib/server-config', () => ({ serverConfig: h.serverConfig }));
@@ -67,13 +69,19 @@ vi.mock('@/lib/fal-story-motion', () => ({
   isPlayableVideoUrl: (url: string | null | undefined) =>
     Boolean(url && /\.(mp4|mov|webm)(\?|$)/i.test(String(url).trim())),
 }));
-vi.mock('@/lib/fal-brand-input', () => ({ resolveFalBrandInput: h.resolveFalBrandInput }));
+vi.mock('@/lib/fal-brand-input', () => ({
+  resolveFalBrandInput: h.resolveFalBrandInput,
+  resolveFalProductionBrandColors: (
+    live: { primary: string; accent: string },
+  ) => live,
+}));
 vi.mock('@/lib/media-url', () => ({ isUsableGalleryPhotoUrl: h.isUsableGalleryPhotoUrl }));
 vi.mock('@/lib/brand-design-template-production', () => ({
   bindBrandTemplateForFalProduction: h.bindBrandTemplateForFalProduction,
   pickTemplateReferenceUrls: h.pickTemplateReferenceUrls,
   templateStyleReferenceUrls: h.templateStyleReferenceUrls,
   resolveFalTemplateLockOptions: h.resolveFalTemplateLockOptions,
+  assertTemplateStyleReference: () => {},
 }));
 vi.mock('@/lib/brand-design-template-matcher', () => ({
   matchDesignTemplateToSlot: h.matchDesignTemplateToSlot,
@@ -82,6 +90,13 @@ vi.mock('@/lib/brand-design-template-matcher', () => ({
 vi.mock('@/app/api/auto-produce/handlers/image-generators', () => ({
   generateDesignedPostImage: h.generateDesignedPostImage,
   generateProductShowcaseImage: h.generateProductShowcaseImage,
+}));
+vi.mock('@/lib/fal-caption-headline', () => ({
+  resolveFalProductionOverlayHeadline: h.resolveFalProductionOverlayHeadline,
+  areFalOverlayTextsRedundant: () => false,
+}));
+vi.mock('@/lib/typography-text-validation', () => ({
+  validateTypographyText: h.validateTypographyText,
 }));
 
 import { falVideoHandler } from '../fal-video-pipeline';

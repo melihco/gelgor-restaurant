@@ -23,6 +23,8 @@ import {
 const FOOD_PHOTO = 'https://cdn.example.com/gallery/food-plate-01.jpg';
 const GYM_PHOTO = 'https://cdn.example.com/gallery/gym-equipment-02.jpg';
 const VENUE_PHOTO = 'https://cdn.example.com/gallery/interior-terrace-03.jpg';
+const NIGHTLIFE_PHOTO = 'https://cdn.example.com/gallery/dj-crowd-night-04.jpg';
+const FALLBACK_PHOTO = 'https://cdn.example.com/gallery/fallback-generic-05.jpg';
 
 function restaurantGallery(): Record<string, GalleryPhotoMeta> {
   return {
@@ -46,6 +48,33 @@ function restaurantGallery(): Record<string, GalleryPhotoMeta> {
       mood: 'warm',
       bestFor: ['venue_photo', 'feed_post'],
       suggestedAssetType: 'venue_photo',
+    },
+  };
+}
+
+function beachClubGallery(): Record<string, GalleryPhotoMeta> {
+  return {
+    [FOOD_PHOTO]: {
+      contentTags: ['food', 'burger', 'fries', 'plate', 'drink'],
+      description: 'Burger and fries served on a plate beside summer drinks on a table.',
+      mood: 'warm',
+      bestFor: ['food_showcase', 'feed_post'],
+      suggestedAssetType: 'food_photo',
+    },
+    [NIGHTLIFE_PHOTO]: {
+      contentTags: ['dj', 'crowd', 'dance', 'party', 'beach', 'night'],
+      description: 'A crowded beach party at night with a DJ booth, dancing guests and stage lights.',
+      mood: 'energetic',
+      bestFor: ['event_announcement', 'story_format', 'feed_post'],
+      suggestedAssetType: 'event_photo',
+      hasPeople: true,
+    },
+    [FALLBACK_PHOTO]: {
+      contentTags: ['galeri', 'brand gallery', 'website image'],
+      description: 'Metadata fallback analysis for a brand gallery image. URL tokens suggest: galeri. A real vision pass should replace this entry when provider quota is available.',
+      mood: 'warm',
+      bestFor: ['feed_post'],
+      suggestedAssetType: 'brand_background',
     },
   };
 }
@@ -188,6 +217,35 @@ describe('matchPhotoToContent — picks the semantically aligned photo', () => {
       { bestEffort: true },
     );
     expect(result).toBeNull();
+  });
+
+  it('prefers a real nightlife photo over a food shot for DJ-night captions', () => {
+    const result = matchPhotoToContent(
+      {
+        caption: 'Create excitement about our upcoming DJ nights with visuals of a lively beach atmosphere, showcasing people dancing and enjoying cocktails.',
+        headline: 'Weekend DJ Nights',
+        contentType: 'instagram_reel',
+        businessType: 'beach_club',
+      },
+      [FOOD_PHOTO, NIGHTLIFE_PHOTO],
+      beachClubGallery(),
+    );
+    expect(result?.url).toBe(NIGHTLIFE_PHOTO);
+    expect(result && result.score >= STRONG_MATCH_SCORE).toBe(true);
+  });
+
+  it('penalizes generic fallback gallery metadata when a more specific analyzed match exists', () => {
+    const result = matchPhotoToContent(
+      {
+        caption: 'Weekend DJ nights with dancing guests and beach party energy.',
+        headline: 'Weekend DJ Nights',
+        contentType: 'instagram_reel',
+        businessType: 'beach_club',
+      },
+      [FALLBACK_PHOTO, NIGHTLIFE_PHOTO],
+      beachClubGallery(),
+    );
+    expect(result?.url).toBe(NIGHTLIFE_PHOTO);
   });
 });
 

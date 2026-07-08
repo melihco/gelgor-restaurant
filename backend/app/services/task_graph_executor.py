@@ -72,10 +72,84 @@ logger = structlog.get_logger()
 
 MAX_NODE_RETRIES = 3  # 4 total attempts (0 + 3 retries) — LLM calls can be flaky
 
+
+def _sanitize_node_error(error_msg: str, task_type: str | None = None) -> str:
+    """Store operator-readable errors — CrewAI dumps the full task prompt otherwise."""
+    msg = (error_msg or "").strip()
+    if not msg:
+        return "Bilinmeyen görev hatası"
+
+    lower = msg.lower()
+    if "execution timed out after" in lower:
+        return msg[:500]
+    if "maximum execution time" in lower or "max execution time" in lower:
+        if task_type == "content_ideation":
+            return (
+                "İçerik fikirleri üretimi zaman aşımına uğradı "
+                "(büyük haftalık paket — otomatik yeniden denenecek)."
+            )
+        return msg[:500]
+
+    if msg.startswith("Task '") or msg.startswith("The task '"):
+        if task_type == "content_ideation":
+            return "İçerik fikirleri üretilemedi (LLM görevi tamamlanamadı)."
+        return "Görev tamamlanamadı (LLM hatası)."
+
+    return msg[:500]
+
 # Nodes with a live asyncio task in this process — used to detect DB "running" orphans
 # after uvicorn reload or crash (in-memory task gone, DB row still running).
 _active_node_executions: set[uuid.UUID] = set()
 ORPHAN_NODE_MIN_ELAPSED_SECONDS = 45
+
+
+def _node_stale_threshold_seconds(
+    task_type: str,
+    input_data: dict | None,
+    *,
+    is_orphan: bool,
+) -> float:
+    """Per-task stale window — content_ideation can run 10+ min; 45s orphan kills it."""
+    settings = get_settings()
+    if task_type == "content_ideation":
+        from app.services.package_weekly_geometry import (
+            resolve_content_ideation_executor_timeout_seconds,
+        )
+
+        count = int((input_data or {}).get("count") or 10)
+        iterations = int((input_data or {}).get("iterations") or 1)
+        full = float(
+            resolve_content_ideation_executor_timeout_seconds(count, iterations)
+        )
+        return full * (1.15 if is_orphan else 1.5)
+    if task_type in ("content_calendar", "visual_design_cards", "feed_cohesion_review"):
+        base = float(settings.crew_execution_timeout_seconds) * 2.0
+        return base * (1.0 if is_orphan else 1.5)
+    if is_orphan:
+        return float(ORPHAN_NODE_MIN_ELAPSED_SECONDS)
+    return float(settings.crew_execution_timeout_seconds) * 1.5
+
+
+async def _requeue_orphaned_running_nodes_on_startup() -> int:
+    """Reset DB ``running`` rows after process restart — no retry budget burn."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            update(MissionTaskNode)
+            .where(MissionTaskNode.status == TaskNodeStatus.RUNNING.value)
+            .execution_options(synchronize_session=False)
+            .values(
+                status=TaskNodeStatus.PENDING.value,
+                started_at=None,
+                error_message="[Startup recovery] Re-queued after process restart.",
+            )
+            .returning(MissionTaskNode.id)
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info("startup_requeue_orphan_running_nodes", count=len(rows))
+    return len(rows)
 
 # Debounced Feed ensure — coalesce feed_cohesion / mission-complete / calendar triggers.
 _scheduled_ensure_tasks: dict[str, asyncio.Task] = {}
@@ -154,10 +228,55 @@ async def _check_and_complete_mission(
     skipped   = sum(1 for row in rows if row.status == TaskNodeStatus.SKIPPED.value)
 
     r = await db.execute(
-        select(Mission.performance_summary).where(Mission.id == mission_id)
+        select(Mission.performance_summary, Mission.status).where(Mission.id == mission_id)
     )
     prev_row = r.one_or_none()
     prev = dict(prev_row[0] or {}) if prev_row else {}
+    current_status = prev_row[1] if prev_row else None
+
+    # Defer mission completion while the durable production factory still has open slots.
+    from app.services import production_job_service as jobs
+
+    job_summary = await jobs.mission_job_summary(mission_id)
+    if job_summary["total"] > 0 and not job_summary.get("complete"):
+        production_state = "draining" if job_summary["active"] > 0 else "queued"
+        if int(job_summary.get("failed") or 0) >= job_summary["total"]:
+            production_state = "exhausted"
+
+        _TRANSIENT_KEYS = {"production_status", "feed_production_lock"}
+        summary = {k: v for k, v in prev.items() if k not in _TRANSIENT_KEYS}
+        summary.update({
+            "total_nodes":     total,
+            "completed_nodes": completed,
+            "failed_nodes":    failed,
+            "skipped_nodes":   skipped,
+            "completion_rate": round(completed / total, 2) if total else 0,
+            "production_state": production_state,
+            "slots_ready":     job_summary["ready"],
+            "slots_total":     job_summary["total"],
+        })
+
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(
+                status=MissionStatus.IN_FLIGHT.value,
+                completed_at=None,
+                performance_summary=summary,
+            )
+        )
+        await db.commit()
+
+        logger.info(
+            "mission_completion_deferred_factory",
+            mission_id=str(mission_id),
+            slots_ready=job_summary["ready"],
+            slots_total=job_summary["total"],
+            active=job_summary["active"],
+            prior_status=current_status,
+        )
+        return False
 
     # Faz 4.3 — completion must MERGE, not replace. Previously this wiped the whole
     # summary (keeping only production_error), losing ai_cost_breakdown, last_feed_produce,
@@ -193,6 +312,24 @@ async def _check_and_complete_mission(
         failed=failed,
         skipped=skipped,
     )
+    return True
+
+
+async def try_complete_mission_when_factory_done(mission_id: uuid.UUID) -> bool:
+    """Mark mission completed when DAG nodes and production factory are both done."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        done = await _check_and_complete_mission(db, mission_id)
+        if not done:
+            return False
+        r = await db.execute(
+            select(Mission.workspace_id).where(Mission.id == mission_id)
+        )
+        row = r.first()
+        workspace_id = row[0] if row else None
+
+    if workspace_id:
+        _schedule_ensure_mission_feed(mission_id, workspace_id, delay_sec=10)
     return True
 
 
@@ -533,12 +670,17 @@ async def _execute_node_body(
             effective_input["iterations"] = resolve_content_ideation_iterations(
                 resolved_subscription_plan_slug,
             )
+        node_retry = await _get_retry_count(factory, node_id)
+        if node_retry >= 1:
+            # After a timeout, drop to single iteration so the node can complete.
+            effective_input["iterations"] = 1
         logger.info(
             "content_ideation_package_geometry",
             node_key=node_key,
             plan_slug=resolved_subscription_plan_slug,
             count=weekly_geo["total"],
             iterations=effective_input["iterations"],
+            node_retry=node_retry,
         )
 
     # Inject recently used weekly_themes into content_strategy so it avoids repeating them.
@@ -615,6 +757,17 @@ async def _execute_node_body(
 
     # ── Step 4: Execute (with per-tenant lock for content_agent) ──────────────
     timeout = float(settings.crew_execution_timeout_seconds)
+    if task_type == "content_ideation":
+        from app.services.package_weekly_geometry import (
+            resolve_content_ideation_executor_timeout_seconds,
+        )
+
+        timeout = float(
+            resolve_content_ideation_executor_timeout_seconds(
+                int(effective_input.get("count") or 10),
+                int(effective_input.get("iterations") or 1),
+            )
+        )
 
     try:
         if task_type in _SERIALIZED_TASK_TYPES:
@@ -641,8 +794,9 @@ async def _execute_node_body(
     except Exception as exc:
         await _fail_node(
             factory, mission_id, workspace_id, node_id, node_key,
-            str(exc)[:500],
+            _sanitize_node_error(str(exc), task_type),
             current_retry=await _get_retry_count(factory, node_id),
+            task_type=task_type,
         )
         await _advance_after_node(mission_id, workspace_id)
         return
@@ -737,8 +891,9 @@ async def _execute_node_body(
         error_msg = result.get("error", "Crew returned non-completed status")
         await _fail_node(
             factory, mission_id, workspace_id, node_id, node_key,
-            error_msg[:500],
+            _sanitize_node_error(str(error_msg), task_type),
             current_retry=await _get_retry_count(factory, node_id),
+            task_type=task_type,
         )
 
     # ── Step 6+7: Advance the graph ───────────────────────────────────────────
@@ -762,8 +917,10 @@ async def _fail_node(
     node_key: str,
     error_msg: str,
     current_retry: int,
+    task_type: str | None = None,
 ) -> None:
     """Increment retry count. If under limit → reset to pending. Else → permanent failure."""
+    error_msg = _sanitize_node_error(error_msg, task_type)
     new_retry = current_retry + 1
 
     if new_retry <= MAX_NODE_RETRIES:
@@ -982,9 +1139,7 @@ async def _recover_stale_running_nodes() -> int:
     Nodes running > 2x the timeout are either retried or permanently failed.
     """
     factory = _get_session_factory()
-    settings = get_settings()
-    # Recover stale nodes after 1.5× timeout (not 2×) for faster recovery.
-    stale_threshold_seconds = settings.crew_execution_timeout_seconds * 1.5
+    # Recover stale nodes after task-type-aware timeout (see _node_stale_threshold_seconds).
 
     recovered = 0
     async with factory() as db:
@@ -993,6 +1148,8 @@ async def _recover_stale_running_nodes() -> int:
                 MissionTaskNode.id,
                 MissionTaskNode.node_key,
                 MissionTaskNode.title,
+                MissionTaskNode.task_type,
+                MissionTaskNode.input_data,
                 MissionTaskNode.started_at,
                 MissionTaskNode.retry_count,
                 MissionTaskNode.mission_id,
@@ -1015,10 +1172,13 @@ async def _recover_stale_running_nodes() -> int:
             elapsed = (now - started).total_seconds()
 
             is_orphan = row.id not in _active_node_executions
-            if is_orphan:
-                if elapsed < ORPHAN_NODE_MIN_ELAPSED_SECONDS:
-                    continue
-            elif elapsed < stale_threshold_seconds:
+            input_data = row.input_data if isinstance(row.input_data, dict) else {}
+            stale_threshold_seconds = _node_stale_threshold_seconds(
+                str(row.task_type or ""),
+                input_data,
+                is_orphan=is_orphan,
+            )
+            if elapsed < stale_threshold_seconds:
                 continue
 
             mission_status = row.mission_status
@@ -1069,7 +1229,11 @@ async def _recover_stale_running_nodes() -> int:
                         status=TaskNodeStatus.FAILED.value,
                         completed_at=now,
                         retry_count=retry_count + 1,
-                        error_message=f"[Final] Stale running state ({int(elapsed)}s). Max retries exhausted.",
+                        error_message=(
+                            "İçerik üretimi yarıda kesildi (sunucu yeniden yüklendi veya görev "
+                            f"zaman aşımı — {int(elapsed)} sn). Deneme hakkı tükendi; "
+                            "'Hatalı görevleri yeniden başlat' ile devam edin."
+                        ),
                     )
                 )
                 await _skip_blocked_nodes(db, row.mission_id, row.node_key)
@@ -1144,21 +1308,19 @@ async def advance_all_active_missions() -> dict[str, int]:
     # Durable Production Factory — resume draining any mission with runnable jobs
     # (restart-safe: claimed-but-orphaned jobs are reclaimed via the stale window),
     # then re-enqueue manifest gaps for completed missions (guaranteed 16/16).
+    # Always tick factory queues — AUTO_FEED only gates *starting* new feed production.
     drained_factory = 0
     reconciled_factory = 0
-    from app.services.production_automation import auto_feed_production_allowed
+    try:
+        from app.services.production_factory_service import drain_all_open_missions
 
-    if auto_feed_production_allowed():
-        try:
-            from app.services.production_factory_service import drain_all_open_missions
-
-            drained_factory = await drain_all_open_missions()
-        except Exception as exc:
-            logger.warning("production_factory_tick_failed", error=str(exc)[:200])
-        try:
-            reconciled_factory = await _reconcile_production_factory_gaps()
-        except Exception as exc:
-            logger.warning("production_factory_reconcile_failed", error=str(exc)[:200])
+        drained_factory = await drain_all_open_missions()
+    except Exception as exc:
+        logger.warning("production_factory_tick_failed", error=str(exc)[:200])
+    try:
+        reconciled_factory = await _reconcile_production_factory_gaps()
+    except Exception as exc:
+        logger.warning("production_factory_reconcile_failed", error=str(exc)[:200])
 
     logger.info(
         "advance_all_complete",
@@ -1182,10 +1344,12 @@ async def advance_all_active_missions() -> dict[str, int]:
 async def recover_mission_graph_on_startup() -> None:
     """
     After uvicorn reload, in-memory asyncio tasks are gone but DB nodes may
-    still be 'running'. Orphan recovery (45s) + advance_all unblocks them.
+    still be 'running'. Re-queue them without burning retries, then advance.
     """
     try:
+        requeued = await _requeue_orphaned_running_nodes_on_startup()
         result = await advance_all_active_missions()
+        result["startup_requeued"] = requeued
         logger.info("mission_graph_startup_recovery", **result)
     except Exception as exc:
         logger.error("mission_graph_startup_recovery_failed", error=str(exc)[:300])
@@ -1932,7 +2096,7 @@ async def _reconcile_production_factory_gaps() -> int:
                         .values(performance_summary=perf)
                     )
                     await db.commit()
-                schedule_drain(mission_id, uuid.UUID(workspace_id_s), delay_sec=0.0)
+                schedule_drain(mission_id, uuid.UUID(workspace_id_s), delay_sec=0.0, force=True)
                 count += 1
                 if count >= 2:
                     break
@@ -2177,11 +2341,19 @@ async def _run_content_production_pipeline_locked(
             feed_director_report=report or None,
             mission_ctx=mission_ctx,
         )
+        from app.services import production_job_service as _pj
+
+        job_summary = await _pj.mission_job_summary(mission_id)
+        factory_total = int(job_summary.get("total") or 0)
+        if enqueued <= 0 and factory_total <= 0:
+            raise RuntimeError(
+                "production_factory.enqueue_empty — plan succeeded but no durable jobs"
+            )
         schedule_drain(
             mission_id,
             workspace_id,
             delay_sec=2.0,
-            force=operator_initiated,
+            force=True,
         )
         produce_data = {
             "produced": 0,
@@ -2195,6 +2367,7 @@ async def _run_content_production_pipeline_locked(
             mission_id=str(mission_id),
             node_key=node_key,
             enqueued=enqueued,
+            factory_total=factory_total,
         )
         await _record_production_path(mission_id, path="factory")
     except Exception as exc:

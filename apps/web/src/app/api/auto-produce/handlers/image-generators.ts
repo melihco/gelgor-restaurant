@@ -230,28 +230,43 @@ export async function generateDesignedPostImage(opts: {
   }
   try {
     const baseUrl = getNextjsInternalOrigin();
-    const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: opts.headline.slice(0, 60),
-        caption: opts.caption,
-        contentType: opts.format === 'story' ? 'instagram_story' : 'instagram_post',
-        brandName: opts.brandName,
-        location: opts.location,
-        industry: opts.businessType,
-        workspaceId: opts.workspaceId,
-        referenceImageUrls: refs,
-        designCardPrompt: opts.designCardPrompt,
-        designCardMode: opts.designCardMode,
-        backgroundIntent: opts.backgroundIntent,
-        overlayColor: opts.overlayColor,
-        logoUrl: opts.logoUrl,
-        logoPlacement: opts.logoPlacement,
-        deferLogoComposite: opts.deferLogoComposite,
-      }),
-      signal: AbortSignal.timeout(120_000),
+    const payload = JSON.stringify({
+      title: opts.headline.slice(0, 60),
+      caption: opts.caption,
+      contentType: opts.format === 'story' ? 'instagram_story' : 'instagram_post',
+      brandName: opts.brandName,
+      location: opts.location,
+      industry: opts.businessType,
+      workspaceId: opts.workspaceId,
+      referenceImageUrls: refs,
+      designCardPrompt: opts.designCardPrompt,
+      designCardMode: opts.designCardMode,
+      backgroundIntent: opts.backgroundIntent,
+      overlayColor: opts.overlayColor,
+      logoUrl: opts.logoUrl,
+      logoPlacement: opts.logoPlacement,
+      deferLogoComposite: opts.deferLogoComposite,
     });
+    let res: Response | null = null;
+    let lastFetchErr: unknown;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          signal: AbortSignal.timeout(120_000),
+        });
+        break;
+      } catch (fetchErr) {
+        lastFetchErr = fetchErr;
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        const retryable = /connect timeout|fetch failed|ECONNREFUSED|socket hang up/i.test(msg);
+        if (!retryable || attempt >= 3) throw fetchErr;
+        await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)));
+      }
+    }
+    if (!res) throw lastFetchErr ?? new Error('generate-instagram-image fetch failed');
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       console.warn(

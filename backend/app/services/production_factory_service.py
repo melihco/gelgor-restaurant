@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from typing import Any
 
@@ -44,6 +45,8 @@ logger = structlog.get_logger()
 _scheduled_completion_tasks: dict[str, asyncio.Task] = {}
 # Debounced per-mission factory drain tasks (in-process asyncio path).
 _scheduled_drain_tasks: dict[str, asyncio.Task] = {}
+# Throttle watchdog/callback force-drain storms (operator kicks bypass).
+_last_drain_kick_monotonic: dict[str, float] = {}
 
 # Hard cap on slots produced per drain pass (across all batches).
 _MAX_SLOTS_PER_DRAIN = 30
@@ -94,8 +97,15 @@ async def enqueue_mission_jobs(
     )
     slots = list((plan or {}).get("slots") or [])
     if not slots:
-        logger.warning("production_factory.enqueue_no_slots", mission_id=str(mission_id))
-        return 0
+        plan_err = str((plan or {}).get("error") or "").strip()
+        logger.warning(
+            "production_factory.enqueue_no_slots",
+            mission_id=str(mission_id),
+            plan_error=plan_err[:200] or None,
+        )
+        raise RuntimeError(
+            plan_err or "Plan returned no manifest slots — factory enqueue aborted"
+        )
 
     inserted = await jobs.upsert_jobs(workspace_id, mission_id, node_key, slots)
     logger.info(
@@ -115,15 +125,19 @@ def schedule_drain(
     *,
     delay_sec: float = 2.0,
     force: bool = False,
+    bypass_throttle: bool = False,
 ) -> None:
     """Coalesce duplicate drain kicks into one debounced background task.
 
     When ``PRODUCTION_ORCHESTRATOR=celery`` the kick is dispatched to the Celery
     ``drain`` queue (cross-replica, durable) instead of an in-process asyncio task.
-    """
-    from app.services.production_automation import auto_feed_production_allowed
 
-    if not force and not auto_feed_production_allowed():
+    ``bypass_throttle`` — operator kick / requeue paths skip the force-drain
+    minimum interval (watchdog ticks remain throttled).
+    """
+    from app.services.production_automation import factory_drain_allowed
+
+    if not factory_drain_allowed(force=force):
         logger.info(
             "production_factory.drain_skipped",
             mission_id=str(mission_id),
@@ -133,7 +147,21 @@ def schedule_drain(
 
     from app.config import get_settings
 
-    if get_settings().use_celery_orchestrator:
+    settings = get_settings()
+    key = str(mission_id)
+
+    if force and not bypass_throttle:
+        min_interval = float(settings.production_drain_force_min_interval_sec)
+        last = _last_drain_kick_monotonic.get(key, 0.0)
+        if min_interval > 0 and (time.monotonic() - last) < min_interval:
+            logger.debug(
+                "production_factory.drain_throttled",
+                mission_id=str(mission_id),
+                min_interval_sec=min_interval,
+            )
+            return
+
+    if settings.use_celery_orchestrator:
         try:
             from app.tasks.drain_tasks import drain_mission
 
@@ -150,10 +178,11 @@ def schedule_drain(
                 error=str(exc)[:200],
             )
 
-    key = str(mission_id)
     existing = _scheduled_drain_tasks.get(key)
     if not force and existing is not None and not existing.done():
         return
+
+    _last_drain_kick_monotonic[key] = time.monotonic()
 
     async def _run() -> None:
         from app.services.redis_lock import distributed_lock
@@ -337,6 +366,41 @@ def _succeeded_slot_map(produce_data: dict | None) -> dict[str, str | None]:
     return out
 
 
+def _slot_failure_map(produce_data: dict | None) -> dict[str, str]:
+    """Map failed/withheld slot keys → human-readable error from auto-produce results."""
+    out: dict[str, str] = {}
+    for row in (produce_data or {}).get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        key = row.get("slotKey")
+        if not isinstance(key, str) or not key:
+            continue
+        if row.get("id") and not row.get("error"):
+            continue
+        err = row.get("error") or row.get("skip_reason")
+        if err:
+            out[key] = str(err)[:500]
+    return out
+
+
+def _resolve_slot_failure_reason(
+    produce_data: dict | None,
+    slot_key: str,
+    batch_reason: str,
+) -> str:
+    """Prefer per-slot auto-produce error over generic batch_reason/no_artifact."""
+    per_slot = _slot_failure_map(produce_data)
+    if slot_key in per_slot:
+        return per_slot[slot_key]
+    if batch_reason and batch_reason not in ("no_artifact", ""):
+        return batch_reason[:500]
+    withheld = int((produce_data or {}).get("withheld") or 0)
+    produced = int((produce_data or {}).get("produced") or 0)
+    if withheld > 0 and produced == 0:
+        return "withheld_quality_gate"
+    return batch_reason or "no_artifact"
+
+
 def _gallery_assignments_from_batch(batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Map factory job payloads → Next.js gallerySlotAssignments (``ideaIndex::slot_role`` keys)."""
     out: dict[str, dict[str, Any]] = {}
@@ -381,6 +445,20 @@ async def drain_production_jobs(
     if not await jobs.has_open_jobs(mission_id):
         return {"claimed": 0, "ready": 0, "failed": 0}
 
+    # Recover slots stuck in running/claimed after worker crash, dev reload, or a hung
+    # auto-produce HTTP call — without this, the queue freezes until the 30-min window.
+    from app.services.production_job_service import _FACTORY_DRAIN_STALE_RECLAIM_SEC
+
+    reclaimed = await jobs.reclaim_stale_jobs(
+        mission_id, stale_sec=_FACTORY_DRAIN_STALE_RECLAIM_SEC
+    )
+    if reclaimed:
+        logger.info(
+            "production_factory.reclaim_stale",
+            mission_id=str(mission_id),
+            reclaimed=reclaimed,
+        )
+
     inputs = await _load_drain_inputs(workspace_id, mission_id)
     if not inputs:
         return {"claimed": 0, "ready": 0, "failed": 0}
@@ -410,6 +488,7 @@ async def drain_production_jobs(
                 {"id": str(job["id"]), "slotKey": key}
                 for job, key in zip(batch, slot_keys)
             ]
+            batch_priority = max(int(job.get("priority") or 0) for job in batch) if batch else 0
             try:
                 eq = await _trigger_auto_produce(
                     workspace_id=workspace_id,
@@ -422,6 +501,7 @@ async def drain_production_jobs(
                     enqueue_only=True,
                     factory_jobs=factory_jobs,
                     gallery_slot_assignments=gallery_slot_assignments or None,
+                    enqueue_priority=batch_priority or None,
                 )
             except Exception as exc:
                 eq = None
@@ -433,11 +513,23 @@ async def drain_production_jobs(
                 )
             if eq and eq.get("reason") == "enqueued_to_bullmq":
                 enqueued_total += len(batch)
-                continue
-            # Enqueue failed — fail the batch so a later tick retries with backoff.
-            for job in batch:
-                await jobs.mark_failed(job["id"], "bullmq enqueue failed")
-            failed_total += len(batch)
+                # One batch in flight per mission — worker holds the production lock;
+                # enqueueing more batches here only yields 409 deferred loops.
+                break
+            # Enqueue failed — defer transient lock/queue errors; fail hard only on unknown.
+            defer_reasons = {
+                "production_in_flight",
+                "enqueue_failed",
+                "route_still_running",
+            }
+            eq_reason = str((eq or {}).get("reason") or "bullmq enqueue failed")
+            if eq_reason in defer_reasons or eq is None:
+                for job in batch:
+                    await jobs.mark_deferred(job["id"], eq_reason, delay_sec=45.0)
+            else:
+                for job in batch:
+                    await jobs.mark_failed(job["id"], eq_reason[:500])
+                failed_total += len(batch)
             continue
 
         try:
@@ -512,13 +604,14 @@ async def drain_production_jobs(
                         slot=key,
                     )
                 else:
-                    status = await jobs.mark_failed(job["id"], batch_reason)
+                    slot_reason = _resolve_slot_failure_reason(produce_data, key, batch_reason)
+                    status = await jobs.mark_failed(job["id"], slot_reason)
                     failed_total += 1
                     logger.info(
                         "production_factory.slot_failed",
                         mission_id=str(mission_id),
                         slot=key,
-                        reason=batch_reason,
+                        reason=slot_reason,
                         status=status,
                     )
 
@@ -539,14 +632,22 @@ async def drain_production_jobs(
         complete=summary_after["complete"],
     )
 
-    # More runnable work (failed slots in backoff or unclaimed) — re-kick later.
-    # In BullMQ mode the worker callback owns completion; we just enqueued this
-    # batch, so a local re-kick would only claim nothing (jobs are 'running').
-    # The periodic drain tick handles any genuinely remaining/backoff jobs.
-    if not use_bullmq and await jobs.has_open_jobs(mission_id):
+    # Continuation kicks — BullMQ relies on worker callbacks; schedule a safety-net
+    # drain when open jobs remain so slots do not freeze if the callback never arrives.
+    if use_bullmq:
+        if await jobs.has_open_jobs(mission_id):
+            delay = 45.0 if enqueued_total > 0 else 2.0
+            schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
+        elif (
+            not summary_after.get("complete")
+            and int(summary_after.get("ready") or 0) < int(summary_after.get("total") or 0)
+            and int(summary_after.get("active") or 0) == 0
+        ):
+            schedule_completion_pass(mission_id, workspace_id, delay_sec=12.0)
+    elif await jobs.has_open_jobs(mission_id):
         # Longer delay when slots failed without artifacts — avoids fal.ai retry storms.
         delay = 120.0 if failed_total > 0 and ready_total == 0 else 45.0
-        schedule_drain(mission_id, workspace_id, delay_sec=delay)
+        schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
     elif (
         not summary_after.get("complete")
         and int(summary_after.get("ready") or 0) < int(summary_after.get("total") or 0)
@@ -593,7 +694,7 @@ async def _finalize_mission_production_state(mission_id: uuid.UUID) -> dict:
                 mission_id,
                 produced=summary_after["ready"],
                 publish_ready=summary_after["ready"],
-                rendering=summary_after["active"],
+                rendering=int(summary_after.get("inFlight") or 0),
                 manifest_ready=summary_after["ready"],
                 required_total=summary_after["total"],
             )
@@ -635,7 +736,41 @@ async def _finalize_mission_production_state(mission_id: uuid.UUID) -> dict:
             error=str(exc)[:200],
         )
 
+    if summary_after.get("complete"):
+        try:
+            from app.services.task_graph_executor import try_complete_mission_when_factory_done
+
+            await try_complete_mission_when_factory_done(mission_id)
+        except Exception as exc:
+            logger.warning(
+                "production_factory.mission_complete_failed",
+                mission_id=str(mission_id),
+                error=str(exc)[:200],
+            )
+
     return summary_after
+
+
+def _resolve_bullmq_batch_reason(
+    produce_data: dict | None,
+    http_status: int | None = None,
+) -> str:
+    """Map worker HTTP status + auto-produce body → batch reason for slot disposition."""
+    if http_status == 409:
+        return "production_in_flight"
+    if http_status == 0:
+        return "production_in_flight"
+    code = str((produce_data or {}).get("code") or "")
+    if code in ("mission_production_in_progress", "production_in_progress"):
+        return "production_in_flight"
+    reason = str((produce_data or {}).get("reason") or "")
+    if reason == "production_in_flight":
+        return reason
+    if http_status and http_status >= 400 and not reason:
+        err = str((produce_data or {}).get("error") or "")
+        if err:
+            return err[:500]
+    return reason or "no_artifact"
 
 
 async def apply_bullmq_completion(
@@ -643,6 +778,8 @@ async def apply_bullmq_completion(
     workspace_id: uuid.UUID,
     factory_jobs: list[dict],
     produce_data: dict | None,
+    *,
+    http_status: int | None = None,
 ) -> dict:
     """Mark claimed jobs ready/failed from a BullMQ worker callback.
 
@@ -655,9 +792,9 @@ async def apply_bullmq_completion(
     # Single-slot fallback for older responses without slotKey.
     if not ok_map and len(factory_jobs) == 1 and _slot_succeeded(produce_data):
         ok_map[slot_keys[0]] = _artifact_id_from(produce_data)
-    reason = str((produce_data or {}).get("reason") or "no_artifact")
+    reason = _resolve_bullmq_batch_reason(produce_data, http_status)
 
-    ready = failed = 0
+    ready = failed = deferred = 0
     if reason == "production_in_flight":
         for fj in factory_jobs:
             job_id = fj.get("id")
@@ -668,6 +805,7 @@ async def apply_bullmq_completion(
             except (ValueError, TypeError):
                 continue
             await jobs.mark_deferred(job_uuid, reason, delay_sec=45.0)
+            deferred += 1
     else:
         for fj in factory_jobs:
             job_id = fj.get("id")
@@ -682,7 +820,8 @@ async def apply_bullmq_completion(
                 await jobs.mark_ready(job_uuid, artifact_id=ok_map[key])
                 ready += 1
             else:
-                await jobs.mark_failed(job_uuid, reason)
+                slot_reason = _resolve_slot_failure_reason(produce_data, key, reason)
+                await jobs.mark_failed(job_uuid, slot_reason)
                 failed += 1
 
     summary_after = await _finalize_mission_production_state(mission_id)
@@ -692,34 +831,45 @@ async def apply_bullmq_completion(
         mission_id=str(mission_id),
         ready=ready,
         failed=failed,
+        deferred=deferred,
+        http_status=http_status,
         complete=summary_after.get("complete"),
     )
 
     # Claim + enqueue any remaining runnable jobs for this mission.
     if not summary_after.get("complete") and await jobs.has_open_jobs(mission_id):
-        schedule_drain(mission_id, workspace_id, delay_sec=2.0)
+        # Match mark_deferred backoff — avoid enqueue storms while lock is held.
+        delay = 45.0 if deferred > 0 else 2.0
+        schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
 
-    return {"ready": ready, "failed": failed, "complete": summary_after.get("complete")}
+    return {
+        "ready": ready,
+        "failed": failed,
+        "deferred": deferred,
+        "complete": summary_after.get("complete"),
+    }
 
 
-async def drain_all_open_missions(limit: int = 25) -> int:
+async def drain_all_open_missions(limit: int | None = None) -> int:
     """Scheduler tick: resume draining missions with runnable jobs.
+
+    Runs even when ``AUTO_FEED_PRODUCTION_ENABLED=false`` — only missions that
+    already have open ``production_jobs`` rows are touched (no new feed starts).
 
     Enforces workspace-level serialization: only N missions per workspace drain
     concurrently (default 1 via PRODUCTION_MAX_CONCURRENT_PER_WORKSPACE).
     This prevents fal/Remotion parallel storms across missions of the same tenant.
+
+    When ``production_fair_share_enabled``, open missions are chosen one per
+    workspace (oldest wait first) so a single tenant cannot monopolize the tick.
     """
-    from app.services.production_automation import auto_feed_production_allowed
-
-    if not auto_feed_production_allowed():
-        return 0
-
     from app.config import get_settings
 
     settings = get_settings()
     max_per_ws = settings.production_max_concurrent_per_workspace
+    tick_limit = int(limit if limit is not None else settings.production_drain_tick_limit)
 
-    mission_ids = await jobs.list_missions_with_open_jobs(limit=limit)
+    mission_ids = await jobs.list_missions_with_open_jobs(limit=tick_limit)
     drained = 0
     ws_counts: dict[str, int] = {}
 
@@ -732,11 +882,42 @@ async def drain_all_open_missions(limit: int = 25) -> int:
         if current >= max_per_ws:
             continue
         ws_counts[ws_key] = current + 1
-        schedule_drain(uuid.UUID(mid), workspace_id, delay_sec=0.0)
+        schedule_drain(uuid.UUID(mid), workspace_id, delay_sec=0.0, force=True)
         drained += 1
     if drained:
         logger.info("production_factory.tick_drained", missions=drained)
     return drained
+
+
+async def run_factory_watchdog_tick(*, reclaim_limit: int = 50) -> dict[str, int]:
+    """Reclaim orphaned running rows and schedule drains for open missions.
+
+    Celery Beat is often off in dev — this asyncio tick prevents slots stuck in
+    ``running`` with an empty BullMQ queue and an idle worker.
+    """
+    from app.config import get_settings
+
+    settings = get_settings()
+    stale_sec = (
+        jobs._BULLMQ_WATCHDOG_STALE_SEC
+        if settings.use_bullmq_executor
+        else jobs._FACTORY_DRAIN_STALE_RECLAIM_SEC
+    )
+
+    reclaimed = 0
+    for mid in await jobs.list_mission_ids_with_any_open_jobs(limit=reclaim_limit):
+        reclaimed += await jobs.reclaim_stale_jobs(uuid.UUID(mid), stale_sec=stale_sec)
+
+    drained = await drain_all_open_missions(limit=reclaim_limit)
+
+    if reclaimed or drained:
+        logger.info(
+            "production_factory.watchdog_tick",
+            reclaimed=reclaimed,
+            missions_scheduled=drained,
+        )
+
+    return {"reclaimed": reclaimed, "drained": drained}
 
 
 async def _workspace_for_mission(mission_id: uuid.UUID) -> uuid.UUID | None:

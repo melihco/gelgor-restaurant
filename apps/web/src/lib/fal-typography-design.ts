@@ -347,6 +347,12 @@ async function callIdeogramV4(
   }
 
   const queued = (await enqueueRes.json()) as FalQueueSubmit;
+  const { recordFalRequestSubmitted, markFalRequestCompleted, markFalRequestFailed } = await import('./fal-request-tracker');
+  recordFalRequestSubmitted({
+    requestId: queued.request_id,
+    model: ideogramModel,
+    kind: 'still',
+  });
   const statusUrl = queued.status_url ?? `${FAL_QUEUE_BASE}/${ideogramModel}/requests/${queued.request_id}/status`;
   const resultUrl = queued.response_url ?? `${FAL_QUEUE_BASE}/${ideogramModel}/requests/${queued.request_id}`;
 
@@ -364,7 +370,10 @@ async function callIdeogramV4(
     if (!statusRes.ok) continue;
 
     const status = (await statusRes.json()) as FalQueueStatus;
-    if (status.status === 'FAILED') throw new Error(status.error ?? 'Ideogram V4 job failed');
+    if (status.status === 'FAILED') {
+      markFalRequestFailed(queued.request_id, status.error ?? 'Ideogram V4 job failed');
+      throw new Error(status.error ?? 'Ideogram V4 job failed');
+    }
     if (status.status !== 'COMPLETED') continue;
 
     const resultRes = await fetch(resultUrl, {
@@ -375,10 +384,15 @@ async function callIdeogramV4(
 
     const result = (await resultRes.json()) as IdeogramResult;
     const url = result.images?.[0]?.url ?? result.image?.url;
-    if (url) return url;
+    if (url) {
+      markFalRequestCompleted(queued.request_id, url);
+      return url;
+    }
+    markFalRequestFailed(queued.request_id, 'Ideogram result has no image URL');
     throw new Error('Ideogram result has no image URL');
   }
 
+  markFalRequestFailed(queued.request_id, `Ideogram V4 timed out after ${timeoutMs / 1000}s`);
   throw new Error(`Ideogram V4 timed out after ${timeoutMs / 1000}s`);
 }
 
@@ -408,7 +422,13 @@ async function callFluxFallback(
 
   const data = (await res.json()) as { images?: Array<{ url?: string }> };
   const url = data.images?.[0]?.url;
-  if (!url) throw new Error('Flux result has no image URL');
+  if (!url) {
+    const { recordFalSyncRequest } = await import('./fal-request-tracker');
+    recordFalSyncRequest({ model: fluxModel, outputUrl: '', error: 'Flux result has no image URL' });
+    throw new Error('Flux result has no image URL');
+  }
+  const { recordFalSyncRequest } = await import('./fal-request-tracker');
+  recordFalSyncRequest({ model: fluxModel, outputUrl: url });
   return url;
 }
 
@@ -519,7 +539,9 @@ export async function generateTypographyDesignWithRetry(
     return generateTypographyDesign(input);
   }
 
-  const maxRetries = opts?.maxRetries ?? 2;
+  /** Hard cap — avoids multi-minute typography storms on fal_only_post slots. */
+  const MAX_TYPOGRAPHY_VALIDATION_ROUNDS = 3;
+  const maxRetries = Math.min(opts?.maxRetries ?? 1, MAX_TYPOGRAPHY_VALIDATION_ROUNDS - 1);
   let lastResult: TypographyDesignResult | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {

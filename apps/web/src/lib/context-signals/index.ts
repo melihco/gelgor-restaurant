@@ -25,6 +25,11 @@ import {
   goldenHourSignal,
 } from './calculators';
 import { resolveSectorPack, sectorPackSignals } from './sector-packs';
+import {
+  resolveBrandOperatingProfile,
+  signalConflictsWithOperatingProfile,
+  type BrandOperatingProfile,
+} from '@/lib/brand-operating-profile';
 
 export * from './types';
 export { moonPhase, nextFullMoon } from './lunar';
@@ -38,6 +43,11 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
   const region = input.region ?? 'TR';
   const horizonDays = input.horizonDays ?? DEFAULT_HORIZON;
   const hasCoords = typeof input.lat === 'number' && typeof input.lng === 'number';
+  const operatingProfile = input.operatingProfile ?? resolveBrandOperatingProfile({
+    businessType: input.businessType,
+    brandDescription: input.brandDescription,
+    brandName: input.brandName,
+  });
 
   const signals: SignalRecord[] = [];
   const coverage: ContextCoverageCheck[] = [];
@@ -72,7 +82,7 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
 
   run('season', true, () => [season]);
   run('day_of_week', true, () => [dayOfWeekSignal(date)]);
-  run('weekly_rhythm', true, () => weeklyRhythmSignals(date));
+  run('weekly_rhythm', true, () => weeklyRhythmSignals(date, operatingProfile));
   run('holiday', true, () => holidaySignals(date, horizonDays, region));
   run('lunar', true, () => lunar);
   run('solstice_equinox', true, () => solsticeSignals(date, horizonDays));
@@ -105,7 +115,10 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
   }
 
   // Sort by confidence desc so the Strategist sees strongest triggers first.
-  signals.sort((a, b) => b.confidence - a.confidence);
+  const filteredSignals = signals.filter(
+    (s) => !signalConflictsWithOperatingProfile(s, operatingProfile),
+  );
+  filteredSignals.sort((a, b) => b.confidence - a.confidence);
 
   const applicableTypes = coverage.filter((c) => c.applicable);
   const computedTypes = applicableTypes.filter((c) => c.computed);
@@ -118,7 +131,7 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
     (s) => Date.parse(s.windowStart) <= weekEnd.getTime(),
   ).length;
 
-  const promptBlock = buildStrategistSignalBlock(signals, pack.label, date);
+  const promptBlock = buildStrategistSignalBlock(filteredSignals, pack.label, date);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -130,7 +143,7 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
       hasCoords,
       horizonDays,
     },
-    signals,
+    signals: filteredSignals,
     coverage,
     coverageScore,
     sectorPack: { id: pack.id, label: pack.label },

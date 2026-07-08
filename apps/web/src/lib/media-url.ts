@@ -104,7 +104,7 @@ async function resolveR2KeyToPublicHttps(key: string): Promise<string> {
   return getPresignedUrl(cleanKey, 3600);
 }
 
-async function mirrorImageBytesToR2Https(sourceUrl: string): Promise<string> {
+async function mirrorImageBytesToR2Https(sourceUrl: string, tenantId = 'fal-motion'): Promise<string> {
   const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
   const { isR2Configured, generateStorageKey, uploadToR2, getPresignedUrl } = await import('@/lib/r2-storage');
 
@@ -126,11 +126,123 @@ async function mirrorImageBytesToR2Https(sourceUrl: string): Promise<string> {
     sourceUrl.match(/\.(jpe?g|png|webp|gif)(\?|$)/i)?.[1]?.toLowerCase().replace('jpeg', 'jpg')
     ?? 'jpg';
   const tenantMatch = sourceUrl.match(/([0-9a-f-]{36})\/(?:image|posts|stories|reels)/i);
-  const tenantId = tenantMatch?.[1] ?? 'fal-motion';
-  const key = generateStorageKey(tenantId, 'image', ext);
+  const resolvedTenant = tenantMatch?.[1] ?? tenantId;
+  const key = generateStorageKey(resolvedTenant, 'image', ext);
   const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
   await uploadToR2(buffer, key, contentType);
   return getPresignedUrl(key, 3600);
+}
+
+function isTenantStoredMediaPath(url: string, workspaceId: string): boolean {
+  const trimmed = url.trim();
+  const key = extractMediaKeyFromUrl(trimmed) ?? (isR2StorageKeyPath(trimmed) ? trimmed.replace(/^\//, '') : null);
+  if (key?.toLowerCase().startsWith(`${workspaceId.toLowerCase()}/`)) return true;
+  return trimmed.includes(`${workspaceId}/`);
+}
+
+/**
+ * Mirror an external (or proxy-wrapped) gallery photo into tenant R2 storage.
+ * Returns a local `/api/media?key=…` URL suitable for Remotion headless render.
+ */
+export async function mirrorGalleryPhotoToTenantStorage(
+  workspaceId: string,
+  sourceUrl: string,
+): Promise<string> {
+  const { mirrorGalleryPhotoToTenantStorageServer } = await import('@/lib/gallery-mirror-server');
+  return mirrorGalleryPhotoToTenantStorageServer(workspaceId, sourceUrl);
+}
+
+/**
+ * Stable gallery URL for auto-produce / Remotion — mirrors external brand-site photos
+ * into tenant storage so production does not depend on live media-proxy fetches.
+ */
+export async function ensureProductionGalleryPhotoUrl(
+  workspaceId: string,
+  photoUrl: string,
+  opts?: { timeoutMs?: number },
+): Promise<string | null> {
+  const { ensureProductionGalleryPhotoUrlServer } = await import('@/lib/gallery-mirror-server');
+  const mirrored = await ensureProductionGalleryPhotoUrlServer(workspaceId, photoUrl, opts);
+  if (mirrored) return mirrored;
+
+  const trimmed = photoUrl.trim();
+  if (!trimmed || !workspaceId) return null;
+  const timeoutMs = opts?.timeoutMs ?? 12_000;
+  const reachable = await confirmGalleryPhotoReachableForRemotion(trimmed, { timeoutMs });
+  if (!reachable) return null;
+  return normalizePhotoUrlForRemotionRender(trimmed);
+}
+
+/** Try primary + candidate gallery URLs — tenant R2 keys first when brand site is down. */
+export async function pickReachableProductionGalleryUrl(
+  workspaceId: string,
+  primaryUrl: string,
+  candidateUrls: string[],
+  opts?: { timeoutMs?: number },
+): Promise<{ url: string; fallbackFrom?: string } | null> {
+  const { pickReachableProductionGalleryUrl: pickServer } = await import('@/lib/gallery-mirror-server');
+  return pickServer(workspaceId, primaryUrl, candidateUrls, opts);
+}
+
+/**
+ * Remotion multi-photo layouts — resolve each gallery slot to a reachable tenant/R2 URL
+ * before headless materialize (brand-site URLs often timeout in dev/production workers).
+ */
+export async function resolveProductionGalleryUrlsForRemotion(
+  workspaceId: string,
+  urls: string[],
+  opts: {
+    primaryUrl: string;
+    candidateUrls?: string[];
+    timeoutMs?: number;
+  },
+): Promise<string[]> {
+  if (!urls.length) return [];
+  const pool = [
+    opts.primaryUrl,
+    ...(opts.candidateUrls ?? []),
+    ...urls,
+  ];
+  const resolved: string[] = [];
+  for (const url of urls) {
+    const picked = await pickReachableProductionGalleryUrl(
+      workspaceId,
+      url,
+      pool,
+      { timeoutMs: opts.timeoutMs ?? 18_000 },
+    );
+    const finalUrl = picked?.url ?? opts.primaryUrl;
+    if (picked?.fallbackFrom) {
+      console.log(
+        `[remotion] galleryPhotoUrls fallback: ${picked.fallbackFrom.slice(0, 72)} → ${finalUrl.slice(0, 72)}`,
+      );
+    }
+    resolved.push(normalizePhotoUrlForRemotionRender(finalUrl));
+  }
+  return resolved;
+}
+
+/** Omit broken external logos rather than failing the whole Remotion story render. */
+export async function resolveRemotionLogoUrlForRender(
+  workspaceId: string,
+  logoUrl: string | undefined,
+  opts?: { timeoutMs?: number },
+): Promise<string | undefined> {
+  const trimmed = String(logoUrl ?? '').trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  const { ensureProductionGalleryPhotoUrlServer } = await import('@/lib/gallery-mirror-server');
+  const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, trimmed, opts);
+  if (ensured) return normalizePhotoUrlForRemotionRender(ensured);
+
+  const external = resolveExternalGalleryPhotoTarget(trimmed);
+  if (external) {
+    console.warn('[remotion] logo unreachable — omitting from render:', external.slice(0, 80));
+    return undefined;
+  }
+
+  return normalizePhotoUrlForRemotionRender(trimmed);
 }
 
 /**
@@ -364,6 +476,22 @@ async function probeHttpAssetUrl(
   accept: 'image' | 'video' | 'any',
 ): Promise<boolean> {
   try {
+    // media-proxy route is GET-only; HEAD can be slow/ambiguous during dev compiles.
+    if (url.includes('/api/media-proxy')) {
+      const referer = refererForUrl(url);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          ...(accept === 'image' ? FETCH_HEADERS : { Accept: 'video/*,*/*;q=0.8' }),
+          ...(referer ? { Referer: referer } : {}),
+          Range: 'bytes=0-2047',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      return res.ok;
+    }
+
     let res = await fetch(url, {
       method: 'HEAD',
       redirect: 'follow',
@@ -448,6 +576,59 @@ export function normalizePhotoUrlForRemotionRender(photoUrl: string): string {
     return `/api/media-proxy?url=${encodeURIComponent(trimmed)}`;
   }
   return trimmed;
+}
+
+/** Resolve external target for proxy-wrapped gallery URLs. */
+export function resolveExternalGalleryPhotoTarget(photoUrl: string): string | null {
+  const trimmed = photoUrl.trim();
+  if (!trimmed) return null;
+  const unwrapped = unwrapMediaProxyTargetUrl(trimmed);
+  if (unwrapped?.startsWith('http')) return unwrapped;
+  if (trimmed.startsWith('http')) return trimmed;
+  return null;
+}
+
+/**
+ * Remotion pre-render gate — proxy-wrapped Feed URLs must unwrap before external fetch.
+ * Dev media-proxy can take 8–15s during cold compile; use generous timeouts.
+ */
+export async function confirmGalleryPhotoReachableForRemotion(
+  photoUrl: string,
+  opts?: { timeoutMs?: number },
+): Promise<boolean> {
+  const timeoutMs = opts?.timeoutMs ?? 28_000;
+  const trimmed = photoUrl.trim();
+  if (!trimmed) return false;
+
+  const externalTarget = resolveExternalGalleryPhotoTarget(trimmed);
+
+  if (externalTarget) {
+    try {
+      const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
+      const buf = await fetchExternalImageBuffer(externalTarget, timeoutMs);
+      if (buf && buf.length > 0) return true;
+    } catch {
+      /* try proxy probe next */
+    }
+  }
+
+  const proxyPath = trimmed.startsWith('/api/media-proxy')
+    ? trimmed
+    : externalTarget
+      ? normalizePhotoUrlForRemotionRender(externalTarget)
+      : null;
+
+  if (proxyPath?.startsWith('/api/media-proxy')) {
+    if (await probeMediaUrlReliable(proxyPath, { timeoutMs, retries: 3, delayMs: 700 })) {
+      return true;
+    }
+  }
+
+  if (externalTarget) {
+    return probeGalleryImageUrl(externalTarget, timeoutMs);
+  }
+
+  return probeMediaUrlReliable(trimmed, { timeoutMs, retries: 2, delayMs: 500 });
 }
 
 export async function probeGalleryImageUrl(url: string, timeoutMs = 10_000): Promise<boolean> {
@@ -560,9 +741,17 @@ export function toFeedPreviewUrl(url: string | null | undefined): string | null 
   const resolved = resolveClientMediaUrl(fullSize);
   if (resolved) return resolved;
   if (fullSize.startsWith('http') && fullSize.length <= 1000) {
-    return `/api/media-proxy?url=${encodeURIComponent(fullSize)}`;
+    return fullSize;
   }
   return fullSize.length <= 1000 ? fullSize : fullSize.slice(0, 1000);
+}
+
+/** Brand-site URLs scraped without scheme (e.g. www.example.com/logo.png). */
+function ensureHttpScheme(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  if (/^\/\//.test(url)) return `https:${url}`;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(url)) return `https://${url}`;
+  return url;
 }
 
 /** Resolve artifact / gallery URLs for browser `<img src>`. */
@@ -572,6 +761,11 @@ export function resolveClientMediaUrl(url: string | null | undefined): string | 
   if (!trimmed) return null;
   if (trimmed.startsWith('data:')) return trimmed;
 
+  const proxied = unwrapMediaProxyUrl(trimmed);
+  if (proxied && proxied !== trimmed) {
+    return resolveClientMediaUrl(proxied);
+  }
+
   if (
     trimmed.startsWith('/api/media')
     || trimmed.startsWith('/api/remotion/')
@@ -580,14 +774,17 @@ export function resolveClientMediaUrl(url: string | null | undefined): string | 
     return trimmed;
   }
 
-  if (trimmed.startsWith('http')) {
-    if (trimmed.includes('canva.com/design')) return null;
-    const displayUrl = normalizeExternalPhotoUrl(trimmed) ?? trimmed;
+  const httpCandidate = trimmed.startsWith('http') ? trimmed : ensureHttpScheme(trimmed);
+  if (httpCandidate.startsWith('http')) {
+    if (httpCandidate.includes('canva.com/design')) return null;
+    const displayUrl = normalizeExternalPhotoUrl(httpCandidate) ?? httpCandidate;
     // Unsplash: direct <img> works but fetch/canvas CORS fails; proxy also surfaces 404 clearly.
     if (displayUrl.includes('images.unsplash.com') || displayUrl.includes('plus.unsplash.com')) {
       return `/api/media-proxy?url=${encodeURIComponent(displayUrl)}`;
     }
     if (SAFE_HTTP_HOSTS.some((h) => displayUrl.includes(h))) return displayUrl;
+    if (isTrustedGalleryUrl(displayUrl)) return displayUrl;
+    // Brand-site hosts — proxy so broken DNS / hotlink blocks do not spam console or blank UI.
     return `/api/media-proxy?url=${encodeURIComponent(displayUrl)}`;
   }
 
@@ -609,12 +806,27 @@ export function resolveClientMediaUrl(url: string | null | undefined): string | 
   return null;
 }
 
-/** Browser `<img>` / canvas fetch — internal /api/media direct, external via proxy when needed. */
+/** Browser `<img>` / canvas fetch — img uses direct external URLs; canvas keeps proxy for CORS. */
 export function resolveBrowserImageSrc(url: string | null | undefined): string {
   if (!url?.trim()) return '';
   const trimmed = url.trim();
   if (trimmed.startsWith('data:')) return trimmed;
-  return resolveClientMediaUrl(trimmed) ?? `/api/media-proxy?url=${encodeURIComponent(trimmed)}`;
+  const resolved = resolveClientMediaUrl(trimmed);
+  if (resolved) {
+    const displayUrl = normalizeExternalPhotoUrl(trimmed) ?? trimmed;
+    const needsCanvasProxy = displayUrl.startsWith('http')
+      && !displayUrl.includes('images.unsplash.com')
+      && !displayUrl.includes('plus.unsplash.com')
+      && !SAFE_HTTP_HOSTS.some((h) => displayUrl.includes(h));
+    if (needsCanvasProxy && resolved === displayUrl) {
+      return `/api/media-proxy?url=${encodeURIComponent(displayUrl)}`;
+    }
+    return resolved;
+  }
+  if (trimmed.startsWith('http')) {
+    return `/api/media-proxy?url=${encodeURIComponent(trimmed)}`;
+  }
+  return '';
 }
 
 /** Feed / Mission Hub — artifact has a previewable media URL (http, /api/, /generated/, data:image). */

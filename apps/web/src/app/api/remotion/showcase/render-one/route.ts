@@ -452,7 +452,9 @@ async function fetchWorkspaceLogoUrl(workspaceId: string): Promise<string> {
     });
     if (!res.ok) return '';
     const ctx = await res.json() as Record<string, unknown>;
-    return resolveProductionLogoUrl([String(ctx.logo_url ?? '')]);
+    return resolveProductionLogoUrl([String(ctx.logo_url ?? '')], {
+      websiteUrl: String(ctx.website_url ?? ''),
+    });
   } catch {
     return '';
   }

@@ -250,23 +250,23 @@ export function editorialTracking(fontWeight: number, fontSize: number, explicit
 export function headlineSize(headline: string, scale = 1, fontWeight = 700): number {
   const n = headline.replace(/\n/g, '').length;
   const base =
-    n <= 5  ? 92
-    : n <= 8  ? 80
-    : n <= 12 ? 66
-    : n <= 17 ? 54
-    : n <= 22 ? 44
-    : n <= 30 ? 37
-    : n <= 40 ? 32
-    : 27;
+    n <= 5  ? 96
+    : n <= 8  ? 84
+    : n <= 12 ? 72
+    : n <= 17 ? 62
+    : n <= 22 ? 54
+    : n <= 30 ? 48
+    : n <= 40 ? 42
+    : 36;
   const lineCount = splitHeadlineLines(headline).length;
-  const density = lineCount >= 4 ? 0.76 : lineCount >= 3 ? 0.84 : 1;
+  const density = lineCount >= 4 ? 0.82 : lineCount >= 3 ? 0.9 : 1;
   // Heavy weights (800+) print denser — slight size reduction for refinement
-  const weightMod = fontWeight >= 900 ? 0.94 : fontWeight >= 800 ? 0.97 : 1;
-  return Math.round(base * scale * density * weightMod);
+  const weightMod = fontWeight >= 900 ? 0.96 : fontWeight >= 800 ? 0.98 : 1;
+  return Math.max(40, Math.round(base * scale * density * weightMod));
 }
 
 /** Break headline into display lines — respects explicit \n, else word-wrap. */
-export function splitHeadlineLines(headline: string, maxLines = 3, maxChars = 16): string[] {
+export function splitHeadlineLines(headline: string, maxLines = 3, maxChars = 20): string[] {
   if (headline.includes('\n')) return headline.split('\n').slice(0, maxLines);
   const words = headline.trim().split(/\s+/);
   const lines: string[] = [];
@@ -349,6 +349,9 @@ export const HeadlineStack: React.FC<{
   const gradientStyle = useBrandGradient
     ? brandHeadlineGradientStyle(primaryColor, accentColor)
     : undefined;
+  const accentContrastShadow = useBrandGradient || (!solidHeadline && color.trim().toLowerCase() !== '#ffffff')
+    ? '0 2px 12px rgba(0,0,0,0.85), 0 4px 28px rgba(0,0,0,0.65)'
+    : undefined;
 
   return (
     <div
@@ -360,8 +363,8 @@ export const HeadlineStack: React.FC<{
       }}
     >
       {lines.map((line, i) => {
-        // More dramatic hierarchy: 1st line full, 2nd 88%, 3rd 76% — premium editorial feel
-        const lineSize = i === 0 ? fontSize : Math.round(fontSize * (i === 1 ? 0.88 : 0.76));
+        // More dramatic hierarchy: 1st line full, 2nd/3rd slightly smaller — keep readable on phone
+        const lineSize = i === 0 ? fontSize : Math.round(fontSize * (i === 1 ? 0.94 : 0.88));
         const lineH = resolveHeadlineLineHeight(isGraphic ? Math.max(lineGap, 1.12) : lineGap, fontWeight);
         const lineBox = headlineLineBoxStyle(i >= lines.length - 1);
         const baseStyle: React.CSSProperties = {
@@ -376,8 +379,10 @@ export const HeadlineStack: React.FC<{
           textTransform: uppercase ? 'uppercase' : 'none',
           ...(!useBrandGradient && outlineShadow && headlineTreatment === 'flat'
             ? { textShadow: textShadow ? `${textShadow}, ${outlineShadow}` : outlineShadow }
-            : !useBrandGradient && textShadow && headlineTreatment === 'flat'
-              ? { textShadow }
+            : !useBrandGradient && (textShadow || accentContrastShadow) && headlineTreatment === 'flat'
+              ? { textShadow: [textShadow, accentContrastShadow].filter(Boolean).join(', ') }
+              : useBrandGradient && accentContrastShadow
+                ? { textShadow: accentContrastShadow }
               : {}),
         };
 
