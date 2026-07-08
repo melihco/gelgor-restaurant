@@ -69,7 +69,7 @@ services:
       - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "true"
       - key: AUTO_FEED_PRODUCTION_ENABLED
-        value: "true"
+        value: "false"
       - key: OPENAI_MODEL
         value: gpt-4o-mini
       - key: OPENAI_CONTENT_MODEL
