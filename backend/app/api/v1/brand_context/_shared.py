@@ -47,6 +47,7 @@ from app.schemas.brand_context import (
     GalleryAnalysisSaveRequest,
     GalleryAppendRequest,
     GalleryMatchStatsRequest,
+    LanguageUpdateRequest,
     ReviewSubmitRequest,
     SourceStatus,
 )

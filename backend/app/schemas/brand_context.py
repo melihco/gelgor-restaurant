@@ -26,6 +26,10 @@ class BrandContextCreate(BaseModel):
     google_business_url: str | None = None
 
 
+class LanguageUpdateRequest(BaseModel):
+    language: str = Field(..., min_length=2, max_length=8)
+
+
 class BrandContextUpdate(BaseModel):
     business_name: str | None = None
     business_type: str | None = None

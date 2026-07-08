@@ -7,10 +7,15 @@ export function normalizeBackendOrigin(raw: string | undefined, fallback = 'http
 
 /** Server-side Nexus REST base (runtime env — works in Docker/Render without rebuild). */
 export function resolveServerApiBaseUrl(): string {
+  const internal = process.env.BACKEND_ORIGIN?.trim();
+  // On Render/Railway, prefer private service hostport — avoids 502s during public API deploys.
+  if (internal && (process.env.RENDER || process.env.RAILWAY_ENVIRONMENT)) {
+    return normalizeBackendOrigin(internal);
+  }
   const raw =
     process.env.NEXUS_API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
-    process.env.BACKEND_ORIGIN ||
+    internal ||
     undefined;
   return normalizeBackendOrigin(raw);
 }

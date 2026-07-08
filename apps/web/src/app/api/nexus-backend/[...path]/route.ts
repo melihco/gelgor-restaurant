@@ -70,7 +70,21 @@ async function proxyToNexus(req: NextRequest, pathSegments: string[]): Promise<N
     init.body = await req.arrayBuffer();
   }
 
-  const upstream = await fetch(target, init);
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, { ...init, signal: AbortSignal.timeout(120_000) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        error: 'nexus_api_unreachable',
+        message: `Could not reach Nexus API: ${message}`,
+        hint: 'API may be restarting — retry in a few seconds.',
+      },
+      { status: 503 },
+    );
+  }
+
   const responseHeaders = new Headers();
   upstream.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) {
