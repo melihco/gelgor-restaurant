@@ -43,6 +43,7 @@ import {
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
+import { finalizeFalPrompt } from '@/lib/fal-prompt';
 
 type AspectRatio = '9:16' | '1:1' | '4:5';
 
@@ -580,7 +581,7 @@ function buildDesignedDesignCardPrompt(
   const promptLimit = (isReel || input.aspectRatio === '9:16' ? 3800 : 3200)
     + (input.logoUrl ? 400 : 0);
 
-  return [
+  const promptBody = [
     role,
     intensityDirectives.priorityBlock,
     ...intensityDirectives.forbiddenLayouts,
@@ -602,7 +603,12 @@ function buildDesignedDesignCardPrompt(
     spec.colorUsage(input.brandColors.primary, input.brandColors.accent),
     intensityDirectives.layoutNote,
     `The result must look like ${brand}'s own art director made it — premium social media design quality, unique to this brand and this post.`,
-  ].filter(Boolean).join(' ').trim().slice(0, promptLimit);
+  ].filter(Boolean).join(' ');
+  return finalizeFalPrompt(promptBody, {
+    maxChars: promptLimit,
+    kind: 'image',
+    label: 'fal-designer',
+  });
 }
 
 /**

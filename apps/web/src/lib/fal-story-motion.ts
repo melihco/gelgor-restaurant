@@ -14,15 +14,16 @@
  * video frame. Remotion or the mobile app caption layer handles text separately.
  */
 
+import {
+  buildFalI2vEnqueuePayload,
+  formatFalEnqueueError,
+  resolveFalI2vModelChain,
+} from '@/lib/fal-i2v-models';
+import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { serverConfig } from './server-config';
 
 const FAL_QUEUE_BASE = 'https://queue.fal.run';
 const FAL_AUTH = (key: string) => ({ Authorization: `Key ${key}` });
-
-const STORY_MOTION_MODELS = [
-  'fal-ai/kling-video/v3/standard/image-to-video',
-  'fal-ai/luma-dream-machine/image-to-video',
-] as const;
 
 /** Reel slots retry Kling/Luma before failing — avoids still_fallback PNG-as-video. */
 export const FAL_REEL_MOTION_ATTEMPTS = 3;
@@ -71,7 +72,7 @@ export function resolveMotionStyle(sector?: string, mood?: string): StoryMotionS
   return 'subtle_drift';
 }
 
-function buildStoryMotionPrompt(input: {
+export function buildStoryMotionPrompt(input: {
   style: StoryMotionStyle;
   headline?: string;
   sector?: string;
@@ -102,7 +103,7 @@ function buildStoryMotionPrompt(input: {
       'Quality: agency-grade social media brand content.',
       input.designerMotionCue ? `Designer motion note: ${input.designerMotionCue.slice(0, 180)}.` : '',
     ].filter(Boolean).join(' ');
-    return `${base} ${context}`.trim().slice(0, 1000);
+    return finalizeFalPrompt(`${base} ${context}`, { kind: 'video', label: 'story-motion-locked' });
   }
 
   // Atmospheric plate path — no text in the frame, full cinematic freedom
@@ -112,7 +113,7 @@ function buildStoryMotionPrompt(input: {
     'Duration: 5 seconds. Aspect ratio: 9:16 vertical. No text overlays. Cinematic motion freedom.',
     'Quality: cinematic, shallow depth of field, premium brand content.',
   ].filter(Boolean).join(' ');
-  return `${base} ${context}`.trim().slice(0, 800);
+  return finalizeFalPrompt(`${base} ${context}`, { kind: 'video', label: 'story-motion-plate' });
 }
 
 interface FalQueueSubmit {
@@ -140,21 +141,14 @@ async function runMotionModel(
   timeoutMs: number,
   preserveExistingText = false,
 ): Promise<string | null> {
-  const payload: Record<string, unknown> = {
+  const payload = buildFalI2vEnqueuePayload(modelId, {
+    imageUrl,
     prompt,
-    start_image_url: imageUrl,
-    duration: 5,
-    aspect_ratio: '9:16',
-    negative_prompt: preserveExistingText
-      ? 'text distortion, letter mutation, blurred text, cropped letters, missing characters, extra characters, rewritten text, typography change, font change, text movement, text warp, text bend, logo distortion, logo redraw, logo morph, logo recolor, logo replacement, fake brand mark, camera pan, camera tilt, camera zoom, reframing, composition change, low quality, artifacts'
-      : 'text, typography, letters, words, captions, subtitles, watermarks, logos, brand names, numbers, signs, labels, blur, distort, low quality, fast motion, zoom, shake',
-  };
-
-  // Kling v3 uses start_image_url; other models may use image_url
-  if (!modelId.includes('kling')) {
-    delete payload.start_image_url;
-    payload.image_url = imageUrl;
-  }
+    durationSecs: 5,
+    aspectRatio: '9:16',
+    preserveExistingText,
+    lumaResolution: serverConfig.ai.tier === 'premium' ? '720p' : '540p',
+  });
 
   const enqueueRes = await fetch(`${FAL_QUEUE_BASE}/${modelId}`, {
     method: 'POST',
@@ -163,13 +157,26 @@ async function runMotionModel(
     signal: AbortSignal.timeout(15_000),
   });
 
+  const {
+    recordFalEnqueueFailed,
+    recordFalRequestSubmitted,
+    markFalRequestCompleted,
+    markFalRequestFailed,
+  } = await import('./fal-request-tracker');
+
   if (!enqueueRes.ok) {
     const body = await enqueueRes.text().catch(() => '');
-    throw new Error(`enqueue failed ${enqueueRes.status}: ${body.slice(0, 200)}`);
+    const message = formatFalEnqueueError(enqueueRes.status, body);
+    recordFalEnqueueFailed({
+      model: modelId,
+      kind: 'video',
+      httpStatus: enqueueRes.status,
+      error: message,
+    });
+    throw new Error(message);
   }
 
   const queued = (await enqueueRes.json()) as FalQueueSubmit;
-  const { recordFalRequestSubmitted, markFalRequestCompleted, markFalRequestFailed } = await import('./fal-request-tracker');
   recordFalRequestSubmitted({
     requestId: queued.request_id,
     model: modelId,
@@ -263,9 +270,12 @@ export async function generateStoryMotionPlate(input: {
     pipeline: input.pipeline,
     designerMotionCue: input.designerMotionCue,
   });
+  console.log(`[fal-story-motion] prompt_chars=${prompt.length}`);
   const timeoutMs = input.timeoutMs ?? 120_000;
+  const storyMotionModels = resolveFalI2vModelChain('story_motion', serverConfig.ai.tier);
 
-  for (const modelId of STORY_MOTION_MODELS) {
+  let lastError = 'no models configured';
+  for (const modelId of storyMotionModels) {
     try {
       console.log(`[fal-story-motion] trying ${modelId} (style: ${style})`);
       const url = await runMotionModel(
@@ -281,10 +291,11 @@ export async function generateStoryMotionPlate(input: {
         return { videoUrl: url, model: modelId, style, durationSecs: 5 };
       }
     } catch (err) {
-      console.warn(`[fal-story-motion] ${modelId} failed:`, err instanceof Error ? err.message : err);
+      lastError = err instanceof Error ? err.message : String(err);
+      console.warn(`[fal-story-motion] ${modelId} failed:`, lastError);
     }
   }
-  throw new Error('All fal.ai story motion models failed');
+  throw new Error(`All fal.ai story motion models failed: ${lastError}`);
 }
 
 /**

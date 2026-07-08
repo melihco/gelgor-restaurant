@@ -45,7 +45,7 @@ services:
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: standard
     envVars:
       - fromGroup: smartagency-shared
       - key: DATABASE_URL
@@ -123,7 +123,7 @@ services:
     runtime: docker
     dockerfilePath: ./apps/web/Dockerfile
     dockerContext: .
-    plan: starter
+    plan: standard
     healthCheckPath: /
     envVars:
       - fromGroup: smartagency-shared

@@ -135,8 +135,7 @@ export async function proxyToCrewBackend(
       signal: AbortSignal.timeout(timeoutMs),
     });
 
-    const raw = await upstream.text();
-    const data = raw ? JSON.parse(raw) : null;
+    const data = (await upstream.json().catch(() => null)) as Record<string, unknown> | null;
 
     if (!upstream.ok) {
       return NextResponse.json(

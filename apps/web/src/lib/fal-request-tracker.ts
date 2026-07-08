@@ -33,6 +33,26 @@ export function getCapturedFalRequests(): FalRequestRecord[] {
   return activeSlotBuffer ? [...activeSlotBuffer] : [];
 }
 
+/** Enqueue rejected before fal returns a queue request_id (403 balance, 404 deprecated model, etc.). */
+export function recordFalEnqueueFailed(input: {
+  model: string;
+  kind: FalRequestKind;
+  httpStatus: number;
+  error: string;
+}): void {
+  const entry: FalRequestRecord = {
+    requestId: `enqueue-failed:${Date.now()}`,
+    model: input.model,
+    kind: input.kind,
+    status: 'failed',
+    submittedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    error: `HTTP ${input.httpStatus}: ${input.error}`.slice(0, 500),
+  };
+  if (activeSlotBuffer) activeSlotBuffer.push(entry);
+  logFalRequest(entry, 'enqueue_failed');
+}
+
 export function recordFalRequestSubmitted(input: {
   requestId: string;
   model: string;

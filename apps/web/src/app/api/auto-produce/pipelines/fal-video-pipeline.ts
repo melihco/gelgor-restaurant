@@ -7,6 +7,7 @@ import {
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { produceFalMissionVideo } from '@/lib/fal-video';
+import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
@@ -142,15 +143,18 @@ export const falVideoHandler: ProductionPipelineHandler = {
       state.pipelineFailureReason = `fal_video_designer: ${falMsg}`.slice(0, 480);
       try {
         const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
-        const motionPrompt = [
-          inputs.headline,
-          inputs.sceneHint,
-          inputs.caption,
-          inputs.mood ? `Mood: ${inputs.mood}` : '',
-          inputs.resolvedBrandName ? `Brand: ${inputs.resolvedBrandName}` : '',
-          inputs.brandBusinessType ? `Sector: ${inputs.brandBusinessType}` : '',
-          'Keep the real venue photo recognizable — subtle premium motion only.',
-        ].filter(Boolean).join('. ').slice(0, 500);
+        const motionPrompt = finalizeFalPrompt(
+          [
+            inputs.headline,
+            inputs.sceneHint,
+            inputs.caption,
+            inputs.mood ? `Mood: ${inputs.mood}` : '',
+            inputs.resolvedBrandName ? `Brand: ${inputs.resolvedBrandName}` : '',
+            inputs.brandBusinessType ? `Sector: ${inputs.brandBusinessType}` : '',
+            'Keep the real venue photo recognizable — subtle premium motion only.',
+          ].filter(Boolean).join('. '),
+          { kind: 'video', label: 'fal-video-fallback' },
+        );
         const fal = await produceFalMissionVideo({
           imageUrl: referenceUrl,
           headline: inputs.headline,

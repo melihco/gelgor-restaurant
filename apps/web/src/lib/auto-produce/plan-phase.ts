@@ -316,7 +316,11 @@ export async function runAutoProducePlanPhase(
           creativeBrief,
           strategistMissionType,
         })
-    : 0;
+    : resolveMaxRunwayReelsPerMission(brandTheme, pkgLimits.monthlyReels, {
+        missionTitle,
+        creativeBrief,
+        strategistMissionType,
+      });
   if (!allIdeasAreReels && maxRunwayReelsPerMission >= 2) {
     console.log(`[auto-produce] Mission importance detected — hero reel cap promoted to ${maxRunwayReelsPerMission}`);
   }

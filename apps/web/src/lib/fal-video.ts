@@ -1,13 +1,13 @@
+import {
+  buildFalI2vEnqueuePayload,
+  formatFalEnqueueError,
+  resolveFalI2vModelChain,
+} from '@/lib/fal-i2v-models';
+import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { serverConfig } from './server-config';
 
 const FAL_QUEUE_BASE = 'https://queue.fal.run';
 const FAL_AUTH_HEADER = (key: string) => ({ Authorization: `Key ${key}` });
-
-const VIDEO_MODELS = [
-  'fal-ai/kling-video/v1.6/pro/image-to-video',
-  'fal-ai/luma-dream-machine/image-to-video',
-  'fal-ai/hailuo-ai/video-01/image-to-video',
-] as const;
 
 interface FalQueueSubmit {
   request_id: string;
@@ -36,25 +36,41 @@ async function runModel(
   durationSecs: number,
   timeoutMs: number,
 ): Promise<string | null> {
+  const payload = buildFalI2vEnqueuePayload(modelId, {
+    imageUrl,
+    prompt,
+    durationSecs,
+    aspectRatio: '9:16',
+    lumaResolution: serverConfig.ai.tier === 'premium' ? '720p' : '540p',
+  });
+
   const enqueueRes = await fetch(`${FAL_QUEUE_BASE}/${modelId}`, {
     method: 'POST',
     headers: { ...FAL_AUTH_HEADER(apiKey), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      prompt,
-      image_url: imageUrl,
-      duration: durationSecs,
-      aspect_ratio: '9:16',
-    }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(15_000),
   });
 
+  const {
+    recordFalEnqueueFailed,
+    recordFalRequestSubmitted,
+    markFalRequestCompleted,
+    markFalRequestFailed,
+  } = await import('./fal-request-tracker');
+
   if (!enqueueRes.ok) {
     const body = await enqueueRes.text().catch(() => '');
-    throw new Error(`enqueue failed ${enqueueRes.status}: ${body.slice(0, 200)}`);
+    const message = formatFalEnqueueError(enqueueRes.status, body);
+    recordFalEnqueueFailed({
+      model: modelId,
+      kind: 'video',
+      httpStatus: enqueueRes.status,
+      error: message,
+    });
+    throw new Error(message);
   }
 
   const queued = (await enqueueRes.json()) as FalQueueSubmit;
-  const { recordFalRequestSubmitted, markFalRequestCompleted, markFalRequestFailed } = await import('./fal-request-tracker');
   recordFalRequestSubmitted({
     requestId: queued.request_id,
     model: modelId,
@@ -78,8 +94,9 @@ async function runModel(
 
     const status = (await statusRes.json()) as FalQueueStatus;
     if (status.status === 'FAILED') {
-      markFalRequestFailed(queued.request_id, status.error ?? 'fal.ai job failed');
-      throw new Error(status.error ?? 'fal.ai job failed');
+      const errMsg = status.error ?? 'fal.ai job failed';
+      markFalRequestFailed(queued.request_id, errMsg);
+      throw new Error(errMsg);
     }
     if (status.status !== 'COMPLETED') continue;
 
@@ -138,8 +155,10 @@ export async function generateFalVideo(
 
   const durationSecs = opts?.durationSecs ?? 5;
   const timeoutMs = opts?.timeoutMs ?? 110_000;
+  const videoModels = resolveFalI2vModelChain('raw_gallery', serverConfig.ai.tier);
 
-  for (const modelId of VIDEO_MODELS) {
+  let lastError = 'no models configured';
+  for (const modelId of videoModels) {
     try {
       console.log(`[fal-video] trying ${modelId}`);
       const url = await runModel(apiKey, modelId, resolvedImageUrl, prompt, durationSecs, timeoutMs);
@@ -148,15 +167,13 @@ export async function generateFalVideo(
         return { videoUrl: url, model: modelId };
       }
     } catch (err) {
-      console.warn(`[fal-video] ${modelId} failed:`, err instanceof Error ? err.message : err);
+      lastError = err instanceof Error ? err.message : String(err);
+      console.warn(`[fal-video] ${modelId} failed:`, lastError);
     }
   }
-  throw new Error('All fal.ai video models failed');
+  throw new Error(`All fal.ai video models failed: ${lastError}`);
 }
 
-// Pipeline classification is owned by the canonical registry (single source of
-// truth). These thin re-exports preserve the historical import path used across
-// production-loop.ts and production-pipeline-router.ts.
 export {
   isFalVideoPipeline,
   isFalDesignPipeline,
@@ -176,15 +193,18 @@ export async function produceFalMissionVideo(input: {
   workspaceId?: string;
   skipReuse?: boolean;
 }): Promise<{ videoUrl: string; model: string; reused?: boolean; reusedFromArtifactId?: string }> {
-  const prompt = [
-    input.headline,
-    input.caption,
-    input.mood ? `Mood: ${input.mood}` : '',
-    input.brandBusinessType ? `Brand sector: ${input.brandBusinessType}` : '',
-    input.pipeline === 'fal_reel'
-      ? 'Cinematic Instagram reel, smooth camera motion, vertical 9:16, premium brand content.'
-      : 'Subtle cinematic story motion, vertical 9:16, ambient atmosphere, premium brand story.',
-  ].filter(Boolean).join('. ').slice(0, 500);
+  const prompt = finalizeFalPrompt(
+    [
+      input.headline,
+      input.caption,
+      input.mood ? `Mood: ${input.mood}` : '',
+      input.brandBusinessType ? `Brand sector: ${input.brandBusinessType}` : '',
+      input.pipeline === 'fal_reel'
+        ? 'Cinematic Instagram reel, smooth camera motion, vertical 9:16, premium brand content.'
+        : 'Subtle cinematic story motion, vertical 9:16, ambient atmosphere, premium brand story.',
+    ].filter(Boolean).join('. '),
+    { kind: 'video', label: 'fal-mission-video' },
+  );
 
   const durationSecs = input.pipeline === 'fal_reel' ? 10 : 5;
   return generateFalVideo(input.imageUrl, prompt, {

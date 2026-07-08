@@ -16,6 +16,7 @@
 
 import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-theme';
 import { serverConfig } from './server-config';
+import { finalizeFalPrompt } from './fal-prompt';
 import {
   buildFalLogoPlacementContract,
   buildFalOnCanvasTextContract,
@@ -188,7 +189,7 @@ function buildTypographyPrompt(input: {
     const bgSceneLine = sceneHint
       ? ` Evoke the mood and theme of: ${sceneHint} — purely through light, color, texture, and atmosphere.`
       : '';
-    return [
+    const bgPrompt = [
       `Cinematic atmospheric background plate, ${aspect}. Pure mood — absolutely NO text, NO letters, NO words, NO typography of any kind.`,
       spec.backgroundHint ? `Atmosphere: ${spec.backgroundHint}.` : '',
       brandColorEmphasis,
@@ -197,7 +198,8 @@ function buildTypographyPrompt(input: {
       bgSceneLine,
       'CRITICAL: This is a background plate only. Zero text. Zero letters. Zero numbers. No watermarks. No brand name text. No headlines. No captions. Just beautiful atmospheric visuals.',
       'Premium cinematic quality. Suitable as a video start frame for professional social content.',
-    ].filter(Boolean).join(' ').trim().slice(0, 1200);
+    ].filter(Boolean).join(' ');
+    return finalizeFalPrompt(bgPrompt, { maxChars: 1200, kind: 'image', label: 'typography-bg-plate' });
   }
 
   // ── Reels / TikTok creator template (9:16 video still) ───────────────────
@@ -227,7 +229,7 @@ function buildTypographyPrompt(input: {
       : input.brandName
         ? ` Place "${input.brandName}" brand name at top-right corner — small, clean watermark.`
         : '';
-    return [
+    const reelPrompt = [
       `Premium Canva Pro Instagram Reel / TikTok cover frame, ${aspect}.`,
       'Social media creator aesthetic — bold stacked headline, geometric color blocks, accent bars, divider lines, decorative shapes (circles, stars, brush strokes). NOT a raw photo.',
       spec.styleDirective,
@@ -244,7 +246,8 @@ function buildTypographyPrompt(input: {
       logoLine,
       'Layout: creator template with large typography panel + abstract branded background. Motion-ready layered composition.',
       'Render only the quoted on-image copy. No prompt instruction words on canvas.',
-    ].filter(Boolean).join(' ').trim().slice(0, 1500);
+    ].filter(Boolean).join(' ');
+    return finalizeFalPrompt(reelPrompt, { maxChars: 1500, kind: 'image', label: 'typography-reel' });
   }
 
   // ── Full typography design (for post stills) ─────────────────────────────
@@ -276,7 +279,7 @@ function buildTypographyPrompt(input: {
       ? ` Place "${input.brandName}" brand name in a clean, minimal style at the top-right or bottom-right corner. Small but legible. Brand watermark presence is mandatory.`
       : '';
 
-  return [
+  const postPrompt = [
     `Professional social media design poster, ${aspect}.`,
     spec.styleDirective,
     brandColorEmphasis,
@@ -294,7 +297,8 @@ function buildTypographyPrompt(input: {
     'No watermarks. No stock photo badges. No random text or placeholder words.',
     'Render only the quoted on-image copy. Do not paint prompt instruction words (e.g. "exactly", "headline", "critical").',
     'Premium agency design quality. Balanced layout with intentional negative space.',
-  ].filter(Boolean).join(' ').trim().slice(0, 1500);
+  ].filter(Boolean).join(' ');
+  return finalizeFalPrompt(postPrompt, { maxChars: 1500, kind: 'image', label: 'typography-post' });
 }
 
 // ── API Call ─────────────────────────────────────────────────────────────────

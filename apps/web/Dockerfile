@@ -33,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=1536
 ENV HOSTNAME=0.0.0.0
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV REMOTION_CHROME_EXECUTABLE=/usr/bin/chromium

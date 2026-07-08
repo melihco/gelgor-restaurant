@@ -316,6 +316,7 @@ import {
 } from './handlers/image-generators';
 import { scoreReelHook } from '@/lib/reel-hook-score';
 import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
+import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { falVideoHandler } from './pipelines/fal-video-pipeline';
 import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
 import { falOnlyHandler } from './pipelines/fal-only-pipeline';
@@ -2901,7 +2902,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             });
           } catch { /* telemetri üretimi bozmamalı */ }
           try {
-            const falPrompt = [caption, headline, brandBusinessType].filter(Boolean).join('. ').slice(0, 500);
+            const falPrompt = finalizeFalPrompt(
+              [caption, headline, brandBusinessType].filter(Boolean).join('. '),
+              { kind: 'video', label: 'runway-fallback' },
+            );
             const fal = await generateFalVideo(referenceUrl, falPrompt, {
               durationSecs: 5,
               timeoutMs: 110_000,
@@ -2934,7 +2938,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         reelFailureReason = runwayBudget.reason ?? 'Runway bütçe yetersiz';
         console.log('[auto-produce] Runway skipped:', runwayBudget.reason);
       }
-    } else if (isReel && !isHeroReel && !isFalMissionVideo) {
+    } else if (isReel && !isHeroReel && !isFalMissionVideo && !isFalOnlyVideo) {
       reelFailureReason = runwayReelsProducedInMission >= maxRunwayReelsPerMission
         ? `Mission reel limiti (${maxRunwayReelsPerMission})`
         : 'Hero reel slot assigned to another idea — publish as story';
