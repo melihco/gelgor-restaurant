@@ -882,14 +882,6 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       steps?: Array<{ id: string; ok: boolean; detail?: string }>;
     };
 
-    if (!res.ok || !data.ok) {
-      const stepFail = data.steps?.find((s) => !s.ok);
-      throw new Error(
-        data.errors?.[0]
-        || (stepFail ? `${stepFail.id}: ${stepFail.detail ?? 'başarısız'}` : 'Marka kurulumu tamamlanamadı.'),
-      );
-    }
-
     if (data.brandAnalysis) {
       setStatus('Firma profili ve marka hafızası kaydediliyor...');
       await persistPythonAnalysisToProfile(data.brandAnalysis, data.authoritativeSector);
@@ -897,6 +889,21 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
         method: 'POST',
         headers: getRequestContextHeaders(),
       }).catch(() => null);
+    }
+
+    if (!res.ok || !data.ok) {
+      const stepFail = data.steps?.find((s) => !s.ok);
+      console.warn('[onboarding] deep brand setup incomplete', {
+        status: res.status,
+        error: data.errors?.[0],
+        step: stepFail,
+      });
+      setStatus(
+        data.brandAnalysis
+          ? 'Marka profili kaydedildi · Gelişmiş ayarlar arka planda tamamlanacak.'
+          : 'Temel marka profili kaydedildi · Analizi Marka Ayarlarından tamamlayabilirsiniz.',
+      );
+      return;
     }
 
     const cal = data.gallery?.calibration;
