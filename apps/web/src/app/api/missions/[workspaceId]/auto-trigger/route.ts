@@ -95,7 +95,20 @@ export async function POST(
     });
   }
 
-  // 1. Check if there are already active/proposed missions — skip if so
+  // 1. Proposal gate — skip when a mission awaits approval or feed is still producing
+  const gateRes = await proxyToCrewBackend(
+    `/api/v1/missions/${workspaceId}/proposal-gate`,
+    { workspaceId, timeoutMs: 15_000 },
+  );
+  const gate = gateRes.ok
+    ? await gateRes.json().catch(() => null) as {
+        allowed?: boolean;
+        reason?: string;
+        message?: string;
+        mission_id?: string;
+      } | null
+    : null;
+
   const listRes = await proxyToCrewBackend(
     `/api/v1/missions/${workspaceId}?limit=20`,
   );
@@ -104,36 +117,36 @@ export async function POST(
   }
 
   const missions = normalizeMissionList(await listRes.json().catch(() => null));
-  const hasActive = missions.some(
-    m => m.status === 'in_flight' || m.status === 'approved',
-  );
   const hasProposed = missions.some(m => m.status === 'proposed');
-  const completedCount = missions.filter(m => m.status === 'completed').length;
 
-  if (hasActive) {
-    return NextResponse.json({ skipped: true, reason: 'already_active' });
-  }
-
-  // Completed weekly cycle — do not auto-propose on every Feed mount (cost leak).
-  if (completedCount > 0 && !hasProposed) {
+  if (gate && gate.allowed === false) {
+    if (gate.reason === 'awaiting_approval' && hasProposed) {
+      const firstProposed = missions.find(m => m.status === 'proposed');
+      if (firstProposed) {
+        await proxyToCrewBackend(
+          `/api/v1/missions/${workspaceId}/${firstProposed.id}/approve`,
+          { method: 'PUT', body: { approved_by: 'auto-feed' }, timeoutMs: 10_000 },
+        ).catch(() => null);
+        return NextResponse.json({
+          triggered: true,
+          action: 'approved_existing',
+          missionId: firstProposed.id,
+        });
+      }
+    }
     return NextResponse.json({
       skipped: true,
-      reason: 'completed_missions_exist',
-      completed_count: completedCount,
-      detail: 'Tamamlanmış mission varken yeni öneri oluşturulmadı.',
+      reason: gate.reason ?? 'proposal_gate',
+      detail: gate.message,
+      mission_id: gate.mission_id,
     });
   }
 
-  // 2. If there are proposed missions, approve the first one
-  if (hasProposed) {
-    const firstProposed = missions.find(m => m.status === 'proposed');
-    if (firstProposed) {
-      await proxyToCrewBackend(
-        `/api/v1/missions/${workspaceId}/${firstProposed.id}/approve`,
-        { method: 'PUT', body: { approved_by: 'auto-feed' }, timeoutMs: 10_000 },
-      ).catch(() => null);
-      return NextResponse.json({ triggered: true, action: 'approved_existing', missionId: firstProposed.id });
-    }
+  const hasActive = missions.some(
+    m => m.status === 'in_flight' || m.status === 'approved',
+  );
+  if (hasActive) {
+    return NextResponse.json({ skipped: true, reason: 'already_active' });
   }
 
   // 3. Fetch context signals (trend, sector, season) before proposing.

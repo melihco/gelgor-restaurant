@@ -51,6 +51,7 @@ from app.services.mission_feed_production_service import (
     kick_feed_production as kick_feed_production_service,
     reproduce_feed_production as reproduce_feed_production_service,
 )
+from app.services.mission_proposal_guard import resolve_mission_proposal_block
 from app.services.strategist_service import propose_missions_for_workspace
 
 logger = structlog.get_logger()
@@ -350,24 +351,20 @@ async def propose_missions(
         body.production_package if body else None,
     )
 
-    blocking = await list_blocking_missions(db, workspace_id)
+    blocking = await resolve_mission_proposal_block(db, workspace_id)
     if blocking:
-        sample = " · ".join(f"{m.title[:36]}" for m in blocking[:2])
         logger.info(
             "propose_missions_blocked",
             workspace_id=str(workspace_id),
-            blocking_count=len(blocking),
+            reason=blocking.reason,
+            mission_id=blocking.mission_id,
         )
         return ProposeMissionsResponse(
             workspace_id=str(workspace_id),
             proposals_created=0,
             missions=[],
-            skip_reason="blocking_missions",
-            message=(
-                f"Yeni öneri için önce mevcut misyonları bitirin veya reddedin "
-                f"({len(blocking)} bekleyen/aktif). "
-                f"{sample}"
-            ),
+            skip_reason=blocking.reason,
+            message=blocking.message,
         )
 
     try:
@@ -540,6 +537,18 @@ async def get_mission_progress(
         include_payload=include_payload,
         summary_max_chars=summary_max_chars,
     )
+
+
+@router.get("/{workspace_id}/proposal-gate")
+async def mission_proposal_gate(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Whether this workspace may receive a new mission proposal (auto + manual)."""
+    block = await resolve_mission_proposal_block(db, workspace_id)
+    if block:
+        return {"allowed": False, **block.as_dict()}
+    return {"allowed": True}
 
 
 @router.get("/{workspace_id}/{mission_id}/production-jobs")

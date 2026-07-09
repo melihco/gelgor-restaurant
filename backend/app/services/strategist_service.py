@@ -386,15 +386,15 @@ async def propose_missions_for_workspace(
     # Blocking missions are handled in the API layer (clear message to the operator).
     # Service-level skip only when force=False and called from scheduler/internal paths.
     if not force:
-        existing_missions = await list_missions(db, workspace_id, limit=30)
-        blocking_statuses = {"proposed", "in_flight", "approved"}
-        blocking = [m for m in existing_missions if m.status in blocking_statuses]
-        if blocking:
+        from app.services.mission_proposal_guard import resolve_mission_proposal_block
+
+        block = await resolve_mission_proposal_block(db, workspace_id)
+        if block:
             logger.info(
                 "propose_missions_skipped_active",
                 workspace_id=str(workspace_id),
-                blocking_count=len(blocking),
-                statuses=[m.status for m in blocking[:5]],
+                reason=block.reason,
+                mission_id=block.mission_id,
             )
             return []
 

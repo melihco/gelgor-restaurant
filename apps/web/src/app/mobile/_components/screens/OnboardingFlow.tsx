@@ -790,6 +790,59 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
     }
   }
 
+  function cleanProfileText(value: unknown): string {
+    return String(value ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function uniqueNonEmpty(items: Array<unknown>): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of items) {
+      const text = cleanProfileText(item);
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(text);
+    }
+    return out;
+  }
+
+  function buildProductionBrandDescription(input: {
+    analysis: Awaited<ReturnType<typeof apiClient.analyzeBrandContext>>;
+    ctx: Record<string, unknown>;
+    industry: string;
+    pillars: string[];
+    ctas: string[];
+  }): string {
+    const { analysis, ctx, industry, pillars, ctas } = input;
+    const brand = cleanProfileText(company) || cleanProfileText(ctx.business_name) || brandName;
+    const location = cleanProfileText(ctx.location);
+    const websiteSummary = cleanProfileText(analysis.website_summary || ctx.website_summary || ctx.description);
+    const instagramBio = cleanProfileText(analysis.instagram_bio || ctx.instagram_bio);
+    const targetAudience = cleanProfileText(ctx.target_audience);
+    const visualStyle = cleanProfileText(ctx.visual_style);
+    const brandTone = cleanProfileText(analysis.inferred_tone || ctx.brand_tone);
+
+    const intro = uniqueNonEmpty([
+      brand && `${brand}${location ? `, ${location}` : ''} merkezli ${industry || 'yerel işletme'} markasıdır.`,
+      websiteSummary,
+      instagramBio && `Instagram bio: ${instagramBio}`,
+    ]).join(' ');
+
+    const productionContext = uniqueNonEmpty([
+      targetAudience && `Hedef kitle: ${targetAudience}.`,
+      brandTone && `Marka tonu: ${brandTone}.`,
+      visualStyle && `Görsel dünya: ${visualStyle}.`,
+      pillars.length ? `İçerik üretiminde ana odaklar: ${pillars.slice(0, 8).join(', ')}.` : '',
+      ctas.length ? `Kampanya ve CTA yönü: ${ctas.slice(0, 6).join(', ')}.` : '',
+    ]).join(' ');
+
+    return uniqueNonEmpty([intro, productionContext]).join('\n\n').slice(0, 1900);
+  }
+
   async function persistPythonAnalysisToProfile(
     analysis: Awaited<ReturnType<typeof apiClient.analyzeBrandContext>>,
     authoritativeSector?: string,
@@ -819,6 +872,13 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       analysis.website_summary || String(ctx.website_summary || ''),
       analysis.instagram_bio ? `Instagram: ${analysis.instagram_bio}` : '',
     ].filter(Boolean).join('\n\n');
+    const productionDescription = buildProductionBrandDescription({
+      analysis,
+      ctx,
+      industry,
+      pillars,
+      ctas,
+    });
     const summary = `${company.trim()} için sektör ${industry || 'general_business'} olarak analiz edildi. Önerilen sosyal medya ihtiyaçları: ${pillars.slice(0, 5).join(', ') || 'daily_story'}.`;
 
     await apiClient.saveCompanyProfile({
@@ -835,7 +895,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       languages: analysis.inferred_language || String(ctx.languages || 'tr'),
       logoUrl: String(ctx.logo_url || ''),
       websiteUrl: websiteUrl || String(ctx.website_url || ''),
-      description: analysis.website_summary || String(ctx.description || ''),
+      description: productionDescription || analysis.website_summary || String(ctx.description || ''),
       instagramHandle: igHandle || String(ctx.instagram_handle || '') || undefined,
       googleBusinessUrl: String(ctx.google_business_url || '') || undefined,
       brandImageUrls: refUrls.slice(0, 40).join(','),

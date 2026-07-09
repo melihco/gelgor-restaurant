@@ -156,6 +156,53 @@ function parseObj(raw: unknown): Record<string, string> {
 
 function arrToStr(arr: string[]): string { return arr.join(', '); }
 
+function cleanProfileText(value: unknown): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function uniqueNonEmpty(items: Array<unknown>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const text = cleanProfileText(item);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
+function buildAiBrandDescription(input: {
+  brandName: string;
+  industry: string;
+  location?: string;
+  websiteSummary?: string;
+  instagramBio?: string;
+  targetAudience?: string;
+  brandTone?: string;
+  visualStyle?: string;
+  contentPillars?: string[];
+  defaultCtas?: string[];
+}): string {
+  const intro = uniqueNonEmpty([
+    input.brandName && `${input.brandName}${input.location ? `, ${input.location}` : ''} merkezli ${input.industry || 'yerel işletme'} markasıdır.`,
+    input.websiteSummary,
+    input.instagramBio && `Instagram bio: ${input.instagramBio}`,
+  ]).join(' ');
+
+  const productionContext = uniqueNonEmpty([
+    input.targetAudience && `Hedef kitle: ${input.targetAudience}.`,
+    input.brandTone && `Marka tonu: ${input.brandTone}.`,
+    input.visualStyle && `Görsel dünya: ${input.visualStyle}.`,
+    input.contentPillars?.length ? `İçerik üretiminde ana odaklar: ${input.contentPillars.slice(0, 8).join(', ')}.` : '',
+    input.defaultCtas?.length ? `Kampanya ve CTA yönü: ${input.defaultCtas.slice(0, 6).join(', ')}.` : '',
+  ]).join(' ');
+
+  return uniqueNonEmpty([intro, productionContext]).join('\n\n').slice(0, 1900);
+}
+
 // ─── Inline field editor (iOS Settings row) ─────────────────────────────
 function Field({ t, label, value, onSave, multiline = false, hint }: {
   t: T; label: string; value: string; onSave: (v: string) => void;
@@ -2467,6 +2514,7 @@ export function BrandConstitution() {
   const [tab, setTab] = useState<Tab>('identity');
   const [saved, setSaved] = useState(false);
   const [analyzeFeedback, setAnalyzeFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [descriptionAiFeedback, setDescriptionAiFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [newCompetitor, setNewCompetitor] = useState('');
   const [confirmingConstitution, setConfirmingConstitution] = useState(false);
   const [constitutionConfirmError, setConstitutionConfirmError] = useState<string | null>(null);
@@ -2585,6 +2633,105 @@ export function BrandConstitution() {
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const descriptionAiMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantId || !profile) throw new Error('tenant_required');
+      setDescriptionAiFeedback(null);
+
+      const current = profile as CompanyProfile & Record<string, unknown>;
+      const websiteUrl = cleanProfileText(current.websiteUrl || (pyCtx as Record<string, unknown> | undefined)?.website_url);
+      const instagramHandle = cleanProfileText(
+        current.instagramHandle || (pyCtx as Record<string, unknown> | undefined)?.instagram_handle,
+      ).replace(/^@/, '');
+      const googleBusinessUrl = cleanProfileText(
+        current.googleBusinessUrl || (pyCtx as Record<string, unknown> | undefined)?.google_business_url,
+      );
+      if (!websiteUrl && !instagramHandle && !googleBusinessUrl) {
+        throw new Error('AI analizi için web sitesi, Instagram veya Google Business bilgisi ekleyin.');
+      }
+
+      try {
+        await apiClient.discoverBrand({
+          websiteUrl: websiteUrl || undefined,
+          instagramHandle: instagramHandle || undefined,
+          googleBusinessUrl: googleBusinessUrl || undefined,
+          applyToProfile: true,
+        });
+      } catch {
+        // Python analysis below is the source of truth for this field.
+      }
+
+      const analysis = await apiClient.analyzeBrandContext(tenantId, {
+        websiteUrl,
+        instagramHandle,
+        googleBusinessUrl,
+        brandName: cleanProfileText(current.brandName || (pyCtx as Record<string, unknown> | undefined)?.business_name),
+      });
+      const ctx = (analysis.brand_context ?? {}) as Record<string, unknown>;
+      const pillars = analysis.content_pillars?.length
+        ? analysis.content_pillars
+        : parseArr(ctx.content_pillars);
+      const ctas = analysis.default_ctas?.length
+        ? analysis.default_ctas
+        : parseArr(ctx.default_ctas);
+      const industry = cleanProfileText(current.industry)
+        || cleanProfileText(analysis.inferred_industry)
+        || cleanProfileText(ctx.business_type)
+        || cleanProfileText(ctx.industry);
+      const nextDescription = buildAiBrandDescription({
+        brandName: cleanProfileText(current.brandName || ctx.business_name),
+        industry,
+        location: cleanProfileText(current.location || ctx.location),
+        websiteSummary: cleanProfileText(analysis.website_summary || ctx.website_summary || ctx.description),
+        instagramBio: cleanProfileText(analysis.instagram_bio || ctx.instagram_bio),
+        targetAudience: cleanProfileText(current.targetAudience || ctx.target_audience),
+        brandTone: cleanProfileText(analysis.inferred_tone || ctx.brand_tone || current.brandTone),
+        visualStyle: cleanProfileText(current.visualStyle || ctx.visual_style),
+        contentPillars: pillars,
+        defaultCtas: ctas,
+      });
+
+      if (!nextDescription) throw new Error('AI analizinden açıklama üretilemedi.');
+
+      const updates: Partial<SaveCompanyProfileRequest> = {
+        description: nextDescription,
+      };
+      if (!cleanProfileText(current.targetAudience) && cleanProfileText(ctx.target_audience)) {
+        updates.targetAudience = cleanProfileText(ctx.target_audience).slice(0, 500);
+      }
+      if (!cleanProfileText(current.visualStyle) && cleanProfileText(ctx.visual_style)) {
+        updates.visualStyle = cleanProfileText(ctx.visual_style).slice(0, 200);
+      }
+      if (!cleanProfileText(current.campaignGoals) && ctas.length) {
+        updates.campaignGoals = ctas.join(', ').slice(0, 1000);
+      }
+      if (!cleanProfileText(current.contentNeeds) && pillars.length) {
+        updates.contentNeeds = JSON.stringify(pillars);
+      }
+
+      await apiClient.saveCompanyProfile({ ...(current as any), ...updates } as SaveCompanyProfileRequest);
+      patchPythonBrandFields({
+        description: nextDescription,
+        ...(updates.targetAudience ? { target_audience: updates.targetAudience } : {}),
+        ...(updates.visualStyle ? { visual_style: updates.visualStyle } : {}),
+      });
+      return nextDescription;
+    },
+    onSuccess: () => {
+      setDescriptionAiFeedback({ kind: 'ok', text: 'AI açıklaması oluşturuldu ve kaydedildi.' });
+      queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
+      void invalidateBrandContextWriteQueries(queryClient, tenantId);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+    onError: (err) => {
+      setDescriptionAiFeedback({
+        kind: 'err',
+        text: err instanceof Error ? err.message : 'AI açıklama analizi başarısız oldu.',
+      });
     },
   });
 
@@ -3153,6 +3300,46 @@ export function BrandConstitution() {
             </div>
 
             <SCard t={t} title="Marka Açıklaması">
+              <div style={{ padding: '14px 16px 0' }}>
+                <button
+                  type="button"
+                  onClick={() => descriptionAiMutation.mutate()}
+                  disabled={descriptionAiMutation.isPending}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 14,
+                    border: `0.5px solid ${t.accentBorder}`,
+                    background: t.accentDim,
+                    color: t.accent,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
+                >
+                  {descriptionAiMutation.isPending ? 'AI markayı analiz ediyor…' : 'AI ile analiz et ve doldur'}
+                </button>
+                {descriptionAiFeedback && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: '9px 11px',
+                    borderRadius: 10,
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                    color: descriptionAiFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
+                    background: descriptionAiFeedback.kind === 'err'
+                      ? 'rgba(245,158,11,0.12)'
+                      : (t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)'),
+                    border: `0.5px solid ${descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.28)'}`,
+                  }}>
+                    {descriptionAiFeedback.text}
+                  </div>
+                )}
+              </div>
               <Field t={t} label="Açıklama & Ürünler" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin — ajanlar bunu kullanır." />
             </SCard>
 

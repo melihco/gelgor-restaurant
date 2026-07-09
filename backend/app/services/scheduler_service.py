@@ -550,6 +550,18 @@ async def _opportunity_scanner_job() -> None:
                 )
 
                 async with async_session_factory() as db:
+                    from app.services.mission_proposal_guard import resolve_mission_proposal_block
+
+                    block = await resolve_mission_proposal_block(db, ctx.workspace_id)
+                    if block:
+                        logger.info(
+                            "opportunity_scanner_skipped_proposal_gate",
+                            workspace_id=str(ctx.workspace_id),
+                            reason=block.reason,
+                        )
+                        continue
+
+                async with async_session_factory() as db:
                     await create_mission(db, ctx.workspace_id, mc)
 
                 created_count += 1
@@ -658,6 +670,17 @@ async def _detect_phase_transitions_job() -> None:
                 )
 
                 async with async_session_factory() as db:
+                    from app.services.mission_proposal_guard import resolve_mission_proposal_block
+
+                    block = await resolve_mission_proposal_block(db, ctx.workspace_id)
+                    if block:
+                        logger.info(
+                            "phase_transition_skipped_proposal_gate",
+                            workspace_id=str(ctx.workspace_id),
+                            reason=block.reason,
+                        )
+                        continue
+
                     await create_mission(db, ctx.workspace_id, mission_create)
 
                     # Update last_known_phase so this transition doesn't re-fire
@@ -763,6 +786,17 @@ async def _detect_special_days_job() -> None:
                         ).limit(1)
                     )
                     if existing.scalar_one_or_none() is not None:
+                        continue
+
+                    from app.services.mission_proposal_guard import resolve_mission_proposal_block
+
+                    block = await resolve_mission_proposal_block(db, ctx.workspace_id)
+                    if block:
+                        logger.info(
+                            "special_day_skipped_proposal_gate",
+                            workspace_id=str(ctx.workspace_id),
+                            reason=block.reason,
+                        )
                         continue
 
                     mission_create = create_special_day_mission(
@@ -873,16 +907,15 @@ async def _daily_auto_content_job() -> None:
             ws_id = ctx.workspace_id
             try:
                 async with async_session_factory() as db:
-                    # Guard: skip if there's already an active mission
-                    active_q = await db.execute(
-                        select(Mission).where(
-                            and_(
-                                Mission.workspace_id == ws_id,
-                                Mission.status.in_(["approved", "in_flight"]),
-                            )
+                    from app.services.mission_proposal_guard import resolve_mission_proposal_block
+
+                    block = await resolve_mission_proposal_block(db, ws_id)
+                    if block:
+                        logger.info(
+                            "auto_content_skipped_proposal_gate",
+                            workspace_id=str(ws_id),
+                            reason=block.reason,
                         )
-                    )
-                    if active_q.scalar_one_or_none():
                         continue
 
                     # Guard: skip if already completed a mission today
@@ -1056,12 +1089,11 @@ async def _semi_auto_proposal_job() -> None:
     from app.models.mission import Mission
     from app.services.brand_context_service import bootstrap_brand_intelligence, build_brand_info as build_brand_info_fn
     from app.services.strategist_service import propose_missions_for_workspace
-    from sqlalchemy import select, func
+    from sqlalchemy import select
     import asyncio as _asyncio
 
     logger.info("semi_auto_proposal_job_start")
     start = datetime.now(timezone.utc)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     proposed_count = 0
 
     try:
@@ -1078,15 +1110,15 @@ async def _semi_auto_proposal_job() -> None:
             ws_id = ctx.workspace_id
             try:
                 async with async_session_factory() as db:
-                    # Skip if there's an active/proposed mission in the last 7 days
-                    recent = await db.execute(
-                        select(func.count()).select_from(Mission).where(
-                            Mission.workspace_id == ws_id,
-                            Mission.status.in_(["proposed", "approved", "in_progress"]),
-                            Mission.created_at >= cutoff,
+                    from app.services.mission_proposal_guard import resolve_mission_proposal_block
+
+                    block = await resolve_mission_proposal_block(db, ws_id)
+                    if block:
+                        logger.info(
+                            "semi_auto_proposal_skipped_gate",
+                            workspace_id=str(ws_id),
+                            reason=block.reason,
                         )
-                    )
-                    if recent.scalar() > 0:
                         continue
 
                     # Bootstrap if signals are still empty
@@ -1106,7 +1138,7 @@ async def _semi_auto_proposal_job() -> None:
                         recent_titles_q = await db.execute(
                             select(Mission.title).where(
                                 Mission.workspace_id == ws_id,
-                                Mission.status.in_(["completed", "in_progress"]),
+                                Mission.status.in_(["completed", "in_flight"]),
                             ).order_by(Mission.created_at.desc()).limit(8)
                         )
                         brand_for_signals._recent_mission_titles = [
