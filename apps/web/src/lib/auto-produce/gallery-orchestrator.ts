@@ -36,6 +36,8 @@ export function assignmentUsesGalleryPhoto(
   const pipeline = String(assignment.pipeline ?? '');
   const role = String(assignment.slot_role ?? '');
   if (pipeline === 'remotion_poster') return false;
+  if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
+  if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
   if (
     pipeline === 'fal_design'
     || role === 'designed_post'
@@ -44,9 +46,6 @@ export function assignmentUsesGalleryPhoto(
   ) {
     return true;
   }
-  if (pipeline.startsWith('fal_only_') || role.startsWith('fal_only_')) return false;
-  if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
-  if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
   return (
     pipeline === 'gallery_photo'
     || pipeline === 'story_still'
@@ -173,9 +172,14 @@ export function buildMissionGalleryAssignments(
     result.set(key, val);
   }
 
+  const assignedCount = [...batchAssigned.values()].filter(Boolean).length;
+  const diversityCount = [...batchAssigned.values()].filter(
+    (v) => v?.reason === 'mission_diversity_fallback',
+  ).length;
+
   console.log(
     `[auto-produce] Mission gallery batch assign: ${assignItems.length} slots, ` +
-    `${[...batchAssigned.values()].filter(Boolean).length} matched (≥${MIN_ACCEPT_SCORE})`,
+    `${assignedCount} assigned (${assignedCount - diversityCount} semantic, ${diversityCount} diversity)`,
   );
 
   return result;

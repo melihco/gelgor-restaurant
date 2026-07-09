@@ -13,6 +13,7 @@ import type { TypographyVibe } from '@/types/brand-theme';
 import {
   produceFalDesignedPostStill,
   produceFalDesignerVideo,
+  resolveFalRequireGroundedGallery,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { generateStoryMotionPlate, isPlayableVideoUrl } from '@/lib/fal-story-motion';
@@ -141,6 +142,12 @@ export async function produceFalOnlySlot(
       input.brandReferenceImageUrls ?? [],
     );
 
+    const groundedRequired = resolveFalRequireGroundedGallery({
+      referencePhotoUrl: photoUrl,
+      sector: input.sector,
+      pipeline: falPipeline,
+    });
+
     let designFailMsg = '';
     try {
       const designer = await produceFalDesignerVideo({
@@ -164,6 +171,7 @@ export async function produceFalOnlySlot(
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         pipeline: falPipeline,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
+        requireGroundedGallery: groundedRequired,
         designerMotionCue: input.designerMotionCue,
         designIntensityLevel: input.designIntensityLevel,
         occasion: binding?.occasion,
@@ -298,6 +306,10 @@ export async function produceFalOnlySlot(
         mood: input.mood,
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
+        requireGroundedGallery: resolveFalRequireGroundedGallery({
+          referencePhotoUrl: photoUrl,
+          sector: input.sector,
+        }),
         designIntensityLevel: input.designIntensityLevel,
         occasion: binding?.occasion,
       });

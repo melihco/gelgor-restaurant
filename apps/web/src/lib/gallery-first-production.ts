@@ -6,6 +6,7 @@ import {
   MIN_ACCEPT_SCORE,
   RELAXED_MATCH_SCORE,
   buildGalleryLookup,
+  pickMissionDiverseFallbackPhoto,
   rankPhotosForContent,
   rankPhotosForContentSeeded,
   type GalleryPhotoMeta,
@@ -195,6 +196,14 @@ export function pickGalleryPhotoForSlot(input: {
   if (!input.slotBackfillPass && best && best.score >= RELAXED_MATCH_SCORE) {
     return best;
   }
+
+  const diverse = pickMissionDiverseFallbackPhoto(
+    input.galleryPhotos,
+    usedBases,
+    input.galleryMeta,
+    input.excludeUrls,
+  );
+  if (diverse) return diverse;
 
   return null;
 }

@@ -150,20 +150,26 @@ export function shouldUseCaptionDrivenVisual(
   if (
     pipeline === 'runway_reel'
     || pipeline === 'remotion_story'
+    || pipeline === 'fal_story'
+    || pipeline === 'fal_reel'
+    || pipeline === 'fal_only_reel'
+    || pipeline === 'fal_only_story'
+    || pipeline === 'fal_only_post'
+    || pipeline?.startsWith('fal_only_')
     || pipeline === 'carousel_gallery'
     || role === 'organic_reel'
     || role === 'organic_carousel'
     || role === 'campaign_story_motion'
+    || role === 'campaign_reel_motion'
     || role === 'organic_story_still'
+    || role === 'fal_reel_motion'
   ) {
     return false;
   }
   return (
     pipeline === 'gallery_photo'
-    || pipeline === 'fal_design'
     || role === 'designed_post'
     || role === 'designed_typography'
-    || role === 'fal_designed_post'
     || role === 'organic_post'
   );
 }

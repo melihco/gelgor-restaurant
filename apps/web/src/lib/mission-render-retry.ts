@@ -23,10 +23,13 @@ export function missionRemotionStoryNeedsRetry(artifact: OutputArtifact): boolea
   const content = parseArtifactContent(artifact.content);
   const role = String(meta.production_role ?? content.production_role ?? '').trim();
   const pipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
+  if (pipeline === 'fal_story') return false;
+
   const isRemotionStory = expectsRemotionStoryVideo(artifact)
-    || role === 'campaign_story_motion'
     || pipeline === 'remotion_story'
-    || (isProductionBundleStory(artifact) && (role.includes('story') || pipeline.includes('story')));
+    || (isProductionBundleStory(artifact)
+      && (role.includes('story') || pipeline.includes('story'))
+      && pipeline !== 'fal_story');
 
   if (!isRemotionStory) return false;
   if (resolveStoryVideoUrl(artifact)) return false;
@@ -50,6 +53,10 @@ export function missionArtifactNeedsRenderRetry(artifact: OutputArtifact): boole
   if (missionRemotionStoryNeedsRetry(artifact)) return true;
 
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const content = parseArtifactContent(artifact.content);
+  const pipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
+  if (pipeline === 'fal_story') return false;
+
   const ct = String(meta.contentType ?? meta.kind ?? '').toLowerCase();
   if (ct.includes('story')) {
     if (resolveStoryVideoUrl(artifact)) return false;

@@ -36,6 +36,7 @@ import {
   enrichGalleryAnalysis,
   assignPhotosToContents,
   resolveBestGalleryUrl,
+  pickMissionDiverseFallbackPhoto,
   MIN_ACCEPT_SCORE,
   RUNWAY_GALLERY_MIN_SCORE,
   type GalleryPhotoMeta,
@@ -324,6 +325,7 @@ import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
 import { runPipelineStages } from './pipelines/pipeline-types';
 import type { SlotProductionContext } from './pipelines/pipeline-types';
 import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
+import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production';
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   fetchRecentFalGridSurfaces,
@@ -1304,6 +1306,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const agentUrl = idea.visual_production_spec?.selected_gallery_url || idea.selected_gallery_url || null;
     const batchExclude = batchUsedByType[postType];
+    const usesFalDesignerTrackEarly =
+      isFalVideoPipeline(assignment.pipeline)
+      || isFalDesignPipeline(assignment.pipeline)
+      || isFalOnlyVideoPipeline(assignment.pipeline)
+      || isFalOnlyPostPipeline(assignment.pipeline);
     /** Brand Hub → Sıfırdan görsel üret: galeri olsa bile feed postlarında matcher atlanır. */
     const captionDrivenSlot = shouldUseCaptionDrivenVisual(aiVisualStandard, kind, assignment);
 
@@ -1397,6 +1404,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           console.warn(
             `[auto-produce] no gallery match for slot ${gallerySlotKey} "${ideationHeadline.slice(0, 48)}" — fallback pick`,
           );
+          const diverseFallback = pickMissionDiverseFallbackPhoto(
+            galleryPhotos,
+            new Set(missionGalleryExclude.map(normalizeGalleryUrl)),
+            galleryMeta,
+            missionGalleryExclude,
+          );
+          if (diverseFallback?.url) {
+            referenceUrl = diverseFallback.url;
+            galleryMatchScore = diverseFallback.score;
+          } else {
           // Use strict mode when caption explicitly names a specific beauty
           // sub-service (nail, lash, hair) — prevents bestEffort from
           // accepting a mis-matched service photo at score ≥10.
@@ -1429,6 +1446,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               mood,
               contentType: postType,
             });
+          }
           }
         }
       } else {
@@ -1918,7 +1936,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       console.log(
         `[auto-produce] weak gallery (${galleryMatchScore}%) → logo hero fallback: "${headline.slice(0, 40)}"`,
       );
-    } else if (weakGallery && mediaFallback === 'brand_solid' && aiVisualStandard.enabled) {
+    } else if (
+      weakGallery
+      && mediaFallback === 'brand_solid'
+      && aiVisualStandard.enabled
+      && !usesFalDesignerTrackEarly
+    ) {
       referenceIsStock = false;
       captionDrivenGenerated = true;
       const aiGenerated = await generateVibeImage({
@@ -2445,7 +2468,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           isProductShowcase,
           adHocBrief,
           falAspectRatio: isCalendarSlot && pkgFmt === 'story' ? '9:16' : undefined,
-          requireGroundedGallery: isCalendarSlot || adHocBrief,
+          requireGroundedGallery: resolveFalRequireGroundedGallery({
+            requireGroundedGallery: isCalendarSlot || adHocBrief,
+            referencePhotoUrl: referenceUrl,
+            sector: brandBusinessType,
+            pipeline: isFalMissionVideo
+              ? (assignment.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story')
+              : undefined,
+            captionDrivenGenerated,
+          }),
           falDesignIntensityOverride: isCalendarSlot
             ? CALENDAR_GALLERY_DESIGN_INTENSITY
             : falGridIntensityOverride,

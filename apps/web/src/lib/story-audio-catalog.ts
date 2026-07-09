@@ -80,7 +80,43 @@ function proxyUrlForTrack(track: StoryMusicTrack): string {
 export function findStoryMusicTrack(id: string | undefined | null): StoryMusicTrack | null {
   const key = String(id ?? '').trim();
   if (!key) return null;
-  return TRACK_BY_ID.get(key) ?? null;
+  return TRACK_BY_ID.get(key) ?? TRACK_BY_ID.get(key.toLowerCase()) ?? null;
+}
+
+export interface StoryMusicLocalTrack {
+  id: string;
+  label: string;
+  relativePath: string;
+  category: StoryMusicCategory;
+}
+
+export type StoryMusicResolvedSource =
+  | { type: 'remote'; track: StoryMusicTrack }
+  | { type: 'local'; track: StoryMusicLocalTrack };
+
+/** Preview/proxy route — remote catalog track or bundled legacy MP3 under public/. */
+export function resolveStoryMusicSource(id: string | undefined | null): StoryMusicResolvedSource | null {
+  const raw = String(id ?? '').trim();
+  if (!raw) return null;
+
+  const remote = TRACK_BY_ID.get(raw) ?? TRACK_BY_ID.get(raw.toLowerCase());
+  if (remote?.url) return { type: 'remote', track: remote };
+
+  const legacyKey = raw.toLowerCase();
+  const legacy = LEGACY_LOCAL[legacyKey];
+  if (legacy?.file) {
+    return {
+      type: 'local',
+      track: {
+        id: legacyKey,
+        label: legacy.label,
+        relativePath: legacy.file,
+        category: legacy.category,
+      },
+    };
+  }
+
+  return null;
 }
 
 export function storyMusicLabel(moodId: string | undefined | null): string {

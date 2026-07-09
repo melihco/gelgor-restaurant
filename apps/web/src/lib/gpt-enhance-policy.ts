@@ -245,7 +245,6 @@ export function shouldSkipProductionForWeakGallery(input: {
 }): boolean {
   if (input.adaptiveScene && !input.captionServiceConflict) return false;
   if (!input.missionProduction) return false;
-  if (input.pipeline.startsWith('fal_only_')) return false;
   if (!input.hasReference) return true;
   if (input.referenceIsStock) return false;
   if (!input.pickedFromBrandGallery) return false;

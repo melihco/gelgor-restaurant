@@ -332,4 +332,30 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
       expect(new Set(urls).size).toBe(2);
     }
   });
+
+  it('assigns unique photos to all slots when pool exceeds strict-match count', () => {
+    const PHOTO_A = 'https://cdn.example.com/gallery/product-a.jpg';
+    const PHOTO_B = 'https://cdn.example.com/gallery/product-b.jpg';
+    const PHOTO_C = 'https://cdn.example.com/gallery/product-c.jpg';
+    const PHOTO_D = 'https://cdn.example.com/gallery/product-d.jpg';
+    const gallery: Record<string, GalleryPhotoMeta> = {
+      [PHOTO_A]: { contentTags: ['olive', 'oil', 'product'], description: 'Olive oil bottle on wooden table.' },
+      [PHOTO_B]: { contentTags: ['fig', 'jam', 'product'], description: 'Fig jam jar with spoon.' },
+      [PHOTO_C]: { contentTags: ['cheese', 'local', 'product'], description: 'Local artisan cheese board.' },
+      [PHOTO_D]: { contentTags: ['herb', 'tea', 'product'], description: 'Dried herbs and tea blend.' },
+    };
+    const assigned = assignPhotosToContents(
+      [
+        { key: '0', input: { caption: 'Zeytinyağı hakkında', businessType: 'local_products_shop' }, postType: 'feed' },
+        { key: '1', input: { caption: 'İncir reçeli tanıtımı', businessType: 'local_products_shop' }, postType: 'feed' },
+        { key: '2', input: { caption: 'Yerel peynir çeşitleri', businessType: 'local_products_shop' }, postType: 'feed' },
+        { key: '3', input: { caption: 'Bitki çayı koleksiyonu', businessType: 'local_products_shop' }, postType: 'feed' },
+      ],
+      [PHOTO_A, PHOTO_B, PHOTO_C, PHOTO_D],
+      gallery,
+    );
+    const urls = [...assigned.values()].filter(Boolean).map((r) => r!.url);
+    expect(urls).toHaveLength(4);
+    expect(new Set(urls).size).toBe(4);
+  });
 });

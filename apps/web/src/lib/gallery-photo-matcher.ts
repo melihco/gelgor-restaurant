@@ -1282,46 +1282,83 @@ export function assignPhotosToContents(
 ): Map<string, PhotoMatchResult | null> {
   const excludeBases = new Set((options?.excludeUrls ?? []).map(normalizeGalleryUrl));
   const lookup = buildGalleryLookup(galleryAnalysis, options?.displayUrls ?? candidateUrls);
-  const minScore = options?.minScore ?? MIN_ACCEPT_SCORE;
+  const strictMinScore = options?.minScore ?? MIN_ACCEPT_SCORE;
   const assigned = new Map<string, PhotoMatchResult | null>();
   /** Mission-wide pool — one venue photo per weekly package slot. */
   const usedMissionWide = new Set(excludeBases);
+  const assignedUrls: string[] = [];
 
-  const pending = items.map((item, order) => ({ ...item, order }));
+  type PendingItem = { key: string; input: MatchPhotoInput; order: number };
 
-  while (pending.length > 0) {
-    let pick: {
-      listIndex: number;
-      key: string;
-      result: PhotoMatchResult;
-      order: number;
-    } | null = null;
+  const greedyAssignRound = (pending: PendingItem[], minScore: number): PendingItem[] => {
+    const remaining: PendingItem[] = [];
 
-    for (let i = 0; i < pending.length; i += 1) {
-      const { key, input, order } = pending[i]!;
-      const top = rankPhotosForContent(
-        input,
-        candidateUrls,
-        lookup,
-        usedMissionWide,
-        galleryAnalysis,
-      )[0];
-      if (!top || top.score < minScore) continue;
-      const better =
-        !pick
-        || top.score > pick.result.score
-        || (top.score === pick.result.score && order < pick.order);
-      if (better) {
-        pick = { listIndex: i, key, result: top, order };
+    while (pending.length > 0) {
+      let pick: {
+        listIndex: number;
+        key: string;
+        result: PhotoMatchResult;
+        order: number;
+      } | null = null;
+
+      for (let i = 0; i < pending.length; i += 1) {
+        const { key, input, order } = pending[i]!;
+        const top = rankPhotosForContent(
+          input,
+          candidateUrls,
+          lookup,
+          usedMissionWide,
+          galleryAnalysis,
+        )[0];
+        if (!top || top.score < minScore) continue;
+        const better =
+          !pick
+          || top.score > pick.result.score
+          || (top.score === pick.result.score && order < pick.order);
+        if (better) {
+          pick = { listIndex: i, key, result: top, order };
+        }
       }
+
+      if (!pick) {
+        remaining.push(...pending);
+        break;
+      }
+
+      assigned.set(pick.key, pick.result);
+      usedMissionWide.add(normalizeGalleryUrl(pick.result.url));
+      assignedUrls.push(pick.result.url);
+      pending.splice(pick.listIndex, 1);
     }
 
-    // No remaining idea clears minScore — the rest stay unassigned.
-    if (!pick) break;
+    return remaining;
+  };
 
-    assigned.set(pick.key, pick.result);
-    usedMissionWide.add(normalizeGalleryUrl(pick.result.url));
-    pending.splice(pick.listIndex, 1);
+  let pending: PendingItem[] = items.map((item, order) => ({ ...item, order }));
+
+  // Phase 1: semantic matches at production threshold.
+  pending = greedyAssignRound(pending, strictMinScore);
+
+  // Phase 2: still-unassigned slots — accept weaker semantic matches before reusing photos.
+  if (pending.length > 0 && RELAXED_MATCH_SCORE < strictMinScore) {
+    pending = greedyAssignRound(pending, RELAXED_MATCH_SCORE);
+  }
+
+  // Phase 3: tag-diversity fallback — any unused catalog photo beats a duplicate.
+  for (const { key } of pending) {
+    const fallback = pickMissionDiverseFallbackPhoto(
+      candidateUrls,
+      usedMissionWide,
+      galleryAnalysis,
+      assignedUrls,
+    );
+    if (!fallback) {
+      assigned.set(key, null);
+      continue;
+    }
+    assigned.set(key, fallback);
+    usedMissionWide.add(normalizeGalleryUrl(fallback.url));
+    assignedUrls.push(fallback.url);
   }
 
   // Preserve original items order; ideas with no acceptable match resolve to null.

@@ -10,7 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-import { findStoryMusicTrack } from '@/lib/story-audio-catalog';
+import { resolveStoryMusicSource } from '@/lib/story-audio-catalog';
 
 export const runtime = 'nodejs';
 
@@ -92,15 +92,93 @@ async function fetchUpstreamMp3(url: string): Promise<Buffer | null> {
   return buf;
 }
 
+function localPublicPath(relativePath: string): string {
+  return path.join(process.cwd(), 'public', relativePath.replace(/^\/+/, ''));
+}
+
+function serveCachedOrLocalFile(
+  req: NextRequest,
+  filePath: string,
+  trackId: string,
+  sourceTag: string,
+): NextResponse {
+  let fileSize = 0;
+  try {
+    const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+    fileSize = stat?.size ?? 0;
+  } catch { /* fall through */ }
+
+  if (fileSize <= 10_000) {
+    return NextResponse.json({ error: 'Track not found' }, { status: 404 });
+  }
+
+  const headerBuf = Buffer.alloc(4);
+  let validHeader = false;
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, headerBuf, 0, 4, 0);
+    fs.closeSync(fd);
+    validHeader = isMp3Header(headerBuf);
+  } catch { /* fall through */ }
+
+  if (!validHeader) {
+    return NextResponse.json({ error: 'Invalid audio file' }, { status: 502 });
+  }
+
+  const AUDIO_HEADERS = {
+    'Content-Type': 'audio/mpeg',
+    'Cache-Control': `public, max-age=${CACHE_MAX_AGE}, immutable`,
+    'Accept-Ranges': 'bytes',
+    'X-Story-Music-Id': trackId,
+  };
+
+  const rangeHeader = req.headers.get('range');
+  if (rangeHeader) {
+    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+    if (match) {
+      const start = parseInt(match[1]!, 10);
+      const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+      return new NextResponse(fileToReadableStream(filePath, start, end), {
+        status: 206,
+        headers: {
+          ...AUDIO_HEADERS,
+          'Content-Length': String(chunkSize),
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'X-Story-Music-Source': `${sourceTag}-range`,
+        },
+      });
+    }
+  }
+
+  return new NextResponse(fileToReadableStream(filePath), {
+    status: 200,
+    headers: {
+      ...AUDIO_HEADERS,
+      'Content-Length': String(fileSize),
+      'X-Story-Music-Source': `${sourceTag}-stream`,
+    },
+  });
+}
+
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ trackId: string }> },
 ): Promise<NextResponse> {
   const { trackId } = await ctx.params;
   const decoded = decodeURIComponent(trackId);
-  const track = findStoryMusicTrack(decoded);
+  const source = resolveStoryMusicSource(decoded);
 
-  if (!track?.url) {
+  if (!source) {
+    return NextResponse.json({ error: 'Track not found' }, { status: 404 });
+  }
+
+  if (source.type === 'local') {
+    return serveCachedOrLocalFile(req, localPublicPath(source.track.relativePath), source.track.id, 'local');
+  }
+
+  const track = source.track;
+  if (!track.url) {
     return NextResponse.json({ error: 'Track not found' }, { status: 404 });
   }
 
@@ -110,13 +188,6 @@ export async function GET(
     const stat = fs.existsSync(cached) ? fs.statSync(cached) : null;
     cachedSize = stat?.size ?? 0;
   } catch { /* best-effort */ }
-
-  const AUDIO_HEADERS = {
-    'Content-Type': 'audio/mpeg',
-    'Cache-Control': `public, max-age=${CACHE_MAX_AGE}, immutable`,
-    'Accept-Ranges': 'bytes',
-    'X-Story-Music-Id': track.id,
-  };
 
   if (cachedSize > 10_000) {
     // Validate header without loading whole file
@@ -130,34 +201,7 @@ export async function GET(
     } catch { /* fall through to upstream */ }
 
     if (validHeader) {
-      // Honour Range requests (important for Safari / iOS audio)
-      const rangeHeader = req.headers.get('range');
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-        if (match) {
-          const start = parseInt(match[1]!, 10);
-          const end = match[2] ? parseInt(match[2], 10) : cachedSize - 1;
-          const chunkSize = end - start + 1;
-          return new NextResponse(fileToReadableStream(cached, start, end), {
-            status: 206,
-            headers: {
-              ...AUDIO_HEADERS,
-              'Content-Length': String(chunkSize),
-              'Content-Range': `bytes ${start}-${end}/${cachedSize}`,
-              'X-Story-Music-Source': 'cache-range',
-            },
-          });
-        }
-      }
-
-      return new NextResponse(fileToReadableStream(cached), {
-        status: 200,
-        headers: {
-          ...AUDIO_HEADERS,
-          'Content-Length': String(cachedSize),
-          'X-Story-Music-Source': 'cache-stream',
-        },
-      });
+      return serveCachedOrLocalFile(req, cached, track.id, 'cache');
     }
   }
 
@@ -176,7 +220,10 @@ export async function GET(
     return new NextResponse(body as BodyInit, {
       status: 200,
       headers: {
-        ...AUDIO_HEADERS,
+        'Content-Type': 'audio/mpeg',
+        'Cache-Control': `public, max-age=${CACHE_MAX_AGE}, immutable`,
+        'Accept-Ranges': 'bytes',
+        'X-Story-Music-Id': track.id,
         'Content-Length': String(body.length),
         'X-Story-Music-Source': 'upstream',
       },

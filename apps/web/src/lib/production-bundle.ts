@@ -587,6 +587,7 @@ export function expectsRemotionStoryVideo(artifact: OutputArtifact): boolean {
   const meta = parseArtifactMetadata(artifact.metadata);
   const content = parseArtifactContent(artifact.content);
   const pipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
+  if (pipeline === 'fal_story') return false;
   if (pipeline === 'remotion_story') return true;
   if (meta.remotion_mission_story === true) return true;
   const role = String(meta.production_role ?? content.production_role ?? '').trim();

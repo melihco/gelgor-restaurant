@@ -11,6 +11,7 @@ import {
 } from '@/lib/gallery-usage-tracker';
 import {
   matchPhotoToContent,
+  pickMissionDiverseFallbackPhoto,
   resolveBestGalleryUrl,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
@@ -284,6 +285,19 @@ export function repickGalleryIfDuplicateForType(input: {
       `[auto-produce] duplicate mission gallery photo — repicked for "${input.headline.slice(0, 48)}"`,
     );
     return repicked;
+  }
+
+  const diverse = pickMissionDiverseFallbackPhoto(
+    input.candidateUrls,
+    new Set(missionExclude.map(normalizeGalleryUrl)),
+    input.galleryAnalysis,
+    missionExclude,
+  );
+  if (diverse?.url && normalizeGalleryUrl(diverse.url) !== normalizeGalleryUrl(referenceUrl)) {
+    console.warn(
+      `[auto-produce] duplicate mission gallery photo — diversity fallback for "${input.headline.slice(0, 48)}"`,
+    );
+    return diverse.url;
   }
 
   return referenceUrl;

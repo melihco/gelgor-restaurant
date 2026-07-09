@@ -8,6 +8,7 @@
 import {
   produceFalDesignedPostStill,
   produceFalDesignerVideo,
+  resolveFalRequireGroundedGallery,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { produceFalMissionVideo } from '@/lib/fal-video';
@@ -224,7 +225,12 @@ export const falVideoHandler: ProductionPipelineHandler = {
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         pipeline: falPipeline,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
-        requireGroundedGallery: inputs.adHocBrief,
+        requireGroundedGallery: resolveFalRequireGroundedGallery({
+          requireGroundedGallery: inputs.requireGroundedGallery || inputs.adHocBrief,
+          referencePhotoUrl: photoUrl,
+          sector: inputs.brandBusinessType,
+          pipeline: falPipeline,
+        }),
         sceneHint: falBrand.sceneHint,
         brandDirectives: [
           ...templateBinding.brandDirectives,

@@ -18,6 +18,7 @@ import { validateTypographyText } from '@/lib/typography-text-validation';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/remotion-quality';
+import { getSectorProfile } from '@/lib/sector-production-profile';
 import {
   resolveFalDisplayHeadline,
   resolveFalSubtitle,
@@ -452,8 +453,34 @@ export function resolveFalCanvasChannel(input: {
   return 'feed_post';
 }
 
-function requiresGroundedGalleryDesign(input: Pick<FalDesignerInput, 'pipeline' | 'requireGroundedGallery'>): boolean {
-  return input.requireGroundedGallery === true || input.pipeline === 'fal_story';
+function requiresGroundedGalleryDesign(
+  input: Pick<FalDesignerInput, 'pipeline' | 'requireGroundedGallery' | 'referencePhotoUrl' | 'sector'>,
+): boolean {
+  if (input.requireGroundedGallery === true || input.pipeline === 'fal_story') return true;
+  const ref = String(input.referencePhotoUrl ?? '').trim();
+  if (!ref) return false;
+  const profile = getSectorProfile(input.sector);
+  // Venue/product brands: never invent synthetic Ideogram scenes when a real gallery photo exists.
+  if (profile.hasPhysicalVenue && profile.galleryReliability !== 'low') return true;
+  return false;
+}
+
+/** Mission / pipeline router — when Fal must compose on the matched gallery photo. */
+export function resolveFalRequireGroundedGallery(input: {
+  requireGroundedGallery?: boolean;
+  referencePhotoUrl?: string | null;
+  sector?: string;
+  pipeline?: 'fal_story' | 'fal_reel';
+  captionDrivenGenerated?: boolean;
+}): boolean {
+  if (input.captionDrivenGenerated) return false;
+  if (input.requireGroundedGallery) return true;
+  return requiresGroundedGalleryDesign({
+    pipeline: input.pipeline,
+    requireGroundedGallery: false,
+    referencePhotoUrl: input.referencePhotoUrl ?? undefined,
+    sector: input.sector,
+  });
 }
 
 /**
@@ -883,7 +910,7 @@ export async function produceFalDesignerStill(
       input.pipeline === 'fal_story'
         ? 'fal_story: grounded gallery design failed — synthetic Ideogram fallback disabled for story slots'
         : 'Brand gallery design failed — could not compose the art-director design on the matched venue photo. ' +
-          'Check OPENAI billing/API or upload a reference photo in the brief.',
+          'Synthetic Ideogram fallback disabled when a brand gallery photo is available.',
     );
   }
 
