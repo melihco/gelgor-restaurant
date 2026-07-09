@@ -3,6 +3,7 @@ using Nexus.Application.Common;
 using Nexus.Application.Services;
 using Nexus.Contracts.Dtos;
 using Nexus.Domain.Entities;
+using Nexus.Domain.Enums;
 using Nexus.Infrastructure.Data;
 
 namespace Nexus.Infrastructure.Services;
@@ -21,18 +22,7 @@ public class SetupService : ISetupService
         var profile = await _context.CompanyProfiles
             .FirstOrDefaultAsync(p => p.TenantId == tenantId, cancellationToken);
 
-        if (profile == null)
-        {
-            profile = new CompanyProfile
-            {
-                TenantId = tenantId,
-                BrandName = string.Empty,
-            };
-            _context.CompanyProfiles.Add(profile);
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-
-        return MapToDto(profile);
+        return profile == null ? EmptyProfileDto() : MapToDto(profile);
     }
 
     public async Task<CompanyProfileDto> SaveCompanyProfileAsync(Guid tenantId, SaveCompanyProfileRequest request, CancellationToken cancellationToken = default)
@@ -138,6 +128,46 @@ public class SetupService : ISetupService
         p.SystemIntelligence,
         p.DiscoveryConfidence,
         p.CreativeProfileConfirmedAt);
+
+    private static CompanyProfileDto EmptyProfileDto() => new(
+        Guid.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        "professional",
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        "tr",
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        ApprovalMode.SuggestAndWait,
+        false,
+        null,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        string.Empty,
+        null,
+        "[]",
+        "[]",
+        "[]",
+        "{}",
+        "[]",
+        "{}",
+        string.Empty,
+        string.Empty,
+        null,
+        null);
 
     private static string NormalizeJson(string? value, string fallback)
     {
