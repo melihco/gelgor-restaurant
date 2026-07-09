@@ -60,7 +60,7 @@ export const PIPELINE_REGISTRY: Readonly<Record<string, PipelineDescriptor>> = {
   remotion_post: d('remotion_post', 'remotion', { isRenderBound: true, retryable: true }),
 
   // fal.ai designer video track
-  fal_story: d('fal_story', 'fal_video', { isVideo: true, usesFalDesigner: true, retryable: true }),
+  fal_story: d('fal_story', 'fal_video', { usesFalDesigner: true, retryable: true }),
   fal_reel: d('fal_reel', 'fal_video', { isVideo: true, usesFalDesigner: true, retryable: true }),
   /** @deprecated — legacy assignments; routes same as fal_reel. */
   runway_reel: d('runway_reel', 'fal_video', { isVideo: true, usesFalDesigner: true, retryable: true }),

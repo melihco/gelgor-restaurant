@@ -183,8 +183,12 @@ function isDalleModel(model: string) {
   return model.startsWith('dall-e');
 }
 
-function sizeFor(contentType: string, model: string) {
+function sizeFor(contentType: string, model: string, isDesignCard = false) {
   const isStory = contentType === 'story' || contentType.includes('story');
+  if (isDesignCard) {
+    // Feed designed posts are 4:5; reels/stories are 9:16 — both use portrait canvas.
+    return '1024x1536';
+  }
   if (isDalleModel(model)) return isStory ? '1024x1536' : '1024x1024';
   if (model === 'gpt-image-2') return isStory ? '1024x1536' : '1024x1024';
   return isStory ? '1024x1536' : '1024x1024';
@@ -537,6 +541,7 @@ function buildReferenceEditDirective(
       'Transform it into a hand-crafted 9:16 Instagram Story/Reel cover — premium social design, NOT a generic template.',
       'MUST ADD visible design layers ON TOP of the photo: large stacked headline typography, brand color blocks, accent bars, decorative cues from the brand world.',
       'PHOTO HERO ZONE (CRITICAL): keep the lower 45–55% as the natural, recognizable venue photo — do NOT replace, blur, or globally recolor it.',
+      'Scale the full gallery photo to fit — object-fit contain. Never crop hero food, faces, or products.',
       'DESIGN ZONE: upper area or diagonal split gets bold branded graphics and text exactly as specified below.',
       'SAFE ZONE (MANDATORY): All text and design elements must stay inside the inner 85% of the frame. Keep minimum 8% margin from top edge, 15% from bottom edge (Instagram UI). Nothing should be cropped or cut off at any edge.',
       'Apply headline, subtitle, shapes, and brand colors exactly as described.',
@@ -558,6 +563,7 @@ function buildReferenceEditDirective(
       'Your task: add designed social-media graphic layers ON TOP of this photo — typography, color blocks, localized scrims.',
       'PHOTO PRESERVATION (CRITICAL): Do NOT replace, re-render, blur, or globally recolor the photograph.',
       'Keep the original photo pixels authentic: same people, lighting, colors, and venue details.',
+      'PHOTO FRAMING: Scale the entire reference photograph to fit inside the output frame (object-fit contain). Never crop off hero subjects, plates, faces, or products — use letterbox/split layout if needed.',
       'Brand colors belong on text and graphic blocks only — never as a full-image filter.',
       'If the layout uses a diagonal or split design, one zone stays the untouched photo; the other is a flat brand color block with headline text.',
       'Apply the text overlays, color blocks, typography, and CTA exactly as described.',
@@ -963,7 +969,7 @@ async function generateWithOpenAI(
           image: imageInput as Parameters<typeof openai.images.edit>[0]['image'],
           prompt: editPrompt,
           n: 1,
-          size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024',
+          size: sizeFor(contentType, editModel, isDesignCard) as '1024x1024' | '1024x1536' | '1536x1024',
           quality: openAiEditQuality(quality),
           ...(isDesignCard ? { input_fidelity: 'high' as const } : {}),
         } satisfies Parameters<typeof openai.images.edit>[0];

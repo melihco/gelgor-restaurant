@@ -240,8 +240,8 @@ export function isPremiumMotionOrDesignedPipeline(
 ): boolean {
   const p = pipeline.trim().toLowerCase();
   const r = role.trim().toLowerCase();
-  if (p === 'remotion_story' || p === 'remotion_poster') return true;
-  if (r === 'designed_post') return true;
+  if (p === 'remotion_story' || p === 'remotion_poster' || p === 'fal_design') return true;
+  if (r === 'designed_post' || r === 'designed_typography' || r === 'fal_designed_post') return true;
   if (r.includes('story_motion') || r.includes('campaign_story')) return true;
   return false;
 }
@@ -446,7 +446,7 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
     return false;
   }
 
-  if (pipeline === 'remotion_poster' || role === 'designed_post') {
+  if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') {
     if (status === 'failed') return false;
     if (meta.grafiker_pass === false) return false;
     if (status !== 'ready') {

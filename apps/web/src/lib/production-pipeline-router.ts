@@ -14,7 +14,9 @@ import {
 } from './mission-production-manifest';
 import { isPromoOfferCopy } from './poster-quality';
 import {
+  applyMissionFalStoryAssignment,
   applyMissionRemotionStoryAssignment,
+  shouldApplyMissionFalStory,
 } from './mission-remotion-story';
 import {
   mapProductionContextToLibrarySlotKey,
@@ -124,13 +126,13 @@ export function inferProductionAssignment(
   if (fmt === 'story') {
     const base: ProductionAssignment = {
       idea_index: ideaIndex,
-      slot_role: campaign ? 'campaign_story_motion' : 'organic_story_still',
-      pipeline: 'remotion_story',
+      slot_role: 'campaign_story_motion',
+      pipeline: 'fal_story',
       copy_bundle_id: bundleId,
-      publish_channel: publishChannelForRole(campaign ? 'campaign_story_motion' : 'organic_story_still'),
-      rationale: campaign ? 'heuristic_campaign_story' : 'heuristic_story_remotion',
+      publish_channel: publishChannelForRole('campaign_story_motion'),
+      rationale: 'heuristic_fal_story',
     };
-    return applyMissionRemotionStoryAssignment(base, storyIndex);
+    return applyMissionFalStoryAssignment(base, storyIndex);
   }
 
   if (fmt === 'carousel') {
@@ -150,7 +152,7 @@ export function inferProductionAssignment(
     return {
       idea_index: ideaIndex,
       slot_role: 'designed_post',
-      pipeline: 'remotion_poster',
+      pipeline: 'fal_design',
       copy_bundle_id: bundleId,
       publish_channel: campaign ? 'instagram_campaign' : 'instagram_organic',
       rationale: campaign
@@ -187,8 +189,9 @@ export function inferAdHocBriefAssignment(
   ).trim();
 
   if (fmt === 'reel' || fmt === 'story') {
-    const role: ProductionSlotRole = 'fal_reel_motion';
-    const pipeline = fmt === 'story' ? 'fal_story' : 'fal_reel';
+    const isStory = fmt === 'story';
+    const role: ProductionSlotRole = isStory ? 'campaign_story_motion' : 'fal_reel_motion';
+    const pipeline = isStory ? 'fal_story' : 'fal_reel';
     return {
       idea_index: ideaIndex,
       slot_role: role,
@@ -196,7 +199,7 @@ export function inferAdHocBriefAssignment(
       copy_bundle_id: bundleId,
       publish_channel: publishChannelForRole(role),
       visual_subject_hint: sceneHint || undefined,
-      rationale: fmt === 'story' ? 'ad_hoc_brief_fal_story' : 'ad_hoc_brief_fal_reel',
+      rationale: isStory ? 'ad_hoc_brief_fal_story' : 'ad_hoc_brief_fal_reel',
     };
   }
 
@@ -294,7 +297,7 @@ function resolveDeterministicRemotionLibrarySlotKey(input: {
     return standardKey;
   }
 
-  if (shouldRenderRemotionStory(assignment) || shouldRenderRemotionPoster(assignment)) {
+  if (shouldApplyMissionFalStory(assignment) || shouldRenderRemotionStory(assignment) || shouldRenderRemotionPoster(assignment)) {
     return mappedKey;
   }
 
@@ -319,23 +322,23 @@ function enrichAssignment(
 }
 
 /**
- * Story ihtiyacı Remotion'da; eski FD/manifest fal story slotlarını reel'e yönlendir.
+ * Canonicalize legacy fal story slot names — keep fal_story pipeline (do NOT downgrade to reel).
  */
 export function normalizeVideoTrackAssignment(assignment: ProductionAssignment): ProductionAssignment {
   if (assignment.slot_role === 'fal_story_motion' || assignment.pipeline === 'fal_story') {
     return {
       ...assignment,
-      slot_role: 'fal_reel_motion',
-      pipeline: 'fal_reel',
-      publish_channel: publishChannelForRole('fal_reel_motion'),
+      slot_role: 'campaign_story_motion',
+      pipeline: 'fal_story',
+      publish_channel: publishChannelForRole('campaign_story_motion'),
     };
   }
   if (assignment.slot_role === 'fal_only_story' || assignment.pipeline === 'fal_only_story') {
     return {
       ...assignment,
-      slot_role: 'fal_only_reel',
-      pipeline: 'fal_only_reel',
-      publish_channel: publishChannelForRole('fal_only_reel'),
+      slot_role: 'fal_only_story',
+      pipeline: 'fal_only_story',
+      publish_channel: publishChannelForRole('fal_only_story'),
     };
   }
   return assignment;
@@ -390,12 +393,19 @@ export function resolveProductionAssignment(input: {
   if (input.adHocBrief) {
     return assignment;
   }
+  if (shouldApplyMissionFalStory(assignment)) {
+    return applyMissionFalStoryAssignment(assignment, input.storyIndex);
+  }
   // FD slot drives pipeline — idea format may be "post" while assignment is campaign_story_motion.
   if (shouldRenderRemotionStory(assignment)) {
     return applyMissionRemotionStoryAssignment(assignment, input.storyIndex);
   }
-  if (detectIdeaPackageFormat(input.idea) === 'story' && assignmentImpliesStoryFormat(assignment.slot_role)) {
-    return applyMissionRemotionStoryAssignment(assignment, input.storyIndex);
+  if (
+    detectIdeaPackageFormat(input.idea) === 'story'
+    && assignmentImpliesStoryFormat(assignment.slot_role)
+    && assignment.slot_role !== 'organic_story_still'
+  ) {
+    return applyMissionFalStoryAssignment(assignment, input.storyIndex);
   }
   return assignment;
 }
@@ -447,6 +457,9 @@ export function shouldRenderRemotionStory(
   }
   if (assignment.pipeline === 'fal_only_story' || assignment.slot_role === 'fal_only_story') {
     return false;
+  }
+  if (assignment.slot_role === 'campaign_story_motion') {
+    return assignment.pipeline === 'remotion_story';
   }
   if (assignment.pipeline === 'remotion_story') return true;
   return REMOTION_STORY_ROLES.has(assignment.slot_role);
@@ -678,7 +691,10 @@ function enrichResolvedAssignment(
     counters.posterOrdinal += 1;
   }
 
-  if (shouldRenderRemotionStory(assignment)) {
+  if (shouldApplyMissionFalStory(assignment)) {
+    assignment = applyMissionFalStoryAssignment(assignment, counters.storyOrdinal);
+    counters.storyOrdinal += 1;
+  } else if (shouldRenderRemotionStory(assignment)) {
     assignment = applyMissionRemotionStoryAssignment(assignment, counters.storyOrdinal);
     counters.storyOrdinal += 1;
   }
@@ -853,7 +869,10 @@ export function resolveFinalMissionAssignments(
       posterOrdinal += 1;
     }
 
-    if (shouldRenderRemotionStory(assignment)) {
+    if (shouldApplyMissionFalStory(assignment)) {
+      assignment = applyMissionFalStoryAssignment(assignment, storyOrdinal);
+      storyOrdinal += 1;
+    } else if (shouldRenderRemotionStory(assignment)) {
       assignment = applyMissionRemotionStoryAssignment(assignment, storyOrdinal);
       storyOrdinal += 1;
     }
@@ -941,9 +960,9 @@ export function resolveContentKindForAssignment(
   if (assignment.pipeline === 'fal_reel' || assignment.slot_role === 'fal_reel_motion') {
     return 'instagram_reel';
   }
-  // Legacy fal story → reel (normalizeVideoTrackAssignment handles new assignments)
+  // fal_story → static 9:16 story poster (gallery-grounded GPT), not a reel MP4.
   if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
-    return 'instagram_reel';
+    return 'instagram_story';
   }
   if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
     return 'instagram_post';

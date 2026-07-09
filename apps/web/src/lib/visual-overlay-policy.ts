@@ -53,7 +53,12 @@ export function prefersGallerySequenceStory(
   photoCount: number,
 ): boolean {
   if (photoCount < 2) return false;
-  if (assignment.pipeline === 'remotion_story' || assignment.slot_role === 'campaign_story_motion') {
+  if (assignment.pipeline === 'fal_story') return false;
+  if (assignment.pipeline === 'remotion_story') {
+    const useCase = normalizeUseCase(idea);
+    if (LIFESTYLE_USE_CASES.has(useCase) || photoCount >= 2) return true;
+  }
+  if (assignment.slot_role === 'campaign_story_motion' && assignment.pipeline === 'remotion_story') {
     const useCase = normalizeUseCase(idea);
     if (LIFESTYLE_USE_CASES.has(useCase) || photoCount >= 2) return true;
   }
@@ -67,9 +72,8 @@ export function gallerySequencePhotoTarget(
   contentKind: string,
 ): number {
   if (assignment.pipeline === 'carousel_gallery' || contentKind === 'instagram_carousel') return 4;
-  if (assignment.pipeline === 'remotion_story' || assignment.slot_role === 'campaign_story_motion') {
-    return 4;
-  }
+  if (assignment.pipeline === 'fal_story') return 1;
+  if (assignment.pipeline === 'remotion_story') return 4;
   return 3;
 }
 

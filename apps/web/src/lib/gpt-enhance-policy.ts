@@ -39,6 +39,7 @@ export type GptEnhanceSkipCode =
   | 'disabled'
   | 'format_excluded'
   | 'remotion_story'
+  | 'fal_story'
   | 'remotion_post'
   | 'remotion_grade'
   | 'gallery_match_ok'
@@ -91,12 +92,16 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
   // designedPostPhotoEnhance: photo-quality-only pass for designed_post background — allow through.
   if (!input.designedPostPhotoEnhance) {
     if (input.designedPosterSync || input.willRemotionPost) return 'remotion_post';
-    if (pipeline === 'remotion_poster' || role === 'designed_post') return 'remotion_post';
+    if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return 'remotion_post';
   }
 
-  // Remotion adds headline/logo — GPT enhance on story photos causes gibberish UI mockups in-image.
-  if (input.willRemotionStory && pipeline === 'remotion_story') {
-    return 'remotion_story';
+  // Fal/Remotion story adds headline overlay — skip GPT enhance on story photos (gibberish UI in-image).
+  if (
+    (input.willRemotionStory && pipeline === 'remotion_story')
+    || pipeline === 'fal_story'
+    || (role === 'campaign_story_motion' && pipeline !== 'story_still')
+  ) {
+    return pipeline === 'fal_story' || role === 'campaign_story_motion' ? 'fal_story' : 'remotion_story';
   }
 
   const adaptiveScene = input.visualStandard.adaptiveScene;
@@ -164,7 +169,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
 
   if (!input.designedPostPhotoEnhance) {
     if (input.designedPosterSync || input.willRemotionPost) return false;
-    if (pipeline === 'remotion_poster' || role === 'designed_post') return false;
+    if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return false;
   }
 
   const adaptiveScene = input.visualStandard.adaptiveScene;

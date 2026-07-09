@@ -10,7 +10,7 @@
 
 import {
   type PostTypeBucket,
-  fetchUsedGalleryImages,
+  fetchGalleryProductionUsage,
   type UsedGalleryUsage,
 } from '@/lib/gallery-usage-tracker';
 import {
@@ -60,6 +60,9 @@ export interface GalleryContext {
 
   /** Per-batch used URL tracker — local to this request, not persisted. */
   batchUsedByType: Record<PostTypeBucket, string[]>;
+
+  /** Gallery URLs already used by sibling slots in the current mission (artifact metadata). */
+  missionSiblingUrls: string[];
 }
 
 /**
@@ -75,7 +78,7 @@ export async function fetchGalleryContext(
   brandCtxRaw: Record<string, unknown>,
   galleryAnalysisInput: Record<string, unknown> | null | undefined,
   brandBusinessType: string,
-  opts?: { gisScore?: number | null },
+  opts?: { gisScore?: number | null; missionId?: string | null },
 ): Promise<GalleryContext> {
   // ── Parse brand gallery photos ─────────────────────────────────────────
   const metaRaw = (galleryAnalysisInput ?? {}) as Record<string, GalleryPhotoMeta>;
@@ -120,13 +123,15 @@ export async function fetchGalleryContext(
   // only probe external / unknown-origin URLs to avoid probe timeouts blocking production.
   const trustedBrandPhotos = candidates.filter(isBrandDomainUrl);
   const needProbe = candidates.filter((u) => !isBrandDomainUrl(u));
-  const [health, usage, recentTemplateIds] = await Promise.all([
+  const [health, galleryUsageBundle, recentTemplateIds] = await Promise.all([
     needProbe.length > 0
       ? filterReachableGalleryUrls(needProbe, { maxProbe: 40, concurrency: 12 })
       : Promise.resolve({ urls: [] as string[], rejected: [] as { url: string; reason: string }[] }),
-    fetchUsedGalleryImages(workspaceId),
+    fetchGalleryProductionUsage(workspaceId, opts?.missionId),
     fetchRecentTemplateIds(workspaceId),
   ]);
+  const usage = galleryUsageBundle.usage;
+  const missionSiblingUrls = galleryUsageBundle.missionSiblingUrls;
   health.urls = [...trustedBrandPhotos, ...health.urls];
 
   if (health.rejected.length > 0) {
@@ -173,6 +178,7 @@ export async function fetchGalleryContext(
     usage,
     recentTemplateIds,
     batchUsedByType: { feed: [], story: [], reel: [], carousel: [] },
+    missionSiblingUrls,
   };
 }
 

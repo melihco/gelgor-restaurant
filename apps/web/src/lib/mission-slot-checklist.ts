@@ -67,7 +67,7 @@ export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   fal_only_post: 'fal.ai editorial post',
   fal_only_reel: 'fal.ai sinematik reel',
   organic_story_still: 'Story (galeri)',
-  campaign_story_motion: 'Kampanya story (Remotion)',
+  campaign_story_motion: 'Kampanya story (fal.ai poster)',
   organic_reel: 'Organik reel (Runway)',
   campaign_reel_motion: 'Kampanya reel (Runway)',
   fal_story_motion: 'fal.ai designer reel (legacy)',

@@ -44,17 +44,18 @@ Reuse idea_index round-robin across the {n} ideas in this batch (same idea_index
 
 Required slot mix (weekly_content / agency):
 - exactly 2 organic_post (gallery_photo)
-- exactly 1 designed_post + 1 designed_typography (remotion_poster)
+- exactly 1 designed_post + 1 designed_typography (fal_design — gallery match + agent design brief)
 - exactly 1 fal_designed_post (fal_design)
 - exactly 1 organic_carousel (carousel_gallery)
-- exactly 2 campaign_story_motion (remotion_story) — different library_slot_key each
+- exactly 2 campaign_story_motion (fal_story) — different library_slot_key each
 - exactly 1 organic_story_still (story_still)
 - exactly 1 organic_reel + 1 campaign_reel_motion (fal_reel) — set hero_reel_index on organic_reel
 - exactly 2 fal_reel_motion (fal_reel)
 - exactly 1 fal_only_post (fal_only_post)
 - exactly 2 fal_only_reel (fal_only_reel)
 
-Stories use Remotion only — do NOT assign fal_story_motion or fal_only_story in weekly missions.
+Campaign story slots use fal.ai grounded 9:16 posters (gallery photo + ideation headline) — NOT Remotion.
+Do NOT assign remotion_story or fal_only_story in weekly missions.
 
 manifest_coverage_pct must be 100 when all {WEEKLY_MANIFEST_SLOT_TOTAL} slots are assigned.
 """
@@ -156,7 +157,7 @@ For ALL slots that use real brand gallery photos (organic_post, organic_story_st
 include "visual_subject_hint": a comma-separated list of 2-4 specific visual subject keywords the gallery photo MUST show.
 These keywords are matched against the photo's vision analysis tags — they act as a photo selection filter.
 
-For fal.ai design slots (fal_designed_post, fal_reel_motion, fal_only_post, fal_only_reel, fal_only_story),
+For fal.ai design slots (designed_post, designed_typography, fal_designed_post, fal_reel_motion, fal_only_post, fal_only_reel, fal_only_story),
 ALSO include "fal_design_hint": one sentence from a senior social designer — layout pattern, typography emphasis,
 graphic accents, and how the caption message should LOOK (Canva Pro quality). Example:
 "fal_design_hint": "diagonal_brand_split — mustard headline stack on teal block, venue photo hero lower-right, accent bar under CTA"
@@ -178,13 +179,15 @@ Reuse idea_index round-robin when fewer than {WEEKLY_MANIFEST_SLOT_TOTAL} ideas 
 
 slot_role options:
 - organic_post — gallery photo feed post (NO designed poster)
-- designed_post — Remotion/SVG designed poster (campaign, promo, brand hero); exactly ONE variant per weekly mission
+- designed_post — fal.ai/GPT-image designed feed post (campaign, promo, brand hero); exactly ONE per weekly mission
+  Gallery photo MUST match caption via visual_subject_hint; set fal_design_hint with layout, typography, and brand vibe for the agent design brief.
   For designed_post set layout_family_hint to a POSTER family (not story):
   editorial_date | restaurant_feature for B2B/logistics/service seasonal copy;
   promo_split ONLY when copy has % / indirim / kampanya;
   event_masthead for dated launches. Never hint promo_split for vague "fırsat" alone.
   Also set library_slot_key to campaign_post, social_proof_post, or ad_creative_post so the brand can reuse this post template later.
-- designed_typography — Remotion AI typography poster; exactly ONE per weekly mission (designed text-forward poster).
+- designed_typography — fal.ai typography-forward designed feed post; exactly ONE per weekly mission (text-forward Canva-style).
+  Set fal_design_hint with typography hierarchy, headline/subline placement, and mood aligned to the caption.
 - fal_designed_post — fal.ai/GPT-image hybrid designed feed post; exactly ONE per weekly mission (uses gallery photo).
 - fal_only_post — tam fal.ai designed feed post; exactly ONE per weekly mission (NO gallery, NO GPT — pure Ideogram/Flux).
 - fal_only_story — tam fal.ai motion story; exactly ONE (NO gallery, NO Remotion — pure Ideogram + I2V).
@@ -197,14 +200,14 @@ slot_role options:
 
 pipeline must match role:
 - organic_post → gallery_photo
-- designed_post → remotion_poster
-- designed_typography → remotion_poster
+- designed_post → fal_design
+- designed_typography → fal_design
 - fal_designed_post → fal_design
 - fal_only_post → fal_only_post
 - fal_only_story → fal_only_story
 - fal_only_reel → fal_only_reel
 - organic_story_still → story_still
-- campaign_story_motion → remotion_story
+- campaign_story_motion → fal_story
 - organic_reel / campaign_reel_motion → fal_reel
 - organic_carousel → carousel_gallery
 
@@ -283,22 +286,26 @@ Return ONLY valid JSON — no markdown, no preamble:
     {{
       "idea_index": 2,
       "slot_role": "designed_post",
-      "pipeline": "remotion_poster",
+      "pipeline": "fal_design",
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "restaurant_feature",
       "library_slot_key": "campaign_post",
-      "rationale": "brand hero idea → Remotion designed poster"
+      "fal_design_hint": "Campaign hero post: bold headline on matched gallery photo, brand colors, premium hospitality layout.",
+      "visual_subject_hint": "teras, deniz, gün batımı",
+      "rationale": "brand hero idea → fal designed post"
     }},
     {{
       "idea_index": 3,
-      "slot_role": "designed_post",
-      "pipeline": "remotion_poster",
+      "slot_role": "designed_typography",
+      "pipeline": "fal_design",
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "promo_split",
       "library_slot_key": "social_proof_post",
-      "rationale": "campaign or proof idea → second designed poster variant"
+      "fal_design_hint": "Typography-forward proof post: short headline + subline, minimal layout on gallery match.",
+      "visual_subject_hint": "müşteri, deneyim",
+      "rationale": "campaign or proof idea → fal typography designed post"
     }},
     {{
       "idea_index": 4,
@@ -312,24 +319,24 @@ Return ONLY valid JSON — no markdown, no preamble:
     {{
       "idea_index": 5,
       "slot_role": "campaign_story_motion",
-      "pipeline": "remotion_story",
+      "pipeline": "fal_story",
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "campaign_hero",
       "library_slot_key": "editorial_story",
       "visual_subject_hint": "marka, öne çıkan, vitrin",
-      "rationale": "brand spotlight idea → Remotion motion story #1"
+      "rationale": "brand spotlight idea → fal.ai story poster #1"
     }},
     {{
       "idea_index": 6,
       "slot_role": "campaign_story_motion",
-      "pipeline": "remotion_story",
+      "pipeline": "fal_story",
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "frosted_glass",
       "library_slot_key": "daily_story",
       "visual_subject_hint": "günlük, sahne, atmosfer",
-      "rationale": "everyday vibe idea → Remotion motion story #2 (different template)"
+      "rationale": "everyday vibe idea → fal.ai story poster #2 (different template)"
     }},
     {{
       "idea_index": 7,

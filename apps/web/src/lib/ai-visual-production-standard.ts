@@ -160,9 +160,11 @@ export function shouldUseCaptionDrivenVisual(
   }
   return (
     pipeline === 'gallery_photo'
-    || pipeline === 'remotion_poster'
-    || role === 'organic_post'
+    || pipeline === 'fal_design'
     || role === 'designed_post'
+    || role === 'designed_typography'
+    || role === 'fal_designed_post'
+    || role === 'organic_post'
   );
 }
 

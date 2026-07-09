@@ -52,7 +52,7 @@ function fdReport(): FeedArtDirectorReport {
       { idea_index: 0, slot_role: 'organic_post', pipeline: 'gallery_photo' },
       { idea_index: 1, slot_role: 'campaign_story_motion', pipeline: 'remotion_story' },
       { idea_index: 2, slot_role: 'organic_reel', pipeline: 'runway_reel' },
-      { idea_index: 3, slot_role: 'designed_post', pipeline: 'remotion_poster' },
+      { idea_index: 3, slot_role: 'designed_post', pipeline: 'fal_design' },
       { idea_index: 4, slot_role: 'organic_carousel', pipeline: 'carousel_gallery' },
     ],
   } as unknown as FeedArtDirectorReport;
@@ -123,9 +123,9 @@ describe('inferProductionAssignment (heuristic)', () => {
         {
           "idea_index": 1,
           "library_slot_key": undefined,
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
-          "rationale": "heuristic_story_remotion+mission_remotion_story_0",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
+          "rationale": "heuristic_fal_story+mission_fal_story_0",
           "slot_role": "campaign_story_motion",
         },
         {
@@ -139,7 +139,7 @@ describe('inferProductionAssignment (heuristic)', () => {
         {
           "idea_index": 3,
           "library_slot_key": undefined,
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_campaign",
           "rationale": "heuristic_campaign_post",
           "slot_role": "designed_post",
@@ -155,15 +155,15 @@ describe('inferProductionAssignment (heuristic)', () => {
         {
           "idea_index": 5,
           "library_slot_key": undefined,
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
-          "rationale": "heuristic_story_remotion+mission_remotion_story_0",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
+          "rationale": "heuristic_fal_story+mission_fal_story_0",
           "slot_role": "campaign_story_motion",
         },
         {
           "idea_index": 6,
           "library_slot_key": undefined,
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "rationale": "heuristic_designed_post",
           "slot_role": "designed_post",
@@ -212,9 +212,9 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
         {
           "idea_index": 1,
           "library_slot_key": "event_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
-          "rationale": "mission_remotion_story_0",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
+          "rationale": "mission_fal_story_0",
           "slot_role": "campaign_story_motion",
         },
         {
@@ -228,7 +228,7 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
         {
           "idea_index": 3,
           "library_slot_key": "campaign_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "rationale": undefined,
           "slot_role": "designed_post",
@@ -334,9 +334,9 @@ describe('prepareMissionFdAssignments — gate path', () => {
           {
             "idea_index": 1,
             "library_slot_key": "event_story",
-            "pipeline": "remotion_story",
-            "publish_channel": "instagram_organic",
-            "rationale": "mission_remotion_story_0",
+            "pipeline": "fal_story",
+            "publish_channel": "instagram_campaign",
+            "rationale": "mission_fal_story_0",
             "slot_role": "campaign_story_motion",
           },
           {
@@ -350,7 +350,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           {
             "idea_index": 3,
             "library_slot_key": "campaign_post",
-            "pipeline": "remotion_poster",
+            "pipeline": "fal_design",
             "publish_channel": "instagram_organic",
             "rationale": undefined,
             "slot_role": "designed_post",
@@ -374,14 +374,14 @@ describe('prepareMissionFdAssignments — gate path', () => {
           {
             "idea_index": 6,
             "library_slot_key": "social_proof_post",
-            "pipeline": "remotion_poster",
+            "pipeline": "fal_design",
             "publish_channel": "instagram_organic",
             "rationale": "manifest_backfill",
             "slot_role": "designed_typography",
           },
           {
             "idea_index": 7,
-            "library_slot_key": undefined,
+            "library_slot_key": "campaign_post",
             "pipeline": "fal_design",
             "publish_channel": "instagram_organic",
             "rationale": "manifest_backfill",
@@ -390,9 +390,9 @@ describe('prepareMissionFdAssignments — gate path', () => {
           {
             "idea_index": 0,
             "library_slot_key": "editorial_story",
-            "pipeline": "remotion_story",
-            "publish_channel": "instagram_organic",
-            "rationale": "manifest_backfill+mission_remotion_story_1",
+            "pipeline": "fal_story",
+            "publish_channel": "instagram_campaign",
+            "rationale": "manifest_backfill+mission_fal_story_1",
             "slot_role": "campaign_story_motion",
           },
           {
@@ -503,7 +503,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
         {
           "idea_index": 2,
           "library_slot_key": "campaign_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "rationale": "manifest_slot_map",
           "slot_role": "designed_post",
@@ -511,14 +511,14 @@ describe('prepareMissionFdAssignments — gate path', () => {
         {
           "idea_index": 3,
           "library_slot_key": "social_proof_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "rationale": "manifest_slot_map",
           "slot_role": "designed_typography",
         },
         {
           "idea_index": 4,
-          "library_slot_key": undefined,
+          "library_slot_key": "campaign_post",
           "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "rationale": "manifest_slot_map",
@@ -535,17 +535,17 @@ describe('prepareMissionFdAssignments — gate path', () => {
         {
           "idea_index": 6,
           "library_slot_key": "event_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
-          "rationale": "manifest_slot_map+mission_remotion_story_0",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
+          "rationale": "manifest_slot_map+mission_fal_story_0",
           "slot_role": "campaign_story_motion",
         },
         {
           "idea_index": 7,
           "library_slot_key": "editorial_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
-          "rationale": "manifest_slot_map+mission_remotion_story_1",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
+          "rationale": "manifest_slot_map+mission_fal_story_1",
           "slot_role": "campaign_story_motion",
         },
         {
@@ -644,10 +644,10 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 1,
           "idea_index": 1,
           "library_slot_key": "event_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
           "queueIndex": 1,
-          "rationale": "mission_remotion_story_0",
+          "rationale": "mission_fal_story_0",
           "slot_role": "campaign_story_motion",
         },
         {
@@ -664,7 +664,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 3,
           "idea_index": 3,
           "library_slot_key": "campaign_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "queueIndex": 3,
           "rationale": undefined,
@@ -694,7 +694,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 6,
           "idea_index": 6,
           "library_slot_key": "social_proof_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "queueIndex": 6,
           "rationale": "manifest_backfill",
@@ -703,7 +703,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
         {
           "ideaIndex": 7,
           "idea_index": 7,
-          "library_slot_key": undefined,
+          "library_slot_key": "campaign_post",
           "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "queueIndex": 7,
@@ -714,10 +714,10 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 0,
           "idea_index": 0,
           "library_slot_key": "editorial_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
           "queueIndex": 8,
-          "rationale": "manifest_backfill+mission_remotion_story_1",
+          "rationale": "manifest_backfill+mission_fal_story_1",
           "slot_role": "campaign_story_motion",
         },
         {
@@ -830,7 +830,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 2,
           "idea_index": 2,
           "library_slot_key": "campaign_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "queueIndex": 2,
           "rationale": "manifest_slot_map",
@@ -840,7 +840,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 3,
           "idea_index": 3,
           "library_slot_key": "social_proof_post",
-          "pipeline": "remotion_poster",
+          "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "queueIndex": 3,
           "rationale": "manifest_slot_map",
@@ -849,7 +849,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
         {
           "ideaIndex": 4,
           "idea_index": 4,
-          "library_slot_key": undefined,
+          "library_slot_key": "campaign_post",
           "pipeline": "fal_design",
           "publish_channel": "instagram_organic",
           "queueIndex": 4,
@@ -870,20 +870,20 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "ideaIndex": 6,
           "idea_index": 6,
           "library_slot_key": "event_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
           "queueIndex": 6,
-          "rationale": "manifest_slot_map+mission_remotion_story_0",
+          "rationale": "manifest_slot_map+mission_fal_story_0",
           "slot_role": "campaign_story_motion",
         },
         {
           "ideaIndex": 7,
           "idea_index": 7,
           "library_slot_key": "editorial_story",
-          "pipeline": "remotion_story",
-          "publish_channel": "instagram_organic",
+          "pipeline": "fal_story",
+          "publish_channel": "instagram_campaign",
           "queueIndex": 7,
-          "rationale": "manifest_slot_map+mission_remotion_story_1",
+          "rationale": "manifest_slot_map+mission_fal_story_1",
           "slot_role": "campaign_story_motion",
         },
         {
@@ -994,14 +994,14 @@ describe('SSOT — gate and queue agree (Faz 2.2)', () => {
 });
 
 describe('normalizeVideoTrackAssignment', () => {
-  it('redirects legacy fal story slots to reel pipelines', () => {
+  it('canonicalizes legacy fal story slots to campaign_story_motion + fal_story', () => {
     expect(normalizeVideoTrackAssignment({
       idea_index: 0,
       slot_role: 'fal_story_motion',
       pipeline: 'fal_story',
       copy_bundle_id: 'x',
       publish_channel: 'instagram_organic',
-    })).toMatchObject({ slot_role: 'fal_reel_motion', pipeline: 'fal_reel' });
+    })).toMatchObject({ slot_role: 'campaign_story_motion', pipeline: 'fal_story' });
 
     expect(normalizeVideoTrackAssignment({
       idea_index: 1,
@@ -1009,6 +1009,6 @@ describe('normalizeVideoTrackAssignment', () => {
       pipeline: 'fal_only_story',
       copy_bundle_id: 'x',
       publish_channel: 'instagram_organic',
-    })).toMatchObject({ slot_role: 'fal_only_reel', pipeline: 'fal_only_reel' });
+    })).toMatchObject({ slot_role: 'fal_only_story', pipeline: 'fal_only_story' });
   });
 });

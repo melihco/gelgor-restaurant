@@ -53,7 +53,7 @@ export function collectRejectedLayoutFamilies(
     const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
     const role = String(meta.production_role ?? '');
     const pipeline = String(meta.pipeline ?? '');
-    const designed = role === 'designed_post' || pipeline === 'remotion_poster' || meta.ad_creative === true;
+    const designed = role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'remotion_poster' || pipeline === 'fal_design' || meta.ad_creative === true;
     if (!designed) continue;
 
     const created = String(artifact.createdAt ?? artifact.CreatedAt ?? '');

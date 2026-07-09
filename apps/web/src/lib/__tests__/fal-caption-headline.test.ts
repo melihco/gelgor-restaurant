@@ -18,7 +18,12 @@ import {
   truncateAtWordBoundary,
   shortenFalOverlayForImageRetry,
   areFalOverlayTextsRedundant,
+  resolveFalOverlayCopy,
+  detectOverlayLocale,
+  containsFalCanvasMetaLeak,
+  isFalCanvasMetaOnlyHeadline,
 } from '../fal-caption-headline';
+import { resolveFalCanvasChannel } from '../fal-designer-production';
 
 describe('correctTurkishSpelling', () => {
   it('fixes "Koketyl" → "Kokteyl"', () => {
@@ -101,6 +106,54 @@ describe('resolveFalDisplayHeadline', () => {
       brandName: 'Yula Bodrum',
     });
     expect(r1.headline).not.toBe(r2.headline);
+  });
+});
+
+describe('resolveFalOverlayCopy', () => {
+  it('locks ideation headline + English CTA when caption is English', () => {
+    const result = resolveFalOverlayCopy({
+      headline: 'Meet the Maker',
+      cta: 'Share Details',
+      caption: 'Discover the story behind our Bodrum citrus artisans this weekend.',
+      channel: 'feed_post',
+      lockIdeationCopy: true,
+    });
+    expect(result.headline).toBe('Meet the Maker');
+    expect(result.subtitle).toBe('Share Details');
+  });
+
+  it('drops Turkish CTA when caption and headline are English', () => {
+    const result = resolveFalOverlayCopy({
+      headline: 'Meet the Maker',
+      cta: 'İletişime Geç',
+      caption: 'Share details about our artisan citrus makers in Bodrum.',
+      channel: 'feed_post',
+      lockIdeationCopy: true,
+    });
+    expect(result.headline).toBe('Meet the Maker');
+    expect(result.subtitle).toBeUndefined();
+  });
+
+  it('does not rewrite English headline via Turkish spellcheck', () => {
+    const result = resolveFalOverlayCopy({
+      headline: 'Weekend Cocktail Night',
+      cta: 'Book Now',
+      caption: 'Join us for signature cocktails by the sea.',
+      channel: 'feed_post',
+      lockIdeationCopy: true,
+    });
+    expect(result.headline).toContain('Cocktail');
+    expect(result.headline).not.toContain('Kokteyl');
+  });
+});
+
+describe('detectOverlayLocale', () => {
+  it('detects English caption', () => {
+    expect(detectOverlayLocale('Share details about the maker')).toBe('en');
+  });
+
+  it('detects Turkish caption', () => {
+    expect(detectOverlayLocale('Bodrum mandalinasının ferahlığını keşfedin')).toBe('tr');
   });
 });
 
@@ -306,5 +359,46 @@ describe('areFalOverlayTextsRedundant', () => {
 
   it('allows distinct headline and subtitle', () => {
     expect(areFalOverlayTextsRedundant('Lezzetli Akşamlar', 'Rezervasyon için DM')).toBe(false);
+  });
+});
+
+describe('fal canvas meta leak guards', () => {
+  it('detects platform meta words on canvas', () => {
+    expect(containsFalCanvasMetaLeak('ÜNLÜ STORY')).toBe(true);
+    expect(containsFalCanvasMetaLeak('Summer Festival')).toBe(false);
+  });
+
+  it('rejects meta-only headlines', () => {
+    expect(isFalCanvasMetaOnlyHeadline('ÜNLÜ STORY')).toBe(true);
+    expect(isFalCanvasMetaOnlyHeadline('INSTAGRAM REEL')).toBe(true);
+    expect(isMeaningfulFalOverlayText('ÜNLÜ STORY')).toBe(false);
+  });
+
+  it('allows real marketing headlines', () => {
+    expect(isMeaningfulFalOverlayText('Summer Festival')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Yaz Kokteyl Gecesi')).toBe(true);
+  });
+
+  it('buildFalOnCanvasTextContract forbids meta labels', () => {
+    const contract = buildFalOnCanvasTextContract({
+      headline: 'Summer Festival',
+      brandName: 'Yula Bodrum',
+    });
+    expect(contract).toContain('FORBIDDEN META WORDS');
+    expect(contract).toContain('STORY');
+  });
+});
+
+describe('resolveFalCanvasChannel', () => {
+  it('maps fal_story pipeline to story channel', () => {
+    expect(resolveFalCanvasChannel({ pipeline: 'fal_story', aspectRatio: '9:16' })).toBe('story');
+  });
+
+  it('maps fal_reel pipeline to reel channel', () => {
+    expect(resolveFalCanvasChannel({ pipeline: 'fal_reel', aspectRatio: '9:16' })).toBe('reel');
+  });
+
+  it('defaults 9:16 without pipeline to story', () => {
+    expect(resolveFalCanvasChannel({ aspectRatio: '9:16' })).toBe('story');
   });
 });

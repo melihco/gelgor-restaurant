@@ -22,24 +22,24 @@ describe('resolveStandardRemotionLibrarySlotKey', () => {
     })).toBe('social_proof');
   });
 
-  it('pins the global Remotion post slot order for every brand', () => {
+  it('pins the global designed post slot order for every brand', () => {
     expect(resolveStandardRemotionLibrarySlotKey({
       slotRole: 'designed_post',
-      pipeline: 'remotion_poster',
+      pipeline: 'fal_design',
       posterOrdinal: 0,
     })).toBe('campaign_post');
 
     expect(resolveStandardRemotionLibrarySlotKey({
       slotRole: 'designed_typography',
-      pipeline: 'remotion_poster',
+      pipeline: 'fal_design',
       posterOrdinal: 1,
     })).toBe('social_proof_post');
   });
 
-  it('routes remotion ads to the ad creative slot', () => {
+  it('routes designed ad slots to the ad creative slot', () => {
     expect(resolveStandardRemotionLibrarySlotKey({
       slotRole: 'paid_ad_creative',
-      pipeline: 'remotion_poster',
+      pipeline: 'fal_design',
     })).toBe('ad_creative_post');
   });
 

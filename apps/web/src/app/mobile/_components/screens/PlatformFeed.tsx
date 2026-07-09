@@ -205,7 +205,7 @@ function productionRoleBadge(meta: Record<string, unknown>): string | null {
   const role = String(meta.production_role ?? '').trim();
   const pipeline = String(meta.pipeline ?? '').trim();
   if (role === 'organic_post' || pipeline === 'gallery_photo') return 'Galeri';
-  if (role === 'designed_post' || pipeline === 'remotion_poster') return 'Tasarım';
+  if (role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'fal_design' || pipeline === 'remotion_poster') return 'Tasarım';
   if (role === 'organic_story_still' || pipeline === 'story_still') return 'Story';
   if (pipeline === 'remotion_story' || meta.remotion_mission_story) return 'Remotion';
   if (role.includes('campaign') || pipeline.includes('remotion')) return 'Kampanya';

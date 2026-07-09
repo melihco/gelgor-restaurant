@@ -1205,6 +1205,61 @@ export function matchPhotoToContent(
   return null;
 }
 
+/** Tag overlap between two gallery photos (0 = distinct, 1 = identical tag set). */
+function galleryTagOverlap(
+  metaA: GalleryPhotoMeta | undefined,
+  metaB: GalleryPhotoMeta | undefined,
+): number {
+  const tagsA = new Set((metaA?.contentTags ?? []).map((t) => String(t).toLowerCase()));
+  const tagsB = new Set((metaB?.contentTags ?? []).map((t) => String(t).toLowerCase()));
+  if (tagsA.size === 0 || tagsB.size === 0) return 0;
+  let shared = 0;
+  for (const t of tagsA) {
+    if (tagsB.has(t)) shared += 1;
+  }
+  return shared / Math.max(tagsA.size, tagsB.size);
+}
+
+/**
+ * When semantic scores fail, pick any unused photo that differs most from already-assigned
+ * mission photos (small catalogs / identical opportunity captions).
+ */
+export function pickMissionDiverseFallbackPhoto(
+  candidateUrls: string[],
+  usedBases: Set<string>,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  assignedUrls: string[],
+): PhotoMatchResult | null {
+  const assignedMeta = assignedUrls.map((url) => {
+    const base = normalizeGalleryUrl(url);
+    return galleryAnalysis[base]
+      ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+  });
+
+  let best: { url: string; diversity: number } | null = null;
+  for (const url of candidateUrls) {
+    const base = normalizeGalleryUrl(url);
+    if (usedBases.has(base)) continue;
+    const meta = galleryAnalysis[base]
+      ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+    let maxOverlap = 0;
+    for (const other of assignedMeta) {
+      maxOverlap = Math.max(maxOverlap, galleryTagOverlap(meta, other));
+    }
+    const diversity = 1 - maxOverlap;
+    if (!best || diversity > best.diversity || (diversity === best.diversity && url < best.url)) {
+      best = { url, diversity };
+    }
+  }
+  if (!best) return null;
+  return {
+    url: best.url,
+    score: RELAXED_MATCH_SCORE,
+    reason: 'mission_diversity_fallback',
+    confidence: 0.35,
+  };
+}
+
 /**
  * Greedy 1:1 assignment — no duplicate photos within the mission batch
  * (mission-wide dedup across feed/story/reel/carousel).

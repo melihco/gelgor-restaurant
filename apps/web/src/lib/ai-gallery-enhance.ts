@@ -41,7 +41,7 @@ const ENHANCE_PIPELINES = new Set([
   'story_still',
   'carousel_gallery',
   'runway_reel',
-  'remotion_poster',
+  'fal_reel',
   'remotion_story',
 ]);
 

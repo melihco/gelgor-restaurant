@@ -122,9 +122,12 @@ export function slotUsesRemotionPost(
   if (assignment.pipeline === 'fal_only_post' || assignment.slot_role === 'fal_only_post') {
     return false;
   }
+  if (assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography') {
+    return false;
+  }
   if (!profile.requireRemotionGrafiker) return false;
   if (contentKind === 'instagram_reel') return false;
-  if (assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post') {
+  if (assignment.pipeline === 'remotion_poster') {
     return true;
   }
   if (contentKind === 'instagram_post' || contentKind === 'instagram_carousel') return true;
@@ -160,8 +163,10 @@ export function slotUsesRemotionStory(
   if (contentKind === 'instagram_reel') return false;
   if (contentKind === 'instagram_story' || contentKind === 'instagram_canvas') return true;
   if (assignment.pipeline === 'remotion_story') return true;
-  return assignment.slot_role === 'campaign_story_motion'
-    || assignment.slot_role === 'organic_story_still';
+  if (assignment.slot_role === 'campaign_story_motion') {
+    return assignment.pipeline === 'remotion_story';
+  }
+  return assignment.slot_role === 'organic_story_still';
 }
 
 export function isFeedDirectorFallback(report: Record<string, unknown> | null | undefined): boolean {

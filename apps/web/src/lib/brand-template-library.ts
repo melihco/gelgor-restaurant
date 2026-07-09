@@ -203,7 +203,7 @@ export function resolveStandardRemotionLibrarySlotKey(input: {
   const role = String(input.slotRole ?? '').trim().toLowerCase();
   const pipeline = String(input.pipeline ?? '').trim().toLowerCase();
 
-  if (role === 'campaign_story_motion' || pipeline === 'remotion_story') {
+  if (role === 'campaign_story_motion' || pipeline === 'remotion_story' || pipeline === 'fal_story') {
     const idx = Math.max(0, input.storyOrdinal ?? 0) % STANDARD_REMOTION_STORY_SLOT_ORDER.length;
     return STANDARD_REMOTION_STORY_SLOT_ORDER[idx]!;
   }
@@ -215,7 +215,7 @@ export function resolveStandardRemotionLibrarySlotKey(input: {
   if (role === 'designed_post') return 'campaign_post';
   if (role === 'designed_typography') return 'social_proof_post';
 
-  if (pipeline === 'remotion_poster' || role === 'designed_post' || role === 'designed_typography') {
+  if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography') {
     const idx = Math.max(0, input.posterOrdinal ?? 0) % STANDARD_REMOTION_POST_SLOT_ORDER.length;
     return STANDARD_REMOTION_POST_SLOT_ORDER[idx]!;
   }

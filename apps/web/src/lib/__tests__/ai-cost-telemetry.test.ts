@@ -84,7 +84,7 @@ describe('Faz 1.4 — designed_post enhance skip flag', () => {
   const baseInput = (overrides: Partial<GptEnhancePolicyInput> = {}): GptEnhancePolicyInput => ({
     visualStandard,
     contentKind: 'instagram_post',
-    assignment: { pipeline: 'remotion_poster', slot_role: 'designed_post' } as GptEnhancePolicyInput['assignment'],
+    assignment: { pipeline: 'fal_design', slot_role: 'designed_post' } as GptEnhancePolicyInput['assignment'],
     businessType: 'restaurant',
     galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE + 5,
     pickedFromBrandGallery: true,

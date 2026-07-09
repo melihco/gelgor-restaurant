@@ -108,7 +108,7 @@ export async function produceFalOnlySlot(
 
   // ── fal-only video (reel) — DESIGNED route first ───────────────────────────
   if (input.isFalOnlyVideo && !input.existingVideoUrl) {
-    const falPipeline = input.pipeline === 'fal_only_reel' ? 'fal_reel' : 'fal_reel';
+    const falPipeline = input.pipeline === 'fal_only_story' ? 'fal_story' : 'fal_reel';
     const binding = input.brandTemplateBinding;
     const lockOpts = resolveFalTemplateLockOptions({
       binding,

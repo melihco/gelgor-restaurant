@@ -101,7 +101,7 @@ Critical:
 - Do NOT invent gallery URLs unless you see one in the idea JSON — leave selected_gallery_url empty otherwise
 - image_edit_prompt must start with preservation rules for visual_subject
 - layout_family_hint must align with Feed Art Director assignments when provided
-- For ideas assigned to fal.ai slots (fal_designed_post, fal_reel_motion, fal_only_*): ALWAYS fill fal_design_brief.
+- For ideas assigned to fal.ai slots (designed_post, designed_typography, fal_designed_post, fal_reel_motion, fal_only_*): ALWAYS fill fal_design_brief.
   Evaluate as a senior social media designer: layout, typography hierarchy, graphic accents, caption→visual bridge.
   fal_design_brief must make the fal.ai output feel Canva Pro premium — not a raw photo with floating text.
 - When premium_composition exists on an idea, align fal_design_brief.layout_pattern and graphic_accents with it.

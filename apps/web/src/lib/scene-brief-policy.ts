@@ -17,7 +17,7 @@ export function slotNeedsSceneBrief(input: {
   if (input.visualStandard.adaptiveScene && !input.designedPosterSync) {
     const pipeline = input.assignment.pipeline;
     const role = input.assignment.slot_role;
-    if (pipeline !== 'remotion_poster' && role !== 'designed_post') {
+    if (pipeline !== 'remotion_poster' && pipeline !== 'fal_design' && role !== 'designed_post' && role !== 'designed_typography') {
       return shouldAiEnhanceForOutput(
         input.visualStandard,
         input.contentKind,
@@ -32,7 +32,7 @@ export function slotNeedsSceneBrief(input: {
 
   const pipeline = input.assignment.pipeline;
   const role = input.assignment.slot_role;
-  if (pipeline === 'remotion_poster' || role === 'designed_post') {
+  if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') {
     return false;
   }
 

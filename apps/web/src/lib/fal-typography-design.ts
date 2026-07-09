@@ -111,10 +111,13 @@ export function getVibePromptSpec(vibe: TypographyVibe): VibePromptSpec {
 type AspectRatio = '9:16' | '1:1' | '4:5';
 
 const ASPECT_LABELS: Record<AspectRatio, string> = {
-  '9:16': 'vertical 9:16 story/reel format',
-  '1:1': 'square 1:1 Instagram feed post format',
-  '4:5': 'portrait 4:5 Instagram feed post format',
+  '9:16': '1080×1920 vertical portrait frame (9:16 aspect ratio)',
+  '1:1': '1080×1080 square frame (1:1 aspect ratio)',
+  '4:5': '1080×1350 portrait frame (4:5 aspect ratio)',
 };
+
+const IDEOGRAM_SAFE_ZONE =
+  'SAFE ZONE (MANDATORY): ALL text and graphic elements must stay within the inner 85% of the frame — minimum 7.5% margin from every edge. For vertical 9:16, protect the top 12% and bottom 15% from important content. Shrink typography rather than clip letters.';
 
 // ── Prompt Builder ───────────────────────────────────────────────────────────
 
@@ -161,6 +164,8 @@ function buildTypographyPrompt(input: {
   backgroundOnly?: boolean;
   /** Premium Canva Pro Reels cover frame — bold graphics + stacked headline. */
   reelDesignMode?: boolean;
+  /** Branded Instagram Story poster — venue hero + headline panel (not reel motion template). */
+  storyDesignMode?: boolean;
 }): string {
   const spec = VIBE_PROMPTS[input.vibe];
   const aspect = ASPECT_LABELS[input.aspectRatio];
@@ -250,6 +255,55 @@ function buildTypographyPrompt(input: {
     return finalizeFalPrompt(reelPrompt, { maxChars: 1500, kind: 'image', label: 'typography-reel' });
   }
 
+  // ── Instagram Story poster (9:16 still) ───────────────────────────────────
+  if (input.storyDesignMode && input.aspectRatio === '9:16') {
+    const safeHeadline = clampFalOverlayHeadlineForCanvas(input.headline, 'story');
+    const safeSubtitle = input.subtitle && isMeaningfulFalOverlayText(input.subtitle)
+      ? sanitizeFalOverlayText(input.subtitle).slice(0, 36)
+      : undefined;
+    const headlineLine = formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription);
+    const subtitleLine = safeSubtitle
+      ? ` ${formatFalOnImageSubtitleDirective(safeSubtitle)}`
+      : '';
+    const textContract = buildFalOnCanvasTextContract({
+      headline: safeHeadline,
+      subtitle: safeSubtitle,
+      brandName: input.brandName,
+      logoProvided: Boolean(input.logoUrl),
+    });
+    const logoLine = input.logoUrl
+      ? buildFalLogoPlacementContract({
+          logoProvided: true,
+          brandName: input.brandName,
+          channel: 'story',
+          hasPhotoHero: false,
+          placement: input.logoPlacement ?? null,
+        })
+      : input.brandName
+        ? ` Place "${input.brandName}" brand name at top-right corner — small, clean watermark.`
+        : '';
+    const storyPrompt = [
+      `Premium branded vertical story poster, ${aspect}.`,
+      'Real venue or product photography hero zone + headline panel — agency story design, NOT a motion reel template.',
+      spec.styleDirective,
+      brandColorEmphasis,
+      visualDnaLine,
+      ...(input.brandDirectives ?? []),
+      headlineLine,
+      subtitleLine,
+      textContract,
+      spec.colorUsage(input.brandColors.primary, input.brandColors.accent),
+      bgDirective,
+      sceneLine,
+      spec.backgroundHint ? `Background hint: ${spec.backgroundHint}.` : '',
+      logoLine,
+      IDEOGRAM_SAFE_ZONE,
+      'Layout: upper graphic/headline zone + lower photo atmosphere — balanced, readable hierarchy.',
+      'Render only the quoted on-image copy. Never paint platform labels (STORY, REEL, POST, INSTAGRAM).',
+    ].filter(Boolean).join(' ');
+    return finalizeFalPrompt(storyPrompt, { maxChars: 1500, kind: 'image', label: 'typography-story' });
+  }
+
   // ── Full typography design (for post stills) ─────────────────────────────
   const canvasChannel = input.aspectRatio === '9:16' ? 'story' : 'feed_post';
   const safeHeadline = clampFalOverlayHeadlineForCanvas(input.headline, canvasChannel);
@@ -296,6 +350,8 @@ function buildTypographyPrompt(input: {
     'Design hierarchy: large headline, optional supporting subtitle, brand watermark — full Canva/agency layout, not a single floating word.',
     'No watermarks. No stock photo badges. No random text or placeholder words.',
     'Render only the quoted on-image copy. Do not paint prompt instruction words (e.g. "exactly", "headline", "critical").',
+    'Never paint platform/format labels: STORY, REEL, POST, INSTAGRAM, TIKTOK, ÜNLÜ.',
+    IDEOGRAM_SAFE_ZONE,
     'Premium agency design quality. Balanced layout with intentional negative space.',
   ].filter(Boolean).join(' ');
   return finalizeFalPrompt(postPrompt, { maxChars: 1500, kind: 'image', label: 'typography-post' });
@@ -470,6 +526,8 @@ export async function generateTypographyDesign(input: {
   backgroundOnly?: boolean;
   /** Premium Canva Pro Reels cover — bold creator graphics for 9:16 video stills. */
   reelDesignMode?: boolean;
+  /** Branded Instagram Story poster for 9:16 stills. */
+  storyDesignMode?: boolean;
 }): Promise<TypographyDesignResult> {
   const apiKey = serverConfig.fal.apiKey;
   if (!apiKey) throw new Error('FAL_API_KEY not set — typography design unavailable');
@@ -480,11 +538,13 @@ export async function generateTypographyDesign(input: {
   const prompt = buildTypographyPrompt({
     headline: clampFalOverlayHeadlineForCanvas(
       sanitizeFalOverlayText(input.headline),
-      input.reelDesignMode && input.aspectRatio === '9:16'
-        ? 'reel'
-        : input.aspectRatio === '9:16'
-          ? 'story'
-          : 'feed_post',
+      input.storyDesignMode && input.aspectRatio === '9:16'
+        ? 'story'
+        : input.reelDesignMode && input.aspectRatio === '9:16'
+          ? 'reel'
+          : input.aspectRatio === '9:16'
+            ? 'story'
+            : 'feed_post',
     ),
     subtitle: input.subtitle ? sanitizeFalOverlayText(input.subtitle).slice(0, 36) : undefined,
     vibe: input.vibe,
@@ -500,9 +560,16 @@ export async function generateTypographyDesign(input: {
     visualDnaTone: input.visualDnaTone,
     backgroundOnly: input.backgroundOnly,
     reelDesignMode: input.reelDesignMode,
+    storyDesignMode: input.storyDesignMode,
   });
 
-  const mode = input.backgroundOnly ? 'background-plate' : input.reelDesignMode ? 'reel-design' : 'typography';
+  const mode = input.backgroundOnly
+    ? 'background-plate'
+    : input.storyDesignMode
+      ? 'story-design'
+      : input.reelDesignMode
+        ? 'reel-design'
+        : 'typography';
   console.log(`[fal-typography] Generating ${mode}: vibe=${input.vibe} aspect=${input.aspectRatio}${input.backgroundOnly ? '' : ` headline="${input.headline.slice(0, 30)}"`}`);
 
   try {
@@ -549,11 +616,13 @@ export async function generateTypographyDesignWithRetry(
   let lastResult: TypographyDesignResult | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const canvasChannel = input.reelDesignMode && input.aspectRatio === '9:16'
-      ? 'reel'
-      : input.aspectRatio === '9:16'
-        ? 'story'
-        : 'feed_post';
+    const canvasChannel = input.storyDesignMode && input.aspectRatio === '9:16'
+      ? 'story'
+      : input.reelDesignMode && input.aspectRatio === '9:16'
+        ? 'reel'
+        : input.aspectRatio === '9:16'
+          ? 'story'
+          : 'feed_post';
     const modifiedInput = attempt === 0
       ? input
       : {

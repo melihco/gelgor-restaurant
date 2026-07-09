@@ -286,11 +286,42 @@ export function isGalleryUrlUsedInBatch(
   return batchUsedByType[postType].some((u) => normalizeGalleryUrl(u) === base);
 }
 
-export async function fetchUsedGalleryImages(
+function artifactMissionId(artifact: Record<string, unknown>): string {
+  const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
+  const content = parseJsonRecord(artifact.content ?? artifact.Content);
+  return String(
+    meta.mission_id ?? meta.missionId ?? content.mission_id ?? content.missionId ?? '',
+  ).trim();
+}
+
+/** Gallery source URLs already used by artifacts in one mission (sibling slot dedup). */
+export function collectMissionGalleryUrls(
+  artifacts: Record<string, unknown>[],
+  missionId: string,
+): string[] {
+  const mid = missionId.trim();
+  if (!mid) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const artifact of artifacts) {
+    if (artifactMissionId(artifact) !== mid) continue;
+    const extracted = extractGalleryUrlsFromArtifact(artifact);
+    if (!extracted) continue;
+    for (const url of extracted.urls) {
+      const base = normalizeGalleryUrl(url);
+      if (seen.has(base)) continue;
+      seen.add(base);
+      out.push(url);
+    }
+  }
+  return out;
+}
+
+export async function fetchWorkspaceArtifacts(
   workspaceId: string,
   nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
   internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
-): Promise<UsedGalleryUsage> {
+): Promise<Record<string, unknown>[]> {
   try {
     const res = await fetch(`${nexusApi}/api/artifacts`, {
       headers: {
@@ -299,10 +330,33 @@ export async function fetchUsedGalleryImages(
       },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return { ...EMPTY_USAGE, byType: { ...EMPTY_USAGE.byType }, countsByUrl: {} };
+    if (!res.ok) return [];
     const artifacts = (await res.json()) as Record<string, unknown>[];
-    return buildGalleryUsageFromArtifacts(Array.isArray(artifacts) ? artifacts : []);
+    return Array.isArray(artifacts) ? artifacts : [];
   } catch {
-    return { byType: { feed: [], story: [], reel: [], carousel: [] }, countsByUrl: {} };
+    return [];
   }
+}
+
+export async function fetchUsedGalleryImages(
+  workspaceId: string,
+  nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
+  internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
+): Promise<UsedGalleryUsage> {
+  const artifacts = await fetchWorkspaceArtifacts(workspaceId, nexusApi, internalKey);
+  return buildGalleryUsageFromArtifacts(artifacts);
+}
+
+export async function fetchGalleryProductionUsage(
+  workspaceId: string,
+  missionId?: string | null,
+  nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
+  internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
+): Promise<{ usage: UsedGalleryUsage; missionSiblingUrls: string[] }> {
+  const artifacts = await fetchWorkspaceArtifacts(workspaceId, nexusApi, internalKey);
+  const usage = buildGalleryUsageFromArtifacts(artifacts);
+  const missionSiblingUrls = missionId?.trim()
+    ? collectMissionGalleryUrls(artifacts, missionId.trim())
+    : [];
+  return { usage, missionSiblingUrls };
 }

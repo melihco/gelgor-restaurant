@@ -35,7 +35,15 @@ export function assignmentUsesGalleryPhoto(
 ): boolean {
   const pipeline = String(assignment.pipeline ?? '');
   const role = String(assignment.slot_role ?? '');
-  if (pipeline === 'remotion_poster' || role === 'designed_post') return false;
+  if (pipeline === 'remotion_poster') return false;
+  if (
+    pipeline === 'fal_design'
+    || role === 'designed_post'
+    || role === 'designed_typography'
+    || role === 'fal_designed_post'
+  ) {
+    return true;
+  }
   if (pipeline.startsWith('fal_only_') || role.startsWith('fal_only_')) return false;
   if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
   if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
@@ -44,7 +52,9 @@ export function assignmentUsesGalleryPhoto(
     || pipeline === 'story_still'
     || pipeline === 'carousel_gallery'
     || pipeline === 'remotion_story'
+    || pipeline === 'fal_story'
     || pipeline === 'runway_reel'
+    || pipeline === 'fal_reel'
   );
 }
 

@@ -21,11 +21,11 @@ import {
 export type ProductionPipeline =
   | 'gallery_photo'      // Ham / hafif galeri gönderisi (caption feed'de)
   | 'remotion_poster'    // Tasarımsal post (SpecPoster / announcement SVG)
-  | 'remotion_story'     // Kampanya / duyuru motion story (MP4)
+  | 'remotion_story'     // Legacy — eski artifact/FD; normalize → fal_story
+  | 'fal_story'          // fal.ai grounded story poster (9:16) — galeri + ideation
   | 'story_still'        // Story: statik galeri görseli (caption feed'de yok)
   | 'runway_reel'        // @deprecated — fal_reel kullan; legacy FD atamaları normalize edilir
-  | 'fal_story'          // fal.ai track — Remotion'dan bağımsız (Ideogram + I2V)
-  | 'fal_reel'           // fal.ai track — Remotion/Runway alternatifi
+  | 'fal_reel'           // fal.ai reel — Remotion/Runway alternatifi
   | 'fal_design'         // fal.ai/GPT-image tasarımsal feed post (Canva benzeri, galeri + tipografi)
   | 'fal_only_story'     // Tam fal.ai story — galeri/GPT yok, Ideogram + I2V
   | 'fal_only_post'      // Tam fal.ai post — galeri/GPT yok, Ideogram/Flux still
@@ -45,9 +45,9 @@ export type CaptionSurface = 'feed_card' | 'visual_only' | 'ad_creative';
 export type ProductionSlotRole =
   /** Haftalık organik feed post — galeri foto, Remotion poster DEĞİL */
   | 'organic_post'
-  /** Tasarımsal / şablonlu post — Remotion poster, caption feed'de aynı brief'ten */
+  /** Tasarımsal / şablonlu post — fal.ai designed post (gallery match + agent brief) */
   | 'designed_post'
-  /** AI typography designed post — Remotion poster (SVG + Sharp) */
+  /** AI typography designed post — fal.ai (gallery + fal_design_hint) */
   | 'designed_typography'
   /** fal.ai/GPT-image Canva-style designed post — parallel track (NOT Remotion) */
   | 'fal_designed_post'
@@ -115,7 +115,8 @@ export interface ProductionAssignment {
    */
   visual_subject_hint?: string;
   /**
-   * Feed Art Director designer note for fal.ai slots (fal_designed_post, fal_reel_motion, fal_only_*).
+   * Feed Art Director designer note for fal.ai designed slots (designed_post, designed_typography,
+   * fal_designed_post, fal_reel_motion, fal_only_*).
    * One sentence: layout + typography + graphic intent for this specific caption.
    */
   fal_design_hint?: string;
@@ -150,10 +151,10 @@ export interface MissionProductionManifest {
 /**
  * Standard weekly mission deliverable: 16 generated slots.
  *
- * Post mix (6): 2 organic gallery + 2 Remotion designed + 1 fal_designed_post
- * (galeri+GPT/fal) + 1 fal_only_post (tam fal).
+ * Post mix (6): 2 organic gallery + 3 fal_designed (designed_post + designed_typography + fal_designed_post)
+ * + 1 fal_only_post (tam fal). Feed designed posts are fal.ai/GPT-image (gallery match + agent brief).
  * Story (3): Remotion motion ×2 + organic still.
- * Reel (6): Runway ×2 + fal_reel_motion ×2 + fal_only_reel ×2 — Remotion kullanılmaz.
+ * Reel (6): fal_reel ×2 + fal_reel_motion ×2 + fal_only_reel ×2 — Remotion kullanılmaz.
  * (Story için fal.ai kullanılmaz — Remotion karşılar. Reels Runway + fal.ai.)
  */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
@@ -248,7 +249,7 @@ export const MISSION_AD_PAIR_COUNTS = {
 const OPPORTUNITY_ORGANIC: MissionProductionSlot[] = [
   {
     role: 'designed_post',
-    pipeline: 'remotion_poster',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'feed_card',
     required: true,
@@ -256,7 +257,7 @@ const OPPORTUNITY_ORGANIC: MissionProductionSlot[] = [
   },
   {
     role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
+    pipeline: 'fal_story',
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
@@ -291,7 +292,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
   {
     role: 'designed_post',
-    pipeline: 'remotion_poster',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'feed_card',
     required: true,
@@ -299,7 +300,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
   {
     role: 'designed_typography',
-    pipeline: 'remotion_poster',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'feed_card',
     required: true,
@@ -323,7 +324,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
   {
     role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
+    pipeline: 'fal_story',
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
@@ -331,7 +332,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
   {
     role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
+    pipeline: 'fal_story',
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
@@ -415,7 +416,7 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   },
   {
     role: 'designed_post',
-    pipeline: 'remotion_poster',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'feed_card',
     required: true,
@@ -423,7 +424,7 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   },
   {
     role: 'designed_typography',
-    pipeline: 'remotion_poster',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'feed_card',
     required: true,
@@ -447,7 +448,7 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   },
   {
     role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
+    pipeline: 'fal_story',
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
@@ -455,7 +456,7 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   },
   {
     role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
+    pipeline: 'fal_story',
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
@@ -515,7 +516,7 @@ function weeklyOrganicSlotsForPlan(packageSlug?: string | null): MissionProducti
 const WEEKLY_CAMPAIGN_ADDON: MissionProductionSlot[] = [
   {
     role: 'campaign_story_motion',
-    pipeline: 'remotion_story',
+    pipeline: 'fal_story',
     format: 'story',
     captionSurface: 'visual_only',
     required: true,
@@ -772,16 +773,19 @@ export function normalizeProductionPipeline(
 ): ProductionPipeline {
   const key = String(pipeline ?? '').trim();
   if (key === 'runway_reel') return 'fal_reel';
+  if (key === 'remotion_poster') return 'fal_design';
+  if (key === 'remotion_story') return 'fal_story';
   return (key as ProductionPipeline) || 'gallery_photo';
 }
 
-/** Mevcut auto-produce: tüm postlar → remotion_poster. Hedef: sadece designed_post. */
+/** Resolve pipeline for a slot role (legacy FD assignments normalized at ingest). */
 export function pipelineForSlotRole(role: ProductionSlotRole): ProductionPipeline {
-  if (role === 'designed_typography') return 'remotion_poster';
-  if (role === 'fal_designed_post') return 'fal_design';
-  // Legacy FD assignments — fal story slots artık reel pipeline kullanır
-  if (role === 'fal_story_motion') return 'fal_reel';
-  if (role === 'fal_only_story') return 'fal_only_reel';
+  if (role === 'designed_typography' || role === 'designed_post' || role === 'fal_designed_post') {
+    return 'fal_design';
+  }
+  // Legacy FD slot roles → canonical fal story / fal reel pipelines
+  if (role === 'fal_story_motion') return 'fal_story';
+  if (role === 'fal_only_story') return 'fal_only_story';
   if (role === 'fal_only_post') return 'fal_only_post';
   if (role === 'fal_only_reel') return 'fal_only_reel';
   if (role === 'product_showcase_post' || role === 'product_showcase_story') return 'product_showcase';

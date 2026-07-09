@@ -154,11 +154,11 @@ describe('mapDesignTemplateTypeToContentIntent', () => {
 });
 
 describe('isRemotionFalAlignedSlot', () => {
-  it('matches designed_post and designed_typography on remotion_poster pipeline', () => {
-    expect(isRemotionFalAlignedSlot({ pipeline: 'remotion_poster', slot_role: 'designed_post' })).toBe(true);
-    expect(isRemotionFalAlignedSlot({ pipeline: 'remotion_poster', slot_role: 'designed_typography' })).toBe(true);
+  it('matches designed_post and designed_typography on fal_design pipeline', () => {
+    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'designed_post' })).toBe(true);
+    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'designed_typography' })).toBe(true);
     expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'fal_designed_post' })).toBe(false);
-    expect(isRemotionFalAlignedSlot({ pipeline: 'remotion_poster', slot_role: 'organic_post' })).toBe(false);
+    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'organic_post' })).toBe(false);
   });
 });
 

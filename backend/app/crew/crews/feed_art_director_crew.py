@@ -43,12 +43,12 @@ _WEEKLY_PACKAGE_TOTAL = 16
 _WEEKLY_SLOT_SPECS: list[tuple[str, str]] = [
     ("organic_post", "gallery_photo"),
     ("organic_post", "gallery_photo"),
-    ("designed_post", "remotion_poster"),
-    ("designed_typography", "remotion_poster"),
+    ("designed_post", "fal_design"),
+    ("designed_typography", "fal_design"),
     ("fal_designed_post", "fal_design"),
     ("organic_carousel", "carousel_gallery"),
-    ("campaign_story_motion", "remotion_story"),
-    ("campaign_story_motion", "remotion_story"),
+    ("campaign_story_motion", "fal_story"),
+    ("campaign_story_motion", "fal_story"),
     ("organic_story_still", "story_still"),
     ("organic_reel", "fal_reel"),
     ("campaign_reel_motion", "fal_reel"),
@@ -100,11 +100,11 @@ def _manifest_required_counts(production_profile: str | None = None) -> dict[str
 
 
 def _post_slot_role_for(post_ordinal: int) -> tuple[str, str]:
-    """Weekly post slot mix (5): 2 organic + 2 Remotion designed + 1 fal designed (Canva-style)."""
+    """Weekly post slot mix (5): 2 organic + 3 fal designed (gallery match + agent brief)."""
     if post_ordinal == 1:
-        return ("designed_post", "remotion_poster")
+        return ("designed_post", "fal_design")
     if post_ordinal == 3:
-        return ("designed_typography", "remotion_poster")
+        return ("designed_typography", "fal_design")
     if post_ordinal >= 4:
         return ("fal_designed_post", "fal_design")
     return ("organic_post", "gallery_photo")
@@ -171,11 +171,11 @@ def _normalize_production_assignments(
     """
     _pipeline_map = {
         "organic_post": "gallery_photo",
-        "designed_post": "remotion_poster",
-        "designed_typography": "remotion_poster",
+        "designed_post": "fal_design",
+        "designed_typography": "fal_design",
         "fal_designed_post": "fal_design",
         "organic_story_still": "story_still",
-        "campaign_story_motion": "remotion_story",
+        "campaign_story_motion": "fal_story",
         "organic_reel": "fal_reel",
         "campaign_reel_motion": "fal_reel",
         "fal_reel_motion": "fal_reel",
@@ -213,8 +213,8 @@ def _normalize_production_assignments(
                 "publish_channel": _publish_channel_for_role(role),
             }
         opp_specs = [
-            ("designed_post", "remotion_poster"),
-            ("campaign_story_motion", "remotion_story"),
+            ("designed_post", "fal_design"),
+            ("campaign_story_motion", "fal_story"),
             ("organic_reel", "fal_reel"),
         ]
         target = min(max(idea_count, 1), 3)
@@ -316,7 +316,7 @@ def _normalize_production_assignments(
         if idea_fmt == "story" and story_n < 3:
             _assign(
                 "campaign_story_motion",
-                "remotion_story",
+                "fal_story",
                 "auto_fill_story_fmt",
                 library_slot_key=_story_library_slot_key(story_n),
             )
@@ -335,13 +335,13 @@ def _normalize_production_assignments(
             _assign("organic_post", "gallery_photo", "auto_fill_organic_post_fmt")
             post_n += 1
         elif idea_fmt in ("post", None) and post_n == 1:
-            _assign("designed_post", "remotion_poster", "auto_fill_designed_post_fmt")
+            _assign("designed_post", "fal_design", "auto_fill_designed_post_fmt")
             post_n += 1
         elif post_n == 0:
             _assign("organic_post", "gallery_photo", "auto_fill_organic_post")
             post_n += 1
         elif post_n == 1:
-            _assign("designed_post", "remotion_poster", "auto_fill_designed_post")
+            _assign("designed_post", "fal_design", "auto_fill_designed_post")
             post_n += 1
         elif carousel_n == 0:
             _assign("organic_carousel", "carousel_gallery", "auto_fill_carousel")
@@ -349,8 +349,8 @@ def _normalize_production_assignments(
         elif story_n < 3:
             _assign(
                 "campaign_story_motion",
-                "remotion_story",
-                "auto_fill_remotion_story",
+                "fal_story",
+                "auto_fill_fal_story",
                 library_slot_key=_story_library_slot_key(story_n),
             )
             story_n += 1

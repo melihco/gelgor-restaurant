@@ -47,11 +47,37 @@ const TURKISH_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
   [/\bsonbahar\b/g, 'Sonbahar'],
 ];
 
+export type OverlayLocale = 'tr' | 'en' | 'unknown';
+
+const TR_CHAR_RX = /[ğüşöçıİĞÜŞÖÇ]/;
+const TR_WORD_RX = /\b(ve|için|icin|ile|burada|şimdi|simdi|hemen|yerini|ayirt|ayırt|rezervasyon|lezzet|deneyim|gecesi|hafta|sonu|kokteyl|mekan|davet)\b/i;
+const EN_WORD_RX = /\b(the|and|for|with|your|share|details|book|now|discover|join|experience|meet|maker|artisan|citrus|fresh|this|weekend)\b/i;
+
+/** Rough locale detector for overlay copy — drives CTA/headline language lock. */
+export function detectOverlayLocale(text: string | undefined | null): OverlayLocale {
+  const t = String(text ?? '').trim();
+  if (t.length < 3) return 'unknown';
+  const hasTrChar = TR_CHAR_RX.test(t);
+  const hasTrWord = TR_WORD_RX.test(t);
+  const hasEnWord = EN_WORD_RX.test(t);
+  if (hasTrChar || (hasTrWord && !hasEnWord)) return 'tr';
+  if (hasEnWord && !hasTrChar && !hasTrWord) return 'en';
+  if (hasEnWord && hasTrWord) return 'unknown';
+  return 'unknown';
+}
+
 /**
  * Fix common Turkish spelling errors found in AI-generated headlines.
  * Preserves casing for first-word capitalization.
+ * Skips English copy — do not rewrite "cocktail" → "Kokteyl" on EN posts.
  */
-export function correctTurkishSpelling(headline: string): string {
+export function correctTurkishSpelling(
+  headline: string,
+  opts?: { locale?: OverlayLocale },
+): string {
+  const locale = opts?.locale ?? detectOverlayLocale(headline);
+  if (locale === 'en') return headline;
+
   let result = headline;
   for (const [pattern, replacement] of TURKISH_CORRECTIONS) {
     result = result.replace(pattern, (match) => {
@@ -61,6 +87,89 @@ export function correctTurkishSpelling(headline: string): string {
     });
   }
   return result;
+}
+
+function dominantOverlayLocale(...parts: Array<string | undefined | null>): OverlayLocale {
+  let tr = 0;
+  let en = 0;
+  for (const p of parts) {
+    const loc = detectOverlayLocale(p ?? '');
+    if (loc === 'tr') tr += 1;
+    else if (loc === 'en') en += 1;
+  }
+  if (tr > en) return 'tr';
+  if (en > tr) return 'en';
+  return 'unknown';
+}
+
+function localesCompatible(a: OverlayLocale, b: OverlayLocale): boolean {
+  if (a === 'unknown' || b === 'unknown') return true;
+  return a === b;
+}
+
+export interface FalOverlayCopyInput {
+  headline: string;
+  cta?: string;
+  caption?: string;
+  channel: 'reel' | 'feed_post' | 'story';
+  /** Mission production: render ideation headline + CTA verbatim (no caption hook rewrite). */
+  lockIdeationCopy?: boolean;
+}
+
+/**
+ * Resolve on-image headline + subtitle for fal/GPT designed posts.
+ * Mission default: ideation strings only, same language as caption, no auto-translation.
+ */
+export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
+  headline: string;
+  subtitle?: string;
+} {
+  const targetLocale = dominantOverlayLocale(input.caption, input.headline, input.cta);
+  const rawHeadline = sanitizeFalOverlayText(input.headline);
+  const rawCta = input.cta ? sanitizeFalOverlayText(input.cta.trim()) : '';
+
+  let headline = rawHeadline;
+  let subtitle: string | undefined;
+
+  if (input.lockIdeationCopy !== false) {
+    headline = correctTurkishSpelling(rawHeadline, {
+      locale: detectOverlayLocale(rawHeadline) === 'unknown' ? targetLocale : detectOverlayLocale(rawHeadline),
+    });
+    headline = resolveFalProductionOverlayHeadline(headline, [], input.channel);
+    if (rawCta && isMeaningfulFalOverlayText(rawCta) && !areFalOverlayTextsRedundant(headline, rawCta)) {
+      const ctaLoc = detectOverlayLocale(rawCta);
+      if (localesCompatible(targetLocale, ctaLoc)) {
+        subtitle = targetLocale === 'tr'
+          ? correctTurkishSpelling(rawCta, { locale: 'tr' })
+          : rawCta;
+      }
+    }
+    return { headline, subtitle };
+  }
+
+  const resolved = resolveFalDisplayHeadline({
+    caption: input.caption ?? '',
+    missionTitle: input.headline,
+    brandName: '',
+    cta: input.cta,
+    maxLen: input.channel === 'reel' ? 22 : 32,
+  });
+  headline = resolveFalProductionOverlayHeadline(
+    resolved.headline,
+    [input.headline, input.caption?.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+    input.channel,
+  );
+  const sub = resolveFalSubtitle({
+    caption: input.caption ?? '',
+    headline,
+    cta: input.cta,
+  });
+  if (sub && localesCompatible(targetLocale, detectOverlayLocale(sub))) {
+    subtitle = targetLocale === 'tr' ? correctTurkishSpelling(sub, { locale: 'tr' }) : sub;
+  } else if (rawCta && localesCompatible(targetLocale, detectOverlayLocale(rawCta))) {
+    subtitle = rawCta;
+  }
+  return { headline, subtitle };
 }
 
 // ── Caption-Derived Headline Extraction ───────────────────────────────────────
@@ -284,6 +393,15 @@ const PROMPT_LEAK_WORDS = new Set([
   'omissions', 'paraphrasing', 'watermark', 'badge',
 ]);
 
+/** Platform/format meta words — must never appear as on-canvas consumer copy. */
+export const FAL_CANVAS_META_WORDS = new Set([
+  'story', 'stories', 'reel', 'reels', 'post', 'posts', 'feed', 'instagram',
+  'tiktok', 'facebook', 'social', 'media', 'viral', 'trending',
+  'ünü', 'unlu', 'ünlü', 'famous',
+]);
+
+const FAL_CANVAS_META_RX = /\b(story|stories|reel|reels|instagram|tiktok|ünü|unlu|ünlü)\b/i;
+
 const INSTRUCTION_FRAGMENT_RX =
   /\b(exactly|verbatim|character-for-character|spell every|reads exactly|no additions|no omissions|no paraphrasing|critical text|mandatory)\b/gi;
 
@@ -385,21 +503,47 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   return false;
 }
 
+/** True when detected/painted canvas text contains platform meta leakage. */
+export function containsFalCanvasMetaLeak(text: string): boolean {
+  const clean = sanitizeFalOverlayText(text);
+  if (!clean) return false;
+  if (FAL_CANVAS_META_RX.test(clean)) return true;
+  const words = clean.split(/\s+/).filter(Boolean);
+  return words.some((w) => FAL_CANVAS_META_WORDS.has(w.toLowerCase()));
+}
+
+/** Headline is only platform/meta vocabulary — e.g. "ÜNLÜ STORY", "INSTAGRAM REEL". */
+export function isFalCanvasMetaOnlyHeadline(text: string): boolean {
+  const clean = sanitizeFalOverlayText(text);
+  if (!clean) return true;
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const nonMeta = words.filter((w) => {
+    const lower = w.toLowerCase();
+    return !PROMPT_LEAK_WORDS.has(lower) && !FAL_CANVAS_META_WORDS.has(lower);
+  });
+  return nonMeta.length === 0;
+}
+
 /** True when copy is long enough to be a real headline/tagline, not a prompt artifact. */
 export function isMeaningfulFalOverlayText(text: string): boolean {
   const clean = sanitizeFalOverlayText(text);
   if (clean.length < 6) return false;
   if (isInternalStrategyBriefing(clean)) return false;
   if (isIncompleteOverlayPhrase(clean)) return false;
+  if (isFalCanvasMetaOnlyHeadline(clean)) return false;
 
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 1) {
     const w = words[0]!.toLowerCase();
-    if (PROMPT_LEAK_WORDS.has(w)) return false;
+    if (PROMPT_LEAK_WORDS.has(w) || FAL_CANVAS_META_WORDS.has(w)) return false;
     return clean.length >= 8 && /[aeiouıöüAEIOUİÖÜ]/i.test(clean);
   }
 
-  const meaningfulWords = words.filter((w) => !PROMPT_LEAK_WORDS.has(w.toLowerCase()));
+  const meaningfulWords = words.filter((w) => {
+    const lower = w.toLowerCase();
+    return !PROMPT_LEAK_WORDS.has(lower) && !FAL_CANVAS_META_WORDS.has(lower);
+  });
   return meaningfulWords.length >= 2 && meaningfulWords.join(' ').length >= 8;
 }
 
@@ -538,7 +682,10 @@ export function buildFalOnCanvasTextContract(input: {
   }
 
   lines.push(
-    'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, extra slogans, URLs, hashtags, dates, or any text not listed above.',
+    'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, extra slogans, URLs, hashtags, dates, auto-translation, mixed-language lines, or any text not listed above.',
+    'FORBIDDEN META WORDS on canvas: never paint "STORY", "REEL", "POST", "INSTAGRAM", "TIKTOK", "FEED", "ÜNLÜ", "VIRAL", "SHARE", or any platform/format label — only the quoted headline/subtitle above.',
+    'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
+    'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec".',
     'If space is tight, shrink typography — never invent alternate wording or truncate mid-word.',
   );
 

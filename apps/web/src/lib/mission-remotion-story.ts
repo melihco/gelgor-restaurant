@@ -1,5 +1,6 @@
 /**
- * Mission-level Remotion template stories — rotate layouts; all story slots use motion.
+ * Mission-level story slot assignments — Fal.ai grounded poster (9:16) for campaign stories.
+ * Remotion motion path retained only for explicit legacy remotion_story / paid-ad slots.
  */
 import type { ProductionAssignment } from './mission-production-manifest';
 
@@ -14,24 +15,54 @@ export function missionTemplateIdeaIndex(missionId: string): number {
   return Math.abs(h);
 }
 
-/** Weekly mission: every story slot is Remotion MP4 (not static gallery-only). */
-export function isRemotionStorySlot(_storyIndex: number): boolean {
+/** Weekly mission: campaign story slots use Fal.ai poster (not Remotion MP4). */
+export function isFalStorySlot(_storyIndex: number): boolean {
   return true;
 }
 
-/** @deprecated Use isRemotionStorySlot */
+/** @deprecated Use isFalStorySlot — weekly stories are Fal.ai, not Remotion. */
+export function isRemotionStorySlot(storyIndex: number): boolean {
+  return !isFalStorySlot(storyIndex);
+}
+
+/** @deprecated Use isFalStorySlot */
 export function isPrimaryRemotionStorySlot(storyIndex: number): boolean {
   return isRemotionStorySlot(storyIndex);
 }
 
+export function shouldApplyMissionFalStory(assignment: ProductionAssignment): boolean {
+  return assignment.pipeline === 'fal_story'
+    || assignment.slot_role === 'fal_story_motion';
+}
+
+export function applyMissionFalStoryAssignment(
+  assignment: ProductionAssignment,
+  storyIndex: number,
+): ProductionAssignment {
+  if (!isFalStorySlot(storyIndex)) return assignment;
+  return {
+    ...assignment,
+    slot_role: 'campaign_story_motion',
+    pipeline: 'fal_story',
+    publish_channel: assignment.publish_channel === 'meta_ads'
+      ? 'meta_ads'
+      : assignment.publish_channel === 'instagram_campaign'
+        ? 'instagram_campaign'
+        : 'instagram_organic',
+    rationale: assignment.rationale
+      ? `${assignment.rationale}+mission_fal_story_${storyIndex}`
+      : `mission_fal_story_${storyIndex}`,
+  };
+}
+
+/** Legacy Remotion MP4 — paid-ad / explicit remotion_story only. */
 export function applyMissionRemotionStoryAssignment(
   assignment: ProductionAssignment,
   storyIndex: number,
 ): ProductionAssignment {
-  if (!isRemotionStorySlot(storyIndex)) return assignment;
   return {
     ...assignment,
-    slot_role: 'campaign_story_motion',
+    slot_role: assignment.slot_role,
     pipeline: 'remotion_story',
     publish_channel: assignment.publish_channel === 'meta_ads'
       ? 'meta_ads'
@@ -42,10 +73,10 @@ export function applyMissionRemotionStoryAssignment(
   };
 }
 
-/** @deprecated Alias for applyMissionRemotionStoryAssignment */
+/** @deprecated Alias for applyMissionFalStoryAssignment */
 export function applyPrimaryMissionRemotionStoryAssignment(
   assignment: ProductionAssignment,
   storyIndex: number,
 ): ProductionAssignment {
-  return applyMissionRemotionStoryAssignment(assignment, storyIndex);
+  return applyMissionFalStoryAssignment(assignment, storyIndex);
 }

@@ -11,6 +11,8 @@ import {
   isInternalStrategyBriefing,
   isRenderedOverlayTextIncomplete,
   isMeaningfulFalOverlayText,
+  containsFalCanvasMetaLeak,
+  isFalCanvasMetaOnlyHeadline,
 } from './fal-caption-headline';
 import { resolveExternallyAccessibleUrl } from './media-url';
 import { serverConfig } from './server-config';
@@ -77,10 +79,12 @@ async function callVisionValidator(
     '{"detected_text": "...", "matches": true/false, "confidence": 0.0-1.0, "reason": "..."}',
     '',
     'Rules:',
-    '- "matches" = true if the detected text conveys the same message (minor spelling/case differences OK)',
+    '- "matches" = true ONLY if the detected main text matches the intended headline message',
+    '- Reject if detected text is mostly platform/meta words: STORY, REEL, POST, INSTAGRAM, TIKTOK, ÜNLÜ, VIRAL',
+    '- Reject if detected text is unrelated to the intended headline (invented slogans, random words)',
     '- "confidence" = how confident you are in your reading (0.0-1.0)',
     '- Ignore decorative elements, brand names, or small text — focus on the largest/main text only',
-    '- If text is partially obscured but readable, still match',
+    '- If text is partially obscured but readable and matches the intended headline, still match',
   ].join('\n');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -130,13 +134,29 @@ async function callVisionValidator(
 
   const detected = parsed.detected_text?.trim() ?? '';
   const incomplete = isRenderedOverlayTextIncomplete(detected);
-  const matches = parsed.matches !== false && !incomplete;
+  const metaLeak = containsFalCanvasMetaLeak(detected) && !containsFalCanvasMetaLeak(intendedHeadline);
+  const metaOnly = isFalCanvasMetaOnlyHeadline(detected);
+  const similarity = quickTextSimilarity(detected, intendedHeadline);
+  const lowSimilarity = detected.length >= 4 && similarity < 0.55;
+  const matches = parsed.matches !== false
+    && !incomplete
+    && !metaLeak
+    && !metaOnly
+    && !lowSimilarity;
 
   return {
     valid: matches,
     confidence: parsed.confidence ?? 0.5,
     detectedText: parsed.detected_text,
-    reason: incomplete ? 'detected incomplete or briefing text on canvas' : parsed.reason,
+    reason: incomplete
+      ? 'detected incomplete or briefing text on canvas'
+      : metaOnly
+        ? 'detected meta-only canvas text (e.g. STORY/REEL label)'
+        : metaLeak
+          ? 'detected platform meta word not in intended headline'
+          : lowSimilarity
+            ? `detected text too different from intended headline (similarity=${similarity.toFixed(2)})`
+            : parsed.reason,
   };
 }
 

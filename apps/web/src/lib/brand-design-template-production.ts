@@ -49,7 +49,7 @@ export function resolveFalTemplateLockOptions(input: {
   const base = Math.max(0, Math.min(2, Math.floor(input.baseGrafikerMaxRetries ?? 0)));
   if (input.adHocBrief || !input.binding?.matched) {
     return {
-      captionAwareHeadline: input.adHocBrief ? false : (input.defaultCaptionAwareHeadline ?? true),
+      captionAwareHeadline: input.adHocBrief ? false : (input.defaultCaptionAwareHeadline ?? false),
       grafikerMaxRetries: base,
       requireTemplateStyleRef: false,
     };
@@ -233,13 +233,13 @@ export function mapDesignTemplateTypeToContentIntent(
   return DESIGN_TEMPLATE_CONTENT_INTENT[templateType];
 }
 
-/** Remotion poster slots that receive fal template alignment hints (Phase 2). */
+/** fal.ai designed post slots that receive brand template alignment hints. */
 export function isRemotionFalAlignedSlot(assignment: {
   pipeline: string;
   slot_role: string;
 }): boolean {
   return (
-    assignment.pipeline === 'remotion_poster'
+    (assignment.pipeline === 'fal_design' || assignment.pipeline === 'remotion_poster')
     && (assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography')
   );
 }

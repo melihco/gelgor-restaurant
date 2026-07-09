@@ -29,7 +29,7 @@ import {
 } from '@/lib/brand-design-template-production';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
-import { resolveFalProductionOverlayHeadline, areFalOverlayTextsRedundant } from '@/lib/fal-caption-headline';
+import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import { validateTypographyText } from '@/lib/typography-text-validation';
@@ -129,6 +129,7 @@ export async function produceFalDesignedPost(
       binding,
       baseGrafikerMaxRetries: input.grafikerMaxRetries,
       adHocBrief: input.requireGroundedGallery,
+      defaultCaptionAwareHeadline: input.captionAwareHeadline === true,
     });
     const designVibe =
       binding?.lockedVibe ??
@@ -155,15 +156,24 @@ export async function produceFalDesignedPost(
 
     // Primary engine — GPT-image design grounded on the real gallery photo.
     if (referenceImageUrls.length > 0 && referenceImageUrls.every(isUsableGalleryPhotoUrl)) {
-      const rawSubtitle = input.subtitle || input.cta || undefined;
-      const dedupedSubtitle = rawSubtitle && !areFalOverlayTextsRedundant(input.headline, rawSubtitle)
-        ? rawSubtitle
-        : undefined;
+      const canvasChannel = aspectRatio === '9:16' ? 'reel' : 'feed_post';
+      const overlayCopy = resolveFalOverlayCopy({
+        headline: input.headline,
+        cta: input.subtitle || input.cta,
+        caption: input.caption,
+        channel: canvasChannel,
+        lockIdeationCopy: input.captionAwareHeadline !== true,
+      });
+      const canvasHeadline = overlayCopy.headline;
+      const dedupedSubtitle = overlayCopy.subtitle;
+      if (!canvasHeadline) {
+        console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
+      } else {
       const designCardPrompt = (aspectRatio === '9:16'
         ? buildDesignedVideoReelDesignCardPrompt
         : buildDesignedPostDesignCardPrompt)({
         vibe: designVibe,
-        headline: input.headline,
+        headline: canvasHeadline,
         subtitle: dedupedSubtitle,
         caption: input.caption,
         sceneHint: input.sceneHint,
@@ -183,19 +193,12 @@ export async function produceFalDesignedPost(
         logoPlacement: input.logoPlacement,
       });
       const maxGptAttempts = binding?.matched ? 1 + lockOpts.grafikerMaxRetries : 1;
-      const canvasHeadline = resolveFalProductionOverlayHeadline(
-        input.headline,
-        input.caption ? [input.caption.split(/[.!?\n]/)[0]?.trim() ?? ''] : [],
-        aspectRatio === '9:16' ? 'reel' : 'feed_post',
-      );
-      if (!canvasHeadline) {
-        console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
-      } else {
       for (let attempt = 0; attempt < maxGptAttempts; attempt += 1) {
         const designedUrl = await generateDesignedPostImage({
           workspaceId: input.workspaceId,
           designCardPrompt,
-          headline: input.headline,
+          designCardMode: aspectRatio === '9:16' ? 'reel' : 'post',
+          headline: canvasHeadline,
           caption: input.caption,
           referenceImageUrls,
           brandName: input.brandName,

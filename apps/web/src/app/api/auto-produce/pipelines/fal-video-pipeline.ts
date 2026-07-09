@@ -1,8 +1,12 @@
 /**
- * fal-video Pipeline — fal.ai designer video track (fal_story / fal_reel).
+ * fal-video Pipeline — fal.ai designer track (fal_story / fal_reel).
+ *
+ * fal_story → grounded 9:16 story poster (GPT-image on gallery); no Kling motion.
+ * fal_reel  → designed still + Kling locked-composition video.
  */
 
 import {
+  produceFalDesignedPostStill,
   produceFalDesignerVideo,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
@@ -18,6 +22,75 @@ import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { serverConfig } from '@/lib/server-config';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
+async function runFalStoryPosterProduction(input: {
+  workspaceId: string;
+  headline: string;
+  caption: string;
+  cta?: string;
+  resolvedBrandName: string;
+  brandBusinessType: string;
+  brandLocation?: string;
+  mood?: string;
+  artDirection?: string;
+  referenceUrl: string;
+  styleRefs: string[];
+  designVibe: ReturnType<typeof resolveTypographyVibeFromContext>;
+  brandColors: { primary: string; accent: string };
+  backgroundStyle: import('@/types/brand-theme').TypographyBackgroundStyle;
+  lockOpts: ReturnType<typeof resolveFalTemplateLockOptions>;
+  templateBinding: Awaited<ReturnType<typeof bindBrandTemplateForFalProduction>>;
+  designBriefDirectives?: string[];
+  visualDnaTone?: string;
+  sceneHint?: string;
+  designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
+  falLogoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
+}): Promise<{
+  imageUrl: string;
+  grafikerScore: number | null;
+  grafikerPass: boolean;
+  typographyModel: string;
+  resolvedHeadline?: string;
+}> {
+  const still = await produceFalDesignedPostStill({
+    workspaceId: input.workspaceId,
+    headline: input.headline,
+    subtitle: input.cta || undefined,
+    caption: input.caption,
+    brandName: input.resolvedBrandName,
+    brandColors: input.brandColors,
+    vibe: input.designVibe,
+    backgroundStyle: input.backgroundStyle,
+    aspectRatio: '9:16',
+    referencePhotoUrl: input.referenceUrl,
+    logoUrl: input.templateBinding.logoUrl ?? undefined,
+    location: input.brandLocation,
+    brandReferenceImageUrls: input.styleRefs,
+    sector: input.brandBusinessType,
+    mood: input.mood,
+    artDirection: input.artDirection,
+    grafikerMaxRetries: input.lockOpts.grafikerMaxRetries,
+    pipeline: 'fal_story',
+    captionAwareHeadline: input.lockOpts.captionAwareHeadline,
+    requireGroundedGallery: true,
+    sceneHint: input.sceneHint,
+    brandDirectives: [
+      ...input.templateBinding.brandDirectives,
+      ...(input.designBriefDirectives ?? []),
+    ],
+    visualDnaTone: input.visualDnaTone,
+    designIntensityLevel: input.designIntensityLevel,
+    occasion: input.templateBinding.occasion,
+    logoPlacement: input.falLogoPlacement,
+  });
+  return {
+    imageUrl: still.imageUrl,
+    grafikerScore: still.grafikerScore,
+    grafikerPass: still.grafikerPass,
+    typographyModel: still.typographyModel,
+    resolvedHeadline: still.resolvedHeadline,
+  };
+}
+
 export const falVideoHandler: ProductionPipelineHandler = {
   name: 'fal_video',
   canRun: (ctx) => ctx.inputs.isFalMissionVideo && Boolean(ctx.inputs.referenceUrl),
@@ -32,9 +105,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
       return;
     }
 
+    const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
+    const intensityChannel = falPipeline === 'fal_reel' ? ('reel' as const) : ('story' as const);
+
     try {
-      const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
-      const intensityChannel = falPipeline === 'fal_reel' ? ('reel' as const) : ('story' as const);
       const falBrand = resolveFalBrandInput({
         brandTheme: inputs.brandTheme,
         templateLibrary: inputs.templateLibrary,
@@ -83,6 +157,53 @@ export const falVideoHandler: ProductionPipelineHandler = {
         baseGrafikerMaxRetries: inputs.grafikerMaxRetries,
         adHocBrief: inputs.adHocBrief,
       });
+      const brandColors = resolveFalProductionBrandColors(
+        falBrand.brandColors,
+        templateBinding.brandColors,
+      );
+
+      if (falPipeline === 'fal_story') {
+        const poster = await runFalStoryPosterProduction({
+          workspaceId: inputs.workspaceId,
+          headline: inputs.headline,
+          caption: inputs.caption,
+          cta: inputs.cta,
+          resolvedBrandName: inputs.resolvedBrandName,
+          brandBusinessType: inputs.brandBusinessType,
+          brandLocation: inputs.brandLocation,
+          mood: inputs.mood,
+          artDirection: inputs.artDirection,
+          referenceUrl: photoUrl,
+          styleRefs,
+          designVibe,
+          brandColors,
+          backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
+          lockOpts,
+          templateBinding,
+          designBriefDirectives: inputs.designBriefDirectives,
+          visualDnaTone: falBrand.visualDnaTone,
+          sceneHint: falBrand.sceneHint,
+          designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
+          falLogoPlacement: inputs.falLogoPlacement,
+        });
+        state.videoUrl = null;
+        state.imageUrl = poster.imageUrl;
+        state.falGrafikerScore = poster.grafikerScore;
+        state.falGrafikerPass = poster.grafikerPass;
+        state.runwayProduceMeta = { source: 'fal_video' };
+        state.costDelta += 0.08;
+        if (templateBinding.matched) {
+          state.brandDesignTemplateId = templateBinding.matched.id;
+          state.brandDesignTemplateType = templateBinding.matched.templateType;
+          state.brandDesignTemplateName = templateBinding.matched.templateName;
+        }
+        console.log(
+          `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
+          `template=${templateBinding.matched?.templateType ?? 'none'} ` +
+          `model=${poster.typographyModel} grafiker=${poster.grafikerScore ?? '—'}/10`,
+        );
+        return;
+      }
 
       const designer = await produceFalDesignerVideo({
         workspaceId: inputs.workspaceId,
@@ -90,10 +211,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         subtitle: inputs.cta || undefined,
         caption: inputs.caption,
         brandName: inputs.resolvedBrandName,
-        brandColors: resolveFalProductionBrandColors(
-          falBrand.brandColors,
-          templateBinding.brandColors,
-        ),
+        brandColors,
         vibe: designVibe,
         backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
         referencePhotoUrl: photoUrl,
@@ -125,7 +243,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
       state.runwayProduceMeta = {
         source: designer.motionModel.includes('kling') ? 'kling' : 'fal_video',
       };
-      state.costDelta += falPipeline === 'fal_reel' ? 0.18 : 0.14;
+      state.costDelta += 0.18;
       if (templateBinding.matched) {
         state.brandDesignTemplateId = templateBinding.matched.id;
         state.brandDesignTemplateType = templateBinding.matched.templateType;
@@ -139,10 +257,12 @@ export const falVideoHandler: ProductionPipelineHandler = {
       );
     } catch (falErr) {
       const falMsg = falErr instanceof Error ? falErr.message : String(falErr);
-      console.warn('[auto-produce] [fal-track] designer failed — raw I2V fallback:', falMsg);
+      console.warn('[auto-produce] [fal-track] designer failed:', falMsg);
       state.pipelineFailureReason = `fal_video_designer: ${falMsg}`.slice(0, 480);
+      if (falPipeline === 'fal_story') {
+        return;
+      }
       try {
-        const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
         const motionPrompt = finalizeFalPrompt(
           [
             inputs.headline,

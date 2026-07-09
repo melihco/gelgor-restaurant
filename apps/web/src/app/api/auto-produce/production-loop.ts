@@ -834,6 +834,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const idea = queueItem.idea as ParsedIdea;
     const ideaRecord = queueItem.idea;
     let assignment = queueItem.assignment;
+    assignment = {
+      ...assignment,
+      pipeline: normalizeProductionPipeline(assignment.pipeline),
+    };
     const resolvedIdeaIndex = typeof ideaRecord.idea_index === 'number'
       ? ideaRecord.idea_index
       : ideaIndex;
@@ -844,14 +848,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let ideationHeadline = rawIdeationHeadline;
     let headline = rawIdeationHeadline;
 
-    const isDesignedPostSlotForHeadline =
-      queueItem.assignment.pipeline === 'remotion_poster'
-      || queueItem.assignment.slot_role === 'designed_post'
-      || queueItem.assignment.slot_role === 'designed_typography';
-    const isTypographyDesignSlot = queueItem.assignment.slot_role === 'designed_typography';
+    const isFalDesignedPostSlotForHeadline =
+      isFalDesignPipeline(assignment.pipeline)
+      || assignment.slot_role === 'designed_post'
+      || assignment.slot_role === 'designed_typography'
+      || assignment.slot_role === 'fal_designed_post';
+    const isTypographyDesignSlot = assignment.slot_role === 'designed_typography';
     let slotVisualDesignCard: MissionVisualDesignCard | null = null;
     let slotVisualDesignCardIndex: number | null = null;
-    if (isDesignedPostSlotForHeadline && visualDesignCards.length) {
+    if (isFalDesignedPostSlotForHeadline && visualDesignCards.length) {
       const chosen = pickMissionVisualDesignCard({
         cards: visualDesignCards,
         idea: ideaRecord,
@@ -1986,13 +1991,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const isStoryIdeaForEnhance = kind === 'instagram_story' || kind === 'instagram_canvas';
     const isOrganicStoryStillSlot = assignment.slot_role === 'organic_story_still';
-    const isDesignedPostSlotEarly =
-      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography' || assignment.slot_role === 'fal_designed_post';
+    const isRemotionDesignedPostSlotEarly = assignment.pipeline === 'remotion_poster';
+    const isFalDesignedPostSlotEarly =
+      isFalDesignPipeline(assignment.pipeline)
+      || assignment.slot_role === 'designed_post'
+      || assignment.slot_role === 'designed_typography'
+      || assignment.slot_role === 'fal_designed_post';
     const willRemotionStoryForEnhance = bundleCards !== false
       && isStoryIdeaForEnhance
       && Boolean(resolvedReferenceUrl)
       && (!isOrganicStoryStillSlot || productionProfile.requireRemotionGrafiker)
-      && !isDesignedPostSlotEarly;
+      && !isFalDesignedPostSlotEarly;
     const willRemotionPostForEnhance = bundleCards !== false && (
       shouldRenderRemotionPoster(assignment)
       || slotUsesRemotionPost(productionProfile, assignment, kind)
@@ -2045,7 +2054,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Unlike story/reel enhance, this must NOT add text — Remotion handles that.
     if (
       !captionDrivenGenerated
-      && isDesignedPostSlotEarly
+      && isRemotionDesignedPostSlotEarly
       && referenceUrl
       && aiVisualStandard.enabled
       && !isNonVenueSector(brandBusinessType)
@@ -2099,7 +2108,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    if (!captionDrivenGenerated && !isDesignedPostSlotEarly) {
+    if (!captionDrivenGenerated && !isFalDesignedPostSlotEarly) {
     // Faz 2.4 — Carousel hero-only enhance (flag-gated, premium korunur).
     // Yalnız kapak fotoğrafına GPT enhance; kalan slide'lar galeriden gelir
     // (Remotion/sharp render-time grade). Default OFF: davranış değişmez.
@@ -2143,7 +2152,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceIsStock,
         willRemotionStory: willRemotionStoryForEnhance,
         willRemotionPost: willRemotionPostForEnhance,
-        designedPosterSync: isDesignedPostSlotEarly,
+        designedPosterSync: isRemotionDesignedPostSlotEarly,
         productionProfile,
       },
     });
@@ -2279,7 +2288,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ? (pkgFmt === 'story' ? 'story' : 'post')
       : isFalDesignPost || isFalOnlyPost
         ? 'post'
-        : assignment.slot_role === 'fal_only_story'
+        : assignment.pipeline === 'fal_story'
+          || assignment.slot_role === 'campaign_story_motion'
+          || assignment.slot_role === 'fal_only_story'
           ? 'story'
           : 'reel';
     const falDesignCtx = usesFalDesignerTrack && !adHocBrief
@@ -2440,7 +2451,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             : falGridIntensityOverride,
           falBackgroundStyleOverride: falGridBackgroundOverride,
           falGridSurfaceKind: slotFalGridSurface ?? undefined,
-          captionAwareHeadline: isCalendarSlot ? false : undefined,
+          captionAwareHeadline: false,
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
           falHeadingFont: falSlotTypography?.headingFont,
@@ -2951,11 +2962,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Post/Story Marky layer — skip when Remotion video will render (use raw gallery photo only)
     const isStoryIdeaEarly = kind === 'instagram_story' || kind === 'instagram_canvas';
     const isOrganicStoryStill = assignment.slot_role === 'organic_story_still';
-    const isDesignedPostSlot =
-      assignment.pipeline === 'remotion_poster'
+    const isRemotionDesignedPostSlot = assignment.pipeline === 'remotion_poster';
+    const isFalDesignedPostSlot =
+      isFalDesignPipeline(assignment.pipeline)
       || assignment.slot_role === 'designed_post'
-      || assignment.slot_role === 'designed_typography';
-    if (isDesignedPostSlot) {
+      || assignment.slot_role === 'designed_typography'
+      || assignment.slot_role === 'fal_designed_post';
+    if (isFalDesignedPostSlot) {
       if (!selectedVisualDesignCard && visualDesignCards.length) {
         const chosen = pickMissionVisualDesignCard({
           cards: visualDesignCards,
@@ -2972,7 +2985,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
     const willRemotionStorySoon = bundleCards !== false && isStoryIdeaEarly && Boolean(referenceUrl)
-      && !isOrganicStoryStill && !isDesignedPostSlot && !isFalMissionVideo && !isFalOnlyVideo;
+      && !isOrganicStoryStill && !isFalDesignedPostSlot && !isFalMissionVideo && !isFalOnlyVideo;
     const skipMarkyLayer = Boolean(videoUrl) || isReel || (isCarousel && carouselUrls.length >= 2)
       || willRemotionStorySoon
       || (isOrganicStoryStill && isStoryIdeaEarly && !productionProfile.requireRemotionGrafiker)
@@ -3090,7 +3103,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const isCampaignDesignedPost = !isFalMissionVideo
-      && isDesignedPostSlot
+      && !isFalDesignPost
+      && isRemotionDesignedPostSlot
       && !isReel
       && !isCarousel
       && (assignment.publish_channel === 'instagram_campaign' || hasEventDetails || isCampaignContentIdea(ideaRecord));
@@ -3124,7 +3138,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
     if (
-      isDesignedPostSlot
+      isRemotionDesignedPostSlot
       && selectedVisualDesignCard
       && referenceUrl
       && !videoUrl
@@ -3156,7 +3170,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
     }
-    if (!isFalMissionVideo && isDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
+    if (!isFalMissionVideo && isRemotionDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
       const posterFmt: 'post' | 'story' = isStoryIdeaEarly ? 'story' : 'post';
       const treatmentForPoster = String(
         idea.visual_production_spec?.treatment || idea.treatment || '',
@@ -3242,7 +3256,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           );
         }
       }
-      if (isDesignedPostSlot && !designedPosterSyncUrl) {
+      if (isRemotionDesignedPostSlot && !designedPosterSyncUrl) {
         console.warn(
           `[auto-produce] Designed post slot withheld (no branded poster): "${headline.slice(0, 40)}"`,
         );
@@ -4231,10 +4245,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const guaranteeAssignment = {
         idea_index: gi,
         slot_role: 'campaign_story_motion' as const,
-        pipeline: 'remotion_story' as const,
-        copy_bundle_id: `${missionId.slice(0, 8)}-remotion-story`,
+        pipeline: 'fal_story' as const,
+        copy_bundle_id: `${missionId.slice(0, 8)}-fal-story`,
         publish_channel: 'instagram_campaign' as const,
-        rationale: 'mission_guaranteed_remotion_story',
+        rationale: 'mission_guaranteed_fal_story',
         library_slot_key: undefined as string | undefined,
       };
       const guaranteeDedupeKey = buildIdeaProductionDedupeKey(

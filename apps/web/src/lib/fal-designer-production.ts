@@ -34,6 +34,7 @@ import {
   buildFalOnCanvasTextContract,
   resolveFalProductionOverlayHeadline,
   areFalOverlayTextsRedundant,
+  resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
 import {
   resolveFalDesignIntensityDirectives,
@@ -77,7 +78,7 @@ export interface FalDesignerInput {
   /**
    * When true, derive a unique display headline from caption instead of using
    * the raw headline (which may be the same mission title across all slots).
-   * Defaults to true for fal designer production.
+   * Defaults to false — mission ideation headline + CTA are rendered verbatim.
    */
   captionAwareHeadline?: boolean;
   /** Shared brand-system directives resolved from Brand Theme + Template Library. */
@@ -98,6 +99,8 @@ export interface FalDesignerInput {
   designerMotionCue?: string;
   /** Ad-hoc New Brief: must compose on the real gallery photo (GPT-image grounded edit). */
   requireGroundedGallery?: boolean;
+  /** fal.ai video pipeline — drives story-specific prompts and fallback policy. */
+  pipeline?: 'fal_story' | 'fal_reel';
   /** Per-channel design intensity — overrides default photo/typography balance in prompts. */
   designIntensityLevel?: FalDesignIntensityLevel;
   /** Locked special-day occasion from brand template (event_special). */
@@ -407,6 +410,8 @@ type DesignCardPromptInput = {
   fontPersonality?: string;
   headingFont?: string;
   bodyFont?: string;
+  /** When true, derive overlay from caption hook instead of ideation headline. */
+  captionAwareHeadline?: boolean;
 };
 
 /**
@@ -419,11 +424,36 @@ export function buildDesignedPostDesignCardPrompt(input: DesignCardPromptInput):
 }
 
 /**
+ * Instagram Story poster — venue photo hero + ideation headline panel.
+ * Used for fal_story when a gallery photo anchors the design.
+ */
+export function buildDesignedStoryDesignCardPrompt(input: DesignCardPromptInput): string {
+  return buildDesignedDesignCardPrompt(input, 'story');
+}
+
+/**
  * Premium Reels/TikTok creator template — bold Canva Pro graphics + photo hero zone.
  * Used for fal_reel / fal_only_reel when a gallery photo anchors the design.
  */
 export function buildDesignedVideoReelDesignCardPrompt(input: DesignCardPromptInput): string {
   return buildDesignedDesignCardPrompt(input, 'reel');
+}
+
+type DesignCardMode = 'feed_post' | 'reel' | 'story';
+
+/** Resolve overlay clamp channel from pipeline + aspect ratio. */
+export function resolveFalCanvasChannel(input: {
+  pipeline?: 'fal_story' | 'fal_reel';
+  aspectRatio?: AspectRatio;
+}): 'reel' | 'feed_post' | 'story' {
+  if (input.pipeline === 'fal_story') return 'story';
+  if (input.pipeline === 'fal_reel') return 'reel';
+  if (input.aspectRatio === '9:16') return 'story';
+  return 'feed_post';
+}
+
+function requiresGroundedGalleryDesign(input: Pick<FalDesignerInput, 'pipeline' | 'requireGroundedGallery'>): boolean {
+  return input.requireGroundedGallery === true || input.pipeline === 'fal_story';
 }
 
 /**
@@ -432,12 +462,14 @@ export function buildDesignedVideoReelDesignCardPrompt(input: DesignCardPromptIn
  */
 function resolveSectorDesignLanguage(
   sector: string | undefined,
-  isReel: boolean,
+  mode: DesignCardMode,
   intensityLevel: FalDesignIntensityLevel = 'balanced',
 ): string {
-  const base = isReel
+  const base = mode === 'reel'
     ? 'Build a confident editorial graphic system: headline, supporting line, brand-color panel. MOTION-READY: keep design layers visually separate from the photo for parallax animation.'
-    : 'Compose a hand-crafted editorial design. Composite ONLY graphic layers on top of the photo.';
+    : mode === 'story'
+      ? 'Compose a branded vertical story poster: real venue/product photography hero + headline panel. Static story frame for Instagram — NOT a motion template, NOT a generic creator card.'
+      : 'Compose a hand-crafted editorial design. Composite ONLY graphic layers on top of the photo.';
 
   if (!sector) return base;
   const s = sector.toLowerCase();
@@ -490,22 +522,28 @@ function resolveSectorDesignLanguage(
 
 function buildDesignedDesignCardPrompt(
   input: DesignCardPromptInput,
-  mode: 'feed_post' | 'reel',
+  mode: DesignCardMode,
 ): string {
   const spec = getVibePromptSpec(input.vibe);
-  const aspect = input.aspectRatio === '9:16'
-    ? 'vertical 9:16 Instagram Story / Reel'
-    : input.aspectRatio === '4:5'
-      ? 'portrait 4:5 Instagram feed post'
-      : 'square 1:1 Instagram feed post';
-
   const isReel = mode === 'reel';
+  const isStory = mode === 'story';
+  const isVertical = input.aspectRatio === '9:16';
+  const aspect = isVertical
+    ? '1080×1920 vertical portrait frame (9:16 aspect ratio)'
+    : input.aspectRatio === '4:5'
+      ? 'portrait 4:5 feed post (1080×1350)'
+      : 'square 1:1 feed post (1080×1080)';
+
   const brand = input.brandName?.trim() || 'the brand';
   const sector = input.sector?.trim();
   const intensityLevel = input.designIntensityLevel ?? 'balanced';
-  const intensityMode = resolveFalDesignIntensityMode(input.aspectRatio, isReel);
+  const intensityMode = resolveFalDesignIntensityMode(input.aspectRatio, isReel || isStory);
 
-  const role = `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping, agency-grade social media post — hand-crafted Canva Pro / Behance quality — NOT a raw photo dump and NOT a generic template card.`;
+  const role = isStory
+    ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping Instagram Story poster — real venue/product photography + branded headline panel — agency-grade Canva Pro quality. NOT a generic template, NOT meta labels like "STORY" or "REEL", NOT a raw photo dump.`
+    : isReel
+      ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping, agency-grade social media reel cover — hand-crafted Canva Pro quality — NOT a raw photo dump and NOT a generic template card.`
+      : `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping, agency-grade social media post — hand-crafted Canva Pro / Behance quality — NOT a raw photo dump and NOT a generic template card.`;
 
   const soul = input.visualDnaTone
     ? `BRAND DNA (general): ${input.visualDnaTone.slice(0, 200)} — this brand's visual identity leads every design choice (typography character, color blocks, decorative rhythm). Apply to graphic layers only — never recolor the photo.`
@@ -519,26 +557,30 @@ function buildDesignedDesignCardPrompt(
     ? `OCCASION — ${input.occasion.name}: honour its spirit${input.occasion.mood ? ` (${input.occasion.mood.slice(0, 90)})` : ''} tastefully WOVEN INTO ${brand}'s palette and visual world — symbolic, subtle accents only. Never clashing holiday-cliché colors, literal flags, balloons, or stock holiday graphics.`
     : '';
 
-  const sectorDesignLanguage = resolveSectorDesignLanguage(sector, isReel, intensityLevel);
+  const sectorDesignLanguage = resolveSectorDesignLanguage(sector, mode, intensityLevel);
 
   const intensityDirectives = resolveFalDesignIntensityDirectives(intensityLevel, intensityMode);
 
   const photoRules = intensityDirectives.photoRules;
 
-  const canvasChannel = isReel ? 'reel' : 'feed_post';
-  const safeHeadline = clampFalOverlayHeadlineForCanvas(input.headline, canvasChannel);
-  const safeSubtitleRaw = input.subtitle ? sanitizeFalOverlayText(input.subtitle).slice(0, 36) : undefined;
-  const safeSubtitle = safeSubtitleRaw
-    && isMeaningfulFalOverlayText(safeSubtitleRaw)
-    && !areFalOverlayTextsRedundant(safeHeadline, safeSubtitleRaw)
-    ? safeSubtitleRaw
-    : undefined;
+  const canvasChannel = isStory ? 'story' : isReel ? 'reel' : 'feed_post';
+  const overlayCopy = resolveFalOverlayCopy({
+    headline: input.headline,
+    cta: input.subtitle,
+    caption: input.caption,
+    channel: canvasChannel,
+    lockIdeationCopy: input.captionAwareHeadline !== true,
+  });
+  const safeHeadline = overlayCopy.headline;
+  const safeSubtitle = overlayCopy.subtitle;
 
-  const logoChannel: 'feed_post' | 'reel' | 'story' = isReel
-    ? 'reel'
-    : input.aspectRatio === '9:16'
-      ? 'story'
-      : 'feed_post';
+  const logoChannel: 'feed_post' | 'reel' | 'story' = isStory
+    ? 'story'
+    : isReel
+      ? 'reel'
+      : isVertical
+        ? 'story'
+        : 'feed_post';
   const brandMarkInstruction = buildFalLogoPlacementContract({
     logoProvided: Boolean(input.logoUrl),
     brandName: input.brandName,
@@ -595,7 +637,12 @@ function buildDesignedDesignCardPrompt(
     sectorDesignLanguage,
     ...photoRules,
     ...premiumTypography,
-    `SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must be placed within the inner 85% of the frame — keep a minimum 7.5% margin from every edge. Nothing should be cut off or touch the border. ${isReel ? 'For vertical 9:16, especially protect the top 12% and bottom 15% from important content (Instagram UI overlaps).' : ''}`,
+    isVertical
+      ? 'PHOTO FRAMING (9:16): Scale the full gallery photograph to fit inside the frame — object-fit contain. Never crop off plates, faces, hands, or hero subjects. Letterbox with brand-color bands if aspect ratios differ.'
+      : 'PHOTO FRAMING (4:5 feed): Show the ENTIRE gallery photograph within the design — scale-to-fit (object-fit contain). Do NOT center-crop or zoom-crop the venue photo. If the photo is wider than 4:5, use side bands or a split layout; never cut off food, people, or products.',
+    isVertical
+      ? `SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must stay within the inner 85% of the frame — minimum 7.5% margin from every edge. Protect the top 12% and bottom 15% from important content (platform UI overlaps). ${isStory ? 'Story poster: headline must be fully readable — shrink type rather than clip letters.' : 'Reel cover: keep headline panel inside safe zone for motion.'}`
+      : 'SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must be placed within the inner 85% of the frame — keep a minimum 7.5% margin from every edge. Keep headline and CTA inside the central 4:5 safe area — nothing clipped by feed crop.',
     input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',
     `BRAND COLORS: Use ${input.brandColors.primary} and ${input.brandColors.accent} for headline, shapes, color blocks, and accents — never as a global photo filter.`,
     ...(input.brandDirectives ?? []),
@@ -607,7 +654,7 @@ function buildDesignedDesignCardPrompt(
   return finalizeFalPrompt(promptBody, {
     maxChars: promptLimit,
     kind: 'image',
-    label: 'fal-designer',
+    label: isStory ? 'fal-designer-story' : 'fal-designer',
   });
 }
 
@@ -671,68 +718,49 @@ export async function produceFalDesignerStill(
   const maxAttempts = Math.min(2, Math.max(1, (input.grafikerMaxRetries ?? 1) + 1));
   let last: FalDesignerStillResult | null = null;
 
-  // Caption-aware headline: derive unique hook from caption when available.
-  // Ad-hoc New Brief keeps the user's title verbatim ("Full Moon", etc.).
-  const useCaptionAware = !input.requireGroundedGallery
-    && input.captionAwareHeadline !== false
-    && input.caption;
   const isVerticalVideo = input.aspectRatio === '9:16';
-  const headlineMaxLen = isVerticalVideo ? 28 : 32;
-  let displayHeadline = ensureMeaningfulFalOverlayText(
-    correctTurkishSpelling(input.headline),
-    input.caption ? [input.caption.split(/[.!?\n]/)[0]?.trim() ?? ''] : [],
-    headlineMaxLen,
-  );
+  const canvasChannel = resolveFalCanvasChannel({
+    pipeline: input.pipeline,
+    aspectRatio: input.aspectRatio,
+  });
+  const groundedOnly = requiresGroundedGalleryDesign(input);
 
-  if (useCaptionAware) {
-    const resolved = resolveFalDisplayHeadline({
-      caption: input.caption!,
-      missionTitle: input.headline,
-      brandName: input.brandName ?? '',
-      cta: input.subtitle,
-      maxLen: headlineMaxLen,
-    });
-    displayHeadline = ensureMeaningfulFalOverlayText(
-      resolved.headline,
-      [input.headline, input.caption!.split(/[.!?\n]/)[0]?.trim() ?? ''],
-      headlineMaxLen,
+  if (input.pipeline === 'fal_story' && !input.referencePhotoUrl?.trim()) {
+    throw new Error(
+      'fal_story: gallery photo required — story design must be grounded on a real venue/product image',
     );
-    if (resolved.source !== 'mission_title') {
-      console.log(
-        `[fal-designer] Caption-aware headline: "${displayHeadline}" (source=${resolved.source}, mission_title="${input.headline.slice(0, 30)}")`,
-      );
-    }
   }
 
-  displayHeadline = resolveFalProductionOverlayHeadline(
-    displayHeadline || correctTurkishSpelling(input.headline),
-    [
-      input.caption?.split(/[.!?\n]/)[0]?.trim() ?? '',
-      input.headline,
-    ].filter(Boolean),
-    isVerticalVideo ? 'reel' : 'feed_post',
-  );
+  const useCaptionAware = input.captionAwareHeadline === true
+    && !groundedOnly
+    && Boolean(input.caption);
+
+  const overlayCopy = resolveFalOverlayCopy({
+    headline: input.headline,
+    cta: input.subtitle,
+    caption: input.caption,
+    channel: canvasChannel,
+    lockIdeationCopy: !useCaptionAware,
+  });
+  const displayHeadline = overlayCopy.headline;
+  const captionSubtitle = overlayCopy.subtitle;
+
+  if (useCaptionAware) {
+    console.log(
+      `[fal-designer] Caption-aware overlay: headline="${displayHeadline.slice(0, 40)}"`,
+    );
+  } else {
+    console.log(
+      `[fal-designer] Ideation overlay lock: headline="${displayHeadline.slice(0, 40)}"` +
+      (captionSubtitle ? ` subtitle="${captionSubtitle.slice(0, 32)}"` : ''),
+    );
+  }
 
   if (!displayHeadline) {
     throw new Error(
       'fal designer: no valid overlay headline after sanitization — slot withheld',
     );
   }
-
-  // Resolve caption-derived subtitle for richer designs
-  const captionSubtitleRaw = useCaptionAware
-    ? resolveFalSubtitle({
-        caption: input.caption!,
-        headline: displayHeadline,
-        cta: input.subtitle,
-        brandName: input.brandName,
-      })
-    : input.subtitle;
-  const captionSubtitle = captionSubtitleRaw
-    && isMeaningfulFalOverlayText(captionSubtitleRaw)
-    && !areFalOverlayTextsRedundant(displayHeadline, captionSubtitleRaw)
-    ? captionSubtitleRaw
-    : undefined;
 
   const groundedRefUrls = [
     input.referencePhotoUrl,
@@ -747,12 +775,16 @@ export async function produceFalDesignerStill(
     // gallery photo (the brand's venue/product), which is far more brand-faithful
     // than a synthetic Ideogram background. Retry once before falling back so a
     // single weak Grafiker score doesn't drop us to a photo-less design.
-    const groundedMaxAttempts = input.requireGroundedGallery ? 3 : 2;
+    const groundedMaxAttempts = groundedOnly ? 3 : 2;
     try {
       const { generateDesignedPostImage } = await import('@/app/api/auto-produce/handlers/image-generators');
-      const buildPrompt = isVerticalVideo
-        ? buildDesignedVideoReelDesignCardPrompt
-        : buildDesignedPostDesignCardPrompt;
+      const buildPrompt = input.pipeline === 'fal_story'
+        ? buildDesignedStoryDesignCardPrompt
+        : isVerticalVideo && input.pipeline === 'fal_reel'
+          ? buildDesignedVideoReelDesignCardPrompt
+          : isVerticalVideo
+            ? buildDesignedStoryDesignCardPrompt
+            : buildDesignedPostDesignCardPrompt;
       const groundedPrompt = buildPrompt({
         vibe: input.vibe,
         headline: displayHeadline,
@@ -775,13 +807,13 @@ export async function produceFalDesignerStill(
       console.log(
         `[fal-designer] grounded edit start: headline="${displayHeadline.slice(0, 40)}" ` +
         `refs=${groundedRefUrls.map((u) => u.split('/').pop()).join(',')} ` +
-        `requireGrounded=${Boolean(input.requireGroundedGallery)}`,
+        `requireGrounded=${Boolean(groundedOnly)}`,
       );
       for (let groundedAttempt = 0; groundedAttempt < groundedMaxAttempts; groundedAttempt++) {
         const groundedUrl = await generateDesignedPostImage({
           workspaceId: input.workspaceId,
           designCardPrompt: groundedPrompt,
-          designCardMode: isVerticalVideo ? 'reel' : 'post',
+          designCardMode: canvasChannel === 'reel' ? 'reel' : 'post',
           headline: displayHeadline,
           caption: input.caption ?? input.subtitle ?? displayHeadline,
           referenceImageUrls: groundedRefUrls,
@@ -846,15 +878,16 @@ export async function produceFalDesignerStill(
     }
   }
 
-  if (input.requireGroundedGallery) {
+  if (groundedOnly) {
     throw new Error(
-      'Brand gallery design failed — could not compose the art-director design on the matched venue photo. ' +
-      'Check OPENAI billing/API or upload a reference photo in the brief.',
+      input.pipeline === 'fal_story'
+        ? 'fal_story: grounded gallery design failed — synthetic Ideogram fallback disabled for story slots'
+        : 'Brand gallery design failed — could not compose the art-director design on the matched venue photo. ' +
+          'Check OPENAI billing/API or upload a reference photo in the brief.',
     );
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const canvasChannel = isVerticalVideo ? 'reel' : 'feed_post';
     const attemptHeadline = shortenFalOverlayForImageRetry(displayHeadline, attempt, canvasChannel);
     if (!attemptHeadline) {
       console.warn(`[fal-designer] Ideogram retry ${attempt + 1}: no complete headline after shortening`);
@@ -879,7 +912,8 @@ export async function produceFalDesignerStill(
       sceneHint: input.sceneHint,
       brandDirectives: input.brandDirectives,
       visualDnaTone: input.visualDnaTone,
-      reelDesignMode: isVerticalVideo,
+      reelDesignMode: canvasChannel === 'reel' && isVerticalVideo,
+      storyDesignMode: canvasChannel === 'story' && isVerticalVideo,
     }, {
       maxRetries: 1,
       validateFn: validateTypographyText,
@@ -926,7 +960,8 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
   const still = await produceFalDesignerStill({
     ...input,
     aspectRatio: '9:16',
-    captionAwareHeadline: input.captionAwareHeadline !== false,
+    pipeline: input.pipeline,
+    captionAwareHeadline: input.captionAwareHeadline === true,
     backgroundStyle: resolveBackgroundStyle(input.backgroundStyle, input.referencePhotoUrl),
     backgroundOnlyPlate: false,
     deferLogoComposite: Boolean(input.logoUrl?.trim()),
