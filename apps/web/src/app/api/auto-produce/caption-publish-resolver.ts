@@ -43,6 +43,7 @@ export interface ParsedIdea {
     selected_gallery_url?: string;
     image_edit_prompt?: string;
     treatment?: string;
+    text_layers?: { title?: string; subtitle?: string; cta?: string };
     premium_composition?: {
       composition_type?: string;
       visual_story?: string;
@@ -66,6 +67,10 @@ export interface ParsedIdea {
   template_use_case?: string;
   cta?: string;
   call_to_action?: string;
+  subline?: string;
+  /** Purpose-built on-canvas copy from content agent (preferred over ideation headline). */
+  canva_field_copy?: Record<string, string>;
+  canvaFieldCopy?: Record<string, string>;
   posting_time_suggestion?: string;
   mood?: string;
   photo_mood?: string;

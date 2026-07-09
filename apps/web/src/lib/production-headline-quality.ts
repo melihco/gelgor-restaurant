@@ -48,11 +48,30 @@ export function isLabelStyleHeadline(headline: string): boolean {
   if (!h) return true;
 
   const words = h.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
+  const lower = h.toLowerCase();
 
   if (words.length <= 1 && h.length < 15) return true;
 
+  // Context-signal / calendar / occasion noun phrases — never on-canvas social copy.
+  // e.g. "Gündüz plaj/havuz", "Yaz sezonu", "15 Temmuz anması", "Yaz zirvesi — plaj"
+  const seasonalOccasionLabels = [
+    /\b(yaz|kış|bahar|sonbahar)\s+(sezonu|zirvesi|açılışı|kampanyası|menüsü)\b/i,
+    /\bgündüz\s+(plaj|havuz)/i,
+    /\b(plaj|havuz)\s*\/\s*(havuz|plaj)/i,
+    /\b\d{1,2}\s+temmuz\s+(anması|anma|etkinliği)?\b/i,
+    /\b(15\s*temmuz|cumhuriyet\s*bayramı|zafer\s*bayramı|kurban\s*bayramı|ramazan)\b/i,
+    /\b(yaz\s*moduna|sezon\s*açılış|hafta\s*sonu\s*programı)\b/i,
+    /\b(daytime\s+beach|summer\s+season|pool\s+day|season\s+opening)\b/i,
+    /\b(anması|anma\s*günü|commemoration)\b/i,
+  ];
+  if (seasonalOccasionLabels.some((p) => p.test(lower))) return true;
+
+  // Slash / pipe category labels: "plaj/havuz", "DJ / gece"
+  if (words.length <= 5 && /[\/|]/.test(h) && !/[!?]/.test(h)) {
+    if (!/\b(ile|için|ve|for|with|your|our)\b/i.test(h)) return true;
+  }
+
   if (words.length === 2) {
-    const lower = h.toLowerCase();
     const labelPatterns = [
       /^(müşteri|ürün|hizmet|kampanya|etkinlik|duyuru|tanıtım|günlük|haftalık|yeni)\s/i,
       /\s(tanıtımı|duyurusu|etkinliği|listesi|bilgisi|yorumları|başarı|başarısı|detayı|haberi)$/i,
@@ -61,11 +80,22 @@ export function isLabelStyleHeadline(headline: string): boolean {
     if (labelPatterns.some((p) => p.test(lower))) return true;
   }
 
-  if (words.length <= 3) {
-    const lower = h.toLowerCase();
-    if (/\s(tanıtımı|duyurusu|etkinliği|listesi|bilgisi|yorumları|başarısı|detayı|haberi)$/i.test(lower)) {
+  if (words.length <= 4) {
+    if (/\s(tanıtımı|duyurusu|etkinliği|listesi|bilgisi|yorumları|başarısı|detayı|haberi|anması|sezonu|zirvesi)$/i.test(lower)) {
       return true;
     }
+  }
+
+  // 3-word noun stacks without verb/CTA energy (signal hooks pasted as headlines)
+  if (
+    words.length <= 3
+    && !/[!?.]$/.test(h)
+    && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir|for|with|your|our|the)\b/i.test(h)
+  ) {
+    const hasVerbEnergy =
+      /[ıiuü]yor|[aeiıoöuü]n$|[aeiıoöuü]r$|[aeiıoöuü]cak$|[dt]ı$|[dt]i$|mış$|miş$|[aeiıoöuü]lım$|[aeiıoöuü]!$/i.test(h)
+      || /\b(join|meet|discover|book|taste|feel|live|come|get|make|share)\b/i.test(h);
+    if (!hasVerbEnergy) return true;
   }
 
   if (words.length <= 2 && !/[!?.]$/.test(h) && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir)\b/i.test(h)) {

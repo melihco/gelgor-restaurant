@@ -138,6 +138,7 @@ export async function produceFalDesignedPost(
         headline: input.headline,
         sector: input.sector,
         brandVibe: input.brandVibe,
+        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(input.sector ?? ''),
       });
     const brandColors = resolveFalProductionBrandColors(
       input.brandColors,

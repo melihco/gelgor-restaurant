@@ -229,6 +229,7 @@ import {
   isInternalStrategyBriefing,
   resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
+import { resolveMissionFalDesignCopy, type FalDesignCopyIdea } from '@/lib/fal-design-copy';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { resolveProductionEngines } from '@/lib/brand-production-engines';
@@ -1011,6 +1012,41 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       : adHocBrief && pkgFmt === 'reel'
         ? 'instagram_reel'
         : resolveContentKindForAssignment(ideaRecord, assignment);
+
+    // Fal / designed slots: on-canvas text from canva_field_copy or caption — never signal labels.
+    const usesFalDesignCopy =
+      isFalDesignedPostSlotForHeadline
+      || isFalVideoPipeline(assignment.pipeline)
+      || isFalDesignPipeline(assignment.pipeline)
+      || isFalOnlyVideoPipeline(assignment.pipeline)
+      || isFalOnlyPostPipeline(assignment.pipeline);
+    if (usesFalDesignCopy && caption.trim().length >= 16) {
+      const falChannel =
+        kind === 'instagram_reel' ? 'reel'
+          : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 'story'
+            : 'feed_post';
+      const designCopy = resolveMissionFalDesignCopy({
+        idea: idea as FalDesignCopyIdea,
+        ideationHeadline: headline,
+        caption,
+        cta,
+        brandName: resolvedBrandName,
+        channel: falChannel,
+        businessType: brandBusinessType,
+      });
+      if (designCopy.headline && designCopy.headline !== headline) {
+        console.log(
+          `[auto-produce] fal design copy (${designCopy.source}): `
+          + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+        );
+        headline = designCopy.headline;
+        ideationHeadline = designCopy.headline;
+      }
+      if (designCopy.subtitle?.trim()) {
+        cta = designCopy.subtitle.trim();
+      }
+    }
+
     const storyIndex = assignmentImpliesStoryFormat(assignment.slot_role) ? slotStoryCount : 0;
     const hasPremiumComposition = Boolean(
       (idea.visual_production_spec as Record<string, unknown> | undefined)?.premium_composition,

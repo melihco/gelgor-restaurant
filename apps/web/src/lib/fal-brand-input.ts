@@ -307,6 +307,7 @@ export function resolveFalBrandInput(input: {
     brandVibe: typographyConfig?.vibe ?? null,
     visualDnaTone,
     postMood: input.postMood,
+    lockPremiumVibe: Boolean(visualDnaTone?.trim()) || /beach|club|hotel|resort|spa|fine_dining/i.test(input.sector ?? ''),
   });
   const backgroundStyle: TypographyBackgroundStyle = input.referencePhotoUrl
     ? 'photo_overlay'

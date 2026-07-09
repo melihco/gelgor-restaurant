@@ -122,6 +122,7 @@ export async function produceFalOnlySlot(
         headline: input.headline,
         sector: input.sector,
         brandVibe: input.brandVibe,
+        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(input.sector ?? ''),
       });
     const brandColors = resolveFalProductionBrandColors(
       input.brandColors,
@@ -266,6 +267,7 @@ export async function produceFalOnlySlot(
           headline: input.headline,
           sector: input.sector,
           brandVibe: input.brandVibe,
+          lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(input.sector ?? ''),
         });
       const brandColors = resolveFalProductionBrandColors(
       input.brandColors,

@@ -149,6 +149,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
           headline: inputs.headline,
           sector: inputs.brandBusinessType,
           brandVibe: falBrand.vibe,
+          lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
+            inputs.brandBusinessType ?? '',
+          ),
         });
 
       const photoUrl = templateBinding.referencePhotoUrl ?? referenceUrl;

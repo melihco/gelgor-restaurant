@@ -268,20 +268,53 @@ export function resolveTypographyVibeFromContext(input: {
   brandVibe?: TypographyVibe | null;
   visualDnaTone?: string | null;
   postMood?: string | null;
+  /**
+   * When true (premium / global venue brands), caption keywords must not flip
+   * a refined soul vibe into neon_glow / street_bold from a single DJ word.
+   */
+  lockPremiumVibe?: boolean;
 }): TypographyVibe {
   if (input.brandVibe) return input.brandVibe;
 
   const fromSoul = inferVibeFromBrandSoul(input.visualDnaTone);
-  if (fromSoul) return fromSoul;
+  if (fromSoul) {
+    // Premium soul wins — don't let one nightlife keyword override editorial restraint.
+    if (input.lockPremiumVibe) return fromSoul;
+    return fromSoul;
+  }
 
   const fromPost = inferVibeFromPostMood(input.postMood);
   if (fromPost) return fromPost;
 
   const sectorDefault = defaultTypographyVibeForSector(input.sector ?? '');
   const fromCaption = inferVibeFromCaptionKeywords(input.caption, input.headline);
+  // Beach / hospitality: prefer coastal/editorial defaults over neon unless mood is explicit.
+  if (
+    input.lockPremiumVibe
+    && fromCaption
+    && (fromCaption === 'neon_glow' || fromCaption === 'street_bold' || fromCaption === 'bubble_3d')
+  ) {
+    return sectorDefault;
+  }
   if (fromCaption && fromCaption !== sectorDefault) return fromCaption;
 
   return sectorDefault;
+}
+
+/** Venue sectors that should default to restrained, agency-grade Fal language. */
+export function isPremiumVenueSector(sector?: string): boolean {
+  const s = (sector ?? '').toLowerCase();
+  return (
+    s.includes('beach')
+    || s.includes('club')
+    || s.includes('hotel')
+    || s.includes('resort')
+    || s.includes('spa')
+    || s.includes('fine_dining')
+    || s.includes('restaurant')
+    || s.includes('bar')
+    || s.includes('nightclub')
+  );
 }
 
 /** Premium social-post typography bar — rejects amateur/system-font output. */
@@ -504,15 +537,13 @@ function resolveSectorDesignLanguage(
 
   if (s.includes('beach') || s.includes('club') || s.includes('nightclub')) {
     if (intensityLevel === 'photo_first') {
-      return `${base} SECTOR STYLE (beach club — photo-first): Sun-washed Aegean restraint. The venue photograph IS the design — warm natural tones, zero poster energy. NO diagonal cuts, NO neon blocks, NO event-card layout.`;
+      return `${base} SECTOR STYLE (beach club — photo-first): Sun-washed Aegean restraint. The venue photograph IS the design — warm natural tones, zero poster energy. NO diagonal cuts, NO neon blocks, NO event-card layout. Think global luxury beach club Instagram — understated, never carnival.`;
     }
-    if (intensityLevel === 'elegant_light') {
-      return `${base} SECTOR STYLE (beach club — elegant): Warm coastal minimalism. Soft bottom scrim, refined small headline — NOT party poster, NOT split diagonal layout.`;
+    if (intensityLevel === 'elegant_light' || intensityLevel === 'balanced' || isPhotoLed) {
+      return `${base} SECTOR STYLE (beach club — global premium): Warm coastal editorial minimalism. Soft bottom scrim or quiet corner type, refined headline — NOT party poster, NOT split diagonal, NOT neon blocks, NOT event-card layout. Think Scorpios / Nobu / Aman social — quiet luxury, award-level restraint.`;
     }
-    if (isPhotoLed) {
-      return `${base} SECTOR STYLE (beach club): Natural coastal warmth — photo hero, subtle brand accents only.`;
-    }
-    return `${base} SECTOR STYLE (beach/night club): Bold, confident, event-poster energy. Use brand-color panels, large condensed sans-serif headline. High contrast — dark or accent panels with bright headline pops. Think luxury beach club campaign poster.`;
+    // designed / bold_editorial only — still avoid carnival poster language
+    return `${base} SECTOR STYLE (beach club — designed): Confident editorial campaign, still photo-led. Brand-color accents as thin panels or type color — never full-bleed neon. Large refined display type, high contrast, luxury beach club lookbook energy — not festival flyer.`;
   }
   if (s.includes('restaurant') || s.includes('fine_dining') || s.includes('gastro')) {
     return `${base} SECTOR STYLE (fine dining/restaurant): Elegant restraint. Use thin serif or modern didone headline, generous white/cream space, a single fine accent line in the brand accent color. Minimal decorative elements — let the food photography speak. Think Michelin guide meets Condé Nast Traveller ad.`;
@@ -566,23 +597,27 @@ function buildDesignedDesignCardPrompt(
   const intensityLevel = input.designIntensityLevel ?? 'balanced';
   const intensityMode = resolveFalDesignIntensityMode(input.aspectRatio, isReel || isStory);
 
+  const premiumVenue = isPremiumVenueSector(sector);
   const role = isStory
-    ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping Instagram Story poster — real venue/product photography + branded headline panel — agency-grade Canva Pro quality. NOT a generic template, NOT meta labels like "STORY" or "REEL", NOT a raw photo dump.`
+    ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''} at a top-tier global digital agency. Design ONE ${aspect}: a scroll-stopping Instagram Story — real venue/product photography + branded headline — Awwwards / Behance quality. NOT a generic Canva template, NOT meta labels like "STORY" or "REEL", NOT a raw photo dump.${premiumVenue ? ' Quiet luxury: understated, editorial, never carnival flyer.' : ''}`
     : isReel
-      ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping, agency-grade social media reel cover — hand-crafted Canva Pro quality — NOT a raw photo dump and NOT a generic template card.`
-      : `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''}. Design ONE ${aspect}: a scroll-stopping, agency-grade social media post — hand-crafted Canva Pro / Behance quality — NOT a raw photo dump and NOT a generic template card.`;
+      ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''} at a top-tier global digital agency. Design ONE ${aspect}: a scroll-stopping reel cover — hand-crafted, award-level social design. NOT a raw photo dump and NOT a generic template card.${premiumVenue ? ' Quiet luxury: photo-led, refined type, never neon party poster.' : ''}`
+      : `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''} at a top-tier global digital agency. Design ONE ${aspect}: a scroll-stopping feed post — Awwwards / Behance / Condé Nast Traveller quality. NOT a raw photo dump and NOT a generic template card.${premiumVenue ? ' Quiet luxury: editorial restraint, brand-true, never stock Canva.' : ''}`;
 
   const soul = input.visualDnaTone
-    ? `BRAND DNA (general): ${input.visualDnaTone.slice(0, 200)} — this brand's visual identity leads every design choice (typography character, color blocks, decorative rhythm). Apply to graphic layers only — never recolor the photo.`
-    : `BRAND DNA: stay true to ${brand}'s authentic aesthetic — refined, intentional, premium — never generic stock.`;
+    ? `BRAND DNA (general): ${input.visualDnaTone.slice(0, 220)} — this brand's visual identity leads every design choice (typography character, color blocks, decorative rhythm). Apply to graphic layers only — never recolor the photo. Every post should feel like THIS brand's art director made it — consistent identity, unique composition for THIS caption.`
+    : `BRAND DNA: stay true to ${brand}'s authentic aesthetic — refined, intentional, premium — never generic stock. Unique composition for this post while staying on-brand.`;
 
   const captionAnchor = (input.caption ?? '').trim().slice(0, 220);
   const postVibe = input.briefMood || captionAnchor
-    ? `POST VIBE (this specific idea): ${(input.briefMood || captionAnchor).slice(0, 160)} — the design must express THIS post's message and energy, not a one-size-fits-all sector template.`
+    ? `POST VIBE (this specific idea): ${(input.briefMood || captionAnchor).slice(0, 160)} — the design must express THIS post's message and energy, not a one-size-fits-all sector template. Vary layout rhythm across posts while keeping brand DNA.`
     : '';
   const captionMessageLock = captionAnchor
-    ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, or nightlife copy for a food caption). The on-canvas headline must stay on the same theme as this caption.`
+    ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, or nightlife copy for a food caption). Never paint calendar/signal labels like season names, "15 Temmuz", "plaj/havuz", or internal strategy phrases — ONLY the contracted headline/subtitle below.`
     : '';
+  const premiumBar = premiumVenue
+    ? 'PREMIUM BAR: Global luxury hospitality social standard — generous breathing room, intentional type hierarchy, photo as hero, zero clutter, zero emoji-as-design, zero festival flyer energy. If it could belong to a mid-tier Canva template pack, reject that look.'
+    : 'PREMIUM BAR: Agency-grade social design — intentional hierarchy, brand-true color, no amateur system-font dump.';
 
   const occasion = input.occasion
     ? `OCCASION — ${input.occasion.name}: honour its spirit${input.occasion.mood ? ` (${input.occasion.mood.slice(0, 90)})` : ''} tastefully WOVEN INTO ${brand}'s palette and visual world — symbolic, subtle accents only. Never clashing holiday-cliché colors, literal flags, balloons, or stock holiday graphics.`
@@ -654,12 +689,16 @@ function buildDesignedDesignCardPrompt(
   const promptLimit = (isReel || input.aspectRatio === '9:16' ? 3800 : 3200)
     + (input.logoUrl ? 400 : 0);
 
+  // Keep contract + scene + brand directives early so finalizeFalPrompt trim cannot drop them.
   const promptBody = [
     role,
     intensityDirectives.priorityBlock,
     ...intensityDirectives.forbiddenLayouts,
     onCanvasTextContract,
     captionMessageLock,
+    premiumBar,
+    input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',
+    ...(input.brandDirectives ?? []),
     logoBlock,
     soul,
     postVibe,
@@ -675,9 +714,7 @@ function buildDesignedDesignCardPrompt(
     isVertical
       ? `SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must stay within the inner 85% of the frame — minimum 7.5% margin from every edge. Protect the top 12% and bottom 15% from important content (platform UI overlaps). ${isStory ? 'Story poster: headline must be fully readable — shrink type rather than clip letters.' : 'Reel cover: keep headline panel inside safe zone for motion.'}`
       : 'SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must be placed within the inner 85% of the frame — keep a minimum 7.5% margin from every edge. Keep headline and CTA inside the central 4:5 safe area — nothing clipped by feed crop.',
-    input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',
     `BRAND COLORS: Use ${input.brandColors.primary} and ${input.brandColors.accent} for headline, shapes, color blocks, and accents — never as a global photo filter.`,
-    ...(input.brandDirectives ?? []),
     intensityDirectives.typographyAnchor,
     spec.colorUsage(input.brandColors.primary, input.brandColors.accent),
     intensityDirectives.layoutNote,
