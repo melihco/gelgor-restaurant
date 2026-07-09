@@ -949,26 +949,24 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
         await runFullBrandOnboarding(session.tenantId);
       }
 
-      // Auto-propose first welcome mission when foundation scores allow it.
+      // Auto-propose first welcome mission in the background. Strategist proposal
+      // can take 30-90s, so onboarding must not hold the user on the setup screen.
       try {
+        setStatus('Marka kurulumu tamamlandı · Haftalık plan arka planda hazırlanıyor.');
         const proposeRes = await fetch(`/api/missions/${session.tenantId}/propose`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...getRequestContextHeaders(),
           },
-          body: JSON.stringify({ context_signals: 'onboarding_welcome' }),
-          signal: AbortSignal.timeout(120_000),
+          body: JSON.stringify({ context_signals: 'onboarding_welcome', background: true }),
+          signal: AbortSignal.timeout(5_000),
         });
-        if (proposeRes.ok) {
-          setStatus('Marka kurulumu tamamlandı · İlk kampanya önerildi.');
-        } else if (proposeRes.status === 412) {
+        if (proposeRes.status === 412) {
           setStatus('Marka kurulumu tamamlandı · Kampanya önerisi için galeri skorunu tamamlayın.');
-        } else {
-          setStatus('Marka kurulumu tamamlandı · Haftalık Plan sekmesinden kampanya başlatabilirsiniz.');
         }
       } catch {
-        setStatus('Marka kurulumu tamamlandı · Haftalık Plan sekmesinden kampanya başlatabilirsiniz.');
+        // Non-blocking: Mission Hub can still trigger a weekly plan later.
       }
       onDone(company.trim(), session.tenantId);
     } catch (e: any) {
