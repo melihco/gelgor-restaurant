@@ -12,6 +12,7 @@ import {
   formatFalLogoPlacementDirective,
   type ResolvedFalLogoPlacement,
 } from './fal-logo-placement';
+import { hasCaptionHeadlineThemeConflict } from './headline-theme-clusters';
 
 // ── Turkish Spell-Check Dictionary ────────────────────────────────────────────
 
@@ -117,8 +118,56 @@ export interface FalOverlayCopyInput {
 }
 
 /**
+ * When ideation headline fights the caption theme (kitchen vs DJ), rebuild
+ * overlay from the caption so on-canvas copy matches the Instagram body.
+ */
+function resolveCaptionAlignedOverlayWhenThemeConflicts(input: {
+  caption: string;
+  headline: string;
+  cta?: string;
+  channel: FalOverlayCopyInput['channel'];
+  targetLocale: OverlayLocale;
+}): { headline: string; subtitle?: string } | null {
+  const caption = input.caption.trim();
+  if (!caption || !hasCaptionHeadlineThemeConflict(caption, input.headline)) {
+    return null;
+  }
+  const resolved = resolveFalDisplayHeadline({
+    caption,
+    missionTitle: input.headline,
+    brandName: '',
+    cta: input.cta,
+    maxLen: input.channel === 'reel' ? 22 : 32,
+  });
+  let headline = resolveFalProductionOverlayHeadline(
+    resolved.headline,
+    [input.headline, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+    input.channel,
+  );
+  if (!headline || hasCaptionHeadlineThemeConflict(caption, headline)) {
+    const firstLine = caption.split(/[.!?\n]/)[0]?.trim() ?? '';
+    headline = resolveFalProductionOverlayHeadline(firstLine, [input.headline], input.channel);
+  }
+  if (!headline) return null;
+  if (input.targetLocale === 'tr') {
+    headline = correctTurkishSpelling(headline, { locale: 'tr' });
+  }
+  let subtitle: string | undefined;
+  const sub = resolveFalSubtitle({
+    caption,
+    headline,
+    cta: input.cta,
+  });
+  if (sub && localesCompatible(input.targetLocale, detectOverlayLocale(sub))) {
+    subtitle = input.targetLocale === 'tr' ? correctTurkishSpelling(sub, { locale: 'tr' }) : sub;
+  }
+  return { headline, subtitle };
+}
+
+/**
  * Resolve on-image headline + subtitle for fal/GPT designed posts.
  * Mission default: ideation strings only, same language as caption, no auto-translation.
+ * Exception: theme conflict with caption → caption-derived overlay (prevents kitchen/DJ drift).
  */
 export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
   headline: string;
@@ -132,6 +181,17 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
   let subtitle: string | undefined;
 
   if (input.lockIdeationCopy !== false) {
+    const themeFix = resolveCaptionAlignedOverlayWhenThemeConflicts({
+      caption: input.caption ?? '',
+      headline: rawHeadline,
+      cta: input.cta,
+      channel: input.channel,
+      targetLocale,
+    });
+    if (themeFix) {
+      return themeFix;
+    }
+
     headline = correctTurkishSpelling(rawHeadline, {
       locale: detectOverlayLocale(rawHeadline) === 'unknown' ? targetLocale : detectOverlayLocale(rawHeadline),
     });
@@ -685,6 +745,7 @@ export function buildFalOnCanvasTextContract(input: {
     'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, extra slogans, URLs, hashtags, dates, auto-translation, mixed-language lines, or any text not listed above.',
     'FORBIDDEN META WORDS on canvas: never paint "STORY", "REEL", "POST", "INSTAGRAM", "TIKTOK", "FEED", "ÜNLÜ", "VIRAL", "SHARE", or any platform/format label — only the quoted headline/subtitle above.',
     'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
+    'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, or nightlife copy for a food caption.',
     'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec".',
     'If space is tight, shrink typography — never invent alternate wording or truncate mid-word.',
   );

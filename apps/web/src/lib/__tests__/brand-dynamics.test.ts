@@ -3,6 +3,7 @@ import { computeBrandDynamics } from '@/lib/brand-dynamics';
 import {
   buildThemeClusterCounts,
   detectHeadlineThemeClusters,
+  hasCaptionHeadlineThemeConflict,
 } from '@/lib/headline-theme-clusters';
 import {
   applyCrossMissionHeadlineDedupe,
@@ -24,6 +25,21 @@ describe('headline theme clusters', () => {
     ]);
     expect(counts.get('dj_nightlife')).toBe(2);
     expect(counts.get('brunch_weekend')).toBe(1);
+  });
+
+  it('flags kitchen overlay vs DJ caption as theme conflict', () => {
+    expect(
+      hasCaptionHeadlineThemeConflict(
+        'Bu yaz sıcak geceleri DJ performanslarıyla renklendiriyoruz',
+        'Mutfağımızda Neler',
+      ),
+    ).toBe(true);
+    expect(
+      hasCaptionHeadlineThemeConflict(
+        'Bu yaz sıcak geceleri DJ performanslarıyla renklendiriyoruz',
+        'DJ Gecesi',
+      ),
+    ).toBe(false);
   });
 });
 

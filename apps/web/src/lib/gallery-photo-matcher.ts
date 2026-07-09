@@ -11,7 +11,12 @@
  *  - URL keys normalized (gallery analysis originals vs upscaled display URLs)
  */
 
-import { captionPhotoConflictPenalty } from '@/lib/caption-photo-alignment';
+import {
+  buildGalleryPhotoSearchable,
+  captionPhotoConflictPenalty,
+  captionRequiresStrictGalleryMatch,
+  isHardCaptionPhotoConflict,
+} from '@/lib/caption-photo-alignment';
 import { normalizeGalleryUrl, GALLERY_USAGE_COUNT_PENALTY, getGlobalGalleryUsageCount, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
@@ -1052,6 +1057,11 @@ function scorePhotoForContent(
     score -= conflict;
     reasons.push(`caption-photo conflict -${conflict}`);
   }
+  // Hard theme veto — pair is unusable regardless of synonym stacking.
+  if (isHardCaptionPhotoConflict(caption, searchable)) {
+    score = Math.min(score, -100);
+    reasons.push('hard_caption_photo_veto');
+  }
 
   const productConflict = productPhotoConflictPenalty(caption, searchable);
   if (productConflict > 0) {
@@ -1060,6 +1070,27 @@ function scorePhotoForContent(
   }
 
   return { score, reasons };
+}
+
+/** Caption text used for conflict checks (headline + body). */
+function matchCaptionBlob(input: MatchPhotoInput): string {
+  return [input.headline, input.caption, input.visualDirection, input.strategicPurpose]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * True when this gallery photo is a hard theme mismatch for the caption
+ * (e.g. DJ caption + food plate). Used to block relaxed/diversity fallbacks.
+ */
+export function isHardGalleryThemeMismatch(
+  input: MatchPhotoInput,
+  meta: GalleryPhotoMeta | undefined,
+  url?: string,
+): boolean {
+  const caption = matchCaptionBlob(input);
+  if (!caption.trim()) return false;
+  return isHardCaptionPhotoConflict(caption, buildGalleryPhotoSearchable(meta, url));
 }
 
 export function rankPhotosForContent(
@@ -1095,6 +1126,10 @@ export function rankPhotosForContent(
     const entry = resolveLookupEntry(url, lookup, fingerprintIndex);
     const meta = entry?.meta ?? {};
     const { score, reasons } = scorePhotoForContent(meta, input);
+    // Never rank hard theme mismatches — they must not win via path/usage noise.
+    if (score <= -100 || isHardGalleryThemeMismatch(input, meta, url)) {
+      continue;
+    }
     const pathScore = scoreUrlPath(url, input);
     let totalScore = score + pathScore;
 
@@ -1223,13 +1258,27 @@ function galleryTagOverlap(
 /**
  * When semantic scores fail, pick any unused photo that differs most from already-assigned
  * mission photos (small catalogs / identical opportunity captions).
+ *
+ * Optional `matchInput`: when provided, hard theme mismatches are skipped and
+ * captions that require strict matching never receive a diversity fallback.
  */
 export function pickMissionDiverseFallbackPhoto(
   candidateUrls: string[],
   usedBases: Set<string>,
   galleryAnalysis: Record<string, GalleryPhotoMeta>,
   assignedUrls: string[],
+  matchInput?: MatchPhotoInput,
 ): PhotoMatchResult | null {
+  if (
+    matchInput
+    && captionRequiresStrictGalleryMatch(
+      matchInput.caption ?? '',
+      matchInput.headline ?? '',
+    )
+  ) {
+    return null;
+  }
+
   const assignedMeta = assignedUrls.map((url) => {
     const base = normalizeGalleryUrl(url);
     return galleryAnalysis[base]
@@ -1242,6 +1291,9 @@ export function pickMissionDiverseFallbackPhoto(
     if (usedBases.has(base)) continue;
     const meta = galleryAnalysis[base]
       ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+    if (matchInput && isHardGalleryThemeMismatch(matchInput, meta, url)) {
+      continue;
+    }
     let maxOverlap = 0;
     for (const other of assignedMeta) {
       maxOverlap = Math.max(maxOverlap, galleryTagOverlap(meta, other));
@@ -1339,18 +1391,27 @@ export function assignPhotosToContents(
   // Phase 1: semantic matches at production threshold.
   pending = greedyAssignRound(pending, strictMinScore);
 
-  // Phase 2: still-unassigned slots — accept weaker semantic matches before reusing photos.
+  // Phase 2: still-unassigned — only non-strict captions may take weaker semantic matches.
+  // Nightlife / food / beauty captions stay unassigned rather than accept a wrong photo.
   if (pending.length > 0 && RELAXED_MATCH_SCORE < strictMinScore) {
-    pending = greedyAssignRound(pending, RELAXED_MATCH_SCORE);
+    const relaxedEligible = pending.filter(
+      (p) => !captionRequiresStrictGalleryMatch(p.input.caption ?? '', p.input.headline ?? ''),
+    );
+    const strictHeld = pending.filter(
+      (p) => captionRequiresStrictGalleryMatch(p.input.caption ?? '', p.input.headline ?? ''),
+    );
+    const stillOpen = greedyAssignRound(relaxedEligible, RELAXED_MATCH_SCORE);
+    pending = [...strictHeld, ...stillOpen];
   }
 
-  // Phase 3: tag-diversity fallback — any unused catalog photo beats a duplicate.
-  for (const { key } of pending) {
+  // Phase 3: tag-diversity fallback — never for strict theme captions; never hard mismatches.
+  for (const { key, input } of pending) {
     const fallback = pickMissionDiverseFallbackPhoto(
       candidateUrls,
       usedMissionWide,
       galleryAnalysis,
       assignedUrls,
+      input,
     );
     if (!fallback) {
       assigned.set(key, null);

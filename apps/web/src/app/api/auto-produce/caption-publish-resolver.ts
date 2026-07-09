@@ -292,6 +292,13 @@ export function repickGalleryIfDuplicateForType(input: {
     new Set(missionExclude.map(normalizeGalleryUrl)),
     input.galleryAnalysis,
     missionExclude,
+    {
+      caption: input.caption,
+      headline: input.headline,
+      mood: input.mood,
+      contentType: input.postType,
+      businessType: input.businessType,
+    },
   );
   if (diverse?.url && normalizeGalleryUrl(diverse.url) !== normalizeGalleryUrl(referenceUrl)) {
     console.warn(
@@ -300,6 +307,7 @@ export function repickGalleryIfDuplicateForType(input: {
     return diverse.url;
   }
 
+  // Prefer leaving a duplicate over shipping a semantically wrong photo.
   return referenceUrl;
 }
 

@@ -204,6 +204,25 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
 /** Skip expensive render when gallery cannot support the caption. */
 export const GALLERY_PRODUCTION_MIN_SCORE = GIS_PILOT_MIN_SCORE - 10;
 
+/**
+ * Fal grounded designs compose typography ON the gallery photo — a weak match
+ * ships kitchen food under a DJ caption. Floor is above generic MIN_ACCEPT.
+ */
+/** Fal typography-on-photo — require near-acceptable GIS bar, not bare MIN_ACCEPT. */
+export const FAL_GROUNDED_GALLERY_MIN_SCORE = GIS_PILOT_MIN_SCORE;
+
+function resolveGalleryWeakFloor(input: {
+  galleryMatchScore: number | null;
+  falGroundedPipeline?: boolean;
+}): { weak: boolean; floor: number } {
+  const floor = input.falGroundedPipeline
+    ? FAL_GROUNDED_GALLERY_MIN_SCORE
+    : MIN_ACCEPT_SCORE;
+  if (input.galleryMatchScore == null) return { weak: false, floor };
+  if (input.galleryMatchScore < 0) return { weak: true, floor };
+  return { weak: input.galleryMatchScore < floor, floor };
+}
+
 export function isWeakGalleryMatch(input: {
   missionProduction: boolean;
   galleryMatchScore: number | null;
@@ -215,18 +234,27 @@ export function isWeakGalleryMatch(input: {
    * Overrides adaptiveScene bypass so the slot triggers AI fallback instead of shipping
    * a visually mismatched photo. */
   captionServiceConflict?: boolean;
+  /**
+   * Fal / Ideogram grounded slots — never bypass weak-gallery via adaptiveScene;
+   * photo must support the caption before design runs.
+   */
+  falGroundedPipeline?: boolean;
 }): boolean {
   // adaptiveScene normally bypasses weak-gallery detection — but not when there is a
-  // confirmed cross-service conflict (e.g. nail caption paired with a lash photo).
-  if (input.adaptiveScene && !input.captionServiceConflict) return false;
+  // confirmed cross-service conflict, or when Fal will paint on the gallery photo.
+  if (
+    input.adaptiveScene
+    && !input.captionServiceConflict
+    && !input.falGroundedPipeline
+  ) {
+    return false;
+  }
   if (!input.missionProduction) return false;
   if (!input.hasReference) return false;
   if (input.referenceIsStock) return false;
   if (!input.pickedFromBrandGallery) return false;
   if (input.galleryMatchScore == null) return false;
-  // A negative score always indicates a conflict penalty win — treat as weak regardless of threshold.
-  if (input.galleryMatchScore < 0) return true;
-  return input.galleryMatchScore < MIN_ACCEPT_SCORE;
+  return resolveGalleryWeakFloor(input).weak;
 }
 
 export function shouldSkipProductionForWeakGallery(input: {
@@ -242,14 +270,24 @@ export function shouldSkipProductionForWeakGallery(input: {
   mediaFallback?: 'brand_solid' | 'logo_hero' | 'block';
   /** See isWeakGalleryMatch — overrides adaptiveScene for service conflicts */
   captionServiceConflict?: boolean;
+  /** Fal grounded — skip rather than ship mismatched photo+caption */
+  falGroundedPipeline?: boolean;
 }): boolean {
-  if (input.adaptiveScene && !input.captionServiceConflict) return false;
+  if (
+    input.adaptiveScene
+    && !input.captionServiceConflict
+    && !input.falGroundedPipeline
+  ) {
+    return false;
+  }
   if (!input.missionProduction) return false;
   if (!input.hasReference) return true;
   if (input.referenceIsStock) return false;
   if (!input.pickedFromBrandGallery) return false;
   if (input.galleryMatchScore == null) return false;
-  if (input.galleryMatchScore < MIN_ACCEPT_SCORE) {
+  if (resolveGalleryWeakFloor(input).weak) {
+    // Fal grounded: always block — brand_solid invents scenes; logo_hero is not a photo match.
+    if (input.falGroundedPipeline) return true;
     const fallback = input.mediaFallback ?? 'block';
     return fallback === 'block';
   }

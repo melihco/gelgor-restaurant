@@ -1,11 +1,13 @@
 /**
- * Gallery-first mission production — pick analyzed gallery photo per slot,
- * then generate caption/headline aligned to that photo (not ideation-first).
+ * Gallery-first mission production — pick analyzed gallery photo per slot.
+ * Ideation caption is authoritative when present: never rewrite it (or its
+ * headline) from photo vision/meta — that causes kitchen overlays on DJ posts.
  */
 import {
   MIN_ACCEPT_SCORE,
   RELAXED_MATCH_SCORE,
   buildGalleryLookup,
+  isHardGalleryThemeMismatch,
   pickMissionDiverseFallbackPhoto,
   rankPhotosForContent,
   rankPhotosForContentSeeded,
@@ -16,7 +18,10 @@ import {
 import { kindToPostType, normalizeGalleryUrl, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { buildInstagramCaptionFromGalleryMeta } from '@/lib/feed-display-caption';
-import { scoreIdeationPhotoMatch } from '@/lib/caption-photo-alignment';
+import {
+  captionRequiresStrictGalleryMatch,
+  scoreIdeationPhotoMatch,
+} from '@/lib/caption-photo-alignment';
 import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator';
 import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
@@ -193,17 +198,22 @@ export function pickGalleryPhotoForSlot(input: {
   const best = ranked[0];
   if (best && best.score >= minScore) return best;
 
-  if (!input.slotBackfillPass && best && best.score >= RELAXED_MATCH_SCORE) {
-    return best;
-  }
-
-  const diverse = pickMissionDiverseFallbackPhoto(
-    input.galleryPhotos,
-    usedBases,
-    input.galleryMeta,
-    input.excludeUrls,
+  // Never accept sub-threshold scores on the normal pass — that shipped DJ+food pairs.
+  // Backfill may still use RELAXED_MATCH_SCORE via minScore above.
+  const strictTheme = captionRequiresStrictGalleryMatch(
+    matchInput.caption ?? '',
+    matchInput.headline ?? '',
   );
-  if (diverse) return diverse;
+  if (!strictTheme) {
+    const diverse = pickMissionDiverseFallbackPhoto(
+      input.galleryPhotos,
+      usedBases,
+      input.galleryMeta,
+      input.excludeUrls,
+      matchInput,
+    );
+    if (diverse) return diverse;
+  }
 
   return null;
 }
@@ -253,18 +263,46 @@ export async function resolveGalleryFirstForSlot(input: {
   const ideationHeadline = String(input.ideationHeadline ?? '').trim();
   const tieBreakSeed = input.ideaIndex;
 
+  const matchInput = buildSlotGalleryMatchInput({
+    assignment: input.assignment,
+    storyIndex: input.storyIndex,
+    brandName: input.brandName,
+    brandDescription: input.brandDescription,
+    businessType: input.businessType,
+    visualSubjectHint: input.visualSubjectHint,
+    creativeBrief: input.creativeBrief,
+    ideationCaption,
+    ideationHeadline,
+  });
+
   let pick: PhotoMatchResult | null = null;
   const forced = String(input.forcedPhotoUrl ?? '').trim();
   if (forced && isUsableGalleryPhotoUrl(forced)) {
     const forcedBase = normalizeGalleryUrl(forced);
     const excluded = new Set(input.excludeUrls.map(normalizeGalleryUrl));
     if (!excluded.has(forcedBase)) {
-      pick = {
-        url: forced,
-        score: MIN_ACCEPT_SCORE,
-        reason: 'mission_batch_assign',
-        confidence: 1,
-      };
+      const forcedMeta = input.galleryMeta[forcedBase]
+        ?? Object.entries(input.galleryMeta).find(
+          ([k]) => normalizeGalleryUrl(k) === forcedBase,
+        )?.[1];
+      // Re-validate batch assign — never trust a pre-assigned hard mismatch.
+      if (!isHardGalleryThemeMismatch(matchInput, forcedMeta, forced)) {
+        const forcedScore = scoreIdeationPhotoMatch({
+          caption: ideationCaption || ideationHeadline,
+          headline: ideationHeadline || ideationCaption,
+          photoUrl: forced,
+          galleryAnalysis: input.galleryMeta,
+          businessType: input.businessType,
+        });
+        if (forcedScore >= MIN_ACCEPT_SCORE) {
+          pick = {
+            url: forced,
+            score: forcedScore,
+            reason: 'mission_batch_assign',
+            confidence: Math.min(1, forcedScore / 80),
+          };
+        }
+      }
     }
   }
 
@@ -287,6 +325,10 @@ export async function resolveGalleryFirstForSlot(input: {
       ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(photoUrl),
     )?.[1];
 
+  if (isHardGalleryThemeMismatch(matchInput, meta, photoUrl)) {
+    return null;
+  }
+
   const alignScore = scoreIdeationPhotoMatch({
     caption: ideationCaption || ideationHeadline,
     headline: ideationHeadline || ideationCaption,
@@ -295,12 +337,20 @@ export async function resolveGalleryFirstForSlot(input: {
     businessType: input.businessType,
   });
 
-  const ideationStrong = ideationCaption.length >= 24
-    && alignScore >= MIN_ACCEPT_SCORE
+  // Ideation caption present → keep caption + headline; only report match score.
+  // Do NOT rewrite from gallery meta/GPT (that invents "Mutfağımızda Neler" over DJ copy).
+  const keepIdeationCopy = ideationCaption.length >= 24
     && !input.forceRewrite
     && !input.slotBackfillPass;
 
-  if (ideationStrong) {
+  if (keepIdeationCopy) {
+    // Weak align on a strict theme → refuse rather than ship mismatched visual.
+    if (
+      captionRequiresStrictGalleryMatch(ideationCaption, ideationHeadline)
+      && alignScore < MIN_ACCEPT_SCORE
+    ) {
+      return null;
+    }
     return {
       photoUrl,
       caption: ideationCaption,
@@ -312,6 +362,7 @@ export async function resolveGalleryFirstForSlot(input: {
     };
   }
 
+  // Empty / stub ideation only — derive publish copy from the matched photo.
   const built = buildInstagramCaptionFromGalleryMeta(
     meta as Record<string, unknown> | undefined,
     input.brandName,

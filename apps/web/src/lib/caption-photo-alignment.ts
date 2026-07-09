@@ -29,30 +29,32 @@ const DRINK_PHOTO_HINTS = [
   'kokteyl', 'içecek', 'icecek', 'glass', 'bottle', 'spirits',
 ];
 
+/** Strong nightlife intent in caption (DJ / party / live music). */
 const NIGHTLIFE_CAPTION_HINTS = [
-  'dj', 'dj night', 'dj nights', 'party', 'beach party', 'nightlife', 'night',
-  'dance', 'dancing', 'crowd', 'live music', 'concert', 'festival', 'opening night',
-  'weekend nights', 'gece', 'geceleri', 'parti', 'dans', 'kalabalık', 'canlı müzik',
-  'etkinlik', 'organizasyon', 'sahne', 'hafta sonu',
+  'dj', 'dj night', 'dj nights', 'party', 'beach party', 'nightlife',
+  'dance', 'dancing', 'live music', 'concert', 'festival', 'opening night',
+  'weekend nights', 'gece', 'geceleri', 'parti', 'dans', 'canlı müzik',
+  'sahne', 'performans', 'lineup', 'after party',
 ];
 
-const NIGHTLIFE_PHOTO_HINTS = [
-  'dj', 'stage', 'dance', 'dancing', 'crowd', 'concert', 'performance', 'party',
-  'night', 'lights', 'neon', 'festival', 'event', 'celebration', 'people',
-  'group', 'live music', 'sahne', 'dans', 'kalabalık', 'parti', 'gece',
-];
-
-const PEOPLE_EVENT_PHOTO_HINTS = [
-  'people', 'person', 'crowd', 'group', 'guest', 'guests', 'audience',
-  'dancing', 'dance', 'celebration', 'event', 'party', 'festival',
-  'insan', 'kalabalık', 'misafir', 'dans',
+/**
+ * Hard nightlife proof on a photo — generic "people/crowd/event" alone is NOT enough
+ * (food plating metas often include guest/people and were escaping the veto).
+ */
+const NIGHTLIFE_HARD_PHOTO_HINTS = [
+  'dj', 'stage', 'dance', 'dancing', 'concert', 'performance', 'nightlife',
+  'neon', 'festival', 'live music', 'sahne', 'dans', 'nightclub', 'club night',
+  'beach party', 'party crowd', 'dancefloor', 'dance floor',
 ];
 
 const FOOD_PHOTO_HINTS = [
   'food', 'dish', 'plate', 'meal', 'seafood', 'fish', 'cuisine', 'menu', 'chef',
   'kitchen', 'yemek', 'tabak', 'balık', 'deniz', 'platter', 'serving', 'dessert',
-  'pasta', 'steak', 'sushi',
+  'pasta', 'steak', 'sushi', 'soup', 'bowl', 'gazpacho', 'meze',
 ];
+
+/** Penalty at/above this is a hard veto — photo must never ship for that caption. */
+export const HARD_CAPTION_PHOTO_CONFLICT = 40;
 
 // ── Beauty sub-service clusters ────────────────────────────────────────────
 // Each cluster: caption signals → exclusive photo signals they conflict with.
@@ -94,6 +96,50 @@ function textHits(text: string, hints: string[]): number {
   return hints.filter(h => lower.includes(h)).length;
 }
 
+/** Flatten gallery meta (+ optional URL) for conflict scoring. */
+export function buildGalleryPhotoSearchable(
+  meta: GalleryPhotoMeta | undefined,
+  url?: string,
+): string {
+  if (!meta && !url) return '';
+  return [
+    ...(meta?.contentTags ?? []),
+    ...(meta?.captionHooks ?? []),
+    ...(meta?.pairingKeywords ?? []),
+    meta?.description ?? '',
+    meta?.usageContext ?? '',
+    meta?.mood ?? '',
+    ...(meta?.bestFor ?? []),
+    meta?.suggestedAssetType ?? '',
+    url ?? '',
+  ].join(' ').toLowerCase();
+}
+
+/** True when penalty is severe enough that the pair must never produce. */
+export function isHardCaptionPhotoConflict(
+  captionText: string,
+  photoSearchable: string,
+): boolean {
+  return captionPhotoConflictPenalty(captionText, photoSearchable) >= HARD_CAPTION_PHOTO_CONFLICT;
+}
+
+/**
+ * Captions that must never accept relaxed / diversity gallery fallbacks
+ * (nightlife, explicit beauty service, strong food/menu).
+ */
+export function captionRequiresStrictGalleryMatch(
+  caption: string,
+  headline = '',
+): boolean {
+  const text = `${caption} ${headline}`.toLowerCase();
+  if (textHits(text, NIGHTLIFE_CAPTION_HINTS) >= 1) return true;
+  if (textHits(text, FOOD_CAPTION_HINTS) >= 2) return true;
+  if (textHits(text, BEAUTY_NAIL_CAPTION) >= 1) return true;
+  if (textHits(text, BEAUTY_LASH_CAPTION) >= 1) return true;
+  if (textHits(text, BEAUTY_HAIR_CAPTION) >= 2) return true;
+  return false;
+}
+
 /** Penalty applied inside gallery-photo-matcher scoring (0 = no conflict). */
 export function captionPhotoConflictPenalty(
   captionText: string,
@@ -106,8 +152,7 @@ export function captionPhotoConflictPenalty(
   const photoFood = textHits(photo, FOOD_PHOTO_HINTS);
   const photoEvent = textHits(photo, EVENT_PHOTO_HINTS);
   const photoDrink = textHits(photo, DRINK_PHOTO_HINTS);
-  const photoNightlife = textHits(photo, NIGHTLIFE_PHOTO_HINTS);
-  const photoPeopleEvent = textHits(photo, PEOPLE_EVENT_PHOTO_HINTS);
+  const photoNightlifeHard = textHits(photo, NIGHTLIFE_HARD_PHOTO_HINTS);
 
   if (captionFood >= 2 && photoEvent >= 1 && photoFood === 0) {
     return 48;
@@ -126,21 +171,24 @@ export function captionPhotoConflictPenalty(
     return 22;
   }
 
-  // Nightlife / DJ / party captions should not land on food-only hero shots.
-  const foodDominantPhoto =
-    photoFood >= 2
-    || (photoFood >= 1 && photoDrink >= 1);
-  const nightlifeProofMissing =
-    photoNightlife === 0 && photoPeopleEvent === 0 && photoEvent === 0;
-  if (captionNightlife >= 2 && foodDominantPhoto && nightlifeProofMissing) {
-    return 56;
+  // Nightlife / DJ captions must not land on food heroes — soft "people" tags do not clear this.
+  const foodDominantPhoto = photoFood >= 1;
+  const nightlifeProofMissing = photoNightlifeHard === 0;
+  if (captionNightlife >= 1 && foodDominantPhoto && nightlifeProofMissing) {
+    // Hard veto magnitude — must survive positive food synonym stacking in the scorer.
+    return captionNightlife >= 2 ? 80 : 72;
   }
-  if (captionNightlife >= 3 && photoDrink >= 1 && nightlifeProofMissing) {
+  // Nightlife caption + drink-only bar shot without nightlife proof is weak, not hard-veto.
+  if (captionNightlife >= 2 && photoDrink >= 1 && nightlifeProofMissing && photoFood === 0) {
     return 34;
   }
 
+  // Reverse: food/menu caption must not land on nightlife stage/crowd heroes.
+  if (captionFood >= 2 && photoNightlifeHard >= 1 && photoFood === 0) {
+    return 64;
+  }
+
   // ── Beauty sub-service cross-service conflict ────────────────────────────
-  // Nail caption + lash/hair photo → strong mismatch
   const captionNail = textHits(caption, BEAUTY_NAIL_CAPTION);
   const captionLash = textHits(caption, BEAUTY_LASH_CAPTION);
   const captionHair = textHits(caption, BEAUTY_HAIR_CAPTION);
@@ -148,19 +196,15 @@ export function captionPhotoConflictPenalty(
   const photoLash = textHits(photo, BEAUTY_LASH_PHOTO);
   const photoHair = textHits(photo, BEAUTY_HAIR_PHOTO);
 
-  // Nail caption but photo is lash-dominant and has no nail signals
   if (captionNail >= 1 && photoLash >= 1 && photoNail === 0) {
     return 45;
   }
-  // Nail caption but photo is hair-dominant and has no nail signals
   if (captionNail >= 1 && photoHair >= 2 && photoNail === 0) {
     return 38;
   }
-  // Lash caption but photo is nail-dominant and has no lash signals
   if (captionLash >= 1 && photoNail >= 1 && photoLash === 0) {
     return 40;
   }
-  // Hair caption but photo is nail-dominant
   if (captionHair >= 2 && photoNail >= 1 && photoHair === 0) {
     return 35;
   }

@@ -44,7 +44,8 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
     expect(plan.productionGate.passed).toBe(true);
     expect(plan.artifactMetadata.resolved_vibe).toBeUndefined();
     expect(plan.subtitle).toBe('Taste the essence of Bodrum');
-    expect(plan.designCardPrompt).toContain('New Citrus Kokteyl');
+    // English caption locks overlay language — "Kokteyl" → caption-aligned "Cocktail".
+    expect(plan.designCardPrompt).toContain('New Citrus Cocktail');
   });
 
   it('proposed mode: locked warm_coastal vibe, harmonized prompt, trace metadata', () => {

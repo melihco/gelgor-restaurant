@@ -576,8 +576,12 @@ function buildDesignedDesignCardPrompt(
     ? `BRAND DNA (general): ${input.visualDnaTone.slice(0, 200)} — this brand's visual identity leads every design choice (typography character, color blocks, decorative rhythm). Apply to graphic layers only — never recolor the photo.`
     : `BRAND DNA: stay true to ${brand}'s authentic aesthetic — refined, intentional, premium — never generic stock.`;
 
-  const postVibe = input.briefMood || input.caption?.slice(0, 120)
-    ? `POST VIBE (this specific idea): ${(input.briefMood || input.caption || '').slice(0, 160)} — the design must express THIS post's message and energy, not a one-size-fits-all sector template.`
+  const captionAnchor = (input.caption ?? '').trim().slice(0, 220);
+  const postVibe = input.briefMood || captionAnchor
+    ? `POST VIBE (this specific idea): ${(input.briefMood || captionAnchor).slice(0, 160)} — the design must express THIS post's message and energy, not a one-size-fits-all sector template.`
+    : '';
+  const captionMessageLock = captionAnchor
+    ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, or nightlife copy for a food caption). The on-canvas headline must stay on the same theme as this caption.`
     : '';
 
   const occasion = input.occasion
@@ -655,6 +659,7 @@ function buildDesignedDesignCardPrompt(
     intensityDirectives.priorityBlock,
     ...intensityDirectives.forbiddenLayouts,
     onCanvasTextContract,
+    captionMessageLock,
     logoBlock,
     soul,
     postVibe,

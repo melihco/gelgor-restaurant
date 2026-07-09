@@ -101,7 +101,8 @@ export const YULA_GALLERY_MATCH = {
   reason: 'semantic_match_after_meta',
 };
 
-export const FAL_GALLERY_MATCH_MIN_SCORE = 35;
+/** Keep in sync with `FAL_GROUNDED_GALLERY_MIN_SCORE` in gpt-enhance-policy.ts (GIS bar). */
+export const FAL_GALLERY_MATCH_MIN_SCORE = 55;
 export const FAL_BRS_MIN_FOR_PRODUCE = 70;
 
 // ── Types ─────────────────────────────────────────────────────────────────────

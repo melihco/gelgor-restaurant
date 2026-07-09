@@ -8,7 +8,12 @@ import {
   incrementReelCount,
   fetchPackageLimits,
 } from './budget';
-import { isWeakGalleryMatch, shouldSkipProductionForWeakGallery } from '@/lib/gpt-enhance-policy';
+import {
+  FAL_GROUNDED_GALLERY_MIN_SCORE,
+  isWeakGalleryMatch,
+  shouldSkipProductionForWeakGallery,
+} from '@/lib/gpt-enhance-policy';
+import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
 import { serverConfig } from '@/lib/server-config';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import {
@@ -37,11 +42,17 @@ import {
   assignPhotosToContents,
   resolveBestGalleryUrl,
   pickMissionDiverseFallbackPhoto,
+  isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
   RUNWAY_GALLERY_MIN_SCORE,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
-import { scoreIdeationPhotoMatch } from '@/lib/caption-photo-alignment';
+import {
+  buildGalleryPhotoSearchable,
+  captionRequiresStrictGalleryMatch,
+  isHardCaptionPhotoConflict,
+  scoreIdeationPhotoMatch,
+} from '@/lib/caption-photo-alignment';
 import {
   buildRunwayGalleryScenePackage,
   galleryMetaToRendererGallery,
@@ -213,7 +224,11 @@ import {
   resolveMeaningfulProductionHeadline,
   sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
-import { isIncompleteOverlayPhrase, isInternalStrategyBriefing } from '@/lib/fal-caption-headline';
+import {
+  isIncompleteOverlayPhrase,
+  isInternalStrategyBriefing,
+  resolveFalOverlayCopy,
+} from '@/lib/fal-caption-headline';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { resolveProductionEngines } from '@/lib/brand-production-engines';
@@ -1397,10 +1412,28 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         : undefined;
 
       if (missionId && assignmentUsesGalleryPhoto(assignment)) {
+        const batchMatchInput = {
+          caption: ideationCaption,
+          headline: ideationHeadline,
+          mood,
+          contentType: postType,
+          businessType: brandBusinessType,
+        };
         if (batchAssigned?.url) {
-          referenceUrl = batchAssigned.url;
-          galleryMatchScore = batchAssigned.score;
-        } else {
+          const batchMeta = galleryMeta[normalizeGalleryUrl(batchAssigned.url)]
+            ?? Object.entries(galleryMeta).find(
+              ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(batchAssigned.url),
+            )?.[1];
+          if (isHardGalleryThemeMismatch(batchMatchInput, batchMeta, batchAssigned.url)) {
+            console.warn(
+              `[auto-produce] batch gallery hard theme mismatch — drop "${ideationHeadline.slice(0, 48)}"`,
+            );
+          } else {
+            referenceUrl = batchAssigned.url;
+            galleryMatchScore = batchAssigned.score;
+          }
+        }
+        if (!referenceUrl) {
           console.warn(
             `[auto-produce] no gallery match for slot ${gallerySlotKey} "${ideationHeadline.slice(0, 48)}" — fallback pick`,
           );
@@ -1409,17 +1442,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             new Set(missionGalleryExclude.map(normalizeGalleryUrl)),
             galleryMeta,
             missionGalleryExclude,
+            batchMatchInput,
           );
           if (diverseFallback?.url) {
             referenceUrl = diverseFallback.url;
             galleryMatchScore = diverseFallback.score;
           } else {
-          // Use strict mode when caption explicitly names a specific beauty
-          // sub-service (nail, lash, hair) — prevents bestEffort from
-          // accepting a mis-matched service photo at score ≥10.
-          const missionFallbackStrict = captionHasExplicitBeautyService(
+          // Strict captions (nightlife / food / beauty) never use bestEffort ≥10.
+          const missionFallbackStrict = captionRequiresStrictGalleryMatch(
             ideationCaption, ideationHeadline,
-          );
+          ) || captionHasExplicitBeautyService(ideationCaption, ideationHeadline);
           referenceUrl = pickMissionGallery(
             ideationCaption,
             ideationHeadline,
@@ -1914,10 +1946,44 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const mediaFallback = motionProfile.mediaPolicy?.fallback ?? 'brand_solid';
+    // Hard theme veto (DJ caption + food plate, nail + lash, …) — always block production.
+    const lockedGalleryMeta = resolvedReferenceUrl
+      ? (galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
+        ?? Object.entries(galleryMeta).find(
+          ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl!),
+        )?.[1])
+      : undefined;
+    const hardThemeConflict = Boolean(
+      pickedFromBrandGallery
+      && resolvedReferenceUrl
+      && isHardCaptionPhotoConflict(
+        `${ideationCaption} ${ideationHeadline}`,
+        buildGalleryPhotoSearchable(lockedGalleryMeta, resolvedReferenceUrl),
+      ),
+    );
+    if (hardThemeConflict) {
+      console.warn(
+        `[auto-produce] hard caption↔photo theme conflict — skip "${ideationHeadline.slice(0, 40)}"`,
+      );
+      results.push({
+        title: headline,
+        imageUrl: galleryPreviewUrl ?? '',
+        error: `Caption–görsel tema çatışması — "${ideationHeadline.slice(0, 40)}" için uygun galeri fotoğrafı yok`,
+        slotKey,
+      });
+      continue;
+    }
     // Detect cross-service conflict: gallery score went negative due to beauty sub-service
     // conflict penalty (e.g. nail caption + lash photo → -45). This overrides adaptiveScene
     // so the weak-gallery gate triggers AI fallback even for beauty_wellness sector.
-    const captionServiceConflict = typeof galleryMatchScore === 'number' && galleryMatchScore < 0;
+    const captionServiceConflict =
+      (typeof galleryMatchScore === 'number' && galleryMatchScore < 0)
+      || hardThemeConflict;
+    // Fal paints typography on the gallery photo — never ship a weak caption↔photo pair.
+    const falGroundedPipeline = usesFalDesignerTrackEarly && !captionDrivenGenerated;
+    const galleryFloor = falGroundedPipeline
+      ? FAL_GROUNDED_GALLERY_MIN_SCORE
+      : MIN_ACCEPT_SCORE;
     const weakGallery = isWeakGalleryMatch({
       missionProduction: Boolean(missionId),
       galleryMatchScore,
@@ -1926,8 +1992,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       hasReference: Boolean(resolvedReferenceUrl),
       adaptiveScene: aiVisualStandard.adaptiveScene,
       captionServiceConflict,
+      falGroundedPipeline,
     });
-    if (weakGallery && mediaFallback === 'logo_hero' && brandLogoUrl) {
+    if (
+      weakGallery
+      && mediaFallback === 'logo_hero'
+      && brandLogoUrl
+      && !falGroundedPipeline
+    ) {
       referenceUrl = brandLogoUrl;
       resolvedReferenceUrl = brandLogoUrl;
       galleryPreviewUrl = toFeedPreviewUrl(brandLogoUrl) ?? brandLogoUrl;
@@ -1972,7 +2044,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline,
           imageUrl: galleryPreviewUrl ?? '',
-          error: `Zayıf galeri eşleşmesi — marka solid üretimi başarısız (${galleryMatchScore}/${MIN_ACCEPT_SCORE})`,
+          error: `Zayıf galeri eşleşmesi — marka solid üretimi başarısız (${galleryMatchScore}/${galleryFloor})`,
           slotKey,
         });
         continue;
@@ -1983,7 +2055,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       galleryMatchScore = null;
       pickedFromBrandGallery = false;
       console.log(
-        `[auto-produce] weak gallery (${galleryMatchScore}%) → brand solid AI: "${headline.slice(0, 40)}"`,
+        `[auto-produce] weak gallery → brand solid AI: "${headline.slice(0, 40)}"`,
       );
     }
 
@@ -1998,18 +2070,43 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         adaptiveScene: aiVisualStandard.adaptiveScene,
         mediaFallback,
         captionServiceConflict,
+        falGroundedPipeline,
       })
     ) {
       console.warn(
-        `[auto-produce] weak gallery (${galleryMatchScore}%) — skip "${headline.slice(0, 40)}"`,
+        `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — skip "${headline.slice(0, 40)}"`,
       );
       results.push({
         title: headline,
         imageUrl: galleryPreviewUrl ?? '',
-        error: `Galeri–başlık eşleşmesi yetersiz (${galleryMatchScore}/${MIN_ACCEPT_SCORE}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
+        error: `Galeri–caption eşleşmesi yetersiz (${galleryMatchScore}/${galleryFloor}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
         slotKey,
       });
       continue;
+    }
+
+    // Overlay must not fight the Instagram caption (kitchen headline + DJ body).
+    if (
+      usesFalDesignerTrackEarly
+      && caption.trim().length >= 24
+      && hasCaptionHeadlineThemeConflict(caption, headline)
+    ) {
+      const aligned = resolveFalOverlayCopy({
+        headline,
+        cta,
+        caption,
+        channel: kind === 'instagram_reel' || kind === 'instagram_story' || kind === 'instagram_canvas'
+          ? (kind === 'instagram_reel' ? 'reel' : 'story')
+          : 'feed_post',
+        lockIdeationCopy: true,
+      });
+      if (aligned.headline && aligned.headline !== headline) {
+        console.warn(
+          `[auto-produce] caption↔headline theme fix: "${headline.slice(0, 36)}" → "${aligned.headline.slice(0, 36)}"`,
+        );
+        headline = aligned.headline;
+        ideationHeadline = aligned.headline;
+      }
     }
 
     const isStoryIdeaForEnhance = kind === 'instagram_story' || kind === 'instagram_canvas';

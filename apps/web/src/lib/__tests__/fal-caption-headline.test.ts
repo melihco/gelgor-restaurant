@@ -110,6 +110,21 @@ describe('resolveFalDisplayHeadline', () => {
 });
 
 describe('resolveFalOverlayCopy', () => {
+  it('realigns kitchen ideation headline to DJ caption theme', () => {
+    const result = resolveFalOverlayCopy({
+      headline: 'Mutfağımızda Neler',
+      cta: 'Hikayemizi keşfet',
+      caption:
+        'Bu yaz, sıcak geceleri DJ performanslarıyla renklendiriyoruz! 15 Temmuz\'da buluşalım! Hızlıca yerini al!',
+      channel: 'reel',
+      lockIdeationCopy: true,
+    });
+    expect(result.headline.toLowerCase()).not.toMatch(/mutfak/);
+    expect(
+      /dj|gece|performans|temmuz|buluş|yerini/i.test(result.headline),
+    ).toBe(true);
+  });
+
   it('locks ideation headline + English CTA when caption is English', () => {
     const result = resolveFalOverlayCopy({
       headline: 'Meet the Maker',

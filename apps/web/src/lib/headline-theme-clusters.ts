@@ -95,13 +95,59 @@ export const HEADLINE_THEME_CLUSTERS: HeadlineThemeCluster[] = [
     ],
   },
   {
+    id: 'kitchen_food',
+    label: 'Mutfak / yemek',
+    patterns: [
+      /mutfağ/i,
+      /mutfak/i,
+      /\bkitchen\b/i,
+      /\byemek\b/i,
+      /\blezzet\b/i,
+      /gastronomi/i,
+      /\btabak\b/i,
+      /\bmenü\b/i,
+      /\bmenu\b/i,
+      /\bchef\b/i,
+      /\bşef\b/i,
+      /food\s*showcase/i,
+    ],
+  },
+  {
     id: 'spa_wellness',
     label: 'Spa / wellness',
     patterns: [/spa\b/i, /wellness/i, /masaj/i, /bakım\s*paket/i],
   },
 ];
 
+/** Theme families that must not mix on the same post (caption vs overlay headline). */
+const THEME_CONFLICT_GROUPS: ReadonlyArray<ReadonlySet<string>> = [
+  new Set(['dj_nightlife', 'seafood_menu', 'menu_special', 'kitchen_food', 'brunch_weekend']),
+  new Set(['spa_wellness', 'dj_nightlife', 'kitchen_food']),
+];
+
 const DEFAULT_BURN_THRESHOLD = 2;
+
+/**
+ * True when overlay headline and caption pull from opposing theme families
+ * (e.g. kitchen headline + DJ caption). Soft themes like reservation_cta are ignored.
+ */
+export function hasCaptionHeadlineThemeConflict(
+  caption: string,
+  headline: string,
+): boolean {
+  const captionThemes = detectHeadlineThemeClusters(caption);
+  const headlineThemes = detectHeadlineThemeClusters(headline);
+  if (!captionThemes.length || !headlineThemes.length) return false;
+
+  for (const group of THEME_CONFLICT_GROUPS) {
+    const captionHit = captionThemes.find((id) => group.has(id));
+    const headlineHit = headlineThemes.find((id) => group.has(id));
+    if (captionHit && headlineHit && captionHit !== headlineHit) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export function detectHeadlineThemeClusters(text: string): string[] {
   const normalized = text.trim();
