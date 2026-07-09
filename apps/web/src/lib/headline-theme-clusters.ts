@@ -115,7 +115,24 @@ export const HEADLINE_THEME_CLUSTERS: HeadlineThemeCluster[] = [
   {
     id: 'spa_wellness',
     label: 'Spa / wellness',
-    patterns: [/spa\b/i, /wellness/i, /masaj/i, /bakım\s*paket/i],
+    patterns: [
+      /spa\b/i,
+      /wellness/i,
+      /masaj/i,
+      /bakım\s*paket/i,
+      /bakim\s*paket/i,
+      /\bcilt\b/i,
+      /cilt\s*bak[ıi]m/i,
+      /\bskin\s*(care|routine|ritual|treatment)/i,
+      /skincare/i,
+      /iyileştir/i,
+      /iyilestir/i,
+      /ferahlatıcı\s*(cilt|wellness|bakım)/i,
+      /ferahlatici\s*(cilt|wellness|bakim)/i,
+      /hydrat/i,
+      /hydration\s*(ritual|treatment)/i,
+      /self[-\s]?care/i,
+    ],
   },
 ];
 

@@ -264,6 +264,7 @@ def run_mission_planning(
 
     result = crew.kickoff()
     raw_output = str(result)
+    tokens_used = total_tokens_from_crew(crew)
 
     proposals = _parse_proposals(raw_output)
 
@@ -274,8 +275,48 @@ def run_mission_planning(
             "mission_diversity_filtered",
             removed=diversity_report["duplicates_removed"],
             kept=len(proposals) - diversity_report["duplicates_removed"],
+            reasons=diversity_report.get("reasons", [])[:5],
         )
     proposals = diversity_report["filtered_proposals"]
+
+    # One retry when the only proposal was a burned wellness/skin clone.
+    if not proposals and diversity_report["duplicates_removed"] > 0:
+        retry_hint = (
+            "\n\nCRITICAL RETRY: Your previous proposal was REJECTED by the diversity gate "
+            f"({'; '.join(diversity_report.get('reasons', [])[:3]) or 'theme repeat'}). "
+            "Propose a DIFFERENT campaign. For beach_club / hospitality brands: "
+            "sunset dining, communal gathering, live music atmosphere, daybed lifestyle, "
+            "or reservation push — NEVER spa, cilt, skincare, or wellness as the main theme."
+        )
+        retry_task = Task(
+            description=task_description + retry_hint,
+            expected_output=planning_task.expected_output,
+            agent=agent,
+        )
+        retry_crew = Crew(
+            agents=[agent],
+            tasks=[retry_task],
+            process=Process.sequential,
+            verbose=settings.crew_verbose,
+        )
+        retry_result = retry_crew.kickoff()
+        raw_output = f"{raw_output}\n\n--- RETRY ---\n{retry_result}"
+        tokens_used += total_tokens_from_crew(retry_crew)
+        retry_proposals = _parse_proposals(str(retry_result))
+        retry_report = _check_proposal_diversity(retry_proposals, brand)
+        proposals = retry_report["filtered_proposals"]
+        diversity_report = {
+            **diversity_report,
+            "retry_attempted": True,
+            "retry_duplicates_removed": retry_report["duplicates_removed"],
+            "retry_reasons": retry_report.get("reasons", []),
+        }
+        if not proposals:
+            logger.warning(
+                "mission_planning_diversity_retry_empty",
+                business=brand.business_name,
+                reasons=retry_report.get("reasons", [])[:5],
+            )
 
     logger.info(
         "mission_planning_complete",
@@ -289,7 +330,7 @@ def run_mission_planning(
         "status":      "completed",
         "proposals":   proposals,
         "raw_output":  raw_output,
-        "tokens_used": total_tokens_from_crew(crew),
+        "tokens_used": tokens_used,
         "diversity_report": diversity_report,
     }
 
@@ -305,6 +346,18 @@ def _title_jaccard(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb)
 
 
+_WELLNESS_TITLE_RX = re.compile(
+    r"\b(spa|wellness|masaj|cilt|skincare|skin\s*care|iyileştir|iyilestir|"
+    r"ferahlatıcı|ferahlatici|hydrat|self[-\s]?care|bakım\s*paket|bakim\s*paket)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_hospitality_brand(brand: BrandInfo) -> bool:
+    btype = (brand.business_type or "").lower()
+    return any(k in btype for k in ("beach", "hotel", "resort", "bar", "club", "marina"))
+
+
 def _check_proposal_diversity(
     proposals: list[dict],
     brand: BrandInfo,
@@ -315,20 +368,25 @@ def _check_proposal_diversity(
     1. Inter-proposal uniqueness: no two proposals share >50% title words
     2. Trigger signal variety: no two proposals use the same trigger_signal
     3. Anti-repeat vs recent missions: check learning_context for overlap
+    4. Hospitality brands: reject spa/cilt/wellness as the primary campaign theme
+       (runs even when only one proposal is returned)
 
     Returns filtered proposals list + a report dict.
     """
-    if len(proposals) <= 1:
-        return {"filtered_proposals": proposals, "duplicates_removed": 0, "reasons": []}
-
     # Extract recent mission titles from learning_context
     recent_titles: list[str] = []
     lc = brand.learning_context or ""
     for line in lc.split("\n"):
         stripped = line.strip()
         if stripped.startswith("-") or stripped.startswith("•"):
-            recent_titles.append(stripped.lstrip("-•").strip().lower())
+            # Strip status prefixes like "[REJECTED] Title (tür: ...)"
+            cleaned = stripped.lstrip("-•").strip().lower()
+            cleaned = re.sub(r"^\[[^\]]+\]\s*", "", cleaned)
+            cleaned = re.sub(r"\s*\(tür:.*$", "", cleaned)
+            if cleaned:
+                recent_titles.append(cleaned)
 
+    hospitality = _is_hospitality_brand(brand)
     kept: list[dict] = []
     removed_reasons: list[str] = []
     seen_signals: set[str] = set()
@@ -337,6 +395,20 @@ def _check_proposal_diversity(
         title = p.get("title", "").strip()
         signal = p.get("trigger_signal", "").strip().lower()
         title_lower = title.lower()
+        blob = " ".join(
+            [
+                title_lower,
+                str(p.get("objective") or "").lower(),
+                str(p.get("creative_brief") or "").lower(),
+                str(p.get("rationale") or "").lower(),
+            ]
+        )
+
+        if hospitality and _WELLNESS_TITLE_RX.search(blob):
+            removed_reasons.append(
+                f"Hospitality brand blocked wellness/skin campaign: '{title}'"
+            )
+            continue
 
         # Check against already-kept proposals
         too_similar = False
@@ -349,7 +421,7 @@ def _check_proposal_diversity(
         if too_similar:
             continue
 
-        # Check against recent mission titles
+        # Check against recent mission titles (including single-proposal runs)
         for rt in recent_titles:
             if _title_jaccard(title_lower, rt) > 0.45:
                 removed_reasons.append(f"Repeats recent mission: '{title}' ≈ '{rt}'")
@@ -359,7 +431,7 @@ def _check_proposal_diversity(
         if too_similar:
             continue
 
-        # Enforce trigger signal variety
+        # Enforce trigger signal variety across multi-proposal batches
         signal_base = signal.split(".")[0] if "." in signal else signal
         if signal_base in seen_signals and len(kept) >= 1:
             removed_reasons.append(f"Duplicate trigger signal '{signal_base}': '{title}'")

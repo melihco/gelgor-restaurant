@@ -250,6 +250,60 @@ def _proposal_dict_to_mission_create(proposal: dict[str, Any]) -> MissionCreate 
         return None
 
 
+# Theme clusters for mission-title anti-repeat (mirrors apps/web headline-theme-clusters).
+_MISSION_THEME_CLUSTERS: list[tuple[str, list[str]]] = [
+    (
+        "Spa / wellness / cilt",
+        [
+            r"\bspa\b",
+            r"wellness",
+            r"masaj",
+            r"\bcilt\b",
+            r"cilt\s*bak",
+            r"\bskin\b",
+            r"skincare",
+            r"iyileştir",
+            r"iyilestir",
+            r"ferahlatıcı",
+            r"ferahlatici",
+            r"hydrat",
+            r"self[-\s]?care",
+            r"bakım\s*paket",
+            r"bakim\s*paket",
+        ],
+    ),
+    (
+        "DJ / gece hayatı",
+        [r"\bdj\b", r"canlı\s*müzik", r"live\s*music", r"lineup", r"gece\s*parti"],
+    ),
+    (
+        "Gün batımı",
+        [r"gün\s*batım", r"sunset", r"golden\s*hour", r"altın\s*saat"],
+    ),
+]
+
+
+def _detect_mission_theme_labels(title: str) -> list[str]:
+    import re as _re
+
+    text = (title or "").lower()
+    if not text.strip():
+        return []
+    hits: list[str] = []
+    for label, patterns in _MISSION_THEME_CLUSTERS:
+        if any(_re.search(p, text, _re.IGNORECASE) for p in patterns):
+            hits.append(label)
+    return hits
+
+
+def _burned_mission_theme_labels(titles: list[str], *, threshold: int = 1) -> list[str]:
+    counts: dict[str, int] = {}
+    for title in titles:
+        for label in _detect_mission_theme_labels(title):
+            counts[label] = counts.get(label, 0) + 1
+    return [label for label, n in counts.items() if n >= threshold]
+
+
 async def _load_recent_mission_context(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -269,22 +323,44 @@ async def _load_recent_mission_context(
     lines: list[str] = []
     cutoff = datetime.now(_tz.utc) - timedelta(days=lookback_days)
 
-    # Recent missions (all statuses except rejected/cancelled)
+    # Recent missions — include rejected/cancelled so operators rejecting
+    # wellness/skin clones still burn that theme for the next "Yeni Plan".
     r = await db.execute(
         _select(_Mission.title, _Mission.type, _Mission.status, _Mission.trigger_signal)
         .where(
             _Mission.workspace_id == workspace_id,
             _Mission.created_at >= cutoff,
-            _Mission.status.notin_(["rejected", "cancelled"]),
         )
         .order_by(_Mission.created_at.desc())
-        .limit(15)
+        .limit(20)
     )
     missions = r.all()
     if missions:
-        lines.append("### SON ÖNERILEN / ÇALIŞAN MİSYONLAR (BUNLARI TEKRAR ÖNERME):")
+        lines.append("### SON MİSYONLAR — rejected/cancelled DAHİL (BUNLARI TEKRAR ÖNERME):")
         for m in missions:
             lines.append(f"- [{m[2].upper()}] {m[0]} (tür: {m[1]}, sinyal: {m[3] or 'manuel'})")
+        # Theme-cluster burn (cilt/wellness/spa synonyms)
+        burned = _burned_mission_theme_labels([str(m[0] or "") for m in missions])
+        if burned:
+            lines.append(
+                f"### YANMIŞ TEMALAR (bu turda YASAK): {', '.join(burned)}"
+            )
+            btype = ""
+            try:
+                from app.models.brand_context import BrandContext
+                br = await db.execute(
+                    _select(BrandContext.business_type).where(
+                        BrandContext.workspace_id == workspace_id
+                    )
+                )
+                btype = str(br.scalar_one_or_none() or "").lower()
+            except Exception:
+                btype = ""
+            if any(k in btype for k in ("beach", "hotel", "resort", "bar", "club")):
+                lines.append(
+                    "Hospitality kuralı: spa/cilt/wellness ANA kampanya olamaz — "
+                    "sunset, dining, music, daybed, communal gathering, reservation seç."
+                )
         lines.append("")
 
     # Build an explicit "used vs available" checklist for the 9-angle taxonomy

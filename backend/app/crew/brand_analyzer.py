@@ -1535,24 +1535,62 @@ def infer_industry(text: str, fallback: str = "") -> str:
     ]):
         return "local_products_shop"
 
-    # ── 3. Beauty & personal care ─────────────────────────────────────────
+    # ── 3. Hospitality override before beauty ─────────────────────────────
+    # Beach clubs / resorts often mention ancillary "spa" / massage. A single
+    # spa token must NOT flip them to beauty_wellness (drives skincare missions).
+    hospitality_primary = any(w in blob for w in [
+        "beach club", "beach bar", "pool club", "plaj kulüb", "plaj kulub",
+        "beach_club", "resort", "hotel", "otel", "daybed", "cabana",
+        "sunset bar", "open-air restaurant", "open air restaurant",
+    ])
+    hospitality_loose = sum(1 for w in [
+        "beach", "plaj", "havuz", "pool", "dj", "sunset", "daybed",
+        "cabana", "aegean", "mykonos", "bodrum", "marina",
+    ] if w in blob)
+
+    # ── 4. Beauty & personal care ─────────────────────────────────────────
     # Covers nail salon, spa, hair salon, barber, aesthetics.
     # Runs BEFORE restaurant check (beauty sites also mention "fiyat", "menü").
-    beauty_signals = [
+    # Ancillary spa words alone are weak when hospitality signals dominate.
+    beauty_core = [
         "tırnak", "tirnak", "nail", "manikür", "manikyur", "manicure",
         "pedikür", "pedikyur", "pedicure", "kalıcı oje", "kali oje",
         "nail art", "nail studio", "nail salon", "tırnak bakım", "tırnak tasarım",
-        "protez tırnak", "jel tırnak", "spa", "güzellik salonu", "guzellik salonu",
+        "protez tırnak", "jel tırnak", "güzellik salonu", "guzellik salonu",
         "güzellik merkezi", "estetik salon", "hair salon", "kuaför", "kuafor",
         "berber", "epilasyon", "lazer epilasyon", "cilt bakım", "cilt bakimi",
-        "massage", "masaj", "beauty salon", "beauty center", "aesthetics", "estetisyen",
+        "beauty salon", "beauty center", "aesthetics", "estetisyen",
         "microblading", "lash", "ipek kirpik", "kaş tasarım", "kas tasarim",
         "dermatoloji", "dermatolojik bakım",
     ]
-    if sum(1 for w in beauty_signals if w in blob) >= 1:
+    beauty_ancillary = ["spa", "massage", "masaj", "wellness"]
+    beauty_core_hits = sum(1 for w in beauty_core if w in blob)
+    beauty_ancillary_hits = sum(1 for w in beauty_ancillary if w in blob)
+    # Core beauty signals win — unless hospitality is clearly primary and the
+    # only "beauty" hit is soft skincare language (common on resort amenity pages).
+    soft_skin_only = (
+        beauty_core_hits >= 1
+        and all(
+            w not in blob
+            for w in (
+                "tırnak", "tirnak", "nail", "manikür", "manikyur", "manicure",
+                "pedikür", "kuaför", "kuafor", "berber", "epilasyon",
+                "güzellik salonu", "guzellik salonu", "estetik salon",
+                "hair salon", "microblading",
+            )
+        )
+        and any(w in blob for w in ("cilt bakım", "cilt bakimi", "dermatoloji"))
+    )
+    if beauty_core_hits >= 1 and not (
+        (hospitality_primary or hospitality_loose >= 2) and soft_skin_only
+    ):
+        return "beauty_wellness"
+    if beauty_ancillary_hits >= 1 and not hospitality_primary and hospitality_loose < 2:
+        return "beauty_wellness"
+    if beauty_ancillary_hits >= 2 and beauty_core_hits == 0 and hospitality_loose == 0:
         return "beauty_wellness"
 
-    # ── 4. Fashion & clothing ─────────────────────────────────────────────
+    # ── 5. Fashion & clothing ─────────────────────────────────────────────
     # Boutique, fashion store, clothing brand — before generic fallback.
     fashion_signals = [
         "fashion", "moda", "giyim", "kıyafet", "kiyafet", "koleksiyon",
@@ -1574,7 +1612,7 @@ def infer_industry(text: str, fallback: str = "") -> str:
     ]):
         return "fashion_retail"
 
-    # ── 5. Bakery / patisserie ────────────────────────────────────────────
+    # ── 6. Bakery / patisserie ────────────────────────────────────────────
     bakery_signals = [
         "pastane", "fırın", "firin", "ekmek", "börek", "borek",
         "patisserie", "pâtisserie", "bakery", "cake shop", "pasta dükkan",
@@ -1592,7 +1630,7 @@ def infer_industry(text: str, fallback: str = "") -> str:
         # Both coffee and bakery signals → treat as café_bakery
         return "cafe_bakery"
 
-    # ── 6. Jewelry ────────────────────────────────────────────────────────
+    # ── 7. Jewelry ────────────────────────────────────────────────────────
     jewelry_signals = [
         "mücevher", "mucevher", "jewelry", "jewellery", "kuyumcu",
         "pırlanta", "pirlanta", "altın takı", "altin taki", "gümüş takı",
@@ -1602,7 +1640,7 @@ def infer_industry(text: str, fallback: str = "") -> str:
     if any(w in blob for w in jewelry_signals):
         return "jewelry_accessories"
 
-    # ── 7. Fitness / gym ──────────────────────────────────────────────────
+    # ── 8. Fitness / gym ──────────────────────────────────────────────────
     fitness_signals = [
         "gym", "spor salonu", "fitness center", "personal training",
         "crossfit", "pilates studio", "yoga stüdyo", "yoga studio",
@@ -1611,13 +1649,13 @@ def infer_industry(text: str, fallback: str = "") -> str:
     if any(w in blob for w in fitness_signals):
         return "fitness"
 
-    # ── 8. Respect stale fallback for all remaining ambiguous signals ─────
+    # ── 9. Respect stale fallback for all remaining ambiguous signals ─────
     # Strong sector-specific keywords above can now override a stale value.
     # Everything below this point is lower-confidence pattern matching.
     if fallback:
         return fallback
 
-    # ── 9. Standard patterns ──────────────────────────────────────────────
+    # ── 10. Standard patterns ─────────────────────────────────────────────
     if any(w in blob for w in ["coffee", "kahve", "latte", "espresso", "cafe", "kafe", "roastery"]):
         return "coffee_shop"
 
