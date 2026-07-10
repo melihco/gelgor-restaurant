@@ -9,6 +9,7 @@ import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import {
   computeBrandReadiness,
+  computeProductionProfileReadiness,
   parseStringOrArray,
   filterUsablePhotos,
   type BrandReadinessInputs,
@@ -30,6 +31,8 @@ interface BrandContextRaw {
   brand_dna?: unknown;
   brand_theme?: unknown;
   visual_dna?: unknown;
+  business_type?: string | null;
+  brand_service_profile?: unknown;
 }
 
 function isNonEmptyObject(v: unknown): boolean {
@@ -187,9 +190,24 @@ export async function GET(
 
   const result = computeBrandReadiness(inputs);
 
+  const serviceProfile = parseJsonField(ctx.brand_service_profile);
+  const productionProfile = computeProductionProfileReadiness({
+    serviceProfile: serviceProfile && typeof serviceProfile === 'object' && !Array.isArray(serviceProfile)
+      ? (serviceProfile as Record<string, unknown>)
+      : null,
+    businessType: ctx.business_type ?? null,
+    visualDna: typeof briefsData?.visual_dna === 'string'
+      ? briefsData.visual_dna
+      : typeof ctx.visual_dna === 'string'
+        ? ctx.visual_dna
+        : null,
+    brandTheme: themeObj,
+  });
+
   const payload = {
     tenantId,
     ...result,
+    productionProfile,
     inputs,
     sources: {
       brandContext: ctxRes.ok || fromDatabase,

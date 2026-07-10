@@ -275,6 +275,47 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_MERGE_LIST_FIELDS = ("signature_offerings", "value_props", "content_guardrails", "primary_ctas")
+
+
+def merge_service_profile(
+    existing: dict[str, Any] | None,
+    incoming: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Merge a freshly derived profile onto an existing persisted profile.
+
+    Re-derives must not wipe manually enriched offerings, value props, or
+    guardrails when the LLM/heuristic returns empty lists (common after SP
+    category repair or low-signal discovery).
+    """
+    if not existing or not isinstance(existing, dict):
+        return reconcile_cta_with_category(_normalize_profile(incoming))
+
+    merged = dict(incoming)
+    preserved_lists = False
+    for key in _MERGE_LIST_FIELDS:
+        existing_items = existing.get(key)
+        incoming_items = merged.get(key)
+        if isinstance(existing_items, list) and len(existing_items) > 0:
+            if not isinstance(incoming_items, list) or len(incoming_items) == 0:
+                merged[key] = list(existing_items)
+                preserved_lists = True
+
+    existing_category = str(existing.get("category") or "").strip().lower()
+    incoming_category = str(merged.get("category") or "").strip().lower()
+    if preserved_lists and existing_category and existing_category == incoming_category:
+        try:
+            existing_conf = float(existing.get("category_confidence") or 0)
+            incoming_conf = float(merged.get("category_confidence") or 0)
+            if existing_conf > incoming_conf:
+                merged["category_confidence"] = existing_conf
+        except (TypeError, ValueError):
+            pass
+
+    return reconcile_cta_with_category(_normalize_profile(merged))
+
+
 def _llm_service_profile(brand_ctx: dict[str, Any]) -> dict[str, Any] | None:
     """Ask the configured LLM to produce a structured positioning profile."""
     try:

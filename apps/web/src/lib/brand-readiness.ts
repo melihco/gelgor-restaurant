@@ -5,17 +5,24 @@
  * A tenant cannot run autonomous production until BAS === 100; missions can only be
  * proposed once BRS >= 80 (and later GIS >= 70).
  *
+ * Production Profile Readiness (PPR) is a separate 100-point gate for onboarding-grade
+ * Fal/visual theming (service profile, production visual_dna, theme layers, sector sync).
+ *
  * This module is the single source of truth for the 100-point checklist. It is pure
  * (no I/O) so it can run server-side in the BFF route and be unit-tested with fixtures.
  *
  * See docs/foundation-sprint-program.md § "BRS 100 puan checklist".
  */
 
+import { canonicalSectorFromCategory } from '@/lib/canonical-sector';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
+
 // Lowered from 80 → 70: allows proposals when core quality data is present
 // (gallery, theme, pillars, CTAs) even without formal constitution confirmation.
 // The GIS gate (≥70) provides independent quality assurance on the gallery side.
 // Constitution approval still earns +20 pts toward full autonomy.
 export const BRS_PROPOSE_THRESHOLD = 70;
+export const PRODUCTION_PROFILE_THRESHOLD = 70;
 export const BRS_MIN_USABLE_PHOTOS = 8;
 export const BRS_MIN_DISCOVERY_CONFIDENCE = 70;
 export const BRS_MIN_COVERAGE_RATIO = 0.9;
@@ -45,6 +52,37 @@ export interface BrandReadinessCheck {
   action: string;
   /** Deep-link hint the UI can route to (screen id or anchor). */
   fix?: string;
+}
+
+export type ProductionProfileCheckId =
+  | 'service_profile'
+  | 'production_visual_dna'
+  | 'production_theme_layers'
+  | 'sector_consistency';
+
+export interface ProductionProfileCheck {
+  id: ProductionProfileCheckId;
+  label: string;
+  earned: number;
+  weight: number;
+  passed: boolean;
+  detail: string;
+  action: string;
+  fix?: string;
+}
+
+export interface ProductionProfileReadinessInputs {
+  serviceProfile: Record<string, unknown> | null | undefined;
+  businessType: string | null | undefined;
+  visualDna: string | null | undefined;
+  brandTheme: Record<string, unknown> | null | undefined;
+}
+
+export interface ProductionProfileReadinessResult {
+  score: number;
+  checks: ProductionProfileCheck[];
+  isProductionReady: boolean;
+  missing: ProductionProfileCheck[];
 }
 
 export interface BrandReadinessResult {
@@ -274,6 +312,122 @@ export function computeBrandReadiness(input: BrandReadinessInputs): BrandReadine
       .every((check) => check.passed);
 
   return { score, checks, canProposeMissions, canAutoProduce, missing };
+}
+
+/** Production visual_dna uses Fal soul sections, not legacy markdown DNA blocks. */
+export function isProductionFormatVisualDna(dna: string | null | undefined): boolean {
+  if (!dna || dna.length < 80) return false;
+  if (/\*\*Brand\*\*:/i.test(dna)) return false;
+  return /Mood:/i.test(dna) && (/Palette words:/i.test(dna) || /Aesthetic:/i.test(dna));
+}
+
+function hasProductionThemeLayers(theme: Record<string, unknown> | null | undefined): boolean {
+  if (!theme) return false;
+  const typography = theme.typography_design;
+  const intensity = theme.fal_design_intensity;
+  const antiPatterns = theme.anti_patterns;
+  return (
+    Boolean(typography && typeof typography === 'object')
+    && Boolean(intensity && typeof intensity === 'object')
+    && Array.isArray(antiPatterns)
+    && antiPatterns.length >= 3
+  );
+}
+
+export function isSectorConsistentWithServiceProfile(
+  businessType: string | null | undefined,
+  serviceProfile: Record<string, unknown> | null | undefined,
+): boolean {
+  const category = typeof serviceProfile?.category === 'string' ? serviceProfile.category.trim() : '';
+  if (!category) return false;
+  const authoritative = normalizeSectorId(canonicalSectorFromCategory(category));
+  const stored = normalizeSectorId(String(businessType ?? ''));
+  if (!authoritative || !stored) return false;
+  return authoritative === stored;
+}
+
+export function computeProductionProfileReadiness(
+  input: ProductionProfileReadinessInputs,
+): ProductionProfileReadinessResult {
+  const checks: ProductionProfileCheck[] = [];
+  const sp = input.serviceProfile ?? null;
+  const category = typeof sp?.category === 'string' ? sp.category.trim() : '';
+
+  {
+    const passed = Boolean(category);
+    checks.push({
+      id: 'service_profile',
+      label: 'Validated service profile',
+      weight: 25,
+      earned: passed ? 25 : 0,
+      passed,
+      detail: passed ? category : 'Missing',
+      action: 'Run service profile derive after brand discovery.',
+      fix: 'brand-analysis',
+    });
+  }
+
+  {
+    const passed = isProductionFormatVisualDna(input.visualDna);
+    const preview = (input.visualDna ?? '').slice(0, 48);
+    checks.push({
+      id: 'production_visual_dna',
+      label: 'Production visual DNA',
+      weight: 25,
+      earned: passed ? 25 : 0,
+      passed,
+      detail: passed ? 'Fal soul format' : preview ? `${preview}…` : 'Missing',
+      action: 'Run production design profile derive (onboarding pipeline).',
+      fix: 'brand-dna',
+    });
+  }
+
+  {
+    const passed = hasProductionThemeLayers(input.brandTheme ?? undefined);
+    const antiCount = Array.isArray(input.brandTheme?.anti_patterns)
+      ? input.brandTheme!.anti_patterns!.length
+      : 0;
+    checks.push({
+      id: 'production_theme_layers',
+      label: 'Theme production layers',
+      weight: 25,
+      earned: passed ? 25 : 0,
+      passed,
+      detail: passed
+        ? 'Typography + Fal intensity + anti-patterns'
+        : `Layers incomplete (${antiCount} anti-patterns)`,
+      action: 'Re-derive brand theme after production design profile.',
+      fix: 'brand-theme',
+    });
+  }
+
+  {
+    const passed = isSectorConsistentWithServiceProfile(input.businessType, sp);
+    checks.push({
+      id: 'sector_consistency',
+      label: 'Sector / SP alignment',
+      weight: 25,
+      earned: passed ? 25 : 0,
+      passed,
+      detail: passed
+        ? `${normalizeSectorId(String(input.businessType ?? ''))} ↔ ${category}`
+        : `${input.businessType ?? '—'} vs ${category || '—'}`,
+      action: 'Reconcile business_type with validated service profile category.',
+      fix: 'brand-analysis',
+    });
+  }
+
+  const score = clampPoints(
+    checks.reduce((sum, c) => sum + c.earned, 0),
+    100,
+  );
+  const missing = checks.filter((c) => !c.passed);
+  return {
+    score,
+    checks,
+    isProductionReady: score >= PRODUCTION_PROFILE_THRESHOLD,
+    missing,
+  };
 }
 
 /** Tolerant parse for fields that Python returns as JSON strings OR arrays. */

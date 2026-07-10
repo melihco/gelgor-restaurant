@@ -10,6 +10,7 @@ from app.services.brand_service_profile_service import (
     canonical_sector_from_category,
     context_updates_from_service_profile,
     heuristic_service_profile,
+    merge_service_profile,
     reconcile_cta_with_category,
     _normalize_profile,
 )
@@ -128,6 +129,36 @@ def test_reconcile_leaves_consistent_and_unknown_categories_untouched():
 
     unknown = reconcile_cta_with_category({"category": "general_business", "cta_style": "contact"})
     assert unknown["cta_style"] == "contact"
+
+
+def test_merge_preserves_guardrails_and_offerings_when_incoming_lists_empty():
+    existing = {
+        "category": "beach_club_bar",
+        "category_confidence": 0.85,
+        "signature_offerings": ["imza kokteyller", "rosé şarap", "gün batımı DJ setleri"],
+        "cta_style": "reservation",
+        "primary_ctas": ["Rezervasyon Yap", "Masanı Ayır"],
+        "seasonality": "summer",
+        "value_props": ["deniz kenarı atmosfer"],
+        "content_guardrails": ["çocuk içeriği üretme", "e-ticaret CTA kullanma"],
+        "source": "onboarding_llm",
+        "version": PROFILE_VERSION,
+    }
+    incoming = heuristic_service_profile({
+        "business_name": "Yula Bodrum",
+        "business_type": "beach_club",
+        "description": "Drink & Chill beach club kokteyl",
+        "website_summary": "Beach club sahilde kokteyl ve şarap.",
+    })
+    assert incoming["signature_offerings"] == []
+    assert incoming["content_guardrails"] == []
+
+    merged = merge_service_profile(existing, incoming)
+    assert merged["category"] == "beach_club_bar"
+    assert merged["signature_offerings"] == existing["signature_offerings"]
+    assert merged["content_guardrails"] == existing["content_guardrails"]
+    assert merged["value_props"] == existing["value_props"]
+    assert merged["category_confidence"] == 0.85
 
 
 def test_context_updates_sync_business_type_and_turkish_ctas():

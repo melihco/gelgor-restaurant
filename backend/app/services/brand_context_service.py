@@ -737,10 +737,13 @@ async def persist_brand_service_profile(
 
     Authoritative positioning (category, signature offerings, CTA style,
     seasonality, guardrails) that the mission engine reads over the brittle
-    `business_type` string. Safe to call repeatedly (idempotent overwrite).
+    `business_type` string. Safe to call repeatedly (idempotent merge).
     """
     from datetime import datetime as _dt, timezone as _tz
-    from app.services.brand_service_profile_service import derive_brand_service_profile
+    from app.services.brand_service_profile_service import (
+        derive_brand_service_profile,
+        merge_service_profile,
+    )
 
     ctx = await get_brand_context(db, workspace_id)
     if ctx is None:
@@ -756,7 +759,9 @@ async def persist_brand_service_profile(
         "location": ctx.location,
         "gallery_analysis": ctx.gallery_analysis,
     }
-    profile = derive_brand_service_profile(brand_ctx_dict)
+    existing_profile = ctx.brand_service_profile if isinstance(ctx.brand_service_profile, dict) else None
+    derived = derive_brand_service_profile(brand_ctx_dict)
+    profile = merge_service_profile(existing_profile, derived)
     ctx.brand_service_profile = profile
     ctx.brand_service_profile_updated_at = _dt.now(_tz.utc)
 
