@@ -57,6 +57,11 @@ import {
 } from '@/tailadmin/components/application/PageElements';
 import { TenantOperatingCapabilitiesEditor } from '@/components/brand/TenantOperatingCapabilitiesEditor';
 import {
+  afterPillarsMirroredToPython,
+  mirrorPillarsToPythonBrandContext,
+  parseContentIntentSlugs,
+} from '@/lib/content-pillars-sync';
+import {
   evaluateGalleryAssetPolicy,
   resolveTenantOperatingProfile,
 } from '@/lib/tenant-operating-policy';
@@ -653,7 +658,18 @@ export default function BrandHubPage() {
         contentNeeds: payload.contentNeeds,
       } as SaveCompanyProfileRequest);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['company-profile'] }),
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['company-profile'] });
+      if (tenantId && variables.contentNeeds !== undefined) {
+        const pillars = parseContentIntentSlugs(variables.contentNeeds);
+        try {
+          await mirrorPillarsToPythonBrandContext(tenantId, pillars);
+          await afterPillarsMirroredToPython(queryClient, tenantId);
+        } catch {
+          /* Nexus saved; Python mirror is best-effort */
+        }
+      }
+    },
   });
   const officeProfileMutation = useMutation({
     mutationFn: (payload: UpsertOfficeBrandProfileRequest) => apiClient.upsertOfficeBrandProfile(payload),

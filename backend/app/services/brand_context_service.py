@@ -1020,10 +1020,11 @@ def merge_dotnet_brand_with_python_db(
         base.competitor_brief = py_brand.competitor_brief
     if py_brand.trend_brief:
         base.trend_brief = py_brand.trend_brief
-    if dotnet_content_pillars:
+    py_pillars = list(py_brand.content_pillars or [])
+    if py_pillars:
+        base.content_pillars = py_pillars
+    elif dotnet_content_pillars:
         base.content_pillars = list(dotnet_content_pillars)
-    elif py_brand.content_pillars:
-        base.content_pillars = py_brand.content_pillars
     if py_brand.default_ctas:
         base.default_ctas = py_brand.default_ctas
     if py_brand.risk_rules:

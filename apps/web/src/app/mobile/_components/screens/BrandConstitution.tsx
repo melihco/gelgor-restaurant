@@ -67,6 +67,11 @@ import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galle
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import type { VisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import { invalidateBrandContextWriteQueries } from '@/lib/query-client-bridge';
+import {
+  afterPillarsMirroredToPython,
+  mirrorPillarsToPythonBrandContext,
+  parseContentIntentSlugs,
+} from '@/lib/content-pillars-sync';
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { BrandSectionIntro } from '../BrandSectionIntro';
@@ -3040,7 +3045,7 @@ export function BrandConstitution() {
   const saveMutation = useMutation({
     mutationFn: (data: Partial<SaveCompanyProfileRequest>) =>
       apiClient.saveCompanyProfile({ ...(profile as any), ...data } as SaveCompanyProfileRequest),
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
       const name = String(variables.brandName || '').trim();
       if (name && tenantId) {
@@ -3051,6 +3056,15 @@ export function BrandConstitution() {
         }).then(() => {
           void invalidateBrandContextWriteQueries(queryClient, tenantId);
         }).catch(() => {/* non-fatal */});
+      }
+      if (tenantId && variables.contentNeeds !== undefined) {
+        const pillars = parseContentIntentSlugs(variables.contentNeeds);
+        try {
+          await mirrorPillarsToPythonBrandContext(tenantId, pillars);
+          await afterPillarsMirroredToPython(queryClient, tenantId);
+        } catch {
+          /* Nexus saved; Python mirror is best-effort */
+        }
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

@@ -5,6 +5,11 @@ import type { T } from '@/app/mobile/_components/theme-context';
 import { fetchTenantBff } from '@/lib/bff-fetch';
 import { parseStringOrArray, BRS_MIN_CONTENT_PILLARS } from '@/lib/brand-readiness';
 import {
+  mirrorPillarsToCompanyProfile,
+  afterPillarsMirroredToNexus,
+} from '@/lib/content-pillars-sync';
+import { useQueryClient } from '@tanstack/react-query';
+import {
   CREATIVE_CONTENT_NEEDS,
   STARTER_INDUSTRY_PLAYBOOKS,
   type CreativeIntent,
@@ -190,6 +195,7 @@ export function BrandContentStrategyPanel({
   sector: string;
   onSaved?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const initialPillars = useMemo(
     () => parseStringOrArray(pyCtx?.content_pillars),
     [pyCtx?.content_pillars],
@@ -232,6 +238,14 @@ export function BrandContentStrategyPanel({
         }),
       });
       if (res.ok) {
+        try {
+          await mirrorPillarsToCompanyProfile(nextPillars);
+          if (tenantId) {
+            await afterPillarsMirroredToNexus(queryClient, tenantId);
+          }
+        } catch {
+          /* Python SSOT saved; Nexus mirror is best-effort */
+        }
         setStatus('İçerik stratejisi kaydedildi');
         onSaved?.();
       } else {
@@ -243,7 +257,7 @@ export function BrandContentStrategyPanel({
       setSaving(false);
       setTimeout(() => setStatus(''), 2500);
     }
-  }, [tenantId, onSaved]);
+  }, [tenantId, onSaved, queryClient]);
 
   const scheduleSave = useCallback((nextPillars: string[], nextCtas: string[]) => {
     void persist(nextPillars, nextCtas);
