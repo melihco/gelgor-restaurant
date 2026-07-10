@@ -67,16 +67,13 @@ export function mergeBrandProfileSnapshot(input: {
   const themeAi = (intelligence.brand_theme ?? {}) as Record<string, unknown>;
   const fromBrandContext = parseReferenceImageUrlList(input.brandContext?.reference_image_urls);
   const fromIntelligence = parseReferenceImageUrlList(intelligence.reference_image_urls);
-  const fromCore = parseReferenceImageUrlList(core.brandImageUrls);
   const galleryUrls = fromBrandContext.length >= 3
     ? fromBrandContext
     : fromIntelligence.length >= 3
       ? fromIntelligence
       : fromBrandContext.length
         ? fromBrandContext
-        : fromIntelligence.length
-          ? fromIntelligence
-          : fromCore;
+        : fromIntelligence;
   const logoUrl = String(core.logoUrl || intelligence.logo_url || '').trim();
 
   const gallery = galleryUrls.map((url, index) => ({

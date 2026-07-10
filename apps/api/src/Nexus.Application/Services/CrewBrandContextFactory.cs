@@ -41,13 +41,6 @@ public static class CrewBrandContextFactory
         if (!string.IsNullOrWhiteSpace(profile?.GoogleBusinessUrl))
             assetDescriptions.Insert(0, $"Google Business: {profile.GoogleBusinessUrl}");
 
-        if (!string.IsNullOrWhiteSpace(profile?.BrandImageUrls))
-        {
-            var urls = profile.BrandImageUrls.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            foreach (var url in urls.Take(5))
-                assetDescriptions.Add($"Marka görseli: {url}");
-        }
-
         // Brand analysis from automatic account scan — inject as high-priority context
         if (!string.IsNullOrWhiteSpace(profile?.BrandAnalysis))
         {

@@ -289,6 +289,7 @@ function assignmentRequestFromTemplate(
 import type { GalleryPhotoAnalysis } from '@/app/api/analyze-gallery/route';
 import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
 import { normalizeSectorId } from '@/lib/announcement-template-library';
+import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
 
 function GalleryAnalysisPanel({
   urls,
@@ -542,6 +543,19 @@ export default function BrandHubPage() {
     queryFn: () => apiClient.getTenantMediaAssets({ officeId }),
     staleTime: 30_000,
   });
+  const { data: brandContextRow } = useQuery<Record<string, unknown> | null>({
+    queryKey: ['brand-context-data', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const res = await fetch(`/api/brand-context-data/${tenantId}`, {
+        headers: { 'X-Tenant-Id': tenantId },
+        cache: 'no-store',
+      });
+      return res.ok ? ((await res.json()) as Record<string, unknown>) : null;
+    },
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
   const { data: officeProfiles = [] } = useQuery<OfficeBrandProfile[]>({
     queryKey: ['brand-context-office-profiles', tenantId],
     queryFn: () => apiClient.getOfficeBrandProfiles(),
@@ -569,8 +583,9 @@ export default function BrandHubPage() {
   const healthSummary = summarizeTemplateHealth(templates);
   const currentOfficeProfile = officeProfiles.find((profile) => profile.officeId === officeId);
 
-  /** URLs from discovery sync (venue_reference) plus any comma-separated BrandImageUrls on the profile. */
+  /** Python gallery (AI-analyzed) plus discovery-synced media assets. */
   const discoveryImageUrls = useMemo(() => {
+    const fromGallery = parseBrandReferenceUrls(brandContextRow?.reference_image_urls);
     const fromAssets = mediaAssets
       .filter((a) => {
         const u = (a.url || '').trim();
@@ -588,12 +603,8 @@ export default function BrandHubPage() {
       })
       .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
       .map((a) => a.url.trim());
-    const fromProfile = (companyProfile?.brandImageUrls || '')
-      .split(/[,\n]/)
-      .map((s) => s.trim())
-      .filter((u) => u.startsWith('http'));
-    return [...new Set([...fromAssets, ...fromProfile])];
-  }, [mediaAssets, companyProfile?.brandImageUrls]);
+    return [...new Set([...fromGallery, ...fromAssets])];
+  }, [mediaAssets, brandContextRow]);
 
   useEffect(() => {
     if (contentTypeFilter !== 'all' && !contentTypeTabs.some((option) => option.id === contentTypeFilter)) {

@@ -57,6 +57,7 @@ import {
   resolveAnnouncementBrandKit,
 } from '@/lib/announcement-brand-kit';
 import { isUsableGalleryPhotoUrl, resolveBrowserImageSrc } from '@/lib/media-url';
+import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   NON_VENUE_SECTORS,
@@ -3967,22 +3968,11 @@ export function MissionContentFactory() {
   const mainBrandCtx = productionSnapshotToLegacyBrandContext(mainProductionSnapshot);
   const mainGallery = mainProductionSnapshot?.galleryAnalysis ?? {};
 
-  // Build full reference image pool for AutoProductionFeed.
-  // Python BrandContext is the authoritative source (gallery deletions update it).
-  // Fall back to .NET brandImageUrls only when Python has no images.
+  // Build full reference image pool for AutoProductionFeed (Python gallery — AI-analyzed).
   const allBrandImages = (() => {
-    const ctxRaw = mainBrandCtx?.reference_image_urls ?? [];
-    let ctxUrls: string[] = [];
-    if (Array.isArray(ctxRaw)) ctxUrls = ctxRaw as string[];
-    else if (typeof ctxRaw === 'string') { try { ctxUrls = JSON.parse(ctxRaw); } catch {} }
-
-    const profileRaw = ctxUrls.length === 0 ? (profile as any)?.brandImageUrls : null;
-    let profileUrls: string[] = [];
-    if (profileRaw) { try { profileUrls = JSON.parse(profileRaw); } catch {} }
-
+    const ctxUrls = parseBrandReferenceUrls(mainBrandCtx?.reference_image_urls);
     const seen = new Set<string>();
-    return [...ctxUrls, ...profileUrls].filter((u): u is string => {
-      if (typeof u !== 'string' || !isUsableGalleryPhotoUrl(u)) return false;
+    return ctxUrls.filter((u) => {
       const base = u.split('?')[0] as string;
       if (seen.has(base)) return false;
       seen.add(base);
@@ -3990,16 +3980,9 @@ export function MissionContentFactory() {
     }).map(upscaleCdnUrl).slice(0, 80);
   })();
 
-  const referenceImageUrls = (() => {
-    const ctxRaw = mainBrandCtx?.reference_image_urls ?? [];
-    let ctxUrls: string[] = [];
-    if (Array.isArray(ctxRaw)) ctxUrls = ctxRaw as string[];
-    else if (typeof ctxRaw === 'string') { try { ctxUrls = JSON.parse(ctxRaw); } catch {} }
-    if (ctxUrls.length > 0) return ctxUrls.map(upscaleCdnUrl).slice(0, 3);
-    const profileRaw = (profile as any)?.brandImageUrls;
-    if (!profileRaw) return [];
-    try { return (JSON.parse(profileRaw) as string[]).map(upscaleCdnUrl).slice(0, 3); } catch { return []; }
-  })();
+  const referenceImageUrls = parseBrandReferenceUrls(mainBrandCtx?.reference_image_urls)
+    .map(upscaleCdnUrl)
+    .slice(0, 3);
 
   const canAutoProduce = ideas.length > 0 && (
     allBrandImages.length > 0

@@ -31,6 +31,7 @@ import {
 } from '@/components/artifacts/artifact-preview';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { CanvaTemplateDecisionInput } from '@/lib/canva-template-selection';
+import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
 
 const CONTENT_FILTER_SELECT_CLASS =
   'h-10 w-full min-w-0 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-2 focus:ring-brand-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90';
@@ -1013,6 +1014,20 @@ export default function ContentPage() {
     staleTime: 5 * 60_000,
   });
 
+  const { data: brandContextRow } = useQuery<Record<string, unknown> | null>({
+    queryKey: ['brand-context-data', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const res = await fetch(`/api/brand-context-data/${tenantId}`, {
+        headers: { 'X-Tenant-Id': tenantId },
+        cache: 'no-store',
+      });
+      return res.ok ? ((await res.json()) as Record<string, unknown>) : null;
+    },
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
+
   // Persist generated images to localStorage so they survive navigation/reload
   const [generatedImages, setGeneratedImagesState] = useState<Record<string, string>>(() => {
     try {
@@ -1125,10 +1140,12 @@ export default function ContentPage() {
 
   const referenceImageUrlsForGeneration = useMemo(() => {
     const galleryTypes = BRAND_HUB_GALLERY_ASSET_TYPES;
-    // Ephemeral CDN patterns — these URLs expire and should never be used
     const EPHEMERAL_CDN = /scontent-|cdninstagram\.com|fbcdn\.net|instagram\.fcdn/i;
 
-    // Priority 1: approved tenant media assets (Brand Hub)
+    // Priority 1: Python gallery (AI-analyzed reference_image_urls)
+    const fromGallery = parseBrandReferenceUrls(brandContextRow?.reference_image_urls);
+
+    // Priority 2: approved tenant media assets (Brand Hub)
     const fromAssets = tenantMediaAssets
       .filter(
         (a) =>
@@ -1140,37 +1157,17 @@ export default function ContentPage() {
       .map((a) => a.url.trim())
       .filter((u) => u.startsWith('http') && !EPHEMERAL_CDN.test(u));
 
-    // Priority 2: images from brand profile URL field
-    const fromProfile = (companyProfile?.brandImageUrls ?? '')
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter((u) => u.startsWith('http'));
-
-    // Priority 3: discovery reference images from Python brand analysis
-    // Stored in companyProfile.systemIntelligence as JSON array or newline-separated URLs
-    const fromDiscovery: string[] = [];
-    const sysIntel = companyProfile?.systemIntelligence ?? '';
-    if (sysIntel) {
-      try {
-        const parsed = JSON.parse(sysIntel);
-        if (Array.isArray(parsed)) fromDiscovery.push(...parsed.filter((u: unknown) => typeof u === 'string' && u.startsWith('http') && !EPHEMERAL_CDN.test(u)));
-      } catch {
-        fromDiscovery.push(...sysIntel.split(/[\n,]/).map((s) => s.trim()).filter((u) => u.startsWith('http') && !EPHEMERAL_CDN.test(u)));
-      }
-    }
-
     const merged: string[] = [];
     const seen = new Set<string>();
-    for (const u of [...fromAssets, ...fromProfile, ...fromDiscovery]) {
+    for (const u of [...fromGallery, ...fromAssets]) {
       const k = normalizeUrlKey(u);
       if (!k || seen.has(k)) continue;
       seen.add(k);
-      // Skip logos in the gallery list
       if (/logo/i.test(u.split('/').pop() ?? '')) continue;
       merged.push(u);
     }
     return merged.slice(0, 24);
-  }, [tenantMediaAssets, companyProfile?.brandImageUrls, companyProfile?.systemIntelligence]);
+  }, [brandContextRow, tenantMediaAssets]);
   const latestStrategyAction = useMemo(() => latestWeeklyStrategy(actions), [actions]);
   const weeklyStrategy = useMemo(() => parseWeeklyStrategy(latestStrategyAction), [latestStrategyAction]);
 
@@ -1708,7 +1705,6 @@ export default function ContentPage() {
           customRules: companyProfile?.customRules,
           websiteUrl: companyProfile?.websiteUrl,
           instagramHandle: companyProfile?.instagramHandle,
-          brandImageUrls: companyProfile?.brandImageUrls,
           logoUrl: brandLogoUrl ?? undefined,
           visualStyle: [
             companyProfile?.visualStyle,
@@ -1978,7 +1974,6 @@ export default function ContentPage() {
             campaignGoals: companyProfile?.campaignGoals,
             customRules: companyProfile?.customRules,
             instagramHandle: companyProfile?.instagramHandle,
-            brandImageUrls: companyProfile?.brandImageUrls,
             publishSlot: item.publishSlot,
             parentTitle: item.parentTitle,
           },

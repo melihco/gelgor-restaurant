@@ -48,10 +48,8 @@ export async function fetchNexusBrandContextFallback(
     const profile = (await res.json()) as Record<string, unknown>;
     if (!profile || !str(profile.brandName)) return null;
 
-    const referenceImageUrls = [
-      ...parseJsonList(profile.brandImageUrls),
-      str(profile.logoUrl),
-    ].filter((url) => url.startsWith('http'));
+    const logo = str(profile.logoUrl);
+    const referenceImageUrls = logo.startsWith('http') ? [logo] : [];
 
     return {
       business_name: str(profile.brandName),

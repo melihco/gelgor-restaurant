@@ -20,7 +20,7 @@ import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { fetchTenantBff } from '@/lib/bff-fetch';
-import { filterBrandGalleryUrls } from '@/lib/gallery-upload';
+import { filterBrandGalleryUrls, parseBrandReferenceUrls } from '@/lib/gallery-upload';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/types';
@@ -2875,11 +2875,13 @@ export function BrandConstitution() {
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
+  type TemplateTab = 'remotion' | 'fal' | 'intensity';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
   type IdentityGroup = 'basics' | 'channels' | 'about' | 'assets';
   const [tab, setTab] = useState<Tab>('identity');
   const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
   const [designGroup, setDesignGroup] = useState<DesignGroup | null>(null);
+  const [templateTab, setTemplateTab] = useState<TemplateTab>('remotion');
   const [contentGroup, setContentGroup] = useState<ContentGroup | null>(null);
   const [identityGroup, setIdentityGroup] = useState<IdentityGroup | null>(null);
   const [saved, setSaved] = useState(false);
@@ -2893,11 +2895,13 @@ export function BrandConstitution() {
     setDesignGroup(opts?.designGroup ?? null);
     setContentGroup(opts?.contentGroup ?? null);
     setIdentityGroup(opts?.identityGroup ?? null);
+    if (opts?.designGroup !== 'templates') setTemplateTab('remotion');
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
   const openDesignGroup = React.useCallback((g: DesignGroup | null) => {
     setDesignGroup(g);
+    if (g !== 'templates') setTemplateTab('remotion');
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
@@ -3321,7 +3325,7 @@ export function BrandConstitution() {
   const contentNeeds  = parseArr((p as any).contentNeeds);
   const templateFams  = parseArr((p as any).templateFamilies);
   const riskRules     = parseObj((p as any).riskRules);
-  const brandImages   = parseArr((p as any).brandImageUrls).filter(u => u.startsWith('http'));
+  const galleryRefUrls = parseBrandReferenceUrls((pyCtx as any)?.reference_image_urls);
 
   const contentLanguage = String((pyCtx as any)?.languages ?? p.languages ?? 'tr').trim().toLowerCase();
 
@@ -3476,7 +3480,7 @@ export function BrandConstitution() {
   const pprScore = productionReadiness?.productionProfile?.score ?? 0;
   const pillarsCount = (parseArr((pyCtx as any)?.content_pillars).length || contentNeeds.length);
   const ctasCount = parseArr((pyCtx as any)?.default_ctas).length;
-  const photoCount = brandImages.length;
+  const photoCount = galleryRefUrls.length;
   const hasChatbot = Boolean((pyCtx as any)?.chatbot_profile);
   const channelsConnected = Boolean(websiteDisplay && instagramDisplay);
 
@@ -3527,7 +3531,7 @@ export function BrandConstitution() {
     { key: 'basics', label: 'Temel Bilgiler', hint: brandNameDisplay || 'Marka adı, sektör, konum', accent: '#5AA0D6' },
     { key: 'channels', label: 'Kanallar', hint: channelsConnected ? 'Web & Instagram bağlı' : 'Web ve sosyal bağlantılar', accent: '#3FB6AE' },
     { key: 'about', label: 'Marka Açıklaması', hint: descriptionDisplay ? `${contentLanguage === 'tr' ? 'Türkçe' : 'English'} · tanım mevcut` : 'AI ile doldur', accent: '#C79A4B' },
-    { key: 'assets', label: 'Logo & Görseller', hint: logoUrl ? 'Logo tanımlı' : 'Logo ekle', accent: '#A985E0' },
+    { key: 'assets', label: 'Logo & Görseller', hint: logoUrl ? `Logo · ${photoCount} galeri fotoğrafı` : photoCount > 0 ? `${photoCount} galeri fotoğrafı` : 'Logo ve galeri', accent: '#A985E0' },
   ];
   const activeIdentityGroup = IDENTITY_GROUPS.find((g) => g.key === identityGroup);
   const identitySectionTitle = identityGroup === 'channels' ? 'Kanallar' : 'Kimlik';
@@ -4018,17 +4022,38 @@ export function BrandConstitution() {
                   <span style={{ fontSize: 12, color: t.textMuted }}>Mevcut logo önizlemesi</span>
                 </div>
               )}
-              <Field t={t} label="Marka Görselleri" value={(p as any).brandImageUrls ?? ''} onSave={save('brandImageUrls')} hint="Virgülle ayırın · https://..." multiline />
-              {brandImages.length > 0 && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-                  {brandImages.slice(0, 6).map((url, i) => (
-                    <div key={i} style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6' }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={resolveGalleryImageSrc(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                    </div>
-                  ))}
+              <div style={{
+                marginTop: 12, padding: '12px 14px', borderRadius: 12,
+                background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                border: `0.5px solid ${t.separator}`,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
+                  Fotoğraf galerisi
                 </div>
-              )}
+                <p style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5, margin: '6px 0 0' }}>
+                  Story, post ve reel üretimi galerideki AI analizli görselleri kullanır. URL yapıştırmayın — Galeri sekmesinden yükleyin veya analiz edin.
+                </p>
+                {galleryRefUrls.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    {galleryRefUrls.slice(0, 6).map((url, i) => (
+                      <div key={i} style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={resolveGalleryImageSrc(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openSection('gallery')}
+                  style={{
+                    marginTop: 12, width: '100%', padding: '10px 14px', borderRadius: 11, border: 'none', cursor: 'pointer',
+                    background: t.accentDim, color: t.accent, fontSize: 13, fontWeight: 700,
+                  }}
+                >
+                  Galeriye git · {photoCount} fotoğraf
+                </button>
+              </div>
             </SCard>
           </>
         )}
@@ -4352,34 +4377,74 @@ export function BrandConstitution() {
 
         {tab === 'design' && designGroup === 'templates' && (
           <>
-            <BrandTemplateLibraryPanel
-              workspaceId={tenantId}
-              sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
-              variant="mobile"
-              mobileTheme={{
-                accent: t.accent,
-                accentBorder: t.accentBorder,
-                accentDim: t.accentDim,
-                separator: t.separator,
-                textPrimary: t.textPrimary,
-                textMuted: t.textMuted,
-                textTertiary: t.textTertiary,
-                isDark: t.isDark,
-              }}
+            <BrandSectionIntro
+              t={t}
+              title="Şablon Kütüphanesi"
+              description="Remotion story/post slotları, fal.ai görsel şablonları ve tipografi yoğunluğu. Mission üretimi bu seçimlerden beslenir."
             />
+            <div style={{
+              display: 'flex', gap: 4, padding: 4, borderRadius: 14, marginBottom: 18,
+              background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.045)',
+            }}>
+              {([
+                { id: 'remotion' as const, label: 'Remotion', hint: '5 üretim slotu' },
+                { id: 'fal' as const, label: 'fal.ai', hint: 'Görsel galeri' },
+                { id: 'intensity' as const, label: 'Yoğunluk', hint: 'Tipografi dengesi' },
+              ]).map((pg) => {
+                const active = templateTab === pg.id;
+                return (
+                  <button
+                    key={pg.id}
+                    type="button"
+                    onClick={() => { setTemplateTab(pg.id); if (typeof window !== 'undefined') window.scrollTo({ top: 0 }); }}
+                    style={{
+                      flex: 1, padding: '9px 6px', borderRadius: 11, border: 'none', cursor: 'pointer',
+                      background: active ? (t.isDark ? 'rgba(255,255,255,0.14)' : '#FFFFFF') : 'transparent',
+                      boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none',
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em', color: active ? t.textPrimary : t.textTertiary }}>{pg.label}</div>
+                    <div style={{ fontSize: 10, color: t.textMuted, marginTop: 1 }}>{pg.hint}</div>
+                  </button>
+                );
+              })}
+            </div>
 
-            {tenantId && (
-              <SCard t={t} title="fal.ai Şablon Galerisi" accent={t.accent}>
-                <BrandFalTemplateGalleryPanel
-                  tenantId={tenantId}
-                  sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
-                  t={t}
-                />
-              </SCard>
+            {templateTab === 'remotion' && (
+              <BrandTemplateLibraryPanel
+                workspaceId={tenantId}
+                sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
+                variant="mobile"
+                mobileTheme={{
+                  accent: t.accent,
+                  accentBorder: t.accentBorder,
+                  accentDim: t.accentDim,
+                  separator: t.separator,
+                  textPrimary: t.textPrimary,
+                  textMuted: t.textMuted,
+                  textTertiary: t.textTertiary,
+                  isDark: t.isDark,
+                }}
+              />
             )}
 
-            {tenantId && (
-              <SCard t={t} title="Tasarım Yoğunluğu (fal.ai)" accent={t.accent}>
+            {templateTab === 'fal' && tenantId && (
+              <BrandFalTemplateGalleryPanel
+                tenantId={tenantId}
+                sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
+                t={t}
+              />
+            )}
+
+            {templateTab === 'intensity' && tenantId && (
+              <div style={{
+                borderRadius: 18, padding: 16,
+                background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                border: `0.5px solid ${t.separator}`,
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, marginBottom: 12, letterSpacing: '-0.02em' }}>
+                  Tasarım Yoğunluğu
+                </div>
                 <BrandFalDesignIntensityPanel
                   tenantId={tenantId}
                   theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
@@ -4388,7 +4453,7 @@ export function BrandConstitution() {
                     queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
                   }}
                 />
-              </SCard>
+              </div>
             )}
           </>
         )}

@@ -749,13 +749,9 @@ function CompanyStep({
             />
           </div>
         </div>
-        <TextArea
-          label="Marka referans görselleri"
-          value={form.brandImageUrls ?? ''}
-          onChange={(v) => updateField('brandImageUrls', v)}
-          placeholder="Logo, mağaza, ürün veya kampanya görsellerinin public URL'lerini virgülle girin"
-          rows={2}
-        />
+        <p className="text-[12px] leading-relaxed text-zinc-500">
+          Referans fotoğraflar Marka Ayarları → Galeri sekmesinden yüklenir; AI analizi otomatik yapılır.
+        </p>
         <button
           type="button"
           onClick={handleAnalyzeBrand}
