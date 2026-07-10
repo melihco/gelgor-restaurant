@@ -1070,6 +1070,59 @@ async def _backfill_missing_intelligence_signals() -> None:
         logger.error("intelligence_backfill_job_failed", error=str(exc)[:300])
 
 
+async def _hourly_new_tenant_intelligence_job() -> None:
+    """
+    F3.1 — Bootstrap industry calendar + market intelligence for tenants
+    confirmed in the last 24 hours that still have NULL signals.
+
+    Complements fire-and-forget post-constitution bootstrap when that path
+    fails or when constitution predates the bootstrap wiring.
+    """
+    from datetime import timedelta
+
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.services.brand_context_service import bootstrap_brand_intelligence
+    from sqlalchemy import select
+    import asyncio as _asyncio
+
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(
+                select(BrandContext).where(
+                    BrandContext.brand_constitution_confirmed_at.isnot(None),
+                    BrandContext.brand_constitution_confirmed_at >= since,
+                    (BrandContext.industry_calendar == None)  # noqa: E711
+                    | (BrandContext.trend_brief == None)  # noqa: E711
+                    | (BrandContext.competitor_pulse == None),  # noqa: E711
+                )
+            )
+            targets = rows.scalars().all()
+
+        logger.info("new_tenant_intelligence_bootstrap_start", workspaces=len(targets))
+
+        for ctx in targets:
+            try:
+                async with async_session_factory() as db:
+                    result = await bootstrap_brand_intelligence(db, ctx.workspace_id)
+                    logger.info(
+                        "new_tenant_intelligence_bootstrap_done",
+                        workspace_id=str(ctx.workspace_id),
+                        result=result,
+                    )
+                await _asyncio.sleep(2)
+            except Exception as exc:
+                logger.warning(
+                    "new_tenant_intelligence_bootstrap_failed",
+                    workspace_id=str(ctx.workspace_id),
+                    error=str(exc)[:200],
+                )
+    except Exception as exc:
+        logger.error("new_tenant_intelligence_bootstrap_job_failed", error=str(exc)[:300])
+
+
 async def _semi_auto_proposal_job() -> None:
     """
     Runs Monday + Thursday at 07:00 UTC.
@@ -1322,6 +1375,18 @@ def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=3600,
+    )
+
+    # Every hour — new tenant intelligence bootstrap (first 24h after constitution)
+    _scheduler.add_job(
+        _hourly_new_tenant_intelligence_job,
+        trigger="interval",
+        hours=1,
+        id="hourly_new_tenant_intelligence",
+        name="Hourly New Tenant Intelligence Bootstrap",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=900,
     )
 
     # Every Sunday 23:00 UTC — Brand DNA synthesis (ready for Monday)

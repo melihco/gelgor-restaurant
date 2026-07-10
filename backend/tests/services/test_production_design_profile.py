@@ -2,7 +2,10 @@
 
 import json
 
-from app.services.production_design_profile_service import derive_production_design_profile
+from app.services.production_design_profile_service import (
+    derive_production_design_profile,
+    ensure_visual_dna_palette_hex,
+)
 
 
 class _FakeCtx:
@@ -53,3 +56,36 @@ def test_heuristic_local_products_profile():
     assert profile["sector"] == "local_products_shop"
     assert "artisan" in profile["visual_dna"].lower() or "authentic" in profile["visual_dna"].lower()
     assert "product_highlight" in profile["content_pillars"]
+
+
+def test_ensure_visual_dna_palette_hex_injects_brand_kit():
+    dna = "\n".join([
+        "Mood: coastal calm",
+        "Aesthetic: beach club editorial",
+        "Palette words: sand, coral, turquoise",
+        "Lighting: golden hour",
+    ])
+    out = ensure_visual_dna_palette_hex(dna, ["#87CEEB", "#FF69B4"])
+    assert "#87CEEB" in out
+    assert "#FF69B4" in out
+    assert "Palette words:" in out
+
+
+def test_ensure_visual_dna_palette_hex_skips_when_present():
+    dna = "Palette words: #112233 accent #AABBCC"
+    out = ensure_visual_dna_palette_hex(dna, ["#112233"])
+    assert out == dna
+
+
+def test_derive_injects_palette_from_brand_kit():
+    ctx = _FakeCtx(
+        workspace_id="431b2901-a2dc-4df6-abe3-3670d9844851",
+        business_name="Sarnic Beach",
+        business_type="beach_club",
+        brand_primary_color="#87CEEB",
+        brand_accent_color="#FF69B4",
+        brand_service_profile={"category": "beach_club_bar"},
+    )
+    profile = derive_production_design_profile(ctx, openai_api_key="")
+    assert "#87CEEB" in profile["visual_dna"]
+    assert "#FF69B4" in profile["visual_dna"]

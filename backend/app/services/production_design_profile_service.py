@@ -32,6 +32,68 @@ logger = structlog.get_logger()
 
 PROFILE_VERSION = 1
 
+_HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}\b")
+
+
+def _brand_palette_hexes_from_ctx(ctx: Any) -> list[str]:
+    """Collect authoritative brand hex codes from kit + theme (F2.2)."""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(raw: Any) -> None:
+        value = str(raw or "").strip()
+        if not _HEX_COLOR_RE.fullmatch(value):
+            return
+        key = value.upper()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(key)
+
+    for field in ("brand_primary_color", "brand_accent_color"):
+        _add(getattr(ctx, field, None))
+
+    theme = getattr(ctx, "brand_theme", None)
+    if isinstance(theme, dict):
+        palette = theme.get("palette")
+        if isinstance(palette, dict):
+            for key in ("primary", "accent", "secondary", "neutral", "shadow"):
+                _add(palette.get(key))
+
+    return out[:6]
+
+
+def ensure_visual_dna_palette_hex(visual_dna: str, hexes: list[str]) -> str:
+    """
+    Inject brand kit hex codes into production visual_dna when missing (F2.2).
+
+    Prevents Fal color drift when Palette words are prose-only.
+    """
+    dna = str(visual_dna or "").strip()
+    if not hexes:
+        return dna
+
+    if dna and any(h.lower() in dna.lower() for h in hexes):
+        return dna
+
+    hex_line = " · ".join(hexes)
+    if not dna:
+        return f"Palette words: brand hex {hex_line}"
+
+    lines = dna.split("\n")
+    for idx, line in enumerate(lines):
+        if line.strip().lower().startswith("palette words:"):
+            lines[idx] = f"{line.rstrip()} · brand hex: {hex_line}"
+            return "\n".join(lines)
+
+    insert_at = next(
+        (i + 1 for i, line in enumerate(lines) if line.strip().lower().startswith("aesthetic:")),
+        len(lines),
+    )
+    lines.insert(insert_at, f"Palette words: brand hex {hex_line}")
+    return "\n".join(lines)
+
+
 _PRODUCTION_DNA_SECTIONS = (
     "Mood",
     "Aesthetic",
@@ -225,6 +287,7 @@ def derive_production_design_profile(ctx: Any, *, openai_api_key: str = "") -> d
     llm_out = _llm_production_design_profile(data, sector, openai_api_key) if openai_api_key else None
 
     visual_dna = str((llm_out or {}).get("visual_dna") or "").strip() or _heuristic_visual_dna(sector, data)
+    visual_dna = ensure_visual_dna_palette_hex(visual_dna, _brand_palette_hexes_from_ctx(ctx))
     brand_tone = str((llm_out or {}).get("brand_tone") or "").strip() or _heuristic_brand_tone(sector, data)
     visual_style = str((llm_out or {}).get("visual_style") or "").strip() or _heuristic_visual_style(sector)
     pillars_in = (llm_out or {}).get("content_pillars") if llm_out else data.get("content_pillars")

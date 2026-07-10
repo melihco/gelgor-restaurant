@@ -22,7 +22,7 @@ import { apiClient, type WorkspaceUsageSummary, type MissionProductionJobsSummar
 import { AiCostBreakdownCard } from '../AiCostBreakdownCard';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import type { MissionSummary, MissionProgress, MissionNodeProgress } from '@/types';
-import { BRS_PROPOSE_THRESHOLD, type BrandReadinessResult } from '@/lib/brand-readiness';
+import { BRS_PROPOSE_THRESHOLD, type BrandReadinessResult, type ProductionProfileReadinessResult, PRODUCTION_PROFILE_THRESHOLD } from '@/lib/brand-readiness';
 import { humanizeAgentError } from '@/lib/humanize-agent-error';
 import { parseProductionIdeas, productionIdeasFromParsed } from '@/lib/production-idea-parse';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
@@ -4496,6 +4496,77 @@ function BrandReadinessCard({
   );
 }
 
+function ProductionProfileCard({
+  t,
+  profile,
+  onFix,
+}: {
+  t: T;
+  profile: ProductionProfileReadinessResult;
+  onFix: (fix?: string) => void;
+}) {
+  const score = profile.score ?? 0;
+  const ready = profile.isProductionReady !== false;
+  const accent = ready ? '#22C55E' : score >= 50 ? '#F59E0B' : '#EF4444';
+  const missing = (profile.missing ?? []).slice(0, 4);
+
+  return (
+    <div style={{
+      margin: '10px 22px 0',
+      padding: '12px 14px',
+      borderRadius: 14,
+      background: t.isDark ? 'rgba(255,255,255,0.03)' : '#fff',
+      border: `0.5px solid ${ready ? t.separator : 'rgba(239,68,68,0.28)'}`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary }}>Üretim Tasarım Profili</div>
+          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+            {ready
+              ? 'Fal katmanları hazır — typography + intensity + DNA'
+              : `Fal standardı için en az %${PRODUCTION_PROFILE_THRESHOLD} gerekli`}
+          </div>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: accent }}>
+          {score}<span style={{ fontSize: 11, color: t.textMuted }}>/100</span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 8, height: 5, borderRadius: 5, background: t.separator, overflow: 'hidden' }}>
+        <div style={{ width: `${score}%`, height: '100%', background: accent, transition: 'width 0.35s ease' }} />
+      </div>
+
+      {missing.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {missing.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onFix(c.fix)}
+              style={{
+                display: 'flex',
+                gap: 8,
+                width: '100%',
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: c.fix ? 'pointer' : 'default',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ fontSize: 11, color: accent }}>○</span>
+              <span style={{ fontSize: 11, color: t.textPrimary, lineHeight: 1.35 }}>
+                {c.label}
+                <span style={{ color: t.textMuted }}> · {c.detail}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── BrandAlignmentCard ──────────────────────────────────────────────────────
 // Sprint 8 — single-glance Brand Alignment Score with the 5 sub-scores.
 // BAS = min(standing scores); autonomy needs all standing = 100.
@@ -4750,7 +4821,7 @@ export function MissionHub() {
   });
 
   // Brand readiness gate (Sprint 1) — missions cannot be proposed until BRS >= 80.
-  const { data: readiness } = useQuery<BrandReadinessResult>({
+  const { data: readiness } = useQuery<BrandReadinessResult & { productionProfile?: ProductionProfileReadinessResult }>({
     queryKey: ['brand-readiness', wsId],
     queryFn: async () => {
       const res = await fetch(`/api/brand-readiness/${wsId}`, {
@@ -5195,6 +5266,17 @@ export function MissionHub() {
           t={t}
           readiness={readiness}
           onComplete={(fix) => openBrand(fix)}
+          onFix={(fix) => openBrand(fix)}
+        />
+      )}
+
+      {readiness?.productionProfile
+        && Array.isArray(readiness.productionProfile.checks)
+        && readiness.productionProfile.checks.length > 0
+        && (operatorMode || !readiness.productionProfile.isProductionReady) && (
+        <ProductionProfileCard
+          t={t}
+          profile={readiness.productionProfile}
           onFix={(fix) => openBrand(fix)}
         />
       )}
