@@ -21,6 +21,8 @@ interface Props {
   caption?: string;
   hashtags?: string[];
   artifactTitle?: string;
+  /** Pre-select suggested publish time from feed metadata. */
+  defaultScheduledAt?: string;
 }
 
 // Generates quick-pick options relative to now
@@ -72,13 +74,17 @@ function formatPreview(iso: string): string {
   return d.toLocaleDateString('tr-TR', opts);
 }
 
-function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags, artifactTitle }: Omit<Props, 'isOpen'>) {
+function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags, artifactTitle, defaultScheduledAt }: Omit<Props, 'isOpen'>) {
   const { t } = useTheme();
   const { tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
   const picks = quickPicks();
+  const suggestedPick = defaultScheduledAt && new Date(defaultScheduledAt).getTime() > Date.now()
+    ? { label: 'Önerilen saat', iso: defaultScheduledAt }
+    : null;
+  const allPicks = suggestedPick ? [suggestedPick, ...picks] : picks;
 
-  const [selectedISO, setSelectedISO] = useState<string>(picks[2]!.iso); // default: Yarın 09:00
+  const [selectedISO, setSelectedISO] = useState<string>(suggestedPick?.iso ?? picks[2]!.iso);
   const [customMode, setCustomMode] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -142,7 +148,7 @@ function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags
               Hızlı Seçim
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-              {picks.map(p => {
+              {allPicks.map(p => {
                 const sel = selectedISO === p.iso;
                 return (
                   <button key={p.label} onClick={() => setSelectedISO(p.iso)}

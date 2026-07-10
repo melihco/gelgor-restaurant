@@ -43,6 +43,7 @@ function VisibilityGatedVideo({
   style,
   onError,
   onEnded,
+  muted = true,
 }: {
   src: string;
   loop?: boolean;
@@ -50,6 +51,7 @@ function VisibilityGatedVideo({
   style?: React.CSSProperties;
   onError?: () => void;
   onEnded?: () => void;
+  muted?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
@@ -92,7 +94,7 @@ function VisibilityGatedVideo({
       src={src}
       poster={poster}
       loop={loop}
-      muted
+      muted={muted}
       playsInline
       preload="metadata"
       onError={() => {
@@ -259,37 +261,124 @@ function AvatarRing({ logoUrl, handle, size = 34 }: { logoUrl?: string; handle: 
 }
 
 // ─── Instagram Feed Post ──────────────────────────────────────────────────────
-export function InstagramFeedNative({ content, handle, logoUrl, isPending, timeLabel }: {
+export type FeedFormatTag = 'carousel' | 'reel' | 'post' | 'ad';
+
+function IGFeedActionRow({ liked, onToggleLike }: { liked: boolean; onToggleLike: () => void }) {
+  return (
+    <div style={{ padding: '8px 14px 4px', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <button type="button" onClick={onToggleLike} aria-label="Beğen" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill={liked ? '#FF3040' : 'none'}
+          stroke={liked ? '#FF3040' : '#fff'} strokeWidth="2">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+        </svg>
+      </button>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+      <div style={{ marginLeft: 'auto' }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function IGFeedCaptionBlock({ handle, content, timeLabel }: {
+  handle: string; content: NativeContentData; timeLabel?: string;
+}) {
+  const h = handle.startsWith('@') ? handle : `@${handle}`;
+  const likeCount = 2847;
+  return (
+    <div style={{ padding: '0 14px 14px' }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+        {likeCount.toLocaleString('tr-TR')} beğeni
+      </div>
+      {content.caption && (
+        <div style={{ fontSize: 14, color: '#fff', lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700 }}>{h}</span>{' '}
+          <span style={{ color: 'rgba(255,255,255,0.92)' }}>{content.caption}</span>
+        </div>
+      )}
+      {content.hashtags.length > 0 && (
+        <div style={{ fontSize: 14, color: '#E0F1FF', marginTop: 4, lineHeight: 1.55 }}>
+          {content.hashtags.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ')}
+        </div>
+      )}
+      {timeLabel && (
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          {timeLabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IGPostHeader({ handle, logoUrl, location, isPending, formatTag }: {
+  handle: string; logoUrl?: string; location?: string; isPending?: boolean; formatTag?: FeedFormatTag;
+}) {
+  const h = handle.startsWith('@') ? handle : `@${handle}`;
+  const tagLabel = formatTag === 'carousel' ? 'Carousel' : formatTag === 'reel' ? 'Reels' : formatTag === 'ad' ? 'Sponsorlu' : null;
+  return (
+    <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <AvatarRing logoUrl={logoUrl} handle={handle} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>{h}</div>
+        {location && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>{location}</div>}
+        {tagLabel && !location && (
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>{tagLabel}</div>
+        )}
+      </div>
+      {isPending && (
+        <span style={{
+          fontSize: 10, padding: '3px 8px', borderRadius: 8,
+          background: 'rgba(245,158,11,0.18)', color: '#FBBF24', fontWeight: 700,
+        }}>Taslak</span>
+      )}
+      <button type="button" aria-label="Menü" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#fff', lineHeight: 1 }}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+      </button>
+    </div>
+  );
+}
+
+export function InstagramFeedNative({
+  content, handle, logoUrl, isPending, timeLabel, afterMedia, formatTag,
+}: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
+  afterMedia?: React.ReactNode;
+  formatTag?: FeedFormatTag;
 }) {
   const [liked, setLiked] = useState(true);
   const [slide, setSlide] = useState(0);
   const images = content.carouselUrls?.length ? content.carouselUrls : content.imageUrl ? [content.imageUrl] : [];
   const current = images[slide] ?? null;
+  const isCarousel = images.length > 1;
 
   return (
     <div style={{ background: '#000' }}>
-      <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <AvatarRing logoUrl={logoUrl} handle={handle} />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{handle.startsWith('@') ? handle : `@${handle}`}</div>
-          {content.location && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{content.location}</div>}
-        </div>
-        {isPending && (
-          <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 10,
-            background: 'rgba(245,158,11,0.2)', color: '#F59E0B', fontWeight: 700 }}>Bekliyor</span>
-        )}
-        <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 20 }}>···</span>
-      </div>
+      <IGPostHeader
+        handle={handle}
+        logoUrl={logoUrl}
+        location={content.location}
+        isPending={isPending}
+        formatTag={formatTag ?? (isCarousel ? 'carousel' : 'post')}
+      />
 
-      <div style={{ aspectRatio: '4/5', background: '#111', position: 'relative', overflow: 'hidden' }}
-        onTouchStart={(e) => { (e.currentTarget as any)._tx = e.touches[0]?.clientX; }}
+      <div
+        className="ig-feed-media-stage"
+        style={{ aspectRatio: '4/5', background: '#0a0a0a', position: 'relative', overflow: 'hidden' }}
+        onTouchStart={(e) => { (e.currentTarget as HTMLElement & { _tx?: number })._tx = e.touches[0]?.clientX; }}
         onTouchEnd={(e) => {
-          const tx = (e.currentTarget as any)._tx;
-          const dx = (e.changedTouches[0]?.clientX ?? 0) - (tx ?? 0);
-          if (images.length > 1 && dx < -40 && slide < images.length - 1) setSlide(slide + 1);
-          if (images.length > 1 && dx > 40 && slide > 0) setSlide(slide - 1);
-        }}>
+          const el = e.currentTarget as HTMLElement & { _tx?: number };
+          const dx = (e.changedTouches[0]?.clientX ?? 0) - (el._tx ?? 0);
+          if (isCarousel && dx < -40 && slide < images.length - 1) setSlide(slide + 1);
+          if (isCarousel && dx > 40 && slide > 0) setSlide(slide - 1);
+        }}
+      >
         {current ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={current} alt="" referrerPolicy="no-referrer"
@@ -297,82 +386,108 @@ export function InstagramFeedNative({ content, handle, logoUrl, isPending, timeL
         ) : (
           <div style={{
             width: '100%', height: '100%',
-            background: isPending
-              ? 'linear-gradient(135deg, #141820 0%, #0a0c12 100%)'
-              : 'linear-gradient(135deg, #1a1a2e, #16213e)',
+            background: 'linear-gradient(135deg, #141820 0%, #0a0c12 100%)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
-            {isPending && (
-              <>
-                <div className="feed-skel-shimmer" style={{
-                  width: '72%', height: '58%', borderRadius: 4,
-                  backgroundColor: 'rgba(255,255,255,0.06)',
-                }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>
-                  Görsel hazırlanıyor…
-                </span>
-              </>
-            )}
+            <div className="feed-skel-shimmer" style={{ width: '72%', height: '58%', borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.06)' }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>Görsel hazırlanıyor…</span>
           </div>
         )}
-        {images.length > 1 && (
+        {isCarousel && (
           <>
-            <div style={{ position: 'absolute', top: 12, right: 12, padding: '4px 10px', borderRadius: 12,
-              background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+            <div style={{
+              position: 'absolute', top: 12, right: 12, padding: '4px 10px', borderRadius: 12,
+              background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 12, fontWeight: 700,
+            }}>
               {slide + 1}/{images.length}
             </div>
-            <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5 }}>
+            <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 4 }}>
               {images.map((_, i) => (
-                <div key={i} style={{ width: i === slide ? 18 : 6, height: 6, borderRadius: 3,
-                  background: i === slide ? '#fff' : 'rgba(255,255,255,0.4)' }} />
+                <div key={i} style={{
+                  width: i === slide ? 6 : 5, height: i === slide ? 6 : 5, borderRadius: '50%',
+                  background: i === slide ? '#0095F6' : 'rgba(255,255,255,0.45)',
+                }} />
               ))}
             </div>
           </>
         )}
       </div>
 
-      <div style={{ padding: '10px 14px 6px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <button type="button" onClick={() => setLiked((l) => !l)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <svg width="26" height="26" viewBox="0 0 24 24" fill={liked ? '#E1306C' : 'none'}
-            stroke={liked ? '#E1306C' : 'rgba(255,255,255,0.9)'} strokeWidth="2">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-          </svg>
-        </button>
-        <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        </svg>
-        <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2">
-          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-        <div style={{ marginLeft: 'auto' }}>
-          <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-          </svg>
-        </div>
-      </div>
+      {afterMedia}
 
-      <div style={{ padding: '0 14px 16px' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
-          {(liked ? 2847 : 2846).toLocaleString('tr-TR')} beğeni
-        </div>
-        {content.caption && (
-          <div style={{ fontSize: 14, color: '#fff', lineHeight: 1.55 }}>
-            <span style={{ fontWeight: 700 }}>{handle.startsWith('@') ? handle : `@${handle}`}</span>{' '}
-            <span style={{ color: 'rgba(255,255,255,0.85)' }}>{content.caption}</span>
-          </div>
-        )}
-        {content.hashtags.length > 0 && (
-          <div style={{ fontSize: 14, color: '#60A5FA', marginTop: 4, lineHeight: 1.6 }}>
-            {content.hashtags.map((h) => (h.startsWith('#') ? h : `#${h}`)).join(' ')}
-          </div>
-        )}
-        {timeLabel && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 6 }}>{timeLabel}</div>}
-      </div>
+      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} />
+      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} />
     </div>
   );
 }
 
-// ─── Instagram Reel ─────────────────────────────────────────────────────────────
+/** Reel shared to Instagram home feed — 4:5 in-scroll (not full-screen Reels tab). */
+export function InstagramReelInFeedNative({
+  content, handle, logoUrl, isPending, timeLabel, afterMedia,
+}: {
+  content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
+  afterMedia?: React.ReactNode;
+}) {
+  const [liked, setLiked] = useState(true);
+  const [muted, setMuted] = useState(true);
+
+  return (
+    <div style={{ background: '#000' }}>
+      <IGPostHeader handle={handle} logoUrl={logoUrl} isPending={isPending} formatTag="reel" />
+
+      <div className="ig-feed-media-stage" style={{ aspectRatio: '4/5', background: '#000', position: 'relative', overflow: 'hidden' }}>
+        {content.videoUrl ? (
+          <VisibilityGatedVideo
+            src={content.videoUrl}
+            poster={content.imageUrl ?? undefined}
+            loop
+            muted={muted}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : content.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={content.imageUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Reel hazırlanıyor…</span>
+          </div>
+        )}
+
+        <div style={{
+          position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6,
+          padding: '5px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.55)',
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+            <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l4 3 4-6-4 3-4-3z"/>
+          </svg>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Reels</span>
+        </div>
+
+        {content.videoUrl && (
+          <button
+            type="button"
+            aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+            onClick={() => setMuted((m) => !m)}
+            style={{
+              position: 'absolute', bottom: 12, right: 12, width: 32, height: 32, borderRadius: '50%',
+              border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+            }}
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
+        )}
+      </div>
+
+      {afterMedia}
+
+      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} />
+      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} />
+    </div>
+  );
+}
+
+// ─── Instagram Reel (full vertical — Reels tab / preview studio) ───────────────
 export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean;
 }) {
@@ -898,6 +1013,9 @@ export function PlatformNativePreview({
   isPending,
   timeLabel,
   backgroundMusicUrl,
+  afterMedia,
+  inFeedScroll,
+  formatTag,
 }: {
   platform: PreviewPlatform;
   mode: PreviewMode;
@@ -908,6 +1026,11 @@ export function PlatformNativePreview({
   timeLabel?: string;
   /** Brand story BGM — Marka → Arka plan müziği seçimi */
   backgroundMusicUrl?: string | null;
+  /** Slot below media — e.g. Paylaş / Zamanla bar (Instagram home feed). */
+  afterMedia?: React.ReactNode;
+  /** Reels in home feed scroll use 4:5 post layout instead of full 9:16. */
+  inFeedScroll?: boolean;
+  formatTag?: FeedFormatTag;
 }) {
   if (platform === 'tiktok') {
     return <TikTokNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
@@ -915,7 +1038,21 @@ export function PlatformNativePreview({
   if (platform === 'x') {
     return <XNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
   }
-  if (mode === 'reel') return <InstagramReelNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
+  if (mode === 'reel') {
+    if (inFeedScroll) {
+      return (
+        <InstagramReelInFeedNative
+          content={content}
+          handle={handle}
+          logoUrl={logoUrl}
+          isPending={isPending}
+          timeLabel={timeLabel}
+          afterMedia={afterMedia}
+        />
+      );
+    }
+    return <InstagramReelNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
+  }
   if (mode === 'story') {
     return (
       <InstagramStoryNative
@@ -927,7 +1064,18 @@ export function PlatformNativePreview({
       />
     );
   }
-  return <InstagramFeedNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} timeLabel={timeLabel} />;
+  const resolvedTag = formatTag ?? (mode === 'carousel' ? 'carousel' : 'post');
+  return (
+    <InstagramFeedNative
+      content={content}
+      handle={handle}
+      logoUrl={logoUrl}
+      isPending={isPending}
+      timeLabel={timeLabel}
+      afterMedia={afterMedia}
+      formatTag={resolvedTag}
+    />
+  );
 }
 
 export const PLATFORM_TABS: { id: PreviewPlatform; label: string; svgPath: string; activeBg: string }[] = [

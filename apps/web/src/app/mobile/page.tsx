@@ -1058,6 +1058,12 @@ const CSS = `
     max-width: 100%;
   }
 
+  .sa-mobile .ig-feed-media-stage {
+    width: 100%;
+    max-width: none;
+    background: #000;
+  }
+
   /* Story viewer — IG native 9:16; portal .sa-mobile-frame içinde (tam tarayıcı değil) */
   .ig-story-viewer-backdrop {
     position: fixed;

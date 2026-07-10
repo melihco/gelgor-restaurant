@@ -126,6 +126,216 @@ function ChevronRight({ color }: { color: string }) {
   );
 }
 
+// ─── Bespoke monoline section icons (premium, brand-agnostic) ──────────
+function SectionIcon({ name, color, size = 22 }: { name: string; color: string; size?: number }) {
+  const common = {
+    width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+    stroke: color, strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  switch (name) {
+    case 'identity':
+      return (
+        <svg {...common}>
+          <path d="M5 9.5 6.4 4.5h11.2L19 9.5" />
+          <path d="M4.6 9.5h14.8v0a2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0 2.4 2.4 0 0 1-4.8 0Z" />
+          <path d="M6 11.4V19.5h12V11.4" />
+          <path d="M10 19.5v-4.6h4v4.6" />
+        </svg>
+      );
+    case 'content':
+      return (
+        <svg {...common}>
+          <path d="M15.5 4.5 19.5 8.5 9 19l-4.5 1L5.5 15.5 15.5 4.5Z" />
+          <path d="M13.6 6.4 17.6 10.4" />
+          <path d="M4 21.5h9" />
+        </svg>
+      );
+    case 'design':
+      return (
+        <svg {...common}>
+          <path d="M12 3.2c-4.9 0-8.8 3.7-8.8 8.4 0 4.6 3.7 8 8.2 8 1.3 0 2.2-1 2.2-2.1 0-.6-.2-1-.6-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.9-1.8h1.4c2.6 0 4.6-2 4.6-4.6 0-3.2-3.5-5.6-8.4-5.6Z" />
+          <circle cx="7.4" cy="11.8" r="1.05" fill={color} stroke="none" />
+          <circle cx="9.8" cy="7.8" r="1.05" fill={color} stroke="none" />
+          <circle cx="14.4" cy="7.6" r="1.05" fill={color} stroke="none" />
+        </svg>
+      );
+    case 'gallery':
+      return (
+        <svg {...common}>
+          <rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.8" />
+          <circle cx="8.4" cy="10" r="1.6" />
+          <path d="M4 16.5 8.8 11.9l3.6 3.4 3.1-2.4 4.5 4.1" />
+        </svg>
+      );
+    case 'chatbot':
+      return (
+        <svg {...common}>
+          <path d="M4.5 5.5h15v9.5h-9.5L5 19.5V5.5Z" />
+          <circle cx="9.6" cy="10.2" r="1.05" fill={color} stroke="none" />
+          <circle cx="14.4" cy="10.2" r="1.05" fill={color} stroke="none" />
+        </svg>
+      );
+    case 'channels':
+      return (
+        <svg {...common}>
+          <path d="M9.4 14.6 14.6 9.4" />
+          <path d="M8.4 10 6.6 11.8a3.6 3.6 0 0 0 5.1 5.1l1.8-1.8" />
+          <path d="M15.6 14 17.4 12.2a3.6 3.6 0 0 0-5.1-5.1L10.5 8.9" />
+        </svg>
+      );
+    case 'templates':
+      return (
+        <svg {...common}>
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" />
+          <rect x="13.5" y="3.5" width="7" height="7" rx="1.6" />
+          <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+          <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
+        </svg>
+      );
+    case 'engines':
+      return (
+        <svg {...common}>
+          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+          <circle cx="12" cy="12" r="3.4" />
+        </svg>
+      );
+    case 'dna':
+      return (
+        <svg {...common}>
+          <path d="M7 3c0 4.5 10 6 10 10.5S7 16.5 7 21" />
+          <path d="M17 3c0 4.5-10 6-10 10.5S17 16.5 17 21" />
+          <path d="M8.5 6.5h7M8.5 17.5h7M9.8 9.5h4.4M9.8 14.5h4.4" />
+        </svg>
+      );
+    case 'rules':
+      return (
+        <svg {...common}>
+          <path d="M12 3.2 19 6v5.5c0 4.3-2.9 7.5-7 9.3-4.1-1.8-7-5-7-9.3V6l7-2.8Z" />
+          <path d="M9 11.8 11.2 14 15 9.8" />
+        </svg>
+      );
+    case 'voice':
+      return (
+        <svg {...common}>
+          <path d="M8 8.5a4 4 0 0 1 8 0v4.5a4 4 0 0 1-8 0V8.5Z" />
+          <path d="M12 17v2.5M9.5 19.5h5" />
+          <path d="M5.5 11.5v1.5M18.5 11.5v1.5" />
+        </svg>
+      );
+    case 'audience':
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="8.5" r="2.6" />
+          <circle cx="16.5" cy="9.5" r="2.1" />
+          <path d="M4.5 18.5c0-2.8 2.2-4.8 4.5-4.8s4.5 2 4.5 4.8M13.5 18.5c0-2.2 1.6-3.8 3-3.8 1.8 0 3 1.8 3 3.8" />
+        </svg>
+      );
+    case 'strategy':
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="5.5" height="16" rx="1.4" />
+          <rect x="11.2" y="8" width="5.5" height="12" rx="1.4" />
+          <rect x="18.4" y="6" width="1.6" height="14" rx="0.8" />
+        </svg>
+      );
+    case 'special':
+      return (
+        <svg {...common}>
+          <rect x="4" y="5" width="16" height="15" rx="2.4" />
+          <path d="M4 9.5h16M8.5 3v3.5M15.5 3v3.5" />
+          <path d="M8.5 13.5h2.2M13.3 13.5h2.2M8.5 16.8h2.2" />
+        </svg>
+      );
+    case 'competitors':
+      return (
+        <svg {...common}>
+          <path d="M4 18.5V6.5l8-3 8 3v12" />
+          <path d="M9 18.5V11.5h6v7" />
+          <path d="M12 8.5v3" />
+        </svg>
+      );
+    case 'upload':
+      return (
+        <svg {...common}>
+          <path d="M12 15V5" />
+          <path d="M8.5 8.5 12 5l3.5 3.5" />
+          <path d="M5 19.5h14" />
+        </svg>
+      );
+    case 'analyze':
+      return (
+        <svg {...common}>
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="M16 16 20.5 20.5" />
+          <path d="M8.5 11h5M11 8.5v5" />
+        </svg>
+      );
+    case 'photos':
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="7.5" height="7.5" rx="1.6" />
+          <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" />
+          <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" />
+          <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6" />
+        </svg>
+      );
+    case 'basics':
+      return (
+        <svg {...common}>
+          <rect x="4" y="3.5" width="16" height="17" rx="2.4" />
+          <path d="M8 8.5h8M8 12h8M8 15.5h5" />
+        </svg>
+      );
+    case 'about':
+      return (
+        <svg {...common}>
+          <path d="M6 4.5h12v15H6z" />
+          <path d="M9 9h6M9 12.5h6M9 16h4" />
+        </svg>
+      );
+    case 'assets':
+      return (
+        <svg {...common}>
+          <rect x="3.5" y="5.5" width="17" height="13" rx="2.2" />
+          <circle cx="8.8" cy="10.5" r="1.6" />
+          <path d="M4 16.5 9.2 11.8l3.2 3 3.6-3.2L20 16.5" />
+        </svg>
+      );
+    case 'chat-info':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="8" r="3.2" />
+          <path d="M6 19.5c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+        </svg>
+      );
+    case 'chat-catalog':
+      return (
+        <svg {...common}>
+          <path d="M5 6.5h14M5 12h14M5 17.5h14" />
+          <circle cx="8" cy="6.5" r="1.2" fill={color} stroke="none" />
+          <circle cx="8" cy="12" r="1.2" fill={color} stroke="none" />
+          <circle cx="8" cy="17.5" r="1.2" fill={color} stroke="none" />
+        </svg>
+      );
+    case 'chat-ai':
+      return (
+        <svg {...common}>
+          <path d="M12 3.5 14.8 9.2 21 10l-4.8 4.2 1.2 6.3L12 17.8 6.6 20.5l1.2-6.3L3 10l6.2-.8L12 3.5Z" />
+        </svg>
+      );
+    case 'chat-integrations':
+      return (
+        <svg {...common}>
+          <path d="M8 12h8M12 8v8" />
+          <rect x="3.5" y="3.5" width="17" height="17" rx="4" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
 function SLabel({ t, text, accent }: { t: T; text: string; accent?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 4px', marginBottom: 8 }}>
@@ -1621,6 +1831,8 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
   queryClient: ReturnType<typeof useQueryClient>;
   companyProfile?: CompanyProfile | null;
 }) {
+  type GalleryGroup = 'upload' | 'analyze' | 'photos';
+  const [galleryGroup, setGalleryGroup] = useState<GalleryGroup | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeStatus, setAnalyzeStatus] = useState<string>('');
   const [uploading, setUploading] = useState(false);
@@ -1685,6 +1897,25 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     staleTime: 60_000,
     enabled: Boolean(tenantId),
   });
+
+  const { data: galleryAnalysis = {} } = useQuery<Record<string, unknown>>({
+    queryKey: ['gallery-analysis', tenantId],
+    queryFn: async () => {
+      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/gallery-analysis`, tenantId);
+      if (!r.ok) return {};
+      return r.json() as Promise<Record<string, unknown>>;
+    },
+    staleTime: 60_000,
+    enabled: Boolean(tenantId),
+  });
+
+  const openGalleryGroup = React.useCallback((g: GalleryGroup | null) => {
+    setGalleryGroup(g);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
+
+  const normGalleryUrl = (u: string) => u.split('?')[0];
+  const analyzedKeySet = new Set(Object.keys(galleryAnalysis).map(normGalleryUrl));
 
   // AI analyze all gallery photos — incremental: skip already-persisted entries
   async function analyzeGallery() {
@@ -1859,42 +2090,138 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     refUrls.length > 0 ? refUrls : (assets.map((a: any) => a.url).filter(Boolean) as string[]),
   );
 
+  const analyzedCount = displayUrls.filter((u) => analyzedKeySet.has(normGalleryUrl(u))).length;
+  const pendingCount = Math.max(0, displayUrls.length - analyzedCount);
+
+  const GALLERY_GROUPS: { key: GalleryGroup; label: string; hint: string; accent: string }[] = [
+    { key: 'upload', label: 'Fotoğraf Yükle', hint: displayUrls.length > 0 ? `${displayUrls.length} fotoğraf mevcut` : 'JPG · PNG · WebP', accent: '#5AA0D6' },
+    { key: 'analyze', label: 'AI Analiz', hint: displayUrls.length > 0 ? `${analyzedCount}/${displayUrls.length} analizli` : 'Etiketleme ve skor', accent: '#4FB597' },
+    { key: 'photos', label: 'Galeri Görünümü', hint: displayUrls.length > 0 ? `${displayUrls.length} görsel · düzenle/sil` : 'Henüz fotoğraf yok', accent: '#C79A4B' },
+  ];
+  const activeGalleryGroup = GALLERY_GROUPS.find((g) => g.key === galleryGroup);
+
   return (
     <>
-      {/* AI Analiz butonu */}
-      <SCard t={t} title="Fotoğraf Galerisi" accent={t.accent}>
-        <p style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6, marginBottom: 12 }}>
-          AI ile tüm fotoğrafları analiz et — her görsele içerik etiketleri, kullanım bağlamı ve skorlar atanır. İçerik üretiminde doğru fotoğraf seçimi iyileşir.
-        </p>
-        <button
-          onClick={analyzeGallery}
-          disabled={analyzing}
-          style={{
-            width: '100%', padding: '13px 14px', borderRadius: 14, cursor: analyzing ? 'default' : 'pointer',
-            background: analyzing ? t.accentDim : t.accentDim,
-            border: `0.5px solid ${t.accentBorder}`,
-            color: t.accent, fontSize: 13, fontWeight: 700,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}>
-          {analyzing
-            ? <><div style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.accentBorder}`, borderTop: `2px solid ${t.accent}`, animation: 'spinSlow 0.8s linear infinite' }} />Analiz ediliyor…</>
-            : `✦ ${displayUrls.length} Fotoğrafı AI ile Analiz Et`}
-        </button>
-        {analyzeStatus && (
-          <p style={{ fontSize: 12, color: analyzeStatus.startsWith('✓') ? '#10B981' : analyzeStatus.startsWith('Hata') ? '#EF4444' : t.textMuted, marginTop: 8, textAlign: 'center' }}>
-            {analyzeStatus}
-          </p>
-        )}
-      </SCard>
-
-      {operatingProfile && (
-        <SCard t={t} title="Galeri kuralları" accent={t.accent}>
-          <TenantGalleryPolicyBanner profile={operatingProfile} variant="mobile" theme={t} />
-        </SCard>
+      {galleryGroup === null && (
+        <>
+          <BrandSectionIntro
+            t={t}
+            title="Galeri"
+            description="Mekan ve ürün fotoğrafları. AI analizi doğru görsel seçimini iyileştirir; Mission ve Feed üretimi bu galeriyi kullanır."
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {GALLERY_GROUPS.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                onClick={() => openGalleryGroup(g.key)}
+                style={{
+                  position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
+                  ...t.surfaceGroup, overflow: 'hidden',
+                  display: 'flex', alignItems: 'center', gap: 14,
+                }}
+              >
+                <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
+                <div style={{
+                  position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
+                }}>
+                  <SectionIcon name={g.key} color={g.accent} />
+                </div>
+                <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
+                </div>
+                <ChevronRight color={t.textTertiary} />
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Upload button */}
-      <SCard t={t} title="Fotoğraf Yükle">
+      {galleryGroup !== null && (
+        <button
+          type="button"
+          onClick={() => openGalleryGroup(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
+        >
+          <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          Galeri · <span style={{ color: t.textPrimary }}>{activeGalleryGroup?.label}</span>
+        </button>
+      )}
+
+      {galleryGroup === 'analyze' && (
+        <>
+          <BrandSectionIntro
+            t={t}
+            title="AI Analiz"
+            description="Her fotoğrafa içerik etiketleri, kullanım bağlamı ve kalite skoru atanır. Üretimde doğru görsel eşleşmesi buna dayanır."
+          />
+          {displayUrls.length > 0 && (
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14,
+            }}>
+              {[
+                { label: 'Toplam', value: String(displayUrls.length), color: t.textPrimary },
+                { label: 'Analizli', value: String(analyzedCount), color: t.success },
+                { label: 'Bekleyen', value: String(pendingCount), color: pendingCount > 0 ? t.warning : t.textMuted },
+              ].map((stat) => (
+                <div key={stat.label} style={{
+                  padding: '12px 10px', borderRadius: 14, textAlign: 'center',
+                  background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                  border: `0.5px solid ${t.separator}`,
+                }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: stat.color, letterSpacing: '-0.03em' }}>{stat.value}</div>
+                  <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{stat.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <SCard t={t} title="Tümünü Analiz Et" accent={t.accent}>
+            <p style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6, marginBottom: 12 }}>
+              Yalnızca yeni fotoğraflar işlenir; daha önce analiz edilenler atlanır.
+            </p>
+            <button
+              onClick={analyzeGallery}
+              disabled={analyzing || displayUrls.length === 0}
+              style={{
+                width: '100%', padding: '13px 14px', borderRadius: 14, cursor: analyzing || displayUrls.length === 0 ? 'default' : 'pointer',
+                background: t.accentDim,
+                border: `0.5px solid ${t.accentBorder}`,
+                color: t.accent, fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                opacity: displayUrls.length === 0 ? 0.55 : 1,
+              }}>
+              {analyzing
+                ? <><div style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${t.accentBorder}`, borderTop: `2px solid ${t.accent}`, animation: 'spinSlow 0.8s linear infinite' }} />Analiz ediliyor…</>
+                : displayUrls.length > 0
+                  ? `✦ ${displayUrls.length} Fotoğrafı AI ile Analiz Et`
+                  : 'Önce fotoğraf yükleyin'}
+            </button>
+            {analyzeStatus && (
+              <p style={{ fontSize: 12, color: analyzeStatus.startsWith('✓') ? '#10B981' : analyzeStatus.startsWith('Hata') || analyzeStatus.startsWith('⚠') ? '#EF4444' : t.textMuted, marginTop: 8, textAlign: 'center', lineHeight: 1.45 }}>
+                {analyzeStatus}
+              </p>
+            )}
+          </SCard>
+
+          {operatingProfile && (
+            <SCard t={t} title="Galeri Kuralları" accent={t.accent}>
+              <TenantGalleryPolicyBanner profile={operatingProfile} variant="mobile" theme={t} />
+            </SCard>
+          )}
+        </>
+      )}
+
+      {galleryGroup === 'upload' && (
+        <>
+          <BrandSectionIntro
+            t={t}
+            title="Fotoğraf Yükle"
+            description="Mekan, müşteri sonucu veya önce/sonra görselleri ekleyin. Yükleme sonrası AI etiketleme arka planda başlar."
+          />
+          <SCard t={t} title="Yükleme">
         {operatingProfile && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
             {(
@@ -1961,9 +2288,22 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
         <p style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', marginTop: 6 }}>
           JPG, PNG, WebP · max 10MB · yükleme sonrası otomatik AI analiz
         </p>
+        {analyzeStatus && (
+          <p style={{ fontSize: 12, color: analyzeStatus.startsWith('✓') ? '#10B981' : t.textMuted, marginTop: 10, textAlign: 'center', lineHeight: 1.45 }}>
+            {analyzeStatus}
+          </p>
+        )}
       </SCard>
+        </>
+      )}
 
-      {/* Photo grid */}
+      {galleryGroup === 'photos' && (
+        <>
+          <BrandSectionIntro
+            t={t}
+            title="Galeri Görünümü"
+            description={`${displayUrls.length} fotoğraf · ${analyzedCount} analizli. Düzenle modunda silme ve temizleme yapabilirsiniz.`}
+          />
       {displayUrls.length > 0 && (() => {
         const totalPages = Math.ceil(displayUrls.length / PAGE_SIZE);
         const pageUrls = displayUrls.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -1971,8 +2311,11 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
           AUTO_EXCLUDE.some(p => u.toLowerCase().includes(p))).length;
 
         return (
-          <SCard t={t} title={`Galeri (${displayUrls.length} fotoğraf)`}>
-            {/* Edit mode toggle + auto-flag warning */}
+          <SCard t={t} title={`${displayUrls.length} fotoğraf`}>
+            <p style={{ fontSize: 11, color: t.textMuted, marginBottom: 12, lineHeight: 1.45 }}>
+              {analyzedCount} analizli · {pendingCount} bekliyor
+              {autoFlaggedCount > 0 ? ` · ${autoFlaggedCount} uyarı` : ''}
+            </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               {autoFlaggedCount > 0 && (
                 <div style={{ flex: 1, fontSize: 11, color: t.warning,
@@ -1996,6 +2339,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
               {pageUrls.map((url, i) => {
                 const isAutoFlagged = AUTO_EXCLUDE.some(p => url.toLowerCase().includes(p));
                 const isDeleting = deletingUrl === url;
+                const isAnalyzed = analyzedKeySet.has(normGalleryUrl(url));
                 return (
                   <div key={page * PAGE_SIZE + i} style={{ position: 'relative', aspectRatio: '1/1',
                     borderRadius: 10, overflow: 'hidden',
@@ -2020,6 +2364,15 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
                         img.style.opacity = '0.3';
                       }}
                     />
+
+                    {/* Analyzed badge */}
+                    {isAnalyzed && !deleteMode && (
+                      <div style={{ position: 'absolute', top: 4, right: 4,
+                        background: 'rgba(16,185,129,0.92)', borderRadius: 6,
+                        fontSize: 8, fontWeight: 700, color: '#fff', padding: '2px 5px' }}>
+                        AI
+                      </div>
+                    )}
 
                     {/* Auto-flag badge */}
                     {isAutoFlagged && !deleteMode && (
@@ -2102,15 +2455,25 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
       })()}
 
       {displayUrls.length === 0 && (
-        <SCard t={t} title="">
-          <div style={{ textAlign: 'center', padding: '20px 0' }}>
-            <p style={{ fontSize: 32, marginBottom: 8 }}>📷</p>
-            <p style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6 }}>
-              Henüz galeri fotoğrafı yok.
-              <br />Fotoğraf yükle veya "Markayı Yeniden Analiz Et" ile Instagram'dan çek.
+        <SCard t={t} title="Boş galeri">
+          <div style={{ textAlign: 'center', padding: '12px 0 4px' }}>
+            <p style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, marginBottom: 14 }}>
+              Henüz galeri fotoğrafı yok. Yükleme ekranından ekleyebilir veya marka analizi ile Instagram'dan çekebilirsiniz.
             </p>
+            <button
+              type="button"
+              onClick={() => openGalleryGroup('upload')}
+              style={{
+                padding: '10px 16px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: t.accentDim, color: t.accent, fontSize: 13, fontWeight: 700,
+              }}
+            >
+              Fotoğraf Yükle →
+            </button>
           </div>
         </SCard>
+      )}
+        </>
       )}
     </>
   );
@@ -2511,13 +2874,40 @@ export function BrandConstitution() {
   const { tenantId: storeTenantId } = useWorkspaceStore();
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
+  type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
+  type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
+  type IdentityGroup = 'basics' | 'channels' | 'about' | 'assets';
   const [tab, setTab] = useState<Tab>('identity');
   const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
+  const [designGroup, setDesignGroup] = useState<DesignGroup | null>(null);
+  const [contentGroup, setContentGroup] = useState<ContentGroup | null>(null);
+  const [identityGroup, setIdentityGroup] = useState<IdentityGroup | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const openSection = React.useCallback((next: Tab) => {
+  const openSection = React.useCallback((
+    next: Tab,
+    opts?: { identityGroup?: IdentityGroup | null; contentGroup?: ContentGroup | null; designGroup?: DesignGroup | null },
+  ) => {
     setTab(next);
     setView('section');
+    setDesignGroup(opts?.designGroup ?? null);
+    setContentGroup(opts?.contentGroup ?? null);
+    setIdentityGroup(opts?.identityGroup ?? null);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
+
+  const openDesignGroup = React.useCallback((g: DesignGroup | null) => {
+    setDesignGroup(g);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
+
+  const openContentGroup = React.useCallback((g: ContentGroup | null) => {
+    setContentGroup(g);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
+
+  const openIdentityGroup = React.useCallback((g: IdentityGroup | null) => {
+    setIdentityGroup(g);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
   const [analyzeFeedback, setAnalyzeFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -2529,7 +2919,13 @@ export function BrandConstitution() {
   useEffect(() => {
     if (!brandReadinessFix) return;
     const nextTab = brandReadinessFixToBrandTab(brandReadinessFix);
-    if (nextTab) { setTab(nextTab); setView('section'); }
+    if (nextTab) {
+      setTab(nextTab);
+      setView('section');
+      setDesignGroup(null);
+      setContentGroup(null);
+      setIdentityGroup(null);
+    }
     clearBrandReadinessFix();
   }, [brandReadinessFix, clearBrandReadinessFix]);
 
@@ -3085,23 +3481,56 @@ export function BrandConstitution() {
   const channelsConnected = Boolean(websiteDisplay && instagramDisplay);
 
   type NavStatus = 'done' | 'warn' | 'neutral';
-  type NavItem = { key: string; target: Tab; icon: string; label: string; status: NavStatus; hint: string; accent: string };
+  type NavItem = { key: string; target: Tab; label: string; status: NavStatus; hint: string; accent: string };
   const NAV_ITEMS: NavItem[] = [
-    { key: 'identity', target: 'identity', icon: '🏢', label: 'Kimlik', accent: '#5A82A0',
+    { key: 'identity', target: 'identity', label: 'Kimlik', accent: '#6C8EF5',
       status: constitutionConfirmedAt ? 'done' : 'warn', hint: constitutionConfirmedAt ? 'Onaylı' : 'Onay bekliyor' },
-    { key: 'content', target: 'content', icon: '✍️', label: 'İçerik', accent: '#7C9A7E',
+    { key: 'content', target: 'content', label: 'İçerik', accent: '#4FB597',
       status: (pillarsCount >= 2 && ctasCount >= 1) ? 'done' : 'warn', hint: `${pillarsCount} sütun · ${ctasCount} CTA` },
-    { key: 'design', target: 'design', icon: '🎨', label: 'Tasarım', accent: '#B08D57',
+    { key: 'design', target: 'design', label: 'Tasarım', accent: '#C79A4B',
       status: pprReady ? 'done' : 'warn', hint: pprReady ? 'Üretime hazır' : `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}` },
-    { key: 'gallery', target: 'gallery', icon: '📷', label: 'Galeri', accent: '#6E8CA0',
+    { key: 'gallery', target: 'gallery', label: 'Galeri', accent: '#5AA0D6',
       status: photoCount >= 8 ? 'done' : 'warn', hint: `${photoCount} fotoğraf` },
-    { key: 'chatbot', target: 'chatbot', icon: '🤖', label: 'Chatbot', accent: '#8E7CC3',
+    { key: 'chatbot', target: 'chatbot', label: 'Chatbot', accent: '#A985E0',
       status: hasChatbot ? 'done' : 'neutral', hint: hasChatbot ? 'Aktif' : 'Kurulmadı' },
-    { key: 'channels', target: 'identity', icon: '🔗', label: 'Kanallar', accent: '#5FA8A0',
+    { key: 'channels', target: 'identity', label: 'Kanallar', accent: '#3FB6AE',
       status: channelsConnected ? 'done' : 'warn', hint: channelsConnected ? 'Bağlı' : 'Eksik bağlantı' },
   ];
   const activeNavLabel = NAV_ITEMS.find((n) => n.target === tab)?.label
     ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
+
+  const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
+    { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
+    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Remotion & fal.ai şablonları', accent: '#5AA0D6' },
+    { key: 'engines', label: 'Üretim Motorları & Ses', hint: 'FAL · Runway · motion · müzik', accent: '#A985E0' },
+    { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
+    { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
+  ];
+  const activeDesignGroup = DESIGN_GROUPS.find((g) => g.key === designGroup);
+
+  const toneLabel = TONE_OPTIONS.find((o) => o.value === (p.brandTone ?? 'professional'))?.label ?? 'Profesyonel';
+  const audienceFilled = Boolean(String(p.targetAudience || (pyCtx as any)?.target_audience || '').trim());
+  const goalsFilled = Boolean(String(p.campaignGoals || (pyCtx as any)?.campaign_goals || '').trim());
+  const competitorsRaw = String(p.competitors || (pyCtx as any)?.competitors || '');
+  const competitorCount = competitorsRaw ? competitorsRaw.split(',').map((s) => s.trim()).filter(Boolean).length : 0;
+
+  const CONTENT_GROUPS: { key: ContentGroup; label: string; hint: string; accent: string }[] = [
+    { key: 'voice', label: 'Ses & Ton', hint: toneLabel, accent: '#5AA0D6' },
+    { key: 'audience', label: 'Hedef & Kampanya', hint: audienceFilled && goalsFilled ? 'Hedef kitle ve kampanya tanımlı' : 'Kitle ve hedefler', accent: '#4FB597' },
+    { key: 'strategy', label: 'İçerik Stratejisi', hint: `${pillarsCount} sütun · ${ctasCount} CTA`, accent: '#C79A4B' },
+    { key: 'special', label: 'Özel Günler & Plan', hint: 'Tatiller, sektör günleri, zamanlı şablonlar', accent: '#A985E0' },
+    { key: 'competitors', label: 'Rakipler', hint: competitorCount > 0 ? `${competitorCount} rakip tanımlı` : 'Rakip ekle veya AI önerisi al', accent: '#E08A6B' },
+  ];
+  const activeContentGroup = CONTENT_GROUPS.find((g) => g.key === contentGroup);
+
+  const IDENTITY_GROUPS: { key: IdentityGroup; label: string; hint: string; accent: string }[] = [
+    { key: 'basics', label: 'Temel Bilgiler', hint: brandNameDisplay || 'Marka adı, sektör, konum', accent: '#5AA0D6' },
+    { key: 'channels', label: 'Kanallar', hint: channelsConnected ? 'Web & Instagram bağlı' : 'Web ve sosyal bağlantılar', accent: '#3FB6AE' },
+    { key: 'about', label: 'Marka Açıklaması', hint: descriptionDisplay ? `${contentLanguage === 'tr' ? 'Türkçe' : 'English'} · tanım mevcut` : 'AI ile doldur', accent: '#C79A4B' },
+    { key: 'assets', label: 'Logo & Görseller', hint: logoUrl ? 'Logo tanımlı' : 'Logo ekle', accent: '#A985E0' },
+  ];
+  const activeIdentityGroup = IDENTITY_GROUPS.find((g) => g.key === identityGroup);
+  const identitySectionTitle = identityGroup === 'channels' ? 'Kanallar' : 'Kimlik';
 
   const statusColor = (s: NavStatus): string =>
     s === 'done' ? t.success : s === 'warn' ? '#F59E0B' : t.textMuted;
@@ -3170,16 +3599,18 @@ export function BrandConstitution() {
 
           {/* Brand hero card */}
           <div style={{
-            position: 'relative', marginBottom: 20, padding: 18, borderRadius: 22, overflow: 'hidden',
+            position: 'relative', marginBottom: 22, padding: 20, borderRadius: 24, overflow: 'hidden',
             ...t.surfaceGroup,
           }}>
-            <div style={{ position: 'absolute', inset: 0, background: brandPrimary, opacity: 0.04, pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', top: -50, right: -40, width: 180, height: 180, borderRadius: '50%', background: brandPrimary, opacity: t.isDark ? 0.14 : 0.08, filter: 'blur(40px)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', inset: 0, background: brandPrimary, opacity: 0.03, pointerEvents: 'none' }} />
             <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
               <div style={{
-                width: 80, height: 80, borderRadius: 24, overflow: 'hidden', flexShrink: 0,
+                width: 80, height: 80, borderRadius: 22, overflow: 'hidden', flexShrink: 0,
                 background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: t.isDark ? '0 4px 16px rgba(0,0,0,0.35)' : '0 4px 16px rgba(0,0,0,0.12)',
+                boxShadow: `0 6px 20px rgba(0,0,0,${t.isDark ? 0.4 : 0.14})`,
+                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
               }}>
                 {logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -3276,29 +3707,55 @@ export function BrandConstitution() {
             </button>
           )}
 
+          {/* Section label */}
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: t.textMuted, margin: '4px 2px 12px' }}>
+            Yönetim
+          </div>
+
           {/* 2×3 section nav grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.key}
                 type="button"
-                onClick={() => openSection(item.target)}
+                onClick={() => {
+                  if (item.key === 'channels') {
+                    openSection('identity', { identityGroup: 'channels' });
+                  } else {
+                    openSection(item.target);
+                  }
+                }}
                 style={{
-                  position: 'relative', textAlign: 'left', padding: '14px 14px 14px 16px', borderRadius: 16, cursor: 'pointer',
-                  ...t.surfaceGroup, borderLeft: `3px solid ${item.accent}`,
-                  display: 'flex', flexDirection: 'column', gap: 8, minHeight: 96,
+                  position: 'relative', textAlign: 'left', padding: 15, borderRadius: 20, cursor: 'pointer',
+                  ...t.surfaceGroup, overflow: 'hidden',
+                  display: 'flex', flexDirection: 'column', gap: 13, minHeight: 118,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 24, lineHeight: 1 }}>{item.icon}</span>
+                {/* Ambient accent glow */}
+                <div style={{ position: 'absolute', top: -26, left: -26, width: 84, height: 84, borderRadius: '50%', background: item.accent, opacity: t.isDark ? 0.16 : 0.1, filter: 'blur(16px)', pointerEvents: 'none' }} />
+
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <div style={{
+                    width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: `linear-gradient(135deg, ${item.accent}2e, ${item.accent}14)`,
+                    border: `0.5px solid ${item.accent}3d`,
+                    boxShadow: `inset 0 1px 0 ${t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.5)'}`,
+                  }}>
+                    <SectionIcon name={item.key} color={item.accent} />
+                  </div>
                   <span style={{
-                    width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, fontWeight: 800, color: '#fff', background: statusColor(item.status),
+                    width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 800, color: statusColor(item.status),
+                    background: `${statusColor(item.status)}22`, border: `0.5px solid ${statusColor(item.status)}3a`,
                   }}>{statusGlyph(item.status)}</span>
                 </div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.01em' }}>{item.label}</div>
-                  <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 2 }}>{item.hint}</div>
+
+                <div style={{ position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{item.label}</span>
+                    <ChevronRight color={t.textTertiary} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 3, letterSpacing: '-0.01em' }}>{item.hint}</div>
                 </div>
               </button>
             ))}
@@ -3366,8 +3823,8 @@ export function BrandConstitution() {
           </div>
         )}
 
-        {/* IDENTITY */}
-        {tab === 'identity' && (
+        {/* Identity group index */}
+        {tab === 'identity' && identityGroup === null && (
           <>
             <BrandSectionIntro
               t={t}
@@ -3376,7 +3833,7 @@ export function BrandConstitution() {
             />
             {!constitutionConfirmedAt && (
               <div style={{
-                marginBottom: 20,
+                marginBottom: 16,
                 padding: '16px',
                 borderRadius: 16,
                 background: t.isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)',
@@ -3389,15 +3846,7 @@ export function BrandConstitution() {
                   Kimlik bilgilerini gözden geçirip onaylayın — Mission Hub skoruna +20 puan ekler.
                 </div>
                 {constitutionConfirmError && (
-                  <div style={{
-                    fontSize: 13,
-                    color: t.danger,
-                    lineHeight: 1.45,
-                    marginBottom: 12,
-                    padding: '10px 12px',
-                    borderRadius: 10,
-                    background: t.dangerDim,
-                  }}>
+                  <div style={{ fontSize: 13, color: t.danger, lineHeight: 1.45, marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: t.dangerDim }}>
                     {constitutionConfirmError}
                   </div>
                 )}
@@ -3406,14 +3855,8 @@ export function BrandConstitution() {
                   onClick={() => void handleConfirmConstitution()}
                   disabled={confirmingConstitution}
                   style={{
-                    width: '100%',
-                    padding: '13px 16px',
-                    borderRadius: 12,
-                    border: 'none',
-                    cursor: confirmingConstitution ? 'wait' : 'pointer',
-                    fontSize: 16,
-                    fontWeight: 600,
-                    color: '#fff',
+                    width: '100%', padding: '13px 16px', borderRadius: 12, border: 'none',
+                    cursor: confirmingConstitution ? 'wait' : 'pointer', fontSize: 16, fontWeight: 600, color: '#fff',
                     background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                   }}
                 >
@@ -3421,95 +3864,161 @@ export function BrandConstitution() {
                 </button>
               </div>
             )}
-
-            <SCard t={t} title="Temel Bilgiler">
-              <Field t={t} label="Marka Adı"  value={brandNameDisplay} onSave={save('brandName')} />
-              <Field t={t} label="Sektör"      value={industryDisplay}  onSave={save('industry')} />
-              <Field t={t} label="Konum"        value={locationDisplay}  onSave={save('location')} />
-              <Field t={t} label="Web Sitesi"   value={websiteDisplay} onSave={save('websiteUrl')} />
-              <Field t={t} label="Instagram" value={instagramDisplay} onSave={save('instagramHandle')} hint="örn: sunuevent" />
-              <Field t={t} label="Google Business" value={(p as any).googleBusinessUrl ?? ''} onSave={save('googleBusinessUrl')} />
-            </SCard>
-
-            <SLabel t={t} text="İçerik Dili" />
-            <div style={{
-              display: 'flex', gap: 3, padding: 3, marginBottom: 28, borderRadius: 10,
-              background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-            }}>
-              {(['tr', 'en'] as const).map(lang => {
-                const active = contentLanguage === lang;
-                return (
-                  <button
-                    key={lang}
-                    type="button"
-                    onClick={() => save('languages')(lang)}
-                    style={{
-                      flex: 1,
-                      padding: '10px 0',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
-                      color: active ? t.textPrimary : t.textTertiary,
-                      fontWeight: 600,
-                      fontSize: 15,
-                      cursor: 'pointer',
-                      boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
-                      transition: 'background 180ms ease, color 180ms ease',
-                    }}
-                  >
-                    {lang === 'tr' ? 'Türkçe' : 'English'}
-                  </button>
-                );
-              })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {IDENTITY_GROUPS.map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => openIdentityGroup(g.key)}
+                  style={{
+                    position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
+                    ...t.surfaceGroup, overflow: 'hidden',
+                    display: 'flex', alignItems: 'center', gap: 14,
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
+                  <div style={{
+                    position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
+                  }}>
+                    <SectionIcon name={g.key === 'channels' ? 'channels' : g.key} color={g.accent} />
+                  </div>
+                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
+                  </div>
+                  <ChevronRight color={t.textTertiary} />
+                </button>
+              ))}
             </div>
+          </>
+        )}
 
-            <SCard t={t} title="Marka Açıklaması">
+        {tab === 'identity' && identityGroup !== null && (
+          <button
+            type="button"
+            onClick={() => openIdentityGroup(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
+          >
+            <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            {identitySectionTitle} · <span style={{ color: t.textPrimary }}>{activeIdentityGroup?.label}</span>
+          </button>
+        )}
+
+        {tab === 'identity' && identityGroup === 'basics' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Temel Bilgiler"
+              description="Markanın resmi adı, sektörü ve konumu. Tüm üretim ve analiz bu kimliğe bağlanır."
+            />
+            <SCard t={t} title="Kimlik">
+              <Field t={t} label="Marka Adı" value={brandNameDisplay} onSave={save('brandName')} />
+              <Field t={t} label="Sektör" value={industryDisplay} onSave={save('industry')} hint={industrySlug !== industryDisplay ? industrySlug : undefined} />
+              <Field t={t} label="Konum" value={locationDisplay} onSave={save('location')} hint="Şehir veya bölge" />
+            </SCard>
+          </>
+        )}
+
+        {tab === 'identity' && identityGroup === 'channels' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Kanallar"
+              description="Web sitesi ve sosyal medya bağlantıları. Marka analizi ve içerik üretimi bu kanallardan beslenir."
+            />
+            <SCard t={t} title="Bağlantılar" accent="#3FB6AE">
+              <Field t={t} label="Web Sitesi" value={websiteDisplay} onSave={save('websiteUrl')} hint="https://..." />
+              <Field t={t} label="Instagram" value={instagramDisplay} onSave={save('instagramHandle')} hint="Kullanıcı adı, @ olmadan" />
+              <Field t={t} label="Google Business" value={(p as any).googleBusinessUrl ?? ''} onSave={save('googleBusinessUrl')} hint="Maps veya Business profil linki" />
+            </SCard>
+            <SCard t={t} title="İçerik Dili">
+              <p style={{ fontSize: 12, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+                Caption, story metinleri ve chatbot yanıtları için varsayılan dil.
+              </p>
+              <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+                {(['tr', 'en'] as const).map(lang => {
+                  const active = contentLanguage === lang;
+                  return (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => save('languages')(lang)}
+                      style={{
+                        flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
+                        background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
+                        color: active ? t.textPrimary : t.textTertiary,
+                        fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                        boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
+                      }}
+                    >
+                      {lang === 'tr' ? 'Türkçe' : 'English'}
+                    </button>
+                  );
+                })}
+              </div>
+            </SCard>
+          </>
+        )}
+
+        {tab === 'identity' && identityGroup === 'about' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Marka Açıklaması"
+              description="Markanızı, ürün ve hizmetlerinizi tanımlayın. AI ajanları bu metni birincil referans olarak kullanır."
+            />
+            <SCard t={t} title="Tanım & Ürünler">
               <div style={{ padding: '14px 16px 0' }}>
                 <button
                   type="button"
                   onClick={() => descriptionAiMutation.mutate()}
                   disabled={descriptionAiMutation.isPending}
                   style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 14,
-                    border: `0.5px solid ${t.accentBorder}`,
-                    background: t.accentDim,
-                    color: t.accent,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
+                    width: '100%', padding: '12px 14px', borderRadius: 14,
+                    border: `0.5px solid ${t.accentBorder}`, background: t.accentDim, color: t.accent,
+                    fontSize: 14, fontWeight: 700, cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   }}
                 >
                   {descriptionAiMutation.isPending ? 'AI markayı analiz ediyor…' : 'AI ile analiz et ve doldur'}
                 </button>
                 {descriptionAiFeedback && (
                   <div style={{
-                    marginTop: 8,
-                    padding: '9px 11px',
-                    borderRadius: 10,
-                    fontSize: 12,
-                    lineHeight: 1.45,
+                    marginTop: 8, padding: '9px 11px', borderRadius: 10, fontSize: 12, lineHeight: 1.45,
                     color: descriptionAiFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
-                    background: descriptionAiFeedback.kind === 'err'
-                      ? 'rgba(245,158,11,0.12)'
-                      : (t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)'),
+                    background: descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.12)' : (t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)'),
                     border: `0.5px solid ${descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.28)'}`,
                   }}>
                     {descriptionAiFeedback.text}
                   </div>
                 )}
               </div>
-              <Field t={t} label="Açıklama & Ürünler" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin — ajanlar bunu kullanır." />
+              <Field t={t} label="Açıklama & Ürünler" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin." />
             </SCard>
+          </>
+        )}
 
-            <SCard t={t} title="Logo & Görseller">
-              <Field t={t} label="Logo URL" value={String(logoCandidate || '')} onSave={save('logoUrl')} />
-              <Field t={t} label="Marka Görselleri (virgülle)" value={(p as any).brandImageUrls ?? ''} onSave={save('brandImageUrls')} hint="https://..." multiline />
+        {tab === 'identity' && identityGroup === 'assets' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Logo & Görseller"
+              description="Marka logosu ve referans görseller. Story, post ve chatbot bu varlıkları kullanır."
+            />
+            <SCard t={t} title="Görsel Varlıklar">
+              <Field t={t} label="Logo URL" value={String(logoCandidate || '')} onSave={save('logoUrl')} hint="PNG veya SVG tercih edilir" />
+              {logoUrl && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '10px 12px', borderRadius: 12, background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 12, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6', flexShrink: 0 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={resolveGalleryImageSrc(logoUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  </div>
+                  <span style={{ fontSize: 12, color: t.textMuted }}>Mevcut logo önizlemesi</span>
+                </div>
+              )}
+              <Field t={t} label="Marka Görselleri" value={(p as any).brandImageUrls ?? ''} onSave={save('brandImageUrls')} hint="Virgülle ayırın · https://..." multiline />
               {brandImages.length > 0 && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
                   {brandImages.slice(0, 6).map((url, i) => (
@@ -3524,85 +4033,161 @@ export function BrandConstitution() {
           </>
         )}
 
-        {tab === 'content' && (
+        {/* Content group index */}
+        {tab === 'content' && contentGroup === null && (
           <>
             <BrandSectionIntro
               t={t}
               title="İçerik"
               description="Ses tonu, hedef kitle ve kampanya odağı. Mission ve Feed caption'ları bu stratejiye göre üretilir."
             />
-
-            <SCard t={t} title="Ses & Ton">
-              <div>
-                <p style={{ fontSize: 11, color: t.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-                  Marka Tonu
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
-                  {TONE_OPTIONS.map(opt => {
-                    const isSelected = (p.brandTone ?? 'professional') === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        onClick={() => save('brandTone')(opt.value)}
-                        style={{
-                          padding: '10px 4px', borderRadius: 12, cursor: 'pointer', textAlign: 'center',
-                          background: isSelected ? 'rgba(90,130,160,0.14)' : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                          border: `1px solid ${isSelected ? 'rgba(90,130,160,0.4)' : t.separator}`,
-                          transition: 'all 0.15s',
-                        }}>
-                        <div style={{ fontSize: 18, marginBottom: 3 }}>{opt.emoji}</div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: isSelected ? '#9DBECE' : t.textSecondary }}>{opt.label}</div>
-                        <div style={{ fontSize: 9, color: t.textMuted, marginTop: 1, lineHeight: 1.2 }}>{opt.desc}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-                {p.brandTone && !TONE_OPTIONS.find(o => o.value === p.brandTone) && (
-                  <p style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>
-                    Özel ton: <span style={{ color: t.textSecondary }}>{p.brandTone}</span>
-                  </p>
-                )}
-              </div>
-            </SCard>
-
-            <SCard t={t} title="Hedef Kitle">
-              <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline hint="Kim için üretiyoruz?" />
-            </SCard>
-
-            <SCard t={t} title="Kampanya Hedefleri">
-              <Field t={t} label="Hedefler" value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''} onSave={save('campaignGoals')} multiline hint="Ne başarmak istiyoruz?" />
-            </SCard>
-
-            {tenantId && (
-              <SCard t={t} title="İçerik Stratejisi" accent={t.accent}>
-                <BrandContentStrategyPanel
-                  tenantId={tenantId}
-                  t={t}
-                  pyCtx={pyCtx as Record<string, unknown> | undefined}
-                  sector={industrySlug || 'restaurant_cafe'}
-                  onSaved={() => {
-                    void queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
-                    void queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {CONTENT_GROUPS.map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => openContentGroup(g.key)}
+                  style={{
+                    position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
+                    ...t.surfaceGroup, overflow: 'hidden',
+                    display: 'flex', alignItems: 'center', gap: 14,
                   }}
-                />
-              </SCard>
-            )}
+                >
+                  <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
+                  <div style={{
+                    position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
+                  }}>
+                    <SectionIcon name={g.key} color={g.accent} />
+                  </div>
+                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
+                  </div>
+                  <ChevronRight color={t.textTertiary} />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
-            {tenantId && (
-              <SCard t={t} title="Özel Günler">
-                <BrandSpecialDaysPanel tenantId={tenantId} t={t} />
-              </SCard>
-            )}
+        {/* Content group sticky sub-header */}
+        {tab === 'content' && contentGroup !== null && (
+          <button
+            type="button"
+            onClick={() => openContentGroup(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
+          >
+            <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            İçerik · <span style={{ color: t.textPrimary }}>{activeContentGroup?.label}</span>
+          </button>
+        )}
 
-            {tenantId && (
-              <BrandScheduledTemplatesPanel
+        {tab === 'content' && contentGroup === 'voice' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Ses & Ton"
+              description="Markanın yazılı sesi. Caption, story metinleri ve chatbot yanıtları bu tona göre üretilir."
+            />
+            <SCard t={t} title="Marka Tonu" accent={t.accent}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {TONE_OPTIONS.map(opt => {
+                  const isSelected = (p.brandTone ?? 'professional') === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => save('brandTone')(opt.value)}
+                      style={{
+                        padding: '14px 12px', borderRadius: 14, cursor: 'pointer', textAlign: 'left',
+                        background: isSelected
+                          ? (t.isDark ? 'linear-gradient(135deg, rgba(90,160,214,0.18), rgba(90,160,214,0.06))' : 'linear-gradient(135deg, rgba(90,160,214,0.12), rgba(90,160,214,0.04))')
+                          : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)'),
+                        border: `1px solid ${isSelected ? 'rgba(90,160,214,0.45)' : t.separator}`,
+                        boxShadow: isSelected ? '0 8px 24px rgba(0,0,0,0.12)' : 'none',
+                        transition: 'all 0.15s',
+                      }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: isSelected ? '#9DBECE' : t.textPrimary, marginBottom: 3 }}>{opt.label}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.35 }}>{opt.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+              {p.brandTone && !TONE_OPTIONS.find(o => o.value === p.brandTone) && (
+                <p style={{ fontSize: 11, color: t.textMuted, marginTop: 10 }}>
+                  Özel ton: <span style={{ color: t.textSecondary }}>{p.brandTone}</span>
+                </p>
+              )}
+            </SCard>
+          </>
+        )}
+
+        {tab === 'content' && contentGroup === 'audience' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Hedef & Kampanya"
+              description="Kime hitap ediyorsunuz ve ne başarmak istiyorsunuz? Mission ve Feed üretimi bu bilgileri referans alır."
+            />
+            <SCard t={t} title="Hedef Kitle">
+              <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline hint="Kim için üretiyoruz? Yaş, ilgi alanı, konum..." />
+            </SCard>
+            <SCard t={t} title="Kampanya Hedefleri">
+              <Field t={t} label="Hedefler" value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''} onSave={save('campaignGoals')} multiline hint="Ne başarmak istiyoruz? Rezervasyon, farkındalık, etkinlik..." />
+            </SCard>
+          </>
+        )}
+
+        {tab === 'content' && contentGroup === 'strategy' && tenantId && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="İçerik Stratejisi"
+              description="İçerik sütunları ve varsayılan CTA'lar. Mission slotları bu stratejiye göre planlanır."
+            />
+            <SCard t={t} title="Sütunlar & CTA'lar" accent={t.accent}>
+              <BrandContentStrategyPanel
                 tenantId={tenantId}
                 t={t}
-                sector={industrySlug || 'restaurant'}
+                pyCtx={pyCtx as Record<string, unknown> | undefined}
+                sector={industrySlug || 'restaurant_cafe'}
+                onSaved={() => {
+                  void queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+                  void queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
+                }}
               />
-            )}
+            </SCard>
+          </>
+        )}
 
-            <SCard t={t} title="Rakipler">
+        {tab === 'content' && contentGroup === 'special' && tenantId && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Özel Günler & Plan"
+              description="Tatiller, sektör günleri ve zamanlı şablonlar. Ülke ve sektöre göre otomatik öneriler sunulur."
+            />
+            <SCard t={t} title="Özel Günler">
+              <BrandSpecialDaysPanel tenantId={tenantId} t={t} />
+            </SCard>
+            <BrandScheduledTemplatesPanel
+              tenantId={tenantId}
+              t={t}
+              sector={industrySlug || 'restaurant'}
+            />
+          </>
+        )}
+
+        {tab === 'content' && contentGroup === 'competitors' && (
+          <>
+            <BrandSectionIntro
+              t={t}
+              title="Rakipler"
+              description="Rakip markaları tanımlayın. AI içerik stratejisi ve farklılaşma önerileri bu listeyi kullanır."
+            />
+            <SCard t={t} title="Rakip Listesi">
               {(() => {
                 const confirmedRaw = p.competitors || (pyCtx as any)?.competitors || '';
                 const confirmed: string[] = confirmedRaw
@@ -3706,18 +4291,67 @@ export function BrandConstitution() {
           </>
         )}
 
-        {tab === 'design' && (
+        {/* Design group index */}
+        {tab === 'design' && designGroup === null && (
           <>
             <BrandSectionIntro
               t={t}
-              title="Görünüm"
-              description="Renk paleti, tipografi ve şablon kütüphanesi. Story / Reel / Post tasarımlarının görünümü buradan gelir. Üretim kontrolleri (görsel kaynağı, onay modu, motorlar) bu sayfanın altındadır."
+              title="Tasarım"
+              description="Marka görünümü ve üretim ayarları. İhtiyacın olan grubu seç — her ekran yalnızca o konuya odaklanır."
             />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {DESIGN_GROUPS.map((g) => (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => openDesignGroup(g.key)}
+                  style={{
+                    position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
+                    ...t.surfaceGroup, overflow: 'hidden',
+                    display: 'flex', alignItems: 'center', gap: 14,
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
+                  <div style={{
+                    position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
+                  }}>
+                    <SectionIcon name={g.key} color={g.accent} />
+                  </div>
+                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
+                  </div>
+                  <ChevronRight color={t.textTertiary} />
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
+        {/* Design group sticky sub-header */}
+        {tab === 'design' && designGroup !== null && (
+          <button
+            type="button"
+            onClick={() => openDesignGroup(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
+          >
+            <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Tasarım · <span style={{ color: t.textPrimary }}>{activeDesignGroup?.label}</span>
+          </button>
+        )}
+
+        {tab === 'design' && designGroup === 'colors' && (
+          <>
             <SCard t={t} title="Görsel Dil">
               <Field t={t} label="Görsel Stil" value={p.visualStyle || (pyCtx as any)?.visual_style || ''} onSave={save('visualStyle')} multiline hint="örn: minimal, luxury, cinematic..." />
             </SCard>
+          </>
+        )}
 
+        {tab === 'design' && designGroup === 'templates' && (
+          <>
             <BrandTemplateLibraryPanel
               workspaceId={tenantId}
               sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
@@ -3756,11 +4390,16 @@ export function BrandConstitution() {
                 />
               </SCard>
             )}
+          </>
+        )}
 
+        {tab === 'design' && designGroup === 'colors' && (
+          <>
             <CollapsibleGroup
               t={t}
               title="Yazı tipi & başlık stili"
               subtitle="Başlık fontu, 3D/efekt, logo konumu, tipografi vibe'ı ve ana/ikincil fontlar"
+              defaultOpen
             >
             {tenantId && (
               <PostDesignDefaultsPanel
@@ -3850,27 +4489,29 @@ export function BrandConstitution() {
               />
             </SCard>
 
+          </>
+        )}
+
+        {tab === 'design' && designGroup === 'dna' && (
+          <>
             <CollapsibleGroup
               t={t}
               title="Marka DNA & görsel dil"
               subtitle="Marka karakterini özetleyen görsel DNA ve vibe analizi"
+              defaultOpen
             >
             <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
             </CollapsibleGroup>
           </>
         )}
 
-        {tab === 'design' && (
+        {tab === 'design' && designGroup === 'rules' && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Üretim"
-              description="Günlük kullanımda yalnızca iki ayar önemli: Görsel Kaynağı ve Onay Modu. Gelişmiş tasarım motorları, kurallar ve analiz verileri aşağıdaki katlanabilir gruplarda toplanır."
-            />
             <CollapsibleGroup
               t={t}
               title="Kurallar, yetenekler & şablonlar"
               subtitle="Özel kurallar, risk sınırları, işletme yetenekleri ve Canva şablonları"
+              defaultOpen
             >
             <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
@@ -3959,6 +4600,11 @@ export function BrandConstitution() {
               </SCard>
             )}
             </CollapsibleGroup>
+          </>
+        )}
+
+        {tab === 'design' && designGroup === 'dna' && (
+          <>
             {/* Re-analyze button */}
             <button
               onClick={() => analyzeMutation.mutate()}
@@ -3988,6 +4634,7 @@ export function BrandConstitution() {
               t={t}
               title="Analiz & performans"
               subtitle="AI değerlendirmesi, sistem analizi, ham veriler ve Meta reklam özeti"
+              defaultOpen
             >
             <SCard t={t} title="AI Değerlendirmesi" accent={t.accent}>
               <InfoRow t={t} label="Tamamlanma Skoru" value={`${score}%`} color={t.accent} />
@@ -4146,7 +4793,11 @@ export function BrandConstitution() {
               )}
             </SCard>
             </CollapsibleGroup>
+          </>
+        )}
 
+        {tab === 'design' && designGroup === 'rules' && (
+          <>
             <SCard t={t} title="Onay Modu" accent={t.warning}>
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 12, color: t.textTertiary, marginBottom: 12, lineHeight: 1.5 }}>
@@ -4340,12 +4991,17 @@ export function BrandConstitution() {
                 </SCard>
               );
             })()}
+          </>
+        )}
 
+        {tab === 'design' && designGroup === 'engines' && (
+          <>
             <CollapsibleGroup
               t={t}
               title="Tasarım motorları & hareket"
               subtitle="Ürün vitrini, Remotion · FAL · Runway, motion stili, reel hareketi, story sesi ve logo kuralları"
               accent="#8B5CF6"
+              defaultOpen
             >
             {tenantId && (
               <SCard t={t} title="Ürün Vitrin (Product Showcase)" accent="#10B981">
@@ -4489,13 +5145,7 @@ export function BrandConstitution() {
         )}
 
         {tab === 'chatbot' && tenantId && (
-          <>
-            <BrandSectionIntro
-              t={t}
-              title="Instagram Chatbot"
-              description="DM chatbot ve ilerideki agent/voice aramaları için marka bilgisi. Analiz sonucu veritabanında saklanır."
-            />
-            <BrandChatbotProfileCard
+          <BrandChatbotProfileCard
               t={t}
               workspaceId={tenantId}
               brandName={brandNameDisplay}
@@ -4522,7 +5172,6 @@ export function BrandConstitution() {
                 }
               }}
             />
-          </>
         )}
 
         {tab === 'gallery' && (

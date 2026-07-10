@@ -183,6 +183,35 @@ export function formatPublishScheduleLabel(
   return parts.join(' · ');
 }
 
+/** Short label for schedule button subtitle — e.g. "Pzt · 12:00" */
+export function formatScheduleButtonSubtitle(meta: Record<string, unknown>): string | null {
+  const slot = publishScheduleFromMetadata(meta);
+  if (!slot) return null;
+  const dayTr = DAY_TR[slot.day] ?? slot.day;
+  return slot.time ? `${dayTr} · ${slot.time}` : dayTr;
+}
+
+const JS_WEEKDAY: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  Paz: 0, Pzt: 1, Sal: 2, Çar: 3, Per: 4, Cum: 5, Cmt: 6,
+};
+
+/** Next occurrence of metadata day+time as ISO (for schedule sheet default). */
+export function resolveSuggestedScheduleISO(meta: Record<string, unknown>): string | null {
+  const slot = publishScheduleFromMetadata(meta);
+  if (!slot?.day) return null;
+  const targetDay = JS_WEEKDAY[slot.day];
+  if (targetDay === undefined) return null;
+  const [hh = 12, mm = 0] = slot.time.split(':').map((x) => parseInt(x, 10) || 0);
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setHours(hh, mm, 0, 0);
+  let daysAhead = (targetDay - candidate.getDay() + 7) % 7;
+  if (daysAhead === 0 && candidate.getTime() <= now.getTime()) daysAhead = 7;
+  candidate.setDate(candidate.getDate() + daysAhead);
+  return candidate.toISOString();
+}
+
 /** Sort key — lower = earlier in week / day (unscheduled → end). */
 export function publishScheduleSortKey(meta: Record<string, unknown>): number {
   const slot = publishScheduleFromMetadata(meta);

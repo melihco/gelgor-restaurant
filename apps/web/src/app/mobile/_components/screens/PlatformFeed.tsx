@@ -110,8 +110,12 @@ import {
   type PreviewPlatform,
 } from '../platform-native-previews';
 import type { OutputArtifact } from '@/types';
+import { FeedPublishBar } from '../FeedPublishBar';
+import { ScheduleSheet } from '../ScheduleSheet';
 import {
   formatPublishScheduleLabel,
+  formatScheduleButtonSubtitle,
+  resolveSuggestedScheduleISO,
   sortFeedArtifactsForDisplay,
 } from '@/lib/feed-publish-schedule';
 
@@ -440,6 +444,10 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
       ? '⚠ Metin hatalı'
       : '⚠ Onay kapalı';
   const [softApproveAck, setSoftApproveAck] = React.useState(false);
+  const [scheduleOpen, setScheduleOpen] = React.useState(false);
+
+  const cardBg = platform === 'instagram' ? '#000' : (t.isDark ? '#0F0F1C' : '#fff');
+  const igHome = !isMobileOperatorMode() && platform === 'instagram';
 
   const handleApproveClick = () => {
     if (!canApproveHard || approving || isRendering) return;
@@ -451,8 +459,26 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
     setSoftApproveAck(false);
   };
 
-  const cardBg = platform === 'instagram' ? '#000' : (t.isDark ? '#0F0F1C' : '#fff');
-  const igHome = !isMobileOperatorMode() && platform === 'instagram';
+  const scheduleSubtitle = formatScheduleButtonSubtitle(meta);
+  const suggestedScheduleISO = resolveSuggestedScheduleISO(meta);
+
+  const publishType: 'feed' | 'reel' | 'story' =
+    kind === 'reel' ? 'reel' : kind === 'story' ? 'story' : 'feed';
+
+  const formatTag: import('../platform-native-previews').FeedFormatTag | undefined =
+    isAdCreative ? 'ad' : kind === 'carousel' ? 'carousel' : kind === 'reel' ? 'reel' : 'post';
+
+  const publishBar = igHome && isPending && !isAdCreative && !isRendering ? (
+    <FeedPublishBar
+      onShareNow={handleApproveClick}
+      onSchedule={() => setScheduleOpen(true)}
+      scheduleSubtitle={scheduleSubtitle}
+      sharing={approving}
+      disabled={!canApproveHard || isRendering}
+      softWarning={hasSoftWarnings && !softApproveAck}
+      hardBlockLabel={hardBlockButtonLabel}
+    />
+  ) : null;
 
   const swipeStartX = React.useRef<number | null>(null);
   const [swipeDx, setSwipeDx] = React.useState(0);
@@ -512,9 +538,12 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           isPending={isPending}
           timeLabel={timeAgo(artifact.createdAt)}
           backgroundMusicUrl={mode === 'story' && !content.videoUrl ? storyMusicUrl : undefined}
+          afterMedia={publishBar}
+          inFeedScroll={igHome}
+          formatTag={formatTag}
         />
 
-        {(scheduleLabel || isAdCreative) && mode !== 'story' && (
+        {(scheduleLabel || isAdCreative) && mode !== 'story' && !igHome && (
           <span style={{
             position: 'absolute', top: 10, left: 10, zIndex: 2,
             fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 8,
@@ -646,32 +675,22 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
         ) : isPending && (
           <>
             <div style={{
-              display: 'flex', gap: 8, padding: '0 14px 14px', background: '#000',
-              borderTop: '0.5px solid rgba(255,255,255,0.06)',
+              display: 'flex', justifyContent: 'center', gap: 16, padding: '0 14px 12px', background: '#000',
             }}>
-              <button type="button" onClick={handleApproveClick} disabled={approving || isRendering || !canApproveHard}
-                title={qualityGate.hardBlockReason ?? undefined}
-                style={{
-                  flex: 1, padding: '10px 0', border: 'none', background: 'none',
-                  color: approving || !canApproveHard ? 'rgba(255,255,255,0.4)' : '#60A5FA',
-                  fontSize: 14, fontWeight: 700, cursor: approving || isRendering || !canApproveHard ? 'not-allowed' : 'pointer',
-                }}>
-                {approving
-                  ? 'Onaylanıyor…'
-                  : !canApproveHard
-                    ? hardBlockButtonLabel
-                    : hasSoftWarnings && !softApproveAck
-                      ? 'Onayla (uyarı)'
-                      : hasSoftWarnings
-                        ? 'Yine de onayla'
-                        : 'Onayla ve yayınla'}
-              </button>
               <button type="button" onClick={() => openApproval(artifact.id)}
                 style={{
-                  padding: '10px 0', border: 'none', background: 'none',
-                  color: 'rgba(255,255,255,0.55)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  padding: 0, border: 'none', background: 'none',
+                  color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}>
                 Düzenle
+              </button>
+              <button type="button" onClick={() => onRevision(artifact.id)} disabled={revisioning}
+                style={{
+                  padding: 0, border: 'none', background: 'none',
+                  color: revisioning ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.45)',
+                  fontSize: 13, fontWeight: 600, cursor: revisioning ? 'not-allowed' : 'pointer',
+                }}>
+                Revize
               </button>
             </div>
             {isDesignedPost && !isAdCreative && (
@@ -778,6 +797,18 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           </div>
         </div>
       )}
+
+      <ScheduleSheet
+        isOpen={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+        publishType={publishType}
+        imageUrl={content.imageUrl ?? undefined}
+        videoUrl={content.videoUrl ?? undefined}
+        caption={content.caption}
+        hashtags={content.hashtags}
+        artifactTitle={artifact.title}
+        defaultScheduledAt={suggestedScheduleISO ?? undefined}
+      />
     </div>
   );
 }, (prev, next) =>
