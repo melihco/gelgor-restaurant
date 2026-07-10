@@ -742,6 +742,22 @@ async def save_brand_theme(ctx: "BrandContext", theme: "BrandTheme | dict", db) 
     existing = ctx.brand_theme if isinstance(ctx.brand_theme, dict) else {}
     theme_dict = _merge_theme_dict_for_save(theme_dict, existing)
 
+    from app.crew.industry_playbooks import normalize_industry_id
+    from app.services.production_design_policy import (
+        _read_service_profile,
+        apply_production_layers_to_theme_dict,
+    )
+
+    sector = normalize_industry_id(getattr(ctx, "business_type", "") or "")
+    visual_dna = getattr(ctx, "visual_dna", None) or ""
+    theme_dict = apply_production_layers_to_theme_dict(
+        theme_dict,
+        sector=sector,
+        visual_dna=visual_dna,
+        service_profile=_read_service_profile(ctx),
+        languages=getattr(ctx, "languages", None) or "tr",
+    )
+
     await db.execute(
         update(BrandContext)
         .where(BrandContext.workspace_id == ctx.workspace_id)

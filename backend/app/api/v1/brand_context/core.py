@@ -141,6 +141,42 @@ async def derive_service_profile(
         raise HTTPException(status_code=404, detail="brand_context_not_found")
     return ctx
 
+
+@router.post("/{workspace_id}/production-design-profile/derive")
+async def derive_production_design_profile_endpoint(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Onboarding-grade production design profile — visual_dna rewrite, pillars,
+    brand_tone/style, theme production layers (typography_design, fal intensity).
+    """
+    from app.config import get_settings
+    from app.services.production_design_profile_service import (
+        apply_production_design_profile,
+        derive_production_design_profile,
+    )
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="brand_context_not_found")
+
+    settings = get_settings()
+    profile = derive_production_design_profile(
+        ctx,
+        openai_api_key=settings.openai_api_key or "",
+    )
+    await apply_production_design_profile(db, ctx, profile)
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    return {
+        "ok": True,
+        "profile": profile,
+        "brand_theme": ctx.brand_theme if ctx else None,
+        "visual_dna_preview": (profile.get("visual_dna") or "")[:240],
+    }
+
+
 @router.post("/{workspace_id}/enrich-brand-kit-from-website")
 async def enrich_brand_kit_from_website(
     workspace_id: uuid.UUID,

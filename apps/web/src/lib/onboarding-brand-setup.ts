@@ -484,6 +484,41 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     steps.push({ id: 'service_profile', ok: false, detail: 'constitution_not_confirmed' });
   }
 
+  // 6d. Industry calendar — sync before production profile so sector type can be aligned
+  if (constitutionConfirmed) {
+    const calRes = await fetchCrewBackendJson<{ industry_type?: string }>(
+      `/api/v1/brand-context/${tenantId}/industry-intelligence`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 120_000 },
+    );
+    steps.push({
+      id: 'industry_calendar',
+      ok: calRes.ok,
+      detail: calRes.ok ? 'calendar refreshed' : calRes.error ?? `HTTP ${calRes.status}`,
+    });
+
+    // 6e. Production design profile — Scorpios-grade visual_dna + Fal theme layers
+    const pdpRes = await fetchCrewBackendJson<{
+      ok?: boolean;
+      profile?: { source?: string; sector?: string };
+    }>(
+      `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 120_000 },
+    );
+    steps.push({
+      id: 'production_design_profile',
+      ok: pdpRes.ok,
+      detail: pdpRes.ok
+        ? `${pdpRes.data?.profile?.source ?? 'derived'} · ${pdpRes.data?.profile?.sector ?? authoritativeSector}`
+        : pdpRes.error ?? `HTTP ${pdpRes.status}`,
+    });
+    if (!pdpRes.ok) {
+      errors.push(`Üretim tasarım profili: ${pdpRes.error ?? pdpRes.status}`);
+    }
+  } else {
+    steps.push({ id: 'industry_calendar', ok: false, detail: 'constitution_not_confirmed' });
+    steps.push({ id: 'production_design_profile', ok: false, detail: 'constitution_not_confirmed' });
+  }
+
   // 6b. Brand DNA synthesis (living anayasa prose) — non-fatal if slow/fails
   const dnaRes = await postJson<{ data_richness?: string }>(
     `${origin}/api/brand-context/${tenantId}/brand-dna`,
@@ -513,6 +548,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     'template_library_lock',
     'reel_motion_standard_seed',
     'ai_production_defaults',
+    'production_design_profile',
   ]);
   // gallery_provision is non-blocking (done early at step 2b; step 7 repeat ensures freshness)
   const productionReady = productionSteps.length > 0

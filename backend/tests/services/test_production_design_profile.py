@@ -1,0 +1,55 @@
+"""Tests for production_design_profile_service heuristic paths."""
+
+import json
+
+from app.services.production_design_profile_service import derive_production_design_profile
+
+
+class _FakeCtx:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+def test_heuristic_beach_club_profile_rewrites_wellness_leak():
+    ctx = _FakeCtx(
+        workspace_id="00000000-0000-0000-0000-000000000001",
+        business_name="Scorpios Bodrum",
+        business_type="beach_club",
+        location="Bodrum",
+        languages="en",
+        brand_tone="samimi, sıcak, güvenilir",
+        visual_style="energetic, vibrant",
+        visual_dna="**Brand**: Scorpios\n**Mood**: sophisticated spa wellness",
+        description="Beach club with dining and music",
+        content_pillars=json.dumps(["service_intro", "educational_post", "social_proof"]),
+        brand_service_profile={
+            "category": "beach_club_bar",
+            "content_guardrails": ["must not focus solely on beauty and wellness services"],
+            "signature_offerings": ["sunset dining", "live music"],
+        },
+    )
+    profile = derive_production_design_profile(ctx, openai_api_key="")
+    assert profile["sector"] == "beach_club"
+    assert profile["source"] == "onboarding_heuristic"
+    assert "Mood:" in profile["visual_dna"]
+    assert "Anti-look:" in profile["visual_dna"]
+    assert "refined" in profile["brand_tone"] or "seçkin" in profile["brand_tone"]
+    assert "daily_story" in profile["content_pillars"]
+    assert "educational_post" not in profile["content_pillars"]
+
+
+def test_heuristic_local_products_profile():
+    ctx = _FakeCtx(
+        workspace_id="00000000-0000-0000-0000-000000000002",
+        business_name="Village Honey Co",
+        business_type="local_products_shop",
+        languages="tr",
+        description="Organic honey and olive oil from Aegean villages",
+        content_pillars="[]",
+        brand_service_profile={"category": "local_products_shop"},
+    )
+    profile = derive_production_design_profile(ctx, openai_api_key="")
+    assert profile["sector"] == "local_products_shop"
+    assert "artisan" in profile["visual_dna"].lower() or "authentic" in profile["visual_dna"].lower()
+    assert "product_highlight" in profile["content_pillars"]
