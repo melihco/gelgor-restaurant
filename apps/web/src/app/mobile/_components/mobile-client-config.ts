@@ -76,49 +76,38 @@ export function tabForMobileScreen(screen: MobileScreen): ClientNavTab | null {
     return 'brand';
   }
   if (screen === 'more' || screen === 'settings' || screen === 'billing' || screen === 'notifications' || screen === 'insights' || screen === 'ads' || screen === 'visitors' || screen === 'new-brief' || screen === 'reviews' || screen === 'review-detail') {
-    return 'more';
+    return null;
   }
   return null;
 }
 
-export type ClientNavTab = 'feed' | 'missions' | 'brand' | 'more';
+/** Bottom bar tabs — Feed · Marka (center) · Plan */
+export type ClientNavTab = 'feed' | 'missions' | 'brand';
 
 /**
- * Floating pill nav — single icon path (no active/idle split, color handled by MobileNav).
- * Icons: distinctive, purposeful. Not generic library icons.
+ * Side tabs + center brand star (see BrandNavStar).
  */
 export const CLIENT_NAV_TABS: { id: ClientNavTab; label: string; icon: string; active: string; idle: string }[] = [
   {
     id: 'feed',
     label: 'Feed',
-    // Stacked content cards — primary production surface
     icon: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
     active: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
     idle:   'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
   },
   {
+    id: 'brand',
+    label: 'Marka',
+    icon: 'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z',
+    active: 'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z',
+    idle:   'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z',
+  },
+  {
     id: 'missions',
     label: 'Plan',
-    // Calendar / weekly planner
     icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
     active: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
     idle:   'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
-  },
-  {
-    id: 'brand',
-    label: 'Marka',
-    // Diamond / brand gem
-    icon: 'M12 2l4 6h6l-4.5 5 1.5 7-7-4-7 4 1.5-7L2 8h6z',
-    active: 'M12 2l4 6h6l-4.5 5 1.5 7-7-4-7 4 1.5-7L2 8h6z',
-    idle:   'M12 2l4 6h6l-4.5 5 1.5 7-7-4-7 4 1.5-7L2 8h6z',
-  },
-  {
-    id: 'more',
-    label: 'Menü',
-    // 3×2 dot grid — compact menu
-    icon: 'M5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
-    active: 'M5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
-    idle:   'M5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
   },
 ];
 

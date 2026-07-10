@@ -33,7 +33,7 @@ export type MobileScreen =
   | 'platform-preview'
   | 'reels-studio';
 
-export type NavTab = 'feed' | 'missions' | 'brand' | 'more';
+export type NavTab = 'feed' | 'missions' | 'brand';
 
 interface MobileStore {
   screen: MobileScreen;
@@ -136,7 +136,6 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       feed: 'feed',
       missions: 'missions',
       brand: 'brand',
-      more: 'more',
     };
     const screen = resolveClientScreen(map[tab]);
     set({ activeTab: tab, screen, history: [screen] });

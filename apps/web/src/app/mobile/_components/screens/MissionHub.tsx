@@ -4717,7 +4717,7 @@ export function MissionHub() {
   const { t } = useTheme();
   const operatorMode = isMobileOperatorMode();
   const debugMode = isDebugUiMode();
-  const { navigate, goBack, openBrand, openStoryTemplates, openFeedForMission } = useMobileStore();
+  const { navigate, goBack, openBrand, openStoryTemplates, openFeedForMission, history } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const { user } = useAuthStore();
   const queryClient = useQueryClient();
@@ -5092,10 +5092,14 @@ export function MissionHub() {
         padding: 'calc(env(safe-area-inset-top,0px) + 14px) 22px 0',
         display: 'flex', alignItems: 'center', gap: 12,
       }}>
-        <button onClick={goBack} style={{ ...t.backBtn, cursor: 'pointer',
+        <button
+          type="button"
+          onClick={() => (history.length > 1 ? goBack() : navigate('more'))}
+          aria-label={history.length > 1 ? 'Geri' : 'Menü'}
+          style={{ ...t.backBtn, cursor: 'pointer',
           width: 34, height: 34, borderRadius: '50%', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-          ←
+          alignItems: 'center', justifyContent: 'center', fontSize: history.length > 1 ? 18 : 15 }}>
+          {history.length > 1 ? '←' : '⊞'}
         </button>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: t.textPrimary,

@@ -57,6 +57,13 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
 
   const menuItems = [
     {
+      label: 'Menü',
+      sub: 'Performans, yorumlar, reklamlar ve daha fazlası',
+      icon: '⊞',
+      color: '#a78bfa',
+      onTap: () => { navigate('more'); onClose(); },
+    },
+    {
       label: 'Bildirimler',
       sub: unreadNotifications > 0 ? `${unreadNotifications} okunmamış` : 'Güncel',
       icon: '◍',

@@ -15,6 +15,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: '#05060f',
+  viewportFit: 'cover',
 };
 
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
