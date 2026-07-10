@@ -296,6 +296,24 @@ import type { GalleryPhotoAnalysis } from '@/app/api/analyze-gallery/route';
 import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
 import { normalizeSectorId } from '@/lib/announcement-template-library';
 import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
+import { getTenantBffHeaders } from '@/lib/runtime-config';
+
+function isPersistedGalleryUrl(url: string): boolean {
+  const u = url.trim();
+  return u.startsWith('http') || u.startsWith('/api/media');
+}
+
+function storageKeyFromMediaUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed.includes('key=')) return '';
+  try {
+    const key = new URL(trimmed, 'https://local.invalid').searchParams.get('key');
+    return key ? decodeURIComponent(key) : '';
+  } catch {
+    const raw = trimmed.split('key=')[1]?.split('&')[0] ?? '';
+    return raw ? decodeURIComponent(raw) : '';
+  }
+}
 
 function GalleryAnalysisPanel({
   urls,
@@ -595,7 +613,7 @@ export default function BrandHubPage() {
     const fromAssets = mediaAssets
       .filter((a) => {
         const u = (a.url || '').trim();
-        if (!u.startsWith('http')) return false;
+        if (!isPersistedGalleryUrl(u)) return false;
         if (a.assetType === 'venue_reference') return true;
         try {
           const parsed = JSON.parse(a.tags || '[]');
@@ -3435,17 +3453,78 @@ function MediaUploadPanel({ workspaceId, officeId }: { workspaceId: string; offi
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length) return;
+    if (!workspaceId?.trim()) {
+      setError('Marka oturumu bulunamadı — sayfayı yenileyin.');
+      return;
+    }
     setUploading(true);
     setError('');
     let count = 0;
 
-    for (const file of Array.from(files)) {
+    const fileList = Array.from(files);
+    const images = fileList.filter((f) => f.type.startsWith('image/') || (!f.type.startsWith('video/') && !f.name.endsWith('.mp4')));
+    const videos = fileList.filter((f) => f.type.startsWith('video/') || f.name.endsWith('.mp4') || f.name.endsWith('.mov'));
+
+    if (images.length > 0) {
       try {
-        // 1. R2'ye yükle
+        const formData = new FormData();
+        for (const file of images) formData.append('file', file);
+        const uploadRes = await fetch(`/api/brand-context/${workspaceId}/gallery-upload`, {
+          method: 'POST',
+          headers: getTenantBffHeaders(workspaceId),
+          body: formData,
+        });
+        const payload = await uploadRes.json().catch(() => ({})) as {
+          error?: string;
+          uploaded?: number;
+          urls?: string[];
+        };
+        if (!uploadRes.ok) {
+          const raw = payload.error ?? '';
+          const message = raw === 'file_too_large_max_10mb'
+            ? 'Dosya 10 MB sınırını aşıyor.'
+            : raw === 'images_only_jpg_png_webp'
+              ? 'Sadece JPG, PNG veya WebP yükleyebilirsiniz.'
+              : raw === 'tenant_required' || raw.includes('X-Tenant-Id')
+                ? 'Oturum hatası — çıkış yapıp tekrar giriş yapın.'
+                : raw || `Görsel yükleme başarısız (${uploadRes.status})`;
+          throw new Error(message);
+        }
+        const uploadedUrls = payload.urls ?? [];
+        const uploaded = payload.uploaded ?? uploadedUrls.length;
+        if (uploaded <= 0) {
+          throw new Error('Görsel yüklenemedi — JPG/PNG/WebP ve max 10MB olmalı.');
+        }
+        count += uploaded;
+
+        for (let i = 0; i < uploadedUrls.length; i += 1) {
+          const url = uploadedUrls[i]!;
+          try {
+            await apiClient.createTenantMediaAsset({
+              officeId: officeId || null,
+              assetType,
+              url,
+              storageKey: storageKeyFromMediaUrl(url),
+              displayName: images[i]?.name ?? 'gallery-upload',
+              description: '',
+              tags: assetType,
+              usageContext: assetType,
+            });
+          } catch {
+            /* .NET asset registry is best-effort; Python gallery is SSOT for production */
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Görsel yükleme hatası');
+      }
+    }
+
+    for (const file of videos) {
+      try {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('tenantId', workspaceId);
-        formData.append('type', file.type.startsWith('video/') ? 'video' : 'image');
+        formData.append('type', 'video');
 
         const uploadRes = await fetch('/api/media/upload', {
           method: 'POST',
@@ -3453,32 +3532,36 @@ function MediaUploadPanel({ workspaceId, officeId }: { workspaceId: string; offi
         });
         if (!uploadRes.ok) {
           const d = await uploadRes.json().catch(() => ({}));
-          throw new Error(d.error ?? 'Yükleme başarısız');
+          throw new Error((d as { error?: string }).error ?? 'Video yükleme başarısız');
         }
         const { url, key } = await uploadRes.json() as { url: string; key: string };
 
-        // 2. .NET'e asset kaydı
         await apiClient.createTenantMediaAsset({
           officeId: officeId || null,
-          assetType,
+          assetType: 'video',
           url,
           storageKey: key,
           displayName: file.name,
           description: '',
-          tags: assetType,
-          usageContext: assetType,
+          tags: 'video',
+          usageContext: 'video',
         });
 
         count++;
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Yükleme hatası');
+        setError(err instanceof Error ? err.message : 'Video yükleme hatası');
       }
     }
 
     setUploadedCount((n) => n + count);
     setUploading(false);
     if (count > 0) {
-      await queryClient.invalidateQueries({ queryKey: ['brand-context-assets'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['brand-context-assets'] }),
+        queryClient.invalidateQueries({ queryKey: ['brand-context-data', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['python-brand-ctx-display', workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ['gallery-analysis', workspaceId] }),
+      ]);
     }
   }
 

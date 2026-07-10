@@ -92,7 +92,14 @@ export async function POST(
     ).filter((url): url is string => Boolean(url));
 
     if (!uploadedUrls.length) {
-      return NextResponse.json({ error: 'upload_failed' }, { status: 400 });
+      const tooBig = batch.some((f) => f.size > MAX_FILE_BYTES);
+      const badType = batch.some((f) => !String(f.type || '').startsWith('image/'));
+      const message = tooBig
+        ? 'file_too_large_max_10mb'
+        : badType
+          ? 'images_only_jpg_png_webp'
+          : 'upload_failed';
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
     const merged = await appendReferenceUrls(workspaceId, uploadedUrls);

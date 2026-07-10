@@ -2032,6 +2032,10 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
 
   // Upload one or more photos — R2 persist; vision analysis runs in background
   async function handleUpload(files: File | File[]) {
+    if (!tenantId?.trim()) {
+      setAnalyzeStatus('Hata: marka oturumu bulunamadı — sayfayı yenileyin.');
+      return;
+    }
     if (uploadGate?.decision === 'blocked') {
       setAnalyzeStatus('Bu fotoğraf türü işletme politikanızda kapalı. Marka → Üretim → Galeri yönetimi açık olmalı.');
       return;
@@ -2060,7 +2064,14 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
       };
 
       if (!res.ok) {
-        throw new Error(data.error || `Yükleme başarısız (${res.status})`);
+        const errMsg = data.error === 'file_too_large_max_10mb'
+          ? 'Dosya 10 MB sınırını aşıyor.'
+          : data.error === 'images_only_jpg_png_webp'
+            ? 'Sadece JPG, PNG veya WebP yükleyebilirsiniz.'
+            : data.error === 'tenant_required' || data.error?.includes('X-Tenant-Id')
+              ? 'Oturum hatası — çıkış yapıp tekrar giriş yapın.'
+              : (data.error || `Yükleme başarısız (${res.status})`);
+        throw new Error(errMsg);
       }
 
       const uploaded = data.uploaded ?? data.urls?.length ?? 0;
@@ -2295,7 +2306,17 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
           JPG, PNG, WebP · max 10MB · yükleme sonrası otomatik AI analiz
         </p>
         {analyzeStatus && (
-          <p style={{ fontSize: 12, color: analyzeStatus.startsWith('✓') ? '#10B981' : t.textMuted, marginTop: 10, textAlign: 'center', lineHeight: 1.45 }}>
+          <p style={{
+            fontSize: 12,
+            color: analyzeStatus.startsWith('✓')
+              ? '#10B981'
+              : /hata|başarısız|tenant|R2|sınır|desteklenir/i.test(analyzeStatus)
+                ? '#F87171'
+                : t.textMuted,
+            marginTop: 10,
+            textAlign: 'center',
+            lineHeight: 1.45,
+          }}>
             {analyzeStatus}
           </p>
         )}
