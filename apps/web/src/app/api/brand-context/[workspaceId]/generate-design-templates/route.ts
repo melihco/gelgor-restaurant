@@ -11,6 +11,7 @@ import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { fetchGalleryContext } from '@/app/api/auto-produce/gallery-context';
 import { fetchBrandProductionTokensForWorkspace } from '@/lib/brand-production-tokens';
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
+import { getSectorImageNegativeGuards } from '@/lib/sector-production-profile';
 import {
   generateBrandDesignTemplates,
   type GeneratedDesignTemplate,
@@ -35,7 +36,7 @@ export async function POST(
   };
 
   // ── Load brand context + gallery analysis + special days from Python ───────
-  const [ctxRes, analysisRes, specialDaysRes] = await Promise.all([
+  const [ctxRes, analysisRes, specialDaysRes, themeRes] = await Promise.all([
     fetchCrewBackendJson<Record<string, unknown>>(
       `/api/v1/brand-context/${workspaceId}`,
       { workspaceId, timeoutMs: 15_000 },
@@ -51,6 +52,10 @@ export async function POST(
       `/api/v1/special-days/workspace/${workspaceId}?limit=4`,
       { workspaceId, timeoutMs: 15_000 },
     ),
+    fetchCrewBackendJson<{ theme?: Record<string, unknown> }>(
+      `/api/v1/brand-context/${workspaceId}/theme`,
+      { workspaceId, timeoutMs: 15_000 },
+    ),
   ]);
 
   if (!ctxRes.ok || !ctxRes.data) {
@@ -64,6 +69,16 @@ export async function POST(
   const galleryAnalysis = (analysisRes.ok ? analysisRes.data : null) ?? null;
   const sector = resolveAuthoritativeIndustry(brandCtx)
     || String(brandCtx.business_type ?? brandCtx.industry ?? '');
+  const brandTheme = (themeRes.ok && themeRes.data?.theme && typeof themeRes.data.theme === 'object')
+    ? themeRes.data.theme
+    : (typeof brandCtx.brand_theme === 'object' ? brandCtx.brand_theme as Record<string, unknown> : null);
+  const themeAnti = Array.isArray(brandTheme?.anti_patterns)
+    ? (brandTheme!.anti_patterns as string[])
+    : [];
+  const antiPatterns = [
+    ...getSectorImageNegativeGuards(sector),
+    ...themeAnti,
+  ].map((item) => String(item).trim()).filter(Boolean).slice(0, 8);
   const brandName = String(brandCtx.business_name ?? 'Brand');
   const locale = body.locale
     ?? (String(brandCtx.languages ?? 'tr').split(/[,\s]/)[0] || 'tr');
@@ -112,6 +127,8 @@ export async function POST(
       brandTone: brandCtx.brand_tone as string | undefined,
       brandDescription: brandCtx.description as string | undefined,
     }),
+    brandTheme,
+    antiPatterns,
     galleryPhotoUrls: gctx.photos,
     galleryAnalysis: gctx.meta,
     limit: body.limit,

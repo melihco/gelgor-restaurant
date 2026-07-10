@@ -9,9 +9,9 @@ Runs the onboarding-grade pipeline per workspace:
 
 Usage:
   cd backend && source .venv/bin/activate
-  python scripts/backfill_production_profile.py --workspace-id 431b2901-a2dc-4df6-abe3-3670d9844851
-  python scripts/backfill_production_profile.py --all-keep-tenants
-  python scripts/backfill_production_profile.py --all-keep-tenants --dry-run --skip-dna
+  PYTHONPATH=. python scripts/backfill_production_profile.py --workspace-id 431b2901-a2dc-4df6-abe3-3670d9844851
+  PYTHONPATH=. python scripts/backfill_production_profile.py --all-keep-tenants
+  PYTHONPATH=. python scripts/backfill_production_profile.py --all-keep-tenants --dry-run --skip-dna
 """
 
 from __future__ import annotations

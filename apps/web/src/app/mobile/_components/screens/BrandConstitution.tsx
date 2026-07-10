@@ -61,7 +61,7 @@ import { BrandFalDesignIntensityPanel } from '@/components/brand/BrandFalDesignI
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
 import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrategyPanel';
 import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
-import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
+import { brandReadinessFixToBrandTab, PRODUCTION_PROFILE_THRESHOLD, type ProductionProfileReadinessResult } from '@/lib/brand-readiness';
 import { isCanvaEnabledClient } from '@/lib/canva-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
@@ -2561,6 +2561,20 @@ export function BrandConstitution() {
     enabled: Boolean(tenantId),
   });
 
+  const { data: productionReadiness } = useQuery<{
+    productionProfile?: ProductionProfileReadinessResult;
+  }>({
+    queryKey: ['brand-readiness', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return {};
+      const r = await fetchTenantBff(`/api/brand-readiness/${tenantId}`, tenantId);
+      if (!r.ok) return {};
+      return r.json();
+    },
+    staleTime: 60_000,
+    enabled: Boolean(tenantId),
+  });
+
   const { data: templates = [] } = useQuery({
     queryKey: ['canva-templates'],
     queryFn: async () => { try { return await apiClient.getCanvaTemplateAssignments({ includeDisabled: false }); } catch { return []; } },
@@ -3201,6 +3215,29 @@ export function BrandConstitution() {
 
       {/* ── TAB CONTENT ── */}
       <div style={{ padding: '20px 20px 0' }}>
+
+        {productionReadiness?.productionProfile
+          && !productionReadiness.productionProfile.isProductionReady && (
+          <div style={{
+            marginBottom: 16,
+            padding: '14px 16px',
+            borderRadius: 14,
+            background: t.isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.06)',
+            border: `0.5px solid ${t.isDark ? 'rgba(239,68,68,0.28)' : 'rgba(239,68,68,0.22)'}`,
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, marginBottom: 4 }}>
+              Üretim tasarım profili eksik ({productionReadiness.productionProfile.score}/{PRODUCTION_PROFILE_THRESHOLD})
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, marginBottom: 8 }}>
+              Fal story/post üretimi için service profile, production visual_dna ve theme katmanları tamamlanmalı.
+            </div>
+            {(productionReadiness.productionProfile.missing ?? []).slice(0, 3).map((item) => (
+              <div key={item.id} style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4, marginTop: 4 }}>
+                · {item.label}: {item.detail}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* IDENTITY */}
         {tab === 'identity' && (

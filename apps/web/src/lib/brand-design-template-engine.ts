@@ -9,7 +9,7 @@
  * pipeline can re-render brand-consistent variations for any mission headline.
  */
 
-import type { TypographyVibe } from '@/types/brand-theme';
+import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
@@ -17,6 +17,10 @@ import {
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
+import {
+  resolveFalDesignIntensityForChannel,
+  type FalDesignChannel,
+} from '@/lib/fal-design-intensity';
 import {
   type GalleryPhotoMeta,
   matchPhotoToContent,
@@ -54,6 +58,10 @@ export interface DesignTemplateEngineInput {
   countryCode?: string;
   /** One-line brand visual tone distilled from visual_dna (see fal-brand-input). */
   visualDnaTone?: string;
+  /** brand_theme JSON — typography_design + fal_design_intensity for onboarding previews. */
+  brandTheme?: Record<string, unknown> | null;
+  /** Sector + theme anti-patterns injected into preview prompts. */
+  antiPatterns?: string[];
   galleryPhotoUrls: string[];
   galleryAnalysis: Record<string, GalleryPhotoMeta>;
   /**
@@ -189,16 +197,32 @@ async function generateOne(
   special?: EngineSpecialDay,
 ): Promise<GeneratedDesignTemplate> {
   const { headline, subtitle, sceneHint, occasion } = resolveCopy(preset, input, special);
-  // For special days the day's mood (not just the brand scene) should steer the
-  // typography vibe so the design genuinely shifts per occasion.
+  const theme = input.brandTheme ?? null;
+  const typographyConfig = (theme?.typography_design ?? theme?.typographyDesign) as
+    | { vibe?: TypographyVibe; background_style?: string; text_effect?: string; logo_treatment?: string }
+    | undefined;
+  const intensityChannel: FalDesignChannel = preset.format === 'reel_cover'
+    ? 'reel'
+    : preset.format === 'story'
+      ? 'story'
+      : 'post';
+  const designIntensityLevel = resolveFalDesignIntensityForChannel(theme, intensityChannel);
   const vibe = resolveTypographyVibeFromContext({
     caption: occasion ? `${sceneHint} ${occasion.mood ?? ''}`.trim() : sceneHint,
     headline,
     sector: input.sector,
+    brandVibe: typographyConfig?.vibe ?? null,
+    visualDnaTone: input.visualDnaTone,
+    lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
   });
-
   const picked = pickPhotoForPreset(preset, input, usedUrls);
   if (picked) usedUrls.add(normalizeGalleryUrl(picked.url));
+  const backgroundStyle: TypographyBackgroundStyle = picked?.url
+    ? 'photo_overlay'
+    : ((typographyConfig?.background_style as TypographyBackgroundStyle | undefined) ?? 'gradient_mesh');
+  const antiPatternDirective = (input.antiPatterns ?? []).length
+    ? `Avoid: ${input.antiPatterns!.slice(0, 6).join('; ')}.`
+    : undefined;
 
   const aspect = aspectForFormat(preset.format);
   const isReel = preset.format === 'reel_cover' || aspect === '9:16';
@@ -216,7 +240,9 @@ async function generateOne(
     sector: input.sector,
     aspectRatio: aspect,
     visualDnaTone: input.visualDnaTone,
+    designIntensityLevel,
     occasion,
+    brandDirectives: antiPatternDirective ? [antiPatternDirective] : undefined,
   });
 
   let thumbnailUrl: string | null = null;
@@ -234,13 +260,14 @@ async function generateOne(
         brandColors: input.brandColors,
         vibe,
         backgroundStyle: resolveIdeogramBackgroundStyle(
-          picked ? 'photo_overlay' : 'gradient_mesh',
+          backgroundStyle,
           picked?.url,
         ),
         aspectRatio: aspect,
         referencePhotoUrl: picked?.url,
         sceneHint,
         visualDnaTone: input.visualDnaTone,
+        designIntensityLevel,
         logoUrl: preset.prominentLogo ? input.logoUrl : undefined,
         location: input.location,
         sector: input.sector,
@@ -316,6 +343,7 @@ async function generateOne(
       intent: preset.intent,
       prominentLogo: preset.prominentLogo,
       logoUrl: input.logoUrl,
+      designIntensityLevel,
       ...(special
         ? { specialDay: { name: special.name, mmdd: special.mmdd, category: special.category } }
         : {}),
