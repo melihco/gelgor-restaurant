@@ -1048,6 +1048,8 @@ async def get_all_briefs(
         "social_signals": _load("social_signals"),
         "social_signals_updated_at": getattr(ctx, "social_signals_updated_at", None),
         "visual_dna": ctx.visual_dna,
+        "business_type": ctx.business_type,
+        "brand_service_profile": ctx.brand_service_profile if isinstance(ctx.brand_service_profile, dict) else _load("brand_service_profile"),
         "google_rating": ctx.google_rating,
         "google_review_count": ctx.google_review_count,
         "discovery_confidence": ctx.discovery_confidence,

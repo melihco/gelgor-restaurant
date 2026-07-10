@@ -100,6 +100,8 @@ export interface GeneratedDesignTemplate {
     specialDay?: { name: string; mmdd: string; category: string };
     generatedAt: string;
     generator: 'gpt-image-1' | 'fal-ideogram' | 'none';
+    /** Per-channel design intensity applied during generation. */
+    designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
   };
 }
 

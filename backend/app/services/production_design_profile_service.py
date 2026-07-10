@@ -358,6 +358,10 @@ async def apply_production_design_profile(
     theme = await derive_brand_theme(ctx)
     await save_brand_theme(ctx, theme, db)
 
+    from app.services.brand_context_service import invalidate_brand_info_cache
+
+    await invalidate_brand_info_cache(getattr(ctx, "workspace_id"))
+
     logger.info(
         "production_design_profile_applied",
         workspace_id=str(getattr(ctx, "workspace_id", "")),

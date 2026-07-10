@@ -14,6 +14,7 @@ import {
   filterUsablePhotos,
   type BrandReadinessInputs,
 } from '@/lib/brand-readiness';
+import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 import { parseBrandTemplateLibraryFromTheme } from '@/lib/brand-template-library';
 import { brsCache } from '@/lib/server-ttl-cache';
 
@@ -86,7 +87,8 @@ export async function GET(
 
   // Serve from in-process cache when fresh — avoids 4 parallel backend calls per dashboard load.
   const cached = brsCache.get(tenantId);
-  if (cached) {
+  const forceRefresh = req.nextUrl.searchParams.get('refresh') === '1';
+  if (cached && !forceRefresh) {
     return NextResponse.json(cached, {
       headers: { 'X-Cache': 'HIT', 'Cache-Control': 'private, max-age=60' },
     });
@@ -190,17 +192,33 @@ export async function GET(
 
   const result = computeBrandReadiness(inputs);
 
-  const serviceProfile = parseJsonField(ctx.brand_service_profile);
+  const briefsRecord = (briefsData && typeof briefsData === 'object' && !Array.isArray(briefsData))
+    ? briefsData as Record<string, unknown>
+    : {};
+  const ctxRecord = (ctx && typeof ctx === 'object' && !Array.isArray(ctx))
+    ? ctx as Record<string, unknown>
+    : {};
+
+  const serviceProfileRaw = parseJsonField(ctxRecord.brand_service_profile)
+    ?? parseJsonField(briefsRecord.brand_service_profile);
+  const businessType = String(
+    ctxRecord.business_type
+    ?? briefsRecord.business_type
+    ?? resolveAuthoritativeIndustry({ ...ctxRecord, brand_service_profile: serviceProfileRaw })
+    ?? '',
+  ) || null;
+  const visualDna = typeof briefsRecord.visual_dna === 'string'
+    ? briefsRecord.visual_dna
+    : typeof ctxRecord.visual_dna === 'string'
+      ? ctxRecord.visual_dna
+      : null;
+
   const productionProfile = computeProductionProfileReadiness({
-    serviceProfile: serviceProfile && typeof serviceProfile === 'object' && !Array.isArray(serviceProfile)
-      ? (serviceProfile as Record<string, unknown>)
+    serviceProfile: serviceProfileRaw && typeof serviceProfileRaw === 'object' && !Array.isArray(serviceProfileRaw)
+      ? (serviceProfileRaw as Record<string, unknown>)
       : null,
-    businessType: ctx.business_type ?? null,
-    visualDna: typeof briefsData?.visual_dna === 'string'
-      ? briefsData.visual_dna
-      : typeof ctx.visual_dna === 'string'
-        ? ctx.visual_dna
-        : null,
+    businessType,
+    visualDna,
     brandTheme: themeObj,
   });
 

@@ -45,7 +45,7 @@ COLS = (
     "brand_primary_color, brand_accent_color, brand_font_family, competitors, "
     "website_summary, reference_image_urls, brand_constitution_confirmed_at, "
     "languages, visual_dna, discovery_confidence, gallery_analysis, brand_dna, "
-    "brand_theme"
+    "brand_theme, brand_service_profile, business_type"
 )
 
 async def main():
