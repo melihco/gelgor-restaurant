@@ -3630,6 +3630,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       );
       refreshFeedPackage();
       void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
+      void queryClient.invalidateQueries({ queryKey: ['mission-production-jobs', workspaceId, mission.id] });
     },
     onError: (err: Error) => {
       setReproduceFeedOk(null);

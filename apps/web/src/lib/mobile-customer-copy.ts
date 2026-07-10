@@ -59,6 +59,14 @@ export function humanizeMobileServiceError(raw: string, status?: number): string
     return msg.replace(/crew_backend[^\s]*/gi, '').trim() || 'İçerik üretimi şu an başlatılamadı.';
   }
 
+  if (
+    lower.includes('requeue-factory-jobs')
+    || lower.includes('slot denemeleri tükendi')
+    || lower.includes('endpoint')
+  ) {
+    return 'Eksik görseller kuyruğa alınıyor. Birkaç dakika içinde tekrar deneyin.';
+  }
+
   return msg;
 }
 

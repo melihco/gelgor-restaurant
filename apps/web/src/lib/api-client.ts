@@ -1746,7 +1746,7 @@ class ApiClient {
     workspaceId: string,
     missionId: string,
     opts?: { productionPackage?: string },
-  ): Promise<{ accepted?: boolean; message?: string }> {
+  ): Promise<{ accepted?: boolean; message?: string; resumed_factory?: boolean; needs_reset?: boolean; requeued?: number }> {
     let res: Response;
     try {
       res = await fetchWithTransientRetry(
@@ -1779,6 +1779,8 @@ class ApiClient {
       detail?: string;
       message?: string;
       accepted?: boolean;
+      resumed_factory?: boolean;
+      needs_reset?: boolean;
     };
     if (!res.ok) {
       throw new Error(
@@ -1788,7 +1790,42 @@ class ApiClient {
         ),
       );
     }
-    return body;
+
+    const rawMsg = String(body.message ?? '').toLowerCase();
+    const humanized = humanizeMobileServiceError(body.message ?? '', res.status);
+
+    if (body.resumed_factory === true) {
+      return { ...body, message: humanized };
+    }
+
+    if (body.needs_reset === true) {
+      return { ...body, message: humanized };
+    }
+
+    const shouldAutoRequeue =
+      rawMsg.includes('requeue-factory-jobs')
+      || rawMsg.includes('slot denemeleri tükendi');
+
+    if (shouldAutoRequeue) {
+      try {
+        const rq = await this.requeueMissionFactoryJobs(workspaceId, missionId);
+        if ((rq.requeued ?? 0) > 0 || (rq.inFlight ?? 0) > 0 || (rq.queued ?? 0) > 0) {
+          return {
+            accepted: true,
+            resumed_factory: true,
+            requeued: rq.requeued,
+            message: "Eksik slotlar kuyruğa alındı. Gönderiler hazır oldukça Feed'e düşer.",
+          };
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+
+    return {
+      ...body,
+      message: humanized,
+    };
   }
 
   async reproduceMissionFeed(

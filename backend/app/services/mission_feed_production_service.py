@@ -339,15 +339,42 @@ async def kick_feed_production(
                     "Eksik slot üretimi devam ediyor. Gönderiler hazır oldukça Feed'e düşer."
                 ),
             }
+
+        # Operator kick: exhausted slots should re-enter the factory queue automatically
+        # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
+        requeued = await pj.requeue_exhausted(mission_id)
+        if requeued or await pj.has_open_jobs(mission_id):
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
+            summary = await pj.mission_job_summary(mission_id)
+            logger.info(
+                "kick_feed_production_factory_requeued",
+                mission_id=str(mission_id),
+                requeued=requeued,
+                ready=summary.get("ready"),
+                total=factory_total,
+            )
+            return {
+                "accepted": True,
+                "mission_id": str(mission_id),
+                "resumed_factory": True,
+                "requeued": requeued,
+                "factory_ready": int(summary.get("ready") or 0),
+                "factory_total": factory_total,
+                "message": (
+                    "Eksik slotlar kuyruğa alındı. Gönderiler hazır oldukça Feed'e düşer."
+                ),
+            }
+
         return {
             "accepted": True,
             "mission_id": str(mission_id),
             "resumed_factory": False,
             "factory_ready": int(summary.get("ready") or 0),
             "factory_total": factory_total,
+            "needs_reset": True,
             "message": (
-                "Tüm slot denemeleri tükendi. Yeniden denemek için "
-                "requeue-factory-jobs endpoint'ini kullanın."
+                "Bazı slotlar maksimum deneme sayısına ulaştı. "
+                "«Eksik içerikleri üret» ile paketi sıfırlayıp yeniden deneyin."
             ),
         }
 

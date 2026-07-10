@@ -19,10 +19,10 @@ export type MissionProductionBlockReason =
   | 'unknown';
 
 export function missionProductionStatusCopy(
-  summary: Pick<
+  summary: (Pick<
     MissionProductionJobsSummary,
     'phase' | 'blockReason' | 'estimatedWaitMinutes' | 'ready' | 'total' | 'inFlight' | 'queued'
-  > | null | undefined,
+  > & { failed?: number }) | null | undefined,
   opts?: { manifestReady?: number; manifestRequired?: number },
 ): { title: string; subtitle: string; inProgress: boolean } {
   const manifestReady = opts?.manifestReady ?? summary?.ready ?? 0;
@@ -89,6 +89,19 @@ export function missionProductionStatusCopy(
     return {
       title: 'Üretim sırasındasınız',
       subtitle: `Platform yoğun — sıra ilerledikçe görselleriniz hazırlanacak.${etaText}`,
+      inProgress: true,
+    };
+  }
+
+  if (
+    (summary.failed ?? 0) > 0
+    && (summary.inFlight ?? 0) === 0
+    && (summary.queued ?? 0) === 0
+    && summary.ready < summary.total
+  ) {
+    return {
+      title: 'Eksik görseller yeniden kuyruğa alınıyor',
+      subtitle: 'Görselleri üret\'e dokunduğunuzda slotlar otomatik yeniden denenir.',
       inProgress: true,
     };
   }
