@@ -39,6 +39,7 @@ import Label from '@/tailadmin/components/form/Label';
 import Input from '@/tailadmin/components/form/input/InputField';
 import TextArea from '@/tailadmin/components/form/input/TextArea';
 import Button from '@/tailadmin/components/ui/button/Button';
+import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
 import type {
   CanvaAspectRatio,
   CanvaContentKind,
@@ -816,6 +817,7 @@ export default function BrandHubPage() {
           <p className="mt-1.5 max-w-xl text-[13px] text-slate-600">Canva connection, Brand Template inventory and agent autofill pipeline in one screen.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <BrandCompleteGapsButton tenantId={tenantId} variant="compact" />
           {/* Sprint 1-3 AI Intelligence Buttons */}
           {[
             { key: 'visuals',    label: 'Visual DNA',   endpoint: 'analyze-visuals',   color: '#a78bfa', title: 'GPT-4o Vision ile venue fotoğraflarını analiz et → renk paleti + atmosfer' },

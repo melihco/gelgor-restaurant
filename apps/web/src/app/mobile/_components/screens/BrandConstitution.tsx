@@ -60,6 +60,7 @@ import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePic
 import { BrandFalDesignIntensityPanel } from '@/components/brand/BrandFalDesignIntensityPanel';
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
 import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrategyPanel';
+import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
 import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
 import { brandReadinessFixToBrandTab, PRODUCTION_PROFILE_THRESHOLD, type ProductionProfileReadinessResult } from '@/lib/brand-readiness';
 import { isCanvaEnabledClient } from '@/lib/canva-config';
@@ -3702,6 +3703,8 @@ export function BrandConstitution() {
           </div>
 
           {sharedStatusBanners}
+
+          <BrandCompleteGapsButton tenantId={tenantId} variant="primary" />
 
           {/* Production readiness — most important missing thing */}
           {productionReadiness?.productionProfile && !pprReady && (

@@ -177,6 +177,44 @@ async def derive_production_design_profile_endpoint(
     }
 
 
+@router.get("/{workspace_id}/brand-gaps")
+async def get_brand_gaps(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """List critical brand-context gaps that block agent / production quality."""
+    from app.services.brand_gap_completion_service import detect_brand_gaps
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="brand_context_not_found")
+    gaps = detect_brand_gaps(ctx)
+    return {"workspace_id": str(workspace_id), "gap_count": len(gaps), "gaps": gaps}
+
+
+@router.post("/{workspace_id}/complete-gaps")
+async def complete_brand_gaps_endpoint(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    AI-assisted repair of detected brand gaps (description, visual_dna, brand_dna,
+    industry calendar, production design profile). Multi-tenant — sector-driven only.
+    """
+    from app.config import get_settings
+    from app.services.brand_gap_completion_service import complete_brand_gaps
+
+    settings = get_settings()
+    result = await complete_brand_gaps(
+        db,
+        workspace_id,
+        openai_api_key=settings.openai_api_key or "",
+    )
+    if result.get("error") == "brand_context_not_found":
+        raise HTTPException(status_code=404, detail="brand_context_not_found")
+    return result
+
+
 @router.post("/{workspace_id}/enrich-brand-kit-from-website")
 async def enrich_brand_kit_from_website(
     workspace_id: uuid.UUID,
