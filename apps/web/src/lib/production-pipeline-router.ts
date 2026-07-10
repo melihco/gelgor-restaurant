@@ -17,7 +17,12 @@ import {
   applyMissionFalStoryAssignment,
   applyMissionRemotionStoryAssignment,
   shouldApplyMissionFalStory,
+  shouldSkipRemotionStoryCandidate,
 } from './mission-remotion-story';
+import {
+  applyMissionFalAdAssignment,
+  shouldApplyMissionFalAd,
+} from './mission-fal-ad';
 import {
   mapProductionContextToLibrarySlotKey,
   resolveStandardRemotionLibrarySlotKey,
@@ -393,6 +398,9 @@ export function resolveProductionAssignment(input: {
   if (input.adHocBrief) {
     return assignment;
   }
+  if (shouldApplyMissionFalAd(assignment)) {
+    return applyMissionFalAdAssignment(assignment);
+  }
   if (shouldApplyMissionFalStory(assignment)) {
     return applyMissionFalStoryAssignment(assignment, input.storyIndex);
   }
@@ -421,20 +429,16 @@ export function assignmentImpliesReel(role: ProductionSlotRole): boolean {
 export function assignmentImpliesStoryFormat(role: ProductionSlotRole): boolean {
   return role === 'campaign_story_motion'
     || role === 'organic_story_still'
-    || role === 'product_showcase_story'
-    || role === 'paid_ad_creative'
-    || role === 'paid_ad_google_creative';
+    || role === 'product_showcase_story';
 }
 
 export function shouldRenderRemotionPoster(assignment: ProductionAssignment): boolean {
   return assignment.pipeline === 'remotion_poster';
 }
 
-/** Motion story + marka şablonları yalnızca kampanya duyuru / reklam rollerinde. */
+/** Motion story — campaign slots only; paid ads use fal_design stills. */
 const REMOTION_STORY_ROLES = new Set<ProductionSlotRole>([
   'campaign_story_motion',
-  'paid_ad_creative',
-  'paid_ad_google_creative',
 ]);
 
 export function shouldRenderRemotionStory(
@@ -691,7 +695,9 @@ function enrichResolvedAssignment(
     counters.posterOrdinal += 1;
   }
 
-  if (shouldApplyMissionFalStory(assignment)) {
+  if (shouldApplyMissionFalAd(assignment)) {
+    assignment = applyMissionFalAdAssignment(assignment);
+  } else if (shouldApplyMissionFalStory(assignment)) {
     assignment = applyMissionFalStoryAssignment(assignment, counters.storyOrdinal);
     counters.storyOrdinal += 1;
   } else if (shouldRenderRemotionStory(assignment)) {
@@ -869,7 +875,9 @@ export function resolveFinalMissionAssignments(
       posterOrdinal += 1;
     }
 
-    if (shouldApplyMissionFalStory(assignment)) {
+    if (shouldApplyMissionFalAd(assignment)) {
+      assignment = applyMissionFalAdAssignment(assignment);
+    } else if (shouldApplyMissionFalStory(assignment)) {
       assignment = applyMissionFalStoryAssignment(assignment, storyOrdinal);
       storyOrdinal += 1;
     } else if (shouldRenderRemotionStory(assignment)) {
@@ -965,6 +973,9 @@ export function resolveContentKindForAssignment(
     return 'instagram_story';
   }
   if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
+    return 'instagram_post';
+  }
+  if (assignment.slot_role === 'paid_ad_creative' || assignment.slot_role === 'paid_ad_google_creative') {
     return 'instagram_post';
   }
   if (assignment.pipeline === 'fal_only_post' || assignment.slot_role === 'fal_only_post') {

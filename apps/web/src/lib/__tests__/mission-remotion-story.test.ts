@@ -9,6 +9,7 @@ import {
   isFalStorySlot,
   isRemotionStorySlot,
   missionTemplateIdeaIndex,
+  shouldSkipRemotionStoryCandidate,
 } from '@/lib/mission-remotion-story';
 
 function baseAssignment(overrides: Partial<ProductionAssignment> = {}): ProductionAssignment {
@@ -93,6 +94,14 @@ describe('applyMissionFalStoryAssignment', () => {
     applyMissionFalStoryAssignment(input, 0);
     expect(input.slot_role).toBe('organic_story_still');
     expect(input.pipeline).toBe('gallery_photo');
+  });
+});
+
+describe('shouldSkipRemotionStoryCandidate', () => {
+  it('skips weekly campaign story slots from Remotion render phase', () => {
+    expect(shouldSkipRemotionStoryCandidate('campaign_story_motion')).toBe(true);
+    expect(shouldSkipRemotionStoryCandidate('fal_story_motion')).toBe(true);
+    expect(shouldSkipRemotionStoryCandidate('paid_ad_creative')).toBe(false);
   });
 });
 

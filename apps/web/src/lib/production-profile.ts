@@ -161,12 +161,24 @@ export function slotUsesRemotionStory(
   }
   if (!profile.requireRemotionGrafiker) return false;
   if (contentKind === 'instagram_reel') return false;
-  if (contentKind === 'instagram_story' || contentKind === 'instagram_canvas') return true;
+  if (assignment.pipeline === 'story_still' || assignment.pipeline === 'gallery_photo') {
+    return false;
+  }
+  if (assignment.slot_role === 'organic_story_still') {
+    return assignment.pipeline === 'remotion_story';
+  }
   if (assignment.pipeline === 'remotion_story') return true;
   if (assignment.slot_role === 'campaign_story_motion') {
     return assignment.pipeline === 'remotion_story';
   }
-  return assignment.slot_role === 'organic_story_still';
+  if (
+    assignment.slot_role === 'paid_ad_creative'
+    || assignment.slot_role === 'paid_ad_google_creative'
+  ) {
+    return assignment.pipeline === 'remotion_story'
+      && (contentKind === 'instagram_story' || contentKind === 'instagram_canvas');
+  }
+  return false;
 }
 
 export function isFeedDirectorFallback(report: Record<string, unknown> | null | undefined): boolean {

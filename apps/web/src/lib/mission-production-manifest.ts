@@ -547,7 +547,7 @@ const CAMPAIGN_AGENCY_ADDON: MissionProductionSlot[] = [
 const ADS_SLOTS: MissionProductionSlot[] = [
   {
     role: 'paid_ad_creative',
-    pipeline: 'meta_ad',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'ad_creative',
     required: true,
@@ -555,7 +555,7 @@ const ADS_SLOTS: MissionProductionSlot[] = [
   },
   {
     role: 'paid_ad_google_creative',
-    pipeline: 'google_ad',
+    pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'ad_creative',
     required: true,
@@ -775,12 +775,16 @@ export function normalizeProductionPipeline(
   if (key === 'runway_reel') return 'fal_reel';
   if (key === 'remotion_poster') return 'fal_design';
   if (key === 'remotion_story') return 'fal_story';
+  if (key === 'meta_ad' || key === 'google_ad') return 'fal_design';
   return (key as ProductionPipeline) || 'gallery_photo';
 }
 
 /** Resolve pipeline for a slot role (legacy FD assignments normalized at ingest). */
 export function pipelineForSlotRole(role: ProductionSlotRole): ProductionPipeline {
   if (role === 'designed_typography' || role === 'designed_post' || role === 'fal_designed_post') {
+    return 'fal_design';
+  }
+  if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') {
     return 'fal_design';
   }
   // Legacy FD slot roles → canonical fal story / fal reel pipelines

@@ -19,6 +19,11 @@ import {
   type FalLogoPosition,
   type ResolvedFalLogoPlacement,
 } from './fal-logo-placement';
+import {
+  isPaidAdProductionSlot,
+  resolveAdChannelFromAssignment,
+  resolveFalAdCreativeDirectives,
+} from './fal-ad-creative-prompt';
 
 export interface FalDesignBrief {
   /** One-line creative hook — what makes this design distinct from generic templates. */
@@ -376,9 +381,25 @@ export function resolveFalDesignPromptContext(
   input: ResolveFalDesignPromptContextInput,
 ): { brief: FalDesignBrief; promptDirectives: string[] } {
   const brief = resolveFalDesignBrief(input);
+  const promptDirectives = buildFalDesignBriefDirectives(brief, input.format);
+  if (
+    input.slotRole
+    && isPaidAdProductionSlot({
+      slot_role: input.slotRole as import('./mission-production-manifest').ProductionSlotRole,
+      pipeline: 'fal_design',
+    })
+  ) {
+    const channel = resolveAdChannelFromAssignment({
+      slot_role: input.slotRole as never,
+      publish_channel: 'instagram_organic',
+    });
+    if (channel) {
+      promptDirectives.push(...resolveFalAdCreativeDirectives(channel));
+    }
+  }
   return {
     brief,
-    promptDirectives: buildFalDesignBriefDirectives(brief, input.format),
+    promptDirectives,
   };
 }
 

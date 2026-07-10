@@ -35,6 +35,12 @@ export function shouldApplyMissionFalStory(assignment: ProductionAssignment): bo
     || assignment.slot_role === 'fal_story_motion';
 }
 
+/** Remotion story phase — weekly campaign stories are Fal posters, not MP4 renders. */
+export function shouldSkipRemotionStoryCandidate(slotRole: string | undefined): boolean {
+  if (!slotRole) return false;
+  return slotRole === 'campaign_story_motion' || slotRole === 'fal_story_motion';
+}
+
 export function applyMissionFalStoryAssignment(
   assignment: ProductionAssignment,
   storyIndex: number,

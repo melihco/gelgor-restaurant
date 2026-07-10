@@ -210,6 +210,8 @@ pipeline must match role:
 - campaign_story_motion → fal_story
 - organic_reel / campaign_reel_motion → fal_reel
 - organic_carousel → carousel_gallery
+- paid_ad_creative → fal_design (Meta Ads paid creative — set fal_design_hint: meta_ads_feed_creative; gallery photo required)
+- paid_ad_google_creative → fal_design (Google Ads display asset — set fal_design_hint: google_ads_display_creative; headline max 30 chars)
 
 ### Brand template library slot
 For every campaign_story_motion and designed_post assignment, also set library_slot_key based on the idea content.

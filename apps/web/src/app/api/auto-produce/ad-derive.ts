@@ -3,7 +3,7 @@
  *
  * Derives Meta + Google ad artifacts from a completed designed_post snapshot.
  * Primary engine: fal.ai designed still (GPT-image grounded + Ideogram fallback).
- * Remotion is fallback only when FAL is unavailable or production fails.
+ * Remotion fallback removed — ads use gallery-grounded fal designs only.
  */
 
 import {
@@ -26,7 +26,7 @@ import {
 import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
 import { resolveFalBrandInput } from '@/lib/fal-brand-input';
 import { sanitizeProductionHeadline } from '@/lib/production-headline-quality';
-import { renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
+import { resolveFalAdCreativeDirectives } from '@/lib/fal-ad-creative-prompt';
 import { serverConfig } from '@/lib/server-config';
 import { produceFalDesignedPost } from './pipelines/fal-designed-post-pipeline';
 import type { NexusClient } from './nexus-client';
@@ -83,43 +83,6 @@ function resolveAdSceneHint(snapshot: DesignedPostSnapshot): string {
     .slice(0, 160);
 }
 
-async function renderAdCreativeWithRemotion(
-  workspaceId: string,
-  channel: AdPublishChannel,
-  snapshot: DesignedPostSnapshot,
-  adHeadline: string,
-  adCta: string,
-  brandName: string,
-  renderCtx: AdDeriveRenderContext,
-  role: string,
-): Promise<string> {
-  const photoUrl = (snapshot.referencePhotoUrl?.trim() || snapshot.imageUrl?.trim());
-  const adRender = await renderRemotionBrandStillResult({
-    workspaceId,
-    photoUrl,
-    headline: adHeadline,
-    caption: snapshot.caption,
-    brandName,
-    location: renderCtx.brandLocation,
-    sector: renderCtx.brandBusinessType,
-    templateUseCase: 'ad_creative',
-    treatment: 'ad_creative',
-    contentType: 'post',
-    ideaIndex: snapshot.ideaIndex + (channel === 'google_ads' ? 1 : 0),
-    brandTheme: renderCtx.brandTheme,
-    logoUrl: renderCtx.brandLogoUrl,
-    primaryColor: renderCtx.primaryColor,
-    accentColor: renderCtx.accentColor,
-    usedTemplateIds: renderCtx.usedTemplateIds,
-    baseUrl: renderCtx.routeBaseUrl,
-    cta: adCta,
-    grafikerMaxRetries: renderCtx.grafikerMaxRetries,
-    librarySlotKey: adLibrarySlotKeyForSnapshot(snapshot),
-    slotRole: role,
-  });
-  return adRender?.imageUrl ?? snapshot.imageUrl;
-}
-
 async function renderAdCreativeWithFal(
   workspaceId: string,
   channel: AdPublishChannel,
@@ -161,7 +124,7 @@ async function renderAdCreativeWithFal(
     brandTone: renderCtx.brandTone,
     brandDescription: renderCtx.brandDescription,
     designBriefDirectives: [
-      'AD CREATIVE FORMAT: Scroll-stopping paid social unit — clear headline hierarchy, strong CTA zone, brand-safe composition for Meta/Google placement.',
+      ...resolveFalAdCreativeDirectives(channel),
       buildBrandOperatingProfileDirective(operatingProfile),
     ].filter((item): item is string => Boolean(item)),
   });
@@ -220,7 +183,7 @@ async function renderAdCreativeWithFal(
   };
 }
 
-/** Meta + Google ad artifacts — fal.ai designed still (Remotion fallback). */
+/** Meta + Google ad artifacts — fal.ai designed still on gallery photo. */
 export async function deriveAdCreativesFromDesignedPost(
   workspaceId: string,
   snapshot: DesignedPostSnapshot,
@@ -291,7 +254,7 @@ export async function deriveAdCreativesFromDesignedPost(
         );
       } catch (falErr) {
         console.warn(
-          `[auto-produce] Ad FAL failed (${channel}), Remotion fallback: ${String(falErr).slice(0, 100)}`,
+          `[auto-produce] Ad FAL failed (${channel}), reusing designed_post still: ${String(falErr).slice(0, 100)}`,
         );
       }
     }
@@ -301,24 +264,11 @@ export async function deriveAdCreativesFromDesignedPost(
       adRenderEngine = 'reuse';
       costUsd = 0.001;
     } else if (!adDedicatedRender) {
-      try {
-        adImageUrl = await renderAdCreativeWithRemotion(
-          workspaceId,
-          channel,
-          snapshot,
-          adHeadline,
-          adCta,
-          brandName,
-          renderCtx,
-          role,
-        );
-        adDedicatedRender = adImageUrl !== snapshot.imageUrl;
-        adRenderEngine = 'remotion';
-        costUsd = adDedicatedRender ? 0.01 : 0.001;
-        console.log(`[auto-produce] Ad creative Remotion (${channel}): "${adHeadline.slice(0, 40)}"`);
-      } catch (adRenderErr) {
-        console.warn(`[auto-produce] Ad render fallback to designed_post: ${String(adRenderErr).slice(0, 80)}`);
-      }
+      console.warn(
+        `[auto-produce] Ad FAL unavailable (${channel}) — reusing designed_post still (no Remotion)`,
+      );
+      adRenderEngine = 'reuse';
+      costUsd = 0.001;
     }
 
     try {

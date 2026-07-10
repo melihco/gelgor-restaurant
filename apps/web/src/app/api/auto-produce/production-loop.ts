@@ -306,6 +306,16 @@ import {
 } from '@/lib/calendar-slot-backfill';
 import type { ProductionRunResultRow } from '@/lib/mission-slot-backfill';
 import {
+  missionHasPublishReadyStory,
+  produceAndSaveMissionFalStoryGuarantee,
+} from '@/lib/mission-fal-story-guarantee';
+import {
+  adHeadlineCharLimit,
+  resolveAdChannelFromAssignment,
+  resolveFalAdCreativeDirectives,
+} from '@/lib/fal-ad-creative-prompt';
+import { isPaidAdProductionSlot } from '@/lib/mission-fal-ad';
+import {
   type ParsedIdea,
   NEXUS_CONTENT_URL_MAX,
   GALLERY_ONLY,
@@ -1057,10 +1067,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const slotRole = String(assignment.slot_role);
     const slotPipeline = String(assignment.pipeline);
     const isPaidAdSlot =
-      slotRole === 'paid_ad_creative'
+      isPaidAdProductionSlot(assignment)
+      || slotRole === 'paid_ad_creative'
       || slotRole === 'paid_ad_google_creative'
       || slotPipeline === 'meta_ad'
       || slotPipeline === 'google_ad';
+    const adPublishChannel = isPaidAdSlot ? resolveAdChannelFromAssignment(assignment) : null;
     const slotRoleFmt = assignment.slot_role === 'organic_carousel'
       ? 'carousel'
       : assignmentImpliesStoryFormat(assignment.slot_role)
@@ -2436,13 +2448,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || assignment.slot_role === 'product_showcase_post'
       || assignment.slot_role === 'product_showcase_story';
     const isFalMissionVideo = isFalVideoPipeline(assignment.pipeline);
-    const isFalDesignPost = isFalDesignPipeline(assignment.pipeline);
+    const isFalDesignPost = isFalDesignPipeline(assignment.pipeline) || isPaidAdSlot;
     const isFalOnlyPost = isFalOnlyPostPipeline(assignment.pipeline);
     const isFalOnlyVideo = isFalOnlyVideoPipeline(assignment.pipeline);
     const usesFalDesignerTrack = isFalMissionVideo || isFalDesignPost || isFalOnlyPost || isFalOnlyVideo;
     const falBriefFormat: 'post' | 'reel' | 'story' = isCalendarSlot
       ? (pkgFmt === 'story' ? 'story' : 'post')
-      : isFalDesignPost || isFalOnlyPost
+      : isPaidAdSlot || isFalDesignPost || isFalOnlyPost
         ? 'post'
         : assignment.pipeline === 'fal_story'
           || assignment.slot_role === 'campaign_story_motion'
@@ -2590,6 +2602,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           designBriefDirectives: [
             ...(falDesignCtx?.promptDirectives ?? []),
             ...falGridRotationDirectives,
+            ...(adPublishChannel ? resolveFalAdCreativeDirectives(adPublishChannel) : []),
           ],
           designerMotionCue: falDesignCtx?.brief.motionCue || (adHocBrief ? String((idea as ParsedIdea).motion_cue ?? '') : undefined),
           artDirection: adHocBrief ? String((idea as ParsedIdea).visual_direction ?? '').trim() || undefined : undefined,
@@ -2600,9 +2613,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           isFalOnlyVideo,
           isProductShowcase,
           adHocBrief,
-          falAspectRatio: isCalendarSlot && pkgFmt === 'story' ? '9:16' : undefined,
+          falAspectRatio: isPaidAdSlot
+            ? '4:5'
+            : isCalendarSlot && pkgFmt === 'story'
+              ? '9:16'
+              : undefined,
           requireGroundedGallery: resolveFalRequireGroundedGallery({
-            requireGroundedGallery: isCalendarSlot || adHocBrief,
+            requireGroundedGallery: isCalendarSlot || adHocBrief || isPaidAdSlot,
             referencePhotoUrl: referenceUrl,
             sector: brandBusinessType,
             pipeline: isFalMissionVideo
@@ -3651,6 +3668,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const willRemotionStoryRender = bundleCards !== false
       && Boolean(referenceUrl)
       && !designedPosterReady
+      && !isPaidAdSlot
       && effectiveKind !== 'instagram_reel'
       && !isReel
       && (
@@ -3688,7 +3706,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       brandName: resolvedBrandName,
       conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
       businessType: brandBusinessType,
-      maxLen: 72,
+      maxLen: adPublishChannel ? adHeadlineCharLimit(adPublishChannel) : 72,
     });
     headline = publishHeadline;
     if (
@@ -4106,12 +4124,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (
       saved.id
       && !saved.error
-      && assignment.slot_role === 'designed_post'
       && persistContentUrl
+      && (
+        assignment.slot_role === 'designed_post'
+        || assignment.slot_role === 'fal_designed_post'
+        || isPaidAdSlot
+      )
+      && (referenceUrl || imageUrl)
     ) {
       designedPostSnapshot = {
         imageUrl: persistContentUrl,
-        referencePhotoUrl: referenceUrl ?? undefined,
+        referencePhotoUrl: referenceUrl ?? imageUrl ?? undefined,
         headline: publishHeadline,
         caption: publishCaption,
         cta,
@@ -4371,12 +4394,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       })
     : null;
 
-  // Mission guarantee: at least one Remotion template story when mission has no story MP4 queued
+  // Mission guarantee: Fal.ai designed story poster when no publish-ready story exists (no Remotion MP4)
   if (
     bundleCards !== false
     && missionId
     && !slotBackfillPass
     && creatomateStoryCandidates.length === 0
+    && !missionHasPublishReadyStory(results)
     && hasGallery
     && brandTokensForRender
     && toProcess.length > 0
@@ -4475,87 +4499,48 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         guaranteePhotoUrl = guaranteeEnhance.photoUrls[0];
         guaranteeAiEnhanced = true;
       }
-      const sceneBrief = guaranteeSceneBrief;
-      const persistContentUrl = nexusPersistableContentUrl(guaranteePhotoUrl, [guaranteePhotoUrl]);
-      const saved = await nexusClient.saveArtifact(workspaceId, {
-        title: headline || `${resolvedBrandName} — story`,
-        contentUrl: persistContentUrl,
-        content: JSON.stringify({
-          kind: 'instagram_story',
-          contentType: 'story',
-          caption: caption.slice(0, 2200),
-          headline,
-          imageUrl: guaranteePhotoUrl,
-          posterUrl: guaranteePhotoUrl,
-          videoUrl: null,
-          idea_index: gi,
-          production_bundle: true,
-          bundle_status: 'rendering',
-          idea_id: ideaId,
-          source: 'remotion',
-          ai_gallery_enhanced: guaranteeAiEnhanced,
-        }),
-        platform: 'instagram',
-        contentType: 'story',
-        metadata: {
-          kind: 'instagram_story',
-          contentType: 'story',
-          platform: 'instagram',
-          headline,
-          caption: caption.slice(0, 2200),
-          source: 'remotion',
-          auto_produced: true,
-          gallery_sourced: true,
-          mission_id: missionId,
-          node_key: nodeKey || null,
-          idea_index: gi,
-          production_role: guaranteeAssignment.slot_role,
-          pipeline: guaranteeAssignment.pipeline,
-          publish_package: 'primary',
-          publish_priority: 'recommended',
-          production_bundle: true,
-          bundle_status: 'rendering',
-          idea_id: ideaId,
-          poster_url: guaranteePhotoUrl,
-          posterUrl: guaranteePhotoUrl,
-          reference_photo_url: guaranteePhotoUrl,
-          ai_gallery_enhanced: guaranteeAiEnhanced,
-          ai_visual_standard_enabled: aiVisualStandard.enabled,
-          ai_visual_standard: buildAiVisualStandardMetadata(aiVisualStandard, aiPhotoEnhanceLevel),
-          ai_visual_subject_resolved: resolvedVisualSubject,
-          visual_pipeline_steps: resolveVisualPipelineSteps(
-            aiVisualStandard,
-            'instagram_story',
-            guaranteeAssignment,
-            { willRemotionStory: true },
-          ),
-          remotion_mission_story: true,
-        },
-      });
-      if (!saved.id) break;
-      existingArtifactKeys.add(guaranteeDedupeKey);
 
-      markSourceGalleryUsed(galleryUsage, batchUsedByType, guaranteeSourceUrl, postType);
-      creatomateStoryCandidates.push({
-        headline: headline || resolvedBrandName,
-        caption,
-        voiceoverCaption: caption,
-        photoUrl: guaranteePhotoUrl,
-        artifactId: saved.id,
-        ideaId,
-        treatment: String(idea.treatment || '').toLowerCase(),
-        mood: String(mood),
-        templateUseCase: String(idea.template_use_case || ''),
-        event_details: idea.event_details as Record<string, string> | undefined,
-        sceneBriefBlock: buildSceneBriefPromptBlock(sceneBrief),
-        preferredLayoutFamily: undefined,
-        slotRole: guaranteeAssignment.slot_role,
+      const guaranteeResult = await produceAndSaveMissionFalStoryGuarantee({
+        workspaceId,
+        missionId,
         ideaIndex: gi,
+        ideaId,
+        headline,
+        caption,
+        mood,
+        referencePhotoUrl: guaranteePhotoUrl,
+        aiGalleryEnhanced: guaranteeAiEnhanced,
+        resolvedBrandName,
+        brandBusinessType,
+        brandLocation,
+        brandLogoUrl: brandLogoUrl || undefined,
+        brandCtx,
+        brandTheme,
+        brandTokens: brandTokensForRender,
+        templateLibrary,
+        grafikerMaxRetries,
         librarySlotKey: guaranteeAssignment.library_slot_key
           ?? missionStoryLibrarySlotKey(templateLibrary, gi),
+        nodeKey: nodeKey || null,
+        assignment: guaranteeAssignment,
+        nexusClient,
+      });
+      if (!guaranteeResult) continue;
+
+      existingArtifactKeys.add(guaranteeDedupeKey);
+      markSourceGalleryUsed(galleryUsage, batchUsedByType, guaranteeSourceUrl, postType);
+      costEstimate += guaranteeResult.costUsd;
+      results.push({
+        id: guaranteeResult.artifactId,
+        title: guaranteeResult.title,
+        imageUrl: guaranteeResult.imageUrl,
+        publishReady: true,
+        rendering: false,
+        slotKey: `${gi}:${guaranteeAssignment.slot_role}`,
+        metadata: guaranteeResult.metadata,
       });
       console.log(
-        `[auto-produce] Mission Remotion story guarantee: idea ${gi} "${headline.slice(0, 40)}"`,
+        `[auto-produce] Mission Fal story guarantee: idea ${gi} "${headline.slice(0, 40)}"`,
       );
       break;
     }

@@ -85,5 +85,5 @@ export function adSlotRoleForChannel(channel: AdPublishChannel): string {
 }
 
 export function adPipelineForChannel(channel: AdPublishChannel): string {
-  return channel === 'google_ads' ? 'google_ad' : 'meta_ad';
+  return 'fal_design';
 }

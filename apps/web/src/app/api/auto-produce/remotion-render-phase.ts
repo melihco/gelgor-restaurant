@@ -46,6 +46,7 @@ import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
 import type { NexusClient } from './nexus-client';
 import { buildInternalProductionHeaders } from '@/lib/tenant-production-guard';
+import { shouldSkipRemotionStoryCandidate } from '@/lib/mission-remotion-story';
 
 // ─── Candidate types ──────────────────────────────────────────────────────────
 
@@ -156,6 +157,18 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
     return;
   }
 
+  const remotionStoryCandidates = creatomateStoryCandidates.filter(
+    (candidate) => !shouldSkipRemotionStoryCandidate(candidate.slotRole),
+  );
+  if (remotionStoryCandidates.length === 0) {
+    if (creatomateStoryCandidates.length > 0) {
+      console.log(
+        '[auto-produce] Remotion story phase skipped — all candidates are Fal.ai poster slots',
+      );
+    }
+    return;
+  }
+
   const productionEngines = resolveProductionEngines(ctx.brandTheme);
   let motionPlatesUsed = 0;
   let typographyUsed = 0;
@@ -174,7 +187,7 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
   // Sprint 4 — Story Set Pre-Plan: assign roles, photo hints, and shared mood
   // BEFORE any renders fire so all cards follow a coherent visual arc.
   const storySetPlan: StorySetPlan = planStorySet(
-    creatomateStoryCandidates.map((c) => ({ headline: c.headline, caption: c.caption })),
+    remotionStoryCandidates.map((c) => ({ headline: c.headline, caption: c.caption })),
     { sector: brandBusinessType, brandLanguage: String((ctx.brandCtx as any)?.language ?? '') },
   );
   console.log(
@@ -186,8 +199,8 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
   const producedHeadlines: string[] = [];
   const renderTasks: Promise<void>[] = [];
 
-  for (let ci = 0; ci < creatomateStoryCandidates.length; ci++) {
-    const candidate = creatomateStoryCandidates[ci]!;
+  for (let ci = 0; ci < remotionStoryCandidates.length; ci++) {
+    const candidate = remotionStoryCandidates[ci]!;
 
     const moodLower = ((candidate as any).mood || '').toLowerCase();
     const treatmentLower = ((candidate as any).treatment || '').toLowerCase();
@@ -209,7 +222,7 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
     const storySequenceRole =
       candidate.storySequenceRole
       ?? storySetPlan.cards[ci]?.role
-      ?? resolveStorySequenceRole(ci, creatomateStoryCandidates.length);
+      ?? resolveStorySequenceRole(ci, remotionStoryCandidates.length);
 
     const storyPick = resolveBrandStoryProductionTemplate({
       library: templateLibrary,
@@ -379,7 +392,7 @@ export async function runRemotionStoryPhase(ctx: RemotionRenderPhaseContext): Pr
       locale: motionProfile.locale,
       storySequenceRole,
       storySequenceIndex: ci + 1,
-      storySequenceTotal: creatomateStoryCandidates.length,
+      storySequenceTotal: remotionStoryCandidates.length,
       recentLayoutFamilies,
       sector: brandBusinessType,
       motionLane,

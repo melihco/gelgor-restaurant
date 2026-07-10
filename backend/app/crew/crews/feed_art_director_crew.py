@@ -182,8 +182,8 @@ def _normalize_production_assignments(
         "fal_only_post": "fal_only_post",
         "fal_only_reel": "fal_only_reel",
         "organic_carousel": "carousel_gallery",
-        "paid_ad_creative": "meta_ad",
-        "paid_ad_google_creative": "google_ad",
+        "paid_ad_creative": "fal_design",
+        "paid_ad_google_creative": "fal_design",
     }
 
     pkg = (production_package or "weekly_content").strip().lower()

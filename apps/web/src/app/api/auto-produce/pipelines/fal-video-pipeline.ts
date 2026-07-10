@@ -23,7 +23,7 @@ import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { serverConfig } from '@/lib/server-config';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
-async function runFalStoryPosterProduction(input: {
+export async function runFalStoryPosterProduction(input: {
   workspaceId: string;
   headline: string;
   caption: string;
