@@ -2512,7 +2512,14 @@ export function BrandConstitution() {
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
   const [tab, setTab] = useState<Tab>('identity');
+  const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
   const [saved, setSaved] = useState(false);
+
+  const openSection = React.useCallback((next: Tab) => {
+    setTab(next);
+    setView('section');
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
   const [analyzeFeedback, setAnalyzeFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [descriptionAiFeedback, setDescriptionAiFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [newCompetitor, setNewCompetitor] = useState('');
@@ -2522,7 +2529,7 @@ export function BrandConstitution() {
   useEffect(() => {
     if (!brandReadinessFix) return;
     const nextTab = brandReadinessFixToBrandTab(brandReadinessFix);
-    if (nextTab) setTab(nextTab);
+    if (nextTab) { setTab(nextTab); setView('section'); }
     clearBrandReadinessFix();
   }, [brandReadinessFix, clearBrandReadinessFix]);
 
@@ -3068,155 +3075,275 @@ export function BrandConstitution() {
     }
   };
 
+  // ── Section navigation metadata (dashboard grid) ──
+  const pprReady = productionReadiness?.productionProfile?.isProductionReady ?? false;
+  const pprScore = productionReadiness?.productionProfile?.score ?? 0;
+  const pillarsCount = (parseArr((pyCtx as any)?.content_pillars).length || contentNeeds.length);
+  const ctasCount = parseArr((pyCtx as any)?.default_ctas).length;
+  const photoCount = brandImages.length;
+  const hasChatbot = Boolean((pyCtx as any)?.chatbot_profile);
+  const channelsConnected = Boolean(websiteDisplay && instagramDisplay);
+
+  type NavStatus = 'done' | 'warn' | 'neutral';
+  type NavItem = { key: string; target: Tab; icon: string; label: string; status: NavStatus; hint: string; accent: string };
+  const NAV_ITEMS: NavItem[] = [
+    { key: 'identity', target: 'identity', icon: '🏢', label: 'Kimlik', accent: '#5A82A0',
+      status: constitutionConfirmedAt ? 'done' : 'warn', hint: constitutionConfirmedAt ? 'Onaylı' : 'Onay bekliyor' },
+    { key: 'content', target: 'content', icon: '✍️', label: 'İçerik', accent: '#7C9A7E',
+      status: (pillarsCount >= 2 && ctasCount >= 1) ? 'done' : 'warn', hint: `${pillarsCount} sütun · ${ctasCount} CTA` },
+    { key: 'design', target: 'design', icon: '🎨', label: 'Tasarım', accent: '#B08D57',
+      status: pprReady ? 'done' : 'warn', hint: pprReady ? 'Üretime hazır' : `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}` },
+    { key: 'gallery', target: 'gallery', icon: '📷', label: 'Galeri', accent: '#6E8CA0',
+      status: photoCount >= 8 ? 'done' : 'warn', hint: `${photoCount} fotoğraf` },
+    { key: 'chatbot', target: 'chatbot', icon: '🤖', label: 'Chatbot', accent: '#8E7CC3',
+      status: hasChatbot ? 'done' : 'neutral', hint: hasChatbot ? 'Aktif' : 'Kurulmadı' },
+    { key: 'channels', target: 'identity', icon: '🔗', label: 'Kanallar', accent: '#5FA8A0',
+      status: channelsConnected ? 'done' : 'warn', hint: channelsConnected ? 'Bağlı' : 'Eksik bağlantı' },
+  ];
+  const activeNavLabel = NAV_ITEMS.find((n) => n.target === tab)?.label
+    ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
+
+  const statusColor = (s: NavStatus): string =>
+    s === 'done' ? t.success : s === 'warn' ? '#F59E0B' : t.textMuted;
+  const statusGlyph = (s: NavStatus): string =>
+    s === 'done' ? '✓' : s === 'warn' ? '!' : '·';
+
+  const monogram = (brandNameDisplay || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  const brandPrimary = String((pyCtx as any)?.brand_primary_color || (p as any).brandColors || t.accent).match(/#[0-9a-fA-F]{3,8}/)?.[0] || t.accent;
+  const brsGood = Number(score) >= 80;
+
+  const sharedStatusBanners = (
+    <>
+      {saved && (
+        <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 12, background: t.successDim, fontSize: 14, color: t.success, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+          ✓ Kaydedildi
+        </div>
+      )}
+      {(pyCtxLoadFailed || hydrateMutation.isPending) && (
+        <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.12)', border: '0.5px solid rgba(245,158,11,0.35)', fontSize: 13, color: '#F59E0B', lineHeight: 1.5 }}>
+          {hydrateMutation.isPending
+            ? 'Kayıtlı marka analizi profilinize aktarılıyor…'
+            : (
+              <>
+                Analiz verisi veritabanında duruyor; ekran boş çünkü Python servisi veya profil senkronu eksik.
+                {pyCtxLoadError instanceof Error ? ` (${pyCtxLoadError.message})` : ''}
+              </>
+            )}
+          <button
+            type="button"
+            onClick={() => { hydratedFromPythonRef.current = false; hydrateMutation.mutate(); }}
+            disabled={hydrateMutation.isPending}
+            style={{ display: 'block', marginTop: 8, padding: '8px 12px', borderRadius: 10, border: 'none', background: '#F59E0B', color: '#1a1200', fontWeight: 600, fontSize: 13, cursor: hydrateMutation.isPending ? 'wait' : 'pointer' }}
+          >
+            Kayıtlı veriyi yükle
+          </button>
+        </div>
+      )}
+      {saveMutation.isPending && (
+        <div style={{ marginBottom: 12, fontSize: 13, color: t.textTertiary, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 14, height: 14, borderRadius: '50%', border: `1.5px solid ${t.separator}`, borderTopColor: t.accent, animation: 'spinSlow 0.8s linear infinite' }} />
+          Kaydediliyor…
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 250ms' }}>
 
-      {/* ── HEADER ── */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 8px) 20px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
-          <h1 style={{ fontSize: 34, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.04em', margin: 0, lineHeight: 1.05 }}>
-            Marka
-          </h1>
-          <div style={{
-            padding: '6px 12px', borderRadius: 20, fontSize: 15, fontWeight: 600,
-            background: t.accentDim, color: t.accent, letterSpacing: '-0.02em',
-          }}>
-            {score}
-          </div>
-        </div>
-        <p style={{ fontSize: 15, color: t.textTertiary, margin: '0 0 20px', letterSpacing: '-0.01em' }}>
-          {brandNameDisplay || 'Marka profili'}
-          {(industryDisplay || locationDisplay) ? ` · ${[industryDisplay, locationDisplay].filter(Boolean).join(' · ')}` : ''}
-        </p>
-
-        {/* Profile hero card */}
-        <div style={{ ...t.surfaceGroup, marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px' }}>
-            <div style={{
-              width: 52, height: 52, borderRadius: 14, overflow: 'hidden', flexShrink: 0,
-              background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-              ) : (
-                <span style={{ fontSize: 17, fontWeight: 700, color: t.accent }}>
-                  {(brandNameDisplay || 'B').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                </span>
-              )}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 17, fontWeight: 600, color: t.textPrimary, letterSpacing: '-0.02em', marginBottom: 2 }}>
-                {brandNameDisplay || 'Marka adı'}
-              </div>
-              <div style={{ fontSize: 13, color: t.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {[websiteDisplay, instagramDisplay ? `@${String(instagramDisplay).replace(/^@/, '')}` : ''].filter(Boolean).join(' · ') || 'Web ve sosyal bağlantı ekleyin'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Save success */}
-        {saved && (
-          <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 12, background: t.successDim, fontSize: 14, color: t.success, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-            ✓ Kaydedildi
-          </div>
-        )}
-
-        {(pyCtxLoadFailed || hydrateMutation.isPending) && (
-          <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.12)', border: '0.5px solid rgba(245,158,11,0.35)', fontSize: 13, color: '#F59E0B', lineHeight: 1.5 }}>
-            {hydrateMutation.isPending
-              ? 'Kayıtlı marka analizi profilinize aktarılıyor…'
-              : (
-                <>
-                  Analiz verisi veritabanında duruyor; ekran boş çünkü Python servisi veya profil senkronu eksik.
-                  {pyCtxLoadError instanceof Error ? ` (${pyCtxLoadError.message})` : ''}
-                </>
-              )}
+      {/* ── DASHBOARD VIEW ── */}
+      {view === 'dashboard' && (
+        <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 8px) 20px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
             <button
               type="button"
-              onClick={() => {
-                hydratedFromPythonRef.current = false;
-                hydrateMutation.mutate();
-              }}
-              disabled={hydrateMutation.isPending}
-              style={{
-                display: 'block', marginTop: 8, padding: '8px 12px', borderRadius: 10,
-                border: 'none', background: '#F59E0B', color: '#1a1200', fontWeight: 600,
-                fontSize: 13, cursor: hydrateMutation.isPending ? 'wait' : 'pointer',
-              }}
+              onClick={goBack}
+              aria-label="Geri"
+              style={{ width: 36, height: 36, borderRadius: 12, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', color: t.textSecondary, flexShrink: 0 }}
             >
-              Kayıtlı veriyi yükle
+              <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
+            <h1 style={{ fontSize: 26, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', margin: 0, lineHeight: 1.1 }}>
+              Marka Ayarları
+            </h1>
           </div>
-        )}
 
-        {saveMutation.isPending && (
-          <div style={{ marginBottom: 12, fontSize: 13, color: t.textTertiary, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 14, height: 14, borderRadius: '50%', border: `1.5px solid ${t.separator}`, borderTopColor: t.accent, animation: 'spinSlow 0.8s linear infinite' }} />
-            Kaydediliyor…
-          </div>
-        )}
+          {/* Brand hero card */}
+          <div style={{
+            position: 'relative', marginBottom: 20, padding: 18, borderRadius: 22, overflow: 'hidden',
+            ...t.surfaceGroup,
+          }}>
+            <div style={{ position: 'absolute', inset: 0, background: brandPrimary, opacity: 0.04, pointerEvents: 'none' }} />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+              <div style={{
+                width: 80, height: 80, borderRadius: 24, overflow: 'hidden', flexShrink: 0,
+                background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: t.isDark ? '0 4px 16px rgba(0,0,0,0.35)' : '0 4px 16px rgba(0,0,0,0.12)',
+              }}>
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                ) : (
+                  <span style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{monogram}</span>
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+                    {brandNameDisplay || 'Marka adı'}
+                  </span>
+                  <span style={{
+                    padding: '3px 9px', borderRadius: 8, fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em',
+                    background: brsGood ? t.successDim : 'rgba(245,158,11,0.14)', color: brsGood ? t.success : '#F59E0B',
+                  }}>
+                    BRS {score}{brsGood ? ' ✓' : ''}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {industryDisplay && (
+                    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: t.accentDim, color: t.accent }}>
+                      {industryDisplay}
+                    </span>
+                  )}
+                  {locationDisplay && (
+                    <span style={{ fontSize: 12.5, color: t.textTertiary }}>{locationDisplay}</span>
+                  )}
+                </div>
+                {descriptionDisplay && (
+                  <p style={{ fontSize: 13, color: t.textTertiary, lineHeight: 1.45, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {descriptionDisplay}
+                  </p>
+                )}
+              </div>
+            </div>
 
-        {(p.brandTone || p.targetAudience || (pyCtx as any)?.target_audience) && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {p.brandTone && (
+            {/* Quick stats */}
+            <div style={{ position: 'relative', display: 'flex', gap: 0, marginTop: 16, paddingTop: 14, borderTop: `0.5px solid ${t.separator}` }}>
+              {[
+                { n: photoCount, l: 'Fotoğraf' },
+                { n: pillarsCount, l: 'İçerik sütunu' },
+                { n: ctasCount, l: 'CTA' },
+              ].map((s, i) => (
+                <div key={s.l} style={{ flex: 1, textAlign: 'center', borderLeft: i > 0 ? `0.5px solid ${t.separator}` : 'none' }}>
+                  <div style={{ fontSize: 19, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{s.n}</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{s.l}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Inline constitution CTA */}
+            {!constitutionConfirmedAt && (
               <button
                 type="button"
-                onClick={() => setTab('content')}
-                style={{ padding: '6px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', background: t.accentDim, color: t.accent }}
-              >
-                {p.brandTone}
-              </button>
-            )}
-            {(p.targetAudience || (pyCtx as any)?.target_audience) && (
-              <button
-                type="button"
-                onClick={() => setTab('content')}
-                style={{ padding: '6px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500, cursor: 'pointer', border: 'none', background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: t.textSecondary, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              >
-                {String(p.targetAudience || (pyCtx as any)?.target_audience || '').slice(0, 48)}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* iOS-style segmented control */}
-        <div style={{
-          display: 'flex', gap: 6, padding: '0 0 4px', marginBottom: 4,
-          overflowX: 'auto', WebkitOverflowScrolling: 'touch',
-        }}>
-          {TABS.map((tb) => {
-            const isActive = tab === tb.id;
-            return (
-              <button
-                key={tb.id}
-                type="button"
-                onClick={() => setTab(tb.id)}
-                aria-current={isActive ? 'page' : undefined}
+                onClick={() => void handleConfirmConstitution()}
+                disabled={confirmingConstitution}
                 style={{
-                  flex: '0 0 auto', padding: '8px 14px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                  fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap',
-                  color: isActive ? t.textPrimary : t.textTertiary,
-                  background: isActive
-                    ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF')
-                    : (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'),
-                  boxShadow: isActive ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
-                  transition: 'background 180ms ease, color 180ms ease',
+                  position: 'relative', width: '100%', marginTop: 14, padding: '11px 16px', borderRadius: 12, border: 'none',
+                  cursor: confirmingConstitution ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#fff',
+                  background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                 }}
               >
-                {tb.label}
+                {confirmingConstitution ? 'Onaylanıyor…' : 'Marka Anayasasını Onayla · +20 puan'}
               </button>
-            );
-          })}
+            )}
+            {constitutionConfirmError && (
+              <div style={{ position: 'relative', marginTop: 10, fontSize: 12.5, color: t.danger, lineHeight: 1.4 }}>{constitutionConfirmError}</div>
+            )}
+          </div>
+
+          {sharedStatusBanners}
+
+          {/* Production readiness — most important missing thing */}
+          {productionReadiness?.productionProfile && !pprReady && (
+            <button
+              type="button"
+              onClick={() => openSection('design')}
+              style={{
+                width: '100%', textAlign: 'left', marginBottom: 20, padding: '14px 16px', borderRadius: 16, cursor: 'pointer',
+                background: 'rgba(245,158,11,0.08)', border: '0.5px solid rgba(245,158,11,0.28)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>
+                  Üretim tasarım profili eksik ({pprScore}/{PRODUCTION_PROFILE_THRESHOLD})
+                </span>
+                <ChevronRight color={t.textTertiary} />
+              </div>
+              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, marginTop: 4 }}>
+                Fal story/post üretimi için service profile, visual_dna ve theme katmanlarını tamamla.
+              </div>
+            </button>
+          )}
+
+          {/* 2×3 section nav grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => openSection(item.target)}
+                style={{
+                  position: 'relative', textAlign: 'left', padding: '14px 14px 14px 16px', borderRadius: 16, cursor: 'pointer',
+                  ...t.surfaceGroup, borderLeft: `3px solid ${item.accent}`,
+                  display: 'flex', flexDirection: 'column', gap: 8, minHeight: 96,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 24, lineHeight: 1 }}>{item.icon}</span>
+                  <span style={{
+                    width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 800, color: '#fff', background: statusColor(item.status),
+                  }}>{statusGlyph(item.status)}</span>
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.01em' }}>{item.label}</div>
+                  <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 2 }}>{item.hint}</div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* ── TAB CONTENT ── */}
+      {/* ── SECTION HEADER (sticky) ── */}
+      {view === 'section' && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 20,
+          padding: 'calc(env(safe-area-inset-top,0px) + 8px) 16px 10px',
+          background: t.isDark ? 'rgba(20,20,22,0.82)' : 'rgba(250,250,252,0.82)',
+          backdropFilter: 'saturate(180%) blur(20px)', WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+          borderBottom: `0.5px solid ${t.separator}`,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <button
+            type="button"
+            onClick={() => setView('dashboard')}
+            aria-label="Marka ayarlarına dön"
+            style={{ display: 'flex', alignItems: 'center', gap: 3, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 15, fontWeight: 500, padding: '4px 4px 4px 0', flexShrink: 0 }}
+          >
+            <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Marka
+          </button>
+          <div style={{ flex: 1, fontSize: 17, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', textAlign: 'center' }}>
+            {activeNavLabel}
+          </div>
+          <div style={{ minWidth: 44, display: 'flex', justifyContent: 'flex-end' }}>
+            {saveMutation.isPending ? (
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: `1.5px solid ${t.separator}`, borderTopColor: t.accent, animation: 'spinSlow 0.8s linear infinite' }} />
+            ) : saved ? (
+              <span style={{ fontSize: 14, fontWeight: 600, color: t.success }}>✓</span>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION CONTENT ── */}
+      {view === 'section' && (
       <div style={{ padding: '20px 20px 0' }}>
+        {sharedStatusBanners}
 
-        {productionReadiness?.productionProfile
+        {tab === 'design' && productionReadiness?.productionProfile
           && !productionReadiness.productionProfile.isProductionReady && (
           <div style={{
             marginBottom: 16,
@@ -4402,6 +4529,7 @@ export function BrandConstitution() {
           <GalleryTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} companyProfile={profile as CompanyProfile} />
         )}
       </div>
+      )}
     </div>
   );
 }
