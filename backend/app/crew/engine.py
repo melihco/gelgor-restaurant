@@ -335,6 +335,8 @@ def _adapt_content_calendar(brand, data, llm):
         brand,
         duration_days=data.get("duration_days", 7),
         frequency=data.get("frequency", "daily"),
+        count=data.get("count"),
+        format_mix=str(data.get("format_mix") or ""),
         llm=llm,
     )
 

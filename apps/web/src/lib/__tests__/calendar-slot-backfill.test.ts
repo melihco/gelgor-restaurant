@@ -96,7 +96,7 @@ describe('calendar-slot-backfill', () => {
     expect(plans[0]!.calendarIdea.calendar_slot_backfill).toBe(true);
   });
 
-  it('skips calendar plan indices already used in artifact metadata', () => {
+  it('skips used calendar indices but can relax format for remaining empty slots', () => {
     const queue = [queueItem(2, 'organic_post')];
     const results: ProductionRunResultRow[] = [];
 
@@ -108,7 +108,9 @@ describe('calendar-slot-backfill', () => {
       linkedPlanIndices: new Set([0, 1, 2, 3]),
     });
 
-    expect(plans).toHaveLength(0);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.planIndex).toBe(1);
+    expect(plans[0]!.calendarIdea.headline).toBe('Sunset Reel');
   });
 
   it('prefers orphan calendar rows over linked rows for empty slots', () => {
@@ -171,6 +173,30 @@ describe('calendar-slot-backfill', () => {
       { title: 'failed', imageUrl: '', error: 'x', metadata: { calendar_plan_index: 5 } },
     ]);
     expect([...used]).toEqual([2]);
+  });
+
+  it('falls back to any unused calendar row when format has no strict match', () => {
+    const queue = [queueItem(6, 'fal_reel_motion')];
+    const results: ProductionRunResultRow[] = [];
+    const postOnlyPlans = [
+      {
+        event_name: 'Menu Spotlight',
+        format: 'post',
+        content_brief: 'Weekly menu hero post.',
+        announcement_type: 'product_reveal',
+      },
+    ];
+
+    const plans = matchCalendarPlansToEmptySlots({
+      queue,
+      results,
+      calendarPlans: postOnlyPlans,
+    });
+
+    expect(plans).toHaveLength(1);
+    expect(plans[0]!.slotKey).toBe('6:fal_reel_motion');
+    expect(plans[0]!.planIndex).toBe(0);
+    expect(plans[0]!.calendarIdea.headline).toBe('Menu Spotlight');
   });
 
   it('buildCalendarBackfillQueueItems injects calendar brief while keeping slot role', () => {

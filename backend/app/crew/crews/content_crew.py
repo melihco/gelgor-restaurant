@@ -968,10 +968,20 @@ def run_content_calendar(
     duration_days: int = 7,
     frequency: str = "daily",
     llm: LLM | None = None,
+    *,
+    count: int | None = None,
+    format_mix: str = "",
 ) -> dict[str, Any]:
     """Generate a content calendar for a brand."""
     content_agent = create_content_agent(brand, llm=llm, for_calendar=True)
-    calendar_task = create_content_calendar_task(content_agent, brand, duration_days, frequency)
+    calendar_task = create_content_calendar_task(
+        content_agent,
+        brand,
+        duration_days,
+        frequency,
+        count=count,
+        format_mix=format_mix,
+    )
 
     crew = Crew(
         agents=[content_agent],

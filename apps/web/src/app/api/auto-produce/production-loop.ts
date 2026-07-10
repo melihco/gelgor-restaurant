@@ -4262,7 +4262,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   }
 
   // Empty manifest slots — backfill from unused content_calendar rows (format + diversity preserved).
-  const MAX_CALENDAR_BACKFILL_ROUNDS = 2;
+  const MAX_CALENDAR_BACKFILL_ROUNDS = 3;
   for (
     let calendarRound = 0;
     calendarRound < MAX_CALENDAR_BACKFILL_ROUNDS;

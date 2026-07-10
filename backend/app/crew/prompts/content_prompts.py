@@ -500,17 +500,17 @@ Selection rules:
 Keep the field names stable. The app maps these fields into Canva template contracts and tenant asset selection.
 """
 
-CONTENT_CALENDAR_TASK = """Create {count} announcement card concepts for {business_name}.
+CONTENT_CALENDAR_TASK = """Create {count} weekly publish plan rows for {business_name}.
 
-PURPOSE: These are branded announcement / event cards to be produced via the brand kit
-template library (SVG motor or Creatomate). Each card will be rendered as a story or reel
-format — NOT raw photo posts. They serve customer acquisition, product/venue reveals,
-promotions, and event highlights.
+PURPOSE: Each row is a scheduled content slot for the 7-day Instagram package — story, post, reel,
+or carousel. Rows feed the production pipeline: matched ideation gets enriched brief/schedule;
+unused rows backfill empty manifest slots after the main production pass.
 
 TODAY'S DATE: {current_date}
 Business: {business_name} | Location: {location} | Type: {business_type}
 Campaign brief: {brief}
 Active seasonal signals: {signals}
+Weekly format mix (distribute across rows): {format_mix}
 
 ANNOUNCEMENT TYPES to consider (pick the most relevant for THIS brand's actual business type):
 - venue_showcase   → physical space reveal (terrace, studio, showroom, clinic interior, gym floor) — adapt to what this business has
@@ -525,13 +525,17 @@ Match the type to what {business_name} actually sells: a gym → fitness class t
 
 RULES:
 - NEVER reference a past holiday or event. Today is {current_date}.
-- Each card must work as a self-contained story (9:16) or short reel teaser.
-- Keep event_name short (≤6 words) — this goes on the card as the headline.
+- Each row must work as a self-contained Instagram slot for its format.
+- Keep event_name short (≤6 words) — headline for the card or caption hook.
 - tagline is the visual sub-line (≤10 words).
 - Choose template_use_case from: event, campaign, announcement.
-- Choose format from: story, post.
+- Choose format from: story, post, reel, carousel.
+- Cover the weekly format mix above — include reel and carousel rows when count allows.
+- Reel rows: motion-forward brief (camera movement, hook in first 2 seconds).
+- Carousel rows: multi-slide narrative brief (hero + supporting angles).
+- Spread publish days across Mon–Sun; include date and time when sensible.
 
-Return a JSON array of {count} announcement card concepts:
+Return a JSON array of {count} publish plan rows:
 [
   {{
     "announcement_type": "one of the types above",
@@ -541,8 +545,8 @@ Return a JSON array of {count} announcement card concepts:
     "time": "time string if applicable, else ''",
     "venue_area": "specific area name (e.g. 'Rooftop Terrace') if applicable, else ''",
     "template_use_case": "event | campaign | announcement",
-    "format": "story | post",
-    "content_brief": "1-2 sentences describing the card's visual concept and message",
+    "format": "story | post | reel | carousel",
+    "content_brief": "1-2 sentences describing the visual concept and message",
     "photo_mood": "brief description of ideal background photo mood/scene",
     "priority": "must_post | recommended | optional"
   }}

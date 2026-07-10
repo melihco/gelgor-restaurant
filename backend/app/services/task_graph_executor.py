@@ -1694,7 +1694,7 @@ def _parse_calendar_plans_from_nodes(nodes: list[dict[str, Any]]) -> list[dict[s
                         if isinstance(item, dict):
                             plans.append(item)
                     break
-    return plans[:12]
+    return plans[:16]
 
 
 async def _calendar_nodes_pending(mission_id: uuid.UUID) -> bool:

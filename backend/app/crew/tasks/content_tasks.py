@@ -600,6 +600,9 @@ def create_content_calendar_task(
     brand: BrandInfo,
     duration_days: int = 7,
     frequency: str = "daily",
+    *,
+    count: int | None = None,
+    format_mix: str = "",
 ) -> Task:
     from datetime import datetime, timezone
     now_utc = datetime.now(timezone.utc)
@@ -617,25 +620,26 @@ def create_content_calendar_task(
     else:
         signals_summary = "Current season, weekly rhythm"
 
-    # Count: 3-5 announcement concepts per calendar run
-    count = max(3, min(5, duration_days))
+    # Match weekly package slot count so backfill has enough format-diverse donors.
+    row_count = max(3, min(int(count or 0) or duration_days, 16))
 
     description = CONTENT_CALENDAR_TASK.format(
         business_name=brand.business_name,
-        count=count,
+        count=row_count,
         current_date=current_date_str,
         location=brand.location or "Turkey",
         business_type=brand.business_type or "hospitality",
         brief=brand.campaign_goals or "increase engagement and brand awareness",
         signals=signals_summary,
+        format_mix=format_mix or f"{duration_days}-day weekly mix (story, post, reel, carousel)",
     )
 
     return Task(
         description=description,
         expected_output=(
-            f"A JSON array of {count} announcement card concepts, each with: "
+            f"A JSON array of {row_count} publish plan rows, each with: "
             "announcement_type, event_name, tagline, date, time, venue_area, "
-            "template_use_case, format, content_brief, photo_mood, priority."
+            "template_use_case, format (story|post|reel|carousel), content_brief, photo_mood, priority."
         ),
         agent=agent,
     )

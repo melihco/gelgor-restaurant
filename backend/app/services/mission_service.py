@@ -157,9 +157,21 @@ def _seasonal_task_graph(
         depends_on=["content_strategy"],
     ))
 
-    # content_calendar omitted when weekly_content_ideation already delivers the
-    # 10-piece buffered Feed package — saves ~$0.30–0.50/misyon LLM without
-    # reducing the 7-day publishable output goal.
+    # Weekly publish schedule — feeds empty manifest slots via calendar-slot-backfill.
+    nodes.append(TaskNodeCreate(
+        node_key="content_calendar",
+        phase_index=2,
+        title=f"{phase_name} — Yayın Takvimi ({weekly_count} slot / backfill havuzu)",
+        task_type="content_calendar",
+        agent_role="content_agent",
+        input_data={
+            "count": weekly_count,
+            "duration_days": profile.get("calendar_days", 7),
+            "format_mix": format_mix_label(weekly_geo),
+            "time_period": phase_name,
+        },
+        depends_on=["weekly_content_ideation"],
+    ))
 
     return nodes
 
@@ -357,8 +369,11 @@ def ensure_feed_cohesion_review_node(
     ):
         return dedupe_task_nodes_by_key(task_nodes)
 
-    ideation_keys = [n.node_key for n in task_nodes if n.task_type == "content_ideation"]
-    if not ideation_keys:
+    plan_dep_keys = [
+        n.node_key for n in task_nodes
+        if n.task_type in ("content_ideation", "content_calendar")
+    ]
+    if not plan_dep_keys:
         return task_nodes
 
     max_phase = max(n.phase_index for n in task_nodes)
@@ -371,7 +386,7 @@ def ensure_feed_cohesion_review_node(
             task_type="feed_cohesion_review",
             agent_role="feed_art_director",
             input_data={},
-            depends_on=ideation_keys,
+            depends_on=plan_dep_keys,
         ),
     ])
 
@@ -397,18 +412,18 @@ async def ensure_feed_cohesion_review_persisted_node(
     dep_rows = await db.execute(
         select(MissionTaskNode.node_key, MissionTaskNode.phase_index).where(
             MissionTaskNode.mission_id == mission_id,
-            MissionTaskNode.task_type == "content_ideation",
+            MissionTaskNode.task_type.in_(("content_ideation", "content_calendar")),
         )
     )
-    ideation_rows = dep_rows.all()
-    if not ideation_rows:
+    plan_rows = dep_rows.all()
+    if not plan_rows:
         return None
 
     depends_on = [
-        str(row[0]) for row in ideation_rows
+        str(row[0]) for row in plan_rows
         if row[0] and str(row[0]) != "feed_cohesion_review"
     ]
-    phase_index = max(int(row[1] or 0) for row in ideation_rows) + 1
+    phase_index = max(int(row[1] or 0) for row in plan_rows) + 1
     node = MissionTaskNode(
         id=uuid.uuid4(),
         mission_id=mission_id,

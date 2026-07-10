@@ -8,6 +8,7 @@ import type { ManifestProductionQueueItem } from '@/lib/auto-produce/build-produ
 import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
 import {
   buildCalendarFalSceneHint,
+  MAX_CALENDAR_PLANS_PER_MISSION,
   normalizeCalendarPlanToProductionIdea,
 } from '@/lib/calendar-production-pack';
 import { slotFormatFromAssignment } from '@/lib/gallery-first-production';
@@ -61,7 +62,7 @@ export function parseCalendarPlansFromMissionNodes(
       node,
       ['plans', 'calendar', 'items', 'content_calendar', 'schedule'],
     ))
-    .slice(0, 12);
+    .slice(0, MAX_CALENDAR_PLANS_PER_MISSION);
 }
 
 export { parseCalendarPlanRecords };
@@ -156,17 +157,25 @@ export function matchCalendarPlansToEmptySlots(input: {
   const plans: CalendarSlotBackfillPlan[] = [];
   const usedHeadlines = new Set<string>();
 
-  for (const slot of emptySlots) {
-    const slotFormat = slotFormatFromAssignment(slot.assignment);
-
-    const planIndex = availableIndices.find((index) => {
+  const pickPlanIndex = (
+    slotFormat: PackageFormat,
+    strictFormat: boolean,
+  ): number | null => {
+    return availableIndices.find((index) => {
       if (usedPlans.has(index)) return false;
       const plan = calendarPlans[index]!;
-      if (calendarPlanPackageFormat(plan) !== slotFormat) return false;
+      if (strictFormat && calendarPlanPackageFormat(plan) !== slotFormat) return false;
       const headline = normalizeHeadline(calendarItemHeadline(plan));
       if (headline && usedHeadlines.has(headline)) return false;
       return true;
-    });
+    }) ?? null;
+  };
+
+  for (const slot of emptySlots) {
+    const slotFormat = slotFormatFromAssignment(slot.assignment);
+
+    const planIndex = pickPlanIndex(slotFormat, true)
+      ?? pickPlanIndex(slotFormat, false);
 
     if (planIndex == null) continue;
 

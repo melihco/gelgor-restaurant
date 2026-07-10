@@ -14,6 +14,7 @@ import { resolveWeeklyPackageGeometry } from '@/lib/package-weekly-geometry';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import {
   buildCalendarFalSceneHint,
+  MAX_CALENDAR_PLANS_PER_MISSION,
   normalizeCalendarPlanToProductionIdea,
 } from '@/lib/calendar-production-pack';
 
@@ -85,14 +86,14 @@ export function parseCalendarPlanRecords(
   return nodeOutputArray(
     { output_summary: outputSummary },
     ['plans', 'calendar', 'items', 'content_calendar', 'schedule'],
-  ).slice(0, 12);
+  ).slice(0, MAX_CALENDAR_PLANS_PER_MISSION);
 }
 
 function parseCalendarPlanRecordsFromNode(node: MissionNode): Record<string, unknown>[] {
   return nodeOutputArray(
     node,
     ['plans', 'calendar', 'items', 'content_calendar', 'schedule'],
-  ).slice(0, 12);
+  ).slice(0, MAX_CALENDAR_PLANS_PER_MISSION);
 }
 
 function pickIdeationForCalendarStrict(

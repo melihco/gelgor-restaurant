@@ -15,6 +15,9 @@ import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-rout
 /** Avoid collision with ideation idea_index 0–15 in production_jobs. */
 export const CALENDAR_PRODUCTION_IDEA_INDEX_BASE = 1000;
 
+/** Max calendar rows consumed per mission (agency weekly = 16 slots). */
+export const MAX_CALENDAR_PLANS_PER_MISSION = 16;
+
 export type CalendarAnnouncementType =
   | 'venue_showcase'
   | 'product_reveal'

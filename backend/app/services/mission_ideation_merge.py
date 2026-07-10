@@ -416,7 +416,7 @@ def _parse_calendar_plans_from_node(node: dict[str, Any]) -> list[dict[str, Any]
     payload_items = _payload_object_array(node)
     if payload_items:
         return payload_items[:12]
-    return _parse_calendar_plans(str(node.get("output_summary") or ""))[:12]
+    return _parse_calendar_plans(str(node.get("output_summary") or ""))[:16]
 
 
 def _calendar_format(plan: dict[str, Any]) -> str:
