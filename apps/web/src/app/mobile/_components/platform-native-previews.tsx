@@ -422,6 +422,113 @@ export function InstagramFeedNative({
 }
 
 /** Reel shared to Instagram home feed — 4:5 in-scroll (not full-screen Reels tab). */
+function IgFeedReelMediaStage({
+  videoUrl,
+  posterUrl,
+  muted,
+  onToggleMute,
+}: {
+  videoUrl: string | null;
+  posterUrl?: string | null;
+  muted: boolean;
+  onToggleMute: () => void;
+}) {
+  const ambientSrc = posterUrl ?? videoUrl ?? null;
+
+  return (
+    <div
+      className="ig-feed-media-stage ig-feed-reel-stage"
+      style={{
+        aspectRatio: '4/5',
+        background: '#000',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {ambientSrc && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={ambientSrc}
+          alt=""
+          aria-hidden
+          referrerPolicy="no-referrer"
+          style={{
+            position: 'absolute',
+            inset: '-10%',
+            width: '120%',
+            height: '120%',
+            objectFit: 'cover',
+            filter: 'blur(26px) brightness(0.48)',
+            transform: 'scale(1.05)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1,
+        }}
+      >
+        {videoUrl ? (
+          <VisibilityGatedVideo
+            src={videoUrl}
+            poster={posterUrl ?? undefined}
+            loop
+            muted={muted}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          />
+        ) : posterUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={posterUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+          />
+        ) : (
+          <div style={{
+            width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', background: '#0a0a0a',
+          }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Reel hazırlanıyor…</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{
+        position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6,
+        padding: '5px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.55)', zIndex: 2,
+      }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+          <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l4 3 4-6-4 3-4-3z"/>
+        </svg>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Reels</span>
+      </div>
+
+      {videoUrl && (
+        <button
+          type="button"
+          aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+          onClick={onToggleMute}
+          style={{
+            position: 'absolute', bottom: 12, right: 12, width: 32, height: 32, borderRadius: '50%',
+            border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, zIndex: 2,
+          }}
+        >
+          {muted ? '🔇' : '🔊'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function InstagramReelInFeedNative({
   content, handle, logoUrl, isPending, timeLabel, afterMedia,
 }: {
@@ -435,54 +542,17 @@ export function InstagramReelInFeedNative({
     <div style={{ background: '#000' }}>
       <IGPostHeader handle={handle} logoUrl={logoUrl} isPending={isPending} formatTag="reel" />
 
-      <div className="ig-feed-media-stage" style={{ aspectRatio: '4/5', background: '#000', position: 'relative', overflow: 'hidden' }}>
-        {content.videoUrl ? (
-          <VisibilityGatedVideo
-            src={content.videoUrl}
-            poster={content.imageUrl ?? undefined}
-            loop
-            muted={muted}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          />
-        ) : content.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={content.imageUrl} alt="" referrerPolicy="no-referrer" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Reel hazırlanıyor…</span>
-          </div>
-        )}
-
-        <div style={{
-          position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6,
-          padding: '5px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.55)',
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
-            <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l4 3 4-6-4 3-4-3z"/>
-          </svg>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Reels</span>
-        </div>
-
-        {content.videoUrl && (
-          <button
-            type="button"
-            aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
-            onClick={() => setMuted((m) => !m)}
-            style={{
-              position: 'absolute', bottom: 12, right: 12, width: 32, height: 32, borderRadius: '50%',
-              border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
-            }}
-          >
-            {muted ? '🔇' : '🔊'}
-          </button>
-        )}
-      </div>
-
-      {afterMedia}
+      <IgFeedReelMediaStage
+        videoUrl={content.videoUrl}
+        posterUrl={content.imageUrl}
+        muted={muted}
+        onToggleMute={() => setMuted((m) => !m)}
+      />
 
       <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} />
       <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} />
+
+      {afterMedia}
     </div>
   );
 }

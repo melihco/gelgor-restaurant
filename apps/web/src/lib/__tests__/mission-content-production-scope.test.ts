@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveMissionContentProductionScope,
+  resolveMissionProductionTargetCount,
   summarizeMissionContentProductionStatus,
 } from '@/lib/mission-production-plan';
 import type { OutputArtifact } from '@/types';
@@ -48,6 +49,22 @@ describe('resolveMissionContentProductionScope', () => {
     expect(scope.requiredProductionCount).toBe(2);
     expect(scope.orphanCalendarCount).toBe(1);
     expect(scope.items.some((row) => row.headline === 'Orphan DJ Night')).toBe(true);
+  });
+  it('resolveMissionProductionTargetCount uses merged pool when calendar present', () => {
+    expect(
+      resolveMissionProductionTargetCount({
+        hasCalendar: true,
+        mergedItemCount: 25,
+        missionType: 'weekly_content',
+      }),
+    ).toBe(25);
+    expect(
+      resolveMissionProductionTargetCount({
+        hasCalendar: false,
+        mergedItemCount: 8,
+        missionType: 'weekly_content',
+      }),
+    ).toBe(16);
   });
 });
 

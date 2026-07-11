@@ -415,8 +415,8 @@ def _parse_calendar_plans(output_summary: str) -> list[dict[str, Any]]:
 def _parse_calendar_plans_from_node(node: dict[str, Any]) -> list[dict[str, Any]]:
     payload_items = _payload_object_array(node)
     if payload_items:
-        return payload_items[:12]
-    return _parse_calendar_plans(str(node.get("output_summary") or ""))[:16]
+        return payload_items[:32]
+    return _parse_calendar_plans(str(node.get("output_summary") or ""))[:32]
 
 
 def _calendar_format(plan: dict[str, Any]) -> str:
@@ -812,6 +812,25 @@ def collect_unique_ideation_from_nodes(
     return dedupe_ideation_by_headline(all_ideas)
 
 
+def resolve_mission_production_target(
+    idea_count: int,
+    *,
+    has_calendar: bool,
+    mission_type: str | None = None,
+    hub_production_package: str | None = None,
+    subscription_plan_slug: str | None = None,
+) -> int:
+    """Content-scoped missions: produce every merged ideation+calendar row, not weekly 16 cap."""
+    package_total = resolve_feed_package_total(
+        mission_type,
+        hub_production_package=hub_production_package,
+        subscription_plan_slug=subscription_plan_slug,
+    )
+    if has_calendar and idea_count > 0:
+        return idea_count
+    return package_total
+
+
 def merge_mission_production_ideas_from_nodes(
     nodes: list[dict[str, Any]],
     *,
@@ -857,7 +876,7 @@ def build_calendar_production_ideas(
 ) -> list[dict[str, Any]]:
     """Map content_calendar rows → additive fal production ideas (TS parity)."""
     ideas: list[dict[str, Any]] = []
-    for plan_index, plan in enumerate(calendar_plans[:8]):
+    for plan_index, plan in enumerate(calendar_plans[:32]):
         headline = _calendar_item_headline(plan)
         if not headline:
             continue

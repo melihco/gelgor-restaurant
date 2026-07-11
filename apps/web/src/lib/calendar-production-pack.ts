@@ -22,13 +22,15 @@ import {
   resolveCalendarDesignLayout,
 } from '@/lib/calendar-design-layout';
 import { normalizeCalendarPlanDesignLayout } from '@/lib/calendar-agent-schema';
+import { detectIdeaPackageFormat } from '@/lib/weekly-publish-package';
+import { applyMissionFalStoryAssignment } from '@/lib/mission-remotion-story';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 
 /** Avoid collision with ideation idea_index 0–15 in production_jobs. */
 export const CALENDAR_PRODUCTION_IDEA_INDEX_BASE = 1000;
 
-/** Max calendar rows consumed per mission (agency weekly = 16 slots). */
-export const MAX_CALENDAR_PLANS_PER_MISSION = 16;
+/** Max calendar plan rows parsed per mission (ideation + orphan calendar can exceed weekly 16). */
+export const MAX_CALENDAR_PLANS_PER_MISSION = 32;
 
 export type CalendarAnnouncementType =
   | 'venue_showcase'
@@ -147,6 +149,7 @@ export function resolveCalendarSlotDesignIntensity(
 
 export function resolveCalendarSlotAssignment(
   idea: Record<string, unknown>,
+  storyOrdinal = 0,
 ): ProductionAssignment {
   const ideaIndex = typeof idea.idea_index === 'number'
     ? idea.idea_index
@@ -164,10 +167,55 @@ export function resolveCalendarSlotAssignment(
     explicitLayoutFamily: readExplicitCalendarDesignLayoutFamily(idea),
   });
 
-  // All calendar rows → caption-matched gallery photo + grounded fal design.
-  const slotRole: ProductionSlotRole = 'fal_designed_post';
+  const pkgFmt = detectIdeaPackageFormat(idea);
   const librarySlotKey = librarySlotForAnnouncement(announcement);
+  const sceneHint = buildCalendarFalSceneHint(idea);
+  const layoutHint = `${sceneHint} | layout:${layout.canvaArchetypeId}`;
 
+  if (pkgFmt === 'story') {
+    const base: ProductionAssignment = {
+      idea_index: ideaIndex,
+      slot_role: 'campaign_story_motion',
+      pipeline: 'fal_story',
+      copy_bundle_id: `calendar:${planIndex}`,
+      publish_channel: 'instagram_organic',
+      library_slot_key: librarySlotKey ?? 'event_story',
+      layout_family_hint: layout.layoutFamilyHint,
+      fal_design_hint: layoutHint,
+      rationale: `calendar_fal_story_${announcement || 'announcement'}`,
+    };
+    return applyMissionFalStoryAssignment(base, storyOrdinal);
+  }
+
+  if (pkgFmt === 'reel') {
+    return {
+      idea_index: ideaIndex,
+      slot_role: 'campaign_reel_motion',
+      pipeline: 'fal_reel',
+      copy_bundle_id: `calendar:${planIndex}`,
+      publish_channel: 'instagram_organic',
+      library_slot_key: librarySlotKey,
+      layout_family_hint: layout.layoutFamilyHint,
+      fal_design_hint: layoutHint,
+      rationale: `calendar_fal_reel_${announcement || 'announcement'}`,
+    };
+  }
+
+  if (pkgFmt === 'carousel') {
+    return {
+      idea_index: ideaIndex,
+      slot_role: 'organic_carousel',
+      pipeline: 'carousel_gallery',
+      copy_bundle_id: `calendar:${planIndex}`,
+      publish_channel: 'instagram_organic',
+      library_slot_key: librarySlotKey,
+      layout_family_hint: layout.layoutFamilyHint,
+      fal_design_hint: sceneHint,
+      rationale: `calendar_carousel_${announcement || 'announcement'}`,
+    };
+  }
+
+  const slotRole: ProductionSlotRole = 'fal_designed_post';
   return {
     idea_index: ideaIndex,
     slot_role: slotRole,
@@ -176,7 +224,7 @@ export function resolveCalendarSlotAssignment(
     publish_channel: 'instagram_organic',
     library_slot_key: librarySlotKey,
     layout_family_hint: layout.layoutFamilyHint,
-    fal_design_hint: `${buildCalendarFalSceneHint(idea)} | layout:${layout.canvaArchetypeId}`,
+    fal_design_hint: layoutHint,
     rationale: `calendar_gallery_designed_${announcement || 'announcement'}_${channel}`,
   };
 }

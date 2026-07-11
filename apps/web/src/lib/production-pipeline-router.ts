@@ -29,6 +29,10 @@ import {
 } from './brand-template-library';
 import { isAgencyServiceSector } from './agency-production-defaults';
 import {
+  isCalendarProductionIdea,
+  resolveCalendarSlotAssignment,
+} from './calendar-production-pack';
+import {
   detectIdeaPackageFormat,
   type FeedArtDirectorReport,
 } from './weekly-publish-package';
@@ -713,15 +717,17 @@ function resolveIdeaDrivenFinalAssignments(
     else if (fmt === 'story') storyIdx += 1;
     else if (fmt === 'reel') reelIdx += 1;
 
-    const base = fdByIdea.get(ideaIdx) ?? inferProductionAssignment(
-      ideaIdx,
-      idea,
-      input.missionId,
-      postIndex,
-      storyIndex,
-      reelIndex,
-      input.sector,
-    );
+    const base = isCalendarProductionIdea(idea)
+      ? resolveCalendarSlotAssignment(idea, storyIndex)
+      : fdByIdea.get(ideaIdx) ?? inferProductionAssignment(
+        ideaIdx,
+        idea,
+        input.missionId,
+        postIndex,
+        storyIndex,
+        reelIndex,
+        input.sector,
+      );
 
     result.push({
       ideaIndex: ideaIdx,

@@ -229,6 +229,40 @@ async def run_feed_production_pipeline(
         raise FeedProductionError(502, f"Feed üretimi başarısız: {exc}") from exc
 
 
+async def _resolve_mission_production_package_total(
+    mission_id: uuid.UUID,
+    *,
+    workspace_id: uuid.UUID,
+    mission_type: str,
+    perf: dict[str, Any],
+) -> int:
+    from app.services.mission_ideation_merge import (
+        merge_mission_production_ideas_from_nodes,
+        resolve_mission_production_target,
+    )
+    from app.services.production_bridge import (
+        load_content_calendar_nodes as _load_content_calendar_nodes,
+        load_content_ideation_nodes as _load_content_ideation_nodes,
+    )
+    from app.services.subscription_plan_service import resolve_workspace_plan_slug
+
+    plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
+    ideation_raw = await _load_content_ideation_nodes(mission_id)
+    calendar_raw = await _load_content_calendar_nodes(mission_id)
+    _, ideas = merge_mission_production_ideas_from_nodes(
+        [*ideation_raw, *calendar_raw],
+        mission_type=mission_type or None,
+        subscription_plan_slug=plan_slug,
+    )
+    return resolve_mission_production_target(
+        len(ideas),
+        has_calendar=bool(calendar_raw),
+        mission_type=mission_type or None,
+        hub_production_package=str(perf.get("hub_production_package") or ""),
+        subscription_plan_slug=plan_slug,
+    )
+
+
 async def kick_feed_production(
     db: AsyncSession,
     workspace_id: uuid.UUID,
@@ -237,7 +271,6 @@ async def kick_feed_production(
 ) -> dict[str, Any]:
     """Non-blocking: schedule background ensure pipeline."""
     from app.debug_session_log import debug_log
-    from app.services.mission_ideation_merge import resolve_feed_package_total
     from app.services.production_bridge import (
         mission_feed_package_complete as _mission_feed_package_complete,
     )
@@ -253,13 +286,11 @@ async def kick_feed_production(
     if row:
         perf = dict(row[0] or {})
         mission_type = str(row[1] or "").strip()
-        from app.services.subscription_plan_service import resolve_workspace_plan_slug
-
-        plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
-        package_total = resolve_feed_package_total(
-            mission_type,
-            hub_production_package=str(perf.get("hub_production_package") or ""),
-            subscription_plan_slug=plan_slug,
+        package_total = await _resolve_mission_production_package_total(
+            mission_id,
+            workspace_id=workspace_id,
+            mission_type=mission_type,
+            perf=perf,
         )
         if _mission_feed_package_complete(perf, package_total=package_total):
             if not req.operator_override:
@@ -496,10 +527,22 @@ async def ensure_mission_feed_production(
         perf = dict(row[0] or {})
         mission_type = str(row[1] or "").strip()
     from app.services.subscription_plan_service import resolve_workspace_plan_slug
+    from app.services.mission_ideation_merge import resolve_mission_production_target
 
     plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
-    package_total = resolve_feed_package_total(
-        mission_type,
+
+    ideation_raw = await _load_content_ideation_nodes(mission_id)
+    calendar_raw = await _load_content_calendar_nodes(mission_id)
+    nodes_raw = [*ideation_raw, *calendar_raw]
+    merged_json, ideas = merge_mission_production_ideas_from_nodes(
+        nodes_raw,
+        mission_type=mission_type or None,
+    )
+    has_calendar = bool(calendar_raw)
+    package_total = resolve_mission_production_target(
+        len(ideas),
+        has_calendar=has_calendar,
+        mission_type=mission_type or None,
         hub_production_package=str(perf.get("hub_production_package") or ""),
         subscription_plan_slug=plan_slug,
     )
@@ -530,7 +573,7 @@ async def ensure_mission_feed_production(
     factory_total = int(job_summary.get("total") or 0)
     factory_ready = int(job_summary.get("ready") or 0)
     factory_active = int(job_summary.get("active") or 0)
-    if factory_total > 0 and factory_ready >= package_total and factory_active == 0:
+    if factory_total > 0 and factory_ready >= factory_total and factory_active == 0:
         logger.info(
             "ensure_mission_feed_skip_factory_complete",
             mission_id=str(mission_id),
@@ -557,13 +600,6 @@ async def ensure_mission_feed_production(
             )
             return
 
-    ideation_raw = await _load_content_ideation_nodes(mission_id)
-    calendar_raw = await _load_content_calendar_nodes(mission_id)
-    nodes_raw = [*ideation_raw, *calendar_raw]
-    merged_json, ideas = merge_mission_production_ideas_from_nodes(
-        nodes_raw,
-        mission_type=mission_type or None,
-    )
     if not ideas:
         debug_log(
             "H3",

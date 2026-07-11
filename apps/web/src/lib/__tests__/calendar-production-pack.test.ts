@@ -8,6 +8,7 @@ import {
   CALENDAR_PRODUCTION_IDEA_INDEX_BASE,
   isCalendarProductionIdea,
   normalizeCalendarPlanToProductionIdea,
+  resolveCalendarSlotAssignment,
 } from '@/lib/calendar-production-pack';
 
 const meetTheMakerPlan = {
@@ -43,12 +44,12 @@ describe('calendar-production-pack', () => {
     expect(hint).toContain('Discover the stories');
   });
 
-  it('routes calendar story event teaser to fal_designed_post pipeline', () => {
+  it('routes calendar story event teaser to fal_story motion pipeline', () => {
     const ideas = buildCalendarProductionIdeas([meetTheMakerPlan]);
     const queue = buildCalendarProductionQueue(ideas);
     expect(queue).toHaveLength(1);
-    expect(queue[0]!.assignment.slot_role).toBe('fal_designed_post');
-    expect(queue[0]!.assignment.pipeline).toBe('fal_design');
+    expect(queue[0]!.assignment.slot_role).toBe('campaign_story_motion');
+    expect(queue[0]!.assignment.pipeline).toBe('fal_story');
     expect(queue[0]!.assignment.library_slot_key).toBe('event_story');
     expect(queue[0]!.assignment.layout_family_hint).toBe('magazine_cover');
     expect(queue[0]!.assignment.fal_design_hint).toContain('layout:editorial_date_masthead');
@@ -65,13 +66,27 @@ describe('calendar-production-pack', () => {
       announcement_type: 'product_reveal',
     }, 0);
     const queue = buildCalendarProductionQueue([idea]);
-    expect(queue[0]!.assignment.slot_role).toBe('fal_designed_post');
-    expect(queue[0]!.assignment.pipeline).toBe('fal_design');
+    expect(queue[0]!.assignment.slot_role).toBe('campaign_story_motion');
+    expect(queue[0]!.assignment.pipeline).toBe('fal_story');
     expect(idea.calendar_gallery_designed).toBe(true);
     expect(idea.design_layout_family).toBe('cinematic_full_bleed');
     expect(queue[0]!.assignment.layout_family_hint).toBe('cinematic_center');
   });
 
+  it('routes calendar event story to fal_story motion slot', () => {
+    const idea = normalizeCalendarPlanToProductionIdea({
+      event_name: 'Sunset DJ Night',
+      tagline: 'Live on the terrace',
+      format: 'story',
+      announcement_type: 'event_teaser',
+      date: 'July 12',
+      time: '21:00',
+    }, 1);
+    const assignment = resolveCalendarSlotAssignment(idea, 0);
+    expect(assignment.slot_role).toBe('campaign_story_motion');
+    expect(assignment.pipeline).toBe('fal_story');
+    expect(assignment.library_slot_key).toBe('event_story');
+  });
   it('builds gallery match caption from brief + mood + tagline', () => {
     const idea = normalizeCalendarPlanToProductionIdea(meetTheMakerPlan, 0);
     const matchCaption = calendarGalleryMatchCaption(idea);

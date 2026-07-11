@@ -418,6 +418,22 @@ export interface MissionContentProductionStatus {
  * SSOT — how many unique content rows this mission must produce.
  * No calendar → ideation count only. With calendar → ideation + orphan calendar rows.
  */
+/**
+ * Feed/factory completion target — content-scoped missions use merged ideation+calendar count,
+ * not fixed weekly geometry (16/12).
+ */
+export function resolveMissionProductionTargetCount(input: {
+  hasCalendar: boolean;
+  mergedItemCount: number;
+  missionType?: string | null;
+  packageSlug?: string | null;
+}): number {
+  if (input.hasCalendar && input.mergedItemCount > 0) {
+    return input.mergedItemCount;
+  }
+  return resolveWeeklyPackageGeometry(input.packageSlug ?? undefined).total;
+}
+
 export function resolveMissionContentProductionScope(params: {
   nodes: MissionNode[];
   missionId?: string;

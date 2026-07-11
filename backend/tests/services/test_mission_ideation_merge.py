@@ -1,6 +1,7 @@
 from app.services.mission_ideation_merge import (
     merge_ideation_ideas,
     resolve_feed_package_total,
+    resolve_mission_production_target,
     resolve_format_targets,
 )
 
@@ -13,7 +14,12 @@ def idea(title: str, fmt: str) -> dict:
     }
 
 
-def test_resolve_feed_package_total_supports_opportunity_package() -> None:
+def test_resolve_mission_production_target_uses_merged_count_with_calendar() -> None:
+    assert resolve_mission_production_target(25, has_calendar=True, mission_type="seasonal") == 25
+    assert resolve_mission_production_target(0, has_calendar=True, mission_type="seasonal") == 16
+    assert resolve_mission_production_target(8, has_calendar=False, mission_type="seasonal") == 16
+
+
     assert resolve_feed_package_total("opportunity") == 3
     assert resolve_feed_package_total(hub_production_package="opportunity") == 3
     assert resolve_feed_package_total("seasonal") == 16

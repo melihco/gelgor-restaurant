@@ -1191,6 +1191,15 @@ const CSS = `
     background: #000;
   }
 
+  /* Reels in home feed — 4:5 frame, full 9:16 video contained (IG letterbox + blur) */
+  .sa-mobile .ig-feed-reel-stage {
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 4 / 5;
+    max-height: min(72dvh, calc(100vw * 1.25));
+    margin-inline: auto;
+  }
+
   /* Story viewer — IG native 9:16; portal .sa-mobile-frame içinde (tam tarayıcı değil) */
   .ig-story-viewer-backdrop {
     position: fixed;

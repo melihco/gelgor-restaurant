@@ -1787,6 +1787,36 @@ def _mission_feed_publish_ready_count(perf: dict) -> int:
     return int(last.get("produced") or 0)
 
 
+async def _resolve_mission_production_package_total(
+    mission_id: uuid.UUID,
+    *,
+    workspace_id: uuid.UUID,
+    mission_type: str,
+    perf: dict,
+) -> int:
+    """Merged ideation+calendar row count when calendar exists; else weekly package cap."""
+    from app.services.mission_ideation_merge import (
+        merge_mission_production_ideas_from_nodes,
+        resolve_mission_production_target,
+    )
+    from app.services.subscription_plan_service import resolve_workspace_plan_slug
+
+    ideation_nodes = await _load_content_ideation_nodes(mission_id)
+    calendar_nodes = await _load_content_calendar_nodes(mission_id)
+    _, ideas = merge_mission_production_ideas_from_nodes(
+        [*ideation_nodes, *calendar_nodes],
+        mission_type=mission_type or None,
+        subscription_plan_slug=await resolve_workspace_plan_slug(str(workspace_id)),
+    )
+    return resolve_mission_production_target(
+        len(ideas),
+        has_calendar=bool(calendar_nodes),
+        mission_type=mission_type or None,
+        hub_production_package=str(perf.get("hub_production_package") or ""),
+        subscription_plan_slug=await resolve_workspace_plan_slug(str(workspace_id)),
+    )
+
+
 def _mission_feed_package_complete(perf: dict, *, package_total: int) -> bool:
     """True when publish-ready slots meet package target and nothing is still rendering."""
     from app.services.mission_ideation_merge import MISSION_FEED_PACKAGE_TOTAL
@@ -1995,8 +2025,6 @@ async def _ensure_mission_feed_production(
 
 async def _reconcile_completed_missions_missing_feed() -> int:
     """Safety net: completed missions with ideation but incomplete Feed package."""
-    from app.services.mission_ideation_merge import resolve_feed_package_total
-
     factory = _get_session_factory()
     reconciled = 0
     async with factory() as db:
@@ -2009,13 +2037,11 @@ async def _reconcile_completed_missions_missing_feed() -> int:
 
     for mission_id, workspace_id, perf_raw, mission_type in rows:
         perf = dict(perf_raw or {})
-        from app.services.subscription_plan_service import resolve_workspace_plan_slug
-
-        plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
-        package_total = resolve_feed_package_total(
-            str(mission_type or ""),
-            hub_production_package=str(perf.get("hub_production_package") or ""),
-            subscription_plan_slug=plan_slug,
+        package_total = await _resolve_mission_production_package_total(
+            mission_id,
+            workspace_id=workspace_id,
+            mission_type=str(mission_type or ""),
+            perf=perf,
         )
         if _mission_feed_package_complete(perf, package_total=package_total):
             continue
@@ -2204,14 +2230,11 @@ async def _trigger_content_production_pipeline(
         row = r.one_or_none()
         perf = dict(row[0] or {}) if row else {}
         mission_type = str(row[1] or "").strip() if row else ""
-    from app.services.mission_ideation_merge import resolve_feed_package_total
-    from app.services.subscription_plan_service import resolve_workspace_plan_slug
-
-    plan_slug = await resolve_workspace_plan_slug(str(workspace_id))
-    package_total = resolve_feed_package_total(
-        mission_type,
-        hub_production_package=str(perf.get("hub_production_package") or ""),
-        subscription_plan_slug=plan_slug,
+    package_total = await _resolve_mission_production_package_total(
+        mission_id,
+        workspace_id=workspace_id,
+        mission_type=mission_type,
+        perf=perf,
     )
     if not force and _recent_feed_produce_skip(perf, package_total=package_total):
         logger.info(
