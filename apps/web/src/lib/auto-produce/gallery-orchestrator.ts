@@ -35,7 +35,6 @@ export function assignmentUsesGalleryPhoto(
 ): boolean {
   const pipeline = String(assignment.pipeline ?? '');
   const role = String(assignment.slot_role ?? '');
-  if (pipeline === 'remotion_poster') return false;
   if (pipeline === 'meta_ad' || pipeline === 'google_ad') return false;
   if (role === 'paid_ad_creative' || role === 'paid_ad_google_creative') return false;
   if (

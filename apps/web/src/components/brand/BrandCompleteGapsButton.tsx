@@ -6,9 +6,12 @@ import { fetchTenantBff } from '@/lib/bff-fetch';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 import {
   countActionableGaps,
+  countAutoFixableGaps,
+  formatCompleteGapsFeedback,
   mergeBrandGapLists,
   type BrandGapItem,
 } from '@/lib/brand-gap-analysis';
+import { parseStringOrArray } from '@/lib/brand-readiness';
 
 export interface BrandCompleteGapsButtonProps {
   tenantId: string | null | undefined;
@@ -29,22 +32,47 @@ export function BrandCompleteGapsButton({
   const { data: gapPreview } = useQuery({
     queryKey: ['brand-gaps', tenantId],
     queryFn: async () => {
-      if (!tenantId) return { gaps: [] as BrandGapItem[] };
-      const r = await fetchTenantBff(
-        `/api/brand-context/${tenantId}/complete-gaps`,
-        tenantId,
-        { headers: getTenantBffHeaders(tenantId) },
-      );
-      if (!r.ok) return { gaps: [] as BrandGapItem[] };
-      const j = await r.json() as { gaps?: BrandGapItem[] };
-      return { gaps: j.gaps ?? [] };
+      if (!tenantId) return { gaps: [] as BrandGapItem[], ctx: null as Record<string, unknown> | null };
+      const [gapRes, ctxRes] = await Promise.all([
+        fetchTenantBff(
+          `/api/brand-context/${tenantId}/complete-gaps`,
+          tenantId,
+          { headers: getTenantBffHeaders(tenantId) },
+        ),
+        fetchTenantBff(
+          `/api/brand-context-data/${tenantId}`,
+          tenantId,
+          { headers: getTenantBffHeaders(tenantId) },
+        ),
+      ]);
+      const gaps = gapRes.ok
+        ? ((await gapRes.json()) as { gaps?: BrandGapItem[] }).gaps ?? []
+        : [];
+      const ctx = ctxRes.ok
+        ? ((await ctxRes.json()) as Record<string, unknown>)
+        : null;
+      return { gaps, ctx };
     },
     staleTime: 60_000,
     enabled: Boolean(tenantId),
   });
 
-  const gaps = gapPreview?.gaps ?? [];
-  const actionable = countActionableGaps(gaps);
+  const mergedGaps = mergeBrandGapLists(gapPreview?.gaps ?? [], {
+    description: String(gapPreview?.ctx?.description ?? ''),
+    websiteSummary: String(gapPreview?.ctx?.website_summary ?? ''),
+    brandDna: gapPreview?.ctx?.brand_dna,
+    discoveryConfidence: Number(gapPreview?.ctx?.discovery_confidence ?? 0),
+    contentPillarCount: parseStringOrArray(gapPreview?.ctx?.content_pillars).length,
+    defaultCtaCount: parseStringOrArray(gapPreview?.ctx?.default_ctas).length,
+    usablePhotoCount: parseStringOrArray(gapPreview?.ctx?.reference_image_urls).length,
+    analyzedPhotoCount: Object.keys(
+      (typeof gapPreview?.ctx?.gallery_analysis === 'object' && gapPreview?.ctx?.gallery_analysis)
+        ? gapPreview.ctx.gallery_analysis as Record<string, unknown>
+        : {},
+    ).length,
+  });
+  const actionable = countActionableGaps(mergedGaps);
+  const autoFixable = countAutoFixableGaps(mergedGaps);
 
   const runComplete = useCallback(async () => {
     if (!tenantId || running) return;
@@ -62,6 +90,7 @@ export function BrandCompleteGapsButton({
       const body = await r.json().catch(() => ({})) as {
         ok?: boolean;
         resolvedCount?: number;
+        gapsAfter?: BrandGapItem[];
         steps?: Array<{ id: string; ok: boolean; detail?: string }>;
         error?: string;
       };
@@ -77,9 +106,11 @@ export function BrandCompleteGapsButton({
       const resolved = body.resolvedCount ?? 0;
       setFeedback({
         kind: 'ok',
-        text: resolved > 0
-          ? `${resolved} eksik alan güncellendi — agent profili güçlendirildi.`
-          : 'Kritik alanlar zaten dolu veya API anahtarı eksik.',
+        text: formatCompleteGapsFeedback({
+          resolvedCount: resolved,
+          steps: body.steps,
+          gapsAfter: body.gapsAfter,
+        }),
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['brand-gaps', tenantId] }),
@@ -106,9 +137,11 @@ export function BrandCompleteGapsButton({
 
   const label = running
     ? 'Tamamlanıyor…'
-    : actionable > 0
-      ? `Marka eksiklerini tamamla (${actionable})`
-      : 'Marka profilini yenile';
+    : autoFixable > 0
+      ? `Marka eksiklerini tamamla (${autoFixable})`
+      : actionable > 0
+        ? `Manuel eksikler (${actionable})`
+        : 'Marka profilini yenile';
 
   if (variant === 'compact') {
     return (
@@ -120,9 +153,9 @@ export function BrandCompleteGapsButton({
           title="AI ile visual DNA, marka DNA, sektör takvimi ve açıklama alanlarını doldurur"
           className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold transition disabled:opacity-40"
           style={{
-            background: actionable > 0 ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.04)',
-            border: `1px solid ${actionable > 0 ? 'rgba(52,211,153,0.35)' : 'rgba(255,255,255,0.09)'}`,
-            color: actionable > 0 ? '#34d399' : '#64748b',
+            background: autoFixable > 0 ? 'rgba(52,211,153,0.12)' : 'rgba(255,255,255,0.04)',
+            border: `1px solid ${autoFixable > 0 ? 'rgba(52,211,153,0.35)' : 'rgba(255,255,255,0.09)'}`,
+            color: autoFixable > 0 ? '#34d399' : '#64748b',
           }}
         >
           {running ? (
@@ -154,17 +187,20 @@ export function BrandCompleteGapsButton({
           fontSize: 14,
           fontWeight: 700,
           color: '#fff',
-          background: actionable > 0
+          background: autoFixable > 0
             ? 'linear-gradient(135deg, #10B981, #059669)'
             : 'linear-gradient(135deg, #6366F1, #4F46E5)',
         }}
       >
         {label}
       </button>
-      {actionable > 0 && gaps.length > 0 && (
+      {actionable > 0 && mergedGaps.length > 0 && (
         <ul style={{ marginTop: 10, paddingLeft: 18, fontSize: 12, lineHeight: 1.5, opacity: 0.85 }}>
-          {mergeBrandGapLists(gaps, {}).slice(0, 5).map((g) => (
-            <li key={g.id}>{g.label}</li>
+          {mergedGaps.slice(0, 6).map((g) => (
+            <li key={g.id}>
+              {g.label}
+              {g.severity === 'low' ? ' (opsiyonel)' : ''}
+            </li>
           ))}
         </ul>
       )}

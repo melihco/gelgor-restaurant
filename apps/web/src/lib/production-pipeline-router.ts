@@ -947,8 +947,12 @@ export function resolveContentKindForAssignment(
   if (assignment.pipeline === 'fal_reel' || assignment.slot_role === 'fal_reel_motion') {
     return 'instagram_reel';
   }
-  // fal_story → static 9:16 story poster (gallery-grounded GPT), not a reel MP4.
-  if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
+  if (
+    assignment.pipeline === 'fal_story'
+    || assignment.pipeline === 'remotion_story'
+    || assignment.slot_role === 'fal_story_motion'
+    || assignment.slot_role === 'campaign_story_motion'
+  ) {
     return 'instagram_story';
   }
   if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { BrandTemplateLibrary, BrandTemplateLibrarySlot } from '@/lib/brand-template-library';
 import { slotTypographyPreviewLabel } from '@/lib/brand-template-slot-typography';
+import { fetchAnnouncementBrandKitPreview } from '@/lib/brand-kit-preview';
 import { prepareGalleryDisplayUrls } from '@/lib/gallery-display-url';
 import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
 import { TemplateColorBehaviorPreview } from '@/components/brand/TemplateColorBehaviorPreview';
@@ -86,12 +87,19 @@ export function TemplateSlotPreviewModal({
         fetch(`/api/brand-context-data/${workspaceId}`, { headers: { 'X-Tenant-Id': workspaceId } }),
         fetch(`/api/brand-context/${workspaceId}/theme`, { headers: { 'X-Tenant-Id': workspaceId } }),
       ]);
-      const ctx = ctxRes.ok ? await ctxRes.json() : {};
+      const ctx = ctxRes.ok ? await ctxRes.json() as Record<string, unknown> : {};
       const themePayload = themeRes.ok ? await themeRes.json() : {};
-      return resolveBrandProductionTokens({
-        brandContext: ctx as Record<string, unknown>,
-        brandTheme: (themePayload.theme ?? null) as Record<string, unknown> | null,
-      });
+      const theme = (themePayload.theme ?? null) as Record<string, unknown> | null;
+      return {
+        tokens: resolveBrandProductionTokens({
+          brandContext: ctx,
+          brandTheme: theme,
+        }),
+        brandName: String(ctx.brand_name ?? ctx.brandName ?? 'Marka'),
+        location: String(ctx.location ?? ctx.city ?? ''),
+        sector: String(ctx.business_type ?? ctx.industry ?? ''),
+        brandTheme: theme,
+      };
     },
     enabled: open && Boolean(workspaceId),
     staleTime: 60_000,
@@ -128,34 +136,26 @@ export function TemplateSlotPreviewModal({
     setError(null);
     setPreviewUrl(null);
     try {
-      const libraryWithSlot: BrandTemplateLibrary = {
-        ...previewLibrary,
-        slots: previewLibrary.slots.map((s) => (s.key === slot.key ? previewSlot : s)),
-      };
-      const res = await fetch('/api/remotion/showcase/render-one', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          templateId,
-          kitId,
-          slotKey: slot.key,
-          workspaceId,
-          kind: isPoster ? 'poster' : 'story',
-          format: isPoster ? 'post' : undefined,
-          photoUrl: selectedPhoto,
-          previewLibrary: libraryWithSlot,
-          preferCachedPreview: true,
-        }),
+      const headline = brandPreview?.brandName?.trim() || 'Marka önizlemesi';
+      const imageUrl = await fetchAnnouncementBrandKitPreview({
+        photoUrl: selectedPhoto,
+        headline,
+        tagline: isPoster ? 'Keşfet' : headline,
+        contentType: isPoster ? 'post' : 'story',
+        tenantId: workspaceId,
+        brandName: brandPreview?.brandName,
+        location: brandPreview?.location,
+        brandTheme: brandPreview?.brandTheme as import('@/types/brand-theme').BrandTheme | null,
+        templateId,
+        sector: brandPreview?.sector,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Önizleme render edilemedi');
-      setPreviewUrl(data.url as string);
+      setPreviewUrl(imageUrl);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Önizleme hatası');
     } finally {
       setRendering(false);
     }
-  }, [templateId, selectedPhoto, kitId, slot.key, workspaceId, isPoster, previewLibrary, previewSlot]);
+  }, [templateId, selectedPhoto, workspaceId, isPoster, brandPreview]);
 
   useEffect(() => {
     if (!open) return;
@@ -284,15 +284,15 @@ export function TemplateSlotPreviewModal({
             {brandPreview && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
                 <span style={{ fontSize: 11, color: textMuted }}>Renkler</span>
-                <span title={brandPreview.primaryColor} style={{ width: 18, height: 18, borderRadius: 6, background: brandPreview.primaryColor, border }} />
-                <span title={brandPreview.accentColor} style={{ width: 18, height: 18, borderRadius: 6, background: brandPreview.accentColor, border }} />
+                <span title={brandPreview.tokens.primaryColor} style={{ width: 18, height: 18, borderRadius: 6, background: brandPreview.tokens.primaryColor, border }} />
+                <span title={brandPreview.tokens.accentColor} style={{ width: 18, height: 18, borderRadius: 6, background: brandPreview.tokens.accentColor, border }} />
               </div>
             )}
             <div style={{ flexBasis: '100%' }}>
               <TemplateColorBehaviorPreview
                 templateId={isPoster ? undefined : previewSlot.storyTemplateId}
                 posterTemplateId={isPoster ? previewSlot.posterTemplateId : undefined}
-                tokens={brandPreview ?? undefined}
+                tokens={brandPreview?.tokens ?? undefined}
                 isMobile={Boolean(isMobile)}
                 theme={theme}
                 compact

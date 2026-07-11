@@ -39,6 +39,21 @@ def is_corrupted_description(description: str | None) -> bool:
     return any(marker in lower for marker in GENERIC_DESCRIPTION_MARKERS)
 
 
+def repair_description_fallback(ctx: Any) -> str | None:
+    """Synthesize description from Instagram bio / business name when website_summary is absent."""
+    bio = str(getattr(ctx, "instagram_bio", None) or "").strip()
+    name = str(getattr(ctx, "business_name", None) or "").strip()
+    location = str(getattr(ctx, "location", None) or "").strip()
+    if bio and len(bio) >= 32:
+        prefix = f"{name} — " if name else ""
+        loc = f" ({location})" if location else ""
+        return f"{prefix}{bio}{loc}"[:2000]
+    if name and location:
+        btype = str(getattr(ctx, "business_type", None) or "işletme").replace("_", " ")
+        return f"{name}, {location} konumunda faaliyet gösteren {btype} markasıdır."[:2000]
+    return None
+
+
 def repair_description_from_discovery(ctx: Any) -> str | None:
     """Prefer real website copy over seed/generic description text."""
     website_summary = str(getattr(ctx, "website_summary", None) or "").strip()
@@ -126,9 +141,15 @@ def detect_brand_gaps(ctx: Any) -> list[dict[str, Any]]:
     sector = _resolve_sector(ctx)
 
     if is_corrupted_description(getattr(ctx, "description", None)):
+        website_summary = str(getattr(ctx, "website_summary", None) or "").strip()
+        label = (
+            "Marka açıklaması generic — website özeti de yok"
+            if not website_summary
+            else "Marka açıklaması generic veya bozuk"
+        )
         gaps.append({
             "id": "description_corrupt",
-            "label": "Marka açıklaması generic veya bozuk",
+            "label": label,
             "severity": "high",
             "fix": "identity",
         })
@@ -172,7 +193,7 @@ def detect_brand_gaps(ctx: Any) -> list[dict[str, Any]]:
     if len(pillars) < 2:
         gaps.append({
             "id": "content_pillars_low",
-            "label": "İçerik sütunları yetersiz",
+            "label": f"İçerik sütunları yetersiz ({len(pillars)}/2)",
             "severity": "medium",
             "fix": "content",
         })
@@ -275,17 +296,43 @@ async def complete_brand_gaps(
     async def _step(step_id: str, ok: bool, detail: str = "") -> None:
         steps.append({"id": step_id, "ok": ok, "detail": detail[:240]})
 
-    # ── 1. Description repair (no LLM — website_summary SSOT) ───────────────
+    # ── 1. Description repair (website_summary → instagram bio fallback) ───
     if "description_corrupt" in target_ids and is_corrupted_description(ctx.description):
-        fixed = repair_description_from_discovery(ctx)
+        fixed = repair_description_from_discovery(ctx) or repair_description_fallback(ctx)
         if fixed:
             ctx.description = fixed
             await db.flush()
             await _step("description", True, fixed[:120])
         else:
-            await _step("description", False, "website_summary yok")
+            await _step("description", False, "website_summary ve instagram_bio yok")
 
-    # ── 2. Service profile ────────────────────────────────────────────────
+    # ── 2. Seed pillars / CTAs / service profile (rule-based, no LLM) ─────
+    seed_targets = {
+        "content_pillars_low",
+        "default_ctas_missing",
+        "service_profile_missing",
+    }
+    if target_ids & seed_targets:
+        try:
+            ctx = await brand_context_service.seed_missing_brand_fields(db, ctx)
+            pillars = _parse_json_list(ctx.content_pillars)
+            if "content_pillars_low" in target_ids and len(pillars) < 2:
+                from app.services.production_design_policy import resolve_content_pillars
+
+                sector = _resolve_sector(ctx)
+                aligned = resolve_content_pillars(sector, pillars)
+                ctx.content_pillars = json.dumps(aligned[:8], ensure_ascii=False)
+                await db.flush()
+                pillars = aligned
+            await _step(
+                "seed_brand_fields",
+                True,
+                f"pillars={len(pillars)} ctas={len(_parse_json_list(ctx.default_ctas))}",
+            )
+        except Exception as exc:
+            await _step("seed_brand_fields", False, str(exc))
+
+    # ── 3. Service profile persist (explicit) ─────────────────────────────
     if "service_profile_missing" in target_ids:
         try:
             await brand_context_service.persist_brand_service_profile(db, workspace_id)
@@ -297,7 +344,7 @@ async def complete_brand_gaps(
     if not ctx:
         return {"ok": False, "error": "brand_context_lost", "steps": steps, "gaps": gaps_before}
 
-    # ── 3. Visual DNA (GPT-4o Vision) ─────────────────────────────────────
+    # ── 4. Visual DNA (GPT-4o Vision) ─────────────────────────────────────
     if "visual_dna_missing" in target_ids and openai_api_key:
         visual = str(getattr(ctx, "visual_dna", None) or "").strip()
         if len(visual) < 80:
@@ -323,7 +370,7 @@ async def complete_brand_gaps(
             else:
                 await _step("visual_dna", False, "no reference images")
 
-    # ── 4. Industry calendar ──────────────────────────────────────────────
+    # ── 5. Industry calendar ──────────────────────────────────────────────
     sector = _resolve_sector(ctx)
     if "industry_calendar_stale" in target_ids:
         try:
@@ -341,7 +388,7 @@ async def complete_brand_gaps(
         except Exception as exc:
             await _step("industry_calendar", False, str(exc))
 
-    # ── 5. Production design profile (visual_dna rewrite + theme layers) ─
+    # ── 6. Production design profile (visual_dna rewrite + theme layers) ─
     production_targets = {
         "visual_dna_missing",
         "brand_theme_missing",
@@ -366,7 +413,7 @@ async def complete_brand_gaps(
         except Exception as exc:
             await _step("production_design_profile", False, str(exc))
 
-    # ── 6. Brand DNA synthesis ────────────────────────────────────────────
+    # ── 7. Brand DNA synthesis ────────────────────────────────────────────
     if "brand_dna_sparse" in target_ids and openai_api_key:
         richness = _brand_dna_richness(ctx)
         if not richness or richness == "sparse":

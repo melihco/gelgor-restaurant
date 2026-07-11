@@ -11,14 +11,18 @@ import {
 
 const VOICEOVER_SERVE_DIR = '/tmp/remotion-serve';
 
-/** Remotion story = 8s; voice starts ~0.55s, ends ~0.85s before cut. */
+function storyAudioServeBaseUrl(): string {
+  return (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
+}
+
+function voiceoverPlaybackUrl(filename: string): string {
+  return `${storyAudioServeBaseUrl()}/api/story-audio/voiceover/${filename}`;
+}
+
+/** Story voice window — 8s slot with intro/outro padding. */
 const STORY_VOICE_WINDOW_SEC = 8 - 0.55 - 0.85;
 /** Turkish conversational pace at natural TTS speed (~10–11 char/s). */
 const NATURAL_CHARS_PER_SEC = 10.5;
-
-function remotionServeBaseUrl(): string {
-  return (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
-}
 
 function maxScriptChars(): number {
   const computed = Math.round(STORY_VOICE_WINDOW_SEC * NATURAL_CHARS_PER_SEC);
@@ -247,7 +251,7 @@ async function synthesizeSpeechMp3(input: {
 
   return {
     filePath,
-    playbackUrl: `${remotionServeBaseUrl()}/api/remotion/voiceover/${input.filename}`,
+    playbackUrl: voiceoverPlaybackUrl(input.filename),
   };
 }
 
@@ -286,7 +290,7 @@ export async function generateStoryVoicePreviewFile(input: {
   if (fs.existsSync(filePath) && fs.statSync(filePath).size > 1000) {
     return {
       filePath,
-      playbackUrl: `${remotionServeBaseUrl()}/api/remotion/voiceover/${filename}`,
+      playbackUrl: voiceoverPlaybackUrl(filename),
       script,
       voiceId: voice,
     };

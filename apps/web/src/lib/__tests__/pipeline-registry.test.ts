@@ -17,9 +17,12 @@ import {
 // behavior-identical.
 const goldenFalVideo = (p: string | undefined | null) => {
   const s = String(p ?? '').trim();
-  return s === 'fal_story' || s === 'fal_reel' || s === 'runway_reel';
+  return s === 'fal_story' || s === 'fal_reel' || s === 'runway_reel' || s === 'remotion_story';
 };
-const goldenFalDesign = (p: string | undefined | null) => String(p ?? '').trim() === 'fal_design';
+const goldenFalDesign = (p: string | undefined | null) => {
+  const s = String(p ?? '').trim();
+  return s === 'fal_design' || s === 'remotion_poster' || s === 'remotion_post';
+};
 const goldenFalOnly = (p: string | undefined | null) => {
   const s = String(p ?? '').trim();
   return s === 'fal_only_story' || s === 'fal_only_post' || s === 'fal_only_reel';

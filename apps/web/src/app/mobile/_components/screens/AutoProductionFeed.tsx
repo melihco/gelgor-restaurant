@@ -73,7 +73,6 @@ import { parseArtifactMissionId } from '@/lib/mission-feed-package';
 import { MissionFeedPreviewGrid } from '../MissionFeedPreviewGrid';
 import { BoostPostSheet } from '../BoostPostSheet';
 import {
-  buildStoryRemotionRenderRequest,
   ideaFieldsForStoryTemplate,
   resolveMissionStoryTemplate,
   resolveStoryTemplateForSlot,
@@ -438,134 +437,46 @@ export function AutoProductionFeed({
 
   const { library: storyTemplateLibrary, isLocked: storyLibraryLocked } = useBrandStoryTemplates(tenantId, resolvedSector);
 
-  const renderStoryForItem = useCallback(async (
+  const refreshStoryBrandKit = useCallback(async (
     item: ProducedItem,
     pick: ReturnType<typeof resolveMissionStoryTemplate>,
     photoUrl: string,
   ) => {
-    const idea = ideas[item.ideaIndex] as Record<string, unknown> | undefined;
-    const mood = String(idea?.mood ?? '').toLowerCase();
-    const body = buildStoryRemotionRenderRequest({
-      pick,
-      workspaceId: tenantId,
-      photoUrl,
-      headline: item.headline,
-      caption: item.caption,
-      brandName: brandName || 'BRAND',
-      location,
-      mood,
-      logoUrl,
-      primaryColor: brandTheme?.palette?.primary,
-      accentColor: brandTheme?.palette?.accent,
-      fontFamily: brandTheme?.typography?.headingFont,
-      bodyFont: brandTheme?.typography?.bodyFont,
-      brandTheme: brandTheme as Record<string, unknown> | null | undefined,
-      sector: resolvedSector,
-    });
-    const res = await fetch('/api/remotion/render', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(360_000),
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    let videoUrl = typeof data.videoUrl === 'string' ? data.videoUrl.trim() : '';
-    if (!videoUrl && data.videoBase64) {
-      const persistRes = await fetch('/api/remotion/persist-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: tenantId,
-          videoBase64: data.videoBase64,
-          compositionId: data.compositionId ?? body.compositionId,
-        }),
-      });
-      if (persistRes.ok) {
-        const persisted = await persistRes.json() as { videoUrl?: string };
-        videoUrl = String(persisted.videoUrl ?? '').trim();
-      }
-    }
-    if (!videoUrl) return;
-    const compositionId = typeof data.compositionId === 'string' ? data.compositionId : undefined;
-    const grafikerScore = typeof data.grafikerScore === 'number' ? data.grafikerScore : undefined;
-    const grafikerPass = typeof data.grafikerPass === 'boolean' ? data.grafikerPass : undefined;
-    const renderMs = typeof data.durationMs === 'number' ? data.durationMs : undefined;
+    if (!tenantId) return;
     setItems(prev => prev.map(it =>
-      it.ideaIndex === item.ideaIndex ? { ...it, reelUrl: videoUrl, canvasBuilding: false } : it,
+      it.ideaIndex === item.ideaIndex ? { ...it, brandKitBuilding: true } : it,
     ));
-    setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'reel' }));
-
-    // Patch existing auto-produce artifact, or create poster-first bundle then attach MP4
-    const fmt = normalizeContentFormat(item.contentType);
-    const kind = kindFromFormat(fmt);
     try {
-      const existing = findMissionProductionArtifact(existingArtifacts, missionId ?? undefined, item.ideaIndex);
-      if (existing?.id) {
-        await apiClient.attachVideoToArtifact(existing.id, videoUrl, photoUrl, {
-          compositionId,
-          grafikerScore,
-          grafikerPass,
-          renderMs,
-        });
-      } else {
-        const saved = await apiClient.saveCreativeArtifact({
-          title: item.headline || `${brandName} — ${fmt}`,
-          contentUrl: photoUrl,
-          content: JSON.stringify({
-            kind,
-            contentType: fmt,
-            caption: item.caption,
-            hashtags: item.hashtags,
-            cta: item.cta,
-            headline: item.headline,
-            imageUrl: photoUrl,
-            posterUrl: photoUrl,
-            videoUrl: null,
-            source: 'remotion',
-            idea_index: item.ideaIndex,
-            production_bundle: true,
-            bundle_status: 'rendering',
-          }),
-          platform: 'instagram',
-          contentType: fmt,
-          metadata: {
-            contentType: fmt,
-            kind,
-            platform: 'instagram',
-            headline: item.headline,
-            caption: item.caption?.slice(0, 300),
-            cta: item.cta,
-            hashtags: item.hashtags?.slice(0, 10),
-            strategic_purpose: item.strategicPurpose?.slice(0, 200),
-            mission_brief: missionBrief?.slice(0, 200),
-            mission_id: missionId,
-            node_key: nodeKey,
-            idea_index: item.ideaIndex,
-            imageUrl: photoUrl,
-            poster_url: photoUrl,
-            posterUrl: photoUrl,
-            source: 'remotion',
-            production_bundle: true,
-            bundle_status: 'rendering',
-            publish_package: 'primary',
-          },
-        });
-        await apiClient.attachVideoToArtifact(saved.id, videoUrl, photoUrl, {
-          compositionId,
-          grafikerScore,
-          grafikerPass,
-          renderMs,
-        });
-      }
-      feedSavedRef.current.add(item.ideaIndex);
+      const brandedUrl = await fetchAnnouncementBrandKitPreview({
+        photoUrl,
+        headline: item.headline,
+        cta: item.cta,
+        tagline: item.caption.slice(0, 80),
+        contentType: 'story',
+        tenantId,
+        brandName: effectiveBrandName,
+        location: effectiveLocation,
+        brandTheme,
+        templateId: pick.storyTemplateId,
+        sector: resolvedSector,
+      });
       setItems(prev => prev.map(it =>
-        it.ideaIndex === item.ideaIndex ? { ...it, status: 'approved' } : it,
+        it.ideaIndex === item.ideaIndex
+          ? {
+            ...it,
+            brandKitUrl: brandedUrl,
+            brandKitBuilding: false,
+            storySlotKey: pick.slot.key,
+            storyTemplateName: pick.templateName,
+          }
+          : it,
       ));
-      queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-      onApproved();
-    } catch { /* non-blocking — user can still manual approve */ }
-  }, [ideas, tenantId, brandName, location, logoUrl, brandTheme, missionId, nodeKey, missionBrief, queryClient, onApproved, existingArtifacts]);
+    } catch {
+      setItems(prev => prev.map(it =>
+        it.ideaIndex === item.ideaIndex ? { ...it, brandKitBuilding: false } : it,
+      ));
+    }
+  }, [tenantId, effectiveBrandName, effectiveLocation, brandTheme, resolvedSector]);
 
   const produceAll = useCallback(async () => {
     if (producedRef.current) return;
@@ -788,10 +699,6 @@ export function AutoProductionFeed({
             } : it
           ));
 
-          // Premium: Remotion MP4 upgrades story (static Marky poster shown until video ready)
-          if (contentTypeFmt === 'story' && storyPick) {
-            renderStoryForItem(itemRef, storyPick, imageUrl).catch(() => { /* non-blocking */ });
-          }
         } catch (brandErr) {
           console.warn('[AutoProductionFeed] brand kit overlay failed:', brandErr);
           setItems(prev => prev.map((it, idx) =>
@@ -815,7 +722,7 @@ export function AutoProductionFeed({
     }
 
     setProducing(false);
-  }, [ideas, photoPool, galleryAnalysis, usedPreviouslyBases, tenantId, brandName, location, sector, brandTheme, renderStoryForItem, effectiveBrandName, effectiveLocation, resolvedSector]);
+  }, [ideas, photoPool, galleryAnalysis, usedPreviouslyBases, tenantId, brandName, location, sector, brandTheme, effectiveBrandName, effectiveLocation, resolvedSector]);
 
   useEffect(() => {
     if (serverProductionOnly) return;
@@ -1799,7 +1706,7 @@ export function AutoProductionFeed({
                                         ? { ...it, storySlotKey: slot.key, storyTemplateName: pick.templateName }
                                         : it,
                                     ));
-                                    renderStoryForItem(item, pick, item.imageUrl).catch(() => {});
+                                    refreshStoryBrandKit(item, pick, item.imageUrl).catch(() => {});
                                   }}
                                   disabled={!item.imageUrl}
                                   style={{

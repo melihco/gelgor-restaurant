@@ -69,7 +69,7 @@ export function shouldUseMultiGalleryPhotos(
   assignment: ProductionAssignment,
   contentKind: string,
 ): boolean {
-  if (assignment.pipeline === 'carousel_gallery' || assignment.pipeline === 'remotion_story') {
+  if (assignment.pipeline === 'carousel_gallery') {
     return true;
   }
   if (assignment.pipeline === 'runway_reel') return true;
@@ -84,8 +84,11 @@ export function multiGalleryPhotoCount(
   if (assignment.pipeline === 'carousel_gallery' || contentKind === 'instagram_carousel') {
     return 4;
   }
-  if (assignment.pipeline === 'remotion_story' || assignment.slot_role === 'campaign_story_motion') {
-    return 4;
+  if (assignment.pipeline === 'fal_story' || assignment.pipeline === 'remotion_story') {
+    return 1;
+  }
+  if (assignment.slot_role === 'campaign_story_motion') {
+    return 1;
   }
   return 3;
 }

@@ -3,6 +3,8 @@ import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-util
 import { upscaleCdnUrl } from '@/lib/gallery-display-url';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { mediaUrlForKey, resolveClientMediaUrl } from '@/lib/media-url';
+import { normalizeProductionPipeline } from '@/lib/mission-production-manifest';
+import { isVideoPipeline } from '@/lib/pipeline-registry';
 
 /** Local helper — avoids circular import via media-url / artifact-utils. */
 function upgradePhotoUrlForDisplay(url: string | null | undefined): string | null {
@@ -581,17 +583,18 @@ export function filterConsumerStoryBar(
     .slice(0, maxRings);
 }
 
-/** Feed story bar + story tab: production bundle with poster and/or Remotion video. */
-/** Story slot that must ship a Remotion MP4 (not gallery-only still). */
-export function expectsRemotionStoryVideo(artifact: OutputArtifact): boolean {
+/** Story slot that historically expected a Remotion MP4 — now fal still poster is sufficient. */
+export function expectsRemotionStoryVideo(_artifact: OutputArtifact): boolean {
+  return false;
+}
+
+function storyExpectsVideoArtifact(artifact: OutputArtifact): boolean {
   const meta = parseArtifactMetadata(artifact.metadata);
   const content = parseArtifactContent(artifact.content);
-  const pipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
-  if (pipeline === 'fal_story') return false;
-  if (pipeline === 'remotion_story') return true;
-  if (meta.remotion_mission_story === true) return true;
-  const role = String(meta.production_role ?? content.production_role ?? '').trim();
-  return role === 'campaign_story_motion';
+  const pipeline = normalizeProductionPipeline(
+    String(meta.pipeline ?? content.pipeline ?? '').trim(),
+  );
+  return isVideoPipeline(pipeline);
 }
 
 export function isProductionBundleStory(artifact: OutputArtifact): boolean {
@@ -600,10 +603,9 @@ export function isProductionBundleStory(artifact: OutputArtifact): boolean {
   const hasVideo = Boolean(resolveStoryVideoUrl(artifact));
   const hasPoster = Boolean(resolvePosterUrl(artifact));
   if (isProductionBundle(artifact)) {
-    return status === 'ready' ? hasVideo : hasPoster || hasVideo;
+    return status === 'ready' ? (hasVideo || hasPoster) : hasPoster || hasVideo;
   }
-  // Legacy Remotion-only artifact
-  return hasVideo;
+  return hasVideo || hasPoster;
 }
 
 export function isBundleReadyForPublish(artifact: OutputArtifact): boolean {
@@ -639,8 +641,11 @@ export function isBundleStaleRendering(
 export function isAwaitingStoryVideo(artifact: OutputArtifact): boolean {
   if (isStoryKind(artifact)) {
     if (resolveStoryVideoUrl(artifact)) return false;
-    if (isProductionBundle(artifact)) return true;
-    return hasProductionBundleFlag(artifact);
+    if (!storyExpectsVideoArtifact(artifact)) {
+      if (resolveBrandedPostUrl(artifact) || resolvePosterUrl(artifact)) return false;
+    }
+    if (isProductionBundle(artifact)) return storyExpectsVideoArtifact(artifact);
+    return hasProductionBundleFlag(artifact) && storyExpectsVideoArtifact(artifact);
   }
   if (isPostKind(artifact) && isProductionBundle(artifact)) {
     const branded = resolveBrandedPostUrl(artifact);
@@ -677,7 +682,7 @@ export function storyRetryLabel(artifact: OutputArtifact): string {
   }
   if (resolveStoryVideoUrl(artifact)) return 'Yeniden render';
   if (isPostKind(artifact) && resolveBrandedPostUrl(artifact)) return 'Yeniden render';
-  return isPostKind(artifact) ? 'Poster üret' : 'Video üret';
+  return isPostKind(artifact) ? 'Poster üret' : 'Poster üret';
 }
 
 export function storyRetryIsBusy(artifact: OutputArtifact): boolean {

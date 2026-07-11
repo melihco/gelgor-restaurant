@@ -134,7 +134,7 @@ export function StoryAudioSettingsPanel({
     stopPreview();
     setVoicePreviewLoading(voiceId);
     try {
-      const res = await fetch('/api/remotion/voice-preview', {
+      const res = await fetch('/api/story-audio/voice-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ voiceId, locale: profile.locale ?? 'tr' }),

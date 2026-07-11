@@ -272,7 +272,7 @@ def _resolve_font(heading_personality: str) -> str:
     return resolve_brand_font(heading_personality, None)
 
 
-async def _render_slot_remotion(
+async def _render_slot_fal(
     nextjs_url: str,
     slot: BundleSlot,
     photo_url: str,
@@ -281,45 +281,42 @@ async def _render_slot_remotion(
     brand_name: str,
     tokens: "CreatomaBrandTokens",
     workspace_id: uuid.UUID,
-    idx: int = 0,
 ) -> BundleResult:
-    """Render one story slot via Remotion (Next.js /api/remotion/render)."""
-    # Select composition based on slot index and mood
-    mood_lower = (tokens.mood or "").lower()
-    if idx == 0:
-        composition_id = "EditorialStory"
-    elif any(x in mood_lower for x in ("sunset", "beach", "sea", "nature", "atmosphere")):
-        composition_id = "CinematicStory"
-    else:
-        composition_id = "LuxurySplitStory"
-
+    """Render one story still via fal/GPT-image (Next.js /api/generate-instagram-image)."""
     payload = {
-        "compositionId": composition_id,
-        "uploadToR2": True,
+        "title": title,
+        "caption": subtitle[:300] or title,
+        "contentType": "story",
+        "brandName": brand_name or "Brand",
         "workspaceId": str(workspace_id),
-        "props": {
-            "photoUrl": photo_url,
-            "headline": title,
-            "subtitle": subtitle[:100],
-            "brandName": brand_name,
-            "primaryColor": tokens.primary_color,
-            "accentColor": tokens.accent_color,
-            "fontFamily": tokens.font_family or "Montserrat",
+        "referenceImageUrls": [photo_url],
+        "brandVibeProfile": {
+            "palette": {
+                "primary": tokens.primary_color,
+                "accent": tokens.accent_color,
+            },
+            "typography": {
+                "headingFont": tokens.font_family or "Montserrat",
+            },
         },
     }
-
     try:
-        async with httpx.AsyncClient(timeout=110.0) as client:
-            resp = await client.post(f"{nextjs_url}/api/remotion/render", json=payload)
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(f"{nextjs_url}/api/generate-instagram-image", json=payload)
         if not resp.is_success:
-            return BundleResult(slot.label, "failed",
-                                error=f"Remotion HTTP {resp.status_code}: {resp.text[:100]}")
+            return BundleResult(
+                slot.label, "failed",
+                error=f"fal HTTP {resp.status_code}: {resp.text[:100]}",
+            )
         data = resp.json()
-        video_url = data.get("videoUrl") or ""
+        image_url = data.get("imageUrl") or ""
         return BundleResult(
-            slot=slot.label, status="succeeded" if video_url else "failed",
-            output_url=video_url, thumb_url=video_url,
-            template_key=composition_id, brand_font=tokens.font_family or "Montserrat",
+            slot=slot.label,
+            status="succeeded" if image_url else "failed",
+            output_url=image_url,
+            thumb_url=image_url,
+            template_key="fal_story_still",
+            brand_font=tokens.font_family or "Montserrat",
         )
     except Exception as e:
         return BundleResult(slot.label, "failed", error=str(e)[:200])
@@ -338,32 +335,28 @@ async def generate_brand_bundle(
     internal_key: str = "",
 ) -> list[BundleResult]:
     """
-    Generate 2 story MP4s for one content idea via Remotion.
+    Generate 2 story outputs for one content idea.
+    Primary: Creatomate when API key is set; otherwise fal/GPT-image still posters.
     Saves each to Nexus artifacts automatically.
-    Falls back to Creatomate if CREATOMATE_API_KEY is set and Remotion fails.
     """
     from app.config import get_settings
     settings = get_settings()
     nextjs_url = getattr(settings, "nextjs_url", "http://localhost:3000").rstrip("/")
     tok = tokens or CreatomaBrandTokens()
 
-    # Primary: Remotion (always available, no monthly fee)
-    tasks_remotion = [
-        _render_slot_remotion(nextjs_url, slot, photo_url, title, subtitle, brand_name, tok, workspace_id, idx=i)
-        for i, slot in enumerate(BUNDLE_SLOTS)
-    ]
-    results: list[BundleResult] = list(await asyncio.gather(*tasks_remotion, return_exceptions=False))
-
-    # If Remotion failed AND Creatomate key available → fallback
-    all_failed = all(r.status == "failed" for r in results)
-    if all_failed and api_key:
-        logger.warning("remotion_bundle_failed_using_creatomate_fallback",
-                        workspace_id=str(workspace_id))
-        fallback_tasks = [
+    if api_key:
+        tasks = [
             _render_slot(api_key, slot, photo_url, title, subtitle, date_badge, brand_name, tok, idx=i)
             for i, slot in enumerate(BUNDLE_SLOTS)
         ]
-        results = list(await asyncio.gather(*fallback_tasks, return_exceptions=False))
+        results: list[BundleResult] = list(await asyncio.gather(*tasks, return_exceptions=False))
+    else:
+        logger.info("creatomate_key_missing_using_fal_story_still", workspace_id=str(workspace_id))
+        tasks_fal = [
+            _render_slot_fal(nextjs_url, slot, photo_url, title, subtitle, brand_name, tok, workspace_id)
+            for slot in BUNDLE_SLOTS
+        ]
+        results = list(await asyncio.gather(*tasks_fal, return_exceptions=False))
 
     # Save successful renders to Nexus
     if nexus_api:

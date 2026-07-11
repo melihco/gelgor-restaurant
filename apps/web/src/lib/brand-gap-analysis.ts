@@ -155,3 +155,62 @@ export function mergeBrandGapLists(
 export function countActionableGaps(gaps: BrandGapItem[]): number {
   return gaps.filter((g) => g.severity !== 'low').length;
 }
+
+/** Gaps the complete-gaps pipeline can repair without manual Marka Analizi. */
+export const AUTO_FIXABLE_GAP_IDS = new Set([
+  'description_corrupt',
+  'visual_dna_missing',
+  'brand_dna_sparse',
+  'service_profile_missing',
+  'industry_calendar_stale',
+  'content_pillars_low',
+  'default_ctas_missing',
+  'brand_theme_missing',
+  'template_library_incomplete',
+  'gallery_coverage_low',
+]);
+
+/** Gaps that need operator action (re-analyze, manual identity edit). */
+export const MANUAL_GAP_IDS = new Set([
+  'discovery_low',
+  'vibe_profile_missing',
+]);
+
+export function countAutoFixableGaps(gaps: BrandGapItem[]): number {
+  return gaps.filter((g) => AUTO_FIXABLE_GAP_IDS.has(g.id)).length;
+}
+
+export function formatCompleteGapsFeedback(input: {
+  resolvedCount: number;
+  steps?: Array<{ id: string; ok: boolean; detail?: string }>;
+  gapsAfter?: BrandGapItem[];
+}): string {
+  const { resolvedCount, steps = [], gapsAfter = [] } = input;
+  if (resolvedCount > 0) {
+    return `${resolvedCount} eksik alan güncellendi — agent profili güçlendirildi.`;
+  }
+
+  const failed = steps.filter((s) => !s.ok);
+  const needsOpenAi = failed.some((s) =>
+    ['visual_dna', 'production_design_profile', 'brand_dna'].includes(s.id),
+  );
+  const needsAnalyze = (gapsAfter.some((g) => g.id === 'discovery_low')
+    || failed.some((s) => s.id === 'discovery_reanalyze'));
+
+  if (needsOpenAi && needsAnalyze) {
+    return 'Bazı alanlar için OPENAI_API_KEY ve Marka Analizi (Kimlik) gerekli. Aşağıdaki manuel adımları tamamlayın.';
+  }
+  if (needsOpenAi) {
+    return 'Marka DNA ve görsel profil için OPENAI_API_KEY gerekli. İçerik sütunları ve açıklama gibi alanlar güncellenmiş olabilir.';
+  }
+  if (needsAnalyze) {
+    return 'Keşif skoru için Marka Ayarları → Kimlik bölümünden web/Instagram analizini yeniden çalıştırın.';
+  }
+  if (failed.length > 0) {
+    const detail = failed.map((s) => s.detail || s.id).filter(Boolean).slice(0, 2).join('; ');
+    return detail
+      ? `Otomatik tamamlama kısmen başarısız: ${detail}`
+      : 'Otomatik tamamlanacak kritik alan kalmadı veya veri yetersiz.';
+  }
+  return 'Kritik alanlar güncel — kalan maddeler manuel adım veya opsiyonel.';
+}

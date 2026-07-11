@@ -1,6 +1,6 @@
 /**
  * POST /api/missions/{workspaceId}/{missionId}/retry-render
- * Re-triggers Remotion for all failed/stale story + designed-post bundles in one mission.
+ * Re-triggers fal overlay for all failed/stale story + designed-post bundles in one mission.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { assertPathTenantMatchesRequest, buildInternalProductionHeaders } from '@/lib/tenant-production-guard';

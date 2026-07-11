@@ -798,6 +798,7 @@ export function normalizeProductionPipeline(
   const key = String(pipeline ?? '').trim();
   if (key === 'runway_reel') return 'fal_reel';
   if (key === 'remotion_post') return 'fal_design';
+  if (key === 'remotion_poster') return 'fal_design';
   if (key === 'remotion_story') return 'fal_story';
   if (key === 'meta_ad' || key === 'google_ad') return 'fal_design';
   return (key as ProductionPipeline) || 'gallery_photo';

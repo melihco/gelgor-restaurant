@@ -1,3 +1,5 @@
+import { normalizeProductionPipeline } from '@/lib/mission-production-manifest';
+
 /**
  * Pipeline Registry — single source of truth for production pipeline metadata.
  *
@@ -61,6 +63,13 @@ export const PIPELINE_REGISTRY: Readonly<Record<string, PipelineDescriptor>> = {
 
   // fal.ai / GPT-image designed still post
   fal_design: d('fal_design', 'fal_design', { usesFalDesigner: true, retryable: true }),
+  /** @deprecated — legacy assignments; routes same as fal_design. */
+  remotion_poster: d('remotion_poster', 'fal_design', { usesFalDesigner: true, retryable: true }),
+  /** @deprecated — legacy assignments; routes same as fal_design. */
+  remotion_post: d('remotion_post', 'fal_design', { usesFalDesigner: true, retryable: true }),
+
+  /** @deprecated — legacy assignments; routes same as fal_story (still poster). */
+  remotion_story: d('remotion_story', 'fal_video', { usesFalDesigner: true, retryable: true }),
 
   // pure fal.ai slots
   fal_only_post: d('fal_only_post', 'fal_only', { usesFalDesigner: true, retryable: true }),
@@ -80,7 +89,10 @@ function normalize(pipeline: string | undefined | null): string {
 export function getPipelineDescriptor(
   pipeline: string | undefined | null,
 ): PipelineDescriptor | undefined {
-  return PIPELINE_REGISTRY[normalize(pipeline)];
+  const key = normalize(pipeline);
+  if (!key) return undefined;
+  const canonical = normalizeProductionPipeline(key);
+  return PIPELINE_REGISTRY[canonical] ?? PIPELINE_REGISTRY[key];
 }
 
 function inFamily(pipeline: string | undefined | null, family: PipelineFamily): boolean {

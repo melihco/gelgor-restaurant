@@ -171,11 +171,50 @@ export async function runCompleteBrandGaps(
   }
 
   if (gapIds.has('discovery_low')) {
-    steps.push({
-      id: 'discovery_reanalyze',
-      ok: false,
-      detail: 'Marka analizini Marka Ayarları → Kimlik üzerinden yeniden çalıştırın (Apify)',
-    });
+    try {
+      const ctxRes = await fetchCrewBackendJson<Record<string, unknown>>(
+        `/api/v1/brand-context/${tenantId}`,
+        { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
+      );
+      const ctx = ctxRes.ok ? ctxRes.data ?? {} : {};
+      const websiteUrl = String(ctx.website_url ?? '').trim();
+      const instagramHandle = String(ctx.instagram_handle ?? '').trim().replace(/^@/, '');
+      const googleBusinessUrl = String(ctx.google_business_url ?? '').trim();
+      if (websiteUrl || instagramHandle || googleBusinessUrl) {
+        const analyzeRes = await fetchCrewBackendJson<Record<string, unknown>>(
+          `/api/v1/brand-context/${tenantId}/analyze`,
+          {
+            method: 'POST',
+            workspaceId: tenantId,
+            timeoutMs: 300_000,
+            headers: forwardHeaders,
+            body: {
+              website_url: websiteUrl || undefined,
+              instagram_handle: instagramHandle || undefined,
+              google_business_url: googleBusinessUrl || undefined,
+              brand_name: String(ctx.business_name ?? ''),
+            },
+          },
+        );
+        steps.push({
+          id: 'discovery_reanalyze',
+          ok: analyzeRes.ok,
+          detail: analyzeRes.ok ? 'brand_analyze_ok' : (analyzeRes.error ?? 'analyze_failed'),
+        });
+      } else {
+        steps.push({
+          id: 'discovery_reanalyze',
+          ok: false,
+          detail: 'Web sitesi veya Instagram bilgisi ekleyin (Kimlik)',
+        });
+      }
+    } catch (err) {
+      steps.push({
+        id: 'discovery_reanalyze',
+        ok: false,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const gapsBefore = pyRes.data?.gaps_before ?? [];
