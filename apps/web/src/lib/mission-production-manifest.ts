@@ -220,7 +220,7 @@ export function isContentScopedMissionProduction(
   missionType?: MissionProductionPackageType | null,
 ): boolean {
   const t = missionType ?? 'weekly_content';
-  return t === 'weekly_content' || t === 'campaign' || t === 'seasonal';
+  return t === 'weekly_content' || t === 'campaign' || t === 'event';
 }
 
 /** Organic slot target for FD backfill / gate (excludes paid ad pair). */
