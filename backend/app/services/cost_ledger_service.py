@@ -18,6 +18,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cost_ledger import ArtifactCostLedger, MissionCostLedger
+from app.services.production_cost_categories import SCOPE_FEED_SLOT, SCOPE_MISSION_GRAPH
+from app.services.production_cost_service import build_slot_key, record_cost_event
 
 logger = structlog.get_logger(__name__)
 
@@ -111,6 +113,34 @@ async def record_mission_cost_line(
             amount_usd=round(amount_usd, 5),
             source_system=source_system,
         )
+        try:
+            await record_cost_event(
+                db,
+                workspace_id=workspace_id,
+                mission_id=mission_id,
+                category=category,
+                amount_usd=amount_usd,
+                scope=SCOPE_MISSION_GRAPH,
+                source_system=source_system,
+                source_ref=source_ref,
+                provider=provider,
+                model=model,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cached_tokens=cached_tokens,
+                idempotency_key=(
+                    f"evt:{idempotency_key}" if idempotency_key else None
+                ),
+                metadata=metadata,
+                usage_date=usage_date,
+            )
+        except Exception as exc:
+            logger.warning(
+                "cost_event_dual_write_failed",
+                mission_id=str(mission_id),
+                category=category,
+                error=str(exc)[:200],
+            )
     return inserted
 
 
@@ -180,6 +210,39 @@ async def record_artifact_cost_line(
             amount_usd=round(amount_usd, 5),
             pipeline=pipeline,
         )
+        try:
+            meta = metadata or {}
+            await record_cost_event(
+                db,
+                workspace_id=workspace_id,
+                mission_id=mission_id,
+                artifact_id=artifact_id,
+                category=category,
+                amount_usd=amount_usd,
+                scope=SCOPE_FEED_SLOT,
+                call_type=call_type,
+                slot_key=build_slot_key(idea_index, slot_role),
+                idea_index=idea_index,
+                slot_role=slot_role,
+                pipeline=pipeline,
+                attempt=attempt,
+                source_system=source_system,
+                provider=provider,
+                model=model,
+                external_request_id=meta.get("fal_request_id") or meta.get("external_request_id"),
+                idempotency_key=(
+                    f"evt:{idempotency_key}" if idempotency_key else None
+                ),
+                metadata=metadata,
+                usage_date=usage_date,
+            )
+        except Exception as exc:
+            logger.warning(
+                "cost_event_dual_write_failed",
+                artifact_id=str(artifact_id),
+                category=category,
+                error=str(exc)[:200],
+            )
     return inserted
 
 
@@ -187,7 +250,10 @@ async def summarize_mission_cost_ledger(
     db: AsyncSession,
     mission_id: uuid.UUID,
 ) -> dict[str, Any]:
-    """Full cost breakdown for admin / Mission Hub."""
+    """Full cost breakdown for admin / Mission Hub (legacy ledger + rollups)."""
+    from app.services.production_cost_service import summarize_mission_production_cost
+
+    production_summary = await summarize_mission_production_cost(db, mission_id)
     mission_rows = (
         await db.execute(
             select(MissionCostLedger).where(MissionCostLedger.mission_id == mission_id)
@@ -242,11 +308,22 @@ async def summarize_mission_cost_ledger(
         key=lambda a: (-a["total_usd"], a.get("idea_index") or 0),
     )
 
+    rollup = production_summary.get("rollup") or {}
+    rollup_total = float(rollup.get("total_usd") or 0)
+    legacy_total = round(mission_total + artifact_total, 5)
+    total_usd = rollup_total if rollup_total > 0 else legacy_total
+
     return {
         "mission_id": str(mission_id),
-        "mission_graph_usd": round(mission_total, 5),
-        "feed_artifacts_usd": round(artifact_total, 5),
-        "total_usd": round(mission_total + artifact_total, 5),
+        "mission_graph_usd": round(
+            float(rollup.get("mission_graph_usd") or mission_total), 5,
+        ),
+        "feed_artifacts_usd": round(
+            float(rollup.get("feed_slot_usd") or artifact_total), 5,
+        ),
+        "total_usd": round(total_usd, 5),
+        "measured_usd": float(rollup.get("measured_usd") or 0),
+        "estimated_usd": float(rollup.get("estimated_usd") or 0),
         "by_category": combined_by_cat,
         "mission_graph_by_category": mission_by_cat,
         "feed_by_category": artifact_by_cat,
@@ -254,6 +331,10 @@ async def summarize_mission_cost_ledger(
         "artifacts": artifacts_sorted,
         "artifact_count": len(artifact_by_id),
         "line_count": len(mission_lines) + len(artifact_rows),
+        "rollup": rollup,
+        "slots": production_summary.get("slots") or [],
+        "slot_count": production_summary.get("slot_count") or 0,
+        "event_count": production_summary.get("event_count") or 0,
     }
 
 

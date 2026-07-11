@@ -143,17 +143,28 @@ async function persistAiCostLine(line: AiCostLine): Promise<void> {
   const shouldPersist = line.persist !== false && Boolean(line.workspaceId) && (line.usd || 0) > 0;
   if (!shouldPersist) return;
 
-  const { recordCostLedgerBatch } = await import('@/lib/cost-ledger-client');
+  const { recordCostLedgerBatch, buildProductionSlotKey } = await import('@/lib/cost-ledger-client');
   const workspaceId = line.workspaceId!;
   const category = line.callType;
+  const slotKey = line.slotKey
+    ?? (line.ideaIndex != null && line.slotRole
+      ? buildProductionSlotKey(line.ideaIndex, line.slotRole)
+      : undefined);
   const idempotencyKey = [
     line.artifactId ? 'artifact' : 'mission',
     line.artifactId ?? line.missionId ?? workspaceId,
     line.callType,
-    line.slotKey ?? '',
+    slotKey ?? '',
     line.attempt ?? 0,
-    line.detail?.slice(0, 40) ?? '',
+    line.falRequestId ?? line.detail?.slice(0, 40) ?? '',
   ].join(':');
+
+  const metadata: Record<string, unknown> = {
+    ...(line.detail ? { detail: line.detail } : {}),
+    ...(line.falRequestId ? { fal_request_id: line.falRequestId } : {}),
+    ...(line.falRequestIds?.length ? { fal_request_ids: line.falRequestIds } : {}),
+    ...(slotKey ? { slot_key: slotKey } : {}),
+  };
 
   if (line.artifactId) {
     await recordCostLedgerBatch(workspaceId, {
@@ -171,7 +182,7 @@ async function persistAiCostLine(line: AiCostLine): Promise<void> {
         pipeline: line.pipeline ?? undefined,
         attempt: line.attempt,
         idempotencyKey,
-        metadata: line.detail ? { detail: line.detail } : {},
+        metadata,
       }],
     });
     return;
@@ -190,7 +201,7 @@ async function persistAiCostLine(line: AiCostLine): Promise<void> {
         tokensOut: line.completionTokens,
         cachedTokens: line.cachedTokens,
         idempotencyKey,
-        metadata: line.detail ? { detail: line.detail } : {},
+        metadata,
       }],
     });
   }

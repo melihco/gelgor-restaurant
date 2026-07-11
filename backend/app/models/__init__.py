@@ -26,3 +26,8 @@ from app.models.mission import Mission, MissionTaskNode    # noqa: F401
 from app.models.brand_rule import BrandRule                # noqa: F401
 from app.models.workspace_usage import WorkspaceUsageDaily  # noqa: F401
 from app.models.cost_ledger import MissionCostLedger, ArtifactCostLedger  # noqa: F401
+from app.models.production_cost import (  # noqa: F401
+    CostEvent,
+    MissionCostRollup,
+    MissionSlotCostRollup,
+)
