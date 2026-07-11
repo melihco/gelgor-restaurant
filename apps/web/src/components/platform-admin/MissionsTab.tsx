@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import type { MissionSummary } from '@/types';
 import { AdminSectionTitle, AdminSurface } from '@/components/ui/admin-template';
+import { MissionActionsPanel } from '@/components/platform-admin/MissionActionsPanel';
 
 const STATUS_COLOR: Record<string, string> = {
   in_flight: 'text-blue-300 border-blue-400/30',
@@ -96,9 +97,16 @@ export function MissionsTab({
         </div>
 
         {selectedMissionId && (
-          <p className="mt-4 text-xs text-amber-200/80">
-            Seçili mission: {selectedMissionId} — Maliyet sekmesinde slot ve event detayını görüntüleyin.
-          </p>
+          <>
+            <p className="mt-4 text-xs text-amber-200/80">
+              Seçili mission — Maliyet sekmesinde slot/event detayı; aşağıda müdahale aksiyonları.
+            </p>
+            <MissionActionsPanel
+              workspaceId={workspaceId}
+              missionId={selectedMissionId}
+              missionStatus={missions.find((m) => m.id === selectedMissionId)?.status ?? 'unknown'}
+            />
+          </>
         )}
       </AdminSurface>
     </div>

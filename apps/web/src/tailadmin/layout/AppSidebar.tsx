@@ -246,6 +246,23 @@ const AppSidebar: React.FC = () => {
         ))}
       </nav>
 
+      {/* Platform admin — operator surface */}
+      {process.env.NEXT_PUBLIC_PLATFORM_ADMIN === 'true' && (
+        <div className="mb-2 px-2.5">
+          <a
+            href="/platform-admin"
+            className={cn(
+              'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition',
+              'text-amber-200/80 hover:bg-amber-400/10 hover:text-amber-100',
+            )}
+            style={{ border: '1px solid rgba(245,158,11,0.2)' }}
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0 text-amber-400" />
+            {wide ? <span>Platform Admin</span> : null}
+          </a>
+        </div>
+      )}
+
       {/* Footer — system status */}
       <div
         className="shrink-0 px-2.5 py-3"
