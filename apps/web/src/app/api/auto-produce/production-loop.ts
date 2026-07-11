@@ -2540,12 +2540,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ideationHeadline = calendarEventOverlay.headline;
     }
     const falCalendarSubtitle = isCalendarSlot
-      ? calendarEventOverlay?.subtitle
-      ?? String(
-        ideaRecord.tagline ?? ideaRecord.subline
-        ?? (idea.event_details as Record<string, unknown> | undefined)?.tagline
-        ?? '',
-      ).trim() || undefined
+      ? (
+        calendarEventOverlay?.subtitle
+        ?? String(
+          ideaRecord.tagline ?? ideaRecord.subline
+          ?? (idea.event_details as Record<string, unknown> | undefined)?.tagline
+          ?? '',
+        ).trim()
+      ) || undefined
       : undefined;
     const falTypoSlot = assignment.library_slot_key
       ? templateLibrary.slots.find((s) => s.key === assignment.library_slot_key)
