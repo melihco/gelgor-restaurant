@@ -81,7 +81,7 @@ describe('applyCalendarProductionEnrichment', () => {
 });
 
 describe('mergeCalendarPlansForProduction', () => {
-  it('injects orphan calendar plans into weekly format pool (capped by package)', () => {
+  it('returns ideation + orphan calendar rows without weekly format backfill', () => {
     const production = mergeCalendarPlansForProduction(
       [{ concept_title: 'Generic post', content_type: 'instagram_post', caption_draft: 'x' }],
       [{
@@ -98,7 +98,7 @@ describe('mergeCalendarPlansForProduction', () => {
     const calendarRow = production.find((row) => row.headline === 'Fresh Seafood Menu Launch');
     expect(calendarRow).toBeDefined();
     expect(calendarRow?.calendar_gallery_designed).toBe(true);
-    expect(production.length).toBeLessThanOrEqual(16);
+    expect(production).toHaveLength(2);
   });
 });
 

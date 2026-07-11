@@ -217,6 +217,7 @@ export async function runAutoProducePlanPhase(
     requireCampaignReel: manifestMissionType === 'campaign',
     productionProfile,
     packageSlug: pkgLimits.packageSlug,
+    contentItemCount: productionIdeas.length,
   });
   if (missionId && productionIdeas.length < requiredSlotTarget) {
     console.warn(

@@ -115,6 +115,7 @@ import { ScheduleSheet } from '../ScheduleSheet';
 import {
   formatPublishScheduleLabel,
   formatScheduleButtonSubtitle,
+  formatFeedScheduleHint,
   resolveSuggestedScheduleISO,
   sortFeedArtifactsForDisplay,
 } from '@/lib/feed-publish-schedule';
@@ -1142,7 +1143,7 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
   const isAgencyBranded = (meta as any)?.agency_branded === true
     || Boolean(brandedUrl && posterUrl && brandedUrl !== posterUrl);
   const slotBadge = productionRoleBadge(meta);
-  const scheduleLabel = formatPublishScheduleLabel(meta);
+  const scheduleLabel = formatFeedScheduleHint(meta);
 
   return (
     <div style={{

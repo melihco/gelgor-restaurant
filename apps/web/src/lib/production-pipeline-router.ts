@@ -3,6 +3,8 @@
  */
 import {
   buildMissionProductionManifest,
+  isContentScopedMissionProduction,
+  isIdeaDrivenMissionProduction,
   MISSION_WEEKLY_PACKAGE_COUNTS,
   resolveMissionRequiredSlotCount,
   pipelineForSlotRole,
@@ -782,6 +784,13 @@ export function resolveFinalMissionAssignments(
 ): FinalMissionAssignment[] {
   if (!input.missionId || input.ideas.length === 0) return [];
 
+  if (
+    isContentScopedMissionProduction(input.manifestMissionType)
+    || isIdeaDrivenMissionProduction(input.manifestMissionType)
+  ) {
+    return resolveIdeaDrivenFinalAssignments(input);
+  }
+
   const organicTarget = resolveMissionRequiredSlotCount({
     missionType: input.manifestMissionType,
     requireCampaignReel: input.requireCampaignReel,
@@ -1241,7 +1250,11 @@ export function prepareMissionFdAssignments(input: {
   } else {
     assignments = normalizeAssignmentsForProductionProfile(raw, input.productionProfile);
   }
-  const validation = validateManifestAgainstAssignments(
+  const contentScoped = isContentScopedMissionProduction(input.manifestMissionType)
+    || isIdeaDrivenMissionProduction(input.manifestMissionType);
+  const validation = contentScoped
+    ? validateIdeaDrivenAssignments(assignments, input.ideas.length)
+    : validateManifestAgainstAssignments(
       input.missionId || 'workspace',
       assignments,
       input.manifestMissionType,

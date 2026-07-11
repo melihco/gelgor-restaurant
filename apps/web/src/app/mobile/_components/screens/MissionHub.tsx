@@ -86,7 +86,7 @@ import {
   summarizeMissionProductionPipeline,
   type MissionProductionPipelineSummary,
 } from '@/lib/mission-pipeline-transparency';
-import { buildMissionPlanningDisplayIdeas } from '@/lib/mission-production-plan';
+import { buildMissionPlanningDisplayIdeas, summarizeMissionContentProductionStatus } from '@/lib/mission-production-plan';
 import {
   summarizeMissionStrategistKpi,
   type MissionStrategistKpiSummary,
@@ -459,9 +459,9 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
   const { t } = useTheme();
   const debugMode = isDebugUiMode();
   const pColor = PRIORITY_COLOR[mission.priority] ?? t.accent;
-  const feedTarget = MISSION_WEEKLY_PACKAGE_COUNTS.total;
+  const missionInFlight = mission.status === 'in_flight' || mission.status === 'approved';
 
-  const missionActive = mission.status === 'in_flight' || mission.status === 'approved';
+  const missionActive = missionInFlight;
   const isFailedCompletedPreview =
     mission.status === 'completed' && (mission.failed_nodes ?? 0) > 0;
   const shouldLoadProgress = missionActive || isFailedCompletedPreview;
@@ -530,17 +530,31 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
       missionTitle: mission.title,
       assignments: fd?.production_assignments,
       artifacts: missionArtifacts,
-      missionInFlight: mission.status === 'in_flight' || mission.status === 'approved',
+      missionInFlight,
     });
-  }, [mission.id, mission.type, mission.title, mission.status, missionArtifacts, prog?.nodes]);
+  }, [mission.id, mission.type, mission.title, missionInFlight, missionArtifacts, prog?.nodes]);
+
+  const contentProductionStatus = useMemo(
+    () => summarizeMissionContentProductionStatus({
+      nodes: prog?.nodes ?? [],
+      missionId: mission.id,
+      artifacts: missionArtifacts,
+      missionInFlight,
+    }),
+    [prog?.nodes, mission.id, missionArtifacts, missionInFlight],
+  );
+
+  const feedTarget = contentProductionStatus.requiredTotal > 0
+    ? contentProductionStatus.requiredTotal
+    : MISSION_WEEKLY_PACKAGE_COUNTS.total;
 
   const feedProductionLockActive = isFeedProductionLockActive(
     prog?.performance_summary as Record<string, unknown> | undefined,
   );
   const feedBackgroundActive = feedProductionLockActive || Boolean(isKickingFeed);
-  const manifestGap = (inFlightSlotChecklist.readyRequired ?? 0)
-    < (inFlightSlotChecklist.requiredTotal ?? feedTarget);
-  const feedPackageComplete = feedPublishableCount >= feedTarget && !manifestGap;
+  const manifestGap = contentProductionStatus.readyRequired < feedTarget;
+  const feedPackageComplete = feedTarget > 0
+    && contentProductionStatus.readyRequired >= feedTarget;
 
   // Auto-kick removed: production is driven by the backend scheduler/factory drain.
   // The InFlightCard should never trigger production on mount — only via explicit
@@ -1300,7 +1314,14 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
 
       {items.map((idea, i) => {
         const ia       = idea as any;
-        const headline = ia.concept_title ?? ia.conceptTitle ?? ia.idea_title ?? ia.title ?? ia.headline ?? `Fikir ${i + 1}`;
+        const headline = ia.headline
+          ?? ia.canva_field_copy?.headline
+          ?? ia.canvaFieldCopy?.headline
+          ?? ia.concept_title
+          ?? ia.conceptTitle
+          ?? ia.idea_title
+          ?? ia.title
+          ?? `Fikir ${i + 1}`;
         const caption  = ia.caption ?? ia.captionDraft ?? ia.caption_draft ?? ia.subline ?? '';
         const hashtags = Array.isArray(ia.hashtags) ? ia.hashtags.slice(0, 4) : [];
         const mood     = ia.mood ?? ia.tone ?? ia.visual_mood ?? '';
@@ -3554,8 +3575,10 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       planning: planningSummary,
       fdAssignmentCount: fdAssignments,
       lastFeedProduced: lastFeedProduced > 0 ? lastFeedProduced : null,
+      nodes: prog?.nodes ?? [],
+      missionInFlight: mission.status === 'in_flight' || mission.status === 'approved',
     });
-  }, [feedArtifacts, mission.id, slotChecklist, planningSummary, fdReport, lastFeedProduced]);
+  }, [feedArtifacts, mission.id, mission.status, slotChecklist, planningSummary, fdReport, lastFeedProduced, prog?.nodes]);
 
   const strategistKpi = useMemo(
     () => summarizeMissionStrategistKpi({

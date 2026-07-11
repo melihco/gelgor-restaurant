@@ -10,7 +10,7 @@ import {
   parseArtifactMissionId,
 } from '@/lib/production-bundle';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
-import { buildMissionPlanningDisplayIdeas } from '@/lib/mission-production-plan';
+import { buildMissionPlanningDisplayIdeas, summarizeMissionContentProductionStatus } from '@/lib/mission-production-plan';
 import type { MissionSlotChecklist } from '@/lib/mission-slot-checklist';
 import type { OutputArtifact } from '@/types';
 import {
@@ -163,16 +163,31 @@ export function summarizeMissionProductionPipeline(input: {
   planning: MissionPlanningSummary;
   fdAssignmentCount?: number | null;
   lastFeedProduced?: number | null;
+  nodes?: MissionNodeLike[];
+  missionInFlight?: boolean;
 }): MissionProductionPipelineSummary {
   const producedArtifacts = countMissionProducedArtifacts(input.artifacts, input.missionId);
   const publishReady = filterFeedPublishableArtifacts(
     input.artifacts.filter((a) => parseArtifactMissionId(a) === input.missionId),
   ).length;
 
-  const manifestRequired = input.checklist?.requiredTotal ?? MISSION_WEEKLY_PACKAGE_COUNTS.total;
+  const contentStatus = input.nodes?.length
+    ? summarizeMissionContentProductionStatus({
+      nodes: input.nodes,
+      missionId: input.missionId,
+      artifacts: input.artifacts,
+      missionInFlight: input.missionInFlight,
+    })
+    : null;
+
+  const manifestRequired = contentStatus?.requiredTotal
+    ?? input.checklist?.requiredTotal
+    ?? MISSION_WEEKLY_PACKAGE_COUNTS.total;
   const fdSlots = input.fdAssignmentCount ?? null;
-  // Hedef: her zaman manifest zorunlu slot sayısı (7). FD atama sayısı bilgi amaçlı.
   const productionTarget = manifestRequired;
+  const manifestReady = contentStatus?.readyRequired
+    ?? input.checklist?.readyRequired
+    ?? 0;
 
   return {
     productionTarget,
@@ -180,7 +195,7 @@ export function summarizeMissionProductionPipeline(input: {
     plannedCalendarRows: input.planning.calendarPlans,
     producedArtifacts,
     publishReady,
-    manifestReady: input.checklist?.readyRequired ?? 0,
+    manifestReady,
     manifestRequired,
     lastProduceRun: input.lastFeedProduced ?? null,
   };

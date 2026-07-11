@@ -185,10 +185,25 @@ export function formatPublishScheduleLabel(
 
 /** Short label for schedule button subtitle — e.g. "Pzt · 12:00" */
 export function formatScheduleButtonSubtitle(meta: Record<string, unknown>): string | null {
+  const suggestion = String(meta.posting_time_suggestion ?? '').trim();
+  if (suggestion) {
+    const short = suggestion.split('—')[0]?.trim() || suggestion;
+    return short.slice(0, 48);
+  }
   const slot = publishScheduleFromMetadata(meta);
   if (!slot) return null;
   const dayTr = DAY_TR[slot.day] ?? slot.day;
   return slot.time ? `${dayTr} · ${slot.time}` : dayTr;
+}
+
+/** Full scheduling hint for feed chips — ideation suggestion first, then structured calendar slot. */
+export function formatFeedScheduleHint(
+  meta: Record<string, unknown>,
+  opts?: { kind?: string },
+): string | null {
+  const suggestion = String(meta.posting_time_suggestion ?? '').trim();
+  if (suggestion) return suggestion.slice(0, 80);
+  return formatPublishScheduleLabel(meta, opts);
 }
 
 const JS_WEEKDAY: Record<string, number> = {

@@ -15,6 +15,65 @@ import {
   resolveMeaningfulProductionHeadline,
 } from './production-headline-quality';
 
+/** True when ideation supplied a real marketing headline (not gallery/vision filler). */
+export function hasPublishableIdeationHeadline(text: string, brandName = ''): boolean {
+  const t = pickStr(text);
+  if (t.length < 8) return false;
+  if (isVisionAnalysisDescription(t)) return false;
+  if (isGalleryTagHeadline(t)) return false;
+  if (brandName && isMeaninglessBrandEchoHeadline(t, brandName)) return false;
+  return true;
+}
+
+/** Designed / overlay slots — headline belongs on the image, not as a separate IG caption line. */
+export function isDesignedPostArtifact(meta: Record<string, unknown>): boolean {
+  const role = String(meta.production_role ?? '').toLowerCase();
+  const pipeline = String(meta.pipeline ?? '').toLowerCase();
+  if (
+    role.includes('designed')
+    || role === 'fal_designed_post'
+    || role === 'paid_ad_creative'
+    || role === 'paid_ad_google_creative'
+  ) {
+    return true;
+  }
+  if (
+    pipeline.includes('fal_design')
+    || pipeline === 'remotion_poster'
+    || pipeline === 'meta_ad'
+    || pipeline === 'google_ad'
+  ) {
+    return true;
+  }
+  return meta.designed_post === true || meta.canvas_produced === true;
+}
+
+/** Nexus artifact list title — never gallery vision dumps or overlay-only hooks alone. */
+export function buildArtifactListTitle(input: {
+  conceptTitle?: string;
+  ideationHeadline?: string;
+  caption?: string;
+  brandName?: string;
+  format?: string;
+}): string {
+  const concept = pickStr(input.conceptTitle);
+  const ideation = pickStr(input.ideationHeadline);
+  const captionHook = pickStr(input.caption).split(/[.!?\n]/)[0]?.trim() ?? '';
+  const brand = pickStr(input.brandName) || 'İçerik';
+  const fmt = pickStr(input.format) || 'post';
+
+  if (concept && !isVisionAnalysisDescription(concept) && !isGalleryTagHeadline(concept)) {
+    return concept.slice(0, 72);
+  }
+  if (hasPublishableIdeationHeadline(ideation, brand)) {
+    return ideation.slice(0, 72);
+  }
+  if (captionHook.length >= 12 && isPublishableIdeationCaption(captionHook)) {
+    return captionHook.slice(0, 72);
+  }
+  return `${brand} — ${fmt}`;
+}
+
 const ATMOSFER_PREFIX_RE = /^atmosfer:\s*/i;
 
 const MOOD_TR: Record<string, string> = {
@@ -189,11 +248,19 @@ function hasIdeationCopy(meta: Record<string, unknown>, content: Record<string, 
   );
 }
 
-/** Story/reel overlay headline — mission ideation first, never photo vision text. */
+/**
+ * Feed UI headline line — only for designed posts (on-canvas copy preview).
+ * Organic gallery posts: Instagram has no separate headline; caption carries the message.
+ */
 export function resolveFeedDisplayHeadline(input: FeedCaptionInput): string {
   const content = input.content ?? {};
   const meta = input.metadata ?? {};
   const brandName = pickStr(meta.brand_name, content.brand_name);
+
+  if (!isDesignedPostArtifact(meta)) {
+    return '';
+  }
+
   const caption = pickStr(
     meta.ideation_caption,
     meta.caption_draft,
@@ -203,12 +270,12 @@ export function resolveFeedDisplayHeadline(input: FeedCaptionInput): string {
   );
 
   const candidates = [
+    meta.design_overlay_headline,
+    content.design_overlay_headline,
     meta.ideation_headline,
     content.ideation_headline,
     content.headline,
     meta.headline,
-    meta.caption_draft,
-    content.caption_draft,
     input.title,
   ];
 

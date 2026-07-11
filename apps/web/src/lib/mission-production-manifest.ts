@@ -212,14 +212,34 @@ export function isIdeaDrivenMissionProduction(
   return (missionType ?? 'weekly_content') === 'opportunity';
 }
 
+/**
+ * Content-scoped missions: production volume = unique ideation (+ orphan calendar rows).
+ * Not the fixed weekly manifest slot count (16/12).
+ */
+export function isContentScopedMissionProduction(
+  missionType?: MissionProductionPackageType | null,
+): boolean {
+  const t = missionType ?? 'weekly_content';
+  return t === 'weekly_content' || t === 'campaign' || t === 'seasonal';
+}
+
 /** Organic slot target for FD backfill / gate (excludes paid ad pair). */
 export function resolveMissionRequiredSlotCount(input: {
   missionType?: MissionProductionPackageType | null;
   requireCampaignReel?: boolean;
   productionProfile?: ProductionProfile | null;
   packageSlug?: string | null;
+  /** When set, content-scoped missions use ideation+calendar item count instead of manifest geometry. */
+  contentItemCount?: number | null;
 }): number {
   const missionType = input.missionType ?? 'weekly_content';
+  if (
+    isContentScopedMissionProduction(missionType)
+    && typeof input.contentItemCount === 'number'
+    && input.contentItemCount > 0
+  ) {
+    return input.contentItemCount;
+  }
   if (missionType === 'opportunity') return MISSION_OPPORTUNITY_PACKAGE_COUNTS.total;
   const manifest = buildMissionProductionManifest({
     missionId: 'slot-count',

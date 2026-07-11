@@ -104,8 +104,44 @@ function artifactScheduleKey(meta: Record<string, unknown>, content: Record<stri
 
 function artifactHeadline(meta: Record<string, unknown>, content: Record<string, unknown>): string {
   return String(
-    meta.headline ?? content.headline ?? content.title ?? '',
+    meta.ideation_headline
+    ?? content.ideation_headline
+    ?? meta.headline
+    ?? content.headline
+    ?? content.title
+    ?? '',
   ).trim();
+}
+
+/** Stable index into Mission Hub ideation cards (before format-slot reindex). */
+export function resolvePlanningIdeaIndex(
+  idea: Record<string, unknown>,
+): number | null {
+  if (typeof idea.planning_idea_index === 'number' && Number.isFinite(idea.planning_idea_index)) {
+    return idea.planning_idea_index;
+  }
+  if (typeof idea.calendar_linked_idea_index === 'number' && Number.isFinite(idea.calendar_linked_idea_index)) {
+    return idea.calendar_linked_idea_index;
+  }
+  if (idea.manifest_slot_backfill === true || idea.source_node === 'format_backfill') {
+    return null;
+  }
+  const idx = idea.idea_index;
+  if (typeof idx === 'number' && Number.isFinite(idx) && idx >= 0 && idx < 1000) {
+    return idx;
+  }
+  return null;
+}
+
+function artifactPlanningIdeaIndex(
+  meta: Record<string, unknown>,
+  content: Record<string, unknown>,
+): number | null {
+  if (typeof meta.planning_idea_index === 'number') return meta.planning_idea_index;
+  if (typeof content.planning_idea_index === 'number') return content.planning_idea_index;
+  if (typeof meta.calendar_linked_idea_index === 'number') return meta.calendar_linked_idea_index;
+  if (typeof content.calendar_linked_idea_index === 'number') return content.calendar_linked_idea_index;
+  return null;
 }
 
 function resolveCalendarArtifactStatus(
@@ -157,10 +193,15 @@ function matchArtifactToCalendarItem(
   for (const a of missionArts) {
     const meta = (a.metadata ?? {}) as Record<string, unknown>;
     const content = parseArtifactContent(a.content) as Record<string, unknown>;
+    const planningIdx = artifactPlanningIdeaIndex(meta, content);
+    if (planningIdx != null && planningIdx === itemIndex) return a;
     const calIdx = meta.calendar_plan_index;
     if (typeof calIdx === 'number' && calIdx === itemIndex) return a;
-    const metaIdx = meta.idea_index ?? content.idea_index;
-    if (typeof metaIdx === 'number' && metaIdx === ideaIdx) return a;
+    // Legacy: production slot index — skip when stable planning index is stored.
+    if (planningIdx == null) {
+      const metaIdx = meta.idea_index ?? content.idea_index;
+      if (typeof metaIdx === 'number' && metaIdx === ideaIdx) return a;
+    }
   }
 
   if (schedKey) {

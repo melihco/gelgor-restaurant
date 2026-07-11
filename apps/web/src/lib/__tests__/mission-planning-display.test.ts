@@ -26,7 +26,8 @@ describe('buildMissionPlanningDisplayIdeas', () => {
 
     expect(display).toHaveLength(1);
     expect(display[0]?.concept_title).toBe('Yeni Ürünlerimiz Geldi!');
-    expect(production.length).toBeGreaterThan(1);
+    expect(production).toHaveLength(1);
+    expect(production[0]?.concept_title).toBe('Yeni Ürünlerimiz Geldi!');
   });
 
   it('dedupes repeated headlines across nodes', () => {

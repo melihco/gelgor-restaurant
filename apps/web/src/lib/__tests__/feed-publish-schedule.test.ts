@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatFeedScheduleHint,
   formatPublishScheduleLabel,
   resolvePublishSchedule,
   resolveScheduleDisplayFormat,
@@ -19,6 +20,18 @@ describe('resolvePublishSchedule', () => {
     });
     expect(schedule.format).toBe('reel');
     expect(schedule.day).toBe('Wed');
+  });
+});
+
+describe('formatFeedScheduleHint', () => {
+  it('prefers posting_time_suggestion over structured slot', () => {
+    const hint = formatFeedScheduleHint({
+      posting_time_suggestion: 'Pazartesi 19:00 — Bodrum, Muğla yerel kitlesi için ideal saat',
+      publish_schedule_day: 'Mon',
+      publish_schedule_time: '09:00',
+    });
+    expect(hint).toContain('Pazartesi 19:00');
+    expect(hint).toContain('Bodrum');
   });
 });
 

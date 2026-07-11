@@ -5,7 +5,6 @@
  */
 import {
   collectUniqueMissionIdeationIdeas,
-  mergeMissionIdeationRecords,
 } from '@/lib/parse-ideation-summary';
 import { nodeHasOutput, nodeOutputArray } from '@/lib/mission-node-output';
 import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
@@ -17,6 +16,14 @@ import {
   MAX_CALENDAR_PLANS_PER_MISSION,
   normalizeCalendarPlanToProductionIdea,
 } from '@/lib/calendar-production-pack';
+import {
+  linkPlanningItemsToArtifacts,
+  resolvePlanningIdeaIndex,
+  type CalendarItemLink,
+} from '@/lib/content-calendar-artifact-link';
+import { parseArtifactMissionId } from '@/lib/production-bundle';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import type { OutputArtifact } from '@/types';
 
 type MissionNode = {
   node_key?: string;
@@ -234,6 +241,7 @@ function enrichIdeationWithCalendarPlan(
     ...idea,
     ...overlay,
     calendar_enriched: true,
+    planning_idea_index: ideaIndex,
     concept_title: headline,
     headline,
     title: headline,
@@ -287,6 +295,7 @@ export function applyCalendarProductionEnrichment(
   const ideas: Record<string, unknown>[] = ideationRecords.map((idea, index) => ({
     ...idea,
     idea_index: index,
+    planning_idea_index: index,
     source_node: String(idea.source_node ?? 'content_ideation'),
     content_type: idea.content_type ?? idea.content_kind ?? 'instagram_post',
   }));
@@ -318,27 +327,157 @@ export function applyCalendarProductionEnrichment(
 }
 
 /**
- * Merge ideation + all calendar plans into a capped weekly production idea pool.
- * Orphan calendar rows compete in format buckets — no extra jobs beyond package total.
+ * Merge ideation + calendar into a content-driven production pool (one row per unique idea).
+ * Orphan calendar rows are appended — no weekly format backfill clones.
  */
 export function mergeCalendarPlansForProduction(
   ideationRecords: Record<string, unknown>[],
   calendarPlans: Record<string, unknown>[],
-  packageSlug?: string | null,
+  _packageSlug?: string | null,
+): Record<string, unknown>[] {
+  return buildContentProductionItemsFromRecords(ideationRecords, calendarPlans);
+}
+
+function buildContentProductionItemsFromRecords(
+  ideationRecords: Record<string, unknown>[],
+  calendarPlans: Record<string, unknown>[],
 ): Record<string, unknown>[] {
   const { ideas, orphanCalendarIdeas } = applyCalendarProductionEnrichment(
-    ideationRecords,
+    ideationRecords.map((idea, index) => ({
+      ...idea,
+      idea_index: index,
+      planning_idea_index: index,
+    })),
     calendarPlans,
   );
-  const pool = [
-    ...orphanCalendarIdeas,
-    ...ideas,
-    ...ideationRecords,
-  ];
+
   if (ideas.length === 0 && orphanCalendarIdeas.length === 0) {
-    return ensureWeeklyFormatCoverage(ideationRecords, ideationRecords, packageSlug);
+    return ideationRecords.map((idea, index) => ({
+      ...idea,
+      idea_index: index,
+      planning_idea_index: index,
+      production_scope: 'ideation',
+    }));
   }
-  return ensureWeeklyFormatCoverage(ideas, pool, packageSlug);
+
+  const enrichedItems = ideas.map((idea, index) => ({
+    ...idea,
+    idea_index: index,
+    planning_idea_index: resolvePlanningIdeaIndex(idea) ?? index,
+    production_scope: 'ideation',
+  }));
+
+  const orphanItems = orphanCalendarIdeas.map((idea, i) => ({
+    ...idea,
+    idea_index: enrichedItems.length + i,
+    production_scope: 'calendar_orphan',
+  }));
+
+  return [...enrichedItems, ...orphanItems];
+}
+
+export interface MissionContentProductionScope {
+  /** Completed content_calendar node with output exists on this mission. */
+  hasCalendar: boolean;
+  /** Rows to produce — one artifact per row. */
+  items: Record<string, unknown>[];
+  ideationItemCount: number;
+  orphanCalendarCount: number;
+  requiredProductionCount: number;
+}
+
+export interface MissionContentProductionStatus {
+  hasCalendar: boolean;
+  requiredTotal: number;
+  readyRequired: number;
+  scope: MissionContentProductionScope;
+  links: CalendarItemLink[];
+}
+
+/**
+ * SSOT — how many unique content rows this mission must produce.
+ * No calendar → ideation count only. With calendar → ideation + orphan calendar rows.
+ */
+export function resolveMissionContentProductionScope(params: {
+  nodes: MissionNode[];
+  missionId?: string;
+}): MissionContentProductionScope {
+  const ideationNodes = params.nodes.filter((n) => n.task_type === 'content_ideation');
+  const calendarNodes = params.nodes.filter((n) => n.task_type === 'content_calendar');
+  const hasCalendar = calendarNodes.some(
+    (n) => n.status === 'completed' && nodeHasOutput(n),
+  );
+
+  const uniqueIdeation = collectUniqueMissionIdeationIdeas(ideationNodes, params.missionId);
+
+  if (!hasCalendar) {
+    const items = uniqueIdeation.map((idea, index) => ({
+      ...idea,
+      idea_index: index,
+      planning_idea_index: index,
+      production_scope: 'ideation',
+    }));
+    return {
+      hasCalendar: false,
+      items,
+      ideationItemCount: items.length,
+      orphanCalendarCount: 0,
+      requiredProductionCount: items.length,
+    };
+  }
+
+  const calendarPlans = calendarNodes
+    .filter((n) => n.status === 'completed' && nodeHasOutput(n))
+    .flatMap(parseCalendarPlanRecordsFromNode);
+
+  const items = buildContentProductionItemsFromRecords(uniqueIdeation, calendarPlans);
+
+  const orphanCalendarCount = items.filter(
+    (row) => row.production_scope === 'calendar_orphan',
+  ).length;
+
+  return {
+    hasCalendar: true,
+    items,
+    ideationItemCount: items.length - orphanCalendarCount,
+    orphanCalendarCount,
+    requiredProductionCount: items.length,
+  };
+}
+
+/** Publish-ready artifact coverage per content production row (planning ↔ artifact link). */
+export function summarizeMissionContentProductionStatus(input: {
+  nodes: MissionNode[];
+  missionId: string;
+  artifacts: OutputArtifact[];
+  missionInFlight?: boolean;
+}): MissionContentProductionStatus {
+  const scope = resolveMissionContentProductionScope({
+    nodes: input.nodes,
+    missionId: input.missionId,
+  });
+  const links = linkPlanningItemsToArtifacts(
+    scope.items,
+    input.artifacts,
+    input.missionId,
+    { missionInFlight: input.missionInFlight },
+  );
+  const publishReadyIds = new Set(
+    filterFeedPublishableArtifacts(
+      input.artifacts.filter((a) => parseArtifactMissionId(a) === input.missionId),
+    ).map((a) => a.id),
+  );
+  const readyRequired = links.filter(
+    (link) => link.status === 'ready' && link.artifactId && publishReadyIds.has(link.artifactId),
+  ).length;
+
+  return {
+    hasCalendar: scope.hasCalendar,
+    requiredTotal: scope.requiredProductionCount,
+    readyRequired,
+    scope,
+    links,
+  };
 }
 
 /**
@@ -390,6 +529,11 @@ function cloneIdeaForFormat(
   slotIndex: number,
 ): Record<string, unknown> {
   const headline = ideationHeadline(donor) || `Haftalık ${fmt} ${slotIndex + 1}`;
+  const planningIdx = typeof donor.planning_idea_index === 'number'
+    ? donor.planning_idea_index
+    : typeof donor.calendar_linked_idea_index === 'number'
+      ? donor.calendar_linked_idea_index
+      : (donor.manifest_slot_backfill ? null : donor.idea_index);
   return {
     ...donor,
     concept_title: headline,
@@ -400,6 +544,7 @@ function cloneIdeaForFormat(
     format: fmt,
     source_node: 'format_backfill',
     manifest_slot_backfill: true,
+    ...(typeof planningIdx === 'number' ? { planning_idea_index: planningIdx } : {}),
   };
 }
 
@@ -468,7 +613,18 @@ export function ensureWeeklyFormatCoverage(
     ...buckets.reel,
   ]
     .slice(0, packageTotal)
-    .map((idea, index) => ({ ...idea, idea_index: index }));
+    .map((idea, index) => {
+      const planningIdx = typeof idea.planning_idea_index === 'number'
+        ? idea.planning_idea_index
+        : typeof idea.calendar_linked_idea_index === 'number'
+          ? idea.calendar_linked_idea_index
+          : (idea.manifest_slot_backfill ? undefined : idea.idea_index);
+      return {
+        ...idea,
+        idea_index: index,
+        ...(typeof planningIdx === 'number' ? { planning_idea_index: planningIdx } : {}),
+      };
+    });
 }
 
 /** Planning UI — one card per distinct ideation idea (no slot format backfill). */
@@ -485,18 +641,10 @@ export function buildMissionProductionIdeas(params: {
   missionId?: string;
   packageSlug?: string | null;
 }): Record<string, unknown>[] {
-  const ideationNodes = params.nodes.filter((n) => n.task_type === 'content_ideation');
-  const calendarNodes = params.nodes.filter(
-    (n) => n.task_type === 'content_calendar' && n.status === 'completed',
-  );
-
-  const ideationRecords = mergeMissionIdeationRecords(
-    ideationNodes,
-    params.missionId,
-    params.packageSlug,
-  );
-  const calendarPlans = calendarNodes.flatMap(parseCalendarPlanRecordsFromNode);
-  return mergeCalendarPlansForProduction(ideationRecords, calendarPlans, params.packageSlug);
+  return resolveMissionContentProductionScope({
+    nodes: params.nodes,
+    missionId: params.missionId,
+  }).items;
 }
 
 export function calendarNodesPending(nodes: MissionNode[]): boolean {

@@ -232,6 +232,11 @@ import {
 import { resolveMissionFalDesignCopy, type FalDesignCopyIdea } from '@/lib/fal-design-copy';
 import { enforceDisplayHeadline } from '@/lib/remotion-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import {
+  buildArtifactListTitle,
+  hasPublishableIdeationHeadline,
+} from '@/lib/feed-display-caption';
+import { resolvePlanningIdeaIndex } from '@/lib/content-calendar-artifact-link';
 import { resolveProductionEngines } from '@/lib/brand-production-engines';
 import { isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { getBrandKit } from '@/lib/agency-brand-kits';
@@ -928,6 +933,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ideationHeadline = enforceDisplayHeadline(rawIdeationHeadline, 72);
       headline = ideationHeadline;
     }
+    /** Ideation marketing hook — preserved for feed metadata; never overwritten by gallery vision. */
+    const storedIdeationHeadline = headline;
 
     // Feed Art Director's visual_subject_hint overrides generic caption for gallery matching.
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
@@ -1167,15 +1174,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           missionSessionCaptions.push(gf.caption);
         }
         if (gf.headline.trim()) {
-          headline = sanitizeProductionHeadline({
-            headline: gf.headline,
-            ideationHeadline,
-            caption: ideationCaption || caption,
-            brandName: resolvedBrandName,
-            conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
-            businessType: brandBusinessType,
-            maxLen: 72,
-          });
+          if (!hasPublishableIdeationHeadline(storedIdeationHeadline, resolvedBrandName)) {
+            headline = sanitizeProductionHeadline({
+              headline: gf.headline,
+              ideationHeadline: storedIdeationHeadline,
+              caption: ideationCaption || caption,
+              brandName: resolvedBrandName,
+              conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
+              businessType: brandBusinessType,
+              maxLen: 72,
+            });
+          }
         }
         if (gf.hashtags.length) {
           hashtags = gf.hashtags;
@@ -3701,19 +3710,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const publishHeadline = sanitizeProductionHeadline({
       headline,
-      ideationHeadline,
+      ideationHeadline: storedIdeationHeadline,
       caption: publishCaption || caption,
       brandName: resolvedBrandName,
       conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
       businessType: brandBusinessType,
       maxLen: adPublishChannel ? adHeadlineCharLimit(adPublishChannel) : 72,
     });
-    headline = publishHeadline;
+    const designOverlayHeadline = publishHeadline;
+    headline = designOverlayHeadline;
     if (
       !ideationHeadline
       || isGalleryTagHeadline(ideationHeadline)
     ) {
-      ideationHeadline = publishHeadline;
+      ideationHeadline = storedIdeationHeadline || designOverlayHeadline;
     }
 
     const isVideoMediaUrl = (url: string | null | undefined): boolean =>
@@ -3751,10 +3761,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       carousel_urls: carouselUrls.length ? carouselUrls : undefined,
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,
       ...(carouselGalleryUrls.length >= 2 ? { carousel_multi_photo: true } : {}),
-      headline: publishHeadline,
-      ideation_headline: publishHeadline,
+      headline: designOverlayHeadline,
+      design_overlay_headline: designOverlayHeadline,
+      ideation_headline: storedIdeationHeadline || undefined,
       idea_index: ideaIndex,
       mission_id: missionId || undefined,
+      ...(resolvePlanningIdeaIndex(ideaRecord) != null
+        ? { planning_idea_index: resolvePlanningIdeaIndex(ideaRecord) }
+        : {}),
       node_key: nodeKey || undefined,
       ...(willRemotionRender || bundleReadyNow ? {
         production_bundle: true,
@@ -3826,7 +3840,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       contentType: effectiveFmt,
       kind: effectiveKind,
       platform: 'instagram',
-      headline: publishHeadline,
+      headline: designOverlayHeadline,
+      design_overlay_headline: designOverlayHeadline,
       caption: publishCaption.slice(0, 2200),
       cta,
       hashtags: publishHashtags,
@@ -3839,7 +3854,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...(galleryMatchScore != null && galleryMatchScore >= MIN_ACCEPT_SCORE
         ? { gallery_match_score: galleryMatchScore }
         : {}),
-      ...(publishHeadline ? { ideation_headline: publishHeadline.slice(0, 120) } : {}),
+      ...(storedIdeationHeadline ? { ideation_headline: storedIdeationHeadline.slice(0, 120) } : {}),
       ...(originalIdeationCaption ? { ideation_caption: originalIdeationCaption.slice(0, 500) } : {}),
       ...(originalIdeationCaption ? { caption_draft: originalIdeationCaption.slice(0, 500) } : {}),
       ...(galleryFirstSource ? {
@@ -3996,6 +4011,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }),
       brandName: resolvedBrandName,
       idea_index: resolvedIdeaIndex,
+      ...(resolvePlanningIdeaIndex(ideaRecord) != null
+        ? { planning_idea_index: resolvePlanningIdeaIndex(ideaRecord) }
+        : {}),
+      ...(typeof ideaRecord.calendar_linked_idea_index === 'number'
+        ? { calendar_linked_idea_index: ideaRecord.calendar_linked_idea_index }
+        : {}),
       // Tüm başarılı üretimler Feed'de görünsün (yedek gizleme yok).
       publish_package: 'primary',
       publish_priority: primaryIdeaIndices.has(resolvedIdeaIndex) ? 'recommended' : 'extended',
@@ -4068,7 +4089,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...remotionStoryMeta,
     };
 
-    const title = headline || `${resolvedBrandName} — ${effectiveFmt}`;
+    const title = buildArtifactListTitle({
+      conceptTitle: getField(idea, 'concept_title', 'idea_title'),
+      ideationHeadline: storedIdeationHeadline,
+      caption: publishCaption,
+      brandName: resolvedBrandName,
+      format: effectiveFmt,
+    });
 
     const persistContentUrl = nexusPersistableContentUrl(nexusPrimaryContentUrl, [
       referenceUrl ?? '',
@@ -4135,7 +4162,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       designedPostSnapshot = {
         imageUrl: persistContentUrl,
         referencePhotoUrl: referenceUrl ?? imageUrl ?? undefined,
-        headline: publishHeadline,
+        headline: designOverlayHeadline,
         caption: publishCaption,
         cta,
         hashtags: publishHashtags,

@@ -22,6 +22,7 @@ import {
 } from '@/lib/production-bundle';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge';
+import { parseArtifactContent } from '@/lib/artifact-utils';
 import { listMissionProducedArtifacts } from '@/lib/mission-pipeline-transparency';
 import { SafeCoverImage } from './SafeCoverImage';
 
@@ -134,6 +135,7 @@ function MissionFeedPreviewTile({
   const fmt = detectArtifactPackageFormat(artifact);
   const native = artifactToNativeContent(artifact);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+  const content = parseArtifactContent(artifact.content) as Record<string, unknown>;
   const mode = detectPreviewMode(artifact, fmt);
   const aspect = aspectForFormat(fmt, mode);
   const rendering = isBundleRendering(artifact) && !resolveStoryVideoUrl(artifact);
@@ -150,7 +152,16 @@ function MissionFeedPreviewTile({
   ].filter((u): u is string => Boolean(u));
   const showVideoThumb = hasVideo && Boolean(native.videoUrl) && !rendering;
   const bundleStatus = getProductionBundleStatus(artifact);
-  const headline = String(meta.headline || native.headline || artifact.title || '').slice(0, 40);
+  const headline = String(
+    meta.ideation_headline
+    ?? content.ideation_headline
+    ?? meta.design_overlay_headline
+    ?? content.design_overlay_headline
+    ?? meta.headline
+    ?? native.headline
+    ?? artifact.title
+    ?? '',
+  ).slice(0, 40);
   const pending = artifact.status === 'pending_review';
   const productionBadge = resolveArtifactProductionBadge(artifact);
 

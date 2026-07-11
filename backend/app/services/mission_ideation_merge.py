@@ -662,6 +662,41 @@ def apply_calendar_production_enrichment(
     return result, orphan_ideas
 
 
+def build_content_production_items_from_records(
+    ideation_records: list[dict[str, Any]],
+    calendar_plans: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """One production row per unique ideation (+ orphan calendar rows). No format backfill."""
+    seeded = [
+        {**idea, "idea_index": index, "planning_idea_index": index}
+        for index, idea in enumerate(ideation_records)
+    ]
+    enriched, orphan_ideas = apply_calendar_production_enrichment(seeded, calendar_plans)
+    if not enriched and not orphan_ideas:
+        return [
+            {**idea, "idea_index": index, "planning_idea_index": index, "production_scope": "ideation"}
+            for index, idea in enumerate(ideation_records)
+        ]
+    enriched_items = [
+        {
+            **idea,
+            "idea_index": index,
+            "planning_idea_index": idea.get("planning_idea_index", idea.get("calendar_linked_idea_index", index)),
+            "production_scope": "ideation",
+        }
+        for index, idea in enumerate(enriched)
+    ]
+    orphan_items = [
+        {
+            **idea,
+            "idea_index": len(enriched_items) + i,
+            "production_scope": "calendar_orphan",
+        }
+        for i, idea in enumerate(orphan_ideas)
+    ]
+    return enriched_items + orphan_items
+
+
 def merge_calendar_plans_for_production(
     ideation_records: list[dict[str, Any]],
     calendar_plans: list[dict[str, Any]],
@@ -669,21 +704,9 @@ def merge_calendar_plans_for_production(
     mission_type: str | None = None,
     subscription_plan_slug: str | None = None,
 ) -> list[dict[str, Any]]:
-    enriched, orphan_ideas = apply_calendar_production_enrichment(ideation_records, calendar_plans)
-    pool = orphan_ideas + enriched + list(ideation_records)
-    if not enriched and not orphan_ideas:
-        return ensure_weekly_format_coverage(
-            ideation_records,
-            ideation_records,
-            mission_type=mission_type,
-            subscription_plan_slug=subscription_plan_slug,
-        )
-    return ensure_weekly_format_coverage(
-        enriched or orphan_ideas,
-        pool,
-        mission_type=mission_type,
-        subscription_plan_slug=subscription_plan_slug,
-    )
+    """Ideation + calendar enrichment — content-scoped (TS parity, no weekly backfill)."""
+    _ = mission_type, subscription_plan_slug
+    return build_content_production_items_from_records(ideation_records, calendar_plans)
 
 
 def apply_calendar_schedule_overlay(
@@ -729,6 +752,38 @@ def _apply_calendar_schedule_overlay_legacy(
     return result
 
 
+def collect_unique_ideation_from_nodes(
+    nodes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Unique ideation rows across completed nodes (TS collectUniqueMissionIdeationIdeas parity)."""
+    completed = [
+        n for n in nodes
+        if n.get("task_type") == "content_ideation"
+        and n.get("status") == "completed"
+        and len(str(n.get("output_summary") or "").strip()) > 20
+    ]
+    if not completed:
+        return []
+
+    def sort_key(n: dict[str, Any]) -> tuple[int, str]:
+        key = str(n.get("node_key") or "")
+        try:
+            idx = _IDEATION_NODE_ORDER.index(key)
+        except ValueError:
+            idx = 99
+        return (idx, key)
+
+    completed.sort(key=sort_key)
+    all_ideas: list[dict[str, Any]] = []
+    for node in completed:
+        items = (
+            _payload_object_array(node)
+            or parse_ideation_ideas_from_summary(str(node.get("output_summary") or ""))
+        )
+        all_ideas.extend(items)
+    return dedupe_ideation_by_headline(all_ideas)
+
+
 def merge_mission_production_ideas_from_nodes(
     nodes: list[dict[str, Any]],
     *,
@@ -736,20 +791,16 @@ def merge_mission_production_ideas_from_nodes(
     subscription_plan_slug: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """
-    Ideation + full calendar enrichment (all plans) → weekly format pool (TS parity).
+    Ideation + calendar enrichment → content-scoped production pool (TS parity).
+    One row per unique ideation; orphan calendar rows appended when calendar exists.
     """
-    ideation_nodes = [n for n in nodes if n.get("task_type") == "content_ideation"]
     calendar_nodes = [
         n for n in nodes
         if n.get("task_type") == "content_calendar"
         and n.get("status") == "completed"
     ]
 
-    _, ideation_records = merged_ideation_json_from_nodes(
-        ideation_nodes,
-        mission_type=mission_type,
-        subscription_plan_slug=subscription_plan_slug,
-    )
+    ideation_records = collect_unique_ideation_from_nodes(nodes)
     calendar_plans: list[dict[str, Any]] = []
     for node in calendar_nodes:
         calendar_plans.extend(_parse_calendar_plans_from_node(node))
