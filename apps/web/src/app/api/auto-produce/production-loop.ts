@@ -209,7 +209,7 @@ import {
   resolveGallerySeriesLayout,
 } from '@/lib/brand-motion-profile';
 import { resolveStoryAudioMood } from '@/lib/story-audio-mood';
-import { resolveKitForSector } from '@/lib/remotion-template-registry';
+import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import {
   ensureBrandTemplateLibrary,
@@ -240,27 +240,30 @@ import { resolvePlanningIdeaIndex } from '@/lib/content-calendar-artifact-link';
 import { resolveProductionEngines } from '@/lib/brand-production-engines';
 import { isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { getBrandKit } from '@/lib/agency-brand-kits';
-import { getRemotionTemplate } from '@/lib/remotion-template-catalog';
+import { getRemotionTemplate } from '@/lib/story-template-catalog';
 import {
   applyBrandTokensToRenderProps,
   resolveBrandProductionTokens,
 } from '@/lib/brand-production-tokens';
 import { resolveFalDesignPromptContext, readAgentFalDesignBrief, readBrandLogoPosition, readTenantPreferredCanvaArchetypes } from '@/lib/fal-design-brief';
 import { resolveSlotRenderTypography } from '@/lib/brand-template-slot-typography';
-import { renderRemotionBrandStill, renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
+import {
+  type StoryCandidate,
+  type PostCandidate,
+  type PremiumCompositionMeta,
+} from './production-candidate-types';
 import {
   alignRemotionPosterWithFalTemplate,
   isRemotionFalAlignedSlot,
   type RemotionFalTemplateAlignment,
 } from '@/lib/brand-design-template-production';
 import { resolveSlotLogoForRender } from '@/lib/brand-logo-production';
-import { persistRemotionVideoOutput } from '@/lib/remotion-video-persist';
 import {
   fetchBrandThemeForProduction,
   resolveProductionVisualStandard,
 } from '@/lib/brand-theme-ai-settings';
 import { auditPosterOverlayCopy, resolvePosterOverlayCopy } from '@/lib/poster-copy';
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from '@/lib/story-composition-types';
 import {
   buildMultiReelPhotoInputs,
   estimateRunwayReelCostUsd,
@@ -370,13 +373,6 @@ import {
   fillCarouselPhotoPool,
   attachReelPhotoRefs,
 } from './handlers/slot-utils';
-import {
-  type StoryCandidate,
-  type PostCandidate,
-  type PremiumCompositionMeta,
-  runRemotionStoryPhase,
-  runRemotionPostPhase,
-} from './remotion-render-phase';
 
 const nexusClient = createDefaultNexusClient();
 
@@ -1069,7 +1065,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       (idea.visual_production_spec as Record<string, unknown> | undefined)?.premium_composition,
     );
     const galleryOnlyVisual = !hasPremiumComposition
-      && !productionProfile.requireRemotionGrafiker
+      && !productionProfile.requireDesignedVisuals
       && isGalleryOnlyVisualPolicy(assignment, ideaRecord);
     const slotRole = String(assignment.slot_role);
     const slotPipeline = String(assignment.pipeline);
@@ -2168,7 +2164,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const isStoryIdeaForEnhance = kind === 'instagram_story' || kind === 'instagram_canvas';
     const isOrganicStoryStillSlot = assignment.slot_role === 'organic_story_still';
-    const isRemotionDesignedPostSlotEarly = assignment.pipeline === 'remotion_poster';
+    const isDesignedPostSlotEarly =
+      isFalDesignPipeline(assignment.pipeline)
+      || assignment.slot_role === 'designed_post'
+      || assignment.slot_role === 'designed_typography';
     const isFalDesignedPostSlotEarly =
       isFalDesignPipeline(assignment.pipeline)
       || assignment.slot_role === 'designed_post'
@@ -2177,7 +2176,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const willRemotionStoryForEnhance = bundleCards !== false
       && isStoryIdeaForEnhance
       && Boolean(resolvedReferenceUrl)
-      && (!isOrganicStoryStillSlot || productionProfile.requireRemotionGrafiker)
+      && (!isOrganicStoryStillSlot || productionProfile.requireDesignedVisuals)
       && !isFalDesignedPostSlotEarly;
     const willRemotionPostForEnhance = bundleCards !== false && (
       shouldRenderRemotionPoster(assignment)
@@ -2231,7 +2230,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Unlike story/reel enhance, this must NOT add text — Remotion handles that.
     if (
       !captionDrivenGenerated
-      && isRemotionDesignedPostSlotEarly
+      && isDesignedPostSlotEarly
       && referenceUrl
       && aiVisualStandard.enabled
       && !isNonVenueSector(brandBusinessType)
@@ -2329,7 +2328,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceIsStock,
         willRemotionStory: willRemotionStoryForEnhance,
         willRemotionPost: willRemotionPostForEnhance,
-        designedPosterSync: isRemotionDesignedPostSlotEarly,
+        designedPosterSync: isDesignedPostSlotEarly,
         productionProfile,
       },
     });
@@ -2710,32 +2709,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         workspaceId,
         vibeProfile,
       });
-      if (!cardUrl && productionProfile.requireRemotionGrafiker) {
-        const eventPoster = await renderRemotionBrandStillResult({
-          workspaceId,
-          photoUrl: referenceUrl ?? '',
-          headline,
-          caption,
-          brandName: resolvedBrandName,
-          location: brandLocation,
-          sector: brandBusinessType,
-          mood,
-          treatment: String(idea.visual_production_spec?.treatment || idea.treatment || '').toLowerCase(),
-          templateUseCase: idea.template_use_case as string | undefined,
-          contentType: contentTypeFmt,
-          ideaIndex,
-          brandTheme,
-          logoUrl: brandLogoUrl,
-          primaryColor: syncPrimaryColor,
-          accentColor: syncAccentColor,
-          usedTemplateIds: syncUsedTemplateIds,
-          baseUrl: routeBaseUrl,
-          cta,
-          grafikerMaxRetries,
-          profileTier: productionProfile.tier,
-        });
-        cardUrl = eventPoster?.imageUrl ?? null;
-      } else if (!cardUrl && shouldUseMarkyLayer(productionProfile)) {
+      if (!cardUrl && shouldUseMarkyLayer(productionProfile)) {
         cardUrl = await generateMarkyLayerCard({
           workspaceId,
           headline,
@@ -3152,7 +3126,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Post/Story Marky layer — skip when Remotion video will render (use raw gallery photo only)
     const isStoryIdeaEarly = kind === 'instagram_story' || kind === 'instagram_canvas';
     const isOrganicStoryStill = assignment.slot_role === 'organic_story_still';
-    const isRemotionDesignedPostSlot = assignment.pipeline === 'remotion_poster';
+    const isDesignedPostSlot =
+      isFalDesignPipeline(assignment.pipeline)
+      || assignment.slot_role === 'designed_post'
+      || assignment.slot_role === 'designed_typography';
     const isFalDesignedPostSlot =
       isFalDesignPipeline(assignment.pipeline)
       || assignment.slot_role === 'designed_post'
@@ -3178,7 +3155,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && !isOrganicStoryStill && !isFalDesignedPostSlot && !isFalMissionVideo && !isFalOnlyVideo;
     const skipMarkyLayer = Boolean(videoUrl) || isReel || (isCarousel && carouselUrls.length >= 2)
       || willRemotionStorySoon
-      || (isOrganicStoryStill && isStoryIdeaEarly && !productionProfile.requireRemotionGrafiker)
+      || (isOrganicStoryStill && isStoryIdeaEarly && !productionProfile.requireDesignedVisuals)
       || galleryOnlyVisual
       || !shouldUseMarkyLayer(productionProfile);
     if (!skipMarkyLayer && referenceUrl) {
@@ -3294,7 +3271,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const isCampaignDesignedPost = !isFalMissionVideo
       && !isFalDesignPost
-      && isRemotionDesignedPostSlot
+      && isDesignedPostSlot
       && !isReel
       && !isCarousel
       && (assignment.publish_channel === 'instagram_campaign' || hasEventDetails || isCampaignContentIdea(ideaRecord));
@@ -3328,7 +3305,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
     if (
-      isRemotionDesignedPostSlot
+      isDesignedPostSlot
       && selectedVisualDesignCard
       && referenceUrl
       && !videoUrl
@@ -3360,93 +3337,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
     }
-    if (!isFalMissionVideo && isRemotionDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
-      const posterFmt: 'post' | 'story' = isStoryIdeaEarly ? 'story' : 'post';
-      const treatmentForPoster = String(
-        idea.visual_production_spec?.treatment || idea.treatment || '',
-      ).toLowerCase();
-      const posterResult = await renderRemotionBrandStillResult({
-        workspaceId,
-        photoUrl: referenceUrl,
-        headline,
-        caption,
-        brandName: resolvedBrandName,
-        location: brandLocation,
-        sector: brandBusinessType,
-        mood,
-        treatment: treatmentForPoster,
-        templateUseCase: isPaidAdSlot
-          ? 'ad_creative'
-          : (idea.template_use_case as string | undefined),
-        contentType: posterFmt,
-        ideaIndex,
-        brandTheme,
-        logoUrl: brandLogoUrl,
-        primaryColor: syncPrimaryColor,
-        accentColor: syncAccentColor,
-        usedTemplateIds: syncUsedTemplateIds,
-        baseUrl: routeBaseUrl,
-        cta,
-        grafikerMaxRetries,
-        slotRole: assignment.slot_role,
-        librarySlotKey: assignment.library_slot_key,
-        profileTier: productionProfile.tier,
-        falTemplateAlignment: remotionFalAlignment,
-      });
-      designedPosterSyncUrl = posterResult?.imageUrl ?? null;
-      designedPosterGrafikerScore = posterResult?.grafikerScore ?? null;
-      designedPosterGrafikerPass = posterResult?.grafikerPass ?? true;
-      if (posterResult?.posterTemplateId || posterResult?.librarySlotKey) {
-        designedPosterTemplateMeta = {
-          templateId: posterResult.templateId ?? posterResult.posterTemplateId,
-          posterTemplateId: posterResult.posterTemplateId,
-          library_slot_key: posterResult.librarySlotKey,
-          kitId: posterResult.kitId,
-          brandTemplateLocked: templateLibrary.locked,
-          reusable_post_template: true,
-          ...(posterResult.brandDesignTemplateId
-            ? {
-              brand_design_template_id: posterResult.brandDesignTemplateId,
-              brand_design_template_type: posterResult.brandDesignTemplateType,
-              brand_design_template_name: posterResult.brandDesignTemplateName,
-              fal_template_alignment: true,
-            }
-            : {}),
-        };
-      }
-      if (!designedPosterSyncUrl) {
-        const fallbackBrand: RendererBrandContext = {
-          brandName: resolvedBrandName,
-          location: brandLocation,
-          businessType: brandBusinessType,
-          vibeProfile,
-        };
-        designedPosterSyncUrl = await renderEventCardFromPayload(
-          prodIdea,
-          fallbackBrand,
-          { photoUrl: referenceUrl },
-          { workspaceId, vibeProfile },
-        );
-      }
-      if (designedPosterSyncUrl) {
-        if (
-          designedPosterGrafikerScore != null
-          && designedPosterGrafikerScore < GRAFIKER_PASS_THRESHOLD
-          && !designedPosterGrafikerPass
-        ) {
-          console.warn(
-            `[auto-produce] Designed post Grafiker ${designedPosterGrafikerScore}/10 — withheld: "${headline.slice(0, 40)}"`,
-          );
-          designedPosterSyncUrl = null;
-        } else {
-          imageUrl = designedPosterSyncUrl;
-          costEstimate += 0.01;
-          console.log(
-            `[auto-produce] Designed post sync (${posterFmt}): "${headline.slice(0, 40)}"`,
-          );
-        }
-      }
-      if (isRemotionDesignedPostSlot && !designedPosterSyncUrl) {
+    if (!isFalMissionVideo && isDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
+      // Remotion poster path removed — fal_design pipeline + event overlay handle designed posts.
+      if (isDesignedPostSlot && !designedPosterSyncUrl) {
         console.warn(
           `[auto-produce] Designed post slot withheld (no branded poster): "${headline.slice(0, 40)}"`,
         );
@@ -3462,126 +3355,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    // Organik + tasarım postları: Remotion SpecPoster + Grafiker (Marky yok)
-    const postNeedsBrandLayer =
-      (aiVisualStandard.enabled || productionProfile.requireRemotionGrafiker)
-      && !galleryOnlyVisual
-      && !isReel
-      && !videoUrl
-      && !isCanvas
-      && !(isCarousel && carouselUrls.length >= 2)
-      && Boolean(referenceUrl)
-      && (kind === 'instagram_post' || (isCarousel && carouselUrls.length < 2))
-      && assignment.slot_role !== 'organic_story_still'
-      && (productionProfile.requireRemotionGrafiker
-        || assignment.slot_role !== 'organic_post');
-
-    if (
-      postNeedsBrandLayer
-      && !designedPosterSyncUrl
-      && (!imageUrl || imageUrl === referenceUrl)
-    ) {
-      const treatmentForAi = String(
-        idea.visual_production_spec?.treatment || idea.treatment || '',
-      ).toLowerCase();
-      const aiPoster = await renderRemotionBrandStillResult({
-        workspaceId,
-        photoUrl: referenceUrl ?? '',
-        headline,
-        caption,
-        brandName: resolvedBrandName,
-        location: brandLocation,
-        sector: brandBusinessType,
-        mood,
-        treatment: treatmentForAi,
-        templateUseCase: idea.template_use_case as string | undefined,
-        contentType: 'post',
-        ideaIndex,
-        brandTheme,
-        logoUrl: brandLogoUrl,
-        primaryColor: syncPrimaryColor,
-        accentColor: syncAccentColor,
-        usedTemplateIds: syncUsedTemplateIds,
-        baseUrl: routeBaseUrl,
-        cta,
-        grafikerMaxRetries,
-        profileTier: productionProfile.tier,
-        slotRole: assignment.slot_role,
-        librarySlotKey: assignment.library_slot_key,
-        falTemplateAlignment: isRemotionFalAlignedSlot(assignment) ? remotionFalAlignment : null,
-      });
-      if (aiPoster?.imageUrl) {
-        const grafikerFail = aiPoster.grafikerScore != null
-          && aiPoster.grafikerScore < GRAFIKER_PASS_THRESHOLD
-          && !aiPoster.grafikerPass;
-        if (grafikerFail && productionProfile.requireRemotionGrafiker) {
-          if (missionId && referenceUrl) {
-            console.warn(
-              `[auto-produce] Grafiker ${aiPoster.grafikerScore}/10 — mission gallery fallback: "${headline.slice(0, 40)}"`,
-            );
-            imageUrl = referenceUrl;
-            designedPosterGrafikerPass = false;
-          } else {
-            console.warn(
-              `[auto-produce] Organic post Grafiker ${aiPoster.grafikerScore}/10 — withheld: "${headline.slice(0, 40)}"`,
-            );
-            results.push({
-              title: headline,
-              imageUrl: '',
-              error: `Grafiker ${aiPoster.grafikerScore}/10 — poster yayına alınmadı`,
-              slotKey,
-            });
-            continue;
-          }
-        } else {
-          imageUrl = aiPoster.imageUrl;
-          designedPosterSyncUrl = aiPoster.imageUrl;
-          designedPosterGrafikerScore = aiPoster.grafikerScore ?? designedPosterGrafikerScore;
-          designedPosterGrafikerPass = aiPoster.grafikerPass ?? designedPosterGrafikerPass;
-          if (aiPoster.posterTemplateId || aiPoster.librarySlotKey) {
-            designedPosterTemplateMeta = {
-              templateId: aiPoster.templateId ?? aiPoster.posterTemplateId,
-              posterTemplateId: aiPoster.posterTemplateId,
-              library_slot_key: aiPoster.librarySlotKey,
-              kitId: aiPoster.kitId,
-              brandTemplateLocked: templateLibrary.locked,
-              reusable_post_template: true,
-            };
-          }
-          costEstimate += 0.01;
-          console.log(
-            `[auto-produce] Remotion branded post (organic): "${headline.slice(0, 40)}"`,
-          );
-        }
-      } else if (productionProfile.requireRemotionGrafiker) {
-        if (missionId) {
-          console.warn(
-            `[auto-produce] Remotion poster zorunlu — mission slot atlandı: "${headline.slice(0, 40)}"`,
-          );
-          results.push({
-            title: headline,
-            imageUrl: '',
-            error: 'Remotion poster üretilemedi (mission designed_post)',
-            slotKey,
-          });
-          continue;
-        }
-        console.warn(
-          `[auto-produce] Remotion poster zorunlu — üretilemedi: "${headline.slice(0, 40)}"`,
-        );
-        results.push({
-          title: headline,
-          imageUrl: '',
-          error: 'Remotion poster üretilemedi (Grafiker zorunlu profil)',
-          slotKey,
-        });
-        continue;
-      } else {
-        console.warn(
-          `[auto-produce] AI branded post layer başarısız — feed ham foto riski: "${headline.slice(0, 40)}"`,
-        );
-      }
-    }
+    // Organic designed posts — fal_design pipeline handles branded layers.
 
     // Reels: Runway/fal MP4 only — never fall back to Remotion story motion.
     if (isReel && !videoUrl) {
@@ -3631,7 +3405,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const vpsRaw = (idea.visual_production_spec as Record<string, unknown> | undefined);
     const treatment = String(vpsRaw?.treatment || idea.treatment || '').toLowerCase();
     const designedPosterReady = Boolean(designedPosterSyncUrl);
-    const markyBranded = !productionProfile.requireRemotionGrafiker
+    const markyBranded = !productionProfile.requireDesignedVisuals
       && Boolean(referenceUrl && imageUrl && imageUrl !== referenceUrl)
       && !designedPosterReady;
 
@@ -3895,7 +3669,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         if (markyBranded && imageUrl && referenceUrl && imageUrl !== referenceUrl) {
           return 'remotion_poster_marky';
         }
-        if (aiEnhanceApplied && !productionProfile.requireRemotionGrafiker) {
+        if (aiEnhanceApplied && !productionProfile.requireDesignedVisuals) {
           return 'gpt_image_enhance';
         }
         if (assignment.pipeline === 'gallery_photo') return 'gallery_raw';
@@ -3929,8 +3703,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
             typography_text_valid: true,
           }
-        : productionProfile.requireRemotionGrafiker
-          ? { production_route: 'remotion_grafiker', marky_disabled: true }
+        : productionProfile.requireDesignedVisuals
+          ? { production_route: 'designed_grafiker', marky_disabled: true }
           : {}),
       flux_used: false,
       agency_defaults_forced: agencyProductionForced,
@@ -4007,7 +3781,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         willRemotionPost: willRemotionPostRender,
         isReel,
         designedPosterSync: designedPosterReady,
-        postBrandLayer: postNeedsBrandLayer,
+        postBrandLayer: false,
       }),
       brandName: resolvedBrandName,
       idea_index: resolvedIdeaIndex,
@@ -4573,56 +4347,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
   }
 
-
-  // ── Remotion story renders — after loop, fire-and-forget ─────────────────
-  await runRemotionStoryPhase({
-    workspaceId,
-    missionId,
-    bundleCards,
-    creatomateStoryCandidates,
-    remotionPostCandidates,
-    brandTokensForRender,
-    recentTemplateIds: gctx.recentTemplateIds,
-    templateLibrary,
-    brandBusinessType,
-    brandCtx,
-    resolvedBrandName,
-    brandLocation,
-    brandLogoUrl,
-    syncPrimaryColor,
-    syncAccentColor,
-    motionProfile,
-    routeBaseUrl,
-    nexusClient,
-    grafikerMaxRetries,
-    brandTheme,
-    profileTier: productionProfile.tier,
-  });
-
-  // ── Remotion feed post renders — agency SVG posters (Canva replacement) ───
-  await runRemotionPostPhase({
-    workspaceId,
-    missionId,
-    bundleCards,
-    creatomateStoryCandidates,
-    remotionPostCandidates,
-    brandTokensForRender,
-    recentTemplateIds: gctx.recentTemplateIds,
-    templateLibrary,
-    brandBusinessType,
-    brandCtx,
-    resolvedBrandName,
-    brandLocation,
-    brandLogoUrl,
-    syncPrimaryColor,
-    syncAccentColor,
-    motionProfile,
-    routeBaseUrl,
-    nexusClient,
-    grafikerMaxRetries,
-    brandTheme,
-    profileTier: productionProfile.tier,
-  });
 
   if (designedPostSnapshot && manifestMissionType !== 'ads_focus') {
     const derivedAds = await deriveAdCreativesFromDesignedPost(

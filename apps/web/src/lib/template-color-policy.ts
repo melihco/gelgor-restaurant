@@ -1,5 +1,5 @@
 import { getPosterTemplate } from './poster-template-catalog';
-import { getRemotionTemplate } from './remotion-template-catalog';
+import { getRemotionTemplate } from './story-template-catalog';
 import type { TemplateColorPolicy, TemplateColorToken } from './remotion-template-types';
 
 export interface TemplateColorTokensLike {

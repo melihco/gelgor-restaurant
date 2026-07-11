@@ -8,7 +8,7 @@ import {
   type BrandTemplateLibrary,
 } from '@/lib/brand-template-library';
 import { listEnabledStorySlots } from '@/lib/mission-story-template';
-import { resolveKitForSector } from '@/lib/remotion-template-registry';
+import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 
 export function useBrandStoryTemplates(

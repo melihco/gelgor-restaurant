@@ -5,7 +5,7 @@
  * No brand or venue names are embedded in this module.
  */
 
-import type { PremiumCompositionMeta } from '@/app/api/auto-produce/remotion-render-phase';
+import type { PremiumCompositionMeta } from '@/app/api/auto-produce/production-candidate-types';
 import {
   buildCanvaArchetypeDirective,
   getCanvaArchetype,

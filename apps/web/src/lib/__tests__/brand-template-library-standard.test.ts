@@ -43,7 +43,7 @@ describe('resolveStandardRemotionLibrarySlotKey', () => {
     })).toBe('ad_creative_post');
   });
 
-  it('does not assign standard template slots to non-remotion pipelines', () => {
+  it('assigns standard template slots for fal story pipelines', () => {
     expect(resolveStandardRemotionLibrarySlotKey({
       slotRole: 'organic_post',
       pipeline: 'gallery_photo',
@@ -54,6 +54,6 @@ describe('resolveStandardRemotionLibrarySlotKey', () => {
       slotRole: 'fal_story_motion',
       pipeline: 'fal_story',
       storyOrdinal: 0,
-    })).toBeUndefined();
+    })).toBe('event_story');
   });
 });

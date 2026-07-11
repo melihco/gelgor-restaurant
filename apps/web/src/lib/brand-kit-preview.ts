@@ -1,8 +1,8 @@
 /**
- * Brand kit preview — Remotion SpecPoster stills (no manual SVG template picking).
+ * Brand kit preview — fal/GPT-image overlay (Remotion removed).
  */
-import { renderRemotionBrandStill } from '@/lib/remotion-brand-kit';
 import type { BrandTheme } from '@/types/brand-theme';
+import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export interface BrandKitPreviewInput {
   photoUrl: string;
@@ -21,46 +21,49 @@ export interface BrandKitPreviewInput {
   ideaIndex?: number;
 }
 
-export type BrandKitPreviewSource = 'remotion' | 'canvas_compose';
+export type BrandKitPreviewSource = 'fal_design' | 'canvas_compose';
 
 export interface BrandKitPreviewResult {
   imageUrl: string;
   source: BrandKitPreviewSource;
 }
 
-/** Remotion still — auto-picks poster/story template from brand library (no design UI). */
 export async function fetchAnnouncementBrandKitPreview(
   input: BrandKitPreviewInput,
 ): Promise<string> {
   if (!input.tenantId) {
-    throw new Error('tenantId required for Remotion brand preview');
+    throw new Error('tenantId required for brand preview');
   }
 
   const fmt = input.contentType === 'reel' ? 'story' : input.contentType;
-  const imageUrl = await renderRemotionBrandStill({
-    workspaceId: input.tenantId,
-    photoUrl: input.photoUrl,
-    headline: input.headline,
-    caption: input.tagline ?? input.cta ?? input.headline,
-    brandName: input.brandName ?? 'Brand',
-    location: input.location,
-    sector: input.sector
-      ?? String(input.brandContext?.business_type ?? input.brandContext?.industry ?? ''),
-    contentType: fmt,
-    ideaIndex: input.ideaIndex ?? 0,
-    posterTemplateId: fmt === 'post' ? input.templateId : undefined,
-    storyTemplateId: fmt === 'story' ? input.templateId : undefined,
-    brandTheme: input.brandTheme as unknown as Record<string, unknown> | null,
-    logoUrl: String(input.brandContext?.logo_url ?? input.brandContext?.logoUrl ?? ''),
+  const baseUrl = getNextjsInternalOrigin();
+  const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: input.headline,
+      caption: input.tagline ?? input.cta ?? input.headline,
+      contentType: fmt,
+      brandName: input.brandName ?? 'Brand',
+      location: input.location,
+      industry: input.sector
+        ?? String(input.brandContext?.business_type ?? input.brandContext?.industry ?? ''),
+      workspaceId: input.tenantId,
+      referenceImageUrls: [input.photoUrl],
+      brandVibeProfile: input.vibeProfile ?? input.brandTheme ?? undefined,
+    }),
+    signal: AbortSignal.timeout(120_000),
   });
-
-  if (!imageUrl) {
-    throw new Error('Remotion önizleme başarısız');
+  if (!res.ok) {
+    throw new Error('Önizleme başarısız');
   }
-  return imageUrl;
+  const data = await res.json() as { imageUrl?: string };
+  if (!data.imageUrl) {
+    throw new Error('Önizleme başarısız');
+  }
+  return data.imageUrl;
 }
 
-/** @deprecated Canvas fallback — prefer Remotion only. */
 export async function fetchCanvasBrandKitPreview(
   input: BrandKitPreviewInput,
   composeBrandPhotoCard: (params: {
@@ -82,7 +85,7 @@ export async function fetchCanvasBrandKitPreview(
 
 export async function generateBrandKitPreview(
   input: BrandKitPreviewInput,
-  composeBrandPhotoCard?: (params: {
+  _composeBrandPhotoCard?: (params: {
     photoUrl: string;
     headline: string;
     cta: string;
@@ -91,5 +94,5 @@ export async function generateBrandKitPreview(
   }) => Promise<string>,
 ): Promise<BrandKitPreviewResult> {
   const imageUrl = await fetchAnnouncementBrandKitPreview(input);
-  return { imageUrl, source: 'remotion' };
+  return { imageUrl, source: 'fal_design' };
 }

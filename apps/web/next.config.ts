@@ -31,16 +31,12 @@ const nextConfig: NextConfig = {
      */
     proxyTimeout: 360_000,
   },
-  // WASM, native binaries and Remotion renderer must not be bundled by webpack
+  // WASM and native binaries must not be bundled by webpack
   serverExternalPackages: [
     '@resvg/resvg-js',
     'satori',
     '@aws-sdk/client-s3',
     '@aws-sdk/s3-request-presigner',
-    // Remotion server-side renderer: uses native Chrome/Puppeteer binaries
-    '@remotion/bundler',
-    '@remotion/renderer',
-    'remotion',
   ],
   webpack: (config) => {
     config.externals.push('pino-pretty', 'lokijs', 'encoding');

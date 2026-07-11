@@ -72,10 +72,9 @@ describe('pipeline-registry descriptors', () => {
     }
   });
 
-  it('classifies the Remotion family as render-bound', () => {
-    expect(isRenderBoundPipeline('remotion_story')).toBe(true);
-    expect(isRenderBoundPipeline('remotion_poster')).toBe(true);
-    // fal/gallery pipelines never compete for the Remotion render gate.
+  it('no pipelines use the legacy render gate after Remotion removal', () => {
+    expect(isRenderBoundPipeline('remotion_story')).toBe(false);
+    expect(isRenderBoundPipeline('remotion_poster')).toBe(false);
     expect(isRenderBoundPipeline('fal_only_reel')).toBe(false);
     expect(isRenderBoundPipeline('gallery_photo')).toBe(false);
     expect(isRenderBoundPipeline('fal_story')).toBe(false);
@@ -84,12 +83,12 @@ describe('pipeline-registry descriptors', () => {
   it('marks video pipelines correctly', () => {
     expect(isVideoPipeline('fal_reel')).toBe(true);
     expect(isVideoPipeline('fal_only_story')).toBe(true);
-    expect(isVideoPipeline('remotion_story')).toBe(true);
     expect(isVideoPipeline('product_showcase')).toBe(true);
     // Still-image pipelines.
     expect(isVideoPipeline('fal_design')).toBe(false);
     expect(isVideoPipeline('fal_only_post')).toBe(false);
     expect(isVideoPipeline('gallery_photo')).toBe(false);
+    expect(isVideoPipeline('remotion_story')).toBe(false);
     expect(isVideoPipeline('remotion_poster')).toBe(false);
   });
 

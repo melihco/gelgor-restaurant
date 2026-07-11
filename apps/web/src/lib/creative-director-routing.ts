@@ -2,15 +2,15 @@
  * Maps Creative Director output → Remotion catalog templateId + layout patches.
  */
 import type { ContentIntent } from './brand-motion-profile';
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from '@/lib/story-composition-types';
 import {
   REMOTION_FAMILY_META,
   listTemplatesByFamily,
   listTemplatesForIntent,
   getRemotionTemplate,
-} from './remotion-template-catalog';
+} from './story-template-catalog';
 import type { RemotionLayoutFamily, RemotionLayoutSpec } from './remotion-template-types';
-import { resolveTemplateId } from './remotion-template-registry';
+import { resolveTemplateId } from './story-template-registry';
 
 export const LAYOUT_FAMILY_IDS = REMOTION_FAMILY_META.map((f) => f.family);
 

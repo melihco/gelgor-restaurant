@@ -136,7 +136,7 @@ services:
     runtime: docker
     dockerfilePath: ./apps/web/Dockerfile
     dockerContext: .
-    plan: pro
+    plan: standard
     healthCheckPath: /api/health/live
     envVars:
       - fromGroup: smartagency-shared

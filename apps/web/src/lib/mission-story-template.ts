@@ -2,7 +2,7 @@
  * Mission / AutoProductionFeed — brand story template resolution.
  * Mirrors auto-produce route logic for stable client-side Remotion renders.
  */
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from '@/lib/story-composition-types';
 import {
   ensureBrandTemplateLibrary,
   resolveBrandStoryProductionTemplate,
@@ -16,7 +16,7 @@ import {
   resolveContentIntent,
   type ContentIntent,
 } from './brand-motion-profile';
-import { REMOTION_TEMPLATE_BY_ID } from './remotion-template-catalog';
+import { REMOTION_TEMPLATE_BY_ID } from './story-template-catalog';
 import { resolveSlotRenderTypography } from './brand-template-slot-typography';
 import { resolveSlotLogoForRender } from './brand-logo-production';
 import {

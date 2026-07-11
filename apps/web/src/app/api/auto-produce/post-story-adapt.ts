@@ -17,7 +17,7 @@ import {
 import { missionStoryLibrarySlotKey } from '@/lib/mission-story-template';
 import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
-import type { StoryCandidate } from './remotion-render-phase';
+import type { StoryCandidate } from './production-candidate-types';
 import type { NexusClient } from './nexus-client';
 import type { OutputArtifact } from '@/types';
 

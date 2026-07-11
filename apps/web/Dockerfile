@@ -1,4 +1,4 @@
-# Smart Agency Web — Next.js standalone + Remotion (Chromium required at runtime)
+# Smart Agency Web — Next.js standalone (no Chromium / Remotion)
 # Build context must be the repo root (see render.yaml dockerContext) so tsconfig extends
 # and @smartagency/contracts path aliases resolve.
 FROM node:20-bookworm-slim AS build
@@ -24,9 +24,7 @@ FROM node:20-bookworm-slim AS runtime
 
 WORKDIR /app
 
-# Remotion @remotion/renderer needs Chromium + font libs on Linux
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
     fonts-liberation \
     fonts-noto-color-emoji \
     ca-certificates \
@@ -35,8 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=1024
 ENV HOSTNAME=0.0.0.0
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV REMOTION_CHROME_EXECUTABLE=/usr/bin/chromium
 
 COPY --from=build /repo/apps/web/.next/standalone ./
 COPY --from=build /repo/apps/web/.next/static ./.next/static

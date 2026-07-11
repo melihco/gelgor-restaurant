@@ -10,7 +10,7 @@ import {
 } from './brand-template-library';
 import { getBrandKit } from './agency-brand-kits';
 import { BRAND_SHOWCASE_PRESETS } from './brand-showcase-presets';
-import { REMOTION_TEMPLATE_BY_ID } from './remotion-template-catalog';
+import { REMOTION_TEMPLATE_BY_ID } from './story-template-catalog';
 import { POSTER_TEMPLATE_BY_ID } from './poster-template-catalog';
 
 type SlotPatch = Partial<Pick<BrandTemplateLibrarySlot, 'storyTemplateId' | 'posterTemplateId'>>;

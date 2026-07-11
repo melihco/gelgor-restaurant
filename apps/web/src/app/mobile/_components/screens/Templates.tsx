@@ -1,6 +1,6 @@
 'use client';
 /**
- * Story Şablonları — markanın 5 slotluk Remotion story kütüphanesi.
+ * Story Şablonları — markanın 5 slotluk story kütüphanesi.
  * Mission Hub / auto-produce bu seçimleri kullanır.
  */
 import { useTheme } from '../theme-context';

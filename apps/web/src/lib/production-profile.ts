@@ -20,11 +20,11 @@ export interface ProductionProfile {
   allowRunwayReels: boolean;
   /** @deprecated Reels never use Remotion — kept for profile shape compatibility. */
   reelRemotionMotionFallback: boolean;
-  /** Agency+Premium: Marky kapalı — post/story Remotion + Grafiker zorunlu (reel değil). */
-  requireRemotionGrafiker: boolean;
+  /** Agency+Premium: Marky kapalı — post/story fal designed + Grafiker zorunlu (reel değil). */
+  requireDesignedVisuals: boolean;
 }
 
-const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier' | 'allowRunwayReels' | 'requireRemotionGrafiker'>> = {
+const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier' | 'allowRunwayReels' | 'requireDesignedVisuals'>> = {
   economy: {
     remotionStoryMotionSlots: 2,
     remotionStoryStillSlots: 1,
@@ -100,84 +100,30 @@ export function resolveProductionProfile(input: {
     ...defaults,
     allowRunwayReels,
     reelRemotionMotionFallback: false,
-    requireRemotionGrafiker: tier === 'agency' || tier === 'premium',
+    requireDesignedVisuals: tier === 'agency' || tier === 'premium',
   };
 }
 
 /** Marky / hızlı overlay yolu — economy dışında kapalı. */
 export function shouldUseMarkyLayer(profile: ProductionProfile): boolean {
-  return !profile.requireRemotionGrafiker;
+  return !profile.requireDesignedVisuals;
 }
 
-/** Post slotları sync/async Remotion poster + Grafiker. */
+/** @deprecated Remotion removed — designed posts use fal_design. */
 export function slotUsesRemotionPost(
-  profile: ProductionProfile,
-  assignment: { pipeline: string; slot_role: string },
-  contentKind: string,
+  _profile: ProductionProfile,
+  _assignment: { pipeline: string; slot_role: string },
+  _contentKind: string,
 ): boolean {
-  // fal.ai/GPT-image designed posts run on their own track — never Remotion.
-  if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
-    return false;
-  }
-  if (assignment.pipeline === 'fal_only_post' || assignment.slot_role === 'fal_only_post') {
-    return false;
-  }
-  if (assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography') {
-    return false;
-  }
-  if (!profile.requireRemotionGrafiker) return false;
-  if (contentKind === 'instagram_reel') return false;
-  if (assignment.pipeline === 'remotion_poster') {
-    return true;
-  }
-  if (contentKind === 'instagram_post' || contentKind === 'instagram_carousel') return true;
-  return assignment.slot_role === 'organic_post';
+  return false;
 }
 
-/** Story slotları Remotion motion (çoklu galeri / hareketli tipografi). */
+/** @deprecated Remotion removed — story motion uses fal_story. */
 export function slotUsesRemotionStory(
-  profile: ProductionProfile,
-  assignment: { pipeline: string; slot_role: string },
-  contentKind: string,
+  _profile: ProductionProfile,
+  _assignment: { pipeline: string; slot_role: string },
+  _contentKind: string,
 ): boolean {
-  if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
-    return false;
-  }
-  if (assignment.pipeline === 'fal_design' || assignment.slot_role === 'fal_designed_post') {
-    return false;
-  }
-  if (
-    assignment.pipeline === 'fal_only_story'
-    || assignment.pipeline === 'fal_only_reel'
-    || assignment.pipeline === 'fal_reel'
-    || assignment.pipeline === 'runway_reel'
-    || assignment.slot_role === 'fal_only_story'
-    || assignment.slot_role === 'fal_only_reel'
-    || assignment.slot_role === 'fal_reel_motion'
-    || assignment.slot_role === 'organic_reel'
-    || assignment.slot_role === 'campaign_reel_motion'
-  ) {
-    return false;
-  }
-  if (!profile.requireRemotionGrafiker) return false;
-  if (contentKind === 'instagram_reel') return false;
-  if (assignment.pipeline === 'story_still' || assignment.pipeline === 'gallery_photo') {
-    return false;
-  }
-  if (assignment.slot_role === 'organic_story_still') {
-    return assignment.pipeline === 'remotion_story';
-  }
-  if (assignment.pipeline === 'remotion_story') return true;
-  if (assignment.slot_role === 'campaign_story_motion') {
-    return assignment.pipeline === 'remotion_story';
-  }
-  if (
-    assignment.slot_role === 'paid_ad_creative'
-    || assignment.slot_role === 'paid_ad_google_creative'
-  ) {
-    return assignment.pipeline === 'remotion_story'
-      && (contentKind === 'instagram_story' || contentKind === 'instagram_canvas');
-  }
   return false;
 }
 

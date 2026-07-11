@@ -5,7 +5,7 @@
 import type { AgencyBrandKit } from './remotion-template-types';
 import { AGENCY_BRAND_KITS, getBrandKit } from './agency-brand-kits';
 import type { MotionStyle } from './brand-motion-profile';
-import { pickBeachClubPhotoPool, pickBeautySalonPhotoPool, pickVerifiedPhotoPool } from './remotion-template-registry';
+import { pickBeachClubPhotoPool, pickBeautySalonPhotoPool, pickVerifiedPhotoPool } from './story-template-registry';
 
 export type ShowcasePresetGroup = 'real_brand' | 'sector_vibe' | 'local_business';
 

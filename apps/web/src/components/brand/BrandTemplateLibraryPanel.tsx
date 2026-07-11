@@ -21,7 +21,7 @@ import {
 } from '@/lib/brand-template-slot-typography';
 import { resolveBrandProductionTokens } from '@/lib/brand-production-tokens';
 import type { MotionStyle } from '@/lib/brand-motion-profile';
-import { resolveKitForSector } from '@/lib/remotion-template-registry';
+import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { TemplateSlotPreviewModal } from '@/components/brand/TemplateSlotPreviewModal';
 import { TemplateColorBehaviorPreview } from '@/components/brand/TemplateColorBehaviorPreview';
@@ -440,11 +440,11 @@ export function BrandTemplateLibraryPanel({
               {enabledCount}/{draft?.slots.length ?? 5} slot aktif
             </span>
             {' · '}
-            Feed, story (Remotion) ve kampanya post üretimi bu slotlardan seçer. Kaydetmeden üretime yansımaz.
+            Feed, story (fal.ai) ve kampanya post üretimi bu slotlardan seçer. Kaydetmeden üretime yansımaz.
           </>
         ) : (
           <>
-            Feed, story (Remotion MP4) ve kampanya post üretimi bu 5 slottan seçer. Font modu “Marka fontu” ise Remotion video, Marka Detayı’ndaki seçili font/post font standardıyla render alır; “Şablon fontu” seçilirse template kendi fontunu korur. Kaydetmeden üretime yansımaz.
+            Feed, story (fal.ai poster) ve kampanya post üretimi bu 5 slottan seçer. Font modu “Marka fontu” ise story, Marka Detayı’ndaki seçili font/post font standardıyla üretilir; “Şablon fontu” seçilirse template kendi fontunu korur. Kaydetmeden üretime yansımaz.
           </>
         )}
         {draft?.locked && (

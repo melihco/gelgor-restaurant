@@ -8,7 +8,7 @@
  */
 import type { ContentIntent } from './brand-motion-profile';
 import type { RemotionCompositionId } from './brand-motion-profile';
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from '@/lib/story-composition-types';
 import type { ProductionSlotRole } from './mission-production-manifest';
 import { AGENCY_BRAND_KITS, getBrandKit } from './agency-brand-kits';
 import {
@@ -20,9 +20,9 @@ import {
   REMOTION_TEMPLATE_CATALOG,
   REMOTION_TEMPLATE_BY_ID,
   getRemotionTemplate,
-} from './remotion-template-catalog';
+} from './story-template-catalog';
 import type { FontPersonality, RemotionLayoutFamily } from './remotion-template-types';
-import { kitMatchesSector, resolveKitForSector } from './remotion-template-registry';
+import { kitMatchesSector, resolveKitForSector } from './story-template-registry';
 import { diversificationSeed, hashTenantSeed, tenantKitSeed } from './tenant-template-seed';
 import { resolveTextOverlayPrefs } from './brand-text-overlay-prefs';
 import { rankPosterFamiliesForSector } from './poster-quality';

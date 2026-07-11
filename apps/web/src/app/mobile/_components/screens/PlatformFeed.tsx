@@ -214,7 +214,7 @@ function productionRoleBadge(meta: Record<string, unknown>): string | null {
   if (role === 'organic_post' || pipeline === 'gallery_photo') return 'Galeri';
   if (role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'fal_design' || pipeline === 'remotion_poster') return 'Tasarım';
   if (role === 'organic_story_still' || pipeline === 'story_still') return 'Story';
-  if (pipeline === 'remotion_story' || meta.remotion_mission_story) return 'Remotion';
+  if (pipeline === 'remotion_story' || pipeline === 'fal_story' || meta.remotion_mission_story) return 'Story';
   if (role.includes('campaign') || pipeline.includes('remotion')) return 'Kampanya';
   if (role.includes('reel') || pipeline === 'runway_reel') return 'Reel';
   if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'Carousel';
@@ -1647,9 +1647,9 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
               backdropFilter: 'blur(4px)', letterSpacing: 1 }}>
               {(() => {
                 const compId = String((content as any)?.compositionId || meta?.compositionId || '');
-                if (compId.includes('Luxury')) return '✦ Remotion';
-                if (compId.includes('Cinematic')) return '◉ Remotion';
-                return '⬛ Remotion';
+                if (compId.includes('Luxury')) return '✦ Story';
+                if (compId.includes('Cinematic')) return '◉ Story';
+                return '⬛ Story';
               })()}
             </div>
             {/* Grafiker score chip (when available) */}
@@ -3388,7 +3388,7 @@ export function PlatformFeed() {
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 11, color: '#9DBECE', fontWeight: 700 }}>
-                            ▶ Remotion {compositionId.replace('Story', '')}
+                            ▶ Story {compositionId.replace('Story', '')}
                           </span>
                           {debugMode && grafiker !== null && (
                             <span style={{

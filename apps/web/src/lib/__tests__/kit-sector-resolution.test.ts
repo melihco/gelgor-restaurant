@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getBrandKit } from '@/lib/agency-brand-kits';
-import { kitMatchesSector, resolveKitForSector } from '@/lib/remotion-template-registry';
+import { kitMatchesSector, resolveKitForSector } from '@/lib/story-template-registry';
 import { deriveBrandTemplateLibrary, ensureBrandTemplateLibrary } from '@/lib/brand-template-library';
 
 const sectorOfKit = (kitId: string) => getBrandKit(kitId)?.sector;

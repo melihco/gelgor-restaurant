@@ -7,7 +7,7 @@ import type { RemotionLayoutFamily } from './remotion-template-types';
 import type { PosterLayoutFamily } from './poster-template-types';
 import { AGENCY_VIBE_PICK_TEMPLATE_IDS } from './agency-vibe-picks';
 import { isAgencyStoryTemplate } from './agency-template-standard';
-import { REMOTION_TEMPLATE_BY_ID } from './remotion-template-catalog';
+import { REMOTION_TEMPLATE_BY_ID } from './story-template-catalog';
 import { POSTER_TEMPLATE_BY_ID } from './poster-template-catalog';
 
 export type SectorVibeKey =

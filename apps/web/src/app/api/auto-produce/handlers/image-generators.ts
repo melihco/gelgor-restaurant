@@ -14,7 +14,6 @@ import {
   type RendererBrandContext,
   type RendererGalleryMeta,
 } from '@/lib/renderer-payload';
-import { renderRemotionBrandStill, renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
 import {
   buildMultiReelPhotoInputs,
   callGenerateMultiReel,
@@ -373,34 +372,52 @@ export async function generateMarkyLayerCard(opts: {
     ctaText?: string;
   };
 }): Promise<string | null> {
+  if (!isUsableGalleryPhotoUrl(opts.referenceImageUrl)) return null;
   const ev = opts.eventDetails ?? {};
   const displayHeadline = ev.artistName
     ? [ev.artistName, ev.date].filter(Boolean).join(' · ')
     : opts.headline;
   const subtitle = ev.tagline ?? opts.caption;
 
-  return renderRemotionBrandStill({
-    workspaceId: opts.workspaceId,
-    photoUrl: opts.referenceImageUrl,
-    headline: displayHeadline.trim() || opts.headline,
-    caption: subtitle,
-    brandName: opts.brandName,
-    location: opts.location,
-    sector: opts.businessType,
-    mood: opts.mood,
-    templateUseCase: opts.templateUseCase,
-    contentType: opts.contentTypeFmt,
-    ideaIndex: opts.ideaIndex ?? 0,
-    brandTheme: opts.brandTheme,
-    logoUrl: opts.logoUrl,
-    primaryColor: opts.primaryColor,
-    accentColor: opts.accentColor,
-    usedTemplateIds: opts.usedTemplateIds,
-    eventDate: ev.date,
-    eventTime: ev.time,
-    cta: ev.ctaText,
-    baseUrl: opts.baseUrl,
-  });
+  if (ev.artistName || ev.date || ev.time) {
+    return generateEventOverlayImage({
+      workspaceId: opts.workspaceId,
+      headline: displayHeadline.trim() || opts.headline,
+      caption: subtitle,
+      referenceImageUrl: opts.referenceImageUrl,
+      brandName: opts.brandName,
+      location: opts.location,
+      businessType: opts.businessType,
+      vibeProfile: opts.vibeProfile ?? null,
+      contentTypeFmt: opts.contentTypeFmt,
+      eventDetails: ev,
+    });
+  }
+
+  try {
+    const baseUrl = opts.baseUrl ?? getNextjsInternalOrigin();
+    const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: displayHeadline.trim() || opts.headline,
+        caption: subtitle,
+        contentType: opts.contentTypeFmt,
+        brandName: opts.brandName,
+        location: opts.location,
+        industry: opts.businessType,
+        workspaceId: opts.workspaceId,
+        referenceImageUrls: [opts.referenceImageUrl],
+        brandVibeProfile: opts.vibeProfile ?? undefined,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { imageUrl?: string };
+    return data.imageUrl ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function generateVibeCarousel(opts: {

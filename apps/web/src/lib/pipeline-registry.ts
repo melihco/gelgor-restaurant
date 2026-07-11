@@ -15,7 +15,6 @@
  */
 
 export type PipelineFamily =
-  | 'remotion' // Remotion-rendered (shares the render gate)
   | 'fal_video' // fal.ai designer video track (fal_story / fal_reel)
   | 'fal_design' // fal.ai / GPT-image designed still post (fal_design)
   | 'fal_only' // pure fal.ai slots (fal_only_*)
@@ -29,7 +28,7 @@ export interface PipelineDescriptor {
   readonly family: PipelineFamily;
   /** Produces a video artifact (vs. a still image). */
   readonly isVideo: boolean;
-  /** Competes for the global Remotion render concurrency gate. */
+  /** Competes for the global render concurrency gate (legacy — always false post-Remotion). */
   readonly isRenderBound: boolean;
   /** Routes through the fal.ai designer (typography/design card) path. */
   readonly usesFalDesigner: boolean;
@@ -54,11 +53,6 @@ function d(
 
 /** Canonical table. Add a new pipeline by adding one row here. */
 export const PIPELINE_REGISTRY: Readonly<Record<string, PipelineDescriptor>> = {
-  // Remotion render-bound family
-  remotion_story: d('remotion_story', 'remotion', { isVideo: true, isRenderBound: true, retryable: true }),
-  remotion_poster: d('remotion_poster', 'remotion', { isRenderBound: true, retryable: true }),
-  remotion_post: d('remotion_post', 'remotion', { isRenderBound: true, retryable: true }),
-
   // fal.ai designer video track
   fal_story: d('fal_story', 'fal_video', { usesFalDesigner: true, retryable: true }),
   fal_reel: d('fal_reel', 'fal_video', { isVideo: true, usesFalDesigner: true, retryable: true }),
@@ -124,9 +118,9 @@ export function isFalOnlyPostPipeline(pipeline: string | undefined | null): bool
   return desc?.family === 'fal_only' && !desc.isVideo;
 }
 
-/** Remotion render-gate-bound pipelines. */
-export function isRenderBoundPipeline(pipeline: string | undefined | null): boolean {
-  return getPipelineDescriptor(pipeline)?.isRenderBound ?? false;
+/** Legacy Remotion pipelines — normalized at ingest; no render gate. */
+export function isRenderBoundPipeline(_pipeline: string | undefined | null): boolean {
+  return false;
 }
 
 /** Whether the pipeline produces a video artifact. */

@@ -160,7 +160,7 @@ export function BrandFalTemplateGalleryPanel({
       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
         Onboarding&apos;de üretilen fal.ai şablon seti mission üretiminde kilitlenir —
         aynı layout, değişen fotoğraf ve metin (kampanya, özel gün, günlük story, reel kapağı).
-        Remotion ucuz alternatif olarak ayrı slotlarda kalır.
+        Galeri eşleşmeli fal.ai tasarımları bu panelden yönetilir.
       </p>
 
       {needsPreviewGeneration && (

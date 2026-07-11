@@ -1,6 +1,5 @@
 /**
  * Mission-level story slot assignments — Fal.ai grounded poster (9:16) for campaign stories.
- * Remotion motion path retained only for explicit legacy remotion_story / paid-ad slots.
  */
 import type { ProductionAssignment } from './mission-production-manifest';
 
@@ -20,25 +19,14 @@ export function isFalStorySlot(_storyIndex: number): boolean {
   return true;
 }
 
-/** @deprecated Use isFalStorySlot — weekly stories are Fal.ai, not Remotion. */
-export function isRemotionStorySlot(storyIndex: number): boolean {
-  return !isFalStorySlot(storyIndex);
-}
-
-/** @deprecated Use isFalStorySlot */
-export function isPrimaryRemotionStorySlot(storyIndex: number): boolean {
-  return isRemotionStorySlot(storyIndex);
-}
-
 export function shouldApplyMissionFalStory(assignment: ProductionAssignment): boolean {
   return assignment.pipeline === 'fal_story'
     || assignment.slot_role === 'fal_story_motion';
 }
 
-/** Remotion story phase — weekly campaign stories are Fal posters, not MP4 renders. */
-export function shouldSkipRemotionStoryCandidate(slotRole: string | undefined): boolean {
-  if (!slotRole) return false;
-  return slotRole === 'campaign_story_motion' || slotRole === 'fal_story_motion';
+/** Legacy Remotion story phase — always skip (Fal posters only). */
+export function shouldSkipRemotionStoryCandidate(_slotRole: string | undefined): boolean {
+  return true;
 }
 
 export function applyMissionFalStoryAssignment(
@@ -59,30 +47,4 @@ export function applyMissionFalStoryAssignment(
       ? `${assignment.rationale}+mission_fal_story_${storyIndex}`
       : `mission_fal_story_${storyIndex}`,
   };
-}
-
-/** Legacy Remotion MP4 — paid-ad / explicit remotion_story only. */
-export function applyMissionRemotionStoryAssignment(
-  assignment: ProductionAssignment,
-  storyIndex: number,
-): ProductionAssignment {
-  return {
-    ...assignment,
-    slot_role: assignment.slot_role,
-    pipeline: 'remotion_story',
-    publish_channel: assignment.publish_channel === 'meta_ads'
-      ? 'meta_ads'
-      : 'instagram_organic',
-    rationale: assignment.rationale
-      ? `${assignment.rationale}+mission_remotion_story_${storyIndex}`
-      : `mission_remotion_story_${storyIndex}`,
-  };
-}
-
-/** @deprecated Alias for applyMissionFalStoryAssignment */
-export function applyPrimaryMissionRemotionStoryAssignment(
-  assignment: ProductionAssignment,
-  storyIndex: number,
-): ProductionAssignment {
-  return applyMissionFalStoryAssignment(assignment, storyIndex);
 }

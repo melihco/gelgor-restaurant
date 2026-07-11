@@ -230,7 +230,7 @@ export function BrandColorPalettePicker({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <p style={{ margin: 0, fontSize: 12, lineHeight: 1.55, color: t.textMuted }}>
-        Seçili renkler <strong style={{ color: t.textPrimary }}>Remotion story</strong> şablonlarına
+        Seçili renkler <strong style={{ color: t.textPrimary }}>story</strong> şablonlarına
         (panel, vurgu çizgisi, CTA, gradient) otomatik uygulanır. Sektör önerileri başlangıç içindir;
         markanıza göre özelleştirin.
       </p>

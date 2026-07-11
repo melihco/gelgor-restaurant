@@ -3005,19 +3005,19 @@ function IdeaCard({
           )}
         </div>
 
-        {/* ── Remotion Story Önizleme ─────────────────────────────────────── */}
+        {/* ── Story önizleme ─────────────────────────────────────── */}
         {(fmtLower.includes('story') || fmtLower.includes('reel')) && (
           <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14,
             background: 'rgba(77,112,136,0.07)', border: '0.5px solid rgba(77,112,136,0.2)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
               <span style={{ fontSize: 13 }}>▶</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#4D7088' }}>Remotion Story</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#4D7088' }}>Tasarımlı Story</span>
               <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 'auto' }}>
                 Creative Director + Grafiker Review dahil
               </span>
             </div>
             <p style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.5, margin: '0 0 0' }}>
-              Story ve Reel üretimi Remotion ile yapılıyor. Mission'ı onayladığında
+              Story ve reel üretimi fal.ai + şablon kütüphanesi ile yapılıyor. Mission'ı onayladığında
               otomatik olarak Creative Director agent devreye girer, template seçer
               ve Grafiker Review ile kalite kontrolü yapar. Feed'de ★ skor ile görünür.
             </p>

@@ -135,7 +135,7 @@ export function BrandProductionEnginesPanel({
     const map = {
       premium: { label: 'FAL Motion', color: '#8B5CF6', bg: 'rgba(139,92,246,0.15)' },
       typography: { label: 'FAL Tipografi', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
-      remotion_only: { label: 'Remotion', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
+      remotion_only: { label: 'Şablon', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
       blocked: { label: 'Kapalı', color: '#6B7280', bg: 'rgba(107,114,128,0.12)' },
     };
     const m = map[tier];
@@ -160,8 +160,8 @@ export function BrandProductionEnginesPanel({
   return (
     <div>
       <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 16 }}>
-        Story ve reel kalitesini yöneten üç motor: <strong>Remotion</strong> (şablon + tipografi),
-        <strong> FAL.ai</strong> (motion plate + AI tipografi), <strong> Runway</strong> (reel video).
+        Story ve reel kalitesini yöneten motorlar: <strong>fal.ai</strong> (story poster + motion plate + AI tipografi),
+        <strong> Runway</strong> (reel video), <strong>şablon kütüphanesi</strong> (tipografi + layout).
         Şablon seçimi Template Kütüphanesi&apos;nden; motor önceliği buradan.
       </div>
 
@@ -252,7 +252,7 @@ export function BrandProductionEnginesPanel({
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Paralel Remotion</div>
+          <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Paralel tasarım</div>
           <div style={{ display: 'flex', gap: 4 }}>
             {[1, 2].map((n) => (
               <button
@@ -300,12 +300,12 @@ export function BrandProductionEnginesPanel({
         </button>
       </div>
 
-      {/* Remotion families */}
+      {/* Story layout families */}
       <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-        Remotion Story Aileleri — Dokun = sıra değişir
+        Story Layout Aileleri — Dokun = sıra değişir
       </div>
       <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
-        FAL Motion → FAL Tipografi → Remotion only → Kapalı
+        FAL Motion → FAL Tipografi → Şablon → Kapalı
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
         {ALL_FAMILIES.map((family) => {

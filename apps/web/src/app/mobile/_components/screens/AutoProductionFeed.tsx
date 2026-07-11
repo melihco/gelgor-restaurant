@@ -1340,7 +1340,7 @@ export function AutoProductionFeed({
             Sunucu üretimi aktif
           </div>
           <p style={{ fontSize: 14, color: t.textSecondary, lineHeight: 1.55, marginBottom: 12 }}>
-            Bu mission için görseller <strong>auto-produce</strong> (Remotion + galeri + Runway) ile sunucuda üretilir.
+            Bu mission için görseller <strong>auto-produce</strong> (fal.ai + galeri + Runway) ile sunucuda üretilir.
             İstemci tarafı otonom üretim ve Canva devre dışı — çift kart oluşmaz.
           </p>
           <div style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 16,
@@ -1611,7 +1611,7 @@ export function AutoProductionFeed({
                 {item.status === 'ready' && visualMode !== 'photo' && (
                   <div style={{ position: 'absolute', bottom: 10, left: 10, padding: '4px 10px', borderRadius: 14,
                     background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 11, fontWeight: 600, backdropFilter: 'blur(6px)' }}>
-                    {visualMode === 'reel' && item.reelUrl && item.contentType.includes('story') ? '🎬 Remotion' :
+                    {visualMode === 'reel' && item.reelUrl && item.contentType.includes('story') ? '🎬 Story' :
                      visualMode === 'reel'   ? '▶ Reel' : ''}
                   </div>
                 )}
@@ -1738,7 +1738,7 @@ export function AutoProductionFeed({
                               fontSize: 11, fontWeight: 700,
                               display: 'flex', alignItems: 'center', gap: 4,
                             }}>
-                            🎬 Remotion
+                            🎬 Story
                           </button>
                         )}
 

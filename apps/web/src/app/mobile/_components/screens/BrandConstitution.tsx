@@ -53,7 +53,7 @@ import {
   evaluateGalleryAssetPolicy,
   resolveTenantOperatingProfile,
 } from '@/lib/tenant-operating-policy';
-import { resolveKitForSector } from '@/lib/remotion-template-registry';
+import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
 import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePicker';
@@ -3541,7 +3541,7 @@ export function BrandConstitution() {
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
-    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Remotion & fal.ai şablonları', accent: '#5AA0D6' },
+    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Story & fal.ai şablonları', accent: '#5AA0D6' },
     { key: 'engines', label: 'Üretim Motorları & Ses', hint: 'FAL · Runway · motion · müzik', accent: '#A985E0' },
     { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
     { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
@@ -4418,14 +4418,14 @@ export function BrandConstitution() {
             <BrandSectionIntro
               t={t}
               title="Şablon Kütüphanesi"
-              description="Remotion story/post slotları, fal.ai görsel şablonları ve tipografi yoğunluğu. Mission üretimi bu seçimlerden beslenir."
+              description="Tasarımlı story/post slotları, fal.ai görsel şablonları ve tipografi yoğunluğu. Mission üretimi bu seçimlerden beslenir."
             />
             <div style={{
               display: 'flex', gap: 4, padding: 4, borderRadius: 14, marginBottom: 18,
               background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.045)',
             }}>
               {([
-                { id: 'remotion' as const, label: 'Remotion', hint: '5 üretim slotu' },
+                { id: 'remotion' as const, label: 'Story şablonları', hint: '5 üretim slotu' },
                 { id: 'fal' as const, label: 'fal.ai', hint: 'Görsel galeri' },
                 { id: 'intensity' as const, label: 'Yoğunluk', hint: 'Tipografi dengesi' },
               ]).map((pg) => {
@@ -4618,7 +4618,7 @@ export function BrandConstitution() {
             >
             <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
-                Post ve story görselleri Remotion ile otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
+                Post ve story görselleri fal.ai + şablon kütüphanesi ile otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
                 Hareket kütüphanesi için <strong>Görsel</strong> sekmesine bakın.
               </p>
             </SCard>
@@ -5102,7 +5102,7 @@ export function BrandConstitution() {
             <CollapsibleGroup
               t={t}
               title="Tasarım motorları & hareket"
-              subtitle="Ürün vitrini, Remotion · FAL · Runway, motion stili, reel hareketi, story sesi ve logo kuralları"
+              subtitle="Ürün vitrini, fal.ai · Runway, motion stili, reel hareketi, story sesi ve logo kuralları"
               accent="#8B5CF6"
               defaultOpen
             >
@@ -5120,7 +5120,7 @@ export function BrandConstitution() {
             )}
 
             {tenantId && (
-              <SCard t={t} title="Üretim Motorları (Remotion · FAL · Runway)" accent="#8B5CF6">
+              <SCard t={t} title="Üretim Motorları (fal.ai · Runway)" accent="#8B5CF6">
                 <BrandProductionEnginesPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
@@ -5166,9 +5166,9 @@ export function BrandConstitution() {
               };
 
               return (
-                <SCard t={t} title="Motion Stili (Remotion)" accent={t.accent}>
+                <SCard t={t} title="Motion Stili" accent={t.accent}>
                   <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-                    Remotion story motion ve composition ağırlıkları. Hangi tasarımın kullanılacağı yukarıdaki Template Kütüphanesi (5) slotlarından seçilir — kayıt sonrası feed üretimi bu şablonları sabitler.
+                    Story motion ve composition ağırlıkları. Hangi tasarımın kullanılacağı yukarıdaki Template Kütüphanesi (5) slotlarından seçilir — kayıt sonrası feed üretimi bu şablonları sabitler.
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                     {MOTION_STYLE_OPTIONS.map(({ id, label, desc }) => {

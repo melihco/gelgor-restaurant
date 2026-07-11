@@ -8,25 +8,25 @@ export type AiEnhanceUiStatus = 'applied' | 'skipped' | 'off' | 'failed';
 const SKIP_LABEL_PROD: Record<GptEnhanceSkipCode, string> = {
   disabled: 'Kapalı',
   format_excluded: 'Bu format için uygulanmıyor',
-  remotion_story: 'Remotion story tasarımı kullanıldı',
+  remotion_story: 'Tasarımlı story (fal.ai) kullanıldı',
   fal_story: 'fal.ai story poster tasarımı kullanıldı',
-  remotion_post: 'Remotion poster tasarımı kullanıldı',
+  remotion_post: 'Tasarımlı post kullanıldı',
   gallery_match_ok: 'Galeri yeterli — atlandı',
   stock_only: 'Stok görsel',
   non_venue_saas: 'Mekan dışı işletme — atlandı',
-  remotion_grade: 'Remotion grade uygulandı — atlandı',
+  remotion_grade: 'Tasarım katmanı uygulandı — atlandı',
 };
 
 const SKIP_LABEL_DEBUG: Record<GptEnhanceSkipCode, string> = {
   disabled: 'ai_photo_enhance kapalı',
   format_excluded: 'Format filtresi (ai_enhance_formats)',
-  remotion_story: 'Policy: remotion_story',
+  remotion_story: 'Policy: designed_story',
   fal_story: 'Policy: fal_story',
-  remotion_post: 'Policy: remotion_post / designed_post',
+  remotion_post: 'Policy: designed_post',
   gallery_match_ok: 'Policy: galeri skoru yeterli',
   stock_only: 'Stok galeri',
   non_venue_saas: 'Policy: non_venue_saas (sektör venue dışı)',
-  remotion_grade: 'Policy: remotion_grade (render-time grade)',
+  remotion_grade: 'Policy: designed_grade (render-time grade)',
 };
 
 export function labelAiEnhanceSkip(
@@ -68,14 +68,14 @@ export function summarizeAiEnhanceItems(
   if (applied === 0 && skipped > 0) {
     return debugMode
       ? `AI enhance: 0/${withStatus.length} uygulandı (çoğu policy skip)`
-      : `AI fotoğraf iyileştirme bu pakette uygulanmadı — tasarım Remotion şablonlarıyla üretildi.`;
+      : `AI fotoğraf iyileştirme bu pakette uygulanmadı — tasarım şablonlarıyla üretildi.`;
   }
   if (applied > 0 && skipped > 0) {
     return debugMode
       ? `AI enhance: ${applied}/${withStatus.length} uygulandı${adaptiveApplied ? ` (${adaptiveApplied} adaptive scene)` : ''}`
       : adaptiveApplied > 0
         ? `${applied} gönderide caption'a uygun sahne kuruldu, ${skipped} slotta şablon/galeri kullanıldı.`
-        : `${applied} gönderide fotoğraf iyileştirildi, ${skipped} slotta Remotion/galeri kullanıldı.`;
+        : `${applied} gönderide fotoğraf iyileştirildi, ${skipped} slotta tasarım/galeri kullanıldı.`;
   }
   if (applied === withStatus.length) {
     return debugMode

@@ -8,10 +8,6 @@ vi.mock('@/lib/server-config', () => ({
   },
 }));
 
-vi.mock('@/lib/remotion-brand-kit', () => ({
-  renderRemotionBrandStillResult: vi.fn(),
-}));
-
 vi.mock('@/lib/brand-design-template-production', () => ({
   bindBrandTemplateForFalProduction: vi.fn().mockResolvedValue({
     matched: null,
@@ -31,7 +27,6 @@ vi.mock('@/app/api/auto-produce/pipelines/fal-designed-post-pipeline', () => ({
 
 import { deriveAdCreativesFromDesignedPost } from '@/app/api/auto-produce/ad-derive';
 import { produceFalDesignedPost } from '@/app/api/auto-produce/pipelines/fal-designed-post-pipeline';
-import { renderRemotionBrandStillResult } from '@/lib/remotion-brand-kit';
 
 const baseSnapshot = {
   imageUrl: 'https://cdn.example/old-remotion.jpg',
@@ -73,7 +68,6 @@ const baseCtx = {
 describe('deriveAdCreativesFromDesignedPost', () => {
   beforeEach(() => {
     vi.mocked(produceFalDesignedPost).mockReset();
-    vi.mocked(renderRemotionBrandStillResult).mockReset();
   });
 
   it('uses FAL for Meta and Google ad derivatives', async () => {
@@ -97,7 +91,6 @@ describe('deriveAdCreativesFromDesignedPost', () => {
 
     expect(derived).toHaveLength(2);
     expect(produceFalDesignedPost).toHaveBeenCalledTimes(2);
-    expect(renderRemotionBrandStillResult).not.toHaveBeenCalled();
     expect(derived[0]?.imageUrl).toBe('https://cdn.example/fal-ad.jpg');
     expect(saveArtifact).toHaveBeenCalledTimes(2);
     const metaMeta = saveArtifact.mock.calls[0]?.[1]?.metadata as Record<string, unknown>;

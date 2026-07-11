@@ -2,7 +2,7 @@
  * Agency poster template types — static + motion posters (9:16, 1:1, 4:5).
  */
 
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from '@/lib/story-composition-types';
 import type { TemplateColorPolicy } from './remotion-template-types';
 
 export type PosterLayoutFamily =

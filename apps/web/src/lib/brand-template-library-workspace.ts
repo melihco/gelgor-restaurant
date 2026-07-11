@@ -7,7 +7,7 @@ import {
   type BrandTemplateLibrary,
 } from './brand-template-library';
 import { fetchBrandThemeForWorkspace } from './brand-production-tokens';
-import { resolveKitForSector } from './remotion-template-registry';
+import { resolveKitForSector } from './story-template-registry';
 import { tenantKitSeed } from './tenant-template-seed';
 
 export interface WorkspaceBrandTemplateLibraryLoadResult {

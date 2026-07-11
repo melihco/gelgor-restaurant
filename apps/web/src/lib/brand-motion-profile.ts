@@ -5,13 +5,13 @@
  * Consumed by auto-produce, Creative Director, and Brand Hub settings.
  */
 
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from '@/lib/story-composition-types';
 import type { RunwayReelStrategy } from './reel-multi-production';
 import type { ReelPacing } from './sector-production-profile';
 import { storyMusicLabel } from './story-audio-catalog';
 import { resolveStoryAudioMood } from './story-audio-mood';
 import { resolveStoryTtsVoiceId, storyVoiceLabel } from './story-voice-catalog';
-import { resolveTemplateId } from './remotion-template-registry';
+import { resolveTemplateId } from './story-template-registry';
 import { MOTION_STYLE_REEL_DEFAULTS } from './brand-reel-motion-profile';
 import { applySectorReelMotionDefaults } from './sector-reel-motion-standard';
 

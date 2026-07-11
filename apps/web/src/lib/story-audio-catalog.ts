@@ -1,4 +1,3 @@
-import { staticFile } from 'remotion';
 import {
   STORY_MUSIC_CATEGORY_LABELS,
   STORY_MUSIC_TRACKS,
@@ -138,12 +137,17 @@ export function storyMusicLabel(moodId: string | undefined | null): string {
   return partial?.[1].label ?? moodId ?? STORY_MUSIC_TRACKS[0]?.label ?? 'Story Music';
 }
 
+function publicStaticFile(relativePath: string): string {
+  const base = storyMusicServeBaseUrl();
+  return `${base}/${relativePath.replace(/^\//, '')}`;
+}
+
 function resolveLocalFile(key: string): string | null {
   const legacy = LEGACY_LOCAL[key];
-  if (legacy) return staticFile(legacy.file);
+  if (legacy) return publicStaticFile(legacy.file);
 
   const catalog = STORY_MUSIC_CATALOG[key];
-  if (catalog?.file) return staticFile(catalog.file);
+  if (catalog?.file) return publicStaticFile(catalog.file);
 
   return null;
 }
@@ -176,7 +180,7 @@ export function resolveStoryMusicUrl(audioMood: string | undefined | null): stri
     const entry = STORY_MUSIC_CATALOG[partialKey]!;
     const partialTrack = TRACK_BY_ID.get(partialKey);
     if (partialTrack?.url) return proxyUrlForTrack(partialTrack);
-    if (entry.file) return staticFile(entry.file);
+    if (entry.file) return publicStaticFile(entry.file);
   }
 
   // Heuristic fallback → category-appropriate modern track

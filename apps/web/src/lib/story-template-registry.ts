@@ -3,7 +3,7 @@
  */
 
 import type { ContentIntent } from './brand-motion-profile';
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from './story-composition-types';
 import {
   AGENCY_BRAND_KITS,
   getBrandKit,
@@ -15,7 +15,7 @@ import {
   REMOTION_TEMPLATE_BY_ID,
   getRemotionTemplate,
   listTemplatesForIntent,
-} from './remotion-template-catalog';
+} from './story-template-catalog';
 import type { RemotionShowcaseJob, RemotionTemplateDefinition } from './remotion-template-types';
 import { resolveKitSectorForVibe } from './sector-template-vibes';
 

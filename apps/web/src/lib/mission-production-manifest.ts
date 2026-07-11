@@ -20,8 +20,12 @@ import {
 /** Görsel üretim hattı — birbirine karıştırılmaz. */
 export type ProductionPipeline =
   | 'gallery_photo'      // Ham / hafif galeri gönderisi (caption feed'de)
-  | 'remotion_poster'    // Tasarımsal post (SpecPoster / announcement SVG)
-  | 'remotion_story'     // Legacy — eski artifact/FD; normalize → fal_story
+  /** @deprecated Legacy artifact/FD — normalize → fal_design */
+  | 'remotion_poster'
+  /** @deprecated Legacy artifact/FD — normalize → fal_story */
+  | 'remotion_story'
+  /** @deprecated Legacy artifact/FD — normalize → fal_design */
+  | 'remotion_post'
   | 'fal_story'          // fal.ai grounded story poster (9:16) — galeri + ideation
   | 'story_still'        // Story: statik galeri görseli (caption feed'de yok)
   | 'runway_reel'        // @deprecated — fal_reel kullan; legacy FD atamaları normalize edilir
@@ -793,7 +797,7 @@ export function normalizeProductionPipeline(
 ): ProductionPipeline {
   const key = String(pipeline ?? '').trim();
   if (key === 'runway_reel') return 'fal_reel';
-  if (key === 'remotion_poster') return 'fal_design';
+  if (key === 'remotion_post') return 'fal_design';
   if (key === 'remotion_story') return 'fal_story';
   if (key === 'meta_ad' || key === 'google_ad') return 'fal_design';
   return (key as ProductionPipeline) || 'gallery_photo';

@@ -4,7 +4,7 @@
  */
 
 import type { ContentIntent } from './brand-motion-profile';
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from './story-composition-types';
 
 export type RemotionLayoutFamily =
   | 'editorial_bottom'

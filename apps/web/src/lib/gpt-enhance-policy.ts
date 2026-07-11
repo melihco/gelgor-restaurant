@@ -134,7 +134,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
     return false;
   }
   // Remotion+Grafiker yolu ham galeri kullanır — enhance Marky kısayolunu tetiklemesin.
-  if (input.productionProfile?.requireRemotionGrafiker) {
+  if (input.productionProfile?.requireDesignedVisuals) {
     return false;
   }
 

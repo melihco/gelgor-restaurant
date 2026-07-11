@@ -329,7 +329,7 @@ export async function runAutoProducePlanPhase(
   if (!productionProfile.allowRunwayReels) {
     console.log(`[auto-produce] Runway disabled — package reel quota is 0 (${productionProfile.tier})`);
   }
-  if (productionProfile.requireRemotionGrafiker) {
+  if (productionProfile.requireDesignedVisuals) {
     console.log(
       `[auto-produce] Production route: remotion+grafiker (Marky kapalı, grafiker_retries=${grafikerMaxRetries})`,
     );

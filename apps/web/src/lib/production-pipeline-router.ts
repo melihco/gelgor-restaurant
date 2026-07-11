@@ -17,9 +17,7 @@ import {
 import { isPromoOfferCopy } from './poster-quality';
 import {
   applyMissionFalStoryAssignment,
-  applyMissionRemotionStoryAssignment,
   shouldApplyMissionFalStory,
-  shouldSkipRemotionStoryCandidate,
 } from './mission-remotion-story';
 import {
   applyMissionFalAdAssignment,
@@ -39,7 +37,7 @@ import {
   type ProductionProfile,
 } from './production-profile';
 import { resolveContentIntent } from './brand-motion-profile';
-import type { StoryCompositionId } from '@/remotion/types';
+import type { StoryCompositionId } from './story-composition-types';
 import { resolveIdeationHeadline } from './production-idea-parse';
 
 export type { ProductionAssignment } from './mission-production-manifest';
@@ -406,10 +404,6 @@ export function resolveProductionAssignment(input: {
   if (shouldApplyMissionFalStory(assignment)) {
     return applyMissionFalStoryAssignment(assignment, input.storyIndex);
   }
-  // FD slot drives pipeline — idea format may be "post" while assignment is campaign_story_motion.
-  if (shouldRenderRemotionStory(assignment)) {
-    return applyMissionRemotionStoryAssignment(assignment, input.storyIndex);
-  }
   if (
     detectIdeaPackageFormat(input.idea) === 'story'
     && assignmentImpliesStoryFormat(assignment.slot_role)
@@ -434,41 +428,17 @@ export function assignmentImpliesStoryFormat(role: ProductionSlotRole): boolean 
     || role === 'product_showcase_story';
 }
 
-export function shouldRenderRemotionPoster(assignment: ProductionAssignment): boolean {
-  return assignment.pipeline === 'remotion_poster';
+/** @deprecated Remotion removed — designed posts use fal_design. */
+export function shouldRenderRemotionPoster(_assignment: ProductionAssignment): boolean {
+  return false;
 }
 
-/** Motion story — campaign slots only; paid ads use fal_design stills. */
-const REMOTION_STORY_ROLES = new Set<ProductionSlotRole>([
-  'campaign_story_motion',
-]);
-
+/** @deprecated Remotion removed — story motion uses fal_story / fal_reel. */
 export function shouldRenderRemotionStory(
-  assignment: ProductionAssignment,
+  _assignment: ProductionAssignment,
   _opts?: { forceEvent?: boolean },
 ): boolean {
-  if (
-    assignment.pipeline === 'runway_reel'
-    || assignment.pipeline === 'fal_reel'
-    || assignment.pipeline === 'fal_only_reel'
-    || assignment.slot_role === 'organic_reel'
-    || assignment.slot_role === 'campaign_reel_motion'
-    || assignment.slot_role === 'fal_reel_motion'
-    || assignment.slot_role === 'fal_only_reel'
-  ) {
-    return false;
-  }
-  if (assignment.pipeline === 'fal_story' || assignment.slot_role === 'fal_story_motion') {
-    return false;
-  }
-  if (assignment.pipeline === 'fal_only_story' || assignment.slot_role === 'fal_only_story') {
-    return false;
-  }
-  if (assignment.slot_role === 'campaign_story_motion') {
-    return assignment.pipeline === 'remotion_story';
-  }
-  if (assignment.pipeline === 'remotion_story') return true;
-  return REMOTION_STORY_ROLES.has(assignment.slot_role);
+  return false;
 }
 
 /** APO-6 — campaign motion story uses CampaignHero composition. */
@@ -703,7 +673,7 @@ function enrichResolvedAssignment(
     assignment = applyMissionFalStoryAssignment(assignment, counters.storyOrdinal);
     counters.storyOrdinal += 1;
   } else if (shouldRenderRemotionStory(assignment)) {
-    assignment = applyMissionRemotionStoryAssignment(assignment, counters.storyOrdinal);
+    assignment = applyMissionFalStoryAssignment(assignment, counters.storyOrdinal);
     counters.storyOrdinal += 1;
   }
 
@@ -890,7 +860,7 @@ export function resolveFinalMissionAssignments(
       assignment = applyMissionFalStoryAssignment(assignment, storyOrdinal);
       storyOrdinal += 1;
     } else if (shouldRenderRemotionStory(assignment)) {
-      assignment = applyMissionRemotionStoryAssignment(assignment, storyOrdinal);
+      assignment = applyMissionFalStoryAssignment(assignment, storyOrdinal);
       storyOrdinal += 1;
     }
 

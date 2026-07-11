@@ -1298,7 +1298,7 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
             return t === 'story_event' || t === 'event_announcement' || t === 'campaign_offer';
           }) && (
             <div style={{ fontSize: 10, color: '#8AABBD', marginTop: 2 }}>
-              ▶ Remotion story'leri arka planda render ediliyor — Feed story bar'ında görünür
+              ▶ Tasarımlı story'ler üretiliyor — Feed story bar'ında görünür
             </div>
           )}
         </div>
@@ -2554,7 +2554,7 @@ function MissionAiCostPanel({
           const fb = summary.feedBreakdown!;
           const buckets: Array<{ label: string; usd: number }> = [
             { label: 'Video (Runway/fal)', usd: fb.runwayUsd },
-            { label: 'Remotion render', usd: fb.remotionUsd },
+            { label: 'Tasarım (fal/Grafiker)', usd: fb.remotionUsd },
             { label: 'Görsel/enhance', usd: fb.imageUsd },
             { label: 'Diğer', usd: fb.otherUsd },
           ].filter((b) => b.usd > 0);
@@ -3207,7 +3207,7 @@ function MissionPublishPackageCard({
         total?: number;
       };
       if (!res.ok) {
-        setRetryMessage(body.message || body.error || 'Remotion yeniden başlatılamadı');
+        setRetryMessage(body.message || body.error || 'Yeniden üretim başlatılamadı');
         return;
       }
       const queued = Number(body.queued ?? 0);
@@ -3217,13 +3217,13 @@ function MissionPublishPackageCard({
         return;
       }
       const storyNote = failedStoryCount > 0
-        ? `${failedStoryCount} Remotion story`
+        ? `${failedStoryCount} tasarımlı story`
         : `${queued} içerik`;
       setRetryMessage(`${storyNote} yeniden üretiliyor (~2 dk). Feed otomatik güncellenecek.`);
       onRefresh?.();
     } catch (err) {
       console.warn('[MissionHub] retry-render unreachable:', err);
-      setRetryMessage('Remotion servisine ulaşılamadı');
+      setRetryMessage('Üretim servisine ulaşılamadı');
     } finally {
       setRetryingAll(false);
     }
@@ -3289,7 +3289,7 @@ function MissionPublishPackageCard({
             })()
           : previewArtifacts.length > 0
             ? `${previewArtifacts.length} içerik önizlenebilir · render devam edebilir.`
-            : 'Auto-produce ve Remotion render arka planda çalışıyor (1–3 dk). Biraz sonra Feed\'i yenileyin.'}
+            : 'Auto-produce ve tasarım üretimi arka planda çalışıyor (1–3 dk). Biraz sonra Feed\'i yenileyin.'}
       </div>
       {factoryJobs && factoryJobs.total > 0 && (
         <div style={{
@@ -3398,9 +3398,9 @@ function MissionPublishPackageCard({
           }}
         >
           {retryingAll
-            ? 'Remotion yeniden başlatılıyor…'
+            ? 'Yeniden üretiliyor…'
             : failedStoryCount > 0
-              ? `${failedStoryCount} Remotion story — yeniden üret`
+              ? `${failedStoryCount} tasarımlı story — yeniden üret`
               : `${failedRenderCount} eksik video/poster — yeniden üret`}
         </button>
         {retryMessage && (

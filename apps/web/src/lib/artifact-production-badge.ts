@@ -22,6 +22,7 @@ const ENGINE_COLORS: Record<string, string> = {
   Kling: '#E879F9',
   Luma: '#A78BFA',
   Remotion: '#60A5FA',
+  Tasarım: '#60A5FA',
   Marky: '#FB923C',
   Galeri: '#94A3B8',
   'GPT Image': '#34D399',
@@ -66,7 +67,7 @@ function resolveEngine(meta: Record<string, unknown>): string {
   if (executed === 'runway_reel') {
     return engineFromRunwaySource(String(meta.runway_source ?? 'runway'));
   }
-  if (executed.startsWith('remotion')) return 'Remotion';
+  if (executed.startsWith('remotion') || executed === 'designed_poster_sync') return 'Tasarım';
   if (executed === 'remotion_poster_marky') return 'Marky';
   if (executed === 'gpt_image_enhance' || executed === 'caption_driven_ai') return 'GPT Image';
   if (executed === 'gallery_raw') return 'Galeri';
@@ -75,7 +76,9 @@ function resolveEngine(meta: Record<string, unknown>): string {
   const pipeline = String(meta.pipeline ?? '').toLowerCase();
   if (pipeline === 'fal_story' || pipeline === 'fal_reel' || pipeline === 'runway_reel') return 'fal.ai';
   if (pipeline.startsWith('fal_only_')) return 'fal.ai';
-  if (pipeline === 'remotion_story' || pipeline === 'remotion_poster') return 'Remotion';
+  if (pipeline === 'remotion_story' || pipeline === 'remotion_poster' || pipeline === 'fal_design' || pipeline === 'fal_story') {
+    return pipeline.startsWith('fal') ? 'fal.ai' : 'Tasarım';
+  }
   if (pipeline === 'gallery_photo' || pipeline === 'story_still') return 'Galeri';
   if (pipeline === 'carousel_gallery') return 'Carousel';
   if (pipeline === 'product_showcase') return 'Showcase';
@@ -87,7 +90,7 @@ function resolveEngine(meta: Record<string, unknown>): string {
 
   const route = String(meta.production_route ?? '').toLowerCase();
   if (route === 'fal_ai') return 'fal.ai';
-  if (route === 'remotion_grafiker') return 'Remotion';
+  if (route === 'remotion_grafiker' || route === 'designed_grafiker') return 'Tasarım';
 
   return 'Üretim';
 }

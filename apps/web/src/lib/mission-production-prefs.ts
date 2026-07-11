@@ -79,13 +79,13 @@ export function buildProductionPackageDirective(pkg: MissionProductionPackage): 
     );
   } else if (pkg === 'opportunity') {
     lines.push(
-      'Fırsat paketi (3 slot): 1 tasarım post + 1 Remotion story + 1 reel (veya economy: story still).',
+      'Fırsat paketi (3 slot): 1 tasarım post + 1 tasarımlı story + 1 reel (veya economy: story still).',
       'Ideation genelde 3–4 acil fikir — tam haftalık 7 slot veya reklam türevi BEKLEME.',
       'production_assignments tam 3 zorunlu slot; manifest_coverage_pct = 100 hedefle.',
     );
   } else {
     lines.push(
-      'Standart haftalık paket: 1 organik post + 1 tasarım post + 1 carousel + 3 Remotion story + 1 reel.',
+      'Standart haftalık paket: 1 organik post + 1 tasarım post + 1 carousel + 3 tasarımlı story + 1 reel.',
       'Tasarım postundan otomatik: 1 Meta Ads + 1 Google Ads kreatifi (ek LLM yok).',
       'Marka corporate design: brand_vibe_profile + template_library slotları.',
     );
