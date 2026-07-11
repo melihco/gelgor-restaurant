@@ -2527,8 +2527,8 @@ export function PlatformFeed() {
 
   return (
     <div
-      className={!operatorMode ? 'ig-feed-shell' : undefined}
-      style={{ minHeight: '100dvh', background: feedBg, paddingBottom: 104, width: '100%' }}
+      className={!operatorMode ? 'ig-feed-shell mobile-tab-scroll' : 'mobile-tab-scroll'}
+      style={{ background: feedBg, paddingBottom: 104, width: '100%' }}
     >
 
       {/* ─── Sticky Header ─────────────────────────────────────────── */}

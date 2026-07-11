@@ -4,6 +4,7 @@ import {
   buildMissionPlanningDisplayIdeas,
   buildMissionProductionIdeas,
 } from '@/lib/mission-production-plan';
+import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { countPlanningNodeResults } from '@/lib/mission-pipeline-transparency';
 
 const singleIdeaNode = {
@@ -18,6 +19,15 @@ const singleIdeaNode = {
     },
   ]),
 };
+
+describe('resolveIdeationHeadline', () => {
+  it('prefers concept_title over shorter caption fragment in headline', () => {
+    expect(resolveIdeationHeadline({
+      concept_title: 'Dive into OUR SUNSET RITUAL!!',
+      headline: 'Join us for a taste',
+    })).toBe('Dive into OUR SUNSET RITUAL!!');
+  });
+});
 
 describe('buildMissionPlanningDisplayIdeas', () => {
   it('shows unique ideation ideas without 16-slot format backfill', () => {

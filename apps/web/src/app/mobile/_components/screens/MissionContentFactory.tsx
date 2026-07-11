@@ -62,13 +62,7 @@ import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   NON_VENUE_SECTORS,
 } from '@/lib/sector-gallery-seed';
-import {
-  buildMultiReelPhotoInputs,
-  callGenerateMultiReel,
-  isUsableReelPhotoUrl,
-  maxPhotosForStrategy,
-  resolveRunwayReelStrategy,
-} from '@/lib/reel-multi-production';
+import { isUsableReelPhotoUrl } from '@/lib/reel-multi-production';
 import { productionIdeaFromRecord } from '@/lib/production-idea-parse';
 import {
   buildReelAgentVisualDirection,
@@ -1960,115 +1954,9 @@ function IdeaCard({
     setIsGeneratingSeries(false);
   }
 
-  // ── "Reel Üret" — auto montaj when 2+ gallery photos, else single Runway ──
-  async function produceMultiPhotoReel(explicitStrategy?: 'multi_ref' | 'sequential') {
-    const CDN_HOSTS = ['cdninstagram.com', 'fbcdn.net', 'scontent-'];
-    const nonCdnPhotos = brandRefImages.filter(isUsableReelPhotoUrl);
-    const promptImage =
-      (generatedUrl && !generatedUrl.startsWith('blob:') ? generatedUrl : null) ||
-      agentGalleryUrl ||
-      nonCdnPhotos[0] ||
-      null;
-
-    if (!promptImage) {
-      throw new Error('Reel için önce bir görsel üretin veya marka fotoğrafı seçin');
-    }
-
-    const extraUrls = brandRefImages.filter(
-      (u) => isUsableReelPhotoUrl(u) && normalizeGalleryUrl(u) !== normalizeGalleryUrl(promptImage),
-    );
-    const montageUrls = [promptImage, ...extraUrls].filter(isUsableReelPhotoUrl).slice(0, 4);
-    const photoInputs = buildMultiReelPhotoInputs(montageUrls, galleryAnalysis, normalizeGalleryUrl);
-
-    if (photoInputs.length < 2) {
-      throw new Error('Montaj reel için en az 2 kullanılabilir marka fotoğrafı gerekiyor');
-    }
-
-    const resolved = explicitStrategy ?? resolveRunwayReelStrategy({
-      photoCount: photoInputs.length,
-      treatment: (vps?.treatment as string) ?? purpose,
-      templateUseCase: getIdeaField(idea, 'template_use_case'),
-      mood: getIdeaField(idea, 'mood', 'tone'),
-      contentType: fmtLower.includes('reel') ? 'reel' : fmt,
-    });
-    const montageStrategy = resolved === 'multi_ref' ? 'multi_ref' : 'sequential';
-    const limit = maxPhotosForStrategy(resolved === 'single' ? 'multi_ref' : resolved);
-    setMultiReelStrategy(montageStrategy);
-
-    const directorExtras = reelDirectorExtrasFromIdeaRecord(idea, {
-      sector,
-      businessType: sector,
-      aiVisualStandard,
-      brandContextForVisual: brandCtxForVisual,
-      vibeProfile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
-      brandThemeGrading: brandTheme?.grading
-        ? {
-            look: brandTheme.grading.look,
-            lut_directive: (brandTheme.grading as { lutDirective?: string }).lutDirective ?? brandTheme.grading.look,
-          }
-        : undefined,
-      workspaceId: tenantId,
-      strategicPurpose: purpose,
-    });
-    const multi = await callGenerateMultiReel(window.location.origin, {
-      workspaceId: tenantId,
-      photos: photoInputs.slice(0, limit),
-      headline,
-      caption: caption.slice(0, 300),
-      brandName: brandName ?? (brandCtx?.business_name as string | undefined) ?? '',
-      brandLocation: brandCtx?.location ?? location ?? '',
-      vibeProfile: pyCtx?.brand_vibe_profile as Record<string, unknown> | undefined,
-      brandThemeGrading: brandTheme?.grading
-        ? {
-            look: brandTheme.grading.look,
-            lut_directive: (brandTheme.grading as { lutDirective?: string }).lutDirective ?? brandTheme.grading.look,
-          }
-        : undefined,
-      strategy: montageStrategy,
-      ratio: '720:1280',
-      duration: 5,
-      agentVisualDirection: buildReelAgentVisualDirection(
-        productionIdeaFromRecord({ ...idea, headline, caption_draft: caption, cta, hashtags, content_type: fmt }, index),
-        { brandName: brandName ?? String(brandCtx?.business_name ?? ''), location: brandCtx?.location ?? location, missionBrief },
-        {
-          photoUrl: promptImage,
-          description: String(findAnalysis(promptImage)?.description ?? ''),
-          tags: (findAnalysis(promptImage)?.contentTags as string[] | undefined) ?? [],
-        },
-        directorExtras,
-      ).slice(0, 400),
-      businessType: sector,
-      strategicPurpose: purpose,
-      missionBrief,
-      productType: directorExtras.productType,
-    });
-
-    if (!multi.videoUrl) {
-      throw new Error(multi.error || 'Çoklu fotoğraf reel üretilemedi');
-    }
-
-    setReelUrl(multi.videoUrl);
-    await apiClient.saveCreativeArtifact({
-      title: `${headline || brandName} — ${montageStrategy === 'sequential' ? 'Montaj Reel' : 'Reel'}`,
-      contentUrl: multi.videoUrl,
-      platform: 'instagram',
-      contentType: 'instagram_reel',
-      content: JSON.stringify({
-        videoUrl: multi.videoUrl,
-        strategy: multi.strategy,
-        photoCount: multi.photoCount,
-        caption,
-        kind: 'instagram_reel',
-      }),
-      metadata: {
-        videoUrl: multi.videoUrl,
-        strategy: multi.strategy,
-        photoCount: multi.photoCount,
-        caption,
-        source: 'runway_multi_photo',
-      },
-    });
-    queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+  // ── "Reel Üret" — fal.ai I2V (tek kare) ──
+  async function produceMultiPhotoReel(_explicitStrategy?: 'multi_ref' | 'sequential') {
+    await generateReelVideo();
   }
 
   async function generateReelVideo() {
@@ -2085,22 +1973,6 @@ function IdeaCard({
 
       if (!promptImage) {
         throw new Error('Reel için önce bir görsel üretin veya marka fotoğrafı seçin');
-      }
-
-      const extraUrls = brandRefImages.filter(
-        (u) => isUsableReelPhotoUrl(u) && normalizeGalleryUrl(u) !== normalizeGalleryUrl(promptImage),
-      );
-      const montageUrls = [promptImage, ...extraUrls].filter(isUsableReelPhotoUrl);
-      const photoInputs = buildMultiReelPhotoInputs(montageUrls, galleryAnalysis, normalizeGalleryUrl);
-
-      if (photoInputs.length >= 2) {
-        try {
-          await produceMultiPhotoReel();
-          return;
-        } catch (multiErr: unknown) {
-          const msg = multiErr instanceof Error ? multiErr.message : 'Montaj reel başarısız';
-          console.warn('[MissionContentFactory] Multi-reel failed, falling back to single:', msg);
-        }
       }
 
       const analysis = findAnalysis(promptImage);

@@ -19,6 +19,26 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
 });
 
 describe('resolveMissionFalDesignCopy', () => {
+  it('prefers concept_title over caption fragment headline', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        concept_title: 'Dive into OUR SUNSET RITUAL!!',
+        headline: 'Join us for a taste',
+        canva_field_copy: {
+          headline: 'Keşfetmeye Hazır mısın?',
+        },
+      },
+      ideationHeadline: 'Dive into OUR SUNSET RITUAL!!',
+      caption: 'Join us for a taste of paradise. Book your sunset ritual tonight.',
+      brandName: 'Scorpios Bodrum',
+      channel: 'feed_post',
+      businessType: 'beach_club',
+    });
+    expect(result.source).toBe('ideation_title');
+    expect(result.headline).toMatch(/SUNSET RITUAL/i);
+    expect(result.headline).not.toMatch(/Join us for a taste|Keşfetmeye/i);
+  });
+
   it('prefers canva_field_copy over label ideation headline', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {

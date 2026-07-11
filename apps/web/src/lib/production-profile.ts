@@ -16,15 +16,13 @@ export interface ProductionProfile {
   grafikerMaxRetries: number;
   fdFallbackPolicy: FdFallbackPolicy;
   skipAggressiveEnhance: boolean;
-  /** @deprecated Runway kapalı — reel slotları fal_reel kullanır. */
-  allowRunwayReels: boolean;
   /** @deprecated Reels never use Remotion — kept for profile shape compatibility. */
   reelRemotionMotionFallback: boolean;
   /** Agency+Premium: Marky kapalı — post/story fal designed + Grafiker zorunlu (reel değil). */
   requireDesignedVisuals: boolean;
 }
 
-const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier' | 'allowRunwayReels' | 'requireDesignedVisuals'>> = {
+const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier' | 'requireDesignedVisuals'>> = {
   economy: {
     remotionStoryMotionSlots: 2,
     remotionStoryStillSlots: 1,
@@ -76,7 +74,6 @@ export function resolveProductionProfile(input: {
   const slug = (input.packageSlug ?? '').trim().toLowerCase();
   const plan = getPlanSpec(slug);
   const monthlyReels = input.monthlyReels ?? plan?.outputs.reels ?? -1;
-  const allowRunwayReels = false;
 
   let tier: ProductionProfileTier = input.profileTierOverride
     ?? tierFromPackageSlug(slug);
@@ -98,7 +95,6 @@ export function resolveProductionProfile(input: {
   return {
     tier,
     ...defaults,
-    allowRunwayReels,
     reelRemotionMotionFallback: false,
     requireDesignedVisuals: tier === 'agency' || tier === 'premium',
   };

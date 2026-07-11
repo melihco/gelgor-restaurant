@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
-import { AdminSectionTitle, AdminSurface } from '@/components/ui/admin-template';
+import { AdminSectionTitle, AdminSurface } from '@/components/platform-admin/admin-ui';
 import { AiAssistField, SaveBar } from '@/components/platform-admin/AiAssistField';
 import { fetchBrandContext, patchBrandContext } from '@/lib/platform-admin-actions-client';
 
@@ -128,16 +128,16 @@ export function BrandStudioTab({
         />
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
-            className="min-w-[280px] flex-1 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none"
+            className="min-w-[280px] flex-1 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.02] px-4 py-3 text-sm text-gray-800 dark:text-white/90 outline-none"
             value={workspaceId}
             onChange={(e) => onWorkspaceIdChange(e.target.value)}
             placeholder="Workspace UUID"
           />
           <BrandCompleteGapsButton tenantId={workspaceId} variant="primary" />
         </div>
-        {ctxQuery.isLoading && <p className="text-sm text-white/50">Marka bağlamı yükleniyor…</p>}
+        {ctxQuery.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Marka bağlamı yükleniyor…</p>}
         {ctxQuery.data && (
-          <p className="text-xs text-white/40">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             {String(ctxQuery.data.business_name ?? ctxQuery.data.brand_name ?? '—')}
             {' · '}
             {String(ctxQuery.data.business_type ?? '—')}

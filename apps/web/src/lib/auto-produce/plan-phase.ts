@@ -27,7 +27,7 @@ import {
 import {
   createProductionStackContext,
   inferHeroReelIndex,
-  resolveMaxRunwayReelsPerMission,
+  resolveMaxHeroReelsPerMission,
   resolvePrimaryIndicesWithReport,
 } from '@/lib/production-stack';
 import { fetchRejectedLayoutFamilies } from '@/lib/layout-family-learning';
@@ -64,7 +64,7 @@ export interface AutoProducePlanContext {
   fdProductionGate: ReturnType<typeof prepareMissionFdAssignments>['gate'];
   stackCtx: ReturnType<typeof createProductionStackContext>;
   primaryIdeaIndices: ReturnType<typeof resolvePrimaryIndicesWithReport>;
-  maxRunwayReelsPerMission: number;
+  maxHeroReelsPerMission: number;
   hasOrganicReelAssignment: boolean;
   rejectedLayoutFamilies: string[];
   headlineHistory: Awaited<ReturnType<typeof fetchRecentHeadlineHistory>>;
@@ -308,26 +308,15 @@ export async function runAutoProducePlanPhase(
   const allIdeasAreReels =
     toProcess.length > 0 &&
     toProcess.every((idea) => String((idea as Record<string, unknown>).content_type ?? '').includes('reel'));
-  const maxRunwayReelsPerMission = productionProfile.allowRunwayReels
-    ? allIdeasAreReels
-      ? Math.min(toProcess.length, 3)
-      : resolveMaxRunwayReelsPerMission(brandTheme, pkgLimits.monthlyReels, {
-          // Sprint 6 — Mission importance auto-promotion
-          missionTitle,
-          creativeBrief,
-          strategistMissionType,
-        })
-    : resolveMaxRunwayReelsPerMission(brandTheme, pkgLimits.monthlyReels, {
+  const maxHeroReelsPerMission = allIdeasAreReels
+    ? Math.min(toProcess.length, 3)
+    : resolveMaxHeroReelsPerMission(brandTheme, pkgLimits.monthlyReels, {
         missionTitle,
         creativeBrief,
         strategistMissionType,
       });
-  if (!allIdeasAreReels && maxRunwayReelsPerMission >= 2) {
-    console.log(`[auto-produce] Mission importance detected — hero reel cap promoted to ${maxRunwayReelsPerMission}`);
-  }
-
-  if (!productionProfile.allowRunwayReels) {
-    console.log(`[auto-produce] Runway disabled — package reel quota is 0 (${productionProfile.tier})`);
+  if (!allIdeasAreReels && maxHeroReelsPerMission >= 2) {
+    console.log(`[auto-produce] Mission importance detected — hero reel cap promoted to ${maxHeroReelsPerMission}`);
   }
   if (productionProfile.requireDesignedVisuals) {
     console.log(
@@ -342,7 +331,7 @@ export async function runAutoProducePlanPhase(
       `[auto-produce] Production Stack: manifest=${manifestMissionType} ` +
       `feed_score=${(feedDirectorReport as Record<string, unknown>)?.feed_score ?? 'n/a'} ` +
       `profile=${productionProfile.tier} gis=${gisScore ?? 'n/a'} ` +
-      `hero_reel=${stackCtx.heroReelIndex ?? 'n/a'} max_runway=${maxRunwayReelsPerMission} ` +
+      `hero_reel=${stackCtx.heroReelIndex ?? 'n/a'} max_hero_reels=${maxHeroReelsPerMission} ` +
       `assignments=${assignCount} manifest_cov=${(feedDirectorReport as Record<string, unknown>)?.manifest_coverage_pct ?? fdPrepared.validation.coveragePct}% ` +
       `slot_fill=${fdPrepared.validation.filledRequired}/${fdPrepared.validation.requiredSlots} ` +
       `layouts=${String(((feedDirectorReport as Record<string, unknown>)?.recommended_layout_families as string[] | undefined)?.slice(0, 4).join(',') ?? '')}`,
@@ -366,7 +355,7 @@ export async function runAutoProducePlanPhase(
       fdProductionGate: fdPrepared.gate,
       stackCtx,
       primaryIdeaIndices,
-      maxRunwayReelsPerMission,
+      maxHeroReelsPerMission,
       hasOrganicReelAssignment,
       rejectedLayoutFamilies,
       headlineHistory,

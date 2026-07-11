@@ -16,7 +16,7 @@ import {
   motionProfileToThemeJson,
   normalizeMotionProfile,
 } from './brand-motion-profile';
-import type { RunwayReelStrategy } from './reel-multi-production';
+import type { ReelMontageStrategy } from './reel-multi-production';
 import { normalizeSectorId, type ReelPacing } from './sector-production-profile';
 
 export type ReelDirectorVariant =
@@ -30,7 +30,7 @@ export interface SectorReelMotionStandard {
   motionStyle: MotionStyle;
   reelPace: ReelPacing;
   reelCameraMotion: UnifiedCameraMotion;
-  reelStrategy: RunwayReelStrategy;
+  reelStrategy: ReelMontageStrategy;
   productSpotlightReel: boolean;
   preferPurePhotoStories: number;
   storyAudioMode: StoryAudioMode;
@@ -340,7 +340,7 @@ export function applySectorReelMotionDefaults(
   return normalizeMotionProfile(next);
 }
 
-export function resolveRunwayDirectorVariant(input: {
+export function resolveReelDirectorVariant(input: {
   sector?: string;
   productSpotlightReel?: boolean;
 }): ReelDirectorVariant | undefined {

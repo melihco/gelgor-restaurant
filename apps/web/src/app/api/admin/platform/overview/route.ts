@@ -9,6 +9,6 @@ export async function GET(req: NextRequest) {
   const auth = await assertPlatformAdminAccess(req);
   if (auth instanceof Response) return auth;
 
-  const overview = await loadPlatformAdminOverview(req);
+  const overview = await loadPlatformAdminOverview(req, auth.user);
   return NextResponse.json(overview);
 }

@@ -4,7 +4,7 @@
  */
 import { normalizeCameraMotion, type UnifiedCameraMotion } from './camera-motion';
 import type { BrandMotionProfile, MotionStyle } from './brand-motion-profile';
-import type { RunwayReelStrategy } from './reel-multi-production';
+import type { ReelMontageStrategy } from './reel-multi-production';
 import {
   getSectorReelPacing,
   type ReelPacing,
@@ -16,7 +16,7 @@ export interface BrandReelProductionParams {
   reelPace: string;
   reelPacing: ReelPacing;
   cameraMotion?: UnifiedCameraMotion;
-  strategy?: RunwayReelStrategy;
+  strategy?: ReelMontageStrategy;
 }
 
 export const MOTION_STYLE_REEL_DEFAULTS: Record<
@@ -64,7 +64,7 @@ export function parseBrandReelFieldsFromMotionRaw(
   if (!raw || typeof raw !== 'object') return {};
   const pace = String(raw.reel_pace ?? raw.reelPace ?? '').trim();
   const camera = String(raw.reel_camera_motion ?? raw.reelCameraMotion ?? '').trim();
-  const strategy = String(raw.reel_strategy ?? raw.reelStrategy ?? '').trim() as RunwayReelStrategy;
+  const strategy = String(raw.reel_strategy ?? raw.reelStrategy ?? '').trim() as ReelMontageStrategy;
   return {
     reelPace: pace && pace !== 'auto' ? pace : undefined,
     reelCameraMotion: camera && camera !== 'auto' ? camera : undefined,

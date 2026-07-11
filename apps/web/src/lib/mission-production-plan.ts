@@ -231,7 +231,8 @@ function enrichIdeationWithCalendarPlan(
   const caption = brief
     || ideationCaption
     || [tagline, calHeadline].filter(Boolean).join(' — ');
-  const headline = calHeadline || ideationHeadline(idea);
+  const ideationTitle = ideationHeadline(idea);
+  const headline = ideationTitle || calHeadline;
 
   const existingVps = typeof idea.visual_production_spec === 'object' && idea.visual_production_spec
     ? { ...(idea.visual_production_spec as Record<string, unknown>) }

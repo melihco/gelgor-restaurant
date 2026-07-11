@@ -1,81 +1,15 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { useMobileStore } from './mobile-store';
-import { useTenantBrandContext } from './TenantBrandProvider';
 import { IcoGrid } from './Icons';
-import { resolveClientMediaUrl } from '@/lib/media-url';
 import {
   brandNavbarBackground,
   useBrandThemePalette,
-  type BrandThemePalette,
 } from './use-brand-theme-palette';
 
 const SLOT_W = 44;
-
-function BrandNavLogo({
-  logoUrl,
-  brandName,
-  palette,
-  dark,
-  size = 34,
-}: {
-  logoUrl?: string;
-  brandName: string;
-  palette: BrandThemePalette;
-  dark: boolean;
-  size?: number;
-}) {
-  const initial = brandName.trim()[0]?.toUpperCase() || 'M';
-  const ring = `linear-gradient(135deg, ${palette.primary}, ${palette.accent} 55%, ${palette.secondary})`;
-
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        padding: 2,
-        background: ring,
-        flexShrink: 0,
-        boxShadow: `0 4px 18px ${palette.primary}44`,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          borderRadius: '50%',
-          overflow: 'hidden',
-          border: `2px solid ${dark ? '#000' : '#fff'}`,
-          background: dark ? '#141418' : '#f4f4f8',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt=""
-            referrerPolicy="no-referrer"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : (
-          <span style={{
-            fontSize: size * 0.38,
-            fontWeight: 800,
-            color: palette.primary,
-            lineHeight: 1,
-          }}>
-            {initial}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function MobileNavMenuButton({
   onClick,
@@ -115,7 +49,6 @@ export function MobileBrandNavbar({
   title,
   subtitle,
   showLogo = true,
-  showBrandName = true,
   rightSlot,
   onMenu,
   className,
@@ -125,6 +58,7 @@ export function MobileBrandNavbar({
   title?: string;
   subtitle?: string;
   showLogo?: boolean;
+  /** @deprecated Tenant adı artık üst barda gösterilmez — yalnızca Smart Agency logosu. */
   showBrandName?: boolean;
   rightSlot?: ReactNode;
   onMenu?: () => void;
@@ -132,19 +66,11 @@ export function MobileBrandNavbar({
   style?: React.CSSProperties;
 }) {
   const navigate = useMobileStore((s) => s.navigate);
-  const tenantBrand = useTenantBrandContext();
   const palette = useBrandThemePalette();
-
-  const logoUrl = tenantBrand.logoUrl
-    ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl)
-    : undefined;
-  const displayTitle = title ?? tenantBrand.brandName ?? 'Marka';
-  const handle = tenantBrand.displayHandle
-    ? `@${tenantBrand.displayHandle.replace(/^@/, '')}`
-    : '';
 
   const textPrimary = dark ? '#fff' : '#111118';
   const textMuted = dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
+  const hasCustomTitle = Boolean(title?.trim());
 
   return (
     <div
@@ -176,41 +102,44 @@ export function MobileBrandNavbar({
           justifyContent: 'center',
           gap: 10,
         }}>
-          {showLogo && (
-            <BrandNavLogo
-              logoUrl={logoUrl}
-              brandName={displayTitle}
-              palette={palette}
-              dark={dark}
+          {showLogo && !hasCustomTitle && (
+            <SmartAgencyLogo
+              variant="full"
+              priority
+              className="h-8 max-w-[min(200px,58vw)]"
             />
           )}
-          <div style={{ minWidth: 0, textAlign: showLogo ? 'left' : 'center' }}>
-            <div style={{
-              fontSize: showLogo ? 15 : 20,
-              fontWeight: 800,
-              color: textPrimary,
-              letterSpacing: '-0.02em',
-              lineHeight: 1.15,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-              {displayTitle}
+          {(hasCustomTitle || subtitle) && (
+            <div style={{ minWidth: 0, textAlign: showLogo && !hasCustomTitle ? 'left' : 'center' }}>
+              {hasCustomTitle && (
+                <div style={{
+                  fontSize: showLogo ? 15 : 20,
+                  fontWeight: 800,
+                  color: textPrimary,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.15,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {title}
+                </div>
+              )}
+              {subtitle && (
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: textMuted,
+                  marginTop: hasCustomTitle ? 2 : 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {subtitle}
+                </div>
+              )}
             </div>
-            {(subtitle || (showBrandName && handle)) && (
-              <div style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: textMuted,
-                marginTop: 2,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}>
-                {subtitle ?? handle}
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         <div style={{

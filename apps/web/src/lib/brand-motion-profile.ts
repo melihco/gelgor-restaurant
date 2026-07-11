@@ -6,7 +6,7 @@
  */
 
 import type { StoryCompositionId } from '@/lib/story-composition-types';
-import type { RunwayReelStrategy } from './reel-multi-production';
+import type { ReelMontageStrategy } from './reel-multi-production';
 import type { ReelPacing } from './sector-production-profile';
 import { storyMusicLabel } from './story-audio-catalog';
 import { resolveStoryAudioMood } from './story-audio-mood';
@@ -91,7 +91,7 @@ export interface BrandMotionProfile {
   /** Runway default camera — `auto` or unset uses motion style / fidelity rules */
   reelCameraMotion?: string;
   /** Force single | sequential | multi_ref when set */
-  reelStrategy?: RunwayReelStrategy | 'auto';
+  reelStrategy?: ReelMontageStrategy | 'auto';
   /** TVC-style Runway reels on real product gallery frames (tenant seed or explicit) */
   productSpotlightReel?: boolean;
 }

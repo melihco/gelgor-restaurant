@@ -197,11 +197,11 @@ function productPhotoConflictPenalty(captionText: string, photoSearchable: strin
 export const STRONG_MATCH_SCORE = 52;
 
 /**
- * Minimum gallery match score to allow Runway Reel generation.
- * Runway is expensive and produces poor quality video when the source photo
+ * Minimum gallery match score to allow reel video generation.
+ * I2V is expensive and produces poor quality when the source photo
  * is a weak semantic match for the caption. Below this, fall back to a still.
  */
-export const RUNWAY_GALLERY_MIN_SCORE = 42;
+export const REEL_GALLERY_MIN_SCORE = 42;
 
 /** Relaxed threshold for manual "pick photo" when nothing clears MIN_ACCEPT. */
 export const RELAXED_MATCH_SCORE = 10;

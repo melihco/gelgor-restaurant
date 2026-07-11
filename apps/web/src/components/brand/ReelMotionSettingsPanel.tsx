@@ -12,13 +12,13 @@ import {
   REEL_PACE_OPTIONS,
 } from '@/lib/brand-reel-motion-profile';
 import { describeSectorReelMotionStandard } from '@/lib/sector-reel-motion-standard';
-import type { RunwayReelStrategy } from '@/lib/reel-multi-production';
+import type { ReelMontageStrategy } from '@/lib/reel-multi-production';
 import type { ReelPacing } from '@/lib/sector-production-profile';
 import type { T } from '@/app/mobile/_components/theme-context';
 
 type ThemeRecord = Record<string, unknown>;
 
-const STRATEGY_OPTIONS: { id: RunwayReelStrategy | 'auto'; label: string; desc: string }[] = [
+const STRATEGY_OPTIONS: { id: ReelMontageStrategy | 'auto'; label: string; desc: string }[] = [
   { id: 'auto', label: 'Otomatik', desc: 'Fotoğraf sayısı ve pace\'e göre seçilir' },
   { id: 'single', label: 'Tek klip', desc: 'Sürekli sinematik reel' },
   { id: 'sequential', label: 'Montaj', desc: 'Her fotoğraf ayrı klip, ardışık montaj' },
@@ -91,7 +91,7 @@ export function ReelMotionSettingsPanel({
   return (
     <div>
       <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-        Runway reel üretiminde varsayılan tempo, kamera ve montaj stratejisi. İçerik fikrindeki
+        fal.ai reel üretiminde varsayılan tempo, kamera ve montaj stratejisi. İçerik fikrindeki
         reel_motion_spec bu ayarların üzerine yazabilir.
       </div>
       <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 16 }}>
@@ -104,7 +104,7 @@ export function ReelMotionSettingsPanel({
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Ürün reklam filmi (Runway)
+        Ürün reklam filmi (fal.ai I2V)
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         {([

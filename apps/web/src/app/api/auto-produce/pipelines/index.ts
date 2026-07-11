@@ -31,5 +31,5 @@ export type {
   SlotProductionContext,
   SlotProductionInputs,
   SlotProductionState,
-  RunwayProduceMeta,
+  VideoProduceMeta,
 } from './pipeline-types';

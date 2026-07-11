@@ -63,6 +63,11 @@ import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrate
 import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
 import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
 import { brandReadinessFixToBrandTab, PRODUCTION_PROFILE_THRESHOLD, type ProductionProfileReadinessResult } from '@/lib/brand-readiness';
+import {
+  focusBrandReadinessAnchor,
+  resolveBrandReadinessNav,
+  type BrandGalleryGroup,
+} from '@/lib/brand-readiness-navigation';
 import { isCanvaEnabledClient } from '@/lib/canva-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
@@ -789,7 +794,7 @@ function PostDesignDefaultsPanel({
       bullets: [
         'AI prompt’a bırakılmaz; gerçek render katmanları Canvas içinde deterministik çizilir.',
         '3D Extrude ve Gradient Stack daha kampanya/poster odaklıdır; Outline ve Soft Shadow daha premium/minimaldir.',
-        'Reel için Runway’e giden prompt image da bu yazı efektini taşıdığı için hareketli içerik standardını etkiler.',
+        'Reel için fal.ai I2V prompt image da bu yazı efektini taşıdığı için hareketli içerik standardını etkiler.',
       ],
     },
     logo: {
@@ -1830,12 +1835,14 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
 const AUTO_EXCLUDE = ['harita', '-map', 'map-', '_map', 'footer', 'menu.', 'fran', 'franchise',
   'bayilik', 'banner', 'icon', '-150x', '-300x', '-100x', 'logo'];
 
-function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
+function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGroup, onInitialGroupConsumed }: {
   t: T;
   tenantId: string;
   pyCtx: Record<string, unknown> | undefined;
   queryClient: ReturnType<typeof useQueryClient>;
   companyProfile?: CompanyProfile | null;
+  initialGroup?: BrandGalleryGroup | null;
+  onInitialGroupConsumed?: () => void;
 }) {
   type GalleryGroup = 'upload' | 'analyze' | 'photos';
   const [galleryGroup, setGalleryGroup] = useState<GalleryGroup | null>(null);
@@ -1919,6 +1926,13 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
     setGalleryGroup(g);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
+
+  useEffect(() => {
+    if (!initialGroup) return;
+    setGalleryGroup(initialGroup);
+    onInitialGroupConsumed?.();
+    focusBrandReadinessAnchor(initialGroup === 'analyze' ? 'gallery-analyze' : initialGroup === 'upload' ? 'gallery-upload' : 'gallery-photos', 420);
+  }, [initialGroup, onInitialGroupConsumed]);
 
   const normGalleryUrl = (u: string) => u.split('?')[0];
   const analyzedKeySet = new Set(Object.keys(galleryAnalysis).map(normGalleryUrl));
@@ -2169,7 +2183,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
       )}
 
       {galleryGroup === 'analyze' && (
-        <>
+        <div data-brand-fix="gallery-analyze">
           <BrandSectionIntro
             t={t}
             title="AI Analiz"
@@ -2228,11 +2242,11 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
               <TenantGalleryPolicyBanner profile={operatingProfile} variant="mobile" theme={t} />
             </SCard>
           )}
-        </>
+        </div>
       )}
 
       {galleryGroup === 'upload' && (
-        <>
+        <div data-brand-fix="gallery-upload">
           <BrandSectionIntro
             t={t}
             title="Fotoğraf Yükle"
@@ -2321,7 +2335,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile }: {
           </p>
         )}
       </SCard>
-        </>
+        </div>
       )}
 
       {galleryGroup === 'photos' && (
@@ -2900,7 +2914,7 @@ export function BrandConstitution() {
   const queryClient = useQueryClient();
   const { tenantId: storeTenantId } = useWorkspaceStore();
   const tenantId = useActiveTenantId() ?? storeTenantId;
-  const { goBack, brandReadinessFix, clearBrandReadinessFix } = useMobileStore();
+  const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix } = useMobileStore();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
   type TemplateTab = 'remotion' | 'fal' | 'intensity';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
@@ -2947,18 +2961,40 @@ export function BrandConstitution() {
   const [confirmingConstitution, setConfirmingConstitution] = useState(false);
   const [constitutionConfirmError, setConstitutionConfirmError] = useState<string | null>(null);
 
+  const [galleryInitialGroup, setGalleryInitialGroup] = useState<BrandGalleryGroup | null>(null);
+  const [focusAnchor, setFocusAnchor] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!brandReadinessFix) return;
-    const nextTab = brandReadinessFixToBrandTab(brandReadinessFix);
-    if (nextTab) {
-      setTab(nextTab);
+    if (!brandReadinessFix && !brandReadinessCheckId) return;
+    const target = resolveBrandReadinessNav(brandReadinessFix, brandReadinessCheckId);
+    if (target) {
+      setTab(target.tab);
       setView('section');
-      setDesignGroup(null);
-      setContentGroup(null);
-      setIdentityGroup(null);
+      setDesignGroup(target.designGroup ?? null);
+      setContentGroup(target.contentGroup ?? null);
+      setIdentityGroup(target.identityGroup ?? null);
+      if (target.designGroup !== 'templates') setTemplateTab('remotion');
+      if (target.galleryGroup) setGalleryInitialGroup(target.galleryGroup);
+      setFocusAnchor(target.anchor);
+    } else if (brandReadinessFix) {
+      const nextTab = brandReadinessFixToBrandTab(brandReadinessFix);
+      if (nextTab) {
+        setTab(nextTab);
+        setView('section');
+        setDesignGroup(null);
+        setContentGroup(null);
+        setIdentityGroup(null);
+      }
     }
     clearBrandReadinessFix();
-  }, [brandReadinessFix, clearBrandReadinessFix]);
+  }, [brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix]);
+
+  useEffect(() => {
+    if (!focusAnchor) return;
+    focusBrandReadinessAnchor(focusAnchor, 480);
+    const timer = window.setTimeout(() => setFocusAnchor(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [focusAnchor, tab, designGroup, contentGroup, identityGroup, galleryInitialGroup]);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['company-profile', tenantId],
@@ -3542,7 +3578,7 @@ export function BrandConstitution() {
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
     { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Story & fal.ai şablonları', accent: '#5AA0D6' },
-    { key: 'engines', label: 'Üretim Motorları & Ses', hint: 'FAL · Runway · motion · müzik', accent: '#A985E0' },
+    { key: 'engines', label: 'Üretim Motorları & Ses', hint: 'FAL · motion · müzik', accent: '#A985E0' },
     { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
     { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
   ];
@@ -3874,7 +3910,9 @@ export function BrandConstitution() {
               description="Marka adı, iletişim kanalları ve temel tanım. Mission ve Feed üretimi bu bilgileri referans alır."
             />
             {!constitutionConfirmedAt && (
-              <div style={{
+              <div
+                data-brand-fix="constitution-confirm"
+                style={{
                 marginBottom: 16,
                 padding: '16px',
                 borderRadius: 16,
@@ -3949,7 +3987,7 @@ export function BrandConstitution() {
         )}
 
         {tab === 'identity' && identityGroup === 'basics' && (
-          <>
+          <div data-brand-fix="service-profile">
             <BrandSectionIntro
               t={t}
               title="Temel Bilgiler"
@@ -3960,11 +3998,11 @@ export function BrandConstitution() {
               <Field t={t} label="Sektör" value={industryDisplay} onSave={save('industry')} hint={industrySlug !== industryDisplay ? industrySlug : undefined} />
               <Field t={t} label="Konum" value={locationDisplay} onSave={save('location')} hint="Şehir veya bölge" />
             </SCard>
-          </>
+          </div>
         )}
 
         {tab === 'identity' && identityGroup === 'channels' && (
-          <>
+          <div data-brand-fix="discovery-channels">
             <BrandSectionIntro
               t={t}
               title="Kanallar"
@@ -4001,7 +4039,7 @@ export function BrandConstitution() {
                 })}
               </div>
             </SCard>
-          </>
+          </div>
         )}
 
         {tab === 'identity' && identityGroup === 'about' && (
@@ -4204,7 +4242,7 @@ export function BrandConstitution() {
         )}
 
         {tab === 'content' && contentGroup === 'strategy' && tenantId && (
-          <>
+          <div data-brand-fix="content-pillars">
             <BrandSectionIntro
               t={t}
               title="İçerik Stratejisi"
@@ -4222,7 +4260,7 @@ export function BrandConstitution() {
                 }}
               />
             </SCard>
-          </>
+          </div>
         )}
 
         {tab === 'content' && contentGroup === 'special' && tenantId && (
@@ -4414,7 +4452,7 @@ export function BrandConstitution() {
         )}
 
         {tab === 'design' && designGroup === 'templates' && (
-          <>
+          <div data-brand-fix="story-templates">
             <BrandSectionIntro
               t={t}
               title="Şablon Kütüphanesi"
@@ -4493,11 +4531,11 @@ export function BrandConstitution() {
                 />
               </div>
             )}
-          </>
+          </div>
         )}
 
         {tab === 'design' && designGroup === 'colors' && (
-          <>
+          <div data-brand-fix="brand-theme">
             <CollapsibleGroup
               t={t}
               title="Yazı tipi & başlık stili"
@@ -4528,6 +4566,7 @@ export function BrandConstitution() {
             )}
 
             {tenantId && (
+              <div data-brand-fix="theme-layers">
               <TypographyDesignPanel
                 t={t}
                 theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
@@ -4548,6 +4587,7 @@ export function BrandConstitution() {
                   queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
                 }}
               />
+              </div>
             )}
 
             <SCard t={t} title="Tipografi">
@@ -4592,11 +4632,11 @@ export function BrandConstitution() {
               />
             </SCard>
 
-          </>
+          </div>
         )}
 
         {tab === 'design' && designGroup === 'dna' && (
-          <>
+          <div data-brand-fix="brand-dna-analyze">
             <CollapsibleGroup
               t={t}
               title="Marka DNA & görsel dil"
@@ -4605,7 +4645,7 @@ export function BrandConstitution() {
             >
             <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
             </CollapsibleGroup>
-          </>
+          </div>
         )}
 
         {tab === 'design' && designGroup === 'rules' && (
@@ -4707,7 +4747,7 @@ export function BrandConstitution() {
         )}
 
         {tab === 'design' && designGroup === 'dna' && (
-          <>
+          <div data-brand-fix="brand-dna-analyze">
             {/* Re-analyze button */}
             <button
               onClick={() => analyzeMutation.mutate()}
@@ -4896,7 +4936,7 @@ export function BrandConstitution() {
               )}
             </SCard>
             </CollapsibleGroup>
-          </>
+          </div>
         )}
 
         {tab === 'design' && designGroup === 'rules' && (
@@ -5102,7 +5142,7 @@ export function BrandConstitution() {
             <CollapsibleGroup
               t={t}
               title="Tasarım motorları & hareket"
-              subtitle="Ürün vitrini, fal.ai · Runway, motion stili, reel hareketi, story sesi ve logo kuralları"
+              subtitle="Ürün vitrini, fal.ai, motion stili, reel hareketi, story sesi ve logo kuralları"
               accent="#8B5CF6"
               defaultOpen
             >
@@ -5120,7 +5160,7 @@ export function BrandConstitution() {
             )}
 
             {tenantId && (
-              <SCard t={t} title="Üretim Motorları (fal.ai · Runway)" accent="#8B5CF6">
+              <SCard t={t} title="Üretim Motorları (fal.ai)" accent="#8B5CF6">
                 <BrandProductionEnginesPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
@@ -5202,7 +5242,7 @@ export function BrandConstitution() {
             })()}
 
             {tenantId && (
-              <SCard t={t} title="Reel Motion (Runway)">
+              <SCard t={t} title="Reel Motion (fal.ai)">
                 <ReelMotionSettingsPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
@@ -5278,7 +5318,15 @@ export function BrandConstitution() {
         )}
 
         {tab === 'gallery' && (
-          <GalleryTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} companyProfile={profile as CompanyProfile} />
+          <GalleryTab
+            t={t}
+            tenantId={tenantId}
+            pyCtx={pyCtx}
+            queryClient={queryClient}
+            companyProfile={profile as CompanyProfile}
+            initialGroup={galleryInitialGroup}
+            onInitialGroupConsumed={() => setGalleryInitialGroup(null)}
+          />
         )}
       </div>
       )}

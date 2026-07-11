@@ -20,11 +20,12 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useAuthStore } from '../auth-store';
 import { apiClient, type WorkspaceUsageSummary, type MissionProductionJobsSummary } from '@/lib/api-client';
 import { AiCostBreakdownCard } from '../AiCostBreakdownCard';
+import { MobileBrandAutoFill } from '../MobileBrandAutoFill';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import type { MissionSummary, MissionProgress, MissionNodeProgress } from '@/types';
 import { BRS_PROPOSE_THRESHOLD, type BrandReadinessResult, type ProductionProfileReadinessResult, PRODUCTION_PROFILE_THRESHOLD } from '@/lib/brand-readiness';
 import { humanizeAgentError } from '@/lib/humanize-agent-error';
-import { parseProductionIdeas, productionIdeasFromParsed } from '@/lib/production-idea-parse';
+import { parseProductionIdeas, productionIdeasFromParsed, resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { computeIdeaContractScore } from '@/types/production-idea';
@@ -102,7 +103,6 @@ import {
 } from '@/lib/brand-motion-profile';
 import {
   collectMissionPreviewArtifacts,
-  MissionFeedPreviewGrid,
 } from '../MissionFeedPreviewGrid';
 import { filterMissionRenderRetryArtifacts, filterMissionRemotionStoryRetryArtifacts } from '@/lib/mission-render-retry';
 import type { OutputArtifact } from '@/types';
@@ -1314,14 +1314,10 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
 
       {items.map((idea, i) => {
         const ia       = idea as any;
-        const headline = ia.headline
-          ?? ia.canva_field_copy?.headline
-          ?? ia.canvaFieldCopy?.headline
-          ?? ia.concept_title
-          ?? ia.conceptTitle
-          ?? ia.idea_title
-          ?? ia.title
-          ?? `Fikir ${i + 1}`;
+        const headline = resolveIdeationHeadline(ia as Record<string, unknown>)
+          || ia.canva_field_copy?.headline
+          || ia.canvaFieldCopy?.headline
+          || `Fikir ${i + 1}`;
         const caption  = ia.caption ?? ia.captionDraft ?? ia.caption_draft ?? ia.subline ?? '';
         const hashtags = Array.isArray(ia.hashtags) ? ia.hashtags.slice(0, 4) : [];
         const mood     = ia.mood ?? ia.tone ?? ia.visual_mood ?? '';
@@ -3110,7 +3106,6 @@ function MissionPublishPackageCard({
   pkg,
   selection,
   previewArtifacts,
-  onPreviewArtifact,
   isLoading,
   onGoToFeed,
   workspaceId,
@@ -3121,7 +3116,6 @@ function MissionPublishPackageCard({
   pkg: MissionFeedPackage | null;
   selection: WeeklyPublishSelection | null;
   previewArtifacts: OutputArtifact[];
-  onPreviewArtifact: (artifactId: string) => void;
   isLoading: boolean;
   onGoToFeed: () => void;
   workspaceId?: string;
@@ -3413,14 +3407,6 @@ function MissionPublishPackageCard({
           </div>
         )}
         </>
-      )}
-      {previewArtifacts.length > 0 && (
-        <MissionFeedPreviewGrid
-          artifacts={previewArtifacts}
-          onPreview={onPreviewArtifact}
-          t={t}
-          title="Üretilen içerikler"
-        />
       )}
       <button
         onClick={onGoToFeed}
@@ -4147,7 +4133,6 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               pkg={feedPackage}
               selection={weeklySelection}
               previewArtifacts={previewArtifacts}
-              onPreviewArtifact={openPlatformPreview}
               isLoading={feedPkgLoading && !feedPackage?.totalPublishable && previewArtifacts.length === 0}
               onGoToFeed={goToFeed}
               workspaceId={workspaceId}
@@ -4423,13 +4408,15 @@ function CompletedRow({ mission, onTap }: { mission: MissionSummary; onTap: () =
 function BrandReadinessCard({
   t,
   readiness,
+  tenantId,
   onComplete,
   onFix,
 }: {
   t: T;
   readiness: BrandReadinessResult;
-  onComplete: (fix?: string) => void;
-  onFix?: (fix: string) => void;
+  tenantId: string | null;
+  onComplete: (fix?: string, checkId?: string) => void;
+  onFix?: (fix: string, checkId?: string) => void;
 }) {
   const operatorMode = isMobileOperatorMode();
   const score = readiness.score ?? 0;
@@ -4475,13 +4462,13 @@ function BrandReadinessCard({
             <button
               key={c.id}
               type="button"
-              onClick={() => (c.fix && onFix ? onFix(c.fix) : onComplete(c.fix))}
+              onClick={() => (c.fix && onFix ? onFix(c.fix, c.id) : onComplete(c.fix, c.id))}
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 8,
                 width: '100%',
-                padding: 0,
+                padding: '6px 0',
                 border: 'none',
                 background: 'transparent',
                 cursor: c.fix ? 'pointer' : 'default',
@@ -4496,11 +4483,12 @@ function BrandReadinessCard({
                     <span style={{ fontWeight: 400, color: t.textMuted }}> · {c.detail}</span>
                   )}
                 </div>
-                {operatorMode && (
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1, lineHeight: 1.4 }}>
-                    {c.action}
-                  </div>
-                )}
+                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>
+                  {c.action}
+                  {c.fix && (
+                    <span style={{ color: t.accent, fontWeight: 600 }}> → Alanı aç</span>
+                  )}
+                </div>
               </div>
             </button>
           ))}
@@ -4508,14 +4496,15 @@ function BrandReadinessCard({
       )}
 
       <button
-        onClick={() => onComplete(missing[0]?.fix)}
+        onClick={() => onComplete(missing[0]?.fix, missing[0]?.id)}
         style={{
           marginTop: 12, width: '100%', padding: '9px 14px', borderRadius: 10,
           border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#fff',
           background: `linear-gradient(135deg, ${accent}dd, ${accent}99)`,
         }}>
-        Markayı Tamamla →
+        İlgili alana git →
       </button>
+      <MobileBrandAutoFill tenantId={tenantId} variant="card" />
     </div>
   );
 }
@@ -4523,11 +4512,13 @@ function BrandReadinessCard({
 function ProductionProfileCard({
   t,
   profile,
+  tenantId,
   onFix,
 }: {
   t: T;
   profile: ProductionProfileReadinessResult;
-  onFix: (fix?: string) => void;
+  tenantId: string | null;
+  onFix: (fix?: string, checkId?: string) => void;
 }) {
   const score = profile.score ?? 0;
   const ready = profile.isProductionReady !== false;
@@ -4566,7 +4557,7 @@ function ProductionProfileCard({
             <button
               key={c.id}
               type="button"
-              onClick={() => onFix(c.fix)}
+              onClick={() => onFix(c.fix, c.id)}
               style={{
                 display: 'flex',
                 gap: 8,
@@ -5274,7 +5265,18 @@ export function MissionHub() {
               <span>
                 Yeni kampanya önerisi için marka kurulumunu tamamlayın.
                 {readiness?.missing?.[0]?.label && (
-                  <> Öncelik: <strong>{readiness.missing[0].label}</strong>.</>
+                  <> Öncelik:{' '}
+                    <button
+                      type="button"
+                      onClick={() => openBrand(readiness.missing[0]?.fix, readiness.missing[0]?.id)}
+                      style={{
+                        border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+                        color: 'inherit', fontWeight: 700, textDecoration: 'underline',
+                      }}
+                    >
+                      {readiness.missing[0].label}
+                    </button>.
+                  </>
                 )}
               </span>
             )
@@ -5293,8 +5295,9 @@ export function MissionHub() {
         <BrandReadinessCard
           t={t}
           readiness={readiness}
-          onComplete={(fix) => openBrand(fix)}
-          onFix={(fix) => openBrand(fix)}
+          tenantId={tenantId}
+          onComplete={(fix, checkId) => openBrand(fix, checkId)}
+          onFix={(fix, checkId) => openBrand(fix, checkId)}
         />
       )}
 
@@ -5305,7 +5308,8 @@ export function MissionHub() {
         <ProductionProfileCard
           t={t}
           profile={readiness.productionProfile}
-          onFix={(fix) => openBrand(fix)}
+          tenantId={tenantId}
+          onFix={(fix, checkId) => openBrand(fix, checkId)}
         />
       )}
 

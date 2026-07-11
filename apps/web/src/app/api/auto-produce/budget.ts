@@ -1,7 +1,7 @@
 /**
  * Auto-produce budget — persisted via Python usage-cost API.
  * Daily cap: AUTO_PRODUCE_DAILY_BUDGET_USD (default $10.00) — raised to cover
- * full-quality production (Runway reel + Creatomate stories + GPT enhance).
+ * full-quality production (fal.ai reels + Creatomate stories + GPT enhance).
  * Override: AUTO_PRODUCE_DAILY_BUDGET_USD env var.
  *
  * Package-aware limits: fetched from Nexus /api/packages/usage and cached 1h.
@@ -19,13 +19,6 @@ const AUTO_PRODUCE_MAX_DAILY = serverConfig.autoProduce.maxDaily;
 /** Operator ceiling for per-HTTP-call mission drain batches (not ideation pool size). */
 const MISSION_AUTO_PRODUCE_MAX_PER_RUN = serverConfig.autoProduce.maxPerRun;
 const DAILY_BUDGET_USD = serverConfig.autoProduce.dailyBudgetUsd;
-/** Runway cost per 5s clip (gen4_turbo API) */
-const RUNWAY_COST_USD = 0.25;
-/**
- * Runway reels are ON by default — full quality production includes video.
- * Disable with AUTO_PRODUCE_RUNWAY=false if Runway API key is not configured.
- */
-const AUTO_PRODUCE_RUNWAY = serverConfig.autoProduce.runwayEnabled;
 /** Operator ceiling for daily reels — package monthly reel limit applies first. */
 const AUTO_PRODUCE_MAX_REELS_DAILY = serverConfig.autoProduce.maxReelsDaily;
 
@@ -97,70 +90,7 @@ function incrementReelCount(workspaceId: string): void {
   }
 }
 
-/**
- * Check whether auto-produce may call Runway for this workspace today.
- * Default: enabled — full quality production includes Runway reels.
- * Disable with AUTO_PRODUCE_RUNWAY=false (e.g. if RUNWAY_API_SECRET not set).
- */
-export async function canAffordRunway(
-  workspaceId: string,
-  estimatedCostUsd = RUNWAY_COST_USD,
-): Promise<BudgetCheckResult> {
-  if (isProductionLimitsBypassed()) {
-    return {
-      allowed: true,
-      remaining: AUTO_PRODUCE_MAX_REELS_DAILY,
-      spentTodayUsd: 0,
-      dailyBudgetUsd: DAILY_BUDGET_USD,
-      remainingUsd: DAILY_BUDGET_USD,
-    };
-  }
-
-  if (!AUTO_PRODUCE_RUNWAY) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: 'Runway devre dışı — RUNWAY_API_SECRET veya AUTO_PRODUCE_RUNWAY=false',
-    };
-  }
-
-  // Derive daily reel cap from package monthly quota (Starter=4/mo → ~4 total, not daily)
-  const pkgLimits = await fetchPackageLimits(workspaceId);
-  const effectiveMaxReels = pkgLimits.monthlyReels === -1
-    ? AUTO_PRODUCE_MAX_REELS_DAILY
-    : Math.min(AUTO_PRODUCE_MAX_REELS_DAILY, pkgLimits.monthlyReels);
-
-  const reelsToday = getReelsProducedToday(workspaceId);
-  if (reelsToday >= effectiveMaxReels) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: `Paket reel limiti doldu (${effectiveMaxReels} reel/ay — ${pkgLimits.monthlyReels === -1 ? 'günlük' : 'aylık'})`,
-    };
-  }
-
-  const budget = await fetchBudgetCheck(workspaceId, estimatedCostUsd);
-  if (!budget.allowed || budget.remaining_usd < estimatedCostUsd) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: `Runway için yeterli bütçe yok ($${budget.remaining_usd.toFixed(2)} kaldı, $${estimatedCostUsd.toFixed(2)} gerekli)`,
-      spentTodayUsd: budget.spent_today_usd,
-      dailyBudgetUsd: budget.daily_budget_usd,
-      remainingUsd: budget.remaining_usd,
-    };
-  }
-
-  return {
-    allowed: true,
-    remaining: effectiveMaxReels - reelsToday,
-    spentTodayUsd: budget.spent_today_usd,
-    dailyBudgetUsd: budget.daily_budget_usd,
-    remainingUsd: budget.remaining_usd,
-  };
-}
-
-export { incrementReelCount, RUNWAY_COST_USD };
+export { incrementReelCount };
 
 export interface BudgetCheckResult {
   allowed: boolean;

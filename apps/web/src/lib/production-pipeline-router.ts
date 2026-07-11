@@ -905,12 +905,11 @@ export function buildManifestProductionQueue(input: {
   }));
 }
 
-/** Runway kapalıyken legacy FD `runway_reel` → `fal_reel`; mevcut fal reel slotları korunur. */
+/** Legacy FD `runway_reel` → `fal_reel`; mevcut fal reel slotları korunur. */
 export function normalizeAssignmentsForProductionProfile(
   assignments: ProductionAssignment[],
-  profile: ProductionProfile,
+  _profile: ProductionProfile,
 ): ProductionAssignment[] {
-  if (profile.allowRunwayReels) return assignments;
   return assignments.map((a) => {
     if (a.slot_role !== 'organic_reel' && a.slot_role !== 'campaign_reel_motion') return a;
     if (String(a.pipeline ?? '').trim() !== 'runway_reel') return a;

@@ -4,8 +4,6 @@ import {
   canProduce,
   recordProduction,
   cleanupOldBuckets,
-  canAffordRunway,
-  incrementReelCount,
   fetchPackageLimits,
 } from './budget';
 import {
@@ -44,7 +42,7 @@ import {
   pickMissionDiverseFallbackPhoto,
   isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
-  RUNWAY_GALLERY_MIN_SCORE,
+  REEL_GALLERY_MIN_SCORE,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import {
@@ -53,10 +51,6 @@ import {
   isHardCaptionPhotoConflict,
   scoreIdeationPhotoMatch,
 } from '@/lib/caption-photo-alignment';
-import {
-  buildRunwayGalleryScenePackage,
-  galleryMetaToRendererGallery,
-} from '@/lib/runway-scene-from-gallery';
 import { shouldAutoProduceEnhanceGallery } from '@/lib/venue-photo-policy';
 import {
   filterReachableGalleryUrls,
@@ -168,15 +162,15 @@ import {
 import type { AiVisualProductionStandard, BrandContextForVisual } from '@/lib/ai-visual-production-standard';
 import {
   buildCreativeTrace,
-  buildRunwayDirectorExtra,
+  buildReelDirectorExtra,
   buildSceneBriefPromptBlock,
   createProductionStackContext,
   fetchProductSceneBrief,
   inferHeroReelIndex,
   resolveLayoutFamilyForAssignment,
   resolvePrimaryIndicesWithReport,
-  resolveMaxRunwayReelsPerMission,
-  shouldProduceRunwayForIdea,
+  resolveMaxHeroReelsPerMission,
+  shouldProduceHeroReelForIdea,
   shouldSkipIdeaForProduction,
   toStorySceneBrief,
   toReelSceneBrief,
@@ -264,14 +258,7 @@ import {
 } from '@/lib/brand-theme-ai-settings';
 import { auditPosterOverlayCopy, resolvePosterOverlayCopy } from '@/lib/poster-copy';
 import type { StoryCompositionId } from '@/lib/story-composition-types';
-import {
-  buildMultiReelPhotoInputs,
-  estimateRunwayReelCostUsd,
-  maxPhotosForStrategy,
-  resolveRunwayReelStrategy,
-} from '@/lib/reel-multi-production';
 import { normalizeCameraMotion } from '@/lib/camera-motion';
-// resolveRunwayCameraMotionForFidelity → handlers/image-generators.ts
 import { fetchProductionContext } from './production-context';
 import { fetchGalleryContext, triggerGalleryAnalysisIfNeeded, ensureGalleryAnalysisForProduction } from './gallery-context';
 import type { ProductionBrandContextSnapshot } from '@smartagency/contracts';
@@ -347,9 +334,7 @@ import {
   generateMarkyLayerCard,
   generateVibeCarousel,
   renderEventCardFromPayload,
-  generateRunwayReel,
 } from './handlers/image-generators';
-import { scoreReelHook } from '@/lib/reel-hook-score';
 import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { falVideoHandler } from './pipelines/fal-video-pipeline';
@@ -612,13 +597,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     manifestValidation,
     stackCtx,
     primaryIdeaIndices,
-    maxRunwayReelsPerMission,
+    maxHeroReelsPerMission,
     hasOrganicReelAssignment,
   } = planOutcome.plan;
 
   const routeBaseUrl = getNextjsInternalOrigin();
 
-  let runwayReelsProducedInMission = 0;
+  let heroReelsProducedInMission = 0;
   let designedPostSnapshot: DesignedPostSnapshot | null = null;
   let slotPostCount = 0;
   let slotStoryCount = 0;
@@ -1038,25 +1023,32 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         kind === 'instagram_reel' ? 'reel'
           : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 'story'
             : 'feed_post';
-      const designCopy = resolveMissionFalDesignCopy({
-        idea: idea as FalDesignCopyIdea,
-        ideationHeadline: headline,
-        caption,
-        cta,
-        brandName: resolvedBrandName,
-        channel: falChannel,
-        businessType: brandBusinessType,
-      });
-      if (designCopy.headline && designCopy.headline !== headline) {
-        console.log(
-          `[auto-produce] fal design copy (${designCopy.source}): `
-          + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
-        );
-        headline = designCopy.headline;
-        ideationHeadline = designCopy.headline;
-      }
-      if (designCopy.subtitle?.trim()) {
-        cta = designCopy.subtitle.trim();
+      const ideationTitleLocked = hasPublishableIdeationHeadline(
+        storedIdeationHeadline,
+        resolvedBrandName,
+      );
+      if (ideationTitleLocked) {
+        headline = enforceDisplayHeadline(storedIdeationHeadline, 72);
+      } else {
+        const designCopy = resolveMissionFalDesignCopy({
+          idea: idea as FalDesignCopyIdea,
+          ideationHeadline: headline,
+          caption,
+          cta,
+          brandName: resolvedBrandName,
+          channel: falChannel,
+          businessType: brandBusinessType,
+        });
+        if (designCopy.headline && designCopy.headline !== headline) {
+          console.log(
+            `[auto-produce] fal design copy (${designCopy.source}): `
+            + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+          );
+          headline = designCopy.headline;
+        }
+        if (designCopy.subtitle?.trim()) {
+          cta = designCopy.subtitle.trim();
+        }
       }
     }
 
@@ -1281,9 +1273,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Track used layout families for subsequent slots in the same mission.
     if (layoutFamilyHint) missionUsedLayoutFamilies.push(layoutFamilyHint);
 
-    const isHeroReel = shouldProduceRunwayForIdea(ideaIndex, kind, stackCtx, {
-      reelsProducedInMission: runwayReelsProducedInMission,
-      maxReelsPerMission: maxRunwayReelsPerMission,
+    const isHeroReel = shouldProduceHeroReelForIdea(ideaIndex, kind, stackCtx, {
+      reelsProducedInMission: heroReelsProducedInMission,
+      maxReelsPerMission: maxHeroReelsPerMission,
       slotRole: assignment.slot_role,
       hasOrganicReelAssignment,
     });
@@ -2439,8 +2431,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let imageUrl: string | null = null;
     let videoUrl: string | null = null;
     let carouselUrls: string[] = [];
-    let runwayProduceMeta: {
-      source: 'runway' | 'runway_multi_photo' | 'kling' | 'luma' | 'fal_video';
+    let videoProduceMeta: {
+      source: 'kling' | 'luma' | 'fal_video';
       strategy?: string;
       photoCount?: number;
       cameraMotion?: string;
@@ -2449,7 +2441,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       i2vReused?: boolean;
       reusedFromArtifactId?: string;
     } | null = null;
-    let reelHookScore: { score: number; pass: boolean; reasons: string[] } | null = null;
 
     // ── Product Showcase pipeline (AI background replacement) ───────
     const isProductShowcase = assignment.pipeline === 'product_showcase'
@@ -2652,7 +2643,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           falGrafikerScore,
           falGrafikerPass,
           falDesignEngine,
-          runwayProduceMeta,
+          videoProduceMeta,
           costDelta: 0,
           pipelineFailureReason: null,
         },
@@ -2677,7 +2668,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       brandDesignTemplateId = slotCtx.state.brandDesignTemplateId ?? null;
       brandDesignTemplateType = slotCtx.state.brandDesignTemplateType ?? null;
       brandDesignTemplateName = slotCtx.state.brandDesignTemplateName ?? null;
-      runwayProduceMeta = slotCtx.state.runwayProduceMeta;
+      videoProduceMeta = slotCtx.state.videoProduceMeta;
       costEstimate += slotCtx.state.costDelta;
       if (slotCtx.state.pipelineFailureReason && !reelFailureReason) {
         reelFailureReason = slotCtx.state.pipelineFailureReason;
@@ -2830,292 +2821,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
       imageUrl = carouselUrls[0] ?? referenceUrl;
 
-    } else if (
-      isReel
-      && isHeroReel
-      && !isFalMissionVideo
-      && assignment.pipeline === 'runway_reel'
-      && serverConfig.autoProduce.runwayEnabled
-    ) {
-      const productionEngines = resolveProductionEngines(brandTheme);
-      if (!productionEngines.runway.enabled) {
-        reelFailureReason = 'Runway marka ayarlarında kapalı';
-        console.warn(`[auto-produce] Runway disabled in brand settings — reel skipped: "${headline.slice(0, 40)}"`);
-      }
-      // Runway hero reel — only the Feed Art Director hero slot (budget-controlled)
-      // reel_motion_spec can live at top level OR inside visual_production_spec (agent prompt puts it in VPS)
-      const reelSpec = (idea.visual_production_spec as Record<string, unknown> | undefined)?.reel_motion_spec
-        ?? idea.reel_motion_spec as Record<string, unknown> | undefined;
-      // Fetch gallery photo description for AI director prompt
-      const galleryEntry = referenceUrl
-        ? (galleryMeta[referenceUrl] ?? Object.entries(galleryMeta).find(([k]) =>
-            normalizeGalleryUrl(k) === normalizeGalleryUrl(referenceUrl!),
-          )?.[1])
-        : undefined;
-      const runwayScene = galleryEntry
-        ? buildRunwayGalleryScenePackage(galleryEntry as GalleryPhotoMeta, caption)
-        : null;
-      const photoDescription = runwayScene?.photoDescription
-        ?? (galleryEntry?.description as string | undefined);
-      const photoTags = runwayScene?.photoTags
-        ?? (Array.isArray(galleryEntry?.contentTags)
-          ? (galleryEntry!.contentTags as string[])
-          : undefined);
-      const reelGalleryMeta = galleryEntry
-        ? galleryMetaToRendererGallery(galleryEntry as GalleryPhotoMeta, {
-            photoUrl: referenceUrl ?? null,
-            caption,
-          })
-        : undefined;
-
-      // Pick 1-2 additional thematically RELATED photos for multi-reference enrichment.
-      // Score by tag overlap with the primary photo's contentTags + headline/caption keywords.
-      const primaryTags = new Set([
-        ...(photoTags ?? []).map(t => t.toLowerCase()),
-        ...caption.toLowerCase().split(/\s+/).filter(w => w.length > 4),
-        ...headline.toLowerCase().split(/\s+/).filter(w => w.length > 4),
-      ]);
-      const additionalPhotoUrls = enhancedGallerySet.length > 1
-        ? enhancedGallerySet.slice(1)
-        : hasGallery
-          ? galleryPhotos
-              .filter(u =>
-                u !== referenceUrl &&
-                isUsableGalleryPhotoUrl(u) &&
-                !isGalleryUrlUsedForPostType(galleryUsage, u, 'reel'),
-              )
-              .map(u => {
-                const entry = galleryMeta[u] ?? Object.entries(galleryMeta).find(([k]) =>
-                  normalizeGalleryUrl(k) === normalizeGalleryUrl(u),
-                )?.[1];
-                const e = (entry ?? {}) as Record<string, unknown>;
-                const entryTags: string[] = (
-                  Array.isArray(e.contentTags) ? e.contentTags :
-                  Array.isArray(e.tags) ? e.tags : []
-                ).map((t: unknown) => String(t).toLowerCase());
-                const overlap = entryTags.filter(t => primaryTags.has(t)).length;
-                const urlLower = u.toLowerCase();
-                const penalty = ['logo', 'map', 'banner', 'menu', 'icon'].some(p => urlLower.includes(p)) ? -5 : 0;
-                return { url: u, score: overlap + penalty };
-              })
-              .sort((a, b) => b.score - a.score)
-              .slice(0, 3)
-              .map(x => x.url)
-          : [];
-
-      const reelPhotoInputs = buildMultiReelPhotoInputs(
-        [referenceUrl, ...additionalPhotoUrls].filter((u): u is string => Boolean(u)),
-        galleryMeta,
-        normalizeGalleryUrl,
-      );
-      const reelSectorId = normalizeSectorId(brandBusinessType);
-      const brandReel = resolveBrandReelProductionParams(motionProfile, reelSectorId);
-      let reelStrategy = resolveRunwayReelStrategy({
-        photoCount: reelPhotoInputs.length,
-        transitionStyle: (reelSpec as Record<string, unknown> | undefined)?.transition_style as string | undefined,
-        treatment: treatmentLower,
-        templateUseCase,
-        mood,
-        contentType: 'reel',
-        reelPacing: brandReel.reelPacing,
-        strategyOverride: brandReel.strategy,
-      });
-      // Faz 3.4 — video kapsamı tier-aware. economy/agency'de çok-klipli Runway montajı
-      // (sequential / multi_ref → 2-3 ayrı klip) tek klipli üretime indirilir; her klip
-      // ayrı Runway çağrısı olduğundan maliyeti ciddi düşürür. premium tam montajı korur.
-      // Flag VIDEO_TIER_SCOPE kapalıyken (varsayılan) davranış birebir aynıdır.
-      if (
-        serverConfig.productionFlags.videoTierScope
-        && reelStrategy !== 'single'
-        && (productionProfile.tier === 'economy' || productionProfile.tier === 'agency')
-      ) {
-        console.log(
-          `[auto-produce] Faz3.4 video scope: tier=${productionProfile.tier} reel strategy ${reelStrategy}→single (cost trim)`,
-        );
-        reelStrategy = 'single';
-      }
-      const reelCostUsd = estimateRunwayReelCostUsd(reelStrategy, reelPhotoInputs.length);
-
-      // Runway quality gate: if the gallery photo is a weak semantic match for the caption,
-      // skip AI video generation — the opening frame will be visually incoherent.
-      const runwayGalleryWeak = pickedFromBrandGallery
-        && galleryMatchScore != null
-        && galleryMatchScore < RUNWAY_GALLERY_MIN_SCORE;
-      if (runwayGalleryWeak) {
-        console.warn(
-          `[auto-produce] Runway gallery floor: match ${galleryMatchScore}/${RUNWAY_GALLERY_MIN_SCORE} — skipping Reel, using still: "${headline.slice(0, 40)}"`,
-        );
-        reelFailureReason = `Galeri eşleşme skoru çok düşük (${galleryMatchScore}/${RUNWAY_GALLERY_MIN_SCORE}) — Reel atlandı`;
-      }
-
-      const runwayBudget = productionEngines.runway.enabled
-        && !runwayGalleryWeak
-        && await canAffordRunway(workspaceId, reelCostUsd);
-      if (runwayBudget && runwayBudget.allowed) {
-        const reelPace = String(
-          (reelSpec as Record<string, unknown> | undefined)?.pace
-          || (reelSpec as Record<string, unknown> | undefined)?.audio_mood
-          || '',
-        ).trim();
-        const reelMood = reelPace || mood;
-        const cameraHint = (reelSpec as Record<string, unknown> | undefined)?.camera_movement as string | undefined;
-        const normalizedCameraHint = normalizeCameraMotion(cameraHint);
-        // Sprint 4 — Brief Split: use typed ReelSceneBrief for richer Runway direction.
-        const effectiveReelBrief = missionReelBrief ?? sceneBrief;
-        const imageEditPromptForReel = [
-          (idea.visual_production_spec as Record<string, unknown> | undefined)?.image_edit_prompt as string | undefined,
-          buildRunwayDirectorExtra(effectiveReelBrief),
-          // Inject reel-specific opening moment if available.
-          (missionReelBrief as any)?.opening_moment
-            ? `Opening: ${(missionReelBrief as any).opening_moment}`
-            : '',
-          (missionReelBrief as any)?.camera_progression
-            ? `Camera: ${(missionReelBrief as any).camera_progression}`
-            : '',
-        ].filter(Boolean).join(' — ');
-
-        // Score the opening hook before firing Runway — result flows into artifact metadata.
-        reelHookScore = scoreReelHook({
-          headline,
-          caption,
-          photoDescription,
-          photoSceneMoment: runwayScene?.sceneMoment ?? reelGalleryMeta?.sceneMoment,
-          photoTags,
-          agentVisualDirection: imageEditPromptForReel || undefined,
-          cameraMotion: normalizedCameraHint,
-          mood: reelMood as string,
-        });
-
-        // Sprint 5 — CTA Intrusion Check:
-        // Detect if the caption leads with a CTA phrase before establishing value.
-        // If so, log a warning — Runway prompt builder already earns the CTA via
-        // Beat 3 desire close, so this is about detecting weak brief inputs early.
-        const captionLow = caption.toLowerCase();
-        const ctaLeadsCaption = /^(?:hemen|şimdi|bugün|now|get|book|reserve|call|shop|buy|order)\b/.test(captionLow.trim());
-        if (ctaLeadsCaption) {
-          console.warn(
-            `[auto-produce] CTA Intrusion: caption leads with action before establishing value — "${caption.slice(0, 60)}"`,
-          );
-        }
-
-        const runwayResult = await generateRunwayReel({
-          workspaceId,
-          headline,
-          caption,
-          brandName:    resolvedBrandName,
-          location:     brandLocation,
-          businessType: brandBusinessType,
-          mood: reelMood as string,
-          reelPace: reelPace || undefined,
-          cameraMotion: normalizedCameraHint,
-          agentImageEditPrompt: imageEditPromptForReel,
-          referenceImageUrl: referenceUrl ?? undefined,
-          additionalPhotoUrls,
-          photos: reelPhotoInputs,
-          galleryMeta,
-          strategy: reelStrategy,
-          productionIdea: prodIdea,
-          transitionStyle: (reelSpec as Record<string, unknown> | undefined)?.transition_style as string | undefined,
-          treatment: treatmentLower,
-          templateUseCase,
-          vibeProfile,
-          photoDescription,
-          photoSceneMoment: runwayScene?.sceneMoment ?? reelGalleryMeta?.sceneMoment,
-          photoMicroMotions: runwayScene?.microMotions ?? reelGalleryMeta?.microMotions,
-          photoMood: runwayScene?.photoMood ?? reelGalleryMeta?.photoMood,
-          photoUsageContext: runwayScene?.usageContext ?? reelGalleryMeta?.usageContext,
-          photoPairingKeywords: runwayScene?.pairingKeywords ?? reelGalleryMeta?.pairingKeywords,
-          photoTags,
-          brandThemeGrading: brandLutDirective || brandGradingLook
-            ? { look: brandGradingLook || undefined, lut_directive: brandLutDirective || undefined }
-            : undefined,
-          tenantLearningBrief: tenantLearningBrief || undefined,
-          sceneBrief: aiVisualStandard.enabled ? sceneBrief : null,
-          aiVisualStandard,
-          brandContextForVisual: brandCtxForVisual,
-          strategicPurpose: String(idea.strategic_purpose ?? ''),
-          productType: String(idea.product_type ?? idea.subject ?? getField(idea, 'product_type', 'subject')),
-          isHeroReel: true,
-          motionProfile,
-        });
-        if (runwayResult) {
-          videoUrl = runwayResult.videoUrl;
-          imageUrl = referenceUrl;
-          incrementReelCount(workspaceId);
-          runwayReelsProducedInMission += 1;
-          costEstimate += reelCostUsd;
-          const runwayTelemetry = {
-            cameraMotion: runwayResult.cameraMotion,
-            reelPace: runwayResult.reelPace,
-            sectorId: runwayResult.sectorId,
-            hookScore: runwayResult.hookScore,
-            strategy: runwayResult.strategy,
-          };
-          if (reelStrategy !== 'single' && reelPhotoInputs.length >= 2) {
-            runwayProduceMeta = {
-              ...runwayTelemetry,
-              source: 'runway_multi_photo',
-              strategy: reelStrategy === 'sequential' ? 'sequential' : 'multi_ref',
-              photoCount: Math.min(reelPhotoInputs.length, maxPhotosForStrategy(reelStrategy)),
-            };
-          } else {
-            runwayProduceMeta = {
-              ...runwayTelemetry,
-              source: 'runway',
-            };
-          }
-        } else if (serverConfig.fal.configured && referenceUrl) {
-          console.log('[auto-produce] Runway failed — trying fal.ai video fallback');
-          try {
-            const { emitQualityEvent } = await import('@/lib/ai-cost-telemetry');
-            emitQualityEvent({
-              event: 'fallback',
-              transition: 'runway->fal_video',
-              reason: reelFailureReason || 'runway_failed',
-              missionId: missionId ?? null,
-              slotKey: `${ideaIndex}:${assignment.slot_role}`,
-            });
-          } catch { /* telemetri üretimi bozmamalı */ }
-          try {
-            const falPrompt = finalizeFalPrompt(
-              [caption, headline, brandBusinessType].filter(Boolean).join('. '),
-              { kind: 'video', label: 'runway-fallback' },
-            );
-            const fal = await generateFalVideo(referenceUrl, falPrompt, {
-              durationSecs: 5,
-              timeoutMs: 110_000,
-              workspaceId,
-            });
-            videoUrl = fal.videoUrl;
-            imageUrl = referenceUrl;
-            runwayProduceMeta = {
-              source: fal.reused
-                ? 'fal_video'
-                : fal.model.includes('kling')
-                  ? 'kling'
-                  : fal.model.includes('luma')
-                    ? 'luma'
-                    : 'fal_video',
-              ...(fal.reused ? { i2vReused: true, reusedFromArtifactId: fal.reusedFromArtifactId } : {}),
-            };
-            console.log(
-              `[auto-produce] fal.ai video fallback success: ${fal.model}${fal.reused ? ' (reused)' : ''}`,
-            );
-          } catch (falErr) {
-            reelFailureReason = 'Runway + fal.ai video üretilemedi';
-            console.warn('[auto-produce] fal.ai fallback also failed:', falErr instanceof Error ? falErr.message : falErr);
-          }
-        } else {
-          reelFailureReason = 'Runway reel üretilemedi';
-          console.warn('[auto-produce] Runway failed for reel:', headline.slice(0, 50));
-        }
-      } else if (runwayBudget) {
-        reelFailureReason = runwayBudget.reason ?? 'Runway bütçe yetersiz';
-        console.log('[auto-produce] Runway skipped:', runwayBudget.reason);
-      }
     } else if (isReel && !isHeroReel && !isFalMissionVideo && !isFalOnlyVideo) {
-      reelFailureReason = runwayReelsProducedInMission >= maxRunwayReelsPerMission
-        ? `Mission reel limiti (${maxRunwayReelsPerMission})`
+      reelFailureReason = heroReelsProducedInMission >= maxHeroReelsPerMission
+        ? `Mission reel limiti (${maxHeroReelsPerMission})`
         : 'Hero reel slot assigned to another idea — publish as story';
       console.log(`[auto-produce] Reel demoted (not hero slot): idea ${ideaIndex} "${headline.slice(0, 40)}"`);
       if (!videoUrl) {
@@ -3648,10 +3356,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         if (captionDrivenGenerated) return 'caption_driven_ai';
         if (videoUrl && isFalOnlyVideo) return assignment.pipeline === 'fal_only_reel' ? 'fal_only_reel' : 'fal_only_story';
         if (videoUrl && isFalMissionVideo) {
-          const rawFalI2v = runwayProduceMeta
-            && (runwayProduceMeta.source === 'kling'
-              || runwayProduceMeta.source === 'luma'
-              || runwayProduceMeta.source === 'fal_video')
+          const rawFalI2v = videoProduceMeta
+            && (videoProduceMeta.source === 'kling'
+              || videoProduceMeta.source === 'luma'
+              || videoProduceMeta.source === 'fal_video')
             && !falDesignEngine;
           return rawFalI2v ? 'fal_raw_i2v' : 'fal_designer_video';
         }
@@ -3709,37 +3417,32 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       flux_used: false,
       agency_defaults_forced: agencyProductionForced,
       agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)),
-      runway_produced: Boolean(videoUrl) && !isFalMissionVideo && !isFalOnlyVideo,
+      hero_reel_produced: Boolean(videoUrl) && !isFalMissionVideo && !isFalOnlyVideo,
       fal_video_produced: isPlayableVideoUrl(videoUrl) && (isFalMissionVideo || isFalOnlyVideo),
       fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo)) || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine)),
-      ...(isFalMissionVideo && runwayProduceMeta ? { fal_video_model: runwayProduceMeta.source } : {}),
-      ...(runwayProduceMeta ? {
-        runway_source: runwayProduceMeta.source,
-        runway_strategy: runwayProduceMeta.strategy,
-        runway_photo_count: runwayProduceMeta.photoCount,
-        camera_motion: runwayProduceMeta.cameraMotion ?? null,
-        reel_pace: runwayProduceMeta.reelPace ?? null,
-        sector_id: runwayProduceMeta.sectorId ?? normalizeSectorId(brandBusinessType),
-        ...(runwayProduceMeta.i2vReused ? {
+      ...(isFalMissionVideo && videoProduceMeta ? { fal_video_model: videoProduceMeta.source } : {}),
+      ...(videoProduceMeta ? {
+        video_source: videoProduceMeta.source,
+        video_strategy: videoProduceMeta.strategy,
+        video_photo_count: videoProduceMeta.photoCount,
+        camera_motion: videoProduceMeta.cameraMotion ?? null,
+        reel_pace: videoProduceMeta.reelPace ?? null,
+        sector_id: videoProduceMeta.sectorId ?? normalizeSectorId(brandBusinessType),
+        ...(videoProduceMeta.i2vReused ? {
           i2v_reused: true,
-          i2v_reused_from_artifact_id: runwayProduceMeta.reusedFromArtifactId ?? null,
+          i2v_reused_from_artifact_id: videoProduceMeta.reusedFromArtifactId ?? null,
         } : {}),
       } : {}),
       ...(isPlayableVideoUrl(videoUrl)
-        && runwayProduceMeta
-        && (runwayProduceMeta.source === 'kling'
-          || runwayProduceMeta.source === 'luma'
-          || runwayProduceMeta.source === 'fal_video')
+        && videoProduceMeta
+        && (videoProduceMeta.source === 'kling'
+          || videoProduceMeta.source === 'luma'
+          || videoProduceMeta.source === 'fal_video')
         ? {
           i2v_source_image_url: pickedGallerySourceUrl ?? referenceUrl ?? null,
           i2v_motion_type: 'raw_gallery',
         }
         : {}),
-      ...(reelHookScore ? {
-        reel_hook_score: reelHookScore.score,
-        reel_hook_pass: reelHookScore.pass,
-        reel_hook_reasons: reelHookScore.reasons.join(', ') || null,
-      } : {}),
       canvas_produced: isCanvas,
       carousel_urls:   persistedCarouselUrls.length ? persistedCarouselUrls : undefined,
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,

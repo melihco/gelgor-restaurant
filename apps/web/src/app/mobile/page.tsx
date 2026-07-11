@@ -17,39 +17,13 @@ import {
 } from './_lib/mobile-artifacts';
 
 import {
-  AICommandCenter,
-  CampaignDetail,
-  CreativePreview,
-  ApprovalFeedback,
-  AIActivity,
-  BrandConstitution,
-  Templates,
-  Insights,
-  Campaigns,
-  Outputs,
-  Reviews,
-  ReviewDetail,
-  AgentsScreen,
-  NewBrief,
-  AdsOverview,
-  MoreMenu,
   prefetchMobileScreen,
-  NotificationsScreen,
-  SettingsScreen,
-  VisitorsScreen,
-  BillingScreen,
-  MissionHub,
-  BrandRulesScreen,
-  MissionContentFactory,
-  PlatformFeed,
-  PlatformPreviewStudio,
-  ReelsStudio,
   LoginScreen,
   OnboardingFlow,
 } from './_components/mobile-screen-loaders';
 import { MobileArtifactsPoller } from './_components/MobileArtifactsPoller';
 import { TenantBrandProvider } from './_components/TenantBrandProvider';
-import { resolveClientScreen } from './_components/mobile-client-config';
+import { MobileScreenRouter } from './_components/MobileScreenRouter';
 
 /* ─── Mobile-scoped CSS ──────────────────────────────────────────────
  * IMPORTANT: All rules MUST be scoped to .sa-mobile to avoid leaking
@@ -1005,6 +979,158 @@ const CSS = `
   .sa-mobile .screen-enter { animation: fadeUp 300ms cubic-bezier(0.22,1,0.36,1) both; }
   .sa-mobile .nav-enter   { animation: navPop 360ms cubic-bezier(0.34,1.2,0.64,1) both; }
 
+  /* ── Native screen transitions (tab + stack) ── */
+  .sa-mobile .mobile-screen-host {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .sa-mobile .mobile-tab-stage {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  .sa-mobile .mobile-tab-pane {
+    position: absolute;
+    inset: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 1;
+    transform: translate3d(0, 0, 0);
+    will-change: transform, opacity;
+  }
+  .sa-mobile .mobile-tab-pane.is-exiting {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .sa-mobile .mobile-tab-pane.is-active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    z-index: 2;
+  }
+  .sa-mobile .mobile-tab-pane.is-under-stack {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+    z-index: 1;
+    transform: scale(0.98);
+    filter: brightness(0.72);
+    transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1), filter 320ms ease;
+  }
+  .sa-mobile .mobile-tab-pane.tab-enter-left {
+    animation: mobileTabEnterLeft 340ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  .sa-mobile .mobile-tab-pane.tab-exit-left {
+    animation: mobileTabExitLeft 340ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    z-index: 3;
+  }
+  .sa-mobile .mobile-tab-pane.tab-enter-right {
+    animation: mobileTabEnterRight 340ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  .sa-mobile .mobile-tab-pane.tab-exit-right {
+    animation: mobileTabExitRight 340ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    z-index: 3;
+  }
+  .sa-mobile .mobile-stack-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 24;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    background: var(--sa-mobile-bg, #05060f);
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.28);
+    will-change: transform, opacity;
+  }
+  .sa-mobile .mobile-stack-layer.mobile-trans-forward {
+    animation: mobileStackPushIn 360ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  .sa-mobile .mobile-stack-layer.mobile-trans-back {
+    animation: mobileStackPopIn 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  .sa-mobile .mobile-stack-layer.mobile-trans-modal-in {
+    animation: mobileModalIn 400ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    box-shadow: none;
+  }
+  .sa-mobile .mobile-stack-layer.mobile-trans-modal-out {
+    animation: mobileModalOut 300ms cubic-bezier(0.32, 0.72, 0, 1) both;
+    box-shadow: none;
+  }
+  .sa-mobile .mobile-tab-scroll {
+    height: 100%;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  @keyframes mobileTabEnterLeft {
+    from { opacity: 0.4; transform: translate3d(32%, 0, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  @keyframes mobileTabExitLeft {
+    from { opacity: 1; transform: translate3d(0, 0, 0); }
+    to   { opacity: 0.35; transform: translate3d(-26%, 0, 0); }
+  }
+  @keyframes mobileTabEnterRight {
+    from { opacity: 0.4; transform: translate3d(-32%, 0, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  @keyframes mobileTabExitRight {
+    from { opacity: 1; transform: translate3d(0, 0, 0); }
+    to   { opacity: 0.35; transform: translate3d(26%, 0, 0); }
+  }
+  @keyframes mobileStackPushIn {
+    from { opacity: 0.92; transform: translate3d(100%, 0, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  @keyframes mobileStackPopIn {
+    from { opacity: 0.88; transform: translate3d(-18%, 0, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  @keyframes mobileModalIn {
+    from { opacity: 0.96; transform: translate3d(0, 100%, 0); }
+    to   { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  @keyframes mobileModalOut {
+    from { opacity: 1; transform: translate3d(0, 0, 0); }
+    to   { opacity: 0.9; transform: translate3d(0, 100%, 0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sa-mobile .mobile-tab-pane,
+    .sa-mobile .mobile-stack-layer {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+      filter: none !important;
+    }
+  }
+
+  .sa-mobile [data-brand-fix].brand-fix-highlight {
+    outline: 2px solid rgba(52, 211, 153, 0.75);
+    outline-offset: 3px;
+    border-radius: 14px;
+    animation: brandFixPulse 1.6s ease-in-out 2;
+  }
+  @keyframes brandFixPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    50% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0.18); }
+  }
+
   /* ── Desktop / tablet — Instagram web genişliği (≥768px) ── */
   @media (min-width: 768px) {
     .sa-mobile-outer {
@@ -1119,42 +1245,6 @@ const CSS = `
 `;
 
 const NO_NAV = new Set(['creative-preview', 'approval', 'new-brief', 'platform-preview']);
-
-function ScreenRouter() {
-  const screen = resolveClientScreen(useMobileStore(s => s.screen));
-  const node = (() => {
-    switch (screen) {
-      case 'home':             return <AICommandCenter />;
-      case 'campaigns':        return <Campaigns />;
-      case 'campaign-detail':  return <CampaignDetail />;
-      case 'creative-preview': return <CreativePreview />;
-      case 'approval':         return <ApprovalFeedback />;
-      case 'ai-activity':      return <AIActivity />;
-      case 'brand':            return <BrandConstitution />;
-      case 'templates':        return <Templates />;
-      case 'insights':         return <Insights />;
-      case 'outputs':          return <Outputs />;
-      case 'reviews':          return <Reviews />;
-      case 'review-detail':    return <ReviewDetail />;
-      case 'agents':           return <AgentsScreen />;
-      case 'new-brief':        return <NewBrief />;
-      case 'ads':              return <AdsOverview />;
-      case 'more':             return <MoreMenu />;
-      case 'notifications':    return <NotificationsScreen />;
-      case 'settings':         return <SettingsScreen />;
-      case 'visitors':         return <VisitorsScreen />;
-      case 'billing':          return <BillingScreen />;
-      case 'missions':         return <MissionHub />;
-      case 'brand-rules':      return <BrandRulesScreen />;
-      case 'mission-factory':  return <MissionContentFactory />;
-      case 'feed':             return <PlatformFeed />;
-      case 'platform-preview': return <PlatformPreviewStudio />;
-      case 'reels-studio':     return <ReelsStudio />;
-      default:                 return <AICommandCenter />;
-    }
-  })();
-  return <div key={screen} className="screen-enter">{node}</div>;
-}
 
 function Splash() {
   return <BrandLoadingScreen />;
@@ -1301,11 +1391,11 @@ function AppShell() {
     <>
       <div style={{
         ...base,
-        overflowY: noNav ? 'hidden' : 'auto',
-        // Extra padding for floating pill nav (58px pill + 18px gap + safe area)
-        paddingBottom: noNav ? 0 : 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
       }}>
-        <ScreenRouter />
+        <MobileScreenRouter />
       </div>
       {!noNav && <MobileNav />}
       {showProfile && <ProfileSheet onClose={closeProfile} />}

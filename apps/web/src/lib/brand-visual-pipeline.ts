@@ -9,7 +9,7 @@ import {
   shouldAiEnhanceForOutput,
 } from '@/lib/ai-visual-production-standard';
 import type { ProductSceneBrief } from '@/lib/production-stack';
-import { buildRunwayDirectorExtra } from '@/lib/production-stack';
+import { buildReelDirectorExtra } from '@/lib/production-stack';
 import {
   buildAiEnhanceContextCaption,
   enhanceGalleryPhotosForIdea,
@@ -184,7 +184,7 @@ export async function runGptImageEnhanceForIdea(
     cta: input.cta,
   });
 
-  const directorSceneExtra = buildRunwayDirectorExtra(input.sceneBrief ?? null);
+  const directorSceneExtra = buildReelDirectorExtra(input.sceneBrief ?? null);
 
   const enhancedUrls = await enhanceGalleryPhotosForIdea({
     baseUrl: input.baseUrl,

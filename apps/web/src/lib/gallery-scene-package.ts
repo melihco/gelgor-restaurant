@@ -1,5 +1,5 @@
 /**
- * Turn gallery vision analysis into Runway image-to-video scene context.
+ * Turn gallery vision analysis into image-to-video scene context.
  * Preserves the exact frame while suggesting subtle, photo-grounded motion.
  */
 
@@ -7,13 +7,13 @@ import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { isVisionAnalysisDescription } from '@/lib/feed-display-caption';
 import type { RendererGalleryMeta } from '@/lib/renderer-payload';
 
-const RUNWAY_DESC_MAX = 520;
+const VIDEO_DESC_MAX = 520;
 const SCENE_MOMENT_MAX = 280;
 
-export interface RunwayGalleryScenePackage {
+export interface GalleryScenePackage {
   /** Full vision description for director GPT (English-safe, trimmed). */
   photoDescription: string;
-  /** One-line "what this frame is" for Runway fidelity. */
+  /** One-line "what this frame is" for I2V fidelity. */
   sceneMoment: string;
   /** Subtle motions safe for image-to-video (steam, ripple, bokeh…). */
   microMotions: string[];
@@ -26,7 +26,7 @@ export interface RunwayGalleryScenePackage {
 }
 
 /** Strip vision boilerplate prefixes; keep substantive scene text. */
-export function sanitizePhotoDescriptionForRunway(raw: string): string {
+export function sanitizePhotoDescriptionForVideo(raw: string): string {
   let t = raw.trim();
   if (!t) return '';
 
@@ -36,8 +36,8 @@ export function sanitizePhotoDescriptionForRunway(raw: string): string {
     .replace(/\bthe\s+image\s+shows\s+/gi, '')
     .trim();
 
-  if (t.length > RUNWAY_DESC_MAX) {
-    const cut = t.slice(0, RUNWAY_DESC_MAX);
+  if (t.length > VIDEO_DESC_MAX) {
+    const cut = t.slice(0, VIDEO_DESC_MAX);
     const lastPeriod = cut.lastIndexOf('.');
     t = lastPeriod > 120 ? cut.slice(0, lastPeriod + 1) : `${cut.trimEnd()}…`;
   }
@@ -146,14 +146,14 @@ function buildSceneMomentLine(
 /**
  * Build structured scene package from gallery_analysis entry + optional caption.
  */
-export function buildRunwayGalleryScenePackage(
+export function buildGalleryScenePackage(
   meta: Partial<GalleryPhotoMeta> | undefined,
   caption?: string,
-): RunwayGalleryScenePackage | null {
+): GalleryScenePackage | null {
   const rawDesc = String(meta?.description ?? '').trim();
   if (!rawDesc && !caption?.trim()) return null;
 
-  const photoDescription = sanitizePhotoDescriptionForRunway(
+  const photoDescription = sanitizePhotoDescriptionForVideo(
     rawDesc || caption!.trim(),
   );
   if (!photoDescription) return null;
@@ -190,12 +190,12 @@ export function buildRunwayGalleryScenePackage(
   };
 }
 
-/** Map gallery meta → renderer gallery block (Runway + buildReelPayload). */
+/** Map gallery meta → renderer gallery block (reel payload + fal I2V). */
 export function galleryMetaToRendererGallery(
   meta: Partial<GalleryPhotoMeta> | undefined,
   opts?: { photoUrl?: string | null; matchScore?: number; caption?: string },
 ): RendererGalleryMeta {
-  const pkg = buildRunwayGalleryScenePackage(meta, opts?.caption);
+  const pkg = buildGalleryScenePackage(meta, opts?.caption);
   return {
     photoUrl: opts?.photoUrl ?? null,
     description: pkg?.photoDescription ?? meta?.description,
@@ -211,14 +211,14 @@ export function galleryMetaToRendererGallery(
 }
 
 /** Director-only extras derived from gallery (for generate-reel body). */
-export function runwaySceneFieldsFromGallery(
+export function gallerySceneFieldsFromGallery(
   meta: Partial<GalleryPhotoMeta> | undefined,
   caption?: string,
 ): Pick<
-  RunwayGalleryScenePackage,
+  GalleryScenePackage,
   'photoDescription' | 'sceneMoment' | 'microMotions' | 'photoTags' | 'photoMood'
 > | null {
-  const pkg = buildRunwayGalleryScenePackage(meta, caption);
+  const pkg = buildGalleryScenePackage(meta, caption);
   if (!pkg) return null;
   return {
     photoDescription: pkg.photoDescription,

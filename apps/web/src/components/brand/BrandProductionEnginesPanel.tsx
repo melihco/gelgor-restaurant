@@ -39,7 +39,6 @@ function readEngines(theme: ThemeRecord): BrandProductionEnginesConfig {
         ? raw.remotion.blocked_story_families
         : defaults.remotion.blocked_story_families,
     },
-    runway: { ...defaults.runway, ...raw.runway },
     throughput: {
       factory_drain_batch: raw.throughput?.factory_drain_batch ?? defaults.throughput?.factory_drain_batch,
       remotion_max_concurrent: raw.throughput?.remotion_max_concurrent ?? defaults.throughput?.remotion_max_concurrent,
@@ -100,7 +99,6 @@ export function BrandProductionEnginesPanel({
       ...patch,
       fal: { ...engines.fal, ...patch.fal },
       remotion: { ...engines.remotion, ...patch.remotion },
-      runway: { ...engines.runway, ...patch.runway },
       throughput: { ...engines.throughput, ...patch.throughput },
     });
   };
@@ -160,8 +158,8 @@ export function BrandProductionEnginesPanel({
   return (
     <div>
       <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 16 }}>
-        Story ve reel kalitesini yöneten motorlar: <strong>fal.ai</strong> (story poster + motion plate + AI tipografi),
-        <strong> Runway</strong> (reel video), <strong>şablon kütüphanesi</strong> (tipografi + layout).
+        Story ve reel kalitesini yöneten motorlar: <strong>fal.ai</strong> (story poster, motion plate, reel I2V, AI tipografi)
+        ve <strong>şablon kütüphanesi</strong> (tipografi + layout).
         Şablon seçimi Template Kütüphanesi&apos;nden; motor önceliği buradan.
       </div>
 
@@ -272,32 +270,6 @@ export function BrandProductionEnginesPanel({
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Runway */}
-      <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-        Runway — Reel Video
-      </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 12px', borderRadius: 12, marginBottom: 16,
-        border: `0.5px solid ${t.separator}`,
-      }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>Runway Reel Üretimi</div>
-          <div style={{ fontSize: 11, color: t.textMuted }}>Tempo/kamera ayarları → Reel Motion paneli</div>
-        </div>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => savePatch({ runway: { enabled: !engines.runway.enabled } })}
-          style={toggleStyle(engines.runway.enabled, '#F59E0B')}
-        >
-          <div style={{
-            position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%',
-            background: '#fff', left: engines.runway.enabled ? 21 : 3, transition: 'left 0.2s',
-          }} />
-        </button>
       </div>
 
       {/* Story layout families */}

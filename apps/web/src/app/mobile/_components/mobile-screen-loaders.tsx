@@ -308,11 +308,6 @@ export const PlatformPreviewStudio = dynamic(
     import('./screens/PlatformPreviewStudio').then((m) => ({ default: m.PlatformPreviewStudio }))),
   { loading: () => <ScreenSkeleton />, ssr: false },
 );
-export const ReelsStudio = dynamic(
-  () => import('./screens/ReelsStudio').then((m) => ({ default: m.ReelsStudio })),
-  { loading: () => <ScreenSkeleton /> },
-);
-
 export const LoginScreen = dynamic(
   importWithChunkRetry('LoginScreen', () =>
     import('./screens/LoginScreen').then((m) => ({ default: m.LoginScreen }))),

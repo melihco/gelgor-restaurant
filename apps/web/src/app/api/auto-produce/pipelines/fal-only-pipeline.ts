@@ -26,8 +26,8 @@ import {
 import { serverConfig } from '@/lib/server-config';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
-export interface FalOnlyRunwayMeta {
-  source: 'runway' | 'runway_multi_photo' | 'kling' | 'luma' | 'fal_video';
+export interface FalOnlyVideoMeta {
+  source: 'kling' | 'luma' | 'fal_video';
 }
 
 export interface FalOnlySlotInput {
@@ -73,7 +73,7 @@ export interface FalOnlySlotResult {
   falGrafikerScore: number | null;
   falGrafikerPass: boolean;
   falDesignEngine: string | null;
-  runwayProduceMeta: FalOnlyRunwayMeta | null;
+  videoProduceMeta: FalOnlyVideoMeta | null;
   /** Added to the running cost estimate. */
   costDelta: number;
   /** Set when production attempted but no usable URL (for factory last_error). */
@@ -101,7 +101,7 @@ export async function produceFalOnlySlot(
       falGrafikerScore: null,
       falGrafikerPass: false,
       falDesignEngine: null,
-      runwayProduceMeta: null,
+      videoProduceMeta: null,
       costDelta: 0,
       failureReason: 'fal_only: FAL_API_KEY not configured',
     };
@@ -188,7 +188,7 @@ export async function produceFalOnlySlot(
         falGrafikerScore: designer.grafikerScore,
         falGrafikerPass: designer.grafikerPass,
         falDesignEngine: photoUrl ? 'fal_grounded_designer' : 'fal_ideogram_only',
-        runwayProduceMeta: {
+        videoProduceMeta: {
           source: designer.motionModel.includes('kling') ? 'kling' : 'fal_video',
         },
         costDelta: falPipeline === 'fal_reel' ? 0.18 : 0.14,
@@ -220,7 +220,7 @@ export async function produceFalOnlySlot(
           falGrafikerScore: null,
           falGrafikerPass: true,
           falDesignEngine: 'fal_cinematic_motion',
-          runwayProduceMeta: {
+          videoProduceMeta: {
             source: motion.model.includes('kling') ? 'kling' : 'luma',
           },
           costDelta: 0.14,
@@ -234,7 +234,7 @@ export async function produceFalOnlySlot(
           falGrafikerScore: null,
           falGrafikerPass: false,
           falDesignEngine: null,
-          runwayProduceMeta: null,
+          videoProduceMeta: null,
           costDelta: 0,
           failureReason: `fal_only_video: ${cinematicMsg}`.slice(0, 480),
         };
@@ -246,7 +246,7 @@ export async function produceFalOnlySlot(
       falGrafikerScore: null,
       falGrafikerPass: false,
       falDesignEngine: null,
-      runwayProduceMeta: null,
+      videoProduceMeta: null,
       costDelta: 0,
       failureReason: `fal_only_video: ${designFailMsg || 'no gallery photo for cinematic fallback'}`.slice(0, 480),
     };
@@ -325,7 +325,7 @@ export async function produceFalOnlySlot(
         falGrafikerScore: still.grafikerScore,
         falGrafikerPass: still.grafikerPass,
         falDesignEngine: photoUrl ? 'fal_grounded_designer' : 'fal_ideogram_only',
-        runwayProduceMeta: null,
+        videoProduceMeta: null,
         costDelta: 0.05,
       };
     } catch (falOnlyErr) {
@@ -337,7 +337,7 @@ export async function produceFalOnlySlot(
         falGrafikerScore: null,
         falGrafikerPass: false,
         falDesignEngine: null,
-        runwayProduceMeta: null,
+        videoProduceMeta: null,
         costDelta: 0,
         failureReason: `fal_only_post: ${msg}`.slice(0, 480),
       };
@@ -426,7 +426,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       state.falGrafikerScore = falOnly.falGrafikerScore;
       state.falGrafikerPass = falOnly.falGrafikerPass;
       state.falDesignEngine = falOnly.falDesignEngine;
-      if (falOnly.runwayProduceMeta) state.runwayProduceMeta = falOnly.runwayProduceMeta;
+      if (falOnly.videoProduceMeta) state.videoProduceMeta = falOnly.videoProduceMeta;
       state.costDelta += falOnly.costDelta;
       if (falOnly.failureReason && !falOnly.imageUrl && !falOnly.videoUrl) {
         state.pipelineFailureReason = falOnly.failureReason;

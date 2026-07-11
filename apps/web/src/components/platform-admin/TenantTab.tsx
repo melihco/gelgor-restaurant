@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
-import { AdminSectionTitle, AdminSurface } from '@/components/ui/admin-template';
+import { AdminSectionTitle, AdminSurface } from '@/components/platform-admin/admin-ui';
 
 export function TenantTab({
   workspaceId,
@@ -27,7 +27,7 @@ export function TenantTab({
       <AdminSurface>
         <AdminSectionTitle title="Workspace seçici" subtitle="v1: manuel UUID; v2: tenant registry dropdown" />
         <input
-          className="w-full max-w-xl rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none focus:border-amber-400/40"
+          className="w-full max-w-xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.02] px-4 py-3 text-sm text-gray-800 dark:text-white/90 outline-none focus:border-brand-400 dark:focus:border-brand-500"
           value={workspaceId}
           onChange={(e) => onWorkspaceIdChange(e.target.value)}
           placeholder="Workspace / tenant UUID"
@@ -37,7 +37,7 @@ export function TenantTab({
       <div className="grid gap-6 lg:grid-cols-2">
         <AdminSurface>
           <AdminSectionTitle title="Marka kimliği" />
-          {brandQuery.isLoading && <p className="text-sm text-white/50">Yükleniyor…</p>}
+          {brandQuery.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Yükleniyor…</p>}
           <div className="grid gap-3">
             <Field label="Marka" value={brand?.brandName ?? '—'} />
             <Field label="Business type" value={brand?.businessType ?? visual?.businessType ?? '—'} />
@@ -51,8 +51,8 @@ export function TenantTab({
           <div className="grid gap-3">
             <Field label="Galeri analizi alanları" value={String(Object.keys(production?.galleryAnalysis ?? {}).length)} />
             <Field label="Referans görseller" value={String(visual?.referenceImageUrls?.length ?? 0)} />
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-[11px] uppercase tracking-wider text-white/40">AI görsel bayrakları</div>
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.02] p-4">
+              <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">AI görsel bayrakları</div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 <Flag label="Photo enhance" on={Boolean(brand?.themeAi?.aiPhotoEnhance)} />
                 <Flag label="Gallery edit" on={Boolean(brand?.themeAi?.aiEnhanceGallerySelected)} />
@@ -68,16 +68,16 @@ export function TenantTab({
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <div className="text-[11px] uppercase tracking-wider text-white/40">{label}</div>
-      <div className="mt-2 text-sm text-white/85">{value}</div>
+    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.02] p-4">
+      <div className="text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">{label}</div>
+      <div className="mt-2 text-sm text-gray-700 dark:text-gray-200">{value}</div>
     </div>
   );
 }
 
 function Flag({ label, on }: { label: string; on: boolean }) {
   return (
-    <span className={`rounded-full border px-3 py-1 ${on ? 'border-emerald-400/35 text-emerald-200' : 'border-white/10 text-white/45'}`}>
+    <span className={`rounded-full border px-3 py-1 ${on ? 'border-success-200 text-success-600 dark:border-success-500/30 dark:text-success-500' : 'border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400'}`}>
       {label}: {on ? 'on' : 'off'}
     </span>
   );

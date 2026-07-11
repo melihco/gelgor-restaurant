@@ -14,7 +14,7 @@
 import type { ProductionIdea, ProductionRenderer } from '@/types/production-idea';
 import type { ProductionPipeline } from '@/lib/mission-production-manifest';
 import { productionIdeaToRecord } from '@/lib/production-idea-parse';
-import { resolveRunwayCameraMotionForFidelity } from './runway-reel-fidelity';
+import { resolveReelCameraMotionForFidelity } from './reel-motion-fidelity';
 import { normalizeSectorId } from './sector-production-profile';
 
 /** Minimum PIS before auto-produce runs a slot (Foundation S4 / APO-3). */
@@ -84,7 +84,7 @@ export function buildReelPayload(
 ): ReelPayload {
   const vibeMotion = (brand.vibeProfile as { motion?: { camera_movement?: string; pace?: string } } | undefined)?.motion;
   const sectorId = normalizeSectorId(opts?.sector ?? brand.businessType);
-  const defaultCamera = resolveRunwayCameraMotionForFidelity({
+  const defaultCamera = resolveReelCameraMotionForFidelity({
     agentCamera: opts?.cameraMotion,
     vibeCamera: vibeMotion?.camera_movement,
     mood: brand.visualStyle,

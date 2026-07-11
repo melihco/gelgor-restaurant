@@ -10,7 +10,7 @@ import {
   buildPostScenePromptBlock,
   resolveVisualSubject,
 } from '@/lib/ai-visual-production-standard';
-import { buildRunwayDirectorExtra, type ProductSceneBrief } from '@/lib/production-stack';
+import { buildReelDirectorExtra, type ProductSceneBrief } from '@/lib/production-stack';
 import {
   buildReelPayload,
   type ReelPayload,
@@ -20,8 +20,8 @@ import {
 import {
   reelPacingDirectorHint,
   resolveEffectiveReelPace,
-  resolveRunwayCameraMotionForFidelity,
-} from '@/lib/runway-reel-fidelity';
+  resolveReelCameraMotionForFidelity,
+} from '@/lib/reel-motion-fidelity';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
 import { firstStr } from '@/lib/production-idea-parse';
 import type { BrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
@@ -36,8 +36,8 @@ export interface ReelDirectorExtras {
   brandContextForVisual?: BrandContextForVisual;
   sceneBrief?: ProductSceneBrief | null;
   reelMotionSpec?: Record<string, unknown>;
-  /** Agent runway_prompt from video_production / feed art director */
-  runwayPromptFromAgent?: string;
+  /** Agent reel prompt from video_production / feed art director */
+  reelPromptFromAgent?: string;
   strategicPurpose?: string;
   productType?: string;
   workspaceId?: string;
@@ -60,11 +60,11 @@ export function buildReelAgentVisualDirection(
   if (vps.imageEditPrompt?.trim()) {
     parts.push(vps.imageEditPrompt.trim().slice(0, 320));
   }
-  if (extras.runwayPromptFromAgent?.trim()) {
-    parts.push(extras.runwayPromptFromAgent.trim().slice(0, 320));
+  if (extras.reelPromptFromAgent?.trim()) {
+    parts.push(extras.reelPromptFromAgent.trim().slice(0, 320));
   }
   if (extras.sceneBrief) {
-    const briefExtra = buildRunwayDirectorExtra(extras.sceneBrief);
+    const briefExtra = buildReelDirectorExtra(extras.sceneBrief);
     if (briefExtra) parts.push(briefExtra.slice(0, 320));
   }
 
@@ -163,8 +163,8 @@ export function buildReelConceptFromIdea(
     idea.visualProductionSpec.imageEditPrompt
       ? `Visual direction: ${idea.visualProductionSpec.imageEditPrompt.slice(0, 220)}`
       : '',
-    extras.runwayPromptFromAgent
-      ? `Runway brief: ${extras.runwayPromptFromAgent.slice(0, 220)}`
+    extras.reelPromptFromAgent
+      ? `Reel brief: ${extras.reelPromptFromAgent.slice(0, 220)}`
       : '',
     vibeClause,
     brand.missionBrief ? `Mission: ${brand.missionBrief.slice(0, 300)}` : '',
@@ -186,7 +186,7 @@ export function buildReelGenerateReelRequest(
   const vibeMotion = (extras.vibeProfile?.motion as Record<string, string> | undefined) ?? {};
   const sectorId = normalizeSectorId(extras.sector ?? extras.businessType);
   const reelPace = String(extras.reelMotionSpec?.pace ?? extras.reelMotionSpec?.audio_mood ?? '').trim();
-  const cameraMotion = resolveRunwayCameraMotionForFidelity({
+  const cameraMotion = resolveReelCameraMotionForFidelity({
     agentCamera:
       extras.cameraMotion
       ?? String(extras.reelMotionSpec?.camera_movement ?? ''),
@@ -310,7 +310,7 @@ export function reelDirectorExtrasFromIdeaRecord(
     brandContextForVisual: opts.brandContextForVisual,
     sceneBrief: opts.sceneBrief,
     reelMotionSpec: reelSpec,
-    runwayPromptFromAgent: firstStr(rec, 'runway_prompt', 'runwayPrompt'),
+    reelPromptFromAgent: firstStr(rec, 'runway_prompt', 'runwayPrompt', 'reel_prompt', 'reelPrompt'),
     strategicPurpose:
       opts.strategicPurpose
       ?? firstStr(rec, 'strategic_purpose', 'strategicPurpose', 'purpose'),

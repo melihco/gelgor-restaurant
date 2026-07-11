@@ -7,7 +7,7 @@ import {
   getAdminMissionCostProduction,
   getAdminWorkspaceCostSummary,
 } from '@/lib/platform-admin-cost-client';
-import { AdminSectionTitle, AdminSurface } from '@/components/ui/admin-template';
+import { AdminSectionTitle, AdminSurface } from '@/components/platform-admin/admin-ui';
 import { CostMetric, formatScopeLabel, formatUsd } from '@/components/platform-admin/OverviewTab';
 
 const SCOPE_ORDER = ['mission_graph', 'feed_slot', 'integration', 'gallery', 'other'];
@@ -51,9 +51,9 @@ export function CostTab({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm text-white/50">Dönem</label>
+        <label className="text-sm text-gray-500 dark:text-gray-400">Dönem</label>
         <select
-          className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
+          className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-white/[0.03] px-3 py-2 text-sm text-gray-800 dark:text-white/90 outline-none"
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
         >
@@ -61,10 +61,10 @@ export function CostTab({
           <option value={30}>30 gün</option>
           <option value={90}>90 gün</option>
         </select>
-        <span className="text-xs text-white/35">Workspace: {workspaceId.slice(0, 8)}…</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">Workspace: {workspaceId.slice(0, 8)}…</span>
       </div>
 
-      {workspaceQuery.isLoading && <p className="text-sm text-white/50">Maliyet verisi yükleniyor…</p>}
+      {workspaceQuery.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Maliyet verisi yükleniyor…</p>}
       {workspaceQuery.isError && <p className="text-sm text-rose-300">Workspace maliyet özeti alınamadı.</p>}
 
       {ws && (
@@ -82,12 +82,12 @@ export function CostTab({
               <div className="space-y-2">
                 {SCOPE_ORDER.filter((s) => (ws.by_scope?.[s] ?? 0) > 0).map((scope) => (
                   <div key={scope} className="flex justify-between gap-4 text-sm">
-                    <span className="text-white/60">{formatScopeLabel(scope)}</span>
-                    <span className="font-semibold text-white">{formatUsd(ws.by_scope[scope] ?? 0)}</span>
+                    <span className="text-gray-600 dark:text-gray-300">{formatScopeLabel(scope)}</span>
+                    <span className="font-semibold text-gray-800 dark:text-white/90">{formatUsd(ws.by_scope[scope] ?? 0)}</span>
                   </div>
                 ))}
                 {Object.keys(ws.by_scope ?? {}).length === 0 && (
-                  <p className="text-sm text-white/40">Henüz cost_events kaydı yok. Yeni üretimler burada görünür.</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Henüz cost_events kaydı yok. Yeni üretimler burada görünür.</p>
                 )}
               </div>
             </AdminSurface>
@@ -96,9 +96,9 @@ export function CostTab({
               <AdminSectionTitle title="Günlük seri" subtitle={`Son ${days} gün`} />
               <div className="max-h-64 space-y-1 overflow-y-auto text-xs">
                 {(ws.daily_series ?? []).slice().reverse().map((d) => (
-                  <div key={d.date} className="flex justify-between gap-2 border-b border-white/5 py-1.5">
-                    <span className="text-white/45">{d.date}</span>
-                    <span className="text-white/80">
+                  <div key={d.date} className="flex justify-between gap-2 border-b border-gray-100 dark:border-gray-800 py-1.5">
+                    <span className="text-gray-500 dark:text-gray-400">{d.date}</span>
+                    <span className="text-gray-700 dark:text-gray-200">
                       {formatUsd(d.total_usd)}
                       {d.measured_usd > 0 && (
                         <span className="ml-2 text-emerald-400/80">({formatUsd(d.measured_usd)} ölçülmüş)</span>
@@ -112,9 +112,9 @@ export function CostTab({
 
           <AdminSurface>
             <AdminSectionTitle title="Top missions" subtitle="Dönemde en yüksek maliyet" count={ws.top_missions?.length} />
-            <div className="overflow-x-auto rounded-2xl border border-white/10">
+            <div className="overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
               <table className="min-w-full text-left text-sm">
-                <thead className="bg-white/5 text-[11px] uppercase tracking-wider text-white/45">
+                <thead className="bg-gray-50 dark:bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   <tr>
                     <th className="px-4 py-3">Mission ID</th>
                     <th className="px-4 py-3">Toplam</th>
@@ -126,12 +126,12 @@ export function CostTab({
                 </thead>
                 <tbody>
                   {(ws.top_missions ?? []).map((m) => (
-                    <tr key={m.mission_id} className="border-t border-white/10">
-                      <td className="px-4 py-3 font-mono text-xs text-white/70">{m.mission_id.slice(0, 8)}…</td>
-                      <td className="px-4 py-3 font-semibold text-white">{formatUsd(m.total_usd)}</td>
-                      <td className="px-4 py-3 text-white/60">{formatUsd(m.measured_usd)}</td>
-                      <td className="px-4 py-3 text-white/60">{m.slot_count}</td>
-                      <td className="px-4 py-3 text-white/60">{m.event_count}</td>
+                    <tr key={m.mission_id} className="border-t border-gray-200 dark:border-gray-800">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-300">{m.mission_id.slice(0, 8)}…</td>
+                      <td className="px-4 py-3 font-semibold text-gray-800 dark:text-white/90">{formatUsd(m.total_usd)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{formatUsd(m.measured_usd)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{m.slot_count}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{m.event_count}</td>
                       <td className="px-4 py-3">
                         <button
                           type="button"
@@ -158,7 +158,7 @@ export function CostTab({
             action={(
               <button
                 type="button"
-                className="text-xs text-white/50 hover:text-white"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white"
                 onClick={() => onSelectMission(null)}
               >
                 Kapat
@@ -166,7 +166,7 @@ export function CostTab({
             )}
           />
 
-          {missionQuery.isLoading && <p className="text-sm text-white/50">Mission rollup yükleniyor…</p>}
+          {missionQuery.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Mission rollup yükleniyor…</p>}
 
           {rollup && (
             <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -178,9 +178,9 @@ export function CostTab({
           )}
 
           {(mission?.slots ?? []).length > 0 && (
-            <div className="mb-6 overflow-x-auto rounded-2xl border border-white/10">
+            <div className="mb-6 overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-800">
               <table className="min-w-full text-left text-sm">
-                <thead className="bg-white/5 text-[11px] uppercase tracking-wider text-white/45">
+                <thead className="bg-gray-50 dark:bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   <tr>
                     <th className="px-4 py-3">Slot</th>
                     <th className="px-4 py-3">Pipeline</th>
@@ -191,12 +191,12 @@ export function CostTab({
                 </thead>
                 <tbody>
                   {mission!.slots.map((slot) => (
-                    <tr key={slot.slot_key} className="border-t border-white/10">
-                      <td className="px-4 py-3 font-mono text-xs text-white">{slot.slot_key}</td>
-                      <td className="px-4 py-3 text-white/60">{slot.pipeline ?? '—'}</td>
-                      <td className="px-4 py-3 font-semibold text-white">{formatUsd(slot.total_usd)}</td>
-                      <td className="px-4 py-3 text-white/60">{slot.line_count}</td>
-                      <td className="px-4 py-3 text-xs text-white/50">
+                    <tr key={slot.slot_key} className="border-t border-gray-200 dark:border-gray-800">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-800 dark:text-white/90">{slot.slot_key}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{slot.pipeline ?? '—'}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-800 dark:text-white/90">{formatUsd(slot.total_usd)}</td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{slot.line_count}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
                         {Object.entries(slot.by_category ?? {}).map(([k, v]) => `${k}: ${formatUsd(v)}`).join(', ') || '—'}
                       </td>
                     </tr>
@@ -208,10 +208,10 @@ export function CostTab({
 
           {(eventsQuery.data?.events ?? []).length > 0 && (
             <>
-              <h3 className="mb-3 text-sm font-semibold text-white/80">Son eventler ({eventsQuery.data?.total ?? 0})</h3>
-              <div className="max-h-80 overflow-y-auto rounded-2xl border border-white/10 text-xs">
+              <h3 className="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200">Son eventler ({eventsQuery.data?.total ?? 0})</h3>
+              <div className="max-h-80 overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800 text-xs">
                 <table className="min-w-full text-left">
-                  <thead className="sticky top-0 bg-white/10 text-[10px] uppercase text-white/45">
+                  <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.05] text-[10px] uppercase text-gray-500 dark:text-gray-400">
                     <tr>
                       <th className="px-3 py-2">Zaman</th>
                       <th className="px-3 py-2">Scope</th>
@@ -223,13 +223,13 @@ export function CostTab({
                   </thead>
                   <tbody>
                     {eventsQuery.data!.events.map((ev) => (
-                      <tr key={ev.id} className="border-t border-white/5">
-                        <td className="px-3 py-2 text-white/50">{ev.recorded_at?.slice(0, 19) ?? '—'}</td>
-                        <td className="px-3 py-2 text-white/70">{ev.scope}</td>
-                        <td className="px-3 py-2 text-white/70">{ev.category}</td>
-                        <td className="px-3 py-2 font-semibold text-white">{formatUsd(ev.amount_usd)}</td>
-                        <td className="px-3 py-2 text-white/50">{ev.pricing_basis}</td>
-                        <td className="px-3 py-2 font-mono text-white/45">{ev.slot_key ?? '—'}</td>
+                      <tr key={ev.id} className="border-t border-gray-100 dark:border-gray-800">
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{ev.recorded_at?.slice(0, 19) ?? '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{ev.scope}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{ev.category}</td>
+                        <td className="px-3 py-2 font-semibold text-gray-800 dark:text-white/90">{formatUsd(ev.amount_usd)}</td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{ev.pricing_basis}</td>
+                        <td className="px-3 py-2 font-mono text-gray-500 dark:text-gray-400">{ev.slot_key ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -239,7 +239,7 @@ export function CostTab({
           )}
 
           {selectedMissionId && !missionQuery.isLoading && !rollup && (
-            <p className="text-sm text-white/40">Bu mission için henüz cost_events kaydı yok.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Bu mission için henüz cost_events kaydı yok.</p>
           )}
         </AdminSurface>
       )}

@@ -1,5 +1,5 @@
 /**
- * Brand-level production engine config — Runway / Remotion / FAL routing.
+ * Brand-level production engine config — Remotion / FAL routing.
  * Stored on brand_theme.production_engines (JSONB).
  */
 import type { RemotionLayoutFamily } from './remotion-template-types';
@@ -22,10 +22,6 @@ export interface BrandRemotionEngineConfig {
   blocked_story_families: RemotionLayoutFamily[];
 }
 
-export interface BrandRunwayEngineConfig {
-  enabled: boolean;
-}
-
 export interface BrandProductionThroughputConfig {
   /** Factory drain batch size (1–5). Default 4. */
   factory_drain_batch?: number;
@@ -36,7 +32,6 @@ export interface BrandProductionThroughputConfig {
 export interface BrandProductionEnginesConfig {
   fal: BrandFalEngineConfig;
   remotion: BrandRemotionEngineConfig;
-  runway: BrandRunwayEngineConfig;
   throughput?: BrandProductionThroughputConfig;
 }
 
@@ -116,9 +111,6 @@ const DEFAULT_ENGINES: BrandProductionEnginesConfig = {
     ],
     blocked_story_families: [...TIER3_STORY_FAMILIES],
   },
-  runway: {
-    enabled: false,
-  },
   throughput: {
     factory_drain_batch: 4,
     remotion_max_concurrent: 2,
@@ -132,7 +124,6 @@ function readEngines(theme: Record<string, unknown> | null | undefined): BrandPr
 
   const fal: Partial<BrandFalEngineConfig> = raw.fal ?? {};
   const remotion: Partial<BrandRemotionEngineConfig> = raw.remotion ?? {};
-  const runway: Partial<BrandRunwayEngineConfig> = raw.runway ?? {};
   const throughput: Partial<BrandProductionThroughputConfig> = raw.throughput ?? {};
 
   return {
@@ -152,9 +143,6 @@ function readEngines(theme: Record<string, unknown> | null | undefined): BrandPr
       blocked_story_families: (remotion.blocked_story_families?.length
         ? remotion.blocked_story_families
         : DEFAULT_ENGINES.remotion.blocked_story_families) as RemotionLayoutFamily[],
-    },
-    runway: {
-      enabled: runway.enabled === true,
     },
     throughput: {
       factory_drain_batch: throughput.factory_drain_batch ?? DEFAULT_ENGINES.throughput?.factory_drain_batch,

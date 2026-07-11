@@ -90,7 +90,6 @@ export const ARTIFACT_POLL_SCREENS = new Set([
   'platform-preview',
   'creative-preview',
   'approval',
-  'reels-studio',
 ]);
 
 export function shouldPollArtifactsForScreen(screen: string): boolean {

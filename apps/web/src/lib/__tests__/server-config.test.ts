@@ -37,7 +37,6 @@ const TOUCHED = [
   'CD_LITE',
   'AUTO_PRODUCE_ENABLE',
   'AUTO_PRODUCE_GALLERY_ONLY',
-  'AUTO_PRODUCE_RUNWAY',
   'AUTO_PRODUCE_MAX_DAILY',
   'MISSION_AUTO_PRODUCE_MAX_PER_RUN',
   'AUTO_PRODUCE_MAX_REELS_DAILY',
@@ -275,10 +274,9 @@ describe('serverConfig', () => {
   });
 
   describe('autoProduce', () => {
-    it('applies defaults (enabled, gallery-only, runway on)', () => {
+    it('applies defaults (enabled, gallery-only)', () => {
       expect(serverConfig.autoProduce.enabled).toBe(true);
       expect(serverConfig.autoProduce.galleryOnly).toBe(true);
-      expect(serverConfig.autoProduce.runwayEnabled).toBe(true);
       expect(serverConfig.autoProduce.maxDaily).toBe(200);
       expect(serverConfig.autoProduce.maxPerRun).toBe(24);
       expect(serverConfig.autoProduce.maxReelsDaily).toBe(15);
@@ -289,10 +287,8 @@ describe('serverConfig', () => {
     it('toggles off only via the literal "false"', () => {
       process.env.AUTO_PRODUCE_ENABLE = 'false';
       process.env.AUTO_PRODUCE_GALLERY_ONLY = 'false';
-      process.env.AUTO_PRODUCE_RUNWAY = 'false';
       expect(serverConfig.autoProduce.enabled).toBe(false);
       expect(serverConfig.autoProduce.galleryOnly).toBe(false);
-      expect(serverConfig.autoProduce.runwayEnabled).toBe(false);
     });
 
     it('parses numeric overrides', () => {

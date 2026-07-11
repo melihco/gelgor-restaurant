@@ -216,8 +216,8 @@ export function shouldSkipIdeaForProduction(
 }
 
 /**
- * High-importance mission signals that warrant promoting a second Runway reel slot
- * even when brand theme hasn't explicitly set max_runway_reels_per_mission ≥ 2.
+ * High-importance mission signals that warrant promoting a second hero reel slot
+ * even when brand theme hasn't explicitly set max_hero_reels_per_mission ≥ 2.
  *
  * Logic: if the mission title, brief, or type contains any of these patterns,
  * the quality gate is relaxed and one additional hero reel is allowed.
@@ -225,7 +225,7 @@ export function shouldSkipIdeaForProduction(
 const HIGH_IMPORTANCE_MISSION_RE =
   /\b(launch|lansman|kampanya|campaign|promo|promotion|event|etkinlik|opening|açılı|grand.?open|yeni.?sezon|new.?season|koleksiyon|collection|festival|gala|concert|konser|indirim|sale|black.?friday|yılbaşı|new.?year|sevgili|valentine|anneler|mothers|babalar|fathers|özel.?teklif|special.?offer|limited|sınırlı)\b/i;
 
-export function resolveMaxRunwayReelsPerMission(
+export function resolveMaxHeroReelsPerMission(
   brandTheme?: Record<string, unknown> | null,
   packageMonthlyReels?: number,
   /** Sprint 6 — Mission context signals for importance-based auto-promotion. */
@@ -236,7 +236,10 @@ export function resolveMaxRunwayReelsPerMission(
   },
 ): number {
   if (packageMonthlyReels === 0) return 0;
-  const raw = brandTheme?.max_runway_reels_per_mission ?? brandTheme?.maxRunwayReelsPerMission;
+  const raw = brandTheme?.max_hero_reels_per_mission
+    ?? brandTheme?.maxHeroReelsPerMission
+    ?? brandTheme?.max_runway_reels_per_mission
+    ?? brandTheme?.maxRunwayReelsPerMission;
   const n = typeof raw === 'number' ? raw : Number(raw);
   let cap = 1;
   if (Number.isFinite(n) && n >= 1) {
@@ -266,7 +269,7 @@ export function resolveMaxRunwayReelsPerMission(
   return cap;
 }
 
-export function shouldProduceRunwayForIdea(
+export function shouldProduceHeroReelForIdea(
   ideaIndex: number,
   format: string,
   ctx: ProductionStackContext,
@@ -371,7 +374,7 @@ export function buildSceneBriefPromptBlock(brief: ProductSceneBrief | null): str
   return parts.join(' | ');
 }
 
-export function buildRunwayDirectorExtra(brief: ProductSceneBrief | null): string {
+export function buildReelDirectorExtra(brief: ProductSceneBrief | null): string {
   if (!brief) return '';
   if (brief.gpt_image2_prompt) {
     return brief.gpt_image2_prompt.slice(0, 400);

@@ -6,8 +6,8 @@ import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
 import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
 
 /** Video-source metadata refined by the fal/runway video pipelines. */
-export interface RunwayProduceMeta {
-  source: 'runway' | 'runway_multi_photo' | 'kling' | 'luma' | 'fal_video';
+export interface VideoProduceMeta {
+  source: 'kling' | 'luma' | 'fal_video';
   strategy?: string;
   photoCount?: number;
   cameraMotion?: string;
@@ -27,7 +27,7 @@ export interface SlotProductionState {
   falGrafikerScore: number | null;
   falGrafikerPass: boolean;
   falDesignEngine: string | null;
-  runwayProduceMeta: RunwayProduceMeta | null;
+  videoProduceMeta: VideoProduceMeta | null;
   /** Locked brand design template applied this slot (onboarding fal set). */
   brandDesignTemplateId?: string | null;
   brandDesignTemplateType?: string | null;

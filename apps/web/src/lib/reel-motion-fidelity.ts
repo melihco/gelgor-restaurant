@@ -1,6 +1,5 @@
 /**
- * Runway image-to-video fidelity — keep motion subtle and anchor to the reference frame.
- * gen4_turbo only animates the first reference image; use sequential strategy for 2+ photos.
+ * Reel image-to-video fidelity — keep motion subtle and anchor to the reference frame.
  */
 import { normalizeCameraMotion, type UnifiedCameraMotion } from './camera-motion';
 import {
@@ -10,11 +9,21 @@ import {
 } from './sector-production-profile';
 import type { MultiReelPhotoInput } from './reel-multi-production';
 import type { RunwayDirectorGuardrailOptions } from './tenant-reel-motion-seed';
-import { resolveRunwayDirectorVariant } from './sector-reel-motion-standard';
-import { stripEmbeddedGuardrailBlocks } from './runway/builders/reel-prompt.builder';
+import { resolveReelDirectorVariant } from './sector-reel-motion-standard';
+
+/** Strip guardrail blocks appended for full-reel prompts — sequential clips add their own. */
+function stripEmbeddedGuardrailBlocks(prompt: string): string {
+  return prompt
+    .replace(/\s*PRODUCT SPOTLIGHT TVC \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*VENUE ATMOSPHERE \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*DIGITAL EDITORIAL \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*REFERENCE FIDELITY \(mandatory\):[\s\S]*/i, '')
+    .replace(/\s*FIDELITY:[\s\S]*/i, '')
+    .trim();
+}
 
 /** Appended to director prompts when not already present. */
-export const RUNWAY_FIDELITY_DIRECTOR_RULES = `
+export const REEL_FIDELITY_DIRECTOR_RULES = `
 REFERENCE FIDELITY (mandatory):
 - Animate ONLY what is visible in the reference photo. Do not invent new objects, people, logos, or scenery.
 - Preserve exact composition, subjects, identity, and layout. No morphing, no scene change, no style drift.
@@ -28,11 +37,11 @@ export function applyFidelityToDirectorPrompt(prompt: string): string {
   if (/preserve exact|do not invent|subtle only|reference photo/i.test(p)) {
     return p.length > 960 ? `${p.slice(0, 957).trimEnd()}…` : p;
   }
-  const merged = `${p} ${RUNWAY_FIDELITY_DIRECTOR_RULES}`;
+  const merged = `${p} ${REEL_FIDELITY_DIRECTOR_RULES}`;
   return merged.length > 960 ? `${merged.slice(0, 957).trimEnd()}…` : merged;
 }
 
-export interface RunwayCameraFidelityInput {
+export interface ReelCameraFidelityInput {
   agentCamera?: string;
   vibeCamera?: string;
   mood?: string;
@@ -47,13 +56,12 @@ export interface RunwayCameraFidelityInput {
   sector?: string;
 }
 
-/** @deprecated Pass RunwayCameraFidelityInput object instead. */
-export function resolveRunwayCameraMotionForFidelity(
-  opts: RunwayCameraFidelityInput,
+export function resolveReelCameraMotionForFidelity(
+  opts: ReelCameraFidelityInput,
 ): UnifiedCameraMotion;
 
 /** Legacy positional overload — kept for gradual migration. */
-export function resolveRunwayCameraMotionForFidelity(opts: {
+export function resolveReelCameraMotionForFidelity(opts: {
   agentCamera?: string;
   vibeCamera?: string;
   mood?: string;
@@ -62,10 +70,10 @@ export function resolveRunwayCameraMotionForFidelity(opts: {
   reelPace?: string;
 }): UnifiedCameraMotion;
 
-export function resolveRunwayCameraMotionForFidelity(
-  opts: RunwayCameraFidelityInput & { pace?: string },
+export function resolveReelCameraMotionForFidelity(
+  opts: ReelCameraFidelityInput & { pace?: string },
 ): UnifiedCameraMotion {
-  const input: RunwayCameraFidelityInput = {
+  const input: ReelCameraFidelityInput = {
     agentCamera: opts.agentCamera,
     vibeCamera: opts.vibeCamera,
     mood: opts.mood,
@@ -73,7 +81,7 @@ export function resolveRunwayCameraMotionForFidelity(
     vibePace: opts.vibePace ?? (opts.pace && !opts.reelPace ? opts.pace : undefined),
     sector: opts.sector,
   };
-  return resolveRunwayCameraMotionForFidelityInternal(input);
+  return resolveReelCameraMotionForFidelityInternal(input);
 }
 
 const STATIC_PREFERRED_SECTORS = new Set([
@@ -101,7 +109,7 @@ const SLOW_PACE_ALLOWED: Partial<Record<string, ReadonlySet<UnifiedCameraMotion>
   local_products_shop: new Set(['dolly_in', 'slow_pan', 'static']),
 };
 
-function resolveEffectivePaceBlob(input: RunwayCameraFidelityInput): string {
+function resolveEffectivePaceBlob(input: ReelCameraFidelityInput): string {
   const sectorPacing = input.sector ? getSectorReelPacing(input.sector) : '';
   return [
     input.reelPace,
@@ -119,8 +127,8 @@ export function isDynamicReelPace(paceBlob: string): boolean {
   return /\b(dynamic|fast|energetic|fast_cut|party|dj|upbeat|130bpm|120bpm)\b/.test(paceBlob);
 }
 
-function resolveRunwayCameraMotionForFidelityInternal(
-  input: RunwayCameraFidelityInput,
+function resolveReelCameraMotionForFidelityInternal(
+  input: ReelCameraFidelityInput,
 ): UnifiedCameraMotion {
   const paceBlob = resolveEffectivePaceBlob(input);
   const dynamic = isDynamicReelPace(paceBlob);
@@ -199,7 +207,7 @@ export function resolveEffectiveReelPace(input: {
   return getSectorReelPacing(input.sector);
 }
 
-export const RUNWAY_CLIP_PROMPT_MAX = 950;
+export const REEL_CLIP_PROMPT_MAX = 950;
 
 function sanitizeClipCaption(text: string): string {
   return text
@@ -213,7 +221,7 @@ export function buildCompactSequentialGuardrailPrefix(
   opts: RunwayDirectorGuardrailOptions,
   cameraMotion?: string,
 ): string {
-  const variant = resolveRunwayDirectorVariant({
+  const variant = resolveReelDirectorVariant({
     sector: opts.sector,
     productSpotlightReel: opts.productSpotlightReel,
   });
@@ -255,7 +263,7 @@ function scrubInventedSceneLanguage(text: string): string {
     .trim();
 }
 
-export function fitRunwayPromptText(text: string, maxLen = RUNWAY_CLIP_PROMPT_MAX): string {
+export function fitReelPromptText(text: string, maxLen = REEL_CLIP_PROMPT_MAX): string {
   const trimmed = text.trim();
   if (trimmed.length <= maxLen) return trimmed;
   return `${trimmed.slice(0, maxLen - 1).trimEnd()}…`;
@@ -308,7 +316,7 @@ export function buildSequentialClipDirectorPrompt(input: {
   const fixedLen = [prefix, clipMeta, frameLine, microLine, captionLine]
     .filter(Boolean)
     .join(' ').length;
-  const creativeBudget = Math.max(80, RUNWAY_CLIP_PROMPT_MAX - fixedLen - 12);
+  const creativeBudget = Math.max(80, REEL_CLIP_PROMPT_MAX - fixedLen - 12);
   if (creative.length > creativeBudget) {
     const cut = creative.slice(0, creativeBudget);
     const lastPeriod = cut.lastIndexOf('.');
@@ -319,7 +327,7 @@ export function buildSequentialClipDirectorPrompt(input: {
     .filter(Boolean)
     .join(' ');
 
-  return fitRunwayPromptText(assembled, RUNWAY_CLIP_PROMPT_MAX);
+  return fitReelPromptText(assembled, REEL_CLIP_PROMPT_MAX);
 }
 
 export type { ReelPacing };

@@ -79,8 +79,7 @@ function localesClash(captionLoc: OverlayLocale, headlineLoc: OverlayLocale): bo
 
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
- * Priority: canva_field_copy → caption-derived hook (when ideation is label/locale-bad)
- * → cleaned ideation → resolveFalOverlayCopy.
+ * Priority: ideation title → canva_field_copy → caption-derived hook (label/locale fallback).
  */
 export function resolveMissionFalDesignCopy(input: {
   idea: FalDesignCopyIdea;
@@ -101,6 +100,24 @@ export function resolveMissionFalDesignCopy(input: {
   const captionLoc = detectOverlayLocale(caption);
   const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : 32;
 
+  const ideation = input.ideationHeadline.trim();
+  const ideationPublishable =
+    Boolean(ideation)
+    && !isLabelStyleHeadline(ideation)
+    && !isMeaninglessBrandEchoHeadline(ideation, brandName)
+    && !localesClash(captionLoc, detectOverlayLocale(ideation));
+
+  if (ideationPublishable) {
+    const overlay = resolveFalOverlayCopy({
+      headline: ideation,
+      cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
+      caption,
+      channel,
+      lockIdeationCopy: true,
+    });
+    return { ...overlay, source: 'ideation_title' };
+  }
+
   const extracted = extractIdeationDesignCopy(input.idea);
   if (extracted.headline) {
     const bad =
@@ -119,7 +136,6 @@ export function resolveMissionFalDesignCopy(input: {
     }
   }
 
-  const ideation = input.ideationHeadline.trim();
   const ideationBad =
     !ideation
     || isLabelStyleHeadline(ideation)

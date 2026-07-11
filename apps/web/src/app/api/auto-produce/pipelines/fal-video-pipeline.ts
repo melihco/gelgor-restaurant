@@ -194,7 +194,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         state.imageUrl = poster.imageUrl;
         state.falGrafikerScore = poster.grafikerScore;
         state.falGrafikerPass = poster.grafikerPass;
-        state.runwayProduceMeta = { source: 'fal_video' };
+        state.videoProduceMeta = { source: 'fal_video' };
         state.costDelta += 0.08;
         if (templateBinding.matched) {
           state.brandDesignTemplateId = templateBinding.matched.id;
@@ -249,7 +249,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
       state.imageUrl = designer.imageUrl;
       state.falGrafikerScore = designer.grafikerScore;
       state.falGrafikerPass = designer.grafikerPass;
-      state.runwayProduceMeta = {
+      state.videoProduceMeta = {
         source: designer.motionModel.includes('kling') ? 'kling' : 'fal_video',
       };
       state.costDelta += 0.18;
@@ -295,7 +295,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         });
         state.videoUrl = isPlayableVideoUrl(fal.videoUrl) ? fal.videoUrl : null;
         state.imageUrl = referenceUrl;
-        state.runwayProduceMeta = {
+        state.videoProduceMeta = {
           source: fal.reused
             ? 'fal_video'
             : fal.model.includes('kling')

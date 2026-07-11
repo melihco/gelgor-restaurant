@@ -142,7 +142,7 @@ function makeCtx(
       falGrafikerScore: null,
       falGrafikerPass: true,
       falDesignEngine: null,
-      runwayProduceMeta: null,
+      videoProduceMeta: null,
       costDelta: 0,
       ...state,
     },
@@ -194,7 +194,7 @@ describe('falVideoHandler.run', () => {
     expect(ctx.state.imageUrl).toBe('designer-img');
     expect(ctx.state.falGrafikerScore).toBe(8);
     expect(ctx.state.falGrafikerPass).toBe(true);
-    expect(ctx.state.runwayProduceMeta).toEqual({ source: 'kling' });
+    expect(ctx.state.videoProduceMeta).toEqual({ source: 'kling' });
     expect(ctx.state.costDelta).toBeCloseTo(0.14);
   });
 
@@ -214,7 +214,7 @@ describe('falVideoHandler.run', () => {
     expect(h.produceFalDesignerVideo).toHaveBeenCalledWith(
       expect.objectContaining({ pipeline: 'fal_reel' }),
     );
-    expect(ctx.state.runwayProduceMeta).toEqual({ source: 'fal_video' });
+    expect(ctx.state.videoProduceMeta).toEqual({ source: 'fal_video' });
     expect(ctx.state.costDelta).toBeCloseTo(0.18);
   });
 
@@ -250,7 +250,7 @@ describe('falVideoHandler.run', () => {
     );
     expect(ctx.state.videoUrl).toBe('https://cdn.example.com/raw-vid.mp4');
     expect(ctx.state.imageUrl).toBe('https://x/photo.jpg');
-    expect(ctx.state.runwayProduceMeta).toEqual({ source: 'luma' });
+    expect(ctx.state.videoProduceMeta).toEqual({ source: 'luma' });
     expect(ctx.state.costDelta).toBe(0);
   });
 
@@ -441,7 +441,7 @@ describe('falOnlyHandler.run', () => {
     );
     expect(ctx.state.videoUrl).toBe('https://cdn.example.com/fal-only-vid.mp4');
     expect(ctx.state.imageUrl).toBe('fal-only-img');
-    expect(ctx.state.runwayProduceMeta).toEqual({ source: 'kling' });
+    expect(ctx.state.videoProduceMeta).toEqual({ source: 'kling' });
     expect(ctx.state.falDesignEngine).toBe('fal_grounded_designer');
     expect(ctx.state.costDelta).toBeCloseTo(0.18);
   });

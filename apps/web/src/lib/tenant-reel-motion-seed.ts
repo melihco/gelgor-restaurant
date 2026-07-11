@@ -2,9 +2,9 @@
  * Runway director prompt guardrails — product / venue / digital variants.
  * Sector defaults live in sector-reel-motion-standard.ts (DB via onboarding).
  */
-import { applyFidelityToDirectorPrompt } from './runway-reel-fidelity';
+import { applyFidelityToDirectorPrompt } from './reel-motion-fidelity';
 import {
-  resolveRunwayDirectorVariant,
+  resolveReelDirectorVariant,
   type ReelDirectorVariant,
 } from './sector-reel-motion-standard';
 
@@ -79,7 +79,7 @@ export function applyRunwayDirectorPromptGuardrails(
     ? { workspaceId: options }
     : options ?? {};
 
-  const variant = resolveRunwayDirectorVariant({
+  const variant = resolveReelDirectorVariant({
     sector: opts.sector,
     productSpotlightReel: opts.productSpotlightReel,
   });

@@ -53,6 +53,32 @@ describe('applyCalendarProductionEnrichment', () => {
     expect(ideas[0]?.fal_design_hint).toContain('sunlit grove');
   });
 
+  it('preserves ideation marketing title when calendar event_name differs', () => {
+    const ideation = [
+      {
+        concept_title: 'Dive into OUR SUNSET RITUAL!!',
+        headline: 'Join us for a taste',
+        caption_draft: 'Join us for a taste of paradise at sunset.',
+        content_type: 'instagram_post',
+      },
+    ];
+    const calendarPlans = [
+      {
+        event_name: 'Join us for a taste',
+        idea_index: 0,
+        format: 'post',
+        day: 'Fri',
+        content_brief: 'Sunset terrace mood — chairs facing the Aegean.',
+        photo_mood: 'golden hour terrace',
+      },
+    ];
+    const { ideas } = applyCalendarProductionEnrichment(ideation, calendarPlans);
+    expect(ideas[0]?.headline).toBe('Dive into OUR SUNSET RITUAL!!');
+    expect(ideas[0]?.concept_title).toBe('Dive into OUR SUNSET RITUAL!!');
+    expect(ideas[0]?.content_brief).toBe('Sunset terrace mood — chairs facing the Aegean.');
+    expect(ideas[0]?.calendar_enriched).toBe(true);
+  });
+
   it('returns orphan calendar rows when no ideation headline match', () => {
     const orphanCalendar = [
       ...calendarPlans,

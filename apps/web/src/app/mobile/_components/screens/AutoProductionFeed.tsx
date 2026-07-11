@@ -54,13 +54,7 @@ import {
   resolveAiVisualProductionStandard,
   type BrandContextForVisual,
 } from '@/lib/ai-visual-production-standard';
-import {
-  buildMultiReelPhotoInputs,
-  callGenerateMultiReel,
-  isUsableReelPhotoUrl,
-  maxPhotosForStrategy,
-  resolveRunwayReelStrategy,
-} from '@/lib/reel-multi-production';
+import { isUsableReelPhotoUrl } from '@/lib/reel-multi-production';
 import { fetchAnnouncementBrandKitPreview } from '@/lib/brand-kit-preview';
 import { resolveContentIntent } from '@/lib/brand-motion-profile';
 import { ensureBrandTemplateLibrary, resolveProductionTemplate } from '@/lib/brand-template-library';
@@ -881,7 +875,7 @@ export function AutoProductionFeed({
           reference_photo_url: referencePhoto,
           videoUrl: videoUrlToSave,
           agency_branded: markyBranded,
-          source: hasRemotionVideo ? 'remotion' : isReel ? 'runway' : undefined,
+          source: hasRemotionVideo ? 'remotion' : isReel ? 'fal' : undefined,
           idea_index: item.ideaIndex,
           ...(bundleReady ? { production_bundle: true, bundle_status: 'ready' } : {}),
         }),
@@ -953,100 +947,18 @@ export function AutoProductionFeed({
   const generateAgency = async (_item: ProducedItem) => { /* stub */ };
   // _generateAgencyFull body removed
 
-  // ── Runway reel builder — shared core ─────────────────────────────────────
-  type RunwayAnimateResult = {
+  // ── fal.ai reel builder — shared core ─────────────────────────────────────
+  type FalAnimateResult = {
     videoUrl: string;
-    source: 'runway' | 'runway_multi_photo';
-    strategy?: string;
-    photoCount?: number;
+    source: 'fal';
   };
 
-  const _runwayAnimate = async (
+  const _falAnimate = async (
     item: ProducedItem,
     promptImage: string,
     source: 'photo' | 'agency' | 'canvas',
-  ): Promise<RunwayAnimateResult> => {
+  ): Promise<FalAnimateResult> => {
     const baseIdea = (ideas[item.ideaIndex] as Record<string, unknown> | undefined) ?? {};
-    const isReelItem = item.contentType.toLowerCase().includes('reel');
-    const extraUrls = brandRefImages.filter(
-      (u) => isUsableReelPhotoUrl(u) && normalizeGalleryUrl(u) !== normalizeGalleryUrl(promptImage),
-    );
-    const montageUrls = [promptImage, ...extraUrls].filter(isUsableReelPhotoUrl).slice(0, 4);
-    const photoInputs = buildMultiReelPhotoInputs(montageUrls, galleryAnalysis, normalizeGalleryUrl);
-
-    if (isReelItem && photoInputs.length >= 2) {
-      const strategy = resolveRunwayReelStrategy({
-        photoCount: photoInputs.length,
-        treatment: getField(baseIdea, 'treatment', 'strategic_purpose'),
-        templateUseCase: getField(baseIdea, 'template_use_case'),
-        mood: getField(baseIdea, 'mood', 'tone'),
-        contentType: 'reel',
-      });
-      const montageStrategy = strategy === 'multi_ref' ? 'multi_ref' : 'sequential';
-      const limit = maxPhotosForStrategy(strategy === 'single' ? 'multi_ref' : strategy);
-      const directorExtras = reelDirectorExtrasFromIdeaRecord(baseIdea, {
-        sector: resolvedSector,
-        businessType: resolvedSector,
-        aiVisualStandard,
-        brandContextForVisual: brandCtxForVisual,
-        brandThemeGrading: brandTheme
-          ? { look: brandTheme.grading?.look, lut_directive: brandTheme.grading?.lutDirective }
-          : undefined,
-        workspaceId: tenantId,
-        strategicPurpose: item.strategicPurpose,
-      });
-      const multi = await callGenerateMultiReel(window.location.origin, {
-        workspaceId: tenantId,
-        photos: photoInputs.slice(0, limit),
-        headline: item.headline || `${effectiveBrandName} Reel`,
-        caption: item.caption.slice(0, 300),
-        brandName: effectiveBrandName,
-        brandLocation: effectiveLocation,
-        vibeProfile: snapshotVisual?.brandVibeProfile,
-        brandThemeGrading: brandTheme
-          ? { look: brandTheme.grading?.look, lut_directive: brandTheme.grading?.lutDirective }
-          : undefined,
-        strategy: montageStrategy,
-        ratio: '720:1280',
-        duration: 5,
-        agentVisualDirection: buildReelAgentVisualDirection(
-          productionIdeaFromRecord({
-            ...baseIdea,
-            headline: item.headline,
-            caption_draft: item.caption,
-            cta: item.cta,
-            hashtags: item.hashtags,
-            content_type: item.contentType,
-            strategic_purpose: item.strategicPurpose,
-          }, item.ideaIndex),
-          {
-            brandName: effectiveBrandName,
-            location: effectiveLocation,
-            missionBrief,
-          },
-          {
-            photoUrl: promptImage,
-            description: (galleryAnalysis[normalizeGalleryUrl(promptImage)] as GalleryMeta | undefined)?.description,
-            tags: (galleryAnalysis[normalizeGalleryUrl(promptImage)] as GalleryMeta | undefined)?.contentTags,
-            matchScore: item.matchScore ?? undefined,
-          },
-          directorExtras,
-        ).slice(0, 400),
-        businessType: resolvedSector,
-        strategicPurpose: item.strategicPurpose,
-        missionBrief,
-        productType: directorExtras.productType,
-      });
-      if (multi.videoUrl) {
-        return {
-          videoUrl: multi.videoUrl,
-          source: 'runway_multi_photo' as const,
-          strategy: multi.strategy,
-          photoCount: multi.photoCount,
-        };
-      }
-    }
-
     const cameraMotion = source === 'agency'
       ? 'arc_right'
       : String(
@@ -1111,21 +1023,21 @@ export function AutoProductionFeed({
     const data = await res.json();
     const videoUrl: string | null = data.videoUrl ?? data.outputUrls?.[0] ?? null;
     if (!res.ok || !videoUrl) throw new Error(data.error || 'Reel üretilemedi');
-    return { videoUrl, source: 'runway' as const };
+    return { videoUrl, source: 'fal' as const };
   };
 
-  // Reel üret — raw brand photo → Runway
+  // Reel üret — raw brand photo → fal.ai I2V
   const generateReel = useCallback(async (item: ProducedItem) => {
     if (!item.imageUrl) return;
     if (reelAttemptedRef.current.has(item.ideaIndex) && item.reelUrl) return;
     reelAttemptedRef.current.add(item.ideaIndex);
     setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelBuilding: true, reelError: null } : it));
     try {
-      const reelResult = await _runwayAnimate(item, item.imageUrl, 'photo');
+      const reelResult = await _falAnimate(item, item.imageUrl, 'photo');
       setItems(prev => prev.map(it => it.ideaIndex === item.ideaIndex ? { ...it, reelUrl: reelResult.videoUrl, reelBuilding: false } : it));
       setActiveVisual(prev => ({ ...prev, [item.ideaIndex]: 'reel' }));
       await apiClient.saveCreativeArtifact({
-        title: `${item.headline || brandName} — ${reelResult.source === 'runway_multi_photo' ? 'Montaj Reel' : 'Reel'}`,
+        title: `${item.headline || brandName} — Reel`,
         contentUrl: reelResult.videoUrl,
         platform: 'instagram',
         contentType: 'reel',
@@ -1136,8 +1048,6 @@ export function AutoProductionFeed({
           caption: item.caption,
           hashtags: item.hashtags,
           headline: item.headline,
-          strategy: reelResult.strategy,
-          photoCount: reelResult.photoCount,
           idea_index: item.ideaIndex,
         }),
         metadata: {
@@ -1147,13 +1057,11 @@ export function AutoProductionFeed({
           caption: item.caption?.slice(0, 300),
           headline: item.headline,
           source: reelResult.source,
-          runway_produced: true,
+          fal_video_produced: true,
           mission_id: missionId,
           node_key: nodeKey,
           idea_index: item.ideaIndex,
           publish_package: 'primary',
-          ...(reelResult.strategy ? { runway_strategy: reelResult.strategy, strategy: reelResult.strategy } : {}),
-          ...(reelResult.photoCount ? { runway_photo_count: reelResult.photoCount, photoCount: reelResult.photoCount } : {}),
         },
       });
       feedSavedRef.current.add(item.ideaIndex);

@@ -659,15 +659,10 @@ export function applyProductionProfileToWeeklySlots(
     if (
       (slot.role === 'organic_reel' || slot.role === 'campaign_reel_motion')
       && slot.pipeline === 'runway_reel'
-      && !profile.allowRunwayReels
     ) {
       trimmed.push({
-        role: 'organic_story_still',
-        pipeline: 'story_still',
-        format: 'story',
-        captionSurface: 'visual_only',
-        required: true,
-        intentHint: 'social_proof',
+        ...slot,
+        pipeline: 'fal_reel',
       });
       continue;
     }

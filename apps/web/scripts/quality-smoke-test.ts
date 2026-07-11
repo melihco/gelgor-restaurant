@@ -13,7 +13,7 @@ import {
 } from '../src/lib/story-sequence-rules';
 import { scoreReelHook } from '../src/lib/reel-hook-score';
 import { rewriteCaptionAsAdCopy } from '../src/lib/story-voiceover';
-import { resolveMaxRunwayReelsPerMission } from '../src/lib/production-stack';
+import { resolveMaxHeroReelsPerMission } from '../src/lib/production-stack';
 import {
   resolveMotionLane,
   shouldShowLogo,
@@ -370,16 +370,16 @@ test('rewriteCaptionAsAdCopy — result fits in time window (≤160 chars)', () 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n=== SPRINT 6: Mission Hero Reel + Subtitle Dedup ===');
 
-test('resolveMaxRunwayReelsPerMission — default = 1', () => {
-  expect(resolveMaxRunwayReelsPerMission(null)).toBe(1);
+test('resolveMaxHeroReelsPerMission — default = 1', () => {
+  expect(resolveMaxHeroReelsPerMission(null)).toBe(1);
 });
 
-test('resolveMaxRunwayReelsPerMission — agency tier = 2', () => {
-  expect(resolveMaxRunwayReelsPerMission({ quality_tier: 'agency' })).toBe(2);
+test('resolveMaxHeroReelsPerMission — agency tier = 2', () => {
+  expect(resolveMaxHeroReelsPerMission({ quality_tier: 'agency' })).toBe(2);
 });
 
-test('resolveMaxRunwayReelsPerMission — launch mission auto-promotes to 2', () => {
-  const result = resolveMaxRunwayReelsPerMission(null, undefined, {
+test('resolveMaxHeroReelsPerMission — launch mission auto-promotes to 2', () => {
+  const result = resolveMaxHeroReelsPerMission(null, undefined, {
     missionTitle: 'Yaz Koleksiyonu Lansmanı',
     creativeBrief: null,
     strategistMissionType: null,
@@ -387,8 +387,8 @@ test('resolveMaxRunwayReelsPerMission — launch mission auto-promotes to 2', ()
   expect(result).toBe(2);
 });
 
-test('resolveMaxRunwayReelsPerMission — campaign brief promotes', () => {
-  const result = resolveMaxRunwayReelsPerMission(null, undefined, {
+test('resolveMaxHeroReelsPerMission — campaign brief promotes', () => {
+  const result = resolveMaxHeroReelsPerMission(null, undefined, {
     missionTitle: 'Haftalık içerik',
     creativeBrief: 'Bu haftaki kampanya için özel indirim görselleri hazırlanacak',
     strategistMissionType: null,
@@ -396,8 +396,8 @@ test('resolveMaxRunwayReelsPerMission — campaign brief promotes', () => {
   expect(result).toBe(2);
 });
 
-test('resolveMaxRunwayReelsPerMission — regular mission stays at 1', () => {
-  const result = resolveMaxRunwayReelsPerMission(null, undefined, {
+test('resolveMaxHeroReelsPerMission — regular mission stays at 1', () => {
+  const result = resolveMaxHeroReelsPerMission(null, undefined, {
     missionTitle: 'Haftalık içerik',
     creativeBrief: 'Günlük paylaşım',
     strategistMissionType: null,
@@ -405,8 +405,8 @@ test('resolveMaxRunwayReelsPerMission — regular mission stays at 1', () => {
   expect(result).toBe(1);
 });
 
-test('resolveMaxRunwayReelsPerMission — packageMonthlyReels=0 wins', () => {
-  const result = resolveMaxRunwayReelsPerMission(null, 0, {
+test('resolveMaxHeroReelsPerMission — packageMonthlyReels=0 wins', () => {
+  const result = resolveMaxHeroReelsPerMission(null, 0, {
     missionTitle: 'Büyük Lansman Kampanyası',
   });
   expect(result).toBe(0);

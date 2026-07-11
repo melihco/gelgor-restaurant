@@ -223,7 +223,7 @@ export const serverConfig = {
     },
   },
 
-  /** Auto-produce budget / runway operator ceilings (package limits apply first). */
+  /** Auto-produce budget / operator ceilings (package limits apply first). */
   autoProduce: {
     /** Master switch — disable with AUTO_PRODUCE_ENABLE=false. */
     get enabled(): boolean {
@@ -232,10 +232,6 @@ export const serverConfig = {
     /** Gallery-only mode — disable with AUTO_PRODUCE_GALLERY_ONLY=false. */
     get galleryOnly(): boolean {
       return readEnv('AUTO_PRODUCE_GALLERY_ONLY') !== 'false';
-    },
-    /** Runway reels off by default — reel slotları fal.ai kullanır. Set AUTO_PRODUCE_RUNWAY=true to re-enable legacy Runway. */
-    get runwayEnabled(): boolean {
-      return readEnv('AUTO_PRODUCE_RUNWAY') === 'true';
     },
     get maxDaily(): number {
       return parseInt(readEnv('AUTO_PRODUCE_MAX_DAILY') ?? '200', 10);
