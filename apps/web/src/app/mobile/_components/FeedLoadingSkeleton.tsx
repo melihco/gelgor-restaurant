@@ -12,8 +12,11 @@ export function FeedLoadingSkeleton({
     <div className="feed-skel" role="status" aria-live="polite" aria-label={message}>
       {includeHeader && (
         <div className="feed-skel-header">
-          <div className="feed-skel-header-spacer" aria-hidden />
-          <div className="feed-skel-header-logo">Instagram</div>
+          <div className="feed-skel-icon feed-skel-shimmer" style={{ borderRadius: 14, width: 40, height: 40 }} aria-hidden />
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <div className="feed-skel-story-avatar feed-skel-shimmer" style={{ width: 34, height: 34 }} />
+            <div className="feed-skel-line feed-skel-line--md feed-skel-shimmer" style={{ width: 96 }} />
+          </div>
           <div className="feed-skel-header-icons" aria-hidden>
             <div className="feed-skel-icon" />
             <div className="feed-skel-icon" />

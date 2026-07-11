@@ -94,6 +94,8 @@ import { useTenantBrandContext } from '../TenantBrandProvider';
 import { getMobilePortalRoot, isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
 import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
 import { FeedLoadingSkeleton } from '../FeedLoadingSkeleton';
+import { MobileBrandNavbar, FeedNavbarActions, MobileNavMenuButton } from '../MobileBrandNavbar';
+import { brandNavbarBackground, useBrandThemePalette } from '../use-brand-theme-palette';
 import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { resolveMertcafePublishAuth, humanizeMertcafePublishError, assertMertcafePublishReady } from '@/lib/mertcafe-publish-auth';
@@ -315,79 +317,6 @@ function InstagramProfileBar({ handle, logoUrl, postCount, storyCount }: {
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>story</div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** Instagram home top bar — logo + heart / DM (pending vs published). */
-function InstagramHomeHeader({
-  showApproved,
-  pendingCount,
-  approvedCount,
-  onShowPending,
-  onShowPublished,
-}: {
-  showApproved: boolean;
-  pendingCount: number;
-  approvedCount: number;
-  onShowPending: () => void;
-  onShowPublished: () => void;
-}) {
-  const iconBtn = (active: boolean): React.CSSProperties => ({
-    background: 'none',
-    border: 'none',
-    padding: 4,
-    cursor: 'pointer',
-    position: 'relative',
-    opacity: active ? 1 : 0.55,
-  });
-
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '2px 12px 10px',
-      minHeight: 44,
-    }}>
-      <div style={{ width: 52 }} aria-hidden />
-      <div style={{
-        fontFamily: "'Billabong', 'Brush Script MT', 'Segoe Script', cursive",
-        fontSize: 36,
-        lineHeight: 1,
-        color: '#fff',
-        letterSpacing: '0.01em',
-        userSelect: 'none',
-      }}>
-        Instagram
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, width: 52, justifyContent: 'flex-end' }}>
-        <button type="button" aria-label="Onay bekleyen içerikler" onClick={onShowPending} style={iconBtn(!showApproved)}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill={!showApproved ? '#fff' : 'none'}
-            stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-          </svg>
-          {pendingCount > 0 && !showApproved && (
-            <span style={{
-              position: 'absolute', top: 2, right: 2, width: 7, height: 7, borderRadius: '50%',
-              background: '#E1306C', border: '1.5px solid #000',
-            }} />
-          )}
-        </button>
-        <button
-          type="button"
-          aria-label="Yayındaki içerikler"
-          onClick={onShowPublished}
-          disabled={approvedCount === 0}
-          style={{ ...iconBtn(showApproved), opacity: approvedCount === 0 ? 0.25 : showApproved ? 1 : 0.55 }}
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"/>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-          </svg>
-        </button>
       </div>
     </div>
   );
@@ -1848,6 +1777,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
 // ── Main Feed ────────────────────────────────────────────────────────────────
 export function PlatformFeed() {
   const { t } = useTheme();
+  const brandPalette = useBrandThemePalette();
   const operatorMode = isMobileOperatorMode();
   const debugMode = isDebugUiMode();
   // navigate and openApproval already destructured above
@@ -2602,23 +2532,36 @@ export function PlatformFeed() {
     >
 
       {/* ─── Sticky Header ─────────────────────────────────────────── */}
+      {!operatorMode ? (
+        <div style={{ position: 'sticky', top: 0, zIndex: 30 }}>
+          <MobileBrandNavbar
+            dark
+            rightSlot={(
+              <FeedNavbarActions
+                showApproved={showApproved}
+                pendingCount={pendingCount}
+                approvedCount={approvedCount}
+                onShowPending={() => setShowApproved(false)}
+                onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
+              />
+            )}
+          />
+        </div>
+      ) : (
       <div style={{
         position: 'sticky', top: 0, zIndex: 30,
-        background: platformView === 'instagram'
-          ? 'rgba(0,0,0,0.96)'
-          : (t.isDark ? 'rgba(6,6,14,0.96)' : 'rgba(244,244,248,0.96)'),
-        backdropFilter: 'blur(32px) saturate(200%)',
-        WebkitBackdropFilter: 'blur(32px) saturate(200%)',
-        borderBottom: !operatorMode
-          ? '0.5px solid rgba(255,255,255,0.08)'
-          : `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
+        ...brandNavbarBackground(brandPalette, { dark: platformView === 'instagram' || t.isDark }),
+        borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
         paddingTop: 'calc(env(safe-area-inset-top,0px) + 8px)',
       }}>
-        {operatorMode ? (
-          <>
+        <>
         {/* Title row — agency */}
-        <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <MobileNavMenuButton
+            onClick={() => navigate('more')}
+            dark={platformView === 'instagram' || t.isDark}
+          />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em' }}>
               İçerik
             </span>
@@ -2920,16 +2863,8 @@ export function PlatformFeed() {
           </div>
         )}
           </>
-        ) : (
-          <InstagramHomeHeader
-            showApproved={showApproved}
-            pendingCount={pendingCount}
-            approvedCount={approvedCount}
-            onShowPending={() => setShowApproved(false)}
-            onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
-          />
-        )}
       </div>
+      )}
 
       {publishSuccess.length > 0 && (
         <div style={{ padding: '10px 16px 0' }}>

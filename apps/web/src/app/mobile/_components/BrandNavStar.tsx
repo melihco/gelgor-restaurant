@@ -1,18 +1,12 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useTheme } from './theme-context';
 import { useTenantBrandContext } from './TenantBrandProvider';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useBrandThemePalette } from './use-brand-theme-palette';
 
 const STAR_PATH =
   'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z';
-
-function parseHex(raw: unknown, fallback: string): string {
-  const match = String(raw ?? '').match(/#[0-9a-fA-F]{3,8}/);
-  return match?.[0] ?? fallback;
-}
 
 export function BrandNavStar({
   active,
@@ -26,28 +20,8 @@ export function BrandNavStar({
   const { t } = useTheme();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
   const tenantBrand = useTenantBrandContext();
-
-  const { data: themeKit } = useQuery({
-    queryKey: ['brand-theme-kit', tenantId],
-    queryFn: async () => {
-      if (!tenantId) return null;
-      const res = await fetch(`/api/brand-context/${tenantId}/theme`, {
-        headers: { 'X-Tenant-Id': tenantId },
-      });
-      if (!res.ok) return null;
-      return res.json() as { theme?: { palette?: { primary?: string; accent?: string } } };
-    },
-    staleTime: 120_000,
-    enabled: Boolean(tenantId),
-  });
-
-  const { primary, accent } = useMemo(() => {
-    const palette = themeKit?.theme?.palette;
-    return {
-      primary: parseHex(palette?.primary, t.accent),
-      accent: parseHex(palette?.accent, t.navActiveColor),
-    };
-  }, [themeKit, t.accent, t.navActiveColor]);
+  const palette = useBrandThemePalette();
+  const { primary, accent } = palette;
 
   const gradId = `brand-nav-star-${tenantId ?? 'default'}`;
 

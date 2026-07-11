@@ -853,11 +853,12 @@ const CSS = `
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 10px;
     border-bottom: 0.5px solid rgba(255,255,255,0.08);
     background: rgba(0,0,0,0.96);
   }
-  .sa-mobile .feed-skel-header-spacer { width: 52px; }
+  .sa-mobile .feed-skel-header-spacer { width: 40px; }
   .sa-mobile .feed-skel-header-logo {
     font-family: 'Billabong', 'Brush Script MT', 'Segoe Script', cursive;
     font-size: 36px;

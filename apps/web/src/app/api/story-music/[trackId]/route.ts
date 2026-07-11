@@ -9,13 +9,17 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveStoryMusicSource } from '@/lib/story-audio-catalog';
 
 export const runtime = 'nodejs';
+export const maxDuration = 120;
 
 const CACHE_DIR = '/tmp/story-music-cache';
 const CACHE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const FALLBACK_LOCAL = 'audio/ambient-chill.mp3';
 
 const UPSTREAM_HEADERS = {
   'User-Agent':
@@ -80,16 +84,65 @@ function fileToReadableStream(filePath: string, rangeStart = 0, rangeEnd?: numbe
   });
 }
 
-async function fetchUpstreamMp3(url: string): Promise<Buffer | null> {
+const inflightFetches = new Map<string, Promise<boolean>>();
+
+async function fetchUpstreamToCache(url: string, destPath: string): Promise<boolean> {
   const res = await fetch(url, {
     headers: UPSTREAM_HEADERS,
     redirect: 'follow',
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(90_000),
   });
-  if (!res.ok) return null;
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (!isMp3Header(buf)) return null;
-  return buf;
+  if (!res.ok || !res.body) return false;
+
+  const tmpPath = `${destPath}.part`;
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  const nodeStream = Readable.fromWeb(res.body as import('stream/web').ReadableStream);
+  const fileStream = fs.createWriteStream(tmpPath);
+  await pipeline(nodeStream, fileStream);
+
+  const headerBuf = Buffer.alloc(4);
+  const fd = fs.openSync(tmpPath, 'r');
+  fs.readSync(fd, headerBuf, 0, 4, 0);
+  fs.closeSync(fd);
+  if (!isMp3Header(headerBuf)) {
+    fs.unlinkSync(tmpPath);
+    return false;
+  }
+
+  const stat = fs.statSync(tmpPath);
+  if (stat.size <= 10_000) {
+    fs.unlinkSync(tmpPath);
+    return false;
+  }
+
+  fs.renameSync(tmpPath, destPath);
+  return true;
+}
+
+async function ensureCachedTrack(url: string, cached: string, trackId: string): Promise<boolean> {
+  const existing = inflightFetches.get(trackId);
+  if (existing) return existing;
+
+  const job = (async () => {
+    try {
+      return await fetchUpstreamToCache(url, cached);
+    } catch {
+      return false;
+    } finally {
+      inflightFetches.delete(trackId);
+    }
+  })();
+
+  inflightFetches.set(trackId, job);
+  return job;
+}
+
+function serveFallback(req: NextRequest, trackId: string): NextResponse {
+  const fallbackPath = localPublicPath(FALLBACK_LOCAL);
+  if (!fs.existsSync(fallbackPath)) {
+    return NextResponse.json({ error: 'Stream failed' }, { status: 502 });
+  }
+  return serveCachedOrLocalFile(req, fallbackPath, trackId, 'fallback');
 }
 
 function localPublicPath(relativePath: string): string {
@@ -205,30 +258,16 @@ export async function GET(
     }
   }
 
-  // Not cached or invalid — fetch from upstream
+  // Not cached or invalid — stream upstream into cache (avoids 9 MB heap spikes on cold start)
   try {
-    const body = await fetchUpstreamMp3(track.url);
-    if (!body) {
-      return NextResponse.json({ error: 'Upstream returned invalid audio' }, { status: 502 });
+    const cachedOk = await ensureCachedTrack(track.url, cached, track.id);
+    if (cachedOk && fs.existsSync(cached)) {
+      return serveCachedOrLocalFile(req, cached, track.id, 'upstream-cache');
     }
 
-    try {
-      fs.mkdirSync(CACHE_DIR, { recursive: true });
-      fs.writeFileSync(cached, body);
-    } catch { /* cache write best-effort */ }
-
-    return new NextResponse(body as BodyInit, {
-      status: 200,
-      headers: {
-        'Content-Type': 'audio/mpeg',
-        'Cache-Control': `public, max-age=${CACHE_MAX_AGE}, immutable`,
-        'Accept-Ranges': 'bytes',
-        'X-Story-Music-Id': track.id,
-        'Content-Length': String(body.length),
-        'X-Story-Music-Source': 'upstream',
-      },
-    });
+    // Last resort: small bundled local track so story UI never hard-fails with 502
+    return serveFallback(req, track.id);
   } catch {
-    return NextResponse.json({ error: 'Stream failed' }, { status: 502 });
+    return serveFallback(req, track.id);
   }
 }

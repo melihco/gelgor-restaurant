@@ -136,8 +136,8 @@ services:
     runtime: docker
     dockerfilePath: ./apps/web/Dockerfile
     dockerContext: .
-    plan: standard
-    healthCheckPath: /
+    plan: pro
+    healthCheckPath: /api/health/live
     envVars:
       - fromGroup: smartagency-shared
       - key: FAL_API_KEY
