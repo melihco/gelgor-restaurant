@@ -6,6 +6,11 @@
  */
 import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
 import {
+  CALENDAR_GALLERY_DESIGN_INTENSITY,
+  resolveCalendarFalDesignIntensity,
+  type FalDesignChannel,
+} from '@/lib/fal-design-intensity';
+import {
   pipelineForSlotRole,
   type ProductionAssignment,
   type ProductionSlotRole,
@@ -114,8 +119,24 @@ export function calendarGalleryMatchCaption(idea: Record<string, unknown>): stri
   return [brief, mood, tagline, headline].filter(Boolean).join(' — ');
 }
 
-/** Calendar track: gallery photo hero + light brand design — not full typography cards. */
-export const CALENDAR_GALLERY_DESIGN_INTENSITY = 'photo_first' as const;
+export { CALENDAR_GALLERY_DESIGN_INTENSITY };
+
+/** Resolve fal intensity for a calendar production idea (announcement-aware). */
+export function resolveCalendarSlotDesignIntensity(
+  idea: Record<string, unknown>,
+  brandTheme: Record<string, unknown> | null | undefined,
+  channel: FalDesignChannel,
+): { level: typeof CALENDAR_GALLERY_DESIGN_INTENSITY; source: string } {
+  return resolveCalendarFalDesignIntensity({
+    announcementType: String(
+      idea.calendar_announcement_type ?? idea.template_use_case ?? idea.announcement_type ?? '',
+    ),
+    channel,
+    brandTheme,
+  });
+}
+
+/** Calendar track: gallery photo hero + announcement-aware fal design intensity. */
 
 export function resolveCalendarSlotAssignment(
   idea: Record<string, unknown>,

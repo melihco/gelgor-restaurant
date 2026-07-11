@@ -255,3 +255,89 @@ export function resolveFalDesignIntensityMode(
   if (isReel || aspectRatio === '9:16') return 'reel';
   return 'feed_post';
 }
+
+/** @deprecated Use resolveCalendarFalDesignIntensity — kept for backward imports. */
+export const CALENDAR_GALLERY_DESIGN_INTENSITY: FalDesignIntensityLevel = 'photo_first';
+
+/**
+ * Announcement-type defaults for calendar / enriched ideation fal slots.
+ * Sector-agnostic — tenant may still override via brand_theme.fal_design_intensity.
+ */
+export const CALENDAR_ANNOUNCEMENT_INTENSITY: Record<string, FalDesignIntensityLevel> = {
+  product_reveal: 'photo_first',
+  venue_showcase: 'photo_first',
+  behind_the_scenes: 'photo_first',
+  event_teaser: 'elegant_light',
+  offer_campaign: 'designed',
+  social_proof: 'elegant_light',
+};
+
+function normalizeAnnouncementKey(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+/**
+ * Resolve fal design intensity for a calendar row or calendar-enriched ideation slot.
+ * Priority: announcement_type override → brand_theme.fal_design_intensity[channel].
+ */
+export function resolveCalendarFalDesignIntensity(input: {
+  announcementType: string;
+  channel: FalDesignChannel;
+  brandTheme?: Record<string, unknown> | null;
+}): { level: FalDesignIntensityLevel; source: string } {
+  const fromTheme = resolveFalDesignIntensityForChannel(input.brandTheme, input.channel);
+  const key = normalizeAnnouncementKey(input.announcementType);
+  const override = key ? CALENDAR_ANNOUNCEMENT_INTENSITY[key] : undefined;
+  if (override) {
+    return { level: override, source: `announcement:${key}` };
+  }
+  return { level: fromTheme, source: `brand_theme.fal_design_intensity.${input.channel}` };
+}
+
+/** Extract announcement type from any production idea record (calendar or ideation). */
+export function readIdeaAnnouncementType(idea: Record<string, unknown>): string {
+  return String(
+    idea.calendar_announcement_type
+    ?? idea.template_use_case
+    ?? idea.announcement_type
+    ?? '',
+  ).trim();
+}
+
+/**
+ * Unified intensity resolver for fal pipeline handlers.
+ * Explicit override wins; calendar/enriched rows use announcement routing.
+ */
+export function resolveSlotFalDesignIntensity(input: {
+  idea?: Record<string, unknown>;
+  channel: FalDesignChannel;
+  brandTheme?: Record<string, unknown> | null;
+  override?: FalDesignIntensityLevel;
+  isCalendarTrack?: boolean;
+}): { level: FalDesignIntensityLevel; source: string } {
+  if (input.override) {
+    return { level: input.override, source: 'explicit_override' };
+  }
+  const isCalendar = input.isCalendarTrack
+    ?? (input.idea ? isCalendarTrackIdea(input.idea) : false);
+  if (isCalendar && input.idea) {
+    return resolveCalendarFalDesignIntensity({
+      announcementType: readIdeaAnnouncementType(input.idea),
+      channel: input.channel,
+      brandTheme: input.brandTheme,
+    });
+  }
+  return {
+    level: resolveFalDesignIntensityForChannel(input.brandTheme, input.channel),
+    source: `brand_theme.fal_design_intensity.${input.channel}`,
+  };
+}
+
+function isCalendarTrackIdea(idea: Record<string, unknown>): boolean {
+  if (idea.calendar_enriched === true) return true;
+  if (idea.calendar_gallery_designed === true) return true;
+  if (typeof idea.calendar_plan_index === 'number') return true;
+  if (String(idea.source_track ?? '') === 'calendar') return true;
+  if (String(idea.source_node ?? '') === 'content_calendar') return true;
+  return false;
+}

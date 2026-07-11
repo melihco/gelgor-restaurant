@@ -272,8 +272,8 @@ import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-produc
 import {
   buildCalendarFalSceneHint,
   calendarGalleryMatchCaption,
-  CALENDAR_GALLERY_DESIGN_INTENSITY,
   isCalendarProductionIdea,
+  resolveCalendarSlotDesignIntensity,
 } from '@/lib/calendar-production-pack';
 import {
   resolveGalleryFirstForSlot,
@@ -2566,6 +2566,25 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       missionFalGridSurfacesUsed.unshift(gridRotation.surfaceKind);
     }
 
+    const falIntensityChannel = falBriefFormat === 'post'
+      ? 'post'
+      : falBriefFormat === 'story'
+        ? 'story'
+        : 'reel';
+    const calendarIntensityBundle = isCalendarSlot
+      ? resolveCalendarSlotDesignIntensity(
+        ideaRecord,
+        brandTheme as Record<string, unknown> | null | undefined,
+        falIntensityChannel,
+      )
+      : null;
+    if (calendarIntensityBundle) {
+      console.log(
+        `[auto-produce] calendar fal intensity (${calendarIntensityBundle.source}): `
+        + `${calendarIntensityBundle.level} — "${headline.slice(0, 40)}"`,
+      );
+    }
+
     // ── FAL pipeline tracks (handler dispatch — b2b) ──────────────────────────
     // The fal_video (designer video + raw I2V fallback), fal_design (Canva-like
     // designed feed post) and fal_only (pure fal.ai) branches are now
@@ -2626,9 +2645,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               : undefined,
             captionDrivenGenerated,
           }),
-          falDesignIntensityOverride: isCalendarSlot
-            ? CALENDAR_GALLERY_DESIGN_INTENSITY
-            : falGridIntensityOverride,
+          falDesignIntensityOverride: calendarIntensityBundle?.level
+            ?? falGridIntensityOverride,
           falBackgroundStyleOverride: falGridBackgroundOverride,
           falGridSurfaceKind: slotFalGridSurface ?? undefined,
           captionAwareHeadline: false,

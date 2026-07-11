@@ -720,11 +720,98 @@ function buildDesignedDesignCardPrompt(
     intensityDirectives.layoutNote,
     `The result must look like ${brand}'s own art director made it — premium social media design quality, unique to this brand and this post.`,
   ].filter(Boolean).join(' ');
-  return finalizeFalPrompt(promptBody, {
+  let prompt = finalizeFalPrompt(promptBody, {
     maxChars: promptLimit,
     kind: 'image',
     label: isStory ? 'fal-designer-story' : 'fal-designer',
   });
+  if (intensityLevel === 'photo_first') {
+    prompt = harmonizePhotoFirstDesignPrompt(prompt, {
+      vibe: input.vibe,
+      subtitle: input.subtitle,
+      brandName: input.brandName,
+    });
+  }
+  return prompt;
+}
+
+/**
+ * Strip conflicting typography/sector blocks when photo_first intensity is active.
+ * Prevents "minimal caption" + "bold headline block" fighting in the same prompt.
+ */
+export function harmonizePhotoFirstDesignPrompt(
+  prompt: string,
+  input: {
+    vibe: TypographyVibe;
+    subtitle?: string;
+    brandName?: string;
+  },
+): string {
+  const withoutLegacyTypography = prompt
+    .replace(
+      /TYPOGRAPHY STANDARD \(MANDATORY\):[\s\S]*?(?=SAFE ZONE \(MANDATORY\):|BRAND COLORS:|═══ CRITICAL TEXT LOCK ═══|$)/,
+      '',
+    )
+    .replace(
+      /SECTOR STYLE \(beach\/night club\):[\s\S]*?(?=PHOTO HERO \(MAXIMUM\):|PHOTO FIDELITY \(MAXIMUM\):|PHOTO HERO:|PHOTO FIDELITY:|TYPOGRAPHY \(photo-first\):)/,
+      'SECTOR STYLE (beach club): Sun-washed coastal restraint — warm natural photo hero, subtle brand accents only. ',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const harmonized = buildHarmonizedPhotoFirstTypographyBlock(input).join(' ');
+  return `${withoutLegacyTypography} ${harmonized}`.replace(/\s+/g, ' ').trim();
+}
+
+export function buildHarmonizedPhotoFirstTypographyBlock(input: {
+  vibe: TypographyVibe;
+  subtitle?: string;
+  brandName?: string;
+}): string[] {
+  const spec = getVibePromptSpec(input.vibe);
+  const lines = [
+    'TYPOGRAPHY (photo-first): Keep the gallery photo as absolute hero — 85–95% of frame untouched.',
+    `If any text appears: ONE small designed tagline only, max 6 words, in ${spec.fontDescription}.`,
+    `Style energy: ${spec.styleDirective} — subtle corner placement or thin scrim, never poster-scale blocks.`,
+    'Do NOT render a large headline block. No event-card layout. No date/time baked into the image.',
+  ];
+  if (input.subtitle?.trim()) {
+    lines.push(
+      `Preferred tagline text (exact): "${input.subtitle.trim().slice(0, 48)}" — small, refined, vibe-aligned.`,
+    );
+  }
+  if (input.brandName) {
+    lines.push(`Optional: tiny "${input.brandName}" watermark — max 8% frame width.`);
+  }
+  return lines;
+}
+
+export function detectFalPromptConflicts(
+  prompt: string,
+  intensity: FalDesignIntensityLevel,
+): string[] {
+  const conflicts: string[] = [];
+  const wantsSmallType = /small, refined caption line only|minimal corner caption|tiny brand mark only/i.test(prompt);
+  const wantsBoldHeadline = /Headline "[^"]+" in [^.]+\./i.test(prompt);
+  const wantsLargeBlocks = /no large blocks|no poster blocks/i.test(prompt);
+  const hasSectorNightEnergy = /neon-glow accents|nightlife energy|speakeasy/i.test(prompt);
+
+  if (intensity === 'photo_first' && wantsSmallType && wantsBoldHeadline) {
+    conflicts.push(
+      'photo_first asks for minimal caption-only type, but TYPOGRAPHY STANDARD demands full custom headline letterforms.',
+    );
+  }
+  if (intensity === 'photo_first' && wantsLargeBlocks && /Supporting tagline/i.test(prompt)) {
+    conflicts.push(
+      'photo_first forbids large text blocks, but prompt still instructs a DESIGNED secondary tagline line.',
+    );
+  }
+  if (hasSectorNightEnergy && /warm_coastal|handwritten|coastal typography/i.test(prompt)) {
+    conflicts.push(
+      'Sector style block pushes nightlife/neon energy while resolved vibe is coastal/handwritten.',
+    );
+  }
+  return conflicts;
 }
 
 /**

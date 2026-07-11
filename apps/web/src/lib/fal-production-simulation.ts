@@ -6,6 +6,7 @@
  */
 import {
   buildDesignedVideoReelDesignCardPrompt,
+  detectFalPromptConflicts,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import { distillBrandSoul, resolveFalBrandInput } from '@/lib/fal-brand-input';
@@ -13,13 +14,13 @@ import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
 import {
   CALENDAR_GALLERY_DESIGN_INTENSITY,
   normalizeCalendarPlanToProductionIdea,
+  resolveCalendarSlotDesignIntensity,
   resolveCalendarSlotAssignment,
 } from '@/lib/calendar-production-pack';
 import {
-  resolveFalDesignIntensityForChannel,
+  resolveCalendarFalDesignIntensity,
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
-import { getVibePromptSpec } from '@/lib/fal-typography-design';
 import type { TypographyVibe } from '@/types/brand-theme';
 
 // ── Fixture: Yula — New Citrus Cocktail Launch (calendar story) ─────────────
@@ -151,106 +152,22 @@ export interface FalFeedBeforeAfterComparison {
   deltas: Array<{ field: string; before: string; after: string; impact: string }>;
 }
 
-// ── Proposed-only helpers (future production behavior) ────────────────────────
+// ── Simulation aliases (legacy before/after labels) ───────────────────────────
 
-/** Announcement-aware intensity — calendar rows no longer one-size photo_first. */
+/** @deprecated Use resolveCalendarFalDesignIntensity — kept for simulation tests. */
 export function resolveProposedCalendarIntensity(
   announcementType: string,
   channel: 'story' | 'post',
-  theme: Record<string, unknown>,
+  brandTheme: Record<string, unknown>,
 ): { level: FalDesignIntensityLevel; source: string } {
-  const fromTheme = resolveFalDesignIntensityForChannel(theme, channel);
-  const key = announcementType.toLowerCase().replace(/\s+/g, '_');
-  const announcementOverrides: Record<string, FalDesignIntensityLevel> = {
-    product_reveal: 'photo_first',
-    venue_showcase: 'photo_first',
-    behind_the_scenes: 'photo_first',
-    event_teaser: 'elegant_light',
-    offer_campaign: 'designed',
-    social_proof: 'elegant_light',
-  };
-  const override = announcementOverrides[key];
-  if (override) {
-    return { level: override, source: `announcement:${key}` };
-  }
-  return { level: fromTheme, source: `brand_theme.fal_design_intensity.${channel}` };
+  return resolveCalendarFalDesignIntensity({ announcementType, channel, brandTheme });
 }
 
-export function detectFalPromptConflicts(
-  prompt: string,
-  intensity: FalDesignIntensityLevel,
-): string[] {
-  const conflicts: string[] = [];
-  const wantsSmallType = /small, refined caption line only|minimal corner caption|tiny brand mark only/i.test(prompt);
-  const wantsBoldHeadline = /Headline "[^"]+" in [^.]+\./i.test(prompt);
-  const wantsLargeBlocks = /no large blocks|no poster blocks/i.test(prompt);
-  const hasSectorNightEnergy = /neon-glow accents|nightlife energy|speakeasy/i.test(prompt);
-
-  if (intensity === 'photo_first' && wantsSmallType && wantsBoldHeadline) {
-    conflicts.push(
-      'photo_first asks for minimal caption-only type, but TYPOGRAPHY STANDARD demands full custom headline letterforms.',
-    );
-  }
-  if (intensity === 'photo_first' && wantsLargeBlocks && /Supporting tagline/i.test(prompt)) {
-    conflicts.push(
-      'photo_first forbids large text blocks, but prompt still instructs a DESIGNED secondary tagline line.',
-    );
-  }
-  if (hasSectorNightEnergy && /warm_coastal|handwritten|coastal typography/i.test(prompt)) {
-    conflicts.push(
-      'Sector style block pushes nightlife/neon energy while resolved vibe is coastal/handwritten.',
-    );
-  }
-  return conflicts;
-}
-
-/** Harmonized photo_first typography — proposed prompt patch (tests first, prod later). */
-export function buildHarmonizedPhotoFirstTypographyBlock(input: {
-  vibe: TypographyVibe;
-  subtitle?: string;
-  brandName?: string;
-}): string[] {
-  const spec = getVibePromptSpec(input.vibe);
-  const lines = [
-    'TYPOGRAPHY (photo-first): Keep the gallery photo as absolute hero — 85–95% of frame untouched.',
-    `If any text appears: ONE small designed tagline only, max 6 words, in ${spec.fontDescription}.`,
-    `Style energy: ${spec.styleDirective} — subtle corner placement or thin scrim, never poster-scale blocks.`,
-    'Do NOT render a large headline block. No event-card layout. No date/time baked into the image.',
-  ];
-  if (input.subtitle?.trim()) {
-    lines.push(
-      `Preferred tagline text (exact): "${input.subtitle.trim().slice(0, 48)}" — small, refined, vibe-aligned.`,
-    );
-  }
-  if (input.brandName) {
-    lines.push(`Optional: tiny "${input.brandName}" watermark — max 8% frame width.`);
-  }
-  return lines;
-}
-
-export function harmonizePhotoFirstDesignPrompt(
-  prompt: string,
-  input: {
-    vibe: TypographyVibe;
-    subtitle?: string;
-    brandName?: string;
-  },
-): string {
-  const withoutLegacyTypography = prompt
-    .replace(
-      /TYPOGRAPHY STANDARD \(MANDATORY\):[\s\S]*?(?=SAFE ZONE \(MANDATORY\):|BRAND COLORS:|═══ CRITICAL TEXT LOCK ═══|$)/,
-      '',
-    )
-    .replace(
-      /SECTOR STYLE \(beach\/night club\):[\s\S]*?(?=PHOTO HERO \(MAXIMUM\):|PHOTO FIDELITY \(MAXIMUM\):|PHOTO HERO:|PHOTO FIDELITY:)/,
-      'SECTOR STYLE (beach club): Sun-washed coastal restraint — warm natural photo hero, subtle brand accents only. ',
-    )
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const harmonized = buildHarmonizedPhotoFirstTypographyBlock(input).join(' ');
-  return `${withoutLegacyTypography} ${harmonized}`.replace(/\s+/g, ' ').trim();
-}
+export {
+  buildHarmonizedPhotoFirstTypographyBlock,
+  detectFalPromptConflicts,
+  harmonizePhotoFirstDesignPrompt,
+} from '@/lib/fal-designer-production';
 
 function describeVibeSource(input: {
   brandTheme: Record<string, unknown>;
@@ -399,9 +316,9 @@ export function simulateFalFeedProduction(
   const intensityBundle = mode === 'current'
     ? {
         level: CALENDAR_GALLERY_DESIGN_INTENSITY,
-        source: 'calendar hardcoded photo_first',
+        source: 'calendar hardcoded photo_first (legacy simulation)',
       }
-    : resolveProposedCalendarIntensity(announcementType, channel, input.brandTheme);
+    : resolveCalendarSlotDesignIntensity(idea, input.brandTheme, channel);
 
   const vibeSource = describeVibeSource({
     brandTheme: input.brandTheme,
@@ -433,14 +350,6 @@ export function simulateFalFeedProduction(
     designIntensityLevel: intensityBundle.level,
     sceneHint: falBrand.sceneHint,
   });
-
-  if (mode === 'proposed' && intensityBundle.level === 'photo_first') {
-    designCardPrompt = harmonizePhotoFirstDesignPrompt(designCardPrompt, {
-      vibe: falBrand.vibe,
-      subtitle,
-      brandName: input.brandName,
-    });
-  }
 
   const promptConflicts = detectFalPromptConflicts(designCardPrompt, intensityBundle.level);
 
