@@ -17,6 +17,7 @@ import {
   type GeneratedDesignTemplate,
 } from '@/lib/brand-design-template-engine';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
+import { isTypographyDesignConfirmed } from '@/lib/typography-design-policy';
 
 export const runtime = 'nodejs';
 // Generation runs up to ~10 GPT-image edits — allow a long window.
@@ -72,6 +73,16 @@ export async function POST(
   const brandTheme = (themeRes.ok && themeRes.data?.theme && typeof themeRes.data.theme === 'object')
     ? themeRes.data.theme
     : (typeof brandCtx.brand_theme === 'object' ? brandCtx.brand_theme as Record<string, unknown> : null);
+
+  if (!isTypographyDesignConfirmed(brandTheme)) {
+    return NextResponse.json(
+      {
+        error: 'typography_design_unconfirmed',
+        message: 'Onboarding tipografi stili onaylanmadan şablon üretilemez.',
+      },
+      { status: 422 },
+    );
+  }
   const themeAnti = Array.isArray(brandTheme?.anti_patterns)
     ? (brandTheme!.anti_patterns as string[])
     : [];

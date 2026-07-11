@@ -276,6 +276,11 @@ import {
   resolveCalendarSlotDesignIntensity,
 } from '@/lib/calendar-production-pack';
 import {
+  readExplicitCalendarDesignLayoutFamily,
+  resolveCalendarDesignLayout,
+} from '@/lib/calendar-design-layout';
+import { resolveCalendarEventOverlay } from '@/lib/calendar-event-overlay';
+import {
   resolveGalleryFirstForSlot,
   shouldUseGalleryFirstMission,
   type GalleryFirstCaptionSource,
@@ -2460,6 +2465,25 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           || assignment.slot_role === 'fal_only_story'
           ? 'story'
           : 'reel';
+    const calendarDesignLayout = isCalendarSlot
+      ? resolveCalendarDesignLayout({
+        announcementType: String(
+          ideaRecord.calendar_announcement_type
+          ?? ideaRecord.template_use_case
+          ?? ideaRecord.announcement_type
+          ?? '',
+        ),
+        channel: falBriefFormat === 'story' ? 'story' : 'post',
+        sector: brandBusinessType,
+        explicitLayoutFamily: readExplicitCalendarDesignLayoutFamily(ideaRecord),
+      })
+      : null;
+    if (calendarDesignLayout) {
+      console.log(
+        `[auto-produce] [calendar-layout] archetype=${calendarDesignLayout.canvaArchetypeId} ` +
+        `remotion=${calendarDesignLayout.layoutFamilyHint} source=${calendarDesignLayout.source}`,
+      );
+    }
     const falDesignCtx = usesFalDesignerTrack && !adHocBrief
       ? resolveFalDesignPromptContext({
           caption,
@@ -2470,7 +2494,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           format: falBriefFormat,
           slotRole: assignment.slot_role,
           sceneHint: falSceneHint,
-          layoutFamilyHint: assignment.layout_family_hint,
+          layoutFamilyHint: calendarDesignLayout?.layoutFamilyHint ?? assignment.layout_family_hint,
+          explicitCanvaArchetypeId: calendarDesignLayout?.canvaArchetypeId,
           falDesignHint: assignment.fal_design_hint,
           referencePhotoUrl: referenceUrl || undefined,
           premiumComposition: extractPremiumComposition(idea),
@@ -2496,8 +2521,27 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let brandDesignTemplateType: string | null = null;
     let brandDesignTemplateName: string | null = null;
 
+    const calendarAnnouncementType = String(
+      ideaRecord.calendar_announcement_type
+      ?? ideaRecord.template_use_case
+      ?? ideaRecord.announcement_type
+      ?? '',
+    );
+    const calendarEventOverlay = isCalendarSlot
+      ? resolveCalendarEventOverlay({
+        idea: ideaRecord,
+        announcementType: calendarAnnouncementType,
+        headline,
+        canvaArchetypeId: calendarDesignLayout?.canvaArchetypeId,
+      })
+      : null;
+    if (calendarEventOverlay?.headline && calendarEventOverlay.headline !== headline) {
+      headline = calendarEventOverlay.headline;
+      ideationHeadline = calendarEventOverlay.headline;
+    }
     const falCalendarSubtitle = isCalendarSlot
-      ? String(
+      ? calendarEventOverlay?.subtitle
+      ?? String(
         ideaRecord.tagline ?? ideaRecord.subline
         ?? (idea.event_details as Record<string, unknown> | undefined)?.tagline
         ?? '',
@@ -2619,6 +2663,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           grafikerMaxRetries,
           designBriefDirectives: [
             ...(falDesignCtx?.promptDirectives ?? []),
+            ...(calendarEventOverlay?.directives ?? []),
             ...falGridRotationDirectives,
             ...(adPublishChannel ? resolveFalAdCreativeDirectives(adPublishChannel) : []),
           ],
@@ -3560,7 +3605,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ).slice(0, 160),
         visual_design_card_prompt_used: missionVisualDesignRendered,
       } : {}),
-      layout_family_hint: assignment.layout_family_hint ?? layoutFamilyHint ?? null,
+      layout_family_hint: calendarDesignLayout?.layoutFamilyHint
+        ?? assignment.layout_family_hint
+        ?? layoutFamilyHint
+        ?? null,
+      ...(calendarDesignLayout
+        ? {
+          design_layout_family: calendarDesignLayout.canvaArchetypeId,
+          design_layout_source: calendarDesignLayout.source,
+        }
+        : {}),
       ...(slotFalGridSurface ? { fal_grid_surface: slotFalGridSurface } : {}),
       ...(slotFalRequests.length ? {
         fal_requests: slotFalRequests,

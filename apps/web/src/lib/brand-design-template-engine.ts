@@ -22,6 +22,10 @@ import {
   type FalDesignChannel,
 } from '@/lib/fal-design-intensity';
 import {
+  isTypographyDesignConfirmed,
+  readTypographyDesignConfig,
+} from '@/lib/typography-design-policy';
+import {
   type GalleryPhotoMeta,
   matchPhotoToContent,
 } from '@/lib/gallery-photo-matcher';
@@ -200,23 +204,23 @@ async function generateOne(
 ): Promise<GeneratedDesignTemplate> {
   const { headline, subtitle, sceneHint, occasion } = resolveCopy(preset, input, special);
   const theme = input.brandTheme ?? null;
-  const typographyConfig = (theme?.typography_design ?? theme?.typographyDesign) as
-    | { vibe?: TypographyVibe; background_style?: string; text_effect?: string; logo_treatment?: string }
-    | undefined;
+  const typographyConfig = readTypographyDesignConfig(theme);
   const intensityChannel: FalDesignChannel = preset.format === 'reel_cover'
     ? 'reel'
     : preset.format === 'story'
       ? 'story'
       : 'post';
   const designIntensityLevel = resolveFalDesignIntensityForChannel(theme, intensityChannel);
-  const vibe = resolveTypographyVibeFromContext({
-    caption: occasion ? `${sceneHint} ${occasion.mood ?? ''}`.trim() : sceneHint,
-    headline,
-    sector: input.sector,
-    brandVibe: typographyConfig?.vibe ?? null,
-    visualDnaTone: input.visualDnaTone,
-    lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
-  });
+  const vibe = isTypographyDesignConfirmed(theme) && typographyConfig?.vibe
+    ? typographyConfig.vibe
+    : resolveTypographyVibeFromContext({
+      caption: occasion ? `${sceneHint} ${occasion.mood ?? ''}`.trim() : sceneHint,
+      headline,
+      sector: input.sector,
+      brandVibe: typographyConfig?.vibe ?? null,
+      visualDnaTone: input.visualDnaTone,
+      lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
+    });
   const picked = pickPhotoForPreset(preset, input, usedUrls);
   if (picked) usedUrls.add(normalizeGalleryUrl(picked.url));
   const backgroundStyle: TypographyBackgroundStyle = picked?.url

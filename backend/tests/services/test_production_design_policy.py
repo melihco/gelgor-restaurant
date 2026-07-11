@@ -49,6 +49,29 @@ def test_hospitality_pillar_realignment_from_beauty_leak():
     assert "educational_post" not in fixed or fixed.count("educational_post") == 0
 
 
+def test_apply_production_layers_preserves_confirmed_typography():
+    theme = {
+        "typography": {"text_overlay_density": "minimal"},
+        "palette": {"accent": "#C4A484"},
+        "typography_design": {
+            "vibe": "warm_coastal",
+            "text_effect": "soft_shadow",
+            "background_style": "photo_overlay",
+            "logo_treatment": "watermark",
+            "confirmed_at": "2026-07-11T12:00:00.000Z",
+            "source": "user",
+        },
+    }
+    out = apply_production_layers_to_theme_dict(
+        theme,
+        sector="beach_club",
+        visual_dna="neon nightlife club energy",
+        languages="tr",
+    )
+    assert out["typography_design"]["vibe"] == "warm_coastal"
+    assert out["typography_design"]["confirmed_at"] == "2026-07-11T12:00:00.000Z"
+
+
 def test_apply_production_layers_merges_into_theme_dict():
     theme = {
         "typography": {"text_overlay_density": "minimal"},

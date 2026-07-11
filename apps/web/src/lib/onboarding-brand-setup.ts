@@ -555,30 +555,13 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     && productionSteps.filter((s) => productionCritical.has(s.id)).every((s) => s.ok)
     && earlyProvisionRes.ok;
 
-  // 8. Brand design templates — Fal.ai-generated, brand-consistent design set
-  //    grounded on real gallery photos + corporate colors + logo. Non-blocking:
-  //    a failure here never blocks onboarding completion.
-  if (productionReady) {
-    const designRes = await postJson<{ generated?: number; failed?: number }>(
-      `${origin}/api/brand-context/${tenantId}/generate-design-templates`,
-      { locale: 'tr' },
-      headers,
-      290_000,
-    );
-    steps.push({
-      id: 'design_templates',
-      ok: designRes.ok,
-      detail: designRes.ok
-        ? `${designRes.data?.generated ?? 0} template üretildi`
-        : designRes.error,
-    });
-  } else {
-    steps.push({
-      id: 'design_templates',
-      ok: false,
-      detail: 'production_not_ready',
-    });
-  }
+  // 8. Brand design templates — deferred until onboarding typography confirm step
+  //    (POST generate-design-templates from TypographyConfirmStep in OnboardingFlow).
+  steps.push({
+    id: 'design_templates',
+    ok: productionReady,
+    detail: productionReady ? 'deferred_until_typography_confirm' : 'production_not_ready',
+  });
 
   // DNA failure is non-blocking once constitution is confirmed
   const ok = errors.length === 0 && Boolean(brandAnalysis?.success) && constitutionConfirmed;

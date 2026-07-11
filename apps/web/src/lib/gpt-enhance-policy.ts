@@ -281,6 +281,9 @@ export function shouldSkipProductionForWeakGallery(input: {
     return false;
   }
   if (!input.missionProduction) return false;
+  if (input.falGroundedPipeline && input.hasReference && input.galleryMatchScore == null) {
+    return true;
+  }
   if (!input.hasReference) return true;
   if (input.referenceIsStock) return false;
   if (!input.pickedFromBrandGallery) return false;

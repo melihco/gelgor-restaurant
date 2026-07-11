@@ -29,7 +29,11 @@ describe('production profile readiness', () => {
       businessType: 'beach_club',
       visualDna: productionVisualDna,
       brandTheme: {
-        typography_design: { vibe: 'warm_coastal' },
+        typography_design: {
+          vibe: 'warm_coastal',
+          confirmed_at: '2026-07-11T12:00:00.000Z',
+          source: 'user',
+        },
         fal_design_intensity: { story: 'photo_first', reel: 'elegant_light', post: 'elegant_light' },
         anti_patterns: ['neon clutter', 'stock wellness', 'kids party'],
       },
@@ -50,7 +54,11 @@ describe('production profile readiness', () => {
       businessType: 'local_products_shop',
       visualDna: productionVisualDna,
       brandTheme: {
-        typography_design: { vibe: 'warm_coastal' },
+        typography_design: {
+          vibe: 'warm_coastal',
+          confirmed_at: '2026-07-11T12:00:00.000Z',
+          source: 'user',
+        },
         fal_design_intensity: { story: 'photo_first' },
         anti_patterns: ['a', 'b', 'c'],
       },
@@ -66,7 +74,11 @@ describe('production profile readiness', () => {
       businessType: 'local_products_shop',
       visualDna: productionVisualDna,
       brandTheme: {
-        typography_design: { vibe: 'retro_poster' },
+        typography_design: {
+          vibe: 'retro_poster',
+          confirmed_at: '2026-07-11T12:00:00.000Z',
+          source: 'user',
+        },
         fal_design_intensity: { story: 'photo_first' },
         anti_patterns: ['industrial', 'clinical', 'luxury hotel'],
       },

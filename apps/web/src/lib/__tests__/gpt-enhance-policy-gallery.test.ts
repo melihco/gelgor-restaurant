@@ -68,6 +68,18 @@ describe('Fal grounded weak-gallery gate', () => {
     ).toBe(false);
   });
 
+  it('skips Fal grounded calendar when gallery score is null after brand_solid fallback', () => {
+    expect(
+      shouldSkipProductionForWeakGallery({
+        ...base,
+        galleryMatchScore: null,
+        adaptiveScene: true,
+        mediaFallback: 'brand_solid',
+        falGroundedPipeline: true,
+      }),
+    ).toBe(true);
+  });
+
   it('still skips non-Fal when fallback is block and score < MIN_ACCEPT', () => {
     expect(
       shouldSkipProductionForWeakGallery({

@@ -534,6 +534,9 @@ RULES:
 - Reel rows: motion-forward brief (camera movement, hook in first 2 seconds).
 - Carousel rows: multi-slide narrative brief (hero + supporting angles).
 - Spread publish days across Mon–Sun; include date and time when sensible.
+- Optional design_layout_family: Canva archetype id (e.g. neon_night_promo, event_ticket_stub).
+  Omit to let production derive layout from announcement_type + format + sector.
+- For event rows, optional artist_name or dj_lineup for overlay copy.
 
 Return a JSON array of {count} publish plan rows:
 [
@@ -544,6 +547,8 @@ Return a JSON array of {count} publish plan rows:
     "date": "date string if applicable, else ''",
     "time": "time string if applicable, else ''",
     "venue_area": "specific area name (e.g. 'Rooftop Terrace') if applicable, else ''",
+    "artist_name": "DJ or performer name if applicable, else ''",
+    "design_layout_family": "optional Canva archetype id, else omit",
     "template_use_case": "event | campaign | announcement",
     "format": "story | post | reel | carousel",
     "content_brief": "1-2 sentences describing the visual concept and message",

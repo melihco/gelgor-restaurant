@@ -559,12 +559,21 @@ def _merge_event_details_from_calendar(
     subline = str(plan.get("tagline") or plan.get("subline") or "").strip()
     time = str(plan.get("time") or plan.get("scheduled_time") or plan.get("publish_time") or "").strip()
     base = dict(idea.get("event_details") or {}) if isinstance(idea.get("event_details"), dict) else {}
+    artist_line = str(
+        plan.get("artist_name")
+        or plan.get("dj_lineup")
+        or plan.get("lineup")
+        or plan.get("dj")
+        or base.get("artist_name")
+        or ""
+    ).strip()
     merged = {
         **base,
         "date": str(plan.get("date") or base.get("date") or "").strip() or None,
         "time": time or base.get("time"),
         "tagline": subline or base.get("tagline"),
         "venue_area": str(plan.get("venue_area") or base.get("venue_area") or "").strip() or None,
+        "artist_name": artist_line or None,
     }
     cleaned = {k: v for k, v in merged.items() if v}
     return cleaned or None
@@ -628,6 +637,25 @@ def _enrich_ideation_with_calendar_plan(
     if announcement:
         row.setdefault("template_use_case", announcement)
         row["calendar_announcement_type"] = announcement
+
+    from app.services.calendar_design_layout import (
+        apply_calendar_design_layout_to_row,
+        normalize_calendar_plan_design_layout,
+        resolve_calendar_design_layout,
+    )
+
+    normalized_plan = normalize_calendar_plan_design_layout(plan)
+    channel = "story" if "story" in fmt.lower() else "post"
+    user_layout = str(
+        normalized_plan.get("design_layout_family") or plan.get("design_layout_family") or ""
+    ).strip()
+    layout = resolve_calendar_design_layout(
+        announcement_type=announcement,
+        channel=channel,
+        explicit_layout_family=user_layout if normalized_plan.get("design_layout_locked") else None,
+    )
+    row = apply_calendar_design_layout_to_row(row, layout)
+    row["fal_design_hint"] = f"calendar layout:{layout['canva_archetype_id']}"
     return row
 
 
@@ -859,8 +887,34 @@ def build_calendar_production_ideas(
             event_details["tagline"] = tagline
         if plan.get("venue_area"):
             event_details["venue_area"] = str(plan.get("venue_area") or "").strip()
+        artist_line = str(
+            plan.get("artist_name")
+            or plan.get("dj_lineup")
+            or plan.get("lineup")
+            or plan.get("dj")
+            or ""
+        ).strip()
+        if artist_line:
+            event_details["artist_name"] = artist_line
 
-        ideas.append({
+        from app.services.calendar_design_layout import (
+            apply_calendar_design_layout_to_row,
+            normalize_calendar_plan_design_layout,
+            resolve_calendar_design_layout,
+        )
+
+        normalized_plan = normalize_calendar_plan_design_layout(plan)
+        channel = "story" if "story" in fmt.lower() else "post"
+        user_layout = str(
+            normalized_plan.get("design_layout_family") or plan.get("design_layout_family") or ""
+        ).strip()
+        layout = resolve_calendar_design_layout(
+            announcement_type=announcement,
+            channel=channel,
+            explicit_layout_family=user_layout if normalized_plan.get("design_layout_locked") else None,
+        )
+
+        idea_row = {
             "idea_index": CALENDAR_PRODUCTION_IDEA_INDEX_BASE + plan_index,
             "calendar_plan_index": plan_index,
             "source_node": "content_calendar",
@@ -893,7 +947,8 @@ def build_calendar_production_ideas(
                 "photo_mood": photo_mood,
                 "content_brief": content_brief,
             },
-        })
+        }
+        ideas.append(apply_calendar_design_layout_to_row(idea_row, layout))
     return ideas
 
 

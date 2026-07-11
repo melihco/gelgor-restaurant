@@ -17,6 +17,11 @@ import {
   normalizeCalendarPlanToProductionIdea,
 } from '@/lib/calendar-production-pack';
 import {
+  applyCalendarDesignLayoutToIdea,
+  resolveCalendarDesignLayout,
+} from '@/lib/calendar-design-layout';
+import { normalizeCalendarPlanDesignLayout } from '@/lib/calendar-agent-schema';
+import {
   linkPlanningItemsToArtifacts,
   resolvePlanningIdeaIndex,
   type CalendarItemLink,
@@ -203,6 +208,9 @@ function mergeEventDetailsFromCalendar(
     time: time || base.time,
     tagline: subline || base.tagline,
     venue_area: String(plan.venue_area ?? base.venue_area ?? '').trim() || undefined,
+    artist_name: String(
+      plan.artist_name ?? plan.dj_lineup ?? plan.lineup ?? plan.dj ?? base.artist_name ?? '',
+    ).trim() || undefined,
   };
   return Object.values(merged).some(Boolean) ? merged : undefined;
 }
@@ -271,8 +279,19 @@ function enrichIdeationWithCalendarPlan(
     },
   };
 
-  enriched.fal_design_hint = buildCalendarFalSceneHint(enriched);
-  return enriched;
+  const normalizedPlan = normalizeCalendarPlanDesignLayout(plan);
+  const layoutChannel = String(fmt).toLowerCase().includes('story') ? 'story' : 'post';
+  const userLayoutFamily = String(
+    normalizedPlan.design_layout_family ?? plan.design_layout_family ?? plan.designLayoutFamily ?? '',
+  ).trim();
+  const layout = resolveCalendarDesignLayout({
+    announcementType: announcement,
+    channel: layoutChannel,
+    explicitLayoutFamily: normalizedPlan.design_layout_locked ? userLayoutFamily : undefined,
+  });
+  const withLayout = applyCalendarDesignLayoutToIdea(enriched, layout);
+  withLayout.fal_design_hint = `${buildCalendarFalSceneHint(withLayout)} | layout:${layout.canvaArchetypeId}`;
+  return withLayout;
 }
 
 export function isCalendarProductionDonor(idea: Record<string, unknown>): boolean {

@@ -77,6 +77,8 @@ export interface ResolveFalDesignPromptContextInput {
   falSlotOrdinal?: number;
   /** Tenant typography_design.preferred_canva_archetypes override. */
   tenantPreferredArchetypes?: CanvaArchetypeId[];
+  /** Calendar design_layout_family or production-resolved archetype lock. */
+  explicitCanvaArchetypeId?: string;
   /** Agent visual_production_spec.fal_design_brief (snake or camel). */
   agentFalDesignBrief?: Record<string, unknown> | null;
   /** Brand Kit post defaults — logo_position fallback. */
@@ -300,7 +302,10 @@ export function resolveFalDesignBrief(input: ResolveFalDesignPromptContextInput)
     strategicPurpose: input.strategicPurpose,
     layoutFamilyHint: input.layoutFamilyHint,
     sector: input.sector,
-    explicitArchetypeId: str(input.agentFalDesignBrief?.canva_archetype ?? input.agentFalDesignBrief?.canvaArchetype) || undefined,
+    explicitArchetypeId:
+      str(input.explicitCanvaArchetypeId)
+      || str(input.agentFalDesignBrief?.canva_archetype ?? input.agentFalDesignBrief?.canvaArchetype)
+      || undefined,
     falDesignHint: input.falDesignHint,
     usedArchetypeIds: (input.usedArchetypeIds ?? []).filter(Boolean) as CanvaArchetypeId[],
     slotOrdinal: input.falSlotOrdinal,

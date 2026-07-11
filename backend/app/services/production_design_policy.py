@@ -243,7 +243,13 @@ def apply_production_layers_to_theme_dict(
     policy_anti = sector_anti_patterns(sector)
     guardrails = [str(g).strip() for g in (sp.get("content_guardrails") or []) if str(g).strip()]
     existing_anti = merged.get("anti_patterns") if isinstance(merged.get("anti_patterns"), list) else []
-    merged["typography_design"] = resolve_typography_design(sector, visual_dna, sp, accent)
+    existing_typo = merged.get("typography_design")
+    derived_typo = resolve_typography_design(sector, visual_dna, sp, accent)
+    if isinstance(existing_typo, dict) and existing_typo.get("confirmed_at"):
+        merged_typo = {**derived_typo, **existing_typo}
+        merged["typography_design"] = merged_typo
+    else:
+        merged["typography_design"] = {**derived_typo, "source": "derived"}
     merged["fal_design_intensity"] = resolve_fal_design_intensity(sector, density)
     merged["anti_patterns"] = list(dict.fromkeys([*existing_anti, *policy_anti, *guardrails]))[:12]
 

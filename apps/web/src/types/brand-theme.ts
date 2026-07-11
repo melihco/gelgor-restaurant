@@ -129,6 +129,10 @@ export interface BrandDesignTypographyConfig {
    */
   preferred_canva_archetypes?: string[];
   preferredCanvaArchetypes?: string[];
+  /** ISO timestamp — set when operator confirms vibe during onboarding or Brand Hub. */
+  confirmed_at?: string;
+  /** user = explicit confirmation; derived = auto policy layer. */
+  source?: 'user' | 'derived';
 }
 
 export interface BrandProductShowcaseConfig {

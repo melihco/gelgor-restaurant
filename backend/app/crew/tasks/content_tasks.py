@@ -639,6 +639,7 @@ def create_content_calendar_task(
         expected_output=(
             f"A JSON array of {row_count} publish plan rows, each with: "
             "announcement_type, event_name, tagline, date, time, venue_area, "
+            "optional artist_name, optional design_layout_family, "
             "template_use_case, format (story|post|reel|carousel), content_brief, photo_mood, priority."
         ),
         agent=agent,

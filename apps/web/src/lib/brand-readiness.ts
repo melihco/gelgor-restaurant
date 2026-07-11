@@ -16,6 +16,7 @@
 
 import { canonicalSectorFromCategory } from '@/lib/canonical-sector';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
+import { isTypographyDesignConfirmed } from '@/lib/typography-design-policy';
 
 // Lowered from 80 → 70: allows proposals when core quality data is present
 // (gallery, theme, pillars, CTAs) even without formal constitution confirmation.
@@ -323,11 +324,10 @@ export function isProductionFormatVisualDna(dna: string | null | undefined): boo
 
 function hasProductionThemeLayers(theme: Record<string, unknown> | null | undefined): boolean {
   if (!theme) return false;
-  const typography = theme.typography_design;
   const intensity = theme.fal_design_intensity;
   const antiPatterns = theme.anti_patterns;
   return (
-    Boolean(typography && typeof typography === 'object')
+    isTypographyDesignConfirmed(theme)
     && Boolean(intensity && typeof intensity === 'object')
     && Array.isArray(antiPatterns)
     && antiPatterns.length >= 3
@@ -394,9 +394,13 @@ export function computeProductionProfileReadiness(
       earned: passed ? 25 : 0,
       passed,
       detail: passed
-        ? 'Typography + Fal intensity + anti-patterns'
-        : `Layers incomplete (${antiCount} anti-patterns)`,
-      action: 'Re-derive brand theme after production design profile.',
+        ? 'Confirmed typography + Fal intensity + anti-patterns'
+        : isTypographyDesignConfirmed(input.brandTheme ?? undefined)
+          ? `Layers incomplete (${antiCount} anti-patterns)`
+          : 'Typography vibe not confirmed',
+      action: isTypographyDesignConfirmed(input.brandTheme ?? undefined)
+        ? 'Re-derive brand theme after production design profile.'
+        : 'Confirm typography vibe during onboarding or Brand Hub.',
       fix: 'brand-theme',
     });
   }

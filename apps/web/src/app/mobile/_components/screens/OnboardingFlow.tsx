@@ -19,9 +19,16 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { StoryNavigation } from '../StoryNavigation';
+import {
+  TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS,
+  buildUserConfirmedTypographyPatch,
+  isTypographyDesignConfirmed,
+  resolveSuggestedTypographyConfig,
+} from '@/lib/typography-design-policy';
+import type { BrandDesignTypographyConfig, TypographyVibe } from '@/types/brand-theme';
 
 // ─── Types ────────────────────────────────────────────────────────────
-type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'templates_showcase' | 'welcome';
+type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'typography_confirm' | 'templates_showcase' | 'welcome';
 
 interface ShowcaseTemplate {
   id: string;
@@ -1145,6 +1152,195 @@ const TEMPLATE_TYPE_DESCRIPTIONS: Record<string, string> = {
   brand_identity: 'Marka kimliğinizi yansıtan tasarım.',
 };
 
+function TypographyConfirmStep({
+  brandName,
+  tenantId,
+  onDone,
+}: {
+  brandName: string;
+  tenantId: string;
+  onDone: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [config, setConfig] = useState<BrandDesignTypographyConfig | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const headers = getRequestContextHeaders();
+        const [themeRes, ctxRes] = await Promise.all([
+          fetch(`/api/brand-context/${tenantId}/theme`, { headers, signal: AbortSignal.timeout(20_000) }),
+          fetch(`/api/brand-context/${tenantId}`, { headers, signal: AbortSignal.timeout(20_000) }).catch(() => null),
+        ]);
+        const themeJson = themeRes.ok ? ((await themeRes.json()) as { theme?: Record<string, unknown> }) : {};
+        const theme = themeJson.theme ?? {};
+        if (isTypographyDesignConfirmed(theme)) {
+          onDone();
+          return;
+        }
+        const ctx = ctxRes?.ok ? ((await ctxRes.json()) as Record<string, unknown>) : null;
+        const sector = String(ctx?.business_type ?? ctx?.industry ?? 'general_business');
+        if (!cancelled) {
+          setConfig(resolveSuggestedTypographyConfig(theme, sector));
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setError('Marka teması yüklenemedi. Lütfen tekrar deneyin.');
+          setLoading(false);
+        }
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [tenantId, onDone]);
+
+  async function handleConfirm() {
+    if (!config || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const headers = {
+        ...getRequestContextHeaders(),
+        'Content-Type': 'application/json',
+      };
+      const confirmed = buildUserConfirmedTypographyPatch(config);
+      const themeRes = await fetch(`/api/brand-context/${tenantId}/theme`, {
+        headers: getRequestContextHeaders(),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const themeJson = themeRes.ok ? ((await themeRes.json()) as { theme?: Record<string, unknown> }) : {};
+      const currentTheme = themeJson.theme ?? {};
+
+      const putRes = await fetch(`/api/brand-context/${tenantId}/theme`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          theme: {
+            ...currentTheme,
+            typography_design: confirmed,
+            typographyDesign: confirmed,
+          },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!putRes.ok) throw new Error('Tipografi stili kaydedilemedi.');
+
+      const genRes = await fetch(`/api/brand-context/${tenantId}/generate-design-templates`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ locale: 'tr' }),
+        signal: AbortSignal.timeout(290_000),
+      });
+      if (!genRes.ok) {
+        const err = (await genRes.json().catch(() => ({}))) as { message?: string };
+        throw new Error(err.message || 'Marka şablonları üretilemedi.');
+      }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Bir hata oluştu.');
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="onboarding-shell">
+        <div className="onboarding-ambient" aria-hidden />
+        <main className="onboarding-welcome-body">
+          <div className="onboarding-setup-shimmer" aria-hidden />
+          <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Tipografi stiliniz</h1>
+          <p className="onboarding-lead" style={{ maxWidth: 300 }}>
+            {brandName} için önerilen yazı stili hazırlanıyor…
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  if (!config) {
+    return (
+      <div className="onboarding-shell">
+        <main className="onboarding-welcome-body">
+          <p className="onboarding-lead">{error ?? 'Tipografi yüklenemedi.'}</p>
+          <button type="button" className="onboarding-primary-btn" onClick={onDone}>
+            Devam et
+          </button>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="onboarding-shell">
+      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingLogoHeader compact />
+      <main className="onboarding-welcome-body" style={{ paddingBottom: 24 }}>
+        <h1 className="onboarding-title" style={{ marginBottom: 8 }}>Yazı stilinizi seçin</h1>
+        <p className="onboarding-lead" style={{ maxWidth: 320, marginBottom: 20 }}>
+          {brandName} için tüm AI tasarımları bu tipografi kimliğine kilitlenecek.
+          Sektörünüze uygun öneriyi onaylayın veya değiştirin.
+        </p>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 10,
+          width: '100%',
+          maxWidth: 360,
+          marginBottom: 20,
+        }}
+        >
+          {TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS.map((opt) => {
+            const active = config.vibe === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setConfig({ ...config, vibe: opt.id as TypographyVibe })}
+                style={{
+                  textAlign: 'left',
+                  padding: '12px 14px',
+                  borderRadius: 14,
+                  border: active ? '2px solid rgba(157,190,206,0.95)' : '1px solid rgba(255,255,255,0.12)',
+                  background: active ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.05)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+                  {opt.emoji} {opt.label}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(226,232,240,0.72)', lineHeight: 1.35 }}>
+                  {opt.desc}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {error && (
+          <p className="onboarding-lead" style={{ color: '#fca5a5', marginBottom: 12 }}>
+            {error}
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="onboarding-primary-btn"
+          disabled={submitting}
+          onClick={() => void handleConfirm()}
+        >
+          {submitting ? 'Şablonlar üretiliyor…' : 'Onayla ve devam et'}
+        </button>
+      </main>
+    </div>
+  );
+}
+
 function TemplatesShowcaseStep({
   brandName,
   tenantId,
@@ -1421,8 +1617,15 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
           onDone={(companyName, newTenantId) => {
             setSignupBrandName(companyName);
             if (newTenantId) setTenantId(newTenantId);
-            setStep(newTenantId ? 'templates_showcase' : 'welcome');
+            setStep(newTenantId ? 'typography_confirm' : 'welcome');
           }}
+        />
+      )}
+      {step === 'typography_confirm' && tenantId && (
+        <TypographyConfirmStep
+          brandName={signupBrandName || brandName}
+          tenantId={tenantId}
+          onDone={() => setStep('templates_showcase')}
         />
       )}
       {step === 'templates_showcase' && (

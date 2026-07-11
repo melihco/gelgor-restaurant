@@ -189,7 +189,7 @@ export async function bindBrandTemplateForFalProduction(input: {
 
     return {
       matched,
-      lockedVibe: matched.vibe ?? input.brandVibe,
+      lockedVibe: input.brandVibe ?? matched.vibe ?? null,
       referencePhotoUrl,
       styleReferenceUrl: matched.thumbnailUrl ?? null,
       brandDirectives: [...buildTemplateLayoutDirectives(matched), ...input.baseDirectives],

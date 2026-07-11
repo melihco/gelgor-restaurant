@@ -83,6 +83,7 @@ import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { BrandSectionIntro } from '../BrandSectionIntro';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
+import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
 
 const BrandChatbotProfileCard = dynamic(
   () => import('../BrandChatbotProfileCard').then((m) => ({ default: m.BrandChatbotProfileCard })),
@@ -4573,14 +4574,15 @@ export function BrandConstitution() {
                 sector={normalizeSectorId(p.sector || (pyCtx as any)?.business_type || '')}
                 onSave={async (next) => {
                   const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
+                  const confirmed = buildUserConfirmedTypographyPatch(next);
                   await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
                     body: JSON.stringify({
                       theme: {
                         ...currentTheme,
-                        typography_design: next,
-                        typographyDesign: next,
+                        typography_design: confirmed,
+                        typographyDesign: confirmed,
                       },
                     }),
                   }).catch(() => {/* non-fatal */});

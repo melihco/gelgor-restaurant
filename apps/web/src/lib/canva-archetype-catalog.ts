@@ -363,6 +363,9 @@ function scoreArchetype(
 
   const hint = (input.layoutFamilyHint ?? '').toLowerCase();
   if (hint) {
+    if (archetype.id === hint || archetype.id.replace(/_/g, '') === hint.replace(/_/g, '')) {
+      score += 120;
+    }
     if (archetype.id.includes(hint.replace(/_/g, ''))) score += 25;
     if (hint.includes('split') && archetype.id.includes('split')) score += 30;
     if (hint.includes('campaign') && archetype.id.includes('campaign')) score += 30;

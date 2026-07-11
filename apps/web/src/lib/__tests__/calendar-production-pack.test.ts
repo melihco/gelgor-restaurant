@@ -50,9 +50,12 @@ describe('calendar-production-pack', () => {
     expect(queue[0]!.assignment.slot_role).toBe('fal_designed_post');
     expect(queue[0]!.assignment.pipeline).toBe('fal_design');
     expect(queue[0]!.assignment.library_slot_key).toBe('event_story');
+    expect(queue[0]!.assignment.layout_family_hint).toBe('magazine_cover');
+    expect(queue[0]!.assignment.fal_design_hint).toContain('layout:editorial_date_masthead');
+    expect(ideas[0]!.design_layout_family).toBe('editorial_date_masthead');
   });
 
-  it('routes calendar product story to gallery-designed fal (not product showcase)', () => {
+  it('routes calendar product story to gallery-designed fal with product layout', () => {
     const idea = normalizeCalendarPlanToProductionIdea({
       event_name: 'New Citrus Cocktail Launch',
       tagline: 'Taste the essence of Bodrum',
@@ -65,6 +68,8 @@ describe('calendar-production-pack', () => {
     expect(queue[0]!.assignment.slot_role).toBe('fal_designed_post');
     expect(queue[0]!.assignment.pipeline).toBe('fal_design');
     expect(idea.calendar_gallery_designed).toBe(true);
+    expect(idea.design_layout_family).toBe('cinematic_full_bleed');
+    expect(queue[0]!.assignment.layout_family_hint).toBe('cinematic_center');
   });
 
   it('builds gallery match caption from brief + mood + tagline', () => {

@@ -124,6 +124,21 @@ describe('bindBrandTemplateForFalProduction', () => {
     expect(binding.brandDirectives.some((d) => d.includes('LOCKED TEMPLATE'))).toBe(true);
   });
 
+  it('prefers confirmed brand vibe over template snapshot', async () => {
+    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue(matched);
+    const binding = await bindBrandTemplateForFalProduction({
+      workspaceId: 'ws-beach',
+      slotRole: 'fal_designed_post',
+      librarySlotKey: null,
+      format: 'post',
+      missionReferenceUrl: 'https://cdn.example.com/mission.jpg',
+      baseDirectives: [],
+      brandColors: { primary: '#264653', accent: '#E9C46A' },
+      brandVibe: 'warm_coastal',
+    });
+    expect(binding.lockedVibe).toBe('warm_coastal');
+  });
+
   it('skips binding for ad-hoc brief', async () => {
     const binding = await bindBrandTemplateForFalProduction({
       workspaceId: 'ws-yula',
