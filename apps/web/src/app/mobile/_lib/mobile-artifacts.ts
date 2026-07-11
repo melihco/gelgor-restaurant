@@ -9,7 +9,7 @@ import {
 import { mobileQueryDefaults } from './mobile-query';
 
 /** Default list cap — full history on Outputs uses a higher screen-specific limit. */
-export const MOBILE_ARTIFACT_LIST_LIMIT = 100;
+export const MOBILE_ARTIFACT_LIST_LIMIT = 48;
 
 /** Shared pool for mission hub, nav badges, and detail sheets — must match MobileArtifactsPoller on missions screen. */
 export const MOBILE_ARTIFACT_MISSION_POOL_LIMIT = MOBILE_ARTIFACT_LIST_LIMIT;
@@ -36,7 +36,7 @@ export const MOBILE_ARTIFACT_FEED_PAGE = 10;
 export const MOBILE_ARTIFACT_FEED_RENDER_PAGE = 5;
 
 /** Feed full scroll window — upper bound for progressive loading. */
-export const MOBILE_ARTIFACT_FEED_LIMIT = 120;
+export const MOBILE_ARTIFACT_FEED_LIMIT = 80;
 
 /** Outputs archive: slightly larger window when that tab is active. */
 export const MOBILE_ARTIFACT_OUTPUTS_LIMIT = 150;

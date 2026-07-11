@@ -54,6 +54,10 @@ import type {
 import { getApiFetchUrl, getRequestContextHeaders, getTenantBffHeaders } from '@/lib/runtime-config';
 import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { setSessionToken } from '@/lib/session-token';
+import {
+  slimArtifactContentJson,
+  slimArtifactMetadata,
+} from '@/lib/artifact-payload-sanitize';
 
 /** Durable Production Factory — per-slot job status for the Mission Hub. */
 export interface MissionProductionJobSlot {
@@ -1513,7 +1517,9 @@ class ApiClient {
             reviewStatusToken.toLowerCase?.() === 'revision_requested'
           ? 'rejected'
           : 'pending_review';
-    const metadata = parseArtifactMetadata(artifact.metadata ?? artifact.Metadata);
+    const metadata = slimArtifactMetadata(
+      parseArtifactMetadata(artifact.metadata ?? artifact.Metadata),
+    );
     const lifecycleStatus = inferArtifactLifecycleStatus(status, metadata, artifact.contentUrl ?? artifact.ContentUrl);
     const type: OutputArtifact['type'] =
       artifactTypeToken === '1' || artifactTypeToken.toLowerCase?.() === 'socialmediagraphic'
@@ -1565,6 +1571,8 @@ class ApiClient {
         });
       }
     }
+
+    content = slimArtifactContentJson(content, contentUrl || undefined);
 
     return {
       id: artifact.id,

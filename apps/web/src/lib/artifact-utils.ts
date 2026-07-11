@@ -465,7 +465,8 @@ function collectCarouselUrlCandidates(
   ];
   for (const c of candidates) {
     if (Array.isArray(c) && c.length >= 2) {
-      return dedupeMediaUrls((c as string[]).map(String));
+      const urls = dedupeMediaUrls((c as string[]).map(String).filter((u) => !u.startsWith('data:')));
+      if (urls.length >= 2) return urls;
     }
   }
   const galleryOnly = dedupeMediaUrls([

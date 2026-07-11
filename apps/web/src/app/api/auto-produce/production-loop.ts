@@ -2848,8 +2848,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       // Apply agency-grade frame overlays to carousel slides:
       // slide 1: headline overlay, slides 2-N: slide number + swipe hint, last: CTA
       if (carouselUrls.length >= 2) {
+        const preCompositorCarouselUrls = [...carouselUrls];
         try {
           const { compositeCarouselFrames, fetchCarouselImageBuffer } = await import('@/lib/carousel-compositor');
+          const { persistCarouselSlideBuffers } = await import('@/lib/persist-enhanced-images');
           const carouselBrandTokens = resolveBrandProductionTokens({
             brandContext: brandCtx,
             brandTheme,
@@ -2874,8 +2876,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               primaryColor: carouselBrandTokens.primaryColor,
               accentColor: carouselBrandTokens.accentColor,
             });
-            // Convert composited buffers to base64 data URLs for immediate use
-            carouselUrls = buffers.map(b => `data:image/jpeg;base64,${b.toString('base64')}`);
+            const persistedSlides = await persistCarouselSlideBuffers(buffers, workspaceId);
+            if (persistedSlides.length >= 2 && persistedSlides.length === buffers.length) {
+              carouselUrls = persistedSlides;
+            } else {
+              console.warn(
+                `[auto-produce] Carousel R2 persist incomplete (${persistedSlides.length}/${buffers.length}), using pre-compositor urls`,
+              );
+              carouselUrls = preCompositorCarouselUrls;
+            }
             costEstimate += 0.001 * buffers.length; // sharp compositing cost
             console.log(`[auto-produce] Carousel branded frames applied: ${buffers.length} slides`);
           }
