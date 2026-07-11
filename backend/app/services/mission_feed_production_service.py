@@ -276,6 +276,7 @@ async def kick_feed_production(
     )
 
     req = body or MissionFeedProductionRequest()
+    package_total = 0
 
     # Hard gate: never re-produce a mission whose feed package is already complete.
     # Operator can bypass with operator_override=true for intentional re-runs.
@@ -350,64 +351,66 @@ async def kick_feed_production(
     factory_complete = bool(summary.get("complete"))
 
     if factory_total > 0 and not factory_complete:
-        if await pj.has_open_jobs(mission_id):
-            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
-            logger.info(
-                "kick_feed_production_factory_resume",
-                mission_id=str(mission_id),
-                reclaimed=reclaimed,
-                ready=summary.get("ready"),
-                total=factory_total,
-            )
+        needs_delta_enqueue = factory_total < package_total
+        if not needs_delta_enqueue:
+            if await pj.has_open_jobs(mission_id):
+                schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
+                logger.info(
+                    "kick_feed_production_factory_resume",
+                    mission_id=str(mission_id),
+                    reclaimed=reclaimed,
+                    ready=summary.get("ready"),
+                    total=factory_total,
+                )
+                return {
+                    "accepted": True,
+                    "mission_id": str(mission_id),
+                    "resumed_factory": True,
+                    "reclaimed": reclaimed,
+                    "factory_ready": int(summary.get("ready") or 0),
+                    "factory_total": factory_total,
+                    "message": (
+                        "Eksik slot üretimi devam ediyor. Gönderiler hazır oldukça Feed'e düşer."
+                    ),
+                }
+
+            # Operator kick: exhausted slots should re-enter the factory queue automatically
+            # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
+            requeued = await pj.requeue_exhausted(mission_id)
+            if requeued or await pj.has_open_jobs(mission_id):
+                schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
+                summary = await pj.mission_job_summary(mission_id)
+                logger.info(
+                    "kick_feed_production_factory_requeued",
+                    mission_id=str(mission_id),
+                    requeued=requeued,
+                    ready=summary.get("ready"),
+                    total=factory_total,
+                )
+                return {
+                    "accepted": True,
+                    "mission_id": str(mission_id),
+                    "resumed_factory": True,
+                    "requeued": requeued,
+                    "factory_ready": int(summary.get("ready") or 0),
+                    "factory_total": factory_total,
+                    "message": (
+                        "Eksik slotlar kuyruğa alındı. Gönderiler hazır oldukça Feed'e düşer."
+                    ),
+                }
+
             return {
                 "accepted": True,
                 "mission_id": str(mission_id),
-                "resumed_factory": True,
-                "reclaimed": reclaimed,
+                "resumed_factory": False,
                 "factory_ready": int(summary.get("ready") or 0),
                 "factory_total": factory_total,
+                "needs_reset": True,
                 "message": (
-                    "Eksik slot üretimi devam ediyor. Gönderiler hazır oldukça Feed'e düşer."
+                    "Bazı slotlar maksimum deneme sayısına ulaştı. "
+                    "«Eksik içerikleri üret» ile paketi sıfırlayıp yeniden deneyin."
                 ),
             }
-
-        # Operator kick: exhausted slots should re-enter the factory queue automatically
-        # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
-        requeued = await pj.requeue_exhausted(mission_id)
-        if requeued or await pj.has_open_jobs(mission_id):
-            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
-            summary = await pj.mission_job_summary(mission_id)
-            logger.info(
-                "kick_feed_production_factory_requeued",
-                mission_id=str(mission_id),
-                requeued=requeued,
-                ready=summary.get("ready"),
-                total=factory_total,
-            )
-            return {
-                "accepted": True,
-                "mission_id": str(mission_id),
-                "resumed_factory": True,
-                "requeued": requeued,
-                "factory_ready": int(summary.get("ready") or 0),
-                "factory_total": factory_total,
-                "message": (
-                    "Eksik slotlar kuyruğa alındı. Gönderiler hazır oldukça Feed'e düşer."
-                ),
-            }
-
-        return {
-            "accepted": True,
-            "mission_id": str(mission_id),
-            "resumed_factory": False,
-            "factory_ready": int(summary.get("ready") or 0),
-            "factory_total": factory_total,
-            "needs_reset": True,
-            "message": (
-                "Bazı slotlar maksimum deneme sayısına ulaştı. "
-                "«Eksik içerikleri üret» ile paketi sıfırlayıp yeniden deneyin."
-            ),
-        }
 
     _schedule_ensure_mission_feed(
         mission_id,
@@ -573,7 +576,12 @@ async def ensure_mission_feed_production(
     factory_total = int(job_summary.get("total") or 0)
     factory_ready = int(job_summary.get("ready") or 0)
     factory_active = int(job_summary.get("active") or 0)
-    if factory_total > 0 and factory_ready >= factory_total and factory_active == 0:
+    if (
+        factory_total > 0
+        and factory_ready >= factory_total
+        and factory_active == 0
+        and factory_total >= package_total
+    ):
         logger.info(
             "ensure_mission_feed_skip_factory_complete",
             mission_id=str(mission_id),
@@ -583,8 +591,10 @@ async def ensure_mission_feed_production(
         )
         return
 
+    needs_delta_enqueue = factory_total > 0 and factory_total < package_total
+
     # Fast path: durable factory jobs already exist — resume drain only (never re-enqueue).
-    if factory_total > 0 and not job_summary.get("complete"):
+    if factory_total > 0 and not job_summary.get("complete") and not needs_delta_enqueue:
         await pj.reclaim_stale_jobs(mission_id)
         if await pj.has_open_jobs(mission_id):
             schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
