@@ -7,15 +7,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  acquireMissionProductionLock,
-  acquireProductionLock,
+  acquireProductionLocksForRun,
   releaseAllProductionLocks,
-  releaseProductionLock,
 } from '@/lib/production-in-process-lock';
 import {
   assertAutonomousProductionAllowed,
   assertMissionBelongsToWorkspace,
   assertWorkspaceMatchesRequestTenant,
+  isTrustedInternalRequest,
 } from '@/lib/tenant-production-guard';
 import { mergeCalendarPlansForProduction } from '@/lib/mission-production-plan';
 import type { FeedArtDirectorReport } from '@/lib/weekly-publish-package';
@@ -66,16 +65,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const qualityGuard = await assertAutonomousProductionAllowed(req, workspaceId);
   if (qualityGuard) return qualityGuard;
 
-  const lockAcquired = await acquireProductionLock(workspaceId);
-  if (!lockAcquired) {
+  const internalCaller = isTrustedInternalRequest(req);
+  const locks = await acquireProductionLocksForRun(workspaceId, missionId, {
+    recoverStale: internalCaller,
+  });
+  if (!locks.workspace) {
     return NextResponse.json(
       { error: 'Production in progress', code: 'production_in_progress' },
       { status: 409 },
     );
   }
 
-  if (!(await acquireMissionProductionLock(missionId))) {
-    await releaseProductionLock(workspaceId);
+  if (!locks.mission) {
+    await releaseAllProductionLocks(workspaceId, missionId);
     return NextResponse.json(
       { error: 'Mission production in progress', code: 'mission_production_in_progress' },
       { status: 409 },

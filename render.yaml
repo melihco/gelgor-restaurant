@@ -39,6 +39,12 @@ envVarGroups:
         value: true
 
 services:
+  # Shared Redis — production locks, factory fair-share, optional BullMQ
+  - type: keyvalue
+    name: smartagency-redis
+    plan: starter
+    ipAllowList: []
+
   # Python Crew — private (yalnızca Render internal network)
   - type: pserv
     name: smartagency-crew
@@ -82,6 +88,13 @@ services:
         sync: false
       - key: CREATOMATE_API_KEY
         sync: false
+      - key: REDIS_URL
+        fromService:
+          name: smartagency-redis
+          type: keyvalue
+          property: connectionString
+      - key: PRODUCTION_EXECUTOR
+        value: http
 
   - type: web
     name: smartagency-api
@@ -238,3 +251,8 @@ services:
           name: smartagency-crew
           type: pserv
           property: hostport
+      - key: REDIS_URL
+        fromService:
+          name: smartagency-redis
+          type: keyvalue
+          property: connectionString

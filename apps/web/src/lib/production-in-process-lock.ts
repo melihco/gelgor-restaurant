@@ -159,3 +159,95 @@ export async function releaseAllProductionLocks(workspaceId: string, missionId?:
   await releaseProductionLock(workspaceId);
   if (missionId) await releaseMissionProductionLock(missionId);
 }
+
+/** Internal recovery — clears workspace lock even when this process did not acquire it. */
+export async function forceReleaseProductionLock(workspaceId: string): Promise<void> {
+  const key = lockKey('ws', workspaceId);
+  if (useIoRedis) {
+    const client = getRedisClient();
+    if (client) {
+      try {
+        await client.del(key);
+      } catch {
+        /* best-effort */
+      }
+    }
+  } else if (useUpstash) {
+    await upstashDel(key);
+  } else {
+    _workspaceProductionLock.delete(key);
+  }
+  _heldTokens.delete(key);
+}
+
+/** Internal recovery — clears mission lock even when this process did not acquire it. */
+export async function forceReleaseMissionProductionLock(missionId: string): Promise<void> {
+  const key = lockKey('mission', missionId);
+  if (useIoRedis) {
+    const client = getRedisClient();
+    if (client) {
+      try {
+        await client.del(key);
+      } catch {
+        /* best-effort */
+      }
+    }
+  } else if (useUpstash) {
+    await upstashDel(key);
+  } else {
+    _missionProductionLock.delete(key);
+  }
+  _heldTokens.delete(key);
+}
+
+export async function forceReleaseAllProductionLocks(
+  workspaceId: string,
+  missionId?: string | null,
+): Promise<void> {
+  await forceReleaseProductionLock(workspaceId);
+  if (missionId) await forceReleaseMissionProductionLock(missionId);
+}
+
+export interface ProductionLockAcquireResult {
+  workspace: boolean;
+  mission: boolean;
+}
+
+/**
+ * Acquire workspace (+ optional mission) production locks.
+ * When `recoverStale` is true (factory/internal callers), a failed acquire
+ * force-clears orphaned locks once and retries — fixes brand_in_flight stalls
+ * after crashed routes or multi-instance in-memory lock drift without Redis.
+ */
+export async function acquireProductionLocksForRun(
+  workspaceId: string,
+  missionId?: string | null,
+  opts?: { recoverStale?: boolean },
+): Promise<ProductionLockAcquireResult> {
+  const recover = opts?.recoverStale === true;
+
+  let workspaceOk = await acquireProductionLock(workspaceId);
+  if (!workspaceOk && recover) {
+    await forceReleaseProductionLock(workspaceId);
+    workspaceOk = await acquireProductionLock(workspaceId);
+  }
+  if (!workspaceOk) {
+    return { workspace: false, mission: false };
+  }
+
+  if (!missionId) {
+    return { workspace: true, mission: true };
+  }
+
+  let missionOk = await acquireMissionProductionLock(missionId);
+  if (!missionOk && recover) {
+    await forceReleaseMissionProductionLock(missionId);
+    missionOk = await acquireMissionProductionLock(missionId);
+  }
+  if (!missionOk) {
+    await releaseProductionLock(workspaceId);
+    return { workspace: true, mission: false };
+  }
+
+  return { workspace: true, mission: true };
+}

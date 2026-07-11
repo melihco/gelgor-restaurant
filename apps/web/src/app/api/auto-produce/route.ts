@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanupOldBuckets } from './budget';
 import {
-  acquireMissionProductionLock,
-  acquireProductionLock,
+  acquireProductionLocksForRun,
   releaseAllProductionLocks,
-  releaseProductionLock,
 } from '@/lib/production-in-process-lock';
 import {
   assertAutonomousProductionAllowed,
   assertMissionBelongsToWorkspace,
   assertWorkspaceMatchesRequestTenant,
+  isTrustedInternalRequest,
 } from '@/lib/tenant-production-guard';
 import {
   mergeCalendarPlansForProduction,
@@ -112,31 +111,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await releaseAllProductionLocks(workspaceId, missionId);
   }
 
-  // Per-workspace concurrent production lock.
-  // Two simultaneous auto-produce calls for the same brand would pick the same
-  // gallery photos and templates → duplicate artifacts in the feed.
-  const lockAcquired = await acquireProductionLock(workspaceId);
-  if (!lockAcquired) {
-    // #region agent log
-    fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c5a590' }, body: JSON.stringify({ sessionId: 'c5a590', hypothesisId: 'H1', location: 'auto-produce/route.ts:409-workspace', message: 'workspace production lock denied', data: { workspaceId, missionId: missionId ?? null }, timestamp: Date.now(), runId: 'pre-fix' }) }).catch(() => {});
-    // #endregion
+  // Per-workspace concurrent production lock (one brand at a time).
+  // Internal factory callers may recover orphaned locks once after a 409 storm.
+  const internalCaller = isTrustedInternalRequest(req);
+  const locks = await acquireProductionLocksForRun(workspaceId, missionId, {
+    recoverStale: internalCaller || skipArtifactDedupe === true,
+  });
+  if (!locks.workspace) {
     return NextResponse.json(
       { error: 'Bu marka için içerik üretimi zaten devam ediyor. Lütfen bekleyin.', code: 'production_in_progress' },
       { status: 409 },
     );
   }
 
+  if (missionId && !locks.mission) {
+    await releaseAllProductionLocks(workspaceId, missionId);
+    return NextResponse.json(
+      { error: 'Bu misyon için Feed üretimi zaten devam ediyor.', code: 'mission_production_in_progress', produced: 0 },
+      { status: 409 },
+    );
+  }
+
   if (missionId) {
-    if (!(await acquireMissionProductionLock(missionId))) {
-      await releaseProductionLock(workspaceId);
-      // #region agent log
-      fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c5a590' }, body: JSON.stringify({ sessionId: 'c5a590', hypothesisId: 'H1', location: 'auto-produce/route.ts:409-mission', message: 'mission production lock denied', data: { workspaceId, missionId }, timestamp: Date.now(), runId: 'pre-fix' }) }).catch(() => {});
-      // #endregion
-      return NextResponse.json(
-        { error: 'Bu misyon için Feed üretimi zaten devam ediyor.', code: 'mission_production_in_progress', produced: 0 },
-        { status: 409 },
-      );
-    }
     const missionGuard = await assertMissionBelongsToWorkspace(workspaceId, missionId, {
       req,
       skipForInternal: true,
