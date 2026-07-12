@@ -87,7 +87,7 @@ import {
   summarizeMissionProductionPipeline,
   type MissionProductionPipelineSummary,
 } from '@/lib/mission-pipeline-transparency';
-import { buildMissionPlanningDisplayIdeas, summarizeMissionContentProductionStatus } from '@/lib/mission-production-plan';
+import { buildMissionPlanningDisplayIdeas, buildMissionProductionIdeas, summarizeMissionContentProductionStatus } from '@/lib/mission-production-plan';
 import {
   summarizeMissionStrategistKpi,
   type MissionStrategistKpiSummary,
@@ -2373,8 +2373,13 @@ function NodeOutputView({
   // content_ideation / visual_design_cards — planlama + üretilmiş görsel önizleme
   if (['content_ideation', 'visual_design_cards'].includes(node.task_type)) {
     const planningKind = node.task_type === 'visual_design_cards' ? 'design' : 'ideation';
+    const hasCalendarNode = allNodes?.some(
+      (n) => n.task_type === 'content_calendar' && n.status === 'completed',
+    );
     const planningIdeas = node.task_type === 'content_ideation' && allNodes?.length
-      ? buildMissionPlanningDisplayIdeas({ nodes: allNodes, missionId })
+      ? (hasCalendarNode
+        ? buildMissionProductionIdeas({ nodes: allNodes, missionId })
+        : buildMissionPlanningDisplayIdeas({ nodes: allNodes, missionId }))
       : [];
     const ideaItems = planningIdeas.length > 0
       ? planningIdeas

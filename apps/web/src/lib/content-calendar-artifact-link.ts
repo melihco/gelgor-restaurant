@@ -84,10 +84,11 @@ export function calendarItemFormat(item: Record<string, unknown>): string {
 function calendarScheduleKey(item: Record<string, unknown>): string | null {
   const dayRaw = String(item.day ?? item.publish_day ?? item.scheduled_day ?? item.date ?? '').trim();
   const day = normalizeDayToken(dayRaw.split(/[\s,]/)[0] ?? dayRaw) ?? normalizeDayToken(dayRaw);
+  const isoDate = /^\d{4}-\d{2}-\d{2}/.test(dayRaw) ? dayRaw.slice(0, 10) : null;
   const time = String(item.time ?? item.scheduled_time ?? item.publish_time ?? '').trim();
   const fmt = calendarItemFormat(item);
-  if (!day && !time) return null;
-  return `${day ?? ''}|${time}|${fmt}`;
+  if (!day && !time && !isoDate) return null;
+  return `${day ?? isoDate ?? ''}|${time}|${fmt}`;
 }
 
 function artifactScheduleKey(meta: Record<string, unknown>, content: Record<string, unknown>): string | null {
@@ -98,8 +99,16 @@ function artifactScheduleKey(meta: Record<string, unknown>, content: Record<stri
     ?? content.content_type
     ?? 'post',
   ).toLowerCase().replace(/^instagram_/, '');
-  if (!slot) return null;
-  return `${slot.day}|${slot.time}|${fmt}`;
+  const isoDate = String(
+    meta.publish_schedule_date
+    ?? content.publish_schedule_date
+    ?? meta.event_date
+    ?? '',
+  ).trim().slice(0, 10);
+  if (!slot && !isoDate) return null;
+  const day = slot?.day ?? '';
+  const time = slot?.time ?? String(meta.publish_schedule_time ?? content.publish_schedule_time ?? '').trim();
+  return `${day || isoDate}|${time}|${fmt}`;
 }
 
 function artifactHeadline(meta: Record<string, unknown>, content: Record<string, unknown>): string {

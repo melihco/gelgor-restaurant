@@ -531,6 +531,38 @@ async def requeue_exhausted(
     return len(rows)
 
 
+async def requeue_failed(
+    mission_id: uuid.UUID,
+) -> int:
+    """Retry failed slots that still have attempts remaining (gallery gate / transient errors)."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET status = 'pending',
+                    run_after = now(),
+                    updated_at = now()
+                WHERE mission_id = CAST(:mission_id AS UUID)
+                  AND status = 'failed'
+                  AND attempts < max_attempts
+                RETURNING id
+                """
+            ),
+            {"mission_id": str(mission_id)},
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info(
+            "production_jobs.requeue_failed",
+            mission_id=str(mission_id),
+            requeued=len(rows),
+        )
+    return len(rows)
+
+
 async def list_missions_with_open_jobs(limit: int = 50) -> list[str]:
     """Distinct mission ids that still have runnable (or stale-claimed) jobs."""
     from app.config import get_settings

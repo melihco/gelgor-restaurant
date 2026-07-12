@@ -1954,6 +1954,22 @@ def _schedule_ensure_mission_feed(
         },
     )
     if skipped:
+        # Calendar / feed_cohesion often land after a short ideation-triggered ensure.
+        # Schedule a follow-up with the longer delay so merged calendar rows still enqueue.
+        if delay_sec >= 30:
+            from app.config import get_settings
+
+            if get_settings().use_celery_orchestrator:
+                try:
+                    from app.tasks.advance_tasks import ensure_mission_feed
+
+                    ensure_mission_feed.apply_async(
+                        args=[str(mission_id), str(workspace_id)],
+                        countdown=max(0.0, float(delay_sec)),
+                        queue="advance",
+                    )
+                except Exception:
+                    pass
         return
 
     # Celery mode: dispatch to the durable ``advance`` queue (cross-replica) instead

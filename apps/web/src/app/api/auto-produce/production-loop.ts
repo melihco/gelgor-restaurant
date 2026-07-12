@@ -2030,7 +2030,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       (typeof galleryMatchScore === 'number' && galleryMatchScore < 0)
       || hardThemeConflict;
     // Fal paints typography on the gallery photo — never ship a weak caption↔photo pair.
-    const falGroundedPipeline = usesFalDesignerTrackEarly && !captionDrivenGenerated;
+    // Calendar slots use brief-driven matching; allow brand-solid fallback instead of hard skip.
+    const falGroundedPipeline = usesFalDesignerTrackEarly && !captionDrivenGenerated && !isCalendarSlot;
     const galleryFloor = falGroundedPipeline
       ? FAL_GROUNDED_GALLERY_MIN_SCORE
       : MIN_ACCEPT_SCORE;
@@ -2062,7 +2063,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       weakGallery
       && mediaFallback === 'brand_solid'
       && aiVisualStandard.enabled
-      && !usesFalDesignerTrackEarly
+      && (!usesFalDesignerTrackEarly || isCalendarSlot)
     ) {
       referenceIsStock = false;
       captionDrivenGenerated = true;

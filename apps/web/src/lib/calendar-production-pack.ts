@@ -65,6 +65,8 @@ function normalizeCalendarDay(raw: unknown): string | null {
 export function isCalendarProductionIdea(idea: Record<string, unknown>): boolean {
   if (idea.calendar_enriched === true) return true;
   if (idea.calendar_gallery_designed === true) return true;
+  if (idea.calendar_slot_backfill === true) return true;
+  if (String(idea.production_scope ?? '') === 'calendar_orphan') return true;
   if (typeof idea.calendar_plan_index === 'number') return true;
   if (String(idea.source_track ?? '') === 'calendar') return true;
   if (String(idea.source_node ?? '') !== 'content_calendar') return false;

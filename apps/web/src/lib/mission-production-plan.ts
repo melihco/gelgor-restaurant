@@ -185,6 +185,7 @@ export function calendarScheduleOverlayFields(
     calendar_plan_index: planIndex,
     calendar_linked_idea_index: ideaIndex,
     publish_schedule_day: day,
+    publish_schedule_date: String(plan.date ?? '').trim().slice(0, 10) || undefined,
     publish_schedule_time: time || undefined,
     publish_schedule_format: fmt,
     calendar_priority: plan.priority ?? plan.must_post ?? null,

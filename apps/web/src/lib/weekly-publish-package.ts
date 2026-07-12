@@ -506,6 +506,16 @@ function normalizeHeadline(raw: unknown): string {
 }
 
 export function detectIdeaPackageFormat(idea: Record<string, unknown>): PackageFormat {
+  const calendarFmt = String(
+    idea.publish_schedule_format
+    ?? (idea.calendar_enriched === true ? idea.format : '')
+    ?? '',
+  ).toLowerCase();
+  if (calendarFmt.includes('story') || calendarFmt.includes('canvas')) return 'story';
+  if (calendarFmt.includes('reel')) return 'reel';
+  if (calendarFmt.includes('carousel')) return 'carousel';
+  if (calendarFmt.includes('post')) return 'post';
+
   const ct = String(
     idea.content_type || idea.content_kind || idea.format || 'post',
   ).toLowerCase();

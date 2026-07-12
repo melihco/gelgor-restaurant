@@ -377,8 +377,12 @@ async def kick_feed_production(
             # Operator kick: exhausted slots should re-enter the factory queue automatically
             # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
             requeued = await pj.requeue_exhausted(mission_id)
+            requeued += await pj.requeue_failed(mission_id)
             if requeued or await pj.has_open_jobs(mission_id):
                 schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
+                from app.services.production_factory_service import schedule_completion_pass
+
+                schedule_completion_pass(mission_id, workspace_id, delay_sec=45.0)
                 summary = await pj.mission_job_summary(mission_id)
                 logger.info(
                     "kick_feed_production_factory_requeued",
@@ -409,6 +413,27 @@ async def kick_feed_production(
                 "message": (
                     "Bazı slotlar maksimum deneme sayısına ulaştı. "
                     "«Eksik içerikleri üret» ile paketi sıfırlayıp yeniden deneyin."
+                ),
+            }
+
+    if factory_total > 0 and not factory_complete:
+        from app.services.production_factory_service import schedule_completion_pass
+
+        failed_requeued = await pj.requeue_failed(mission_id)
+        if failed_requeued or await pj.has_open_jobs(mission_id):
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
+            schedule_completion_pass(mission_id, workspace_id, delay_sec=45.0)
+            summary = await pj.mission_job_summary(mission_id)
+            return {
+                "accepted": True,
+                "mission_id": str(mission_id),
+                "resumed_factory": True,
+                "requeued_failed": failed_requeued,
+                "factory_ready": int(summary.get("ready") or 0),
+                "factory_total": factory_total,
+                "message": (
+                    "Eksik slot üretimi yeniden kuyruğa alındı. "
+                    "Gönderiler hazır oldukça Feed'e düşer."
                 ),
             }
 
