@@ -39,6 +39,8 @@ import {
   enrichGalleryAnalysis,
   assignPhotosToContents,
   resolveBestGalleryUrl,
+  resolveUrlInPool,
+  matchPhotoToContent,
   pickMissionDiverseFallbackPhoto,
   isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
@@ -1382,6 +1384,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const forceAttachedPhotos = Boolean(adHocBrief && idea.force_attached_photos && attachedPhotoUrls.length > 0);
 
     const agentUrl = idea.visual_production_spec?.selected_gallery_url || idea.selected_gallery_url || null;
+    let agentIdeationGalleryLock = false;
     const batchExclude = batchUsedByType[postType];
     const usesFalDesignerTrackEarly =
       isFalVideoPipeline(assignment.pipeline)
@@ -1420,9 +1423,38 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       if (ideationPick) {
         referenceUrl = ideationPick.url;
         galleryMatchScore = ideationPick.score;
+        if (
+          typeof agentUrl === 'string'
+          && normalizeGalleryUrl(ideationPick.url) === normalizeGalleryUrl(agentUrl)
+        ) {
+          agentIdeationGalleryLock = true;
+        }
         console.log(
           `[auto-produce] ideation gallery pick score=${ideationPick.score}: "${headline.slice(0, 50)}"`,
         );
+      } else if (typeof agentUrl === 'string') {
+        const pooledAgentUrl = resolveUrlInPool(agentUrl, galleryPhotos);
+        if (pooledAgentUrl) {
+          const agentRank = matchPhotoToContent(
+            {
+              caption: ideationCaption,
+              headline: ideationHeadline,
+              mood,
+              contentType: postType,
+              businessType: brandBusinessType,
+              globalUsageCounts: globalGalleryUsageCounts,
+            },
+            [pooledAgentUrl],
+            galleryMeta,
+            { excludeUrls: missionGalleryExclude, minScore: 0, tieBreakSeed: ideaIndex },
+          );
+          referenceUrl = pooledAgentUrl;
+          galleryMatchScore = agentRank?.score ?? null;
+          agentIdeationGalleryLock = true;
+          console.log(
+            `[auto-produce] ideation gallery lock (agent URL in pool) score=${galleryMatchScore}: "${headline.slice(0, 50)}"`,
+          );
+        }
       }
     }
 
@@ -2139,6 +2171,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         mediaFallback,
         captionServiceConflict,
         falGroundedPipeline,
+        agentIdeationGalleryLock,
       })
     ) {
       console.warn(

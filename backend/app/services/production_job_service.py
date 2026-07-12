@@ -550,7 +550,7 @@ async def requeue_exhausted(
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'exhausted'
-                  AND attempts < :ceiling
+                  AND attempts <= :ceiling
                 RETURNING id
                 """
             ),

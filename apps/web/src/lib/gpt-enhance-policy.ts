@@ -272,7 +272,20 @@ export function shouldSkipProductionForWeakGallery(input: {
   captionServiceConflict?: boolean;
   /** Fal grounded — skip rather than ship mismatched photo+caption */
   falGroundedPipeline?: boolean;
+  /**
+   * Content ideation set visual_production_spec.selected_gallery_url — the caption
+   * agent already paired headline ↔ photo; do not re-block at production GIS bar.
+   */
+  agentIdeationGalleryLock?: boolean;
 }): boolean {
+  if (
+    input.agentIdeationGalleryLock
+    && input.hasReference
+    && !input.captionServiceConflict
+    && !input.referenceIsStock
+  ) {
+    return false;
+  }
   if (
     input.adaptiveScene
     && !input.captionServiceConflict

@@ -12,18 +12,21 @@ import {
 } from '@/lib/brand-gap-analysis';
 import { fetchBrandGapPreview } from '@/lib/brand-gap-preview-client';
 
-export interface BrandCompleteGapsButtonProps {
-  tenantId: string | null | undefined;
-  /** compact = icon + short label for hub header */
-  variant?: 'primary' | 'compact';
-  onDone?: (result: { ok: boolean; resolvedCount: number }) => void;
+export interface BrandCompleteGapsState {
+  running: boolean;
+  label: string;
+  shortLabel: string;
+  hint: string;
+  autoFixable: number;
+  actionable: number;
+  feedback: { kind: 'ok' | 'err'; text: string } | null;
+  runComplete: () => Promise<void>;
 }
 
-export function BrandCompleteGapsButton({
-  tenantId,
-  variant = 'primary',
-  onDone,
-}: BrandCompleteGapsButtonProps) {
+export function useBrandCompleteGaps(
+  tenantId: string | null | undefined,
+  onDone?: (result: { ok: boolean; resolvedCount: number }) => void,
+): BrandCompleteGapsState {
   const queryClient = useQueryClient();
   const [running, setRunning] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -101,8 +104,6 @@ export function BrandCompleteGapsButton({
     }
   }, [tenantId, running, queryClient, onDone]);
 
-  if (!tenantId) return null;
-
   const label = running
     ? 'Tamamlanıyor…'
     : autoFixable > 0
@@ -110,6 +111,136 @@ export function BrandCompleteGapsButton({
       : actionable > 0
         ? `Manuel eksikler (${actionable})`
         : 'Marka profilini yenile';
+
+  const shortLabel = running
+    ? 'Tamamlanıyor…'
+    : autoFixable > 0
+      ? 'Marka eksiklerini tamamla'
+      : actionable > 0
+        ? 'Manuel eksikler'
+        : 'Marka profilini yenile';
+
+  const hint = running
+    ? 'AI çalışıyor'
+    : autoFixable > 0
+      ? 'AI ile otomatik'
+      : actionable > 0
+        ? `${actionable} manuel adım`
+        : 'Profili yenile';
+
+  return {
+    running,
+    label,
+    shortLabel,
+    hint,
+    autoFixable,
+    actionable,
+    feedback,
+    runComplete,
+  };
+}
+
+export interface BrandCompleteGapsButtonProps {
+  tenantId: string | null | undefined;
+  /** compact = icon + short label for hub header; mobile = slim CTA without gap bullet list */
+  variant?: 'primary' | 'compact' | 'mobile';
+  /** When false, hides the gap label list under the button (mobile dashboard). */
+  showGapPreview?: boolean;
+  onDone?: (result: { ok: boolean; resolvedCount: number }) => void;
+}
+
+export function BrandCompleteGapsButton({
+  tenantId,
+  variant = 'primary',
+  showGapPreview = variant !== 'mobile',
+  onDone,
+}: BrandCompleteGapsButtonProps) {
+  const {
+    running,
+    label,
+    autoFixable,
+    actionable,
+    feedback,
+    runComplete,
+  } = useBrandCompleteGaps(tenantId, onDone);
+
+  const { data: gapPreview } = useQuery({
+    queryKey: ['brand-gaps', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return { gaps: [] as BrandGapItem[], mergedGaps: [] as BrandGapItem[], ctx: null };
+      return fetchBrandGapPreview(tenantId);
+    },
+    staleTime: 60_000,
+    enabled: Boolean(tenantId) && showGapPreview && variant === 'primary',
+  });
+  const mergedGaps = gapPreview?.mergedGaps ?? [];
+
+  if (!tenantId) return null;
+
+  if (variant === 'mobile') {
+    return (
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          disabled={running}
+          onClick={() => void runComplete()}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            padding: '13px 16px',
+            borderRadius: 14,
+            border: autoFixable > 0
+              ? '0.5px solid rgba(16,185,129,0.3)'
+              : '0.5px solid rgba(99,102,241,0.28)',
+            cursor: running ? 'wait' : 'pointer',
+            fontSize: 14,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            color: autoFixable > 0 ? '#34D399' : '#A5B4FC',
+            background: autoFixable > 0
+              ? 'rgba(16,185,129,0.1)'
+              : 'rgba(99,102,241,0.1)',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            {running ? (
+              <span
+                style={{
+                  width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+                  border: '1.5px solid currentColor', borderTopColor: 'transparent',
+                  animation: 'spinSlow 0.8s linear infinite',
+                }}
+              />
+            ) : (
+              <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0 }}>✦</span>
+            )}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+          </span>
+          {autoFixable > 0 && !running && (
+            <span style={{
+              flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+              background: 'rgba(16,185,129,0.18)', color: '#34D399',
+            }}
+            >
+              {autoFixable}
+            </span>
+          )}
+        </button>
+        {feedback && (
+          <div style={{
+            marginTop: 8, fontSize: 12.5, lineHeight: 1.45,
+            color: feedback.kind === 'ok' ? '#10B981' : '#EF4444',
+          }}
+          >
+            {feedback.text}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (variant === 'compact') {
     return (
@@ -168,7 +299,7 @@ export function BrandCompleteGapsButton({
       >
         {label}
       </button>
-      {actionable > 0 && mergedGaps.length > 0 && (
+      {showGapPreview && actionable > 0 && mergedGaps.length > 0 && (
         <ul style={{ marginTop: 10, paddingLeft: 18, fontSize: 12, lineHeight: 1.5, opacity: 0.85 }}>
           {mergedGaps.slice(0, 6).map((g) => (
             <li key={g.id}>

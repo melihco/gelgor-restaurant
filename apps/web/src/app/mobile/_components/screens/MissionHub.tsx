@@ -3249,11 +3249,12 @@ function MissionPublishPackageCard({
   const selectionLabel = selection
     ? formatWeeklyPackageSummary(selection, {
         producedOverride: factoryJobs?.total ? factoryJobs.ready : undefined,
-        targetOverride: factoryJobs?.total
-          ? Math.max(MISSION_WEEKLY_PACKAGE_COUNTS.total, factoryJobs.total)
-          : undefined,
+        targetOverride: factoryJobs?.total ? factoryJobs.total : undefined,
       })
     : label;
+  const targetLabel = factoryJobs?.total
+    ? `${factoryJobs.total} marka slotu`
+    : `${formatWeeklyPackageTarget()} (${MISSION_WEEKLY_PACKAGE_COUNTS.total} içerik)`;
 
   return (
     <div style={{
@@ -3269,7 +3270,7 @@ function MissionPublishPackageCard({
         )}
       </div>
       <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6, lineHeight: 1.45 }}>
-        Hedef paket: {formatWeeklyPackageTarget()} ({MISSION_WEEKLY_PACKAGE_COUNTS.total} içerik)
+        Hedef paket: {targetLabel}
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: t.textPrimary, marginBottom: 6 }}>
         {hasContent ? selectionLabel : 'Video story\'ler hazırlanıyor…'}

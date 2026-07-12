@@ -68,6 +68,30 @@ describe('Fal grounded weak-gallery gate', () => {
     ).toBe(false);
   });
 
+  it('trusts content ideation selected_gallery_url lock below GIS floor', () => {
+    expect(
+      shouldSkipProductionForWeakGallery({
+        ...base,
+        galleryMatchScore: 44,
+        falGroundedPipeline: true,
+        mediaFallback: 'block',
+        agentIdeationGalleryLock: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('still skips ideation lock when caption service conflict', () => {
+    expect(
+      shouldSkipProductionForWeakGallery({
+        ...base,
+        galleryMatchScore: 44,
+        falGroundedPipeline: true,
+        agentIdeationGalleryLock: true,
+        captionServiceConflict: true,
+      }),
+    ).toBe(true);
+  });
+
   it('skips Fal grounded calendar when gallery score is null after brand_solid fallback', () => {
     expect(
       shouldSkipProductionForWeakGallery({

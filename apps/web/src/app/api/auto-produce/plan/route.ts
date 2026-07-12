@@ -15,6 +15,13 @@ import {
   mergeCalendarPlansForProduction,
   ensureWeeklyFormatCoverage,
 } from '@/lib/mission-production-plan';
+import {
+  enrichProductionQueueWithBrandSlots,
+  loadBrandActiveSlotSet,
+  stampIdeasWithBrandCatalogSlots,
+} from '@/lib/brand-active-slot-resolver';
+import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 import { fetchProductionContext } from '../production-context';
 import { fetchGalleryContext } from '../gallery-context';
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
@@ -36,14 +43,23 @@ function formatForSlotRole(role: ProductionSlotRole): SlotFormat {
       return 'carousel';
     case 'organic_story_still':
     case 'campaign_story_motion':
-    case 'paid_ad_creative':
-    case 'paid_ad_google_creative':
+    case 'fal_story_motion':
+    case 'fal_only_story':
+    case 'product_showcase_story':
       return 'story';
     case 'organic_reel':
     case 'campaign_reel_motion':
+    case 'fal_reel_motion':
+    case 'fal_only_reel':
       return 'reel';
     case 'organic_post':
     case 'designed_post':
+    case 'designed_typography':
+    case 'fal_designed_post':
+    case 'fal_only_post':
+    case 'product_showcase_post':
+    case 'paid_ad_creative':
+    case 'paid_ad_google_creative':
     default:
       return 'post';
   }
@@ -155,7 +171,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const { toProcess, maxIdeas, manifestMissionType, pkgLimits, productionProfile } = planOutcome.plan;
+    let { toProcess } = planOutcome.plan;
+    const { maxIdeas, manifestMissionType, pkgLimits, productionProfile } = planOutcome.plan;
+    const sector = normalizeSectorId(pctx.brandBusinessType);
+    let brandActiveSlots = null;
+    if (sector) {
+      try {
+        brandActiveSlots = await loadBrandActiveSlotSet(
+          workspaceId,
+          sector,
+          undefined,
+          readBrandSlotFacilitiesFromTheme(brandTheme ?? null),
+        );
+      } catch (err) {
+        console.warn(
+          `[auto-produce/plan] Brand slot catalog unavailable — falling back to legacy matcher: `
+          + `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (brandActiveSlots) {
+      toProcess = stampIdeasWithBrandCatalogSlots(
+        toProcess as Record<string, unknown>[],
+        brandActiveSlots,
+      );
+    }
 
     const manifestQueue = buildAutoProduceProductionQueue({
       missionId,
@@ -167,6 +207,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       productionProfile,
       packageSlug: pkgLimits.packageSlug,
     });
+    const productionQueue = brandActiveSlots
+      ? enrichProductionQueueWithBrandSlots(manifestQueue, brandActiveSlots)
+      : manifestQueue;
 
     const galleryAnalysis = (body as { galleryAnalysis?: Record<string, unknown> })
       .galleryAnalysis ?? null;
@@ -178,7 +221,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
     const missionGalleryAssignments = buildMissionGalleryAssignments({
       missionId,
-      productionLoop: manifestQueue,
+      productionLoop: productionQueue,
       galleryPhotos: gctx.photos,
       galleryMeta: gctx.meta,
       brandBusinessType: pctx.brandBusinessType,
@@ -190,7 +233,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       galleryUsage: gctx.usage,
     });
 
-    const slots = manifestQueue.map((item) => {
+    const slots = productionQueue.map((item) => {
       const role = item.assignment.slot_role;
       const galleryKey = missionGallerySlotKey(item.ideaIndex, String(role));
       const assigned = missionGalleryAssignments.get(galleryKey);

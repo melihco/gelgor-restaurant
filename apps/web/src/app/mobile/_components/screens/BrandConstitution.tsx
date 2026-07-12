@@ -54,7 +54,7 @@ import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePicker';
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
 import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrategyPanel';
-import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
+import { useBrandCompleteGaps } from '@/components/brand/BrandCompleteGapsButton';
 import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
 import { brandReadinessFixToBrandTab, PRODUCTION_PROFILE_THRESHOLD, type ProductionProfileReadinessResult } from '@/lib/brand-readiness';
 import {
@@ -2909,6 +2909,7 @@ export function BrandConstitution() {
   const queryClient = useQueryClient();
   const { tenantId: storeTenantId } = useWorkspaceStore();
   const tenantId = useActiveTenantId() ?? storeTenantId;
+  const brandGaps = useBrandCompleteGaps(tenantId);
   const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix } = useMobileStore();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
@@ -3803,8 +3804,6 @@ export function BrandConstitution() {
 
           {sharedStatusBanners}
 
-          <BrandCompleteGapsButton tenantId={tenantId} variant="primary" />
-
           {/* Production readiness — most important missing thing */}
           {productionReadiness?.productionProfile && !pprReady && (
             <button
@@ -3836,12 +3835,95 @@ export function BrandConstitution() {
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: t.textMuted }}>
               Yönetim
             </div>
-            <div style={{ fontSize: 11, color: t.textMuted }}>{NAV_ITEMS.length} alan</div>
+            <div style={{ fontSize: 11, color: t.textMuted }}>{NAV_ITEMS.length + 1} alan</div>
           </div>
 
-          {/* 2×3 section nav grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {NAV_ITEMS.map((item) => (
+          {/* Instagram-style settings list */}
+          <div style={{
+            borderRadius: 16, overflow: 'hidden', marginBottom: brandGaps.feedback ? 0 : 8,
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
+            border: `0.5px solid ${t.separator}`,
+          }}
+          >
+            {tenantId && (
+              <button
+                type="button"
+                disabled={brandGaps.running}
+                onClick={() => void brandGaps.runComplete()}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '13px 16px',
+                  minHeight: 52,
+                  border: 'none',
+                  cursor: brandGaps.running ? 'wait' : 'pointer',
+                  textAlign: 'left',
+                  background: brandGaps.autoFixable > 0
+                    ? (t.isDark ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.05)')
+                    : 'transparent',
+                  borderBottom: `0.5px solid ${t.separator}`,
+                }}
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: brandGaps.autoFixable > 0
+                    ? 'rgba(16,185,129,0.14)'
+                    : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                }}
+                >
+                  {brandGaps.running ? (
+                    <div style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      border: `1.5px solid ${t.separator}`, borderTopColor: t.accent,
+                      animation: 'spinSlow 0.8s linear infinite',
+                    }} />
+                  ) : (
+                    <span style={{
+                      fontSize: 16, lineHeight: 1,
+                      color: brandGaps.autoFixable > 0 ? '#34D399' : t.accent,
+                    }}
+                    >
+                      ✦
+                    </span>
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 15, fontWeight: 500, color: t.textPrimary,
+                    letterSpacing: '-0.02em', lineHeight: 1.2,
+                  }}
+                  >
+                    {brandGaps.shortLabel}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <span style={{
+                    fontSize: 13,
+                    color: brandGaps.autoFixable > 0 ? '#34D399' : t.textMuted,
+                    fontWeight: 500,
+                    letterSpacing: '-0.01em',
+                  }}
+                  >
+                    {brandGaps.hint}
+                  </span>
+                  {brandGaps.autoFixable > 0 && !brandGaps.running && (
+                    <span style={{
+                      minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12, fontWeight: 700, color: '#34D399',
+                      background: 'rgba(16,185,129,0.16)',
+                    }}
+                    >
+                      {brandGaps.autoFixable}
+                    </span>
+                  )}
+                </div>
+              </button>
+            )}
+            {NAV_ITEMS.map((item, index) => (
               <button
                 key={item.key}
                 type="button"
@@ -3853,57 +3935,62 @@ export function BrandConstitution() {
                   }
                 }}
                 style={{
-                  position: 'relative', textAlign: 'left', padding: '14px 14px 13px', borderRadius: 18, cursor: 'pointer',
-                  background: t.isDark
-                    ? 'linear-gradient(160deg, rgba(20,26,36,0.92) 0%, rgba(14,18,26,0.96) 100%)'
-                    : 'linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.94) 100%)',
-                  border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-                  boxShadow: t.isDark ? '0 10px 28px rgba(0,0,0,0.22)' : '0 8px 22px rgba(15,23,42,0.06)',
-                  overflow: 'hidden',
-                  display: 'flex', flexDirection: 'column', gap: 12, minHeight: 112,
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '13px 16px',
+                  minHeight: 52,
+                  border: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  background: 'transparent',
+                  borderBottom: index < NAV_ITEMS.length - 1 ? `0.5px solid ${t.separator}` : 'none',
                 }}
               >
-                <div style={{ position: 'absolute', top: -24, right: -24, width: 72, height: 72, borderRadius: '50%', background: item.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(18px)', pointerEvents: 'none' }} />
-
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                }}
+                >
+                  <SectionIcon name={item.key} color={item.accent} size={20} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    width: 42, height: 42, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: `linear-gradient(145deg, ${item.accent}30, ${item.accent}12)`,
-                    border: `0.5px solid ${item.accent}40`,
-                  }}>
-                    <SectionIcon name={item.key} color={item.accent} />
-                  </div>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    padding: '3px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
-                    letterSpacing: '0.02em', textTransform: 'uppercase',
-                    color: statusColor(item.status),
-                    background: `${statusColor(item.status)}18`,
-                    border: `0.5px solid ${statusColor(item.status)}30`,
+                    fontSize: 15, fontWeight: 500, color: t.textPrimary,
+                    letterSpacing: '-0.02em', lineHeight: 1.2,
                   }}
                   >
-                    {item.status === 'done' ? '✓' : item.status === 'warn' ? '!' : '·'}
-                    {item.status === 'done' ? 'Hazır' : item.status === 'warn' ? 'Eksik' : '—'}
-                  </span>
-                </div>
-
-                <div style={{ position: 'relative' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <span style={{ fontSize: 14.5, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.025em' }}>{item.label}</span>
-                    <span style={{
-                      width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                      border: `0.5px solid ${t.separator}`,
-                    }}
-                    >
-                      <ChevronRight color={t.textTertiary} />
-                    </span>
+                    {item.label}
                   </div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, letterSpacing: '-0.01em', lineHeight: 1.35 }}>{item.hint}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <span style={{
+                    fontSize: 13, color: statusColor(item.status), fontWeight: 500,
+                    letterSpacing: '-0.01em', maxWidth: 120, overflow: 'hidden',
+                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                  >
+                    {item.hint}
+                  </span>
+                  <ChevronRight color={t.textMuted} />
                 </div>
               </button>
             ))}
           </div>
+          {brandGaps.feedback && (
+            <div style={{
+              marginTop: 8, marginBottom: 8, padding: '10px 14px', borderRadius: 12,
+              fontSize: 12.5, lineHeight: 1.45,
+              color: brandGaps.feedback.kind === 'ok' ? t.success : t.danger,
+              background: brandGaps.feedback.kind === 'ok' ? t.successDim : 'rgba(239,68,68,0.08)',
+              border: `0.5px solid ${brandGaps.feedback.kind === 'ok' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.22)'}`,
+            }}
+            >
+              {brandGaps.feedback.text}
+            </div>
+          )}
         </div>
       )}
 
