@@ -284,7 +284,7 @@ async def trigger_auto_produce(
             }
             if enqueue_priority is not None and int(enqueue_priority) > 0:
                 enqueue_body["priority"] = int(enqueue_priority)
-            _eq_timeout = httpx.Timeout(connect=15.0, read=30.0, write=30.0, pool=5.0)
+            _eq_timeout = httpx.Timeout(connect=15.0, read=60.0, write=30.0, pool=5.0)
             async with httpx.AsyncClient(timeout=_eq_timeout) as client:
                 eresp = await client.post(
                     f"{nextjs_url}/api/queue/enqueue",

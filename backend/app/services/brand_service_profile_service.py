@@ -96,6 +96,16 @@ _CATEGORY_RULES: list[dict[str, Any]] = [
         "seasonality": "seasonal",
         "signals": ["fashion", "moda", "giyim", "koleksiyon", "butik", "boutique", "tasarım giyim"],
     },
+    {
+        "category": "wedding_event_service",
+        "cta_style": "contact",
+        "seasonality": "year_round",
+        "signals": [
+            "wedding", "düğün", "dugun", "gelin", "bride", "groom", "nişan", "nisan",
+            "wedding planner", "wedding planning", "düğün organizasyon", "wedding venue",
+            "bridal", "ceremony", "reception", "destination wedding",
+        ],
+    },
 ]
 
 _CTA_PRESETS: dict[str, list[str]] = {
@@ -136,6 +146,8 @@ _CATEGORY_TO_CANONICAL_SECTOR: dict[str, str] = {
     "clinic_healthcare": "healthcare_clinic",
     "local_products_shop": "local_products_shop",
     "fashion_retail": "fashion_boutique",
+    "wedding_event_service": "wedding_event",
+    "event_planning_service": "wedding_event",
 }
 
 
@@ -348,7 +360,7 @@ def _llm_service_profile(brand_ctx: dict[str, Any]) -> dict[str, Any] | None:
         "Return JSON with EXACTLY these keys:\n"
         '{"category": "snake_case category e.g. beach_club_bar|restaurant_bar|cafe_bakery|'
         'hotel_hospitality|beauty_wellness|fitness_studio|clinic_healthcare|local_products_shop|'
-        'fashion_retail|general_business",\n'
+        'fashion_retail|wedding_event_service|general_business",\n'
         ' "category_confidence": 0.0-1.0,\n'
         ' "signature_offerings": ["3-6 concrete things this brand sells/offers, in the brand language"],\n'
         f' "cta_style": "one of {list(VALID_CTA_STYLES)}",\n'

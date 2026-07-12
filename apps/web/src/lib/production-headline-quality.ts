@@ -6,7 +6,7 @@ import {
   isIncompleteOverlayPhrase,
   isInternalStrategyBriefing,
 } from './fal-caption-headline';
-import { enforceDisplayHeadline } from './remotion-quality';
+import { enforceDisplayHeadline } from './grafiker-quality';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
 import { isNonVenueSector } from './sector-gallery-seed';
 import { isNonVenueSectorProfile } from './sector-production-profile';

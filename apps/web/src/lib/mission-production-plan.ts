@@ -10,6 +10,7 @@ import { nodeHasOutput, nodeOutputArray } from '@/lib/mission-node-output';
 import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
 import { detectIdeaPackageFormat } from '@/lib/weekly-publish-package';
 import { resolveWeeklyPackageGeometry } from '@/lib/package-weekly-geometry';
+import type { PackageGeometry } from '@/lib/mission-production-manifest';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import {
   buildCalendarFalSceneHint,
@@ -594,9 +595,18 @@ export function ensureWeeklyFormatCoverage(
   primary: Record<string, unknown>[],
   pool: Record<string, unknown>[],
   packageSlug?: string | null,
+  brandFormatTargets?: PackageGeometry | null,
 ): Record<string, unknown>[] {
-  const FORMAT_TARGETS = formatTargetsForPlan(packageSlug);
-  const packageTotal = resolveWeeklyPackageGeometry(packageSlug).total;
+  const FORMAT_TARGETS = brandFormatTargets
+    ? {
+        story: brandFormatTargets.story,
+        post: brandFormatTargets.post,
+        carousel: brandFormatTargets.carousel,
+        reel: brandFormatTargets.reel,
+      }
+    : formatTargetsForPlan(packageSlug);
+  const packageTotal = brandFormatTargets?.total
+    ?? resolveWeeklyPackageGeometry(packageSlug).total;
   const buckets: Record<PackageFormat, Record<string, unknown>[]> = {
     story: [],
     post: [],

@@ -16,24 +16,26 @@ import { hasCaptionHeadlineThemeConflict } from './headline-theme-clusters';
 
 // ── Turkish Spell-Check Dictionary ────────────────────────────────────────────
 
-const TURKISH_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
+const TYPO_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
   [/\bkoketyl\b/gi, 'Kokteyl'],
-  [/\bkokteyl\b/gi, 'Kokteyl'],
   [/\bkoctail\b/gi, 'Kokteyl'],
-  [/\bcocktail\b/gi, 'Kokteyl'],
   [/\brestarant\b/gi, 'Restoran'],
-  [/\brestaurant\b/gi, 'Restoran'],
   [/\brezarvasyon\b/gi, 'Rezervasyon'],
-  [/\brezervasyon\b/gi, 'Rezervasyon'],
-  [/\bkampanya\b/gi, 'Kampanya'],
   [/\bindrim\b/gi, 'İndirim'],
-  [/\bindirim\b/gi, 'İndirim'],
   [/\bhaftasonu\b/gi, 'Hafta Sonu'],
-  [/\bhafta sonu\b/gi, 'Hafta Sonu'],
   [/\bpazartsi\b/gi, 'Pazartesi'],
-  [/\bperşembe\b/gi, 'Perşembe'],
   [/\bpersembe\b/gi, 'Perşembe'],
   [/\bjubilesyon\b/gi, 'Jubilasyon'],
+];
+
+/** Turkish copy normalization — never translate English words when locale is unknown/en. */
+const TR_NORMALIZE_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
+  [/\bkokteyl\b/gi, 'Kokteyl'],
+  [/\brezervasyon\b/gi, 'Rezervasyon'],
+  [/\bkampanya\b/gi, 'Kampanya'],
+  [/\bindirim\b/gi, 'İndirim'],
+  [/\bhafta sonu\b/gi, 'Hafta Sonu'],
+  [/\bperşembe\b/gi, 'Perşembe'],
   [/\bgurme\b/gi, 'Gurme'],
   [/\blezzet\b/gi, 'Lezzet'],
   [/\bdeneyim\b/gi, 'Deneyim'],
@@ -47,6 +49,31 @@ const TURKISH_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
   [/\bbahar\b/g, 'Bahar'],
   [/\bsonbahar\b/g, 'Sonbahar'],
 ];
+
+/** English → Turkish localization — only when overlay locale is explicitly Turkish. */
+const TR_LOCALIZE_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
+  [/\bcocktail\b/gi, 'Kokteyl'],
+  [/\brestaurant\b/gi, 'Restoran'],
+];
+
+function applySpellingCorrections(
+  headline: string,
+  patterns: ReadonlyArray<[RegExp, string]>,
+): string {
+  let result = headline;
+  for (const [pattern, replacement] of patterns) {
+    result = result.replace(pattern, (match) => {
+      if (match === match.toUpperCase()) return replacement.toUpperCase();
+      if (match[0] === match[0]?.toUpperCase()) return replacement;
+      return replacement.toLowerCase();
+    });
+  }
+  return result;
+}
+
+function looksTurkishOverlay(text: string): boolean {
+  return TR_CHAR_RX.test(text) || TR_WORD_RX.test(text);
+}
 
 export type OverlayLocale = 'tr' | 'en' | 'unknown';
 
@@ -79,13 +106,12 @@ export function correctTurkishSpelling(
   const locale = opts?.locale ?? detectOverlayLocale(headline);
   if (locale === 'en') return headline;
 
-  let result = headline;
-  for (const [pattern, replacement] of TURKISH_CORRECTIONS) {
-    result = result.replace(pattern, (match) => {
-      if (match === match.toUpperCase()) return replacement.toUpperCase();
-      if (match[0] === match[0]?.toUpperCase()) return replacement;
-      return replacement.toLowerCase();
-    });
+  let result = applySpellingCorrections(headline, TYPO_CORRECTIONS);
+  if (locale === 'tr') {
+    result = applySpellingCorrections(result, TR_NORMALIZE_CORRECTIONS);
+    result = applySpellingCorrections(result, TR_LOCALIZE_CORRECTIONS);
+  } else if (locale === 'unknown' && looksTurkishOverlay(result)) {
+    result = applySpellingCorrections(result, TR_NORMALIZE_CORRECTIONS);
   }
   return result;
 }

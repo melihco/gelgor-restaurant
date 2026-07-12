@@ -307,6 +307,7 @@ class BrandDesignTemplate(BaseModel):
     design_spec: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     sector_category: Mapped[str | None] = mapped_column(String(64))
     locale: Mapped[str | None] = mapped_column(String(8))
+    catalog_slot_key: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
     usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

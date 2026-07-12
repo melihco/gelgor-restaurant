@@ -3,6 +3,7 @@
  * Never use hardcoded demo brand names, sectors, or handles in production UI/prompts.
  */
 
+import { resolveTenantCanonicalSector } from '@/lib/canonical-sector';
 import { resolveSectorPack } from '@/lib/context-signals/sector-packs';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
 import type { CompanyProfile } from '@/types';
@@ -64,13 +65,10 @@ export function resolveTenantSector(
   profile?: Partial<CompanyProfile> | null,
   brandCtx?: Record<string, unknown> | null,
 ): string {
-  return String(
-    profile?.industry
-    || brandCtx?.business_type
-    || brandCtx?.businessType
-    || brandCtx?.industry
-    || 'general_business',
-  ).trim().toLowerCase();
+  return resolveTenantCanonicalSector(
+    profile as Record<string, unknown> | null | undefined,
+    brandCtx,
+  );
 }
 
 /** Merge Nexus company profile + Python brand context into one struct. */

@@ -17,6 +17,7 @@ class DesignTemplateCreate(BaseModel):
     design_spec: dict[str, Any] = Field(default_factory=dict)
     sector_category: str | None = None
     locale: str | None = None
+    catalog_slot_key: str | None = Field(default=None, max_length=128)
 
 
 class DesignTemplateUpdate(BaseModel):
@@ -40,6 +41,7 @@ class DesignTemplateRead(BaseModel):
     design_spec: dict[str, Any]
     sector_category: str | None
     locale: str | None
+    catalog_slot_key: str | None = None
     status: str
     usage_count: int
     last_used_at: datetime | None

@@ -7,6 +7,15 @@ import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { parseContentIntentSlugs } from '@/lib/content-pillars-sync';
 import { buildCompanyProfilePatchFromPython } from '@/lib/sync-company-profile-from-python';
 import { serverConfig } from '@/lib/server-config';
+import {
+  PRODUCTION_PROFILE_THRESHOLD,
+} from '@/lib/brand-readiness';
+import {
+  buildUserConfirmedTypographyPatch,
+  isTypographyDesignConfirmed,
+  resolveSuggestedTypographyConfig,
+} from '@/lib/typography-design-policy';
+import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 import type { BrandGapItem } from '@/lib/brand-gap-analysis';
 
 export interface CompleteGapsStep {
@@ -168,6 +177,95 @@ export async function runCompleteBrandGaps(
       forwardHeaders,
       120_000,
     ));
+  }
+
+  // PPR repair — Fal production visual_dna + confirmed typography layers
+  try {
+    const origin = getNextjsInternalOrigin();
+    const readinessRes = await fetch(`${origin}/api/brand-readiness/${tenantId}?refresh=1`, {
+      headers: { 'X-Tenant-Id': tenantId, ...forwardHeaders },
+      signal: AbortSignal.timeout(90_000),
+    });
+    const readiness = readinessRes.ok
+      ? ((await readinessRes.json()) as {
+        productionProfile?: { score?: number; missing?: Array<{ id: string }> };
+      })
+      : null;
+    const pprScore = readiness?.productionProfile?.score ?? 100;
+    const pprMissing = new Set(
+      (readiness?.productionProfile?.missing ?? []).map((m) => m.id),
+    );
+
+    if (pprScore < PRODUCTION_PROFILE_THRESHOLD) {
+      const needsVisualDna = pprMissing.has('production_visual_dna');
+      const needsThemeLayers = pprMissing.has('production_theme_layers');
+
+      if (needsVisualDna || needsThemeLayers) {
+        const pdpRes = await fetchCrewBackendJson<{ ok?: boolean; profile?: { source?: string } }>(
+          `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
+          {
+            method: 'POST',
+            workspaceId: tenantId,
+            timeoutMs: 180_000,
+            headers: forwardHeaders,
+            body: {},
+          },
+        );
+        steps.push({
+          id: 'production_design_profile',
+          ok: pdpRes.ok,
+          detail: pdpRes.ok
+            ? (pdpRes.data?.profile?.source ?? 'derived')
+            : (pdpRes.error ?? `HTTP ${pdpRes.status}`),
+        });
+      }
+
+      if (needsThemeLayers) {
+        const ctxRes = await fetchCrewBackendJson<Record<string, unknown>>(
+          `/api/v1/brand-context/${tenantId}`,
+          { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
+        );
+        const sector = resolveAuthoritativeIndustry(ctxRes.data ?? {}) ?? 'general_business';
+        const themeRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
+          headers: { 'X-Tenant-Id': tenantId, ...forwardHeaders },
+          signal: AbortSignal.timeout(30_000),
+        });
+        const themeJson = themeRes.ok
+          ? ((await themeRes.json()) as { theme?: Record<string, unknown> | null })
+          : { theme: null };
+        const theme = themeJson.theme ?? {};
+        if (!isTypographyDesignConfirmed(theme)) {
+          const suggested = resolveSuggestedTypographyConfig(theme, sector);
+          const confirmed = buildUserConfirmedTypographyPatch(suggested);
+          const putRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Tenant-Id': tenantId,
+              ...forwardHeaders,
+            },
+            body: JSON.stringify({
+              theme: {
+                ...theme,
+                typographyDesign: confirmed,
+              },
+            }),
+            signal: AbortSignal.timeout(45_000),
+          });
+          steps.push({
+            id: 'typography_confirm',
+            ok: putRes.ok,
+            detail: putRes.ok ? confirmed.vibe : `HTTP ${putRes.status}`,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    steps.push({
+      id: 'ppr_repair',
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 
   if (gapIds.has('discovery_low')) {

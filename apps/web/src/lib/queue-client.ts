@@ -18,13 +18,12 @@ import { Queue, type QueueOptions, type ConnectionOptions } from 'bullmq';
 // NOTE: BullMQ disallows ':' in queue names (it's the Redis key separator).
 export const PRODUCTION_SLOTS_QUEUE = 'production-slots';
 
-const REDIS_URL = process.env.REDIS_URL;
-
 export function getQueueConnection(): ConnectionOptions | null {
-  if (!REDIS_URL) return null;
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) return null;
   // BullMQ accepts a connection URL via the `url`-less options; we pass the
   // parsed pieces through ioredis-compatible options.
-  return { url: REDIS_URL } as unknown as ConnectionOptions;
+  return { url: redisUrl } as unknown as ConnectionOptions;
 }
 
 export interface FactoryJobRef {

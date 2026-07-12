@@ -106,7 +106,7 @@ const FIX_TARGETS: Record<string, BrandReadinessNavTarget> = {
     tab: 'design',
     designGroup: 'templates',
     anchor: 'story-templates',
-    label: 'Story şablonları',
+    label: 'fal.ai şablon galerisi',
   },
   'content-pillars': CHECK_TARGETS.content_pillars!,
   brand: {

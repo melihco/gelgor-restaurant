@@ -293,7 +293,8 @@ function assignmentRequestFromTemplate(
 // ── Gallery Analysis Panel ────────────────────────────────────────────────────
 
 import type { GalleryPhotoAnalysis } from '@/app/api/analyze-gallery/route';
-import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
+import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
+import { resolveTenantCanonicalSector } from '@/lib/canonical-sector';
 import { normalizeSectorId } from '@/lib/announcement-template-library';
 import { parseBrandReferenceUrls } from '@/lib/gallery-upload';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
@@ -601,8 +602,15 @@ export default function BrandHubPage() {
     [templates, platformFilter],
   );
   const connected = canvaStatus?.connected === true;
+  const tenantCanonicalSector = useMemo(
+    () => resolveTenantCanonicalSector(
+      companyProfile as Record<string, unknown> | undefined,
+      brandContextRow ?? undefined,
+    ),
+    [companyProfile, brandContextRow],
+  );
   const tenantName = companyProfile?.brandName || "Marka adı (Setup'tan)";
-  const tenantIndustry = companyProfile?.industry || 'Hospitality / local growth';
+  const tenantIndustry = tenantCanonicalSector || companyProfile?.industry || 'Hospitality / local growth';
   const templateCount = canvaTemplates?.count ?? canvaStatus?.templateCount ?? 0;
   const healthSummary = summarizeTemplateHealth(templates);
   const currentOfficeProfile = officeProfiles.find((profile) => profile.officeId === officeId);
@@ -914,11 +922,20 @@ export default function BrandHubPage() {
       )}
       {activeTab === 'templates' && (
         <div className="space-y-4">
-          <BrandTemplateLibraryPanel
-            workspaceId={tenantId}
-            sector={normalizeSectorId(companyProfile?.industry ?? '')}
-            variant="desktop"
-          />
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            <p className="mb-1 text-[13px] font-semibold text-white/90">fal.ai Marka Şablon Galerisi</p>
+            <p className="mb-4 text-[12px] text-white/50">
+              Sektör slot kataloğundan marka bazlı şablonlar — üretim yalnızca fal.ai pipeline ile çalışır.
+            </p>
+            <BrandFalTemplateGalleryPanel
+              tenantId={tenantId}
+              sector={normalizeSectorId(companyProfile?.industry ?? '')}
+              variant="desktop"
+            />
+          </div>
           <ShotstackTemplateGallery workspaceId={tenantId} />
           <CreatomateTemplateSelectorPanel workspaceId={tenantId} />
           <BrandTemplateConfigPanel workspaceId={tenantId} />

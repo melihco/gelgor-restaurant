@@ -179,7 +179,10 @@ def schedule_drain(
             )
 
     existing = _scheduled_drain_tasks.get(key)
-    if not force and existing is not None and not existing.done():
+    if force and bypass_throttle and existing is not None and not existing.done():
+        existing.cancel()
+        _scheduled_drain_tasks.pop(key, None)
+    elif not force and existing is not None and not existing.done():
         return
 
     _last_drain_kick_monotonic[key] = time.monotonic()
@@ -442,15 +445,22 @@ async def drain_production_jobs(
     from app.config import get_settings
     from app.services.production_bridge import trigger_auto_produce as _trigger_auto_produce
 
+    settings = get_settings()
+    use_bullmq = settings.use_bullmq_executor
+
     if not await jobs.has_open_jobs(mission_id):
         return {"claimed": 0, "ready": 0, "failed": 0}
 
     # Recover slots stuck in running/claimed after worker crash, dev reload, or a hung
-    # auto-produce HTTP call — without this, the queue freezes until the 30-min window.
-    from app.services.production_job_service import _FACTORY_DRAIN_STALE_RECLAIM_SEC
+    # auto-produce HTTP call — without this, the queue freezes until the stale window.
+    reclaim_stale_sec = (
+        jobs._BULLMQ_DRAIN_STALE_RECLAIM_SEC
+        if use_bullmq
+        else jobs._FACTORY_DRAIN_STALE_RECLAIM_SEC
+    )
 
     reclaimed = await jobs.reclaim_stale_jobs(
-        mission_id, stale_sec=_FACTORY_DRAIN_STALE_RECLAIM_SEC
+        mission_id, stale_sec=reclaim_stale_sec
     )
     if reclaimed:
         logger.info(
@@ -464,20 +474,21 @@ async def drain_production_jobs(
         return {"claimed": 0, "ready": 0, "failed": 0}
     brand, node_key, summary, fd_report = inputs
 
-    use_bullmq = get_settings().use_bullmq_executor
+    use_bullmq = settings.use_bullmq_executor
     theme = getattr(brand, "brand_theme", None)
     batch_size = _drain_batch_size(theme if isinstance(theme, dict) else None)
+    claim_stale_sec = (
+        jobs._BULLMQ_WATCHDOG_STALE_SEC if use_bullmq else jobs._STALE_CLAIM_SEC
+    )
     claimed_total = ready_total = failed_total = enqueued_total = 0
     while claimed_total < max_slots:
         limit = min(batch_size, max_slots - claimed_total)
-        batch = await jobs.claim_batch(mission_id, limit=limit)
+        batch = await jobs.claim_batch(mission_id, limit=limit, stale_sec=claim_stale_sec)
         if not batch:
             break
         claimed_total += len(batch)
         slot_keys = [f"{job['idea_index']}:{job['slot_role']}" for job in batch]
         gallery_slot_assignments = _gallery_assignments_from_batch(batch)
-        for job in batch:
-            await jobs.mark_running(job["id"])
 
         # ── BullMQ executor: enqueue claimed batch, leave jobs 'running' ─────
         # The Next.js worker executes the pipeline and calls back to mark each
@@ -512,25 +523,26 @@ async def drain_production_jobs(
                     error=str(exc)[:200],
                 )
             if eq and eq.get("reason") == "enqueued_to_bullmq":
+                for job in batch:
+                    await jobs.mark_running(job["id"])
                 enqueued_total += len(batch)
                 # One batch in flight per mission — worker holds the production lock;
                 # enqueueing more batches here only yields 409 deferred loops.
                 break
             # Enqueue failed — defer transient lock/queue errors; fail hard only on unknown.
-            defer_reasons = {
-                "production_in_flight",
-                "enqueue_failed",
-                "route_still_running",
-            }
             eq_reason = str((eq or {}).get("reason") or "bullmq enqueue failed")
-            if eq_reason in defer_reasons or eq is None:
+            if eq_reason in _bullmq_defer_reasons() or eq is None:
+                delay = _bullmq_defer_delay_sec(eq_reason)
                 for job in batch:
-                    await jobs.mark_deferred(job["id"], eq_reason, delay_sec=45.0)
+                    await jobs.mark_deferred(job["id"], eq_reason, delay_sec=delay)
             else:
                 for job in batch:
                     await jobs.mark_failed(job["id"], eq_reason[:500])
                 failed_total += len(batch)
             continue
+
+        for job in batch:
+            await jobs.mark_running(job["id"])
 
         try:
             produce_data = await _trigger_auto_produce(
@@ -759,7 +771,8 @@ def _resolve_bullmq_batch_reason(
     if http_status == 409:
         return "production_in_flight"
     if http_status == 0:
-        return "production_in_flight"
+        err = str((produce_data or {}).get("error") or "").strip()
+        return err[:500] if err else "auto_produce_unreachable"
     code = str((produce_data or {}).get("code") or "")
     if code in ("mission_production_in_progress", "production_in_progress"):
         return "production_in_flight"
@@ -771,6 +784,27 @@ def _resolve_bullmq_batch_reason(
         if err:
             return err[:500]
     return reason or "no_artifact"
+
+
+def _bullmq_defer_delay_sec(reason: str) -> float:
+    """Backoff before re-claiming deferred BullMQ slots."""
+    if reason == "production_in_flight":
+        return 45.0
+    if reason == "auto_produce_unreachable":
+        return 20.0
+    if reason in {"enqueue_failed", "bullmq enqueue failed"}:
+        return 30.0
+    return 45.0
+
+
+def _bullmq_defer_reasons() -> frozenset[str]:
+    return frozenset({
+        "production_in_flight",
+        "auto_produce_unreachable",
+        "enqueue_failed",
+        "bullmq enqueue failed",
+        "route_still_running",
+    })
 
 
 async def apply_bullmq_completion(
@@ -795,7 +829,9 @@ async def apply_bullmq_completion(
     reason = _resolve_bullmq_batch_reason(produce_data, http_status)
 
     ready = failed = deferred = 0
-    if reason == "production_in_flight":
+    defer_reasons = _bullmq_defer_reasons()
+    if reason in defer_reasons:
+        delay = _bullmq_defer_delay_sec(reason)
         for fj in factory_jobs:
             job_id = fj.get("id")
             if not job_id:
@@ -804,7 +840,7 @@ async def apply_bullmq_completion(
                 job_uuid = uuid.UUID(str(job_id))
             except (ValueError, TypeError):
                 continue
-            await jobs.mark_deferred(job_uuid, reason, delay_sec=45.0)
+            await jobs.mark_deferred(job_uuid, reason, delay_sec=delay)
             deferred += 1
     else:
         for fj in factory_jobs:

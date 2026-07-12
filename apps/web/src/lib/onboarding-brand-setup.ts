@@ -14,6 +14,7 @@ import { deriveBrandTemplateLibrary } from '@/lib/brand-template-library';
 import { ensureSectorReelMotionInTheme } from '@/lib/sector-reel-motion-standard';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 
 export interface DeepBrandSetupInput {
   origin: string;
@@ -58,7 +59,7 @@ function resolveSectorFromAnalysis(brand: PythonBrandAnalyzeResponse | null): st
     ?? ctx?.industry
     ?? 'general_business',
   ).trim();
-  return raw || 'general_business';
+  return normalizeSectorId(raw || 'general_business');
 }
 
 /** Theme derive + locked 5-slot library + AI production defaults + gallery provision. */

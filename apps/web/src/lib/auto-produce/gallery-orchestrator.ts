@@ -18,7 +18,7 @@ import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
 } from '@/lib/production-headline-quality';
-import { enforceDisplayHeadline } from '@/lib/remotion-quality';
+import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { buildSlotGalleryMatchInput, assignmentPostType } from '@/lib/gallery-first-production';
 import type { UsedGalleryUsage } from '@/lib/gallery-usage-tracker';

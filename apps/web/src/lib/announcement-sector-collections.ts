@@ -11,6 +11,7 @@ import type {
 export type SectorId =
   | 'beach_club'
   | 'restaurant_cafe'
+  | 'coffee_shop'
   | 'beauty_wellness'
   | 'healthcare_clinic'
   | 'real_estate'
@@ -38,10 +39,18 @@ export interface SectorCollectionPackage {
 
 const SECTOR_ALIASES: Record<string, SectorId> = {
   restaurant: 'restaurant_cafe',
-  coffee_shop: 'restaurant_cafe',
-  cafe: 'restaurant_cafe',
+  bistro: 'restaurant_cafe',
+  restoran: 'restaurant_cafe',
+  brunch: 'restaurant_cafe',
+  coffee_shop: 'coffee_shop',
+  cafe: 'coffee_shop',
+  kahve: 'coffee_shop',
+  espresso_bar: 'coffee_shop',
+  roastery: 'coffee_shop',
+  cafe_bakery: 'coffee_shop',
   hospitality: 'restaurant_cafe',
-  hospitality_entertainment: 'restaurant_cafe',
+  hotel: 'restaurant_cafe',
+  resort: 'restaurant_cafe',
   beauty: 'beauty_wellness',
   wellness: 'beauty_wellness',
   health: 'healthcare_clinic',
@@ -129,6 +138,35 @@ export const SECTOR_COLLECTIONS: SectorCollectionPackage[] = [
       announcement: [
         'agency_frosted_panel_02', 'agency_editorial_left_01', 'agency_minimal_whisper_03',
         'agency_corner_stamp_10', 'agency_gala_invite_10',
+      ],
+    },
+    templateIds: [],
+  },
+  {
+    id: 'coffee_shop',
+    labelTr: 'Kahve Dükkanı',
+    labelEn: 'Coffee Shop',
+    icon: '☕',
+    descriptionTr: 'Latte art, yeni çekirdek, sabah ritüeli, seasonal içecek ve cozy corner duyuruları.',
+    creativeDirectionTr: 'Minimal whisper, frosted panel, editorial — sıcak, samimi, ürün odaklı.',
+    defaultPreferences: {
+      event: 'agency_minimal_whisper_03',
+      campaign: 'agency_campaign_badge_01',
+      announcement: 'agency_frosted_panel_02',
+      defaultFormat: 'story',
+    },
+    picks: {
+      event: [
+        'agency_minimal_whisper_03', 'agency_frosted_panel_02', 'agency_editorial_left_01',
+        'agency_corner_stamp_10', 'agency_frame_classic_01',
+      ],
+      campaign: [
+        'agency_campaign_badge_01', 'agency_offer_band_05', 'agency_color_split_05',
+        'agency_promo_banner_01',
+      ],
+      announcement: [
+        'agency_frosted_panel_02', 'agency_minimal_whisper_03', 'agency_editorial_left_08',
+        'agency_corner_stamp_04',
       ],
     },
     templateIds: [],

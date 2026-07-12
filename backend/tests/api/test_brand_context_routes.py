@@ -20,6 +20,7 @@ EXPECTED_ROUTES: frozenset[str] = frozenset(
         "GET /{workspace_id}",
         "GET /{workspace_id}/all-briefs",
         "GET /{workspace_id}/announcement-templates",
+        "GET /{workspace_id}/brand-gaps",
         "GET /{workspace_id}/brand-template-config",
         "GET /{workspace_id}/chatbot-profile",
         "GET /{workspace_id}/gallery-analysis",
@@ -51,6 +52,7 @@ EXPECTED_ROUTES: frozenset[str] = frozenset(
         "POST /{workspace_id}/brand-template-config",
         "POST /{workspace_id}/brand-video-pack",
         "POST /{workspace_id}/chatbot-profile/analyze",
+        "POST /{workspace_id}/complete-gaps",
         "POST /{workspace_id}/confirm-constitution",
         "POST /{workspace_id}/creatomate-bundle",
         "POST /{workspace_id}/design-cards",
@@ -64,6 +66,7 @@ EXPECTED_ROUTES: frozenset[str] = frozenset(
         "POST /{workspace_id}/monthly-brief",
         "POST /{workspace_id}/pinterest-inspiration",
         "POST /{workspace_id}/post-templates",
+        "POST /{workspace_id}/production-design-profile/derive",
         "POST /{workspace_id}/refresh-performance",
         "POST /{workspace_id}/refresh-trends",
         "POST /{workspace_id}/reviews/submit",
@@ -101,4 +104,4 @@ def test_brand_context_route_surface_is_stable() -> None:
 
 
 def test_brand_context_route_count() -> None:
-    assert len(_actual_routes()) == 65
+    assert len(_actual_routes()) == 68

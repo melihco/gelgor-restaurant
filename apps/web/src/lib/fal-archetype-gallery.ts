@@ -108,6 +108,7 @@ export interface BrandDesignTemplateRow {
   template_name: string;
   format: string;
   thumbnail_url?: string | null;
+  catalog_slot_key?: string | null;
   usage_count?: number;
   status?: string;
 }
@@ -119,6 +120,7 @@ export function normalizeDesignTemplateRow(raw: Record<string, unknown>): BrandD
     template_name: String(raw.template_name ?? raw.templateName ?? 'Şablon'),
     format: String(raw.format ?? 'post'),
     thumbnail_url: (raw.thumbnail_url ?? raw.thumbnailUrl) as string | null | undefined,
+    catalog_slot_key: (raw.catalog_slot_key ?? raw.catalogSlotKey) as string | null | undefined,
     usage_count: Number(raw.usage_count ?? raw.usageCount ?? 0),
     status: String(raw.status ?? 'active'),
   };

@@ -14,6 +14,13 @@ import {
   mergeCalendarPlansForProduction,
   ensureWeeklyFormatCoverage,
 } from '@/lib/mission-production-plan';
+import {
+  loadBrandActiveSlotSet,
+  resolveBrandProductionFormatTargets,
+  stampIdeasWithBrandCatalogSlots,
+} from '@/lib/brand-active-slot-resolver';
+import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 import type { FeedArtDirectorReport } from '@/lib/weekly-publish-package';
 import type { MissionProductionManifest } from '@/lib/mission-production-manifest';
 import type { MissionVisualDesignCard } from '@/lib/mission-visual-design-cards';
@@ -163,9 +170,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Mission Feed: format coverage when calendar merge was not applied above.
     if (missionId && (calendarPlans.length === 0 || alreadyScheduleOverlay || !ideas?.length)) {
+      const sector = normalizeSectorId(
+        String(productionSnapshot?.brand?.businessType ?? ''),
+      );
+      let brandFormatTargets = null;
+      if (sector) {
+        try {
+          const activeSlots = await loadBrandActiveSlotSet(
+            workspaceId,
+            sector,
+            undefined,
+            readBrandSlotFacilitiesFromTheme(brandTheme ?? null),
+          );
+          brandFormatTargets = resolveBrandProductionFormatTargets(
+            activeSlots,
+            productionPackage ?? undefined,
+          );
+          productionIdeas = stampIdeasWithBrandCatalogSlots(
+            productionIdeas as Record<string, unknown>[],
+            activeSlots,
+          ) as ParsedIdea[];
+        } catch {
+          /* catalog unavailable — legacy package geometry */
+        }
+      }
       productionIdeas = ensureWeeklyFormatCoverage(
         productionIdeas as Record<string, unknown>[],
         productionIdeas as Record<string, unknown>[],
+        productionPackage ?? undefined,
+        brandFormatTargets,
       ) as ParsedIdea[];
     }
 

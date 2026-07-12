@@ -1,37 +1,18 @@
 /**
- * Mission / AutoProductionFeed — brand story template resolution.
- * Mirrors auto-produce route logic for stable client-side Remotion renders.
+ * Mission / AutoProductionFeed — brand story slot resolution (catalog SSOT).
  */
-import type { StoryCompositionId } from '@/lib/story-composition-types';
 import {
   ensureBrandTemplateLibrary,
-  resolveBrandStoryProductionTemplate,
-  resolveStoryCompositionForBrandTemplate,
-  compositionIdForStoryTemplate,
+  selectBrandLibrarySlot,
   type BrandTemplateLibrary,
   type BrandTemplateLibrarySlot,
 } from './brand-template-library';
-import {
-  resolveBrandRemotionRenderPolicy,
-  resolveContentIntent,
-  type ContentIntent,
-} from './brand-motion-profile';
-import { REMOTION_TEMPLATE_BY_ID } from './story-template-catalog';
-import { resolveSlotRenderTypography } from './brand-template-slot-typography';
-import { resolveSlotLogoForRender } from './brand-logo-production';
-import {
-  applyBrandTokensToRenderProps,
-  resolveBrandProductionTokens,
-} from './brand-production-tokens';
+import { resolveContentIntent, type ContentIntent } from './brand-motion-profile';
 
-export interface MissionStoryTemplatePick {
+export interface MissionStorySlotPick {
   slot: BrandTemplateLibrarySlot;
-  storyTemplateId?: string;
-  compositionId: StoryCompositionId;
   kitId: string;
   intent: ContentIntent;
-  templateName: string;
-  collection?: string;
   library: BrandTemplateLibrary;
 }
 
@@ -54,74 +35,8 @@ export function ideaFieldsForStoryTemplate(idea: Record<string, unknown>) {
   };
 }
 
-export function resolveMissionStoryTemplate(input: {
-  theme: Record<string, unknown> | null | undefined;
-  sector: string;
-  tenantId: string;
-  idea: Record<string, unknown>;
-  ideaIndex: number;
-  usedTemplateIds?: string[];
-}): MissionStoryTemplatePick {
-  const { treatment, templateUseCase, mood, headline } = ideaFieldsForStoryTemplate(input.idea);
-  const intent = resolveContentIntent({
-    treatment,
-    templateUseCase,
-    mood,
-    headline,
-    contentType: 'story',
-  });
-  const library = ensureBrandTemplateLibrary(input.theme, {
-    sector: input.sector,
-    tenantId: input.tenantId,
-  });
-  const pick = resolveBrandStoryProductionTemplate({
-    library,
-    sector: input.sector,
-    intent,
-    treatment,
-    ideaIndex: input.ideaIndex,
-    usedTemplateIds: input.usedTemplateIds,
-    headline: headline || undefined,
-    templateUseCase,
-  });
-  const tpl = REMOTION_TEMPLATE_BY_ID.get(pick.storyTemplateId);
-
-  return {
-    slot: pick.slot,
-    storyTemplateId: pick.storyTemplateId,
-    compositionId: pick.compositionId as StoryCompositionId,
-    kitId: pick.kitId,
-    intent: pick.intent,
-    templateName: pick.templateNameTr,
-    collection: tpl?.collection,
-    library,
-  };
-}
-
-/** Manual slot override (expanded panel in Mission Factory). */
-export function resolveStoryTemplateForSlot(
-  library: BrandTemplateLibrary,
-  slotKey: string,
-  sector: string,
-): MissionStoryTemplatePick | null {
-  const slot = library.slots.find((s) => s.key === slotKey && s.format === 'story' && s.enabled);
-  if (!slot?.storyTemplateId) return null;
-  const tpl = REMOTION_TEMPLATE_BY_ID.get(slot.storyTemplateId);
-  const compositionId = compositionIdForStoryTemplate(slot.storyTemplateId, slot) as StoryCompositionId;
-  return {
-    slot,
-    storyTemplateId: slot.storyTemplateId,
-    compositionId,
-    kitId: library.kitId,
-    intent: 'daily_moment',
-    templateName: tpl?.nameTr ?? slot.labelTr,
-    collection: tpl?.collection,
-    library,
-  };
-}
-
 export function listEnabledStorySlots(library: BrandTemplateLibrary): BrandTemplateLibrarySlot[] {
-  return library.slots.filter((s) => s.format === 'story' && s.enabled && s.storyTemplateId);
+  return library.slots.filter((s) => s.format === 'story' && s.enabled);
 }
 
 /** Rotate Marka Detayı story slots across weekly mission story ideas. */
@@ -134,100 +49,75 @@ export function missionStoryLibrarySlotKey(
   return slots[storyIndex % slots.length]!.key;
 }
 
-export interface StoryRemotionRenderBody {
-  compositionId: StoryCompositionId;
-  workspaceId: string;
-  useCreativeDirector: boolean;
-  brandTemplateLocked?: boolean;
-  allowedCompositions?: StoryCompositionId[];
-  motionStyle?: string;
-  locale?: string;
-  uploadToR2?: boolean;
-  requirePersistent?: boolean;
-  props: Record<string, unknown>;
+export function resolveMissionStorySlot(input: {
+  theme: Record<string, unknown> | null | undefined;
+  sector: string;
+  tenantId: string;
+  idea: Record<string, unknown>;
+  ideaIndex: number;
+  librarySlotKey?: string;
+}): MissionStorySlotPick {
+  const { treatment, templateUseCase, mood, headline } = ideaFieldsForStoryTemplate(input.idea);
+  const intent = resolveContentIntent({
+    treatment,
+    templateUseCase,
+    mood,
+    headline,
+    contentType: 'story',
+  });
+  const library = ensureBrandTemplateLibrary(input.theme, {
+    sector: input.sector,
+    tenantId: input.tenantId,
+  });
+  const forced = input.librarySlotKey
+    ? library.slots.find((s) => s.key === input.librarySlotKey && s.enabled && s.format === 'story')
+    : undefined;
+  const slot = forced ?? selectBrandLibrarySlot(library, {
+    intent,
+    treatment,
+    ideaIndex: input.ideaIndex,
+    format: 'story',
+  });
+  return { slot, kitId: library.kitId, intent, library };
 }
 
-export function buildStoryRemotionRenderRequest(input: {
-  pick: MissionStoryTemplatePick;
-  workspaceId: string;
-  photoUrl: string;
-  headline: string;
-  caption: string;
-  brandName: string;
-  location?: string;
-  mood?: string;
-  logoUrl?: string;
-  primaryColor?: string;
-  accentColor?: string;
-  fontFamily?: string;
-  bodyFont?: string;
-  motionStyle?: string;
-  locale?: string;
-  brandTheme?: Record<string, unknown> | null;
-  sector?: string;
-}): StoryRemotionRenderBody {
-  const { pick } = input;
-  const policy = input.brandTheme
-    ? resolveBrandRemotionRenderPolicy(input.brandTheme, { sector: input.sector })
-    : null;
-  const tokens = resolveBrandProductionTokens({
-    brandTheme: input.brandTheme,
-    sector: input.sector,
-    brandName: input.brandName,
-  });
-  const templateId = pick.storyTemplateId ?? '';
-  const slotTypo = resolveSlotRenderTypography({
-    slot: {
-      fontMode: pick.slot.fontMode,
-      fontPersonality: pick.slot.fontPersonality,
-      headingFont: pick.slot.headingFont,
-      bodyFont: pick.slot.bodyFont,
-      format: 'story',
-      storyTemplateId: pick.slot.storyTemplateId,
-      posterTemplateId: pick.slot.posterTemplateId,
-    },
-    templateId,
-    format: 'story',
-    brandHeadingFont: input.fontFamily ?? tokens.headingFont,
-    brandBodyFont: input.bodyFont ?? tokens.bodyFont,
-    sector: input.sector,
-  });
-  const compositionId = (
-    templateId && REMOTION_TEMPLATE_BY_ID.has(templateId)
-      ? compositionIdForStoryTemplate(templateId, pick.slot)
-      : pick.compositionId
-  ) as StoryCompositionId;
-  const baseProps = applyBrandTokensToRenderProps({
-    photoUrl: input.photoUrl,
-    headline: input.headline,
-    subtitle: input.caption.slice(0, 120),
-    brandName: input.brandName,
-    location: input.location ?? '',
-    mood: input.mood ?? '',
-    logoUrl: resolveSlotLogoForRender(input.logoUrl, pick.slot),
-    templateId,
-    kitId: pick.kitId,
-    librarySlotKey: pick.slot.key,
-    primaryColor: input.primaryColor ?? tokens.primaryColor,
-    accentColor: input.accentColor ?? tokens.accentColor,
-    sector: input.sector,
-    contentIntent: pick.intent,
-  }, tokens, {
-    headingFont: slotTypo.headingFont,
-    bodyFont: slotTypo.bodyFont,
-    fontPersonality: slotTypo.fontPersonality,
-    honorTemplateTypography: slotTypo.honorTemplateTypography,
-  });
+/** @deprecated Remotion removed — use resolveMissionStorySlot */
+export function resolveMissionStoryTemplate(input: {
+  theme: Record<string, unknown> | null | undefined;
+  sector: string;
+  tenantId: string;
+  idea: Record<string, unknown>;
+  ideaIndex: number;
+  usedTemplateIds?: string[];
+  librarySlotKey?: string;
+}): MissionStorySlotPick & {
+  storyTemplateId?: string;
+  compositionId: string;
+  templateName: string;
+  collection?: string;
+} {
+  const pick = resolveMissionStorySlot(input);
   return {
-    compositionId,
-    workspaceId: input.workspaceId,
-    useCreativeDirector: true,
-    brandTemplateLocked: pick.library.locked ?? policy?.brandTemplateLocked,
-    allowedCompositions: policy?.allowedCompositions,
-    motionStyle: input.motionStyle ?? policy?.motionStyle,
-    locale: input.locale ?? policy?.locale,
-    uploadToR2: Boolean(process.env.R2_BUCKET_NAME),
-    requirePersistent: true,
-    props: baseProps,
+    ...pick,
+    storyTemplateId: undefined,
+    compositionId: 'SpecStory',
+    templateName: pick.slot.labelTr,
+    collection: undefined,
+  };
+}
+
+/** Manual slot override (expanded panel in Mission Factory). */
+export function resolveStoryTemplateForSlot(
+  library: BrandTemplateLibrary,
+  slotKey: string,
+  _sector: string,
+): MissionStorySlotPick | null {
+  const slot = library.slots.find((s) => s.key === slotKey && s.format === 'story' && s.enabled);
+  if (!slot) return null;
+  return {
+    slot,
+    kitId: library.kitId,
+    intent: 'daily_moment',
+    library,
   };
 }

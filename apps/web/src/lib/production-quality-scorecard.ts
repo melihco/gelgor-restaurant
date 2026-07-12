@@ -4,7 +4,7 @@
  */
 import { classifyMatch, type MatchQuality, resolveArtifactMatchScore } from '@/lib/gallery-photo-matcher';
 import { getProductionBundleStatus, type ProductionBundleStatus } from '@/lib/production-bundle';
-import { GRAFIKER_PASS_THRESHOLD } from '@/lib/remotion-quality';
+import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import type { OutputArtifact } from '@/types';
 
 export type QualitySignalLevel = 'ok' | 'warn' | 'block';

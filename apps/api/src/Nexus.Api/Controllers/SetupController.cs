@@ -626,31 +626,29 @@ public class SetupController : ControllerBase
         IReadOnlyList<string> templateNeeds,
         IReadOnlyList<string> contentPillars)
     {
-        var rules = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var blob = $"{industry} {string.Join(" ", templateNeeds)} {string.Join(" ", contentPillars)}".ToLowerInvariant();
-
-        if (blob.Contains("offer") || blob.Contains("campaign"))
-        {
-            rules["price"] = "approval_required";
-            rules["discount"] = "approval_required";
-            rules["limited_availability"] = "approval_required";
-        }
-
-        if (blob.Contains("event"))
-        {
-            rules["date"] = "approval_required";
-            rules["location"] = "approval_required";
-        }
-
-        if (blob.Contains("health") || blob.Contains("clinic") || blob.Contains("medical") || blob.Contains("sağlık"))
-        {
-            rules["regulated_industry"] = "approval_required";
-            rules["health_claim"] = "approval_required";
-            rules["before_after"] = "approval_required";
-            rules["personal_data"] = "blocked";
-        }
-
+        var playbookId = NormalizeIndustryForRisk(industry);
+        var rules = IndustryRiskPlaybooks.BuildDefaultRiskRules(playbookId);
+        IndustryRiskPlaybooks.ApplyContentHeuristics(rules, industry, templateNeeds, contentPillars);
         return rules;
+    }
+
+    private static string NormalizeIndustryForRisk(string industry)
+    {
+        var value = (industry ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('/', '_').Replace('&', '_');
+        if (value.Contains('_', StringComparison.Ordinal) && value.Length > 3)
+            return value;
+        return value switch
+        {
+            "restaurant" or "cafe" or "bistro" => "restaurant_cafe",
+            "coffee" or "kahve" => "coffee_shop",
+            "wedding" or "event" or "organizasyon" or "dugun" or "düğün" => "wedding_event",
+            "beach" or "bar" => "beach_club",
+            "gym" or "fitness" => "fitness_gym",
+            "hotel" or "resort" or "otel" => "hospitality",
+            "clinic" or "health" or "medical" => "healthcare_clinic",
+            "retail" or "ecommerce" => "ecommerce_retail",
+            _ => "local_service_business",
+        };
     }
 
     private static string BuildCustomerVisibleSummary(CompanyProfile profile, BrandIntelligenceReportDto report)

@@ -4,9 +4,40 @@ import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
   buildIntensityTypographyBlock,
+  resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '../fal-designer-production';
+
+describe('resolveFalRequireGroundedGallery', () => {
+  it('requires grounded gallery for physical-venue brands with real gallery photos', () => {
+    expect(resolveFalRequireGroundedGallery({
+      hasRealBrandGallery: true,
+      referencePhotoUrl: 'https://yulabodrum.com/galeri/44.webp',
+      sector: 'beach_club',
+      captionDrivenGenerated: false,
+    })).toBe(true);
+  });
+
+  it('keeps gallery grounding required even when caption-driven synthetic ref is present', () => {
+    expect(resolveFalRequireGroundedGallery({
+      hasRealBrandGallery: true,
+      referencePhotoUrl: 'https://cdn.example.com/ai-scene.png',
+      sector: 'beach_club',
+      captionDrivenGenerated: true,
+    })).toBe(true);
+  });
+
+  it('requires grounded gallery for fal_reel video slots', () => {
+    expect(resolveFalRequireGroundedGallery({
+      hasRealBrandGallery: true,
+      referencePhotoUrl: 'https://yulabodrum.com/galeri/sunset.webp',
+      sector: 'beach_club',
+      pipeline: 'fal_reel',
+      captionDrivenGenerated: false,
+    })).toBe(true);
+  });
+});
 
 describe('resolveTypographyVibeFromContext', () => {
   it('prefers tenant typography_design.vibe over caption keywords', () => {

@@ -17,7 +17,7 @@ import {
 import { validateTypographyText } from '@/lib/typography-text-validation';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
-import { GRAFIKER_PASS_THRESHOLD } from '@/lib/remotion-quality';
+import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { getSectorProfile } from '@/lib/sector-production-profile';
 import {
   resolveFalDisplayHeadline,
@@ -111,6 +111,11 @@ export interface FalDesignerInput {
    * on the final video (fal_reel) to avoid duplicate marks after Kling motion.
    */
   deferLogoComposite?: boolean;
+  /**
+   * Brand Hub per-slot preview — skip slow GPT grounded edit + Grafiker loops.
+   * Uses a single Ideogram typography pass (~30–90s). Mission production keeps full QA.
+   */
+  templatePreviewMode?: boolean;
 }
 
 export interface FalDesignerStillResult {
@@ -487,13 +492,21 @@ export function resolveFalCanvasChannel(input: {
 }
 
 function requiresGroundedGalleryDesign(
-  input: Pick<FalDesignerInput, 'pipeline' | 'requireGroundedGallery' | 'referencePhotoUrl' | 'sector'>,
+  input: Pick<FalDesignerInput, 'pipeline' | 'requireGroundedGallery' | 'referencePhotoUrl' | 'sector' | 'templatePreviewMode'>,
 ): boolean {
+  if (input.templatePreviewMode) return false;
   if (input.requireGroundedGallery === true || input.pipeline === 'fal_story') return true;
   const ref = String(input.referencePhotoUrl ?? '').trim();
   if (!ref) return false;
   const profile = getSectorProfile(input.sector);
-  // Venue/product brands: never invent synthetic Ideogram scenes when a real gallery photo exists.
+  // Venue/product brands: gallery photo + template for all Fal video/story/reel slots.
+  if (
+    (input.pipeline === 'fal_reel' || input.pipeline === 'fal_story' || input.pipeline === 'fal_design')
+    && profile.hasPhysicalVenue
+    && profile.galleryReliability !== 'low'
+  ) {
+    return true;
+  }
   if (profile.hasPhysicalVenue && profile.galleryReliability !== 'low') return true;
   return false;
 }
@@ -505,15 +518,28 @@ export function resolveFalRequireGroundedGallery(input: {
   sector?: string;
   pipeline?: 'fal_story' | 'fal_reel';
   captionDrivenGenerated?: boolean;
+  /** Brand has analyzed venue/product gallery — synthetic AI scenes are not allowed. */
+  hasRealBrandGallery?: boolean;
 }): boolean {
-  if (input.captionDrivenGenerated) return false;
   if (input.requireGroundedGallery) return true;
-  return requiresGroundedGalleryDesign({
+  const groundedByPolicy = requiresGroundedGalleryDesign({
     pipeline: input.pipeline,
     requireGroundedGallery: false,
     referencePhotoUrl: input.referencePhotoUrl ?? undefined,
     sector: input.sector,
   });
+  if (groundedByPolicy) return true;
+  // Gallery-backed physical venues: Fal paints on the caption-matched photo — never Ideogram-only.
+  if (
+    input.hasRealBrandGallery
+    && input.referencePhotoUrl?.trim()
+    && !input.captionDrivenGenerated
+  ) {
+    const profile = getSectorProfile(input.sector);
+    if (profile.hasPhysicalVenue && profile.galleryReliability !== 'low') return true;
+  }
+  if (input.captionDrivenGenerated) return false;
+  return false;
 }
 
 /**
@@ -871,6 +897,56 @@ export async function produceFalDesignerStill(
   }
 
   // ── Full typography still path ─────────────────────────────────────────────
+  if (input.templatePreviewMode) {
+    const previewChannel = resolveFalCanvasChannel({
+      pipeline: input.pipeline,
+      aspectRatio: input.aspectRatio,
+    });
+    const overlayCopy = resolveFalOverlayCopy({
+      headline: input.headline,
+      cta: input.subtitle,
+      caption: input.caption,
+      channel: previewChannel,
+      lockIdeationCopy: true,
+    });
+    const displayHeadline = overlayCopy.headline;
+    const captionSubtitle = overlayCopy.subtitle;
+    if (!displayHeadline) {
+      throw new Error('template preview: no valid overlay headline');
+    }
+    const ideogramBackground = resolveIdeogramBackgroundStyle(
+      backgroundStyle,
+      input.referencePhotoUrl,
+    );
+    const typoResult = await generateTypographyDesignWithRetry({
+      headline: displayHeadline,
+      subtitle: captionSubtitle?.slice(0, 60),
+      vibe: input.vibe,
+      brandColors: input.brandColors,
+      backgroundStyle: ideogramBackground,
+      aspectRatio: input.aspectRatio,
+      brandName: input.brandName,
+      logoUrl: input.logoUrl,
+      logoPlacement: input.logoPlacement,
+      sceneHint: input.sceneHint,
+      brandDirectives: input.brandDirectives,
+      visualDnaTone: input.visualDnaTone,
+      storyDesignMode: input.aspectRatio === '9:16',
+      reelDesignMode: input.aspectRatio === '9:16' && input.pipeline === 'fal_reel',
+    }, { maxRetries: 0 });
+    const previewResult: FalDesignerStillResult = {
+      imageUrl: typoResult.imageUrl,
+      typographyModel: `${typoResult.model}:template-preview`,
+      vibe: input.vibe,
+      grafikerScore: null,
+      grafikerPass: true,
+      textValidated: false,
+      retryCount: typoResult.retryCount,
+      resolvedHeadline: displayHeadline,
+    };
+    return finalizeFalStillWithOfficialLogo(previewResult, input);
+  }
+
   const maxAttempts = Math.min(2, Math.max(1, (input.grafikerMaxRetries ?? 1) + 1));
   let last: FalDesignerStillResult | null = null;
 
@@ -1113,14 +1189,23 @@ export async function produceFalDesignerStill(
 export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'aspectRatio'> & {
   pipeline: 'fal_story' | 'fal_reel';
 }): Promise<FalDesignerVideoResult> {
+  const groundedRequired = input.requireGroundedGallery ?? resolveFalRequireGroundedGallery({
+    requireGroundedGallery: false,
+    referencePhotoUrl: input.referencePhotoUrl,
+    sector: input.sector,
+    pipeline: input.pipeline,
+  });
   const still = await produceFalDesignerStill({
     ...input,
     aspectRatio: '9:16',
     pipeline: input.pipeline,
     captionAwareHeadline: input.captionAwareHeadline === true,
-    backgroundStyle: resolveBackgroundStyle(input.backgroundStyle, input.referencePhotoUrl),
+    backgroundStyle: input.referencePhotoUrl?.trim()
+      ? 'photo_overlay'
+      : resolveBackgroundStyle(input.backgroundStyle, input.referencePhotoUrl),
     backgroundOnlyPlate: false,
     deferLogoComposite: Boolean(input.logoUrl?.trim()),
+    requireGroundedGallery: groundedRequired,
   });
 
   const motionStyle = input.pipeline === 'fal_reel'

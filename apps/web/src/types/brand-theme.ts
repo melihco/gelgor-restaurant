@@ -264,6 +264,17 @@ export interface BrandTheme {
   /** fal.ai designer photo vs typography balance — per channel (story / reel / post). */
   fal_design_intensity?: import('@/lib/fal-design-intensity').BrandFalDesignIntensityConfig;
   falDesignIntensity?: import('@/lib/fal-design-intensity').BrandFalDesignIntensityConfig;
+
+  /** Parametric fal.ai template production — gallery + mission designer. */
+  fal_template_production?: import('@/lib/fal-template-production-settings').BrandFalTemplateProductionConfig;
+  falTemplateProduction?: import('@/lib/fal-template-production-settings').BrandFalTemplateProductionConfig;
+
+  /**
+   * Facility hints for optional catalog slots (pool, dj_stage, spa, etc.).
+   * Opt-out model: omitted keys default to true; false disables matching requires:* slots.
+   */
+  slot_facilities?: import('@/lib/sector-slot-pack').BrandSlotFacilities;
+  slotFacilities?: import('@/lib/sector-slot-pack').BrandSlotFacilities;
 }
 
 // ── Safe fonts list — must be Google Fonts or OFL licensed ───────────────────

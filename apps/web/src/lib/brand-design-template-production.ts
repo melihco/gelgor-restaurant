@@ -8,12 +8,13 @@
 import type { TypographyVibe } from '@/types/brand-theme';
 import type { ContentIntent } from '@/lib/brand-motion-profile';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
-import { GRAFIKER_PASS_THRESHOLD } from '@/lib/remotion-quality';
+import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import {
   matchDesignTemplateToSlot,
   recordDesignTemplateUsage,
   type MatchedDesignTemplate,
 } from '@/lib/brand-design-template-matcher';
+import type { BrandActiveSlotSet } from '@/lib/brand-active-slot-resolver';
 
 export interface BrandTemplateFalBinding {
   matched: MatchedDesignTemplate | null;
@@ -150,6 +151,14 @@ export async function bindBrandTemplateForFalProduction(input: {
   librarySlotKey: string | null | undefined;
   format: 'story' | 'post' | 'reel';
   caption?: string;
+  headline?: string;
+  announcementType?: string | null;
+  templateUseCase?: string | null;
+  /** Catalog slot key when production knows the mission slot (Faz 5). */
+  catalogSlotKey?: string | null;
+  /** Tenant-enabled catalog snapshot — excludes disabled slot templates. */
+  brandActiveSlots?: BrandActiveSlotSet | null;
+  /** True only for ad-hoc New Brief — skips onboarding template lock. */
   adHocBrief?: boolean;
   missionReferenceUrl: string | null;
   baseDirectives: string[];
@@ -175,8 +184,25 @@ export async function bindBrandTemplateForFalProduction(input: {
       librarySlotKey: input.librarySlotKey,
       format: input.format,
       caption: input.caption,
+      headline: input.headline,
+      announcementType: input.announcementType,
+      templateUseCase: input.templateUseCase,
+      catalogSlotKey: input.catalogSlotKey,
+      brandActiveSlots: input.brandActiveSlots,
     });
-    if (!matched) return empty;
+    if (!matched) {
+      console.warn(
+        `[design-matcher] no template match workspace=${input.workspaceId} ` +
+        `role=${input.slotRole} library=${input.librarySlotKey ?? '-'} ` +
+        `announcement=${input.announcementType ?? '-'} format=${input.format}`,
+      );
+      return empty;
+    }
+
+    console.log(
+      `[design-matcher] locked "${matched.templateName}" (${matched.templateType}) ` +
+      `role=${input.slotRole} announcement=${input.announcementType ?? '-'}`,
+    );
 
     void recordDesignTemplateUsage(input.workspaceId, matched.id);
 

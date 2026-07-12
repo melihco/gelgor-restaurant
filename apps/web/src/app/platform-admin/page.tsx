@@ -10,6 +10,7 @@ import { MissionsTab } from '@/components/platform-admin/MissionsTab';
 import { OperationsTab } from '@/components/platform-admin/OperationsTab';
 import { OverviewTab } from '@/components/platform-admin/OverviewTab';
 import { PlatformAdminChrome } from '@/components/platform-admin/PlatformAdminChrome';
+import { SlotCatalogTab } from '@/components/platform-admin/SlotCatalogTab';
 import { TenantTab } from '@/components/platform-admin/TenantTab';
 import { DataCanvas, PageHeader } from '@/components/platform-admin/admin-ui';
 import Label from '@/tailadmin/components/form/Label';
@@ -27,6 +28,7 @@ type AdminTab =
   | 'overview'
   | 'brand'
   | 'tenant'
+  | 'slots'
   | 'missions'
   | 'cost'
   | 'operations'
@@ -36,6 +38,7 @@ const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: 'overview', label: 'Genel Bakış' },
   { id: 'brand', label: 'Marka Stüdyosu' },
   { id: 'tenant', label: 'Marka Snapshot' },
+  { id: 'slots', label: 'Slot Kataloğu' },
   { id: 'missions', label: 'Mission & Üretim' },
   { id: 'cost', label: 'Maliyet' },
   { id: 'operations', label: 'Operasyonlar' },
@@ -243,6 +246,7 @@ export default function PlatformAdminPage() {
         {tab === 'tenant' && (
           <TenantTab workspaceId={effectiveWorkspaceId} onWorkspaceIdChange={setWorkspaceId} />
         )}
+        {tab === 'slots' && <SlotCatalogTab workspaceId={effectiveWorkspaceId} />}
         {tab === 'missions' && (
           <MissionsTab
             workspaceId={effectiveWorkspaceId}

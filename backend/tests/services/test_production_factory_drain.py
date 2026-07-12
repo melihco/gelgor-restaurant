@@ -79,6 +79,14 @@ def test_resolve_slot_failure_reason_prefers_per_slot_error() -> None:
     assert pfs._resolve_slot_failure_reason(produce, "9:other", "production_in_flight") == "production_in_flight"
 
 
+def test_resolve_bullmq_batch_reason_unreachable_not_in_flight() -> None:
+    assert pfs._resolve_bullmq_batch_reason(None, http_status=0) == "auto_produce_unreachable"
+    assert pfs._resolve_bullmq_batch_reason(
+        {"error": "fetch failed"}, http_status=0,
+    ) == "fetch failed"
+    assert pfs._resolve_bullmq_batch_reason(None, http_status=409) == "production_in_flight"
+
+
 # ── Drain flow helpers ───────────────────────────────────────────────────────
 
 
@@ -100,7 +108,13 @@ class _JobsRecorder:
     async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
         return not self._summary.get("complete", False)
 
-    async def claim_batch(self, mission_id: uuid.UUID, *, limit: int) -> list[dict]:
+    async def claim_batch(
+        self,
+        mission_id: uuid.UUID,
+        *,
+        limit: int,
+        stale_sec: int = 1800,
+    ) -> list[dict]:
         if self._claim_batches:
             return self._claim_batches.pop(0)
         return []
@@ -295,6 +309,7 @@ async def test_drain_bullmq_enqueue_lock_defers_batch(
 
     assert out["failed"] == 0
     assert jobs.deferred == [(batch[0]["id"], "enqueue_failed")]
+    assert jobs.running == []
 
 
 async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(

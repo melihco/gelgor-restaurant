@@ -31,7 +31,7 @@ import {
   resolvePrimaryIndicesWithReport,
 } from '@/lib/production-stack';
 import { fetchRejectedLayoutFamilies } from '@/lib/layout-family-learning';
-import { resolveGrafikerMaxRetries } from '@/lib/remotion-quality';
+import { resolveGrafikerMaxRetries } from '@/lib/grafiker-quality';
 import {
   productionIdeasFromParsed,
   productionIdeaToRecord,

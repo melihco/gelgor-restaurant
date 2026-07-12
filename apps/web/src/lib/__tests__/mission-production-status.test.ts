@@ -31,5 +31,18 @@ describe('missionProductionStatusCopy', () => {
       queued: 15,
     });
     expect(copy.title).toBe('Görseller üretiliyor');
+    expect(copy.subtitle).toBe('Üretim devam ediyor (0/18 hazır · 2 üretiliyor).');
+    expect(copy.inProgress).toBe(true);
+  });
+
+  it('returns slot-only producing subtitle when nothing is in flight', () => {
+    const copy = missionProductionStatusCopy({
+      total: 18,
+      ready: 0,
+      phase: 'producing',
+      inFlight: 0,
+      queued: 18,
+    });
+    expect(copy.subtitle).toBe('Üretim devam ediyor (0/18 slot).');
   });
 });

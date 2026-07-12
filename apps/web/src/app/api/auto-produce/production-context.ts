@@ -72,7 +72,7 @@ export interface ProductionContext {
   readonly brandTheme: Record<string, unknown> | null;
   /** Resolved brand production tokens (fonts, colors, overlay). */
   readonly tokens: BrandProductionTokens;
-  /** Remotion template library — 5 story slots from Marka Detayı. */
+  /** Legacy slot library — typography prefs; routing uses catalog_slot_key SSOT. */
   readonly templateLibrary: BrandTemplateLibrary;
   /** Brand kit ID for this sector. */
   readonly kitId: string;

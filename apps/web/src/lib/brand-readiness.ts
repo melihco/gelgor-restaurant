@@ -111,7 +111,7 @@ export interface BrandReadinessInputs {
   hasBrandDna: boolean;
   /** Palette / typography visual kit derived or saved manually. */
   hasBrandTheme: boolean;
-  /** Five locked production slots in brand_theme.template_library. */
+  /** fal.ai brand_design_templates (active catalog slots with previews). */
   hasTemplateLibrary: boolean;
   contentPillarCount: number;
   defaultCtaCount: number;
@@ -242,9 +242,9 @@ export function computeBrandReadiness(input: BrandReadinessInputs): BrandReadine
     const earned = themePts + libraryPts;
     const passed = earned === 10;
     let detail = 'Türetilmedi';
-    if (input.hasBrandTheme && input.hasTemplateLibrary) detail = 'Tema + 5 şablon';
-    else if (input.hasBrandTheme) detail = 'Tema var · 5 şablon bekliyor';
-    else if (input.hasTemplateLibrary) detail = '5 şablon · tema bekliyor';
+    if (input.hasBrandTheme && input.hasTemplateLibrary) detail = 'Tema + fal şablon seti';
+    else if (input.hasBrandTheme) detail = 'Tema var · fal şablon bekliyor';
+    else if (input.hasTemplateLibrary) detail = 'fal şablonlar · tema bekliyor';
     checks.push({
       id: 'brand_theme',
       label: 'Marka teması (görsel kit)',

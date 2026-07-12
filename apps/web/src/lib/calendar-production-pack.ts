@@ -113,11 +113,18 @@ function librarySlotForAnnouncement(type: string): string | undefined {
   const key = type.toLowerCase().replace(/\s+/g, '_');
   const map: Record<string, string> = {
     event_teaser: 'event_story',
+    event_announcement: 'event_story',
     offer_campaign: 'campaign_post',
+    campaign_offer: 'campaign_post',
     social_proof: 'social_proof_post',
     product_reveal: 'campaign_post',
+    product_showcase: 'campaign_post',
     venue_showcase: 'editorial_story',
     behind_the_scenes: 'daily_story',
+    brand_awareness: 'editorial_story',
+    announcement: 'campaign_post',
+    educational_post: 'daily_story',
+    daily_story: 'daily_story',
   };
   return map[key];
 }

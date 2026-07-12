@@ -8,10 +8,9 @@ import {
   countActionableGaps,
   countAutoFixableGaps,
   formatCompleteGapsFeedback,
-  mergeBrandGapLists,
   type BrandGapItem,
 } from '@/lib/brand-gap-analysis';
-import { parseStringOrArray } from '@/lib/brand-readiness';
+import { fetchBrandGapPreview } from '@/lib/brand-gap-preview-client';
 import { useTheme } from './theme-context';
 
 export interface MobileBrandAutoFillProps {
@@ -36,41 +35,14 @@ export function MobileBrandAutoFill({
   const { data: gapPreview } = useQuery({
     queryKey: ['brand-gaps', tenantId],
     queryFn: async () => {
-      if (!tenantId) return { gaps: [] as BrandGapItem[], ctx: null as Record<string, unknown> | null };
-      const [gapRes, ctxRes] = await Promise.all([
-        fetchTenantBff(`/api/brand-context/${tenantId}/complete-gaps`, tenantId, {
-          headers: getTenantBffHeaders(tenantId),
-        }),
-        fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
-          headers: getTenantBffHeaders(tenantId),
-        }),
-      ]);
-      const gaps = gapRes.ok
-        ? ((await gapRes.json()) as { gaps?: BrandGapItem[] }).gaps ?? []
-        : [];
-      const ctx = ctxRes.ok
-        ? ((await ctxRes.json()) as Record<string, unknown>)
-        : null;
-      return { gaps, ctx };
+      if (!tenantId) return { gaps: [] as BrandGapItem[], mergedGaps: [] as BrandGapItem[], ctx: null };
+      return fetchBrandGapPreview(tenantId);
     },
     staleTime: 60_000,
     enabled: Boolean(tenantId),
   });
 
-  const mergedGaps = mergeBrandGapLists(gapPreview?.gaps ?? [], {
-    description: String(gapPreview?.ctx?.description ?? ''),
-    websiteSummary: String(gapPreview?.ctx?.website_summary ?? ''),
-    brandDna: gapPreview?.ctx?.brand_dna,
-    discoveryConfidence: Number(gapPreview?.ctx?.discovery_confidence ?? 0),
-    contentPillarCount: parseStringOrArray(gapPreview?.ctx?.content_pillars).length,
-    defaultCtaCount: parseStringOrArray(gapPreview?.ctx?.default_ctas).length,
-    usablePhotoCount: parseStringOrArray(gapPreview?.ctx?.reference_image_urls).length,
-    analyzedPhotoCount: Object.keys(
-      (typeof gapPreview?.ctx?.gallery_analysis === 'object' && gapPreview?.ctx?.gallery_analysis)
-        ? gapPreview.ctx.gallery_analysis as Record<string, unknown>
-        : {},
-    ).length,
-  });
+  const mergedGaps = gapPreview?.mergedGaps ?? [];
   const autoFixable = countAutoFixableGaps(mergedGaps);
   const actionable = countActionableGaps(mergedGaps);
 

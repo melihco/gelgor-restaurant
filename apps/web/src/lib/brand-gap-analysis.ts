@@ -6,6 +6,7 @@ import {
   BRS_MIN_CONTENT_PILLARS,
   BRS_MIN_DISCOVERY_CONFIDENCE,
   BRS_MIN_COVERAGE_RATIO,
+  parseStringOrArray,
   type BrandReadinessCheck,
 } from '@/lib/brand-readiness';
 
@@ -32,6 +33,65 @@ export interface BrandGapAnalysisInput {
   productionProfileMissing?: Array<{ id: string; label: string }>;
 }
 
+/** Map raw brand_context + BRS inputs into gap-analysis shape (same sources as /api/brand-readiness). */
+export function buildBrandGapAnalysisInput(input: {
+  ctx?: Record<string, unknown> | null;
+  briefs?: { brand_dna?: unknown; visual_dna?: unknown } | null;
+  galleryAnalysis?: Record<string, unknown> | null;
+  readiness?: {
+    inputs?: {
+      discoveryConfidence?: number;
+      usablePhotoCount?: number;
+      analyzedPhotoCount?: number;
+      contentPillarCount?: number;
+      defaultCtaCount?: number;
+      hasBrandDna?: boolean;
+    };
+    missing?: BrandReadinessCheck[];
+    productionProfile?: { missing?: Array<{ id: string; label: string }> };
+  } | null;
+}): BrandGapAnalysisInput | null {
+  const ctx = input.ctx;
+  if (!ctx) return null;
+
+  const briefs = input.briefs ?? {};
+  const visualDna = typeof briefs.visual_dna === 'string'
+    ? briefs.visual_dna
+    : typeof ctx.visual_dna === 'string'
+      ? ctx.visual_dna
+      : null;
+  const brandDna = briefs.brand_dna ?? ctx.brand_dna;
+
+  const galleryMap = input.galleryAnalysis && typeof input.galleryAnalysis === 'object'
+    ? input.galleryAnalysis
+    : {};
+  const readinessInputs = input.readiness?.inputs;
+
+  return {
+    description: String(ctx.description ?? ''),
+    websiteSummary: String(ctx.website_summary ?? ''),
+    visualDna,
+    brandDna,
+    discoveryConfidence: readinessInputs?.discoveryConfidence
+      ?? Number(ctx.discovery_confidence ?? 0),
+    contentPillarCount: readinessInputs?.contentPillarCount
+      ?? parseStringOrArray(ctx.content_pillars).length,
+    defaultCtaCount: readinessInputs?.defaultCtaCount
+      ?? parseStringOrArray(ctx.default_ctas).length,
+    usablePhotoCount: readinessInputs?.usablePhotoCount
+      ?? parseStringOrArray(ctx.reference_image_urls).length,
+    analyzedPhotoCount: readinessInputs?.analyzedPhotoCount
+      ?? Object.keys(galleryMap).length,
+    readinessMissing: input.readiness?.inputs?.hasBrandDna === false
+      ? (input.readiness?.missing ?? []).filter((c) => c.id === 'brand_dna')
+      : input.readiness?.missing,
+    productionProfileMissing: input.readiness?.productionProfile?.missing?.map((c) => ({
+      id: c.id,
+      label: c.label,
+    })),
+  };
+}
+
 const GENERIC_DESCRIPTION_MARKERS = [
   'local service business sektöründe',
   'brand — local service',
@@ -45,19 +105,24 @@ export function isCorruptedBrandDescription(description: string | null | undefin
   return GENERIC_DESCRIPTION_MARKERS.some((m) => lower.includes(m));
 }
 
-function brandDnaRichness(brandDna: unknown): string | null {
-  if (!brandDna) return null;
-  let data: Record<string, unknown> | null = null;
-  if (typeof brandDna === 'string') {
-    try {
-      data = JSON.parse(brandDna) as Record<string, unknown>;
-    } catch {
-      return null;
+function brandDnaRichness(brandDna: unknown, visualDna?: string | null): string | null {
+  if (brandDna) {
+    let data: Record<string, unknown> | null = null;
+    if (typeof brandDna === 'string') {
+      try {
+        data = JSON.parse(brandDna) as Record<string, unknown>;
+      } catch {
+        data = null;
+      }
+    } else if (typeof brandDna === 'object') {
+      data = brandDna as Record<string, unknown>;
     }
-  } else if (typeof brandDna === 'object' && brandDna) {
-    data = brandDna as Record<string, unknown>;
+    const richness = typeof data?.data_richness === 'string' ? data.data_richness : null;
+    if (richness) return richness;
   }
-  return typeof data?.data_richness === 'string' ? data.data_richness : null;
+  // Align with BRS: production visual_dna satisfies the DNA gate when JSON brand_dna is empty.
+  if (typeof visualDna === 'string' && visualDna.trim().length > 50) return 'ok';
+  return null;
 }
 
 /** Merge Python gap list with BFF readiness signals for dashboard display. */
@@ -83,7 +148,7 @@ export function mergeBrandGapLists(
     });
   }
 
-  const richness = brandDnaRichness(input.brandDna);
+  const richness = brandDnaRichness(input.brandDna, input.visualDna);
   if (!richness || richness === 'sparse') {
     add({
       id: 'brand_dna_sparse',

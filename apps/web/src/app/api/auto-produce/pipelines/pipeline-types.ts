@@ -77,12 +77,22 @@ export interface SlotProductionInputs {
   isFalOnlyPost: boolean;
   isFalOnlyVideo: boolean;
   isProductShowcase: boolean;
+  /** Calendar / ideation announcement routing for onboarding template matcher. */
+  announcementType?: string | null;
+  templateUseCase?: string | null;
+  /** DB catalog slot key — tenant-enabled production slot (Faz 5 bridge). */
+  catalogSlotKey?: string | null;
+  /** Tenant-enabled catalog snapshot — matcher excludes disabled slot templates. */
+  brandActiveSlots?: import('@/lib/brand-active-slot-resolver').BrandActiveSlotSet | null;
   /** New Brief form — user-intent driven fal art-director production. */
   adHocBrief?: boolean;
   /** Calendar story cards — vertical fal designed output. */
   falAspectRatio?: '9:16' | '4:5';
   /** Calendar gallery-designed track — must compose on matched gallery photo. */
   requireGroundedGallery?: boolean;
+  /** Brand has analyzed venue/product gallery — never skip headline-matched photo. */
+  hasRealBrandGallery?: boolean;
+  captionDrivenGenerated?: boolean;
   /** Override brand design intensity (calendar defaults to photo_first). */
   falDesignIntensityOverride?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
   /** Grid rotation — alternate background treatment vs previous feed tiles. */

@@ -1649,6 +1649,24 @@ def infer_industry(text: str, fallback: str = "") -> str:
     if any(w in blob for w in fitness_signals):
         return "fitness"
 
+    # ── 8b. Wedding & event services — override stale fallback ────────────
+    wedding_strong = [
+        "wedding planner", "wedding planning", "wedding venue", "düğün salonu", "dugun salonu",
+        "düğün organizasyon", "dugun organizasyon", "wedding organization", "destination wedding",
+        "bridal", "wedding coordinator", "event décor", "event decor",
+    ]
+    wedding_signals = [
+        "wedding", "düğün", "dugun", "gelin", "damat", "bride", "groom", "nişan", "nisan",
+        "ceremony", "reception", "wedding invitation", "davetiye",
+    ]
+    if any(w in blob for w in wedding_strong):
+        return "wedding_event"
+    wedding_hits = sum(1 for w in wedding_signals if w in blob)
+    if wedding_hits >= 2:
+        return "wedding_event"
+    if wedding_hits >= 1 and any(w in blob for w in ["organizasyon", "event planning", "etkinlik"]):
+        return "wedding_event"
+
     # ── 9. Respect stale fallback for all remaining ambiguous signals ─────
     # Strong sector-specific keywords above can now override a stale value.
     # Everything below this point is lower-confidence pattern matching.
@@ -1676,7 +1694,7 @@ def infer_industry(text: str, fallback: str = "") -> str:
 
     if any(w in blob for w in ["handmade", "el yap", "seramik", "takı", "craft", "atölye"]):
         return "handmade_product_brand"
-    if any(w in blob for w in ["sahne", "organizasyon", "event plann"]):
+    if any(w in blob for w in ["sahne", "video production", "film production", "post production", "event plann"]):
         return "production_company"
     if any(w in blob for w in ["pizza", "burger", "restaurant", "restoran", "chef", "şef",
                                 "mutfak", "yemek menüsü", "masa rezervasyon", "sofra"]):
@@ -1698,7 +1716,7 @@ def infer_content_pillars(text: str, industry: str) -> list[str]:
     from app.crew.industry_playbooks import normalize_industry_id, get_industry_playbook
     normalized = normalize_industry_id(industry)
     playbook = get_industry_playbook(normalized)
-    if normalized in ("local_products_shop", "beach_club", "ecommerce_retail", "beauty_wellness"):
+    if normalized in ("local_products_shop", "beach_club", "ecommerce_retail", "beauty_wellness", "wedding_event"):
         return playbook.default_content_needs[:6]
 
     # For other industries, build from text signals

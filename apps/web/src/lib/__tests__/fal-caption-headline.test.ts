@@ -160,6 +160,19 @@ describe('resolveFalOverlayCopy', () => {
     expect(result.headline).toContain('Cocktail');
     expect(result.headline).not.toContain('Kokteyl');
   });
+
+  it('keeps English reel headline verbatim (no cocktail → Kokteyl on clamp)', () => {
+    const result = resolveFalOverlayCopy({
+      headline: 'Cocktail Preparation',
+      cta: 'DM to book',
+      caption:
+        'Ever wondered how your favorite cocktails are made? Watch as our talented bartenders create refreshing drinks, one shake at a time!',
+      channel: 'reel',
+      lockIdeationCopy: true,
+    });
+    expect(result.headline).toBe('Cocktail Preparation');
+    expect(result.subtitle).toBe('DM to book');
+  });
 });
 
 describe('detectOverlayLocale', () => {

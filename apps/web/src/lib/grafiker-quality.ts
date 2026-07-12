@@ -1,12 +1,12 @@
 /**
- * Remotion story quality — premium defaults, headline safety, Grafiker retry patches.
+ * Grafiker quality — headline safety, layout refinement, and vision QA thresholds.
  */
 import type { CreativeDirectorLayoutOverrides } from './creative-director-routing';
 import type { RemotionLayoutFamily } from './remotion-template-types';
 import { sanitizePosterText } from './announcement-text-fit';
 
 export const GRAFIKER_PASS_THRESHOLD = 8;
-export const GRAFIKER_HARD_FLOOR = 4;   // Below this: discard render, fall back to gallery still
+export const GRAFIKER_HARD_FLOOR = 4;
 export const GRAFIKER_MAX_RETRIES = 2;
 
 export function resolveGrafikerMaxRetries(profileMax?: number | null): number {

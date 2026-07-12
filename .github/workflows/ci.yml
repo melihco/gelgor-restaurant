@@ -9,7 +9,7 @@ on:
 
 jobs:
   api:
-    name: API build
+    name: API build & tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,9 +20,11 @@ jobs:
         run: dotnet restore apps/api/Nexus.sln
       - name: Build API
         run: dotnet build apps/api/Nexus.sln --configuration Release --no-restore
+      - name: Run API unit tests
+        run: dotnet test apps/api/Nexus.sln --configuration Release --no-build --verbosity minimal
 
   web:
-    name: Web build
+    name: Web build & tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +39,12 @@ jobs:
       - name: Type-check web
         working-directory: apps/web
         run: npm run type-check
+      - name: Run web unit tests
+        working-directory: apps/web
+        run: npm run test
+      - name: Run Tier-1 coverage gate
+        working-directory: apps/web
+        run: npm run test:coverage
       - name: Build web
         working-directory: apps/web
         run: npm run build

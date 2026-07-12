@@ -1,0 +1,551 @@
+"""
+Sector Slot Pack — Python mirror of apps/web/src/lib/sector-slot-pack.ts.
+
+SECTOR_SLOT_PACKS is the SSOT for seed generation; keep in sync with TypeScript.
+"""
+
+from __future__ import annotations
+
+from typing import TypedDict
+
+
+class SlotInstance(TypedDict, total=False):
+    suffix: str
+    label_tr: str
+    label_en: str
+    format: str
+    optional_tags: list[str]
+    enabled_by_default: bool
+
+
+class SectorPack(TypedDict):
+    sector_id: str
+    label_tr: str
+    label_en: str
+    aliases: list[str]
+    sort_order: int
+    instances: list[SlotInstance]
+
+
+def _inst(
+    suffix: str,
+    label_tr: str,
+    label_en: str,
+    fmt: str,
+    optional_tags: list[str] | None = None,
+) -> SlotInstance:
+    row: SlotInstance = {
+        "suffix": suffix,
+        "label_tr": label_tr,
+        "label_en": label_en,
+        "format": fmt,
+    }
+    if optional_tags:
+        row["optional_tags"] = optional_tags
+    return row
+
+
+# Keep aligned with sector-slot-pack.ts SECTOR_SLOT_PACKS
+SECTOR_SLOT_PACKS: list[SectorPack] = [
+    {
+        "sector_id": "beach_club",
+        "label_tr": "Beach Club",
+        "label_en": "Beach Club",
+        "aliases": ["beach", "beach_club_bar", "nightclub", "cocktail_bar"],
+        "sort_order": 10,
+        "instances": [
+            _inst("sunset_ambiance_post", "Gün batımı atmosfer", "Sunset ambiance", "post"),
+            _inst("cocktail_menu_post", "Kokteyl menü", "Cocktail menu", "post", ["requires:full_menu"]),
+            _inst("pool_lifestyle_post", "Havuz lifestyle", "Pool lifestyle", "post", ["requires:pool"]),
+            _inst("daybed_offer_post", "Şezlong teklifi", "Daybed offer", "post"),
+            _inst("dj_night_teaser_post", "DJ gece teaser", "DJ night teaser", "post", ["requires:dj_stage"]),
+            _inst("guest_social_proof_post", "Misafir sosyal kanıt", "Guest social proof", "post"),
+            _inst("aerial_venue_post", "Havadan mekan", "Aerial venue", "post"),
+            _inst("summer_opening_post", "Yaz açılış", "Summer opening", "post"),
+            _inst("live_music_event_post", "Canlı müzik etkinlik", "Live music event", "post", ["requires:live_music"]),
+            _inst("private_event_post", "Özel etkinlik", "Private event", "post", ["requires:private_events"]),
+            _inst("sunset_golden_story", "Altın saat story", "Golden hour story", "story"),
+            _inst("dj_event_story", "DJ etkinlik story", "DJ event story", "story", ["requires:dj_stage"]),
+            _inst("cocktail_promo_story", "Kokteyl promo story", "Cocktail promo story", "story"),
+            _inst("pool_party_story", "Havuz partisi story", "Pool party story", "story", ["requires:pool"]),
+            _inst("day_pass_story", "Gün pass story", "Day pass story", "story"),
+            _inst("atmosphere_reel", "Atmosfer reel", "Atmosphere reel", "reel"),
+            _inst("cocktail_craft_reel", "Kokteyl craft reel", "Cocktail craft reel", "reel"),
+            _inst("sunset_timelapse_reel", "Gün batımı timelapse reel", "Sunset timelapse reel", "reel"),
+            _inst("event_aftermovie_reel", "Etkinlik aftermovie reel", "Event aftermovie reel", "reel", ["requires:dj_stage"]),
+            _inst("guest_moments_carousel", "Misafir anları carousel", "Guest moments carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "restaurant_cafe",
+        "label_tr": "Restoran & Kafe",
+        "label_en": "Restaurant & Cafe",
+        "aliases": ["restaurant", "bistro", "brunch", "restaurant_bar"],
+        "sort_order": 20,
+        "instances": [
+            _inst("signature_dish_post", "İmza tabak", "Signature dish", "post"),
+            _inst("menu_highlight_post", "Menü öne çıkan", "Menu highlight", "post", ["requires:full_menu"]),
+            _inst("chef_special_post", "Şef özel", "Chef special", "post"),
+            _inst("dining_ambiance_post", "Yemek atmosferi", "Dining ambiance", "post"),
+            _inst("reservation_cta_post", "Rezervasyon CTA", "Reservation CTA", "post"),
+            _inst("customer_review_post", "Müşteri yorumu", "Customer review", "post"),
+            _inst("seasonal_ingredient_post", "Mevsimsel malzeme", "Seasonal ingredient", "post"),
+            _inst("brunch_offer_post", "Brunch teklifi", "Brunch offer", "post"),
+            _inst("happy_hour_post", "Happy hour", "Happy hour", "post"),
+            _inst("private_dining_post", "Özel yemek", "Private dining", "post", ["requires:private_events"]),
+            _inst("new_menu_story", "Yeni menü story", "New menu story", "story", ["requires:full_menu"]),
+            _inst("kitchen_bts_story", "Mutfak kulis story", "Kitchen BTS story", "story"),
+            _inst("table_ready_story", "Masa hazır story", "Table ready story", "story"),
+            _inst("farm_to_table_story", "Çiftlikten sofraya story", "Farm to table story", "story"),
+            _inst("weekend_booking_story", "Hafta sonu rezervasyon story", "Weekend booking story", "story"),
+            _inst("chef_plating_reel", "Şef plating reel", "Chef plating reel", "reel"),
+            _inst("kitchen_process_reel", "Mutfak süreç reel", "Kitchen process reel", "reel"),
+            _inst("dining_experience_reel", "Yemek deneyimi reel", "Dining experience reel", "reel"),
+            _inst("cocktail_bar_reel", "Kokteyl bar reel", "Cocktail bar reel", "reel"),
+            _inst("menu_tasting_carousel", "Menü tadım carousel", "Menu tasting carousel", "carousel", ["requires:full_menu"]),
+        ],
+    },
+    {
+        "sector_id": "coffee_shop",
+        "label_tr": "Kahve Dükkanı",
+        "label_en": "Coffee Shop",
+        "aliases": ["cafe", "coffee", "specialty_coffee", "roastery"],
+        "sort_order": 25,
+        "instances": [
+            _inst("signature_latte_post", "İmza latte", "Signature latte", "post"),
+            _inst("pastry_pairing_post", "Pastane eşleşmesi", "Pastry pairing", "post"),
+            _inst("cafe_ambiance_post", "Kafe atmosferi", "Cafe ambiance", "post"),
+            _inst("bean_origin_post", "Çekirdek kökeni", "Bean origin", "post"),
+            _inst("morning_ritual_post", "Sabah ritüeli", "Morning ritual", "post"),
+            _inst("loyalty_offer_post", "Sadakat teklifi", "Loyalty offer", "post"),
+            _inst("customer_moment_post", "Müşteri anı", "Customer moment", "post"),
+            _inst("seasonal_drink_post", "Mevsimsel içecek", "Seasonal drink", "post"),
+            _inst("workspace_vibe_post", "Çalışma alanı vibe", "Workspace vibe", "post"),
+            _inst("delivery_promo_post", "Teslimat promo", "Delivery promo", "post", ["requires:delivery"]),
+            _inst("brew_method_story", "Demleme yöntemi story", "Brew method story", "story"),
+            _inst("barista_bts_story", "Barista kulis story", "Barista BTS story", "story"),
+            _inst("new_blend_story", "Yeni harman story", "New blend story", "story"),
+            _inst("happy_hour_story", "Happy hour story", "Happy hour story", "story"),
+            _inst("latte_art_reel", "Latte art reel", "Latte art reel", "reel"),
+            _inst("cafe_atmosphere_reel", "Kafe atmosfer reel", "Cafe atmosphere reel", "reel"),
+            _inst("roasting_process_reel", "Kavurma süreç reel", "Roasting process reel", "reel"),
+            _inst("drink_menu_carousel", "İçecek menü carousel", "Drink menu carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "fine_dining",
+        "label_tr": "Fine Dining",
+        "label_en": "Fine Dining",
+        "aliases": ["fine_dining", "gastronomy", "michelin", "tasting_menu"],
+        "sort_order": 28,
+        "instances": [
+            _inst("tasting_menu_post", "Tadım menüsü", "Tasting menu", "post", ["requires:full_menu"]),
+            _inst("chef_table_post", "Şef masası", "Chef table", "post"),
+            _inst("wine_pairing_post", "Şarap eşleşmesi", "Wine pairing", "post"),
+            _inst("plating_art_post", "Plating sanatı", "Plating art", "post"),
+            _inst("dining_room_ambiance_post", "Salon atmosferi", "Dining room ambiance", "post"),
+            _inst("reservation_exclusive_post", "Özel rezervasyon", "Exclusive reservation", "post"),
+            _inst("guest_experience_post", "Misafir deneyimi", "Guest experience", "post"),
+            _inst("seasonal_course_post", "Mevsimsel kurs", "Seasonal course", "post"),
+            _inst("sommelier_pick_post", "Sommelier seçimi", "Sommelier pick", "post"),
+            _inst("private_dining_post", "Özel yemek", "Private dining", "post", ["requires:private_events"]),
+            _inst("menu_reveal_story", "Menü reveal story", "Menu reveal story", "story"),
+            _inst("kitchen_precision_story", "Mutfak hassasiyet story", "Kitchen precision story", "story"),
+            _inst("reservation_reminder_story", "Rezervasyon hatırlatma story", "Reservation reminder story", "story"),
+            _inst("wine_cellar_story", "Şarap mahzeni story", "Wine cellar story", "story"),
+            _inst("chef_signature_reel", "Şef imza reel", "Chef signature reel", "reel"),
+            _inst("service_ritual_reel", "Servis ritüeli reel", "Service ritual reel", "reel"),
+            _inst("evening_ambiance_reel", "Akşam atmosfer reel", "Evening ambiance reel", "reel"),
+            _inst("course_journey_carousel", "Kurs yolculuğu carousel", "Course journey carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "hospitality",
+        "label_tr": "Otel & Konaklama",
+        "label_en": "Hospitality",
+        "aliases": ["hotel", "resort", "boutique_hotel", "hostel"],
+        "sort_order": 30,
+        "instances": [
+            _inst("suite_showcase_post", "Suit tanıtım", "Suite showcase", "post"),
+            _inst("lobby_ambiance_post", "Lobi atmosferi", "Lobby ambiance", "post"),
+            _inst("breakfast_experience_post", "Kahvaltı deneyimi", "Breakfast experience", "post"),
+            _inst("pool_retreat_post", "Havuz dinlenme", "Pool retreat", "post", ["requires:pool"]),
+            _inst("spa_wellness_post", "Spa wellness", "Spa wellness", "post", ["requires:spa"]),
+            _inst("guest_review_post", "Misafir yorumu", "Guest review", "post"),
+            _inst("local_experience_post", "Yerel deneyim", "Local experience", "post"),
+            _inst("seasonal_package_post", "Mevsimsel paket", "Seasonal package", "post"),
+            _inst("terrace_view_post", "Teras manzara", "Terrace view", "post", ["requires:outdoor_terrace"]),
+            _inst("event_venue_post", "Etkinlik mekanı", "Event venue", "post", ["requires:private_events"]),
+            _inst("checkin_story", "Check-in story", "Check-in story", "story"),
+            _inst("room_tour_story", "Oda turu story", "Room tour story", "story"),
+            _inst("spa_offer_story", "Spa teklifi story", "Spa offer story", "story", ["requires:spa"]),
+            _inst("weekend_escape_story", "Hafta sonu kaçamağı story", "Weekend escape story", "story"),
+            _inst("property_tour_reel", "Tesis turu reel", "Property tour reel", "reel"),
+            _inst("guest_experience_reel", "Misafir deneyimi reel", "Guest experience reel", "reel"),
+            _inst("sunrise_terrace_reel", "Gün doğumu teras reel", "Sunrise terrace reel", "reel", ["requires:outdoor_terrace"]),
+            _inst("amenities_carousel", "Olanaklar carousel", "Amenities carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "beauty_wellness",
+        "label_tr": "Güzellik & Wellness",
+        "label_en": "Beauty & Wellness",
+        "aliases": ["beauty", "beauty_salon", "wellness_spa", "spa", "nail_salon"],
+        "sort_order": 35,
+        "instances": [
+            _inst("treatment_showcase_post", "Bakım tanıtım", "Treatment showcase", "post"),
+            _inst("before_after_post", "Önce sonra", "Before after", "post"),
+            _inst("nail_art_spotlight_post", "Tırnak art spotlight", "Nail art spotlight", "post"),
+            _inst("skincare_routine_post", "Cilt bakım rutini", "Skincare routine", "post"),
+            _inst("salon_ambiance_post", "Salon atmosferi", "Salon ambiance", "post"),
+            _inst("stylist_intro_post", "Stilist tanıtım", "Stylist intro", "post"),
+            _inst("bridal_package_post", "Gelin paketi", "Bridal package", "post"),
+            _inst("membership_offer_post", "Üyelik teklifi", "Membership offer", "post"),
+            _inst("client_testimonial_post", "Müşteri yorumu", "Client testimonial", "post"),
+            _inst("retail_product_post", "Perakende ürün", "Retail product", "post"),
+            _inst("appointment_reminder_story", "Randevu hatırlatma story", "Appointment reminder story", "story"),
+            _inst("new_treatment_story", "Yeni bakım story", "New treatment story", "story"),
+            _inst("seasonal_campaign_story", "Mevsimsel kampanya story", "Seasonal campaign story", "story"),
+            _inst("self_care_tip_story", "Self care ipucu story", "Self care tip story", "story"),
+            _inst("flash_sale_story", "Flash sale story", "Flash sale story", "story"),
+            _inst("transformation_reel", "Dönüşüm reel", "Transformation reel", "reel"),
+            _inst("treatment_process_reel", "Bakım süreç reel", "Treatment process reel", "reel"),
+            _inst("salon_tour_reel", "Salon turu reel", "Salon tour reel", "reel"),
+            _inst("styling_demo_reel", "Styling demo reel", "Styling demo reel", "reel"),
+            _inst("portfolio_gallery_carousel", "Portfolyo galeri carousel", "Portfolio gallery carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "barber_salon",
+        "label_tr": "Berber & Kuaför",
+        "label_en": "Barber Salon",
+        "aliases": ["barber", "barbershop", "mens_grooming", "hair_salon_men"],
+        "sort_order": 38,
+        "instances": [
+            _inst("fade_showcase_post", "Fade vitrin", "Fade showcase", "post"),
+            _inst("beard_styling_post", "Sakal styling", "Beard styling", "post"),
+            _inst("shop_ambiance_post", "Dükkan atmosferi", "Shop ambiance", "post"),
+            _inst("barber_intro_post", "Berber tanıtım", "Barber intro", "post"),
+            _inst("client_transformation_post", "Müşteri dönüşüm", "Client transformation", "post"),
+            _inst("grooming_package_post", "Bakım paketi", "Grooming package", "post"),
+            _inst("walkin_offer_post", "Walk-in teklifi", "Walk-in offer", "post"),
+            _inst("social_proof_post", "Sosyal kanıt", "Social proof", "post"),
+            _inst("appointment_story", "Randevu story", "Appointment story", "story"),
+            _inst("technique_bts_story", "Teknik kulis story", "Technique BTS story", "story"),
+            _inst("new_service_story", "Yeni hizmet story", "New service story", "story"),
+            _inst("cut_process_reel", "Kesim süreç reel", "Cut process reel", "reel"),
+            _inst("shop_vibe_reel", "Dükkan vibe reel", "Shop vibe reel", "reel"),
+            _inst("style_gallery_carousel", "Stil galeri carousel", "Style gallery carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "healthcare_clinic",
+        "label_tr": "Sağlık Kliniği",
+        "label_en": "Healthcare Clinic",
+        "aliases": ["clinic", "medical", "dental", "physiotherapy", "dermatology"],
+        "sort_order": 40,
+        "instances": [
+            _inst("service_overview_post", "Hizmet özeti", "Service overview", "post"),
+            _inst("expert_intro_post", "Uzman tanıtım", "Expert intro", "post"),
+            _inst("clinic_trust_post", "Klinik güven", "Clinic trust", "post"),
+            _inst("patient_story_post", "Hasta hikayesi", "Patient story", "post"),
+            _inst("health_tip_post", "Sağlık ipucu", "Health tip", "post"),
+            _inst("appointment_cta_post", "Randevu CTA", "Appointment CTA", "post"),
+            _inst("technology_highlight_post", "Teknoloji öne çıkan", "Technology highlight", "post"),
+            _inst("seasonal_checkup_post", "Mevsimsel kontrol", "Seasonal checkup", "post"),
+            _inst("consultation_story", "Konsültasyon story", "Consultation story", "story"),
+            _inst("faq_story", "SSS story", "FAQ story", "story"),
+            _inst("reminder_story", "Hatırlatma story", "Reminder story", "story"),
+            _inst("facility_tour_reel", "Tesis turu reel", "Facility tour reel", "reel"),
+            _inst("expert_advice_reel", "Uzman tavsiye reel", "Expert advice reel", "reel"),
+            _inst("services_carousel", "Hizmetler carousel", "Services carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "wedding_event",
+        "label_tr": "Düğün & Etkinlik",
+        "label_en": "Wedding & Event",
+        "aliases": ["wedding", "event_venue", "wedding_planner", "banquet"],
+        "sort_order": 45,
+        "instances": [
+            _inst("venue_showcase_post", "Mekan vitrin", "Venue showcase", "post"),
+            _inst("bridal_inspiration_post", "Gelin ilham", "Bridal inspiration", "post"),
+            _inst("real_wedding_post", "Gerçek düğün", "Real wedding", "post"),
+            _inst("package_offer_post", "Paket teklifi", "Package offer", "post"),
+            _inst("vendor_spotlight_post", "Tedarikçi spotlight", "Vendor spotlight", "post"),
+            _inst("seasonal_trend_post", "Mevsimsel trend", "Seasonal trend", "post"),
+            _inst("client_testimonial_post", "Müşteri yorumu", "Client testimonial", "post"),
+            _inst("planning_tip_post", "Planlama ipucu", "Planning tip", "post"),
+            _inst("outdoor_ceremony_post", "Açık hava tören", "Outdoor ceremony", "post", ["requires:outdoor_terrace"]),
+            _inst("dj_reception_post", "DJ resepsiyon", "DJ reception", "post", ["requires:dj_stage"]),
+            _inst("save_date_story", "Save the date story", "Save the date story", "story"),
+            _inst("behind_setup_story", "Kurulum kulis story", "Behind setup story", "story"),
+            _inst("availability_story", "Müsaitlik story", "Availability story", "story"),
+            _inst("floral_detail_story", "Çiçek detay story", "Floral detail story", "story"),
+            _inst("venue_walkthrough_reel", "Mekan walkthrough reel", "Venue walkthrough reel", "reel"),
+            _inst("ceremony_moments_reel", "Tören anları reel", "Ceremony moments reel", "reel"),
+            _inst("reception_energy_reel", "Resepsiyon enerji reel", "Reception energy reel", "reel", ["requires:live_music"]),
+            _inst("portfolio_carousel", "Portfolyo carousel", "Portfolio carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "local_products_shop",
+        "label_tr": "Yerel Ürün Dükkanı",
+        "label_en": "Local Products Shop",
+        "aliases": ["local_shop", "artisan_shop", "farm_shop", "handmade_shop"],
+        "sort_order": 48,
+        "instances": [
+            _inst("product_hero_post", "Ürün hero", "Product hero", "post"),
+            _inst("maker_story_post", "Üretici hikayesi", "Maker story", "post"),
+            _inst("seasonal_harvest_post", "Mevsimsel hasat", "Seasonal harvest", "post"),
+            _inst("shop_ambiance_post", "Dükkan atmosferi", "Shop ambiance", "post"),
+            _inst("customer_favorite_post", "Müşteri favorisi", "Customer favorite", "post"),
+            _inst("limited_batch_post", "Sınırlı parti", "Limited batch", "post"),
+            _inst("gift_bundle_post", "Hediye paketi", "Gift bundle", "post"),
+            _inst("market_day_post", "Pazar günü", "Market day", "post"),
+            _inst("new_arrival_story", "Yeni gelen story", "New arrival story", "story"),
+            _inst("production_bts_story", "Üretim kulis story", "Production BTS story", "story"),
+            _inst("farm_visit_story", "Çiftlik ziyareti story", "Farm visit story", "story"),
+            _inst("weekend_hours_story", "Hafta sonu saat story", "Weekend hours story", "story"),
+            _inst("product_detail_reel", "Ürün detay reel", "Product detail reel", "reel"),
+            _inst("shop_tour_reel", "Dükkan turu reel", "Shop tour reel", "reel"),
+            _inst("craft_process_reel", "El işi süreç reel", "Craft process reel", "reel"),
+            _inst("product_range_carousel", "Ürün yelpazesi carousel", "Product range carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "ecommerce_retail",
+        "label_tr": "E-Ticaret & Perakende",
+        "label_en": "E-commerce & Retail",
+        "aliases": ["retail", "ecommerce", "fashion", "boutique", "handmade_product"],
+        "sort_order": 50,
+        "instances": [
+            _inst("product_hero_post", "Ürün hero", "Product hero", "post"),
+            _inst("new_arrival_post", "Yeni gelen", "New arrival", "post"),
+            _inst("bestseller_spotlight_post", "Çok satan spotlight", "Bestseller spotlight", "post"),
+            _inst("outfit_styling_post", "Kombin styling", "Outfit styling", "post"),
+            _inst("sale_announcement_post", "İndirim duyurusu", "Sale announcement", "post"),
+            _inst("ugc_customer_post", "UGC müşteri", "UGC customer", "post"),
+            _inst("limited_drop_post", "Limited drop", "Limited drop", "post"),
+            _inst("gift_guide_post", "Hediye rehberi", "Gift guide", "post"),
+            _inst("restock_alert_post", "Stok uyarısı", "Restock alert", "post"),
+            _inst("brand_story_post", "Marka hikayesi", "Brand story", "post"),
+            _inst("flash_sale_story", "Flash sale story", "Flash sale story", "story"),
+            _inst("new_collection_story", "Yeni koleksiyon story", "New collection story", "story"),
+            _inst("styling_tip_story", "Styling ipucu story", "Styling tip story", "story"),
+            _inst("behind_brand_story", "Marka perde arkası story", "Behind brand story", "story"),
+            _inst("customer_review_story", "Müşteri yorum story", "Customer review story", "story"),
+            _inst("product_detail_reel", "Ürün detay reel", "Product detail reel", "reel"),
+            _inst("lookbook_reel", "Lookbook reel", "Lookbook reel", "reel"),
+            _inst("unboxing_reel", "Unboxing reel", "Unboxing reel", "reel"),
+            _inst("warehouse_bts_reel", "Depo kulis reel", "Warehouse BTS reel", "reel"),
+            _inst("multi_product_carousel", "Çoklu ürün carousel", "Multi product carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "fitness_gym",
+        "label_tr": "Fitness & Gym",
+        "label_en": "Fitness & Gym",
+        "aliases": ["fitness", "gym", "yoga_studio", "crossfit", "pilates"],
+        "sort_order": 55,
+        "instances": [
+            _inst("class_schedule_post", "Ders programı", "Class schedule", "post", ["requires:classes"]),
+            _inst("trainer_spotlight_post", "Antrenör spotlight", "Trainer spotlight", "post"),
+            _inst("transformation_post", "Dönüşüm", "Transformation", "post"),
+            _inst("facility_tour_post", "Tesis turu", "Facility tour", "post"),
+            _inst("membership_offer_post", "Üyelik teklifi", "Membership offer", "post"),
+            _inst("nutrition_tip_post", "Beslenme ipucu", "Nutrition tip", "post"),
+            _inst("group_class_post", "Grup dersi", "Group class", "post", ["requires:classes"]),
+            _inst("personal_training_post", "Kişisel antrenman", "Personal training", "post"),
+            _inst("member_story_post", "Üye hikayesi", "Member story", "post"),
+            _inst("equipment_highlight_post", "Ekipman öne çıkan", "Equipment highlight", "post"),
+            _inst("class_reminder_story", "Ders hatırlatma story", "Class reminder story", "story", ["requires:classes"]),
+            _inst("challenge_launch_story", "Challenge lansman story", "Challenge launch story", "story"),
+            _inst("morning_motivation_story", "Sabah motivasyon story", "Morning motivation story", "story"),
+            _inst("trial_pass_story", "Deneme pass story", "Trial pass story", "story"),
+            _inst("pt_availability_story", "PT müsaitlik story", "PT availability story", "story"),
+            _inst("workout_highlight_reel", "Antrenman highlight reel", "Workout highlight reel", "reel"),
+            _inst("class_energy_reel", "Ders enerji reel", "Class energy reel", "reel", ["requires:classes"]),
+            _inst("trainer_demo_reel", "Antrenör demo reel", "Trainer demo reel", "reel"),
+            _inst("member_testimonial_reel", "Üye testimonial reel", "Member testimonial reel", "reel"),
+            _inst("program_overview_carousel", "Program genel bakış carousel", "Program overview carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "nightclub",
+        "label_tr": "Gece Kulübü",
+        "label_en": "Nightclub",
+        "aliases": ["club", "dance_club", "lounge_bar", "cocktail_lounge"],
+        "sort_order": 58,
+        "instances": [
+            _inst("dj_lineup_post", "DJ lineup", "DJ lineup", "post", ["requires:dj_stage"]),
+            _inst("theme_night_post", "Tema gecesi", "Theme night", "post"),
+            _inst("vip_table_post", "VIP masa", "VIP table", "post", ["requires:private_events"]),
+            _inst("venue_energy_post", "Mekan enerji", "Venue energy", "post"),
+            _inst("guest_moments_post", "Misafir anları", "Guest moments", "post"),
+            _inst("bottle_service_post", "Şişe servis", "Bottle service", "post"),
+            _inst("weekend_teaser_post", "Hafta sonu teaser", "Weekend teaser", "post"),
+            _inst("social_proof_post", "Sosyal kanıt", "Social proof", "post"),
+            _inst("guestlist_story", "Guestlist story", "Guestlist story", "story"),
+            _inst("dj_announce_story", "DJ duyuru story", "DJ announce story", "story", ["requires:dj_stage"]),
+            _inst("door_time_story", "Kapı saati story", "Door time story", "story"),
+            _inst("aftermovie_teaser_story", "Aftermovie teaser story", "Aftermovie teaser story", "story"),
+            _inst("crowd_energy_reel", "Kalabalık enerji reel", "Crowd energy reel", "reel"),
+            _inst("dj_set_reel", "DJ set reel", "DJ set reel", "reel", ["requires:dj_stage"]),
+            _inst("light_show_reel", "Işık gösterisi reel", "Light show reel", "reel"),
+            _inst("event_highlights_carousel", "Etkinlik öne çıkanlar carousel", "Event highlights carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "fashion_boutique",
+        "label_tr": "Moda Butiği",
+        "label_en": "Fashion Boutique",
+        "aliases": ["boutique", "fashion_store", "designer_boutique", "apparel"],
+        "sort_order": 60,
+        "instances": [
+            _inst("lookbook_hero_post", "Lookbook hero", "Lookbook hero", "post"),
+            _inst("new_collection_post", "Yeni koleksiyon", "New collection", "post"),
+            _inst("styling_inspiration_post", "Styling ilham", "Styling inspiration", "post"),
+            _inst("bestseller_post", "Çok satan", "Bestseller", "post"),
+            _inst("seasonal_trend_post", "Mevsimsel trend", "Seasonal trend", "post"),
+            _inst("client_look_post", "Müşteri kombin", "Client look", "post"),
+            _inst("sale_event_post", "İndirim etkinlik", "Sale event", "post"),
+            _inst("brand_story_post", "Marka hikayesi", "Brand story", "post"),
+            _inst("fitting_room_story", "Kabin story", "Fitting room story", "story"),
+            _inst("stylist_pick_story", "Stilist seçimi story", "Stylist pick story", "story"),
+            _inst("new_arrival_story", "Yeni gelen story", "New arrival story", "story"),
+            _inst("weekend_hours_story", "Hafta sonu saat story", "Weekend hours story", "story"),
+            _inst("runway_style_reel", "Runway stil reel", "Runway style reel", "reel"),
+            _inst("outfit_transition_reel", "Kombin geçiş reel", "Outfit transition reel", "reel"),
+            _inst("boutique_tour_reel", "Butik turu reel", "Boutique tour reel", "reel"),
+            _inst("collection_carousel", "Koleksiyon carousel", "Collection carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "bakery_patisserie",
+        "label_tr": "Fırın & Pastane",
+        "label_en": "Bakery & Patisserie",
+        "aliases": ["bakery", "patisserie", "pastry_shop", "cake_shop"],
+        "sort_order": 62,
+        "instances": [
+            _inst("signature_pastry_post", "İmza pasta", "Signature pastry", "post"),
+            _inst("daily_fresh_post", "Günlük taze", "Daily fresh", "post"),
+            _inst("custom_cake_post", "Özel pasta", "Custom cake", "post"),
+            _inst("bakery_ambiance_post", "Fırın atmosferi", "Bakery ambiance", "post"),
+            _inst("seasonal_flavor_post", "Mevsimsel lezzet", "Seasonal flavor", "post"),
+            _inst("customer_favorite_post", "Müşteri favorisi", "Customer favorite", "post"),
+            _inst("catering_offer_post", "Catering teklifi", "Catering offer", "post", ["requires:private_events"]),
+            _inst("morning_batch_post", "Sabah fırını", "Morning batch", "post"),
+            _inst("oven_bts_story", "Fırın kulis story", "Oven BTS story", "story"),
+            _inst("new_recipe_story", "Yeni tarif story", "New recipe story", "story"),
+            _inst("order_reminder_story", "Sipariş hatırlatma story", "Order reminder story", "story"),
+            _inst("weekend_special_story", "Hafta sonu özel story", "Weekend special story", "story"),
+            _inst("decorating_process_reel", "Süsleme süreç reel", "Decorating process reel", "reel"),
+            _inst("fresh_from_oven_reel", "Fırından taze reel", "Fresh from oven reel", "reel"),
+            _inst("display_case_reel", "Vitrin reel", "Display case reel", "reel"),
+            _inst("pastry_range_carousel", "Pastane yelpazesi carousel", "Pastry range carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "real_estate",
+        "label_tr": "Emlak",
+        "label_en": "Real Estate",
+        "aliases": ["realty", "property", "realtor", "housing"],
+        "sort_order": 65,
+        "instances": [
+            _inst("listing_hero_post", "İlan hero", "Listing hero", "post"),
+            _inst("property_tour_post", "Mülk turu", "Property tour", "post"),
+            _inst("neighborhood_highlight_post", "Mahalle öne çıkan", "Neighborhood highlight", "post"),
+            _inst("agent_intro_post", "Danışman tanıtım", "Agent intro", "post"),
+            _inst("sold_success_post", "Satıldı başarı", "Sold success", "post"),
+            _inst("market_insight_post", "Piyasa içgörü", "Market insight", "post"),
+            _inst("open_house_post", "Açık ev", "Open house", "post"),
+            _inst("client_testimonial_post", "Müşteri yorumu", "Client testimonial", "post"),
+            _inst("new_listing_story", "Yeni ilan story", "New listing story", "story"),
+            _inst("viewing_reminder_story", "Görüntüleme hatırlatma story", "Viewing reminder story", "story"),
+            _inst("price_update_story", "Fiyat güncelleme story", "Price update story", "story"),
+            _inst("walkthrough_reel", "Walkthrough reel", "Walkthrough reel", "reel"),
+            _inst("aerial_property_reel", "Havadan mülk reel", "Aerial property reel", "reel"),
+            _inst("portfolio_carousel", "Portfolyo carousel", "Portfolio carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "local_service_business",
+        "label_tr": "Yerel Hizmet İşletmesi",
+        "label_en": "Local Service Business",
+        "aliases": ["local_service", "home_service", "repair", "cleaning", "plumber"],
+        "sort_order": 70,
+        "instances": [
+            _inst("service_hero_post", "Hizmet hero", "Service hero", "post"),
+            _inst("before_after_post", "Önce sonra", "Before after", "post"),
+            _inst("team_intro_post", "Ekip tanıtım", "Team intro", "post"),
+            _inst("customer_review_post", "Müşteri yorumu", "Customer review", "post"),
+            _inst("seasonal_offer_post", "Mevsimsel teklif", "Seasonal offer", "post"),
+            _inst("service_area_post", "Hizmet bölgesi", "Service area", "post"),
+            _inst("booking_cta_story", "Rezervasyon CTA story", "Booking CTA story", "story"),
+            _inst("tip_of_week_story", "Haftanın ipucu story", "Tip of week story", "story"),
+            _inst("job_complete_story", "İş tamamlandı story", "Job complete story", "story"),
+            _inst("work_process_reel", "İş süreç reel", "Work process reel", "reel"),
+            _inst("team_in_action_reel", "Ekip aksiyon reel", "Team in action reel", "reel"),
+            _inst("services_carousel", "Hizmetler carousel", "Services carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "general_business",
+        "label_tr": "Genel İşletme",
+        "label_en": "General Business",
+        "aliases": ["business", "company", "startup", "b2b"],
+        "sort_order": 99,
+        "instances": [
+            _inst("brand_intro_post", "Marka tanıtım", "Brand intro", "post"),
+            _inst("value_proposition_post", "Değer önerisi", "Value proposition", "post"),
+            _inst("team_spotlight_post", "Ekip spotlight", "Team spotlight", "post"),
+            _inst("customer_success_post", "Müşteri başarısı", "Customer success", "post"),
+            _inst("announcement_post", "Duyuru", "Announcement", "post"),
+            _inst("behind_scenes_post", "Perde arkası", "Behind scenes", "post"),
+            _inst("news_update_story", "Haber güncelleme story", "News update story", "story"),
+            _inst("tip_insight_story", "İpucu içgörü story", "Tip insight story", "story"),
+            _inst("event_invite_story", "Etkinlik davet story", "Event invite story", "story"),
+            _inst("brand_story_reel", "Marka hikaye reel", "Brand story reel", "reel"),
+            _inst("office_culture_reel", "Ofis kültür reel", "Office culture reel", "reel"),
+            _inst("highlights_carousel", "Öne çıkanlar carousel", "Highlights carousel", "carousel"),
+        ],
+    },
+]
+
+
+def build_sector_seed() -> list[dict]:
+    return [
+        {
+            "sector_id": p["sector_id"],
+            "label_tr": p["label_tr"],
+            "label_en": p["label_en"],
+            "aliases": p.get("aliases", []),
+            "sort_order": p.get("sort_order", 0),
+        }
+        for p in SECTOR_SLOT_PACKS
+    ]
+
+
+def build_slot_keys_by_sector() -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for pack in SECTOR_SLOT_PACKS:
+        sid = pack["sector_id"]
+        out[sid] = [f"{sid}_{inst['suffix']}" for inst in pack["instances"]]
+    return out
+
+
+def build_optional_tags_by_slot() -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for pack in SECTOR_SLOT_PACKS:
+        sid = pack["sector_id"]
+        for inst in pack["instances"]:
+            tags = inst.get("optional_tags")
+            if tags:
+                out[f"{sid}_{inst['suffix']}"] = tags
+    return out
+
+
+SECTOR_SEED = build_sector_seed()
+SLOT_KEYS_BY_SECTOR = build_slot_keys_by_sector()
+OPTIONAL_TAGS_BY_SLOT = build_optional_tags_by_slot()

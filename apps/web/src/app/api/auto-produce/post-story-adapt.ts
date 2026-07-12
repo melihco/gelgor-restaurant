@@ -4,10 +4,7 @@
  * When ideation is short or story production fails, reuse successfully produced
  * feed posts as story alternatives (same brief, different format — not duplicate spam).
  */
-import {
-  assignmentImpliesStoryFormat,
-  shouldRenderRemotionStory,
-} from '@/lib/production-pipeline-router';
+import { assignmentImpliesStoryFormat } from '@/lib/production-pipeline-router';
 import type { ManifestProductionQueueItem } from '@/lib/auto-produce/build-production-queue';
 import {
   findMissionSlotBackfillItems,
@@ -17,7 +14,6 @@ import {
 import { missionStoryLibrarySlotKey } from '@/lib/mission-story-template';
 import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
-import type { StoryCandidate } from './production-candidate-types';
 import type { NexusClient } from './nexus-client';
 import type { OutputArtifact } from '@/types';
 
@@ -228,7 +224,6 @@ export interface PostStoryAdaptOutcome {
   attempted: boolean;
   adapted: number;
   results: ProductionRunResultRow[];
-  storyCandidates: StoryCandidate[];
   costEstimate: number;
 }
 
@@ -265,13 +260,11 @@ export async function deriveStoriesFromPostsForEmptySlots(
       attempted: false,
       adapted: 0,
       results: [],
-      storyCandidates: [],
       costEstimate: 0,
     };
   }
 
   const results: ProductionRunResultRow[] = [];
-  const storyCandidates: StoryCandidate[] = [];
   let costEstimate = 0;
   let storyOrdinal = 0;
 
@@ -280,14 +273,13 @@ export async function deriveStoriesFromPostsForEmptySlots(
     const photoUrl = source.referencePhotoUrl || source.imageUrl;
     if (!photoUrl) continue;
 
-    const willRemotionStory = shouldRenderRemotionStory(assignment);
     const effectiveFmt = 'story';
-    const effectiveKind = willRemotionStory ? 'instagram_story' : 'instagram_story';
-    const ideaId = `${ctx.missionId}-${slot.ideaIndex}-adapt-${source.artifactId.slice(0, 8)}`;
+    const effectiveKind = 'instagram_story';
     const headline = source.headline || ctx.brandName;
     const caption = source.caption || headline;
     const storySlotKey = assignment.library_slot_key
       ?? missionStoryLibrarySlotKey(ctx.templateLibrary, storyOrdinal);
+    const persistUrl = source.imageUrl || photoUrl;
 
     const metadata: Record<string, unknown> = {
       auto_produced: true,
@@ -312,17 +304,11 @@ export async function deriveStoriesFromPostsForEmptySlots(
       publish_package: 'primary',
       publish_priority: 'extended',
       reference_photo_url: photoUrl,
-      imageUrl: willRemotionStory ? photoUrl : (source.imageUrl || photoUrl),
+      imageUrl: persistUrl,
       gallery_sourced: true,
-      cost_usd_estimate: willRemotionStory ? 0.01 : 0.002,
+      cost_usd_estimate: 0.002,
       ...(source.mood ? { mood: source.mood } : {}),
       ...(source.treatment ? { treatment: source.treatment } : {}),
-      ...(willRemotionStory ? {
-        production_bundle: true,
-        bundle_status: 'rendering',
-        remotion_mission_story: true,
-        idea_id: ideaId,
-      } : {}),
     };
 
     const contentJson = JSON.stringify({
@@ -331,7 +317,7 @@ export async function deriveStoriesFromPostsForEmptySlots(
       caption,
       hashtags: source.hashtags ?? [],
       headline,
-      imageUrl: metadata.imageUrl,
+      imageUrl: persistUrl,
       reference_photo_url: photoUrl,
       idea_index: slot.ideaIndex,
       mission_id: ctx.missionId,
@@ -339,7 +325,6 @@ export async function deriveStoriesFromPostsForEmptySlots(
       adapted_from_artifact_id: source.artifactId,
     });
 
-    const persistUrl = String(metadata.imageUrl ?? photoUrl);
     const saved = await ctx.nexusClient.saveArtifact(ctx.workspaceId, {
       title: `${headline} — Story`,
       contentUrl: persistUrl,
@@ -359,35 +344,17 @@ export async function deriveStoriesFromPostsForEmptySlots(
       continue;
     }
 
-    costEstimate += willRemotionStory ? 0.01 : 0.002;
+    costEstimate += 0.002;
     results.push({
       id: saved.id,
       title: `${headline} — Story`,
       imageUrl: persistUrl,
       error: saved.error,
-      publishReady: !willRemotionStory,
-      rendering: willRemotionStory,
+      publishReady: true,
+      rendering: false,
       slotKey: missionSlotRunKey(slot.ideaIndex, assignment.slot_role),
       metadata,
     });
-
-    if (willRemotionStory) {
-      storyCandidates.push({
-        headline,
-        caption,
-        voiceoverCaption: caption,
-        photoUrl,
-        artifactId: saved.id,
-        ideaId,
-        treatment: source.treatment,
-        mood: source.mood,
-        templateUseCase: source.templateUseCase,
-        slotRole: assignment.slot_role,
-        publishChannel: assignment.publish_channel,
-        ideaIndex: slot.ideaIndex,
-        librarySlotKey: storySlotKey,
-      });
-    }
 
     storyOrdinal += 1;
     console.log(
@@ -401,7 +368,6 @@ export async function deriveStoriesFromPostsForEmptySlots(
     attempted: results.length > 0,
     adapted: results.filter((r) => r.id && !r.error).length,
     results,
-    storyCandidates,
     costEstimate,
   };
 }

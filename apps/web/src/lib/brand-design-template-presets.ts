@@ -42,6 +42,8 @@ export interface DesignTemplatePreset {
   matchKeywords: string;
   /** Whether the brand logo should be embedded prominently. */
   prominentLogo: boolean;
+  /** Catalog slot key when preset is derived from production_slot_definitions. */
+  catalogSlotKey?: string;
 }
 
 /** Sector-tailored noun for the brand's primary "product" surface. */

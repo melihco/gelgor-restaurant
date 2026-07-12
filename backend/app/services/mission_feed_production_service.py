@@ -339,13 +339,18 @@ async def kick_feed_production(
     )
     from app.config import get_settings
 
-    op_priority = get_settings().production_operator_job_priority
+    settings = get_settings()
+    op_priority = settings.production_operator_job_priority
     await pj.boost_mission_job_priority(mission_id, priority=op_priority)
 
     # Operator kick resumes stalled factory drains (e.g. dev reload dropped the
     # asyncio task while jobs stayed in running/claimed). Do NOT release the
     # feed production lock here — that causes parallel auto-produce → fal.ai storms.
-    reclaimed = await pj.reclaim_stale_jobs(mission_id)
+    if settings.use_bullmq_executor:
+        # BullMQ marks jobs running at enqueue; recycle all in-flight on operator kick.
+        reclaimed = await pj.reclaim_inflight_jobs(mission_id)
+    else:
+        reclaimed = await pj.reclaim_stale_jobs(mission_id)
     summary = await pj.mission_job_summary(mission_id)
     factory_total = int(summary.get("total") or 0)
     factory_complete = bool(summary.get("complete"))

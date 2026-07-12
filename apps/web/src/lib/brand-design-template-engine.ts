@@ -18,9 +18,13 @@ import {
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
 import {
-  resolveFalDesignIntensityForChannel,
-  type FalDesignChannel,
-} from '@/lib/fal-design-intensity';
+  resolveFalTemplateIntensityForChannel,
+  resolveFalTemplateBackgroundStyle,
+  shouldProminentLogoInFalTemplate,
+  applyFalProductionOverridesToTheme,
+  type BrandFalTemplateProductionConfig,
+} from '@/lib/fal-template-production-settings';
+import type { FalDesignChannel } from '@/lib/fal-design-intensity';
 import {
   isTypographyDesignConfirmed,
   readTypographyDesignConfig,
@@ -79,6 +83,12 @@ export interface DesignTemplateEngineInput {
   limit?: number;
   /** Parallelism for generation calls (default 3). */
   concurrency?: number;
+  /** When set, overrides sector default presets (catalog-driven onboarding). */
+  presets?: DesignTemplatePreset[];
+  /** Transient fal_template_production overrides (slot preview / compare). */
+  productionOverrides?: Partial<BrandFalTemplateProductionConfig>;
+  /** Ideogram-only fast path for onboarding batch (~60s/slot). Default true. */
+  templatePreviewMode?: boolean;
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -89,6 +99,7 @@ export interface GeneratedDesignTemplate {
   thumbnail_url: string | null;
   sector_category: string | null;
   locale: string | null;
+  catalog_slot_key?: string | null;
   design_spec: {
     prompt: string;
     vibe: TypographyVibe;
@@ -106,6 +117,8 @@ export interface GeneratedDesignTemplate {
     generator: 'gpt-image-1' | 'fal-ideogram' | 'none';
     /** Per-channel design intensity applied during generation. */
     designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
+    /** Catalog slot key when preset came from production_slot_definitions. */
+    catalogSlotKey?: string | null;
   };
 }
 
@@ -203,14 +216,17 @@ async function generateOne(
   special?: EngineSpecialDay,
 ): Promise<GeneratedDesignTemplate> {
   const { headline, subtitle, sceneHint, occasion } = resolveCopy(preset, input, special);
-  const theme = input.brandTheme ?? null;
+  const theme = applyFalProductionOverridesToTheme(
+    input.brandTheme ?? null,
+    input.productionOverrides,
+  );
   const typographyConfig = readTypographyDesignConfig(theme);
   const intensityChannel: FalDesignChannel = preset.format === 'reel_cover'
     ? 'reel'
     : preset.format === 'story'
       ? 'story'
       : 'post';
-  const designIntensityLevel = resolveFalDesignIntensityForChannel(theme, intensityChannel);
+  const designIntensityLevel = resolveFalTemplateIntensityForChannel(theme, intensityChannel);
   const vibe = isTypographyDesignConfirmed(theme) && typographyConfig?.vibe
     ? typographyConfig.vibe
     : resolveTypographyVibeFromContext({
@@ -223,9 +239,11 @@ async function generateOne(
     });
   const picked = pickPhotoForPreset(preset, input, usedUrls);
   if (picked) usedUrls.add(normalizeGalleryUrl(picked.url));
-  const backgroundStyle: TypographyBackgroundStyle = picked?.url
-    ? 'photo_overlay'
-    : ((typographyConfig?.background_style as TypographyBackgroundStyle | undefined) ?? 'gradient_mesh');
+  const backgroundStyle: TypographyBackgroundStyle = resolveFalTemplateBackgroundStyle({
+    theme,
+    referencePhotoUrl: picked?.url,
+  });
+  const prominentLogo = shouldProminentLogoInFalTemplate(theme, preset.prominentLogo);
   const antiPatternDirective = (input.antiPatterns ?? []).length
     ? `Avoid: ${input.antiPatterns!.slice(0, 6).join('; ')}.`
     : undefined;
@@ -274,11 +292,12 @@ async function generateOne(
         sceneHint,
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
-        logoUrl: preset.prominentLogo ? input.logoUrl : undefined,
+        logoUrl: prominentLogo ? input.logoUrl : undefined,
         location: input.location,
         sector: input.sector,
         captionAwareHeadline: false,
         grafikerMaxRetries: 0,
+        templatePreviewMode: input.templatePreviewMode !== false,
         occasion,
       });
       if (!still.imageUrl) return false;
@@ -298,7 +317,9 @@ async function generateOne(
     await tryFalPreview();
   }
 
-  if (!thumbnailUrl && picked && !serverConfig.imageGen.preferFalDesignedPosts) {
+  const allowGptFallback = !serverConfig.imageGen.preferFalDesignedPosts
+    || input.templatePreviewMode !== false;
+  if (!thumbnailUrl && picked && allowGptFallback) {
     try {
       const generated = await generateDesignedPostImage({
         workspaceId: input.workspaceId,
@@ -311,7 +332,7 @@ async function generateOne(
         format: imageFormatForFormat(preset.format),
         location: input.location,
         businessType: input.sector,
-        logoUrl: preset.prominentLogo ? input.logoUrl : undefined,
+        logoUrl: prominentLogo ? input.logoUrl : undefined,
         overlayColor: input.brandColors.primary,
         backgroundIntent: sceneHint,
       });
@@ -338,6 +359,7 @@ async function generateOne(
     thumbnail_url: thumbnailUrl,
     sector_category: input.sector || null,
     locale: input.locale ?? 'tr',
+    catalog_slot_key: preset.catalogSlotKey ?? null,
     design_spec: {
       prompt,
       vibe,
@@ -347,9 +369,10 @@ async function generateOne(
       galleryRef: picked?.url ?? null,
       galleryMatchScore: picked?.score ?? null,
       intent: preset.intent,
-      prominentLogo: preset.prominentLogo,
+      prominentLogo,
       logoUrl: input.logoUrl,
       designIntensityLevel,
+      catalogSlotKey: preset.catalogSlotKey ?? null,
       ...(special
         ? { specialDay: { name: special.name, mmdd: special.mmdd, category: special.category } }
         : {}),
@@ -372,32 +395,52 @@ async function mirrorPreview(url: string, workspaceId: string): Promise<string |
 }
 
 /**
+ * Build generation jobs. Legacy `event_special` presets (no catalog slot) expand
+ * into one template per upcoming country special day. Catalog-bound venue event
+ * slots (e.g. dj_night_teaser) stay a single job — they are not national holidays.
+ */
+export function buildDesignTemplateGenerationJobs(
+  presets: DesignTemplatePreset[],
+  specialDays: EngineSpecialDay[] = [],
+  maxSpecialDays = 4,
+): Array<{ preset: DesignTemplatePreset; special?: EngineSpecialDay }> {
+  const days = specialDays.slice(0, maxSpecialDays);
+  const jobs: Array<{ preset: DesignTemplatePreset; special?: EngineSpecialDay }> = [];
+  for (const preset of presets) {
+    const expandForSpecialDays = preset.templateType === 'event_special'
+      && days.length > 0
+      && !preset.catalogSlotKey;
+    if (expandForSpecialDays) {
+      for (const sd of days) jobs.push({ preset, special: sd });
+    } else {
+      jobs.push({ preset });
+    }
+  }
+  return jobs;
+}
+
+/**
  * Generate the brand's design-template set. Runs presets with bounded
  * concurrency and never throws on individual failures — partial sets are valid.
  */
 export async function generateBrandDesignTemplates(
   input: DesignTemplateEngineInput,
 ): Promise<DesignTemplateEngineResult> {
-  const presets = resolveDesignTemplatePresets(input.sector);
+  const basePresets = input.presets?.length
+    ? input.presets
+    : resolveDesignTemplatePresets(input.sector);
   const selected = typeof input.limit === 'number'
-    ? presets.slice(0, input.limit)
-    : presets;
+    ? basePresets.slice(0, input.limit)
+    : basePresets;
   const concurrency = Math.max(1, input.concurrency ?? 3);
   const usedUrls = new Set<string>();
   const templates: GeneratedDesignTemplate[] = [];
 
-  // Build the generation job list. The event_special preset expands into one
-  // brand-consistent template per upcoming country special day so the brand has
-  // a ready-to-publish creative for every occasion from day one.
-  const specialDays = (input.specialDays ?? []).slice(0, input.maxSpecialDays ?? 4);
-  const jobs: Array<{ preset: DesignTemplatePreset; special?: EngineSpecialDay }> = [];
-  for (const preset of selected) {
-    if (preset.templateType === 'event_special' && specialDays.length > 0) {
-      for (const sd of specialDays) jobs.push({ preset, special: sd });
-    } else {
-      jobs.push({ preset });
-    }
-  }
+  const jobs = buildDesignTemplateGenerationJobs(
+    selected,
+    input.specialDays ?? [],
+    input.maxSpecialDays ?? 4,
+  );
 
   // Process in bounded-concurrency batches. usedUrls is mutated across batches
   // so photo dedup holds; within a batch picks may overlap (acceptable).
@@ -415,4 +458,20 @@ export async function generateBrandDesignTemplates(
     generated,
     failed: templates.length - generated,
   };
+}
+
+/** Generate one catalog/onboarding preset — used for per-slot Fal preview & compare. */
+export async function generateSingleDesignTemplatePreset(
+  input: DesignTemplateEngineInput,
+  preset: DesignTemplatePreset,
+  options?: { productionOverrides?: Partial<BrandFalTemplateProductionConfig> },
+): Promise<GeneratedDesignTemplate> {
+  return generateOne(
+    preset,
+    {
+      ...input,
+      productionOverrides: options?.productionOverrides ?? input.productionOverrides,
+    },
+    new Set<string>(),
+  );
 }

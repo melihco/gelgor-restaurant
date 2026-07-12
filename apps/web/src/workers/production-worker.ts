@@ -1,19 +1,7 @@
-/**
- * BullMQ production worker — consumes the `production:slots` queue.
- *
- * Each job is a claimed slot batch (1-5 slots) enqueued by the Python production
- * factory. The worker:
- *   1. Executes the pipeline via the internal /api/auto-produce endpoint.
- *   2. Calls back to Python (/internal/v1/production-jobs/complete) so the claimed
- *      production_jobs rows are marked ready/failed by slot key.
- *
- * Distributed concurrency control (replaces Python's sequential per-mission drain):
- *   - `PRODUCTION_WORKER_CONCURRENCY` jobs run in parallel PER worker process.
- *   - A BullMQ rate limiter caps global throughput (protects fal.ai / OpenAI quotas).
- * Scale horizontally by running multiple worker processes/containers.
- *
- * Run:  tsx src/workers/production-worker.ts   (or: npm run worker:production)
- */
+import { loadLocalEnv } from './load-local-env';
+
+// Must run before queue-client reads process.env.REDIS_URL.
+loadLocalEnv();
 
 import { Worker, type Job } from 'bullmq';
 import { getQueueConnection, PRODUCTION_SLOTS_QUEUE, type ProductionSlotJobData } from '../lib/queue-client';
@@ -83,6 +71,12 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
     produceData = { error: err instanceof Error ? err.message : 'auto-produce fetch failed' };
   } finally {
     clearTimeout(fetchTimer);
+  }
+
+  if (httpStatus === 0) {
+    console.warn(
+      `[production-worker] auto-produce unreachable mission=${missionId} error=${String(produceData.error ?? 'unknown')}`,
+    );
   }
 
   // 2. Call back to Python to mark each claimed job ready/failed by slot key.

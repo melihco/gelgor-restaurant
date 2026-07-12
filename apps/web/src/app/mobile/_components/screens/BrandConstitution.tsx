@@ -30,7 +30,7 @@ import {
   buildCompanyProfilePatchFromPython,
   isCompanyProfileSparse,
 } from '@/lib/sync-company-profile-from-python';
-import { shouldRefreshIndustryFromPython } from '@/lib/canonical-sector';
+import { resolveTenantCanonicalSector, shouldRefreshIndustryFromPython } from '@/lib/canonical-sector';
 import { TENANT_INDUSTRY_PLAYBOOKS } from '@/lib/tenant-operating-policy';
 import {
   MOTION_STYLE_OPTIONS,
@@ -43,10 +43,6 @@ import { StoryAudioSettingsPanel } from '@/components/brand/StoryAudioSettingsPa
 import { ReelMotionSettingsPanel } from '@/components/brand/ReelMotionSettingsPanel';
 import { BrandProductShowcasePanel } from '@/components/brand/BrandProductShowcasePanel';
 import { BrandProductionEnginesPanel } from '@/components/brand/BrandProductionEnginesPanel';
-import {
-  deriveBrandTemplateLibrary,
-  ensureBrandTemplateLibrary,
-} from '@/lib/brand-template-library';
 import { TenantOperatingCapabilitiesEditor } from '@/components/brand/TenantOperatingCapabilitiesEditor';
 import { TenantGalleryPolicyBanner } from '@/components/brand/TenantGalleryPolicyBanner';
 import {
@@ -55,9 +51,7 @@ import {
 } from '@/lib/tenant-operating-policy';
 import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
-import { BrandTemplateLibraryPanel } from '@/components/brand/BrandTemplateLibraryPanel';
 import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePicker';
-import { BrandFalDesignIntensityPanel } from '@/components/brand/BrandFalDesignIntensityPanel';
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
 import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrategyPanel';
 import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
@@ -822,7 +816,7 @@ function PostDesignDefaultsPanel({
           <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
             Aktif Marka Standardı
           </div>
-          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 750, lineHeight: 1.45 }}>
+          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 700, lineHeight: 1.45 }}>
             {selectedFont.label} · {selectedEffect.label} · Logo: {selectedLogo.label}
           </div>
           <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
@@ -1003,7 +997,7 @@ function TypographyDesignPanel({
           <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
             Aktif Tipografi Stili
           </div>
-          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 750, lineHeight: 1.45 }}>
+          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 700, lineHeight: 1.45 }}>
             {TYPOGRAPHY_VIBE_LABELS[active.vibe].emoji} {TYPOGRAPHY_VIBE_LABELS[active.vibe].tr} · {active.background_style}
           </div>
           <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
@@ -2917,13 +2911,11 @@ export function BrandConstitution() {
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix } = useMobileStore();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
-  type TemplateTab = 'remotion' | 'fal' | 'intensity';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
   type IdentityGroup = 'basics' | 'channels' | 'about' | 'assets';
   const [tab, setTab] = useState<Tab>('identity');
   const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
   const [designGroup, setDesignGroup] = useState<DesignGroup | null>(null);
-  const [templateTab, setTemplateTab] = useState<TemplateTab>('remotion');
   const [contentGroup, setContentGroup] = useState<ContentGroup | null>(null);
   const [identityGroup, setIdentityGroup] = useState<IdentityGroup | null>(null);
   const [saved, setSaved] = useState(false);
@@ -2937,13 +2929,11 @@ export function BrandConstitution() {
     setDesignGroup(opts?.designGroup ?? null);
     setContentGroup(opts?.contentGroup ?? null);
     setIdentityGroup(opts?.identityGroup ?? null);
-    if (opts?.designGroup !== 'templates') setTemplateTab('remotion');
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
   const openDesignGroup = React.useCallback((g: DesignGroup | null) => {
     setDesignGroup(g);
-    if (g !== 'templates') setTemplateTab('remotion');
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
@@ -2974,7 +2964,6 @@ export function BrandConstitution() {
       setDesignGroup(target.designGroup ?? null);
       setContentGroup(target.contentGroup ?? null);
       setIdentityGroup(target.identityGroup ?? null);
-      if (target.designGroup !== 'templates') setTemplateTab('remotion');
       if (target.galleryGroup) setGalleryInitialGroup(target.galleryGroup);
       setFocusAnchor(target.anchor);
     } else if (brandReadinessFix) {
@@ -3004,12 +2993,6 @@ export function BrandConstitution() {
     enabled: Boolean(tenantId),
   });
 
-  const { data: scoreData } = useQuery({
-    queryKey: ['brand-style-score'],
-    queryFn: async () => { try { return await apiClient.getBrandStyleScore(); } catch { return null; } },
-    staleTime: 300_000,
-  });
-
   const { data: pyCtx, isError: pyCtxLoadFailed, error: pyCtxLoadError } = useQuery({
     queryKey: ['brand-context-data', tenantId],
     queryFn: () => apiClient.getBrandContextData(tenantId!),
@@ -3033,6 +3016,7 @@ export function BrandConstitution() {
   });
 
   const { data: productionReadiness } = useQuery<{
+    score?: number;
     productionProfile?: ProductionProfileReadinessResult;
   }>({
     queryKey: ['brand-readiness', tenantId],
@@ -3385,14 +3369,17 @@ export function BrandConstitution() {
 
   const p = profile as CompanyProfile & Record<string, unknown>;
   const brandNameDisplay = String(p.brandName || (pyCtx as any)?.business_name || '');
-  const industrySlug = String(p.industry || (pyCtx as any)?.industry || (pyCtx as any)?.business_type || '');
+  const industrySlug = resolveTenantCanonicalSector(
+    p,
+    pyCtx as Record<string, unknown> | undefined,
+  );
   const industryDisplay =
     TENANT_INDUSTRY_PLAYBOOKS.find((pb) => pb.id === industrySlug)?.label || industrySlug;
   const locationDisplay = String(p.location || (pyCtx as any)?.location || '');
   const websiteDisplay = String(p.websiteUrl || (pyCtx as any)?.website_url || '');
   const instagramDisplay = String((p as any).instagramHandle || (pyCtx as any)?.instagram_handle || '');
   const descriptionDisplay = String(p.description || (pyCtx as any)?.description || (pyCtx as any)?.website_summary || '');
-  const score         = scoreData?.score ?? (p as any).discoveryConfidence ?? 0;
+  const score         = productionReadiness?.score ?? (p as any).discoveryConfidence ?? 0;
   const logoCandidate = p.logoUrl || (pyCtx as any)?.logo_url || '';
   const logoUrl = resolveBrandLogoDisplayUrl(logoCandidate);
   const contentNeeds  = parseArr((p as any).contentNeeds);
@@ -3578,7 +3565,7 @@ export function BrandConstitution() {
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
-    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Story & fal.ai şablonları', accent: '#5AA0D6' },
+    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'fal.ai slot galerisi', accent: '#5AA0D6' },
     { key: 'engines', label: 'Üretim Motorları & Ses', hint: 'FAL · motion · müzik', accent: '#A985E0' },
     { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
     { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
@@ -3611,8 +3598,6 @@ export function BrandConstitution() {
 
   const statusColor = (s: NavStatus): string =>
     s === 'done' ? t.success : s === 'warn' ? '#F59E0B' : t.textMuted;
-  const statusGlyph = (s: NavStatus): string =>
-    s === 'done' ? '✓' : s === 'warn' ? '!' : '·';
 
   const monogram = (brandNameDisplay || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   const brandPrimary = String((pyCtx as any)?.brand_primary_color || (p as any).brandColors || t.accent).match(/#[0-9a-fA-F]{3,8}/)?.[0] || t.accent;
@@ -3659,67 +3644,116 @@ export function BrandConstitution() {
 
       {/* ── DASHBOARD VIEW ── */}
       {view === 'dashboard' && (
-        <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 8px) 20px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 10px) 20px 0' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
             <button
               type="button"
               onClick={goBack}
               aria-label="Geri"
-              style={{ width: 36, height: 36, borderRadius: 12, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', color: t.textSecondary, flexShrink: 0 }}
+              style={{
+                width: 40, height: 40, borderRadius: 14, border: `0.5px solid ${t.separator}`,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                color: t.textSecondary, flexShrink: 0,
+                boxShadow: t.isDark ? 'inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
+              }}
             >
               <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
-            <h1 style={{ fontSize: 26, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', margin: 0, lineHeight: 1.1 }}>
-              Marka Ayarları
-            </h1>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: 11, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase',
+                color: t.textMuted, marginBottom: 3,
+              }}
+              >
+                Marka merkezi
+              </div>
+              <h1 style={{
+                fontSize: 24, fontWeight: 700, color: t.textPrimary,
+                letterSpacing: '-0.04em', margin: 0, lineHeight: 1.05,
+              }}
+              >
+                Marka Ayarları
+              </h1>
+            </div>
           </div>
 
           {/* Brand hero card */}
           <div style={{
-            position: 'relative', marginBottom: 22, padding: 20, borderRadius: 24, overflow: 'hidden',
-            ...t.surfaceGroup,
-          }}>
-            <div style={{ position: 'absolute', top: -50, right: -40, width: 180, height: 180, borderRadius: '50%', background: brandPrimary, opacity: t.isDark ? 0.14 : 0.08, filter: 'blur(40px)', pointerEvents: 'none' }} />
-            <div style={{ position: 'absolute', inset: 0, background: brandPrimary, opacity: 0.03, pointerEvents: 'none' }} />
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+            position: 'relative', marginBottom: 20, padding: '18px 18px 16px', borderRadius: 26, overflow: 'hidden',
+            background: t.isDark
+              ? 'linear-gradient(165deg, rgba(22,28,38,0.96) 0%, rgba(12,16,24,0.98) 100%)'
+              : 'linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)',
+            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)'}`,
+            boxShadow: t.isDark
+              ? '0 18px 48px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.05)'
+              : '0 14px 36px rgba(15,23,42,0.08)',
+          }}
+          >
+            <div style={{ position: 'absolute', top: -60, right: -30, width: 200, height: 200, borderRadius: '50%', background: brandPrimary, opacity: t.isDark ? 0.12 : 0.07, filter: 'blur(48px)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', bottom: -40, left: -20, width: 140, height: 140, borderRadius: '50%', background: t.accent, opacity: t.isDark ? 0.06 : 0.04, filter: 'blur(40px)', pointerEvents: 'none' }} />
+
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
               <div style={{
-                width: 80, height: 80, borderRadius: 22, overflow: 'hidden', flexShrink: 0,
-                background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
+                width: 76, height: 76, borderRadius: 20, overflow: 'hidden', flexShrink: 0,
+                background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 6px 20px rgba(0,0,0,${t.isDark ? 0.4 : 0.14})`,
-                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
+                boxShadow: `0 8px 24px rgba(0,0,0,${t.isDark ? 0.35 : 0.12})`,
+                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
               }}>
                 {logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                 ) : (
-                  <span style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{monogram}</span>
+                  <span style={{ fontSize: 26, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{monogram}</span>
                 )}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+              <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.035em', lineHeight: 1.1 }}>
                     {brandNameDisplay || 'Marka adı'}
                   </span>
                   <span style={{
-                    padding: '3px 9px', borderRadius: 8, fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em',
-                    background: brsGood ? t.successDim : 'rgba(245,158,11,0.14)', color: brsGood ? t.success : '#F59E0B',
-                  }}>
-                    BRS {score}{brsGood ? ' ✓' : ''}
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    padding: '4px 10px 4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                    letterSpacing: '0.02em', textTransform: 'uppercase',
+                    background: brsGood ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
+                    color: brsGood ? '#34D399' : '#F59E0B',
+                    border: `0.5px solid ${brsGood ? 'rgba(52,211,153,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                  }}
+                  >
+                    <span style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: brsGood ? '#34D399' : '#F59E0B',
+                      boxShadow: brsGood ? '0 0 8px rgba(52,211,153,0.55)' : 'none',
+                    }} />
+                    BRS {score}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: descriptionDisplay ? 10 : 0 }}>
                   {industryDisplay && (
-                    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: t.accentDim, color: t.accent }}>
+                    <span style={{
+                      padding: '4px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: 600,
+                      background: t.accentDim, color: t.accent,
+                      border: `0.5px solid ${t.accentBorder}`,
+                    }}
+                    >
                       {industryDisplay}
                     </span>
                   )}
                   {locationDisplay && (
-                    <span style={{ fontSize: 12.5, color: t.textTertiary }}>{locationDisplay}</span>
+                    <span style={{ fontSize: 12, color: t.textTertiary, letterSpacing: '-0.01em' }}>
+                      {locationDisplay}
+                    </span>
                   )}
                 </div>
                 {descriptionDisplay && (
-                  <p style={{ fontSize: 13, color: t.textTertiary, lineHeight: 1.45, margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  <p style={{
+                    fontSize: 12.5, color: t.textTertiary, lineHeight: 1.5, margin: 0,
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                  }}
+                  >
                     {descriptionDisplay}
                   </p>
                 )}
@@ -3727,15 +3761,22 @@ export function BrandConstitution() {
             </div>
 
             {/* Quick stats */}
-            <div style={{ position: 'relative', display: 'flex', gap: 0, marginTop: 16, paddingTop: 14, borderTop: `0.5px solid ${t.separator}` }}>
+            <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
               {[
                 { n: photoCount, l: 'Fotoğraf' },
                 { n: pillarsCount, l: 'İçerik sütunu' },
                 { n: ctasCount, l: 'CTA' },
-              ].map((s, i) => (
-                <div key={s.l} style={{ flex: 1, textAlign: 'center', borderLeft: i > 0 ? `0.5px solid ${t.separator}` : 'none' }}>
-                  <div style={{ fontSize: 19, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{s.n}</div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{s.l}</div>
+              ].map((s) => (
+                <div
+                  key={s.l}
+                  style={{
+                    textAlign: 'center', padding: '10px 6px', borderRadius: 14,
+                    background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
+                    border: `0.5px solid ${t.separator}`,
+                  }}
+                >
+                  <div style={{ fontSize: 18, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>{s.n}</div>
+                  <div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 2, letterSpacing: '-0.01em' }}>{s.l}</div>
                 </div>
               ))}
             </div>
@@ -3787,12 +3828,19 @@ export function BrandConstitution() {
           )}
 
           {/* Section label */}
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: t.textMuted, margin: '4px 2px 12px' }}>
-            Yönetim
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            margin: '8px 2px 14px',
+          }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: t.textMuted }}>
+              Yönetim
+            </div>
+            <div style={{ fontSize: 11, color: t.textMuted }}>{NAV_ITEMS.length} alan</div>
           </div>
 
           {/* 2×3 section nav grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.key}
@@ -3805,36 +3853,53 @@ export function BrandConstitution() {
                   }
                 }}
                 style={{
-                  position: 'relative', textAlign: 'left', padding: 15, borderRadius: 20, cursor: 'pointer',
-                  ...t.surfaceGroup, overflow: 'hidden',
-                  display: 'flex', flexDirection: 'column', gap: 13, minHeight: 118,
+                  position: 'relative', textAlign: 'left', padding: '14px 14px 13px', borderRadius: 18, cursor: 'pointer',
+                  background: t.isDark
+                    ? 'linear-gradient(160deg, rgba(20,26,36,0.92) 0%, rgba(14,18,26,0.96) 100%)'
+                    : 'linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.94) 100%)',
+                  border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                  boxShadow: t.isDark ? '0 10px 28px rgba(0,0,0,0.22)' : '0 8px 22px rgba(15,23,42,0.06)',
+                  overflow: 'hidden',
+                  display: 'flex', flexDirection: 'column', gap: 12, minHeight: 112,
                 }}
               >
-                {/* Ambient accent glow */}
-                <div style={{ position: 'absolute', top: -26, left: -26, width: 84, height: 84, borderRadius: '50%', background: item.accent, opacity: t.isDark ? 0.16 : 0.1, filter: 'blur(16px)', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: -24, right: -24, width: 72, height: 72, borderRadius: '50%', background: item.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(18px)', pointerEvents: 'none' }} />
 
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{
-                    width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: `linear-gradient(135deg, ${item.accent}2e, ${item.accent}14)`,
-                    border: `0.5px solid ${item.accent}3d`,
-                    boxShadow: `inset 0 1px 0 ${t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.5)'}`,
+                    width: 42, height: 42, borderRadius: 13, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: `linear-gradient(145deg, ${item.accent}30, ${item.accent}12)`,
+                    border: `0.5px solid ${item.accent}40`,
                   }}>
                     <SectionIcon name={item.key} color={item.accent} />
                   </div>
                   <span style={{
-                    width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 800, color: statusColor(item.status),
-                    background: `${statusColor(item.status)}22`, border: `0.5px solid ${statusColor(item.status)}3a`,
-                  }}>{statusGlyph(item.status)}</span>
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '3px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+                    letterSpacing: '0.02em', textTransform: 'uppercase',
+                    color: statusColor(item.status),
+                    background: `${statusColor(item.status)}18`,
+                    border: `0.5px solid ${statusColor(item.status)}30`,
+                  }}
+                  >
+                    {item.status === 'done' ? '✓' : item.status === 'warn' ? '!' : '·'}
+                    {item.status === 'done' ? 'Hazır' : item.status === 'warn' ? 'Eksik' : '—'}
+                  </span>
                 </div>
 
                 <div style={{ position: 'relative' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{item.label}</span>
-                    <ChevronRight color={t.textTertiary} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontSize: 14.5, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.025em' }}>{item.label}</span>
+                    <span style={{
+                      width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                      border: `0.5px solid ${t.separator}`,
+                    }}
+                    >
+                      <ChevronRight color={t.textTertiary} />
+                    </span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: t.textMuted, marginTop: 3, letterSpacing: '-0.01em' }}>{item.hint}</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, letterSpacing: '-0.01em', lineHeight: 1.35 }}>{item.hint}</div>
                 </div>
               </button>
             ))}
@@ -4457,80 +4522,15 @@ export function BrandConstitution() {
             <BrandSectionIntro
               t={t}
               title="Şablon Kütüphanesi"
-              description="Tasarımlı story/post slotları, fal.ai görsel şablonları ve tipografi yoğunluğu. Mission üretimi bu seçimlerden beslenir."
+              description="Sektör slot kataloğundan marka bazlı fal.ai şablonları. Mission üretimi aktif slotlardan ve bu galeriden beslenir."
             />
-            <div style={{
-              display: 'flex', gap: 4, padding: 4, borderRadius: 14, marginBottom: 18,
-              background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.045)',
-            }}>
-              {([
-                { id: 'remotion' as const, label: 'Story şablonları', hint: '5 üretim slotu' },
-                { id: 'fal' as const, label: 'fal.ai', hint: 'Görsel galeri' },
-                { id: 'intensity' as const, label: 'Yoğunluk', hint: 'Tipografi dengesi' },
-              ]).map((pg) => {
-                const active = templateTab === pg.id;
-                return (
-                  <button
-                    key={pg.id}
-                    type="button"
-                    onClick={() => { setTemplateTab(pg.id); if (typeof window !== 'undefined') window.scrollTo({ top: 0 }); }}
-                    style={{
-                      flex: 1, padding: '9px 6px', borderRadius: 11, border: 'none', cursor: 'pointer',
-                      background: active ? (t.isDark ? 'rgba(255,255,255,0.14)' : '#FFFFFF') : 'transparent',
-                      boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.1)') : 'none',
-                    }}
-                  >
-                    <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em', color: active ? t.textPrimary : t.textTertiary }}>{pg.label}</div>
-                    <div style={{ fontSize: 10, color: t.textMuted, marginTop: 1 }}>{pg.hint}</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {templateTab === 'remotion' && (
-              <BrandTemplateLibraryPanel
-                workspaceId={tenantId}
-                sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
-                variant="mobile"
-                mobileTheme={{
-                  accent: t.accent,
-                  accentBorder: t.accentBorder,
-                  accentDim: t.accentDim,
-                  separator: t.separator,
-                  textPrimary: t.textPrimary,
-                  textMuted: t.textMuted,
-                  textTertiary: t.textTertiary,
-                  isDark: t.isDark,
-                }}
-              />
-            )}
-
-            {templateTab === 'fal' && tenantId && (
+            {tenantId && (
               <BrandFalTemplateGalleryPanel
                 tenantId={tenantId}
-                sector={normalizeSectorId(String(p.industry ?? (pyCtx as any)?.business_type ?? ''))}
+                sector={industrySlug}
+                theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
                 t={t}
               />
-            )}
-
-            {templateTab === 'intensity' && tenantId && (
-              <div style={{
-                borderRadius: 18, padding: 16,
-                background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                border: `0.5px solid ${t.separator}`,
-              }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, marginBottom: 12, letterSpacing: '-0.02em' }}>
-                  Tasarım Yoğunluğu
-                </div>
-                <BrandFalDesignIntensityPanel
-                  tenantId={tenantId}
-                  theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
-                  t={t}
-                  onSaved={() => {
-                    queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
-                  }}
-                />
-              </div>
             )}
           </div>
         )}
@@ -5181,14 +5181,12 @@ export function BrandConstitution() {
               const purePhotoPct = Math.round(
                 Number(motionRaw?.prefer_pure_photo_stories ?? motionRaw?.preferPurePhotoStories ?? 0.72) * 100,
               );
-              const sectorNorm = normalizeSectorId(String(p.industry ?? ''));
+              const sectorNorm = industrySlug;
 
               const saveMotionStyle = async (style: MotionStyle) => {
                 if (!tenantId) return;
                 const base = parseMotionProfileFromTheme(currentTheme, { sector: sectorNorm, tenantId: tenantId ?? undefined });
                 const next = applyMotionStylePreset(base, style);
-                const kitId = resolveKitForSector(sectorNorm, tenantKitSeed(tenantId ?? undefined));
-                const library = ensureBrandTemplateLibrary(currentTheme, { sector: sectorNorm, kitId, motionStyle: style, tenantId: tenantId ?? undefined });
                 const motion_profile = motionProfileToThemeJson({
                   ...next,
                   operatorOverride: true,
@@ -5200,7 +5198,6 @@ export function BrandConstitution() {
                     theme: {
                       ...currentTheme,
                       motion_profile,
-                      template_library: library.locked ? library : deriveBrandTemplateLibrary({ kitId, sector: sectorNorm, motionStyle: style, tenantId: tenantId ?? undefined }),
                     },
                   }),
                 }).catch(() => {/* non-fatal */});
@@ -5210,7 +5207,7 @@ export function BrandConstitution() {
               return (
                 <SCard t={t} title="Motion Stili" accent={t.accent}>
                   <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-                    Story motion ve composition ağırlıkları. Hangi tasarımın kullanılacağı yukarıdaki Template Kütüphanesi (5) slotlarından seçilir — kayıt sonrası feed üretimi bu şablonları sabitler.
+                    Story motion ve composition ağırlıkları. Tasarım slotları slot kataloğu ve fal.ai şablonlarından yönetilir.
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                     {MOTION_STYLE_OPTIONS.map(({ id, label, desc }) => {
@@ -5248,7 +5245,7 @@ export function BrandConstitution() {
                 <ReelMotionSettingsPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
-                  sector={normalizeSectorId(String(p.industry ?? ''))}
+                  sector={industrySlug}
                   t={t}
                   onSaved={() => {
                     queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
@@ -5262,7 +5259,7 @@ export function BrandConstitution() {
                 <StoryAudioSettingsPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
-                  sector={normalizeSectorId(String(p.industry ?? ''))}
+                  sector={industrySlug}
                   t={t}
                   onSaved={() => {
                     queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });

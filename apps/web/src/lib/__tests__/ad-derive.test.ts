@@ -5,6 +5,7 @@ vi.mock('@/lib/server-config', () => ({
     fal: { configured: true },
     autoProduce: { reuseDesignedPostStill: false },
     crewBackend: { baseUrl: 'http://127.0.0.1:8000' },
+    internal: { apiKey: 'test-internal-key' },
   },
 }));
 

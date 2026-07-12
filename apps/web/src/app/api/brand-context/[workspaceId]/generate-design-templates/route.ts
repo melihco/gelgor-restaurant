@@ -16,8 +16,10 @@ import {
   generateBrandDesignTemplates,
   type GeneratedDesignTemplate,
 } from '@/lib/brand-design-template-engine';
+import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
+import { resolveOnboardingDesignPresetsFromCatalog } from '@/lib/catalog-design-template-presets';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
-import { isTypographyDesignConfirmed } from '@/lib/typography-design-policy';
+import { isTypographyDesignConfirmed, resolveSuggestedTypographyConfig } from '@/lib/typography-design-policy';
 
 export const runtime = 'nodejs';
 // Generation runs up to ~10 GPT-image edits — allow a long window.
@@ -70,18 +72,17 @@ export async function POST(
   const galleryAnalysis = (analysisRes.ok ? analysisRes.data : null) ?? null;
   const sector = resolveAuthoritativeIndustry(brandCtx)
     || String(brandCtx.business_type ?? brandCtx.industry ?? '');
-  const brandTheme = (themeRes.ok && themeRes.data?.theme && typeof themeRes.data.theme === 'object')
+  let brandTheme = (themeRes.ok && themeRes.data?.theme && typeof themeRes.data.theme === 'object')
     ? themeRes.data.theme
     : (typeof brandCtx.brand_theme === 'object' ? brandCtx.brand_theme as Record<string, unknown> : null);
 
-  if (!isTypographyDesignConfirmed(brandTheme)) {
-    return NextResponse.json(
-      {
-        error: 'typography_design_unconfirmed',
-        message: 'Onboarding tipografi stili onaylanmadan şablon üretilemez.',
-      },
-      { status: 422 },
-    );
+  const typographyConfirmed = isTypographyDesignConfirmed(brandTheme);
+  if (!typographyConfirmed) {
+    const suggested = resolveSuggestedTypographyConfig(brandTheme, sector);
+    brandTheme = {
+      ...(brandTheme ?? {}),
+      typography_design: suggested,
+    };
   }
   const themeAnti = Array.isArray(brandTheme?.anti_patterns)
     ? (brandTheme!.anti_patterns as string[])
@@ -122,6 +123,19 @@ export async function POST(
     );
   }
 
+  // ── Slot catalog bootstrap + catalog-driven presets (Faz 3) ─────────────────
+  const productionSettings = resolveFalTemplateProductionSettings(brandTheme);
+  const catalogPresets = await resolveOnboardingDesignPresetsFromCatalog(
+    workspaceId,
+    sector,
+    { limit: body.limit ?? productionSettings.preview_cap },
+  );
+  console.log(
+    `[generate-design-templates] catalog presets source=${catalogPresets.source} `
+    + `sector=${catalogPresets.sectorId} enabled=${catalogPresets.enabledSlotCount} `
+    + `selected=${catalogPresets.selectedSlotCount} bootstrapped=${catalogPresets.bootstrapped}`,
+  );
+
   // ── Generate ───────────────────────────────────────────────────────────────
   const result = await generateBrandDesignTemplates({
     workspaceId,
@@ -142,11 +156,13 @@ export async function POST(
     antiPatterns,
     galleryPhotoUrls: gctx.photos,
     galleryAnalysis: gctx.meta,
-    limit: body.limit,
-    concurrency: body.concurrency,
+    concurrency: body.concurrency ?? productionSettings.concurrency,
+    presets: catalogPresets.presets,
+    templatePreviewMode: true,
   });
 
   // ── Persist (bulk upsert replaces prior auto-generated set) ────────────────
+  const persistableTemplates = result.templates.filter((t) => Boolean(t.thumbnail_url));
   const persistRes = await fetchCrewBackendJson<GeneratedDesignTemplate[]>(
     `/api/v1/design-templates/${workspaceId}/bulk`,
     {
@@ -154,7 +170,7 @@ export async function POST(
       method: 'POST',
       timeoutMs: 20_000,
       body: {
-        templates: result.templates,
+        templates: persistableTemplates,
         archive_existing: body.archiveExisting !== false,
       },
     },
@@ -170,9 +186,21 @@ export async function POST(
   return NextResponse.json({
     workspaceId,
     sector,
+    typography_design_confirmed: typographyConfirmed,
     generated: result.generated,
     failed: result.failed,
     persisted: persistRes.ok,
+    catalog: {
+      source: catalogPresets.source,
+      enabled_slot_count: catalogPresets.enabledSlotCount,
+      selected_slot_count: catalogPresets.selectedSlotCount,
+      bootstrapped: catalogPresets.bootstrapped,
+      production_settings: {
+        preview_cap: productionSettings.preview_cap,
+        concurrency: productionSettings.concurrency,
+        intensity: productionSettings.intensity,
+      },
+    },
     templates: persistRes.ok && persistRes.data ? persistRes.data : result.templates,
   });
 }

@@ -54,7 +54,6 @@ import {
 import { shouldAutoProduceEnhanceGallery } from '@/lib/venue-photo-policy';
 import {
   filterReachableGalleryUrls,
-  normalizePhotoUrlForRemotionRender,
   toFeedPreviewUrl,
   normalizeExternalPhotoUrl,
   isStockGalleryPhotoUrl,
@@ -86,8 +85,6 @@ import {
   runGptImageEnhanceForIdea,
 } from '@/lib/brand-visual-pipeline';
 import { resolveVisualSubject, shouldUseCaptionDrivenVisual } from '@/lib/ai-visual-production-standard';
-import { missionTemplateIdeaIndex } from '@/lib/mission-remotion-story';
-import { missionStoryLibrarySlotKey } from '@/lib/mission-story-template';
 import { normalizeHashtags, resolveCarouselUrls } from '@/lib/artifact-utils';
 import {
   detectIdeaPackageFormat,
@@ -104,32 +101,27 @@ import {
   resolveProductionAssignment,
   assignmentImpliesReel,
   assignmentImpliesStoryFormat,
-  shouldRenderRemotionPoster,
-  shouldRenderRemotionStory,
   type ManifestProductionQueueItem,
 } from '@/lib/production-pipeline-router';
 import {
   gallerySequencePhotoTarget,
   isGalleryOnlyVisualPolicy,
-  prefersGallerySequenceStory,
   storyGalleryPhotoTarget,
 } from '@/lib/visual-overlay-policy';
-import { GRAFIKER_PASS_THRESHOLD, resolveGrafikerMaxRetries } from '@/lib/remotion-quality';
+import { GRAFIKER_PASS_THRESHOLD, resolveGrafikerMaxRetries } from '@/lib/grafiker-quality';
 import {
   fetchGisScoreForWorkspace,
   isFeedDirectorFallback,
   resolveProductionProfile,
   shouldBlockProductionOnFdFallback,
   shouldUseMarkyLayer,
-  slotUsesRemotionPost,
-  slotUsesRemotionStory,
   type ProductionProfile,
 } from '@/lib/production-profile';
 import {
   buildMissionProductionTelemetry,
   countArtifactsWithScheduleLabel,
 } from '@/lib/mission-production-telemetry';
-import type { MissionProductionManifest, ProductionSlotRole } from '@/lib/mission-production-manifest';
+import type { MissionProductionManifest, ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { normalizeProductionPipeline } from '@/lib/mission-production-manifest';
 import { resolveManifestMissionType } from '@/lib/mission-production-prefs';
 import {
@@ -163,7 +155,6 @@ import type { AiVisualProductionStandard, BrandContextForVisual } from '@/lib/ai
 import {
   buildCreativeTrace,
   buildReelDirectorExtra,
-  buildSceneBriefPromptBlock,
   createProductionStackContext,
   fetchProductSceneBrief,
   inferHeroReelIndex,
@@ -200,17 +191,15 @@ import {
   allowedCompositionsForDirector,
   parseMotionProfileFromTheme,
   resolveContentIntent,
-  resolveGallerySeriesLayout,
 } from '@/lib/brand-motion-profile';
 import { resolveStoryAudioMood } from '@/lib/story-audio-mood';
 import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import {
   ensureBrandTemplateLibrary,
-  resolveProductionTemplate,
-  resolveBrandStoryProductionTemplate,
-  resolveStoryCompositionForBrandTemplate,
-  storyTemplateFamilyForSlot,
+  getLibrarySlotByKey,
+  resolveStoryLibrarySlotKey,
+  storyLayoutFamilyForSlotKey,
 } from '@/lib/brand-template-library';
 import {
   isMeaninglessBrandEchoHeadline,
@@ -224,7 +213,7 @@ import {
   resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
 import { resolveMissionFalDesignCopy, type FalDesignCopyIdea } from '@/lib/fal-design-copy';
-import { enforceDisplayHeadline } from '@/lib/remotion-quality';
+import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import {
   buildArtifactListTitle,
@@ -234,7 +223,6 @@ import { resolvePlanningIdeaIndex } from '@/lib/content-calendar-artifact-link';
 import { resolveProductionEngines } from '@/lib/brand-production-engines';
 import { isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { getBrandKit } from '@/lib/agency-brand-kits';
-import { getRemotionTemplate } from '@/lib/story-template-catalog';
 import {
   applyBrandTokensToRenderProps,
   resolveBrandProductionTokens,
@@ -242,8 +230,6 @@ import {
 import { resolveFalDesignPromptContext, readAgentFalDesignBrief, readBrandLogoPosition, readTenantPreferredCanvaArchetypes } from '@/lib/fal-design-brief';
 import { resolveSlotRenderTypography } from '@/lib/brand-template-slot-typography';
 import {
-  type StoryCandidate,
-  type PostCandidate,
   type PremiumCompositionMeta,
 } from './production-candidate-types';
 import {
@@ -269,6 +255,13 @@ import {
 } from '@/lib/auto-produce/pipeline-telemetry';
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
+import {
+  enrichProductionQueueWithBrandSlots,
+  loadBrandActiveSlotSet,
+  stampIdeasWithBrandCatalogSlots,
+  type BrandActiveSlotSet,
+} from '@/lib/brand-active-slot-resolver';
+import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
 import {
   buildCalendarFalSceneHint,
   calendarGalleryMatchCaption,
@@ -492,9 +485,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const brandTheme = pctx.brandTheme;
   const brandTokens = pctx.tokens;
   const templateLibrary = pctx.templateLibrary;
-  const hasReusablePostTemplates = templateLibrary.slots.some(
-    (s) => s.enabled && s.format === 'post' && Boolean(s.posterTemplateId),
-  );
   const brandKitId = pctx.kitId;
   const aiPhotoEnhance = pctx.aiPhotoEnhanceEnabled;
   const aiPhotoEnhanceLevel = pctx.aiPhotoEnhanceLevel;
@@ -516,13 +506,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const syncPrimaryColor = vibePalette?.primary;
   const syncAccentColor = vibePalette?.accent;
 
-  // Log brand story templates for this workspace
+  // Log brand story slot keys for this workspace
   const missionStorySlotKeys = templateLibrary.slots
-    .filter((s) => s.format === 'story' && s.enabled && s.storyTemplateId)
-    .map((s) => `${s.key}:${s.storyTemplateId}`);
+    .filter((s) => s.format === 'story' && s.enabled)
+    .map((s) => s.key);
   if (missionStorySlotKeys.length) {
     console.log(
-      `[auto-produce] Brand story templates (${templateLibrary.locked ? 'locked' : 'derived'}): ` +
+      `[auto-produce] Brand story slots (${templateLibrary.locked ? 'locked' : 'derived'}): ` +
       missionStorySlotKeys.join(', '),
     );
   }
@@ -605,6 +595,36 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     maxHeroReelsPerMission,
     hasOrganicReelAssignment,
   } = planOutcome.plan;
+
+  const brandSector = normalizeSectorId(brandBusinessType);
+  let brandActiveSlots: BrandActiveSlotSet | null = null;
+  if (brandSector) {
+    try {
+      brandActiveSlots = await loadBrandActiveSlotSet(
+        workspaceId,
+        brandSector,
+        undefined,
+        readBrandSlotFacilitiesFromTheme(brandTheme as Record<string, unknown> | null),
+      );
+      console.log(
+        `[auto-produce] Brand active slots: ${brandActiveSlots.slots.length} enabled `
+        + `(sector=${brandSector})`,
+      );
+    } catch (err) {
+      console.warn(
+        `[auto-produce] Brand slot catalog unavailable — falling back to legacy matcher: `
+        + `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  const hasReusablePostTemplates = brandActiveSlots
+    ? brandActiveSlots.slots.some((s) => s.format === 'post' && s.hasTemplate)
+    : templateLibrary.slots.some((s) => s.enabled && s.format === 'post');
+
+  const brandAwareToProcess = brandActiveSlots
+    ? stampIdeasWithBrandCatalogSlots(toProcess as Record<string, unknown>[], brandActiveSlots)
+    : (toProcess as Record<string, unknown>[]);
 
   const routeBaseUrl = getNextjsInternalOrigin();
 
@@ -757,8 +777,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // campaign_story_motion → Remotion MP4
   // organic_reel / campaign_reel_motion → fal_reel (fal designer video; Runway kapalı)
   // ─────────────────────────────────────────────────────────────────────────
-  const creatomateStoryCandidates: StoryCandidate[] = [];
-  const remotionPostCandidates: PostCandidate[] = [];
 
   const existingArtifactKeys = missionId && !skipArtifactDedupe
     ? await loadMissionAutoArtifactDedupeKeys(workspaceId, missionId)
@@ -766,7 +784,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
   const manifestQueue = buildAutoProduceProductionQueue({
     missionId,
-    toProcess: toProcess as Record<string, unknown>[],
+    toProcess: brandAwareToProcess,
     feedDirectorReport,
     manifestMissionType,
     brandBusinessType,
@@ -776,7 +794,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     adHocBrief,
   });
 
-  const fullProductionQueue = manifestQueue;
+  const brandAwareQueue = brandActiveSlots
+    ? enrichProductionQueueWithBrandSlots(manifestQueue, brandActiveSlots)
+    : manifestQueue;
+
+  const fullProductionQueue = brandAwareQueue;
 
   if (adHocBrief) {
     console.log(
@@ -1284,16 +1306,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       slotRole: assignment.slot_role,
       hasOrganicReelAssignment,
     });
-    const isStoryIdeaForBrief = kind === 'instagram_story' || kind === 'instagram_canvas';
-    const organicStillForBrief = assignment.slot_role === 'organic_story_still';
-    const designedPostForBrief =
-      assignment.pipeline === 'remotion_poster' || assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography' || assignment.slot_role === 'fal_designed_post';
-    const willRemotionStoryForBrief = bundleCards !== false
-      && isStoryIdeaForBrief
-      && !organicStillForBrief
-      && !designedPostForBrief
-      && shouldRenderRemotionStory(assignment);
-
     // Scene Director LLM — once per mission when any slot needs it (not per idea).
     let sceneBrief: ProductSceneBrief | null = null;
     if (slotNeedsSceneBrief({
@@ -1302,11 +1314,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       assignment,
       galleryOnlyVisual,
       isHeroReel,
-      willRemotionStory: willRemotionStoryForBrief,
+      willRemotionStory: false,
       designedPosterSync: false,
     })) {
       // Retry when previous fetch failed (null) and this is a high-value visual slot.
-      const isImportantVisualSlot = isHeroReel || willRemotionStoryForBrief;
+      const isImportantVisualSlot = isHeroReel;
       if (missionSceneBrief === undefined || (missionSceneBrief === null && isImportantVisualSlot)) {
         const missionCaption = [
           missionVisualBrief ? `Mission: ${missionVisualBrief}` : '',
@@ -1421,7 +1433,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
     }
 
-    if (captionDrivenSlot && !referenceUrl && !forceAttachedPhotos) {
+    if (
+      captionDrivenSlot
+      && !referenceUrl
+      && !forceAttachedPhotos
+      && !(hasRealBrandPhotos && usesFalDesignerTrackEarly)
+    ) {
       const aiFromCaption = await generateVibeImage({
         workspaceId,
         headline,
@@ -2176,18 +2193,25 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && Boolean(resolvedReferenceUrl)
       && (!isOrganicStoryStillSlot || productionProfile.requireDesignedVisuals)
       && !isFalDesignedPostSlotEarly;
-    const willRemotionPostForEnhance = bundleCards !== false && (
-      shouldRenderRemotionPoster(assignment)
-      || slotUsesRemotionPost(productionProfile, assignment, kind)
-    );
 
     const useMultiGallery = !captionDrivenGenerated
       && hasGallery
       && shouldUseMultiGalleryPhotos(assignment, kind);
     const storyLibrarySlotKey = assignmentImpliesStoryFormat(assignment.slot_role)
-      ? (assignment.library_slot_key ?? missionStoryLibrarySlotKey(templateLibrary, storyIndex))
+      ? resolveStoryLibrarySlotKey({
+        librarySlotKey: assignment.library_slot_key,
+        catalogSlotKey: assignment.catalog_slot_key
+          ?? (ideaRecord.catalog_slot_key as string | undefined),
+        activeSlots: brandActiveSlots,
+        library: templateLibrary,
+        storyIndex,
+      })
       : undefined;
-    const slotStoryTemplateFamily = storyTemplateFamilyForSlot(templateLibrary, storyLibrarySlotKey);
+    const slotStoryTemplateFamily = storyLayoutFamilyForSlotKey(
+      storyLibrarySlotKey,
+      brandBusinessType,
+      storyIndex,
+    );
 
     if (useMultiGallery) {
       const galleryTarget = pkgFmt === 'story'
@@ -2325,7 +2349,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         pickedFromBrandGallery,
         referenceIsStock,
         willRemotionStory: willRemotionStoryForEnhance,
-        willRemotionPost: willRemotionPostForEnhance,
+        willRemotionPost: false,
         designedPosterSync: isDesignedPostSlotEarly,
         productionProfile,
       },
@@ -2551,7 +2575,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ) || undefined
       : undefined;
     const falTypoSlot = assignment.library_slot_key
-      ? templateLibrary.slots.find((s) => s.key === assignment.library_slot_key)
+      ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
       : undefined;
     const falSlotTypography = usesFalDesignerTrack
       ? resolveSlotRenderTypography({
@@ -2633,6 +2657,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     // ── FAL pipeline tracks (handler dispatch — b2b) ──────────────────────────
+    if (
+      usesFalDesignerTrack
+      && hasRealBrandPhotos
+      && !referenceUrl
+      && !forceAttachedPhotos
+    ) {
+      console.warn(
+        `[auto-produce] fal slot skipped — brand gallery required, no headline-matched photo: "${headline.slice(0, 48)}"`,
+      );
+    }
     // The fal_video (designer video + raw I2V fallback), fal_design (Canva-like
     // designed feed post) and fal_only (pure fal.ai) branches are now
     // ProductionPipelineHandlers. The dispatch runs them in the original order,
@@ -2679,6 +2713,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           isFalOnlyVideo,
           isProductShowcase,
           adHocBrief,
+          announcementType: calendarAnnouncementType || templateUseCase || undefined,
+          templateUseCase: templateUseCase || undefined,
+          catalogSlotKey: assignment.catalog_slot_key ?? (ideaRecord.catalog_slot_key as string | undefined),
+          brandActiveSlots,
           falAspectRatio: isPaidAdSlot
             ? '4:5'
             : isCalendarSlot && pkgFmt === 'story'
@@ -2688,11 +2726,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             requireGroundedGallery: isCalendarSlot || adHocBrief || isPaidAdSlot,
             referencePhotoUrl: referenceUrl,
             sector: brandBusinessType,
+            hasRealBrandGallery: hasRealBrandPhotos,
             pipeline: isFalMissionVideo
               ? (assignment.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story')
               : undefined,
             captionDrivenGenerated,
           }),
+          hasRealBrandGallery: hasRealBrandPhotos,
+          captionDrivenGenerated,
           falDesignIntensityOverride: calendarIntensityBundle?.level
             ?? falGridIntensityOverride,
           falBackgroundStyleOverride: falGridBackgroundOverride,
@@ -3231,34 +3272,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const isStoryIdea = kind === 'instagram_story' || kind === 'instagram_canvas'
       || assignmentImpliesStoryFormat(assignment.slot_role);
-    const willRemotionStoryRender = bundleCards !== false
-      && Boolean(referenceUrl)
-      && !designedPosterReady
-      && !isPaidAdSlot
-      && effectiveKind !== 'instagram_reel'
-      && !isReel
-      && (
-        shouldRenderRemotionStory(assignment, { forceEvent: hasEventDetails || isCanvas })
-        || slotUsesRemotionStory(productionProfile, assignment, effectiveKind)
-      );
-    const willRemotionPostRender = bundleCards !== false
-      && effectiveKind === 'instagram_post'
-      && Boolean(referenceUrl)
-      && !markyBranded
-      && !designedPosterReady
-      && (shouldRenderRemotionPoster(assignment)
-        || slotUsesRemotionPost(productionProfile, assignment, effectiveKind));
-    const willRemotionRender = willRemotionStoryRender || willRemotionPostRender;
-    const storyPosterUrl = willRemotionStoryRender
-      ? galleryPreviewUrl
-      : null;
-    const postPlaceholderUrl = willRemotionPostRender ? galleryPreviewUrl : (markyBranded ? imageUrl : null);
-    const bundleReadyNow = designedPosterReady
-      || (markyBranded && !willRemotionPostRender && !willRemotionStoryRender);
+    const bundleReadyNow = designedPosterReady || markyBranded;
 
-    const nexusPrimaryContentUrl = (willRemotionStoryRender || willRemotionPostRender) && galleryPreviewUrl
-      ? galleryPreviewUrl
-      : (videoUrl ?? imageUrl ?? galleryPreviewUrl ?? '');
+    const nexusPrimaryContentUrl = videoUrl ?? imageUrl ?? galleryPreviewUrl ?? '';
     if (!nexusPrimaryContentUrl) {
       console.warn(`[auto-produce] no nexus contentUrl for "${headline.slice(0, 50)}", skipping save`);
       results.push({ title: headline, imageUrl: '', error: 'Production failed: no persistable content URL', slotKey });
@@ -3298,9 +3314,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const previewStillUrl = pickStillPreviewUrl(
       designedPosterSyncUrl,
       falDesignedStillUrl,
-      willRemotionStoryRender ? storyPosterUrl : null,
       markyBranded ? imageUrl : null,
-      willRemotionPostRender ? postPlaceholderUrl : null,
       galleryPreviewUrl,
     );
 
@@ -3313,8 +3327,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       hashtags: publishHashtags,
       cta,
       imageUrl: previewStillUrl ?? undefined,
-      posterUrl: previewStillUrl ?? galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl ?? designedPosterSyncUrl ?? undefined,
-      videoUrl: willRemotionRender ? null : (isPlayableVideoUrl(videoUrl) ? videoUrl : null),
+      posterUrl: previewStillUrl ?? galleryPreviewUrl ?? designedPosterSyncUrl ?? undefined,
+      videoUrl: isPlayableVideoUrl(videoUrl) ? videoUrl : null,
       carousel_urls: carouselUrls.length ? carouselUrls : undefined,
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,
       ...(carouselGalleryUrls.length >= 2 ? { carousel_multi_photo: true } : {}),
@@ -3327,9 +3341,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ? { planning_idea_index: resolvePlanningIdeaIndex(ideaRecord) }
         : {}),
       node_key: nodeKey || undefined,
-      ...(willRemotionRender || bundleReadyNow ? {
+      ...(bundleReadyNow ? {
         production_bundle: true,
-        bundle_status: bundleReadyNow ? 'ready' : 'rendering',
+        bundle_status: 'ready',
         idea_id: ideaId,
       } : {}),
       agency_branded: markyBranded,
@@ -3350,38 +3364,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       });
     }
 
-    let remotionStoryMeta: Record<string, unknown> = {};
-    if (willRemotionStoryRender) {
-      const storyIntent = resolveContentIntent({
-        treatment,
-        templateUseCase: String(idea.template_use_case || ideaRecord?.template_use_case || ''),
-        mood,
-        headline,
-      });
-      const storySlotKey = assignment.library_slot_key
-        ?? missionStoryLibrarySlotKey(templateLibrary, storyIndex);
-      const storyPick = resolveBrandStoryProductionTemplate({
+    const storySlotMeta: Record<string, unknown> = {};
+    if (assignmentImpliesStoryFormat(assignment.slot_role)) {
+      const storySlotKey = resolveStoryLibrarySlotKey({
+        librarySlotKey: assignment.library_slot_key,
+        catalogSlotKey: assignment.catalog_slot_key
+          ?? (ideaRecord.catalog_slot_key as string | undefined),
+        activeSlots: brandActiveSlots,
         library: templateLibrary,
-        sector: brandBusinessType,
-        intent: storyIntent,
-        treatment,
-        ideaIndex,
-        headline,
-        caption: publishCaption || caption,
-        slotRole: assignment.slot_role,
-        templateUseCase: String(idea.template_use_case || ''),
-        hasEventDetails,
-        librarySlotKey: storySlotKey,
+        storyIndex,
       });
-      remotionStoryMeta = {
-        library_slot_key: storySlotKey,
-        remotion_mission_story: true,
-        templateId: storyPick.storyTemplateId,
-        storyTemplateId: storyPick.storyTemplateId,
-        compositionId: storyPick.compositionId,
-        kitId: storyPick.kitId,
-        brandTemplateLocked: storyPick.libraryLocked || templateLibrary.locked,
-      };
+      if (storySlotKey) storySlotMeta.library_slot_key = storySlotKey;
+      if (assignment.catalog_slot_key) {
+        storySlotMeta.catalog_slot_key = assignment.catalog_slot_key;
+      }
     }
 
     const slotFalRequests = getCapturedFalRequests();
@@ -3445,10 +3441,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             : 'fal_designer_post';
         }
         if (videoUrl) return normalizeProductionPipeline(assignment.pipeline) === 'fal_reel' ? 'fal_reel' : 'runway_reel';
-        if (willRemotionStoryRender) return 'remotion_story_async';
         if (missionVisualDesignRendered) return 'mission_visual_design_card';
         if (designedPosterSyncUrl) return 'remotion_poster_sync';
-        if (willRemotionPostRender) return 'remotion_post_async';
         if (markyBranded && imageUrl && referenceUrl && imageUrl !== referenceUrl) {
           return 'remotion_poster_marky';
         }
@@ -3537,7 +3531,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         }),
       ),
       imageUrl: previewStillUrl ?? undefined,
-      videoUrl: willRemotionRender ? null : (isPlayableVideoUrl(videoUrl) ? videoUrl : null),
+      videoUrl: isPlayableVideoUrl(videoUrl) ? videoUrl : null,
       reference_photo_url: pickedGallerySourceUrl ?? referenceUrl,
       ...(pickedGallerySourceUrl && referenceUrl !== pickedGallerySourceUrl
         ? { enhanced_photo_url: referenceUrl }
@@ -3555,8 +3549,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ai_visual_standard: buildAiVisualStandardMetadata(aiVisualStandard, aiPhotoEnhanceLevel),
       ai_visual_subject_resolved: resolvedVisualSubject,
       visual_pipeline_steps: resolveVisualPipelineSteps(aiVisualStandard, kind, assignment, {
-        willRemotionStory: willRemotionStoryRender,
-        willRemotionPost: willRemotionPostRender,
+        willRemotionStory: false,
+        willRemotionPost: false,
         isReel,
         designedPosterSync: designedPosterReady,
         postBrandLayer: false,
@@ -3640,14 +3634,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         premium_score: ideaPremiumComposition.premiumScore ?? null,
         production_tier: 'premium' as const,
       } : {}),
-      ...(willRemotionRender || bundleReadyNow ? {
+      ...(bundleReadyNow ? {
         production_bundle: true,
-        bundle_status: bundleReadyNow ? 'ready' : 'rendering',
+        bundle_status: 'ready',
         idea_id: ideaId,
-        poster_url: galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl,
-        posterUrl: galleryPreviewUrl ?? storyPosterUrl ?? postPlaceholderUrl,
+        poster_url: galleryPreviewUrl,
+        posterUrl: galleryPreviewUrl,
       } : {}),
-      ...remotionStoryMeta,
+      ...storySlotMeta,
     };
 
     const title = buildArtifactListTitle({
@@ -3676,8 +3670,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const publishReadyNow = Boolean(
       saved.id
       && !saved.error
-      && bundleReadyNow
-      && !willRemotionRender,
+      && bundleReadyNow,
     );
     results.push({
       id: saved.id,
@@ -3686,7 +3679,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       videoUrl: videoUrl ?? undefined,
       error: saved.error,
       publishReady: publishReadyNow,
-      rendering: Boolean(saved.id && !saved.error && willRemotionRender),
+      rendering: false,
       slotKey,
       metadata,
     });
@@ -3735,93 +3728,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       };
     }
 
-    // ── Story → Remotion: TÜM story'ler için Remotion render tetiklenir ─────
-    if (willRemotionRender && saved.id && storyPosterUrl) {
-      let gallerySeriesUrls: string[] = enhancedGallerySet.length >= 2
-        ? [...enhancedGallerySet]
-        : (referenceUrl ? [referenceUrl] : []);
-      const gallerySeqTarget = storyGalleryPhotoTarget({
-        assignment,
-        contentKind: kind,
-        templateFamily: slotStoryTemplateFamily,
-      });
-      if (gallerySeqTarget > 1 && gallerySeriesUrls.length < gallerySeqTarget && hasGallery && galleryPhotos.length >= 2) {
-        if (carouselGalleryUrls.length >= 2) {
-          for (const u of carouselGalleryUrls) {
-            if (!gallerySeriesUrls.includes(u)) gallerySeriesUrls.push(u);
-            if (gallerySeriesUrls.length >= gallerySeqTarget) break;
-          }
-        }
-        if (gallerySeriesUrls.length < gallerySeqTarget) {
-          const extras = pickSupplementaryGalleryPhotos(
-            caption,
-            headline,
-            mood,
-            galleryMeta,
-            galleryPhotos,
-            referenceUrl ?? '',
-            batchUsedByType[postType],
-            gallerySeqTarget - 1,
-            postType,
-          );
-          for (const u of extras) {
-            if (!gallerySeriesUrls.includes(u)) gallerySeriesUrls.push(u);
-            markGalleryUrlUsedForPostType(galleryUsage, u, postType);
-            batchUsedByType[postType].push(u);
-            if (gallerySeriesUrls.length >= gallerySeqTarget) break;
-          }
-        }
-      }
-
-      const galleryPhotoUrls = slotStoryTemplateFamily === 'polaroid_single'
-        ? undefined
-        : gallerySeriesUrls.length >= 2
-          ? gallerySeriesUrls
-          : undefined;
-      creatomateStoryCandidates.push({
-        headline,
-        caption: (idea.caption_draft ?? idea.caption ?? '') as string,
-        voiceoverCaption: publishCaption || caption,
-        photoUrl: referenceUrl ?? '',
-        galleryPhotoUrls,
-        galleryLayout: galleryPhotoUrls
-          ? (prefersGallerySequenceStory(assignment, ideaRecord, galleryPhotoUrls.length)
-            ? 'sequence'
-            : resolveGallerySeriesLayout(galleryPhotoUrls.length, ideaIndex))
-          : undefined,
-        treatment,
-        mood: (idea.mood || '') as string,
-        templateUseCase: String(idea.template_use_case || ''),
-        event_details: (idea.event_details as Record<string, string> | undefined),
-        artifactId: saved.id,
-        ideaId,
-        sceneBriefBlock: buildSceneBriefPromptBlock(missionStoryBrief ?? sceneBrief),
-        preferredLayoutFamily: layoutFamilyHint,
-        slotRole: assignment.slot_role,
-        publishChannel: assignment.publish_channel,
-        ideaIndex,
-        librarySlotKey: assignment.library_slot_key
-          ?? missionStoryLibrarySlotKey(templateLibrary, storyIndex),
-        galleryMatchScore: galleryMatchScore ?? null,
-        premiumComposition: ideaPremiumComposition,
-      });
-    }
-
-    if (willRemotionPostRender && !designedPosterReady && saved.id && postPlaceholderUrl) {
-      remotionPostCandidates.push({
-          headline,
-          caption: (idea.caption_draft ?? idea.caption ?? '') as string,
-          photoUrl: postPlaceholderUrl,
-          treatment,
-          mood: (idea.mood || '') as string,
-          templateUseCase: String(idea.template_use_case || ''),
-          event_details: (idea.event_details as Record<string, string> | undefined),
-          artifactId: saved.id,
-          ideaId,
-          ideaIndex,
-          premiumComposition: ideaPremiumComposition,
-      });
-    }
     } catch (slotErr) {
       const message = slotErr instanceof Error ? slotErr.message : String(slotErr);
       const orphanedFal = getCapturedFalRequests();
@@ -3864,7 +3770,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (postStoryAdapt.attempted) {
       postStoryAdaptAttempted = true;
       results.push(...postStoryAdapt.results);
-      creatomateStoryCandidates.push(...postStoryAdapt.storyCandidates);
       costEstimate += postStoryAdapt.costEstimate;
       console.log(
         `[auto-produce] Post→story adaptation: ${postStoryAdapt.adapted} story slot(s) filled`,
@@ -3987,7 +3892,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     bundleCards !== false
     && missionId
     && !slotBackfillPass
-    && creatomateStoryCandidates.length === 0
     && !missionHasPublishReadyStory(results)
     && hasGallery
     && brandTokensForRender
@@ -4107,8 +4011,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         brandTokens: brandTokensForRender,
         templateLibrary,
         grafikerMaxRetries,
-        librarySlotKey: guaranteeAssignment.library_slot_key
-          ?? missionStoryLibrarySlotKey(templateLibrary, gi),
+        librarySlotKey: resolveStoryLibrarySlotKey({
+          librarySlotKey: guaranteeAssignment.library_slot_key,
+          catalogSlotKey: (guaranteeAssignment as ProductionAssignment).catalog_slot_key,
+          activeSlots: brandActiveSlots,
+          library: templateLibrary,
+          storyIndex: gi,
+        }),
         nodeKey: nodeKey || null,
         assignment: guaranteeAssignment,
         nexusClient,

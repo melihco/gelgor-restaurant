@@ -8,12 +8,16 @@
 
 import {
   CREATIVE_CONTENT_NEEDS,
+  EXTENDED_INDUSTRY_PLAYBOOKS,
   STARTER_INDUSTRY_PLAYBOOKS,
   type CreativeAssetIntent,
   type CreativeIntent,
   type CreativeRiskSignal,
   type IndustryPlaybook,
 } from '@/lib/creative-production-contracts';
+import { getSectorProfile, normalizeSectorId } from '@/lib/sector-production-profile';
+import { resolveDefaultContentNeeds } from '@/lib/slot-content-needs-bridge';
+import type { BrandActiveSlot } from '@/lib/brand-active-slot-resolver';
 
 export type PolicyDecision = 'allow' | 'approval_required' | 'blocked';
 
@@ -58,6 +62,9 @@ export interface TenantOperatingProfileInput {
   galleryPolicyJson?: string;
   riskRulesJson?: string;
   customRules?: string;
+  /** When set, default capabilities derive from active catalog slots (Fal SSOT). */
+  activeSlots?: BrandActiveSlot[];
+  slotFacilities?: Record<string, unknown> | null;
 }
 
 export interface ResolvedTenantOperatingProfile {
@@ -140,6 +147,21 @@ const EXTRA_CONTENT_NEEDS: TenantCapabilityDefinition[] = [
   },
 ];
 
+export const COFFEE_SHOP_PLAYBOOK: IndustryPlaybook = {
+  id: 'coffee_shop',
+  label: 'Kahve Dükkanı / Kafe',
+  defaultContentNeeds: [
+    'daily_story',
+    'product_highlight',
+    'campaign_offer',
+    'social_proof',
+    'behind_the_scenes',
+  ],
+  riskySignals: ['price', 'discount', 'date', 'location', 'limited_availability'],
+  approvalRequiredFor: ['price', 'discount', 'date'],
+  preferredChannels: ['instagram_story', 'instagram_post', 'instagram_reel', 'google_business_update'],
+};
+
 export const BARBER_SALON_PLAYBOOK: IndustryPlaybook = {
   id: 'barber_salon',
   label: 'Berber / Kuaför',
@@ -157,13 +179,22 @@ export const BARBER_SALON_PLAYBOOK: IndustryPlaybook = {
 
 export const TENANT_INDUSTRY_PLAYBOOKS: IndustryPlaybook[] = [
   ...STARTER_INDUSTRY_PLAYBOOKS,
-  BARBER_SALON_PLAYBOOK,
+  ...EXTENDED_INDUSTRY_PLAYBOOKS,
+  COFFEE_SHOP_PLAYBOOK,
 ];
 
+/** Food & drink aliases — kept in sync with sector-production-profile.ts SECTOR_ALIASES. */
 const INDUSTRY_ALIASES: Record<string, string> = {
+  cafe: 'coffee_shop',
+  coffee_shop: 'coffee_shop',
+  kahve: 'coffee_shop',
+  espresso_bar: 'coffee_shop',
+  roastery: 'coffee_shop',
   restaurant: 'restaurant_cafe',
-  coffee_shop: 'restaurant_cafe',
-  cafe: 'restaurant_cafe',
+  bistro: 'restaurant_cafe',
+  restaurant_bar: 'restaurant_cafe',
+  restoran: 'restaurant_cafe',
+  brunch: 'restaurant_cafe',
   barber: 'barber_salon',
   barbershop: 'barber_salon',
   hairdresser: 'barber_salon',
@@ -205,6 +236,13 @@ export const TENANT_CAPABILITY_CATALOG: TenantCapabilityDefinition[] = [
 
 const GALLERY_POLICY_BY_INDUSTRY: Record<string, TenantGalleryPolicy> = {
   restaurant_cafe: {
+    allowedAssetIntents: ['venue_photo', 'hero_image', 'product_image', 'brand_background', 'logo', 'team_photo'],
+    clientPhotoPolicy: 'blocked',
+    beforeAfterPolicy: 'blocked',
+    maxGalleryPhotos: 48,
+    requireConsentMetadata: false,
+  },
+  coffee_shop: {
     allowedAssetIntents: ['venue_photo', 'hero_image', 'product_image', 'brand_background', 'logo', 'team_photo'],
     clientPhotoPolicy: 'blocked',
     beforeAfterPolicy: 'blocked',
@@ -266,10 +304,12 @@ const DEFAULT_GALLERY_POLICY: TenantGalleryPolicy = {
 };
 
 export function normalizeIndustryId(industry: string): string {
-  const value = (industry || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/\//g, '_');
-  const aliased = INDUSTRY_ALIASES[value] ?? value;
-  const known = TENANT_INDUSTRY_PLAYBOOKS.some((p) => p.id === aliased);
-  return known ? aliased : 'local_service_business';
+  const normalized = normalizeSectorId(industry);
+  const knownPlaybook = TENANT_INDUSTRY_PLAYBOOKS.some((p) => p.id === normalized);
+  if (knownPlaybook) return normalized;
+  const profile = getSectorProfile(normalized);
+  if (profile.sectorId === normalized && normalized !== 'general_business') return normalized;
+  return 'local_service_business';
 }
 
 export function getIndustryPlaybook(industry: string): IndustryPlaybook {
@@ -367,7 +407,17 @@ export function resolveTenantOperatingProfile(
   } else if (fromContentNeeds.length > 0) {
     enabled = fromContentNeeds.filter((id): id is TenantCapabilityId => eligible.has(id as TenantCapabilityId));
   } else {
-    enabled = playbook.defaultContentNeeds.filter((id) => eligible.has(id));
+    const slotDefaults = resolveDefaultContentNeeds({
+      sector: industry,
+      activeSlots: input.activeSlots,
+      slotFacilities: input.slotFacilities,
+      playbookFallback: playbook.defaultContentNeeds,
+    });
+    enabled = slotDefaults
+      .filter((id) => eligible.has(id as TenantCapabilityId)) as TenantCapabilityId[];
+    if (enabled.length === 0) {
+      enabled = playbook.defaultContentNeeds.filter((id) => eligible.has(id));
+    }
     if (industry === 'barber_salon' || industry === 'beauty_wellness') {
       for (const extra of ['gallery_manage', 'gallery_client_upload'] as WorkflowCapabilityId[]) {
         if (eligible.has(extra) && !enabled.includes(extra)) enabled.push(extra);

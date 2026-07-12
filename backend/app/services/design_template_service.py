@@ -71,6 +71,7 @@ async def create_template(
         design_spec=data.design_spec or {},
         sector_category=data.sector_category,
         locale=data.locale,
+        catalog_slot_key=data.catalog_slot_key,
         status="active",
     )
     db.add(template)
@@ -122,13 +123,31 @@ async def bulk_upsert_templates(
 
     When ``archive_existing`` is set, prior active templates are archived so the
     fresh batch becomes the live set without losing historical usage data.
+
+    When ``archive_existing`` is false, only active rows whose ``catalog_slot_key``
+    collides with the incoming batch are archived — smoke tests and per-slot
+    retries do not duplicate live templates.
     """
+    incoming_keys = {
+        item.catalog_slot_key for item in data.templates if item.catalog_slot_key
+    }
+
     if data.archive_existing:
         await db.execute(
             update(BrandDesignTemplate)
             .where(
                 BrandDesignTemplate.workspace_id == workspace_id,
                 BrandDesignTemplate.status == "active",
+            )
+            .values(status="archived", updated_at=datetime.now(timezone.utc))
+        )
+    elif incoming_keys:
+        await db.execute(
+            update(BrandDesignTemplate)
+            .where(
+                BrandDesignTemplate.workspace_id == workspace_id,
+                BrandDesignTemplate.status == "active",
+                BrandDesignTemplate.catalog_slot_key.in_(incoming_keys),
             )
             .values(status="archived", updated_at=datetime.now(timezone.utc))
         )
@@ -144,6 +163,7 @@ async def bulk_upsert_templates(
             design_spec=item.design_spec or {},
             sector_category=item.sector_category,
             locale=item.locale,
+            catalog_slot_key=item.catalog_slot_key,
             status="active",
         )
         db.add(template)

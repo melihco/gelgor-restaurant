@@ -5,7 +5,7 @@ import type { PosterLayoutFamily } from './poster-template-types';
 import type { TemplateLayoutSpec } from './announcement-template-types';
 import type { TextOverlayDensity } from './brand-text-overlay-prefs';
 import { sanitizePosterText } from './announcement-text-fit';
-import { enforceDisplayHeadline, refineCategoryLabel } from './remotion-quality';
+import { enforceDisplayHeadline, refineCategoryLabel } from './grafiker-quality';
 import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,

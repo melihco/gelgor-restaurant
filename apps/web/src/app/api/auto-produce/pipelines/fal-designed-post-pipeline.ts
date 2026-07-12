@@ -148,6 +148,9 @@ export async function produceFalDesignedPost(
     const logoUrl = binding?.logoUrl ?? input.logoUrl;
     const referenceUrl =
       binding?.referencePhotoUrl ?? input.referenceUrl;
+    const groundedGalleryRef = Boolean(
+      referenceUrl && isUsableGalleryPhotoUrl(referenceUrl),
+    );
     const referenceImageUrls = pickTemplateReferenceUrls({
       missionPhotoUrl: referenceUrl,
       matched: binding?.matched ?? null,
@@ -246,11 +249,16 @@ export async function produceFalDesignedPost(
       }
     } else if (input.requireGroundedGallery) {
       throw new Error('Brand gallery photo required for New Brief designed post.');
+    } else if (groundedGalleryRef && !imageUrl) {
+      throw new Error(
+        'Brand gallery design failed — could not compose on the caption-matched venue photo.',
+      );
     }
 
     // Fallback engine — fal Ideogram V4 typography still (no photo needed).
     if (
       !input.requireGroundedGallery
+      && !groundedGalleryRef
       && (!imageUrl || (referenceUrl && imageUrl === referenceUrl))
       && serverConfig.fal.configured
     ) {
@@ -355,7 +363,12 @@ export const falDesignHandler: ProductionPipelineHandler = {
       librarySlotKey: inputs.librarySlotKey,
       format: inputs.falAspectRatio === '9:16' ? 'story' : 'post',
       caption: inputs.caption,
-      adHocBrief: Boolean(inputs.requireGroundedGallery || inputs.adHocBrief),
+      headline: inputs.headline,
+      announcementType: inputs.announcementType,
+      templateUseCase: inputs.templateUseCase,
+      catalogSlotKey: inputs.catalogSlotKey,
+      brandActiveSlots: inputs.brandActiveSlots,
+      adHocBrief: Boolean(inputs.adHocBrief),
       missionReferenceUrl: inputs.referenceUrl,
       baseDirectives: falBrand.promptDirectives,
       brandColors: falBrand.brandColors,

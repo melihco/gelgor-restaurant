@@ -12,14 +12,31 @@ public class TenantOperatingPolicyService : ITenantOperatingPolicyService
     private static readonly Dictionary<string, string> IndustryAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["restaurant"] = "restaurant_cafe",
-        ["coffee_shop"] = "restaurant_cafe",
-        ["cafe"] = "restaurant_cafe",
+        ["bistro"] = "restaurant_cafe",
+        ["restaurant_bar"] = "restaurant_cafe",
+        ["restoran"] = "restaurant_cafe",
+        ["coffee_shop"] = "coffee_shop",
+        ["cafe"] = "coffee_shop",
+        ["kahve"] = "coffee_shop",
+        ["espresso_bar"] = "coffee_shop",
+        ["roastery"] = "coffee_shop",
         ["barber"] = BarberSalon,
         ["barbershop"] = BarberSalon,
         ["hairdresser"] = BarberSalon,
         ["berber"] = BarberSalon,
         ["kuaför"] = BarberSalon,
         ["kuafor"] = BarberSalon,
+        ["wedding"] = "wedding_event",
+        ["wedding_event"] = "wedding_event",
+        ["wedding_planner"] = "wedding_event",
+        ["wedding_planning"] = "wedding_event",
+        ["event_planning"] = "wedding_event",
+        ["dugun"] = "wedding_event",
+        ["düğün"] = "wedding_event",
+        ["organizasyon"] = "wedding_event",
+        ["etkinlik_ve_organizasyon"] = "wedding_event",
+        ["etkinlik_organizasyon"] = "wedding_event",
+        ["event"] = "wedding_event",
     };
 
     private static readonly HashSet<string> ClientAssetTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -68,6 +85,9 @@ public class TenantOperatingPolicyService : ITenantOperatingPolicyService
         ["restaurant_cafe"] = new(
             new[] { "venue_photo", "hero_image", "product_image", "brand_background", "logo", "team_photo" },
             "blocked", "blocked", 48, false),
+        ["coffee_shop"] = new(
+            new[] { "venue_photo", "hero_image", "product_image", "brand_background", "logo", "team_photo" },
+            "blocked", "blocked", 48, false),
         ["beauty_wellness"] = new(
             new[] { "venue_photo", "hero_image", "expert_photo", "before_after_image", "brand_background", "logo", "team_photo" },
             "approval_required", "approval_required", 64, true),
@@ -79,13 +99,6 @@ public class TenantOperatingPolicyService : ITenantOperatingPolicyService
             "blocked", "approval_required", 40, true),
     };
 
-    private static readonly Dictionary<string, string[]> DefaultNeedsByIndustry = new()
-    {
-        ["restaurant_cafe"] = new[] { "menu_share", "campaign_offer", "event_announcement", "daily_story", "social_proof" },
-        ["beauty_wellness"] = new[] { "service_intro", "campaign_offer", "social_proof", "educational_post", "lead_generation" },
-        [BarberSalon] = new[] { "service_intro", "social_proof", "post_service_client_result", "lead_generation", "behind_the_scenes" },
-        ["local_service_business"] = new[] { "service_intro", "lead_generation", "social_proof", "educational_post" },
-    };
 
     public IReadOnlyList<TenantCapabilityDefinitionDto> GetCapabilityCatalog(string? industry = null)
     {
@@ -110,10 +123,8 @@ public class TenantOperatingPolicyService : ITenantOperatingPolicyService
             enabled = explicitCaps.Where(eligible.Contains).ToList();
         else if (contentNeeds.Count > 0)
             enabled = contentNeeds.ToList();
-        else if (DefaultNeedsByIndustry.TryGetValue(playbookId, out var defaults))
-            enabled = defaults.ToList();
         else
-            enabled = new List<string> { "service_intro", "social_proof" };
+            enabled = IndustryContentNeedsBridge.DeriveContentNeeds(playbookId).ToList();
 
         if (playbookId is BarberSalon or "beauty_wellness")
         {
@@ -227,12 +238,15 @@ public class TenantOperatingPolicyService : ITenantOperatingPolicyService
 
     private static string NormalizeIndustry(string industry)
     {
-        var value = (industry ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('/', '_');
+        var value = (industry ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('/', '_').Replace('&', '_');
         if (IndustryAliases.TryGetValue(value, out var aliased))
             return aliased;
-        return DefaultNeedsByIndustry.ContainsKey(value) || GalleryByIndustry.ContainsKey(value)
-            ? value
-            : "local_service_business";
+        if (GalleryByIndustry.ContainsKey(value))
+            return value;
+        // Preserve canonical production slugs (e.g. wedding_event, beach_club).
+        if (value.Contains('_', StringComparison.Ordinal))
+            return value;
+        return "local_service_business";
     }
 
     private static TenantGalleryPolicyDto ResolveGalleryPolicy(string? json, string playbookId)
@@ -274,25 +288,7 @@ public class TenantOperatingPolicyService : ITenantOperatingPolicyService
     }
 
     private static Dictionary<string, string> MergeRiskRules(string playbookId, Dictionary<string, string> profileRules)
-    {
-        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (playbookId is "restaurant_cafe")
-        {
-            foreach (var s in new[] { "price", "discount", "date", "location" })
-                merged[s] = "allow";
-            foreach (var s in new[] { "price", "discount", "date" })
-                merged[s] = "approval_required";
-        }
-        else if (playbookId is BarberSalon or "beauty_wellness")
-        {
-            merged["personal_data"] = "approval_required";
-            merged["before_after"] = "approval_required";
-        }
-
-        foreach (var kv in profileRules)
-            merged[kv.Key] = kv.Value;
-        return merged;
-    }
+        => IndustryRiskPlaybooks.MergeWithProfileRules(playbookId, profileRules);
 
     private static List<string> ParseJsonArray(string? json)
     {

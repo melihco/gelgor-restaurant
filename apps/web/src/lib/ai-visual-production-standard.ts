@@ -152,6 +152,7 @@ export function shouldUseCaptionDrivenVisual(
     || pipeline === 'remotion_story'
     || pipeline === 'fal_story'
     || pipeline === 'fal_reel'
+    || pipeline === 'fal_design'
     || pipeline === 'fal_only_reel'
     || pipeline === 'fal_only_story'
     || pipeline === 'fal_only_post'
@@ -163,6 +164,7 @@ export function shouldUseCaptionDrivenVisual(
     || role === 'campaign_reel_motion'
     || role === 'organic_story_still'
     || role === 'fal_reel_motion'
+    || role === 'fal_designed_post'
   ) {
     return false;
   }

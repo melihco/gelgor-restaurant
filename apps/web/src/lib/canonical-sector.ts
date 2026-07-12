@@ -11,6 +11,8 @@ export const CATEGORY_TO_CANONICAL_SECTOR: Record<string, string> = {
   clinic_healthcare: 'healthcare_clinic',
   local_products_shop: 'local_products_shop',
   fashion_retail: 'fashion_boutique',
+  wedding_event_service: 'wedding_event',
+  event_planning_service: 'wedding_event',
 };
 
 export const WEAK_INDUSTRY_VALUES = new Set([
@@ -43,6 +45,22 @@ export function resolveAuthoritativeIndustry(py: Record<string, unknown>): strin
   return normalizeSectorId(businessType);
 }
 
+/**
+ * Single runtime sector slug for a tenant — Python brand_context is authoritative,
+ * Nexus CompanyProfile.industry is the synced mirror.
+ */
+export function resolveTenantCanonicalSector(
+  profile?: Record<string, unknown> | null,
+  py?: Record<string, unknown> | null,
+): string {
+  const fromPython = py ? resolveAuthoritativeIndustry(py) : '';
+  if (fromPython) return fromPython;
+  const fromNexus = normalizeSectorId(str(profile?.industry));
+  if (fromNexus !== 'general_business') return fromNexus;
+  const fromPyFallback = normalizeSectorId(str(py?.business_type ?? py?.industry));
+  return fromPyFallback || 'general_business';
+}
+
 /** True when Nexus industry should be overwritten from Python/service profile. */
 export function shouldRefreshIndustryFromPython(
   profile: Record<string, unknown>,
@@ -51,12 +69,21 @@ export function shouldRefreshIndustryFromPython(
   const authoritative = resolveAuthoritativeIndustry(py);
   if (!authoritative) return false;
 
+  const currentNorm = normalizeSectorId(str(profile.industry));
+  const authNorm = normalizeSectorId(authoritative);
+  if (currentNorm === authNorm) return false;
+
   const current = str(profile.industry).toLowerCase();
   if (!current || WEAK_INDUSTRY_VALUES.has(current)) return true;
 
   const sp = py.brand_service_profile as Record<string, unknown> | undefined;
+  const category = sp && typeof sp.category === 'string' ? sp.category.trim() : '';
   const confidence = Number(sp?.category_confidence ?? 0);
-  if (confidence < 0.55) return false;
+  if (category && confidence >= 0.55) return true;
 
-  return normalizeSectorId(current) !== normalizeSectorId(authoritative);
+  // Align Nexus human labels / stale values with Python business_type SSOT.
+  const pyBusinessNorm = normalizeSectorId(str(py.business_type));
+  if (pyBusinessNorm && pyBusinessNorm === authNorm) return true;
+
+  return false;
 }

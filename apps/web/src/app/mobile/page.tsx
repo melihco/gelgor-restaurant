@@ -1337,13 +1337,13 @@ function AppShell() {
 
   useEffect(() => {
     const onAuthChanged = () => {
-      // setSessionToken() fires this on login/register too — only show login after logout.
+      // Logout: return to login form.
       if (!getSessionToken()) {
         setShowLogin(true);
-      } else if (!useAuthStore.getState().isAuthenticated) {
-        // Mid-onboarding token (signup) — stay on plans/welcome, not login form.
-        setShowLogin(false);
       }
+      // Do NOT set showLogin(false) when a token appears — LoginScreen sets the user
+      // right after setSessionToken; flipping showLogin here briefly renders OnboardingFlow
+      // ("Markanızı tanıyalım") before isAuthenticated becomes true.
     };
     window.addEventListener('smartagency-auth-changed', onAuthChanged);
     return () => window.removeEventListener('smartagency-auth-changed', onAuthChanged);

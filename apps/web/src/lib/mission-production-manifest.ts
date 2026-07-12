@@ -112,6 +112,11 @@ export interface ProductionAssignment {
    */
   library_slot_key?: string;
   /**
+   * DB production slot catalog key — tenant-enabled slot for this assignment.
+   * Bridge until production_jobs.slot_key (Faz 5); set by brand-active-slot-resolver.
+   */
+  catalog_slot_key?: string;
+  /**
    * Feed Art Director's visual direction for gallery photo selection.
    * Comma-separated specific subject keywords the gallery photo must show.
    * Example: "tırnak, manikür, nail art" — injected into caption matcher

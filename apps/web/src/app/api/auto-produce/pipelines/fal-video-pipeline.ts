@@ -94,9 +94,21 @@ export async function runFalStoryPosterProduction(input: {
 
 export const falVideoHandler: ProductionPipelineHandler = {
   name: 'fal_video',
-  canRun: (ctx) => ctx.inputs.isFalMissionVideo && Boolean(ctx.inputs.referenceUrl),
+  canRun: (ctx) => {
+    if (!ctx.inputs.isFalMissionVideo) return false;
+    if (ctx.inputs.hasRealBrandGallery) return true;
+    return Boolean(ctx.inputs.referenceUrl);
+  },
   run: async ({ inputs, state }) => {
     const referenceUrl = inputs.referenceUrl;
+    if (inputs.hasRealBrandGallery && !referenceUrl) {
+      state.pipelineFailureReason =
+        'Brand gallery photo required — headline-matched venue photo missing for fal video slot';
+      console.warn(
+        `[auto-produce] [fal-track] withheld: no gallery ref for "${inputs.headline.slice(0, 40)}"`,
+      );
+      return;
+    }
     if (!referenceUrl) return;
 
     if (!serverConfig.fal.configured) {
@@ -134,7 +146,12 @@ export const falVideoHandler: ProductionPipelineHandler = {
         librarySlotKey: inputs.librarySlotKey,
         format: intensityChannel,
         caption: inputs.caption,
-        adHocBrief: inputs.adHocBrief,
+        headline: inputs.headline,
+        announcementType: inputs.announcementType,
+        templateUseCase: inputs.templateUseCase,
+        catalogSlotKey: inputs.catalogSlotKey,
+        brandActiveSlots: inputs.brandActiveSlots,
+        adHocBrief: Boolean(inputs.adHocBrief),
         missionReferenceUrl: referenceUrl,
         baseDirectives: falBrand.promptDirectives,
         brandColors: falBrand.brandColors,
@@ -233,6 +250,8 @@ export const falVideoHandler: ProductionPipelineHandler = {
           referencePhotoUrl: photoUrl,
           sector: inputs.brandBusinessType,
           pipeline: falPipeline,
+          hasRealBrandGallery: inputs.hasRealBrandGallery,
+          captionDrivenGenerated: inputs.captionDrivenGenerated,
         }),
         sceneHint: falBrand.sceneHint,
         brandDirectives: [
@@ -262,7 +281,8 @@ export const falVideoHandler: ProductionPipelineHandler = {
         `[auto-produce] [fal-track] ${falPipeline}: "${inputs.headline.slice(0, 40)}" ` +
         `template=${templateBinding.matched?.templateType ?? 'none'} ` +
         `typo=${designer.typographyModel} motion=${designer.motionModel} ` +
-        `grafiker=${designer.grafikerScore ?? '—'}/10`,
+        `grafiker=${designer.grafikerScore ?? '—'}/10 ` +
+        `gallery=${photoUrl.split('/').pop()?.slice(0, 48) ?? 'none'}`,
       );
     } catch (falErr) {
       const falMsg = falErr instanceof Error ? falErr.message : String(falErr);

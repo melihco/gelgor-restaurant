@@ -141,6 +141,12 @@ class BrandTheme(BaseModel):
 
     # fal.ai designer intensity — story / reel / post (photo_first … bold_editorial)
     fal_design_intensity: FalDesignIntensityConfig | None = None
+    # Locked typography vibe for Fal designer (onboarding confirm gate)
+    typography_design: dict | None = None
+    # Parametric fal template gallery + production (Brand Hub → fal.ai)
+    fal_template_production: dict | None = None
+    # Facility hints — opt-out disables requires:* catalog slots at bootstrap
+    slot_facilities: dict[str, bool] | None = None
 
 
 # ── Request / Response wrappers ───────────────────────────────────────────────
@@ -179,3 +185,4 @@ class AiThemeSettingsPatch(BaseModel):
     mertcafe_instagram_accounts: list[dict[str, str]] | None = None
     mertcafe_use_oauth_account: bool | None = None
     fal_design_intensity: dict | None = None
+    fal_template_production: dict | None = None

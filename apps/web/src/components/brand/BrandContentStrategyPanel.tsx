@@ -9,11 +9,8 @@ import {
   afterPillarsMirroredToNexus,
 } from '@/lib/content-pillars-sync';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  CREATIVE_CONTENT_NEEDS,
-  STARTER_INDUSTRY_PLAYBOOKS,
-  type CreativeIntent,
-} from '@/lib/creative-production-contracts';
+import { CREATIVE_CONTENT_NEEDS, type CreativeIntent } from '@/lib/creative-production-contracts';
+import { deriveContentNeedsFromSectorPack } from '@/lib/slot-content-needs-bridge';
 
 const EXTRA_PILLAR_LABELS: Record<string, string> = {
   daily_story: 'Günlük story / mekan',
@@ -216,12 +213,9 @@ export function BrandContentStrategyPanel({
   }, [initialPillars, initialCtas]);
 
   const pillarSuggestions = useMemo(() => {
-    const playbook = STARTER_INDUSTRY_PLAYBOOKS.find(
-      (p) => p.id === sector || sector.includes(p.id),
-    );
-    const defaults = playbook?.defaultContentNeeds ?? CREATIVE_CONTENT_NEEDS.map((n) => n.id);
+    const fromSlots = deriveContentNeedsFromSectorPack(sector);
     const fromAnalysis = initialPillars;
-    return [...new Set([...defaults, ...fromAnalysis])] as CreativeIntent[];
+    return [...new Set([...fromSlots, ...fromAnalysis])] as CreativeIntent[];
   }, [sector, initialPillars]);
 
   const persist = useCallback(async (nextPillars: string[], nextCtas: string[]) => {

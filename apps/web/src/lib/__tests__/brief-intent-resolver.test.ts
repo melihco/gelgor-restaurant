@@ -33,7 +33,7 @@ describe('inferAdHocBriefAssignment', () => {
       content_type: 'story',
       visual_direction: 'full moon beach night',
     }, '');
-    expect(a.slot_role).toBe('fal_reel_motion');
+    expect(a.slot_role).toBe('campaign_story_motion');
     expect(a.pipeline).toBe('fal_story');
     expect(a.visual_subject_hint).toBe('full moon beach night');
   });

@@ -65,6 +65,10 @@ export interface FalOnlySlotInput {
   backgroundStyle?: import('@/types/brand-theme').TypographyBackgroundStyle;
   brandTemplateBinding?: import('@/lib/brand-design-template-production').BrandTemplateFalBinding | null;
   logoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
+  /** Pre-resolved from production-loop — gallery brands must compose on matched photo. */
+  requireGroundedGallery?: boolean;
+  hasRealBrandGallery?: boolean;
+  captionDrivenGenerated?: boolean;
 }
 
 export interface FalOnlySlotResult {
@@ -143,10 +147,12 @@ export async function produceFalOnlySlot(
       input.brandReferenceImageUrls ?? [],
     );
 
-    const groundedRequired = resolveFalRequireGroundedGallery({
+    const groundedRequired = input.requireGroundedGallery ?? resolveFalRequireGroundedGallery({
       referencePhotoUrl: photoUrl,
       sector: input.sector,
       pipeline: falPipeline,
+      hasRealBrandGallery: input.hasRealBrandGallery,
+      captionDrivenGenerated: input.captionDrivenGenerated,
     });
 
     let designFailMsg = '';
@@ -308,9 +314,11 @@ export async function produceFalOnlySlot(
         mood: input.mood,
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
-        requireGroundedGallery: resolveFalRequireGroundedGallery({
+        requireGroundedGallery: input.requireGroundedGallery ?? resolveFalRequireGroundedGallery({
           referencePhotoUrl: photoUrl,
           sector: input.sector,
+          hasRealBrandGallery: input.hasRealBrandGallery,
+          captionDrivenGenerated: input.captionDrivenGenerated,
         }),
         designIntensityLevel: input.designIntensityLevel,
         occasion: binding?.occasion,
@@ -378,7 +386,12 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       librarySlotKey: inputs.librarySlotKey,
       format: inputs.isFalOnlyPost ? 'post' : inputs.pipeline.includes('reel') ? 'reel' : 'story',
       caption: inputs.caption,
-      adHocBrief: inputs.adHocBrief,
+      headline: inputs.headline,
+      announcementType: inputs.announcementType,
+      templateUseCase: inputs.templateUseCase,
+      catalogSlotKey: inputs.catalogSlotKey,
+      brandActiveSlots: inputs.brandActiveSlots,
+      adHocBrief: Boolean(inputs.adHocBrief),
       missionReferenceUrl: inputs.referenceUrl,
       baseDirectives: falBrand.promptDirectives,
       brandColors: falBrand.brandColors,
@@ -419,6 +432,9 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
       brandTemplateBinding: templateBinding,
       logoPlacement: inputs.falLogoPlacement,
+      requireGroundedGallery: inputs.requireGroundedGallery,
+      hasRealBrandGallery: inputs.hasRealBrandGallery,
+      captionDrivenGenerated: inputs.captionDrivenGenerated,
     });
     if (falOnly) {
       if (falOnly.imageUrl != null) state.imageUrl = falOnly.imageUrl;

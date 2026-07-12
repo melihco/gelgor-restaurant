@@ -31,8 +31,8 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
   it('current mode: calendar fal slot, photo_first, inferred vibe, harmonized prompt', () => {
     const plan = simulateFalFeedProduction('current', BASE_INPUT);
 
-    expect(plan.slotRole).toBe('fal_designed_post');
-    expect(plan.pipeline).toBe('fal_design');
+    expect(plan.slotRole).toBe('campaign_story_motion');
+    expect(plan.pipeline).toBe('fal_story');
     expect(plan.format).toBe('story');
     expect(plan.engine).toBe('gpt_image_designed');
     expect(plan.intensity).toBe('photo_first');

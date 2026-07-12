@@ -18,10 +18,11 @@ import {
 } from './template-color-policy';
 import { resolveTypographyVibeFromContext } from './fal-designer-production';
 import {
-  resolveFalDesignIntensityForChannel,
-  type FalDesignChannel,
-  type FalDesignIntensityLevel,
-} from './fal-design-intensity';
+  resolveFalTemplateIntensityForChannel,
+  resolveFalTemplateBackgroundStyle,
+  resolveFalTemplateProductionSettings,
+} from '@/lib/fal-template-production-settings';
+import type { FalDesignChannel, FalDesignIntensityLevel } from '@/lib/fal-design-intensity';
 
 export interface ResolvedFalBrandInput {
   brandColors: { primary: string; accent: string };
@@ -309,9 +310,10 @@ export function resolveFalBrandInput(input: {
     postMood: input.postMood,
     lockPremiumVibe: Boolean(visualDnaTone?.trim()) || /beach|club|hotel|resort|spa|fine_dining/i.test(input.sector ?? ''),
   });
-  const backgroundStyle: TypographyBackgroundStyle = input.referencePhotoUrl
-    ? 'photo_overlay'
-    : typographyConfig?.background_style ?? 'gradient_mesh';
+  const backgroundStyle: TypographyBackgroundStyle = resolveFalTemplateBackgroundStyle({
+    theme: themeRecord,
+    referencePhotoUrl: input.referencePhotoUrl,
+  });
   const antiPatterns = [
     ...getSectorImageNegativeGuards(input.sector),
     ...(((themeRecord?.anti_patterns ?? themeRecord?.antiPatterns) as string[] | undefined) ?? []),
@@ -336,7 +338,7 @@ export function resolveFalBrandInput(input: {
       fontPersonality: slotTypography?.fontPersonality,
     }),
     describeTextEffect(typographyConfig?.text_effect ?? postDefaults?.text_effect),
-    describeLogoTreatment(typographyConfig?.logo_treatment),
+    describeLogoTreatment(resolveFalTemplateProductionSettings(themeRecord).logo_treatment),
     buildTemplateColorDirective({
       templateId,
       posterTemplateId,
@@ -362,6 +364,6 @@ export function resolveFalBrandInput(input: {
     visualDnaTone,
     templateId,
     posterTemplateId,
-    designIntensityLevel: resolveFalDesignIntensityForChannel(themeRecord, input.format),
+    designIntensityLevel: resolveFalTemplateIntensityForChannel(themeRecord, input.format),
   };
 }

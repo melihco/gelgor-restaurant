@@ -33,6 +33,8 @@ _BACKOFF_CAP_SEC = 900  # 15 min
 _STALE_CLAIM_SEC = 1800  # 30 min — Remotion renders routinely take 5-15 min
 # Proactive reclaim at each factory drain pass (shorter than _STALE_CLAIM_SEC).
 _FACTORY_DRAIN_STALE_RECLAIM_SEC = 600  # 10 min
+# BullMQ drain: reclaim running rows when enqueue/worker never completes (dev-friendly).
+_BULLMQ_DRAIN_STALE_RECLAIM_SEC = 180  # 3 min — Next compile / enqueue timeout recovery
 # BullMQ watchdog: reclaim running rows when worker callback never arrives (~max auto-produce).
 _BULLMQ_WATCHDOG_STALE_SEC = 660  # 11 min — above Next maxDuration 600s
 
@@ -448,6 +450,40 @@ async def reclaim_stale_jobs(
     if rows:
         logger.info(
             "production_jobs.reclaim_stale",
+            mission_id=str(mission_id),
+            reclaimed=len(rows),
+        )
+    return len(rows)
+
+
+async def reclaim_inflight_jobs(mission_id: uuid.UUID) -> int:
+    """Reset all claimed/running rows to pending (operator kick / missing BullMQ worker).
+
+    BullMQ mode marks jobs ``running`` at enqueue time; without a worker process they
+    stay in-flight indefinitely. Operator kick should always recycle these slots.
+    """
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET status = 'pending',
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    updated_at = now()
+                WHERE mission_id = CAST(:mission_id AS UUID)
+                  AND status IN ('claimed', 'running')
+                RETURNING id
+                """
+            ),
+            {"mission_id": str(mission_id)},
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info(
+            "production_jobs.reclaim_inflight",
             mission_id=str(mission_id),
             reclaimed=len(rows),
         )

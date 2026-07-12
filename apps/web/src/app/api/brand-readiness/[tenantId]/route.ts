@@ -15,7 +15,6 @@ import {
   type BrandReadinessInputs,
 } from '@/lib/brand-readiness';
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
-import { parseBrandTemplateLibraryFromTheme } from '@/lib/brand-template-library';
 import { brsCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
@@ -94,7 +93,7 @@ export async function GET(
     });
   }
 
-  const [ctxRes, galleryRes, themeRes, briefsRes] = await Promise.all([
+  const [ctxRes, galleryRes, themeRes, briefsRes, templatesRes] = await Promise.all([
     fetchCrewBackendJson<BrandContextRaw>(`/api/v1/brand-context/${tenantId}`, {
       workspaceId: tenantId,
       timeoutMs: 8_000,
@@ -109,6 +108,10 @@ export async function GET(
     ),
     fetchCrewBackendJson<{ brand_dna?: unknown; visual_dna?: unknown }>(
       `/api/v1/brand-context/${tenantId}/all-briefs`,
+      { workspaceId: tenantId, timeoutMs: 8_000 },
+    ),
+    fetchCrewBackendJson<Array<{ status?: string }>>(
+      `/api/v1/design-templates/${tenantId}`,
       { workspaceId: tenantId, timeoutMs: 8_000 },
     ),
   ]);
@@ -167,9 +170,11 @@ export async function GET(
       && isNonEmptyObject(themeObj)
       && (isNonEmptyObject(themeObj.palette) || isNonEmptyObject(themeObj.typography)),
   );
-  const library = parseBrandTemplateLibraryFromTheme(themeObj);
-  const enabledTemplateSlots = library?.slots.filter((slot) => slot.enabled !== false) ?? [];
-  const hasTemplateLibrary = Boolean(library?.locked && enabledTemplateSlots.length >= 5);
+  const activeFalTemplates = (templatesRes.ok && Array.isArray(templatesRes.data)
+    ? templatesRes.data
+    : []
+  ).filter((t) => t.status !== 'archived');
+  const hasTemplateLibrary = activeFalTemplates.length >= 3;
 
   const briefsData = briefsRes.ok && briefsRes.data
     ? briefsRes.data

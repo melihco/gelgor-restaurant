@@ -661,8 +661,13 @@ const SECTOR_ALIASES: Record<string, string> = {
   berber: 'barber_salon',
   // Food & drink family
   cafe: 'coffee_shop',
+  kahve: 'coffee_shop',
+  espresso_bar: 'coffee_shop',
+  roastery: 'coffee_shop',
   restaurant: 'restaurant_cafe',
+  restoran: 'restaurant_cafe',
   bistro: 'restaurant_cafe',
+  brunch: 'restaurant_cafe',
   restaurant_bar: 'restaurant_cafe',
   beach_club_bar: 'beach_club',
   restaurant_cafe: 'restaurant_cafe',
@@ -701,7 +706,15 @@ const SECTOR_ALIASES: Record<string, string> = {
   wedding: 'wedding_event',
   event: 'wedding_event',
   dugun: 'wedding_event',
+  düğün: 'wedding_event',
   organizasyon: 'wedding_event',
+  wedding_planner: 'wedding_event',
+  wedding_planning: 'wedding_event',
+  event_planning: 'wedding_event',
+  event_planning_service: 'wedding_event',
+  wedding_event_service: 'wedding_event',
+  etkinlik_ve_organizasyon: 'wedding_event',
+  etkinlik_organizasyon: 'wedding_event',
 };
 
 const FALLBACK_PROFILE: SectorProductionProfile = PROFILE_MAP.get('general_business')!;
@@ -709,7 +722,7 @@ const FALLBACK_PROFILE: SectorProductionProfile = PROFILE_MAP.get('general_busin
 /** Normalize a raw sector string to a canonical profile key. */
 export function normalizeSectorId(sector: string | null | undefined): string {
   if (!sector) return 'general_business';
-  const key = sector.toLowerCase().replace(/[\s-]+/g, '_').trim();
+  const key = sector.toLowerCase().replace(/[\s\-&]+/g, '_').trim();
   return SECTOR_ALIASES[key] ?? key;
 }
 

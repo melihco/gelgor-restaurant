@@ -57,9 +57,14 @@ export function missionProductionStatusCopy(
   }
 
   if (phase === 'producing' || (summary.inFlight ?? 0) > 0) {
+    const inFlight = summary.inFlight ?? 0;
+    const progressText =
+      inFlight > 0
+        ? `Üretim devam ediyor (${summary.ready}/${summary.total} hazır · ${inFlight} üretiliyor).`
+        : `Üretim devam ediyor (${summary.ready}/${summary.total} slot).`;
     return {
       title: 'Görseller üretiliyor',
-      subtitle: `Üretim devam ediyor (${summary.ready}/${summary.total} slot).${etaText}`,
+      subtitle: `${progressText}${etaText}`,
       inProgress: true,
     };
   }

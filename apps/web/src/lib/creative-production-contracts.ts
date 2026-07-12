@@ -51,7 +51,9 @@ export type CreativeRiskSignal =
   | 'before_after'
   | 'personal_data'
   | 'user_generated_content'
-  | 'limited_availability';
+  | 'limited_availability'
+  | 'alcohol'
+  | 'origin_claim';
 
 export type CreativeAssetIntent =
   | 'logo'
@@ -279,6 +281,82 @@ export const STARTER_INDUSTRY_PLAYBOOKS: IndustryPlaybook[] = [
     riskySignals: ['price', 'location', 'personal_data'],
     approvalRequiredFor: ['price', 'personal_data'],
     preferredChannels: ['google_business_update', 'instagram_post', 'meta_ad_creative'],
+  },
+];
+
+/** Extended playbooks — mirrors Python industry_playbooks.py risky_signals / approval_required_for. */
+export const EXTENDED_INDUSTRY_PLAYBOOKS: IndustryPlaybook[] = [
+  {
+    id: 'beach_club',
+    label: 'Beach Club',
+    defaultContentNeeds: ['daily_story', 'event_announcement', 'campaign_offer', 'social_proof', 'behind_the_scenes'],
+    riskySignals: ['price', 'date', 'limited_availability', 'alcohol'],
+    approvalRequiredFor: ['price', 'date', 'alcohol'],
+    preferredChannels: ['instagram_story', 'instagram_reel', 'instagram_post'],
+  },
+  {
+    id: 'wedding_event',
+    label: 'Düğün / Etkinlik',
+    defaultContentNeeds: ['event_announcement', 'social_proof', 'behind_the_scenes', 'campaign_offer', 'lead_generation'],
+    riskySignals: ['date', 'location', 'personal_data', 'limited_availability'],
+    approvalRequiredFor: ['date', 'personal_data'],
+    preferredChannels: ['instagram_story', 'instagram_post', 'instagram_reel'],
+  },
+  {
+    id: 'local_products_shop',
+    label: 'Yöresel / Yerel Ürün',
+    defaultContentNeeds: ['product_highlight', 'behind_the_scenes', 'social_proof', 'educational_post', 'daily_story'],
+    riskySignals: ['price', 'health_claim', 'origin_claim'],
+    approvalRequiredFor: ['price', 'health_claim'],
+    preferredChannels: ['instagram_post', 'instagram_story', 'instagram_reel'],
+  },
+  {
+    id: 'barber_salon',
+    label: 'Berber / Kuaför',
+    defaultContentNeeds: ['service_intro', 'social_proof', 'post_service_client_result', 'lead_generation', 'behind_the_scenes'],
+    riskySignals: ['personal_data', 'before_after', 'price'],
+    approvalRequiredFor: ['personal_data', 'before_after'],
+    preferredChannels: ['instagram_story', 'instagram_reel', 'instagram_post'],
+  },
+  {
+    id: 'fitness_gym',
+    label: 'Fitness / Gym',
+    defaultContentNeeds: ['service_intro', 'educational_post', 'social_proof', 'campaign_offer', 'lead_generation'],
+    riskySignals: ['health_claim', 'before_after', 'price', 'personal_data'],
+    approvalRequiredFor: ['health_claim', 'before_after', 'personal_data'],
+    preferredChannels: ['instagram_reel', 'instagram_story', 'instagram_post'],
+  },
+  {
+    id: 'hospitality',
+    label: 'Otel / Konaklama',
+    defaultContentNeeds: ['daily_story', 'product_highlight', 'social_proof', 'event_announcement', 'seasonal_content'],
+    riskySignals: ['price', 'date', 'limited_availability', 'location'],
+    approvalRequiredFor: ['price', 'date'],
+    preferredChannels: ['instagram_story', 'instagram_reel', 'instagram_post'],
+  },
+  {
+    id: 'nightclub_lounge',
+    label: 'Gece Kulübü / Lounge',
+    defaultContentNeeds: ['event_announcement', 'daily_story', 'campaign_offer', 'social_proof', 'behind_the_scenes'],
+    riskySignals: ['price', 'date', 'limited_availability', 'alcohol'],
+    approvalRequiredFor: ['price', 'date', 'alcohol'],
+    preferredChannels: ['instagram_story', 'instagram_reel', 'instagram_post'],
+  },
+  {
+    id: 'cafe_bakery',
+    label: 'Pastane / Fırın',
+    defaultContentNeeds: ['product_highlight', 'daily_story', 'behind_the_scenes', 'social_proof', 'campaign_offer'],
+    riskySignals: ['price', 'date', 'limited_availability'],
+    approvalRequiredFor: ['price', 'date'],
+    preferredChannels: ['instagram_story', 'instagram_post', 'instagram_reel'],
+  },
+  {
+    id: 'fine_dining',
+    label: 'Fine Dining',
+    defaultContentNeeds: ['menu_share', 'product_highlight', 'event_announcement', 'social_proof', 'behind_the_scenes'],
+    riskySignals: ['price', 'discount', 'date', 'location', 'limited_availability'],
+    approvalRequiredFor: ['price', 'discount', 'date'],
+    preferredChannels: ['instagram_post', 'instagram_story', 'instagram_reel'],
   },
 ];
 

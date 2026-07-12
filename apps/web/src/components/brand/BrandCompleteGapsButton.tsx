@@ -8,10 +8,9 @@ import {
   countActionableGaps,
   countAutoFixableGaps,
   formatCompleteGapsFeedback,
-  mergeBrandGapLists,
   type BrandGapItem,
 } from '@/lib/brand-gap-analysis';
-import { parseStringOrArray } from '@/lib/brand-readiness';
+import { fetchBrandGapPreview } from '@/lib/brand-gap-preview-client';
 
 export interface BrandCompleteGapsButtonProps {
   tenantId: string | null | undefined;
@@ -32,45 +31,14 @@ export function BrandCompleteGapsButton({
   const { data: gapPreview } = useQuery({
     queryKey: ['brand-gaps', tenantId],
     queryFn: async () => {
-      if (!tenantId) return { gaps: [] as BrandGapItem[], ctx: null as Record<string, unknown> | null };
-      const [gapRes, ctxRes] = await Promise.all([
-        fetchTenantBff(
-          `/api/brand-context/${tenantId}/complete-gaps`,
-          tenantId,
-          { headers: getTenantBffHeaders(tenantId) },
-        ),
-        fetchTenantBff(
-          `/api/brand-context-data/${tenantId}`,
-          tenantId,
-          { headers: getTenantBffHeaders(tenantId) },
-        ),
-      ]);
-      const gaps = gapRes.ok
-        ? ((await gapRes.json()) as { gaps?: BrandGapItem[] }).gaps ?? []
-        : [];
-      const ctx = ctxRes.ok
-        ? ((await ctxRes.json()) as Record<string, unknown>)
-        : null;
-      return { gaps, ctx };
+      if (!tenantId) return { gaps: [] as BrandGapItem[], mergedGaps: [] as BrandGapItem[], ctx: null };
+      return fetchBrandGapPreview(tenantId);
     },
     staleTime: 60_000,
     enabled: Boolean(tenantId),
   });
 
-  const mergedGaps = mergeBrandGapLists(gapPreview?.gaps ?? [], {
-    description: String(gapPreview?.ctx?.description ?? ''),
-    websiteSummary: String(gapPreview?.ctx?.website_summary ?? ''),
-    brandDna: gapPreview?.ctx?.brand_dna,
-    discoveryConfidence: Number(gapPreview?.ctx?.discovery_confidence ?? 0),
-    contentPillarCount: parseStringOrArray(gapPreview?.ctx?.content_pillars).length,
-    defaultCtaCount: parseStringOrArray(gapPreview?.ctx?.default_ctas).length,
-    usablePhotoCount: parseStringOrArray(gapPreview?.ctx?.reference_image_urls).length,
-    analyzedPhotoCount: Object.keys(
-      (typeof gapPreview?.ctx?.gallery_analysis === 'object' && gapPreview?.ctx?.gallery_analysis)
-        ? gapPreview.ctx.gallery_analysis as Record<string, unknown>
-        : {},
-    ).length,
-  });
+  const mergedGaps = gapPreview?.mergedGaps ?? [];
   const actionable = countActionableGaps(mergedGaps);
   const autoFixable = countAutoFixableGaps(mergedGaps);
 
@@ -180,16 +148,22 @@ export function BrandCompleteGapsButton({
         onClick={() => void runComplete()}
         style={{
           width: '100%',
-          padding: '13px 16px',
-          borderRadius: 14,
-          border: 'none',
+          padding: '14px 16px',
+          borderRadius: 16,
+          border: autoFixable > 0
+            ? '0.5px solid rgba(16,185,129,0.35)'
+            : '0.5px solid rgba(99,102,241,0.35)',
           cursor: running ? 'wait' : 'pointer',
-          fontSize: 14,
+          fontSize: 13.5,
           fontWeight: 700,
+          letterSpacing: '-0.02em',
           color: '#fff',
           background: autoFixable > 0
-            ? 'linear-gradient(135deg, #10B981, #059669)'
-            : 'linear-gradient(135deg, #6366F1, #4F46E5)',
+            ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
+            : 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)',
+          boxShadow: autoFixable > 0
+            ? '0 10px 28px rgba(16,185,129,0.22)'
+            : '0 10px 28px rgba(99,102,241,0.22)',
         }}
       >
         {label}

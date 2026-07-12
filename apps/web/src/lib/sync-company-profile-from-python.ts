@@ -1,8 +1,10 @@
 import type { SaveCompanyProfileRequest } from '@/types';
 import {
   resolveAuthoritativeIndustry,
+  resolveTenantCanonicalSector,
   shouldRefreshIndustryFromPython,
 } from '@/lib/canonical-sector';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 
 /** Map Python brand_tone text → Setup Wizard preset value. */
 export function pythonToneToPreset(tone: string): string {
@@ -21,18 +23,7 @@ function str(v: unknown): string {
 
 /** Python may store human labels (e.g. "Restoran & Bar") — map to playbook slug when possible. */
 export function industryFromPythonBusinessType(businessType: string): string {
-  const t = businessType.toLowerCase();
-  if (!t) return '';
-  if (/^[a-z][a-z0-9_]+$/.test(t) && t.includes('_')) return businessType;
-  if (t.includes('restoran') || t.includes('bar') || t.includes('cafe') || t.includes('kafe')) {
-    return 'restaurant_cafe';
-  }
-  if (t.includes('otel') || t.includes('hotel') || t.includes('resort')) return 'hotel_resort';
-  if (t.includes('ürün') || t.includes('shop') || t.includes('market') || t.includes('badam')) {
-    return 'local_products_shop';
-  }
-  if (t.includes('beach') || t.includes('club')) return 'beach_club';
-  return businessType.slice(0, 100);
+  return normalizeSectorId(businessType) || businessType.slice(0, 100);
 }
 
 function parseJsonList(raw: unknown): string[] {

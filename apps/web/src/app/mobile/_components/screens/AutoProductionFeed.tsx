@@ -56,20 +56,15 @@ import {
 } from '@/lib/ai-visual-production-standard';
 import { isUsableReelPhotoUrl } from '@/lib/reel-multi-production';
 import { fetchAnnouncementBrandKitPreview } from '@/lib/brand-kit-preview';
-import { resolveContentIntent } from '@/lib/brand-motion-profile';
-import { ensureBrandTemplateLibrary, resolveProductionTemplate } from '@/lib/brand-template-library';
 import { upscaleCdnUrl } from './MissionContentFactory';
 // composeBrandPhotoCard, composeAgencyDesignCard, CANVAS_STYLES removed — Remotion handles story/reel designs
 import type { BrandTheme } from '@/types/brand-theme';
-import { useBrandStoryTemplates } from '@/hooks/useBrandStoryTemplates';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import { parseArtifactMissionId } from '@/lib/mission-feed-package';
 import { MissionFeedPreviewGrid } from '../MissionFeedPreviewGrid';
 import { BoostPostSheet } from '../BoostPostSheet';
 import {
-  ideaFieldsForStoryTemplate,
-  resolveMissionStoryTemplate,
-  resolveStoryTemplateForSlot,
+  resolveMissionStorySlot,
 } from '@/lib/mission-story-template';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -289,7 +284,7 @@ export function AutoProductionFeed({
 }: AutoProductionFeedProps) {
   const tenantBrand = useTenantBrandContext();
   const { t } = useTheme();
-  const { openPlatformPreview, openStoryTemplates } = useMobileStore();
+  const { openPlatformPreview } = useMobileStore();
   const queryClient = useQueryClient();
 
   const { data: fetchedProductionSnapshot } = useQuery<ProductionBrandContextSnapshot | null>({
@@ -429,48 +424,6 @@ export function AutoProductionFeed({
     return filtered.map(upscaleCdnUrl);
   })();
 
-  const { library: storyTemplateLibrary, isLocked: storyLibraryLocked } = useBrandStoryTemplates(tenantId, resolvedSector);
-
-  const refreshStoryBrandKit = useCallback(async (
-    item: ProducedItem,
-    pick: ReturnType<typeof resolveMissionStoryTemplate>,
-    photoUrl: string,
-  ) => {
-    if (!tenantId) return;
-    setItems(prev => prev.map(it =>
-      it.ideaIndex === item.ideaIndex ? { ...it, brandKitBuilding: true } : it,
-    ));
-    try {
-      const brandedUrl = await fetchAnnouncementBrandKitPreview({
-        photoUrl,
-        headline: item.headline,
-        cta: item.cta,
-        tagline: item.caption.slice(0, 80),
-        contentType: 'story',
-        tenantId,
-        brandName: effectiveBrandName,
-        location: effectiveLocation,
-        brandTheme,
-        templateId: pick.storyTemplateId,
-        sector: resolvedSector,
-      });
-      setItems(prev => prev.map(it =>
-        it.ideaIndex === item.ideaIndex
-          ? {
-            ...it,
-            brandKitUrl: brandedUrl,
-            brandKitBuilding: false,
-            storySlotKey: pick.slot.key,
-            storyTemplateName: pick.templateName,
-          }
-          : it,
-      ));
-    } catch {
-      setItems(prev => prev.map(it =>
-        it.ideaIndex === item.ideaIndex ? { ...it, brandKitBuilding: false } : it,
-      ));
-    }
-  }, [tenantId, effectiveBrandName, effectiveLocation, brandTheme, resolvedSector]);
 
   const produceAll = useCallback(async () => {
     if (producedRef.current) return;
@@ -537,7 +490,6 @@ export function AutoProductionFeed({
     const usedInSession = new Set<string>();
     // Sprint 2 (S2.9): collect match scores to feed the GIS matcher-avg log
     const sessionMatchScores: number[] = [];
-    const usedTemplateIds: string[] = [];
 
     for (let i = 0; i < initial.length; i++) {
       const item = initial[i]!;
@@ -636,38 +588,15 @@ export function AutoProductionFeed({
 
       try {
           const ideaRecord = ideas[i] as Record<string, unknown>;
-          const storyPick = fmt === 'story'
-            ? resolveMissionStoryTemplate({
+          const storyPick = fmt === 'story' && tenantId
+            ? resolveMissionStorySlot({
               theme: brandTheme as Record<string, unknown> | null,
               sector: resolvedSector,
               tenantId,
               idea: ideaRecord,
               ideaIndex: i,
-              usedTemplateIds,
             })
             : null;
-          if (storyPick?.storyTemplateId) usedTemplateIds.push(storyPick.storyTemplateId);
-
-          let posterTemplateId: string | undefined;
-          if (fmt === 'post' || fmt === 'carousel') {
-            const { treatment, templateUseCase, mood, headline } = ideaFieldsForStoryTemplate(ideaRecord);
-            const intent = resolveContentIntent({ treatment, templateUseCase, mood, headline });
-            const library = ensureBrandTemplateLibrary(brandTheme as unknown as Record<string, unknown>, {
-              sector: resolvedSector,
-              tenantId,
-            });
-            const production = resolveProductionTemplate({
-              library,
-              sector: resolvedSector,
-              intent,
-              treatment,
-              ideaIndex: i,
-              format: 'post',
-              usedTemplateIds,
-              brandTheme: brandTheme as Record<string, unknown> | null | undefined,
-            });
-            posterTemplateId = production.posterTemplateId;
-          }
 
           const brandedUrl = await fetchAnnouncementBrandKitPreview({
             photoUrl: imageUrl,
@@ -679,7 +608,7 @@ export function AutoProductionFeed({
             brandName: effectiveBrandName,
             location: effectiveLocation,
             brandTheme,
-            templateId: posterTemplateId ?? storyPick?.storyTemplateId,
+            templateId: undefined,
           });
 
           setItems(prev => prev.map((it, idx) =>
@@ -688,7 +617,7 @@ export function AutoProductionFeed({
               brandKitUrl: brandedUrl,
               brandKitBuilding: false,
               storySlotKey: storyPick?.slot.key ?? null,
-              storyTemplateName: storyPick?.templateName ?? null,
+              storyTemplateName: storyPick?.slot.labelTr ?? null,
               status: 'ready',
             } : it
           ));
@@ -1254,27 +1183,6 @@ export function AutoProductionFeed({
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={openStoryTemplates}
-          style={{
-            width: '100%',
-            marginBottom: 10,
-            padding: '10px 12px',
-            borderRadius: 12,
-            cursor: 'pointer',
-            textAlign: 'left',
-            border: `0.5px solid ${storyLibraryLocked ? `${t.success}40` : t.accentBorder}`,
-            background: storyLibraryLocked ? `${t.success}10` : t.accentDim,
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 700, color: storyLibraryLocked ? t.success : t.accent }}>
-            {storyLibraryLocked ? '✓ Marka story şablonları aktif' : 'Story şablonlarını özelleştir'}
-          </div>
-          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
-            Mission üretimi {storyTemplateLibrary?.slots.filter((s) => s.format === 'story' && s.enabled).length ?? 0} story slot kullanıyor
-          </div>
-        </button>
       </div>
 
       {/* Feed */}
@@ -1591,55 +1499,9 @@ export function AutoProductionFeed({
                       </div>
                     </div>
 
-                    {/* Expanded production panel — Remotion + Reel only */}
+                    {/* Expanded production panel — reel options */}
                     {expandedPanel[item.ideaIndex] && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 0' }}>
-
-                        {/* Marka story şablonları (5 slot kütüphanesi) */}
-                        {item.contentType.includes('story') && storyTemplateLibrary && (
-                          storyTemplateLibrary.slots
-                            .filter((s) => s.format === 'story' && s.enabled)
-                            .map((slot) => {
-                              const pick = resolveStoryTemplateForSlot(storyTemplateLibrary, slot.key, resolvedSector);
-                              if (!pick) return null;
-                              const isActive = item.storySlotKey === slot.key;
-                              return (
-                                <button
-                                  key={slot.key}
-                                  type="button"
-                                  onClick={() => {
-                                    if (!item.imageUrl) return;
-                                    setItems(prev => prev.map(it =>
-                                      it.ideaIndex === item.ideaIndex
-                                        ? { ...it, storySlotKey: slot.key, storyTemplateName: pick.templateName }
-                                        : it,
-                                    ));
-                                    refreshStoryBrandKit(item, pick, item.imageUrl).catch(() => {});
-                                  }}
-                                  disabled={!item.imageUrl}
-                                  style={{
-                                    padding: '10px 8px',
-                                    borderRadius: 12,
-                                    cursor: item.imageUrl ? 'pointer' : 'default',
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    textAlign: 'left',
-                                    border: `1.5px solid ${isActive ? t.accent : t.separator}`,
-                                    background: isActive ? `${t.accent}18` : t.elevated,
-                                    color: isActive ? t.accent : t.textSecondary,
-                                  }}
-                                >
-                                  <span style={{ fontSize: 15 }}>▶</span>
-                                  <span style={{ marginLeft: 6 }}>{slot.labelTr}</span>
-                                  <span style={{ display: 'block', fontSize: 10, color: t.textMuted, marginTop: 2 }}>
-                                    {pick.templateName}
-                                  </span>
-                                </button>
-                              );
-                            })
-                        )}
-
-                        {/* Canvas overlay kaldırıldı — Remotion kullanılıyor */}
 
                         {/* Reel (raw photo → Runway) */}
                         <button onClick={() => {
@@ -1657,10 +1519,6 @@ export function AutoProductionFeed({
                             {item.reelError || 'Fotoğraf → Runway'}
                           </span>
                         </button>
-
-                        {/* Ajans Story → Reel kaldırıldı — Remotion ile değiştirildi */}
-
-                        {/* Marka Kiti kaldırıldı — Remotion story şablonları kullanılıyor */}
 
                       </div>
                     )}

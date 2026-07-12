@@ -306,7 +306,7 @@ function resolveDeterministicRemotionLibrarySlotKey(input: {
     return standardKey;
   }
 
-  if (shouldApplyMissionFalStory(assignment) || shouldRenderRemotionStory(assignment) || shouldRenderRemotionPoster(assignment)) {
+  if (shouldApplyMissionFalStory(assignment)) {
     return mappedKey;
   }
 
@@ -667,16 +667,9 @@ function enrichResolvedAssignment(
     posterOrdinal: counters.posterOrdinal,
   });
 
-  if (shouldRenderRemotionPoster(assignment)) {
-    counters.posterOrdinal += 1;
-  }
-
   if (shouldApplyMissionFalAd(assignment)) {
     assignment = applyMissionFalAdAssignment(assignment);
   } else if (shouldApplyMissionFalStory(assignment)) {
-    assignment = applyMissionFalStoryAssignment(assignment, counters.storyOrdinal);
-    counters.storyOrdinal += 1;
-  } else if (shouldRenderRemotionStory(assignment)) {
     assignment = applyMissionFalStoryAssignment(assignment, counters.storyOrdinal);
     counters.storyOrdinal += 1;
   }
@@ -856,16 +849,9 @@ export function resolveFinalMissionAssignments(
       posterOrdinal,
     });
 
-    if (shouldRenderRemotionPoster(assignment)) {
-      posterOrdinal += 1;
-    }
-
     if (shouldApplyMissionFalAd(assignment)) {
       assignment = applyMissionFalAdAssignment(assignment);
     } else if (shouldApplyMissionFalStory(assignment)) {
-      assignment = applyMissionFalStoryAssignment(assignment, storyOrdinal);
-      storyOrdinal += 1;
-    } else if (shouldRenderRemotionStory(assignment)) {
       assignment = applyMissionFalStoryAssignment(assignment, storyOrdinal);
       storyOrdinal += 1;
     }

@@ -10,7 +10,7 @@ accessible. In production, mismatched X-Tenant-Id → 403.
 from fastapi import APIRouter, Depends
 
 from app.api.deps import verify_workspace_access
-from app.api.v1 import tenants, workspaces, packages, agents, tasks, reviews, brand_context, ads, analytics, provider_actions, intelligence, social, missions, brand_rules, usage_cost, cost_ledger, product_visual, scheduled_templates, design_templates, special_days
+from app.api.v1 import tenants, workspaces, packages, agents, tasks, reviews, brand_context, ads, analytics, provider_actions, intelligence, social, missions, brand_rules, usage_cost, cost_ledger, product_visual, scheduled_templates, design_templates, special_days, slot_catalog
 
 api_router = APIRouter()
 
@@ -37,3 +37,4 @@ api_router.include_router(product_visual.router, prefix="/product-visual", tags=
 api_router.include_router(scheduled_templates.router, prefix="/scheduled-templates", tags=["Scheduled Templates"], dependencies=_ws_dep)
 api_router.include_router(design_templates.router, prefix="/design-templates", tags=["Design Templates"], dependencies=_ws_dep)
 api_router.include_router(special_days.router, prefix="/special-days", tags=["Special Days"])
+api_router.include_router(slot_catalog.router, prefix="/slot-catalog", tags=["Slot Catalog"], dependencies=_ws_dep)

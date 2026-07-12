@@ -1,6 +1,5 @@
-/**
- * Load tenant-saved template_library from Python brand theme for showcase & catalog.
- */
+import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 import {
   ensureBrandTemplateLibrary,
   parseBrandTemplateLibraryFromTheme,
@@ -30,7 +29,9 @@ async function fetchBrandContextSector(workspaceId: string): Promise<string> {
     });
     if (!res.ok) return 'professional_service';
     const ctx = await res.json() as Record<string, unknown>;
-    return String(ctx.business_type ?? ctx.industry ?? 'professional_service').toLowerCase();
+    const sector = resolveAuthoritativeIndustry(ctx)
+      || normalizeSectorId(String(ctx.business_type ?? ctx.industry ?? ''));
+    return sector || 'general_business';
   } catch {
     return 'professional_service';
   }

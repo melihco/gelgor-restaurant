@@ -56,13 +56,17 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/server-config', () => ({ serverConfig: h.serverConfig }));
-vi.mock('@/lib/fal-designer-production', () => ({
-  produceFalDesignerVideo: h.produceFalDesignerVideo,
-  produceFalDesignedPostStill: h.produceFalDesignedPostStill,
-  resolveTypographyVibeFromContext: h.resolveTypographyVibeFromContext,
-  buildDesignedPostDesignCardPrompt: h.buildDesignedPostDesignCardPrompt,
-  resolveIdeogramBackgroundStyle: h.resolveIdeogramBackgroundStyle,
-}));
+vi.mock('@/lib/fal-designer-production', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/fal-designer-production')>();
+  return {
+    ...actual,
+    produceFalDesignerVideo: h.produceFalDesignerVideo,
+    produceFalDesignedPostStill: h.produceFalDesignedPostStill,
+    resolveTypographyVibeFromContext: h.resolveTypographyVibeFromContext,
+    buildDesignedPostDesignCardPrompt: h.buildDesignedPostDesignCardPrompt,
+    resolveIdeogramBackgroundStyle: h.resolveIdeogramBackgroundStyle,
+  };
+});
 vi.mock('@/lib/fal-video', () => ({ produceFalMissionVideo: h.produceFalMissionVideo }));
 vi.mock('@/lib/fal-story-motion', () => ({
   generateStoryMotionPlate: h.generateStoryMotionPlate,
@@ -93,6 +97,10 @@ vi.mock('@/app/api/auto-produce/handlers/image-generators', () => ({
 }));
 vi.mock('@/lib/fal-caption-headline', () => ({
   resolveFalProductionOverlayHeadline: h.resolveFalProductionOverlayHeadline,
+  resolveFalOverlayCopy: vi.fn(({ headline, cta }: { headline: string; cta?: string }) => ({
+    headline,
+    subtitle: cta ?? '',
+  })),
   areFalOverlayTextsRedundant: () => false,
 }));
 vi.mock('@/lib/typography-text-validation', () => ({
@@ -168,34 +176,26 @@ beforeEach(() => {
 });
 
 describe('falVideoHandler.run', () => {
-  it('produces a designer video and merges the result + story cost into state', async () => {
-    h.produceFalDesignerVideo.mockResolvedValue({
-      videoUrl: 'https://cdn.example.com/designer-vid.mp4',
-      imageUrl: 'designer-img',
+  it('produces a fal_story poster still and merges it into state', async () => {
+    h.produceFalDesignedPostStill.mockResolvedValue({
+      imageUrl: 'story-poster-img',
       grafikerScore: 8,
       grafikerPass: true,
-      motionModel: 'kling-v2',
       typographyModel: 'ideogram-v4',
+      resolvedHeadline: 'Sunset Session',
     });
 
     const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
     await falVideoHandler.run(ctx);
 
-    expect(h.produceFalDesignerVideo).toHaveBeenCalledTimes(1);
-    expect(h.produceFalDesignerVideo).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceId: 'ws-1',
-        referencePhotoUrl: 'https://x/photo.jpg',
-        pipeline: 'fal_story',
-        designerMotionCue: 'slow push in',
-      }),
-    );
-    expect(ctx.state.videoUrl).toBe('https://cdn.example.com/designer-vid.mp4');
-    expect(ctx.state.imageUrl).toBe('designer-img');
+    expect(h.produceFalDesignedPostStill).toHaveBeenCalledTimes(1);
+    expect(h.produceFalDesignerVideo).not.toHaveBeenCalled();
+    expect(ctx.state.videoUrl).toBeNull();
+    expect(ctx.state.imageUrl).toBe('story-poster-img');
     expect(ctx.state.falGrafikerScore).toBe(8);
     expect(ctx.state.falGrafikerPass).toBe(true);
-    expect(ctx.state.videoProduceMeta).toEqual({ source: 'kling' });
-    expect(ctx.state.costDelta).toBeCloseTo(0.14);
+    expect(ctx.state.videoProduceMeta).toEqual({ source: 'fal_video' });
+    expect(ctx.state.costDelta).toBeCloseTo(0.08);
   });
 
   it('charges the reel cost when the slot pipeline is a reel', async () => {
@@ -218,7 +218,7 @@ describe('falVideoHandler.run', () => {
     expect(ctx.state.costDelta).toBeCloseTo(0.18);
   });
 
-  it('does not treat still_fallback PNG as videoUrl', async () => {
+  it('does not treat still_fallback PNG as videoUrl on fal_reel', async () => {
     h.produceFalDesignerVideo.mockResolvedValue({
       videoUrl: 'https://cdn.example.com/still.png',
       imageUrl: 'designer-img',
@@ -228,25 +228,25 @@ describe('falVideoHandler.run', () => {
       typographyModel: 'ideogram-v4',
     });
 
-    const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
+    const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_reel' });
     await falVideoHandler.run(ctx);
 
     expect(ctx.state.videoUrl).toBeNull();
     expect(ctx.state.imageUrl).toBe('designer-img');
   });
 
-  it('falls back to raw image-to-video when the designer path throws', async () => {
+  it('falls back to raw image-to-video when the designer path throws on fal_reel', async () => {
     h.produceFalDesignerVideo.mockRejectedValue(new Error('designer boom'));
     h.produceFalMissionVideo.mockResolvedValue({
       videoUrl: 'https://cdn.example.com/raw-vid.mp4',
       model: 'luma-dream',
     });
 
-    const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
+    const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_reel' });
     await falVideoHandler.run(ctx);
 
     expect(h.produceFalMissionVideo).toHaveBeenCalledWith(
-      expect.objectContaining({ imageUrl: 'https://x/photo.jpg', pipeline: 'fal_story' }),
+      expect.objectContaining({ imageUrl: 'https://x/photo.jpg', pipeline: 'fal_reel' }),
     );
     expect(ctx.state.videoUrl).toBe('https://cdn.example.com/raw-vid.mp4');
     expect(ctx.state.imageUrl).toBe('https://x/photo.jpg');
