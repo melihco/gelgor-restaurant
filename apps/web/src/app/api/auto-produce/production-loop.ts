@@ -3214,16 +3214,24 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     // Organic designed posts — fal_design pipeline handles branded layers.
 
-    // Reels: Runway/fal MP4 only — never fall back to Remotion story motion.
+    // Reels prefer MP4, but fal_reel can still return a designed still when the
+    // video provider fails/no_artifact. Keep that still publishable so dynamic
+    // brand slot packages do not stall forever on external video availability.
     if (isReel && !videoUrl) {
-      console.warn(`[auto-produce] reel skip (no video): ${headline.slice(0, 50)} — ${reelFailureReason ?? 'unknown'}`);
-      results.push({
-        title: headline,
-        imageUrl: referenceUrl ?? '',
-        error: reelFailureReason ?? 'Reel videosu üretilemedi (Runway/fal.ai)',
-        slotKey,
-      });
-      continue;
+      if (isFalMissionVideo && imageUrl) {
+        console.warn(
+          `[auto-produce] fal_reel still fallback (no video): ${headline.slice(0, 50)} — ${reelFailureReason ?? falPipelineFailureReason ?? 'unknown'}`,
+        );
+      } else {
+        console.warn(`[auto-produce] reel skip (no video): ${headline.slice(0, 50)} — ${reelFailureReason ?? 'unknown'}`);
+        results.push({
+          title: headline,
+          imageUrl: referenceUrl ?? '',
+          error: reelFailureReason ?? 'Reel videosu üretilemedi (Runway/fal.ai)',
+          slotKey,
+        });
+        continue;
+      }
     }
 
     // Guard: skip only when there is no video, still, or gallery reference for Remotion
