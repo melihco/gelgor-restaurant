@@ -31,3 +31,8 @@ from app.models.production_cost import (  # noqa: F401
     MissionCostRollup,
     MissionSlotCostRollup,
 )
+from app.models.slot_catalog import (  # noqa: F401
+    CanonicalSector,
+    ProductionSlotDefinition,
+    TenantSlotAssignment,
+)

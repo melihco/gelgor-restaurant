@@ -63,6 +63,12 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("scheduler_and_startup_recovery_disabled")
 
+    try:
+        from app.services.slot_catalog_bootstrap import ensure_slot_catalog_ready
+        await ensure_slot_catalog_ready()
+    except Exception as exc:
+        logger.warning("slot_catalog_bootstrap_failed", error=str(exc)[:300])
+
     # Factory watchdog — resume open production_jobs without Celery Beat (dev + prod safety net).
     async def _factory_watchdog_loop() -> None:
         from app.services.production_factory_service import run_factory_watchdog_tick
