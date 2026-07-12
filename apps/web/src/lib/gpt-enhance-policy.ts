@@ -287,6 +287,16 @@ export function shouldSkipProductionForWeakGallery(input: {
     return false;
   }
   if (
+    input.falGroundedPipeline
+    && input.hasReference
+    && !input.captionServiceConflict
+    && !input.referenceIsStock
+    && input.galleryMatchScore != null
+    && input.galleryMatchScore >= GALLERY_PRODUCTION_MIN_SCORE
+  ) {
+    return false;
+  }
+  if (
     input.adaptiveScene
     && !input.captionServiceConflict
     && !input.falGroundedPipeline
