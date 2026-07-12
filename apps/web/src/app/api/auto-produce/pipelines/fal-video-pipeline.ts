@@ -329,6 +329,11 @@ export const falVideoHandler: ProductionPipelineHandler = {
         const rawMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
         console.warn('[auto-produce] [fal-track] raw fallback failed:', rawMsg);
         state.pipelineFailureReason = `fal_video: ${rawMsg}`.slice(0, 480);
+        // Keep the grounded gallery/design reference publishable when video
+        // providers return no_artifact. The production loop will persist this
+        // as a still fallback for fal_reel slots instead of stalling the package.
+        state.imageUrl = referenceUrl;
+        state.videoUrl = null;
       }
     }
   },
