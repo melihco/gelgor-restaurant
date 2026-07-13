@@ -764,6 +764,18 @@ export function isCaptionDrivenDefault(sector: string | null | undefined): boole
   return getSectorProfile(sector).captionDrivenDefault;
 }
 
+/**
+ * Caption/scratch AI without a brand photo is only for non-venue / low-gallery SaaS.
+ * Physical brands with real gallery photos must stay gallery-grounded (fal on product/venue).
+ */
+export function allowsCaptionScratchGalleryFallback(
+  sector: string | null | undefined,
+  hasRealBrandPhotos: boolean,
+): boolean {
+  if (hasRealBrandPhotos) return false;
+  return isNonVenueSectorProfile(sector) || isCaptionDrivenDefault(sector);
+}
+
 /** Default visual subject for the sector (used by creative director). */
 export function getDefaultVisualSubject(sector: string | null | undefined): DefaultVisualSubject {
   return getSectorProfile(sector).defaultVisualSubject;

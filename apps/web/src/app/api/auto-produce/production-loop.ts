@@ -72,6 +72,7 @@ import {
   getSectorColorGrade,
   isNonVenueSectorProfile,
   normalizeSectorId,
+  allowsCaptionScratchGalleryFallback,
 } from '@/lib/sector-production-profile';
 import { resolveBrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
@@ -432,8 +433,8 @@ export interface RunProductionParams {
   adHocBrief?: boolean;
 }
 
-/** When brand CDN/gallery URLs are dead, fal design/video can still ship via caption-driven scratch gen. */
-function canRecoverGalleryWithFalScratch(pipeline: string, slotRole: string): boolean {
+/** Pipelines that can attempt durable gallery rematch/mirror before aborting. */
+function canRetryBrandGalleryRecovery(pipeline: string, slotRole: string): boolean {
   return isFalDesignPipeline(pipeline)
     || isFalVideoPipeline(pipeline)
     || isFalOnlyPipeline(pipeline)
@@ -443,7 +444,28 @@ function canRecoverGalleryWithFalScratch(pipeline: string, slotRole: string): bo
     || slotRole === 'campaign_story_motion'
     || slotRole === 'campaign_reel_motion'
     || slotRole === 'organic_reel'
-    || slotRole === 'organic_story_still';
+    || slotRole === 'organic_story_still'
+    || slotRole === 'organic_carousel'
+    || slotRole === 'organic_post'
+    || pipeline === 'carousel_gallery'
+    || pipeline === 'gallery_photo';
+}
+
+async function rematchMirroredBrandGalleryUrl(opts: {
+  workspaceId: string;
+  primaryUrl: string | null | undefined;
+  galleryPhotos: string[];
+}): Promise<string | null> {
+  const photos = opts.galleryPhotos.filter((u) => Boolean(u?.trim()));
+  const primary = (opts.primaryUrl || photos[0] || '').trim();
+  if (!primary) return null;
+  const picked = await pickReachableProductionGalleryUrl(
+    opts.workspaceId,
+    primary,
+    photos,
+    { timeoutMs: 12_000 },
+  );
+  return picked?.url ?? null;
 }
 
 export async function runProduction(params: RunProductionParams): Promise<NextResponse> {
@@ -1797,10 +1819,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))) {
-      // External URL is broken — attempt fallback to a fresh gallery pick before aborting.
-      console.warn(`[auto-produce] broken external gallery URL — attempting fallback pick: ${referenceUrl.slice(0, 100)}`);
+      // External CDN URL dead — rematch + mirror brand gallery before any caption scratch.
+      console.warn(`[auto-produce] broken external gallery URL — rematching brand gallery: ${referenceUrl.slice(0, 100)}`);
       const fallbackCandidates = galleryPhotos.filter((u) => u !== referenceUrl);
-      const fallback = fallbackCandidates.length
+      const heuristicPick = fallbackCandidates.length
         ? pickMissionGallery(
             ideationCaption,
             ideationHeadline,
@@ -1816,13 +1838,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ideaIndex,
           )
         : null;
-      if (fallback) {
-        console.log(`[auto-produce] fallback gallery pick: ${fallback.slice(0, 80)}`);
-        referenceUrl = fallback;
-        referenceIsStock = isStockGalleryPhotoUrl(fallback);
-      } else if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+      const rematched = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
+        ? await rematchMirroredBrandGalleryUrl({
+          workspaceId,
+          primaryUrl: heuristicPick || referenceUrl,
+          galleryPhotos,
+        })
+        : null;
+      if (rematched) {
+        console.log(`[auto-produce] brand gallery rematch/mirror: ${rematched.slice(0, 80)}`);
+        referenceUrl = rematched;
+        referenceIsStock = isStockGalleryPhotoUrl(rematched);
+      } else if (
+        allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)
+        && canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
+      ) {
         console.warn(
-          `[auto-produce] gallery unreachable — fal scratch recovery for "${headline.slice(0, 48)}"`,
+          `[auto-produce] no brand gallery rematch — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
         );
         const recovered = await generateVibeImage({
           workspaceId,
@@ -1839,7 +1871,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDna: String(brandCtx.visual_dna ?? ''),
           vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
           logoUrl: brandLogoUrl || undefined,
-          // Do not pass brand gallery refs — they are often the same expired CDN URLs.
           referenceImageUrls: undefined,
           agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
             ?.image_edit_prompt as string | undefined,
@@ -1859,8 +1890,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceUrl = recovered;
         referenceIsStock = false;
         galleryMatchScore = null;
+        captionDrivenGenerated = true;
       } else {
-        console.warn(`[auto-produce] no fallback gallery URL — slot skipped`);        results.push({
+        console.warn(`[auto-produce] brand gallery unreachable — refusing caption scratch for photo brand`);
+        results.push({
           title: headline,
           imageUrl: '',
           error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
@@ -1935,34 +1968,64 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.log(`[auto-produce] broken internal URL — fallback pick: ${internalFallback.slice(0, 80)}`);
         referenceUrl = internalFallback;
         referenceIsStock = isStockGalleryPhotoUrl(internalFallback);
-      } else if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
-        console.warn(
-          `[auto-produce] broken internal/no gallery — fal scratch for "${headline.slice(0, 48)}"`,
-        );
-        const recovered = await generateVibeImage({
-          workspaceId,
-          headline,
-          caption,
-          contentType: kind,
-          brandName: resolvedBrandName,
-          location: brandLocation,
-          businessType: brandBusinessType,
-          brandTone: String(brandCtx.brand_tone ?? ''),
-          brandDescription: String(brandCtx.description ?? ''),
-          targetAudience: String(brandCtx.target_audience ?? ''),
-          visualStyle: String(brandCtx.visual_style ?? ''),
-          visualDna: String(brandCtx.visual_dna ?? ''),
-          vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-          logoUrl: brandLogoUrl || undefined,
-          // Scratch recovery must not re-use expired Instagram CDN refs.
-          referenceImageUrls: undefined,
-          agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-            ?.image_edit_prompt as string | undefined,
-          lutDirective: brandLutDirective || undefined,
-          antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-          captionDrivenMode: true,
-        });
-        if (!recovered) {
+      } else {
+        const rematched = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
+          ? await rematchMirroredBrandGalleryUrl({
+            workspaceId,
+            primaryUrl: referenceUrl,
+            galleryPhotos,
+          })
+          : null;
+        if (rematched) {
+          console.log(`[auto-produce] brand gallery rematch after internal miss: ${rematched.slice(0, 80)}`);
+          referenceUrl = rematched;
+          referenceIsStock = isStockGalleryPhotoUrl(rematched);
+        } else if (
+          allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)
+          && canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
+        ) {
+          console.warn(
+            `[auto-produce] broken internal/no gallery — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
+          );
+          const recovered = await generateVibeImage({
+            workspaceId,
+            headline,
+            caption,
+            contentType: kind,
+            brandName: resolvedBrandName,
+            location: brandLocation,
+            businessType: brandBusinessType,
+            brandTone: String(brandCtx.brand_tone ?? ''),
+            brandDescription: String(brandCtx.description ?? ''),
+            targetAudience: String(brandCtx.target_audience ?? ''),
+            visualStyle: String(brandCtx.visual_style ?? ''),
+            visualDna: String(brandCtx.visual_dna ?? ''),
+            vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+            logoUrl: brandLogoUrl || undefined,
+            referenceImageUrls: undefined,
+            agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
+              ?.image_edit_prompt as string | undefined,
+            lutDirective: brandLutDirective || undefined,
+            antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+            captionDrivenMode: true,
+          });
+          if (!recovered) {
+            results.push({
+              title: headline,
+              imageUrl: '',
+              error: brokenInternal
+                ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
+                : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+              slotKey,
+            });
+            continue;
+          }
+          referenceUrl = recovered;
+          referenceIsStock = false;
+          galleryMatchScore = null;
+          captionDrivenGenerated = true;
+        } else {
+          console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
           results.push({
             title: headline,
             imageUrl: '',
@@ -1973,20 +2036,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           });
           continue;
         }
-        referenceUrl = recovered;
-        referenceIsStock = false;
-        galleryMatchScore = null;
-      } else {
-        console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
-        results.push({
-          title: headline,
-          imageUrl: '',
-          error: brokenInternal
-            ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
-            : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
-          slotKey,
-        });
-        continue;
       }
     }
 
@@ -2006,9 +2055,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           }
           referenceUrl = picked.url;
         } else if (!referenceUrl.startsWith('/api/media?key=')) {
-          if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+          if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
             console.warn(
-              `[auto-produce] mirror failed — fal scratch for "${headline.slice(0, 48)}"`,
+              `[auto-produce] mirror failed — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
             );
             const recovered = await generateVibeImage({
               workspaceId,
@@ -2025,7 +2074,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               visualDna: String(brandCtx.visual_dna ?? ''),
               vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
               logoUrl: brandLogoUrl || undefined,
-              referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+              referenceImageUrls: undefined,
               agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
                 ?.image_edit_prompt as string | undefined,
               lutDirective: brandLutDirective || undefined,
@@ -2044,6 +2093,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             referenceUrl = recovered;
             referenceIsStock = false;
             galleryMatchScore = null;
+            captionDrivenGenerated = true;
           } else {
             console.warn(
               `[auto-produce] gallery photo unreachable after mirror: ${referenceUrl.slice(0, 90)}`,
@@ -2060,7 +2110,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } catch (mirrorErr) {
         console.warn('[auto-produce] pickReachableProductionGalleryUrl failed:', mirrorErr);
         if (!referenceUrl.startsWith('/api/media?key=')) {
-          if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+          if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
             const recovered = await generateVibeImage({
               workspaceId,
               headline,
@@ -2076,7 +2126,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               visualDna: String(brandCtx.visual_dna ?? ''),
               vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
               logoUrl: brandLogoUrl || undefined,
-              referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+              referenceImageUrls: undefined,
               agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
                 ?.image_edit_prompt as string | undefined,
               lutDirective: brandLutDirective || undefined,
@@ -2095,6 +2145,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             referenceUrl = recovered;
             referenceIsStock = false;
             galleryMatchScore = null;
+            captionDrivenGenerated = true;
           } else {
             results.push({
               title: headline,
@@ -2338,9 +2389,37 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         agentIdeationGalleryLock,
       })
     ) {
-      if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+      // Prefer another mirrored brand photo over caption-scratch AI.
+      const rematched = hasRealBrandPhotos
+        ? await rematchMirroredBrandGalleryUrl({
+          workspaceId,
+          primaryUrl: resolvedReferenceUrl,
+          galleryPhotos: galleryPhotos.filter(
+            (u) => normalizeGalleryUrl(u) !== normalizeGalleryUrl(resolvedReferenceUrl ?? ''),
+          ),
+        })
+        : null;
+      if (rematched) {
         console.warn(
-          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — fal scratch for "${headline.slice(0, 40)}"`,
+          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — rematched brand photo for "${headline.slice(0, 40)}"`,
+        );
+        referenceUrl = rematched;
+        resolvedReferenceUrl = rematched;
+        galleryPreviewUrl = toFeedPreviewUrl(rematched) ?? rematched;
+        referenceIsStock = isStockGalleryPhotoUrl(rematched);
+        pickedFromBrandGallery = true;
+        galleryMatchScore = scoreIdeationPhotoMatch({
+          caption: ideationCaption,
+          headline: ideationHeadline,
+          photoUrl: rematched,
+          galleryAnalysis: galleryMeta,
+          businessType: brandBusinessType,
+          mood,
+          contentType: kind,
+        });
+      } else if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
+        console.warn(
+          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — caption scratch (non-venue) for "${headline.slice(0, 40)}"`,
         );
         const recovered = await generateVibeImage({
           workspaceId,
@@ -2357,7 +2436,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDna: String(brandCtx.visual_dna ?? ''),
           vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
           logoUrl: brandLogoUrl || undefined,
-          // Scratch recovery must not re-use expired Instagram CDN refs.
           referenceImageUrls: undefined,
           agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
             ?.image_edit_prompt as string | undefined,
@@ -2380,6 +2458,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryMatchScore = null;
         pickedFromBrandGallery = false;
         referenceIsStock = false;
+        captionDrivenGenerated = true;
       } else {
         console.warn(
           `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — skip "${headline.slice(0, 40)}"`,
