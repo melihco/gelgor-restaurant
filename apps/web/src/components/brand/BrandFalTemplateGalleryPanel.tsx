@@ -26,6 +26,7 @@ import type { ProductionSlotDefinition, TenantSlotAssignment } from '@/lib/produ
 import { BrandFalTemplateProductionPanel } from '@/components/brand/BrandFalTemplateProductionPanel';
 import { FalSlotPreviewCompareModal } from '@/components/brand/FalSlotPreviewCompareModal';
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 
 type Variant = 'mobile' | 'desktop';
 
@@ -128,7 +129,8 @@ function GalleryCard({
       ? galleryRowSubtitle(row)
       : '';
   const format = orphan?.format ?? row?.format ?? 'post';
-  const hasPreview = Boolean(tmpl?.thumbnail_url);
+  const previewUrl = resolveClientMediaUrl(tmpl?.thumbnail_url ?? undefined) ?? tmpl?.thumbnail_url ?? null;
+  const hasPreview = Boolean(previewUrl);
   const slotEnabled = row?.enabled ?? true;
 
   return (
@@ -147,10 +149,10 @@ function GalleryCard({
         position: 'relative',
       }}
       >
-        {hasPreview && tmpl?.thumbnail_url ? (
+        {hasPreview && previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={tmpl.thumbnail_url}
+            src={previewUrl}
             alt={title}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />

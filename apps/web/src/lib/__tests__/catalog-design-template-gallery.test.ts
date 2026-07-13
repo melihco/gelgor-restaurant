@@ -61,6 +61,41 @@ describe('buildCatalogDesignGalleryRows', () => {
     expect(galleryRowTitle(first)).toBe('DJ Gecesi');
   });
 
+  it('prefers catalog_slot_key over earlier template_type fallback', () => {
+    const slots = [
+      mockSlot({
+        slot_key: 'beach_club_dj_night_teaser_post',
+        label_tr: 'DJ Gece Teaser',
+        design_template_type: 'event_special',
+        sort_order: 0,
+      }),
+      mockSlot({
+        slot_key: 'beach_club_dj_event_story',
+        label_tr: 'DJ Etkinlik',
+        format: 'story',
+        design_template_type: 'event_special',
+        sort_order: 1,
+      }),
+    ];
+    const templates = [
+      mockTemplate({
+        id: 't-dj-story',
+        template_type: 'event_special',
+        format: 'story',
+        catalog_slot_key: 'beach_club_dj_event_story',
+        thumbnail_url: 'https://cdn.example/dj-story.png',
+      }),
+    ];
+
+    const rows = buildCatalogDesignGalleryRows({ slots, templates });
+    const post = rows.find((row) => row.slotKey === 'beach_club_dj_night_teaser_post');
+    const story = rows.find((row) => row.slotKey === 'beach_club_dj_event_story');
+
+    expect(post?.template).toBeNull();
+    expect(story?.template?.id).toBe('t-dj-story');
+    expect(story?.matchSource).toBe('catalog_key');
+  });
+
   it('falls back to design_template_type when catalog key missing', () => {
     const slots = [
       mockSlot({ slot_key: 'slot_a', design_template_type: 'daily_story', format: 'story' }),

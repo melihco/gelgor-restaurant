@@ -119,25 +119,33 @@ export function buildCatalogDesignGalleryRows(input: {
     byType.set(template.template_type, typeList);
   }
 
-  const rows: CatalogDesignGalleryRow[] = input.slots.map((slot, index) => {
-    let template: BrandDesignTemplateRow | null = null;
-    let matchSource: CatalogDesignGalleryRow['matchSource'] = null;
+  const matches = new Map<string, {
+    template: BrandDesignTemplateRow;
+    matchSource: NonNullable<CatalogDesignGalleryRow['matchSource']>;
+  }>();
 
+  // Pass 1 — catalog_slot_key wins over slot iteration order. Without this,
+  // a post slot with the same design_template_type can steal a template that
+  // was generated for a later story slot (e.g. beach_club_dj_event_story).
+  for (const slot of input.slots) {
     const catalogMatch = byCatalogKey.get(slot.slot_key);
-    if (catalogMatch && !claimedIds.has(catalogMatch.id)) {
-      template = catalogMatch;
-      matchSource = 'catalog_key';
-      claimedIds.add(catalogMatch.id);
-    } else {
-      const typeCandidates = byType.get(slot.design_template_type) ?? [];
-      const fallback = typeCandidates.find((t) => !claimedIds.has(t.id));
-      if (fallback) {
-        template = fallback;
-        matchSource = 'template_type';
-        claimedIds.add(fallback.id);
-      }
-    }
+    if (!catalogMatch || claimedIds.has(catalogMatch.id)) continue;
+    matches.set(slot.slot_key, { template: catalogMatch, matchSource: 'catalog_key' });
+    claimedIds.add(catalogMatch.id);
+  }
 
+  // Pass 2 — legacy fallback when onboarding rows lack catalog_slot_key.
+  for (const slot of input.slots) {
+    if (matches.has(slot.slot_key)) continue;
+    const typeCandidates = byType.get(slot.design_template_type) ?? [];
+    const fallback = typeCandidates.find((t) => !claimedIds.has(t.id));
+    if (!fallback) continue;
+    matches.set(slot.slot_key, { template: fallback, matchSource: 'template_type' });
+    claimedIds.add(fallback.id);
+  }
+
+  return input.slots.map((slot, index) => {
+    const match = matches.get(slot.slot_key);
     return {
       slotKey: slot.slot_key,
       labelTr: slot.label_tr,
@@ -147,15 +155,13 @@ export function buildCatalogDesignGalleryRows(input: {
       librarySlotKey: slot.library_slot_key,
       enabled: input.slotEnabledByKey?.get(slot.slot_key) ?? true,
       priority: slot.sort_order ?? index,
-      template,
-      matchSource,
+      template: match?.template ?? null,
+      matchSource: match?.matchSource ?? null,
       optionalTags: slot.optional_tags,
       isOptional: isOptionalCatalogSlot(slot.optional_tags),
       facilityHint: facilityHintForSlot(slot.optional_tags),
     };
   });
-
-  return rows;
 }
 
 export function collectOrphanDesignTemplates(
