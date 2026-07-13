@@ -237,6 +237,9 @@ function enrichIdeationWithCalendarPlan(
   const announcement = String(
     plan.announcement_type ?? plan.type ?? plan.template_use_case ?? '',
   ).trim();
+  const calendarSubjectKey = String(plan.subject_key ?? plan.subjectKey ?? '').trim();
+  const ideationSubjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim();
+  const subjectKey = ideationSubjectKey || calendarSubjectKey || undefined;
   const ideationCaption = String(idea.caption_draft ?? idea.caption ?? '').trim();
   const caption = brief
     || ideationCaption
@@ -258,6 +261,7 @@ function enrichIdeationWithCalendarPlan(
     title: headline,
     caption_draft: caption,
     caption,
+    ...(subjectKey ? { subject_key: subjectKey } : {}),
     ...(brief ? { content_brief: brief } : {}),
     ...(tagline ? { tagline, subline: tagline } : {}),
     ...(mood ? { photo_mood: mood, mood, visual_direction: mood } : {}),

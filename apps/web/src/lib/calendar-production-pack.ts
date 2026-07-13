@@ -258,6 +258,8 @@ export function normalizeCalendarPlanToProductionIdea(
   const announcementType = String(
     plan.announcement_type ?? plan.type ?? plan.template_use_case ?? '',
   ).trim().toLowerCase();
+  // Language-neutral subject for caption↔gallery matching (same SSOT as ideation).
+  const subjectKey = String(plan.subject_key ?? plan.subjectKey ?? '').trim() || undefined;
   const day = normalizeCalendarDay(plan.date ?? plan.day ?? plan.publish_day ?? plan.scheduled_day);
   const time = String(plan.time ?? plan.scheduled_time ?? plan.publish_time ?? '').trim();
   const postingSuggestion = [plan.date, time].filter(Boolean).join(' ').trim();
@@ -298,6 +300,7 @@ export function normalizeCalendarPlanToProductionIdea(
     caption_draft: caption,
     caption,
     content_brief: contentBrief || undefined,
+    ...(subjectKey ? { subject_key: subjectKey } : {}),
     content_type: calendarFormatToContentType(fmt),
     content_kind: calendarFormatToContentType(fmt),
     format: channel,

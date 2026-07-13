@@ -906,8 +906,19 @@ export function enrichGalleryAnalysis(
 ): Record<string, GalleryPhotoMeta> {
   const enriched: Record<string, GalleryPhotoMeta> = {};
   for (const [url, meta] of Object.entries(galleryAnalysis)) {
-    const patch = enrichTagsFromDescription(meta);
-    enriched[url] = Object.keys(patch).length > 0 ? { ...meta, ...patch } : meta;
+    // Accept either camelCase (Next persist) or snake_case (Python dumps).
+    const raw = meta as GalleryPhotoMeta & { primary_subject?: string; subject_confidence?: number };
+    const primarySubject = meta.primarySubject
+      ?? (typeof raw.primary_subject === 'string' ? raw.primary_subject : undefined);
+    const subjectConfidence = meta.subjectConfidence
+      ?? (typeof raw.subject_confidence === 'number' ? raw.subject_confidence : undefined);
+    const normalized: GalleryPhotoMeta = {
+      ...meta,
+      ...(primarySubject ? { primarySubject } : {}),
+      ...(subjectConfidence != null ? { subjectConfidence } : {}),
+    };
+    const patch = enrichTagsFromDescription(normalized);
+    enriched[url] = Object.keys(patch).length > 0 ? { ...normalized, ...patch } : normalized;
   }
   return enriched;
 }
