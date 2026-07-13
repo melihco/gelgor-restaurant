@@ -101,6 +101,14 @@ export function resolveFalTemplateProductionSettings(
   };
 }
 
+export function resolveTemplateLibraryDesignIntensity(
+  level: FalDesignIntensityLevel,
+): FalDesignIntensityLevel {
+  if (level === 'photo_first') return 'elegant_light';
+  if (level === 'elegant_light') return 'balanced';
+  return level;
+}
+
 export function resolveFalTemplateIntensityForChannel(
   theme: Record<string, unknown> | null | undefined,
   channel: FalDesignChannel,

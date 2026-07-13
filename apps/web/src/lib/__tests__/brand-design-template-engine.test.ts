@@ -89,6 +89,7 @@ describe('buildBrandIntelligenceDirectives', () => {
     expect(prompt).toContain('Premium beach club');
     expect(prompt).toContain('sunset dining');
     expect(prompt).toContain('story uses elegant_light');
+    expect(prompt).toContain('LAYOUT RECIPE');
     expect(prompt).toContain('reusable brand recipes');
   });
 });

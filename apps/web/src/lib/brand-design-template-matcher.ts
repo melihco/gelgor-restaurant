@@ -261,9 +261,13 @@ function pickFormatFallbackTemplate(
 
 function buildDirective(record: BrandDesignTemplateRecord): string {
   const vibe = record.design_spec?.vibe;
+  const archetype = record.design_spec?.canvaArchetypeName ?? record.design_spec?.canvaArchetypeId;
+  const layout = record.design_spec?.layoutPattern;
   return [
     `Stay visually consistent with the brand's locked "${record.template_name}" template`,
     vibe ? `(${vibe} style)` : '',
+    archetype ? `— Canva archetype "${archetype}"` : '',
+    layout ? `layout: ${String(layout).slice(0, 120)}` : '',
     '— same typographic personality, color treatment and layout language as the brand identity, applied to this post.',
   ].filter(Boolean).join(' ');
 }

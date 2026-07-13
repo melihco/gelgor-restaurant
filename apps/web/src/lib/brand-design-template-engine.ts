@@ -20,10 +20,16 @@ import {
 import {
   resolveFalTemplateIntensityForChannel,
   resolveFalTemplateBackgroundStyle,
+  resolveTemplateLibraryDesignIntensity,
   shouldProminentLogoInFalTemplate,
   applyFalProductionOverridesToTheme,
   type BrandFalTemplateProductionConfig,
 } from '@/lib/fal-template-production-settings';
+import {
+  buildFalDesignBriefDirectives,
+  readTenantPreferredCanvaArchetypes,
+  resolveFalDesignBrief,
+} from '@/lib/fal-design-brief';
 import type { FalDesignChannel } from '@/lib/fal-design-intensity';
 import {
   isTypographyDesignConfirmed,
@@ -270,7 +276,7 @@ export function buildBrandIntelligenceDirectives(
     ctas.length ? `Native CTA language: ${ctas.join(' | ')}.` : '',
     vibe ? `Vibe profile signals: ${vibe}.` : '',
     service ? `Service/venue profile signals: ${service}.` : '',
-    `Template channel/intensity: ${channel} uses ${level}. If level is photo_first/elegant_light, keep Scorpios-style quiet luxury and photo-led restraint; if designed/bold_editorial, increase custom canvas composition, brand-color panels, editorial typography and graphic architecture while still preserving the real brand photo and brand DNA.`,
+    `Template channel/intensity: ${channel} uses ${level}. Build a reusable LAYOUT RECIPE with visible graphic architecture (zones, panels, hierarchy, brand-color accents) — not a raw photo with floating center text. At photo_first/elegant_light keep quiet luxury but still show designed zones; at balanced/designed/bold_editorial increase canvas composition, editorial typography and brand-specific structure while preserving the real gallery photo and visual DNA.`,
   ].filter(Boolean);
 
   return [
@@ -296,7 +302,8 @@ async function generateOne(
     : preset.format === 'story'
       ? 'story'
       : 'post';
-  const designIntensityLevel = resolveFalTemplateIntensityForChannel(theme, intensityChannel);
+  const productionIntensity = resolveFalTemplateIntensityForChannel(theme, intensityChannel);
+  const designIntensityLevel = resolveTemplateLibraryDesignIntensity(productionIntensity);
   const brandIntelligenceDirectives = buildBrandIntelligenceDirectives(
     input,
     intensityChannel,
@@ -314,6 +321,23 @@ async function generateOne(
     });
   const picked = pickPhotoForPreset(preset, input, usedUrls);
   if (picked) usedUrls.add(normalizeGalleryUrl(picked.url));
+  const briefFormat = preset.format === 'reel_cover'
+    ? 'reel'
+    : preset.format === 'story'
+      ? 'story'
+      : 'post';
+  const layoutBrief = resolveFalDesignBrief({
+    caption: subtitle ?? headline ?? preset.name,
+    headline: headline || input.brandName,
+    templateUseCase: preset.intent,
+    format: briefFormat,
+    sceneHint,
+    sector: input.sector,
+    referencePhotoUrl: picked?.url,
+    tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(theme),
+    layoutFamilyHint: preset.catalogSlotKey ?? undefined,
+  });
+  const layoutDirectives = buildFalDesignBriefDirectives(layoutBrief, briefFormat);
   const backgroundStyle: TypographyBackgroundStyle = resolveFalTemplateBackgroundStyle({
     theme,
     referencePhotoUrl: picked?.url,
@@ -343,6 +367,8 @@ async function generateOne(
     occasion,
     brandDirectives: [
       ...brandIntelligenceDirectives,
+      'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
+      ...layoutDirectives,
       ...(antiPatternDirective ? [antiPatternDirective] : []),
     ],
   });
@@ -450,7 +476,13 @@ async function generateOne(
       prominentLogo,
       logoUrl: input.logoUrl,
       designIntensityLevel,
+      productionIntensityLevel: productionIntensity,
       catalogSlotKey: preset.catalogSlotKey ?? null,
+      canvaArchetypeId: layoutBrief.canvaArchetypeId ?? null,
+      canvaArchetypeName: layoutBrief.canvaArchetypeName ?? null,
+      layoutPattern: layoutBrief.layoutPattern,
+      typographyMode: layoutBrief.typographyMode,
+      designBriefDirectives: layoutDirectives,
       ...(special
         ? { specialDay: { name: special.name, mmdd: special.mmdd, category: special.category } }
         : {}),

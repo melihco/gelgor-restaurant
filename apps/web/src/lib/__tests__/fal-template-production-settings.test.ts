@@ -3,6 +3,7 @@ import {
   resolveFalTemplateProductionSettings,
   resolveFalTemplateBackgroundStyle,
   resolveFalTemplateIntensityForChannel,
+  resolveTemplateLibraryDesignIntensity,
   shouldProminentLogoInFalTemplate,
   buildFalTemplateProductionPatch,
 } from '@/lib/fal-template-production-settings';
@@ -95,5 +96,14 @@ describe('resolveFalTemplateIntensityForChannel', () => {
         intensity: { story: 'elegant_light', reel: 'designed', post: 'photo_first' },
       },
     }, 'post')).toBe('photo_first');
+  });
+});
+
+describe('resolveTemplateLibraryDesignIntensity', () => {
+  it('raises soft production intensities for layout-rich template recipes', () => {
+    expect(resolveTemplateLibraryDesignIntensity('photo_first')).toBe('elegant_light');
+    expect(resolveTemplateLibraryDesignIntensity('elegant_light')).toBe('balanced');
+    expect(resolveTemplateLibraryDesignIntensity('balanced')).toBe('balanced');
+    expect(resolveTemplateLibraryDesignIntensity('designed')).toBe('designed');
   });
 });
