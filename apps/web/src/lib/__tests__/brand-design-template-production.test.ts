@@ -34,14 +34,25 @@ const matched: MatchedDesignTemplate = {
   brandColors: { primary: '#111', accent: '#f0f' },
   logoUrl: 'https://cdn.example.com/logo.png',
   directive: 'Stay consistent with Günlük Story.',
+  sampleHeadline: 'Gün batımı',
+  sampleSubtitle: 'Sınırlı süre',
+  layoutPattern: 'diagonal_split_photo_left',
+  designBriefDirectives: ['Upper headline zone with accent bar'],
+  canvaArchetypeId: 'arc-01',
+  canvaArchetypeName: 'Diagonal Split',
 };
 
 describe('buildTemplateLayoutDirectives', () => {
-  it('includes locked layout recipe and style reference hint', () => {
-    const dirs = buildTemplateLayoutDirectives(matched);
-    expect(dirs.some((d) => d.includes('BRAND LOCKED TEMPLATE'))).toBe(true);
-    expect(dirs.some((d) => d.includes('Bold diagonal panel'))).toBe(true);
-    expect(dirs.some((d) => d.includes('second reference image'))).toBe(true);
+  it('includes layout recipe and mission copy without raw preview prompt', () => {
+    const dirs = buildTemplateLayoutDirectives(matched, {
+      headline: 'Datça erken hasat',
+      subtitle: 'Sınırlı stok',
+    });
+    expect(dirs.some((d) => d.includes('LAYOUT TEMPLATE'))).toBe(true);
+    expect(dirs.some((d) => d.includes('MISSION HEADLINE') && d.includes('Datça erken hasat'))).toBe(true);
+    expect(dirs.some((d) => d.includes('FORBIDDEN ON-CANVAS TEXT') && d.includes('Gün batımı'))).toBe(true);
+    expect(dirs.some((d) => d.includes('Bold diagonal panel'))).toBe(false);
+    expect(dirs.some((d) => d.includes('second reference image'))).toBe(false);
     expect(dirs.some((d) => d.includes('TEXT LOCK'))).toBe(true);
   });
 });
@@ -63,7 +74,7 @@ describe('resolveFalTemplateLockOptions', () => {
     });
     expect(opts.captionAwareHeadline).toBe(false);
     expect(opts.grafikerMaxRetries).toBe(1);
-    expect(opts.requireTemplateStyleRef).toBe(true);
+    expect(opts.requireTemplateStyleRef).toBe(false);
   });
 
   it('keeps defaults when no template matched', () => {
@@ -87,16 +98,22 @@ describe('resolveFalTemplateLockOptions', () => {
 });
 
 describe('pickTemplateReferenceUrls', () => {
-  it('prefers mission photo first and template preview second', () => {
+  it('returns mission photo only — never template preview thumbnail', () => {
     const urls = pickTemplateReferenceUrls({
       missionPhotoUrl: 'https://cdn.example.com/mission.jpg',
       matched,
       brandReferenceImageUrls: [],
     });
-    expect(urls).toEqual([
-      'https://cdn.example.com/mission.jpg',
-      'https://cdn.example.com/preview-daily.jpg',
-    ]);
+    expect(urls).toEqual(['https://cdn.example.com/mission.jpg']);
+  });
+
+  it('falls back to template gallery ref when mission photo missing', () => {
+    const urls = pickTemplateReferenceUrls({
+      missionPhotoUrl: null,
+      matched,
+      brandReferenceImageUrls: [],
+    });
+    expect(urls).toEqual(['https://cdn.example.com/gallery-a.jpg']);
   });
 });
 
@@ -121,7 +138,7 @@ describe('bindBrandTemplateForFalProduction', () => {
     expect(binding.matched?.templateType).toBe('daily_story');
     expect(binding.lockedVibe).toBe('neon_glow');
     expect(binding.brandColors?.accent).toBe('#f0f');
-    expect(binding.brandDirectives.some((d) => d.includes('LOCKED TEMPLATE'))).toBe(true);
+    expect(binding.brandDirectives.some((d) => d.includes('LAYOUT TEMPLATE'))).toBe(true);
   });
 
   it('prefers confirmed brand vibe over template snapshot', async () => {

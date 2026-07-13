@@ -32,7 +32,8 @@ import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
 import { generateDesignedPostImage } from '../handlers/image-generators';
-import { validateTypographyText } from '@/lib/typography-text-validation';
+import { validateFalCanvasText } from '@/lib/typography-text-validation';
+import { textMatchesTemplatePlaceholder } from '@/lib/template-placeholder-guard';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export interface FalDesignedPostInput {
@@ -213,10 +214,19 @@ export async function produceFalDesignedPost(
           logoPlacement: input.logoPlacement,
         });
         if (!designedUrl) break;
-        const textOk = await validateTypographyText(designedUrl, canvasHeadline);
-        if (!textOk) {
+        const textCheck = await validateFalCanvasText(designedUrl, {
+          headline: canvasHeadline,
+          subtitle: dedupedSubtitle,
+        });
+        const placeholderLeak = binding?.matched
+          && (
+            textMatchesTemplatePlaceholder(textCheck.detectedHeadline, binding.matched)
+            || textMatchesTemplatePlaceholder(textCheck.detectedSubtitle, binding.matched)
+          );
+        if (!textCheck.valid || placeholderLeak) {
           console.warn(
-            `[auto-produce] [fal-design] GPT designed post text validation failed attempt ${attempt + 1}/${maxGptAttempts}`,
+            `[auto-produce] [fal-design] GPT designed post text validation failed attempt ${attempt + 1}/${maxGptAttempts}` +
+            (placeholderLeak ? ' (template placeholder leak)' : ''),
           );
           if (binding?.matched) continue;
           break;
@@ -225,7 +235,7 @@ export async function produceFalDesignedPost(
           const grafiker = await reviewDesignedPostOutput(designedUrl, input.headline);
           falGrafikerScore = grafiker.score;
           falGrafikerPass = grafiker.pass;
-          if (grafiker.pass || attempt >= maxGptAttempts - 1) {
+          if (grafiker.pass) {
             imageUrl = designedUrl;
             falDesignEngine = 'gpt_image_designed';
             costDelta += 0.04;
@@ -364,6 +374,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       format: inputs.falAspectRatio === '9:16' ? 'story' : 'post',
       caption: inputs.caption,
       headline: inputs.headline,
+      subtitle: inputs.falSubtitle || inputs.cta,
       announcementType: inputs.announcementType,
       templateUseCase: inputs.templateUseCase,
       catalogSlotKey: inputs.catalogSlotKey,

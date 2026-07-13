@@ -192,7 +192,7 @@ export async function generateDesignedPostImage(opts: {
   overlayColor?: string;
   backgroundIntent?: string;
 }): Promise<string | null> {
-  const refs = opts.referenceImageUrls.filter((u) => u && isUsableGalleryPhotoUrl(u)).slice(0, 2);
+  const refs = opts.referenceImageUrls.filter((u) => u && isUsableGalleryPhotoUrl(u)).slice(0, 1);
   if (!opts.designCardPrompt.trim() || refs.length === 0) {
     console.warn(
       `[auto-produce] designed post skipped: prompt=${Boolean(opts.designCardPrompt.trim())} refs=${refs.length} ` +

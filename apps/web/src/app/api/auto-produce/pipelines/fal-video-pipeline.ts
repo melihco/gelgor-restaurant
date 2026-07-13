@@ -147,6 +147,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         format: intensityChannel,
         caption: inputs.caption,
         headline: inputs.headline,
+        subtitle: inputs.cta,
         announcementType: inputs.announcementType,
         templateUseCase: inputs.templateUseCase,
         catalogSlotKey: inputs.catalogSlotKey,

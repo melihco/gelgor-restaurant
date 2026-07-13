@@ -935,7 +935,9 @@ async function generateWithOpenAI(
 
   // When gallery photos are provided, attempt images.edit for venue-consistent output.
   // If edit fails (e.g. model doesn't support it), fall through to generate with prompt context.
-  const refUrl = validUrls.length > 1
+  const refUrl = isDesignCard && validUrls.length > 0
+    ? validUrls[0]
+    : validUrls.length > 1
     ? await pickBestGalleryPhoto(validUrls, prompt.slice(0, 600), openai)
     : validUrls[0];
 

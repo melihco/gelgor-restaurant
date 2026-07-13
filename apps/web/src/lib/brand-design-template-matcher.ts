@@ -44,7 +44,7 @@ export interface MatchedDesignTemplate {
   vibe?: TypographyVibe;
   galleryRef: string | null;
   prominentLogo: boolean;
-  /** Onboarding GPT-image prompt — layout lock for production. */
+  /** Onboarding GPT-image prompt — preview-only; do not inject verbatim in production. */
   designSpecPrompt: string | null;
   thumbnailUrl: string | null;
   brandColors: { primary: string; accent: string } | null;
@@ -52,6 +52,13 @@ export interface MatchedDesignTemplate {
   specialDay?: { name: string; mmdd?: string; category?: string };
   /** Short directive injected into the design prompt for brand consistency. */
   directive: string;
+  /** Preview placeholder headline — forbidden in production output. */
+  sampleHeadline?: string | null;
+  sampleSubtitle?: string | null;
+  layoutPattern?: string | null;
+  designBriefDirectives?: string[];
+  canvaArchetypeId?: string | null;
+  canvaArchetypeName?: string | null;
 }
 
 /** Production slot format → design-template formats considered compatible. */
@@ -399,6 +406,14 @@ export async function matchDesignTemplateToSlot(
       ? { name: sdSpecial.name, mmdd: sdSpecial.mmdd, category: sdSpecial.category }
       : undefined,
     directive: buildDirective(r),
+    sampleHeadline: typeof sd.sampleHeadline === 'string' ? sd.sampleHeadline : null,
+    sampleSubtitle: typeof sd.sampleSubtitle === 'string' ? sd.sampleSubtitle : null,
+    layoutPattern: typeof sd.layoutPattern === 'string' ? sd.layoutPattern : null,
+    designBriefDirectives: Array.isArray(sd.designBriefDirectives)
+      ? sd.designBriefDirectives.filter((line): line is string => typeof line === 'string')
+      : [],
+    canvaArchetypeId: typeof sd.canvaArchetypeId === 'string' ? sd.canvaArchetypeId : null,
+    canvaArchetypeName: typeof sd.canvaArchetypeName === 'string' ? sd.canvaArchetypeName : null,
   };
 }
 

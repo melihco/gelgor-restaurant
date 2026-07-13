@@ -387,6 +387,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       format: inputs.isFalOnlyPost ? 'post' : inputs.pipeline.includes('reel') ? 'reel' : 'story',
       caption: inputs.caption,
       headline: inputs.headline,
+      subtitle: inputs.cta,
       announcementType: inputs.announcementType,
       templateUseCase: inputs.templateUseCase,
       catalogSlotKey: inputs.catalogSlotKey,

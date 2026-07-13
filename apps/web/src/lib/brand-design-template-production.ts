@@ -15,6 +15,7 @@ import {
   type MatchedDesignTemplate,
 } from '@/lib/brand-design-template-matcher';
 import type { BrandActiveSlotSet } from '@/lib/brand-active-slot-resolver';
+import { collectTemplatePlaceholderTexts } from '@/lib/template-placeholder-guard';
 
 export interface BrandTemplateFalBinding {
   matched: MatchedDesignTemplate | null;
@@ -58,52 +59,76 @@ export function resolveFalTemplateLockOptions(input: {
   return {
     captionAwareHeadline: false,
     grafikerMaxRetries: Math.min(2, Math.max(base, 1)),
-    requireTemplateStyleRef: Boolean(input.binding.matched.thumbnailUrl),
+    requireTemplateStyleRef: false,
   };
 }
 
-export function templateLockUsesGrafikerPass(score: number | null, pass: boolean | undefined): boolean {
-  return pass === true || (score != null && score >= GRAFIKER_PASS_THRESHOLD);
+export interface TemplateMissionCopy {
+  headline?: string;
+  subtitle?: string;
 }
 
-export function buildTemplateLayoutDirectives(matched: MatchedDesignTemplate): string[] {
+export function buildTemplateLayoutDirectives(
+  matched: MatchedDesignTemplate,
+  mission?: TemplateMissionCopy,
+): string[] {
   const out: string[] = [matched.directive];
-  if (matched.designSpecPrompt) {
-    out.unshift(
-      `BRAND LOCKED TEMPLATE "${matched.templateName}" (${matched.templateType}): ` +
-        'Reuse the EXACT same layout system as the onboarding-approved preview — ' +
-        'same panel geometry, typographic hierarchy, color-block placement, decorative rhythm. ' +
-        'ONLY swap: (1) photo/content zone with this mission subject, (2) headline and supporting copy from THIS mission brief. ' +
-        'Never reuse onboarding sample placeholder text visible in the template preview. ' +
-        `Layout recipe: ${matched.designSpecPrompt.slice(0, 950)}`,
-    );
-  } else {
-    out.unshift(
-      `BRAND LOCKED TEMPLATE "${matched.templateName}" (${matched.templateType}): ` +
-        'Keep the same typographic hierarchy, color blocks and decorative rhythm as the brand onboarding set. ' +
-        'ONLY swap mission photo and mission copy — never reuse sample placeholder text.',
+  const layoutRecipe: string[] = [];
+
+  if (matched.canvaArchetypeName || matched.canvaArchetypeId) {
+    layoutRecipe.push(
+      `Canva layout archetype: ${matched.canvaArchetypeName ?? matched.canvaArchetypeId}`,
     );
   }
-  if (matched.thumbnailUrl) {
+  if (matched.layoutPattern) {
+    layoutRecipe.push(`Layout pattern: ${String(matched.layoutPattern).slice(0, 220)}`);
+  }
+  if (matched.designBriefDirectives?.length) {
+    layoutRecipe.push(...matched.designBriefDirectives.slice(0, 8));
+  }
+
+  const forbidden = collectTemplatePlaceholderTexts(matched);
+  const missionHeadline = mission?.headline?.trim() ?? '';
+  const missionSubtitle = mission?.subtitle?.trim() ?? '';
+
+  out.unshift(
+    `BRAND LAYOUT TEMPLATE "${matched.templateName}" (${matched.templateType}): ` +
+      'This onboarding template is a reusable LAYOUT RECIPE only — not final publish copy. ' +
+      'Reuse the same panel geometry, typographic hierarchy, color-block placement, and decorative rhythm. ' +
+      'ONLY swap: (1) the photo/content zone with the mission gallery photo, (2) ALL on-canvas text with the mission copy below. ' +
+      'Never reuse sample placeholder text from the template library preview.',
+  );
+
+  if (layoutRecipe.length > 0) {
+    out.push(`Layout system: ${layoutRecipe.join(' | ')}`);
+  }
+
+  if (missionHeadline) {
+    out.push(`MISSION HEADLINE (render exactly, Turkish diacritics preserved): "${missionHeadline}"`);
+  }
+  if (missionSubtitle) {
+    out.push(`MISSION SUBTITLE (render exactly): "${missionSubtitle}"`);
+  }
+
+  if (forbidden.length > 0) {
     out.push(
-      `The second reference image is the approved "${matched.templateName}" template preview — ` +
-        'match its composition skeleton exactly; change only photo fill and text content.',
+      `FORBIDDEN ON-CANVAS TEXT (template preview placeholders — never render): ${forbidden.map((t) => `"${t}"`).join(', ')}`,
     );
   }
+
   out.push(
-    'TEXT LOCK: Render ONLY the mission headline and supporting line provided in this prompt. ' +
-    'Typography style, weight and placement must match the locked template preview.',
+    'TEXT LOCK: Render ONLY the mission headline and supporting line above. ' +
+      'Typography style, weight, and placement must follow the locked layout recipe — not the preview image text.',
   );
   return out;
 }
 
-/** Up to two refs for GPT-image grounded edit: mission photo + template style lock. */
+/** Mission gallery photo only — template preview PNGs carry sample copy and must not be edit refs. */
 export function pickTemplateReferenceUrls(input: {
   missionPhotoUrl: string | null | undefined;
   matched: MatchedDesignTemplate | null;
   brandReferenceImageUrls?: string[];
 }): string[] {
-  const urls: string[] = [];
   const mission =
     input.missionPhotoUrl && isUsableGalleryPhotoUrl(input.missionPhotoUrl)
       ? input.missionPhotoUrl
@@ -112,35 +137,27 @@ export function pickTemplateReferenceUrls(input: {
     input.matched?.galleryRef && isUsableGalleryPhotoUrl(input.matched.galleryRef)
       ? input.matched.galleryRef
       : null;
-  const styleRef =
-    input.matched?.thumbnailUrl && isUsableGalleryPhotoUrl(input.matched.thumbnailUrl)
-      ? input.matched.thumbnailUrl
-      : null;
 
-  if (mission) urls.push(mission);
-  else if (templateGallery) urls.push(templateGallery);
+  if (mission) return [mission];
 
-  if (styleRef && styleRef !== urls[0]) urls.push(styleRef);
-  else if (urls.length < 2) {
-    const extra = (input.brandReferenceImageUrls ?? []).find(
-      (u) => u && isUsableGalleryPhotoUrl(u) && !urls.includes(u),
-    );
-    if (extra) urls.push(extra);
-  }
+  if (templateGallery) return [templateGallery];
 
-  return urls.slice(0, 2);
+  const extra = (input.brandReferenceImageUrls ?? []).find(
+    (u) => u && isUsableGalleryPhotoUrl(u),
+  );
+  return extra ? [extra] : [];
 }
 
-/** Phase 1 — warn when a matched template has a preview but it is missing from refs. */
+/** Phase 1 — template preview must not be used as a production edit reference. */
 export function assertTemplateStyleReference(
   binding: BrandTemplateFalBinding | null | undefined,
   referenceUrls: string[],
 ): void {
   const preview = binding?.styleReferenceUrl;
   if (!binding?.matched || !preview || !isUsableGalleryPhotoUrl(preview)) return;
-  if (!referenceUrls.includes(preview)) {
+  if (referenceUrls.includes(preview)) {
     console.warn(
-      `[fal-template-lock] missing style ref for "${binding.matched.templateName}" — layout lock weakened`,
+      `[fal-template-lock] template preview must not be used as edit ref for "${binding.matched.templateName}" — sample copy leak risk`,
     );
   }
 }
@@ -152,6 +169,7 @@ export async function bindBrandTemplateForFalProduction(input: {
   format: 'story' | 'post' | 'reel';
   caption?: string;
   headline?: string;
+  subtitle?: string;
   announcementType?: string | null;
   templateUseCase?: string | null;
   /** Catalog slot key when production knows the mission slot (Faz 5). */
@@ -218,7 +236,13 @@ export async function bindBrandTemplateForFalProduction(input: {
       lockedVibe: input.brandVibe ?? matched.vibe ?? null,
       referencePhotoUrl,
       styleReferenceUrl: matched.thumbnailUrl ?? null,
-      brandDirectives: [...buildTemplateLayoutDirectives(matched), ...input.baseDirectives],
+      brandDirectives: [
+        ...buildTemplateLayoutDirectives(matched, {
+          headline: input.headline,
+          subtitle: input.subtitle ?? input.caption,
+        }),
+        ...input.baseDirectives,
+      ],
       brandColors: matched.brandColors ?? null,
       logoUrl: matched.prominentLogo ? (input.logoUrl ?? matched.logoUrl) : input.logoUrl,
       occasion: specialDay?.name
@@ -303,7 +327,7 @@ export async function alignRemotionPosterWithFalTemplate(input: {
   if (!binding.matched) return null;
 
   const layoutHint = binding.brandDirectives
-    .filter((d) => d.includes('LOCKED TEMPLATE') || d.includes('TEXT LOCK'))
+    .filter((d) => d.includes('LAYOUT TEMPLATE') || d.includes('TEXT LOCK'))
     .slice(0, 2)
     .join(' ')
     .slice(0, 420);
@@ -320,17 +344,17 @@ export async function alignRemotionPosterWithFalTemplate(input: {
   };
 }
 
-/** Extra brand refs for fal designer — template preview first for layout lock. */
+/** Extra brand refs for fal designer — never include template preview (sample copy). */
 export function templateStyleReferenceUrls(
   binding: BrandTemplateFalBinding,
   brandReferenceImageUrls: string[],
 ): string[] {
   const out: string[] = [];
-  if (binding.styleReferenceUrl && isUsableGalleryPhotoUrl(binding.styleReferenceUrl)) {
-    out.push(binding.styleReferenceUrl);
-  }
   for (const u of brandReferenceImageUrls) {
-    if (u && !out.includes(u) && u !== binding.referencePhotoUrl) out.push(u);
+    if (!u || !isUsableGalleryPhotoUrl(u)) continue;
+    if (u === binding.referencePhotoUrl) continue;
+    if (u === binding.styleReferenceUrl) continue;
+    out.push(u);
   }
-  return out.slice(0, 2);
+  return out.slice(0, 1);
 }
