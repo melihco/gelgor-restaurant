@@ -465,6 +465,67 @@ describe('local product carousel — honey caption must not pick olive oil', () 
     ).toBe(true);
   });
 
+  it('sector-agnostic: vetoes cross-subject for non-dictionary sectors (beauty)', () => {
+    // nail_service caption on a haircut photo — no food dictionary involved.
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Kışa özel manikür ve nail art randevuları',
+          headline: 'Nail art',
+          businessType: 'beauty_salon',
+          subjectKey: 'nail_service',
+        },
+        {
+          contentTags: ['salon', 'hair'],
+          description: 'A stylist finishing a fresh haircut.',
+          primarySubject: 'haircut',
+          subjectConfidence: 0.9,
+        },
+        'https://cdn.example.com/gallery/haircut-01.jpg',
+      ),
+    ).toBe(true);
+  });
+
+  it('sector-agnostic: related subjects (haircut vs hair_color) are NOT vetoed', () => {
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Yeni sezon saç boyama trendleri',
+          headline: 'Saç rengi',
+          businessType: 'beauty_salon',
+          subjectKey: 'hair_color',
+        },
+        {
+          contentTags: ['salon', 'hair'],
+          description: 'Balayage hair color result.',
+          primarySubject: 'haircut',
+          subjectConfidence: 0.9,
+        },
+        'https://cdn.example.com/gallery/hair-02.jpg',
+      ),
+    ).toBe(false);
+  });
+
+  it('sector-agnostic: abstract/none subject never hard-vetoes', () => {
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Ekibimizle tanışın',
+          headline: 'Ekibimiz',
+          businessType: 'gym',
+          subjectKey: 'none',
+        },
+        {
+          contentTags: ['gym', 'equipment'],
+          description: 'Dumbbells on a rack.',
+          primarySubject: 'dumbbell',
+          subjectConfidence: 0.8,
+        },
+        'https://cdn.example.com/gallery/gym-01.jpg',
+      ),
+    ).toBe(false);
+  });
+
   it('pickScoredCarouselSlides returns only honey-matching slides', () => {
     const slides = pickScoredCarouselSlides(
       {

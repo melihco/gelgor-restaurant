@@ -213,6 +213,61 @@ function subjectClustersFromToken(token: string | undefined): Set<number> {
   return hits;
 }
 
+const NON_CONCRETE_SUBJECTS = new Set([
+  '', 'none', 'other', 'brand', 'logo', 'n/a', 'na', 'unknown', 'misc',
+  'general', 'atmosphere', 'lifestyle', 'venue', 'background',
+]);
+
+function normalizeSubjectForRelation(raw: string | undefined): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function concreteSubjectTokens(normalized: string): string[] {
+  return normalized.split(' ').filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
+}
+
+export type CanonicalSubjectRelation = 'match' | 'conflict' | 'unknown';
+
+/**
+ * Sector-agnostic comparison of two AI-produced canonical subject tokens
+ * (caption `subject_key` vs photo `primary_subject`). No product dictionary —
+ * works for ANY brand/sector (beauty, gym, hotel, food, retail, …).
+ *
+ * - Same token, or one contains the other, or a shared significant token → match
+ *   (handles "haircut" vs "hair_color", "pasta" vs "pasta_carbonara").
+ * - Both concrete but unrelated → conflict ("burger" vs "pizza", "nail_service"
+ *   vs "haircut", "honey" vs "olive_oil").
+ * - Either side abstract/absent ("none", empty) → unknown (never a hard veto).
+ */
+export function canonicalSubjectRelation(
+  captionKey: string | undefined,
+  photoKey: string | undefined,
+): CanonicalSubjectRelation {
+  const a = normalizeSubjectForRelation(captionKey);
+  const b = normalizeSubjectForRelation(photoKey);
+  if (NON_CONCRETE_SUBJECTS.has(a) || NON_CONCRETE_SUBJECTS.has(b)) return 'unknown';
+  if (a === b) return 'match';
+  if (a.includes(b) || b.includes(a)) return 'match';
+  const aTokens = concreteSubjectTokens(a);
+  const bTokens = concreteSubjectTokens(b);
+  const aSet = new Set(aTokens);
+  if (bTokens.some((t) => aSet.has(t))) return 'match';
+  // Conservative relatedness: a shared 4-char token stem (haircut ↔ hair_color)
+  // means "related enough" — do NOT hard-veto, fall back to softer signals.
+  const STEM = 4;
+  const sharesStem = aTokens.some((ta) =>
+    ta.length >= STEM
+    && bTokens.some((tb) => tb.length >= STEM && ta.slice(0, STEM) === tb.slice(0, STEM)),
+  );
+  if (sharesStem) return 'unknown';
+  return 'conflict';
+}
+
 /**
  * Caption's product clusters. Prefers the canonical `subjectKey` (from ideation)
  * so the keyword dictionary is only a fallback for legacy ideas without it.
@@ -1136,6 +1191,21 @@ function scorePhotoForContent(
       score = Math.min(score, -100);
       reasons.push('hard_product_sku_veto');
     }
+
+    // Sector-agnostic canonical subject gate — engages for ANY sector when both
+    // the ideation subject_key and vision primary_subject are present and the
+    // food dictionary didn't already decide. This is what makes cross-subject
+    // mismatch (haircut↔nail, burger↔pizza) block without a keyword list.
+    if (captionSubjectClusters.size === 0 && productConflict < STRONG_MATCH_SCORE) {
+      const relation = canonicalSubjectRelation(input.subjectKey, meta.primarySubject);
+      if (relation === 'match') {
+        score += 24;
+        reasons.push('subject_key_match');
+      } else if (relation === 'conflict' && (meta.subjectConfidence ?? 1) >= 0.4) {
+        score = Math.min(score, -100);
+        reasons.push('subject_key_conflict_veto');
+      }
+    }
   }
 
   return { score, reasons };
@@ -1161,10 +1231,22 @@ export function isHardGalleryThemeMismatch(
   if (!caption.trim()) return false;
   const searchable = buildGalleryPhotoSearchable(meta, url);
   if (isHardCaptionPhotoConflict(caption, searchable)) return true;
-  return productPhotoConflictPenalty(caption, searchable, {
-    subjectKey: input.subjectKey,
-    primarySubject: meta?.primarySubject,
-  }) >= STRONG_MATCH_SCORE;
+  if (
+    productPhotoConflictPenalty(caption, searchable, {
+      subjectKey: input.subjectKey,
+      primarySubject: meta?.primarySubject,
+    }) >= STRONG_MATCH_SCORE
+  ) {
+    return true;
+  }
+  // Sector-agnostic: unrelated AI canonical subjects (any sector) are a hard
+  // mismatch when the food dictionary didn't already flag a conflict.
+  const captionClusters = resolveCaptionSubjectClusters(caption.toLowerCase(), input.subjectKey);
+  if (captionClusters.size === 0) {
+    const relation = canonicalSubjectRelation(input.subjectKey, meta?.primarySubject);
+    if (relation === 'conflict' && (meta?.subjectConfidence ?? 1) >= 0.4) return true;
+  }
+  return false;
 }
 
 export function rankPhotosForContent(
