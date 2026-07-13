@@ -1839,7 +1839,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDna: String(brandCtx.visual_dna ?? ''),
           vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
           logoUrl: brandLogoUrl || undefined,
-          referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          // Do not pass brand gallery refs — they are often the same expired CDN URLs.
+          referenceImageUrls: undefined,
           agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
             ?.image_edit_prompt as string | undefined,
           lutDirective: brandLutDirective || undefined,
@@ -1859,8 +1860,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceIsStock = false;
         galleryMatchScore = null;
       } else {
-        console.warn(`[auto-produce] no fallback gallery URL — slot skipped`);
-        results.push({
+        console.warn(`[auto-produce] no fallback gallery URL — slot skipped`);        results.push({
           title: headline,
           imageUrl: '',
           error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
@@ -1954,7 +1954,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDna: String(brandCtx.visual_dna ?? ''),
           vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
           logoUrl: brandLogoUrl || undefined,
-          referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          // Scratch recovery must not re-use expired Instagram CDN refs.
+          referenceImageUrls: undefined,
           agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
             ?.image_edit_prompt as string | undefined,
           lutDirective: brandLutDirective || undefined,
@@ -2356,7 +2357,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDna: String(brandCtx.visual_dna ?? ''),
           vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
           logoUrl: brandLogoUrl || undefined,
-          referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          // Scratch recovery must not re-use expired Instagram CDN refs.
+          referenceImageUrls: undefined,
           agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
             ?.image_edit_prompt as string | undefined,
           lutDirective: brandLutDirective || undefined,
