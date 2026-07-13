@@ -453,7 +453,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
         border: igHome ? 'none' : `0.5px solid ${t.separator}`,
         borderBottom: igHome ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
         contentVisibility: 'auto',
-        containIntrinsicSize: mode === 'reel' ? '0 820px' : '0 680px',
+        containIntrinsicSize: mode === 'reel' ? '0 820px' : '0 960px',
         transform: `translateX(${Math.max(-48, Math.min(48, swipeDx * 0.4))}px)`,
         transition: swipeDx === 0 ? 'transform 200ms cubic-bezier(0.22,1,0.36,1)' : 'none',
         position: 'relative',

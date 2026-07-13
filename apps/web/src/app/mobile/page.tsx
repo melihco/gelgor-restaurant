@@ -1303,11 +1303,12 @@ const CSS = `
     margin-inline: 0;
   }
 
-  /* Posts — aspect set inline from image (1:1 … 4:5); full column width */
+  /* Posts — natural height (width 100%, no cover crop); skeleton uses 4:5 */
   .sa-mobile .ig-feed-post-stage {
     width: 100%;
     max-width: none;
     margin-inline: 0;
+    overflow: visible;
   }
 
   .sa-mobile .ig-feed-post {

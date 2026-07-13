@@ -35,38 +35,6 @@ export interface NativeContentData {
   grafikerScore?: number | null;
 }
 
-/** Instagram home feed — portrait cap 4:5, landscape cap 1.91:1 (w/h). */
-function clampIgFeedPostAspect(width: number, height: number): number {
-  if (!width || !height) return 1;
-  const ratio = width / height;
-  return Math.max(0.8, Math.min(1.91, ratio));
-}
-
-function useIgFeedPostAspect(src: string | null | undefined): number {
-  const [aspect, setAspect] = useState(1);
-  useEffect(() => {
-    if (!src) {
-      setAspect(1);
-      return;
-    }
-    let cancelled = false;
-    const img = new Image();
-    img.onload = () => {
-      if (cancelled) return;
-      setAspect(clampIgFeedPostAspect(img.naturalWidth, img.naturalHeight));
-    };
-    img.onerror = () => {
-      if (!cancelled) setAspect(1);
-    };
-    img.referrerPolicy = 'no-referrer';
-    img.src = src;
-    return () => {
-      cancelled = true;
-    };
-  }, [src]);
-  return aspect;
-}
-
 /** Feed preview video — decode/play only when visible in the scroll viewport. */
 function VisibilityGatedVideo({
   src,
@@ -389,7 +357,6 @@ export function InstagramFeedNative({
   const images = content.carouselUrls?.length ? content.carouselUrls : content.imageUrl ? [content.imageUrl] : [];
   const current = images[slide] ?? null;
   const isCarousel = images.length > 1;
-  const postAspect = useIgFeedPostAspect(current);
 
   return (
     <div style={{ background: '#000' }}>
@@ -403,7 +370,12 @@ export function InstagramFeedNative({
 
       <div
         className="ig-feed-media-stage ig-feed-post-stage"
-        style={{ aspectRatio: postAspect, background: '#0a0a0a', position: 'relative', overflow: 'hidden' }}
+        style={{
+          width: '100%',
+          background: '#0a0a0a',
+          position: 'relative',
+          ...(!current ? { aspectRatio: '4 / 5' } : {}),
+        }}
         onTouchStart={(e) => { (e.currentTarget as HTMLElement & { _tx?: number })._tx = e.touches[0]?.clientX; }}
         onTouchEnd={(e) => {
           const el = e.currentTarget as HTMLElement & { _tx?: number };
@@ -415,7 +387,7 @@ export function InstagramFeedNative({
         {current ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={current} alt="" referrerPolicy="no-referrer"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            style={{ width: '100%', height: 'auto', display: 'block', verticalAlign: 'top' }} />
         ) : (
           <div style={{
             width: '100%', height: '100%',
