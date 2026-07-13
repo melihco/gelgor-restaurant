@@ -13,6 +13,7 @@ import {
 import {
   mergeCalendarPlansForProduction,
   ensureWeeklyFormatCoverage,
+  isContentScopedProductionPool,
 } from '@/lib/mission-production-plan';
 import {
   loadBrandActiveSlotSet,
@@ -168,38 +169,45 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'No ideas provided' }, { status: 400 });
     }
 
-    // Mission Feed: format coverage when calendar merge was not applied above.
-    if (missionId && (calendarPlans.length === 0 || alreadyScheduleOverlay || !ideas?.length)) {
+    // Stamp brand catalog slots when available; weekly geometry pad only for
+    // pure ideation weekly packages (never trim content-scoped additive pools).
+    if (missionId) {
       const sector = normalizeSectorId(
         String(productionSnapshot?.brand?.businessType ?? ''),
       );
       let brandFormatTargets = null;
+      let brandActiveSlots = null as Awaited<ReturnType<typeof loadBrandActiveSlotSet>> | null;
       if (sector) {
         try {
-          const activeSlots = await loadBrandActiveSlotSet(
+          brandActiveSlots = await loadBrandActiveSlotSet(
             workspaceId,
             sector,
             undefined,
             readBrandSlotFacilitiesFromTheme(brandTheme ?? null),
           );
           brandFormatTargets = resolveBrandProductionFormatTargets(
-            activeSlots,
+            brandActiveSlots,
             productionPackage ?? undefined,
           );
           productionIdeas = stampIdeasWithBrandCatalogSlots(
             productionIdeas as Record<string, unknown>[],
-            activeSlots,
+            brandActiveSlots,
           ) as ParsedIdea[];
         } catch {
           /* catalog unavailable — legacy package geometry */
         }
       }
-      productionIdeas = ensureWeeklyFormatCoverage(
-        productionIdeas as Record<string, unknown>[],
-        productionIdeas as Record<string, unknown>[],
-        productionPackage ?? undefined,
-        brandFormatTargets,
-      ) as ParsedIdea[];
+      if (
+        !isContentScopedProductionPool(productionIdeas as Record<string, unknown>[])
+        && (calendarPlans.length === 0 || !ideas?.length)
+      ) {
+        productionIdeas = ensureWeeklyFormatCoverage(
+          productionIdeas as Record<string, unknown>[],
+          productionIdeas as Record<string, unknown>[],
+          productionPackage ?? undefined,
+          brandFormatTargets,
+        ) as ParsedIdea[];
+      }
     }
 
     const response = await runProduction({

@@ -628,10 +628,27 @@ function cloneIdeaForFormat(
   };
 }
 
+/** True when the pool is already ideation+calendar content-scoped (must not trim). */
+export function isContentScopedProductionPool(
+  ideas: Record<string, unknown>[],
+): boolean {
+  return ideas.some((row) => {
+    const scope = String(row.production_scope ?? '').trim();
+    if (scope === 'ideation' || scope === 'calendar_plan' || scope === 'calendar_orphan') {
+      return true;
+    }
+    return row.publish_schedule_day != null
+      || row.calendar_plan_index != null
+      || row.calendar_enriched === true
+      || String(row.source_track ?? '') === 'calendar';
+  });
+}
+
 /**
  * P1-5 — Ensure the weekly mission has enough ideas for the plan manifest
  * (Starter 4+3+1+4 · Agency 6+3+1+6).
  * Calendar rows and ideation overflow backfill missing format buckets.
+ * Do NOT use on content-scoped additive pools (ideation+calendar) — those keep every row.
  */
 export function ensureWeeklyFormatCoverage(
   primary: Record<string, unknown>[],

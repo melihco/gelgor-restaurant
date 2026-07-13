@@ -2403,6 +2403,8 @@ async def _run_content_production_pipeline_locked(
             "skipped": True,
             "reason": "enqueued_to_factory",
             "factory": True,
+            "total": factory_total,
+            "rendering": max(enqueued, factory_total),
         }
         logger.info(
             "production_factory.dispatch",

@@ -515,7 +515,12 @@ async def get_mission_progress(
     workspace_id: uuid.UUID,
     mission_id: uuid.UUID,
     include_payload: bool = Query(False, description="Include full node output_payload fields"),
-    summary_max_chars: int = Query(12000, ge=0, le=200000),
+    summary_max_chars: int = Query(
+        100_000,
+        ge=0,
+        le=200_000,
+        description="Max chars of node output_summary to return (ideation arrays often exceed 12k)",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """

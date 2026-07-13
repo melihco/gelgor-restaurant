@@ -3,6 +3,8 @@ import {
   applyCalendarProductionEnrichment,
   applyCalendarScheduleOverlay,
   buildMissionProductionIdeas,
+  ensureWeeklyFormatCoverage,
+  isContentScopedProductionPool,
   mergeCalendarPlansForProduction,
 } from '@/lib/mission-production-plan';
 import { CALENDAR_PRODUCTION_IDEA_INDEX_BASE } from '@/lib/calendar-production-pack';
@@ -142,6 +144,29 @@ describe('mergeCalendarPlansForProduction', () => {
     expect(production.filter((row) => row.production_scope === 'ideation')).toHaveLength(1);
     expect(production.filter((row) => row.production_scope === 'calendar_plan')).toHaveLength(1);
     expect(production.find((row) => row.production_scope === 'ideation')?.calendar_enriched).toBe(true);
+  });
+
+  it('isContentScopedProductionPool detects additive rows so weekly trim is skipped', () => {
+    const production = mergeCalendarPlansForProduction(
+      Array.from({ length: 10 }, (_, i) => ({
+        concept_title: `Idea ${i}`,
+        content_type: 'instagram_post',
+        caption_draft: `caption ${i}`,
+      })),
+      Array.from({ length: 12 }, (_, i) => ({
+        event_name: `Cal ${i}`,
+        format: 'post',
+        content_brief: `brief ${i}`,
+        day: 'Mon',
+        time: '10:00',
+      })),
+    );
+    expect(production.length).toBe(22);
+    expect(isContentScopedProductionPool(production)).toBe(true);
+    // Regression: weekly coverage must not be applied by callers on content-scoped pools.
+    // If mis-applied it would shrink toward package geometry (~12-16).
+    const wronglyTrimmed = ensureWeeklyFormatCoverage(production, production, 'agency');
+    expect(wronglyTrimmed.length).toBeLessThan(production.length);
   });
 });
 

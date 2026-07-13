@@ -14,6 +14,7 @@ import { assertWorkspaceMatchesRequestTenant } from '@/lib/tenant-production-gua
 import {
   mergeCalendarPlansForProduction,
   ensureWeeklyFormatCoverage,
+  isContentScopedProductionPool,
 } from '@/lib/mission-production-plan';
 import {
   enrichProductionQueueWithBrandSlots,
@@ -165,7 +166,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (calendarPlans.length === 0 || alreadyScheduleOverlay || !ideas.length) {
+    // Weekly geometry pad only for pure ideation weekly packages.
+    // Content-scoped additive pools (ideation + calendar) must keep every row —
+    // ensureWeeklyFormatCoverage would .slice(0, packageTotal) and drop them.
+    if (
+      !isContentScopedProductionPool(mergedIdeas)
+      && (calendarPlans.length === 0 || !ideas.length)
+    ) {
       mergedIdeas = ensureWeeklyFormatCoverage(
         mergedIdeas,
         mergedIdeas,

@@ -354,93 +354,87 @@ async def kick_feed_production(
     summary = await pj.mission_job_summary(mission_id)
     factory_total = int(summary.get("total") or 0)
     factory_complete = bool(summary.get("complete"))
+    # Additive merge can raise package_total above an older factory queue (e.g. 13 → 23).
+    # Must fall through to ensure_mission_feed so missing slots are planned + upserted —
+    # never "resume" the undersized queue as if it were complete.
+    needs_delta_enqueue = (
+        factory_total > 0
+        and not factory_complete
+        and package_total > 0
+        and factory_total < package_total
+    )
 
-    if factory_total > 0 and not factory_complete:
-        needs_delta_enqueue = factory_total < package_total
-        if not needs_delta_enqueue:
-            if await pj.has_open_jobs(mission_id):
-                schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
-                logger.info(
-                    "kick_feed_production_factory_resume",
-                    mission_id=str(mission_id),
-                    reclaimed=reclaimed,
-                    ready=summary.get("ready"),
-                    total=factory_total,
-                )
-                return {
-                    "accepted": True,
-                    "mission_id": str(mission_id),
-                    "resumed_factory": True,
-                    "reclaimed": reclaimed,
-                    "factory_ready": int(summary.get("ready") or 0),
-                    "factory_total": factory_total,
-                    "message": (
-                        "Eksik slot üretimi devam ediyor. Gönderiler hazır oldukça Feed'e düşer."
-                    ),
-                }
-
-            # Operator kick: exhausted slots should re-enter the factory queue automatically
-            # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
-            requeued = await pj.requeue_exhausted(mission_id)
-            requeued += await pj.requeue_failed(mission_id)
-            if requeued or await pj.has_open_jobs(mission_id):
-                schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
-                from app.services.production_factory_service import schedule_completion_pass
-
-                schedule_completion_pass(mission_id, workspace_id, delay_sec=45.0)
-                summary = await pj.mission_job_summary(mission_id)
-                logger.info(
-                    "kick_feed_production_factory_requeued",
-                    mission_id=str(mission_id),
-                    requeued=requeued,
-                    ready=summary.get("ready"),
-                    total=factory_total,
-                )
-                return {
-                    "accepted": True,
-                    "mission_id": str(mission_id),
-                    "resumed_factory": True,
-                    "requeued": requeued,
-                    "factory_ready": int(summary.get("ready") or 0),
-                    "factory_total": factory_total,
-                    "message": (
-                        "Eksik slotlar kuyruğa alındı. Gönderiler hazır oldukça Feed'e düşer."
-                    ),
-                }
-
-            return {
-                "accepted": True,
-                "mission_id": str(mission_id),
-                "resumed_factory": False,
-                "factory_ready": int(summary.get("ready") or 0),
-                "factory_total": factory_total,
-                "needs_reset": True,
-                "message": (
-                    "Bazı slotlar maksimum deneme sayısına ulaştı. "
-                    "«Eksik içerikleri üret» ile paketi sıfırlayıp yeniden deneyin."
-                ),
-            }
-
-    if factory_total > 0 and not factory_complete:
-        from app.services.production_factory_service import schedule_completion_pass
-
-        failed_requeued = await pj.requeue_failed(mission_id)
-        if failed_requeued or await pj.has_open_jobs(mission_id):
+    if factory_total > 0 and not factory_complete and not needs_delta_enqueue:
+        if await pj.has_open_jobs(mission_id):
             schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
-            schedule_completion_pass(mission_id, workspace_id, delay_sec=45.0)
-            summary = await pj.mission_job_summary(mission_id)
+            logger.info(
+                "kick_feed_production_factory_resume",
+                mission_id=str(mission_id),
+                reclaimed=reclaimed,
+                ready=summary.get("ready"),
+                total=factory_total,
+            )
             return {
                 "accepted": True,
                 "mission_id": str(mission_id),
                 "resumed_factory": True,
-                "requeued_failed": failed_requeued,
+                "reclaimed": reclaimed,
                 "factory_ready": int(summary.get("ready") or 0),
                 "factory_total": factory_total,
                 "message": (
-                    "Eksik slot üretimi yeniden kuyruğa alındı. "
-                    "Gönderiler hazır oldukça Feed'e düşer."
+                    "Eksik slot üretimi devam ediyor. Gönderiler hazır oldukça Feed'e düşer."
                 ),
             }
+
+        # Operator kick: exhausted slots should re-enter the factory queue automatically
+        # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
+        requeued = await pj.requeue_exhausted(mission_id)
+        requeued += await pj.requeue_failed(mission_id)
+        if requeued or await pj.has_open_jobs(mission_id):
+            schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
+            from app.services.production_factory_service import schedule_completion_pass
+
+            schedule_completion_pass(mission_id, workspace_id, delay_sec=45.0)
+            summary = await pj.mission_job_summary(mission_id)
+            logger.info(
+                "kick_feed_production_factory_requeued",
+                mission_id=str(mission_id),
+                requeued=requeued,
+                ready=summary.get("ready"),
+                total=factory_total,
+            )
+            return {
+                "accepted": True,
+                "mission_id": str(mission_id),
+                "resumed_factory": True,
+                "requeued": requeued,
+                "factory_ready": int(summary.get("ready") or 0),
+                "factory_total": factory_total,
+                "message": (
+                    "Eksik slotlar kuyruğa alındı. Gönderiler hazır oldukça Feed'e düşer."
+                ),
+            }
+
+        return {
+            "accepted": True,
+            "mission_id": str(mission_id),
+            "resumed_factory": False,
+            "factory_ready": int(summary.get("ready") or 0),
+            "factory_total": factory_total,
+            "needs_reset": True,
+            "message": (
+                "Bazı slotlar maksimum deneme sayısına ulaştı. "
+                "«Eksik içerikleri üret» ile paketi sıfırlayıp yeniden deneyin."
+            ),
+        }
+
+    if needs_delta_enqueue:
+        logger.info(
+            "kick_feed_production_delta_enqueue",
+            mission_id=str(mission_id),
+            factory_total=factory_total,
+            package_total=package_total,
+        )
 
     _schedule_ensure_mission_feed(
         mission_id,
@@ -494,27 +488,48 @@ async def reproduce_feed_production(
     )
 
     produced = int((produce_data or {}).get("produced") or 0)
+    publish_ready = int((produce_data or {}).get("publishReady") or 0)
+    rendering = int((produce_data or {}).get("rendering") or 0)
+    enqueued = int((produce_data or {}).get("enqueued") or 0)
+    factory_dispatched = bool((produce_data or {}).get("factory")) or (
+        str((produce_data or {}).get("reason") or "") == "enqueued_to_factory"
+    )
+    # Factory path intentionally returns produced=0 until drain finishes — do not
+    # treat durable enqueue as "empty feed".
+    if factory_dispatched and rendering <= 0 and enqueued > 0:
+        rendering = enqueued
     logger.info(
         "mission_reproduce_feed_via_api",
         mission_id=str(mission_id),
         produced=produced,
+        enqueued=enqueued,
+        factory=factory_dispatched,
     )
+    total = int((produce_data or {}).get("total") or len(ideas))
+    if produced > 0:
+        message = f"{produced} içerik Feed'e eklendi (onay bekliyor)."
+    elif factory_dispatched or enqueued > 0 or rendering > 0:
+        message = (
+            f"{max(enqueued, rendering, total)} slot fabrikaya alındı. "
+            "Gönderiler hazır oldukça Feed'e düşer."
+        )
+    else:
+        message = (
+            "Üretim tamamlandı ancak Feed'e kaydedilen içerik yok. "
+            "Next.js, galeri veya günlük bütçe kapısını kontrol edin."
+        )
     return {
         "id": str(mission_id),
         "status": mission.status,
         "produced": produced,
-        "publishReady": int((produce_data or {}).get("publishReady") or 0),
-        "rendering": int((produce_data or {}).get("rendering") or 0),
-        "total": int((produce_data or {}).get("total") or len(ideas)),
+        "publishReady": publish_ready,
+        "rendering": rendering,
+        "enqueued": enqueued,
+        "total": total,
         "results": (produce_data or {}).get("results"),
         "pis": (produce_data or {}).get("pis"),
         "clean_slate": reset_summary,
-        "message": (
-            f"{produced} içerik Feed'e eklendi (onay bekliyor)."
-            if produced > 0
-            else "Üretim tamamlandı ancak Feed'e kaydedilen içerik yok. "
-            "Next.js, galeri veya günlük bütçe kapısını kontrol edin."
-        ),
+        "message": message,
     }
 
 

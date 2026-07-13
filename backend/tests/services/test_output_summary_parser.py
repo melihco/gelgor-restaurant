@@ -33,9 +33,15 @@ def test_extract_object_array_returns_largest_embedded_candidate() -> None:
     assert extract_object_array_from_output_summary(raw) == [{"title": "B"}, {"title": "C"}]
 
 
-def test_extract_object_array_returns_empty_for_unrecoverable_text() -> None:
-    assert extract_object_array_from_output_summary("not json at all") == []
-    assert extract_object_array_from_output_summary(None) == []
+def test_extract_object_array_recovers_truncated_json_array() -> None:
+    # Missing closing bracket + incomplete last object — production summarizer cap.
+    raw = (
+        '[{"headline":"A","caption_draft":"one"},'
+        '{"headline":"B","caption_draft":"two"},'
+        '{"headline":"C","caption_draft":"partial'
+    )
+    result = extract_object_array_from_output_summary(raw)
+    assert [row["headline"] for row in result] == ["A", "B"]
 
 
 def test_extract_structured_payload_returns_object() -> None:

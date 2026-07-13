@@ -94,7 +94,18 @@ export async function POST(
   const produced = Number(body.produced ?? 0);
   const publishReady = Number(body.publishReady ?? 0);
   const rendering = Number(body.rendering ?? 0);
-  if (produced <= 0 && publishReady <= 0 && rendering <= 0) {
+  const enqueued = Number(body.enqueued ?? 0);
+  const factoryDispatched =
+    body.factory === true
+    || String(body.reason ?? '') === 'enqueued_to_factory'
+    || enqueued > 0;
+  // Durable factory returns produced=0 until drain completes — that is success.
+  if (
+    produced <= 0
+    && publishReady <= 0
+    && rendering <= 0
+    && !factoryDispatched
+  ) {
     return NextResponse.json(
       {
         error: String(
@@ -105,6 +116,7 @@ export async function POST(
         produced,
         publishReady,
         rendering,
+        enqueued,
         total: Number(body.total ?? 0),
         results: body.results,
         pis: body.pis,
@@ -113,12 +125,15 @@ export async function POST(
     );
   }
 
-  if (produced <= 0 && (publishReady > 0 || rendering > 0)) {
+  if (produced <= 0 && (publishReady > 0 || rendering > 0 || factoryDispatched)) {
     return NextResponse.json({
       ...body,
+      rendering: rendering > 0 ? rendering : Math.max(enqueued, Number(body.total ?? 0)),
       message: String(
         body.message
-        ?? `${rendering + publishReady} içerik render ediliyor — Feed'e kısa sürede düşecek.`,
+        ?? (factoryDispatched
+          ? `${Math.max(enqueued, Number(body.total ?? 0))} slot fabrikaya alındı — Feed'e hazır oldukça düşer.`
+          : `${rendering + publishReady} içerik render ediliyor — Feed'e kısa sürede düşecek.`),
       ),
     });
   }

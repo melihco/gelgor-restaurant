@@ -114,6 +114,49 @@ def _scan_json_object_candidates(text: str) -> list[dict[str, Any]]:
     return candidates
 
 
+def _recover_truncated_array_objects(text: str) -> list[dict[str, Any]]:
+    """Recover complete top-level objects from a truncated JSON array (no closing `]`)."""
+    first_bracket = text.find("[")
+    if first_bracket == -1:
+        return []
+
+    objects: list[dict[str, Any]] = []
+    depth = 0
+    in_str = False
+    escape = False
+    obj_start = -1
+
+    for i in range(first_bracket + 1, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_str:
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start != -1:
+                try:
+                    parsed = json.loads(text[obj_start:i + 1])
+                    if isinstance(parsed, dict):
+                        objects.append(parsed)
+                except Exception:
+                    pass
+                obj_start = -1
+
+    return objects
+
+
 def extract_object_array_from_output_summary(
     output_summary: str | None,
     root_array_keys: tuple[str, ...] = ("ideas", "content_ideas", "contentIdeas"),
@@ -138,10 +181,15 @@ def extract_object_array_from_output_summary(
         pass
 
     candidates = _scan_json_array_candidates(clean)
-    if not candidates:
-        return []
+    if candidates:
+        return max(candidates, key=len)
 
-    return max(candidates, key=len)
+    # Truncated arrays (progress API / display caps) — recover complete objects.
+    recovered = _recover_truncated_array_objects(clean)
+    if recovered:
+        return recovered
+
+    return []
 
 
 def extract_structured_payload_from_output_summary(
