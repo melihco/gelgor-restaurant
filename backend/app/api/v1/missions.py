@@ -579,11 +579,20 @@ async def requeue_mission_factory_jobs(
     from app.services.production_factory_service import schedule_drain
 
     await _load_mission_or_404(db, workspace_id, mission_id)
-    requeued = await pj.requeue_exhausted(mission_id)
-    if requeued or await pj.has_open_jobs(mission_id):
+    reclaimed = await pj.reclaim_inflight_jobs(mission_id)
+    requeued_exhausted = await pj.requeue_exhausted(mission_id)
+    requeued_failed = await pj.requeue_failed(mission_id)
+    requeued = requeued_exhausted + requeued_failed
+    if requeued or reclaimed or await pj.has_open_jobs(mission_id):
         schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
     summary = await pj.mission_job_summary(mission_id)
-    return {"requeued": requeued, **summary}
+    return {
+        "requeued": requeued,
+        "reclaimed": reclaimed,
+        "requeuedExhausted": requeued_exhausted,
+        "requeuedFailed": requeued_failed,
+        **summary,
+    }
 
 
 @router.put("/{workspace_id}/{mission_id}/approve")

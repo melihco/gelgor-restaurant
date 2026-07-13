@@ -44,7 +44,6 @@ import {
   pickMissionDiverseFallbackPhoto,
   isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
-  STRONG_MATCH_SCORE,
   REEL_GALLERY_MIN_SCORE,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
@@ -2889,9 +2888,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         contentType: 'carousel',
         businessType: brandBusinessType,
       };
-      const carouselMinScore = captionRequiresStrictGalleryMatch(caption, headline)
-        ? STRONG_MATCH_SCORE
-        : MIN_ACCEPT_SCORE;
+      const carouselMinScore = MIN_ACCEPT_SCORE;
 
       if (hasGallery) {
         const carouselResult = await generateVibeCarousel({
@@ -2922,6 +2919,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       carouselUrls = filled.carouselUrls;
       carouselGalleryUrls = filled.carouselGalleryUrls;
+      if (carouselUrls.length === 0 && referenceUrl) {
+        carouselUrls = [referenceUrl];
+        carouselGalleryUrls = [referenceUrl];
+        console.log(
+          `[auto-produce] Carousel degraded to single gallery photo — "${headline.slice(0, 40)}"`,
+        );
+      }
       if (carouselUrls.length >= CAROUSEL_MIN_SLIDES) {
         console.log(
           `[auto-produce] Carousel slides: ${carouselUrls.length} (gallery=${carouselGalleryUrls.length}) — "${headline.slice(0, 40)}"`,

@@ -1,6 +1,8 @@
 import { shouldPreserveVenuePhotos, shouldUpscaleSmallGalleryPhoto } from '@/lib/venue-photo-policy';
 import {
   pickScoredCarouselSlides,
+  matchPhotoToContent,
+  isHardGalleryThemeMismatch,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
@@ -431,7 +433,36 @@ export async function generateVibeCarousel(opts: {
     opts.count,
     opts.minScore ?? MIN_ACCEPT_SCORE,
   );
-  const picked = scored.map((r) => r.url);
+  let picked = scored.map((r) => r.url);
+
+  if (
+    picked.length === 0
+    && (opts.minScore ?? MIN_ACCEPT_SCORE) > MIN_ACCEPT_SCORE
+  ) {
+    const relaxed = pickScoredCarouselSlides(
+      matchInput,
+      candidates,
+      opts.galleryAnalysis,
+      localUsed,
+      opts.count,
+      MIN_ACCEPT_SCORE,
+    );
+    picked = relaxed.map((r) => r.url);
+  }
+
+  if (!picked.length) {
+    const hero = matchPhotoToContent(matchInput, candidates, opts.galleryAnalysis, {
+      excludeUrls: localUsed,
+      bestEffort: true,
+    });
+    if (
+      hero?.url
+      && !isHardGalleryThemeMismatch(matchInput, undefined, hero.url)
+      && (hero.score ?? 0) >= MIN_ACCEPT_SCORE
+    ) {
+      picked = [hero.url];
+    }
+  }
 
   if (!picked.length) return { enhancedUrls: [], galleryUrls: [] };
 

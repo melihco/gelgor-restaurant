@@ -3133,7 +3133,7 @@ function MissionPublishPackageCard({
 
   // Durable Production Factory — live per-slot job rollup.
   const [factoryJobs, setFactoryJobs] = useState<MissionProductionJobsSummary | null>(null);
-  const factoryRequeueAttempted = useRef(false);
+  const lastFactoryRequeueAt = useRef(0);
   useEffect(() => {
     if (!workspaceId || !missionId) return;
     let cancelled = false;
@@ -3145,14 +3145,19 @@ function MissionPublishPackageCard({
         if (cancelled) return;
         setFactoryJobs(summary);
 
-        const hasExhausted = summary.slots.some((s) => s.status === 'exhausted');
+        const hasStalledFailed = summary.failed > 0
+          && (summary.inFlight ?? 0) === 0
+          && summary.ready < summary.total;
+        const needsRequeue = summary.slots.some((s) => s.status === 'exhausted')
+          || hasStalledFailed;
+        const requeueCooldownMs = 60_000;
         if (
-          hasExhausted
-          && !factoryRequeueAttempted.current
+          needsRequeue
+          && Date.now() - lastFactoryRequeueAt.current > requeueCooldownMs
           && workspaceId
           && missionId
         ) {
-          factoryRequeueAttempted.current = true;
+          lastFactoryRequeueAt.current = Date.now();
           try {
             await apiClient.requeueMissionFactoryJobs(workspaceId, missionId);
             if (!cancelled) {
@@ -3160,7 +3165,7 @@ function MissionPublishPackageCard({
               return;
             }
           } catch {
-            factoryRequeueAttempted.current = false;
+            lastFactoryRequeueAt.current = 0;
           }
         }
 
@@ -3313,7 +3318,9 @@ function MissionPublishPackageCard({
           )}
           {factoryJobs.failed > 0 && (
             <span style={{ fontSize: 10, color: '#E2A03F' }}>
-              {factoryJobs.failed} slot yeniden deneniyor
+              {(factoryJobs.inFlight ?? 0) > 0
+                ? `${factoryJobs.failed} slot tekrar denenecek`
+                : `${factoryJobs.failed} slot bekliyor`}
             </span>
           )}
           <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
