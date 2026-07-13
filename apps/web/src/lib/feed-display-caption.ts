@@ -15,6 +15,15 @@ import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
 } from './production-headline-quality';
+import { nodeOutputArray } from './mission-node-output';
+
+/**
+ * Calendar-produced slots use idea_index ≥ this base (mirror of
+ * CALENDAR_PRODUCTION_IDEA_INDEX_BASE — inlined to avoid a client bundle cycle
+ * through calendar-production-pack → gallery-first-production → this module).
+ */
+const CALENDAR_PRODUCTION_IDEA_INDEX_BASE = 1000;
+const MAX_CALENDAR_PLANS_PER_MISSION = 32;
 
 /** True when ideation supplied a real marketing headline (not gallery/vision filler). */
 export function hasPublishableIdeationHeadline(text: string, brandName = ''): boolean {
@@ -182,7 +191,8 @@ export interface FeedCaptionInput {
 }
 
 export function pickIdeationCaptionFromIdea(idea: Record<string, unknown>): string {
-  for (const key of ['caption_draft', 'caption', 'captionDraft', 'brief', 'body', 'description', 'copy', 'text', 'script']) {
+  // Prefer real IG copy fields before brief/description (those are often planning meta).
+  for (const key of ['caption_draft', 'caption', 'captionDraft', 'copy', 'text', 'script', 'body', 'brief', 'description']) {
     const v = idea[key];
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
@@ -206,6 +216,23 @@ export function buildMissionIdeationCaptionLookup(
     if (!caption || isGalleryDerivedCaption(caption)) return;
     lookup.set(index, caption);
     const rawIdx = idea.idea_index ?? idea.ideaIndex;
+    if (typeof rawIdx === 'number' && Number.isFinite(rawIdx)) {
+      lookup.set(rawIdx, caption);
+    }
+  });
+  // Calendar-produced slots use idea_index ≥ CALENDAR_PRODUCTION_IDEA_INDEX_BASE.
+  const calendarPlans = nodes
+    .filter((n) => n.task_type === 'content_calendar' && n.status === 'completed')
+    .flatMap((node) => nodeOutputArray(
+      node as { output_summary?: string | null; output_payload?: unknown },
+      ['plans', 'calendar', 'items', 'content_calendar', 'schedule'],
+    ))
+    .slice(0, MAX_CALENDAR_PLANS_PER_MISSION);
+  calendarPlans.forEach((plan, planIndex) => {
+    const caption = pickIdeationCaptionFromIdea(plan);
+    if (!caption || isGalleryDerivedCaption(caption)) return;
+    lookup.set(CALENDAR_PRODUCTION_IDEA_INDEX_BASE + planIndex, caption);
+    const rawIdx = plan.idea_index ?? plan.ideaIndex;
     if (typeof rawIdx === 'number' && Number.isFinite(rawIdx)) {
       lookup.set(rawIdx, caption);
     }

@@ -158,11 +158,23 @@ function flattenLocalProductTerms(max = 64): string[] {
   return out;
 }
 
+/** Match SKU terms with Turkish morphology; avoid short-stem false positives (ambalaj→bal). */
+function localProductTermHit(haystack: string, term: string): boolean {
+  const t = term.toLowerCase().trim();
+  if (!t) return false;
+  const h = haystack.toLowerCase();
+  if (t.length >= 5) return h.includes(t);
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Short stems: word-start + optional letters (balımızın, sızma) — not mid-token.
+  const re = new RegExp(`(?:^|[^\\p{L}\\p{N}])${escaped}\\p{L}*(?=$|[^\\p{L}\\p{N}])`, 'iu');
+  return re.test(h);
+}
+
 function detectLocalProductClusters(text: string): Set<number> {
   const lower = text.toLowerCase();
   const hits = new Set<number>();
   LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
-    if (cluster.terms.some((t) => lower.includes(t.toLowerCase()))) hits.add(idx);
+    if (cluster.terms.some((t) => localProductTermHit(lower, t))) hits.add(idx);
   });
   return hits;
 }
@@ -171,22 +183,8 @@ function productPhotoConflictPenalty(captionText: string, photoSearchable: strin
   const cap = detectLocalProductClusters(captionText);
   const photo = detectLocalProductClusters(photoSearchable);
   if (cap.size === 0) return 0;
-  // Caption mentions a specific product — photo must match the same cluster
-  if (photo.size === 0) {
-    // Photo has no recognized product cluster but caption does.
-    // Check if photo text contains terms from a DIFFERENT cluster than caption's.
-    const photoLower = photoSearchable.toLowerCase();
-    const capLower = captionText.toLowerCase();
-    let conflict = false;
-    LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
-      if (conflict) return;
-      if (cap.has(idx)) return;
-      if (cluster.terms.some((t) => photoLower.includes(t.toLowerCase()) && !capLower.includes(t.toLowerCase()))) {
-        conflict = true;
-      }
-    });
-    return conflict ? 52 : 0;
-  }
+  // Caption names a concrete SKU — photo must evidence the same cluster.
+  // Untagged packaging (oil tins with empty vision meta) must not soft-pass.
   for (const idx of cap) {
     if (photo.has(idx)) return 0;
   }
@@ -1036,8 +1034,8 @@ function scorePhotoForContent(
   }
 
   for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
-    const captionHitsCluster = cluster.terms.filter((t) => text.includes(t.toLowerCase())).length;
-    const photoHitsCluster = cluster.terms.filter((t) => searchable.includes(t.toLowerCase())).length;
+    const captionHitsCluster = cluster.terms.filter((t) => localProductTermHit(text, t)).length;
+    const photoHitsCluster = cluster.terms.filter((t) => localProductTermHit(searchable, t)).length;
     if (captionHitsCluster >= 1 && photoHitsCluster >= 1) {
       score += 24;
       reasons.push(`product_match:${cluster.id}`);
@@ -1060,6 +1058,11 @@ function scorePhotoForContent(
   if (productConflict > 0) {
     score -= productConflict;
     reasons.push(`product-label conflict -${productConflict}`);
+  }
+  // Hard product veto (bal caption + zeytinyağı / unlabeled tin) — unusable pair.
+  if (productConflict >= STRONG_MATCH_SCORE) {
+    score = Math.min(score, -100);
+    reasons.push('hard_product_sku_veto');
   }
 
   return { score, reasons };

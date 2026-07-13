@@ -49,9 +49,7 @@ import {
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
 import {
-  buildGalleryPhotoSearchable,
   captionRequiresStrictGalleryMatch,
-  isHardCaptionPhotoConflict,
   scoreIdeationPhotoMatch,
 } from '@/lib/caption-photo-alignment';
 import { shouldAutoProduceEnhanceGallery } from '@/lib/venue-photo-policy';
@@ -2267,12 +2265,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl!),
         )?.[1])
       : undefined;
+    // Product SKU + nightlife/food/beauty — isHardCaptionPhotoConflict alone misses
+    // bal↔zeytinyağı and unlabeled packaging that still ships the wrong product.
     const hardThemeConflict = Boolean(
       pickedFromBrandGallery
       && resolvedReferenceUrl
-      && isHardCaptionPhotoConflict(
-        `${ideationCaption} ${ideationHeadline}`,
-        buildGalleryPhotoSearchable(lockedGalleryMeta, resolvedReferenceUrl),
+      && isHardGalleryThemeMismatch(
+        {
+          caption: ideationCaption,
+          headline: ideationHeadline,
+          visualDirection: String(idea.visual_direction ?? '').trim() || undefined,
+          businessType: brandBusinessType,
+        },
+        lockedGalleryMeta,
+        resolvedReferenceUrl,
       ),
     );
     if (hardThemeConflict) {

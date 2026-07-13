@@ -393,6 +393,25 @@ describe('local product carousel — honey caption must not pick olive oil', () 
     ).toBe(true);
   });
 
+  it('hard-vetoes unlabeled oil tins for honey caption (empty product tags)', () => {
+    const unlabeledOil = 'https://cdn.example.com/gallery/product-tins-01.jpg';
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Süzme çiçek balımızın özelliklerini ve faydalarını keşfedin',
+          headline: 'Süzme çiçek balımızın',
+          businessType: 'local_products_shop',
+        },
+        {
+          contentTags: ['product', 'tin', 'packaging'],
+          description: 'Three metal cans on a wooden table.',
+          mood: 'natural',
+        },
+        unlabeledOil,
+      ),
+    ).toBe(true);
+  });
+
   it('pickScoredCarouselSlides returns only honey-matching slides', () => {
     const slides = pickScoredCarouselSlides(
       {
