@@ -3680,89 +3680,94 @@ export function BrandConstitution() {
             </div>
           </div>
 
-          {/* Brand hero card */}
+          {/* Brand profile badge */}
           <div style={{
-            position: 'relative', marginBottom: 20, padding: '18px 18px 16px', borderRadius: 26, overflow: 'hidden',
+            position: 'relative', marginBottom: 20, padding: '24px 18px 16px', borderRadius: 28, overflow: 'hidden',
             background: t.isDark
-              ? 'linear-gradient(165deg, rgba(22,28,38,0.96) 0%, rgba(12,16,24,0.98) 100%)'
-              : 'linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)',
-            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)'}`,
+              ? 'linear-gradient(180deg, rgba(21,27,37,0.96) 0%, rgba(10,13,19,0.98) 100%)'
+              : 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)',
+            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
             boxShadow: t.isDark
-              ? '0 18px 48px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.05)'
-              : '0 14px 36px rgba(15,23,42,0.08)',
+              ? '0 18px 52px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06)'
+              : '0 16px 38px rgba(15,23,42,0.09)',
           }}
           >
-            <div style={{ position: 'absolute', top: -60, right: -30, width: 200, height: 200, borderRadius: '50%', background: brandPrimary, opacity: t.isDark ? 0.12 : 0.07, filter: 'blur(48px)', pointerEvents: 'none' }} />
-            <div style={{ position: 'absolute', bottom: -40, left: -20, width: 140, height: 140, borderRadius: '50%', background: t.accent, opacity: t.isDark ? 0.06 : 0.04, filter: 'blur(40px)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', top: -70, left: '50%', transform: 'translateX(-50%)', width: 260, height: 190, borderRadius: '50%', background: brandPrimary, opacity: t.isDark ? 0.14 : 0.08, filter: 'blur(54px)', pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', right: -42, bottom: 24, width: 160, height: 160, borderRadius: '50%', background: t.accent, opacity: t.isDark ? 0.07 : 0.04, filter: 'blur(44px)', pointerEvents: 'none' }} />
 
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
               <div style={{
-                width: 76, height: 76, borderRadius: 20, overflow: 'hidden', flexShrink: 0,
-                background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
+                width: 116, height: 116, borderRadius: 30, overflow: 'hidden',
+                background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.03)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 8px 24px rgba(0,0,0,${t.isDark ? 0.35 : 0.12})`,
-                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                boxShadow: t.isDark
+                  ? '0 18px 38px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)'
+                  : '0 14px 30px rgba(15,23,42,0.13)',
+                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'}`,
               }}>
                 {logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                  <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 12 }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                 ) : (
-                  <span style={{ fontSize: 26, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{monogram}</span>
+                  <span style={{ fontSize: 38, fontWeight: 800, color: '#fff', letterSpacing: '-0.04em' }}>{monogram}</span>
                 )}
               </div>
-              <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 7 }}>
-                  <span style={{ fontSize: 20, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.035em', lineHeight: 1.1 }}>
-                    {brandNameDisplay || 'Marka adı'}
-                  </span>
+
+              <h2 style={{
+                margin: '14px 0 8px',
+                fontSize: 25,
+                fontWeight: 800,
+                color: t.textPrimary,
+                letterSpacing: '-0.045em',
+                lineHeight: 1.05,
+              }}
+              >
+                {brandNameDisplay || 'Marka adı'}
+              </h2>
+
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {industryDisplay && (
                   <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                    padding: '4px 10px 4px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-                    letterSpacing: '0.02em', textTransform: 'uppercase',
-                    background: brsGood ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
-                    color: brsGood ? '#34D399' : '#F59E0B',
-                    border: `0.5px solid ${brsGood ? 'rgba(52,211,153,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                    padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                    background: t.accentDim, color: t.accent,
+                    border: `0.5px solid ${t.accentBorder}`,
                   }}
                   >
-                    <span style={{
-                      width: 6, height: 6, borderRadius: '50%',
-                      background: brsGood ? '#34D399' : '#F59E0B',
-                      boxShadow: brsGood ? '0 0 8px rgba(52,211,153,0.55)' : 'none',
-                    }} />
-                    BRS {score}
+                    {industryDisplay}
                   </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: descriptionDisplay ? 10 : 0 }}>
-                  {industryDisplay && (
-                    <span style={{
-                      padding: '4px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: 600,
-                      background: t.accentDim, color: t.accent,
-                      border: `0.5px solid ${t.accentBorder}`,
-                    }}
-                    >
-                      {industryDisplay}
-                    </span>
-                  )}
-                  {locationDisplay && (
-                    <span style={{ fontSize: 12, color: t.textTertiary, letterSpacing: '-0.01em' }}>
-                      {locationDisplay}
-                    </span>
-                  )}
-                </div>
-                {descriptionDisplay && (
-                  <p style={{
-                    fontSize: 12.5, color: t.textTertiary, lineHeight: 1.5, margin: 0,
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                )}
+                {locationDisplay && (
+                  <span style={{
+                    padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                    background: t.isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.035)',
+                    color: t.textSecondary,
+                    border: `0.5px solid ${t.separator}`,
                   }}
                   >
-                    {descriptionDisplay}
-                  </p>
+                    {locationDisplay}
+                  </span>
                 )}
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800,
+                  letterSpacing: '0.01em',
+                  background: brsGood ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
+                  color: brsGood ? '#34D399' : '#F59E0B',
+                  border: `0.5px solid ${brsGood ? 'rgba(52,211,153,0.35)' : 'rgba(245,158,11,0.35)'}`,
+                }}
+                >
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: brsGood ? '#34D399' : '#F59E0B',
+                    boxShadow: brsGood ? '0 0 8px rgba(52,211,153,0.55)' : 'none',
+                  }} />
+                  BRS {score}
+                </span>
               </div>
             </div>
 
             {/* Quick stats */}
-            <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 16 }}>
+            <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 18 }}>
               {[
                 { n: photoCount, l: 'Fotoğraf' },
                 { n: pillarsCount, l: 'İçerik sütunu' },

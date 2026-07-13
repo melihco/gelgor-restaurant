@@ -230,7 +230,7 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
           <button type="button" onClick={handleSubmit} className="onboarding-cta">
             Analizi Başlat
           </button>
-          <p className="onboarding-note">Kayıt olmadan deneyebilirsiniz</p>
+          <p className="onboarding-note">Marka analizi genelde 2–4 dakika sürer.</p>
         </div>
       </main>
 
@@ -1129,8 +1129,9 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
             onClick={handleSignup}
             className="onboarding-cta"
           >
-            Devam Et →
+            Hesap Oluştur
           </button>
+          <p className="auth-legal-note">Hesabınızı oluşturarak marka analizinizi kaydedersiniz.</p>
         </div>
       </main>
     </div>

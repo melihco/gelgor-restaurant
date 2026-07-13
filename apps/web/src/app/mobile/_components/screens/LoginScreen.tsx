@@ -1,6 +1,6 @@
 'use client';
+
 import { useState } from 'react';
-import { useTheme } from '../theme-context';
 import { useAuthStore } from '../auth-store';
 import { apiClient, toUserFriendlyApiError } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
@@ -12,15 +12,61 @@ interface LoginScreenProps {
   onSignup?: () => void;
 }
 
+function EyeIcon({ open }: { open: boolean }) {
+  if (open) {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path
+          d="M3 3l18 18M10.58 10.58A2 2 0 0012 15a2 2 0 001.42-.58M9.88 4.24A10.94 10.94 0 0112 5c5.52 0 10 4.5 10 7a10.6 10.6 0 01-2.16 2.78M6.11 6.11A10.94 10.94 0 002 12c0 2.5 4.48 7 10 7 1.74 0 3.37-.4 4.79-1.08"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  );
+}
+
+function resolveLoginErrorMessage(friendly: ReturnType<typeof toUserFriendlyApiError>): string {
+  if (friendly.status === 401 || friendly.status === 403) {
+    return 'E-posta veya şifre hatalı.';
+  }
+  if (friendly.status === 0) {
+    const detail = (friendly.detail || '').toLowerCase();
+    if (detail.includes('timed out') || detail.includes('timeout') || detail.includes('aborted')) {
+      return 'Sunucu yanıt vermiyor. Lütfen birkaç saniye sonra tekrar deneyin.';
+    }
+    return 'Bağlantı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.';
+  }
+  if (friendly.status === 502 || friendly.status === 503 || friendly.status === 504) {
+    return 'Hizmet geçici olarak kullanılamıyor. Lütfen kısa süre sonra tekrar deneyin.';
+  }
+  if (friendly.status === 500) {
+    return process.env.NODE_ENV === 'development'
+      ? 'Sunucu yanıt veremedi. Nexus API (5050) çalışıyor mu kontrol edin.'
+      : 'Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.';
+  }
+  return friendly.detail || friendly.title || 'Giriş yapılamadı.';
+}
+
 export function LoginScreen({ onSignup }: LoginScreenProps) {
-  const { t } = useTheme();
   const { setUser } = useAuthStore();
   const { setWorkspace, setTenantFromSession } = useWorkspaceStore();
 
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
 
   const handleLogin = async () => {
@@ -42,194 +88,86 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
       }
       setUser(me);
     } catch (e: unknown) {
-      const friendly = toUserFriendlyApiError(e, 'Giriş yapılamadı.');
-      if (friendly.status === 401 || friendly.status === 403) {
-        setError('E-posta veya şifre hatalı.');
-      } else if (friendly.status === 0) {
-        const detail = (friendly.detail || '').toLowerCase();
-        if (detail.includes('timed out') || detail.includes('timeout') || detail.includes('aborted')) {
-          setError('Sunucu yanıt vermiyor. Birkaç saniye bekleyip tekrar deneyin — geliştirme sunucusu yoğun olabilir.');
-        } else {
-          setError('Bağlantı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.');
-        }
-      } else if (friendly.status === 502 || friendly.status === 503 || friendly.status === 504) {
-        setError('Nexus API şu an ulaşılamıyor. Geliştirme ortamında `dotnet run` ile API’yi (port 5050) başlatın.');
-      } else if (friendly.status === 500) {
-        setError('Sunucu yanıt veremedi. Nexus API (5050) çalışıyor mu kontrol edin.');
-      } else {
-        setError(friendly.detail || friendly.title);
-      }
+      setError(resolveLoginErrorMessage(toUserFriendlyApiError(e, 'Giriş yapılamadı.')));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{
-      position: 'relative',
-      height: '100dvh', background: t.bg,
-      display: 'flex', flexDirection: 'column',
-      justifyContent: 'center', alignItems: 'center',
-      padding: '0 32px',
-      transition: 'background 300ms',
-    }}>
-      {/* Logo */}
-      <div style={{ marginBottom: 44, textAlign: 'center' }}>
-        <SmartAgencyLogo
-          variant="full"
-          priority
-          className="login-logo"
-        />
-      </div>
+    <div className="onboarding-shell onboarding-shell--login">
+      <div className="onboarding-ambient" aria-hidden />
 
-      {/* Form */}
-      <div style={{ width: '100%', maxWidth: 360 }}>
-        {/* Email */}
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: t.labelColor, letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 7 }}>
-            E-posta
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-            placeholder="ornek@sirket.com"
-            autoComplete="email"
-            style={{
-              width: '100%', padding: '15px 16px', borderRadius: 14, outline: 'none', boxSizing: 'border-box',
-              fontSize: 15,
-              background: t.isDark ? 'rgba(255,255,255,0.05)' : '#fff',
-              border: error
-                ? `0.5px solid ${t.danger}`
-                : `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)'}`,
-              color: t.textPrimary,
-              boxShadow: !t.isDark ? '0 1px 3px rgba(0,0,0,0.05)' : 'none',
-            }}
-          />
-        </div>
+      <header className="onboarding-header onboarding-header--login">
+        <SmartAgencyLogo variant="full" priority className="login-logo" />
+      </header>
 
-        {/* Password */}
-        <div style={{ marginBottom: error ? 10 : 20 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: t.labelColor, letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 7 }}>
-            Şifre
-          </label>
-          <div style={{ position: 'relative' }}>
+      <main className="onboarding-main onboarding-login-main">
+        <h1 className="onboarding-title onboarding-title--step">Giriş Yap</h1>
+        <p className="onboarding-lead onboarding-lead--step">
+          Marka panelinize ve AI üretim ekibinize erişin.
+        </p>
+
+        <div className="onboarding-fields">
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">E-posta</span>
             <input
-              type={showPass ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              placeholder="••••••••"
-              autoComplete="current-password"
-              style={{
-                width: '100%', padding: '15px 48px 15px 16px', borderRadius: 14, outline: 'none', boxSizing: 'border-box',
-                fontSize: 15,
-                background: t.isDark ? 'rgba(255,255,255,0.05)' : '#fff',
-                border: error
-                  ? `0.5px solid ${t.danger}`
-                  : `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)'}`,
-                color: t.textPrimary,
-                boxShadow: !t.isDark ? '0 1px 3px rgba(0,0,0,0.05)' : 'none',
-              }}
+              placeholder="siz@firma.com"
+              autoComplete="email"
+              className={`onboarding-input${email.trim() ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
             />
-            <button
-              onClick={() => setShowPass(!showPass)}
-              style={{
-                position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 14, color: t.textMuted,
-              }}
-            >
-              {showPass ? '🙈' : '👁'}
-            </button>
-          </div>
+          </label>
+
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">Şifre</span>
+            <div className="auth-password-wrap">
+              <input
+                type={showPass ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className={`onboarding-input auth-password-input${password.trim() ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                onClick={() => setShowPass((v) => !v)}
+                aria-label={showPass ? 'Şifreyi gizle' : 'Şifreyi göster'}
+              >
+                <EyeIcon open={showPass} />
+              </button>
+            </div>
+          </label>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div style={{
-            padding: '10px 14px', borderRadius: 10, marginBottom: 16,
-            background: t.dangerDim, border: `0.5px solid ${t.danger}25`,
-            fontSize: 13, color: t.danger, lineHeight: 1.4,
-          }}>
-            {error}
-          </div>
-        )}
+        {error && <p className="onboarding-error">{error}</p>}
 
-        {/* Login button */}
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          style={{
-            width: '100%', padding: '17px', borderRadius: 16,
-            fontSize: 16, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer',
-            background: t.isDark
-              ? 'linear-gradient(135deg, rgba(77,112,136,0.9), rgba(90,130,160,0.8))'
-              : 'linear-gradient(135deg, #4D7088, #5A82A0)',
-            border: 'none', color: '#fff',
-            boxShadow: '0 4px 16px rgba(77,112,136,0.35)',
-            opacity: loading ? 0.7 : 1,
-            letterSpacing: '0.01em',
-          }}
-        >
-          {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
-        </button>
-
-        {/* Divider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
-          <div style={{ flex: 1, height: '0.5px', background: t.separator }} />
-          <span style={{ fontSize: 11, color: t.textMuted }}>veya</span>
-          <div style={{ flex: 1, height: '0.5px', background: t.separator }} />
-        </div>
-
-        {/* Demo fill */}
-        <button
-          onClick={() => { setEmail('info@sunuevent.com'); setPassword('SmartAgency2026!'); }}
-          style={{
-            width: '100%', padding: '14px', borderRadius: 14,
-            fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            ...( t.isDark
-              ? { background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.09)', color: t.textTertiary }
-              : { background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#6b6b73' }
-            ),
-          }}
-        >
-          Demo bilgileriyle doldur
-        </button>
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        position: 'absolute',
-        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
-        left: 0,
-        right: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 10,
-      }}>
-        {onSignup && (
+        <div className="onboarding-actions onboarding-actions--login">
           <button
             type="button"
-            onClick={onSignup}
-            style={{
-              fontSize: 13,
-              color: 'rgba(148,163,184,0.55)',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px 8px',
-            }}
+            onClick={handleLogin}
+            disabled={loading}
+            className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
           >
-            ← Yeni hesap oluştur
+            {loading ? 'Giriş yapılıyor…' : 'Giriş Yap'}
+          </button>
+        </div>
+      </main>
+
+      <footer className="onboarding-footer onboarding-footer--login">
+        {onSignup && (
+          <button type="button" onClick={onSignup} className="onboarding-login-link">
+            Hesabınız yok mu? <span>Yeni hesap oluştur</span>
           </button>
         )}
-        <p style={{ margin: 0, fontSize: 11, color: t.textMuted, textAlign: 'center' }}>
-          SmartAgency AI · v2.4.1
-        </p>
-      </div>
+        <p className="auth-legal-note">SmartAgency · Güvenli oturum</p>
+      </footer>
     </div>
   );
 }

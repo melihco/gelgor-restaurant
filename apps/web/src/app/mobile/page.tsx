@@ -349,6 +349,62 @@ const CSS = `
     object-fit: contain;
     filter: drop-shadow(0 6px 20px rgba(0,0,0,0.28));
   }
+  .sa-mobile .onboarding-shell--login {
+    justify-content: flex-start;
+  }
+  .sa-mobile .onboarding-header--login {
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 36px)
+      28px
+      32px;
+  }
+  .sa-mobile .onboarding-login-main {
+    justify-content: flex-start;
+    padding-bottom: 12px;
+  }
+  .sa-mobile .onboarding-actions--login {
+    margin-top: 28px;
+    padding-top: 0;
+  }
+  .sa-mobile .onboarding-footer--login {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .sa-mobile .auth-password-wrap {
+    position: relative;
+  }
+  .sa-mobile .auth-password-input {
+    padding-right: 48px;
+  }
+  .sa-mobile .auth-password-toggle {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: rgba(148,163,184,0.45);
+    cursor: pointer;
+    transition: color 160ms ease;
+  }
+  .sa-mobile .auth-password-toggle:active {
+    color: rgba(184,205,216,0.85);
+  }
+  .sa-mobile .auth-legal-note {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: rgba(148,163,184,0.28);
+  }
   .sa-mobile .onboarding-title {
     margin: 0 0 10px;
     font-size: clamp(28px, 7vw, 34px);
