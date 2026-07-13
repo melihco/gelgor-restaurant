@@ -12,7 +12,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { T } from '@/app/mobile/_components/theme-context';
-import { BrandSectionIntro } from '@/app/mobile/_components/BrandSectionIntro';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 import { SECTOR_TEMPLATE_PRESETS } from '@/lib/scheduled-template-feed';
 
@@ -207,12 +206,6 @@ export function BrandScheduledTemplatesPanel({
 
   return (
     <div style={{ paddingBottom: 24 }}>
-      <BrandSectionIntro
-        t={t}
-        title="Zamanlanmış Story / Reel"
-        description="Canva'dan indirdiğiniz videoları buraya yükleyin. AI dokunmadan, belirlediğiniz gün ve saatte feed story bar'da otomatik görünür; süre bitince kalkar, ertesi planlı günde tekrar çıkar."
-      />
-
       {loadError && (
         <div style={{
           marginBottom: 14, padding: '12px 14px', borderRadius: 12,

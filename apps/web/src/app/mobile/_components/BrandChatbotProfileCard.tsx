@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { MertcafeIntegrationsCard } from './MertcafeIntegrationsCard';
-import { BrandSectionIntro } from './BrandSectionIntro';
 import type { T } from './theme-context';
 import type { BrandChatbotProfile } from '@/types/brand-chatbot';
 
@@ -244,11 +243,6 @@ export function BrandChatbotProfileCard({
 
       {chatGroup === null && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="Instagram Chatbot"
-            description="DM chatbot ve agent/voice aramaları için marka bilgisi. Analiz mevcut marka verisinden otomatik üretilir."
-          />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {CHAT_GROUPS.map((g) => (
               <button
@@ -293,11 +287,6 @@ export function BrandChatbotProfileCard({
 
       {chatGroup === 'info' && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="İşletme Bilgisi"
-            description="Chatbot'un müşteriye gösterdiği temel iletişim bilgileri."
-          />
           <SCard t={t} title="İletişim" accent="#5AA0D6">
             <Field t={t} label="Görünen işletme adı" value={form.businessDisplayName}
               onChange={(v) => setForm((f) => ({ ...f, businessDisplayName: v }))} />
@@ -314,11 +303,6 @@ export function BrandChatbotProfileCard({
 
       {chatGroup === 'catalog' && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="Menü & Politikalar"
-            description="Ürün özeti, kargo ve sipariş süreci. Chatbot bu bilgilerle müşteri sorularını yanıtlar."
-          />
           <SCard t={t} title="Katalog & Süreç" accent="#4FB597">
             <Field t={t} label="Menü / ürün özeti" value={form.menuSummary} multiline
               onChange={(v) => setForm((f) => ({ ...f, menuSummary: v }))} />
@@ -335,11 +319,6 @@ export function BrandChatbotProfileCard({
 
       {chatGroup === 'ai' && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="AI Analiz & SSS"
-            description="Marka verisinden otomatik chatbot profili üretin. SSS ve ürün kategorileri burada görünür."
-          />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
             <span style={{
               fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 999,
@@ -448,11 +427,6 @@ export function BrandChatbotProfileCard({
 
       {chatGroup === 'integrations' && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="Entegrasyonlar"
-            description="Harici chatbot platformlarına profil senkronizasyonu."
-          />
           <MertcafeIntegrationsCard
             t={t}
             workspaceId={workspaceId}

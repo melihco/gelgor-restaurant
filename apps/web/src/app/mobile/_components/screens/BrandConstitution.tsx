@@ -74,7 +74,7 @@ import {
 } from '@/lib/content-pillars-sync';
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
-import { BrandSectionIntro } from '../BrandSectionIntro';
+import { BrandLogoPreviewCard } from '../BrandLogoPreviewCard';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
@@ -2131,11 +2131,6 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
     <>
       {galleryGroup === null && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="Galeri"
-            description="Mekan ve ürün fotoğrafları. AI analizi doğru görsel seçimini iyileştirir; Mission ve Feed üretimi bu galeriyi kullanır."
-          />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {GALLERY_GROUPS.map((g) => (
               <button
@@ -2180,11 +2175,6 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
 
       {galleryGroup === 'analyze' && (
         <div data-brand-fix="gallery-analyze">
-          <BrandSectionIntro
-            t={t}
-            title="AI Analiz"
-            description="Her fotoğrafa içerik etiketleri, kullanım bağlamı ve kalite skoru atanır. Üretimde doğru görsel eşleşmesi buna dayanır."
-          />
           {displayUrls.length > 0 && (
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14,
@@ -2243,11 +2233,6 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
 
       {galleryGroup === 'upload' && (
         <div data-brand-fix="gallery-upload">
-          <BrandSectionIntro
-            t={t}
-            title="Fotoğraf Yükle"
-            description="Mekan, müşteri sonucu veya önce/sonra görselleri ekleyin. Yükleme sonrası AI etiketleme arka planda başlar."
-          />
           <SCard t={t} title="Yükleme">
         {operatingProfile && (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -2336,11 +2321,6 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
 
       {galleryGroup === 'photos' && (
         <>
-          <BrandSectionIntro
-            t={t}
-            title="Galeri Görünümü"
-            description={`${displayUrls.length} fotoğraf · ${analyzedCount} analizli. Düzenle modunda silme ve temizleme yapabilirsiniz.`}
-          />
       {displayUrls.length > 0 && (() => {
         const totalPages = Math.ceil(displayUrls.length / PAGE_SIZE);
         const pageUrls = displayUrls.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -3557,8 +3537,6 @@ export function BrandConstitution() {
     hasChatbot,
     channelsConnected,
   });
-  const activeNavLabel = HUB_NAV_ITEMS.find((n) => n.target === tab)?.label
-    ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
@@ -3591,6 +3569,14 @@ export function BrandConstitution() {
   ];
   const activeIdentityGroup = IDENTITY_GROUPS.find((g) => g.key === identityGroup);
   const identitySectionTitle = identityGroup === 'channels' ? 'Kanallar' : 'Kimlik';
+
+  const activeNavLabel = (() => {
+    if (tab === 'identity' && identityGroup) return activeIdentityGroup?.label ?? 'Kimlik';
+    if (tab === 'content' && contentGroup) return activeContentGroup?.label ?? 'İçerik';
+    if (tab === 'design' && designGroup) return activeDesignGroup?.label ?? 'Tasarım';
+    return HUB_NAV_ITEMS.find((n) => n.target === tab)?.label
+      ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
+  })();
 
   const monogram = (brandNameDisplay || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   const brandPrimary = String((pyCtx as any)?.brand_primary_color || (p as any).brandColors || t.accent).match(/#[0-9a-fA-F]{3,8}/)?.[0] || t.accent;
@@ -3724,11 +3710,6 @@ export function BrandConstitution() {
         {/* Identity group index */}
         {tab === 'identity' && identityGroup === null && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Kimlik"
-              description="Marka adı, logo, iletişim kanalları ve temel tanım. Mission ve Feed üretimi bu bilgileri referans alır."
-            />
             {!constitutionConfirmedAt && (
               <div
                 data-brand-fix="constitution-confirm"
@@ -3764,20 +3745,13 @@ export function BrandConstitution() {
                 </button>
               </div>
             )}
-            <div data-brand-fix="brand-logo" style={{ marginBottom: 16 }}>
-              <SCard t={t} title="Logo" accent="#A985E0">
-                <Field t={t} label="Logo URL" value={String(logoCandidate || '')} onSave={save('logoUrl')} hint="PNG veya SVG tercih edilir" />
-                {logoUrl && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0 8px' }}>
-                    <div style={{ width: 52, height: 52, borderRadius: 12, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6', flexShrink: 0 }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={resolveGalleryImageSrc(logoUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                    </div>
-                    <span style={{ fontSize: 12, color: t.textMuted }}>Mevcut logo önizlemesi</span>
-                  </div>
-                )}
-              </SCard>
-            </div>
+            <BrandLogoPreviewCard
+              t={t}
+              logoUrl={logoUrl ?? ''}
+              logoSource={String(logoCandidate || '')}
+              monogram={monogram}
+              onSave={save('logoUrl')}
+            />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {IDENTITY_GROUPS.map((g) => (
                 <button
@@ -3822,11 +3796,6 @@ export function BrandConstitution() {
 
         {tab === 'identity' && identityGroup === 'basics' && (
           <div data-brand-fix="service-profile">
-            <BrandSectionIntro
-              t={t}
-              title="Temel Bilgiler"
-              description="Markanın resmi adı, sektörü ve konumu. Tüm üretim ve analiz bu kimliğe bağlanır."
-            />
             <SCard t={t} title="Kimlik">
               <Field t={t} label="Marka Adı" value={brandNameDisplay} onSave={save('brandName')} />
               <Field t={t} label="Sektör" value={industryDisplay} onSave={save('industry')} hint={industrySlug !== industryDisplay ? industrySlug : undefined} />
@@ -3837,11 +3806,6 @@ export function BrandConstitution() {
 
         {tab === 'identity' && identityGroup === 'channels' && (
           <div data-brand-fix="discovery-channels">
-            <BrandSectionIntro
-              t={t}
-              title="Kanallar"
-              description="Web sitesi ve sosyal medya bağlantıları. Marka analizi ve içerik üretimi bu kanallardan beslenir."
-            />
             <SCard t={t} title="Bağlantılar" accent="#3FB6AE">
               <Field t={t} label="Web Sitesi" value={websiteDisplay} onSave={save('websiteUrl')} hint="https://..." />
               <Field t={t} label="Instagram" value={instagramDisplay} onSave={save('instagramHandle')} hint="Kullanıcı adı, @ olmadan" />
@@ -3878,11 +3842,6 @@ export function BrandConstitution() {
 
         {tab === 'identity' && identityGroup === 'about' && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Marka Açıklaması"
-              description="Markanızı, ürün ve hizmetlerinizi tanımlayın. AI ajanları bu metni birincil referans olarak kullanır."
-            />
             <SCard t={t} title="Tanım & Ürünler">
               <div style={{ padding: '14px 16px 0' }}>
                 <button
@@ -3917,11 +3876,6 @@ export function BrandConstitution() {
         {/* Content group index */}
         {tab === 'content' && contentGroup === null && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="İçerik"
-              description="Ses tonu, hedef kitle ve kampanya odağı. Mission ve Feed caption'ları bu stratejiye göre üretilir."
-            />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {CONTENT_GROUPS.map((g) => (
                 <button
@@ -3967,11 +3921,6 @@ export function BrandConstitution() {
 
         {tab === 'content' && contentGroup === 'voice' && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Ses & Ton"
-              description="Markanın yazılı sesi. Caption, story metinleri ve chatbot yanıtları bu tona göre üretilir."
-            />
             <SCard t={t} title="Marka Tonu" accent={t.accent}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                 {TONE_OPTIONS.map(opt => {
@@ -4007,11 +3956,6 @@ export function BrandConstitution() {
 
         {tab === 'content' && contentGroup === 'audience' && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Hedef & Kampanya"
-              description="Kime hitap ediyorsunuz ve ne başarmak istiyorsunuz? Mission ve Feed üretimi bu bilgileri referans alır."
-            />
             <SCard t={t} title="Hedef Kitle">
               <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline hint="Kim için üretiyoruz? Yaş, ilgi alanı, konum..." />
             </SCard>
@@ -4023,11 +3967,6 @@ export function BrandConstitution() {
 
         {tab === 'content' && contentGroup === 'strategy' && tenantId && (
           <div data-brand-fix="content-pillars">
-            <BrandSectionIntro
-              t={t}
-              title="İçerik Stratejisi"
-              description="İçerik sütunları ve varsayılan CTA'lar. Mission slotları bu stratejiye göre planlanır."
-            />
             <SCard t={t} title="Sütunlar & CTA'lar" accent={t.accent}>
               <BrandContentStrategyPanel
                 tenantId={tenantId}
@@ -4045,11 +3984,6 @@ export function BrandConstitution() {
 
         {tab === 'content' && contentGroup === 'special' && tenantId && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Özel Günler & Plan"
-              description="Tatiller, sektör günleri ve zamanlı şablonlar. Ülke ve sektöre göre otomatik öneriler sunulur."
-            />
             <SCard t={t} title="Özel Günler">
               <BrandSpecialDaysPanel tenantId={tenantId} t={t} />
             </SCard>
@@ -4063,11 +3997,6 @@ export function BrandConstitution() {
 
         {tab === 'content' && contentGroup === 'competitors' && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Rakipler"
-              description="Rakip markaları tanımlayın. AI içerik stratejisi ve farklılaşma önerileri bu listeyi kullanır."
-            />
             <SCard t={t} title="Rakip Listesi">
               {(() => {
                 const confirmedRaw = p.competitors || (pyCtx as any)?.competitors || '';
@@ -4175,11 +4104,6 @@ export function BrandConstitution() {
         {/* Design group index */}
         {tab === 'design' && designGroup === null && (
           <>
-            <BrandSectionIntro
-              t={t}
-              title="Tasarım"
-              description="Marka görünümü ve üretim ayarları. İhtiyacın olan grubu seç — her ekran yalnızca o konuya odaklanır."
-            />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {DESIGN_GROUPS.map((g) => (
                 <button
@@ -4233,11 +4157,6 @@ export function BrandConstitution() {
 
         {tab === 'design' && designGroup === 'templates' && (
           <div data-brand-fix="story-templates">
-            <BrandSectionIntro
-              t={t}
-              title="Şablon Kütüphanesi"
-              description="Sektör slot kataloğundan marka bazlı fal.ai şablonları. Mission üretimi aktif slotlardan ve bu galeriden beslenir."
-            />
             {tenantId && (
               <BrandFalTemplateGalleryPanel
                 tenantId={tenantId}
