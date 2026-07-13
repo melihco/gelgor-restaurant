@@ -4,7 +4,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useMobileStore } from './mobile-store';
 import { useTheme } from './theme-context';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { CLIENT_NAV_TABS, isMobileOperatorMode } from './mobile-client-config';
+import {
+  CLIENT_NAV_TABS,
+  CLIENT_NAV_MENU,
+  isMobileOperatorMode,
+  isMoreMenuScreen,
+} from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
 import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT, invalidateMobileArtifactPool } from '../_lib/mobile-artifacts';
 import { filterFeedDisplayArtifacts } from '@/lib/weekly-publish-package';
@@ -124,11 +129,82 @@ function SideNavButton({
   );
 }
 
+function MenuNavButton({
+  isActive,
+  showLabel,
+  onSelect,
+  onPointerEnter,
+  t,
+}: {
+  isActive: boolean;
+  showLabel: boolean;
+  onSelect: () => void;
+  onPointerEnter: () => void;
+  t: ReturnType<typeof useTheme>['t'];
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onPointerEnter={onPointerEnter}
+      aria-label={CLIENT_NAV_MENU.label}
+      aria-current={isActive ? 'page' : undefined}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        height: 52,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 3,
+        border: 'none',
+        background: isActive
+          ? (t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)')
+          : 'transparent',
+        borderRadius: 23,
+        cursor: 'pointer',
+        padding: '0 4px',
+        transition: 'background 150ms ease',
+        outline: 'none',
+      }}
+    >
+      <svg
+        width={22}
+        height={22}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={isActive ? t.navActiveColor : t.navIdleColor}
+        strokeWidth={isActive ? 2.2 : 1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ transition: 'stroke 150ms ease, stroke-width 150ms ease' }}
+      >
+        <path d={CLIENT_NAV_MENU.icon} />
+      </svg>
+      <span style={{
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.03em',
+        textTransform: 'uppercase',
+        color: isActive ? t.navActiveColor : t.navIdleColor,
+        opacity: (isActive || showLabel) ? (isActive ? 1 : 0.72) : 0,
+        maxHeight: (isActive || showLabel) ? 12 : 0,
+        overflow: 'hidden',
+        transition: 'opacity 150ms ease, max-height 150ms ease',
+        whiteSpace: 'nowrap',
+      }}>
+        {CLIENT_NAV_MENU.label}
+      </span>
+    </button>
+  );
+}
+
 /**
- * 3-item bottom nav: Feed · Marka (center star) · Plan
+ * 3-item bottom nav: Akış · Marka (center) · Menü
  */
 export function MobileNav() {
-  const { activeTab, setTab } = useMobileStore();
+  const { activeTab, setTab, navigate, screen } = useMobileStore();
   const { t } = useTheme();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
   const queryClient = useQueryClient();
@@ -142,14 +218,12 @@ export function MobileNav() {
     [artifacts],
   );
   const showAllLabels = !isMobileOperatorMode();
+  const menuActive = isMoreMenuScreen(screen) || activeTab === 'missions';
 
   const feedTab = CLIENT_NAV_TABS.find((tab) => tab.id === 'feed')!;
-  const planTab = CLIENT_NAV_TABS.find((tab) => tab.id === 'missions')!;
 
   const prefetchTab = (tabId: SideTab['id']) => {
-    if (tabId === 'missions') {
-      safePrefetch(() => import('./screens/MissionHub'));
-    } else if (tabId === 'feed') {
+    if (tabId === 'feed') {
       safePrefetch(() => import('./screens/PlatformFeed'));
     } else if (tabId === 'brand') {
       safePrefetch(() => import('./screens/BrandConstitution'));
@@ -157,10 +231,15 @@ export function MobileNav() {
   };
 
   const selectTab = (tabId: SideTab['id']) => {
-    if (tenantId && (tabId === 'feed' || tabId === 'missions')) {
+    if (tenantId && tabId === 'feed') {
       invalidateMobileArtifactPool(queryClient, tenantId);
     }
     setTab(tabId);
+  };
+
+  const openMenu = () => {
+    safePrefetch(() => import('./screens/MoreMenu'));
+    navigate('more');
   };
 
   return (
@@ -187,7 +266,7 @@ export function MobileNav() {
     >
       <SideNavButton
         tab={feedTab}
-        isActive={activeTab === 'feed'}
+        isActive={activeTab === 'feed' && !menuActive}
         badgeCount={pendingApprovalCount}
         showLabel={showAllLabels}
         onSelect={() => selectTab('feed')}
@@ -196,18 +275,16 @@ export function MobileNav() {
       />
 
       <BrandNavStar
-        active={activeTab === 'brand'}
+        active={activeTab === 'brand' && !menuActive}
         onClick={() => selectTab('brand')}
         onPointerEnter={() => prefetchTab('brand')}
       />
 
-      <SideNavButton
-        tab={planTab}
-        isActive={activeTab === 'missions'}
-        badgeCount={0}
+      <MenuNavButton
+        isActive={menuActive}
         showLabel={showAllLabels}
-        onSelect={() => selectTab('missions')}
-        onPointerEnter={() => prefetchTab('missions')}
+        onSelect={openMenu}
+        onPointerEnter={() => safePrefetch(() => import('./screens/MoreMenu'))}
         t={t}
       />
     </nav>

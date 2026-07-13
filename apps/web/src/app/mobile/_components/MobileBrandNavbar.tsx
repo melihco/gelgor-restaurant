@@ -49,6 +49,7 @@ export function MobileBrandNavbar({
   title,
   subtitle,
   showLogo = true,
+  showMenuButton = false,
   rightSlot,
   onMenu,
   className,
@@ -60,6 +61,8 @@ export function MobileBrandNavbar({
   showLogo?: boolean;
   /** @deprecated Tenant adı artık üst barda gösterilmez — yalnızca Smart Agency logosu. */
   showBrandName?: boolean;
+  /** Sol üst menü — varsayılan kapalı; Menü alt navbar'da. */
+  showMenuButton?: boolean;
   rightSlot?: ReactNode;
   onMenu?: () => void;
   className?: string;
@@ -90,10 +93,14 @@ export function MobileBrandNavbar({
         gap: 8,
         minHeight: 44,
       }}>
-        <MobileNavMenuButton
-          onClick={onMenu ?? (() => navigate('more'))}
-          dark={dark}
-        />
+        {showMenuButton ? (
+          <MobileNavMenuButton
+            onClick={onMenu ?? (() => navigate('more'))}
+            dark={dark}
+          />
+        ) : (
+          <div style={{ width: SLOT_W, flexShrink: 0 }} aria-hidden />
+        )}
 
         <div style={{
           flex: 1,

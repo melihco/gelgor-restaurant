@@ -81,12 +81,33 @@ export function tabForMobileScreen(screen: MobileScreen): ClientNavTab | null {
   return null;
 }
 
-/** Bottom bar tabs — Feed · Marka (center) · Plan */
+/** Bottom bar tabs — Feed · Marka (center) · Menü */
 export type ClientNavTab = 'feed' | 'missions' | 'brand';
 
-/**
- * Side tabs + center brand star (see BrandNavStar).
- */
+/** Screens opened from the overflow menu — bottom Menü tab stays highlighted. */
+export const MORE_MENU_SCREENS = new Set<MobileScreen>([
+  'more',
+  'settings',
+  'billing',
+  'notifications',
+  'insights',
+  'ads',
+  'visitors',
+  'reviews',
+  'review-detail',
+  'agents',
+  'ai-activity',
+  'brand-rules',
+  'templates',
+  'outputs',
+  'new-brief',
+]);
+
+export function isMoreMenuScreen(screen: MobileScreen): boolean {
+  return MORE_MENU_SCREENS.has(screen);
+}
+
+/** Side tabs (feed) + center brand star — Plan lives in More menu. */
 export const CLIENT_NAV_TABS: { id: ClientNavTab; label: string; icon: string; active: string; idle: string }[] = [
   {
     id: 'feed',
@@ -102,14 +123,13 @@ export const CLIENT_NAV_TABS: { id: ClientNavTab; label: string; icon: string; a
     active: 'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z',
     idle:   'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z',
   },
-  {
-    id: 'missions',
-    label: 'Plan',
-    icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
-    active: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
-    idle:   'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01',
-  },
 ];
+
+/** Bottom nav — overflow menu (2×2 grid, stroke style matches Akış). */
+export const CLIENT_NAV_MENU = {
+  label: 'Menü',
+  icon: 'M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z',
+} as const;
 
 export type MoreMenuItem = {
   label: string;
@@ -126,6 +146,18 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
   items: MoreMenuItem[];
 }[] {
   const clientGroups: { title: string; items: MoreMenuItem[] }[] = [
+    {
+      title: 'Plan & Üretim',
+      items: [
+        {
+          label: 'İçerik Planı',
+          sub: 'Haftalık görevler ve içerik üretimi',
+          iconBg: '#8AABBD',
+          iconText: '▣',
+          screen: 'missions',
+        },
+      ],
+    },
     {
       title: 'Marka & Ayarlar',
       items: [

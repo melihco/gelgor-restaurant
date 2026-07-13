@@ -11,7 +11,7 @@ const STAR_PATH =
 /** Center nav orb — ~10% larger than legacy 58px circle for thumb reach + logo legibility. */
 const NAV_ORB_OUTER = 79;
 const NAV_ORB_SIZE = 64;
-const NAV_ORB_LIFT = -24;
+const NAV_ORB_LIFT = -18;
 const NAV_LOGO_SIZE = 46;
 
 export function BrandNavStar({
@@ -96,20 +96,6 @@ export function BrandNavStar({
           </svg>
         )}
       </div>
-      <span
-        style={{
-          display: 'block',
-          marginTop: 4,
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          textAlign: 'center',
-          color: active ? primary : t.navIdleColor,
-        }}
-      >
-        Marka
-      </span>
     </button>
   );
 }

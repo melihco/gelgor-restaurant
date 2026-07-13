@@ -89,6 +89,10 @@ export function MoreMenu() {
       setTab('brand');
       return;
     }
+    if (screen === 'missions') {
+      setTab('missions');
+      return;
+    }
     navigate(screen);
   };
 
