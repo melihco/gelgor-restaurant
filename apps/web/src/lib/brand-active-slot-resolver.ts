@@ -380,7 +380,10 @@ export function stampIdeasWithBrandCatalogSlots(
 ): Record<string, unknown>[] {
   const used = new Set<string>();
   return ideas.map((idea) => {
-    const matched = matchIdeaToBrandCatalogSlot({ idea, activeSlots, usedSlotKeys: used });
+    let matched = matchIdeaToBrandCatalogSlot({ idea, activeSlots, usedSlotKeys: used });
+    if (!matched && activeSlots.slots.length > 0) {
+      matched = matchIdeaToBrandCatalogSlot({ idea, activeSlots });
+    }
     if (!matched) return idea;
     used.add(matched.slotKey);
     return {
@@ -406,7 +409,12 @@ export function applyCatalogSlotToAssignment(
   };
 }
 
-/** Attach catalog_slot_key to each queue item; drop rows with no enabled slot match. */
+/**
+ * Attach catalog_slot_key to each queue item.
+ * Prefer unique enabled slots first; when the brand has fewer slots than ideas,
+ * reuse the best-matching slot rather than dropping content-scoped rows.
+ * Unmatched ideas keep their FD/inferred assignment so production count stays intact.
+ */
 export function enrichProductionQueueWithBrandSlots(
   queue: ManifestProductionQueueItem[],
   activeSlots: BrandActiveSlotSet,
@@ -415,13 +423,24 @@ export function enrichProductionQueueWithBrandSlots(
   const out: ManifestProductionQueueItem[] = [];
 
   for (const item of queue) {
-    const matched = matchIdeaToBrandCatalogSlot({
+    let matched = matchIdeaToBrandCatalogSlot({
       idea: item.idea,
       assignment: item.assignment,
       activeSlots,
       usedSlotKeys: used,
     });
-    if (!matched) continue;
+    // Content packages often exceed enabled catalog size — rotate templates, never drop.
+    if (!matched && activeSlots.slots.length > 0) {
+      matched = matchIdeaToBrandCatalogSlot({
+        idea: item.idea,
+        assignment: item.assignment,
+        activeSlots,
+      });
+    }
+    if (!matched) {
+      out.push(item);
+      continue;
+    }
     used.add(matched.slotKey);
     const assignment = applyCatalogSlotToAssignment(item.assignment, matched);
     out.push({

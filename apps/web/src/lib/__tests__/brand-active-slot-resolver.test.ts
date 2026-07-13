@@ -258,6 +258,43 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     expect(queue[0]!.assignment.library_slot_key).toBe('beach_club_dj_night_teaser_post');
     expect(queue[0]!.assignment.library_slot_key).not.toBe('campaign_post');
   });
+
+  it('keeps all ideas when the brand has fewer enabled catalog slots than queue rows', () => {
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-1',
+      sector: 'local_products_shop',
+      sectorSlots: [
+        mockSlot('local_products_shop_harvest_post', 'post'),
+        mockSlot('local_products_shop_product_post', 'post'),
+      ],
+      tenantAssignments: [
+        mockAssignment('local_products_shop_harvest_post', true),
+        mockAssignment('local_products_shop_product_post', true),
+      ],
+    });
+
+    const queueItems = Array.from({ length: 8 }, (_, i) => ({
+      queueIndex: i,
+      ideaIndex: i,
+      idea: {
+        headline: `Idea ${i}`,
+        content_type: 'instagram_post',
+        caption_draft: `caption ${i}`,
+        production_scope: i < 4 ? 'ideation' : 'calendar_plan',
+      },
+      assignment: {
+        idea_index: i,
+        slot_role: 'designed_post' as const,
+        pipeline: 'fal_design',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic' as const,
+      },
+    }));
+
+    const queue = enrichProductionQueueWithBrandSlots(queueItems, activeSet);
+    expect(queue).toHaveLength(8);
+    expect(queue.every((row) => row.assignment.catalog_slot_key)).toBe(true);
+  });
 });
 
 describe('wedding_event sector isolation', () => {
