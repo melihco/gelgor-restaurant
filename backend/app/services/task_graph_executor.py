@@ -2671,6 +2671,12 @@ async def _run_feed_art_director_report(
         weekly_theme = f"{weekly_theme} | {brief[:120]}".strip(" |")
 
     from app.crew.tasks.feed_art_director_tasks import FD_CONTENT_IDEAS_INPUT_MAX_CHARS
+    from app.services.feed_director_slot_catalog import load_feed_director_catalog_slots
+
+    catalog_slots: list[dict[str, str]] = []
+    factory = _get_session_factory()
+    async with factory() as db:
+        catalog_slots = await load_feed_director_catalog_slots(db, workspace_id)
 
     report = await asyncio.to_thread(
         run_feed_art_director,
@@ -2682,6 +2688,7 @@ async def _run_feed_art_director_report(
         creative_brief=brief,
         production_package=ctx.get("production_package") or None,
         production_profile=ctx.get("production_profile") or None,
+        catalog_slots=catalog_slots or None,
     )
 
     report_json = _json.dumps(report, ensure_ascii=False, indent=2)

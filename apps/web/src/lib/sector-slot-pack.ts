@@ -31,6 +31,12 @@ export interface SlotArchetypeInstance {
   /** e.g. ['requires:pool'] — disabled when matching facility is false. */
   optionalTags?: string[];
   enabledByDefault?: boolean;
+  /** Override default format→pipeline mapping (e.g. fal_only_story for typography posters). */
+  pipeline?: string;
+  /** Override default format→slot_role mapping. */
+  slotRole?: string;
+  /** Override inferDesignTemplateType() when set. */
+  designTemplateType?: string;
 }
 
 export interface SectorSlotPack {
@@ -95,6 +101,8 @@ export function slotEnabledByFacilities(
 
 function inferDesignTemplateType(slotKey: string): string {
   const key = slotKey.toLowerCase();
+  if (/typography_poster/.test(key)) return 'campaign_announcement';
+  if (/event_announcement/.test(key)) return 'event_special';
   if (/social_proof|testimonial|review|ugc|guest_social|client_testimonial|member_story/.test(key)) {
     return 'social_proof';
   }
@@ -152,6 +160,13 @@ function inferLibrarySlotKey(slotKey: string, designType: string): string | null
 
 function buildMatchSignals(slotKey: string, designType: string): Record<string, unknown> {
   const signals: Record<string, unknown> = { design_template_type: designType };
+  if (/typography_poster/.test(slotKey)) {
+    signals.announcement_types = ['campaign_offer', 'offer_campaign'];
+    signals.typography_forward = true;
+  }
+  if (/event_announcement/.test(slotKey)) {
+    signals.announcement_types = ['event_teaser', 'event_announcement'];
+  }
   if (/event|dj|wedding/.test(slotKey)) {
     signals.announcement_types = ['event_teaser', 'event_announcement'];
   }
@@ -195,6 +210,24 @@ export const SECTOR_SLOT_PACKS: SectorSlotPack[] = [
       { suffix: 'cocktail_promo_story', labelTr: 'Kokteyl promo story', labelEn: 'Cocktail promo story', format: 'story' },
       { suffix: 'pool_party_story', labelTr: 'Havuz partisi story', labelEn: 'Pool party story', format: 'story', optionalTags: ['requires:pool'] },
       { suffix: 'day_pass_story', labelTr: 'Gün pass story', labelEn: 'Day pass story', format: 'story' },
+      {
+        suffix: 'event_announcement_story',
+        labelTr: 'Etkinlik duyuru afişi',
+        labelEn: 'Event announcement story',
+        format: 'story',
+        pipeline: 'fal_story',
+        slotRole: 'campaign_story_motion',
+        designTemplateType: 'event_special',
+      },
+      {
+        suffix: 'typography_poster_story',
+        labelTr: 'Tipografi poster story',
+        labelEn: 'Typography poster story',
+        format: 'story',
+        pipeline: 'fal_only_story',
+        slotRole: 'fal_only_story',
+        designTemplateType: 'campaign_announcement',
+      },
       { suffix: 'atmosphere_reel', labelTr: 'Atmosfer reel', labelEn: 'Atmosphere reel', format: 'reel' },
       { suffix: 'cocktail_craft_reel', labelTr: 'Kokteyl craft reel', labelEn: 'Cocktail craft reel', format: 'reel' },
       { suffix: 'sunset_timelapse_reel', labelTr: 'Gün batımı timelapse reel', labelEn: 'Sunset timelapse reel', format: 'reel' },
@@ -224,6 +257,24 @@ export const SECTOR_SLOT_PACKS: SectorSlotPack[] = [
       { suffix: 'table_ready_story', labelTr: 'Masa hazır story', labelEn: 'Table ready story', format: 'story' },
       { suffix: 'farm_to_table_story', labelTr: 'Çiftlikten sofraya story', labelEn: 'Farm to table story', format: 'story' },
       { suffix: 'weekend_booking_story', labelTr: 'Hafta sonu rezervasyon story', labelEn: 'Weekend booking story', format: 'story' },
+      {
+        suffix: 'event_announcement_story',
+        labelTr: 'Etkinlik duyuru afişi',
+        labelEn: 'Event announcement story',
+        format: 'story',
+        pipeline: 'fal_story',
+        slotRole: 'campaign_story_motion',
+        designTemplateType: 'event_special',
+      },
+      {
+        suffix: 'typography_poster_story',
+        labelTr: 'Tipografi poster story',
+        labelEn: 'Typography poster story',
+        format: 'story',
+        pipeline: 'fal_only_story',
+        slotRole: 'fal_only_story',
+        designTemplateType: 'campaign_announcement',
+      },
       { suffix: 'chef_plating_reel', labelTr: 'Şef plating reel', labelEn: 'Chef plating reel', format: 'reel' },
       { suffix: 'kitchen_process_reel', labelTr: 'Mutfak süreç reel', labelEn: 'Kitchen process reel', format: 'reel' },
       { suffix: 'dining_experience_reel', labelTr: 'Yemek deneyimi reel', labelEn: 'Dining experience reel', format: 'reel' },
@@ -656,15 +707,15 @@ export function instanceToSlotDefinition(
   facilities?: BrandSlotFacilities,
 ): ProductionSlotDefinition {
   const slotKey = slotKeyForSector(pack.sectorId, instance.suffix);
-  const designType = inferDesignTemplateType(slotKey);
+  const designType = instance.designTemplateType ?? inferDesignTemplateType(slotKey);
   return {
     slot_key: slotKey,
     sector_id: pack.sectorId,
     label_tr: instance.labelTr,
     label_en: instance.labelEn,
     format: instance.format,
-    pipeline: inferPipeline(instance.format),
-    slot_role: inferSlotRole(instance.format),
+    pipeline: instance.pipeline ?? inferPipeline(instance.format),
+    slot_role: instance.slotRole ?? inferSlotRole(instance.format),
     design_template_type: designType,
     library_slot_key: inferLibrarySlotKey(slotKey, designType),
     tier: instance.format === 'reel' || instance.format === 'carousel' ? 'premium' : 'standard',

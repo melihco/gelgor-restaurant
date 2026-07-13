@@ -275,8 +275,14 @@ function scoreSlotForIdea(
   );
   const hay = ideaHaystack(idea);
 
+  if (assignment?.catalog_slot_key && slot.slotKey === assignment.catalog_slot_key) {
+    score += 60;
+  }
   if (assignment?.library_slot_key && slot.librarySlotKey === assignment.library_slot_key) {
     score += 50;
+  }
+  if (assignment?.library_slot_key && slot.slotKey === assignment.library_slot_key) {
+    score += 55;
   }
   if (assignment?.slot_role && slot.slotRole === assignment.slot_role) {
     score += 20;
@@ -385,6 +391,21 @@ export function stampIdeasWithBrandCatalogSlots(
   });
 }
 
+/**
+ * Catalog slot_key replaces legacy Remotion names (campaign_post, daily_story, …).
+ * Template match, artifact metadata, and Fal briefs use the full catalog key.
+ */
+export function applyCatalogSlotToAssignment(
+  assignment: ProductionAssignment,
+  matched: BrandActiveSlot,
+): ProductionAssignment {
+  return {
+    ...assignment,
+    catalog_slot_key: matched.slotKey,
+    library_slot_key: matched.slotKey,
+  };
+}
+
 /** Attach catalog_slot_key to each queue item; drop rows with no enabled slot match. */
 export function enrichProductionQueueWithBrandSlots(
   queue: ManifestProductionQueueItem[],
@@ -402,6 +423,7 @@ export function enrichProductionQueueWithBrandSlots(
     });
     if (!matched) continue;
     used.add(matched.slotKey);
+    const assignment = applyCatalogSlotToAssignment(item.assignment, matched);
     out.push({
       ...item,
       idea: {
@@ -409,11 +431,7 @@ export function enrichProductionQueueWithBrandSlots(
         catalog_slot_key: matched.slotKey,
         catalog_slot_label: matched.labelTr,
       },
-      assignment: {
-        ...item.assignment,
-        catalog_slot_key: matched.slotKey,
-        library_slot_key: item.assignment.library_slot_key ?? matched.librarySlotKey ?? undefined,
-      },
+      assignment,
     });
   }
   return out;

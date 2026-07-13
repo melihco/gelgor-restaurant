@@ -341,3 +341,21 @@ function isCalendarTrackIdea(idea: Record<string, unknown>): boolean {
   if (String(idea.source_node ?? '') === 'content_calendar') return true;
   return false;
 }
+
+const PHOTO_FIRST_ARCHETYPES = new Set([
+  'cinematic_full_bleed',
+  'noir_editorial',
+  'polaroid_memory',
+  'location_pin_card',
+]);
+
+/** Prevent intensity rules from fighting photo-first archetypes (e.g. full-bleed + designed split). */
+export function clampDesignIntensityForArchetype(
+  level: FalDesignIntensityLevel,
+  archetypeId?: string | null,
+): FalDesignIntensityLevel {
+  if (!archetypeId || !PHOTO_FIRST_ARCHETYPES.has(archetypeId)) return level;
+  if (level === 'bold_editorial' || level === 'designed') return 'balanced';
+  if (level === 'balanced') return 'elegant_light';
+  return level;
+}

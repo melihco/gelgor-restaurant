@@ -3408,18 +3408,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const storySlotMeta: Record<string, unknown> = {};
+    const resolvedCatalogSlotKey = assignment.catalog_slot_key
+      ?? (ideaRecord.catalog_slot_key as string | undefined);
+    const resolvedProductionSlotKey = assignment.library_slot_key
+      ?? resolvedCatalogSlotKey;
+
     if (assignmentImpliesStoryFormat(assignment.slot_role)) {
       const storySlotKey = resolveStoryLibrarySlotKey({
         librarySlotKey: assignment.library_slot_key,
-        catalogSlotKey: assignment.catalog_slot_key
-          ?? (ideaRecord.catalog_slot_key as string | undefined),
+        catalogSlotKey: resolvedCatalogSlotKey,
         activeSlots: brandActiveSlots,
         library: templateLibrary,
         storyIndex,
       });
       if (storySlotKey) storySlotMeta.library_slot_key = storySlotKey;
-      if (assignment.catalog_slot_key) {
-        storySlotMeta.catalog_slot_key = assignment.catalog_slot_key;
+      if (resolvedCatalogSlotKey) {
+        storySlotMeta.catalog_slot_key = resolvedCatalogSlotKey;
       }
     }
 
@@ -3616,6 +3620,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       publish_priority: primaryIdeaIndices.has(resolvedIdeaIndex) ? 'recommended' : 'extended',
       production_role: assignment.slot_role,
       pipeline: assignment.pipeline,
+      ...(resolvedCatalogSlotKey ? { catalog_slot_key: resolvedCatalogSlotKey } : {}),
+      ...(resolvedProductionSlotKey ? { library_slot_key: resolvedProductionSlotKey } : {}),
       visual_policy: galleryOnlyVisual ? 'gallery_only' : 'designed',
       copy_bundle_id: assignment.copy_bundle_id,
       publish_channel: assignment.publish_channel,

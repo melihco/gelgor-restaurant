@@ -25,6 +25,7 @@ from app.data.production_slot_catalog_meta import (
 from app.data.production_slot_catalog_seed import (
     OPTIONAL_TAGS_BY_SLOT,
     SECTOR_SEED,
+    SLOT_INSTANCE_BY_KEY,
     SLOT_KEYS_BY_SECTOR,
 )
 from app.database import async_session_factory
@@ -61,9 +62,15 @@ async def seed_slots(session) -> int:
     count = 0
     for sector_id, keys in SLOT_KEYS_BY_SECTOR.items():
         for idx, slot_key in enumerate(keys):
+            inst = SLOT_INSTANCE_BY_KEY.get(slot_key, {})
             fmt = infer_format(slot_key)
-            design_type = infer_design_template_type(slot_key)
-            label_tr, label_en = humanize_slot_key(slot_key)
+            design_type = inst.get("design_template_type") or infer_design_template_type(slot_key)
+            pack_label_tr = inst.get("label_tr")
+            pack_label_en = inst.get("label_en")
+            if pack_label_tr and pack_label_en:
+                label_tr, label_en = pack_label_tr, pack_label_en
+            else:
+                label_tr, label_en = humanize_slot_key(slot_key)
             existing = await session.get(ProductionSlotDefinition, slot_key)
             optional_tags = OPTIONAL_TAGS_BY_SLOT.get(slot_key, [])
             payload = {
@@ -71,8 +78,8 @@ async def seed_slots(session) -> int:
                 "label_tr": label_tr,
                 "label_en": label_en,
                 "format": fmt,
-                "pipeline": infer_pipeline(fmt),
-                "slot_role": infer_slot_role(fmt),
+                "pipeline": inst.get("pipeline") or infer_pipeline(fmt),
+                "slot_role": inst.get("slot_role") or infer_slot_role(fmt),
                 "design_template_type": design_type,
                 "library_slot_key": infer_library_slot_key(slot_key, design_type),
                 "tier": "premium" if "reel" in slot_key or "carousel" in slot_key else "standard",

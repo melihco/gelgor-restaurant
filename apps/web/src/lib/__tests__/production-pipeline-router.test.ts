@@ -65,6 +65,7 @@ function assignmentFingerprint(a: ProductionAssignment) {
     pipeline: a.pipeline,
     publish_channel: a.publish_channel,
     library_slot_key: a.library_slot_key,
+    catalog_slot_key: a.catalog_slot_key,
     rationale: a.rationale,
   };
 }
@@ -92,6 +93,7 @@ describe('parseProductionAssignments', () => {
     expect(parsed.map(assignmentFingerprint)).toMatchInlineSnapshot(`
       [
         {
+          "catalog_slot_key": undefined,
           "idea_index": 0,
           "library_slot_key": undefined,
           "pipeline": "gallery_photo",
@@ -101,6 +103,45 @@ describe('parseProductionAssignments', () => {
         },
       ]
     `);
+  });
+
+  it('preserves catalog_slot_key from FD report', () => {
+    const parsed = parseProductionAssignments({
+      production_assignments: [
+        {
+          idea_index: 1,
+          slot_role: 'designed_post',
+          pipeline: 'fal_design',
+          catalog_slot_key: 'restaurant_cafe_brunch_offer_post',
+        },
+        {
+          idea_index: 2,
+          slot_role: 'campaign_story_motion',
+          pipeline: 'fal_story',
+          catalog_slot_key: 'restaurant_cafe_event_announcement_story',
+        },
+      ],
+    } as unknown as FeedArtDirectorReport);
+    expect(parsed.map(assignmentFingerprint)).toEqual([
+      {
+        idea_index: 1,
+        slot_role: 'designed_post',
+        pipeline: 'fal_design',
+        publish_channel: 'instagram_organic',
+        library_slot_key: undefined,
+        catalog_slot_key: 'restaurant_cafe_brunch_offer_post',
+        rationale: undefined,
+      },
+      {
+        idea_index: 2,
+        slot_role: 'campaign_story_motion',
+        pipeline: 'fal_story',
+        publish_channel: 'instagram_campaign',
+        library_slot_key: undefined,
+        catalog_slot_key: 'restaurant_cafe_event_announcement_story',
+        rationale: undefined,
+      },
+    ]);
   });
 });
 
@@ -113,6 +154,7 @@ describe('inferProductionAssignment (heuristic)', () => {
     expect(out).toMatchInlineSnapshot(`
       [
         {
+          "catalog_slot_key": undefined,
           "idea_index": 0,
           "library_slot_key": undefined,
           "pipeline": "gallery_photo",
@@ -121,6 +163,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "organic_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 1,
           "library_slot_key": undefined,
           "pipeline": "fal_story",
@@ -129,6 +172,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 2,
           "library_slot_key": undefined,
           "pipeline": "fal_reel",
@@ -137,6 +181,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "organic_reel",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 3,
           "library_slot_key": undefined,
           "pipeline": "fal_design",
@@ -145,6 +190,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 4,
           "library_slot_key": undefined,
           "pipeline": "carousel_gallery",
@@ -153,6 +199,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "organic_carousel",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 5,
           "library_slot_key": undefined,
           "pipeline": "fal_story",
@@ -161,6 +208,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 6,
           "library_slot_key": undefined,
           "pipeline": "fal_design",
@@ -169,6 +217,7 @@ describe('inferProductionAssignment (heuristic)', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 7,
           "library_slot_key": undefined,
           "pipeline": "fal_reel",
@@ -202,6 +251,7 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
     expect(out).toMatchInlineSnapshot(`
       [
         {
+          "catalog_slot_key": undefined,
           "idea_index": 0,
           "library_slot_key": undefined,
           "pipeline": "gallery_photo",
@@ -210,6 +260,7 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
           "slot_role": "organic_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 1,
           "library_slot_key": "event_story",
           "pipeline": "fal_story",
@@ -218,6 +269,7 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 2,
           "library_slot_key": undefined,
           "pipeline": "fal_reel",
@@ -226,6 +278,7 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
           "slot_role": "organic_reel",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 3,
           "library_slot_key": "campaign_post",
           "pipeline": "fal_design",
@@ -234,6 +287,7 @@ describe('resolveProductionAssignment (per-idea, fallback queue)', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 4,
           "library_slot_key": undefined,
           "pipeline": "carousel_gallery",
@@ -324,6 +378,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
       {
         "assignments": [
           {
+            "catalog_slot_key": undefined,
             "idea_index": 0,
             "library_slot_key": undefined,
             "pipeline": "gallery_photo",
@@ -332,6 +387,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "organic_post",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 1,
             "library_slot_key": "event_story",
             "pipeline": "fal_story",
@@ -340,6 +396,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "campaign_story_motion",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 2,
             "library_slot_key": undefined,
             "pipeline": "fal_reel",
@@ -348,6 +405,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "organic_reel",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 3,
             "library_slot_key": "campaign_post",
             "pipeline": "fal_design",
@@ -356,6 +414,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "designed_post",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 4,
             "library_slot_key": undefined,
             "pipeline": "carousel_gallery",
@@ -364,6 +423,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "organic_carousel",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 5,
             "library_slot_key": "editorial_story",
             "pipeline": "fal_story",
@@ -372,6 +432,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "campaign_story_motion",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 6,
             "library_slot_key": "campaign_post",
             "pipeline": "fal_design",
@@ -380,6 +441,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
             "slot_role": "designed_post",
           },
           {
+            "catalog_slot_key": undefined,
             "idea_index": 7,
             "library_slot_key": undefined,
             "pipeline": "fal_reel",
@@ -421,6 +483,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
     expect(prepared.assignments.map(assignmentFingerprint)).toMatchInlineSnapshot(`
       [
         {
+          "catalog_slot_key": undefined,
           "idea_index": 0,
           "library_slot_key": undefined,
           "pipeline": "gallery_photo",
@@ -429,6 +492,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "organic_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 1,
           "library_slot_key": "event_story",
           "pipeline": "fal_story",
@@ -437,6 +501,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 2,
           "library_slot_key": undefined,
           "pipeline": "fal_reel",
@@ -445,6 +510,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "organic_reel",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 3,
           "library_slot_key": "campaign_post",
           "pipeline": "fal_design",
@@ -453,6 +519,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 4,
           "library_slot_key": undefined,
           "pipeline": "carousel_gallery",
@@ -461,6 +528,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "organic_carousel",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 5,
           "library_slot_key": "editorial_story",
           "pipeline": "fal_story",
@@ -469,6 +537,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 6,
           "library_slot_key": "campaign_post",
           "pipeline": "fal_design",
@@ -477,6 +546,7 @@ describe('prepareMissionFdAssignments — gate path', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "idea_index": 7,
           "library_slot_key": undefined,
           "pipeline": "fal_reel",
@@ -503,6 +573,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
     expect(queueFingerprint(queue)).toMatchInlineSnapshot(`
       [
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 0,
           "idea_index": 0,
           "library_slot_key": undefined,
@@ -513,6 +584,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "organic_post",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 1,
           "idea_index": 1,
           "library_slot_key": "event_story",
@@ -523,6 +595,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 2,
           "idea_index": 2,
           "library_slot_key": undefined,
@@ -533,6 +606,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "organic_reel",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 3,
           "idea_index": 3,
           "library_slot_key": "campaign_post",
@@ -543,6 +617,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 4,
           "idea_index": 4,
           "library_slot_key": undefined,
@@ -553,6 +628,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "organic_carousel",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 5,
           "idea_index": 5,
           "library_slot_key": "editorial_story",
@@ -563,6 +639,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 6,
           "idea_index": 6,
           "library_slot_key": "campaign_post",
@@ -573,6 +650,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 7,
           "idea_index": 7,
           "library_slot_key": undefined,
@@ -599,6 +677,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
     expect(queueFingerprint(queue)).toMatchInlineSnapshot(`
       [
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 0,
           "idea_index": 0,
           "library_slot_key": undefined,
@@ -609,6 +688,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "organic_post",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 1,
           "idea_index": 1,
           "library_slot_key": "event_story",
@@ -619,6 +699,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 2,
           "idea_index": 2,
           "library_slot_key": undefined,
@@ -629,6 +710,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "organic_reel",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 3,
           "idea_index": 3,
           "library_slot_key": "campaign_post",
@@ -639,6 +721,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 4,
           "idea_index": 4,
           "library_slot_key": undefined,
@@ -649,6 +732,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "organic_carousel",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 5,
           "idea_index": 5,
           "library_slot_key": "editorial_story",
@@ -659,6 +743,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "campaign_story_motion",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 6,
           "idea_index": 6,
           "library_slot_key": "campaign_post",
@@ -669,6 +754,7 @@ describe('buildManifestProductionQueue — production queue path', () => {
           "slot_role": "designed_post",
         },
         {
+          "catalog_slot_key": undefined,
           "ideaIndex": 7,
           "idea_index": 7,
           "library_slot_key": undefined,

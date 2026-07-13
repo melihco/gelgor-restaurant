@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBrandIntelligenceDirectives,
   buildDesignTemplateGenerationJobs,
+  resolveDefaultTemplateHeroPhoto,
 } from '@/lib/brand-design-template-engine';
 import type { DesignTemplatePreset } from '@/lib/brand-design-template-presets';
 
@@ -91,5 +92,31 @@ describe('buildBrandIntelligenceDirectives', () => {
     expect(prompt).toContain('story uses elegant_light');
     expect(prompt).toContain('LAYOUT RECIPE');
     expect(prompt).toContain('reusable brand recipes');
+  });
+});
+
+describe('resolveDefaultTemplateHeroPhoto', () => {
+  it('prefers true venue aerial over paddleboard product shot', () => {
+    const hero = resolveDefaultTemplateHeroPhoto({
+      workspaceId: 'tenant-1',
+      sector: 'beach_club',
+      brandName: 'Yula',
+      brandColors: { primary: '#0ea5a4', accent: '#fff' },
+      galleryPhotoUrls: [
+        'https://brand.example.com/paddle.webp',
+        'https://brand.example.com/terrace.webp',
+      ],
+      galleryAnalysis: {
+        'https://brand.example.com/paddle.webp': {
+          suggestedAssetType: 'venue_reference',
+          description: 'paddleboard on turquoise water haute boards product',
+        },
+        'https://brand.example.com/terrace.webp': {
+          suggestedAssetType: 'venue_reference',
+          description: 'aerial terrace infinity pool venue sunset view',
+        },
+      },
+    });
+    expect(hero?.url).toContain('terrace');
   });
 });

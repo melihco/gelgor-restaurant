@@ -112,7 +112,7 @@ export const CANVA_ARCHETYPE_CATALOG: CanvaArchetypeSpec[] = [
     motionCue: 'slow cinematic drift on photo, static corner type',
     formats: ['reel', 'story', 'post'],
     useCases: ['daily_story'],
-    keywordRx: /sunset|gün bat|horizon|sky|sea|deniz|manzara|view/i,
+    keywordRx: /sunset|gün bat|horizon|sky|sea|deniz|manzara|view|aerial|havadan|drone|kuşbakış/i,
   },
   {
     id: 'campaign_hero_block',
@@ -379,6 +379,11 @@ function scoreArchetype(
     ?? CANVA_SECTOR_ARCHETYPE_HINTS.default
     ?? [];
   if (pool.includes(archetype.id)) score += 22;
+
+  if (/aerial|havadan|drone|kuşbakış|manzara|panoram|overview/.test(input.textBlob)) {
+    if (archetype.id === 'cinematic_full_bleed' || archetype.id === 'magazine_cover_drop') score += 45;
+    if (archetype.id === 'split_feature_panel') score -= 40;
+  }
 
   return score;
 }

@@ -838,7 +838,7 @@ export function getLibrarySlotByKey(
   return library.slots.find((s) => s.key === slotKey && s.enabled);
 }
 
-/** Rotate story library_slot_key — prefers catalog assignments when loaded. */
+/** Rotate story slot key — prefers Fal catalog slot_key when tenant assignments are loaded. */
 export function resolveStoryLibrarySlotKey(input: {
   librarySlotKey?: string | null;
   catalogSlotKey?: string | null;
@@ -846,10 +846,19 @@ export function resolveStoryLibrarySlotKey(input: {
   library?: BrandTemplateLibrary | null;
   storyIndex: number;
 }): string | undefined {
-  if (input.librarySlotKey) return input.librarySlotKey;
+  if (input.catalogSlotKey && input.activeSlots?.enabledSlotKeys.has(input.catalogSlotKey)) {
+    return input.catalogSlotKey;
+  }
+  if (
+    input.librarySlotKey
+    && input.activeSlots?.enabledSlotKeys.has(input.librarySlotKey)
+  ) {
+    return input.librarySlotKey;
+  }
+  if (input.librarySlotKey && !input.activeSlots) return input.librarySlotKey;
   if (input.catalogSlotKey && input.activeSlots) {
     const catalogSlot = input.activeSlots.slots.find((s) => s.slotKey === input.catalogSlotKey);
-    if (catalogSlot?.librarySlotKey) return catalogSlot.librarySlotKey;
+    if (catalogSlot) return catalogSlot.slotKey;
   }
   if (input.activeSlots) {
     const storyCatalogSlots = input.activeSlots.slots.filter((s) => s.format === 'story');

@@ -9,6 +9,7 @@ import re
 from crewai import Agent, Task
 
 from app.crew.prompts.canva_archetype_prompts import CANVA_ARCHETYPE_AGENT_PROMPT_BLOCK
+from app.services.feed_director_slot_catalog import format_catalog_slots_for_prompt
 
 # 10-idea weekly batches with TR captions exceed 6k chars — keep full pool for slot routing.
 FD_CONTENT_IDEAS_PROMPT_MAX_CHARS = 12_000
@@ -31,7 +32,7 @@ Reuse idea_index round-robin when fewer than 3 ideas exist. Do NOT assign paid a
 
 Required slot mix (opportunity):
 - exactly 1 designed_post
-- exactly 1 campaign_story_motion (library_slot_key required)
+- exactly 1 campaign_story_motion (catalog_slot_key required — story format from brand catalog)
 - exactly 1 organic_reel (set hero_reel_index to that idea_index)
 
 manifest_coverage_pct must be 100 when all 3 slots are assigned.
@@ -47,7 +48,7 @@ Required slot mix (weekly_content / agency):
 - exactly 1 designed_post + 1 designed_typography (fal_design — gallery match + agent design brief)
 - exactly 1 fal_designed_post (fal_design)
 - exactly 1 organic_carousel (carousel_gallery)
-- exactly 2 campaign_story_motion (fal_story) — different library_slot_key each
+- exactly 2 campaign_story_motion (fal_story) — different catalog_slot_key each
 - exactly 1 organic_story_still (story_still)
 - exactly 1 organic_reel + 1 campaign_reel_motion (fal_reel) — set hero_reel_index on organic_reel
 - exactly 2 fal_reel_motion (fal_reel)
@@ -71,6 +72,7 @@ def create_feed_cohesion_task(
     mission_title: str = "",
     creative_brief: str = "",
     production_package: str = "weekly_content",
+    catalog_slots: list[dict[str, str]] | None = None,
 ) -> Task:
     """
     Task: Review full weekly content batch → produce feed_art_director_report.
@@ -88,6 +90,7 @@ def create_feed_cohesion_task(
     except Exception:
         pass
     slot_directive = _production_assignment_directive(production_package, idea_count)
+    catalog_block = format_catalog_slots_for_prompt(catalog_slots)
 
     mission_block = ""
     if mission_title or creative_brief or mission_type:
@@ -147,10 +150,12 @@ Assign each idea to a day and optional time slot. Aim for:
 - Carousels on Tuesday/Wednesday (highest save rate)
 - For idea-driven missions, schedule one primary publish moment per idea; spread formats across the week.
 
+{catalog_block}
 {slot_directive}
 
 For EVERY assignment entry include: idea_index, slot_role, pipeline, copy_bundle_id, publish_channel, rationale.
-Optional: layout_family_hint (designed_post / stories), library_slot_key (designed_post and campaign_story_motion).
+Required for Fal/designed slots: catalog_slot_key (from brand catalog list above — locks onboarding template).
+Optional: layout_family_hint (designed_post / stories), fal_design_hint.
 
 ### MANDATORY: visual_subject_hint for every gallery-using slot
 For ALL slots that use real brand gallery photos (organic_post, organic_story_still, campaign_story_motion, organic_carousel, organic_reel),
@@ -185,7 +190,7 @@ slot_role options:
   editorial_date | restaurant_feature for B2B/logistics/service seasonal copy;
   promo_split ONLY when copy has % / indirim / kampanya;
   event_masthead for dated launches. Never hint promo_split for vague "fırsat" alone.
-  Also set library_slot_key to campaign_post, social_proof_post, or ad_creative_post so the brand can reuse this post template later.
+  Also set catalog_slot_key to a post-format slot from the brand catalog (e.g. campaign/promo intent).
 - designed_typography — fal.ai typography-forward designed feed post; exactly ONE per weekly mission (text-forward Canva-style).
   Set fal_design_hint with typography hierarchy, headline/subline placement, and mood aligned to the caption.
 - fal_designed_post — fal.ai/GPT-image hybrid designed feed post; exactly ONE per weekly mission (uses gallery photo).
@@ -213,25 +218,19 @@ pipeline must match role:
 - paid_ad_creative → fal_design (Meta Ads paid creative — set fal_design_hint: meta_ads_feed_creative; gallery photo required)
 - paid_ad_google_creative → fal_design (Google Ads display asset — set fal_design_hint: google_ads_display_creative; headline max 30 chars)
 
-### Brand template library slot
-For every campaign_story_motion and designed_post assignment, also set library_slot_key based on the idea content.
-This tells the production engine which configured reusable template to use:
-- daily_story — everyday content, behind-the-scenes, educational, lifestyle moments
-- event_story — events, live shows, openings, concerts, special nights, announcements
-- campaign_post — promotional offers, limited-time deals, discount campaigns, product launches (designed_post)
-- editorial_story — brand spotlights, chef/artist features, product showcases, editorial quality
-- social_proof — customer reviews, testimonials, crowd photos, social moments, UGC
-- social_proof_post — customer/review proof as a designed_post
-- ad_creative_post — paid/ad style designed_post
-
-Match library_slot_key to the idea's dominant intent:
-- Event/concert/show ideas → event_story
-- Promo/offer/discount post ideas → campaign_post
-- Brand story/feature/spotlight ideas → editorial_story
-- Customer proof/crowd/social ideas → social_proof
-- General daily/behind-the-scenes → daily_story
-Vary across the 2 story slots — do NOT assign the same library_slot_key to both stories.
-For the designed_post slot prefer campaign_post or social_proof_post based on the idea intent.
+### Brand catalog slot routing
+For every Fal/designed assignment, set catalog_slot_key from the enabled brand catalog JSON above.
+This locks the tenant's onboarding template for that slot (layout, typography, pipeline).
+- Event/concert/show ideas → story slot with event/announcement intent
+- Promo/offer/discount post ideas → post-format campaign/promo slot
+- Brand story/feature/spotlight ideas → editorial or hero post/story slot
+- Customer proof/crowd/social ideas → social proof post or story slot
+- General daily/behind-the-scenes → lifestyle/daily story or organic post (catalog optional)
+Vary catalog_slot_key across similar slots — do NOT repeat the same key twice when alternatives exist.
+For designed_post / designed_typography / fal_designed_post / fal_only_post pick post-format keys.
+For campaign_story_motion / fal_only_story pick story-format keys.
+For reel slots pick reel-format keys.
+Do NOT use legacy Remotion names (campaign_post, daily_story, event_story).
 
 Weekly mission — one assignment per idea ({idea_count} ideas in this batch):
 - Match slot_role/pipeline to each idea's format (post → organic_post/designed_post/fal_*, story → campaign_story_motion/organic_story_still, reel → organic_reel/campaign_reel_motion, carousel → organic_carousel)
@@ -292,7 +291,7 @@ Return ONLY valid JSON — no markdown, no preamble:
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "restaurant_feature",
-      "library_slot_key": "campaign_post",
+      "catalog_slot_key": "<post-format slot_key from brand catalog>",
       "fal_design_hint": "Campaign hero post: bold headline on matched gallery photo, brand colors, premium hospitality layout.",
       "visual_subject_hint": "teras, deniz, gün batımı",
       "rationale": "brand hero idea → fal designed post"
@@ -304,7 +303,7 @@ Return ONLY valid JSON — no markdown, no preamble:
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "promo_split",
-      "library_slot_key": "social_proof_post",
+      "catalog_slot_key": "<post-format slot_key from brand catalog>",
       "fal_design_hint": "Typography-forward proof post: short headline + subline, minimal layout on gallery match.",
       "visual_subject_hint": "müşteri, deneyim",
       "rationale": "campaign or proof idea → fal typography designed post"
@@ -325,7 +324,7 @@ Return ONLY valid JSON — no markdown, no preamble:
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "campaign_hero",
-      "library_slot_key": "editorial_story",
+      "catalog_slot_key": "<story-format slot_key from brand catalog>",
       "visual_subject_hint": "marka, öne çıkan, vitrin",
       "rationale": "brand spotlight idea → fal.ai story poster #1"
     }},
@@ -336,7 +335,7 @@ Return ONLY valid JSON — no markdown, no preamble:
       "copy_bundle_id": "mission-week",
       "publish_channel": "instagram_organic",
       "layout_family_hint": "frosted_glass",
-      "library_slot_key": "daily_story",
+      "catalog_slot_key": "<different story-format slot_key from brand catalog>",
       "visual_subject_hint": "günlük, sahne, atmosfer",
       "rationale": "everyday vibe idea → fal.ai story poster #2 (different template)"
     }},

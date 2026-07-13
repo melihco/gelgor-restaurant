@@ -42,6 +42,20 @@ describe('fal-design-brief', () => {
     );
   });
 
+  it('routes beach club venue showcase away from generic split panel', () => {
+    const { brief } = resolveFalDesignPromptContext({
+      caption: 'Havadan mekan manzarası',
+      headline: 'Havadan Mekan',
+      format: 'post',
+      templateUseCase: 'daily_story',
+      sector: 'beach_club',
+      referencePhotoUrl: 'https://cdn.example.com/aerial.jpg',
+      explicitCanvaArchetypeId: 'diagonal_brand_split',
+    });
+
+    expect(brief.canvaArchetypeId).toBe('diagonal_brand_split');
+  });
+
   it('merges agent fal_design_brief over synthesized defaults', () => {
     const brief = resolveFalDesignBrief({
       caption: 'Mutlu müşterilerimiz',

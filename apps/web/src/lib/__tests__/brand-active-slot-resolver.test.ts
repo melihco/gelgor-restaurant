@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   filterDesignTemplatesToActiveSlots,
   matchIdeaToBrandCatalogSlot,
+  enrichProductionQueueWithBrandSlots,
   resolveBrandActiveSlotKeys,
   resolveBrandProductionFormatTargets,
 } from '@/lib/brand-active-slot-resolver';
@@ -217,6 +218,45 @@ describe('filterDesignTemplatesToActiveSlots', () => {
 
     const filtered = filterDesignTemplatesToActiveSlots(templates, activeSet);
     expect(filtered.map((t) => t.id)).toEqual(['dj']);
+  });
+});
+
+describe('enrichProductionQueueWithBrandSlots', () => {
+  it('replaces legacy Remotion library_slot_key with catalog slot_key', () => {
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-1',
+      sector: 'beach_club',
+      sectorSlots: [
+        mockSlot('beach_club_dj_night_teaser_post', 'post', { library_slot_key: 'event_story' }),
+      ],
+      tenantAssignments: [mockAssignment('beach_club_dj_night_teaser_post', true)],
+    });
+
+    const queue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'DJ Night',
+          calendar_announcement_type: 'event_teaser',
+          content_type: 'instagram_post',
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          library_slot_key: 'campaign_post',
+        },
+      }],
+      activeSet,
+    );
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]!.assignment.catalog_slot_key).toBe('beach_club_dj_night_teaser_post');
+    expect(queue[0]!.assignment.library_slot_key).toBe('beach_club_dj_night_teaser_post');
+    expect(queue[0]!.assignment.library_slot_key).not.toBe('campaign_post');
   });
 });
 

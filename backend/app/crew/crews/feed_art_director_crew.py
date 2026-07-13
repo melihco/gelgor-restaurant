@@ -27,16 +27,10 @@ from app.config import get_settings
 from app.crew.agents.feed_art_director_agent import create_feed_art_director_agent
 from app.crew.context import BrandInfo
 from app.crew.tasks.feed_art_director_tasks import create_feed_cohesion_task
+from app.services.feed_director_slot_catalog import apply_catalog_slot_to_entry
 from app.crew.token_usage import total_tokens_from_crew
 
 logger = structlog.get_logger()
-
-# Marka Detayı story slots — rotate when FD auto-fills Remotion story ideas.
-_STORY_LIBRARY_SLOT_ROTATION = (
-    "daily_story",
-    "editorial_story",
-    "social_proof",
-)
 
 # Haftalık Feed paketi — her misyonda tam 16 üretim slotu (7 günlük yayın hedefi + buffer)
 _WEEKLY_PACKAGE_TOTAL = 16
@@ -110,12 +104,6 @@ def _post_slot_role_for(post_ordinal: int) -> tuple[str, str]:
     return ("organic_post", "gallery_photo")
 
 
-def _story_library_slot_key(story_ordinal: int) -> str:
-    return _STORY_LIBRARY_SLOT_ROTATION[
-        story_ordinal % len(_STORY_LIBRARY_SLOT_ROTATION)
-    ]
-
-
 def _idea_content_format(idea: dict[str, Any]) -> str:
     """Detect the idea's intended format from content_type / content_kind / format fields."""
     ct = str(
@@ -164,6 +152,7 @@ def _normalize_production_assignments(
     production_profile: str | None = None,
     ideas: list[dict[str, Any]] | None = None,
     production_package: str = "weekly_content",
+    catalog_slots: list[dict[str, str]] | None = None,
 ) -> None:
     """Normalize FD output to fixed weekly manifest geometry (16 agency slots).
 
@@ -187,6 +176,7 @@ def _normalize_production_assignments(
     }
 
     pkg = (production_package or "weekly_content").strip().lower()
+    used_catalog_keys: set[str] = set()
 
     if pkg == "opportunity":
         raw = report.get("production_assignments")
@@ -219,7 +209,6 @@ def _normalize_production_assignments(
         ]
         target = min(max(idea_count, 1), 3)
         final_assignments: list[dict[str, Any]] = []
-        story_ord = 0
         for slot_i in range(target):
             if slot_i in by_index:
                 entry = dict(by_index[slot_i])
@@ -234,11 +223,8 @@ def _normalize_production_assignments(
                     "rationale": f"auto_fill_{role}",
                 }
             role = str(entry.get("slot_role") or "")
-            if role == "campaign_story_motion":
-                entry["library_slot_key"] = str(
-                    entry.get("library_slot_key") or _story_library_slot_key(story_ord)
-                )
-                story_ord += 1
+            apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
+            entry.pop("library_slot_key", None)
             final_assignments.append(entry)
         report["production_assignments"] = final_assignments
         report["format_distribution"] = _format_distribution_from_assignments(final_assignments)
@@ -318,7 +304,6 @@ def _normalize_production_assignments(
                 "campaign_story_motion",
                 "fal_story",
                 "auto_fill_story_fmt",
-                library_slot_key=_story_library_slot_key(story_n),
             )
             story_n += 1
         elif idea_fmt == "reel" and reel_n == 0:
@@ -351,7 +336,6 @@ def _normalize_production_assignments(
                 "campaign_story_motion",
                 "fal_story",
                 "auto_fill_fal_story",
-                library_slot_key=_story_library_slot_key(story_n),
             )
             story_n += 1
         elif reel_n == 0:
@@ -378,7 +362,6 @@ def _normalize_production_assignments(
     all_sorted = [by_index[k] for k in sorted(by_index.keys())]
 
     final_assignments = []
-    story_ord = 0
 
     for slot_i, (role, pipeline) in enumerate(slot_specs):
         if by_role.get(role):
@@ -393,7 +376,14 @@ def _normalize_production_assignments(
         entry = {
             k: v
             for k, v in donor.items()
-            if k not in ("slot_role", "pipeline", "idea_index", "library_slot_key")
+            if k
+            not in (
+                "slot_role",
+                "pipeline",
+                "idea_index",
+                "library_slot_key",
+                "catalog_slot_key",
+            )
         }
         entry.update({
             "idea_index": idea_i,
@@ -403,13 +393,10 @@ def _normalize_production_assignments(
             "publish_channel": channel,
             "rationale": str(donor.get("rationale") or f"weekly_slot_{slot_i}"),
         })
-        if role == "campaign_story_motion":
-            entry["library_slot_key"] = str(
-                donor.get("library_slot_key") or _story_library_slot_key(story_ord)
-            )
-            story_ord += 1
-        else:
-            entry.pop("library_slot_key", None)
+        if donor.get("catalog_slot_key"):
+            entry["catalog_slot_key"] = donor.get("catalog_slot_key")
+        apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
+        entry.pop("library_slot_key", None)
         final_assignments.append(entry)
 
     report["production_assignments"] = final_assignments
@@ -473,6 +460,7 @@ def run_feed_art_director(
     creative_brief: str = "",
     production_package: str | None = None,
     production_profile: str | None = None,
+    catalog_slots: list[dict[str, str]] | None = None,
     llm: LLM | None = None,
 ) -> dict[str, Any]:
     """
@@ -499,6 +487,7 @@ def run_feed_art_director(
             content_ideas_json,
             production_package=production_package,
             production_profile=production_profile,
+            catalog_slots=catalog_slots,
         )
 
     # Extract weekly theme from ideas if not explicitly provided
@@ -522,6 +511,7 @@ def run_feed_art_director(
             mission_title=mission_title,
             creative_brief=creative_brief,
             production_package=production_package,
+            catalog_slots=catalog_slots,
         )
 
         crew = Crew(
@@ -547,6 +537,7 @@ def run_feed_art_director(
                 content_ideas_json,
                 production_package=production_package,
                 production_profile=production_profile,
+                catalog_slots=catalog_slots,
             )
 
         try:
@@ -564,6 +555,7 @@ def run_feed_art_director(
                 production_profile=production_profile,
                 ideas=parsed_ideas,
                 production_package=production_package,
+                catalog_slots=catalog_slots,
             )
             assignments = report.get("production_assignments")
             expected_slots = 3 if production_package == "opportunity" else _WEEKLY_PACKAGE_TOTAL
@@ -597,6 +589,7 @@ def run_feed_art_director(
             content_ideas_json,
             production_package=production_package,
             production_profile=production_profile,
+            catalog_slots=catalog_slots,
         )
 
 
@@ -606,6 +599,7 @@ def _fallback_report(
     *,
     production_package: str = "weekly_content",
     production_profile: str | None = None,
+    catalog_slots: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Safe fallback when the agent fails — feed still publishes."""
     report: dict[str, Any] = {
@@ -633,6 +627,7 @@ def _fallback_report(
                 production_profile=production_profile,
                 ideas=ideas,
                 production_package=production_package,
+                catalog_slots=catalog_slots,
             )
     except Exception:
         pass

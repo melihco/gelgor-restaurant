@@ -16,6 +16,9 @@ class SlotInstance(TypedDict, total=False):
     format: str
     optional_tags: list[str]
     enabled_by_default: bool
+    pipeline: str
+    slot_role: str
+    design_template_type: str
 
 
 class SectorPack(TypedDict):
@@ -33,6 +36,10 @@ def _inst(
     label_en: str,
     fmt: str,
     optional_tags: list[str] | None = None,
+    *,
+    pipeline: str | None = None,
+    slot_role: str | None = None,
+    design_template_type: str | None = None,
 ) -> SlotInstance:
     row: SlotInstance = {
         "suffix": suffix,
@@ -42,6 +49,12 @@ def _inst(
     }
     if optional_tags:
         row["optional_tags"] = optional_tags
+    if pipeline:
+        row["pipeline"] = pipeline
+    if slot_role:
+        row["slot_role"] = slot_role
+    if design_template_type:
+        row["design_template_type"] = design_template_type
     return row
 
 
@@ -69,6 +82,24 @@ SECTOR_SLOT_PACKS: list[SectorPack] = [
             _inst("cocktail_promo_story", "Kokteyl promo story", "Cocktail promo story", "story"),
             _inst("pool_party_story", "Havuz partisi story", "Pool party story", "story", ["requires:pool"]),
             _inst("day_pass_story", "Gün pass story", "Day pass story", "story"),
+            _inst(
+                "event_announcement_story",
+                "Etkinlik duyuru afişi",
+                "Event announcement story",
+                "story",
+                pipeline="fal_story",
+                slot_role="campaign_story_motion",
+                design_template_type="event_special",
+            ),
+            _inst(
+                "typography_poster_story",
+                "Tipografi poster story",
+                "Typography poster story",
+                "story",
+                pipeline="fal_only_story",
+                slot_role="fal_only_story",
+                design_template_type="campaign_announcement",
+            ),
             _inst("atmosphere_reel", "Atmosfer reel", "Atmosphere reel", "reel"),
             _inst("cocktail_craft_reel", "Kokteyl craft reel", "Cocktail craft reel", "reel"),
             _inst("sunset_timelapse_reel", "Gün batımı timelapse reel", "Sunset timelapse reel", "reel"),
@@ -98,6 +129,24 @@ SECTOR_SLOT_PACKS: list[SectorPack] = [
             _inst("table_ready_story", "Masa hazır story", "Table ready story", "story"),
             _inst("farm_to_table_story", "Çiftlikten sofraya story", "Farm to table story", "story"),
             _inst("weekend_booking_story", "Hafta sonu rezervasyon story", "Weekend booking story", "story"),
+            _inst(
+                "event_announcement_story",
+                "Etkinlik duyuru afişi",
+                "Event announcement story",
+                "story",
+                pipeline="fal_story",
+                slot_role="campaign_story_motion",
+                design_template_type="event_special",
+            ),
+            _inst(
+                "typography_poster_story",
+                "Tipografi poster story",
+                "Typography poster story",
+                "story",
+                pipeline="fal_only_story",
+                slot_role="fal_only_story",
+                design_template_type="campaign_announcement",
+            ),
             _inst("chef_plating_reel", "Şef plating reel", "Chef plating reel", "reel"),
             _inst("kitchen_process_reel", "Mutfak süreç reel", "Kitchen process reel", "reel"),
             _inst("dining_experience_reel", "Yemek deneyimi reel", "Dining experience reel", "reel"),
@@ -546,6 +595,17 @@ def build_optional_tags_by_slot() -> dict[str, list[str]]:
     return out
 
 
+def build_slot_instance_by_key() -> dict[str, SlotInstance]:
+    """Full pack instance metadata keyed by slot_key (pipeline overrides, etc.)."""
+    out: dict[str, SlotInstance] = {}
+    for pack in SECTOR_SLOT_PACKS:
+        sid = pack["sector_id"]
+        for inst in pack["instances"]:
+            out[f"{sid}_{inst['suffix']}"] = inst
+    return out
+
+
 SECTOR_SEED = build_sector_seed()
 SLOT_KEYS_BY_SECTOR = build_slot_keys_by_sector()
 OPTIONAL_TAGS_BY_SLOT = build_optional_tags_by_slot()
+SLOT_INSTANCE_BY_KEY = build_slot_instance_by_key()

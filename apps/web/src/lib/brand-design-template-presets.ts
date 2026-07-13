@@ -205,3 +205,52 @@ export const DESIGN_TEMPLATE_INTENT_BY_TYPE: Record<DesignTemplateType, string> 
   reel_cover: 'reel',
   brand_identity: 'branding',
 };
+
+/** Calendar announcement_type for Canva archetype matrix routing. */
+export const DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT: Partial<Record<DesignTemplateType, string>> = {
+  venue_showcase: 'venue_showcase',
+  social_proof: 'social_proof',
+  campaign_announcement: 'offer_campaign',
+  seasonal_promo: 'offer_campaign',
+  event_special: 'event_teaser',
+  menu_highlight: 'product_reveal',
+  daily_story: 'behind_the_scenes',
+  announcement_formal: 'offer_campaign',
+  brand_identity: 'venue_showcase',
+  reel_cover: 'behind_the_scenes',
+};
+
+/** Fal designer use-case ids (must match canva-archetype-catalog useCases). */
+export const DESIGN_TEMPLATE_TO_FAL_USE_CASE: Partial<Record<DesignTemplateType, string>> = {
+  venue_showcase: 'daily_story',
+  social_proof: 'social_proof',
+  campaign_announcement: 'campaign_offer',
+  seasonal_promo: 'campaign_offer',
+  event_special: 'event_announcement',
+  menu_highlight: 'product_highlight',
+  daily_story: 'daily_story',
+  announcement_formal: 'event_announcement',
+  brand_identity: 'daily_story',
+  reel_cover: 'daily_story',
+};
+
+export function resolveFalUseCaseForDesignTemplate(
+  templateType: DesignTemplateType,
+  fallbackIntent?: string,
+): string {
+  const mapped = DESIGN_TEMPLATE_TO_FAL_USE_CASE[templateType];
+  if (mapped) return mapped;
+  const intent = String(fallbackIntent ?? '').trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    daily: 'daily_story',
+    campaign: 'campaign_offer',
+    event: 'event_announcement',
+    product: 'product_highlight',
+    seasonal: 'campaign_offer',
+    branding: 'daily_story',
+    announcement: 'event_announcement',
+    reel: 'daily_story',
+    social_proof: 'social_proof',
+  };
+  return aliases[intent] ?? (intent || 'daily_story');
+}

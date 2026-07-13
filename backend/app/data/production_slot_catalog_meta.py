@@ -37,6 +37,10 @@ def infer_slot_role(fmt: str) -> str:
 
 def infer_design_template_type(slot_key: str) -> str:
     key = slot_key.lower()
+    if "typography_poster" in key:
+        return "campaign_announcement"
+    if "event_announcement" in key:
+        return "event_special"
     if any(x in key for x in ("social_proof", "testimonial", "review", "ugc", "guest_social")):
         return "social_proof"
     if any(x in key for x in ("event", "dj", "live_music", "private_event", "aftermovie")):
@@ -215,6 +219,11 @@ def humanize_slot_key(slot_key: str) -> tuple[str, str]:
 
 def build_match_signals(slot_key: str, design_template_type: str) -> dict:
     signals: dict = {"design_template_type": design_template_type}
+    if "typography_poster" in slot_key:
+        signals["announcement_types"] = ["campaign_offer", "offer_campaign"]
+        signals["typography_forward"] = True
+    if "event_announcement" in slot_key:
+        signals["announcement_types"] = ["event_teaser", "event_announcement"]
     if "event" in slot_key or "dj" in slot_key:
         signals["announcement_types"] = ["event_teaser", "event_announcement"]
     if "offer" in slot_key or "sale" in slot_key or "promo" in slot_key:

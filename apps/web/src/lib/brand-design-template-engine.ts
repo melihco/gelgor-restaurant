@@ -31,6 +31,15 @@ import {
   resolveFalDesignBrief,
 } from '@/lib/fal-design-brief';
 import type { FalDesignChannel } from '@/lib/fal-design-intensity';
+import { clampDesignIntensityForArchetype } from '@/lib/fal-design-intensity';
+import {
+  DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT,
+  resolveFalUseCaseForDesignTemplate,
+  type DesignTemplateFormat,
+  type DesignTemplatePreset,
+  resolveDesignTemplatePresets,
+} from '@/lib/brand-design-template-presets';
+import { resolveCalendarDesignLayout } from '@/lib/calendar-design-layout';
 import {
   isTypographyDesignConfirmed,
   readTypographyDesignConfig,
@@ -40,11 +49,6 @@ import {
   matchPhotoToContent,
 } from '@/lib/gallery-photo-matcher';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
-import {
-  type DesignTemplateFormat,
-  type DesignTemplatePreset,
-  resolveDesignTemplatePresets,
-} from '@/lib/brand-design-template-presets';
 import { generateDesignedPostImage } from '@/app/api/auto-produce/handlers/image-generators';
 import { generateStorageKey, isR2Configured, uploadImageFromUrl } from '@/lib/r2-storage';
 import { serverConfig } from '@/lib/server-config';
@@ -194,8 +198,11 @@ function scoreDefaultHeroPhoto(url: string, meta: GalleryPhotoMeta | undefined):
   for (const [rx, value] of HERO_ASSET_TYPE_SCORES) {
     if (rx.test(assetType)) score += value;
   }
-  if (/water|sea|beach|shore|venue|terrace|table|entrance|harbor|sunset|view|mekan|sahil|deniz/.test(description)) {
+  if (/water|sea|beach|shore|venue|terrace|table|entrance|harbor|sunset|view|mekan|sahil|deniz|pool|infinity|aerial|drone|panoram/.test(description)) {
     score += 20;
+  }
+  if (/paddle|surfboard|sup board|kayak|single board|product only|haute boards|brand on product/.test(description)) {
+    score -= 35;
   }
   if (/cocktail|drink|food|burger|fries|salad|taco|plate|glass|champagne|dj|party|people celebrating/.test(description)) {
     score -= 12;
@@ -363,7 +370,37 @@ async function generateOne(
       ? 'story'
       : 'post';
   const productionIntensity = resolveFalTemplateIntensityForChannel(theme, intensityChannel);
-  const designIntensityLevel = resolveTemplateLibraryDesignIntensity(productionIntensity);
+  const picked = defaultHeroPhoto ?? pickPhotoForPreset(preset, input, usedUrls);
+  if (picked && !defaultHeroPhoto) usedUrls.add(normalizeGalleryUrl(picked.url));
+  const briefFormat = preset.format === 'reel_cover'
+    ? 'reel'
+    : preset.format === 'story'
+      ? 'story'
+      : 'post';
+  const layoutChannel: 'story' | 'post' = briefFormat === 'story' ? 'story' : 'post';
+  const announcementType = DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT[preset.templateType]
+    ?? preset.intent;
+  const calendarLayout = resolveCalendarDesignLayout({
+    announcementType,
+    channel: layoutChannel,
+    sector: input.sector,
+  });
+  const layoutBrief = resolveFalDesignBrief({
+    caption: subtitle ?? headline ?? preset.name,
+    headline: headline || input.brandName,
+    templateUseCase: resolveFalUseCaseForDesignTemplate(preset.templateType, preset.intent),
+    format: briefFormat,
+    sceneHint,
+    sector: input.sector,
+    referencePhotoUrl: picked?.url,
+    tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(theme),
+    layoutFamilyHint: preset.catalogSlotKey ?? calendarLayout.canvaArchetypeId,
+    explicitCanvaArchetypeId: calendarLayout.canvaArchetypeId,
+  });
+  const designIntensityLevel = clampDesignIntensityForArchetype(
+    resolveTemplateLibraryDesignIntensity(productionIntensity),
+    layoutBrief.canvaArchetypeId,
+  );
   const brandIntelligenceDirectives = buildBrandIntelligenceDirectives(
     input,
     intensityChannel,
@@ -379,30 +416,13 @@ async function generateOne(
       visualDnaTone: input.visualDnaTone,
       lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
     });
-  const picked = defaultHeroPhoto ?? pickPhotoForPreset(preset, input, usedUrls);
-  if (picked && !defaultHeroPhoto) usedUrls.add(normalizeGalleryUrl(picked.url));
-  const briefFormat = preset.format === 'reel_cover'
-    ? 'reel'
-    : preset.format === 'story'
-      ? 'story'
-      : 'post';
-  const layoutBrief = resolveFalDesignBrief({
-    caption: subtitle ?? headline ?? preset.name,
-    headline: headline || input.brandName,
-    templateUseCase: preset.intent,
-    format: briefFormat,
-    sceneHint,
-    sector: input.sector,
-    referencePhotoUrl: picked?.url,
-    tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(theme),
-    layoutFamilyHint: preset.catalogSlotKey ?? undefined,
-  });
   const layoutDirectives = buildFalDesignBriefDirectives(layoutBrief, briefFormat);
   const backgroundStyle: TypographyBackgroundStyle = resolveFalTemplateBackgroundStyle({
     theme,
     referencePhotoUrl: picked?.url,
   });
-  const prominentLogo = shouldProminentLogoInFalTemplate(theme, preset.prominentLogo);
+  const useOfficialLogo = Boolean(input.logoUrl?.trim());
+  const prominentLogo = useOfficialLogo || shouldProminentLogoInFalTemplate(theme, preset.prominentLogo);
   const antiPatternDirective = (input.antiPatterns ?? []).length
     ? `Avoid: ${input.antiPatterns!.slice(0, 6).join('; ')}.`
     : undefined;
@@ -428,6 +448,9 @@ async function generateOne(
     brandDirectives: [
       ...brandIntelligenceDirectives,
       'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
+      'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
+      'FORBIDDEN LOGO: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone.',
+      'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
       picked?.url
         ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
         : '',
@@ -461,11 +484,12 @@ async function generateOne(
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
         logoUrl: prominentLogo ? input.logoUrl : undefined,
+        logoPlacement: layoutBrief.logoPlacement ?? undefined,
         location: input.location,
         sector: input.sector,
         captionAwareHeadline: false,
         requireGroundedGallery: Boolean(picked?.url),
-        grafikerMaxRetries: 0,
+        grafikerMaxRetries: 1,
         templatePreviewMode: input.templatePreviewMode !== false,
         occasion,
       });

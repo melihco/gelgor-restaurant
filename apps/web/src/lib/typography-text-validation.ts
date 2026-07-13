@@ -34,57 +34,122 @@ export async function validateTypographyText(
   imageUrl: string,
   intendedHeadline: string,
 ): Promise<boolean> {
+  const result = await validateFalCanvasText(imageUrl, { headline: intendedHeadline });
+  return result.valid;
+}
+
+export interface FalCanvasTextValidationInput {
+  headline: string;
+  subtitle?: string;
+}
+
+export interface FalCanvasTextValidationResult {
+  valid: boolean;
+  headlineValid: boolean;
+  subtitleValid: boolean;
+  confidence: number;
+  detectedHeadline?: string;
+  detectedSubtitle?: string;
+  reason?: string;
+}
+
+/**
+ * Verify headline and optional subtitle on a designed frame.
+ * Rejects misspelled Turkish diacritics and invented copy.
+ */
+export async function validateFalCanvasText(
+  imageUrl: string,
+  input: FalCanvasTextValidationInput,
+): Promise<FalCanvasTextValidationResult> {
+  const intendedHeadline = input.headline.trim();
+  const intendedSubtitle = input.subtitle?.trim() ?? '';
+
   if (
-    !intendedHeadline.trim()
+    !intendedHeadline
     || !isMeaningfulFalOverlayText(intendedHeadline)
     || isIncompleteOverlayPhrase(intendedHeadline)
     || isInternalStrategyBriefing(intendedHeadline)
   ) {
     console.warn('[typography-validate] intended headline invalid — reject before vision');
-    return false;
+    return {
+      valid: false,
+      headlineValid: false,
+      subtitleValid: !intendedSubtitle,
+      confidence: 0,
+      reason: 'invalid intended headline',
+    };
   }
 
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     console.warn('[typography-validate] OPENAI_API_KEY not set — cannot verify canvas text (reject)');
-    return false;
+    return {
+      valid: false,
+      headlineValid: false,
+      subtitleValid: false,
+      confidence: 0,
+      reason: 'OPENAI_API_KEY missing',
+    };
   }
 
   try {
     const visionUrl = await resolveExternallyAccessibleUrl(imageUrl);
-    const result = await callVisionValidator(apiKey, visionUrl, intendedHeadline);
+    const result = await callVisionCanvasValidator(
+      apiKey,
+      visionUrl,
+      intendedHeadline,
+      intendedSubtitle || undefined,
+    );
     console.log(
       `[typography-validate] headline="${intendedHeadline.slice(0, 25)}" ` +
-      `valid=${result.valid} confidence=${result.confidence} detected="${result.detectedText?.slice(0, 30)}"`,
+      `subtitle="${intendedSubtitle.slice(0, 20)}" ` +
+      `valid=${result.valid} headlineOk=${result.headlineValid} subtitleOk=${result.subtitleValid} ` +
+      `confidence=${result.confidence}`,
     );
-    return result.valid;
+    return result;
   } catch (err) {
     console.warn('[typography-validate] Vision check failed — rejecting image:', err instanceof Error ? err.message : err);
-    return false;
+    return {
+      valid: false,
+      headlineValid: false,
+      subtitleValid: false,
+      confidence: 0,
+      reason: err instanceof Error ? err.message : 'vision failed',
+    };
   }
 }
 
-async function callVisionValidator(
+async function callVisionCanvasValidator(
   apiKey: string,
   imageUrl: string,
   intendedHeadline: string,
-): Promise<ValidationResult> {
+  intendedSubtitle?: string,
+): Promise<FalCanvasTextValidationResult> {
+  const subtitleBlock = intendedSubtitle
+    ? [
+      `The INTENDED subtitle (second line) is: "${intendedSubtitle}"`,
+      '- "subtitle_matches" = true ONLY if the detected subtitle line matches exactly (Turkish diacritics İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç must be correct)',
+      '- Reject subtitle if ASCII-only approximations appear (e.g. "Sinirli sure" vs "Sınırlı süre")',
+    ].join('\n')
+    : '- No subtitle required — subtitle_matches = true';
+
   const prompt = [
     'You are a text accuracy validator for AI-generated social media designs.',
-    'Look at this image and identify the main headline/display text.',
+    'Look at this image and identify the headline and any subtitle/supporting line text.',
     '',
     `The INTENDED headline is: "${intendedHeadline}"`,
+    subtitleBlock,
     '',
     'Respond in JSON only:',
-    '{"detected_text": "...", "matches": true/false, "confidence": 0.0-1.0, "reason": "..."}',
+    '{"detected_headline": "...", "headline_matches": true/false, "detected_subtitle": "...", "subtitle_matches": true/false, "confidence": 0.0-1.0, "reason": "..."}',
     '',
     'Rules:',
-    '- "matches" = true ONLY if the detected main text matches the intended headline message',
+    '- "headline_matches" = true ONLY if the detected main/largest text matches the intended headline message',
     '- Reject if detected text is mostly platform/meta words: STORY, REEL, POST, INSTAGRAM, TIKTOK, ÜNLÜ, VIRAL',
     '- Reject if detected text is unrelated to the intended headline (invented slogans, random words)',
-    '- "confidence" = how confident you are in your reading (0.0-1.0)',
-    '- Ignore decorative elements, brand names, or small text — focus on the largest/main text only',
-    '- If text is partially obscured but readable and matches the intended headline, still match',
+    '- Turkish diacritics must be exact — reject ASCII-only misspellings',
+    '- Ignore decorative elements and small logo-area gibberish — focus on designed headline/subtitle only',
+    '- If text is partially obscured but readable and matches, still match',
   ].join('\n');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -104,7 +169,7 @@ async function callVisionValidator(
           ],
         },
       ],
-      max_tokens: 200,
+      max_tokens: 260,
       temperature: 0,
     }),
     signal: AbortSignal.timeout(15_000),
@@ -122,41 +187,84 @@ async function callVisionValidator(
   const content = data.choices?.[0]?.message?.content ?? '';
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    return { valid: false, confidence: 0, reason: 'Could not parse vision response' };
+    return {
+      valid: false,
+      headlineValid: false,
+      subtitleValid: false,
+      confidence: 0,
+      reason: 'Could not parse vision response',
+    };
   }
 
   const parsed = JSON.parse(jsonMatch[0]) as {
-    detected_text?: string;
-    matches?: boolean;
+    detected_headline?: string;
+    headline_matches?: boolean;
+    detected_subtitle?: string;
+    subtitle_matches?: boolean;
     confidence?: number;
     reason?: string;
+    detected_text?: string;
+    matches?: boolean;
   };
 
-  const detected = parsed.detected_text?.trim() ?? '';
-  const incomplete = isRenderedOverlayTextIncomplete(detected);
-  const metaLeak = containsFalCanvasMetaLeak(detected) && !containsFalCanvasMetaLeak(intendedHeadline);
-  const metaOnly = isFalCanvasMetaOnlyHeadline(detected);
-  const similarity = quickTextSimilarity(detected, intendedHeadline);
-  const lowSimilarity = detected.length >= 4 && similarity < 0.55;
-  const matches = parsed.matches !== false
-    && !incomplete
+  const detectedHeadline = (parsed.detected_headline ?? parsed.detected_text ?? '').trim();
+  const detectedSubtitle = (parsed.detected_subtitle ?? '').trim();
+  const incompleteHeadline = isRenderedOverlayTextIncomplete(detectedHeadline);
+  const metaLeak = containsFalCanvasMetaLeak(detectedHeadline) && !containsFalCanvasMetaLeak(intendedHeadline);
+  const metaOnly = isFalCanvasMetaOnlyHeadline(detectedHeadline);
+  const headlineSimilarity = quickTextSimilarity(detectedHeadline, intendedHeadline);
+  const lowHeadlineSimilarity = detectedHeadline.length >= 4 && headlineSimilarity < 0.55;
+  const headlineValid = (parsed.headline_matches ?? parsed.matches) !== false
+    && !incompleteHeadline
     && !metaLeak
     && !metaOnly
-    && !lowSimilarity;
+    && !lowHeadlineSimilarity;
+
+  let subtitleValid = true;
+  if (intendedSubtitle) {
+    const incompleteSubtitle = isRenderedOverlayTextIncomplete(detectedSubtitle);
+    const subtitleSimilarity = quickTextSimilarity(detectedSubtitle, intendedSubtitle);
+    const lowSubtitleSimilarity = detectedSubtitle.length >= 4 && subtitleSimilarity < 0.72;
+    subtitleValid = parsed.subtitle_matches !== false
+      && !incompleteSubtitle
+      && !lowSubtitleSimilarity;
+  }
 
   return {
-    valid: matches,
+    valid: headlineValid && subtitleValid,
+    headlineValid,
+    subtitleValid,
     confidence: parsed.confidence ?? 0.5,
-    detectedText: parsed.detected_text,
-    reason: incomplete
-      ? 'detected incomplete or briefing text on canvas'
-      : metaOnly
-        ? 'detected meta-only canvas text (e.g. STORY/REEL label)'
-        : metaLeak
-          ? 'detected platform meta word not in intended headline'
-          : lowSimilarity
-            ? `detected text too different from intended headline (similarity=${similarity.toFixed(2)})`
-            : parsed.reason,
+    detectedHeadline,
+    detectedSubtitle: detectedSubtitle || undefined,
+    reason: !headlineValid
+      ? (incompleteHeadline
+        ? 'detected incomplete headline'
+        : metaOnly
+          ? 'detected meta-only canvas text'
+          : metaLeak
+            ? 'detected platform meta word'
+            : lowHeadlineSimilarity
+              ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
+              : parsed.reason)
+      : !subtitleValid
+        ? `subtitle mismatch (detected="${detectedSubtitle.slice(0, 30)}")`
+        : parsed.reason,
+  };
+}
+
+/** @deprecated Use callVisionCanvasValidator */
+async function callVisionValidator(
+  apiKey: string,
+  imageUrl: string,
+  intendedHeadline: string,
+): Promise<ValidationResult> {
+  const result = await callVisionCanvasValidator(apiKey, imageUrl, intendedHeadline);
+  return {
+    valid: result.headlineValid,
+    confidence: result.confidence,
+    detectedText: result.detectedHeadline,
+    reason: result.reason,
   };
 }
 

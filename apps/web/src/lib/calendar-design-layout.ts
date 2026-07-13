@@ -20,7 +20,7 @@ export type CalendarLayoutChannel = Extract<FalDesignChannel, 'story' | 'post'>;
 
 const DEFAULT_CALENDAR_LAYOUT: Record<string, Partial<Record<CalendarLayoutChannel, CanvaArchetypeId>>> = {
   product_reveal: { story: 'cinematic_full_bleed', post: 'product_hero_card' },
-  venue_showcase: { story: 'cinematic_full_bleed', post: 'split_feature_panel' },
+  venue_showcase: { story: 'cinematic_full_bleed', post: 'cinematic_full_bleed' },
   behind_the_scenes: { story: 'polaroid_memory', post: 'magazine_cover_drop' },
   event_teaser: { story: 'editorial_date_masthead', post: 'event_ticket_stub' },
   offer_campaign: { story: 'campaign_hero_block', post: 'promo_price_stack' },
@@ -36,6 +36,7 @@ const SECTOR_CALENDAR_LAYOUT_OVERRIDES: Record<
     event_teaser: { story: 'neon_night_promo', post: 'diagonal_brand_split' },
     product_reveal: { story: 'cinematic_full_bleed', post: 'product_hero_card' },
     offer_campaign: { story: 'diagonal_brand_split', post: 'campaign_hero_block' },
+    venue_showcase: { story: 'cinematic_full_bleed', post: 'diagonal_brand_split' },
   },
   local_products_shop: {
     product_reveal: { story: 'product_hero_card', post: 'graphic_shape_stack' },

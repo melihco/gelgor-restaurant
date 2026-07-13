@@ -9,7 +9,8 @@ from __future__ import annotations
 from app.data.sector_slot_pack import (
     OPTIONAL_TAGS_BY_SLOT,
     SECTOR_SEED,
+    SLOT_INSTANCE_BY_KEY,
     SLOT_KEYS_BY_SECTOR,
 )
 
-__all__ = ["SECTOR_SEED", "SLOT_KEYS_BY_SECTOR", "OPTIONAL_TAGS_BY_SLOT"]
+__all__ = ["SECTOR_SEED", "SLOT_KEYS_BY_SECTOR", "OPTIONAL_TAGS_BY_SLOT", "SLOT_INSTANCE_BY_KEY"]

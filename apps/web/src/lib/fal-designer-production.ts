@@ -14,7 +14,7 @@ import {
   FAL_REEL_MOTION_ATTEMPTS,
   type StoryMotionResult,
 } from '@/lib/fal-story-motion';
-import { validateTypographyText } from '@/lib/typography-text-validation';
+import { validateFalCanvasText, validateTypographyText } from '@/lib/typography-text-validation';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
@@ -1065,10 +1065,14 @@ export async function produceFalDesignerStill(
           );
           continue;
         }
-        const textOk = await validateTypographyText(groundedUrl, displayHeadline);
-        if (!textOk) {
+        const textCheck = await validateFalCanvasText(groundedUrl, {
+          headline: displayHeadline,
+          subtitle: captionSubtitle,
+        });
+        if (!textCheck.valid) {
           console.warn(
-            `[fal-designer] grounded edit text validation failed attempt ${groundedAttempt + 1}/${groundedMaxAttempts} headline="${displayHeadline}"`,
+            `[fal-designer] grounded edit text validation failed attempt ${groundedAttempt + 1}/${groundedMaxAttempts} ` +
+            `headline="${displayHeadline}" subtitle="${captionSubtitle ?? ''}" reason=${textCheck.reason ?? 'mismatch'}`,
           );
           continue;
         }
@@ -1148,7 +1152,13 @@ export async function produceFalDesignerStill(
       storyDesignMode: canvasChannel === 'story' && isVerticalVideo,
     }, {
       maxRetries: 1,
-      validateFn: validateTypographyText,
+      validateFn: async (imageUrl, headline) => {
+        const check = await validateFalCanvasText(imageUrl, {
+          headline,
+          subtitle: attempt === 0 ? captionSubtitle : undefined,
+        });
+        return check.valid;
+      },
     });
 
     const grafiker = await reviewDesignedFrame(

@@ -90,7 +90,22 @@ const FAL_AVOID_DEFAULTS = [
   'unreadable text over busy photos without a color panel or scrim',
   'stock watermark badges or lorem ipsum filler',
   'identical layout to every other post in the feed — this slot must feel custom',
+  'AI-painted logos, fake wordmarks, stylized brand lettering, or sun/pin badge substitutes',
+  'misspelled Turkish copy or ASCII-only diacritic drops (e.g. "Sinirli sure" instead of "Sınırlı süre")',
+  'generic template-pack symmetry — every post must have a distinct composition rhythm',
 ];
+
+const TEMPLATE_INTENT_TO_FAL_USE_CASE: Record<string, string> = {
+  daily: 'daily_story',
+  campaign: 'campaign_offer',
+  event: 'event_announcement',
+  product: 'product_highlight',
+  seasonal: 'campaign_offer',
+  branding: 'daily_story',
+  announcement: 'event_announcement',
+  reel: 'daily_story',
+  social_proof: 'social_proof',
+};
 
 const COMPOSITION_LAYOUT: Record<string, Partial<FalDesignBrief>> = {
   oversized_typography: {
@@ -154,7 +169,7 @@ function distillCaptionHook(caption: string): string {
 
 function inferTemplateUseCase(input: ResolveFalDesignPromptContextInput): string {
   const explicit = str(input.templateUseCase).toLowerCase();
-  if (explicit) return explicit;
+  if (explicit) return TEMPLATE_INTENT_TO_FAL_USE_CASE[explicit] ?? explicit;
   const text = `${input.headline ?? ''} ${input.caption ?? ''} ${input.strategicPurpose ?? ''}`.toLowerCase();
   if (/%|indirim|kampanya|offer|discount|fırsat|promo/.test(text)) return 'campaign_offer';
   if (/etkinlik|event|konser|dj|live|açılış|opening|tarih/.test(text)) return 'event_announcement';

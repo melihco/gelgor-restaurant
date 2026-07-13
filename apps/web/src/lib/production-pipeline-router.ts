@@ -247,6 +247,9 @@ export function parseProductionAssignments(
       library_slot_key: (item as ProductionAssignment).library_slot_key
         ? String((item as ProductionAssignment).library_slot_key)
         : undefined,
+      catalog_slot_key: (item as ProductionAssignment).catalog_slot_key
+        ? String((item as ProductionAssignment).catalog_slot_key)
+        : undefined,
       visual_subject_hint: (item as ProductionAssignment).visual_subject_hint
         ? String((item as ProductionAssignment).visual_subject_hint)
         : undefined,
@@ -266,6 +269,7 @@ function resolveDeterministicRemotionLibrarySlotKey(input: {
   posterOrdinal?: number;
 }): string | undefined {
   const { assignment, idea } = input;
+  if (assignment.catalog_slot_key) return assignment.catalog_slot_key;
   if (assignment.library_slot_key) return assignment.library_slot_key;
 
   const hasEventDetails = Boolean(
@@ -321,6 +325,16 @@ function enrichAssignment(
     posterOrdinal?: number;
   },
 ): ProductionAssignment {
+  const catalogKey = assignment.catalog_slot_key
+    ?? (idea.catalog_slot_key as string | undefined);
+  if (catalogKey) {
+    return {
+      ...assignment,
+      catalog_slot_key: catalogKey,
+      library_slot_key: assignment.library_slot_key ?? catalogKey,
+    };
+  }
+
   const librarySlotKey = resolveDeterministicRemotionLibrarySlotKey({
     assignment,
     idea,

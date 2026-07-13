@@ -761,6 +761,8 @@ export function buildFalOnCanvasTextContract(input: {
   const subtitle = input.subtitle ? sanitizeFalOverlayText(input.subtitle) : '';
   if (subtitle && isMeaningfulFalOverlayText(subtitle)) {
     lines.push(`SUBTITLE (second line, optional): "${subtitle}"`);
+    const diacriticLock = formatTurkishDiacriticCharacterLock(subtitle);
+    if (diacriticLock) lines.push(diacriticLock);
   }
 
   if (input.brandName?.trim() && !input.logoProvided) {
@@ -772,11 +774,17 @@ export function buildFalOnCanvasTextContract(input: {
     'FORBIDDEN META WORDS on canvas: never paint "STORY", "REEL", "POST", "INSTAGRAM", "TIKTOK", "FEED", "ÜNLÜ", "VIRAL", "SHARE", or any platform/format label — only the quoted headline/subtitle above.',
     'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
     'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, or nightlife copy for a food caption.',
-    'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec".',
+    'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec" or "Sinirli sure".',
     'If space is tight, shrink typography — never invent alternate wording or truncate mid-word.',
   );
 
   return lines.join(' ');
+}
+
+function formatTurkishDiacriticCharacterLock(text: string): string {
+  if (!/[İıŞşĞğÜüÖöÇç]/.test(text)) return '';
+  const chars = [...text].map((ch) => (ch === ' ' ? '·' : ch)).join(' ');
+  return `SUBTITLE CHARACTER LOCK (copy glyph-by-glyph): ${chars}`;
 }
 
 export type FalLogoCanvasChannel = 'feed_post' | 'reel' | 'story';
