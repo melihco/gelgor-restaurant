@@ -532,7 +532,7 @@ async def list_missions_with_exhausted_incomplete(limit: int = 25) -> list[tuple
 async def requeue_exhausted(
     mission_id: uuid.UUID,
     *,
-    attempts_ceiling: int = 9,
+    attempts_ceiling: int = 12,
 ) -> int:
     """Guaranteed-fill: give exhausted slots more retries (bounded) so the drainer
     can fill them (e.g. after the reel Remotion fallback is in place). Returns count
@@ -544,13 +544,13 @@ async def requeue_exhausted(
                 """
                 UPDATE production_jobs
                 SET status = 'pending',
-                    max_attempts = LEAST(:ceiling, max_attempts + 2),
+                    max_attempts = GREATEST(max_attempts, LEAST(:ceiling, attempts + 1)),
                     run_after = now(),
                     last_error = COALESCE(last_error, '') || ' [requeued]',
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'exhausted'
-                  AND attempts <= :ceiling
+                  AND attempts < :ceiling
                 RETURNING id
                 """
             ),
