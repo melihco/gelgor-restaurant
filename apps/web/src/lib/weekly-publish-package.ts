@@ -12,6 +12,7 @@ import {
   resolvePosterUrl,
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
+import { compareArtifactsByProductionTime } from '@/lib/artifact-production-time';
 import { nodeHasOutput, nodeOutputArray, nodeOutputObject } from '@/lib/mission-node-output';
 import { buildMissionProductionIdeas } from '@/lib/mission-production-plan';
 import { isPublishableMediaUrl } from '@/lib/media-url';
@@ -475,18 +476,14 @@ export function isArtifactFeedReady(artifact: OutputArtifact): boolean {
 export function filterFeedPublishableArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   return dedupeProductionBundles(artifacts)
     .filter(isArtifactFeedReady)
-    .sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    .sort(compareArtifactsByProductionTime);
 }
 
 /** Feed UI — show every distinct production run with preview media (includes in-progress renders). */
 export function filterFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   return dedupeFeedDisplayArtifacts(artifacts)
     .filter(isArtifactFeedPublishable)
-    .sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    .sort(compareArtifactsByProductionTime);
 }
 
 /**

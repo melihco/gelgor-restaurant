@@ -73,7 +73,9 @@ import {
   MOBILE_ARTIFACT_FEED_LIMIT,
   MOBILE_ARTIFACT_FEED_RENDER_PAGE,
   MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
+  refetchMobileFeedPool,
 } from '../../_lib/mobile-artifacts';
+import { useFeedPullToRefresh } from '../../_hooks/use-feed-pull-to-refresh';
 import { FeedLazyPostList } from '../FeedLazyPostList';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
 import {
@@ -122,6 +124,7 @@ import {
   resolveSuggestedScheduleISO,
   sortFeedArtifactsForDisplay,
 } from '@/lib/feed-publish-schedule';
+import { compareArtifactsByProductionTime } from '@/lib/artifact-production-time';
 
 type FeedFilter = 'all' | 'post' | 'story' | 'reel' | 'ad';
 
@@ -1789,6 +1792,8 @@ export function PlatformFeed() {
   // navigate and openApproval already destructured above
   const queryClient = useQueryClient();
   const tenantId = useActiveTenantId();
+  const feedRefreshNonce = useMobileStore((s) => s.feedRefreshNonce);
+  const feedScrollRef = useRef<HTMLDivElement>(null);
   const { storyMusicUrl } = useBrandStoryAudio(tenantId);
 
   // Scheduled templates — recurring story/reel gallery items
@@ -1823,6 +1828,30 @@ export function PlatformFeed() {
     subscribeOnly: true,
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
   });
+
+  const refreshFeed = useCallback(async () => {
+    if (!tenantId) return;
+    await refetchMobileFeedPool(queryClient, tenantId);
+  }, [queryClient, tenantId]);
+
+  const {
+    pullDistance,
+    pullActive,
+    pullReady,
+    refreshing: pullRefreshing,
+    onTouchStart: onFeedTouchStart,
+    onTouchMove: onFeedTouchMove,
+    onTouchEnd: onFeedTouchEnd,
+  } = useFeedPullToRefresh({
+    scrollRef: feedScrollRef,
+    onRefresh: refreshFeed,
+    disabled: operatorMode,
+  });
+
+  useEffect(() => {
+    if (feedRefreshNonce === 0) return;
+    feedScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [feedRefreshNonce]);
 
   const mergedRawArtifacts = rawArtifacts;
 
@@ -2086,7 +2115,7 @@ export function PlatformFeed() {
     if (showApproved) {
       return sourcePool
         .filter((a) => a.status === 'approved')
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort(compareArtifactsByProductionTime);
     }
     const publishable = filterFeedDisplayArtifacts(sourcePool);
     if (missionFilterId) {
@@ -2292,10 +2321,7 @@ export function PlatformFeed() {
       return [
         ...scoped.filter((a) => a.status === 'pending_review'),
         ...scoped.filter((a) => a.status === 'approved'),
-      ].sort((a, b) => {
-        if (a.status !== b.status) return a.status === 'pending_review' ? -1 : 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
+      ].sort(compareArtifactsByProductionTime);
     }
     return filterConsumerStoryBar(visibilityFiltered, {
       maxRings: 10,
@@ -2459,10 +2485,8 @@ export function PlatformFeed() {
   );
 
   const artifacts = useMemo(
-    () => sortFeedArtifactsForDisplay(filteredFeedArtifacts, {
-      missionScoped: Boolean(missionFilterId),
-    }),
-    [filteredFeedArtifacts, missionFilterId],
+    () => sortFeedArtifactsForDisplay(filteredFeedArtifacts),
+    [filteredFeedArtifacts],
   );
 
   const feedPostCount = useMemo(() => allArtifacts.filter((a) => {
@@ -2536,11 +2560,39 @@ export function PlatformFeed() {
     && artifactsPending
     && dedupedRaw.length === 0;
 
+  const feedRefreshing = pullRefreshing || artifactsFetching;
+
   return (
     <div
+      ref={feedScrollRef}
       className={!operatorMode ? 'ig-feed-shell mobile-tab-scroll' : 'mobile-tab-scroll'}
-      style={{ background: feedBg, paddingBottom: 104, width: '100%' }}
+      style={{
+        background: feedBg,
+        paddingBottom: 104,
+        width: '100%',
+        transform: pullActive ? `translateY(${pullDistance}px)` : undefined,
+        transition: pullActive && !pullRefreshing ? 'none' : 'transform 220ms ease',
+      }}
+      onTouchStart={!operatorMode ? onFeedTouchStart : undefined}
+      onTouchMove={!operatorMode ? onFeedTouchMove : undefined}
+      onTouchEnd={!operatorMode ? onFeedTouchEnd : undefined}
     >
+      {!operatorMode && (pullActive || feedRefreshing) && (
+        <div
+          className="ig-feed-pull-indicator"
+          aria-hidden
+          style={{
+            opacity: pullReady || feedRefreshing ? 1 : 0.55,
+          }}
+        >
+          <div
+            className={`ig-feed-pull-spinner${feedRefreshing ? ' is-spinning' : ''}`}
+            style={{
+              transform: feedRefreshing ? undefined : `rotate(${Math.min(320, pullDistance * 3)}deg)`,
+            }}
+          />
+        </div>
+      )}
 
       {/* ─── Sticky Header ─────────────────────────────────────────── */}
       {!operatorMode ? (

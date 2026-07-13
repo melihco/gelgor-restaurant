@@ -3,6 +3,7 @@ import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-util
 import { upscaleCdnUrl } from '@/lib/gallery-display-url';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { mediaUrlForKey, resolveClientMediaUrl } from '@/lib/media-url';
+import { compareArtifactsByProductionTime } from '@/lib/artifact-production-time';
 import { normalizeProductionPipeline } from '@/lib/mission-production-manifest';
 import { isVideoPipeline } from '@/lib/pipeline-registry';
 
@@ -490,9 +491,7 @@ function dedupeByKey(
     deduped.push(winner);
   }
 
-  return deduped.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  return deduped.sort(compareArtifactsByProductionTime);
 }
 
 export function dedupeProductionBundles(artifacts: OutputArtifact[]): OutputArtifact[] {
@@ -507,9 +506,7 @@ export function dedupeProductionBundles(artifacts: OutputArtifact[]): OutputArti
 export function dedupeFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   const seen = new Set<string>();
   const out: OutputArtifact[] = [];
-  const sorted = [...artifacts].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  const sorted = [...artifacts].sort(compareArtifactsByProductionTime);
   for (const artifact of sorted) {
     if (!artifact?.id || seen.has(artifact.id)) continue;
     seen.add(artifact.id);
@@ -521,14 +518,6 @@ export function dedupeFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputA
 /** Story bubble bar — one ring per idea/slot, not per headline text. */
 export function dedupeStoryBarArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   return dedupeByKey(artifacts, getStoryBarDedupeKey);
-}
-
-function storyIdeaSortKey(artifact: OutputArtifact): number {
-  const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
-  const content = parseArtifactContent(artifact.content);
-  const idx = meta.idea_index ?? content.idea_index ?? meta.ideaIndex;
-  if (typeof idx === 'number') return idx;
-  return 999;
 }
 
 /**
@@ -574,12 +563,7 @@ export function filterConsumerStoryBar(
   }
 
   return pool
-    .sort((a, b) => {
-      if (a.status !== b.status) return a.status === 'pending_review' ? -1 : 1;
-      const idx = storyIdeaSortKey(a) - storyIdeaSortKey(b);
-      if (idx !== 0) return idx;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    })
+    .sort(compareArtifactsByProductionTime)
     .slice(0, maxRings);
 }
 

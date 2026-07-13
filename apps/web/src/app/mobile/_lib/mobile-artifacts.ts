@@ -23,6 +23,23 @@ export function invalidateMobileArtifactPool(
   });
 }
 
+/** Refetch feed pool + scheduled story templates (Akış tab tap / pull-to-refresh). */
+export async function refetchMobileFeedPool(
+  queryClient: {
+    refetchQueries: (opts: { queryKey: readonly unknown[] }) => Promise<unknown>;
+  },
+  tenantId: string,
+) {
+  await Promise.all([
+    queryClient.refetchQueries({
+      queryKey: mobileArtifactsQueryKey(tenantId, { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT }),
+    }),
+    queryClient.refetchQueries({
+      queryKey: ['scheduled-templates', tenantId],
+    }),
+  ]);
+}
+
 /**
  * Feed first paint — small payload for instant TTFB (Instagram-style first page).
  * The feed grows this window in `MOBILE_ARTIFACT_FEED_PAGE` steps on scroll.

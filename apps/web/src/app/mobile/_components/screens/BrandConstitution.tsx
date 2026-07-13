@@ -75,6 +75,7 @@ import {
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { BrandLogoPreviewCard } from '../BrandLogoPreviewCard';
+import { BrandCompleteGapsCard } from '../BrandCompleteGapsCard';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
@@ -3634,8 +3635,6 @@ export function BrandConstitution() {
           locationLabel={locationDisplay || null}
           readinessScore={Number(score) || 0}
           navItems={HUB_NAV_ITEMS}
-          tenantId={tenantId}
-          brandGaps={brandGaps}
           constitutionConfirmedAt={constitutionConfirmedAt}
           confirmingConstitution={confirmingConstitution}
           constitutionConfirmError={constitutionConfirmError}
@@ -3752,6 +3751,7 @@ export function BrandConstitution() {
               monogram={monogram}
               onSave={save('logoUrl')}
             />
+            {tenantId && <BrandCompleteGapsCard t={t} brandGaps={brandGaps} />}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {IDENTITY_GROUPS.map((g) => (
                 <button

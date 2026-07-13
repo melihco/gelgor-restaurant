@@ -11,7 +11,7 @@ import {
   isMoreMenuScreen,
 } from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
-import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT, invalidateMobileArtifactPool } from '../_lib/mobile-artifacts';
+import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT, refetchMobileFeedPool } from '../_lib/mobile-artifacts';
 import { filterFeedDisplayArtifacts } from '@/lib/weekly-publish-package';
 import { BrandNavStar } from './BrandNavStar';
 
@@ -204,7 +204,7 @@ function MenuNavButton({
  * 3-item bottom nav: Akış · Marka (center) · Menü
  */
 export function MobileNav() {
-  const { activeTab, setTab, navigate, screen } = useMobileStore();
+  const { activeTab, setTab, navigate, screen, bumpFeedRefresh } = useMobileStore();
   const { t } = useTheme();
   const tenantId = useWorkspaceStore((s) => s.tenantId);
   const queryClient = useQueryClient();
@@ -231,8 +231,11 @@ export function MobileNav() {
   };
 
   const selectTab = (tabId: SideTab['id']) => {
-    if (tenantId && tabId === 'feed') {
-      invalidateMobileArtifactPool(queryClient, tenantId);
+    if (tabId === 'feed') {
+      bumpFeedRefresh();
+      if (tenantId) {
+        void refetchMobileFeedPool(queryClient, tenantId);
+      }
     }
     setTab(tabId);
   };

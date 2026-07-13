@@ -2,6 +2,7 @@
  * Feed — yayın takvimi (calendar → FD → manifest default → artifact metadata).
  */
 import type { OutputArtifact } from '@/types';
+import { compareArtifactsByProductionTime } from '@/lib/artifact-production-time';
 import {
   resolvePublishSlotForIdea,
   type FeedArtDirectorReport,
@@ -248,13 +249,10 @@ export function sortFeedArtifactsForDisplay(
 ): OutputArtifact[] {
   const missionScoped = opts?.missionScoped ?? false;
   return [...items].sort((a, b) => {
-    if (a.status !== b.status) {
-      return a.status === 'pending_review' ? -1 : 1;
-    }
     if (missionScoped) {
       const sched = compareArtifactsByPublishSchedule(a, b);
       if (sched !== 0) return sched;
     }
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    return compareArtifactsByProductionTime(a, b);
   });
 }

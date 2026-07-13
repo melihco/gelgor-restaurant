@@ -1357,6 +1357,32 @@ const CSS = `
   .sa-mobile .ig-feed-shell {
     width: 100%;
     max-width: 100%;
+    position: relative;
+  }
+
+  .sa-mobile .ig-feed-pull-indicator {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 52px);
+    left: 0;
+    right: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 35;
+    pointer-events: none;
+  }
+
+  .sa-mobile .ig-feed-pull-spinner {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    border-top-color: rgba(255, 255, 255, 0.82);
+  }
+
+  .sa-mobile .ig-feed-pull-spinner.is-spinning {
+    animation: spinSlow 0.8s linear infinite;
   }
 
   .sa-mobile .ig-feed-media-stage {

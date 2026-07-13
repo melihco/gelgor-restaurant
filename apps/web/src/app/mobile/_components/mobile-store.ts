@@ -63,6 +63,8 @@ interface MobileStore {
   feedListLimit: number;
   /** Brief jobs queued from New Brief — tracked until artifacts land in feed. */
   pendingBriefJobs: PendingBriefJob[];
+  /** Incremented when Akış tab is tapped — feed scrolls to top and refetches. */
+  feedRefreshNonce: number;
 
   navigate: (screen: MobileScreen) => void;
   setFeedListLimit: (limit: number) => void;
@@ -79,6 +81,7 @@ interface MobileStore {
   openFeedForMission: (missionId: string | null) => void;
   clearFeedMissionFilter: () => void;
   enqueueBriefProduction: (job: PendingBriefJob) => void;
+  bumpFeedRefresh: () => void;
   goBack: () => void;
 }
 
@@ -97,8 +100,11 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   feedMissionFilterId: null,
   feedListLimit: MOBILE_ARTIFACT_FEED_INITIAL,
   pendingBriefJobs: [],
+  feedRefreshNonce: 0,
 
   setFeedListLimit: (limit) => set((s) => (s.feedListLimit === limit ? s : { feedListLimit: limit })),
+
+  bumpFeedRefresh: () => set((s) => ({ feedRefreshNonce: s.feedRefreshNonce + 1 })),
 
   navigate: (screen) => {
     const resolved = resolveClientScreen(screen);
