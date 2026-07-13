@@ -337,6 +337,7 @@ import {
   renderEventCardFromPayload,
 } from './handlers/image-generators';
 import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
+import { isFalOnlyPipeline } from '@/lib/pipeline-registry';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { falVideoHandler } from './pipelines/fal-video-pipeline';
 import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
@@ -429,6 +430,20 @@ export interface RunProductionParams {
   completionPassOnly?: boolean;
   /** New Brief form — fal.ai art-director pipelines, no Remotion bundle. */
   adHocBrief?: boolean;
+}
+
+/** When brand CDN/gallery URLs are dead, fal design/video can still ship via caption-driven scratch gen. */
+function canRecoverGalleryWithFalScratch(pipeline: string, slotRole: string): boolean {
+  return isFalDesignPipeline(pipeline)
+    || isFalVideoPipeline(pipeline)
+    || isFalOnlyPipeline(pipeline)
+    || slotRole === 'designed_post'
+    || slotRole === 'designed_typography'
+    || slotRole === 'fal_designed_post'
+    || slotRole === 'campaign_story_motion'
+    || slotRole === 'campaign_reel_motion'
+    || slotRole === 'organic_reel'
+    || slotRole === 'organic_story_still';
 }
 
 export async function runProduction(params: RunProductionParams): Promise<NextResponse> {
@@ -1805,6 +1820,44 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.log(`[auto-produce] fallback gallery pick: ${fallback.slice(0, 80)}`);
         referenceUrl = fallback;
         referenceIsStock = isStockGalleryPhotoUrl(fallback);
+      } else if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+        console.warn(
+          `[auto-produce] gallery unreachable — fal scratch recovery for "${headline.slice(0, 48)}"`,
+        );
+        const recovered = await generateVibeImage({
+          workspaceId,
+          headline,
+          caption,
+          contentType: kind,
+          brandName: resolvedBrandName,
+          location: brandLocation,
+          businessType: brandBusinessType,
+          brandTone: String(brandCtx.brand_tone ?? ''),
+          brandDescription: String(brandCtx.description ?? ''),
+          targetAudience: String(brandCtx.target_audience ?? ''),
+          visualStyle: String(brandCtx.visual_style ?? ''),
+          visualDna: String(brandCtx.visual_dna ?? ''),
+          vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+          logoUrl: brandLogoUrl || undefined,
+          referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
+            ?.image_edit_prompt as string | undefined,
+          lutDirective: brandLutDirective || undefined,
+          antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+          captionDrivenMode: true,
+        });
+        if (!recovered) {
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+            slotKey,
+          });
+          continue;
+        }
+        referenceUrl = recovered;
+        referenceIsStock = false;
+        galleryMatchScore = null;
       } else {
         console.warn(`[auto-produce] no fallback gallery URL — slot skipped`);
         results.push({
@@ -1882,6 +1935,46 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.log(`[auto-produce] broken internal URL — fallback pick: ${internalFallback.slice(0, 80)}`);
         referenceUrl = internalFallback;
         referenceIsStock = isStockGalleryPhotoUrl(internalFallback);
+      } else if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+        console.warn(
+          `[auto-produce] broken internal/no gallery — fal scratch for "${headline.slice(0, 48)}"`,
+        );
+        const recovered = await generateVibeImage({
+          workspaceId,
+          headline,
+          caption,
+          contentType: kind,
+          brandName: resolvedBrandName,
+          location: brandLocation,
+          businessType: brandBusinessType,
+          brandTone: String(brandCtx.brand_tone ?? ''),
+          brandDescription: String(brandCtx.description ?? ''),
+          targetAudience: String(brandCtx.target_audience ?? ''),
+          visualStyle: String(brandCtx.visual_style ?? ''),
+          visualDna: String(brandCtx.visual_dna ?? ''),
+          vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+          logoUrl: brandLogoUrl || undefined,
+          referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
+            ?.image_edit_prompt as string | undefined,
+          lutDirective: brandLutDirective || undefined,
+          antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+          captionDrivenMode: true,
+        });
+        if (!recovered) {
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: brokenInternal
+              ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
+              : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+            slotKey,
+          });
+          continue;
+        }
+        referenceUrl = recovered;
+        referenceIsStock = false;
+        galleryMatchScore = null;
       } else {
         console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
         results.push({
@@ -1912,27 +2005,104 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           }
           referenceUrl = picked.url;
         } else if (!referenceUrl.startsWith('/api/media?key=')) {
-          console.warn(
-            `[auto-produce] gallery photo unreachable after mirror: ${referenceUrl.slice(0, 90)}`,
-          );
-          results.push({
-            title: headline,
-            imageUrl: '',
-            error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
-            slotKey,
-          });
-          continue;
+          if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+            console.warn(
+              `[auto-produce] mirror failed — fal scratch for "${headline.slice(0, 48)}"`,
+            );
+            const recovered = await generateVibeImage({
+              workspaceId,
+              headline,
+              caption,
+              contentType: kind,
+              brandName: resolvedBrandName,
+              location: brandLocation,
+              businessType: brandBusinessType,
+              brandTone: String(brandCtx.brand_tone ?? ''),
+              brandDescription: String(brandCtx.description ?? ''),
+              targetAudience: String(brandCtx.target_audience ?? ''),
+              visualStyle: String(brandCtx.visual_style ?? ''),
+              visualDna: String(brandCtx.visual_dna ?? ''),
+              vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+              logoUrl: brandLogoUrl || undefined,
+              referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+              agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
+                ?.image_edit_prompt as string | undefined,
+              lutDirective: brandLutDirective || undefined,
+              antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+              captionDrivenMode: true,
+            });
+            if (!recovered) {
+              results.push({
+                title: headline,
+                imageUrl: '',
+                error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
+                slotKey,
+              });
+              continue;
+            }
+            referenceUrl = recovered;
+            referenceIsStock = false;
+            galleryMatchScore = null;
+          } else {
+            console.warn(
+              `[auto-produce] gallery photo unreachable after mirror: ${referenceUrl.slice(0, 90)}`,
+            );
+            results.push({
+              title: headline,
+              imageUrl: '',
+              error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
+              slotKey,
+            });
+            continue;
+          }
         }
       } catch (mirrorErr) {
         console.warn('[auto-produce] pickReachableProductionGalleryUrl failed:', mirrorErr);
         if (!referenceUrl.startsWith('/api/media?key=')) {
-          results.push({
-            title: headline,
-            imageUrl: '',
-            error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
-            slotKey,
-          });
-          continue;
+          if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+            const recovered = await generateVibeImage({
+              workspaceId,
+              headline,
+              caption,
+              contentType: kind,
+              brandName: resolvedBrandName,
+              location: brandLocation,
+              businessType: brandBusinessType,
+              brandTone: String(brandCtx.brand_tone ?? ''),
+              brandDescription: String(brandCtx.description ?? ''),
+              targetAudience: String(brandCtx.target_audience ?? ''),
+              visualStyle: String(brandCtx.visual_style ?? ''),
+              visualDna: String(brandCtx.visual_dna ?? ''),
+              vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+              logoUrl: brandLogoUrl || undefined,
+              referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+              agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
+                ?.image_edit_prompt as string | undefined,
+              lutDirective: brandLutDirective || undefined,
+              antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+              captionDrivenMode: true,
+            });
+            if (!recovered) {
+              results.push({
+                title: headline,
+                imageUrl: '',
+                error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
+                slotKey,
+              });
+              continue;
+            }
+            referenceUrl = recovered;
+            referenceIsStock = false;
+            galleryMatchScore = null;
+          } else {
+            results.push({
+              title: headline,
+              imageUrl: '',
+              error: 'Galeri fotoğrafı erişilemiyor (mirror ve fallback başarısız)',
+              slotKey,
+            });
+            continue;
+          }
         }
       }
     }
@@ -2167,16 +2337,59 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         agentIdeationGalleryLock,
       })
     ) {
-      console.warn(
-        `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — skip "${headline.slice(0, 40)}"`,
-      );
-      results.push({
-        title: headline,
-        imageUrl: galleryPreviewUrl ?? '',
-        error: `Galeri–caption eşleşmesi yetersiz (${galleryMatchScore}/${galleryFloor}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
-        slotKey,
-      });
-      continue;
+      if (canRecoverGalleryWithFalScratch(assignment.pipeline, assignment.slot_role)) {
+        console.warn(
+          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — fal scratch for "${headline.slice(0, 40)}"`,
+        );
+        const recovered = await generateVibeImage({
+          workspaceId,
+          headline,
+          caption,
+          contentType: kind,
+          brandName: resolvedBrandName,
+          location: brandLocation,
+          businessType: brandBusinessType,
+          brandTone: String(brandCtx.brand_tone ?? ''),
+          brandDescription: String(brandCtx.description ?? ''),
+          targetAudience: String(brandCtx.target_audience ?? ''),
+          visualStyle: String(brandCtx.visual_style ?? ''),
+          visualDna: String(brandCtx.visual_dna ?? ''),
+          vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+          logoUrl: brandLogoUrl || undefined,
+          referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
+            ?.image_edit_prompt as string | undefined,
+          lutDirective: brandLutDirective || undefined,
+          antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+          captionDrivenMode: true,
+        });
+        if (!recovered) {
+          results.push({
+            title: headline,
+            imageUrl: galleryPreviewUrl ?? '',
+            error: `Galeri–caption eşleşmesi yetersiz (${galleryMatchScore}/${galleryFloor}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
+            slotKey,
+          });
+          continue;
+        }
+        referenceUrl = recovered;
+        resolvedReferenceUrl = recovered;
+        galleryPreviewUrl = toFeedPreviewUrl(recovered) ?? recovered;
+        galleryMatchScore = null;
+        pickedFromBrandGallery = false;
+        referenceIsStock = false;
+      } else {
+        console.warn(
+          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — skip "${headline.slice(0, 40)}"`,
+        );
+        results.push({
+          title: headline,
+          imageUrl: galleryPreviewUrl ?? '',
+          error: `Galeri–caption eşleşmesi yetersiz (${galleryMatchScore}/${galleryFloor}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
+          slotKey,
+        });
+        continue;
+      }
     }
 
     // Overlay must not fight the Instagram caption (kitchen headline + DJ body).
