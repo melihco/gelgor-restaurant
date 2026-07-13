@@ -1,8 +1,9 @@
 /**
- * content_calendar → production enrichment + format-coverage pool donors.
+ * content_calendar → production enrichment + additive calendar production rows.
  *
- * All calendar plans enrich matched ideation (brief, mood, format, schedule) or enter
- * the weekly idea pool as orphan rows — capped by manifest package total, not additive jobs.
+ * Calendar plans enrich matched ideation (brief, mood, format, schedule) AND each
+ * calendar plan is also produced as its own row (matched or orphan). Volume is
+ * ideation count + calendar count — not weekly geometry.
  */
 import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
 import {
@@ -66,7 +67,8 @@ export function isCalendarProductionIdea(idea: Record<string, unknown>): boolean
   if (idea.calendar_enriched === true) return true;
   if (idea.calendar_gallery_designed === true) return true;
   if (idea.calendar_slot_backfill === true) return true;
-  if (String(idea.production_scope ?? '') === 'calendar_orphan') return true;
+  const scope = String(idea.production_scope ?? '');
+  if (scope === 'calendar_orphan' || scope === 'calendar_plan') return true;
   if (typeof idea.calendar_plan_index === 'number') return true;
   if (String(idea.source_track ?? '') === 'calendar') return true;
   if (String(idea.source_node ?? '') !== 'content_calendar') return false;

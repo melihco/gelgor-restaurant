@@ -1,7 +1,7 @@
 /**
  * Mission ideation → auto-produce plan.
- * content_ideation = caption/headline base; content_calendar enriches ALL linked plans
- * (brief, mood, format, schedule) and orphan calendar rows enter the format-coverage pool.
+ * content_ideation = caption/headline base; content_calendar enriches matched ideas
+ * AND every calendar plan is produced as its own row (additive: ideas + calendar).
  */
 import {
   collectUniqueMissionIdeationIdeas,
@@ -304,7 +304,8 @@ export function isCalendarProductionDonor(idea: Record<string, unknown>): boolea
 
 /**
  * Link every calendar plan onto ideation when possible; enrich with full publish brief.
- * Returns orphan calendar rows (no ideation match) for format-coverage pool injection.
+ * Also collects EVERY calendar plan as a production donor (matched or orphan).
+ * Matched plans still enrich the ideation row — and are produced as separate calendar items.
  */
 export function applyCalendarProductionEnrichment(
   ideationRecords: Record<string, unknown>[],
@@ -312,7 +313,14 @@ export function applyCalendarProductionEnrichment(
 ): {
   ideas: Record<string, unknown>[];
   linkedPlanIndices: Set<number>;
+  /** @deprecated Prefer calendarProductionIdeas — orphans only kept for callers. */
   orphanCalendarIdeas: Record<string, unknown>[];
+  /** All calendar rows that should become production items (ideas + calendar = additive). */
+  calendarProductionIdeas: Array<{
+    planIndex: number;
+    idea: Record<string, unknown>;
+    linkedIdeaIndex: number | null;
+  }>;
 } {
   const ideas: Record<string, unknown>[] = ideationRecords.map((idea, index) => ({
     ...idea,
@@ -323,34 +331,64 @@ export function applyCalendarProductionEnrichment(
   }));
 
   const linkedPlanIndices = new Set<number>();
-  const orphanCalendarIdeas: Record<string, unknown>[] = [];
+  const calendarProductionIdeas: Array<{
+    planIndex: number;
+    idea: Record<string, unknown>;
+    linkedIdeaIndex: number | null;
+  }> = [];
 
   if (calendarPlans.length === 0) {
-    return { ideas, linkedPlanIndices, orphanCalendarIdeas };
+    return {
+      ideas,
+      linkedPlanIndices,
+      orphanCalendarIdeas: [],
+      calendarProductionIdeas,
+    };
   }
 
   const usedIdeation = new Set<number>();
   for (let planIndex = 0; planIndex < calendarPlans.length; planIndex += 1) {
     const plan = calendarPlans[planIndex]!;
+    const calendarIdea = normalizeCalendarPlanToProductionIdea(plan, planIndex);
+    if (!String(calendarIdea.headline ?? '').trim()) continue;
+
     const { index } = pickIdeationForCalendarStrict(plan, ideas, usedIdeation);
     if (index == null || index < 0 || index >= ideas.length) {
-      const orphan = normalizeCalendarPlanToProductionIdea(plan, planIndex);
-      if (String(orphan.headline ?? '').trim()) {
-        orphanCalendarIdeas.push(orphan);
-      }
+      calendarProductionIdeas.push({
+        planIndex,
+        idea: calendarIdea,
+        linkedIdeaIndex: null,
+      });
       continue;
     }
     usedIdeation.add(index);
     linkedPlanIndices.add(planIndex);
     ideas[index] = enrichIdeationWithCalendarPlan(ideas[index]!, plan, planIndex, index);
+    calendarProductionIdeas.push({
+      planIndex,
+      idea: {
+        ...calendarIdea,
+        calendar_linked_idea_index: index,
+        planning_idea_index: index,
+      },
+      linkedIdeaIndex: index,
+    });
   }
 
-  return { ideas, linkedPlanIndices, orphanCalendarIdeas };
+  return {
+    ideas,
+    linkedPlanIndices,
+    orphanCalendarIdeas: calendarProductionIdeas
+      .filter((row) => row.linkedIdeaIndex == null)
+      .map((row) => row.idea),
+    calendarProductionIdeas,
+  };
 }
 
 /**
- * Merge ideation + calendar into a content-driven production pool (one row per unique idea).
- * Orphan calendar rows are appended — no weekly format backfill clones.
+ * Merge ideation + calendar into an additive production pool.
+ * Every unique ideation row AND every calendar plan becomes its own production item.
+ * Matched calendars still enrich the ideation caption/schedule, but are also produced.
  */
 export function mergeCalendarPlansForProduction(
   ideationRecords: Record<string, unknown>[],
@@ -364,7 +402,7 @@ function buildContentProductionItemsFromRecords(
   ideationRecords: Record<string, unknown>[],
   calendarPlans: Record<string, unknown>[],
 ): Record<string, unknown>[] {
-  const { ideas, orphanCalendarIdeas } = applyCalendarProductionEnrichment(
+  const { ideas, calendarProductionIdeas } = applyCalendarProductionEnrichment(
     ideationRecords.map((idea, index) => ({
       ...idea,
       idea_index: index,
@@ -373,7 +411,7 @@ function buildContentProductionItemsFromRecords(
     calendarPlans,
   );
 
-  if (ideas.length === 0 && orphanCalendarIdeas.length === 0) {
+  if (ideas.length === 0 && calendarProductionIdeas.length === 0) {
     return ideationRecords.map((idea, index) => ({
       ...idea,
       idea_index: index,
@@ -389,13 +427,13 @@ function buildContentProductionItemsFromRecords(
     production_scope: 'ideation',
   }));
 
-  const orphanItems = orphanCalendarIdeas.map((idea, i) => ({
-    ...idea,
+  const calendarItems = calendarProductionIdeas.map((row, i) => ({
+    ...row.idea,
     idea_index: enrichedItems.length + i,
-    production_scope: 'calendar_orphan',
+    production_scope: row.linkedIdeaIndex == null ? 'calendar_orphan' : 'calendar_plan',
   }));
 
-  return [...enrichedItems, ...orphanItems];
+  return [...enrichedItems, ...calendarItems];
 }
 
 export interface MissionContentProductionScope {
@@ -418,7 +456,8 @@ export interface MissionContentProductionStatus {
 
 /**
  * SSOT — how many unique content rows this mission must produce.
- * No calendar → ideation count only. With calendar → ideation + orphan calendar rows.
+ * No calendar → ideation count only.
+ * With calendar → every ideation row + every calendar plan (additive).
  */
 /**
  * Feed/factory completion target — content-scoped missions use merged ideation+calendar count,
@@ -471,13 +510,16 @@ export function resolveMissionContentProductionScope(params: {
   const items = buildContentProductionItemsFromRecords(uniqueIdeation, calendarPlans);
 
   const orphanCalendarCount = items.filter(
-    (row) => row.production_scope === 'calendar_orphan',
+    (row) => {
+      const scope = String(row.production_scope ?? '');
+      return scope === 'calendar_orphan' || scope === 'calendar_plan';
+    },
   ).length;
 
   return {
     hasCalendar: true,
     items,
-    ideationItemCount: items.length - orphanCalendarCount,
+    ideationItemCount: items.filter((row) => row.production_scope === 'ideation').length,
     orphanCalendarCount,
     requiredProductionCount: items.length,
   };

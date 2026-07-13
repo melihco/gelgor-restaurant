@@ -126,6 +126,23 @@ describe('mergeCalendarPlansForProduction', () => {
     expect(calendarRow?.calendar_gallery_designed).toBe(true);
     expect(production).toHaveLength(2);
   });
+
+  it('also produces matched calendar plans as separate rows (additive)', () => {
+    const production = mergeCalendarPlansForProduction(
+      [{ concept_title: 'Sunset Ritual', content_type: 'instagram_post', caption_draft: 'golden hour' }],
+      [{
+        event_name: 'Sunset Ritual',
+        format: 'post',
+        content_brief: 'Calendar publish brief.',
+        day: 'Fri',
+        time: '18:00',
+      }],
+    );
+    expect(production).toHaveLength(2);
+    expect(production.filter((row) => row.production_scope === 'ideation')).toHaveLength(1);
+    expect(production.filter((row) => row.production_scope === 'calendar_plan')).toHaveLength(1);
+    expect(production.find((row) => row.production_scope === 'ideation')?.calendar_enriched).toBe(true);
+  });
 });
 
 describe('applyCalendarScheduleOverlay (compat)', () => {
@@ -178,9 +195,14 @@ describe('buildMissionProductionIdeas with calendar overlay', () => {
     const production = buildMissionProductionIdeas({ nodes });
     const matched = production.find((row) => row.concept_title === 'Tek fikir');
     const orphan = production.find((row) => row.headline === 'Weekend DJ Nights');
+    const calendarMatched = production.find(
+      (row) => row.production_scope === 'calendar_plan',
+    );
 
+    expect(production).toHaveLength(3);
     expect(matched?.publish_schedule_day).toBe('Mon');
     expect(matched?.content_brief).toBe('Calendar brief wins when richer.');
     expect(orphan?.source_track).toBe('calendar');
+    expect(calendarMatched?.content_brief).toBe('Calendar brief wins when richer.');
   });
 });
