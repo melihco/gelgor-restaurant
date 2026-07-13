@@ -9,10 +9,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+DesignTemplateFormat = Literal["story", "post", "reel", "reel_cover"]
+
+
 class DesignTemplateCreate(BaseModel):
     template_type: str = Field(max_length=48)
     template_name: str = Field(max_length=160)
-    format: Literal["story", "post", "reel_cover"] = "story"
+    format: DesignTemplateFormat = "story"
     thumbnail_url: str | None = None
     design_spec: dict[str, Any] = Field(default_factory=dict)
     sector_category: str | None = None
@@ -22,7 +25,7 @@ class DesignTemplateCreate(BaseModel):
 
 class DesignTemplateUpdate(BaseModel):
     template_name: str | None = None
-    format: Literal["story", "post", "reel_cover"] | None = None
+    format: DesignTemplateFormat | None = None
     thumbnail_url: str | None = None
     design_spec: dict[str, Any] | None = None
     sector_category: str | None = None

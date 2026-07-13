@@ -208,23 +208,31 @@ export async function POST(
 
   // ── Persist (bulk upsert replaces prior auto-generated set) ────────────────
   const persistableTemplates = result.templates.filter((t) => Boolean(t.thumbnail_url));
-  const persistRes = await fetchCrewBackendJson<GeneratedDesignTemplate[]>(
-    `/api/v1/design-templates/${workspaceId}/bulk`,
-    {
-      workspaceId,
-      method: 'POST',
-      timeoutMs: 20_000,
-      body: {
-        templates: persistableTemplates,
-        archive_existing: body.archiveExisting !== false,
+  const persistRes = persistableTemplates.length > 0
+    ? await fetchCrewBackendJson<GeneratedDesignTemplate[]>(
+      `/api/v1/design-templates/${workspaceId}/bulk`,
+      {
+        workspaceId,
+        method: 'POST',
+        timeoutMs: 60_000,
+        body: {
+          templates: persistableTemplates,
+          archive_existing: body.archiveExisting !== false,
+        },
       },
-    },
-  );
+    )
+    : {
+      ok: false,
+      status: 422,
+      data: null,
+      error: 'no_persistable_template_previews',
+    };
 
   if (!persistRes.ok) {
     console.warn(
       `[generate-design-templates] persist failed for ${workspaceId}:`,
       persistRes.error,
+      persistRes.data,
     );
   }
 
@@ -235,6 +243,12 @@ export async function POST(
     generated: result.generated,
     failed: result.failed,
     persisted: persistRes.ok,
+    persisted_count: persistRes.ok && Array.isArray(persistRes.data) ? persistRes.data.length : 0,
+    persist_status: persistRes.status,
+    persist_error: persistRes.ok ? null : {
+      error: persistRes.error ?? 'persist_failed',
+      detail: persistRes.data ?? null,
+    },
     catalog: {
       source: catalogPresets.source,
       enabled_slot_count: catalogPresets.enabledSlotCount,
