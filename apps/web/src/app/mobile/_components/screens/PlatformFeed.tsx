@@ -117,6 +117,13 @@ import type { OutputArtifact } from '@/types';
 import { FeedPublishBar } from '../FeedPublishBar';
 import { resolveIgFeedChrome } from '../ig-feed-chrome';
 import { ScheduleSheet } from '../ScheduleSheet';
+import { MediaPlaybackProvider, useMediaPlayback } from '../feed/media-playback-context';
+import { useFeedEngagement } from '../feed/use-feed-engagement';
+import { CommentsBottomSheet } from '../feed/CommentsBottomSheet';
+import { ShareBottomSheet } from '../feed/ShareBottomSheet';
+import { ReelsScreen } from '../feed/ReelsScreen';
+import { FlowHeaderActions } from '../feed/FlowHeaderActions';
+import type { FeedEngagementState } from '../feed/types';
 import {
   formatPublishScheduleLabel,
   formatScheduleButtonSubtitle,
@@ -336,6 +343,7 @@ function InstagramProfileBar({ handle, logoUrl, postCount, storyCount }: {
 const NativeFeedCard = React.memo(function NativeFeedCard({
   artifact, platform, onApprove, onRevision, onRetryRender, retryingRender, approving, revisioning,
   workspaceId, onOpenMetaAd, onOpenGoogleAd, onOpenReelFullscreen, t, storyMusicUrl, missionIdeationLookup,
+  engagement, onToggleLike, onToggleSave, onOpenComments, onOpenShare, consumerMode,
 }: {
   artifact: OutputArtifact;
   platform: PreviewPlatform;
@@ -352,6 +360,13 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   t: ReturnType<typeof useTheme>['t'];
   storyMusicUrl?: string | null;
   missionIdeationLookup?: ReadonlyMap<string, string>;
+  engagement?: FeedEngagementState;
+  onToggleLike?: () => void;
+  onToggleSave?: () => void;
+  onOpenComments?: () => void;
+  onOpenShare?: () => void;
+  /** Consumer Akış — publish bar secondary / collapsed behind menu. */
+  consumerMode?: boolean;
 }) {
   const tenantBrand = useTenantBrandContext();
   const openApproval = useMobileStore((s) => s.openApproval);
@@ -413,20 +428,65 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   const formatTag: import('../platform-native-previews').FeedFormatTag | undefined =
     isAdCreative ? 'ad' : kind === 'carousel' ? 'carousel' : kind === 'reel' ? 'reel' : 'post';
 
+  const [publishDockOpen, setPublishDockOpen] = React.useState(false);
   const publishBar = igHome && isPending && !isAdCreative && !isRendering ? (
-    <FeedPublishBar
-      onShareNow={handleApproveClick}
-      onSchedule={() => setScheduleOpen(true)}
-      onEdit={() => openApproval(artifact.id)}
-      onRevise={() => onRevision(artifact.id)}
-      scheduleSubtitle={scheduleSubtitle}
-      sharing={approving}
-      revisioning={revisioning}
-      disabled={!canApproveHard || isRendering}
-      softWarning={hasSoftWarnings && !softApproveAck}
-      hardBlockLabel={hardBlockButtonLabel}
-      dark={t.isDark}
-    />
+    consumerMode ? (
+      <div style={{
+        padding: '0 14px 12px',
+        borderTop: `0.5px solid ${igHomeChrome.separator}`,
+      }}>
+        <button
+          type="button"
+          aria-expanded={publishDockOpen}
+          aria-label="Yayın seçenekleri"
+          onClick={() => setPublishDockOpen((v) => !v)}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            borderRadius: 12,
+            border: `0.5px solid ${igHomeChrome.separator}`,
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            color: igHomeChrome.textMuted,
+            fontSize: 13,
+            fontWeight: 650,
+            cursor: 'pointer',
+          }}
+        >
+          {publishDockOpen ? 'Yayın seçeneklerini gizle' : 'Yayınla / Zamanla'}
+        </button>
+        {publishDockOpen && (
+          <div style={{ marginTop: 8 }}>
+            <FeedPublishBar
+              onShareNow={handleApproveClick}
+              onSchedule={() => setScheduleOpen(true)}
+              onEdit={() => openApproval(artifact.id)}
+              onRevise={() => onRevision(artifact.id)}
+              scheduleSubtitle={scheduleSubtitle}
+              sharing={approving}
+              revisioning={revisioning}
+              disabled={!canApproveHard || isRendering}
+              softWarning={hasSoftWarnings && !softApproveAck}
+              hardBlockLabel={hardBlockButtonLabel}
+              dark={t.isDark}
+            />
+          </div>
+        )}
+      </div>
+    ) : (
+      <FeedPublishBar
+        onShareNow={handleApproveClick}
+        onSchedule={() => setScheduleOpen(true)}
+        onEdit={() => openApproval(artifact.id)}
+        onRevise={() => onRevision(artifact.id)}
+        scheduleSubtitle={scheduleSubtitle}
+        sharing={approving}
+        revisioning={revisioning}
+        disabled={!canApproveHard || isRendering}
+        softWarning={hasSoftWarnings && !softApproveAck}
+        hardBlockLabel={hardBlockButtonLabel}
+        dark={t.isDark}
+      />
+    )
   ) : null;
 
   const swipeStartX = React.useRef<number | null>(null);
@@ -493,6 +553,12 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           formatTag={formatTag}
           igChromeDark={t.isDark}
           onReelOpen={igHome && mode === 'reel' ? onOpenReelFullscreen : undefined}
+          engagementId={artifact.id}
+          engagement={engagement}
+          onToggleLike={onToggleLike}
+          onToggleSave={onToggleSave}
+          onOpenComments={onOpenComments}
+          onOpenShare={onOpenShare}
         />
 
         {(scheduleLabel || isAdCreative) && mode !== 'story' && !igHome && (
@@ -757,7 +823,12 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   && prev.approving === next.approving
   && prev.revisioning === next.revisioning
   && prev.retryingRender === next.retryingRender
-  && prev.platform === next.platform,
+  && prev.platform === next.platform
+  && prev.engagement?.isLiked === next.engagement?.isLiked
+  && prev.engagement?.isSaved === next.engagement?.isSaved
+  && prev.engagement?.likeCount === next.engagement?.likeCount
+  && prev.engagement?.commentCount === next.engagement?.commentCount
+  && prev.consumerMode === next.consumerMode,
 );
 
 function isRemotionVideoStory(artifact: OutputArtifact): boolean {
@@ -1785,6 +1856,14 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
 
 // ── Main Feed ────────────────────────────────────────────────────────────────
 export function PlatformFeed() {
+  return (
+    <MediaPlaybackProvider>
+      <PlatformFeedInner />
+    </MediaPlaybackProvider>
+  );
+}
+
+function PlatformFeedInner() {
   const { t } = useTheme();
   const brandPalette = useBrandThemePalette();
   const operatorMode = isMobileOperatorMode();
@@ -1795,6 +1874,16 @@ export function PlatformFeed() {
   const feedRefreshNonce = useMobileStore((s) => s.feedRefreshNonce);
   const feedScrollRef = useRef<HTMLDivElement>(null);
   const { storyMusicUrl } = useBrandStoryAudio(tenantId);
+  const engagementApi = useFeedEngagement();
+  const { setGloballyPaused, pauseAll } = useMediaPlayback();
+  const [sheetTargetId, setSheetTargetId] = useState<string | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [seenStoryIds, setSeenStoryIds] = useState<Set<string>>(() => new Set());
+  const [storyPaused, setStoryPaused] = useState(false);
+  const storyHoldRef = useRef(false);
+  const storyHoldStartedAt = useRef(0);
+  const storyHoldTimerRef = useRef<number | null>(null);
 
   // Scheduled templates — recurring story/reel gallery items
   const { data: scheduledTemplatesRaw = [] } = useQuery<ScheduledTemplateConfig[]>({
@@ -1905,6 +1994,19 @@ export function PlatformFeed() {
   const [storyViewIdx, setStoryViewIdx] = useState<number | null>(null);
   const [scheduledMediaIdx, setScheduledMediaIdx] = useState(0);
   const [storyProgress, setStoryProgress] = useState(0);
+
+  React.useEffect(() => {
+    if (commentsOpen || shareOpen) {
+      if (!reelViewerArtifact) {
+        setGloballyPaused(true);
+        pauseAll();
+      }
+      return;
+    }
+    if (storyViewIdx === null && !reelViewerArtifact) {
+      setGloballyPaused(false);
+    }
+  }, [commentsOpen, shareOpen, reelViewerArtifact, storyViewIdx, setGloballyPaused, pauseAll]);
   // Auto-trigger the mission pipeline on mount (fire-and-forget).
   // Kicks off propose → approve → task_graph_executor → content_ideation
   // → auto-produce → Feed artifacts without any manual interaction.
@@ -2356,15 +2458,33 @@ export function PlatformFeed() {
     }
     return resolveArtifactImg(artifact);
   };
+  const markStorySeen = (idx: number) => {
+    const item = storyBarItems[idx];
+    if (!item) return;
+    const id = item.kind === 'artifact' ? item.artifact.id : item.template.template_id;
+    setSeenStoryIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
   const openStory = (idx: number) => {
     setStoryViewIdx(idx);
     setScheduledMediaIdx(0);
     setStoryProgress(0);
+    setStoryPaused(false);
+    setGloballyPaused(true);
+    pauseAll();
+    markStorySeen(idx);
   };
   const closeStory = () => {
     setStoryViewIdx(null);
     setScheduledMediaIdx(0);
     setStoryProgress(0);
+    setStoryPaused(false);
+    setGloballyPaused(false);
   };
   const nextStory = () => {
     if (storyViewIdx === null) return;
@@ -2375,9 +2495,11 @@ export function PlatformFeed() {
       return;
     }
     if (storyViewIdx < storyBarItems.length - 1) {
-      setStoryViewIdx(storyViewIdx + 1);
+      const nextIdx = storyViewIdx + 1;
+      setStoryViewIdx(nextIdx);
       setScheduledMediaIdx(0);
       setStoryProgress(0);
+      markStorySeen(nextIdx);
     } else {
       closeStory();
     }
@@ -2410,21 +2532,23 @@ export function PlatformFeed() {
     return media?.type === 'video' ? 8000 : 5000;
   }, []);
 
-  // Story progress auto-advance (8s for video, 5s for photo)
+  // Story progress auto-advance (8s for video, 5s for photo) — pauses on hold
   React.useEffect(() => {
     if (storyViewIdx === null) return;
     const item = storyBarItems[storyViewIdx];
     if (!item) return;
+    if (storyPaused) return;
     const dur = storySlideDurationMs(item, scheduledMediaIdx);
-    let elapsed = 0;
+    let elapsed = (storyProgress / 100) * dur;
     const interval = setInterval(() => {
+      if (storyHoldRef.current) return;
       elapsed += 100;
       setStoryProgress(Math.min(100, (elapsed / dur) * 100));
       if (elapsed >= dur) { clearInterval(interval); nextStory(); }
     }, 100);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyViewIdx, scheduledMediaIdx, storyBarItems]);
+  }, [storyViewIdx, scheduledMediaIdx, storyBarItems, storyPaused]);
 
   // Auto-switch to pending view when new items arrive while user is in galeri view
   React.useEffect(() => {
@@ -2600,13 +2724,14 @@ export function PlatformFeed() {
           <MobileBrandNavbar
             dark={t.isDark}
             rightSlot={(
-              <FeedNavbarActions
+              <FlowHeaderActions
                 showApproved={showApproved}
                 pendingCount={pendingCount}
                 approvedCount={approvedCount}
                 onShowPending={() => setShowApproved(false)}
                 onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
                 dark={t.isDark}
+                notificationCount={pendingCount > 0 ? pendingCount : 0}
               />
             )}
           />
@@ -2999,7 +3124,8 @@ export function PlatformFeed() {
             const meta = (art.metadata ?? {}) as Record<string, unknown>;
             const brandName = String(meta.brandName || '').trim();
             const isPending = art.status === 'pending_review';
-            const isViewed = storyViewIdx !== null && storyViewIdx > idx;
+            const isViewed = seenStoryIds.has(art.id)
+              || (storyViewIdx !== null && storyViewIdx > idx);
             const isRendering = isBundleRendering(art);
             const isFailed = isBundleFailed(art) && !vid;
             const initials = brandName ? brandName.slice(0, 2).toUpperCase() : 'S';
@@ -3107,8 +3233,10 @@ export function PlatformFeed() {
             );
           })}
 
-          {/* Scheduled template bubbles — recurring content */}
-          {activeScheduledTemplates.map((tpl, tplIdx) => (
+              {/* Scheduled template bubbles — recurring content */}
+          {activeScheduledTemplates.map((tpl, tplIdx) => {
+            const scheduledViewed = seenStoryIds.has(tpl.template_id);
+            return (
             <div
               key={tpl.template_id}
               role="button"
@@ -3126,7 +3254,9 @@ export function PlatformFeed() {
             >
               <div style={{
                 width: 68, height: 68, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #10b981, #34d399, #6ee7b7)',
+                background: scheduledViewed
+                  ? t.separator
+                  : 'linear-gradient(135deg, #10b981, #34d399, #6ee7b7)',
                 padding: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <div style={{
@@ -3170,7 +3300,8 @@ export function PlatformFeed() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -3383,10 +3514,47 @@ export function PlatformFeed() {
                       </div>
                     )}
 
-                    {/* Tap zones: left = prev, right = next — header/dock excluded */}
+                    {/* Tap zones: left = prev, right = next; hold ≥180ms = pause (no nav) */}
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', zIndex: 5, pointerEvents: 'none' }}>
-                      <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={prevStory} aria-hidden />
-                      <div style={{ flex: 1, pointerEvents: 'auto' }} onClick={nextStory} aria-hidden />
+                      {(['prev', 'next'] as const).map((side) => (
+                        <div
+                          key={side}
+                          role="presentation"
+                          style={{ flex: 1, pointerEvents: 'auto', touchAction: 'none' }}
+                          onPointerDown={() => {
+                            storyHoldStartedAt.current = Date.now();
+                            storyHoldRef.current = true;
+                            if (storyHoldTimerRef.current != null) {
+                              window.clearTimeout(storyHoldTimerRef.current);
+                            }
+                            storyHoldTimerRef.current = window.setTimeout(() => {
+                              if (storyHoldRef.current) setStoryPaused(true);
+                            }, 160);
+                          }}
+                          onPointerUp={() => {
+                            const heldMs = Date.now() - storyHoldStartedAt.current;
+                            const wasLong = heldMs >= 180 || storyPaused;
+                            storyHoldRef.current = false;
+                            if (storyHoldTimerRef.current != null) {
+                              window.clearTimeout(storyHoldTimerRef.current);
+                              storyHoldTimerRef.current = null;
+                            }
+                            setStoryPaused(false);
+                            if (!wasLong) {
+                              if (side === 'prev') prevStory();
+                              else nextStory();
+                            }
+                          }}
+                          onPointerCancel={() => {
+                            storyHoldRef.current = false;
+                            if (storyHoldTimerRef.current != null) {
+                              window.clearTimeout(storyHoldTimerRef.current);
+                              storyHoldTimerRef.current = null;
+                            }
+                            setStoryPaused(false);
+                          }}
+                        />
+                      ))}
                     </div>
                   </div>
                   </>
@@ -3575,55 +3743,52 @@ export function PlatformFeed() {
         )
       )}
 
-      {/* ── Reel fullscreen viewer (IG tap-to-expand 9:16) ── */}
-      {reelViewerArtifact && typeof window !== 'undefined' && createPortal(
-        <div
-          className="ig-story-viewer-backdrop"
-          style={{ animation: 'fadeIn 120ms ease both' }}
-          onClick={() => setReelViewerArtifact(null)}
-        >
-          <div
-            className="ig-story-viewer-column"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="ig-story-viewer-stage" style={{ position: 'relative' }}>
-              <button
-                type="button"
-                onClick={() => setReelViewerArtifact(null)}
-                aria-label="Kapat"
-                style={{
-                  position: 'absolute',
-                  top: 'max(12px, env(safe-area-inset-top))',
-                  left: 12,
-                  zIndex: 20,
-                  background: 'rgba(0,0,0,0.45)',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: 36,
-                  height: 36,
-                  color: '#fff',
-                  fontSize: 18,
-                  cursor: 'pointer',
-                  lineHeight: 1,
-                }}
-              >
-                ✕
-              </button>
-              <PlatformNativePreview
-                platform="instagram"
-                mode="reel"
-                content={artifactToNativeContent(reelViewerArtifact)}
-                handle={feedHandle}
-                logoUrl={feedLogoUrl}
-                isPending={reelViewerArtifact.status === 'pending_review'}
-                timeLabel={timeAgo(reelViewerArtifact.createdAt)}
-                reelImmersive
-              />
-            </div>
-          </div>
-        </div>,
-        getMobilePortalRoot(),
+      {/* ── Reels fullscreen snap pager ── */}
+      {reelViewerArtifact && (
+        <ReelsScreen
+          items={artifacts.filter((a) => {
+            const k = detectKind(a);
+            return k === 'reel' || k === 'video';
+          }).length > 0
+            ? artifacts.filter((a) => {
+              const k = detectKind(a);
+              return k === 'reel' || k === 'video';
+            })
+            : [reelViewerArtifact]}
+          initialId={reelViewerArtifact.id}
+          handle={feedHandle}
+          logoUrl={feedLogoUrl}
+          onClose={() => setReelViewerArtifact(null)}
+          getEngagement={engagementApi.get}
+          onToggleLike={(id) => { void engagementApi.toggleLike(id); }}
+          onToggleSave={(id) => { void engagementApi.toggleSave(id); }}
+          onOpenComments={(id) => {
+            setSheetTargetId(id);
+            setCommentsOpen(true);
+          }}
+          onOpenShare={(id) => {
+            setSheetTargetId(id);
+            setShareOpen(true);
+          }}
+          sheetOpen={commentsOpen || shareOpen}
+          missionIdeationLookup={missionIdeationLookup}
+        />
       )}
+
+      <CommentsBottomSheet
+        open={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        comments={sheetTargetId ? engagementApi.getComments(sheetTargetId) : []}
+        onSubmit={async (text) => {
+          if (sheetTargetId) await engagementApi.addComment(sheetTargetId, text);
+        }}
+      />
+
+      <ShareBottomSheet
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        shareText={sheetTargetId ? 'Akış içeriği' : undefined}
+      />
 
       {/* Feed */}
       {feedPostsLoading ? (
@@ -3803,6 +3968,18 @@ export function PlatformFeed() {
                     onRetryRender={handleRetryRenderById}
                     onOpenMetaAd={handleOpenMetaAdById}
                     onOpenGoogleAd={handleOpenGoogleAd}
+                    consumerMode={!operatorMode}
+                    engagement={engagementApi.get(artifact.id)}
+                    onToggleLike={() => { void engagementApi.toggleLike(artifact.id); }}
+                    onToggleSave={() => { void engagementApi.toggleSave(artifact.id); }}
+                    onOpenComments={() => {
+                      setSheetTargetId(artifact.id);
+                      setCommentsOpen(true);
+                    }}
+                    onOpenShare={() => {
+                      setSheetTargetId(artifact.id);
+                      setShareOpen(true);
+                    }}
                     onOpenReelFullscreen={
                       !operatorMode && detectFeedArtifactKind(artifact) === 'reel'
                         ? () => setReelViewerArtifact(artifact)

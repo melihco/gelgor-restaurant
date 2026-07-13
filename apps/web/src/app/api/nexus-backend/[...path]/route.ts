@@ -92,7 +92,26 @@ async function proxyToNexus(req: NextRequest, pathSegments: string[]): Promise<N
     }
   });
 
-  return new NextResponse(upstream.body, {
+  // Buffer the upstream body instead of streaming. Streaming pipes throw
+  // "failed to pipe response" / UND_ERR_SOCKET when Nexus closes mid-transfer
+  // (restart, timeout, or large artifact payloads) and can tear down the
+  // Next.js request worker. Buffering turns that into a clean 502.
+  let body: ArrayBuffer;
+  try {
+    body = await upstream.arrayBuffer();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      {
+        error: 'nexus_upstream_terminated',
+        message: `Nexus API closed the connection while streaming: ${message}`,
+        hint: 'API may have restarted or timed out — retry the request.',
+      },
+      { status: 502 },
+    );
+  }
+
+  return new NextResponse(body, {
     status: upstream.status,
     headers: responseHeaders,
   });

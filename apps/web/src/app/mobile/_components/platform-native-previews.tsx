@@ -3,7 +3,7 @@
  * Platform-native preview components — Instagram / TikTok / X pixel-faithful layouts.
  * Shared by PlatformFeed and PlatformPreviewStudio.
  */
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import type { OutputArtifact } from '@/types';
 import { parseArtifactContent, resolveArtifact, resolveCarouselUrls, normalizeHashtags } from '@/lib/artifact-utils';
 import { resolveClientMediaUrl } from '@/lib/media-url';
@@ -21,6 +21,19 @@ import {
   IG_FEED_REEL_RATIO,
   useIgFeedMediaAspectRatio,
 } from './ig-feed-media-sizing';
+import { DoubleTapHeart } from './feed/DoubleTapHeart';
+import { useMediaPlayback } from './feed/media-playback-context';
+import type { FeedEngagementState } from './feed/types';
+import { defaultEngagementForId } from './feed/types';
+
+export interface FeedInteractionHandlers {
+  engagementId?: string;
+  engagement?: FeedEngagementState;
+  onToggleLike?: () => void;
+  onToggleSave?: () => void;
+  onOpenComments?: () => void;
+  onOpenShare?: () => void;
+}
 
 export type PreviewPlatform = 'instagram' | 'tiktok' | 'x';
 export type PreviewMode = 'feed' | 'reel' | 'story' | 'carousel';
@@ -50,6 +63,7 @@ function VisibilityGatedVideo({
   onError,
   onEnded,
   muted = true,
+  mediaId,
 }: {
   src: string;
   loop?: boolean;
@@ -58,9 +72,12 @@ function VisibilityGatedVideo({
   onError?: () => void;
   onEnded?: () => void;
   muted?: boolean;
+  mediaId?: string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
+  const { globallyPaused, registerController, setActiveMediaId, activeMediaId } = useMediaPlayback();
+  const id = mediaId ?? src;
 
   useEffect(() => {
     setFailed(false);
@@ -68,26 +85,46 @@ function VisibilityGatedVideo({
 
   useEffect(() => {
     const el = ref.current;
+    if (!el) return;
+    return registerController(id, () => {
+      el.pause();
+    });
+  }, [id, registerController]);
+
+  useEffect(() => {
+    const el = ref.current;
     if (!el || failed) return;
 
     const syncPlayback = (inView: boolean) => {
+      if (globallyPaused) {
+        el.pause();
+        return;
+      }
       if (inView) {
+        setActiveMediaId(id);
         void el.play().catch(() => undefined);
       } else {
         el.pause();
+        if (activeMediaId === id) setActiveMediaId(null);
       }
     };
 
     const obs = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return;
-        syncPlayback(entry.isIntersecting && entry.intersectionRatio >= 0.25);
+        syncPlayback(entry.isIntersecting && entry.intersectionRatio >= 0.35);
       },
-      { threshold: [0, 0.25, 0.5] },
+      { threshold: [0, 0.35, 0.55] },
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [src, failed]);
+  }, [src, failed, globallyPaused, id, setActiveMediaId, activeMediaId]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (globallyPaused) el.pause();
+  }, [globallyPaused]);
 
   if (failed && poster) {
     return <StoryCoverImage src={poster} style={style} />;
@@ -269,50 +306,133 @@ function AvatarRing({ logoUrl, handle, size = 34, chrome }: { logoUrl?: string; 
 // ─── Instagram Feed Post ──────────────────────────────────────────────────────
 export type FeedFormatTag = 'carousel' | 'reel' | 'post' | 'ad';
 
-function IGFeedActionRow({ liked, onToggleLike, chrome }: { liked: boolean; onToggleLike: () => void; chrome: IgFeedChrome }) {
+function IGFeedActionRow({
+  liked,
+  saved,
+  onToggleLike,
+  onToggleSave,
+  onOpenComments,
+  onOpenShare,
+  chrome,
+}: {
+  liked: boolean;
+  saved?: boolean;
+  onToggleLike: () => void;
+  onToggleSave?: () => void;
+  onOpenComments?: () => void;
+  onOpenShare?: () => void;
+  chrome: IgFeedChrome;
+}) {
+  const btn: React.CSSProperties = {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    width: 44,
+    height: 44,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '-10px 0',
+  };
   return (
-    <div style={{ padding: '8px 14px 4px', display: 'flex', alignItems: 'center', gap: 14 }}>
-      <button type="button" onClick={onToggleLike} aria-label="Beğen" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+    <div style={{ padding: '4px 6px 0', display: 'flex', alignItems: 'center', gap: 2 }}>
+      <button type="button" onClick={onToggleLike} aria-label={liked ? 'Beğeniyi kaldır' : 'Beğen'} style={btn}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill={liked ? '#FF3040' : 'none'}
           stroke={liked ? '#FF3040' : chrome.icon} strokeWidth="2">
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
         </svg>
       </button>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2" aria-hidden>
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2" aria-hidden>
-        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-      </svg>
-      <div style={{ marginLeft: 'auto' }}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2" aria-hidden>
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      <button type="button" onClick={onOpenComments} aria-label="Yorumlar" style={btn} disabled={!onOpenComments}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
         </svg>
+      </button>
+      <button type="button" onClick={onOpenShare} aria-label="Paylaş" style={btn} disabled={!onOpenShare}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2">
+          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+      <div style={{ marginLeft: 'auto' }}>
+        <button
+          type="button"
+          onClick={onToggleSave}
+          aria-label={saved ? 'Kaydı kaldır' : 'Kaydet'}
+          style={btn}
+          disabled={!onToggleSave}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill={saved ? chrome.icon : 'none'} stroke={chrome.icon} strokeWidth="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
       </div>
     </div>
   );
 }
 
-function IGFeedCaptionBlock({ handle, content, timeLabel, chrome }: {
-  handle: string; content: NativeContentData; timeLabel?: string; chrome: IgFeedChrome;
+function IGFeedCaptionBlock({
+  handle,
+  content,
+  timeLabel,
+  chrome,
+  likeCount,
+  commentCount,
+  onOpenComments,
+}: {
+  handle: string;
+  content: NativeContentData;
+  timeLabel?: string;
+  chrome: IgFeedChrome;
+  likeCount?: number;
+  commentCount?: number;
+  onOpenComments?: () => void;
 }) {
   const h = handle.startsWith('@') ? handle : `@${handle}`;
-  const likeCount = 2847;
+  const [expanded, setExpanded] = useState(false);
+  const caption = content.caption || '';
+  const long = caption.length > 110;
+
   return (
     <div style={{ padding: '0 14px 14px' }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: chrome.text, marginBottom: 6 }}>
-        {likeCount.toLocaleString('tr-TR')} beğeni
+        {(likeCount ?? 0).toLocaleString('tr-TR')} beğeni
       </div>
-      {content.caption && (
+      {caption && (
         <div style={{ fontSize: 14, color: chrome.text, lineHeight: 1.5 }}>
           <span style={{ fontWeight: 700 }}>{h}</span>{' '}
-          <span style={{ color: chrome.textSecondary }}>{content.caption}</span>
+          <span style={{ color: chrome.textSecondary }}>
+            {expanded || !long ? caption : `${caption.slice(0, 110).trimEnd()}…`}
+          </span>
+          {long && !expanded && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              style={{
+                background: 'none', border: 'none', padding: 0, marginLeft: 4,
+                color: chrome.textMuted, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              devamını gör
+            </button>
+          )}
         </div>
       )}
       {content.hashtags.length > 0 && (
         <div style={{ fontSize: 14, color: chrome.hashtag, marginTop: 4, lineHeight: 1.55 }}>
           {content.hashtags.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ')}
         </div>
+      )}
+      {typeof commentCount === 'number' && commentCount > 0 && (
+        <button
+          type="button"
+          onClick={onOpenComments}
+          style={{
+            background: 'none', border: 'none', padding: 0, marginTop: 6,
+            color: chrome.textMuted, fontSize: 13, fontWeight: 600, cursor: onOpenComments ? 'pointer' : 'default',
+          }}
+        >
+          {commentCount.toLocaleString('tr-TR')} yorumun tümünü gör
+        </button>
       )}
       {timeLabel && (
         <div style={{ fontSize: 10, color: chrome.timeLabel, marginTop: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -353,19 +473,55 @@ function IGPostHeader({ handle, logoUrl, location, isPending, formatTag, chrome 
 
 export function InstagramFeedNative({
   content, handle, logoUrl, isPending, timeLabel, afterMedia, formatTag, igChromeDark = true,
+  engagement, onToggleLike, onToggleSave, onOpenComments, onOpenShare, engagementId,
 }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
   afterMedia?: React.ReactNode;
   formatTag?: FeedFormatTag;
   igChromeDark?: boolean;
-}) {
+} & FeedInteractionHandlers) {
   const chrome = resolveIgFeedChrome(igChromeDark);
-  const [liked, setLiked] = useState(true);
+  const eng = engagement ?? defaultEngagementForId(engagementId ?? handle);
+  const [liked, setLiked] = useState(eng.isLiked);
+  const [saved, setSaved] = useState(eng.isSaved);
+  const [likeCount, setLikeCount] = useState(eng.likeCount);
   const [slide, setSlide] = useState(0);
+  const [heartBurst, setHeartBurst] = useState(0);
+  const lastTapRef = useRef(0);
+  const touchStart = useRef<{ x: number; y: number; axis: 'x' | 'y' | null } | null>(null);
   const images = content.carouselUrls?.length ? content.carouselUrls : content.imageUrl ? [content.imageUrl] : [];
   const current = images[slide] ?? null;
   const isCarousel = images.length > 1;
   const aspectRatio = useIgFeedMediaAspectRatio(current, IG_FEED_DEFAULT_RATIO);
+
+  useEffect(() => {
+    setLiked(eng.isLiked);
+    setSaved(eng.isSaved);
+    setLikeCount(eng.likeCount);
+  }, [eng.isLiked, eng.isSaved, eng.likeCount, engagementId]);
+
+  const doLike = useCallback(() => {
+    if (onToggleLike) {
+      onToggleLike();
+      return;
+    }
+    setLiked((l) => {
+      setLikeCount((c) => Math.max(0, c + (l ? -1 : 1)));
+      return !l;
+    });
+  }, [onToggleLike]);
+
+  const onMediaPointer = (e: React.TouchEvent | React.MouseEvent) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      lastTapRef.current = 0;
+      if (!liked) doLike();
+      setHeartBurst((n) => n + 1);
+      e.preventDefault?.();
+      return;
+    }
+    lastTapRef.current = now;
+  };
 
   return (
     <div style={{ background: chrome.shell }}>
@@ -386,15 +542,38 @@ export function InstagramFeedNative({
           background: chrome.media,
           position: 'relative',
           overflow: 'hidden',
+          touchAction: isCarousel ? 'pan-y' : 'manipulation',
         }}
-        onTouchStart={(e) => { (e.currentTarget as HTMLElement & { _tx?: number })._tx = e.touches[0]?.clientX; }}
+        onClick={onMediaPointer}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          if (!t) return;
+          touchStart.current = { x: t.clientX, y: t.clientY, axis: null };
+        }}
+        onTouchMove={(e) => {
+          if (!isCarousel || !touchStart.current) return;
+          const t = e.touches[0];
+          if (!t) return;
+          const dx = t.clientX - touchStart.current.x;
+          const dy = t.clientY - touchStart.current.y;
+          if (!touchStart.current.axis) {
+            if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+            touchStart.current.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+          }
+          if (touchStart.current.axis === 'x') {
+            e.stopPropagation();
+          }
+        }}
         onTouchEnd={(e) => {
-          const el = e.currentTarget as HTMLElement & { _tx?: number };
-          const dx = (e.changedTouches[0]?.clientX ?? 0) - (el._tx ?? 0);
-          if (isCarousel && dx < -40 && slide < images.length - 1) setSlide(slide + 1);
-          if (isCarousel && dx > 40 && slide > 0) setSlide(slide - 1);
+          const start = touchStart.current;
+          touchStart.current = null;
+          if (!isCarousel || !start || start.axis === 'y') return;
+          const dx = (e.changedTouches[0]?.clientX ?? start.x) - start.x;
+          if (dx < -40 && slide < images.length - 1) setSlide(slide + 1);
+          if (dx > 40 && slide > 0) setSlide(slide - 1);
         }}
       >
+        <DoubleTapHeart visible={heartBurst > 0} key={heartBurst} />
         {current ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={current} alt="" referrerPolicy="no-referrer"
@@ -437,8 +616,27 @@ export function InstagramFeedNative({
         )}
       </div>
 
-      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} chrome={chrome} />
-      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} chrome={chrome} />
+      <IGFeedActionRow
+        liked={liked}
+        saved={saved}
+        onToggleLike={doLike}
+        onToggleSave={() => {
+          if (onToggleSave) onToggleSave();
+          else setSaved((s) => !s);
+        }}
+        onOpenComments={onOpenComments}
+        onOpenShare={onOpenShare}
+        chrome={chrome}
+      />
+      <IGFeedCaptionBlock
+        handle={handle}
+        content={content}
+        timeLabel={timeLabel}
+        chrome={chrome}
+        likeCount={likeCount}
+        commentCount={eng.commentCount}
+        onOpenComments={onOpenComments}
+      />
       {afterMedia}
     </div>
   );
@@ -452,6 +650,7 @@ function IgFeedReelMediaStage({
   onToggleMute,
   chrome,
   onOpenFullscreen,
+  mediaId,
 }: {
   videoUrl: string | null;
   posterUrl?: string | null;
@@ -459,6 +658,7 @@ function IgFeedReelMediaStage({
   onToggleMute: () => void;
   chrome: IgFeedChrome;
   onOpenFullscreen?: () => void;
+  mediaId?: string;
 }) {
   const ambientSrc = posterUrl ?? videoUrl ?? null;
 
@@ -515,6 +715,7 @@ function IgFeedReelMediaStage({
           poster={posterUrl ?? undefined}
           loop
           muted={muted}
+          mediaId={mediaId}
           style={{
             position: 'absolute',
             inset: 0,
@@ -565,12 +766,13 @@ function IgFeedReelMediaStage({
         <button
           type="button"
           aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+          aria-pressed={!muted}
           onClick={(e) => {
             e.stopPropagation();
             onToggleMute();
           }}
           style={{
-            position: 'absolute', bottom: 12, right: 12, width: 32, height: 32, borderRadius: '50%',
+            position: 'absolute', bottom: 12, right: 12, width: 44, height: 44, borderRadius: '50%',
             border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, zIndex: 3,
           }}
@@ -584,15 +786,36 @@ function IgFeedReelMediaStage({
 
 export function InstagramReelInFeedNative({
   content, handle, logoUrl, isPending, timeLabel, afterMedia, igChromeDark = true, onReelOpen,
+  engagement, onToggleLike, onToggleSave, onOpenComments, onOpenShare, engagementId,
 }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
   afterMedia?: React.ReactNode;
   igChromeDark?: boolean;
   onReelOpen?: () => void;
-}) {
+} & FeedInteractionHandlers) {
   const chrome = resolveIgFeedChrome(igChromeDark);
-  const [liked, setLiked] = useState(true);
-  const [muted, setMuted] = useState(true);
+  const eng = engagement ?? defaultEngagementForId(engagementId ?? handle);
+  const [liked, setLiked] = useState(eng.isLiked);
+  const [saved, setSaved] = useState(eng.isSaved);
+  const [likeCount, setLikeCount] = useState(eng.likeCount);
+  const { preferUnmuted, setPreferUnmuted } = useMediaPlayback();
+  const muted = !preferUnmuted;
+
+  useEffect(() => {
+    setLiked(eng.isLiked);
+    setSaved(eng.isSaved);
+    setLikeCount(eng.likeCount);
+  }, [eng.isLiked, eng.isSaved, eng.likeCount, engagementId]);
+
+  const doLike = () => {
+    if (onToggleLike) onToggleLike();
+    else {
+      setLiked((l) => {
+        setLikeCount((c) => Math.max(0, c + (l ? -1 : 1)));
+        return !l;
+      });
+    }
+  };
 
   return (
     <div style={{ background: chrome.shell }}>
@@ -602,13 +825,33 @@ export function InstagramReelInFeedNative({
         videoUrl={content.videoUrl}
         posterUrl={content.imageUrl}
         muted={muted}
-        onToggleMute={() => setMuted((m) => !m)}
+        onToggleMute={() => setPreferUnmuted(muted)}
         chrome={chrome}
         onOpenFullscreen={onReelOpen}
+        mediaId={engagementId}
       />
 
-      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} chrome={chrome} />
-      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} chrome={chrome} />
+      <IGFeedActionRow
+        liked={liked}
+        saved={saved}
+        onToggleLike={doLike}
+        onToggleSave={() => {
+          if (onToggleSave) onToggleSave();
+          else setSaved((s) => !s);
+        }}
+        onOpenComments={onOpenComments}
+        onOpenShare={onOpenShare}
+        chrome={chrome}
+      />
+      <IGFeedCaptionBlock
+        handle={handle}
+        content={content}
+        timeLabel={timeLabel}
+        chrome={chrome}
+        likeCount={likeCount}
+        commentCount={eng.commentCount}
+        onOpenComments={onOpenComments}
+      />
 
       {afterMedia}
     </div>
@@ -1165,6 +1408,12 @@ export function PlatformNativePreview({
   igChromeDark = true,
   onReelOpen,
   reelImmersive = false,
+  engagement,
+  onToggleLike,
+  onToggleSave,
+  onOpenComments,
+  onOpenShare,
+  engagementId,
 }: {
   platform: PreviewPlatform;
   mode: PreviewMode;
@@ -1186,7 +1435,7 @@ export function PlatformNativePreview({
   onReelOpen?: () => void;
   /** Full-screen reel viewer — unmuted by default. */
   reelImmersive?: boolean;
-}) {
+} & FeedInteractionHandlers) {
   if (platform === 'tiktok') {
     return <TikTokNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
   }
@@ -1205,6 +1454,12 @@ export function PlatformNativePreview({
           afterMedia={afterMedia}
           igChromeDark={igChromeDark}
           onReelOpen={onReelOpen}
+          engagement={engagement}
+          onToggleLike={onToggleLike}
+          onToggleSave={onToggleSave}
+          onOpenComments={onOpenComments}
+          onOpenShare={onOpenShare}
+          engagementId={engagementId}
         />
       );
     }
@@ -1232,6 +1487,12 @@ export function PlatformNativePreview({
       afterMedia={afterMedia}
       formatTag={resolvedTag}
       igChromeDark={igChromeDark}
+      engagement={engagement}
+      onToggleLike={onToggleLike}
+      onToggleSave={onToggleSave}
+      onOpenComments={onOpenComments}
+      onOpenShare={onOpenShare}
+      engagementId={engagementId}
     />
   );
 }

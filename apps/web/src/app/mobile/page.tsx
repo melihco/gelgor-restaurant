@@ -1415,7 +1415,104 @@ const CSS = `
     transition: transform 160ms ease;
   }
 
-  /* Story viewer — IG native 9:16; portal .sa-mobile-frame içinde (tam tarayıcı değil) */
+  /* Reels fullscreen snap pager */
+  .sa-reels-root {
+    position: fixed;
+    inset: 0;
+    z-index: 820;
+    background: #000;
+    animation: saReelsEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .sa-reels-scroller {
+    height: 100%;
+    height: 100dvh;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sa-reels-slide {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+    overflow: hidden;
+    background: #000;
+    flex-shrink: 0;
+  }
+  @keyframes saReelsEnter {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes saHeartPop {
+    0% { opacity: 0; transform: scale(0.35); }
+    35% { opacity: 1; transform: scale(1.12); }
+    70% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.08); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sa-reels-root, .sa-double-tap-heart svg {
+      animation: none !important;
+    }
+  }
+
+  /* Feed engagement sheets */
+  .sa-feed-sheet-root {
+    position: fixed;
+    inset: 0;
+    z-index: 860;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .sa-feed-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.48);
+    cursor: pointer;
+  }
+  .sa-feed-sheet-panel {
+    position: relative;
+    width: min(100%, 480px);
+    max-height: 88dvh;
+    border-radius: 18px 18px 0 0;
+    display: flex;
+    flex-direction: column;
+    animation: saSheetUp 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .sa-feed-comments-panel {
+    height: min(88dvh, 720px);
+  }
+  .sa-feed-sheet-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(128, 128, 128, 0.45);
+    margin: 10px auto 4px;
+    flex-shrink: 0;
+  }
+  @keyframes saSheetUp {
+    from { transform: translateY(24%); opacity: 0.6; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  /* Story viewer — full-bleed on phone WebView */
+  @media (max-width: 767px) {
+    .ig-story-viewer-column {
+      width: 100%;
+      max-height: 100dvh;
+      height: 100dvh;
+    }
+    .ig-story-viewer-stage {
+      flex: 1 1 auto;
+      aspect-ratio: auto;
+      height: auto;
+      min-height: 0;
+    }
+  }
   .ig-story-viewer-backdrop {
     position: fixed;
     inset: 0;
