@@ -719,12 +719,12 @@ function buildDesignedDesignCardPrompt(
   const promptBody = [
     role,
     intensityDirectives.priorityBlock,
+    ...(input.brandDirectives ?? []),
     ...intensityDirectives.forbiddenLayouts,
     onCanvasTextContract,
     captionMessageLock,
     premiumBar,
     input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',
-    ...(input.brandDirectives ?? []),
     logoBlock,
     soul,
     postVibe,

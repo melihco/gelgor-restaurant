@@ -83,6 +83,8 @@ describe('buildBrandIntelligenceDirectives', () => {
     }, 'story', 'elegant_light');
 
     const prompt = directives.join(' ');
+    expect(prompt).toContain('BRAND DESIGN CONTRACT');
+    expect(prompt).toContain('VISUAL DNA — PRIMARY DESIGN SOURCE');
     expect(prompt).toContain('Scorpios');
     expect(prompt).toContain('Premium beach club');
     expect(prompt).toContain('sunset dining');

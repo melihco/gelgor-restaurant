@@ -259,10 +259,10 @@ export function buildBrandIntelligenceDirectives(
   const vibe = compactObjectSummary(intel.vibeProfile, 420);
   const service = compactObjectSummary(intel.serviceProfile, 360);
   const lines = [
-    `BRAND LEARNING CONTEXT: This template set is for ${input.brandName}, sector=${input.sector}${input.location ? `, location=${input.location}` : ''}. Generate templates as if you have studied this specific brand, not as generic ${input.sector} presets.`,
-    intel.description ? `Brand description: ${intel.description.slice(0, 360)}.` : '',
+    `BRAND DESIGN CONTRACT: This template set is for ${input.brandName}, sector=${input.sector}${input.location ? `, location=${input.location}` : ''}. Every layout, type choice, color block, crop, and decorative rhythm must come from THIS brand's visual identity, not from generic ${input.sector} presets.`,
+    intel.visualDna ? `VISUAL DNA — PRIMARY DESIGN SOURCE: ${intel.visualDna.slice(0, 620)}. Treat this as the highest creative reference after the requested on-canvas text. If sector defaults conflict with visual DNA, visual DNA wins.` : '',
     intel.brandTone ? `Brand tone: ${intel.brandTone.slice(0, 180)}.` : '',
-    intel.visualDna ? `Visual DNA: ${intel.visualDna.slice(0, 520)}.` : '',
+    intel.description ? `Brand description: ${intel.description.slice(0, 320)}.` : '',
     intel.visualStyle ? `Visual style: ${intel.visualStyle.slice(0, 220)}.` : '',
     intel.targetAudience ? `Target audience: ${intel.targetAudience.slice(0, 220)}.` : '',
     intel.campaignGoals ? `Business/campaign goals: ${intel.campaignGoals.slice(0, 220)}.` : '',
@@ -275,7 +275,7 @@ export function buildBrandIntelligenceDirectives(
 
   return [
     lines.join(' '),
-    'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers.',
+    'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers. Keep text exact and legible; never invent or misspell Turkish words.',
   ];
 }
 
