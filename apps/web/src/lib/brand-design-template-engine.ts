@@ -136,8 +136,16 @@ export interface GeneratedDesignTemplate {
     generator: 'gpt-image-1' | 'fal-ideogram' | 'none';
     /** Per-channel design intensity applied during generation. */
     designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
+    /** Original tenant setting before template-library layout enrichment. */
+    productionIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
     /** Catalog slot key when preset came from production_slot_definitions. */
     catalogSlotKey?: string | null;
+    /** Canva archetype metadata locked into the reusable template recipe. */
+    canvaArchetypeId?: string | null;
+    canvaArchetypeName?: string | null;
+    layoutPattern?: string;
+    typographyMode?: string;
+    designBriefDirectives?: string[];
   };
 }
 
