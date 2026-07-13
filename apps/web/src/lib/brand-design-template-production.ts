@@ -63,6 +63,10 @@ export function resolveFalTemplateLockOptions(input: {
   };
 }
 
+export function templateLockUsesGrafikerPass(score: number | null, pass: boolean | undefined): boolean {
+  return pass === true || (score != null && score >= GRAFIKER_PASS_THRESHOLD);
+}
+
 export interface TemplateMissionCopy {
   headline?: string;
   subtitle?: string;

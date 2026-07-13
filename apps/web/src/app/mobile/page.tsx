@@ -1235,8 +1235,8 @@ const CSS = `
     50% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0.18); }
   }
 
-  /* ── Desktop / tablet — Instagram web genişliği (≥768px) ── */
-  @media (min-width: 768px) {
+  /* ── Desktop browser preview only (≥1280px) — WebView/tablet full width below ── */
+  @media (min-width: 1280px) {
     .sa-mobile-outer {
       position: fixed;
       inset: 0;
@@ -1248,8 +1248,8 @@ const CSS = `
 
     .sa-mobile-frame {
       position: relative;
-      /* IG feed column — mobile-first; wider on large desktop like instagram.com */
-      width: min(480px, calc(100vw - 32px));
+      /* IG web feed column ~470–630px; comfortable dev preview without over-narrowing */
+      width: min(630px, calc(100vw - 48px));
       height: 100vh;
       max-height: 100dvh;
       overflow: hidden;
@@ -1261,9 +1261,9 @@ const CSS = `
     }
   }
 
-  @media (min-width: 1100px) {
+  @media (min-width: 1440px) {
     .sa-mobile-frame {
-      width: min(630px, calc(100vw - 64px));
+      width: min(720px, calc(100vw - 80px));
     }
   }
 
@@ -1376,8 +1376,8 @@ const CSS = `
     }
   }
 
-  /* Mobile: wrappers are transparent layout containers */
-  @media (max-width: 767px) {
+  /* Phones + tablets (WebView-first) — no artificial column; feed media is full viewport width */
+  @media (max-width: 1279px) {
     .sa-mobile-outer { display: contents; }
     .sa-mobile-frame { display: contents; }
   }
