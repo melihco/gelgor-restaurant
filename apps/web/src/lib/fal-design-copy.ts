@@ -18,6 +18,7 @@ import {
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
 } from '@/lib/production-headline-quality';
+import { rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
 
 export interface FalDesignCopyIdea {
   headline?: string;
@@ -77,6 +78,36 @@ function localesClash(captionLoc: OverlayLocale, headlineLoc: OverlayLocale): bo
   return captionLoc !== headlineLoc;
 }
 
+function finalizeMissionOverlay(input: {
+  headline: string;
+  cta?: string;
+  caption: string;
+  channel: 'reel' | 'feed_post' | 'story';
+  brandName: string;
+  businessType?: string;
+  lockIdeationCopy?: boolean;
+}): { headline: string; subtitle?: string } {
+  const overlay = resolveFalOverlayCopy({
+    headline: input.headline,
+    cta: input.cta,
+    caption: input.caption,
+    channel: input.channel,
+    lockIdeationCopy: input.lockIdeationCopy,
+    brandName: input.brandName,
+    businessType: input.businessType,
+  });
+  const rebased = rebiasUngroundedOverlayCopy({
+    headline: overlay.headline,
+    subtitle: overlay.subtitle,
+    caption: input.caption,
+    brandName: input.brandName,
+    businessType: input.businessType,
+    channel: input.channel,
+    cta: input.cta,
+  });
+  return { headline: rebased.headline, subtitle: rebased.subtitle };
+}
+
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
  * Priority: ideation title → canva_field_copy → caption-derived hook (label/locale fallback).
@@ -108,11 +139,13 @@ export function resolveMissionFalDesignCopy(input: {
     && !localesClash(captionLoc, detectOverlayLocale(ideation));
 
   if (ideationPublishable) {
-    const overlay = resolveFalOverlayCopy({
+    const overlay = finalizeMissionOverlay({
       headline: ideation,
       cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
       caption,
       channel,
+      brandName,
+      businessType: input.businessType,
       lockIdeationCopy: true,
     });
     return { ...overlay, source: 'ideation_title' };
@@ -125,11 +158,13 @@ export function resolveMissionFalDesignCopy(input: {
       || isMeaninglessBrandEchoHeadline(extracted.headline, brandName)
       || localesClash(captionLoc, detectOverlayLocale(extracted.headline));
     if (!bad) {
-      const overlay = resolveFalOverlayCopy({
+      const overlay = finalizeMissionOverlay({
         headline: extracted.headline,
         cta: extracted.subtitle || input.cta,
         caption,
         channel,
+        brandName,
+        businessType: input.businessType,
         lockIdeationCopy: true,
       });
       return { ...overlay, source: extracted.source };
@@ -170,21 +205,25 @@ export function resolveMissionFalDesignCopy(input: {
       headline,
       cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
     }) ?? undefined;
-    const overlay = resolveFalOverlayCopy({
+    const overlay = finalizeMissionOverlay({
       headline,
       cta: subtitle || input.cta,
       caption,
       channel,
+      brandName,
+      businessType: input.businessType,
       lockIdeationCopy: true,
     });
     return { ...overlay, source: 'caption_design_copy' };
   }
 
-  const overlay = resolveFalOverlayCopy({
+  const overlay = finalizeMissionOverlay({
     headline: ideation,
     cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
     caption,
     channel,
+    brandName,
+    businessType: input.businessType,
     lockIdeationCopy: true,
   });
 

@@ -57,7 +57,7 @@ export function resolveFalTemplateLockOptions(input: {
     };
   }
   return {
-    captionAwareHeadline: false,
+    captionAwareHeadline: input.defaultCaptionAwareHeadline ?? true,
     grafikerMaxRetries: Math.min(2, Math.max(base, 1)),
     requireTemplateStyleRef: false,
   };

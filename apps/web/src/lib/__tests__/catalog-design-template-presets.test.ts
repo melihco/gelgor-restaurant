@@ -42,6 +42,7 @@ describe('buildDesignPresetFromCatalogSlot', () => {
     expect(preset.catalogSlotKey).toBe('beach_club_dj_night_teaser_post');
     expect(preset.name).toBe('DJ Gecesi');
     expect(preset.format).toBe('post');
+    expect(preset.sampleHeadline).not.toBe('DJ Gecesi');
     expect(preset.matchKeywords).toContain('dj');
     expect(preset.prominentLogo).toBe(true);
   });

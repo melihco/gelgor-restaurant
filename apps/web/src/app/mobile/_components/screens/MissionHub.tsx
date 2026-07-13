@@ -11,7 +11,7 @@
  * StrategistAgent (30–90s); shows a pulsing loading state with timeout message.
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { ResponsiveAppSheet } from '../responsive-app-sheet';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import type { T } from '../theme-context';
@@ -3759,72 +3759,47 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   // and factory drain loop — UI opening a detail sheet must never trigger fal/Remotion costs.
   // Operator can still use explicit buttons when in debug/operatorMode.
 
-  if (typeof window === 'undefined') return null;
-
-  const sheet = (
-    <>
-      <div onClick={onClose} style={{
-        position: 'fixed', inset: 0, zIndex: 600,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
-        animation: 'fadeIn 180ms ease both',
-      }} />
-      <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 601,
-        maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
-        background: t.isDark ? '#0D0D1A' : '#f2f2f7',
-        borderRadius: '26px 26px 0 0',
-        paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
-        animation: 'slideUp 280ms cubic-bezier(0.4,0,0.2,1) both',
-        boxShadow: '0 -12px 60px rgba(0,0,0,0.45)',
-        border: t.isDark ? '0.5px solid rgba(255,255,255,0.06)' : 'none',
-      }}>
-        {/* Handle */}
-        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 12, marginBottom: 4, flexShrink: 0 }}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)' }} />
-        </div>
-
-        {/* Header */}
-        <div style={{ padding: '4px 22px 14px', borderBottom: `0.5px solid ${t.separator}`, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20,
-              background: rate >= 80 ? 'rgba(16,185,129,0.10)' : 'rgba(245,158,11,0.10)',
-              color: rate >= 80 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
-              %{rate} · {TYPE_LABEL[mission.type] ?? mission.type}
-            </span>
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-            {mission.title}
-          </div>
-          {mission.objective && (
-            <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 5, lineHeight: 1.5 }}>
-              {mission.objective}
+  return (
+    <ResponsiveAppSheet
+      onClose={onClose}
+      title={mission.title}
+      subtitle={`${mission.completed_nodes}/${mission.total_nodes} plan adımı · ${timeAgo(mission.completed_at)}`}
+      tall
+      ariaLabel="Plan detayı"
+    >
+      <div style={{ padding: '12px 16px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20,
+                background: rate >= 80 ? 'rgba(16,185,129,0.10)' : 'rgba(245,158,11,0.10)',
+                color: rate >= 80 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
+                %{rate} · {TYPE_LABEL[mission.type] ?? mission.type}
+              </span>
             </div>
-          )}
-          {debugMode && telemetryAlerts.length > 0 && (
-            <div style={{
-              marginTop: 10,
-              padding: '10px 12px',
-              borderRadius: 12,
-              background: 'rgba(239,68,68,0.12)',
-              border: '1px solid rgba(239,68,68,0.35)',
-              fontSize: 11,
-              color: '#FCA5A5',
-              lineHeight: 1.45,
-            }}>
-              {telemetryAlerts.map((alert) => (
-                <div key={alert} style={{ marginTop: telemetryAlerts[0] === alert ? 0 : 6 }}>
-                  {alert}
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
-            {mission.completed_nodes}/{mission.total_nodes} plan adımı · {timeAgo(mission.completed_at)}
+            {mission.objective && (
+              <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.5 }}>
+                {mission.objective}
+              </div>
+            )}
+            {debugMode && telemetryAlerts.length > 0 && (
+              <div style={{
+                marginTop: 10,
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'rgba(239,68,68,0.12)',
+                border: '1px solid rgba(239,68,68,0.35)',
+                fontSize: 11,
+                color: '#FCA5A5',
+                lineHeight: 1.45,
+              }}>
+                {telemetryAlerts.map((alert) => (
+                  <div key={alert} style={{ marginTop: telemetryAlerts[0] === alert ? 0 : 6 }}>
+                    {alert}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 22px' }}>
           {isLoading && missionInFlight && (
             <div style={{ textAlign: 'center', padding: '24px 0' }}>
               <div style={{ width: 24, height: 24, borderRadius: '50%',
@@ -4283,7 +4258,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
 
                 {/* Expanded output */}
                 {isOpen && (
-                  <div style={{
+                  <div className="sa-plan-node-collapse" style={{
                     padding: '14px', border: `0.5px solid ${meta.color + '30'}`,
                     borderTop: 'none', borderRadius: '0 0 14px 14px',
                     background: t.isDark ? 'rgba(255,255,255,0.02)' : '#fff',
@@ -4320,12 +4295,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               </div>
             );
           })}
-        </div>
       </div>
-    </>
+    </ResponsiveAppSheet>
   );
-
-  return createPortal(sheet, document.body);
 }
 
 // ── CompletedRow ──────────────────────────────────────────────────────────────
@@ -5114,7 +5086,7 @@ export function MissionHub() {
         onClose={() => setDetailMission(null)}
       />
     )}
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 88 }}>
+    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 88 }} className="sa-stack-screen">
       {/* ── Header — native tab toolbar (no web page title on client) ── */}
       <div style={{
         padding: 'calc(env(safe-area-inset-top,0px) + 8px) 16px 12px',

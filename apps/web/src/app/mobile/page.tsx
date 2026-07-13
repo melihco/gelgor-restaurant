@@ -344,16 +344,17 @@ const CSS = `
   .sa-mobile .login-logo {
     display: block;
     margin: 0 auto;
-    width: min(220px, 85vw);
+    width: min(168px, 52vw);
     height: auto !important;
     object-fit: contain;
-    filter: drop-shadow(0 6px 20px rgba(0,0,0,0.28));
+    filter: drop-shadow(0 4px 16px rgba(0,0,0,0.22));
   }
   .sa-mobile .onboarding-shell--login {
-    justify-content: flex-start;
+    justify-content: center;
   }
   .sa-mobile .onboarding-shell--login .onboarding-fields {
     flex: 0 0 auto;
+    gap: 12px;
   }
   .sa-mobile .onboarding-auth-form {
     display: flex;
@@ -365,22 +366,39 @@ const CSS = `
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-left: max(20px, calc(env(safe-area-inset-left, 0px) + 20px));
-    padding-right: max(20px, calc(env(safe-area-inset-right, 0px) + 20px));
-  }
-  .sa-mobile .onboarding-header--login {
+    justify-content: center;
+    align-items: center;
     padding:
-      calc(env(safe-area-inset-top, 0px) + max(20px, 4vh))
-      max(20px, calc(env(safe-area-inset-right, 0px) + 20px))
-      20px
-      max(20px, calc(env(safe-area-inset-left, 0px) + 20px));
+      calc(env(safe-area-inset-top, 0px) + 16px)
+      max(24px, calc(env(safe-area-inset-right, 0px) + 24px))
+      16px
+      max(24px, calc(env(safe-area-inset-left, 0px) + 24px));
   }
-  .sa-mobile .onboarding-login-main {
-    justify-content: flex-start;
-    padding-bottom: 12px;
+  .sa-mobile .login-content {
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sa-mobile .login-hero {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .sa-mobile .login-title {
+    margin: 0 0 16px;
+    font-size: clamp(26px, 6.5vw, 30px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #F2F2F6;
+    text-align: center;
+  }
+  .sa-mobile .login-form {
+    width: 100%;
   }
   .sa-mobile .onboarding-actions--login {
-    margin-top: 20px;
+    margin-top: 16px;
     padding-top: 0;
     flex-shrink: 0;
   }
@@ -395,19 +413,15 @@ const CSS = `
     padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
   }
   @media (max-height: 700px) {
-    .sa-mobile .onboarding-header--login {
-      padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
-      padding-bottom: 8px;
+    .sa-mobile .login-hero {
+      margin-bottom: 20px;
+    }
+    .sa-mobile .login-title {
+      font-size: clamp(22px, 5.5vw, 26px);
+      margin-bottom: 12px;
     }
     .sa-mobile .login-logo {
-      width: min(188px, 68vw);
-    }
-    .sa-mobile .onboarding-title--step {
-      font-size: clamp(22px, 5.5vw, 26px);
-    }
-    .sa-mobile .onboarding-lead--step {
-      margin-bottom: 16px;
-      font-size: 13px;
+      width: min(148px, 48vw);
     }
   }
   .sa-mobile .auth-password-wrap {
@@ -1359,12 +1373,12 @@ const CSS = `
     margin-inline: 0;
   }
 
-  /* Posts — natural height (width 100%, no cover crop); skeleton uses 4:5 */
+  /* Posts — IG clamped aspect (4:5 … 1.91:1), cover crop inside frame */
   .sa-mobile .ig-feed-post-stage {
     width: 100%;
     max-width: none;
     margin-inline: 0;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .sa-mobile .ig-feed-post {
@@ -1437,6 +1451,108 @@ const CSS = `
   @media (max-width: 1279px) {
     .sa-mobile-outer { display: contents; }
     .sa-mobile-frame { display: contents; }
+  }
+
+  /* Stack screens (Plan, Ayarlar, …) — centered column on tablet, feed stays full bleed */
+  @media (min-width: 768px) and (max-width: 1279px) {
+    .sa-mobile .sa-stack-screen {
+      max-width: 720px;
+      width: 100%;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  /* Responsive bottom sheet — mobile peek + tablet centered panel (not full-screen) */
+  .sa-responsive-sheet-root {
+    position: fixed;
+    inset: 0;
+    z-index: 650;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .sa-responsive-sheet-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    padding: 0;
+    margin: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    animation: fadeIn 180ms ease both;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  .sa-responsive-sheet-panel {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-height: min(78dvh, 640px);
+    display: flex;
+    flex-direction: column;
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.42);
+    animation: slideUp 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .sa-responsive-sheet-panel--tall {
+    max-height: min(82dvh, 720px);
+  }
+  .sa-responsive-sheet-handle {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 2px;
+    flex-shrink: 0;
+  }
+  .sa-responsive-sheet-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  @media (min-width: 768px) {
+    .sa-responsive-sheet-root {
+      align-items: center;
+      padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 0px));
+    }
+    .sa-responsive-sheet-panel {
+      width: min(520px, 100%);
+      max-height: min(72dvh, 620px);
+      border-radius: 20px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+    }
+    .sa-responsive-sheet-panel--tall {
+      max-height: min(78dvh, 680px);
+      width: min(560px, 100%);
+    }
+    .sa-responsive-sheet-handle {
+      display: none;
+    }
+  }
+  @media (min-width: 1280px) {
+    .sa-responsive-sheet-panel {
+      width: min(480px, calc(100% - 24px));
+    }
+    .sa-responsive-sheet-panel--tall {
+      width: min(520px, calc(100% - 24px));
+    }
+  }
+
+  .sa-plan-node-collapse {
+    max-height: min(50dvh, 420px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  @media (min-width: 768px) {
+    .sa-plan-node-collapse {
+      max-height: min(40dvh, 360px);
+    }
   }
 `;
 

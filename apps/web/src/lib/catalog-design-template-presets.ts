@@ -50,32 +50,35 @@ function slotFormatToDesignFormat(format: string): DesignTemplateFormat {
   return 'post';
 }
 
-function sampleCopyForType(templateType: DesignTemplateType, slotLabel: string): {
+const GENERIC_ONBOARDING_COPY = resolveDesignTemplatePresets('');
+
+function sampleCopyForType(templateType: DesignTemplateType): {
   headline: string;
   subtitle?: string;
 } {
-  const meta = DESIGN_TEMPLATE_TYPE_LABELS[templateType];
-  if (templateType === 'brand_identity') {
-    return { headline: slotLabel };
+  const preset = GENERIC_ONBOARDING_COPY.find((p) => p.templateType === templateType);
+  if (preset?.sampleHeadline) {
+    return { headline: preset.sampleHeadline, subtitle: preset.sampleSubtitle };
   }
+  const meta = DESIGN_TEMPLATE_TYPE_LABELS[templateType];
   if (templateType === 'social_proof') {
     return { headline: '"Harika bir deneyim"', subtitle: '— Mutlu misafirimiz' };
   }
   if (meta?.tr) {
     const base = meta.tr.replace(/duyurusu$/i, '').trim();
     return {
-      headline: base === 'Kampanya' ? 'Özel Kampanya' : slotLabel,
+      headline: base === 'Kampanya' ? 'Özel Kampanya' : base || 'Keşfetmeye Hazır mısın?',
       subtitle: templateType === 'announcement_formal' ? 'Bilgilerinize' : 'Sınırlı süre',
     };
   }
-  return { headline: slotLabel };
+  return { headline: 'Keşfetmeye Hazır mısın?' };
 }
 
 export function buildDesignPresetFromCatalogSlot(
   slot: ProductionSlotDefinition,
 ): DesignTemplatePreset {
   const templateType = slot.design_template_type as DesignTemplateType;
-  const copy = sampleCopyForType(templateType, slot.label_tr);
+  const copy = sampleCopyForType(templateType);
   const keywords = [
     slot.label_tr,
     slot.label_en,

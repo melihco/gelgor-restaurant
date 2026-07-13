@@ -71,6 +71,15 @@ export function isLabelStyleHeadline(headline: string): boolean {
     if (!/\b(ile|için|ve|for|with|your|our)\b/i.test(h)) return true;
   }
 
+  // Catalog slot labels with format suffix — "Çiftlik ziyareti story", "DJ gecesi reel"
+  if (
+    words.length <= 5
+    && /\b(story|reel|post|carousel|feed|hikaye|gönderi|gönderisi|icerik|içerik)\s*$/i.test(h)
+    && !/[!?]/.test(h)
+  ) {
+    return true;
+  }
+
   if (words.length === 2) {
     const labelPatterns = [
       /^(müşteri|ürün|hizmet|kampanya|etkinlik|duyuru|tanıtım|günlük|haftalık|yeni)\s/i,

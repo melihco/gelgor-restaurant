@@ -99,18 +99,15 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
     <div className="onboarding-shell onboarding-shell--login">
       <div className="onboarding-ambient" aria-hidden />
 
-      <header className="onboarding-header onboarding-header--login">
-        <SmartAgencyLogo variant="full" priority className="login-logo" />
-      </header>
-
       <main className="onboarding-main onboarding-login-main">
-        <h1 className="onboarding-title onboarding-title--step">Giriş Yap</h1>
-        <p className="onboarding-lead onboarding-lead--step">
-          Marka panelinize ve AI üretim ekibinize erişin.
-        </p>
+        <div className="login-content">
+          <div className="login-hero">
+            <h1 className="login-title">Giriş yap</h1>
+            <SmartAgencyLogo variant="full" priority className="login-logo" />
+          </div>
 
-        <form className="onboarding-auth-form" onSubmit={handleLogin} noValidate>
-          <div className="onboarding-fields">
+          <form className="onboarding-auth-form login-form" onSubmit={handleLogin} noValidate>
+            <div className="onboarding-fields">
             <label className="onboarding-field">
               <span className="onboarding-field-label">E-posta</span>
               <input
@@ -152,20 +149,21 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
                 </button>
               </div>
             </label>
-          </div>
+            </div>
 
-          {error && <p className="onboarding-error">{error}</p>}
+            {error && <p className="onboarding-error">{error}</p>}
 
-          <div className="onboarding-actions onboarding-actions--login">
-            <button
-              type="submit"
-              disabled={loading}
-              className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
-            >
-              {loading ? 'Giriş yapılıyor…' : 'Giriş Yap'}
-            </button>
-          </div>
-        </form>
+            <div className="onboarding-actions onboarding-actions--login">
+              <button
+                type="submit"
+                disabled={loading}
+                className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
+              >
+                {loading ? 'Giriş yapılıyor…' : 'Giriş yap'}
+              </button>
+            </div>
+          </form>
+        </div>
       </main>
 
       <footer className="onboarding-footer onboarding-footer--login">

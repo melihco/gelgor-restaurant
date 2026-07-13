@@ -71,8 +71,9 @@ describe('resolveFalTemplateLockOptions', () => {
         occasion: undefined,
       },
       baseGrafikerMaxRetries: 0,
+      defaultCaptionAwareHeadline: true,
     });
-    expect(opts.captionAwareHeadline).toBe(false);
+    expect(opts.captionAwareHeadline).toBe(true);
     expect(opts.grafikerMaxRetries).toBe(1);
     expect(opts.requireTemplateStyleRef).toBe(false);
   });

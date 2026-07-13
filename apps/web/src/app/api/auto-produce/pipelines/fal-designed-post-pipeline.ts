@@ -32,6 +32,10 @@ import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
 import { generateDesignedPostImage } from '../handlers/image-generators';
+import {
+  detectedCanvasTextOffCaption,
+  isOffTopicTourismOverlay,
+} from '@/lib/overlay-caption-grounding';
 import { validateFalCanvasText } from '@/lib/typography-text-validation';
 import { textMatchesTemplatePlaceholder } from '@/lib/template-placeholder-guard';
 import type { ProductionPipelineHandler } from './pipeline-types';
@@ -168,6 +172,8 @@ export async function produceFalDesignedPost(
         caption: input.caption,
         channel: canvasChannel,
         lockIdeationCopy: input.captionAwareHeadline !== true,
+        brandName: input.brandName,
+        businessType: input.sector,
       });
       const canvasHeadline = overlayCopy.headline;
       const dedupedSubtitle = overlayCopy.subtitle;
@@ -223,10 +229,18 @@ export async function produceFalDesignedPost(
             textMatchesTemplatePlaceholder(textCheck.detectedHeadline, binding.matched)
             || textMatchesTemplatePlaceholder(textCheck.detectedSubtitle, binding.matched)
           );
-        if (!textCheck.valid || placeholderLeak) {
+        const captionDrift = Boolean(
+          textCheck.detectedHeadline
+          && (
+            detectedCanvasTextOffCaption(textCheck.detectedHeadline, input.caption, input.sector)
+            || isOffTopicTourismOverlay(textCheck.detectedHeadline, input.caption, input.sector)
+          ),
+        );
+        if (!textCheck.valid || placeholderLeak || captionDrift) {
           console.warn(
             `[auto-produce] [fal-design] GPT designed post text validation failed attempt ${attempt + 1}/${maxGptAttempts}` +
-            (placeholderLeak ? ' (template placeholder leak)' : ''),
+            (placeholderLeak ? ' (template placeholder leak)' : '') +
+            (captionDrift ? ' (caption drift / off-topic overlay)' : ''),
           );
           if (binding?.matched) continue;
           break;

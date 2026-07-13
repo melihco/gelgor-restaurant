@@ -77,4 +77,9 @@ describe('feed display copy — Meon wedding example', () => {
     ).toBe(false);
     expect(hasPublishableIdeationHeadline(MEON.ideationHeadline)).toBe(true);
   });
+
+  it('rejects slot format labels as ideation headline', () => {
+    expect(hasPublishableIdeationHeadline('Çiftlik ziyareti story')).toBe(false);
+    expect(hasPublishableIdeationHeadline('DJ gecesi reel')).toBe(false);
+  });
 });

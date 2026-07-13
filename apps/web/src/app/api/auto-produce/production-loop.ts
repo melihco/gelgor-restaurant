@@ -1053,32 +1053,24 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         kind === 'instagram_reel' ? 'reel'
           : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 'story'
             : 'feed_post';
-      const ideationTitleLocked = hasPublishableIdeationHeadline(
-        storedIdeationHeadline,
-        resolvedBrandName,
-      );
-      if (ideationTitleLocked) {
-        headline = enforceDisplayHeadline(storedIdeationHeadline, 72);
-      } else {
-        const designCopy = resolveMissionFalDesignCopy({
-          idea: idea as FalDesignCopyIdea,
-          ideationHeadline: headline,
-          caption,
-          cta,
-          brandName: resolvedBrandName,
-          channel: falChannel,
-          businessType: brandBusinessType,
-        });
-        if (designCopy.headline && designCopy.headline !== headline) {
-          console.log(
-            `[auto-produce] fal design copy (${designCopy.source}): `
-            + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
-          );
-          headline = designCopy.headline;
-        }
-        if (designCopy.subtitle?.trim()) {
-          cta = designCopy.subtitle.trim();
-        }
+      const designCopy = resolveMissionFalDesignCopy({
+        idea: idea as FalDesignCopyIdea,
+        ideationHeadline: headline,
+        caption,
+        cta,
+        brandName: resolvedBrandName,
+        channel: falChannel,
+        businessType: brandBusinessType,
+      });
+      if (designCopy.headline && designCopy.headline !== headline) {
+        console.log(
+          `[auto-produce] fal design copy (${designCopy.source}): `
+          + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+        );
+        headline = designCopy.headline;
+      }
+      if (designCopy.subtitle?.trim()) {
+        cta = designCopy.subtitle.trim();
       }
     }
 
@@ -2774,7 +2766,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ?? falGridIntensityOverride,
           falBackgroundStyleOverride: falGridBackgroundOverride,
           falGridSurfaceKind: slotFalGridSurface ?? undefined,
-          captionAwareHeadline: false,
+          captionAwareHeadline: true,
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
           falHeadingFont: falSlotTypography?.headingFont,
@@ -3336,14 +3328,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       continue;
     }
 
+    const falOverlayMaxLen =
+      kind === 'instagram_reel' ? 22
+        : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 28
+          : 32;
     const publishHeadline = sanitizeProductionHeadline({
       headline,
-      ideationHeadline: storedIdeationHeadline,
+      ideationHeadline: usesFalDesignCopy ? headline : storedIdeationHeadline,
       caption: publishCaption || caption,
       brandName: resolvedBrandName,
       conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
       businessType: brandBusinessType,
-      maxLen: adPublishChannel ? adHeadlineCharLimit(adPublishChannel) : 72,
+      maxLen: adPublishChannel
+        ? adHeadlineCharLimit(adPublishChannel)
+        : usesFalDesignCopy
+          ? falOverlayMaxLen
+          : 72,
     });
     const designOverlayHeadline = publishHeadline;
     headline = designOverlayHeadline;
@@ -3363,7 +3363,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
       return null;
     };
-    const falDesignedStillUrl = (isFalMissionVideo || isFalOnlyVideo) && imageUrl && !isVideoMediaUrl(imageUrl)
+    const falDesignedStillUrl = (
+      isFalMissionVideo
+      || isFalOnlyVideo
+      || isFalDesignPost
+      || isFalOnlyPost
+    ) && imageUrl && !isVideoMediaUrl(imageUrl)
       ? imageUrl
       : null;
     const previewStillUrl = pickStillPreviewUrl(

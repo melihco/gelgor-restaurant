@@ -16,6 +16,12 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
     expect(isLabelStyleHeadline('Meet us under the stars')).toBe(false);
     expect(isLabelStyleHeadline('Sıcak gecelerde buluşalım')).toBe(false);
   });
+
+  it('rejects catalog slot labels with format suffix', () => {
+    expect(isLabelStyleHeadline('Çiftlik ziyareti story')).toBe(true);
+    expect(isLabelStyleHeadline('DJ gecesi reel')).toBe(true);
+    expect(isLabelStyleHeadline('Menü öne çıkar post')).toBe(true);
+  });
 });
 
 describe('resolveMissionFalDesignCopy', () => {
@@ -57,6 +63,22 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(result.source).toBe('canva_field_copy');
     expect(result.headline.toLowerCase()).not.toMatch(/sezon/);
     expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak/);
+  });
+
+  it('derives overlay from caption when ideation is a slot format label', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: { headline: 'Çiftlik ziyareti story' },
+      ideationHeadline: 'Çiftlik ziyareti story',
+      caption:
+        'Datça\'daki zeytinliklerimizde erken hasat zeytinyağımızı birlikte keşfedin. '
+        + 'Doğal üretim, soğuk sıkım — sınırlı stok!',
+      brandName: 'Karaman Datça',
+      channel: 'feed_post',
+      businessType: 'local_products_shop',
+    });
+    expect(result.source).toMatch(/caption_design_copy/);
+    expect(result.headline.toLowerCase()).not.toMatch(/çiftlik ziyareti|story/);
+    expect(result.headline.length).toBeLessThanOrEqual(32);
   });
 
   it('derives overlay from caption when ideation is a season label', () => {

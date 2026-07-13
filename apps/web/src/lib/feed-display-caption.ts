@@ -11,6 +11,7 @@ import {
 } from './vision-text-guard';
 import { mergeMissionIdeationRecords } from './parse-ideation-summary';
 import {
+  isLabelStyleHeadline,
   isMeaninglessBrandEchoHeadline,
   resolveMeaningfulProductionHeadline,
 } from './production-headline-quality';
@@ -21,6 +22,7 @@ export function hasPublishableIdeationHeadline(text: string, brandName = ''): bo
   if (t.length < 8) return false;
   if (isVisionAnalysisDescription(t)) return false;
   if (isGalleryTagHeadline(t)) return false;
+  if (isLabelStyleHeadline(t)) return false;
   if (brandName && isMeaninglessBrandEchoHeadline(t, brandName)) return false;
   return true;
 }

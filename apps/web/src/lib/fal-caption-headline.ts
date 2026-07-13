@@ -13,6 +13,13 @@ import {
   type ResolvedFalLogoPlacement,
 } from './fal-logo-placement';
 import { hasCaptionHeadlineThemeConflict } from './headline-theme-clusters';
+import {
+  extractProductBiasedCaptionHook,
+  isGenericRetailOverlayCta,
+  isOffTopicTourismOverlay,
+  overlayHeadlineGroundedInCaption,
+  rebiasUngroundedOverlayCopy,
+} from './overlay-caption-grounding';
 
 // ── Turkish Spell-Check Dictionary ────────────────────────────────────────────
 
@@ -141,6 +148,8 @@ export interface FalOverlayCopyInput {
   channel: 'reel' | 'feed_post' | 'story';
   /** Mission production: render ideation headline + CTA verbatim (no caption hook rewrite). */
   lockIdeationCopy?: boolean;
+  brandName?: string;
+  businessType?: string;
 }
 
 /**
@@ -224,13 +233,22 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
     headline = resolveFalProductionOverlayHeadline(headline, [], input.channel);
     if (rawCta && isMeaningfulFalOverlayText(rawCta) && !areFalOverlayTextsRedundant(headline, rawCta)) {
       const ctaLoc = detectOverlayLocale(rawCta);
-      if (localesCompatible(targetLocale, ctaLoc)) {
+      if (localesCompatible(targetLocale, ctaLoc) && !isGenericRetailOverlayCta(rawCta, input.caption ?? '')) {
         subtitle = targetLocale === 'tr'
           ? correctTurkishSpelling(rawCta, { locale: 'tr' })
           : rawCta;
       }
     }
-    return { headline, subtitle };
+    const rebased = rebiasUngroundedOverlayCopy({
+      headline,
+      subtitle,
+      caption: input.caption ?? '',
+      brandName: input.brandName,
+      businessType: input.businessType,
+      channel: input.channel,
+      cta: input.cta,
+    });
+    return { headline: rebased.headline, subtitle: rebased.subtitle };
   }
 
   const resolved = resolveFalDisplayHeadline({
@@ -252,10 +270,23 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
   });
   if (sub && localesCompatible(targetLocale, detectOverlayLocale(sub))) {
     subtitle = targetLocale === 'tr' ? correctTurkishSpelling(sub, { locale: 'tr' }) : sub;
-  } else if (rawCta && localesCompatible(targetLocale, detectOverlayLocale(rawCta))) {
+  } else if (
+    rawCta
+    && localesCompatible(targetLocale, detectOverlayLocale(rawCta))
+    && !isGenericRetailOverlayCta(rawCta, input.caption ?? '')
+  ) {
     subtitle = rawCta;
   }
-  return { headline, subtitle };
+  const rebased = rebiasUngroundedOverlayCopy({
+    headline,
+    subtitle,
+    caption: input.caption ?? '',
+    brandName: input.brandName,
+    businessType: input.businessType,
+    channel: input.channel,
+    cta: input.cta,
+  });
+  return { headline: rebased.headline, subtitle: rebased.subtitle };
 }
 
 // ── Caption-Derived Headline Extraction ───────────────────────────────────────
@@ -300,14 +331,35 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
 
   // Strategy 1: Extract a question from the caption (great engagement hook)
   const question = extractQuestion(caption, brandName, maxLen);
-  if (question && question.toLowerCase() !== missionTitle.toLowerCase()) {
+  if (
+    question
+    && question.toLowerCase() !== missionTitle.toLowerCase()
+    && overlayHeadlineGroundedInCaption(question, caption)
+    && !isOffTopicTourismOverlay(question, caption)
+  ) {
     const finalized = finalizeHeadline(question, maxLen);
     if (finalized) return { headline: finalized.headline, source: 'caption_question' };
   }
 
+  // Product-biased hook for artisan / local product captions
+  const productHook = extractProductBiasedCaptionHook(caption, missionTitle, brandName, maxLen);
+  if (
+    productHook
+    && productHook.toLowerCase() !== missionTitle.toLowerCase()
+    && !isOffTopicTourismOverlay(productHook, caption)
+  ) {
+    const finalized = finalizeHeadline(productHook, maxLen);
+    if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
+  }
+
   // Strategy 2: Extract the strongest action/benefit phrase from caption
   const hook = extractCaptionHook(caption, missionTitle, brandName, maxLen);
-  if (hook && hook.toLowerCase() !== missionTitle.toLowerCase()) {
+  if (
+    hook
+    && hook.toLowerCase() !== missionTitle.toLowerCase()
+    && overlayHeadlineGroundedInCaption(hook, caption)
+    && !isOffTopicTourismOverlay(hook, caption)
+  ) {
     const finalized = finalizeHeadline(hook, maxLen);
     if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
   }
@@ -317,7 +369,8 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
     const ctaClean = input.cta.trim().replace(/[!.]+$/, '').trim();
     if (ctaClean.length >= 6 && ctaClean.length <= maxLen
       && ctaClean.toLowerCase() !== missionTitle.toLowerCase()
-      && !ctaClean.toLowerCase().includes(brandName)) {
+      && !ctaClean.toLowerCase().includes(brandName)
+      && !isGenericRetailOverlayCta(ctaClean, caption)) {
       const finalized = finalizeHeadline(ctaClean, maxLen);
       if (finalized) return { headline: finalized.headline, source: 'caption_cta' };
     }
@@ -933,7 +986,8 @@ export function resolveFalSubtitle(input: {
     if (ctaClean.length >= 6 && ctaClean.length <= maxLen
       && !ctaClean.toLowerCase().includes(headlineLower)
       && !areFalOverlayTextsRedundant(input.headline, ctaClean)
-      && isMeaningfulFalOverlayText(ctaClean)) {
+      && isMeaningfulFalOverlayText(ctaClean)
+      && !isGenericRetailOverlayCta(ctaClean, caption)) {
       return ctaClean;
     }
   }

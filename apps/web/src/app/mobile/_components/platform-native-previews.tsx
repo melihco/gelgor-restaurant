@@ -16,6 +16,11 @@ import {
 import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline } from '@/lib/feed-display-caption';
 import { useStoryBackgroundAudio } from './StoryBackgroundAudio';
 import { resolveIgFeedChrome, type IgFeedChrome } from './ig-feed-chrome';
+import {
+  IG_FEED_DEFAULT_RATIO,
+  IG_FEED_REEL_RATIO,
+  useIgFeedMediaAspectRatio,
+} from './ig-feed-media-sizing';
 
 export type PreviewPlatform = 'instagram' | 'tiktok' | 'x';
 export type PreviewMode = 'feed' | 'reel' | 'story' | 'carousel';
@@ -360,6 +365,7 @@ export function InstagramFeedNative({
   const images = content.carouselUrls?.length ? content.carouselUrls : content.imageUrl ? [content.imageUrl] : [];
   const current = images[slide] ?? null;
   const isCarousel = images.length > 1;
+  const aspectRatio = useIgFeedMediaAspectRatio(current, IG_FEED_DEFAULT_RATIO);
 
   return (
     <div style={{ background: chrome.shell }}>
@@ -376,9 +382,10 @@ export function InstagramFeedNative({
         className="ig-feed-media-stage ig-feed-post-stage"
         style={{
           width: '100%',
+          aspectRatio: String(aspectRatio),
           background: chrome.media,
           position: 'relative',
-          ...(!current ? { aspectRatio: '4 / 5' } : {}),
+          overflow: 'hidden',
         }}
         onTouchStart={(e) => { (e.currentTarget as HTMLElement & { _tx?: number })._tx = e.touches[0]?.clientX; }}
         onTouchEnd={(e) => {
@@ -391,7 +398,13 @@ export function InstagramFeedNative({
         {current ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={current} alt="" referrerPolicy="no-referrer"
-            style={{ width: '100%', height: 'auto', display: 'block', verticalAlign: 'top' }} />
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'block',
+              objectFit: 'cover',
+              objectPosition: 'center',
+            }} />
         ) : (
           <div style={{
             width: '100%', height: '100%',
@@ -424,10 +437,9 @@ export function InstagramFeedNative({
         )}
       </div>
 
-      {afterMedia}
-
       <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} chrome={chrome} />
       <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} chrome={chrome} />
+      {afterMedia}
     </div>
   );
 }
@@ -439,12 +451,14 @@ function IgFeedReelMediaStage({
   muted,
   onToggleMute,
   chrome,
+  onOpenFullscreen,
 }: {
   videoUrl: string | null;
   posterUrl?: string | null;
   muted: boolean;
   onToggleMute: () => void;
   chrome: IgFeedChrome;
+  onOpenFullscreen?: () => void;
 }) {
   const ambientSrc = posterUrl ?? videoUrl ?? null;
 
@@ -452,12 +466,29 @@ function IgFeedReelMediaStage({
     <div
       className="ig-feed-media-stage ig-feed-reel-stage"
       style={{
-        aspectRatio: '4/5',
+        aspectRatio: String(IG_FEED_REEL_RATIO),
         background: chrome.media,
         position: 'relative',
         overflow: 'hidden',
       }}
     >
+      {onOpenFullscreen && (
+        <button
+          type="button"
+          aria-label="Reels tam ekran izle"
+          onClick={onOpenFullscreen}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        />
+      )}
+
       {ambientSrc && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -534,11 +565,14 @@ function IgFeedReelMediaStage({
         <button
           type="button"
           aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
-          onClick={onToggleMute}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleMute();
+          }}
           style={{
             position: 'absolute', bottom: 12, right: 12, width: 32, height: 32, borderRadius: '50%',
             border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, zIndex: 2,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, zIndex: 3,
           }}
         >
           {muted ? '🔇' : '🔊'}
@@ -549,11 +583,12 @@ function IgFeedReelMediaStage({
 }
 
 export function InstagramReelInFeedNative({
-  content, handle, logoUrl, isPending, timeLabel, afterMedia, igChromeDark = true,
+  content, handle, logoUrl, isPending, timeLabel, afterMedia, igChromeDark = true, onReelOpen,
 }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
   afterMedia?: React.ReactNode;
   igChromeDark?: boolean;
+  onReelOpen?: () => void;
 }) {
   const chrome = resolveIgFeedChrome(igChromeDark);
   const [liked, setLiked] = useState(true);
@@ -569,6 +604,7 @@ export function InstagramReelInFeedNative({
         muted={muted}
         onToggleMute={() => setMuted((m) => !m)}
         chrome={chrome}
+        onOpenFullscreen={onReelOpen}
       />
 
       <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} chrome={chrome} />
@@ -580,10 +616,11 @@ export function InstagramReelInFeedNative({
 }
 
 // ─── Instagram Reel (full vertical — Reels tab / preview studio) ───────────────
-export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
-  content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean;
+export function InstagramReelNative({ content, handle, logoUrl, isPending, immersive = false }: {
+  content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; immersive?: boolean;
 }) {
   const [liked, setLiked] = useState(true);
+  const [muted, setMuted] = useState(!immersive);
   const h = handle.startsWith('@') ? handle : `@${handle}`;
 
   return (
@@ -593,6 +630,7 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
           src={content.videoUrl}
           poster={content.imageUrl ?? undefined}
           loop
+          muted={muted}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : (
@@ -611,7 +649,23 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
       <div style={{ position: 'absolute', top: 12, left: 14, right: 14, zIndex: 5,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>Reels</span>
-        {isPending && <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, background: 'rgba(245,158,11,0.85)', color: '#000', fontWeight: 700 }}>Bekliyor</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isPending && <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10, background: 'rgba(245,158,11,0.85)', color: '#000', fontWeight: 700 }}>Bekliyor</span>}
+          {content.videoUrl && (
+            <button
+              type="button"
+              aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
+              onClick={() => setMuted((m) => !m)}
+              style={{
+                width: 32, height: 32, borderRadius: '50%', border: 'none',
+                background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14,
+              }}
+            >
+              {muted ? '🔇' : '🔊'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ position: 'absolute', right: 12, bottom: 80, zIndex: 5 }}>
@@ -1109,6 +1163,8 @@ export function PlatformNativePreview({
   inFeedScroll,
   formatTag,
   igChromeDark = true,
+  onReelOpen,
+  reelImmersive = false,
 }: {
   platform: PreviewPlatform;
   mode: PreviewMode;
@@ -1126,6 +1182,10 @@ export function PlatformNativePreview({
   formatTag?: FeedFormatTag;
   /** Instagram home feed chrome — false in client light mode. */
   igChromeDark?: boolean;
+  /** Feed reel tap — open immersive 9:16 viewer. */
+  onReelOpen?: () => void;
+  /** Full-screen reel viewer — unmuted by default. */
+  reelImmersive?: boolean;
 }) {
   if (platform === 'tiktok') {
     return <TikTokNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
@@ -1144,10 +1204,11 @@ export function PlatformNativePreview({
           timeLabel={timeLabel}
           afterMedia={afterMedia}
           igChromeDark={igChromeDark}
+          onReelOpen={onReelOpen}
         />
       );
     }
-    return <InstagramReelNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
+    return <InstagramReelNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} immersive={reelImmersive} />;
   }
   if (mode === 'story') {
     return (

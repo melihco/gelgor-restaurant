@@ -168,6 +168,7 @@ function FeedArtifactQualityStrip({
   const grafiker = typeof meta.grafiker_score === 'number' ? meta.grafiker_score : null;
   const grafikerPass = typeof meta.grafiker_pass === 'boolean' ? meta.grafiker_pass : null;
   if (!slotLabel && fdScore == null && grafiker == null) return null;
+  if (!isDebugUiMode()) return null;
 
   const chip = (label: string, value: string, color: string) => (
     <span style={{
@@ -331,7 +332,7 @@ function InstagramProfileBar({ handle, logoUrl, postCount, storyCount }: {
 
 const NativeFeedCard = React.memo(function NativeFeedCard({
   artifact, platform, onApprove, onRevision, onRetryRender, retryingRender, approving, revisioning,
-  workspaceId, onOpenMetaAd, onOpenGoogleAd, t, storyMusicUrl, missionIdeationLookup,
+  workspaceId, onOpenMetaAd, onOpenGoogleAd, onOpenReelFullscreen, t, storyMusicUrl, missionIdeationLookup,
 }: {
   artifact: OutputArtifact;
   platform: PreviewPlatform;
@@ -344,6 +345,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   workspaceId?: string;
   onOpenMetaAd?: (artifactId: string) => void;
   onOpenGoogleAd?: () => void;
+  onOpenReelFullscreen?: () => void;
   t: ReturnType<typeof useTheme>['t'];
   storyMusicUrl?: string | null;
   missionIdeationLookup?: ReadonlyMap<string, string>;
@@ -412,8 +414,11 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
     <FeedPublishBar
       onShareNow={handleApproveClick}
       onSchedule={() => setScheduleOpen(true)}
+      onEdit={() => openApproval(artifact.id)}
+      onRevise={() => onRevision(artifact.id)}
       scheduleSubtitle={scheduleSubtitle}
       sharing={approving}
+      revisioning={revisioning}
       disabled={!canApproveHard || isRendering}
       softWarning={hasSoftWarnings && !softApproveAck}
       hardBlockLabel={hardBlockButtonLabel}
@@ -464,7 +469,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
         border: igHome ? 'none' : `0.5px solid ${t.separator}`,
         borderBottom: igHome ? `0.5px solid ${igHomeChrome.separator}` : undefined,
         contentVisibility: 'auto',
-        containIntrinsicSize: mode === 'reel' ? '0 820px' : '0 960px',
+        containIntrinsicSize: mode === 'reel' ? '0 700px' : '0 680px',
         transform: `translateX(${Math.max(-48, Math.min(48, swipeDx * 0.4))}px)`,
         transition: swipeDx === 0 ? 'transform 200ms cubic-bezier(0.22,1,0.36,1)' : 'none',
         position: 'relative',
@@ -484,6 +489,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           inFeedScroll={igHome}
           formatTag={formatTag}
           igChromeDark={t.isDark}
+          onReelOpen={igHome && mode === 'reel' ? onOpenReelFullscreen : undefined}
         />
 
         {(scheduleLabel || isAdCreative) && mode !== 'story' && !igHome && (
@@ -620,25 +626,6 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           />
         ) : isPending && (
           <>
-            <div style={{
-              display: 'flex', justifyContent: 'center', gap: 16, padding: '0 14px 12px', background: igHomeChrome.shell,
-            }}>
-              <button type="button" onClick={() => openApproval(artifact.id)}
-                style={{
-                  padding: 0, border: 'none', background: 'none',
-                  color: igHomeChrome.actionMuted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}>
-                Düzenle
-              </button>
-              <button type="button" onClick={() => onRevision(artifact.id)} disabled={revisioning}
-                style={{
-                  padding: 0, border: 'none', background: 'none',
-                  color: revisioning ? igHomeChrome.textMuted : igHomeChrome.actionMuted,
-                  fontSize: 13, fontWeight: 600, cursor: revisioning ? 'not-allowed' : 'pointer',
-                }}>
-                Revize
-              </button>
-            </div>
             {isDesignedPost && !isAdCreative && (
               <AdPublishActions
                 artifact={artifact}
@@ -1862,6 +1849,7 @@ export function PlatformFeed() {
   const navigate = useMobileStore((s) => s.navigate);
   const openApproval = useMobileStore((s) => s.openApproval);
   const [boostAdArtifact, setBoostAdArtifact] = useState<OutputArtifact | null>(null);
+  const [reelViewerArtifact, setReelViewerArtifact] = useState<OutputArtifact | null>(null);
   const [filter, setFilter] = useState<FeedFilter>('all');
   const [slotFilter, setSlotFilter] = useState<FeedSlotFilter>('all');
   const feedMissionFromStore = useMobileStore((s) => s.feedMissionFilterId);
@@ -3535,6 +3523,56 @@ export function PlatformFeed() {
         )
       )}
 
+      {/* ── Reel fullscreen viewer (IG tap-to-expand 9:16) ── */}
+      {reelViewerArtifact && typeof window !== 'undefined' && createPortal(
+        <div
+          className="ig-story-viewer-backdrop"
+          style={{ animation: 'fadeIn 120ms ease both' }}
+          onClick={() => setReelViewerArtifact(null)}
+        >
+          <div
+            className="ig-story-viewer-column"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="ig-story-viewer-stage" style={{ position: 'relative' }}>
+              <button
+                type="button"
+                onClick={() => setReelViewerArtifact(null)}
+                aria-label="Kapat"
+                style={{
+                  position: 'absolute',
+                  top: 'max(12px, env(safe-area-inset-top))',
+                  left: 12,
+                  zIndex: 20,
+                  background: 'rgba(0,0,0,0.45)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 36,
+                  height: 36,
+                  color: '#fff',
+                  fontSize: 18,
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+              <PlatformNativePreview
+                platform="instagram"
+                mode="reel"
+                content={artifactToNativeContent(reelViewerArtifact)}
+                handle={feedHandle}
+                logoUrl={feedLogoUrl}
+                isPending={reelViewerArtifact.status === 'pending_review'}
+                timeLabel={timeAgo(reelViewerArtifact.createdAt)}
+                reelImmersive
+              />
+            </div>
+          </div>
+        </div>,
+        getMobilePortalRoot(),
+      )}
+
       {/* Feed */}
       {feedPostsLoading ? (
         <FeedLoadingSkeleton message="Gönderiler yükleniyor…" />
@@ -3713,6 +3751,11 @@ export function PlatformFeed() {
                     onRetryRender={handleRetryRenderById}
                     onOpenMetaAd={handleOpenMetaAdById}
                     onOpenGoogleAd={handleOpenGoogleAd}
+                    onOpenReelFullscreen={
+                      !operatorMode && detectFeedArtifactKind(artifact) === 'reel'
+                        ? () => setReelViewerArtifact(artifact)
+                        : undefined
+                    }
                   />
                 </div>
               );
