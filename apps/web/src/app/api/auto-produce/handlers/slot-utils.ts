@@ -13,37 +13,18 @@ export function isCarouselAssignment(
     || assignment.pipeline === 'carousel_gallery';
 }
 
+/** Trim carousel URLs — never pad with unscored gallery photos (caption mismatch risk). */
 export function fillCarouselPhotoPool(
   carouselUrls: string[],
   carouselGalleryUrls: string[],
-  galleryPhotos: string[],
+  _galleryPhotos: string[],
   minSlides = CAROUSEL_MIN_SLIDES,
   maxSlides = CAROUSEL_TARGET_SLIDES,
 ): { carouselUrls: string[]; carouselGalleryUrls: string[] } {
-  const galleryOut = [...carouselGalleryUrls];
-  const seen = new Set(galleryOut.map(normalizeGalleryUrl));
-  for (const p of galleryPhotos) {
-    if (galleryOut.length >= maxSlides) break;
-    if (p.toLowerCase().includes('logo') || p.toLowerCase().includes('icon')) continue;
-    const base = normalizeGalleryUrl(p);
-    if (seen.has(base)) continue;
-    galleryOut.push(p);
-    seen.add(base);
-  }
-  const displayOut = carouselUrls.length >= minSlides
-    ? [...carouselUrls]
-    : [...galleryOut];
-  const displaySeen = new Set(displayOut.map(normalizeGalleryUrl));
-  for (const p of galleryOut) {
-    if (displayOut.length >= maxSlides) break;
-    const base = normalizeGalleryUrl(p);
-    if (displaySeen.has(base)) continue;
-    displayOut.push(p);
-    displaySeen.add(base);
-  }
+  void minSlides;
   return {
-    carouselUrls: displayOut.slice(0, maxSlides),
-    carouselGalleryUrls: galleryOut.slice(0, maxSlides),
+    carouselUrls: carouselUrls.slice(0, maxSlides),
+    carouselGalleryUrls: carouselGalleryUrls.slice(0, maxSlides),
   };
 }
 

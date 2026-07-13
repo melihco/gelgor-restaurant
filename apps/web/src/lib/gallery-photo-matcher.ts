@@ -829,16 +829,8 @@ function tokenize(text: string): string[] {
     .filter(w => w.length > 2 && !STOP_WORDS.has(w));
 }
 
-function buildSearchable(meta: GalleryPhotoMeta): string {
-  return [
-    ...(meta.contentTags ?? []),
-    ...(meta.captionHooks ?? []),
-    ...(meta.pairingKeywords ?? []),
-    meta.description ?? '',
-    meta.usageContext ?? '',
-    meta.mood ?? '',
-    ...(meta.bestFor ?? []),
-  ].join(' ').toLowerCase();
+function buildSearchable(meta: GalleryPhotoMeta, url?: string): string {
+  return buildGalleryPhotoSearchable(meta, url);
 }
 
 function isGenericFallbackGalleryDescription(description: string): boolean {
@@ -850,6 +842,7 @@ function isGenericFallbackGalleryDescription(description: string): boolean {
 function scorePhotoForContent(
   meta: GalleryPhotoMeta,
   input: MatchPhotoInput,
+  url?: string,
 ): { score: number; reasons: string[] } {
   const headlineText = (input.headline ?? '').trim();
   const captionBody = [input.caption, input.visualDirection, input.strategicPurpose]
@@ -857,7 +850,7 @@ function scorePhotoForContent(
     .join(' ');
   const caption = [headlineText, captionBody].filter(Boolean).join(' ');
   const text = caption.toLowerCase();
-  const searchable = buildSearchable(meta);
+  const searchable = buildSearchable(meta, url);
   const reasons: string[] = [];
   let score = 0;
 
@@ -1090,7 +1083,9 @@ export function isHardGalleryThemeMismatch(
 ): boolean {
   const caption = matchCaptionBlob(input);
   if (!caption.trim()) return false;
-  return isHardCaptionPhotoConflict(caption, buildGalleryPhotoSearchable(meta, url));
+  const searchable = buildGalleryPhotoSearchable(meta, url);
+  if (isHardCaptionPhotoConflict(caption, searchable)) return true;
+  return productPhotoConflictPenalty(caption, searchable) >= STRONG_MATCH_SCORE;
 }
 
 export function rankPhotosForContent(
@@ -1125,7 +1120,7 @@ export function rankPhotosForContent(
 
     const entry = resolveLookupEntry(url, lookup, fingerprintIndex);
     const meta = entry?.meta ?? {};
-    const { score, reasons } = scorePhotoForContent(meta, input);
+    const { score, reasons } = scorePhotoForContent(meta, input, url);
     // Never rank hard theme mismatches — they must not win via path/usage noise.
     if (score <= -100 || isHardGalleryThemeMismatch(input, meta, url)) {
       continue;

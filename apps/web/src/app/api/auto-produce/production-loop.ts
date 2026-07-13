@@ -44,8 +44,10 @@ import {
   pickMissionDiverseFallbackPhoto,
   isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
+  STRONG_MATCH_SCORE,
   REEL_GALLERY_MIN_SCORE,
   type GalleryPhotoMeta,
+  type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
 import {
   buildGalleryPhotoSearchable,
@@ -2227,9 +2229,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && (!isOrganicStoryStillSlot || productionProfile.requireDesignedVisuals)
       && !isFalDesignedPostSlotEarly;
 
+    const isCarouselSlotEarly = isCarouselAssignment(kind, assignment);
     const useMultiGallery = !captionDrivenGenerated
       && hasGallery
-      && shouldUseMultiGalleryPhotos(assignment, kind);
+      && shouldUseMultiGalleryPhotos(assignment, kind)
+      && !isCarouselSlotEarly;
     const storyLibrarySlotKey = assignmentImpliesStoryFormat(assignment.slot_role)
       ? resolveStoryLibrarySlotKey({
         librarySlotKey: assignment.library_slot_key,
@@ -2875,18 +2879,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       if (cardUrl) costEstimate += 0.001;
 
     } else if (isCarousel) {
-      if (enhancedGallerySet.length >= 2) {
-        carouselUrls = [...enhancedGallerySet];
-        carouselGalleryUrls = [...enhancedGallerySet];
-        for (const gUrl of sourceGalleryUrlsForSlot.length > 0
-          ? sourceGalleryUrlsForSlot
-          : carouselGalleryUrls) {
-          markSourceGalleryUsed(galleryUsage, batchUsedByType, gUrl, 'carousel');
-        }
-      } else if (hasGallery) {
-        const carouselExclude = getExcludeUrlsForPostType(
-          galleryUsage, 'carousel', batchUsedByType.carousel,
-        );
+      const carouselExclude = getExcludeUrlsForPostType(
+        galleryUsage, 'carousel', batchUsedByType.carousel,
+      );
+      const carouselMatchInput: MatchPhotoInput = {
+        caption,
+        headline,
+        mood,
+        contentType: 'carousel',
+        businessType: brandBusinessType,
+      };
+      const carouselMinScore = captionRequiresStrictGalleryMatch(caption, headline)
+        ? STRONG_MATCH_SCORE
+        : MIN_ACCEPT_SCORE;
+
+      if (hasGallery) {
         const carouselResult = await generateVibeCarousel({
           workspaceId,
           headline,
@@ -2899,6 +2906,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           candidateUrls: galleryPhotos,
           excludeUrls: carouselExclude,
           count:        CAROUSEL_TARGET_SLIDES,
+          minScore:     carouselMinScore,
         });
         carouselUrls = carouselResult.enhancedUrls;
         carouselGalleryUrls = carouselResult.galleryUrls;

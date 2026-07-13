@@ -93,6 +93,10 @@ describe('captionRequiresStrictGalleryMatch', () => {
       'Bodrumda gün batımı keyfi',
       'Sunset',
     )).toBe(false);
+    expect(captionRequiresStrictGalleryMatch(
+      'Datça\'nın en özel süzme çiçek balını keşfedin',
+      'Saf Lezzet',
+    )).toBe(true);
   });
 });
 

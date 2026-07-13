@@ -86,6 +86,14 @@ const BEAUTY_HAIR_CAPTION = [
   'saç kesim', 'saç boyama', 'keratin', 'fön',
 ];
 
+/** Named local-product SKUs — carousel/feed must not cross-match (bal ↔ zeytinyağı). */
+const LOCAL_PRODUCT_CAPTION_HINTS = [
+  'bal', 'honey', 'petek', 'süzme bal', 'suzme bal', 'çiçek balı', 'cicek bali',
+  'zeytinyağı', 'zeytinyagi', 'zeytin yagi', 'olive oil', 'extra virgin', 'sızma', 'sizma',
+  'reçel', 'recel', 'pekmez', 'incir', 'kayısı', 'kayisi', 'badem', 'ceviz', 'fındık', 'findik',
+  'tarhana', 'salça', 'salca', 'turşu', 'tursu', 'peynir', 'tahin', 'keçiboynuzu', 'keciboynuzu',
+];
+
 const BEAUTY_NAIL_PHOTO = [
   'nail', 'tırnak', 'tirnak', 'manikür', 'manikyur', 'oje', 'nail art',
   'nail polish', 'jel tırnak', 'protez tırnak',
@@ -102,6 +110,13 @@ export function buildGalleryPhotoSearchable(
   url?: string,
 ): string {
   if (!meta && !url) return '';
+  const urlTokens = url
+    ? url
+      .split(/[/_.-]+/)
+      .map((t) => t.replace(/\.(jpg|jpeg|png|webp|gif|avif)$/i, ''))
+      .filter((t) => t.length >= 3)
+      .join(' ')
+    : '';
   return [
     ...(meta?.contentTags ?? []),
     ...(meta?.captionHooks ?? []),
@@ -111,6 +126,7 @@ export function buildGalleryPhotoSearchable(
     meta?.mood ?? '',
     ...(meta?.bestFor ?? []),
     meta?.suggestedAssetType ?? '',
+    urlTokens,
     url ?? '',
   ].join(' ').toLowerCase();
 }
@@ -137,6 +153,7 @@ export function captionRequiresStrictGalleryMatch(
   if (textHits(text, BEAUTY_NAIL_CAPTION) >= 1) return true;
   if (textHits(text, BEAUTY_LASH_CAPTION) >= 1) return true;
   if (textHits(text, BEAUTY_HAIR_CAPTION) >= 2) return true;
+  if (textHits(text, LOCAL_PRODUCT_CAPTION_HINTS) >= 1) return true;
   return false;
 }
 

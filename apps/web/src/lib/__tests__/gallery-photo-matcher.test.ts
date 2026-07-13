@@ -15,6 +15,8 @@ import {
   assignPhotosToContents,
   rankPhotosForContent,
   buildGalleryLookup,
+  pickScoredCarouselSlides,
+  isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
   STRONG_MATCH_SCORE,
   type GalleryPhotoMeta,
@@ -357,5 +359,55 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
     const urls = [...assigned.values()].filter(Boolean).map((r) => r!.url);
     expect(urls).toHaveLength(4);
     expect(new Set(urls).size).toBe(4);
+  });
+});
+
+describe('local product carousel — honey caption must not pick olive oil', () => {
+  const HONEY_PHOTO = 'https://cdn.example.com/gallery/petek-bal-01.jpg';
+  const OIL_PHOTO = 'https://cdn.example.com/gallery/zeytinyagi-3lt-tin.jpg';
+
+  const gallery: Record<string, GalleryPhotoMeta> = {
+    [HONEY_PHOTO]: {
+      contentTags: ['product', 'honey', 'jar'],
+      description: 'Flower honey jar and honeycomb on wooden table.',
+      mood: 'warm',
+    },
+    [OIL_PHOTO]: {
+      contentTags: ['product', 'bottle', 'tin'],
+      description: 'Three liter olive oil tin cans on wooden table with olives.',
+      mood: 'natural',
+    },
+  };
+
+  it('hard-vetoes olive oil photo for honey caption', () => {
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Datça\'nın en özel süzme çiçek balını keşfedin',
+          headline: 'Saf Lezzet',
+          businessType: 'local_products_shop',
+        },
+        gallery[OIL_PHOTO],
+        OIL_PHOTO,
+      ),
+    ).toBe(true);
+  });
+
+  it('pickScoredCarouselSlides returns only honey-matching slides', () => {
+    const slides = pickScoredCarouselSlides(
+      {
+        caption: 'Datça\'nın en özel süzme çiçek balını keşfedin',
+        headline: 'Saf Lezzet',
+        businessType: 'local_products_shop',
+      },
+      [OIL_PHOTO, HONEY_PHOTO],
+      gallery,
+      [],
+      3,
+      STRONG_MATCH_SCORE,
+    );
+    expect(slides.length).toBeGreaterThanOrEqual(1);
+    expect(slides.every((s) => s.url === HONEY_PHOTO)).toBe(true);
+    expect(slides.some((s) => s.url === OIL_PHOTO)).toBe(false);
   });
 });

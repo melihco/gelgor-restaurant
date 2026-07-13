@@ -405,6 +405,7 @@ export async function generateVibeCarousel(opts: {
   candidateUrls: string[];
   excludeUrls: string[];
   count: number;
+  minScore?: number;
 }): Promise<{ enhancedUrls: string[]; galleryUrls: string[] }> {
   const baseUrl = getNextjsInternalOrigin();
 
@@ -428,7 +429,7 @@ export async function generateVibeCarousel(opts: {
     opts.galleryAnalysis,
     localUsed,
     opts.count,
-    MIN_ACCEPT_SCORE,
+    opts.minScore ?? MIN_ACCEPT_SCORE,
   );
   const picked = scored.map((r) => r.url);
 
