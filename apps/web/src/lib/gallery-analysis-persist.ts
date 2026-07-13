@@ -55,6 +55,8 @@ export async function persistEnrichedGalleryAnalysis(
     usageContext: meta.usageContext ?? '',
     qualityScore: meta.qualityScore ?? null,
     analyzedAt: meta.analyzedAt ?? null,
+    ...(meta.primarySubject ? { primarySubject: meta.primarySubject } : {}),
+    ...(meta.subjectConfidence != null ? { subjectConfidence: meta.subjectConfidence } : {}),
   }));
 
   const saveRes = await fetch(

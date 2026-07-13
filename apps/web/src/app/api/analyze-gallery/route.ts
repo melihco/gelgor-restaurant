@@ -25,6 +25,15 @@ export interface GalleryPhotoAnalysis {
   usageContext: string;
   captionHooks?: string[];
   pairingKeywords?: string[];
+  /**
+   * Canonical, language-neutral token for the ONE dominant product/subject shown
+   * (e.g. "honey", "olive_oil", "nail_service"). Drives caption↔photo subject
+   * matching without any hand-maintained keyword dictionary. "none" when the
+   * photo is abstract/background/logo with no concrete subject.
+   */
+  primarySubject?: string;
+  /** 0..1 model confidence in primarySubject. */
+  subjectConfidence?: number;
   /** Deterministic 0..100 quality of this analysis (Sprint 2 GIS). */
   qualityScore?: number;
   /** ISO timestamp when this analysis was produced (Sprint 2 GIS recency). */
@@ -60,9 +69,18 @@ TAG EVERY VISIBLE ELEMENT (use categories relevant to what you see):
 
 BILINGUAL RULE: Add both English + Turkish for every key tag.
 
+PRIMARY SUBJECT (critical for auto-matching): Pick the SINGLE dominant product or subject the photo is really about and name it with ONE canonical, lowercase English snake_case token. This is language-neutral — always English, regardless of any label language.
+- Packaged goods / local products: honey, olive_oil, olives, jam, molasses, tahini, dried_figs, walnuts, almonds, soap, spice_mix, tea, coffee, cheese, pasta, bread, ...
+- Services: nail_service, lash_service, haircut, hair_color, brow_service, massage, facial, ...
+- Food/drink: burger, pizza, pasta, cocktail, coffee_drink, dessert, ...
+- Use "none" ONLY when the photo has no concrete product/service subject (pure venue/background/logo/abstract).
+Never invent a subject that isn't clearly the focus. When two products share the frame, pick the one that dominates.
+
 Respond ONLY with JSON (no markdown):
 {
   "description": "2–3 sentences. Describe EXACTLY what you see: specific objects, people, setting, activity, atmosphere.",
+  "primary_subject": "canonical english snake_case token or none",
+  "subject_confidence": 0.0,
   "contentTags": ["specific tag 1", "specific tag 2", ...],
   "bestFor": ["use_case1", ...],
   "notGoodFor": ["use_case1", ...],
@@ -85,6 +103,20 @@ bestFor/notGoodFor values: venue_photo, product_highlight, service_showcase, dri
 /** Normalize URL for cache key — ignore query params */
 function normalizeUrlKey(url: string): string {
   return url.split('?')[0] ?? url;
+}
+
+/** Canonicalize a vision subject token: lowercase snake_case; empty → undefined. */
+function normalizeSubjectToken(raw: unknown): string | undefined {
+  const t = String(raw ?? '').trim().toLowerCase();
+  if (!t || t === 'none' || t === 'n/a' || t === 'unknown' || t === 'other') return undefined;
+  const normalized = t.replace(/[\s/]+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  return normalized || undefined;
+}
+
+function clampConfidence(raw: unknown): number | undefined {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.max(0, Math.min(1, n));
 }
 
 function humanizeUrlTokens(url: string): string[] {
@@ -208,6 +240,8 @@ async function analyzePhoto(
     usageContext: String(parsed.usageContext ?? ''),
     captionHooks: Array.isArray(parsed.captionHooks) ? parsed.captionHooks.map(String) : [],
     pairingKeywords: Array.isArray(parsed.pairingKeywords) ? parsed.pairingKeywords.map(String) : [],
+    primarySubject: normalizeSubjectToken(parsed.primary_subject ?? parsed.primarySubject),
+    subjectConfidence: clampConfidence(parsed.subject_confidence ?? parsed.subjectConfidence),
     analyzedAt: new Date().toISOString(),
     analysisSource: 'vision',
   };
@@ -283,6 +317,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           isLogo: Boolean(hit.isLogo),
           suggestedAssetType: String(hit.suggestedAssetType ?? 'venue_reference'),
           usageContext: String(hit.usageContext ?? ''),
+          ...(hit.primarySubject ? { primarySubject: normalizeSubjectToken(hit.primarySubject) } : {}),
+          ...(hit.subjectConfidence != null ? { subjectConfidence: clampConfidence(hit.subjectConfidence) } : {}),
         });
         continue;
       }

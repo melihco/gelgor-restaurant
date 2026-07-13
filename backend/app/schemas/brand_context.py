@@ -249,6 +249,9 @@ class GalleryPhotoAnalysisEntry(BaseModel):
     quality_score: float | None = Field(default=None, alias="qualityScore")
     analyzed_at: str | None = Field(default=None, alias="analyzedAt")
     analysis_source: str | None = Field(default=None, alias="analysisSource")
+    # Canonical, language-neutral subject token for caption↔photo matching.
+    primary_subject: str | None = Field(default=None, alias="primarySubject")
+    subject_confidence: float | None = Field(default=None, alias="subjectConfidence")
 
 
 class GalleryAnalysisSaveRequest(BaseModel):

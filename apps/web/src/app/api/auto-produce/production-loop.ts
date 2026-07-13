@@ -1010,6 +1010,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           .filter(Boolean)
           .join(' — ')
           .slice(0, 160);
+    // Canonical product subject from ideation (AI-produced, language-neutral) —
+    // SSOT for caption↔photo matching; keyword dictionary is only a fallback.
+    const ideationSubjectKey = String(
+      ideaRecord.subject_key ?? ideaRecord.subjectKey ?? '',
+    ).trim() || undefined;
     let hashtags = normalizeHashtags(idea.hashtags);
     let cta = getField(idea, 'cta', 'call_to_action');
     if (caption && cta) {
@@ -1441,6 +1446,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           mood,
           contentType: postType,
           businessType: brandBusinessType,
+          subjectKey: ideationSubjectKey,
           globalUsageCounts: globalGalleryUsageCounts,
         },
         galleryPhotos,
@@ -1470,6 +1476,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               mood,
               contentType: postType,
               businessType: brandBusinessType,
+              subjectKey: ideationSubjectKey,
               globalUsageCounts: globalGalleryUsageCounts,
             },
             [pooledAgentUrl],
@@ -1545,6 +1552,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           mood,
           contentType: postType,
           businessType: brandBusinessType,
+          subjectKey: ideationSubjectKey,
         };
         if (batchAssigned?.url) {
           const batchMeta = galleryMeta[normalizeGalleryUrl(batchAssigned.url)]
@@ -1604,6 +1612,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               businessType: brandBusinessType,
               mood,
               contentType: postType,
+              subjectKey: ideationSubjectKey,
             });
           }
           }
@@ -1687,6 +1696,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           businessType: brandBusinessType,
           mood,
           contentType: postType,
+          subjectKey: ideationSubjectKey,
         });
         console.log(
           `[auto-produce] AI OFF — galeri passthrough: "${ideationHeadline.slice(0, 48)}" → ${referenceUrl.slice(0, 72)}`,
@@ -2184,6 +2194,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         businessType: brandBusinessType,
         mood,
         contentType: postType,
+        subjectKey: ideationSubjectKey,
       });
 
       galleryMatchScore = scorePhoto(normalizedResolvedReferenceUrl);
@@ -2276,6 +2287,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           headline: ideationHeadline,
           visualDirection: String(idea.visual_direction ?? '').trim() || undefined,
           businessType: brandBusinessType,
+          subjectKey: ideationSubjectKey,
         },
         lockedGalleryMeta,
         resolvedReferenceUrl,
@@ -2422,6 +2434,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           businessType: brandBusinessType,
           mood,
           contentType: kind,
+          subjectKey: ideationSubjectKey,
         });
       } else if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
         console.warn(

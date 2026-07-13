@@ -36,6 +36,10 @@ export interface GalleryPhotoMeta {
   pairingKeywords?: string[];
   qualityScore?: number | null;
   analyzedAt?: string | null;
+  /** Canonical language-neutral subject token (e.g. "honey", "olive_oil"). */
+  primarySubject?: string;
+  /** 0..1 confidence in primarySubject. */
+  subjectConfidence?: number;
 }
 
 export interface MatchPhotoInput {
@@ -60,6 +64,12 @@ export interface MatchPhotoInput {
   storySequenceRole?: 'hook' | 'proof' | 'cta';
   /** Cross-type gallery usage — penalize over-used photos to spread diversity. */
   globalUsageCounts?: ReadonlyMap<string, number>;
+  /**
+   * Canonical, language-neutral subject token for the caption's product/service
+   * (from ideation `subject_key`, e.g. "honey", "olive_oil"). When present it is
+   * the SSOT for product↔photo matching, bypassing the keyword dictionary.
+   */
+  subjectKey?: string;
 }
 
 export interface PhotoMatchResult {
@@ -179,12 +189,66 @@ function detectLocalProductClusters(text: string): Set<number> {
   return hits;
 }
 
-function productPhotoConflictPenalty(captionText: string, photoSearchable: string): number {
-  const cap = detectLocalProductClusters(captionText);
-  const photo = detectLocalProductClusters(photoSearchable);
+/**
+ * Map a canonical, language-neutral subject token (e.g. "olive_oil", "honey")
+ * to SKU cluster indices. Both `foo_bar` and `foo bar` forms are matched so the
+ * AI subject key from vision/ideation joins the same SSOT vocabulary.
+ */
+function subjectClustersFromToken(token: string | undefined): Set<number> {
+  const raw = String(token ?? '').trim().toLowerCase();
+  const hits = new Set<number>();
+  if (!raw || raw === 'none' || raw === 'other' || raw === 'brand' || raw === 'logo') {
+    return hits;
+  }
+  const spaced = raw.replace(/_/g, ' ');
+  LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
+    const match = cluster.terms.some((term) => {
+      const t = term.toLowerCase();
+      return t === raw || t === spaced
+        || spaced.includes(t) || t.includes(spaced)
+        || localProductTermHit(spaced, term);
+    });
+    if (match) hits.add(idx);
+  });
+  return hits;
+}
+
+/**
+ * Caption's product clusters. Prefers the canonical `subjectKey` (from ideation)
+ * so the keyword dictionary is only a fallback for legacy ideas without it.
+ */
+function resolveCaptionSubjectClusters(captionText: string, subjectKey?: string): Set<number> {
+  if (subjectKey && subjectKey.trim()) {
+    const fromKey = subjectClustersFromToken(subjectKey);
+    if (fromKey.size) return fromKey;
+    // Explicit non-product subject (e.g. "team", "venue") → no product veto.
+    if (String(subjectKey).trim().toLowerCase() !== '') return new Set();
+  }
+  return detectLocalProductClusters(captionText);
+}
+
+/**
+ * Photo's product clusters. Prefers vision-committed `primarySubject` (reliable
+ * even when free-text tags are generic) over lexical tag scraping.
+ */
+function resolvePhotoSubjectClusters(photoSearchable: string, primarySubject?: string): Set<number> {
+  if (primarySubject && primarySubject.trim()) {
+    return subjectClustersFromToken(primarySubject);
+  }
+  return detectLocalProductClusters(photoSearchable);
+}
+
+function productPhotoConflictPenalty(
+  captionText: string,
+  photoSearchable: string,
+  opts?: { subjectKey?: string; primarySubject?: string },
+): number {
+  const cap = resolveCaptionSubjectClusters(captionText, opts?.subjectKey);
+  const photo = resolvePhotoSubjectClusters(photoSearchable, opts?.primarySubject);
   if (cap.size === 0) return 0;
   // Caption names a concrete SKU — photo must evidence the same cluster.
-  // Untagged packaging (oil tins with empty vision meta) must not soft-pass.
+  // Untagged packaging (oil tins with empty vision meta) must not soft-pass;
+  // a vision-committed primary_subject makes this reliable across languages.
   for (const idx of cap) {
     if (photo.has(idx)) return 0;
   }
@@ -1033,12 +1097,16 @@ function scorePhotoForContent(
     }
   }
 
-  for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
-    const captionHitsCluster = cluster.terms.filter((t) => localProductTermHit(text, t)).length;
-    const photoHitsCluster = cluster.terms.filter((t) => localProductTermHit(searchable, t)).length;
-    if (captionHitsCluster >= 1 && photoHitsCluster >= 1) {
+  // Canonical subject clusters (AI subject key / vision primary_subject) win over
+  // raw keyword scraping; dictionary detection is the fallback inside the resolvers.
+  const captionSubjectClusters = resolveCaptionSubjectClusters(text, input.subjectKey);
+  const photoSubjectClusters = resolvePhotoSubjectClusters(searchable, meta.primarySubject);
+  let productClusterMatched = false;
+  for (const idx of captionSubjectClusters) {
+    if (photoSubjectClusters.has(idx)) {
       score += 24;
-      reasons.push(`product_match:${cluster.id}`);
+      reasons.push(`product_match:${LOCAL_PRODUCT_SKU_CLUSTERS[idx]?.id ?? idx}`);
+      productClusterMatched = true;
       break;
     }
   }
@@ -1054,15 +1122,20 @@ function scorePhotoForContent(
     reasons.push('hard_caption_photo_veto');
   }
 
-  const productConflict = productPhotoConflictPenalty(caption, searchable);
-  if (productConflict > 0) {
-    score -= productConflict;
-    reasons.push(`product-label conflict -${productConflict}`);
-  }
-  // Hard product veto (bal caption + zeytinyağı / unlabeled tin) — unusable pair.
-  if (productConflict >= STRONG_MATCH_SCORE) {
-    score = Math.min(score, -100);
-    reasons.push('hard_product_sku_veto');
+  if (!productClusterMatched) {
+    const productConflict = productPhotoConflictPenalty(caption, searchable, {
+      subjectKey: input.subjectKey,
+      primarySubject: meta.primarySubject,
+    });
+    if (productConflict > 0) {
+      score -= productConflict;
+      reasons.push(`product-label conflict -${productConflict}`);
+    }
+    // Hard product veto (bal caption + zeytinyağı / unlabeled tin) — unusable pair.
+    if (productConflict >= STRONG_MATCH_SCORE) {
+      score = Math.min(score, -100);
+      reasons.push('hard_product_sku_veto');
+    }
   }
 
   return { score, reasons };
@@ -1088,7 +1161,10 @@ export function isHardGalleryThemeMismatch(
   if (!caption.trim()) return false;
   const searchable = buildGalleryPhotoSearchable(meta, url);
   if (isHardCaptionPhotoConflict(caption, searchable)) return true;
-  return productPhotoConflictPenalty(caption, searchable) >= STRONG_MATCH_SCORE;
+  return productPhotoConflictPenalty(caption, searchable, {
+    subjectKey: input.subjectKey,
+    primarySubject: meta?.primarySubject,
+  }) >= STRONG_MATCH_SCORE;
 }
 
 export function rankPhotosForContent(

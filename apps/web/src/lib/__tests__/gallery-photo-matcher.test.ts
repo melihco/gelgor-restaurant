@@ -412,6 +412,59 @@ describe('local product carousel — honey caption must not pick olive oil', () 
     ).toBe(true);
   });
 
+  it('vetoes via vision primary_subject even when tags/description are generic', () => {
+    const genericTinsMeta: GalleryPhotoMeta = {
+      contentTags: ['product', 'packaging', 'wooden table'],
+      description: 'Three metal cans arranged on a rustic wooden surface.',
+      primarySubject: 'olive_oil',
+    };
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Süzme çiçek balımızın faydaları',
+          headline: 'Süzme çiçek balı',
+          businessType: 'local_products_shop',
+        },
+        genericTinsMeta,
+        'https://cdn.example.com/gallery/product-tins-02.jpg',
+      ),
+    ).toBe(true);
+  });
+
+  it('canonical subjectKey drives matching regardless of caption language', () => {
+    const honeyMeta: GalleryPhotoMeta = {
+      contentTags: ['jar', 'amber', 'wooden table'],
+      description: 'An amber jar on a wooden table.',
+      primarySubject: 'honey',
+    };
+    // English caption + explicit subject key still matches the honey photo.
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Discover the benefits of our raw flower honey',
+          headline: 'Pure taste',
+          businessType: 'local_products_shop',
+          subjectKey: 'honey',
+        },
+        honeyMeta,
+        'https://cdn.example.com/gallery/jar-amber.jpg',
+      ),
+    ).toBe(false);
+    // Same photo, olive-oil subject key → hard mismatch.
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Cold pressed premium',
+          headline: 'Premium',
+          businessType: 'local_products_shop',
+          subjectKey: 'olive_oil',
+        },
+        honeyMeta,
+        'https://cdn.example.com/gallery/jar-amber.jpg',
+      ),
+    ).toBe(true);
+  });
+
   it('pickScoredCarouselSlides returns only honey-matching slides', () => {
     const slides = pickScoredCarouselSlides(
       {

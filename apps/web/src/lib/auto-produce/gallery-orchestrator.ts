@@ -126,6 +126,7 @@ export function buildMissionGalleryAssignments(
       || queueItem.assignment.pipeline === 'story_still';
     const storyIndex = isStory ? storyOrdinal++ : 0;
 
+    const subjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined;
     const matchInput = {
       ...buildSlotGalleryMatchInput({
       assignment: queueItem.assignment,
@@ -138,6 +139,7 @@ export function buildMissionGalleryAssignments(
       ideationCaption: caption,
       ideationHeadline: headline,
     }),
+      ...(subjectKey ? { subjectKey } : {}),
       ...(globalUsageCounts ? { globalUsageCounts } : {}),
     };
 

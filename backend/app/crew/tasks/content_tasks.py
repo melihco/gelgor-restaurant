@@ -586,6 +586,11 @@ def create_content_ideation_task(
             "concept_title, idea_title, cta, shot_type, visual_direction, caption_draft,\n"
             "caption_draft_alt, caption_hook_type, caption_alt_hook_type, engagement_prediction,\n"
             "tokens_hint, hashtags, posting_time_suggestion, strategic_purpose,\n"
+            "subject_key (ONE canonical lowercase english snake_case token for the single dominant "
+            "product/service this idea is about — e.g. honey, olive_oil, olives, jam, soap, "
+            "nail_service, haircut, burger, cocktail; language-neutral, ALWAYS english regardless of "
+            "the caption language; use \"none\" for brand/atmosphere ideas with no concrete subject. "
+            "This drives caption↔gallery-photo matching, so it MUST name the same product the caption sells),\n"
             "asset_recommendation, production_notes, brand_confidence, missing_questions,\n"
             "visual_production_spec (with treatment, selected_gallery_url, image_edit_prompt, text_layers, reel_motion_spec,\n"
             "  and premium_composition object for at least 3 premium ideas).\n"
@@ -640,6 +645,9 @@ def create_content_calendar_task(
             f"A JSON array of {row_count} publish plan rows, each with: "
             "announcement_type, event_name, tagline, date, time, venue_area, "
             "optional artist_name, optional design_layout_family, "
+            "subject_key (ONE canonical lowercase english snake_case token for the single dominant "
+            "product/service — e.g. honey, olive_oil, soap, nail_service; language-neutral, ALWAYS "
+            "english; \"none\" for pure brand/atmosphere rows), "
             "template_use_case, format (story|post|reel|carousel), content_brief, photo_mood, priority."
         ),
         agent=agent,

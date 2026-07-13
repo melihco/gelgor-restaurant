@@ -126,6 +126,7 @@ export function buildGalleryPhotoSearchable(
     meta?.mood ?? '',
     ...(meta?.bestFor ?? []),
     meta?.suggestedAssetType ?? '',
+    meta?.primarySubject ? meta.primarySubject.replace(/_/g, ' ') : '',
     urlTokens,
     url ?? '',
   ].join(' ').toLowerCase();
@@ -282,6 +283,8 @@ export function scoreIdeationPhotoMatch(params: {
   mood?: string;
   contentType?: string;
   storySequenceRole?: 'hook' | 'proof' | 'cta';
+  /** Canonical product subject from ideation — SSOT for product↔photo matching. */
+  subjectKey?: string;
 }): number {
   const match = matchPhotoToContent(
     {
@@ -291,6 +294,7 @@ export function scoreIdeationPhotoMatch(params: {
       contentType: params.contentType,
       businessType: params.businessType,
       storySequenceRole: params.storySequenceRole,
+      subjectKey: params.subjectKey,
     },
     [params.photoUrl],
     params.galleryAnalysis,
