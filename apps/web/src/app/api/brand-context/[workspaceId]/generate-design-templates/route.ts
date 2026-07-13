@@ -25,6 +25,35 @@ export const runtime = 'nodejs';
 // Generation runs up to ~10 GPT-image edits — allow a long window.
 export const maxDuration = 600;
 
+function parseMaybeJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseMaybeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean);
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item ?? '').trim()).filter(Boolean);
+  } catch {
+    /* fall through */
+  }
+  return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ workspaceId: string }> },
@@ -152,6 +181,22 @@ export async function POST(
       brandTone: brandCtx.brand_tone as string | undefined,
       brandDescription: brandCtx.description as string | undefined,
     }),
+    brandIntelligence: {
+      description: typeof brandCtx.description === 'string' ? brandCtx.description : undefined,
+      brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+      visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+      visualStyle: typeof brandCtx.visual_style === 'string' ? brandCtx.visual_style : undefined,
+      targetAudience: typeof brandCtx.target_audience === 'string' ? brandCtx.target_audience : undefined,
+      campaignGoals: typeof brandCtx.campaign_goals === 'string' ? brandCtx.campaign_goals : undefined,
+      contentPillars: parseMaybeStringArray(brandCtx.content_pillars),
+      defaultCtas: parseMaybeStringArray(brandCtx.default_ctas),
+      vibeProfile: parseMaybeJsonRecord(brandCtx.brand_vibe_profile),
+      serviceProfile: parseMaybeJsonRecord(
+        brandCtx.service_profile
+        ?? brandTheme?.service_profile
+        ?? brandTheme?.serviceProfile,
+      ),
+    },
     brandTheme,
     antiPatterns,
     galleryPhotoUrls: gctx.photos,

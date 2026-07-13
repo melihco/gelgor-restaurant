@@ -66,6 +66,19 @@ export interface DesignTemplateEngineInput {
   countryCode?: string;
   /** One-line brand visual tone distilled from visual_dna (see fal-brand-input). */
   visualDnaTone?: string;
+  /** Deep brand learning context injected into every template prompt. */
+  brandIntelligence?: {
+    description?: string;
+    brandTone?: string;
+    visualDna?: string;
+    visualStyle?: string;
+    targetAudience?: string;
+    campaignGoals?: string;
+    contentPillars?: string[];
+    defaultCtas?: string[];
+    vibeProfile?: Record<string, unknown> | null;
+    serviceProfile?: Record<string, unknown> | null;
+  };
   /** brand_theme JSON — typography_design + fal_design_intensity for onboarding previews. */
   brandTheme?: Record<string, unknown> | null;
   /** Sector + theme anti-patterns injected into preview prompts. */
@@ -209,6 +222,63 @@ function resolveCopy(
   };
 }
 
+function compactList(values: unknown, limit = 5): string[] {
+  const arr = Array.isArray(values)
+    ? values
+    : typeof values === 'string'
+      ? values.split(/[,\n]/)
+      : [];
+  return arr
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function compactObjectSummary(value: Record<string, unknown> | null | undefined, max = 360): string {
+  if (!value || typeof value !== 'object') return '';
+  const entries = Object.entries(value)
+    .filter(([, v]) => v != null && String(v).trim() !== '')
+    .slice(0, 10);
+  if (!entries.length) return '';
+  return entries
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? compactList(v, 4).join(', ') : String(v).slice(0, 80)}`)
+    .join(' | ')
+    .slice(0, max);
+}
+
+export function buildBrandIntelligenceDirectives(
+  input: DesignTemplateEngineInput,
+  channel: FalDesignChannel,
+  level: import('@/lib/fal-design-intensity').FalDesignIntensityLevel,
+): string[] {
+  const intel = input.brandIntelligence;
+  if (!intel) return [];
+
+  const pillars = compactList(intel.contentPillars, 5);
+  const ctas = compactList(intel.defaultCtas, 4);
+  const vibe = compactObjectSummary(intel.vibeProfile, 420);
+  const service = compactObjectSummary(intel.serviceProfile, 360);
+  const lines = [
+    `BRAND LEARNING CONTEXT: This template set is for ${input.brandName}, sector=${input.sector}${input.location ? `, location=${input.location}` : ''}. Generate templates as if you have studied this specific brand, not as generic ${input.sector} presets.`,
+    intel.description ? `Brand description: ${intel.description.slice(0, 360)}.` : '',
+    intel.brandTone ? `Brand tone: ${intel.brandTone.slice(0, 180)}.` : '',
+    intel.visualDna ? `Visual DNA: ${intel.visualDna.slice(0, 520)}.` : '',
+    intel.visualStyle ? `Visual style: ${intel.visualStyle.slice(0, 220)}.` : '',
+    intel.targetAudience ? `Target audience: ${intel.targetAudience.slice(0, 220)}.` : '',
+    intel.campaignGoals ? `Business/campaign goals: ${intel.campaignGoals.slice(0, 220)}.` : '',
+    pillars.length ? `Content pillars to reflect: ${pillars.join(' | ')}.` : '',
+    ctas.length ? `Native CTA language: ${ctas.join(' | ')}.` : '',
+    vibe ? `Vibe profile signals: ${vibe}.` : '',
+    service ? `Service/venue profile signals: ${service}.` : '',
+    `Template channel/intensity: ${channel} uses ${level}. If level is photo_first/elegant_light, keep Scorpios-style quiet luxury and photo-led restraint; if designed/bold_editorial, increase custom canvas composition, brand-color panels, editorial typography and graphic architecture while still preserving the real brand photo and brand DNA.`,
+  ].filter(Boolean);
+
+  return [
+    lines.join(' '),
+    'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers.',
+  ];
+}
+
 async function generateOne(
   preset: DesignTemplatePreset,
   input: DesignTemplateEngineInput,
@@ -227,6 +297,11 @@ async function generateOne(
       ? 'story'
       : 'post';
   const designIntensityLevel = resolveFalTemplateIntensityForChannel(theme, intensityChannel);
+  const brandIntelligenceDirectives = buildBrandIntelligenceDirectives(
+    input,
+    intensityChannel,
+    designIntensityLevel,
+  );
   const vibe = isTypographyDesignConfirmed(theme) && typographyConfig?.vibe
     ? typographyConfig.vibe
     : resolveTypographyVibeFromContext({
@@ -266,7 +341,10 @@ async function generateOne(
     visualDnaTone: input.visualDnaTone,
     designIntensityLevel,
     occasion,
-    brandDirectives: antiPatternDirective ? [antiPatternDirective] : undefined,
+    brandDirectives: [
+      ...brandIntelligenceDirectives,
+      ...(antiPatternDirective ? [antiPatternDirective] : []),
+    ],
   });
 
   let thumbnailUrl: string | null = null;

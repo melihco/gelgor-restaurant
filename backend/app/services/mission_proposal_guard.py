@@ -37,20 +37,12 @@ async def is_mission_feed_production_complete(
 ) -> bool:
     """True when feed/factory production for this mission is done enough to propose the next one."""
     from app.services import production_job_service as pj
-    from app.services.mission_ideation_merge import resolve_feed_package_total
     from app.services.production_bridge import mission_feed_package_complete
-    from app.services.subscription_plan_service import resolve_workspace_plan_slug
+    from app.services.mission_feed_production_service import (
+        _resolve_mission_production_package_total,
+    )
 
     perf = dict(mission.performance_summary or {})
-    plan_slug = await resolve_workspace_plan_slug(str(mission.workspace_id))
-    package_total = resolve_feed_package_total(
-        str(mission.type or ""),
-        hub_production_package=str(perf.get("hub_production_package") or ""),
-        subscription_plan_slug=plan_slug,
-    )
-    if mission_feed_package_complete(perf, package_total=package_total):
-        return True
-
     summary = await pj.mission_job_summary(mission.id, enrich=False)
     total = int(summary.get("total") or 0)
     ready = int(summary.get("ready") or 0)
@@ -59,6 +51,15 @@ async def is_mission_feed_production_complete(
     if bool(summary.get("complete")):
         return True
     if total > 0 and ready >= total and in_flight == 0 and queued == 0:
+        return True
+
+    package_total = await _resolve_mission_production_package_total(
+        mission.id,
+        workspace_id=mission.workspace_id,
+        mission_type=str(mission.type or ""),
+        perf=perf,
+    )
+    if mission_feed_package_complete(perf, package_total=package_total):
         return True
     return False
 

@@ -3217,8 +3217,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Reels prefer MP4, but fal_reel can still return a designed still when the
     // video provider fails/no_artifact. Keep that still publishable so dynamic
     // brand slot packages do not stall forever on external video availability.
+    let falReelStillFallback = false;
     if (isReel && !videoUrl) {
       if (isFalMissionVideo && imageUrl) {
+        falReelStillFallback = true;
         console.warn(
           `[auto-produce] fal_reel still fallback (no video): ${headline.slice(0, 50)} — ${reelFailureReason ?? falPipelineFailureReason ?? 'unknown'}`,
         );
@@ -3467,6 +3469,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       renderer_executed: (() => {
         if (captionDrivenGenerated) return 'caption_driven_ai';
         if (videoUrl && isFalOnlyVideo) return assignment.pipeline === 'fal_only_reel' ? 'fal_only_reel' : 'fal_only_story';
+        if (falReelStillFallback) return 'fal_reel_still_fallback';
         if (videoUrl && isFalMissionVideo) {
           const rawFalI2v = videoProduceMeta
             && (videoProduceMeta.source === 'kling'
@@ -3529,7 +3532,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)),
       hero_reel_produced: Boolean(videoUrl) && !isFalMissionVideo && !isFalOnlyVideo,
       fal_video_produced: isPlayableVideoUrl(videoUrl) && (isFalMissionVideo || isFalOnlyVideo),
-      fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo)) || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine)),
+      fal_reel_still_fallback: falReelStillFallback,
+      fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo))
+        || falReelStillFallback
+        || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine)),
       ...(isFalMissionVideo && videoProduceMeta ? { fal_video_model: videoProduceMeta.source } : {}),
       ...(videoProduceMeta ? {
         video_source: videoProduceMeta.source,
@@ -3573,6 +3579,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ),
       imageUrl: previewStillUrl ?? undefined,
       videoUrl: isPlayableVideoUrl(videoUrl) ? videoUrl : null,
+      ...(falReelStillFallback ? { fal_reel_fallback_reason: reelFailureReason ?? falPipelineFailureReason ?? 'no_artifact' } : {}),
       reference_photo_url: pickedGallerySourceUrl ?? referenceUrl,
       ...(pickedGallerySourceUrl && referenceUrl !== pickedGallerySourceUrl
         ? { enhanced_photo_url: referenceUrl }

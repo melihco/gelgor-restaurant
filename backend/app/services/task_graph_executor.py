@@ -1694,7 +1694,9 @@ def _parse_calendar_plans_from_nodes(nodes: list[dict[str, Any]]) -> list[dict[s
                         if isinstance(item, dict):
                             plans.append(item)
                     break
-    return plans[:16]
+    # Keep parity with the Next.js planner: calendar-backed missions may add
+    # orphan rows beyond the legacy 16-slot weekly geometry.
+    return plans[:32]
 
 
 async def _calendar_nodes_pending(mission_id: uuid.UUID) -> bool:
@@ -1829,13 +1831,14 @@ def _mission_feed_package_complete(perf: dict, *, package_total: int) -> bool:
         return False
     manifest_ready = int(last.get("manifest_ready") or last.get("manifestReady") or 0)
     required_total = int(last.get("required_total") or last.get("requiredTotal") or expected)
-    if required_total > 0 and manifest_ready >= required_total:
+    target = required_total if required_total > 0 else expected
+    if target > 0 and manifest_ready >= target:
         return True
-    if publish_ready >= expected:
+    if publish_ready >= target:
         return True
     # Legacy rows (pre publishReady telemetry)
     if "publish_ready" not in last and "publishReady" not in last:
-        return int(last.get("produced") or 0) >= expected
+        return int(last.get("produced") or 0) >= target
     return False
 
 

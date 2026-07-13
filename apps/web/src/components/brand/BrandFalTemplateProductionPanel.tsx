@@ -206,7 +206,9 @@ export function BrandFalTemplateProductionPanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        fal.ai şablon üretimi ve mission tasarımları bu parametrelere göre çalışır.
+        fal.ai şablon üretimi ve mission tasarımları bu parametrelere göre çalışır:
+        düşük yoğunluk Scorpios gibi fotoğraf öncelikli, sakin premium şablonlar üretir;
+        yüksek yoğunluk marka renk blokları, editoryal tipografi ve canvas benzeri daha tasarımsal kompozisyonlar açar.
         Değişiklikler bir sonraki <strong style={{ color: t.textSecondary }}>Yeniden üret</strong>
         {' '}veya mission üretiminde uygulanır.
       </p>

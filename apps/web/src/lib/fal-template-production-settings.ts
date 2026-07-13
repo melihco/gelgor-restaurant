@@ -131,7 +131,10 @@ export function shouldProminentLogoInFalTemplate(
 
 export function buildFalTemplateProductionPatch(
   config: BrandFalTemplateProductionConfig,
-): Record<string, unknown> {
+): {
+  falTemplateProduction: BrandFalTemplateProductionConfig;
+  falDesignIntensity: Required<BrandFalDesignIntensityConfig>;
+} {
   return {
     falTemplateProduction: {
       intensity: config.intensity,

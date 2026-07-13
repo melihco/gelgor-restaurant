@@ -265,7 +265,11 @@ export const falVideoHandler: ProductionPipelineHandler = {
         logoPlacement: inputs.falLogoPlacement,
       });
       state.videoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
-      state.imageUrl = designer.imageUrl;
+      state.imageUrl = designer.imageUrl || photoUrl || referenceUrl;
+      if (falPipeline === 'fal_reel' && !state.videoUrl && state.imageUrl) {
+        state.pipelineFailureReason = state.pipelineFailureReason
+          ?? 'fal_reel_video_no_artifact_still_fallback';
+      }
       state.falGrafikerScore = designer.grafikerScore;
       state.falGrafikerPass = designer.grafikerPass;
       state.videoProduceMeta = {

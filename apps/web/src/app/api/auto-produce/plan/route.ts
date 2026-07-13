@@ -18,6 +18,7 @@ import {
 import {
   enrichProductionQueueWithBrandSlots,
   loadBrandActiveSlotSet,
+  resolveBrandProductionFormatTargets,
   stampIdeasWithBrandCatalogSlots,
 } from '@/lib/brand-active-slot-resolver';
 import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
@@ -129,13 +130,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'No ideas provided' }, { status: 400 });
     }
 
-    if (calendarPlans.length === 0 || alreadyScheduleOverlay || !ideas.length) {
-      mergedIdeas = ensureWeeklyFormatCoverage(
-        mergedIdeas,
-        mergedIdeas,
-      ) as Record<string, unknown>[];
-    }
-
     // ── Brand context (sector + theme drive queue routing) ───────────────────
     const pctx = await fetchProductionContext(workspaceId, {
       brandName: brandName ?? undefined,
@@ -146,6 +140,38 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
     if (!pctx) {
       return NextResponse.json({ error: 'Production context unavailable' }, { status: 500 });
+    }
+
+    const sector = normalizeSectorId(pctx.brandBusinessType);
+    let brandActiveSlots: Awaited<ReturnType<typeof loadBrandActiveSlotSet>> | null = null;
+    let brandFormatTargets: ReturnType<typeof resolveBrandProductionFormatTargets> | null = null;
+    if (sector) {
+      try {
+        brandActiveSlots = await loadBrandActiveSlotSet(
+          workspaceId,
+          sector,
+          undefined,
+          readBrandSlotFacilitiesFromTheme(pctx.brandTheme ?? brandTheme ?? null),
+        );
+        brandFormatTargets = resolveBrandProductionFormatTargets(
+          brandActiveSlots,
+          productionPackage ?? undefined,
+        );
+      } catch (err) {
+        console.warn(
+          `[auto-produce/plan] Brand slot catalog unavailable — falling back to legacy matcher: `
+          + `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    if (calendarPlans.length === 0 || alreadyScheduleOverlay || !ideas.length) {
+      mergedIdeas = ensureWeeklyFormatCoverage(
+        mergedIdeas,
+        mergedIdeas,
+        productionPackage ?? undefined,
+        brandFormatTargets,
+      ) as Record<string, unknown>[];
     }
 
     const planOutcome = await runAutoProducePlanPhase({
@@ -173,23 +199,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     let { toProcess } = planOutcome.plan;
     const { maxIdeas, manifestMissionType, pkgLimits, productionProfile } = planOutcome.plan;
-    const sector = normalizeSectorId(pctx.brandBusinessType);
-    let brandActiveSlots = null;
-    if (sector) {
-      try {
-        brandActiveSlots = await loadBrandActiveSlotSet(
-          workspaceId,
-          sector,
-          undefined,
-          readBrandSlotFacilitiesFromTheme(brandTheme ?? null),
-        );
-      } catch (err) {
-        console.warn(
-          `[auto-produce/plan] Brand slot catalog unavailable — falling back to legacy matcher: `
-          + `${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
     if (brandActiveSlots) {
       toProcess = stampIdeasWithBrandCatalogSlots(
         toProcess as Record<string, unknown>[],

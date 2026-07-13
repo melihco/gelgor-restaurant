@@ -585,7 +585,7 @@ export function BrandFalTemplateGalleryPanel({
         return;
       }
 
-      setStatus('Smoke test OK — kayıtlı parametrelerle şablonlar üretiliyor… (3–8 dk sürebilir)');
+      setStatus('Smoke test OK — marka DNA, sektör, vibe ve tasarım yoğunluğu ayarlarıyla şablonlar üretiliyor… (3–8 dk sürebilir)');
       const full = await runGenerate({
         concurrency: productionSettings.concurrency,
         limit: productionSettings.preview_cap,
@@ -608,7 +608,7 @@ export function BrandFalTemplateGalleryPanel({
             return normalized.status !== 'archived' && Boolean(normalized.thumbnail_url);
           }).length
         : selected;
-      setStatus(`Marka şablon seti hazır — ${previewCount} önizleme, katalog kaynağı: ${String(catalogMeta?.source ?? 'catalog')}.`);
+      setStatus(`Markaya özel Fal şablon seti hazır — ${previewCount} önizleme, katalog kaynağı: ${String(catalogMeta?.source ?? 'catalog')}.`);
 
       const freshRows = Array.isArray(full.data?.templates)
         ? full.data.templates
@@ -662,9 +662,9 @@ export function BrandFalTemplateGalleryPanel({
       />
 
       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        Sektör slot kataloğu başlıklarıyla hizalı fal.ai şablon seti — mission üretiminde aynı layout,
-        değişen fotoğraf ve metin. İhtiyacınız olmayan slotları (ör. havuz yoksa havuz slotları) kapatabilirsiniz;
-        üretim yalnızca açık slotlara eşlenir.
+        Marka DNA, sektör, vibe, galeri analizi ve tasarım yoğunluğu ayarlarıyla üretilen fal.ai şablon seti.
+        Mission üretiminde aynı marka reçetesi korunur; fotoğraf, metin ve slot amacı değişir.
+        İhtiyacınız olmayan slotları (ör. havuz yoksa havuz slotları) kapatabilirsiniz; üretim yalnızca açık slotlara eşlenir.
       </p>
 
       {needsPreviewGeneration && (
