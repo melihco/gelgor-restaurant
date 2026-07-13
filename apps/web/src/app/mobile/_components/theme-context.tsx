@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 export interface T {
   bg: string;
@@ -206,6 +206,24 @@ const ThemeCtx = createContext<{ t: T; toggle: () => void }>({ t: dark, toggle: 
 
 export function MobileThemeProvider({ children }: { children: React.ReactNode }) {
   const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    const theme = isDark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = theme;
+
+    const shell = document.querySelector<HTMLElement>('.mobile-shell');
+    const frame = document.querySelector<HTMLElement>('.sa-mobile-frame');
+    const mobile = document.querySelector<HTMLElement>('.sa-mobile');
+    const bg = isDark ? '#07090F' : '#F4F6F8';
+
+    if (shell) shell.style.background = bg;
+    if (frame) {
+      frame.dataset.theme = theme;
+      frame.style.setProperty('--sa-mobile-bg', bg);
+    }
+    if (mobile) mobile.dataset.theme = theme;
+  }, [isDark]);
+
   return (
     <ThemeCtx.Provider value={{ t: isDark ? dark : light, toggle: () => setIsDark(d => !d) }}>
       {children}

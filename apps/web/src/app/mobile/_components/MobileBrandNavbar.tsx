@@ -130,7 +130,7 @@ export function MobileBrandNavbar({
               <SmartAgencyLogo
                 variant="full"
                 priority
-                className="h-8 max-w-[min(200px,58vw)]"
+                className={dark ? 'h-8 max-w-[min(200px,58vw)]' : 'h-8 max-w-[min(200px,58vw)] brightness-0'}
               />
             </button>
           )}
@@ -189,13 +189,17 @@ export function FeedNavbarActions({
   approvedCount,
   onShowPending,
   onShowPublished,
+  dark = true,
 }: {
   showApproved: boolean;
   pendingCount: number;
   approvedCount: number;
   onShowPending: () => void;
   onShowPublished: () => void;
+  dark?: boolean;
 }) {
+  const iconColor = dark ? '#fff' : '#1a1a22';
+  const badgeBorder = dark ? '#000' : '#fff';
   const iconBtn = (active: boolean): React.CSSProperties => ({
     background: 'none',
     border: 'none',
@@ -208,14 +212,14 @@ export function FeedNavbarActions({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
       <button type="button" aria-label="Onay bekleyen içerikler" onClick={onShowPending} style={iconBtn(!showApproved)}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill={!showApproved ? '#fff' : 'none'}
-          stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill={!showApproved ? iconColor : 'none'}
+          stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
         </svg>
         {pendingCount > 0 && !showApproved && (
           <span style={{
             position: 'absolute', top: 2, right: 2, width: 7, height: 7, borderRadius: '50%',
-            background: '#E1306C', border: '1.5px solid #000',
+            background: '#E1306C', border: `1.5px solid ${badgeBorder}`,
           }} />
         )}
       </button>
@@ -226,7 +230,7 @@ export function FeedNavbarActions({
         disabled={approvedCount === 0}
         style={{ ...iconBtn(showApproved), opacity: approvedCount === 0 ? 0.25 : showApproved ? 1 : 0.55 }}
       >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff"
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor}
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/>
           <polygon points="22 2 15 22 11 13 2 9 22 2"/>

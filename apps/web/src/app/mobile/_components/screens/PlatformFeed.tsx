@@ -113,6 +113,7 @@ import {
 } from '../platform-native-previews';
 import type { OutputArtifact } from '@/types';
 import { FeedPublishBar } from '../FeedPublishBar';
+import { resolveIgFeedChrome } from '../ig-feed-chrome';
 import { ScheduleSheet } from '../ScheduleSheet';
 import {
   formatPublishScheduleLabel,
@@ -229,12 +230,18 @@ function AdPublishActions({
   onOpenMeta,
   onOpenGoogle,
   t,
+  shellBg,
+  separator,
+  mutedText,
 }: {
   artifact: OutputArtifact;
   workspaceId?: string;
   onOpenMeta: () => void;
   onOpenGoogle: () => void;
   t: ReturnType<typeof useTheme>['t'];
+  shellBg?: string;
+  separator?: string;
+  mutedText?: string;
 }) {
   const channel = adChannelFromArtifact(artifact);
   const label = adPlatformLabel(channel);
@@ -244,10 +251,10 @@ function AdPublishActions({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', gap: 8,
-      padding: '0 14px 14px', background: '#000',
-      borderTop: '0.5px solid rgba(255,255,255,0.06)',
+      padding: '0 14px 14px', background: shellBg ?? '#000',
+      borderTop: `0.5px solid ${separator ?? 'rgba(255,255,255,0.06)'}`,
     }}>
-      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
+      <div style={{ fontSize: 11, color: mutedText ?? 'rgba(255,255,255,0.45)', fontWeight: 600 }}>
         {label} kreatifi — organik yayın yerine reklam panelinden gönderin
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -376,8 +383,11 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   const [softApproveAck, setSoftApproveAck] = React.useState(false);
   const [scheduleOpen, setScheduleOpen] = React.useState(false);
 
-  const cardBg = platform === 'instagram' ? '#000' : (t.isDark ? '#0F0F1C' : '#fff');
   const igHome = !isMobileOperatorMode() && platform === 'instagram';
+  const igHomeChrome = resolveIgFeedChrome(t.isDark);
+  const cardBg = igHome
+    ? igHomeChrome.shell
+    : (platform === 'instagram' ? '#000' : (t.isDark ? '#0F0F1C' : '#fff'));
 
   const handleApproveClick = () => {
     if (!canApproveHard || approving || isRendering) return;
@@ -407,6 +417,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
       disabled={!canApproveHard || isRendering}
       softWarning={hasSoftWarnings && !softApproveAck}
       hardBlockLabel={hardBlockButtonLabel}
+      dark={t.isDark}
     />
   ) : null;
 
@@ -451,7 +462,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
         overflow: 'hidden',
         background: cardBg,
         border: igHome ? 'none' : `0.5px solid ${t.separator}`,
-        borderBottom: igHome ? '0.5px solid rgba(255,255,255,0.08)' : undefined,
+        borderBottom: igHome ? `0.5px solid ${igHomeChrome.separator}` : undefined,
         contentVisibility: 'auto',
         containIntrinsicSize: mode === 'reel' ? '0 820px' : '0 960px',
         transform: `translateX(${Math.max(-48, Math.min(48, swipeDx * 0.4))}px)`,
@@ -472,6 +483,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           afterMedia={publishBar}
           inFeedScroll={igHome}
           formatTag={formatTag}
+          igChromeDark={t.isDark}
         />
 
         {(scheduleLabel || isAdCreative) && mode !== 'story' && !igHome && (
@@ -602,23 +614,26 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
             onOpenMeta={() => onOpenMetaAd?.(artifact.id)}
             onOpenGoogle={() => onOpenGoogleAd?.()}
             t={t}
+            shellBg={igHomeChrome.shell}
+            separator={igHomeChrome.separator}
+            mutedText={igHomeChrome.textMuted}
           />
         ) : isPending && (
           <>
             <div style={{
-              display: 'flex', justifyContent: 'center', gap: 16, padding: '0 14px 12px', background: '#000',
+              display: 'flex', justifyContent: 'center', gap: 16, padding: '0 14px 12px', background: igHomeChrome.shell,
             }}>
               <button type="button" onClick={() => openApproval(artifact.id)}
                 style={{
                   padding: 0, border: 'none', background: 'none',
-                  color: 'rgba(255,255,255,0.55)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  color: igHomeChrome.actionMuted, fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 }}>
                 Düzenle
               </button>
               <button type="button" onClick={() => onRevision(artifact.id)} disabled={revisioning}
                 style={{
                   padding: 0, border: 'none', background: 'none',
-                  color: revisioning ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.45)',
+                  color: revisioning ? igHomeChrome.textMuted : igHomeChrome.actionMuted,
                   fontSize: 13, fontWeight: 600, cursor: revisioning ? 'not-allowed' : 'pointer',
                 }}>
                 Revize
@@ -631,6 +646,9 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
                 onOpenMeta={() => onOpenMetaAd?.(artifact.id)}
                 onOpenGoogle={() => onOpenGoogleAd?.()}
                 t={t}
+                shellBg={igHomeChrome.shell}
+                separator={igHomeChrome.separator}
+                mutedText={igHomeChrome.textMuted}
               />
             )}
           </>
@@ -2489,7 +2507,11 @@ export function PlatformFeed() {
     navigate('ads');
   }, [navigate]);
 
-  const feedBg = !operatorMode || platformView === 'instagram' ? '#000' : (t.isDark ? '#0a0a0f' : '#f7f7f7');
+  const feedBg = !operatorMode
+    ? (t.isDark ? '#000' : t.bg)
+    : (platformView === 'instagram' ? '#000' : (t.isDark ? '#0a0a0f' : '#f7f7f7'));
+  const clientStoryBarBg = feedBg;
+  const storyRingBorder = feedBg;
 
   // Post / reel / carousel in feed scroll; stories open from the bubble bar above.
   const TABS: { id: FeedFilter; label: string; icon?: string }[] = operatorMode
@@ -2536,7 +2558,7 @@ export function PlatformFeed() {
       {!operatorMode ? (
         <div style={{ position: 'sticky', top: 0, zIndex: 30 }}>
           <MobileBrandNavbar
-            dark
+            dark={t.isDark}
             rightSlot={(
               <FeedNavbarActions
                 showApproved={showApproved}
@@ -2544,6 +2566,7 @@ export function PlatformFeed() {
                 approvedCount={approvedCount}
                 onShowPending={() => setShowApproved(false)}
                 onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
+                dark={t.isDark}
               />
             )}
           />
@@ -2928,7 +2951,7 @@ export function PlatformFeed() {
           padding: '12px 16px 14px',
           gap: 14,
           borderBottom: `0.5px solid ${t.separator}`,
-          background: platformView === 'instagram' ? '#000' : feedBg,
+          background: operatorMode && platformView === 'instagram' ? '#000' : clientStoryBarBg,
         }}>
           {storyArtifacts.map((art, idx) => {
             const poster = resolveStoryPoster(art);
@@ -2978,7 +3001,7 @@ export function PlatformFeed() {
                   <div style={{
                     width: '100%', height: '100%', borderRadius: '50%',
                     overflow: 'hidden',
-                    border: `2px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                    border: `2px solid ${operatorMode && platformView === 'instagram' ? '#000' : storyRingBorder}`,
                     background: t.isDark ? '#1a1a2e' : '#e5e5e5',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     position: 'relative',
@@ -2997,7 +3020,7 @@ export function PlatformFeed() {
                       <div style={{
                         position: 'absolute', bottom: 0, right: 0,
                         width: 18, height: 18, borderRadius: '50%',
-                        background: '#8AABBD', border: `1.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                        background: '#8AABBD', border: `1.5px solid ${operatorMode && platformView === 'instagram' ? '#000' : storyRingBorder}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 8, color: '#fff',
                       }}>▶</div>
@@ -3007,7 +3030,7 @@ export function PlatformFeed() {
                       <div style={{
                         position: 'absolute', top: 0, right: 0,
                         width: 16, height: 16, borderRadius: '50%',
-                        background: '#10B981', border: `1.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                        background: '#10B981', border: `1.5px solid ${operatorMode && platformView === 'instagram' ? '#000' : storyRingBorder}`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 7, color: '#fff', fontWeight: 800,
                       }}>★</div>
@@ -3068,7 +3091,7 @@ export function PlatformFeed() {
               }}>
                 <div style={{
                   width: '100%', height: '100%', borderRadius: '50%',
-                  border: `2.5px solid ${platformView === 'instagram' ? '#000' : feedBg}`,
+                  border: `2.5px solid ${operatorMode && platformView === 'instagram' ? '#000' : storyRingBorder}`,
                   overflow: 'hidden', position: 'relative',
                 }}>
                   {tpl.media_items[0]?.type === 'video' ? (

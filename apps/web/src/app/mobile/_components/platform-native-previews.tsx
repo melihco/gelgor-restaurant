@@ -15,6 +15,7 @@ import {
 } from '@/lib/production-bundle';
 import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline } from '@/lib/feed-display-caption';
 import { useStoryBackgroundAudio } from './StoryBackgroundAudio';
+import { resolveIgFeedChrome, type IgFeedChrome } from './ig-feed-chrome';
 
 export type PreviewPlatform = 'instagram' | 'tiktok' | 'x';
 export type PreviewMode = 'feed' | 'reel' | 'story' | 'carousel';
@@ -242,14 +243,14 @@ function ActionRail({ likes, comments, color = '#fff', onLike, liked }: {
   );
 }
 
-function AvatarRing({ logoUrl, handle, size = 34 }: { logoUrl?: string; handle: string; size?: number }) {
+function AvatarRing({ logoUrl, handle, size = 34, chrome }: { logoUrl?: string; handle: string; size?: number; chrome: IgFeedChrome }) {
   return (
     <div style={{ width: size, height: size, borderRadius: '50%', flexShrink: 0,
       padding: 2, background: 'linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)' }}>
       <div style={{ width: '100%', height: '100%', borderRadius: '50%',
-        border: '2px solid #000', overflow: 'hidden', background: '#222',
+        border: `2px solid ${chrome.avatarRingBorder}`, overflow: 'hidden', background: chrome.avatarInnerBg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: size * 0.35, fontWeight: 800, color: '#fff' }}>
+        fontSize: size * 0.35, fontWeight: 800, color: chrome.avatarInnerText }}>
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logoUrl} alt="" referrerPolicy="no-referrer"
@@ -263,23 +264,23 @@ function AvatarRing({ logoUrl, handle, size = 34 }: { logoUrl?: string; handle: 
 // ─── Instagram Feed Post ──────────────────────────────────────────────────────
 export type FeedFormatTag = 'carousel' | 'reel' | 'post' | 'ad';
 
-function IGFeedActionRow({ liked, onToggleLike }: { liked: boolean; onToggleLike: () => void }) {
+function IGFeedActionRow({ liked, onToggleLike, chrome }: { liked: boolean; onToggleLike: () => void; chrome: IgFeedChrome }) {
   return (
     <div style={{ padding: '8px 14px 4px', display: 'flex', alignItems: 'center', gap: 14 }}>
       <button type="button" onClick={onToggleLike} aria-label="Beğen" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill={liked ? '#FF3040' : 'none'}
-          stroke={liked ? '#FF3040' : '#fff'} strokeWidth="2">
+          stroke={liked ? '#FF3040' : chrome.icon} strokeWidth="2">
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
         </svg>
       </button>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2" aria-hidden>
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2" aria-hidden>
         <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
       </svg>
       <div style={{ marginLeft: 'auto' }}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={chrome.icon} strokeWidth="2" aria-hidden>
           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
         </svg>
       </div>
@@ -287,29 +288,29 @@ function IGFeedActionRow({ liked, onToggleLike }: { liked: boolean; onToggleLike
   );
 }
 
-function IGFeedCaptionBlock({ handle, content, timeLabel }: {
-  handle: string; content: NativeContentData; timeLabel?: string;
+function IGFeedCaptionBlock({ handle, content, timeLabel, chrome }: {
+  handle: string; content: NativeContentData; timeLabel?: string; chrome: IgFeedChrome;
 }) {
   const h = handle.startsWith('@') ? handle : `@${handle}`;
   const likeCount = 2847;
   return (
     <div style={{ padding: '0 14px 14px' }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: chrome.text, marginBottom: 6 }}>
         {likeCount.toLocaleString('tr-TR')} beğeni
       </div>
       {content.caption && (
-        <div style={{ fontSize: 14, color: '#fff', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 14, color: chrome.text, lineHeight: 1.5 }}>
           <span style={{ fontWeight: 700 }}>{h}</span>{' '}
-          <span style={{ color: 'rgba(255,255,255,0.92)' }}>{content.caption}</span>
+          <span style={{ color: chrome.textSecondary }}>{content.caption}</span>
         </div>
       )}
       {content.hashtags.length > 0 && (
-        <div style={{ fontSize: 14, color: '#E0F1FF', marginTop: 4, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 14, color: chrome.hashtag, marginTop: 4, lineHeight: 1.55 }}>
           {content.hashtags.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ')}
         </div>
       )}
       {timeLabel && (
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginTop: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+        <div style={{ fontSize: 10, color: chrome.timeLabel, marginTop: 8, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
           {timeLabel}
         </div>
       )}
@@ -317,19 +318,19 @@ function IGFeedCaptionBlock({ handle, content, timeLabel }: {
   );
 }
 
-function IGPostHeader({ handle, logoUrl, location, isPending, formatTag }: {
-  handle: string; logoUrl?: string; location?: string; isPending?: boolean; formatTag?: FeedFormatTag;
+function IGPostHeader({ handle, logoUrl, location, isPending, formatTag, chrome }: {
+  handle: string; logoUrl?: string; location?: string; isPending?: boolean; formatTag?: FeedFormatTag; chrome: IgFeedChrome;
 }) {
   const h = handle.startsWith('@') ? handle : `@${handle}`;
   const tagLabel = formatTag === 'carousel' ? 'Carousel' : formatTag === 'reel' ? 'Reels' : formatTag === 'ad' ? 'Sponsorlu' : null;
   return (
     <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-      <AvatarRing logoUrl={logoUrl} handle={handle} />
+      <AvatarRing logoUrl={logoUrl} handle={handle} chrome={chrome} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>{h}</div>
-        {location && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>{location}</div>}
+        <div style={{ fontSize: 14, fontWeight: 600, color: chrome.text, letterSpacing: '-0.01em' }}>{h}</div>
+        {location && <div style={{ fontSize: 11, color: chrome.textMuted, marginTop: 1 }}>{location}</div>}
         {tagLabel && !location && (
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>{tagLabel}</div>
+          <div style={{ fontSize: 11, color: chrome.textMuted, marginTop: 1 }}>{tagLabel}</div>
         )}
       </div>
       {isPending && (
@@ -338,7 +339,7 @@ function IGPostHeader({ handle, logoUrl, location, isPending, formatTag }: {
           background: 'rgba(245,158,11,0.18)', color: '#FBBF24', fontWeight: 700,
         }}>Taslak</span>
       )}
-      <button type="button" aria-label="Menü" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#fff', lineHeight: 1 }}>
+      <button type="button" aria-label="Menü" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: chrome.icon, lineHeight: 1 }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
       </button>
     </div>
@@ -346,12 +347,14 @@ function IGPostHeader({ handle, logoUrl, location, isPending, formatTag }: {
 }
 
 export function InstagramFeedNative({
-  content, handle, logoUrl, isPending, timeLabel, afterMedia, formatTag,
+  content, handle, logoUrl, isPending, timeLabel, afterMedia, formatTag, igChromeDark = true,
 }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
   afterMedia?: React.ReactNode;
   formatTag?: FeedFormatTag;
+  igChromeDark?: boolean;
 }) {
+  const chrome = resolveIgFeedChrome(igChromeDark);
   const [liked, setLiked] = useState(true);
   const [slide, setSlide] = useState(0);
   const images = content.carouselUrls?.length ? content.carouselUrls : content.imageUrl ? [content.imageUrl] : [];
@@ -359,20 +362,21 @@ export function InstagramFeedNative({
   const isCarousel = images.length > 1;
 
   return (
-    <div style={{ background: '#000' }}>
+    <div style={{ background: chrome.shell }}>
       <IGPostHeader
         handle={handle}
         logoUrl={logoUrl}
         location={content.location}
         isPending={isPending}
         formatTag={formatTag ?? (isCarousel ? 'carousel' : 'post')}
+        chrome={chrome}
       />
 
       <div
         className="ig-feed-media-stage ig-feed-post-stage"
         style={{
           width: '100%',
-          background: '#0a0a0a',
+          background: chrome.media,
           position: 'relative',
           ...(!current ? { aspectRatio: '4 / 5' } : {}),
         }}
@@ -391,11 +395,13 @@ export function InstagramFeedNative({
         ) : (
           <div style={{
             width: '100%', height: '100%',
-            background: 'linear-gradient(135deg, #141820 0%, #0a0c12 100%)',
+            background: igChromeDark
+              ? 'linear-gradient(135deg, #141820 0%, #0a0c12 100%)'
+              : 'linear-gradient(135deg, #eef1f4 0%, #e4e8ec 100%)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
-            <div className="feed-skel-shimmer" style={{ width: '72%', height: '58%', borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.06)' }} />
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>Görsel hazırlanıyor…</span>
+            <div className="feed-skel-shimmer" style={{ width: '72%', height: '58%', borderRadius: 4, backgroundColor: igChromeDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: chrome.textMuted }}>Görsel hazırlanıyor…</span>
           </div>
         )}
         {isCarousel && (
@@ -420,8 +426,8 @@ export function InstagramFeedNative({
 
       {afterMedia}
 
-      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} />
-      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} />
+      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} chrome={chrome} />
+      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} chrome={chrome} />
     </div>
   );
 }
@@ -432,11 +438,13 @@ function IgFeedReelMediaStage({
   posterUrl,
   muted,
   onToggleMute,
+  chrome,
 }: {
   videoUrl: string | null;
   posterUrl?: string | null;
   muted: boolean;
   onToggleMute: () => void;
+  chrome: IgFeedChrome;
 }) {
   const ambientSrc = posterUrl ?? videoUrl ?? null;
 
@@ -445,7 +453,7 @@ function IgFeedReelMediaStage({
       className="ig-feed-media-stage ig-feed-reel-stage"
       style={{
         aspectRatio: '4/5',
-        background: '#000',
+        background: chrome.media,
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -506,9 +514,9 @@ function IgFeedReelMediaStage({
         <div style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#0a0a0a',
+          background: chrome.media,
         }}>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Reel hazırlanıyor…</span>
+          <span style={{ fontSize: 12, color: chrome.textMuted }}>Reel hazırlanıyor…</span>
         </div>
       )}
 
@@ -541,27 +549,30 @@ function IgFeedReelMediaStage({
 }
 
 export function InstagramReelInFeedNative({
-  content, handle, logoUrl, isPending, timeLabel, afterMedia,
+  content, handle, logoUrl, isPending, timeLabel, afterMedia, igChromeDark = true,
 }: {
   content: NativeContentData; handle: string; logoUrl?: string; isPending?: boolean; timeLabel?: string;
   afterMedia?: React.ReactNode;
+  igChromeDark?: boolean;
 }) {
+  const chrome = resolveIgFeedChrome(igChromeDark);
   const [liked, setLiked] = useState(true);
   const [muted, setMuted] = useState(true);
 
   return (
-    <div style={{ background: '#000' }}>
-      <IGPostHeader handle={handle} logoUrl={logoUrl} isPending={isPending} formatTag="reel" />
+    <div style={{ background: chrome.shell }}>
+      <IGPostHeader handle={handle} logoUrl={logoUrl} isPending={isPending} formatTag="reel" chrome={chrome} />
 
       <IgFeedReelMediaStage
         videoUrl={content.videoUrl}
         posterUrl={content.imageUrl}
         muted={muted}
         onToggleMute={() => setMuted((m) => !m)}
+        chrome={chrome}
       />
 
-      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} />
-      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} />
+      <IGFeedActionRow liked={liked} onToggleLike={() => setLiked((l) => !l)} chrome={chrome} />
+      <IGFeedCaptionBlock handle={handle} content={content} timeLabel={timeLabel} chrome={chrome} />
 
       {afterMedia}
     </div>
@@ -609,7 +620,7 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending }: {
 
       <div style={{ position: 'absolute', bottom: 16, left: 14, right: 64, zIndex: 5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <AvatarRing logoUrl={logoUrl} handle={h} size={32} />
+          <AvatarRing logoUrl={logoUrl} handle={h} size={32} chrome={resolveIgFeedChrome(true)} />
           <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{h}</span>
         </div>
         {content.caption && (
@@ -952,7 +963,7 @@ export function InstagramStoryNative({ content, handle, logoUrl, isPending, back
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, padding: '10px 12px 0' }}>
         <StoryProgressBar count={1} active={0} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-          <AvatarRing logoUrl={logoUrl} handle={h} />
+          <AvatarRing logoUrl={logoUrl} handle={h} chrome={resolveIgFeedChrome(true)} />
           <div style={{ flex: 1 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{h}</span>
             {content.templateId && (
@@ -1097,6 +1108,7 @@ export function PlatformNativePreview({
   afterMedia,
   inFeedScroll,
   formatTag,
+  igChromeDark = true,
 }: {
   platform: PreviewPlatform;
   mode: PreviewMode;
@@ -1112,6 +1124,8 @@ export function PlatformNativePreview({
   /** Reels in home feed scroll use 4:5 post layout instead of full 9:16. */
   inFeedScroll?: boolean;
   formatTag?: FeedFormatTag;
+  /** Instagram home feed chrome — false in client light mode. */
+  igChromeDark?: boolean;
 }) {
   if (platform === 'tiktok') {
     return <TikTokNative content={content} handle={handle} logoUrl={logoUrl} isPending={isPending} />;
@@ -1129,6 +1143,7 @@ export function PlatformNativePreview({
           isPending={isPending}
           timeLabel={timeLabel}
           afterMedia={afterMedia}
+          igChromeDark={igChromeDark}
         />
       );
     }
@@ -1155,6 +1170,7 @@ export function PlatformNativePreview({
       timeLabel={timeLabel}
       afterMedia={afterMedia}
       formatTag={resolvedTag}
+      igChromeDark={igChromeDark}
     />
   );
 }

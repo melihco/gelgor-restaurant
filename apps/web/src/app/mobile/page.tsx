@@ -1052,6 +1052,62 @@ const CSS = `
     letter-spacing: 0.01em;
   }
 
+  .sa-mobile-frame[data-theme="light"] .feed-skel,
+  .sa-mobile[data-theme="light"] .feed-skel {
+    background: #F4F6F8;
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-header,
+  .sa-mobile[data-theme="light"] .feed-skel-header {
+    background: rgba(255,255,255,0.96);
+    border-bottom-color: rgba(0,0,0,0.08);
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-icon,
+  .sa-mobile[data-theme="light"] .feed-skel-icon {
+    background: rgba(0,0,0,0.07);
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-shimmer,
+  .sa-mobile[data-theme="light"] .feed-skel-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(0,0,0,0.05) 0%,
+      rgba(0,0,0,0.10) 45%,
+      rgba(0,0,0,0.05) 100%
+    );
+    background-size: 200% 100%;
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-stories,
+  .sa-mobile[data-theme="light"] .feed-skel-stories {
+    border-bottom-color: rgba(0,0,0,0.08);
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-story-avatar,
+  .sa-mobile[data-theme="light"] .feed-skel-story-avatar {
+    border-color: #F4F6F8;
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-post,
+  .sa-mobile[data-theme="light"] .feed-skel-post {
+    border-bottom-color: rgba(0,0,0,0.08);
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-media,
+  .sa-mobile[data-theme="light"] .feed-skel-media {
+    background-color: rgba(0,0,0,0.06);
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-skel-message,
+  .sa-mobile[data-theme="light"] .feed-skel-message {
+    color: rgba(8,12,16,0.55);
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-empty-title,
+  .sa-mobile[data-theme="light"] .feed-empty-title {
+    color: #080C10;
+  }
+  .sa-mobile-frame[data-theme="light"] .feed-empty-body,
+  .sa-mobile[data-theme="light"] .feed-empty-body {
+    color: rgba(8,12,16,0.55);
+  }
+  .sa-mobile-frame[data-theme="light"] .ig-feed-media-stage,
+  .sa-mobile[data-theme="light"] .ig-feed-media-stage {
+    background: #f4f4f4;
+  }
+
   .sa-mobile .feed-empty {
     min-height: 42vh;
     display: flex;

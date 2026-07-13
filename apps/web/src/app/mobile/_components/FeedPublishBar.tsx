@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { resolveIgFeedChrome } from './ig-feed-chrome';
 
 export function FeedPublishBar({
   onShareNow,
@@ -10,6 +11,7 @@ export function FeedPublishBar({
   disabled = false,
   softWarning = false,
   hardBlockLabel,
+  dark = true,
 }: {
   onShareNow: () => void;
   onSchedule: () => void;
@@ -18,7 +20,9 @@ export function FeedPublishBar({
   disabled?: boolean;
   softWarning?: boolean;
   hardBlockLabel?: string;
+  dark?: boolean;
 }) {
+  const chrome = resolveIgFeedChrome(dark);
   const shareLabel = sharing
     ? 'Paylaşılıyor…'
     : disabled && hardBlockLabel
@@ -30,9 +34,9 @@ export function FeedPublishBar({
   return (
     <div style={{
       padding: '10px 14px 12px',
-      background: '#000',
-      borderTop: '0.5px solid rgba(255,255,255,0.06)',
-      borderBottom: '0.5px solid rgba(255,255,255,0.06)',
+      background: chrome.publishBarBg,
+      borderTop: `0.5px solid ${chrome.publishBarBorder}`,
+      borderBottom: `0.5px solid ${chrome.publishBarBorder}`,
     }}>
       <button
         type="button"
@@ -44,8 +48,8 @@ export function FeedPublishBar({
           borderRadius: 10,
           border: 'none',
           cursor: disabled || sharing ? 'not-allowed' : 'pointer',
-          background: disabled ? 'rgba(255,255,255,0.08)' : '#0095F6',
-          color: disabled ? 'rgba(255,255,255,0.35)' : '#fff',
+          background: disabled ? (dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : '#0095F6',
+          color: disabled ? (dark ? 'rgba(255,255,255,0.35)' : 'rgba(8,12,16,0.35)') : '#fff',
           fontSize: 14,
           fontWeight: 700,
           letterSpacing: '-0.01em',
@@ -64,16 +68,16 @@ export function FeedPublishBar({
           width: '100%',
           padding: '10px 14px',
           borderRadius: 10,
-          border: '0.5px solid rgba(255,255,255,0.18)',
-          background: 'rgba(255,255,255,0.04)',
+          border: `0.5px solid ${dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)'}`,
+          background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
           cursor: sharing ? 'not-allowed' : 'pointer',
           textAlign: 'left',
         }}
       >
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: chrome.text, letterSpacing: '-0.01em' }}>
           Önerilen saatte paylaş
         </div>
-        <div style={{ fontSize: 12, color: scheduleSubtitle ? '#C9A96E' : 'rgba(255,255,255,0.45)', marginTop: 2 }}>
+        <div style={{ fontSize: 12, color: scheduleSubtitle ? '#C9A96E' : chrome.textMuted, marginTop: 2 }}>
           {scheduleSubtitle ?? 'Takvimden zaman seç'}
         </div>
       </button>
