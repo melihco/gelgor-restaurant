@@ -20,6 +20,8 @@ export async function invalidateBrandContextWriteQueries(
   if (!tenantId) return;
   const keys: InvalidateQueryKey[] = [
     ['brand-context-data', tenantId],
+    ['brand-readiness', tenantId],
+    ['brand-gaps', tenantId],
     ['production-context-snapshot', tenantId],
     ...extras,
   ];

@@ -78,6 +78,7 @@ import { BrandSectionIntro } from '../BrandSectionIntro';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
+import { BrandHubDashboard, buildBrandHubNavItems } from '../BrandHubDashboard';
 
 const BrandChatbotProfileCard = dynamic(
   () => import('../BrandChatbotProfileCard').then((m) => ({ default: m.BrandChatbotProfileCard })),
@@ -3546,23 +3547,17 @@ export function BrandConstitution() {
   const hasChatbot = Boolean((pyCtx as any)?.chatbot_profile);
   const channelsConnected = Boolean(websiteDisplay && instagramDisplay);
 
-  type NavStatus = 'done' | 'warn' | 'neutral';
-  type NavItem = { key: string; target: Tab; label: string; status: NavStatus; hint: string; accent: string };
-  const NAV_ITEMS: NavItem[] = [
-    { key: 'identity', target: 'identity', label: 'Kimlik', accent: '#6C8EF5',
-      status: constitutionConfirmedAt ? 'done' : 'warn', hint: constitutionConfirmedAt ? 'Onaylı' : 'Onay bekliyor' },
-    { key: 'content', target: 'content', label: 'İçerik', accent: '#4FB597',
-      status: (pillarsCount >= 2 && ctasCount >= 1) ? 'done' : 'warn', hint: `${pillarsCount} sütun · ${ctasCount} CTA` },
-    { key: 'design', target: 'design', label: 'Tasarım', accent: '#C79A4B',
-      status: pprReady ? 'done' : 'warn', hint: pprReady ? 'Üretime hazır' : `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}` },
-    { key: 'gallery', target: 'gallery', label: 'Galeri', accent: '#5AA0D6',
-      status: photoCount >= 8 ? 'done' : 'warn', hint: `${photoCount} fotoğraf` },
-    { key: 'chatbot', target: 'chatbot', label: 'Chatbot', accent: '#A985E0',
-      status: hasChatbot ? 'done' : 'neutral', hint: hasChatbot ? 'Aktif' : 'Kurulmadı' },
-    { key: 'channels', target: 'identity', label: 'Kanallar', accent: '#3FB6AE',
-      status: channelsConnected ? 'done' : 'warn', hint: channelsConnected ? 'Bağlı' : 'Eksik bağlantı' },
-  ];
-  const activeNavLabel = NAV_ITEMS.find((n) => n.target === tab)?.label
+  const HUB_NAV_ITEMS = buildBrandHubNavItems({
+    constitutionConfirmedAt,
+    pillarsCount,
+    ctasCount,
+    pprReady,
+    pprScore,
+    photoCount,
+    hasChatbot,
+    channelsConnected,
+  });
+  const activeNavLabel = HUB_NAV_ITEMS.find((n) => n.target === tab)?.label
     ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
@@ -3597,12 +3592,8 @@ export function BrandConstitution() {
   const activeIdentityGroup = IDENTITY_GROUPS.find((g) => g.key === identityGroup);
   const identitySectionTitle = identityGroup === 'channels' ? 'Kanallar' : 'Kimlik';
 
-  const statusColor = (s: NavStatus): string =>
-    s === 'done' ? t.success : s === 'warn' ? '#F59E0B' : t.textMuted;
-
   const monogram = (brandNameDisplay || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   const brandPrimary = String((pyCtx as any)?.brand_primary_color || (p as any).brandColors || t.accent).match(/#[0-9a-fA-F]{3,8}/)?.[0] || t.accent;
-  const brsGood = Number(score) >= 80;
 
   const sharedStatusBanners = (
     <>
@@ -3645,343 +3636,29 @@ export function BrandConstitution() {
 
       {/* ── DASHBOARD VIEW ── */}
       {view === 'dashboard' && (
-        <div style={{ padding: `calc(env(safe-area-inset-top,0px) + ${showStackBack ? 10 : 16}px) 20px 0` }}>
-          {showStackBack && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-              <button
-                type="button"
-                onClick={goBack}
-                aria-label="Geri"
-                style={{
-                  width: 44, height: 44, borderRadius: 14, border: `0.5px solid ${t.separator}`,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                  color: t.textSecondary, flexShrink: 0,
-                  boxShadow: t.isDark ? 'inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
-                }}
-              >
-                <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </button>
-            </div>
-          )}
-
-          {/* Brand profile badge */}
-          <div style={{
-            position: 'relative', marginBottom: 20, padding: '24px 18px 16px', borderRadius: 28, overflow: 'hidden',
-            background: t.isDark
-              ? 'linear-gradient(180deg, rgba(21,27,37,0.96) 0%, rgba(10,13,19,0.98) 100%)'
-              : 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)',
-            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
-            boxShadow: t.isDark
-              ? '0 18px 52px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.06)'
-              : '0 16px 38px rgba(15,23,42,0.09)',
-          }}
-          >
-            <div style={{ position: 'absolute', top: -70, left: '50%', transform: 'translateX(-50%)', width: 260, height: 190, borderRadius: '50%', background: brandPrimary, opacity: t.isDark ? 0.14 : 0.08, filter: 'blur(54px)', pointerEvents: 'none' }} />
-            <div style={{ position: 'absolute', right: -42, bottom: 24, width: 160, height: 160, borderRadius: '50%', background: t.accent, opacity: t.isDark ? 0.07 : 0.04, filter: 'blur(44px)', pointerEvents: 'none' }} />
-
-            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-              <div style={{
-                width: 116, height: 116, borderRadius: 30, overflow: 'hidden',
-                background: logoUrl ? (t.isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.03)') : `linear-gradient(135deg, ${brandPrimary}, ${t.accent})`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: t.isDark
-                  ? '0 18px 38px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.08)'
-                  : '0 14px 30px rgba(15,23,42,0.13)',
-                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)'}`,
-              }}>
-                {logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={resolveGalleryImageSrc(logoUrl)} alt={brandNameDisplay} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 12 }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                ) : (
-                  <span style={{ fontSize: 38, fontWeight: 800, color: '#fff', letterSpacing: '-0.04em' }}>{monogram}</span>
-                )}
-              </div>
-
-              <h2 style={{
-                margin: '14px 0 8px',
-                fontSize: 25,
-                fontWeight: 800,
-                color: t.textPrimary,
-                letterSpacing: '-0.045em',
-                lineHeight: 1.05,
-              }}
-              >
-                {brandNameDisplay || 'Marka adı'}
-              </h2>
-
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {industryDisplay && (
-                  <span style={{
-                    padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700,
-                    background: t.accentDim, color: t.accent,
-                    border: `0.5px solid ${t.accentBorder}`,
-                  }}
-                  >
-                    {industryDisplay}
-                  </span>
-                )}
-                {locationDisplay && (
-                  <span style={{
-                    padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600,
-                    background: t.isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.035)',
-                    color: t.textSecondary,
-                    border: `0.5px solid ${t.separator}`,
-                  }}
-                  >
-                    {locationDisplay}
-                  </span>
-                )}
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800,
-                  letterSpacing: '0.01em',
-                  background: brsGood ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
-                  color: brsGood ? '#34D399' : '#F59E0B',
-                  border: `0.5px solid ${brsGood ? 'rgba(52,211,153,0.35)' : 'rgba(245,158,11,0.35)'}`,
-                }}
-                >
-                  <span style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: brsGood ? '#34D399' : '#F59E0B',
-                    boxShadow: brsGood ? '0 0 8px rgba(52,211,153,0.55)' : 'none',
-                  }} />
-                  BRS {score}
-                </span>
-              </div>
-            </div>
-
-            {/* Quick stats */}
-            <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 18 }}>
-              {[
-                { n: photoCount, l: 'Fotoğraf' },
-                { n: pillarsCount, l: 'İçerik sütunu' },
-                { n: ctasCount, l: 'CTA' },
-              ].map((s) => (
-                <div
-                  key={s.l}
-                  style={{
-                    textAlign: 'center', padding: '10px 6px', borderRadius: 14,
-                    background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.025)',
-                    border: `0.5px solid ${t.separator}`,
-                  }}
-                >
-                  <div style={{ fontSize: 18, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>{s.n}</div>
-                  <div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 2, letterSpacing: '-0.01em' }}>{s.l}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Inline constitution CTA */}
-            {!constitutionConfirmedAt && (
-              <button
-                type="button"
-                onClick={() => void handleConfirmConstitution()}
-                disabled={confirmingConstitution}
-                style={{
-                  position: 'relative', width: '100%', marginTop: 14, padding: '11px 16px', borderRadius: 12, border: 'none',
-                  cursor: confirmingConstitution ? 'wait' : 'pointer', fontSize: 14, fontWeight: 600, color: '#fff',
-                  background: 'linear-gradient(135deg, #F59E0B, #D97706)',
-                }}
-              >
-                {confirmingConstitution ? 'Onaylanıyor…' : 'Marka Anayasasını Onayla · +20 puan'}
-              </button>
-            )}
-            {constitutionConfirmError && (
-              <div style={{ position: 'relative', marginTop: 10, fontSize: 12.5, color: t.danger, lineHeight: 1.4 }}>{constitutionConfirmError}</div>
-            )}
-          </div>
-
-          {sharedStatusBanners}
-
-          {/* Production readiness — most important missing thing */}
-          {productionReadiness?.productionProfile && !pprReady && (
-            <button
-              type="button"
-              onClick={() => openSection('design')}
-              style={{
-                width: '100%', textAlign: 'left', marginBottom: 20, padding: '14px 16px', borderRadius: 16, cursor: 'pointer',
-                background: 'rgba(245,158,11,0.08)', border: '0.5px solid rgba(245,158,11,0.28)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>
-                  Üretim tasarım profili eksik ({pprScore}/{PRODUCTION_PROFILE_THRESHOLD})
-                </span>
-                <ChevronRight color={t.textTertiary} />
-              </div>
-              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, marginTop: 4 }}>
-                Fal story/post üretimi için service profile, visual_dna ve theme katmanlarını tamamla.
-              </div>
-            </button>
-          )}
-
-          {/* Section label */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            margin: '8px 2px 14px',
-          }}
-          >
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: t.textMuted }}>
-              Yönetim
-            </div>
-            <div style={{ fontSize: 11, color: t.textMuted }}>{NAV_ITEMS.length + 1} alan</div>
-          </div>
-
-          {/* Instagram-style settings list */}
-          <div style={{
-            borderRadius: 16, overflow: 'hidden', marginBottom: brandGaps.feedback ? 0 : 8,
-            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
-            border: `0.5px solid ${t.separator}`,
-          }}
-          >
-            {tenantId && (
-              <button
-                type="button"
-                disabled={brandGaps.running}
-                onClick={() => void brandGaps.runComplete()}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '13px 16px',
-                  minHeight: 52,
-                  border: 'none',
-                  cursor: brandGaps.running ? 'wait' : 'pointer',
-                  textAlign: 'left',
-                  background: brandGaps.autoFixable > 0
-                    ? (t.isDark ? 'rgba(16,185,129,0.06)' : 'rgba(16,185,129,0.05)')
-                    : 'transparent',
-                  borderBottom: `0.5px solid ${t.separator}`,
-                }}
-              >
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: brandGaps.autoFixable > 0
-                    ? 'rgba(16,185,129,0.14)'
-                    : (t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-                }}
-                >
-                  {brandGaps.running ? (
-                    <div style={{
-                      width: 16, height: 16, borderRadius: '50%',
-                      border: `1.5px solid ${t.separator}`, borderTopColor: t.accent,
-                      animation: 'spinSlow 0.8s linear infinite',
-                    }} />
-                  ) : (
-                    <span style={{
-                      fontSize: 16, lineHeight: 1,
-                      color: brandGaps.autoFixable > 0 ? '#34D399' : t.accent,
-                    }}
-                    >
-                      ✦
-                    </span>
-                  )}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 15, fontWeight: 500, color: t.textPrimary,
-                    letterSpacing: '-0.02em', lineHeight: 1.2,
-                  }}
-                  >
-                    {brandGaps.shortLabel}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  <span style={{
-                    fontSize: 13,
-                    color: brandGaps.autoFixable > 0 ? '#34D399' : t.textMuted,
-                    fontWeight: 500,
-                    letterSpacing: '-0.01em',
-                  }}
-                  >
-                    {brandGaps.hint}
-                  </span>
-                  {brandGaps.autoFixable > 0 && !brandGaps.running && (
-                    <span style={{
-                      minWidth: 22, height: 22, padding: '0 6px', borderRadius: 999,
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: '#34D399',
-                      background: 'rgba(16,185,129,0.16)',
-                    }}
-                    >
-                      {brandGaps.autoFixable}
-                    </span>
-                  )}
-                </div>
-              </button>
-            )}
-            {NAV_ITEMS.map((item, index) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => {
-                  if (item.key === 'channels') {
-                    openSection('identity', { identityGroup: 'channels' });
-                  } else {
-                    openSection(item.target);
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '13px 16px',
-                  minHeight: 52,
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  background: 'transparent',
-                  borderBottom: index < NAV_ITEMS.length - 1 ? `0.5px solid ${t.separator}` : 'none',
-                }}
-              >
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                }}
-                >
-                  <SectionIcon name={item.key} color={item.accent} size={20} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 15, fontWeight: 500, color: t.textPrimary,
-                    letterSpacing: '-0.02em', lineHeight: 1.2,
-                  }}
-                  >
-                    {item.label}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  <span style={{
-                    fontSize: 13, color: statusColor(item.status), fontWeight: 500,
-                    letterSpacing: '-0.01em', maxWidth: 120, overflow: 'hidden',
-                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}
-                  >
-                    {item.hint}
-                  </span>
-                  <ChevronRight color={t.textMuted} />
-                </div>
-              </button>
-            ))}
-          </div>
-          {brandGaps.feedback && (
-            <div style={{
-              marginTop: 8, marginBottom: 8, padding: '10px 14px', borderRadius: 12,
-              fontSize: 12.5, lineHeight: 1.45,
-              color: brandGaps.feedback.kind === 'ok' ? t.success : t.danger,
-              background: brandGaps.feedback.kind === 'ok' ? t.successDim : 'rgba(239,68,68,0.08)',
-              border: `0.5px solid ${brandGaps.feedback.kind === 'ok' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.22)'}`,
-            }}
-            >
-              {brandGaps.feedback.text}
-            </div>
-          )}
-        </div>
+        <BrandHubDashboard
+          t={t}
+          showStackBack={showStackBack}
+          onBack={goBack}
+          brandName={brandNameDisplay}
+          logoUrl={logoUrl}
+          monogram={monogram}
+          brandPrimary={brandPrimary}
+          industryLabel={industryDisplay || null}
+          locationLabel={locationDisplay || null}
+          readinessScore={Number(score) || 0}
+          navItems={HUB_NAV_ITEMS}
+          tenantId={tenantId}
+          brandGaps={brandGaps}
+          constitutionConfirmedAt={constitutionConfirmedAt}
+          confirmingConstitution={confirmingConstitution}
+          constitutionConfirmError={constitutionConfirmError}
+          onConfirmConstitution={() => void handleConfirmConstitution()}
+          onOpenSection={openSection}
+          showPprBanner={Boolean(productionReadiness?.productionProfile && !pprReady)}
+          pprScore={pprScore}
+          statusBanners={sharedStatusBanners}
+        />
       )}
 
       {/* ── SECTION HEADER (sticky) ── */}

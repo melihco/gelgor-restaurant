@@ -1248,8 +1248,8 @@ const CSS = `
 
     .sa-mobile-frame {
       position: relative;
-      /* IG mobile feed — phone-width column (edge-to-edge media) */
-      width: min(430px, calc(100vw - 24px));
+      /* IG feed column — mobile-first; wider on large desktop like instagram.com */
+      width: min(480px, calc(100vw - 32px));
       height: 100vh;
       max-height: 100dvh;
       overflow: hidden;
@@ -1263,7 +1263,7 @@ const CSS = `
 
   @media (min-width: 1100px) {
     .sa-mobile-frame {
-      width: min(430px, calc(100vw - 48px));
+      width: min(630px, calc(100vw - 64px));
     }
   }
 
@@ -1295,7 +1295,7 @@ const CSS = `
     background: #000;
   }
 
-  /* Reels in home feed — 4:5 frame, full-bleed cover (IG mobile) */
+  /* Reels in home feed — fixed 4:5 crop (IG shows reels in feed as 4:5, not full 9:16) */
   .sa-mobile .ig-feed-reel-stage {
     width: 100%;
     max-width: none;
@@ -1303,9 +1303,31 @@ const CSS = `
     margin-inline: 0;
   }
 
+  /* Posts — aspect set inline from image (1:1 … 4:5); full column width */
+  .sa-mobile .ig-feed-post-stage {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+
   .sa-mobile .ig-feed-post {
     width: 100%;
     max-width: none;
+  }
+
+  /* Brand hub — premium studio tiles */
+  .sa-mobile .brand-hub-tile {
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile .brand-hub-tile:active {
+    transform: scale(0.97);
+  }
+  .sa-mobile .brand-hub-gap-cta:active {
+    transform: scale(0.985);
+  }
+  .sa-mobile .brand-hub-gap-cta {
+    transition: transform 160ms ease;
   }
 
   /* Story viewer — IG native 9:16; portal .sa-mobile-frame içinde (tam tarayıcı değil) */

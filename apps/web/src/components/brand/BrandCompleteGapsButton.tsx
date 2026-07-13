@@ -109,7 +109,7 @@ export function useBrandCompleteGaps(
     : autoFixable > 0
       ? `Marka eksiklerini tamamla (${autoFixable})`
       : actionable > 0
-        ? `Manuel eksikler (${actionable})`
+        ? 'Kalan adımlar'
         : 'Marka profilini yenile';
 
   const shortLabel = running
@@ -125,7 +125,7 @@ export function useBrandCompleteGaps(
     : autoFixable > 0
       ? 'AI ile otomatik'
       : actionable > 0
-        ? `${actionable} manuel adım`
+        ? `${actionable} kalan adım`
         : 'Profili yenile';
 
   return {

@@ -125,6 +125,20 @@ function brandDnaRichness(brandDna: unknown, visualDna?: string | null): string 
   return null;
 }
 
+/** BRS checklist items that mirror a canonical gap id — avoid double-counting in UI. */
+const BRS_CHECK_CANONICAL_GAP: Record<string, string> = {
+  discovery_confidence: 'discovery_low',
+  content_pillars: 'content_pillars_low',
+  default_ctas: 'default_ctas_missing',
+  gallery_coverage: 'gallery_coverage_low',
+  brand_dna: 'brand_dna_sparse',
+  brand_theme: 'brand_theme_missing',
+};
+
+const PPR_CHECK_CANONICAL_GAP: Record<string, string> = {
+  service_profile: 'service_profile_missing',
+};
+
 /** Merge Python gap list with BFF readiness signals for dashboard display. */
 export function mergeBrandGapLists(
   pythonGaps: BrandGapItem[],
@@ -191,6 +205,8 @@ export function mergeBrandGapLists(
 
   for (const check of input.readinessMissing ?? []) {
     if (check.passed) continue;
+    const canonical = BRS_CHECK_CANONICAL_GAP[check.id];
+    if (canonical && seen.has(canonical)) continue;
     add({
       id: `brs_${check.id}`,
       label: check.label,
@@ -200,6 +216,8 @@ export function mergeBrandGapLists(
   }
 
   for (const item of input.productionProfileMissing ?? []) {
+    const canonical = PPR_CHECK_CANONICAL_GAP[item.id];
+    if (canonical && seen.has(canonical)) continue;
     add({
       id: `ppr_${item.id}`,
       label: item.label,
@@ -269,7 +287,14 @@ export function formatCompleteGapsFeedback(input: {
     return 'Marka DNA ve görsel profil için OPENAI_API_KEY gerekli. İçerik sütunları ve açıklama gibi alanlar güncellenmiş olabilir.';
   }
   if (needsAnalyze) {
-    return 'Keşif skoru için Marka Ayarları → Kimlik bölümünden web/Instagram analizini yeniden çalıştırın.';
+    const reanalyze = steps.find((s) => s.id === 'discovery_reanalyze');
+    if (reanalyze?.detail?.includes('Web sitesi veya Instagram')) {
+      return 'Kimlik → Kanallar\'a web sitesi veya Instagram ekleyin; ardından "Marka Analizi"ni çalıştırın (URL kaydetmek keşif skorunu güncellemez).';
+    }
+    if (reanalyze && !reanalyze.ok) {
+      return `Keşif analizi otomatik tamamlanamadı (${reanalyze.detail ?? 'hata'}). Kimlik → Kanallar → Marka Analizi\'ni manuel çalıştırın.`;
+    }
+    return 'Keşif skoru yalnızca Marka Analizi ile güncellenir. Kimlik → Kanallar → "Marka Analizi"ni çalıştırın (alan doldurmak tek başına yetmez).';
   }
   if (failed.length > 0) {
     const detail = failed.map((s) => s.detail || s.id).filter(Boolean).slice(0, 2).join('; ');

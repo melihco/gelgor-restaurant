@@ -23,4 +23,14 @@ describe('brand gap completion feedback', () => {
     });
     expect(text).toContain('OPENAI_API_KEY');
   });
+
+  it('explains analyze button requirement for discovery', () => {
+    const text = formatCompleteGapsFeedback({
+      resolvedCount: 0,
+      steps: [],
+      gapsAfter: [{ id: 'discovery_low', label: 'discovery', severity: 'medium' }],
+    });
+    expect(text).toContain('Marka Analizi');
+    expect(text).toContain('alan doldurmak tek başına yetmez');
+  });
 });
