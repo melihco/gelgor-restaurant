@@ -11,6 +11,7 @@ import {
   type MertcafeSavedAccount,
 } from '@/lib/mertcafe-accounts';
 import type { T } from './theme-context';
+import { isDebugUiMode } from './mobile-client-config';
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -40,6 +41,7 @@ export function MertcafeAccountSwitcher({
   compact?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const debugMode = isDebugUiMode();
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [newId, setNewId] = useState('');
   const [newLabel, setNewLabel] = useState('');
@@ -558,63 +560,65 @@ export function MertcafeAccountSwitcher({
               {syncOAuthMutation.isPending ? 'Senkronize ediliyor…' : 'OAuth hesabını yayın hedefi yap'}
             </button>
 
-            {!showAddForm ? (
-              <button
-                type="button"
-                onClick={() => setShowAddForm(true)}
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
-                  background: 'transparent', border: `0.5px solid ${t.separator}`,
-                  color: t.textTertiary, fontSize: 13,
-                }}
-              >
-                + Manuel hesap ID ekle
-              </button>
-            ) : (
-              <div style={{ padding: '12px', borderRadius: 12, border: `0.5px solid ${t.separator}` }}>
-                <label style={{ fontSize: 11, color: t.labelColor, display: 'block', marginBottom: 6 }}>
-                  Instagram hesap ID
-                </label>
-                <input
-                  value={newId}
-                  onChange={(e) => setNewId(e.target.value)}
-                  placeholder="6a200e8e2b2567671aae"
-                  style={inputStyle(t)}
-                />
-                <label style={{ fontSize: 11, color: t.labelColor, display: 'block', margin: '10px 0 6px' }}>
-                  Etiket (isteğe bağlı)
-                </label>
-                <input
-                  value={newLabel}
-                  onChange={(e) => setNewLabel(e.target.value)}
-                  placeholder="ör. @kacta ana hesap"
-                  style={inputStyle(t)}
-                />
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button
-                    type="button"
-                    disabled={!newId.trim() || addMutation.isPending}
-                    onClick={() => addMutation.mutate()}
-                    style={{
-                      flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                      background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700,
-                    }}
-                  >
-                    {addMutation.isPending ? 'Kaydediliyor…' : 'Ekle ve aktif yap'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                      background: 'transparent', border: `0.5px solid ${t.separator}`,
-                      color: t.textMuted, fontSize: 12,
-                    }}
-                  >
-                    İptal
-                  </button>
+            {debugMode && (
+              !showAddForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(true)}
+                  style={{
+                    width: '100%', padding: '10px 14px', borderRadius: 12, cursor: 'pointer',
+                    background: 'transparent', border: `0.5px solid ${t.separator}`,
+                    color: t.textTertiary, fontSize: 13,
+                  }}
+                >
+                  + Manuel hesap ID ekle
+                </button>
+              ) : (
+                <div style={{ padding: '12px', borderRadius: 12, border: `0.5px solid ${t.separator}` }}>
+                  <label style={{ fontSize: 11, color: t.labelColor, display: 'block', marginBottom: 6 }}>
+                    Instagram hesap ID
+                  </label>
+                  <input
+                    value={newId}
+                    onChange={(e) => setNewId(e.target.value)}
+                    placeholder="1784xxxxxxxxxxxx"
+                    style={inputStyle(t)}
+                  />
+                  <label style={{ fontSize: 11, color: t.labelColor, display: 'block', margin: '10px 0 6px' }}>
+                    Etiket (isteğe bağlı)
+                  </label>
+                  <input
+                    value={newLabel}
+                    onChange={(e) => setNewLabel(e.target.value)}
+                    placeholder="ör. @markaniz"
+                    style={inputStyle(t)}
+                  />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <button
+                      type="button"
+                      disabled={!newId.trim() || addMutation.isPending}
+                      onClick={() => addMutation.mutate()}
+                      style={{
+                        flex: 1, padding: '10px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                        background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700,
+                      }}
+                    >
+                      {addMutation.isPending ? 'Kaydediliyor…' : 'Ekle ve aktif yap'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddForm(false)}
+                      style={{
+                        padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                        background: 'transparent', border: `0.5px solid ${t.separator}`,
+                        color: t.textMuted, fontSize: 12,
+                      }}
+                    >
+                      İptal
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         </div>

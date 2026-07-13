@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
-import { IcoBack, IcoRetry } from '../Icons';
+import { IcoRetry } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { isMobileOperatorMode } from '../mobile-client-config';
 import type { T } from '../theme-context';
@@ -112,17 +113,7 @@ export function VisitorsScreen() {
   if (!isLoading && !hasRealData && !operatorMode) {
     return (
       <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100 }}>
-        <div style={{ padding: '56px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <IcoBack color={t.textSecondary} />
-            </button>
-            <div>
-              <p style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 3 }}>Google Analytics</p>
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>Web Trafiği</h1>
-            </div>
-          </div>
-        </div>
+        <MobileStackHeader t={t} title="Web Trafiği" onBack={goBack} />
         <div style={{ padding: '48px 24px', textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 16, opacity: 0.2 }}>📊</div>
           <h2 style={{ fontSize: 18, fontWeight: 800, color: t.textPrimary, marginBottom: 10 }}>Trafik verileri yakında</h2>
@@ -176,28 +167,28 @@ export function VisitorsScreen() {
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
-      {/* Header */}
-      <div style={{ padding: '56px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <IcoBack color={t.textSecondary} />
+      <MobileStackHeader
+        t={t}
+        title="Web Trafiği"
+        onBack={goBack}
+        right={(
+          <button
+            type="button"
+            onClick={() => refetch()}
+            aria-label="Yenile"
+            style={{ ...t.iconBtn, width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <IcoRetry size={16} color={t.textSecondary} />
           </button>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 3 }}>Google Analytics</p>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>Web Trafiği</h1>
-          </div>
-          <button onClick={() => refetch()} style={{ ...t.iconBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <IcoRetry size={14} color={t.textSecondary} />
-          </button>
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {RANGES.map((r) => (
-            <button key={r.id} onClick={() => setRange(r.id)} style={{
-              padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: range === r.id ? 600 : 400,
-              ...(range === r.id ? t.pillActive(t.info) : t.pillIdle),
-            }}>{r.label}</button>
-          ))}
-        </div>
+        )}
+      />
+      <div style={{ padding: '12px 24px 16px', display: 'flex', gap: 6, borderBottom: `0.5px solid ${t.separator}` }}>
+        {RANGES.map((r) => (
+          <button key={r.id} onClick={() => setRange(r.id)} style={{
+            padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: range === r.id ? 600 : 400,
+            ...(range === r.id ? t.pillActive(t.info) : t.pillIdle),
+          }}>{r.label}</button>
+        ))}
       </div>
 
       {isLoading ? (

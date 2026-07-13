@@ -41,7 +41,7 @@ const VISUAL_OUTPUT_TYPES_LIST: {
 }[] = [
   {
     id: 'story',
-    label: 'Story',
+    label: 'Hikaye',
     icon: '▋',
     desc: '9:16 dikey tasarım + hareket',
     format: '9:16',
@@ -68,7 +68,7 @@ const TEXT_OUTPUT_TYPES_LIST: {
   icon: string;
   desc: string;
 }[] = [
-  { id: 'caption', label: 'Caption', icon: 'T', desc: 'Metin & hashtag seti' },
+  { id: 'caption', label: 'Metin', icon: 'T', desc: 'Metin & hashtag seti' },
   { id: 'ad', label: 'Reklam', icon: '◈', desc: 'Google / Meta reklam brief\'i' },
   { id: 'report', label: 'Rapor', icon: '↗', desc: 'Performans analizi talebi' },
 ];

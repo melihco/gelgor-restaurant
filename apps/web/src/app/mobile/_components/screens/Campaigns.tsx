@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
+import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { Brief } from '@/types';
@@ -146,7 +147,7 @@ type TabFilter = 'all' | 'active' | 'completed';
 
 export function Campaigns() {
   const { t } = useTheme();
-  const { openCampaign, navigate } = useMobileStore();
+  const { openCampaign, navigate, goBack } = useMobileStore();
   const { officeId } = useWorkspaceStore();
   const [tab, setTab] = useState<TabFilter>('all');
 
@@ -175,23 +176,41 @@ export function Campaigns() {
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, transition: 'background 300ms', fontFamily: '-apple-system, "SF Pro Display", sans-serif', paddingBottom: 96 }}>
-
-      {/* Header */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 20px) 20px 0', borderBottom: `0.5px solid ${t.separator}` }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: t.labelColor, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>Workspace</div>
-            <h1 style={{ fontSize: 28, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 5 }}>Campaigns</h1>
-            {!isLoading && (
-              <div style={{ fontSize: 13, color: t.textTertiary }}>
-                {activeCnt > 0 ? `${activeCnt} aktif mission` : `${briefs.length} brief`}
-              </div>
-            )}
-          </div>
-          <button onClick={() => navigate('new-brief')} style={{ marginTop: 8, padding: '10px 16px', borderRadius: 12, cursor: 'pointer', background: 'linear-gradient(135deg, rgba(77,112,136,0.90), rgba(45,80,104,0.85))', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 3px 12px rgba(77,112,136,0.3)' }}>
-            <span style={{ fontSize: 16 }}>+</span> Yeni
+      <MobileStackHeader
+        t={t}
+        title="Kampanyalar"
+        onBack={goBack}
+        right={(
+          <button
+            type="button"
+            onClick={() => navigate('new-brief')}
+            aria-label="Yeni brief"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              border: 'none',
+              cursor: 'pointer',
+              background: t.accent,
+              color: '#fff',
+              fontSize: 22,
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            +
           </button>
-        </div>
+        )}
+      />
+
+      <div style={{ padding: '0 20px', borderBottom: `0.5px solid ${t.separator}` }}>
+        {!isLoading && (
+          <p style={{ fontSize: 13, color: t.textTertiary, margin: '0 0 12px' }}>
+            {activeCnt > 0 ? `${activeCnt} aktif görev` : `${briefs.length} brief`}
+          </p>
+        )}
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 0 }}>

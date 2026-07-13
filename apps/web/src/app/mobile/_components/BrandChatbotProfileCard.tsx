@@ -382,7 +382,7 @@ export function BrandChatbotProfileCard({
                   border: '0.5px solid rgba(129,140,248,0.35)',
                 }}
               >
-                {syncMertcafeMutation.isPending ? 'Sync…' : 'Mertcafe\'e Gönder'}
+                {syncMertcafeMutation.isPending ? 'Senkronize ediliyor…' : 'Mertcafe\'e Gönder'}
               </button>
             </div>
 

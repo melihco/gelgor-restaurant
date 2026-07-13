@@ -84,8 +84,8 @@ function ImageGenPanel({ artifactId, caption, title, queryClient }: {
   );
 
   const MODES = [
-    { id: 'post' as const,  label: 'Post',  sub: '4:5', icon: '▦' },
-    { id: 'story' as const, label: 'Story', sub: '9:16', icon: '▨' },
+    { id: 'post' as const,  label: 'Gönderi', sub: '4:5', icon: '▦' },
+    { id: 'story' as const, label: 'Hikaye', sub: '9:16', icon: '▨' },
     { id: 'reel' as const,  label: 'Reel',  sub: '9:16', icon: '▶' },
   ];
 
@@ -199,9 +199,9 @@ function splitArtifactTitle(raw: string): { agentLine: string; taskLine: string 
 function getTypeLabel(signal: ReturnType<typeof signalFromArtifact>): string {
   const k = signal.kind;
   const map: Record<string, string> = {
-    instagram_post:    'Instagram Post',
-    instagram_story:   'Instagram Story',
-    instagram_reel:    'Instagram Reel',
+    instagram_post:    'Instagram Gönderisi',
+    instagram_story:   'Instagram Hikayesi',
+    instagram_reel:    'Instagram Reels',
     instagram_plan:    'İçerik Planı',
     ad_campaign:       'Reklam Kampanyası',
     ad_creative:       'Reklam Görseli',

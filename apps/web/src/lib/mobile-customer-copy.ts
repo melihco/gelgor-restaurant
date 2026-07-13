@@ -121,3 +121,69 @@ export function estimateRemainingPosts(remainingTokens: number): number {
   if (!Number.isFinite(remainingTokens) || remainingTokens <= 0) return 0;
   return Math.max(0, Math.floor(remainingTokens / 35));
 }
+
+/** Feed / onay / plan ekranlarında içerik türü etiketi. */
+export function formatMobileContentTypeLabel(kind: string | undefined | null): string {
+  const raw = String(kind ?? '').trim().toLowerCase();
+  const k = raw.replace(/^instagram_/, '');
+  switch (k) {
+    case 'post':
+    case 'image':
+      return 'Gönderi';
+    case 'story':
+      return 'Hikaye';
+    case 'reel':
+      return 'Reel';
+    case 'carousel':
+      return 'Kaydırmalı';
+    case 'plan':
+      return 'İçerik Planı';
+    case 'ad':
+    case 'ad_creative':
+      return 'Reklam';
+    case 'caption':
+      return 'Metin';
+    case 'report':
+    case 'analytics':
+      return 'Rapor';
+    case 'review':
+    case 'review_reply':
+      return 'Yorum Yanıtı';
+    case 'strategy':
+      return 'Strateji';
+    default:
+      return 'İçerik';
+  }
+}
+
+/** Meta kampanya durumu — ham API enum yerine TR. */
+export function formatMetaCampaignStatus(status: string | undefined | null): string {
+  switch (String(status ?? '').toUpperCase()) {
+    case 'ACTIVE':
+      return 'Aktif';
+    case 'PAUSED':
+      return 'Duraklatıldı';
+    case 'ARCHIVED':
+      return 'Arşivlendi';
+    case 'DELETED':
+      return 'Silindi';
+    case 'IN_PROCESS':
+      return 'İşleniyor';
+    case 'WITH_ISSUES':
+      return 'Sorunlu';
+    default:
+      return 'Bilinmiyor';
+  }
+}
+
+/** Yorum kaynağı etiketi. */
+export function formatReviewProviderLabel(provider: string | undefined | null): string {
+  switch (String(provider ?? '')) {
+    case 'GoogleBusiness':
+      return 'Google İşletme';
+    case 'Instagram':
+      return 'Instagram';
+    default:
+      return String(provider ?? 'Kaynak');
+  }
+}

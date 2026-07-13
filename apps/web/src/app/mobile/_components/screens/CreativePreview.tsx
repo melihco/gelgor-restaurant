@@ -17,6 +17,7 @@ import { apiClient } from '@/lib/api-client';
 import { useArtifactDecision } from '../../_hooks/use-artifact-decision';
 import { signalFromArtifact, MobileArtifactView } from '../MobileArtifactView';
 import { resolveArtifact, contentTypeLabel, type ResolvedArtifact } from '@/lib/artifact-utils';
+import { formatMobileContentTypeLabel } from '@/lib/mobile-customer-copy';
 import type { ArtifactSignal } from '../MobileArtifactView';
 import type { OutputArtifact } from '@/types';
 
@@ -342,7 +343,7 @@ export function CreativePreview() {
   const hashtags  = ((currentIdea?.hashtags ?? signal.hashtags ?? []) as string[]).slice(0, 12);
   const isVertical = ckind === 'story' || ckind === 'reel';
 
-  const typeLabel = ckind === 'story' ? 'Story' : ckind === 'reel' ? 'Reel' : ckind === 'plan' ? 'İçerik Planı' : 'Post';
+  const typeLabel = formatMobileContentTypeLabel(ckind);
 
   // ── Full-screen immersive (story/reel) ────────────────────────────────
   if (isVertical) {

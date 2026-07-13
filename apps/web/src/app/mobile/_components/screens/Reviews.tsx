@@ -4,11 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { IcoBack, IcoStar, IcoGoogle, IcoInstagram, IcoSend, IcoEdit, IcoCheck } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { createPortal } from 'react-dom';
 import { useState as useLocalState, useEffect } from 'react';
 import type { T } from '../theme-context';
 import type { SuggestedActionDto } from '@/types';
+import { formatReviewProviderLabel } from '@/lib/mobile-customer-copy';
 
 // ─── Types ────────────────────────────────────────────────────────────
 interface ReviewItem {
@@ -91,7 +93,7 @@ type Filter = 'all' | 'pending' | 'executed' | 'negative';
 
 export function Reviews() {
   const { t } = useTheme();
-  const { navigate } = useMobileStore();
+  const { navigate, goBack } = useMobileStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<ReviewItem | null>(null);
 
@@ -127,12 +129,10 @@ export function Reviews() {
   return (
     <>
       <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
-        {/* Header */}
-        <div style={{ padding: '60px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-          <p style={{ fontSize: 12, fontWeight: 500, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>Google Business</p>
-          <h1 style={{ fontSize: 32, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.1, marginBottom: 16 }}>Yorumlar</h1>
+        <MobileStackHeader t={t} title="Yorumlar" onBack={goBack} />
 
-          {/* Stats */}
+        {/* Stats */}
+        <div style={{ padding: '16px 24px 20px', borderBottom: filtered.length > 0 || !isLoading ? `0.5px solid ${t.separator}` : undefined }}>
           {!isLoading && allReviews.length > 0 && (
             <div style={{ display: 'flex', gap: 8 }}>
               {[
@@ -185,7 +185,7 @@ export function Reviews() {
               {allReviews.length === 0 && (
                 <>
                   <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, marginBottom: 20, maxWidth: 280, margin: '0 auto 20px' }}>
-                    Google Business ve Instagram bağlantısı kurulunca yorumlar burada görünür ve AI yanıt önerileri hazırlanır.
+                    Google İşletme ve Instagram bağlantısı kurulunca yorumlar burada görünür ve AI yanıt önerileri hazırlanır.
                   </div>
                   <button
                     type="button"
@@ -229,7 +229,7 @@ export function Reviews() {
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
                         {r.provider === 'Instagram' ? <IcoInstagram size={14} color={t.textTertiary} /> : <IcoGoogle size={14} color={t.textTertiary} />}
-                        <span style={{ fontSize: 12, color: t.textTertiary }}>{r.provider === 'GoogleBusiness' ? 'Google Business' : r.provider}</span>
+                        <span style={{ fontSize: 12, color: t.textTertiary }}>{formatReviewProviderLabel(r.provider)}</span>
                       </div>
                       <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 20, fontWeight: 600, flexShrink: 0, background: t[sc_t.dimKey] as string, color: sc_t.color }}>
                         {sc_t.label}
@@ -320,7 +320,7 @@ function ReviewDetailSheet({ review, onClose }: { review: ReviewItem; onClose: (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
                 {review.provider === 'Instagram' ? <IcoInstagram size={14} color={t.textTertiary} /> : <IcoGoogle size={14} color={t.textTertiary} />}
-                <span style={{ fontSize: 12, color: t.textTertiary }}>{review.provider === 'GoogleBusiness' ? 'Google Business' : review.provider}</span>
+                <span style={{ fontSize: 12, color: t.textTertiary }}>{formatReviewProviderLabel(review.provider)}</span>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: t[sc_s.dimKey] as string, color: sc_s.color, fontWeight: 600 }}>{sc_s.label}</span>

@@ -69,7 +69,8 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
 
-  const handleLogin = async () => {
+  const handleLogin = async (event?: React.FormEvent) => {
+    event?.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError('E-posta ve şifre gerekli.');
       return;
@@ -108,56 +109,63 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
           Marka panelinize ve AI üretim ekibinize erişin.
         </p>
 
-        <div className="onboarding-fields">
-          <label className="onboarding-field">
-            <span className="onboarding-field-label">E-posta</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-              placeholder="siz@firma.com"
-              autoComplete="email"
-              className={`onboarding-input${email.trim() ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
-            />
-          </label>
-
-          <label className="onboarding-field">
-            <span className="onboarding-field-label">Şifre</span>
-            <div className="auth-password-wrap">
+        <form className="onboarding-auth-form" onSubmit={handleLogin} noValidate>
+          <div className="onboarding-fields">
+            <label className="onboarding-field">
+              <span className="onboarding-field-label">E-posta</span>
               <input
-                type={showPass ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                className={`onboarding-input auth-password-input${password.trim() ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
+                type="email"
+                name="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="siz@firma.com"
+                autoComplete="email"
+                inputMode="email"
+                enterKeyHint="next"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={`onboarding-input${email.trim() ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
               />
-              <button
-                type="button"
-                className="auth-password-toggle"
-                onClick={() => setShowPass((v) => !v)}
-                aria-label={showPass ? 'Şifreyi gizle' : 'Şifreyi göster'}
-              >
-                <EyeIcon open={showPass} />
-              </button>
-            </div>
-          </label>
-        </div>
+            </label>
 
-        {error && <p className="onboarding-error">{error}</p>}
+            <label className="onboarding-field">
+              <span className="onboarding-field-label">Şifre</span>
+              <div className="auth-password-wrap">
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  name="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  enterKeyHint="go"
+                  className={`onboarding-input auth-password-input${password.trim() ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
+                />
+                <button
+                  type="button"
+                  className="auth-password-toggle"
+                  onClick={() => setShowPass((v) => !v)}
+                  aria-label={showPass ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                >
+                  <EyeIcon open={showPass} />
+                </button>
+              </div>
+            </label>
+          </div>
 
-        <div className="onboarding-actions onboarding-actions--login">
-          <button
-            type="button"
-            onClick={handleLogin}
-            disabled={loading}
-            className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
-          >
-            {loading ? 'Giriş yapılıyor…' : 'Giriş Yap'}
-          </button>
-        </div>
+          {error && <p className="onboarding-error">{error}</p>}
+
+          <div className="onboarding-actions onboarding-actions--login">
+            <button
+              type="submit"
+              disabled={loading}
+              className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
+            >
+              {loading ? 'Giriş yapılıyor…' : 'Giriş Yap'}
+            </button>
+          </div>
+        </form>
       </main>
 
       <footer className="onboarding-footer onboarding-footer--login">

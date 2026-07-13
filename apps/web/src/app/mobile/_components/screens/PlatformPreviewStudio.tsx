@@ -778,7 +778,7 @@ function AIExplanationSheet({ artifact, onClose }: { artifact: OutputArtifact; o
   if (strategicPurpose) items.push({ label: 'Stratejik amaç', value: strategicPurpose });
   if (missionBrief)     items.push({ label: 'Kampanya brief', value: missionBrief });
   if (visualDirection)  items.push({ label: 'Görsel yönlendirme', value: visualDirection });
-  if (hookType)         items.push({ label: 'Caption hook stratejisi', value: fmt(hookType) });
+  if (hookType)         items.push({ label: 'Metin kancası stratejisi', value: fmt(hookType) });
   if (templateUseCase)  items.push({ label: 'Şablon amacı', value: fmt(templateUseCase) });
   if (postingTime)      items.push({ label: 'Yayın zamanı önerisi', value: postingTime });
   if (productionNotes)  items.push({ label: 'Prodüksiyon notu', value: productionNotes });

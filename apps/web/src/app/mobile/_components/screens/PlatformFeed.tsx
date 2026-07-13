@@ -769,7 +769,7 @@ function formatPublishFeedback(kind: string): string {
   const now = new Date();
   const day = TR_DAYS[now.getDay()] ?? '';
   const time = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-  const label = kind === 'story' ? 'Story' : kind === 'reel' ? 'Reel' : 'Post';
+  const label = kind === 'story' ? 'Hikaye' : kind === 'reel' ? 'Reel' : 'Gönderi';
   return `✓ ${label} yayınlandı — ${day} ${time}`;
 }
 
@@ -2494,17 +2494,17 @@ export function PlatformFeed() {
   const TABS: { id: FeedFilter; label: string; icon?: string }[] = operatorMode
     ? [
         { id: 'all', label: 'Tümü', icon: '⊞' },
-        { id: 'post', label: 'Post', icon: '□' },
-        { id: 'story', label: 'Story', icon: '○' },
+        { id: 'post', label: 'Gönderi', icon: '□' },
+        { id: 'story', label: 'Hikaye', icon: '○' },
         { id: 'reel', label: 'Reel', icon: '▶' },
         { id: 'ad', label: 'Reklam', icon: '📊' },
       ]
     : [
         { id: 'all', label: 'Tümü' },
         { id: 'post', label: 'Gönderi' },
-        { id: 'story', label: 'Story' },
+        { id: 'story', label: 'Hikaye' },
         { id: 'reel', label: 'Reel' },
-        { id: 'ad', label: 'Reklam', icon: '📊' },
+        { id: 'ad', label: 'Reklam' },
       ];
 
   const SLOT_TABS: { id: FeedSlotFilter; label: string }[] =

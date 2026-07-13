@@ -130,7 +130,7 @@ import { resolveStoryVideoUrl } from '@/lib/production-bundle';
 import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge';
 import { SafeCoverImage } from '../SafeCoverImage';
 import { formatUsd } from '@/lib/ai-cost-catalog';
-import { missionFeedStatusLabel } from '@/lib/mobile-customer-copy';
+import { missionFeedStatusLabel, formatMobileContentTypeLabel } from '@/lib/mobile-customer-copy';
 import { missionProductionStatusCopy } from '@/lib/mission-production-status';
 import { useMissionFactoryJobs } from '../../_lib/use-mission-factory-jobs';
 import {
@@ -1254,13 +1254,13 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
   }];
 
   const FMT_CONFIG: Record<string, { icon: string; label: string; color: string; aspect: string }> = {
-    post:            { icon: '□', label: 'Post',    color: '#3B82F6', aspect: '4/5' },
-    instagram_post:  { icon: '□', label: 'Post',    color: '#3B82F6', aspect: '4/5' },
-    story:           { icon: '◉', label: 'Story',   color: '#8AABBD', aspect: '9/16' },
-    instagram_story: { icon: '◉', label: 'Story',   color: '#8AABBD', aspect: '9/16' },
-    reel:            { icon: '▶', label: 'Reel',    color: '#EC4899', aspect: '9/16' },
-    instagram_reel:  { icon: '▶', label: 'Reel',    color: '#EC4899', aspect: '9/16' },
-    carousel:        { icon: '⊞', label: 'Carousel',color: '#F59E0B', aspect: '1/1' },
+    post:            { icon: '□', label: formatMobileContentTypeLabel('post'),    color: '#3B82F6', aspect: '4/5' },
+    instagram_post:  { icon: '□', label: formatMobileContentTypeLabel('post'),    color: '#3B82F6', aspect: '4/5' },
+    story:           { icon: '◉', label: formatMobileContentTypeLabel('story'),   color: '#8AABBD', aspect: '9/16' },
+    instagram_story: { icon: '◉', label: formatMobileContentTypeLabel('story'),   color: '#8AABBD', aspect: '9/16' },
+    reel:            { icon: '▶', label: formatMobileContentTypeLabel('reel'),    color: '#EC4899', aspect: '9/16' },
+    instagram_reel:  { icon: '▶', label: formatMobileContentTypeLabel('reel'),    color: '#EC4899', aspect: '9/16' },
+    carousel:        { icon: '⊞', label: formatMobileContentTypeLabel('carousel'),color: '#F59E0B', aspect: '1/1' },
   };
 
   const readyPreviewCount = links?.filter((l) => l.status === 'ready').length ?? 0;
@@ -4293,7 +4293,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
                     />
 
                     {/* Per-node action buttons */}
-                    {isContentNode && hasOutput && (
+                    {isContentNode && hasOutput && debugMode && (
                       <div style={{ marginTop: 14 }}>
                         <button
                           onClick={() => { onClose(); openMissionFactory(mission.id, node.node_key); }}
@@ -5108,29 +5108,29 @@ export function MissionHub() {
       />
     )}
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 88 }}>
-      {/* ── Header ── */}
+      {/* ── Header — native tab toolbar (no web page title on client) ── */}
       <div style={{
-        padding: 'calc(env(safe-area-inset-top,0px) + 14px) 22px 0',
-        display: 'flex', alignItems: 'center', gap: 12,
+        padding: 'calc(env(safe-area-inset-top,0px) + 8px) 16px 12px',
+        display: 'flex', alignItems: 'center', gap: 10,
       }}>
         <button
           type="button"
           onClick={() => (history.length > 1 ? goBack() : navigate('more'))}
           aria-label={history.length > 1 ? 'Geri' : 'Menü'}
           style={{ ...t.backBtn, cursor: 'pointer',
-          width: 34, height: 34, borderRadius: '50%', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', fontSize: history.length > 1 ? 18 : 15 }}>
+          width: 44, height: 44, borderRadius: 12, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', fontSize: history.length > 1 ? 18 : 15, flexShrink: 0 }}>
           {history.length > 1 ? '←' : '⊞'}
         </button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: t.textPrimary,
-            letterSpacing: '-0.03em', lineHeight: 1.1 }}>
-            {operatorMode ? 'Mission Hub' : 'Haftalık Plan'}
+        {operatorMode ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: t.textPrimary, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+              Operasyon Merkezi
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>
-            {operatorMode ? 'Otonom kampanya yönetimi' : 'İçerik planları ve üretim durumu'}
-          </div>
-        </div>
+        ) : (
+          <div style={{ flex: 1 }} aria-hidden />
+        )}
         {/* New Mission button */}
         <button
           onClick={() => { setProposeError(null); proposeMutation.mutate(); }}

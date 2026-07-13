@@ -4,9 +4,10 @@ import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { apiClient } from '@/lib/api-client';
-import { IcoBack } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 import type { T } from '../theme-context';
 import type { MetaCampaign } from '@/types/meta-ads.types';
+import { formatMetaCampaignStatus } from '@/lib/mobile-customer-copy';
 
 const OBJ_LABEL: Record<string, string> = {
   OUTCOME_AWARENESS: 'Erişim', OUTCOME_ENGAGEMENT: 'Etkileşim', OUTCOME_TRAFFIC: 'Trafik',
@@ -42,6 +43,7 @@ function MetaCampaignCard({ campaign, onActivate, isActivating }: {
   const { t } = useTheme();
   const isPaused    = campaign.status === 'PAUSED';
   const isActive    = campaign.status === 'ACTIVE';
+  const statusLabel = formatMetaCampaignStatus(campaign.status);
   const statusColor = isActive ? '#10B981' : isPaused ? '#F59E0B' : '#94A3B8';
 
   return (
@@ -52,7 +54,7 @@ function MetaCampaignCard({ campaign, onActivate, isActivating }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 10, padding: '2px 9px', borderRadius: 20, fontWeight: 700,
             background: `${statusColor}14`, color: statusColor }}>
-            {isActive ? 'Aktif' : isPaused ? 'Duraklatıldı' : campaign.status}
+            {statusLabel}
           </span>
           <span style={{ fontSize: 11, color: t.textMuted }}>
             {OBJ_LABEL[campaign.objective] ?? campaign.objective}
@@ -127,18 +129,7 @@ export function AdsOverview() {
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
-      {/* Header */}
-      <div style={{ padding: '56px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <IcoBack color={t.textSecondary} />
-          </button>
-          <div>
-            <p style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 3 }}>Meta Ads</p>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.025em' }}>Reklam Performansı</h1>
-          </div>
-        </div>
-      </div>
+      <MobileStackHeader t={t} title="Reklamlar" onBack={goBack} />
 
       {/* Summary KPIs — derived from real Meta campaign data */}
       <div style={{ padding: '20px 24px 0' }}>

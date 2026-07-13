@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { IcoBack, IcoCheck } from '../Icons';
+import { IcoCheck } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { isMobileOperatorMode } from '../mobile-client-config';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
@@ -103,7 +104,6 @@ export function NotificationsScreen() {
 
   const handleTap = (n: any) => {
     if (!n.read) markReadMutation.mutate(n.id);
-    // Route based on entity type, passing relatedEntityId so the target screen opens the right item
     if (n.type?.includes('action') || n.type?.includes('approval') || n.type?.includes('artifact')) {
       if (n.relatedEntityId) openApproval(n.relatedEntityId);
       else navigate('feed');
@@ -111,8 +111,10 @@ export function NotificationsScreen() {
       navigate('reviews');
     } else if (n.type?.includes('mission')) {
       navigate('missions');
+    } else if (n.type?.includes('execution') || n.type?.includes('agent_blocked')) {
+      navigate('settings');
     } else {
-      navigate('home');
+      navigate('feed');
     }
   };
 
@@ -123,22 +125,37 @@ export function NotificationsScreen() {
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
-      {/* Header */}
-      <div style={{ padding: '56px 24px 16px', borderBottom: `0.5px solid ${t.separator}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <IcoBack color={t.textSecondary} />
+      <MobileStackHeader
+        t={t}
+        title="Bildirimler"
+        onBack={goBack}
+        right={unread > 0 ? (
+          <button
+            type="button"
+            onClick={() => markAllMutation.mutate()}
+            disabled={markAllMutation.isPending}
+            aria-label="Tümünü okundu işaretle"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: t.accentDim,
+            }}
+          >
+            <IcoCheck size={18} color={t.accent} strokeWidth={2.5} />
           </button>
-          <h1 style={{ flex: 1, fontSize: 22, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>Bildirimler</h1>
-          {unread > 0 && (
-            <button onClick={() => markAllMutation.mutate()} disabled={markAllMutation.isPending} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 20, cursor: 'pointer', ...t.pillActive(t.accent), fontSize: 11, fontWeight: 600 }}>
-              <IcoCheck size={11} color={t.accent} strokeWidth={2.5} />
-              Tümünü Oku
-            </button>
-          )}
-        </div>
-        {unread > 0 && <p style={{ fontSize: 12, color: t.warning, fontWeight: 500, marginTop: 6, paddingLeft: 46 }}>{unread} okunmamış</p>}
-      </div>
+        ) : undefined}
+      />
+      {unread > 0 && (
+        <p style={{ fontSize: 12, color: t.warning, fontWeight: 500, margin: 0, padding: '8px 24px 0' }}>
+          {unread} okunmamış
+        </p>
+      )}
 
       <div style={{ padding: '12px 24px 0' }}>
         {isLoading ? (

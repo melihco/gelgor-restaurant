@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import { productionSnapshotToLegacyBrandContext } from '@/lib/production-snapshot-compat';
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
-import { IcoBack } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 
 export function Templates() {
   const { t } = useTheme();
@@ -27,44 +27,9 @@ export function Templates() {
 
   return (
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100 }}>
-      <div style={{
-        padding: '56px 20px 16px',
-        borderBottom: `0.5px solid ${t.separator}`,
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 12,
-      }}>
-        <button
-          type="button"
-          onClick={goBack}
-          aria-label="Geri"
-          style={{
-            marginTop: 4,
-            width: 36,
-            height: 36,
-            borderRadius: 12,
-            border: `0.5px solid ${t.separator}`,
-            background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)',
-            color: t.textSecondary,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <IcoBack size={18} />
-        </button>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: '-0.03em', color: t.textPrimary }}>
-            Şablon Galerisi
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: t.textMuted, lineHeight: 1.45 }}>
-            fal.ai slot şablonları — mission üretimi bu katalogdan beslenir.
-          </p>
-        </div>
-      </div>
+      <MobileStackHeader t={t} title="Story Şablonları" onBack={goBack} />
 
-      <div style={{ padding: '16px 16px 0' }}>
+      <div style={{ padding: '12px 16px 0' }}>
         {tenantId ? (
           <BrandFalTemplateGalleryPanel tenantId={tenantId} sector={sector} t={t} />
         ) : (

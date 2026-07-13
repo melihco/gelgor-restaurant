@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { IcoBack } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { TokenWalletCard } from '../TokenWalletCard';
 import { ClientCreditSummary } from '../ClientCreditSummary';
@@ -109,11 +109,13 @@ function PackDetailModal({
   t,
   onClose,
   onBuy,
+  purchaseEnabled,
 }: {
   pack: CreditPack;
   t: T;
   onClose: () => void;
   onBuy: () => void;
+  purchaseEnabled: boolean;
 }) {
   const totalEstimate = pack.breakdown.reduce(
     (s, b) => s + b.creditsEach * b.qty, 0,
@@ -256,16 +258,23 @@ function PackDetailModal({
           background: t.isDark ? '#111118' : '#fff',
         }}>
           <button
-            onClick={onBuy}
+            onClick={purchaseEnabled ? onBuy : undefined}
+            disabled={!purchaseEnabled}
             style={{
               width: '100%', padding: '16px',
-              borderRadius: 16, border: 'none', cursor: 'pointer',
+              borderRadius: 16, border: 'none',
+              cursor: purchaseEnabled ? 'pointer' : 'not-allowed',
               fontSize: 15, fontWeight: 800, letterSpacing: '-0.01em',
-              background: `linear-gradient(135deg, ${t.accent}, #5A82A0)`,
-              color: '#fff',
+              background: purchaseEnabled
+                ? `linear-gradient(135deg, ${t.accent}, #5A82A0)`
+                : (t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
+              color: purchaseEnabled ? '#fff' : t.textMuted,
+              opacity: purchaseEnabled ? 1 : 0.85,
             }}
           >
-            {pack.credits.toLocaleString('tr-TR')} Kredi Yükle — ₺{pack.price.toLocaleString('tr-TR')}
+            {purchaseEnabled
+              ? `${pack.credits.toLocaleString('tr-TR')} Kredi Yükle — ₺${pack.price.toLocaleString('tr-TR')}`
+              : 'Online yükleme yakında — destek ekibimizle iletişime geçin'}
           </button>
         </div>
       </div>
@@ -280,6 +289,7 @@ export function BillingScreen() {
   const { goBack } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const debugMode = isDebugUiMode();
+  const purchaseEnabled = debugMode && process.env.NEXT_PUBLIC_CREDIT_PURCHASE_ENABLED === 'true';
   const [modalPack, setModalPack] = useState<CreditPack | null>(null);
 
   const { data: quotaData } = useQuery({
@@ -301,9 +311,9 @@ export function BillingScreen() {
   const artifactCount = usageCost?.week_artifact_count ?? null;
 
   const handleBuy = (pack: CreditPack) => {
+    if (!purchaseEnabled) return;
     setModalPack(null);
-    // TODO: Stripe payment intent → pack.id
-    alert(`${pack.label} paketi yakında aktif olacak.`);
+    // Stripe payment intent → pack.id (enabled via NEXT_PUBLIC_CREDIT_PURCHASE_ENABLED)
   };
 
   return (
@@ -314,28 +324,14 @@ export function BillingScreen() {
           t={t}
           onClose={() => setModalPack(null)}
           onBuy={() => handleBuy(modalPack)}
+          purchaseEnabled={purchaseEnabled}
         />
       )}
 
       <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100,
         transition: 'background 300ms' }}>
 
-        {/* Header */}
-        <div style={{ padding: '56px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button onClick={goBack} style={{ ...t.backBtn, width: 34, height: 34,
-              borderRadius: '50%', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', cursor: 'pointer' }}>
-              <IcoBack color={t.textSecondary} />
-            </button>
-            <div>
-              <p style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em',
-                textTransform: 'uppercase', marginBottom: 3 }}>Kullandığın Kadar Öde</p>
-              <h1 style={{ fontSize: 22, fontWeight: 700, color: t.textPrimary,
-                letterSpacing: '-0.02em' }}>Kredi & Kullanım</h1>
-            </div>
-          </div>
-        </div>
+        <MobileStackHeader t={t} title="Kredi & Kullanım" onBack={goBack} />
 
         {/* Token Wallet card */}
         <div style={{ padding: '20px 24px 0' }}>
@@ -434,9 +430,20 @@ export function BillingScreen() {
           </div>
         )}
 
-        {/* Credit pack cards — her biri modal açıyor */}
+        {/* Credit pack cards — paket detayları; satın alma yalnızca flag ile açılır */}
         <div style={{ padding: '20px 24px 0' }}>
-          <SLabel t={t} text="Kredi Yükle" />
+          <SLabel t={t} text={purchaseEnabled ? 'Kredi Yükle' : 'Kredi Paketleri'} />
+          {!purchaseEnabled && (
+            <div style={{
+              marginBottom: 14, padding: '12px 14px', borderRadius: 12,
+              background: t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)',
+              border: `0.5px solid ${t.accentBorder}`,
+              fontSize: 13, color: t.textSecondary, lineHeight: 1.55,
+            }}>
+              Online kredi yükleme yakında aktif olacak. Paket detaylarını inceleyebilir;
+              yükleme için destek ekibimizle iletişime geçin.
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {CREDIT_PACKS.map(pack => (
               <button

@@ -1,5 +1,6 @@
 import type { OutputArtifact } from '@/types';
 import { resolveClientMediaUrl } from '@/lib/media-url';
+import { formatMobileContentTypeLabel } from '@/lib/mobile-customer-copy';
 
 /**
  * Parse an OutputArtifact.content field safely.
@@ -539,14 +540,11 @@ export function resolveCarouselUrls(
 
 /** Short label for content type chip */
 export function contentTypeLabel(ct: string): string {
-  if (ct.includes('story'))    return 'Story';
-  if (ct.includes('reel'))     return 'Reel';
-  if (ct.includes('post'))     return 'Post';
-  if (ct.includes('plan'))     return 'Content Plan';
-  if (ct.includes('ad'))       return 'Ad Creative';
-  if (ct.includes('report'))   return 'Report';
-  if (ct.includes('analytics'))return 'Analytics';
-  if (ct.includes('review'))   return 'Review Reply';
-  if (ct.includes('strategy')) return 'Strategy';
-  return 'Output';
+  const lower = ct.toLowerCase();
+  if (lower.includes('plan')) return 'İçerik Planı';
+  if (lower.includes('report') || lower.includes('analytics')) return 'Rapor';
+  if (lower.includes('review')) return 'Yorum Yanıtı';
+  if (lower.includes('strategy')) return 'Strateji';
+  const label = formatMobileContentTypeLabel(ct);
+  return label === 'İçerik' ? 'Çıktı' : label;
 }

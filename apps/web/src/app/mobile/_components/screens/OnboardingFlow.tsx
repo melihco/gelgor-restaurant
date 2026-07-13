@@ -603,13 +603,14 @@ function ResultsStep({ result, url, ig, onNext }: {
         <div style={{ ...cardStyle, background: 'rgba(52,211,153,0.05)', border: '0.5px solid rgba(52,211,153,0.15)', marginTop: 4 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#34D399', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>Kayıt Sonrası</div>
           {[
-            '✦ Tam marka analizini görün',
-            '⚡ AI ekibinizi aktive edin',
-            '📊 İçerik stratejinizi otomatik oluşturun',
-            '🎨 Markaya özel şablonlar hazırlanır',
+            'Tam marka analizini görün',
+            'AI ekibinizi aktive edin',
+            'İçerik stratejinizi otomatik oluşturun',
+            'Markaya özel şablonlar hazırlanır',
           ].map((item, i) => (
-            <div key={i} style={{ fontSize: 13, color: 'rgba(226,232,240,0.65)', marginBottom: i < 3 ? 7 : 0, display: 'flex', gap: 8 }}>
-              {item}
+            <div key={i} style={{ fontSize: 13, color: 'rgba(226,232,240,0.65)', marginBottom: i < 3 ? 7 : 0, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <span style={{ color: '#9DBECE', flexShrink: 0 }}>✦</span>
+              <span>{item}</span>
             </div>
           ))}
         </div>
@@ -1533,7 +1534,7 @@ function WelcomeStep({
             </div>
           </div>
           <div className="onboarding-feature-grid">
-            {['✦ Marka profili', '🎨 Görsel kimlik', '📊 İçerik planı', '🤖 AI ekibi aktif'].map((f) => (
+            {['Marka profili', 'Görsel kimlik', 'İçerik planı', 'AI ekibi hazır'].map((f) => (
               <div key={f} className="onboarding-feature-chip">{f}</div>
             ))}
           </div>
@@ -1545,7 +1546,7 @@ function WelcomeStep({
           className="onboarding-cta"
           style={{ maxWidth: 360 }}
         >
-          Komuta Merkezine Git ✦
+          Uygulamaya Git
         </button>
       </main>
     </div>

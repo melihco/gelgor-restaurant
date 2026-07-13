@@ -3,6 +3,7 @@
 
 import React from 'react';
 import type { T } from './theme-context';
+import { IcoBack } from './Icons';
 
 // ─── Circular Progress Ring (SVG) ─────────────────────────────────────
 export function CircleProgress({
@@ -111,6 +112,81 @@ export function SectionHeader({
         </button>
       )}
     </div>
+  );
+}
+
+// ─── Native stack header (iOS-style back + centered title) ─────────────
+export function MobileStackHeader({
+  t,
+  title,
+  onBack,
+  right,
+  sticky = true,
+}: {
+  t: T;
+  title: string;
+  onBack: () => void;
+  right?: React.ReactNode;
+  sticky?: boolean;
+}) {
+  return (
+    <header
+      style={{
+        ...(sticky ? { position: 'sticky' as const, top: 0, zIndex: 30 } : {}),
+        background: t.isDark ? 'rgba(10,10,14,0.94)' : 'rgba(244,244,248,0.94)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
+        borderBottom: `0.5px solid ${t.separator}`,
+      }}
+    >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '44px 1fr 44px',
+          alignItems: 'center',
+          minHeight: 44,
+          padding: '2px 10px',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Geri"
+          style={{
+            ...t.backBtn,
+            width: 44,
+            height: 44,
+            borderRadius: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            justifySelf: 'start',
+          }}
+        >
+          <IcoBack color={t.textSecondary} />
+        </button>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 17,
+            fontWeight: 600,
+            color: t.textPrimary,
+            letterSpacing: '-0.02em',
+            textAlign: 'center',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {title}
+        </h1>
+        <div style={{ justifySelf: 'end', minWidth: 44, display: 'flex', justifyContent: 'flex-end' }}>
+          {right}
+        </div>
+      </div>
+    </header>
   );
 }
 

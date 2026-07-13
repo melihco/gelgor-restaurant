@@ -66,6 +66,7 @@ export function MobileBrandNavbar({
   style?: React.CSSProperties;
 }) {
   const navigate = useMobileStore((s) => s.navigate);
+  const setTab = useMobileStore((s) => s.setTab);
   const palette = useBrandThemePalette();
 
   const textPrimary = dark ? '#fff' : '#111118';
@@ -103,11 +104,28 @@ export function MobileBrandNavbar({
           gap: 10,
         }}>
           {showLogo && !hasCustomTitle && (
-            <SmartAgencyLogo
-              variant="full"
-              priority
-              className="h-8 max-w-[min(200px,58vw)]"
-            />
+            <button
+              type="button"
+              onClick={() => setTab('brand')}
+              aria-label="Marka ayarları"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                padding: 4,
+                margin: 0,
+                minHeight: 44,
+              }}
+            >
+              <SmartAgencyLogo
+                variant="full"
+                priority
+                className="h-8 max-w-[min(200px,58vw)]"
+              />
+            </button>
           )}
           {(hasCustomTitle || subtitle) && (
             <div style={{ minWidth: 0, textAlign: showLogo && !hasCustomTitle ? 'left' : 'center' }}>

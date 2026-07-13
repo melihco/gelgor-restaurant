@@ -10,6 +10,7 @@ import { logoutFromBrowser } from '@/lib/browser-logout';
 import { buildMoreMenuGroups } from '../mobile-client-config';
 import { summarizeMobileIntegrations } from '@/lib/mobile-integration-status';
 import { IcoLogout } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 
 // Icon paths per menu item type — premium SVG, no emoji
 const ITEM_ICONS: Record<string, string> = {
@@ -53,7 +54,7 @@ function MenuItemIcon({ iconBg, label }: { iconBg: string; label: string }) {
 export function MoreMenu() {
   const { t, toggle } = useTheme();
   const tenantBrand = useTenantBrandContext();
-  const { navigate } = useMobileStore();
+  const { navigate, goBack, setTab } = useMobileStore();
   const { user, setUser } = useAuthStore();
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -83,6 +84,14 @@ export function MoreMenu() {
     integrationTotal,
   });
 
+  const openMenuItem = (screen: Parameters<typeof navigate>[0]) => {
+    if (screen === 'brand') {
+      setTab('brand');
+      return;
+    }
+    navigate(screen);
+  };
+
   return (
     <div style={{
       minHeight: '100dvh',
@@ -90,24 +99,41 @@ export function MoreMenu() {
       paddingBottom: 104,
       transition: 'background 300ms',
     }}>
+      <MobileStackHeader t={t} title="Menü" onBack={goBack} sticky />
 
       {/* ─── Profile Header ─────────────────────────────────────────── */}
       <div style={{
-        padding: 'calc(env(safe-area-inset-top,0px) + 20px) 22px 22px',
+        padding: '16px 22px 22px',
         background: t.isDark
           ? 'linear-gradient(180deg, rgba(138,171,189,0.10) 0%, rgba(6,6,14,0) 100%)'
           : 'linear-gradient(180deg, rgba(77,112,136,0.05) 0%, rgba(244,244,248,0) 100%)',
         borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'}`,
       }}>
 
-        {/* Avatar + name */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+        {/* Avatar + name — tap opens Marka tab */}
+        <button
+          type="button"
+          onClick={() => setTab('brand')}
+          aria-label="Marka ayarlarını aç"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            marginBottom: 18,
+            width: '100%',
+            padding: 0,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
           <div style={{
             width: 52, height: 52, borderRadius: 16, flexShrink: 0,
-            background: 'linear-gradient(135deg, #8AABBD 0%, #2D5068 100%)',
+            background: 'linear-gradient(135deg, #4D7088 0%, #5A82A0 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18, fontWeight: 900, color: '#fff',
-            boxShadow: '0 4px 18px rgba(138,171,189,0.35)',
+            boxShadow: '0 4px 18px rgba(77,112,136,0.35)',
           }}>
             {initials}
           </div>
@@ -121,7 +147,13 @@ export function MoreMenu() {
             </div>
             <div style={{ fontSize: 11.5, color: t.textTertiary, marginTop: 3 }}>{email}</div>
           </div>
-        </div>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            aria-hidden
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
 
         {/* Integration status chips */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -217,7 +249,7 @@ export function MoreMenu() {
             {group.items.map((item, i) => (
               <button
                 key={item.label}
-                onClick={() => navigate(item.screen)}
+                onClick={() => openMenuItem(item.screen)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 13,
                   padding: '13px 16px', width: '100%', textAlign: 'left',

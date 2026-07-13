@@ -55,12 +55,28 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
     return filterFeedPublishableArtifacts(artifacts).filter((a) => a.status === 'pending_review').length;
   }, [rawNotifs, artifacts]);
 
+  const { data: quotaData } = useQuery({
+    queryKey: ['usage-quota'],
+    queryFn: async () => { try { return await apiClient.getUsageQuota(); } catch { return null; } },
+    staleTime: 120_000,
+  });
+
+  const displayName = user?.displayName?.trim()
+    || tenantBrand.brandName?.trim()
+    || 'Marka hesabı';
+  const emailDisplay = user?.email?.trim() || 'E-posta bilgisi yok';
+  const planSub = quotaData?.packageName
+    ? quotaData.packageName
+    : usageCost?.token_wallet
+      ? `${Math.max(0, usageCost.token_wallet.remaining_tokens ?? 0).toLocaleString('tr-TR')} kredi kaldı`
+      : 'Kredi ve kullanım özeti';
+
   const menuItems = [
     {
       label: 'Menü',
       sub: 'Performans, yorumlar, reklamlar ve daha fazlası',
       icon: '⊞',
-      color: '#a78bfa',
+      color: '#4D7088',
       onTap: () => { navigate('more'); onClose(); },
     },
     {
@@ -79,16 +95,20 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
     },
     {
       label: 'Kredi & Kullanım',
-      sub: 'Premium Plan',
+      sub: planSub,
       icon: '◇',
       color: '#9DBECE',
       onTap: () => { navigate('billing'); onClose(); },
     },
   ];
 
-  const initials = user?.displayName
-    ? user.displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-    : 'LB';
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'M';
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -150,10 +170,10 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary, marginBottom: 2 }}>
-                {user?.displayName ?? tenantBrand.brandName ?? 'Workspace'}
+                {displayName}
               </div>
               <div style={{ fontSize: 13, color: t.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user?.email ?? 'lokumbodrum@example.com'}
+                {emailDisplay}
               </div>
             </div>
             {/* Theme toggle */}

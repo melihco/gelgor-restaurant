@@ -8,11 +8,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
+import { useMobileStore } from '../mobile-store';
 import { apiClient } from '@/lib/api-client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { parseAgentSummary } from '../activity-parser';
 import { humanizeAgentError } from '@/lib/humanize-agent-error';
 import { AssignMissionSheet } from '../AssignMissionSheet';
+import { MobileStackHeader } from '../ui-primitives';
 import type { T } from '../theme-context';
 
 // ─── agentType number → PROFILES key ─────────────────────────────────
@@ -400,6 +402,7 @@ const NEXUS_TYPE_TO_PYTHON_ROLE: Record<string, string> = {
 
 export function AgentsScreen() {
   const { t } = useTheme();
+  const { goBack } = useMobileStore();
   const { officeId, tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
   const [assignTarget, setAssignTarget] = useState<AgentData | null>(null);
@@ -459,14 +462,9 @@ export function AgentsScreen() {
   return (
     <>
     <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 300ms' }}>
+      <MobileStackHeader t={t} title="AI Ajanlar" onBack={goBack} />
 
-      {/* Header */}
-      <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 20px) 22px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: t.labelColor, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-          AI Ekibi
-        </div>
-        <h1 style={{ fontSize: 30, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1, marginBottom: 16 }}>Agents</h1>
-
+      <div style={{ padding: '16px 22px 20px' }}>
         {/* Summary stats — 2×2 grid for readable mobile layout */}
         {!isLoading && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

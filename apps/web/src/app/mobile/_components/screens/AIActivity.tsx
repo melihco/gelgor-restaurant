@@ -2,7 +2,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
-import { IcoDot, IcoRetry } from '../Icons';
+import { useMobileStore } from '../mobile-store';
+import { IcoRetry } from '../Icons';
+import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { parseAgentSummary, parseJobResult } from '../activity-parser';
 import { ActivityDetailSheet } from '../ActivityDetailSheet';
@@ -165,6 +167,7 @@ const SC: Record<string, { dot: string; label: string; dimKey: keyof T }> = {
 // ─── Main component ────────────────────────────────────────────────────
 export function AIActivity() {
   const { t } = useTheme();
+  const { goBack } = useMobileStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [detailItem, setDetailItem] = useState<ActivityItem | null>(null);
   const queryClient = useQueryClient();
@@ -198,35 +201,38 @@ export function AIActivity() {
   return (
     <>
       <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
+        <MobileStackHeader
+          t={t}
+          title="AI Aktivite"
+          onBack={goBack}
+          right={counts.failed > 0 ? (
+            <button
+              type="button"
+              onClick={() => reconcileMutation.mutate()}
+              disabled={reconcileMutation.isPending}
+              aria-label="Takılı görevleri temizle"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                border: 'none',
+                cursor: 'pointer',
+                background: t.warningDim,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IcoRetry size={16} color={t.warning} />
+            </button>
+          ) : undefined}
+        />
 
-        {/* Header */}
-        <div style={{ padding: '60px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                <IcoDot color={counts.running > 0 ? t.live : t.textMuted} size={7} />
-                <h1 style={{ fontSize: 32, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em' }}>AI Activity</h1>
-              </div>
-              <p style={{ fontSize: 13, color: t.textTertiary }}>
-                {isLoading ? 'Yükleniyor...' : `${counts.running} aktif · ${counts.failed} başarısız`}
-                {lastUpdated && !isLoading && <span style={{ color: t.textMuted }}> · {lastUpdated}</span>}
-              </p>
-            </div>
-            {counts.failed > 0 && (
-              <button
-                onClick={() => reconcileMutation.mutate()}
-                disabled={reconcileMutation.isPending}
-                style={{
-                  marginTop: 10, padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
-                  background: t.warningDim, border: `0.5px solid ${t.warning}25`,
-                  fontSize: 11, fontWeight: 600, color: t.warning,
-                  opacity: reconcileMutation.isPending ? 0.5 : 1,
-                }}
-              >
-                {reconcileMutation.isPending ? '...' : '↻ Stuck\'ları Temizle'}
-              </button>
-            )}
-          </div>
+        <div style={{ padding: '16px 24px 20px', borderBottom: `0.5px solid ${t.separator}` }}>
+          <p style={{ fontSize: 13, color: t.textTertiary, margin: '0 0 12px' }}>
+            {isLoading ? 'Yükleniyor...' : `${counts.running} aktif · ${counts.failed} başarısız`}
+            {lastUpdated && !isLoading && <span style={{ color: t.textMuted }}> · {lastUpdated}</span>}
+          </p>
 
           {/* Health metrics */}
           {health && (

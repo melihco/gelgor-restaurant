@@ -11,7 +11,7 @@ const TONE_OPTIONS = [
   { value: 'professional', label: 'Profesyonel', desc: 'Kurumsal, güven veren', emoji: '🏢' },
   { value: 'friendly',     label: 'Samimi',      desc: 'Sıcak, erişilebilir',  emoji: '😊' },
   { value: 'energetic',    label: 'Enerjik',     desc: 'Dinamik, heyecanlı',   emoji: '⚡' },
-  { value: 'luxury',       label: 'Premium',     desc: 'Lüks, sofistike',       emoji: '✨' },
+  { value: 'luxury',       label: 'Lüks',        desc: 'Lüks, sofistike',       emoji: '✨' },
   { value: 'casual',       label: 'Rahat',       desc: 'Doğal, gündelik',      emoji: '☀️' },
 ];
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -90,19 +90,19 @@ const BrandScheduledTemplatesPanel = dynamic(
 );
 
 const POST_FONT_OPTIONS: Array<{ id: BrandPostDesignDefaults['font_preset']; label: string; desc: string; functionText: string }> = [
-  { id: 'poster_3d', label: 'Poster 3D', desc: 'Kalın, kampanya afişi gibi', functionText: 'Post ve story ara görsellerinde büyük headline için Anton/Archivo tabanlı poster yazısı kullanır.' },
-  { id: 'sticker_pop', label: 'Sticker Pop', desc: 'Daha eğlenceli ve sosyal', functionText: 'Bangers tarzı daha organik, etiket/sticker hissi veren yazı dili üretir.' },
-  { id: 'condensed_impact', label: 'Condensed', desc: 'Dar, güçlü, satış odaklı', functionText: 'Dar ve yüksek harflerle daha fazla vurgu sağlar; kampanya ve duyuru postlarına uygundur.' },
-  { id: 'elegant_serif', label: 'Editorial', desc: 'Premium ve dergi hissi', functionText: 'Playfair tabanlı serif başlıkla lüks, restoran ve lifestyle içeriklerini daha editorial gösterir.' },
-  { id: 'clean_sans', label: 'Clean Sans', desc: 'Sade, kurumsal, minimal', functionText: 'Inter tabanlı sade başlık kullanır; klinik, kurumsal ve minimal markalar için daha güvenlidir.' },
+  { id: 'poster_3d', label: '3D Poster', desc: 'Kalın, kampanya afişi gibi', functionText: 'Post ve story ara görsellerinde büyük headline için Anton/Archivo tabanlı poster yazısı kullanır.' },
+  { id: 'sticker_pop', label: 'Çıkartma Pop', desc: 'Daha eğlenceli ve sosyal', functionText: 'Bangers tarzı daha organik, etiket/sticker hissi veren yazı dili üretir.' },
+  { id: 'condensed_impact', label: 'Dar & Güçlü', desc: 'Dar, güçlü, satış odaklı', functionText: 'Dar ve yüksek harflerle daha fazla vurgu sağlar; kampanya ve duyuru postlarına uygundur.' },
+  { id: 'elegant_serif', label: 'Dergi Serif', desc: 'Premium ve dergi hissi', functionText: 'Playfair tabanlı serif başlıkla lüks, restoran ve lifestyle içeriklerini daha editorial gösterir.' },
+  { id: 'clean_sans', label: 'Sade Sans', desc: 'Sade, kurumsal, minimal', functionText: 'Inter tabanlı sade başlık kullanır; klinik, kurumsal ve minimal markalar için daha güvenlidir.' },
 ];
 
 const POST_EFFECT_OPTIONS: Array<{ id: BrandPostDesignDefaults['text_effect']; label: string; desc: string; functionText: string }> = [
-  { id: 'extrude_3d', label: '3D Extrude', desc: 'Derinlikli, dikkat çekici başlık', functionText: 'Canvas render sırasında başlığı çok katmanlı gölge ve stroke ile gerçek 3D derinlikli çizer.' },
-  { id: 'gradient_stack', label: 'Gradient Stack', desc: 'Renk geçişli poster yazısı', functionText: 'Başlıkta beyazdan marka aksan rengine inen gradient ve derinlik katmanı uygular.' },
-  { id: 'neon_3d', label: 'Neon Glow', desc: 'Gece/story enerjisi', functionText: 'Başlığa parlama/glow uygular; gece etkinliği, bar, beach club ve story/reel girişleri için daha çarpıcıdır.' },
-  { id: 'editorial_outline', label: 'Outline', desc: 'Lüks, ince konturlu başlık', functionText: 'Başlık etrafına zarif kontur ve kontrollü gölge verir; premium ama sakin görünür.' },
-  { id: 'soft_shadow', label: 'Soft Shadow', desc: 'Daha sakin okunabilirlik', functionText: 'Sadece yumuşak okunabilirlik gölgesi kullanır; daha az agresif ve güvenli üretim modudur.' },
+  { id: 'extrude_3d', label: '3D Kabartma', desc: 'Derinlikli, dikkat çekici başlık', functionText: 'Canvas render sırasında başlığı çok katmanlı gölge ve stroke ile gerçek 3D derinlikli çizer.' },
+  { id: 'gradient_stack', label: 'Gradyan Katman', desc: 'Renk geçişli poster yazısı', functionText: 'Başlıkta beyazdan marka aksan rengine inen gradient ve derinlik katmanı uygular.' },
+  { id: 'neon_3d', label: 'Neon Parlama', desc: 'Gece/story enerjisi', functionText: 'Başlığa parlama/glow uygular; gece etkinliği, bar, beach club ve story/reel girişleri için daha çarpıcıdır.' },
+  { id: 'editorial_outline', label: 'İnce Kontur', desc: 'Lüks, ince konturlu başlık', functionText: 'Başlık etrafına zarif kontur ve kontrollü gölge verir; premium ama sakin görünür.' },
+  { id: 'soft_shadow', label: 'Yumuşak Gölge', desc: 'Daha sakin okunabilirlik', functionText: 'Sadece yumuşak okunabilirlik gölgesi kullanır; daha az agresif ve güvenli üretim modudur.' },
 ];
 
 const POST_LOGO_OPTIONS: Array<{ id: BrandPostDesignDefaults['logo_position']; label: string; desc: string; functionText: string }> = [
@@ -947,7 +947,7 @@ function PostDesignDefaultsPanel({
 const TYPOGRAPHY_VIBE_OPTIONS: Array<{ id: TypographyVibe; label: string; desc: string; emoji: string }> = [
   { id: 'bubble_3d', label: 'Balon 3D', desc: 'Şişirilmiş 3D harfler, Gen Z, eğlenceli', emoji: '🫧' },
   { id: 'chrome_gradient', label: 'Krom Gradient', desc: 'Metalik yansıma, premium lüks', emoji: '✨' },
-  { id: 'neon_glow', label: 'Neon Glow', desc: 'Neon tüp aydınlatma, gece hayatı', emoji: '💡' },
+  { id: 'neon_glow', label: 'Neon Parlama', desc: 'Neon tüp aydınlatma, gece hayatı', emoji: '💡' },
   { id: 'editorial_serif', label: 'Editöryal Serif', desc: 'Dergi stili, dramatik boyut', emoji: '📰' },
   { id: 'street_bold', label: 'Sokak Kalın', desc: 'Kentsel, sıkıştırılmış, güçlü', emoji: '🏋️' },
   { id: 'handwritten', label: 'El Yazısı', desc: 'Fırça kaligrafi, doğal sıcaklık', emoji: '✍️' },
@@ -2586,7 +2586,7 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
                 <input
                   value={h}
                   onChange={e => { const next = [...handles]; next[i] = e.target.value; setHandles(next); }}
-                  placeholder="thesummerroom.co"
+                  placeholder="markaniz"
                   disabled={loading}
                   style={{ width: '100%', paddingLeft: 28, paddingRight: 12, paddingTop: 11, paddingBottom: 11, borderRadius: 12, outline: 'none', boxSizing: 'border-box', fontSize: 14, background: t.isDark ? 'rgba(255,255,255,0.06)' : '#fff', border: `1px solid ${t.separator}`, color: t.textPrimary }}
                 />
@@ -2910,7 +2910,7 @@ export function BrandConstitution() {
   const { tenantId: storeTenantId } = useWorkspaceStore();
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const brandGaps = useBrandCompleteGaps(tenantId);
-  const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix } = useMobileStore();
+  const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix, history } = useMobileStore();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
   type IdentityGroup = 'basics' | 'channels' | 'about' | 'assets';
@@ -3369,6 +3369,7 @@ export function BrandConstitution() {
   }
 
   const p = profile as CompanyProfile & Record<string, unknown>;
+  const showStackBack = history.length > 1;
   const brandNameDisplay = String(p.brandName || (pyCtx as any)?.business_name || '');
   const industrySlug = resolveTenantCanonicalSector(
     p,
@@ -3645,40 +3646,25 @@ export function BrandConstitution() {
 
       {/* ── DASHBOARD VIEW ── */}
       {view === 'dashboard' && (
-        <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 10px) 20px 0' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-            <button
-              type="button"
-              onClick={goBack}
-              aria-label="Geri"
-              style={{
-                width: 40, height: 40, borderRadius: 14, border: `0.5px solid ${t.separator}`,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                color: t.textSecondary, flexShrink: 0,
-                boxShadow: t.isDark ? 'inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
-              }}
-            >
-              <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: 11, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase',
-                color: t.textMuted, marginBottom: 3,
-              }}
+        <div style={{ padding: `calc(env(safe-area-inset-top,0px) + ${showStackBack ? 10 : 16}px) 20px 0` }}>
+          {showStackBack && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+              <button
+                type="button"
+                onClick={goBack}
+                aria-label="Geri"
+                style={{
+                  width: 44, height: 44, borderRadius: 14, border: `0.5px solid ${t.separator}`,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                  color: t.textSecondary, flexShrink: 0,
+                  boxShadow: t.isDark ? 'inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
+                }}
               >
-                Marka merkezi
-              </div>
-              <h1 style={{
-                fontSize: 24, fontWeight: 700, color: t.textPrimary,
-                letterSpacing: '-0.04em', margin: 0, lineHeight: 1.05,
-              }}
-              >
-                Marka Ayarları
-              </h1>
+                <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
             </div>
-          </div>
+          )}
 
           {/* Brand profile badge */}
           <div style={{

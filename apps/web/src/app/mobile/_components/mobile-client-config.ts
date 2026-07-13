@@ -55,6 +55,8 @@ const REDIRECT_MAP: Partial<Record<MobileScreen, MobileScreen>> = {
   agents: 'feed',
   'ai-activity': 'feed',
   'brand-rules': 'brand',
+  home: 'feed',
+  'mission-factory': 'missions',
 };
 
 export function resolveClientScreen(screen: MobileScreen): MobileScreen {
@@ -88,7 +90,7 @@ export type ClientNavTab = 'feed' | 'missions' | 'brand';
 export const CLIENT_NAV_TABS: { id: ClientNavTab; label: string; icon: string; active: string; idle: string }[] = [
   {
     id: 'feed',
-    label: 'Feed',
+    label: 'Akış',
     icon: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
     active: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
     idle:   'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM7 10h10M7 14h6',
@@ -128,7 +130,6 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
       title: 'Marka & Ayarlar',
       items: [
         { label: 'Marka Ayarları', sub: 'Logo, renkler, galeri, AI tercihleri', iconBg: '#60a5fa', iconText: '◈', screen: 'brand' },
-        { label: 'Performans', sub: 'Sosyal medya özet metrikleri', iconBg: '#34d399', iconText: '↗', screen: 'insights' },
         {
           label: 'Entegrasyonlar',
           sub: `${opts.connectedCount}/${opts.integrationTotal} bağlı`,
@@ -158,6 +159,7 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
     {
       title: 'Ajans Operasyonları',
       items: [
+        { label: 'Performans', sub: 'Sosyal medya özet metrikleri (beta)', iconBg: '#34d399', iconText: '↗', screen: 'insights', operatorOnly: true },
         { label: 'AI Aktivite', sub: 'Ajan logları ve canlı üretim', iconBg: '#10b981', iconText: '◎', screen: 'ai-activity', operatorOnly: true },
         { label: 'AI Ajanlar', sub: 'Ajan sağlığı ve görevler', iconBg: '#9DBECE', iconText: '◉', screen: 'agents', operatorOnly: true },
         { label: 'Marka Kuralları', sub: 'Öğrenme ve onay önerileri', iconBg: '#10b981', iconText: '◈', screen: 'brand-rules', operatorOnly: true },

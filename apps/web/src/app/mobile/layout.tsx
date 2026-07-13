@@ -20,7 +20,10 @@ export const viewport: Viewport = {
 
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mobile-shell">
+    <div
+      className="mobile-shell"
+      style={{ minHeight: '100dvh', background: '#0A0A0E' }}
+    >
       {children}
     </div>
   );
