@@ -454,52 +454,58 @@ function IgFeedReelMediaStage({
           referrerPolicy="no-referrer"
           style={{
             position: 'absolute',
-            inset: '-10%',
-            width: '120%',
-            height: '120%',
+            inset: '-8%',
+            width: '116%',
+            height: '116%',
             objectFit: 'cover',
-            filter: 'blur(26px) brightness(0.48)',
-            transform: 'scale(1.05)',
+            filter: 'blur(28px) brightness(0.42)',
+            transform: 'scale(1.06)',
             pointerEvents: 'none',
           }}
         />
       )}
 
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1,
-        }}
-      >
-        {videoUrl ? (
-          <VisibilityGatedVideo
-            src={videoUrl}
-            poster={posterUrl ?? undefined}
-            loop
-            muted={muted}
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-          />
-        ) : posterUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={posterUrl}
-            alt=""
-            referrerPolicy="no-referrer"
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-          />
-        ) : (
-          <div style={{
-            width: '100%', height: '100%', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', background: '#0a0a0a',
-          }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Reel hazırlanıyor…</span>
-          </div>
-        )}
-      </div>
+      {videoUrl ? (
+        <VisibilityGatedVideo
+          src={videoUrl}
+          poster={posterUrl ?? undefined}
+          loop
+          muted={muted}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            display: 'block',
+          }}
+        />
+      ) : posterUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={posterUrl}
+          alt=""
+          referrerPolicy="no-referrer"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            display: 'block',
+          }}
+        />
+      ) : (
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: '#0a0a0a',
+        }}>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Reel hazırlanıyor…</span>
+        </div>
+      )}
 
       <div style={{
         position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6,

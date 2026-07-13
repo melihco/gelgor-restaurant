@@ -2913,7 +2913,7 @@ export function BrandConstitution() {
   const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix, history } = useMobileStore();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
-  type IdentityGroup = 'basics' | 'channels' | 'about' | 'assets';
+  type IdentityGroup = 'basics' | 'channels' | 'about';
   const [tab, setTab] = useState<Tab>('identity');
   const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
   const [designGroup, setDesignGroup] = useState<DesignGroup | null>(null);
@@ -3593,7 +3593,6 @@ export function BrandConstitution() {
     { key: 'basics', label: 'Temel Bilgiler', hint: brandNameDisplay || 'Marka adı, sektör, konum', accent: '#5AA0D6' },
     { key: 'channels', label: 'Kanallar', hint: channelsConnected ? 'Web & Instagram bağlı' : 'Web ve sosyal bağlantılar', accent: '#3FB6AE' },
     { key: 'about', label: 'Marka Açıklaması', hint: descriptionDisplay ? `${contentLanguage === 'tr' ? 'Türkçe' : 'English'} · tanım mevcut` : 'AI ile doldur', accent: '#C79A4B' },
-    { key: 'assets', label: 'Logo & Görseller', hint: logoUrl ? `Logo · ${photoCount} galeri fotoğrafı` : photoCount > 0 ? `${photoCount} galeri fotoğrafı` : 'Logo ve galeri', accent: '#A985E0' },
   ];
   const activeIdentityGroup = IDENTITY_GROUPS.find((g) => g.key === identityGroup);
   const identitySectionTitle = identityGroup === 'channels' ? 'Kanallar' : 'Kimlik';
@@ -4051,7 +4050,7 @@ export function BrandConstitution() {
             <BrandSectionIntro
               t={t}
               title="Kimlik"
-              description="Marka adı, iletişim kanalları ve temel tanım. Mission ve Feed üretimi bu bilgileri referans alır."
+              description="Marka adı, logo, iletişim kanalları ve temel tanım. Mission ve Feed üretimi bu bilgileri referans alır."
             />
             {!constitutionConfirmedAt && (
               <div
@@ -4088,6 +4087,20 @@ export function BrandConstitution() {
                 </button>
               </div>
             )}
+            <div data-brand-fix="brand-logo" style={{ marginBottom: 16 }}>
+              <SCard t={t} title="Logo" accent="#A985E0">
+                <Field t={t} label="Logo URL" value={String(logoCandidate || '')} onSave={save('logoUrl')} hint="PNG veya SVG tercih edilir" />
+                {logoUrl && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0 8px' }}>
+                    <div style={{ width: 52, height: 52, borderRadius: 12, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6', flexShrink: 0 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={resolveGalleryImageSrc(logoUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                    <span style={{ fontSize: 12, color: t.textMuted }}>Mevcut logo önizlemesi</span>
+                  </div>
+                )}
+              </SCard>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {IDENTITY_GROUPS.map((g) => (
                 <button
@@ -4220,60 +4233,6 @@ export function BrandConstitution() {
                 )}
               </div>
               <Field t={t} label="Açıklama & Ürünler" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin." />
-            </SCard>
-          </>
-        )}
-
-        {tab === 'identity' && identityGroup === 'assets' && (
-          <>
-            <BrandSectionIntro
-              t={t}
-              title="Logo & Görseller"
-              description="Marka logosu ve referans görseller. Story, post ve chatbot bu varlıkları kullanır."
-            />
-            <SCard t={t} title="Görsel Varlıklar">
-              <Field t={t} label="Logo URL" value={String(logoCandidate || '')} onSave={save('logoUrl')} hint="PNG veya SVG tercih edilir" />
-              {logoUrl && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '10px 12px', borderRadius: 12, background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 12, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6', flexShrink: 0 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={resolveGalleryImageSrc(logoUrl)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                  </div>
-                  <span style={{ fontSize: 12, color: t.textMuted }}>Mevcut logo önizlemesi</span>
-                </div>
-              )}
-              <div style={{
-                marginTop: 12, padding: '12px 14px', borderRadius: 12,
-                background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                border: `0.5px solid ${t.separator}`,
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
-                  Fotoğraf galerisi
-                </div>
-                <p style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5, margin: '6px 0 0' }}>
-                  Story, post ve reel üretimi galerideki AI analizli görselleri kullanır. URL yapıştırmayın — Galeri sekmesinden yükleyin veya analiz edin.
-                </p>
-                {galleryRefUrls.length > 0 && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                    {galleryRefUrls.slice(0, 6).map((url, i) => (
-                      <div key={i} style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: t.isDark ? '#121220' : '#F0F0F6' }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={resolveGalleryImageSrc(url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => openSection('gallery')}
-                  style={{
-                    marginTop: 12, width: '100%', padding: '10px 14px', borderRadius: 11, border: 'none', cursor: 'pointer',
-                    background: t.accentDim, color: t.accent, fontSize: 13, fontWeight: 700,
-                  }}
-                >
-                  Galeriye git · {photoCount} fotoğraf
-                </button>
-              </div>
             </SCard>
           </>
         )}

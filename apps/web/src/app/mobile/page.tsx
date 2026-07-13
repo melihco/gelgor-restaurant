@@ -1248,8 +1248,8 @@ const CSS = `
 
     .sa-mobile-frame {
       position: relative;
-      /* IG web ana feed sütunu ~630px; geniş ekranda biraz daha ferah */
-      width: min(630px, calc(100vw - 40px));
+      /* IG mobile feed — phone-width column (edge-to-edge media) */
+      width: min(430px, calc(100vw - 24px));
       height: 100vh;
       max-height: 100dvh;
       overflow: hidden;
@@ -1263,7 +1263,7 @@ const CSS = `
 
   @media (min-width: 1100px) {
     .sa-mobile-frame {
-      width: min(720px, calc(100vw - 80px));
+      width: min(430px, calc(100vw - 48px));
     }
   }
 
@@ -1295,13 +1295,17 @@ const CSS = `
     background: #000;
   }
 
-  /* Reels in home feed — 4:5 frame, full 9:16 video contained (IG letterbox + blur) */
+  /* Reels in home feed — 4:5 frame, full-bleed cover (IG mobile) */
   .sa-mobile .ig-feed-reel-stage {
     width: 100%;
-    max-width: 100%;
+    max-width: none;
     aspect-ratio: 4 / 5;
-    max-height: min(72dvh, calc(100vw * 1.25));
-    margin-inline: auto;
+    margin-inline: 0;
+  }
+
+  .sa-mobile .ig-feed-post {
+    width: 100%;
+    max-width: none;
   }
 
   /* Story viewer — IG native 9:16; portal .sa-mobile-frame içinde (tam tarayıcı değil) */

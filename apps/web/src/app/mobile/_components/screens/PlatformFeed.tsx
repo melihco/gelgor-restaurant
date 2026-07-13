@@ -440,6 +440,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
 
   return (
     <div
+      className={igHome ? 'ig-feed-post' : undefined}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}

@@ -5,7 +5,7 @@
 import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
 
 export type BrandConstitutionTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
-export type BrandIdentityGroup = 'basics' | 'channels' | 'about' | 'assets';
+export type BrandIdentityGroup = 'basics' | 'channels' | 'about';
 export type BrandContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
 export type BrandDesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
 export type BrandGalleryGroup = 'upload' | 'analyze' | 'photos';
