@@ -140,6 +140,8 @@ export interface GeneratedDesignTemplate {
     productionIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
     /** Catalog slot key when preset came from production_slot_definitions. */
     catalogSlotKey?: string | null;
+    /** True when this template was anchored to the shared venue/hero photo. */
+    defaultHeroPhotoLock?: boolean;
     /** Canva archetype metadata locked into the reusable template recipe. */
     canvaArchetypeId?: string | null;
     canvaArchetypeName?: string | null;
@@ -162,6 +164,55 @@ function aspectForFormat(format: DesignTemplateFormat): '9:16' | '4:5' | '1:1' {
 
 function imageFormatForFormat(format: DesignTemplateFormat): 'post' | 'story' {
   return format === 'post' ? 'post' : 'story';
+}
+
+const HERO_ASSET_TYPE_SCORES: Array<[RegExp, number]> = [
+  [/hero_image/i, 120],
+  [/venue_reference|venue_photo/i, 100],
+  [/brand_background/i, 80],
+  [/product_image|food_drink_photo/i, -20],
+  [/event_photo/i, -30],
+  [/logo|icon/i, -120],
+];
+
+function scoreDefaultHeroPhoto(url: string, meta: GalleryPhotoMeta | undefined): number {
+  const assetType = String(meta?.suggestedAssetType ?? '');
+  const description = String(
+    (meta as GalleryPhotoMeta & { description?: unknown; caption?: unknown; summary?: unknown } | undefined)?.description
+      ?? (meta as GalleryPhotoMeta & { caption?: unknown } | undefined)?.caption
+      ?? (meta as GalleryPhotoMeta & { summary?: unknown } | undefined)?.summary
+      ?? '',
+  ).toLowerCase();
+  const quality = Number(
+    (meta as GalleryPhotoMeta & { qualityScore?: unknown; quality_score?: unknown; score?: unknown } | undefined)?.qualityScore
+      ?? (meta as GalleryPhotoMeta & { quality_score?: unknown; score?: unknown } | undefined)?.quality_score
+      ?? (meta as GalleryPhotoMeta & { score?: unknown } | undefined)?.score
+      ?? 0,
+  );
+
+  let score = Number.isFinite(quality) ? Math.min(quality, 100) / 5 : 0;
+  for (const [rx, value] of HERO_ASSET_TYPE_SCORES) {
+    if (rx.test(assetType)) score += value;
+  }
+  if (/water|sea|beach|shore|venue|terrace|table|entrance|harbor|sunset|view|mekan|sahil|deniz/.test(description)) {
+    score += 20;
+  }
+  if (/cocktail|drink|food|burger|fries|salad|taco|plate|glass|champagne|dj|party|people celebrating/.test(description)) {
+    score -= 12;
+  }
+  if (/assets\/img|ikonlar|logo|\.svg/i.test(url)) score -= 100;
+  return score;
+}
+
+/** Pick one brand-owned venue/hero image to anchor the whole template set. */
+export function resolveDefaultTemplateHeroPhoto(input: DesignTemplateEngineInput): { url: string; score: number } | null {
+  let best: { url: string; score: number } | null = null;
+  for (const url of input.galleryPhotoUrls) {
+    const meta = input.galleryAnalysis[normalizeGalleryUrl(url)] ?? input.galleryAnalysis[url];
+    const score = scoreDefaultHeroPhoto(url, meta);
+    if (!best || score > best.score) best = { url, score };
+  }
+  return best && best.score > 40 ? best : null;
 }
 
 /**
@@ -298,6 +349,7 @@ async function generateOne(
   input: DesignTemplateEngineInput,
   usedUrls: Set<string>,
   special?: EngineSpecialDay,
+  defaultHeroPhoto?: { url: string; score: number } | null,
 ): Promise<GeneratedDesignTemplate> {
   const { headline, subtitle, sceneHint, occasion } = resolveCopy(preset, input, special);
   const theme = applyFalProductionOverridesToTheme(
@@ -327,8 +379,8 @@ async function generateOne(
       visualDnaTone: input.visualDnaTone,
       lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
     });
-  const picked = pickPhotoForPreset(preset, input, usedUrls);
-  if (picked) usedUrls.add(normalizeGalleryUrl(picked.url));
+  const picked = defaultHeroPhoto ?? pickPhotoForPreset(preset, input, usedUrls);
+  if (picked && !defaultHeroPhoto) usedUrls.add(normalizeGalleryUrl(picked.url));
   const briefFormat = preset.format === 'reel_cover'
     ? 'reel'
     : preset.format === 'story'
@@ -376,9 +428,12 @@ async function generateOne(
     brandDirectives: [
       ...brandIntelligenceDirectives,
       'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
+      picked?.url
+        ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
+        : '',
       ...layoutDirectives,
       ...(antiPatternDirective ? [antiPatternDirective] : []),
-    ],
+    ].filter(Boolean),
   });
 
   let thumbnailUrl: string | null = null;
@@ -401,6 +456,7 @@ async function generateOne(
         ),
         aspectRatio: aspect,
         referencePhotoUrl: picked?.url,
+        brandReferenceImageUrls: picked?.url ? [picked.url] : undefined,
         sceneHint,
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
@@ -408,12 +464,13 @@ async function generateOne(
         location: input.location,
         sector: input.sector,
         captionAwareHeadline: false,
+        requireGroundedGallery: Boolean(picked?.url),
         grafikerMaxRetries: 0,
         templatePreviewMode: input.templatePreviewMode !== false,
         occasion,
       });
       if (!still.imageUrl) return false;
-      generator = 'fal-ideogram';
+      generator = still.typographyModel.includes('gpt-image-1') ? 'gpt-image-1' : 'fal-ideogram';
       thumbnailUrl = (await mirrorPreview(still.imageUrl, input.workspaceId)) ?? still.imageUrl;
       return Boolean(thumbnailUrl);
     } catch (err) {
@@ -480,6 +537,7 @@ async function generateOne(
       sampleSubtitle: subtitle,
       galleryRef: picked?.url ?? null,
       galleryMatchScore: picked?.score ?? null,
+      defaultHeroPhotoLock: Boolean(defaultHeroPhoto),
       intent: preset.intent,
       prominentLogo,
       logoUrl: input.logoUrl,
@@ -553,6 +611,7 @@ export async function generateBrandDesignTemplates(
   const concurrency = Math.max(1, input.concurrency ?? 3);
   const usedUrls = new Set<string>();
   const templates: GeneratedDesignTemplate[] = [];
+  const defaultHeroPhoto = resolveDefaultTemplateHeroPhoto(input);
 
   const jobs = buildDesignTemplateGenerationJobs(
     selected,
@@ -565,7 +624,7 @@ export async function generateBrandDesignTemplates(
   for (let i = 0; i < jobs.length; i += concurrency) {
     const batch = jobs.slice(i, i + concurrency);
     const results = await Promise.all(
-      batch.map((job) => generateOne(job.preset, input, usedUrls, job.special)),
+      batch.map((job) => generateOne(job.preset, input, usedUrls, job.special, defaultHeroPhoto)),
     );
     templates.push(...results);
   }
@@ -584,12 +643,15 @@ export async function generateSingleDesignTemplatePreset(
   preset: DesignTemplatePreset,
   options?: { productionOverrides?: Partial<BrandFalTemplateProductionConfig> },
 ): Promise<GeneratedDesignTemplate> {
+  const engineInput = {
+    ...input,
+    productionOverrides: options?.productionOverrides ?? input.productionOverrides,
+  };
   return generateOne(
     preset,
-    {
-      ...input,
-      productionOverrides: options?.productionOverrides ?? input.productionOverrides,
-    },
+    engineInput,
     new Set<string>(),
+    undefined,
+    resolveDefaultTemplateHeroPhoto(engineInput),
   );
 }

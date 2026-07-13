@@ -897,7 +897,7 @@ export async function produceFalDesignerStill(
   }
 
   // ── Full typography still path ─────────────────────────────────────────────
-  if (input.templatePreviewMode) {
+  if (input.templatePreviewMode && !input.referencePhotoUrl?.trim()) {
     const previewChannel = resolveFalCanvasChannel({
       pipeline: input.pipeline,
       aspectRatio: input.aspectRatio,
