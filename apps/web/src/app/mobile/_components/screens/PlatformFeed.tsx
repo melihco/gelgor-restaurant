@@ -3643,11 +3643,11 @@ export function PlatformFeed() {
                 : !showApproved && pendingPublishableCount > 0
                   ? 'İçerikler yükleniyor…'
                 : rawPendingCount > pendingPublishableCount
-                  ? `${rawPendingCount - pendingPublishableCount} içerik hazırlanıyor — render bitince Feed'e düşecek.`
+                  ? `${rawPendingCount - pendingPublishableCount} içerik hazırlanıyor — bitince Akış'a düşecek.`
                   : pipelineStatus === 'running'
-                    ? 'Kampanya hazırlanıyor — strateji, içerik fikirleri ve tasarım kartları oluşturuluyor.'
+                    ? 'Kampanya hazırlanıyor — strateji ve içerik fikirleri oluşturuluyor.'
                     : brandAlignment && !brandAlignment.canAutoProduce
-                      ? 'Marka profilinizi tamamlayın — ardından yeni kampanyalar otomatik başlar.'
+                      ? 'Marka profilinizi tamamlayın — ardından yeni planlar otomatik başlar.'
                       : 'Haftalık plandan onayladığınız kampanyalar hazır olunca burada görünür.'}
             </div>
             {!showApproved && missionFilterId && rawPendingCount > 0 && artifacts.length === 0 && (

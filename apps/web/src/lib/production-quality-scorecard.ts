@@ -96,7 +96,7 @@ export function buildProductionQualityScorecard(
     )
   ) {
     hardBlock = true;
-    hardBlockReason = `Tasarım kalitesi yetersiz (Grafiker ${grafikerScore ?? '—'}/${GRAFIKER_PASS_THRESHOLD})`;
+    hardBlockReason = 'Tasarım kalitesi onay için yeterli değil';
   }
 
   if (!hardBlock && typographyTextValid === false) {
@@ -109,7 +109,7 @@ export function buildProductionQualityScorecard(
   }
 
   if (bundleStatus === 'failed') {
-    softWarnings.push('Üretim hatası — yeniden render önerilir');
+    softWarnings.push('Üretim hatası — yeniden üretmeyi deneyin');
   }
 
   // PIS is surfaced in Mission Hub aggregate alerts — not approval soft-gate

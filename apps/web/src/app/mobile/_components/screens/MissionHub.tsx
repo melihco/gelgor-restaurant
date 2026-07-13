@@ -728,32 +728,32 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
                   )}
                   <span style={{ color: '#34d399', fontSize: 13, fontWeight: 700 }}>
                     {visualDesignPending
-                      ? 'Görsel tasarım önerileri bekleniyor'
+                      ? 'Görseller hazırlanıyor'
                       : calendarPending
                         ? 'Yayın takvimi hazırlanıyor'
                         : productionBlock && !feedBackgroundActive
-                          ? productionBlock.label
+                          ? 'Üretim sırası bekleniyor'
                           : feedBackgroundActive
-                            ? 'Feed arka planda üretiliyor'
-                            : 'Feed üretimi bekleniyor'}
+                            ? 'İçerikler hazırlanıyor'
+                            : 'İçerik üretimi bekleniyor'}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
                   {visualDesignPending
-                    ? 'Ajans tasarım kartları tamamlanınca Feed üretimi otomatik başlayacak.'
+                    ? 'Tasarım tamamlanınca gönderiler otomatik üretilir.'
                     : calendarPending
-                      ? 'Yayın planı tamamlanınca her plan satırı için Feed çıktısı üretilir.'
+                      ? 'Plan tamamlanınca Akış içerikleri üretilir.'
                       : productionBlock && !feedBackgroundActive
-                        ? `Feed üretimi şunu bekliyor: ${productionBlock.awaitingNodes.join(', ') || productionBlock.label}. Tamamlanınca otomatik başlayacak.`
+                        ? 'Hazırlık adımları bitince üretim otomatik başlar.'
                         : feedPublishableCount > 0
-                        ? `${feedPublishableCount}/${feedTarget} yayına hazır`
+                        ? `${feedPublishableCount}/${feedTarget} içerik yayına hazır`
                           + (feedProducedCount > feedPublishableCount
-                            ? ` (${feedProducedCount} üretildi, render bekliyor olabilir)`
+                            ? ` (${feedProducedCount} üretildi)`
                             : '')
-                          + ' — yeni içerikler geldikçe Feed\'de listelenir.'
+                          + ' — yeni içerikler Akış\'ta listelenir.'
                         : feedProducedCount > 0
-                          ? `${feedProducedCount} çıktı üretildi — yayına hazır hale geldikçe Feed\'de görünür.`
-                          : 'Gönderiler hazır oldukça Feed sekmesine düşer (story, post, carousel, reel).'}
+                          ? `${feedProducedCount} içerik üretildi — hazır oldukça Akış'ta görünür.`
+                          : 'Gönderiler hazır oldukça Akış sekmesine düşer.'}
                 </div>
                 {debugMode && !feedBackgroundActive && !feedPrepPending && onKickFeedProduction && (
                   <button
@@ -1285,12 +1285,12 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
           </div>
           <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3, lineHeight: 1.4 }}>
             {readyPreviewCount > 0
-              ? 'Üretilen görseller kartlarda önizlenir — tam boyut için Feed veya Önizle.'
+              ? 'Üretilen görseller kartlarda önizlenir — tam boyut için Akış\'a bakın.'
               : renderingCount > 0
                 ? 'Görseller üretiliyor — tamamlandığında kartlarda görünür.'
                 : planningKind === 'design'
-                  ? 'Planlama brief\'i — üretim sonrası fal.ai / tasarım çıktıları burada önizlenir.'
-                  : 'Planlama çıktısı — üretimde caption ve format kaynağı; Feed dosyası değildir.'}
+                  ? 'Tasarım planı — üretim sonrası görseller burada önizlenir.'
+                  : 'İçerik planı — Akış üretiminde caption ve format kaynağıdır.'}
           </div>
           {/* Story/Remotion indicator */}
           {planningKind === 'ideation' && items.some((idea: any) => {
@@ -1298,7 +1298,7 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
             return t === 'story_event' || t === 'event_announcement' || t === 'campaign_offer';
           }) && (
             <div style={{ fontSize: 10, color: '#8AABBD', marginTop: 2 }}>
-              ▶ Tasarımlı story'ler üretiliyor — Feed story bar'ında görünür
+              ▶ Story görselleri üretiliyor — Akış hikaye barında görünür
             </div>
           )}
         </div>
@@ -1381,7 +1381,7 @@ function ContentIdeasView({ signal, t, onGoToFeed, planningKind = 'ideation', li
                 color: fmtCfg.color, letterSpacing: '0.04em' }}>
                 {fmtCfg.icon} {fmtCfg.label}
               </span>
-              {productionBadge && (
+              {productionBadge && isMobileOperatorMode() && (
                 <span style={{
                   fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 8,
                   background: 'rgba(0,0,0,0.06)', color: productionBadge.engineColor,
@@ -2104,12 +2104,14 @@ function FeedCohesionOutputView({
           </div>
         )}
         <div style={{ flex: 1, fontSize: 12, color: t.textSecondary, lineHeight: 1.55 }}>
-          {verdict || 'Feed Art Director analizi tamamlandı.'}
+          {verdict || (isMobileOperatorMode()
+            ? 'Feed Art Director analizi tamamlandı.'
+            : 'Haftalık içerik planı hazır.')}
         </div>
       </div>
 
-      {/* PIS summary (APO-3) */}
-      {(pisAvg != null || pisWarnings.length > 0) && (
+      {/* PIS summary (APO-3) — operator only */}
+      {isMobileOperatorMode() && (pisAvg != null || pisWarnings.length > 0) && (
         <div style={{ padding: '10px 12px', borderRadius: 10,
           background: pisSkipped > 0 ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.06)',
           border: `0.5px solid ${pisSkipped > 0 ? 'rgba(245,158,11,0.25)' : 'rgba(16,185,129,0.2)'}` }}>
@@ -2132,8 +2134,8 @@ function FeedCohesionOutputView({
         </div>
       )}
 
-      {/* Production assignments (APO-1) */}
-      {assignments.length > 0 && (
+      {/* Production assignments (APO-1) — operator only */}
+      {isMobileOperatorMode() && assignments.length > 0 && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
@@ -2185,7 +2187,7 @@ function FeedCohesionOutputView({
       {(plannedDist.post + plannedDist.story + plannedDist.reel + plannedDist.carousel) > 0 && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            Format Dağılımı (Plan)
+            {isMobileOperatorMode() ? 'Format Dağılımı (Plan)' : 'İçerik dağılımı'}
           </div>
           <FormatDistributionChips dist={plannedDist} t={t} />
           {producedDist && (
@@ -2193,7 +2195,7 @@ function FeedCohesionOutputView({
               <FormatDistributionChips
                 dist={producedDist}
                 t={t}
-                label={`Feed'de hazır (${slotChecklist?.readyTotal ?? 0}/${assignments.length || slotChecklist?.items.length || 0})`}
+                label={`${isMobileOperatorMode() ? "Feed'de hazır" : 'Hazır'} (${slotChecklist?.readyTotal ?? 0}/${assignments.length || slotChecklist?.items.length || 0})`}
               />
             </div>
           )}
@@ -2209,7 +2211,7 @@ function FeedCohesionOutputView({
       {notes.length > 0 && (
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-            Art Director Notları
+            {isMobileOperatorMode() ? 'Art Director Notları' : 'Öneriler'}
           </div>
           {notes.slice(0, 4).map((n, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
@@ -3258,7 +3260,9 @@ function MissionPublishPackageCard({
       })
     : label;
   const targetLabel = factoryJobs?.total
-    ? `${factoryJobs.total} marka slotu`
+    ? (isMobileOperatorMode()
+      ? `${factoryJobs.total} marka slotu`
+      : `${factoryJobs.total} içerik`)
     : `${formatWeeklyPackageTarget()} (${MISSION_WEEKLY_PACKAGE_COUNTS.total} içerik)`;
 
   return (
@@ -3275,10 +3279,10 @@ function MissionPublishPackageCard({
         )}
       </div>
       <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6, lineHeight: 1.45 }}>
-        Hedef paket: {targetLabel}
+        Hedef: {targetLabel}
       </div>
       <div style={{ fontSize: 15, fontWeight: 800, color: t.textPrimary, marginBottom: 6 }}>
-        {hasContent ? selectionLabel : 'Video story\'ler hazırlanıyor…'}
+        {hasContent ? selectionLabel : 'Story görselleri hazırlanıyor…'}
       </div>
       <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5, marginBottom: 14 }}>
         {hasContent && pkg
@@ -3286,15 +3290,15 @@ function MissionPublishPackageCard({
               const { ready, target } = slotProgress;
               const progress =
                 ready > 0 && ready < target
-                  ? `${ready}/${target} slot üretildi · `
+                  ? `${ready}/${target} hazır · `
                   : '';
               return pkg.pendingReview > 0
-                ? `${progress}${pkg.pendingReview} içerik Feed'de onayınızı bekliyor.${pkg.backupCount > 0 ? ` (+${pkg.backupCount} ek üretim önerilen paket dışında)` : ''}`
-                : `${progress}${pkg.approved} içerik onaylandı · Feed'de yayın geçmişini kontrol edin.`;
+                ? `${progress}${pkg.pendingReview} içerik Akış'ta onayınızı bekliyor.${pkg.backupCount > 0 && isMobileOperatorMode() ? ` (+${pkg.backupCount} ek üretim)` : ''}`
+                : `${progress}${pkg.approved} içerik onaylandı · Akış'ta yayın geçmişini kontrol edin.`;
             })()
           : previewArtifacts.length > 0
-            ? `${previewArtifacts.length} içerik önizlenebilir · render devam edebilir.`
-            : 'Auto-produce ve tasarım üretimi arka planda çalışıyor (1–3 dk). Biraz sonra Feed\'i yenileyin.'}
+            ? `${previewArtifacts.length} içerik önizlenebilir.`
+            : 'İçerik üretimi arka planda devam ediyor. Biraz sonra Akış\'ı yenileyin.'}
       </div>
       {factoryJobs && factoryJobs.total > 0 && (
         <div style={{
@@ -3304,7 +3308,9 @@ function MissionPublishPackageCard({
           border: '0.5px solid rgba(16,185,129,0.28)',
         }}>
           <span style={{ fontSize: 11, fontWeight: 800, color: '#10B981', letterSpacing: '0.04em' }}>
-            ÜRETİM HATTI {factoryJobs.ready}/{factoryJobs.total}
+            {isMobileOperatorMode()
+              ? `ÜRETİM HATTI ${factoryJobs.ready}/${factoryJobs.total}`
+              : `${factoryJobs.ready}/${factoryJobs.total} hazır`}
           </span>
           {(factoryJobs.inFlight ?? 0) > 0 && (
             <span style={{ fontSize: 10, color: t.textSecondary }}>
@@ -3764,7 +3770,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       onClose={onClose}
       title={mission.title}
       subtitle={`${mission.completed_nodes}/${mission.total_nodes} plan adımı · ${timeAgo(mission.completed_at)}`}
-      tall
+      fullScreen
+      closeButton="x-right"
       ariaLabel="Plan detayı"
     >
       <div style={{ padding: '12px 16px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
@@ -4424,10 +4431,10 @@ function BrandReadinessCard({
           </div>
           <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
             {blocks
-              ? 'Misyon önerebilmek için en az %70 gerekli'
+              ? 'Yeni plan önermek için en az %70 gerekli'
               : score === 100
-                ? 'Tüm kapılar tamam — tam uyum'
-                : 'Otonom üretim için %100 hedefleyin'}
+                ? 'Marka profili tamam'
+                : 'Daha iyi üretim için profili tamamlayın'}
           </div>
         </div>
         <div style={{ fontSize: 22, fontWeight: 800, color: accent, letterSpacing: '-0.03em' }}>
@@ -4520,11 +4527,11 @@ function ProductionProfileCard({
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary }}>Üretim Tasarım Profili</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary }}>Tasarım Profili</div>
           <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
             {ready
-              ? 'Fal katmanları hazır — typography + intensity + DNA'
-              : `Fal standardı için en az %${PRODUCTION_PROFILE_THRESHOLD} gerekli`}
+              ? 'Tasarım standardı hazır'
+              : `Üretim için en az %${PRODUCTION_PROFILE_THRESHOLD} gerekli`}
           </div>
         </div>
         <div style={{ fontSize: 18, fontWeight: 800, color: accent }}>

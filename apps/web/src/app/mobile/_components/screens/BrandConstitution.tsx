@@ -791,7 +791,7 @@ function PostDesignDefaultsPanel({
       bullets: [
         'AI prompt’a bırakılmaz; gerçek render katmanları Canvas içinde deterministik çizilir.',
         '3D Extrude ve Gradient Stack daha kampanya/poster odaklıdır; Outline ve Soft Shadow daha premium/minimaldir.',
-        'Reel için fal.ai I2V prompt image da bu yazı efektini taşıdığı için hareketli içerik standardını etkiler.',
+        'Reel için ürün görselleri de bu yazı efektini taşıdığı için hareketli içerik standardını etkiler.',
       ],
     },
     logo: {
@@ -3541,8 +3541,8 @@ export function BrandConstitution() {
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
-    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'fal.ai slot galerisi', accent: '#5AA0D6' },
-    { key: 'engines', label: 'Üretim Motorları & Ses', hint: 'FAL · motion · müzik', accent: '#A985E0' },
+    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Gönderi ve story şablonları', accent: '#5AA0D6' },
+    { key: 'engines', label: 'Üretim & Ses', hint: 'Hareket, müzik, motor ayarları', accent: '#A985E0' },
     { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
     { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
   ];
@@ -3693,10 +3693,10 @@ export function BrandConstitution() {
             border: `0.5px solid ${t.isDark ? 'rgba(239,68,68,0.28)' : 'rgba(239,68,68,0.22)'}`,
           }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, marginBottom: 4 }}>
-              Üretim tasarım profili eksik ({productionReadiness.productionProfile.score}/{PRODUCTION_PROFILE_THRESHOLD})
+              Üretim tasarımı eksik ({productionReadiness.productionProfile.score}/{PRODUCTION_PROFILE_THRESHOLD})
             </div>
             <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, marginBottom: 8 }}>
-              Fal story/post üretimi için service profile, production visual_dna ve theme katmanları tamamlanmalı.
+              Story ve gönderi üretimi için marka tasarım profilinin tamamlanması gerekir.
             </div>
             {(productionReadiness.productionProfile.missing ?? []).slice(0, 3).map((item) => (
               <div key={item.id} style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4, marginTop: 4 }}>
@@ -3723,7 +3723,7 @@ export function BrandConstitution() {
                   Marka Anayasası onay bekliyor
                 </div>
                 <div style={{ fontSize: 13, color: t.textTertiary, lineHeight: 1.5, marginBottom: 14 }}>
-                  Kimlik bilgilerini gözden geçirip onaylayın — Mission Hub skoruna +20 puan ekler.
+                  Kimlik bilgilerini gözden geçirip onaylayın — hazırlık skoruna +20 puan ekler.
                 </div>
                 {constitutionConfirmError && (
                   <div style={{ fontSize: 13, color: t.danger, lineHeight: 1.45, marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: t.dangerDim }}>
@@ -4293,7 +4293,7 @@ export function BrandConstitution() {
             >
             <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
-                Post ve story görselleri fal.ai + şablon kütüphanesi ile otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
+                Post ve story görselleri marka şablonlarıyla otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
                 Hareket kütüphanesi için <strong>Görsel</strong> sekmesine bakın.
               </p>
             </SCard>
@@ -4777,7 +4777,7 @@ export function BrandConstitution() {
             <CollapsibleGroup
               t={t}
               title="Tasarım motorları & hareket"
-              subtitle="Ürün vitrini, fal.ai, motion stili, reel hareketi, story sesi ve logo kuralları"
+              subtitle="Ürün vitrini, üretim motorları, hareket stili, reel ve story sesi"
               accent="#8B5CF6"
               defaultOpen
             >
@@ -4795,7 +4795,7 @@ export function BrandConstitution() {
             )}
 
             {tenantId && (
-              <SCard t={t} title="Üretim Motorları (fal.ai)" accent="#8B5CF6">
+              <SCard t={t} title="Üretim Motorları" accent="#8B5CF6">
                 <BrandProductionEnginesPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}
@@ -4840,7 +4840,7 @@ export function BrandConstitution() {
               return (
                 <SCard t={t} title="Motion Stili" accent={t.accent}>
                   <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-                    Story motion ve composition ağırlıkları. Tasarım slotları slot kataloğu ve fal.ai şablonlarından yönetilir.
+                    Story motion ve composition ağırlıkları. Tasarım slotları şablon kütüphanesinden yönetilir.
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                     {MOTION_STYLE_OPTIONS.map(({ id, label, desc }) => {
@@ -4874,7 +4874,7 @@ export function BrandConstitution() {
             })()}
 
             {tenantId && (
-              <SCard t={t} title="Reel Motion (fal.ai)">
+              <SCard t={t} title="Reel Motion">
                 <ReelMotionSettingsPanel
                   tenantId={tenantId}
                   theme={((brandThemePayload?.theme ?? {}) as Record<string, unknown>)}

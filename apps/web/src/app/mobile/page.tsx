@@ -344,7 +344,7 @@ const CSS = `
   .sa-mobile .login-logo {
     display: block;
     margin: 0 auto;
-    width: min(168px, 52vw);
+    width: min(220px, 68vw);
     height: auto !important;
     object-fit: contain;
     filter: drop-shadow(0 4px 16px rgba(0,0,0,0.22));
@@ -386,14 +386,6 @@ const CSS = `
     text-align: center;
     margin-bottom: 28px;
   }
-  .sa-mobile .login-title {
-    margin: 0 0 16px;
-    font-size: clamp(26px, 6.5vw, 30px);
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    color: #F2F2F6;
-    text-align: center;
-  }
   .sa-mobile .login-form {
     width: 100%;
   }
@@ -416,12 +408,8 @@ const CSS = `
     .sa-mobile .login-hero {
       margin-bottom: 20px;
     }
-    .sa-mobile .login-title {
-      font-size: clamp(22px, 5.5vw, 26px);
-      margin-bottom: 12px;
-    }
     .sa-mobile .login-logo {
-      width: min(148px, 48vw);
+      width: min(188px, 58vw);
     }
   }
   .sa-mobile .auth-password-wrap {
@@ -1528,6 +1516,25 @@ const CSS = `
   .sa-responsive-sheet-panel--tall {
     max-height: min(82dvh, 720px);
   }
+  .sa-responsive-sheet-root--fullscreen {
+    align-items: stretch;
+    pointer-events: auto;
+  }
+  .sa-responsive-sheet-panel--fullscreen {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+    animation: slideUpFull 320ms cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+  @keyframes slideUpFull {
+    from { transform: translate3d(0, 100%, 0); }
+    to { transform: translate3d(0, 0, 0); }
+  }
+  .sa-responsive-sheet-panel--fullscreen .sa-plan-node-collapse {
+    max-height: min(62dvh, 560px);
+  }
   .sa-responsive-sheet-handle {
     display: flex;
     justify-content: center;
@@ -1546,6 +1553,10 @@ const CSS = `
       align-items: center;
       padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 0px));
     }
+    .sa-responsive-sheet-root--fullscreen {
+      align-items: stretch;
+      padding: 0;
+    }
     .sa-responsive-sheet-panel {
       width: min(520px, 100%);
       max-height: min(72dvh, 620px);
@@ -1555,6 +1566,14 @@ const CSS = `
     .sa-responsive-sheet-panel--tall {
       max-height: min(78dvh, 680px);
       width: min(560px, 100%);
+    }
+    .sa-responsive-sheet-panel--fullscreen {
+      width: min(560px, 100%);
+      max-height: min(92dvh, 820px);
+      height: min(92dvh, 820px);
+      margin: max(16px, env(safe-area-inset-top, 0px)) auto max(16px, env(safe-area-inset-bottom, 0px));
+      border-radius: 20px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
     }
     .sa-responsive-sheet-handle {
       display: none;

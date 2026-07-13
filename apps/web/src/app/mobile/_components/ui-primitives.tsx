@@ -3,7 +3,7 @@
 
 import React from 'react';
 import type { T } from './theme-context';
-import { IcoBack } from './Icons';
+import { IcoBack, IcoClose } from './Icons';
 
 // ─── Circular Progress Ring (SVG) ─────────────────────────────────────
 export function CircleProgress({
@@ -122,18 +122,25 @@ export function MobileStackHeader({
   onBack,
   right,
   sticky = true,
+  closeButton = 'back',
+  headerBackground,
 }: {
   t: T;
   title: string;
   onBack: () => void;
   right?: React.ReactNode;
   sticky?: boolean;
+  closeButton?: 'back' | 'x-right';
+  headerBackground?: string;
 }) {
+  const headerBg = headerBackground
+    ?? (t.isDark ? 'rgba(20,20,22,0.82)' : 'rgba(250,250,252,0.82)');
+
   return (
     <header
       style={{
         ...(sticky ? { position: 'sticky' as const, top: 0, zIndex: 30 } : {}),
-        background: t.isDark ? 'rgba(10,10,14,0.94)' : 'rgba(244,244,248,0.94)',
+        background: headerBg,
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
         paddingTop: 'env(safe-area-inset-top, 0px)',
@@ -149,24 +156,28 @@ export function MobileStackHeader({
           padding: '2px 10px',
         }}
       >
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Geri"
-          style={{
-            ...t.backBtn,
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            justifySelf: 'start',
-          }}
-        >
-          <IcoBack color={t.textSecondary} />
-        </button>
+        {closeButton === 'back' ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Geri"
+            style={{
+              ...t.backBtn,
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              justifySelf: 'start',
+            }}
+          >
+            <IcoBack color={t.textSecondary} />
+          </button>
+        ) : (
+          <div aria-hidden style={{ width: 44, height: 44 }} />
+        )}
         <h1
           style={{
             margin: 0,
@@ -183,7 +194,25 @@ export function MobileStackHeader({
           {title}
         </h1>
         <div style={{ justifySelf: 'end', minWidth: 44, display: 'flex', justifyContent: 'flex-end' }}>
-          {right}
+          {closeButton === 'x-right' ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Kapat"
+              style={{
+                ...t.backBtn,
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <IcoClose size={18} color={t.textSecondary} strokeWidth={2.2} />
+            </button>
+          ) : right}
         </div>
       </div>
     </header>

@@ -24,7 +24,7 @@ describe('buildProductionQualityScorecard hard blocks', () => {
       grafiker_pass: false,
     });
     expect(card.hardBlock).toBe(true);
-    expect(card.hardBlockReason).toContain('Grafiker');
+    expect(card.hardBlockReason).toContain('Tasarım kalitesi');
   });
 
   it('hard blocks low grafiker score without explicit pass', () => {

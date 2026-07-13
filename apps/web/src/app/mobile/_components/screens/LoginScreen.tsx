@@ -102,7 +102,6 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
       <main className="onboarding-main onboarding-login-main">
         <div className="login-content">
           <div className="login-hero">
-            <h1 className="login-title">Giriş yap</h1>
             <SmartAgencyLogo variant="full" priority className="login-logo" />
           </div>
 
@@ -159,7 +158,7 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
                 disabled={loading}
                 className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
               >
-                {loading ? 'Giriş yapılıyor…' : 'Giriş yap'}
+                {loading ? 'Bağlanıyor…' : 'Devam et'}
               </button>
             </div>
           </form>

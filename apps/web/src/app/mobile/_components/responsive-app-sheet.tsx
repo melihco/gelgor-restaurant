@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getMobilePortalRoot } from './mobile-client-config';
 import { useTheme } from './theme-context';
 import { MobileStackHeader } from './ui-primitives';
+
+const SWIPE_DISMISS_THRESHOLD = 96;
+const MAX_SWIPE_DRAG = 180;
 
 export function ResponsiveAppSheet({
   onClose,
@@ -13,6 +16,8 @@ export function ResponsiveAppSheet({
   headerRight,
   children,
   tall = false,
+  fullScreen = false,
+  closeButton = 'back',
   ariaLabel = 'Detay',
 }: {
   onClose: () => void;
@@ -22,10 +27,18 @@ export function ResponsiveAppSheet({
   children: React.ReactNode;
   /** Taller panel for mission/plan detail (still not full-screen). */
   tall?: boolean;
+  /** Edge-to-edge sheet — mission detail, swipe down to dismiss. */
+  fullScreen?: boolean;
+  closeButton?: 'back' | 'x-right';
   ariaLabel?: string;
 }) {
   const { t } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef(0);
+  const draggingRef = useRef(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -36,27 +49,88 @@ export function ResponsiveAppSheet({
     };
   }, []);
 
+  const resetDrag = useCallback(() => {
+    draggingRef.current = false;
+    setIsDragging(false);
+    setDragOffset(0);
+  }, []);
+
+  const onTouchStart = useCallback((event: React.TouchEvent) => {
+    if (!fullScreen) return;
+    const body = bodyRef.current;
+    if (!body || body.scrollTop > 1) return;
+    dragStartY.current = event.touches[0]?.clientY ?? 0;
+    draggingRef.current = true;
+    setIsDragging(true);
+  }, [fullScreen]);
+
+  const onTouchMove = useCallback((event: React.TouchEvent) => {
+    if (!draggingRef.current || !fullScreen) return;
+    const body = bodyRef.current;
+    if (!body || body.scrollTop > 1) {
+      resetDrag();
+      return;
+    }
+    const delta = (event.touches[0]?.clientY ?? 0) - dragStartY.current;
+    if (delta <= 0) {
+      setDragOffset(0);
+      return;
+    }
+    event.preventDefault();
+    setDragOffset(Math.min(MAX_SWIPE_DRAG, delta));
+  }, [fullScreen, resetDrag]);
+
+  const onTouchEnd = useCallback(() => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    setIsDragging(false);
+    if (dragOffset >= SWIPE_DISMISS_THRESHOLD) {
+      onClose();
+      setDragOffset(0);
+      return;
+    }
+    setDragOffset(0);
+  }, [dragOffset, onClose]);
+
   if (!mounted || typeof window === 'undefined') return null;
 
-  const panelClass = tall
-    ? 'sa-responsive-sheet-panel sa-responsive-sheet-panel--tall'
-    : 'sa-responsive-sheet-panel';
+  const panelClass = fullScreen
+    ? 'sa-responsive-sheet-panel sa-responsive-sheet-panel--fullscreen'
+    : tall
+      ? 'sa-responsive-sheet-panel sa-responsive-sheet-panel--tall'
+      : 'sa-responsive-sheet-panel';
+
+  const rootClass = fullScreen
+    ? 'sa-responsive-sheet-root sa-responsive-sheet-root--fullscreen'
+    : 'sa-responsive-sheet-root';
+
+  const surfaceBg = t.isDark ? '#0D0D1A' : '#f2f2f7';
+  const headerBg = t.isDark ? 'rgba(13,13,26,0.88)' : 'rgba(242,242,247,0.92)';
 
   const sheet = (
-    <div className="sa-responsive-sheet-root" role="dialog" aria-modal="true" aria-label={ariaLabel}>
-      <button
-        type="button"
-        className="sa-responsive-sheet-backdrop"
-        aria-label="Kapat"
-        onClick={onClose}
-      />
+    <div className={rootClass} role="dialog" aria-modal="true" aria-label={ariaLabel}>
+      {!fullScreen && (
+        <button
+          type="button"
+          className="sa-responsive-sheet-backdrop"
+          aria-label="Kapat"
+          onClick={onClose}
+        />
+      )}
       <div
         className={panelClass}
         style={{
-          background: t.isDark ? '#0D0D1A' : '#f2f2f7',
-          border: t.isDark ? '0.5px solid rgba(255,255,255,0.06)' : '0.5px solid rgba(0,0,0,0.08)',
+          background: surfaceBg,
+          border: fullScreen
+            ? 'none'
+            : (t.isDark ? '0.5px solid rgba(255,255,255,0.06)' : '0.5px solid rgba(0,0,0,0.08)'),
           color: t.textPrimary,
+          transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : undefined,
+          transition: isDragging ? 'none' : 'transform 220ms ease',
         }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
       >
         <div className="sa-responsive-sheet-handle" aria-hidden>
           <span
@@ -69,7 +143,15 @@ export function ResponsiveAppSheet({
             }}
           />
         </div>
-        <MobileStackHeader t={t} title={title} onBack={onClose} right={headerRight} sticky={false} />
+        <MobileStackHeader
+          t={t}
+          title={title}
+          onBack={onClose}
+          right={headerRight}
+          sticky={false}
+          closeButton={fullScreen ? (closeButton === 'x-right' ? 'x-right' : closeButton) : 'back'}
+          headerBackground={headerBg}
+        />
         {subtitle && (
           <div
             style={{
@@ -78,12 +160,13 @@ export function ResponsiveAppSheet({
               color: t.textTertiary,
               lineHeight: 1.45,
               borderBottom: `0.5px solid ${t.separator}`,
+              background: surfaceBg,
             }}
           >
             {subtitle}
           </div>
         )}
-        <div className="sa-responsive-sheet-body">{children}</div>
+        <div ref={bodyRef} className="sa-responsive-sheet-body">{children}</div>
       </div>
     </div>
   );
