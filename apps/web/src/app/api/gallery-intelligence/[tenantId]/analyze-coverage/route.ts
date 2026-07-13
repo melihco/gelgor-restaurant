@@ -99,7 +99,9 @@ export async function POST(
     body: JSON.stringify({
       assetUrls: batch,
       maxImages: batch.length,
-      existingAnalysis: existing,
+      // When force-reanalyzing, omit cache so vision always re-runs (primary_subject etc.).
+      existingAnalysis: body.forceReanalyze ? {} : existing,
+      forceReanalyze: Boolean(body.forceReanalyze),
       tier,
     }),
     signal: AbortSignal.timeout(280_000),
