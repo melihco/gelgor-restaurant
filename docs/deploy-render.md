@@ -47,6 +47,29 @@ psql "$DATABASE_URL" -f backend/migrations/0001_brand_context_discovery_fields.s
 
 .NET API ilk açılışta tabloları `EnsureCreated` ile kurar.
 
+## Üretim worker'ı (BullMQ) — yatay ölçekleme
+
+`smartagency-production-worker` (type: worker) üretim hattını web'den izole eder:
+
+- Aynı Docker image, farklı entrypoint (`node start-worker.mjs`): container içinde
+  **127.0.0.1'e bağlı özel bir Next.js instance'ı** + BullMQ consumer birlikte çalışır.
+- Üretim yükü (sharp, satori/Resvg, fal/OpenAI çağrıları) worker container'ında koşar;
+  kullanıcıya bakan `smartagency-web` yalnızca UI/API servis eder — 502 riski kalkar.
+- Worker'lar Redis üzerinden koordine olur: BullMQ kuyruğu, global inflight cap
+  (`PRODUCTION_GLOBAL_MAX_INFLIGHT`), workspace üretim kilitleri. Yüzlerce tenant
+  için `numInstances` artırmak yeterli.
+
+**Devreye alma sırası (güvenli):**
+
+1. Blueprint sync → worker servisi oluşur. `PRODUCTION_EXECUTOR=http` kaldığı sürece
+   worker boşta bekler, mevcut akış değişmez.
+2. Worker'ın `sync: false` env'lerini doldur (web ile aynı liste):
+   `python3 scripts/sync-render-env-from-local.py` veya dashboard.
+3. Worker loglarında `started. queue=production-slots` görünce:
+   `smartagency-crew` → `PRODUCTION_EXECUTOR=bullmq` yap.
+4. Geri dönüş: `PRODUCTION_EXECUTOR=http` — Python watchdog kuyruktaki claim'leri
+   stale-reclaim ile geri alır, HTTP drain kaldığı yerden devam eder.
+
 ## Maliyet notu
 
 - `plan: starter` web/api için (Remotion RAM). Free tier uyku modu + düşük RAM story render’da patlayabilir.

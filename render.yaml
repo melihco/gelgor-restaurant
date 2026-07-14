@@ -93,6 +93,9 @@ services:
           name: smartagency-redis
           type: keyvalue
           property: connectionString
+      # Üretim yürütücüsü: `http` = web instance içinde senkron (mevcut durum),
+      # `bullmq` = Redis kuyruğu + smartagency-production-worker (ölçekli mod).
+      # Worker servisi canlı ve env'leri dolu olduktan sonra `bullmq`'ya çevir.
       - key: PRODUCTION_EXECUTOR
         value: http
 
@@ -246,6 +249,134 @@ services:
       - key: NEXTJS_INTERNAL_URL
         fromService:
           name: smartagency-web
+          type: web
+          property: hostport
+      - key: CREW_BACKEND_URL
+        fromService:
+          name: smartagency-crew
+          type: pserv
+          property: hostport
+      - key: REDIS_URL
+        fromService:
+          name: smartagency-redis
+          type: keyvalue
+          property: connectionString
+
+  # Üretim worker'ı — BullMQ consumer + kendi özel Next.js instance'ı (127.0.0.1).
+  # Üretim yükü (sharp/satori/fal) bu container'da koşar; kullanıcıya bakan
+  # smartagency-web hiç üretim çalıştırmaz. Yüzlerce tenant için numInstances'ı
+  # artırmak yeterli — worker'lar Redis üzerinden koordine olur (BullMQ kuyruğu,
+  # global inflight cap, workspace üretim kilitleri).
+  # Aktif etmek için: smartagency-crew'da PRODUCTION_EXECUTOR=bullmq yap.
+  - type: worker
+    name: smartagency-production-worker
+    runtime: docker
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    dockerCommand: node start-worker.mjs
+    plan: standard
+    numInstances: 1
+    envVars:
+      - fromGroup: smartagency-shared
+      - key: PORT
+        value: "3000"
+      # BullMQ tüketici ayarları — instance başına 2 paralel slot batch.
+      - key: PRODUCTION_WORKER_CONCURRENCY
+        value: "2"
+      - key: PRODUCTION_GLOBAL_MAX_INFLIGHT
+        value: "12"
+      - key: SHARP_CONCURRENCY
+        value: "2"
+      - key: FAL_API_KEY
+        sync: false
+      - key: RUNWAY_API_SECRET
+        sync: false
+      - key: RUNWAYML_API_SECRET
+        sync: false
+      - key: SMART_AGENCY_IMAGE_PROVIDER
+        value: flux
+      - key: SMART_AGENCY_IMAGE_MODEL
+        value: gpt-image-1
+      - key: SMART_AGENCY_IMAGE_QUALITY
+        value: medium
+      - key: FAL_IMAGE_MODEL
+        value: fal-ai/flux/schnell
+      - key: AI_MODEL_TIER
+        value: starter
+      - key: PREFER_FAL_DESIGNED_POSTS
+        value: "true"
+      - key: GRAFIKER_LITE
+        value: "true"
+      - key: CD_LITE
+        value: "true"
+      - key: SKIP_ENHANCE_FOR_REMOTION_GRADE
+        value: "true"
+      - key: VIDEO_TIER_SCOPE
+        value: "true"
+      # Yayınlanan içerikteki mutlak URL'ler kamuya açık web adresini kullanmalı.
+      - key: NEXT_PUBLIC_SITE_URL
+        fromService:
+          name: smartagency-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXUS_API_URL
+        fromService:
+          name: smartagency-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: MERTCAFE_BASE_URL
+        sync: false
+      - key: MERTCAFE_API_KEY
+        sync: false
+      - key: MERTCAFE_WORKSPACE_API_KEYS
+        sync: false
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: CREATOMATE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VENUE_PHOTO_PRESERVE
+        value: "false"
+      - key: AUTO_PRODUCE_SUBTLE_ENHANCE
+        value: "false"
+      - key: AUTO_PRODUCE_GALLERY_ONLY
+        value: "false"
+      - key: AUTO_PRODUCE_BYPASS_LIMITS
+        value: "true"
+      - key: AUTO_PRODUCE_RUNWAY
+        value: "false"
+      - key: AUTO_PRODUCE_MAX_DAILY
+        value: "500"
+      - key: MISSION_AUTO_PRODUCE_MAX_PER_RUN
+        value: "5"
+      - key: AUTO_PRODUCE_DAILY_BUDGET_USD
+        value: "50"
+      - key: AUTO_PRODUCE_MAX_REELS_DAILY
+        value: "15"
+      - key: RUNWAY_MODEL
+        value: gen4_turbo
+      - key: RUNWAY_API_VERSION
+        value: "2024-11-06"
+      - key: RUNWAY_DEFAULT_DURATION
+        value: "5"
+      - key: RUNWAY_DEFAULT_RATIO
+        value: "720:1280"
+      - key: RUNWAY_TIMEOUT_MS
+        value: "240000"
+      - key: BACKEND_ORIGIN
+        fromService:
+          name: smartagency-api
           type: web
           property: hostport
       - key: CREW_BACKEND_URL
