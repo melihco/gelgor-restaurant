@@ -2,7 +2,7 @@
 
 import { useTheme } from './theme-context';
 import { useTenantBrandContext } from './TenantBrandProvider';
-import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import { useBrandThemePalette } from './use-brand-theme-palette';
 
 const STAR_PATH =
@@ -24,7 +24,7 @@ export function BrandNavStar({
   onPointerEnter?: () => void;
 }) {
   const { t } = useTheme();
-  const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const tenantId = useActiveTenantId();
   const tenantBrand = useTenantBrandContext();
   const palette = useBrandThemePalette();
   const { primary, accent } = palette;

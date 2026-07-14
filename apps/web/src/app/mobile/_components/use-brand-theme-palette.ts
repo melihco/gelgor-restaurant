@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from './theme-context';
-import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 
 export type BrandThemePalette = {
   primary: string;
@@ -54,7 +54,7 @@ export function brandNavbarBackground(
 
 export function useBrandThemePalette(): BrandThemePalette {
   const { t } = useTheme();
-  const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const tenantId = useActiveTenantId();
 
   const { data: themeKit } = useQuery({
     queryKey: ['brand-theme-kit', tenantId],

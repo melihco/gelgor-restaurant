@@ -5,6 +5,7 @@ import { useMobileStore } from './_components/mobile-store';
 import { MobileThemeProvider, useTheme } from './_components/theme-context';
 import { useAuthStore } from './_components/auth-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import { MobileNav } from './_components/MobileNav';
 import { ProfileSheet } from './_components/ProfileSheet';
 import { apiClient } from '@/lib/api-client';
@@ -1712,7 +1713,7 @@ function AppShell() {
   const showProfile = useAuthStore((s) => s.showProfile);
   const closeProfile = useAuthStore((s) => s.closeProfile);
   const setTenantFromSession = useWorkspaceStore((s) => s.setTenantFromSession);
-  const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const tenantId = useActiveTenantId();
   const queryClient = useQueryClient();
   const screen = useMobileStore(s => s.screen);
   const noNav = NO_NAV.has(screen);

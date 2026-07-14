@@ -5,7 +5,7 @@ import { useAuthStore } from '../auth-store';
 import { apiClient, toUserFriendlyApiError } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
+import { clearSessionScopedQueries, invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 
 interface LoginScreenProps {
@@ -78,6 +78,7 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
     setLoading(true);
     setError('');
     try {
+      clearSessionScopedQueries();
       const session = await apiClient.login({ email: email.trim(), password });
       if (session.token) setSessionToken(session.token);
       if (session.tenantId && session.officeId) setWorkspace(session.tenantId, session.officeId);

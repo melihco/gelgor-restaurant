@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMobileStore } from './mobile-store';
 import { useTheme } from './theme-context';
-import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import {
   CLIENT_NAV_TABS,
   CLIENT_NAV_MENU,
@@ -206,7 +206,7 @@ function MenuNavButton({
 export function MobileNav() {
   const { activeTab, setTab, navigate, screen, bumpFeedRefresh } = useMobileStore();
   const { t } = useTheme();
-  const tenantId = useWorkspaceStore((s) => s.tenantId);
+  const tenantId = useActiveTenantId();
   const queryClient = useQueryClient();
   const { data: artifacts = [] } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
