@@ -11,6 +11,7 @@ import {
   pickMissionDiverseFallbackPhoto,
   rankPhotosForContent,
   rankPhotosForContentSeeded,
+  resolveGalleryMatchSubjectKey,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
   type PhotoMatchResult,
@@ -145,7 +146,11 @@ export function buildSlotGalleryMatchInput(input: {
   const syntheticCaption = caption
     || [hint, brief, brandLine].filter(Boolean).join(' — ')
     || input.brandName;
-  const subjectKey = String(input.subjectKey ?? '').trim() || undefined;
+  const subjectKey = resolveGalleryMatchSubjectKey({
+    caption: syntheticCaption,
+    headline: syntheticHeadline,
+    subjectKey: String(input.subjectKey ?? '').trim() || undefined,
+  });
 
   return {
     caption: syntheticCaption,

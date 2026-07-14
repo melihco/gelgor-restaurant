@@ -127,6 +127,9 @@ export function buildGalleryPhotoSearchable(
     ...(meta?.bestFor ?? []),
     meta?.suggestedAssetType ?? '',
     meta?.primarySubject ? meta.primarySubject.replace(/_/g, ' ') : '',
+    ...((meta?.subjectAliases ?? []).map((a) => String(a).replace(/_/g, ' '))),
+    meta?.subjectFamily ? meta.subjectFamily.replace(/_/g, ' ') : '',
+    meta?.visibleLabelText ?? '',
     urlTokens,
     url ?? '',
   ].join(' ').toLowerCase();

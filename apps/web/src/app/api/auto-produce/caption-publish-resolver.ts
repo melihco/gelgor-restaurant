@@ -15,9 +15,11 @@ import {
   pickMissionDiverseFallbackPhoto,
   preferSubjectAlignedCandidates,
   resolveBestGalleryUrl,
+  resolveGalleryMatchSubjectKey,
   resolveGalleryPhotoMeta,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
+import { gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
 import {
   filterUsableGalleryPhotoUrls,
   isUsableGalleryPhotoUrl,
@@ -188,11 +190,18 @@ export function pickGalleryPhotoForIdea(
 ): string | null {
   if (!candidateUrls.length) return null;
 
+  const alignedSubjectKey = resolveGalleryMatchSubjectKey({
+    caption,
+    headline,
+    subjectKey,
+  });
+
   const scopedCandidates = preferSubjectAlignedCandidates(
     candidateUrls,
     galleryAnalysis,
-    subjectKey,
+    alignedSubjectKey,
   );
+  if (!scopedCandidates.length) return null;
 
   const input = {
     caption,
@@ -200,7 +209,7 @@ export function pickGalleryPhotoForIdea(
     mood,
     contentType,
     businessType,
-    ...(subjectKey ? { subjectKey } : {}),
+    ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };
   const displayUrls = scopedCandidates;
@@ -234,6 +243,78 @@ export function pickGalleryPhotoForIdea(
     ?? tryPick(typeExcludeUrls, true)
     ?? tryPick(batchExcludeUrls, true)
   );
+}
+
+/**
+ * Async gallery pick with AI judge gate for gray-zone assignments.
+ * Use in resolver/rematch paths where a wrong photo must not be returned.
+ */
+export async function pickGalleryPhotoForIdeaAsync(
+  caption: string,
+  headline: string,
+  mood: string,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  candidateUrls: string[],
+  typeExcludeUrls: string[],
+  batchExcludeUrls: string[],
+  contentType?: string,
+  agentUrl?: string | null,
+  businessType?: string,
+  productionStrict = true,
+  tieBreakSeed?: number,
+  globalUsageCounts?: ReadonlyMap<string, number>,
+  subjectKey?: string,
+  judgeContext?: {
+    workspaceId?: string;
+    missionId?: string;
+    slotKey?: string;
+  },
+): Promise<string | null> {
+  const picked = pickGalleryPhotoForIdea(
+    caption,
+    headline,
+    mood,
+    galleryAnalysis,
+    candidateUrls,
+    typeExcludeUrls,
+    batchExcludeUrls,
+    contentType,
+    agentUrl,
+    businessType,
+    productionStrict,
+    tieBreakSeed,
+    globalUsageCounts,
+    subjectKey,
+  );
+  if (!picked) return null;
+
+  const alignedSubjectKey = resolveGalleryMatchSubjectKey({ caption, headline, subjectKey });
+  const input = {
+    caption,
+    headline,
+    mood,
+    contentType,
+    businessType,
+    ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
+    ...(globalUsageCounts ? { globalUsageCounts } : {}),
+  };
+  const match = matchPhotoToContent(input, candidateUrls, galleryAnalysis, {
+    excludeUrls: [...typeExcludeUrls, ...batchExcludeUrls],
+    displayUrls: candidateUrls,
+    minScore: 0,
+    ...(tieBreakSeed != null ? { tieBreakSeed } : {}),
+  });
+  const result = match && normalizeGalleryUrl(match.url) === normalizeGalleryUrl(picked)
+    ? match
+    : { url: picked, score: match?.score ?? 0, reason: 'resolver_pick', confidence: 0.5 };
+
+  const gated = await gatePhotoMatchResult(result, input, galleryAnalysis, candidateUrls, {
+    excludeUrls: [...typeExcludeUrls, ...batchExcludeUrls],
+    workspaceId: judgeContext?.workspaceId,
+    missionId: judgeContext?.missionId,
+    slotKey: judgeContext?.slotKey,
+  });
+  return gated?.url ?? null;
 }
 
 /** Re-pick when the same gallery source was already used anywhere in this mission batch. */

@@ -26,6 +26,7 @@ export type AiCallType =
   | 'sharp_composite'
   | 'creative_director'
   | 'grafiker_vision'
+  | 'gallery_match'
   | 'other';
 
 export interface OpenAiUsageLike {

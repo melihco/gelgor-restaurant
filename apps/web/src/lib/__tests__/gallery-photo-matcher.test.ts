@@ -18,6 +18,10 @@ import {
   isHardGalleryThemeMismatch,
   resolveGalleryPhotoMeta,
   preferSubjectAlignedCandidates,
+  canonicalSubjectRelation,
+  canonicalSubjectFromText,
+  resolveGalleryMatchSubjectKey,
+  isJamFamilySubject,
   MIN_ACCEPT_SCORE,
   STRONG_MATCH_SCORE,
   type GalleryPhotoMeta,
@@ -607,5 +611,177 @@ describe('local product carousel — honey caption must not pick olive oil', () 
       maxAttempts: 3,
     });
     expect(rematched).toBe(OIL_PHOTO);
+  });
+});
+
+describe('jam family + gallery subject_key alignment (local_products_shop + gym)', () => {
+  const FIG_JAM = 'https://cdn.example.com/fig-jam.jpg';
+  const STRAWBERRY_JAM = 'https://cdn.example.com/strawberry-jam.jpg';
+  const HONEY_PHOTO_JAM = 'https://cdn.example.com/honey-jam-test.jpg';
+
+  const localShopGallery = (): Record<string, GalleryPhotoMeta> => ({
+    [FIG_JAM]: {
+      primarySubject: 'fig_jam',
+      subjectConfidence: 0.9,
+      contentTags: ['fig', 'jam', 'reçel'],
+      description: 'Fig jam jars on wooden table.',
+    },
+    [STRAWBERRY_JAM]: {
+      primarySubject: 'strawberry_jam',
+      subjectConfidence: 0.9,
+      contentTags: ['strawberry', 'jam', 'reçel'],
+      description: 'Strawberry jam collection.',
+    },
+    [HONEY_PHOTO_JAM]: {
+      primarySubject: 'honey',
+      subjectConfidence: 0.9,
+      contentTags: ['honey', 'bal'],
+      description: 'Honey jars.',
+    },
+  });
+
+  it('isJamFamilySubject covers generic jam and variants', () => {
+    expect(isJamFamilySubject('jam')).toBe(true);
+    expect(isJamFamilySubject('fig_jam')).toBe(true);
+    expect(isJamFamilySubject('olive_oil')).toBe(false);
+  });
+
+  it('generic jam subject_key ranks fig_jam / strawberry_jam above MIN_ACCEPT', () => {
+    const gallery = localShopGallery();
+    const urls = [FIG_JAM, STRAWBERRY_JAM];
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'Geleneksel reçeller',
+        headline: 'Reçel çeşitleri',
+        businessType: 'local_products_shop',
+        subjectKey: 'jam',
+      },
+      urls,
+      buildGalleryLookup(gallery, urls),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.score).toBeGreaterThanOrEqual(MIN_ACCEPT_SCORE);
+    expect([FIG_JAM, STRAWBERRY_JAM]).toContain(ranked[0]?.url);
+  });
+
+  it('resolveGalleryMatchSubjectKey prefers caption product over conflicting subject_key', () => {
+    expect(resolveGalleryMatchSubjectKey({
+      caption: 'Karaman Datça reçellerini keşfedin — doğal lezzet',
+      headline: 'Doğanın Mucizesi Bir Kavanozda!',
+      subjectKey: 'honey',
+    })).toBe('jam');
+    expect(resolveGalleryMatchSubjectKey({
+      caption: 'Müşterilerimiz bal çeşitlerimizi çok seviyor',
+      headline: 'Gelenekten Geleceğe: Reçel Yapımı',
+      subjectKey: 'honey',
+    })).toBe('honey');
+  });
+
+  it('canonicalSubjectRelation treats jam variants as related', () => {
+    expect(canonicalSubjectRelation('jam', 'fig_jam')).toBe('match');
+    expect(canonicalSubjectRelation('jam', 'strawberry_jam')).toBe('match');
+  });
+
+  it('herbal_tea subject hard-conflicts honey primarySubject', () => {
+    const gallery = localShopGallery();
+    expect(isHardGalleryThemeMismatch(
+      {
+        caption: 'Geleneksel bitki çayları hakkında bilgi',
+        businessType: 'local_products_shop',
+        subjectKey: 'herbal_tea',
+      },
+      gallery[HONEY_PHOTO_JAM],
+      HONEY_PHOTO_JAM,
+    )).toBe(true);
+  });
+
+  it('gym sector: olive_oil subject_key hard-conflicts with honey primarySubject', () => {
+    const gallery = localShopGallery();
+    expect(isHardGalleryThemeMismatch(
+      {
+        caption: 'Antrenman sonrası beslenme',
+        businessType: 'gym',
+        subjectKey: 'olive_oil',
+      },
+      gallery[HONEY_PHOTO_JAM],
+      HONEY_PHOTO_JAM,
+    )).toBe(true);
+  });
+});
+
+describe('canonicalSubjectFromText — language-neutral intent extraction', () => {
+  it('maps Turkish product wording to canonical english', () => {
+    expect(canonicalSubjectFromText('Doğal zeytinyağımız raflarda')).toBe('olive_oil');
+    expect(canonicalSubjectFromText('Süzme çiçek balı')).toBe('honey');
+    expect(canonicalSubjectFromText('Ev yapımı incir reçeli')).toBe('jam');
+  });
+
+  it('maps English wording to the same canonical token', () => {
+    expect(canonicalSubjectFromText('Cold pressed extra virgin olive oil')).toBe('olive_oil');
+    expect(canonicalSubjectFromText('Pure flower honey jar')).toBe('honey');
+  });
+
+  it('maps mixed TR/EN wording consistently', () => {
+    expect(canonicalSubjectFromText('Our best zeytinyağı — premium olive oil')).toBe('olive_oil');
+    expect(canonicalSubjectFromText('Herbal tea / bitki çayı seçkisi')).toBe('herbal_tea');
+  });
+
+  it('returns undefined when no concrete product subject is present', () => {
+    expect(canonicalSubjectFromText('Ekibimizle harika bir gün')).toBeUndefined();
+    expect(canonicalSubjectFromText('A beautiful sunset over the terrace')).toBeUndefined();
+    expect(canonicalSubjectFromText('')).toBeUndefined();
+  });
+});
+
+describe('subject aliases / family feed multilingual matching', () => {
+  const VARIANT_JAM = 'https://cdn.example.com/variant-jam.jpg';
+
+  it('generic jam caption matches a variant photo via subjectAliases (no dictionary term in tags)', () => {
+    const gallery: Record<string, GalleryPhotoMeta> = {
+      [VARIANT_JAM]: {
+        primarySubject: 'blackberry_preserve',
+        subjectAliases: ['jam'],
+        subjectFamily: 'jam',
+        contentTags: ['jar', 'spread', 'breakfast'],
+        description: 'Artisan preserve jar on a table.',
+      },
+    };
+    const urls = [VARIANT_JAM];
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'Our homemade jams',
+        headline: 'Jam selection',
+        businessType: 'local_products_shop',
+        subjectKey: 'jam',
+      },
+      urls,
+      buildGalleryLookup(gallery, urls),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.url).toBe(VARIANT_JAM);
+    expect(ranked[0]?.score).toBeGreaterThanOrEqual(MIN_ACCEPT_SCORE);
+  });
+
+  it('visibleLabelText participates so an olive_oil caption matches an unlabeled-tag photo', () => {
+    const OIL_LABEL = 'https://cdn.example.com/oil-label.jpg';
+    const gallery: Record<string, GalleryPhotoMeta> = {
+      [OIL_LABEL]: {
+        primarySubject: 'olive_oil',
+        visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        contentTags: ['bottle', 'kitchen'],
+        description: 'A glass bottle on a shelf.',
+      },
+    };
+    expect(isHardGalleryThemeMismatch(
+      {
+        caption: 'Erken hasat zeytinyağı',
+        businessType: 'local_products_shop',
+        subjectKey: 'olive_oil',
+      },
+      gallery[OIL_LABEL],
+      OIL_LABEL,
+    )).toBe(false);
   });
 });

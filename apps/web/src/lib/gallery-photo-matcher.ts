@@ -40,6 +40,19 @@ export interface GalleryPhotoMeta {
   primarySubject?: string;
   /** 0..1 confidence in primarySubject. */
   subjectConfidence?: number;
+  /**
+   * Additional canonical (English) subject tokens the photo can also satisfy —
+   * e.g. a fig-jam jar: ["jam", "fig"]. Language-neutral; feeds subject matching
+   * without growing the hand-maintained dictionary.
+   */
+  subjectAliases?: string[];
+  /**
+   * Broad language-neutral subject family (e.g. "jam", "nuts", "dairy") so
+   * generic captions ("reçel çeşitleri" / "our jams") match any variant.
+   */
+  subjectFamily?: string;
+  /** Any product label text literally visible on the packaging (as seen, any language). */
+  visibleLabelText?: string;
 }
 
 export interface MatchPhotoInput {
@@ -100,6 +113,7 @@ export const LOCAL_PRODUCT_SKU_CLUSTERS: ReadonlyArray<{
   { id: 'zeytin', terms: ['zeytin', 'olive', 'siyah zeytin', 'yeşil zeytin', 'yesil zeytin', 'green olive', 'black olive'] },
   { id: 'reçel', terms: ['reçel', 'recel', 'jam', 'marmalade', 'confiture', 'incir reçeli', 'incir receli', 'ayva reçeli', 'ayva receli', 'çilek reçeli', 'cilek receli', 'portakal reçeli', 'vişne reçeli', 'visne receli', 'gül reçeli', 'gul receli'] },
   { id: 'bal', terms: ['bal', 'honey', 'petek', 'petek bal', 'comb honey', 'süzme bal', 'suzme bal', 'çiçek balı', 'cicek bali', 'keçiboynuzu balı', 'keciboynuzu bali'] },
+  { id: 'bitki çayı', terms: ['bitki çayı', 'bitki çayları', 'bitki cayi', 'bitki caylari', 'herbal tea', 'herbal_tea', 'bitki çay', 'bitki cay', 'çay karışımı', 'cay karisimi'] },
   { id: 'pekmez', terms: ['pekmez', 'molasses', 'üzüm pekmezi', 'uzum pekmezi', 'dut pekmezi', 'carob molasses', 'keçiboynuzu pekmezi', 'keciboynuzu pekmezi', 'tahin pekmez'] },
   { id: 'incir', terms: ['incir', 'fig', 'kuru incir', 'dried fig', 'fig jam', 'taze incir'] },
   { id: 'kayısı', terms: ['kayısı', 'kayisi', 'apricot', 'kuru kayısı', 'kuru kayisi', 'dried apricot', 'malatya kayısı'] },
@@ -189,6 +203,145 @@ function detectLocalProductClusters(text: string): Set<number> {
   return hits;
 }
 
+/** Generic `jam` and variant `*_jam` tokens share the same gallery pick family. */
+export function isJamFamilySubject(token: string | undefined): boolean {
+  const n = normalizeSubjectForRelation(token).replace(/ /g, '_');
+  if (!n || n === 'none') return false;
+  if (n === 'jam' || n.endsWith('_jam')) return true;
+  return n === 'marmalade' || n === 'recel' || n === 'reçel';
+}
+
+function jamFamilyClusterIndices(): number[] {
+  const indices = new Set<number>();
+  LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
+    if (cluster.id === 'reçel' || cluster.id === 'incir') indices.add(idx);
+    if (cluster.terms.some((term) => /\bjam\b/i.test(term) || /reçel|recel/i.test(term))) {
+      indices.add(idx);
+    }
+  });
+  return [...indices];
+}
+
+/**
+ * Turkish cluster id → canonical, language-neutral English subject token.
+ * This is the SSOT that keeps all internal subject reasoning in one vocabulary
+ * regardless of caption language (TR / EN / mixed). The keyword dictionary
+ * (`LOCAL_PRODUCT_SKU_CLUSTERS`) is only a cheap synonym hint used to *reach*
+ * one of these canonical tokens — never the final answer on its own.
+ */
+const CLUSTER_ID_TO_SUBJECT_KEY: Readonly<Record<string, string>> = {
+  'reçel': 'jam',
+  'bal': 'honey',
+  'zeytinyağı': 'olive_oil',
+  'zeytin': 'olives',
+  'incir': 'fig_jam',
+  'badem': 'almond_butter',
+  'bitki çayı': 'herbal_tea',
+  'nane': 'mint',
+  'pekmez': 'molasses',
+  'kayısı': 'apricot',
+  'ceviz': 'walnut',
+  'fındık': 'hazelnut',
+  'fıstık': 'pistachio',
+  'kaju': 'cashew',
+  'leblebi': 'roasted_chickpea',
+  'turşu': 'pickle',
+  'salça': 'tomato_paste',
+  'domates': 'tomato',
+  'biber': 'pepper',
+  'sumak': 'sumac',
+  'tarçın': 'cinnamon',
+  'kekik': 'thyme',
+  'biberiye': 'rosemary',
+  'defne': 'bay_leaf',
+  'kimyon': 'cumin',
+  'zencefil': 'ginger',
+  'zerdeçal': 'turmeric',
+  'tahin': 'tahini',
+  'peynir': 'cheese',
+  'tereyağı': 'butter',
+  'tarhana': 'tarhana',
+  'erişte': 'noodle',
+  'ekmek': 'bread',
+  'çay': 'tea',
+  'kahve': 'coffee',
+  'dut': 'mulberry',
+  'üzüm': 'grape',
+  'elma': 'apple',
+  'ayva': 'quince',
+  'portakal': 'orange',
+  'limon': 'lemon',
+  'nar': 'pomegranate',
+  'sucuk': 'sausage',
+  'pastırma': 'cured_beef',
+  'zeytin_ezmesi': 'olive_tapenade',
+  'ot': 'herbs',
+  'çam_kozalağı': 'pine_cone',
+  'keçiboynuzu': 'carob',
+  'lavanta': 'lavender',
+  'propolis': 'propolis',
+  'susam': 'sesame',
+  'kurutulmuş_meyve': 'dried_fruit',
+  'macun': 'herbal_paste',
+  'sirke': 'vinegar',
+  'sabun': 'soap',
+  'baharat_karışım': 'spice_mix',
+  'bulgur': 'bulgur',
+  'şölen': 'snack_mix',
+};
+
+function inferSubjectKeyFromClusters(clusters: Set<number>): string | undefined {
+  for (const idx of clusters) {
+    const id = LOCAL_PRODUCT_SKU_CLUSTERS[idx]?.id;
+    if (id && CLUSTER_ID_TO_SUBJECT_KEY[id]) return CLUSTER_ID_TO_SUBJECT_KEY[id];
+  }
+  return undefined;
+}
+
+/**
+ * Language-neutral subject extractor for free caption/headline text.
+ *
+ * Returns a canonical English snake_case token (e.g. "olive_oil", "honey") when
+ * a product/subject is detectable, independent of Turkish/English wording. The
+ * dictionary is used only as a synonym bridge; callers should treat the result
+ * as a *hint* and let the AI judge / vision `primarySubject` be authoritative in
+ * gray zones. Returns `undefined` when no concrete subject is found.
+ */
+export function canonicalSubjectFromText(text: string | undefined): string | undefined {
+  const raw = String(text ?? '').trim();
+  if (!raw) return undefined;
+  const clusters = detectLocalProductClusters(raw.toLowerCase());
+  return inferSubjectKeyFromClusters(clusters);
+}
+
+/**
+ * When ideation `subject_key` disagrees with caption/headline product signals,
+ * prefer the caption-derived canonical subject for gallery matching.
+ */
+export function resolveGalleryMatchSubjectKey(input: {
+  caption?: string;
+  headline?: string;
+  subjectKey?: string;
+}): string | undefined {
+  const key = String(input.subjectKey ?? '').trim();
+  const blob = [input.headline, input.caption].filter(Boolean).join(' ').trim();
+  if (!blob && !key) return undefined;
+
+  const captionClusters = detectLocalProductClusters(blob.toLowerCase());
+  const keyClusters = subjectClustersFromToken(key);
+
+  if (captionClusters.size === 0) return key || undefined;
+  if (keyClusters.size === 0) {
+    return inferSubjectKeyFromClusters(captionClusters) ?? (key || undefined);
+  }
+
+  for (const idx of keyClusters) {
+    if (captionClusters.has(idx)) return key;
+  }
+
+  return inferSubjectKeyFromClusters(captionClusters) ?? key;
+}
+
 /**
  * Map a canonical, language-neutral subject token (e.g. "olive_oil", "honey")
  * to SKU cluster indices. Both `foo_bar` and `foo bar` forms are matched so the
@@ -199,6 +352,9 @@ function subjectClustersFromToken(token: string | undefined): Set<number> {
   const hits = new Set<number>();
   if (!raw || raw === 'none' || raw === 'other' || raw === 'brand' || raw === 'logo') {
     return hits;
+  }
+  if (isJamFamilySubject(raw)) {
+    for (const idx of jamFamilyClusterIndices()) hits.add(idx);
   }
   const spaced = raw.replace(/_/g, ' ');
   LOCAL_PRODUCT_SKU_CLUSTERS.forEach((cluster, idx) => {
@@ -251,6 +407,7 @@ export function canonicalSubjectRelation(
   const a = normalizeSubjectForRelation(captionKey);
   const b = normalizeSubjectForRelation(photoKey);
   if (NON_CONCRETE_SUBJECTS.has(a) || NON_CONCRETE_SUBJECTS.has(b)) return 'unknown';
+  if (isJamFamilySubject(a) && isJamFamilySubject(b)) return 'match';
   if (a === b) return 'match';
   if (a.includes(b) || b.includes(a)) return 'match';
   const aTokens = concreteSubjectTokens(a);
@@ -266,6 +423,30 @@ export function canonicalSubjectRelation(
   );
   if (sharesStem) return 'unknown';
   return 'conflict';
+}
+
+/**
+ * Meta-aware canonical relation: compares the caption subject against the photo's
+ * `primarySubject` AND its vision `subjectAliases` / `subjectFamily`. A match on
+ * any alias/family wins (safe, widens matching); a conflict is only reported when
+ * the primary subject conflicts and no alias/family rescues it. This is what lets
+ * a generic caption ("jam" / "reçel çeşitleri") accept a specific variant jar
+ * without growing the keyword dictionary — language-neutral by construction.
+ */
+export function canonicalSubjectRelationForMeta(
+  captionKey: string | undefined,
+  meta: GalleryPhotoMeta | undefined,
+): CanonicalSubjectRelation {
+  const primary = canonicalSubjectRelation(captionKey, meta?.primarySubject);
+  if (primary === 'match') return 'match';
+  const extras = [
+    ...((meta?.subjectAliases ?? [])),
+    ...(meta?.subjectFamily ? [meta.subjectFamily] : []),
+  ];
+  for (const token of extras) {
+    if (canonicalSubjectRelation(captionKey, token) === 'match') return 'match';
+  }
+  return primary;
 }
 
 /**
@@ -288,7 +469,12 @@ function resolveCaptionSubjectClusters(captionText: string, subjectKey?: string)
  */
 function resolvePhotoSubjectClusters(photoSearchable: string, primarySubject?: string): Set<number> {
   if (primarySubject && primarySubject.trim()) {
-    return subjectClustersFromToken(primarySubject);
+    const hits = subjectClustersFromToken(primarySubject);
+    // Fold in aliases/family/label text captured in the searchable blob so a
+    // generic caption ("jam") still matches a specific jar ("fig_jam"). Union
+    // only widens membership → never creates a false product veto.
+    for (const idx of detectLocalProductClusters(photoSearchable)) hits.add(idx);
+    return hits;
   }
   return detectLocalProductClusters(photoSearchable);
 }
@@ -949,15 +1135,30 @@ export function enrichGalleryAnalysis(
   const enriched: Record<string, GalleryPhotoMeta> = {};
   for (const [url, meta] of Object.entries(galleryAnalysis)) {
     // Accept either camelCase (Next persist) or snake_case (Python dumps).
-    const raw = meta as GalleryPhotoMeta & { primary_subject?: string; subject_confidence?: number };
+    const raw = meta as GalleryPhotoMeta & {
+      primary_subject?: string;
+      subject_confidence?: number;
+      subject_aliases?: string[];
+      subject_family?: string;
+      visible_label_text?: string;
+    };
     const primarySubject = meta.primarySubject
       ?? (typeof raw.primary_subject === 'string' ? raw.primary_subject : undefined);
     const subjectConfidence = meta.subjectConfidence
       ?? (typeof raw.subject_confidence === 'number' ? raw.subject_confidence : undefined);
+    const subjectAliases = meta.subjectAliases
+      ?? (Array.isArray(raw.subject_aliases) ? raw.subject_aliases.map(String) : undefined);
+    const subjectFamily = meta.subjectFamily
+      ?? (typeof raw.subject_family === 'string' ? raw.subject_family : undefined);
+    const visibleLabelText = meta.visibleLabelText
+      ?? (typeof raw.visible_label_text === 'string' ? raw.visible_label_text : undefined);
     const normalized: GalleryPhotoMeta = {
       ...meta,
       ...(primarySubject ? { primarySubject } : {}),
       ...(subjectConfidence != null ? { subjectConfidence } : {}),
+      ...(subjectAliases?.length ? { subjectAliases } : {}),
+      ...(subjectFamily ? { subjectFamily } : {}),
+      ...(visibleLabelText ? { visibleLabelText } : {}),
     };
     const patch = enrichTagsFromDescription(normalized);
     enriched[url] = Object.keys(patch).length > 0 ? { ...normalized, ...patch } : normalized;
@@ -1250,7 +1451,7 @@ function scorePhotoForContent(
     // food dictionary didn't already decide. This is what makes cross-subject
     // mismatch (haircut↔nail, burger↔pizza) block without a keyword list.
     if (captionSubjectClusters.size === 0 && productConflict < STRONG_MATCH_SCORE) {
-      const relation = canonicalSubjectRelation(input.subjectKey, meta.primarySubject);
+      const relation = canonicalSubjectRelationForMeta(input.subjectKey, meta);
       if (relation === 'match') {
         score += 24;
         reasons.push('subject_key_match');
@@ -1292,12 +1493,16 @@ export function preferSubjectAlignedCandidates(
 
   const exact = candidateUrls.filter((url) => {
     const meta = resolveMeta(url);
-    return canonicalSubjectRelation(key, meta?.primarySubject) === 'match';
+    return canonicalSubjectRelationForMeta(key, meta) === 'match';
   });
   if (exact.length > 0) return exact;
 
   const captionClusters = subjectClustersFromToken(key);
-  if (captionClusters.size === 0) return candidateUrls;
+  if (captionClusters.size === 0) {
+    return NON_CONCRETE_SUBJECTS.has(normalizeSubjectForRelation(key))
+      ? candidateUrls
+      : [];
+  }
 
   const cluster = candidateUrls.filter((url) => {
     const meta = resolveMeta(url);
@@ -1310,7 +1515,8 @@ export function preferSubjectAlignedCandidates(
     }
     return false;
   });
-  return cluster.length > 0 ? cluster : candidateUrls;
+  // Concrete product subject with zero cluster-aligned photos — never widen to unrelated SKUs.
+  return cluster;
 }
 
 /**
@@ -1334,12 +1540,9 @@ export function isHardGalleryThemeMismatch(
   ) {
     return true;
   }
-  // Sector-agnostic: unrelated AI canonical subjects (any sector) are a hard
-  // mismatch when the food dictionary didn't already flag a conflict.
-  const captionClusters = resolveCaptionSubjectClusters(caption.toLowerCase(), input.subjectKey);
-  if (captionClusters.size === 0) {
-    const relation = canonicalSubjectRelation(input.subjectKey, meta?.primarySubject);
-    if (relation === 'conflict' && (meta?.subjectConfidence ?? 1) >= 0.4) return true;
+  const relation = canonicalSubjectRelationForMeta(input.subjectKey, meta);
+  if (relation === 'conflict' && (meta?.subjectConfidence ?? 1) >= 0.4) {
+    return true;
   }
   return false;
 }

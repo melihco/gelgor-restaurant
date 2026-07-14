@@ -8,11 +8,13 @@
 
 import {
   assignPhotosToContents,
+  resolveGalleryMatchSubjectKey,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
   type PhotoMatchResult,
   MIN_ACCEPT_SCORE,
 } from '@/lib/gallery-photo-matcher';
+import { gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import {
   isMeaninglessBrandEchoHeadline,
@@ -57,6 +59,7 @@ export function assignmentUsesGalleryPhoto(
 }
 
 export interface GalleryOrchestrationInput {
+  workspaceId?: string;
   missionId: string | undefined;
   productionLoop: ManifestProductionQueueItem[];
   galleryPhotos: string[];
@@ -73,11 +76,12 @@ export interface GalleryOrchestrationInput {
 
 /**
  * Build a semantic gallery assignment map for all production slots.
+ * Gray-zone batch picks are confirmed by the AI judge before reservation.
  * Returns a Map keyed by `missionGallerySlotKey(ideaIndex, slotRole)`.
  */
-export function buildMissionGalleryAssignments(
+export async function buildMissionGalleryAssignments(
   input: GalleryOrchestrationInput,
-): Map<string, PhotoMatchResult | null> {
+): Promise<Map<string, PhotoMatchResult | null>> {
   const result = new Map<string, PhotoMatchResult | null>();
 
   if (
@@ -126,7 +130,11 @@ export function buildMissionGalleryAssignments(
       || queueItem.assignment.pipeline === 'story_still';
     const storyIndex = isStory ? storyOrdinal++ : 0;
 
-    const subjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined;
+    const subjectKey = resolveGalleryMatchSubjectKey({
+      caption,
+      headline,
+      subjectKey: String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined,
+    });
     const matchInput = {
       ...buildSlotGalleryMatchInput({
         assignment: queueItem.assignment,
@@ -169,18 +177,36 @@ export function buildMissionGalleryAssignments(
     { minScore: MIN_ACCEPT_SCORE, excludeUrls: seedExclude },
   );
 
+  let judgeRejected = 0;
+  let judgeSwapped = 0;
   for (const [key, val] of batchAssigned) {
-    result.set(key, val);
+    const item = assignItems.find((i) => i.key === key);
+    if (!item || !val) {
+      result.set(key, val);
+      continue;
+    }
+    const gated = await gatePhotoMatchResult(val, item.input, input.galleryMeta, input.galleryPhotos, {
+      excludeUrls: seedExclude,
+      workspaceId: input.workspaceId,
+      missionId: input.missionId,
+      slotKey: key,
+    });
+    if (val && !gated) judgeRejected += 1;
+    if (gated && gated.url !== val.url) judgeSwapped += 1;
+    result.set(key, gated);
   }
 
-  const assignedCount = [...batchAssigned.values()].filter(Boolean).length;
-  const diversityCount = [...batchAssigned.values()].filter(
-    (v) => v?.reason === 'mission_diversity_fallback',
+  const assignedCount = [...result.values()].filter(Boolean).length;
+  const diversityCount = [...result.values()].filter(
+    (v) => v?.reason?.includes('mission_diversity_fallback'),
   ).length;
 
   console.log(
     `[auto-produce] Mission gallery batch assign: ${assignItems.length} slots, ` +
-    `${assignedCount} assigned (${assignedCount - diversityCount} semantic, ${diversityCount} diversity)`,
+    `${assignedCount} assigned (${assignedCount - diversityCount} semantic, ${diversityCount} diversity)` +
+    (judgeRejected || judgeSwapped
+      ? `, judge: ${judgeRejected} rejected, ${judgeSwapped} swapped`
+      : ''),
   );
 
   return result;

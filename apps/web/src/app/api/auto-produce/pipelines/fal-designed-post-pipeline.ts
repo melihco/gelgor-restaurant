@@ -274,16 +274,15 @@ export async function produceFalDesignedPost(
     } else if (input.requireGroundedGallery) {
       throw new Error('Brand gallery photo required for New Brief designed post.');
     } else if (groundedGalleryRef && !imageUrl) {
-      throw new Error(
-        'Brand gallery design failed — could not compose on the caption-matched venue photo.',
+      console.warn(
+        '[auto-produce] [fal-design] grounded GPT compose failed — trying ideogram fallback',
       );
     }
 
-    // Fallback engine — fal Ideogram V4 typography still (no photo needed).
+    // Fallback engine — fal Ideogram V4 typography still.
     if (
       !input.requireGroundedGallery
-      && !groundedGalleryRef
-      && (!imageUrl || (referenceUrl && imageUrl === referenceUrl))
+      && !imageUrl
       && serverConfig.fal.configured
     ) {
       const still = await produceFalDesignedPostStill({

@@ -34,6 +34,16 @@ export interface GalleryPhotoAnalysis {
   primarySubject?: string;
   /** 0..1 model confidence in primarySubject. */
   subjectConfidence?: number;
+  /**
+   * Extra canonical English subject tokens this photo can also satisfy
+   * (e.g. a fig-jam jar → ["jam", "fig"]). Lets generic captions match
+   * specific variants without growing the keyword dictionary.
+   */
+  subjectAliases?: string[];
+  /** Broad language-neutral subject family (e.g. "jam", "nuts", "dairy"). */
+  subjectFamily?: string;
+  /** Product label text literally visible on the packaging (verbatim, any language). */
+  visibleLabelText?: string;
   /** Deterministic 0..100 quality of this analysis (Sprint 2 GIS). */
   qualityScore?: number;
   /** ISO timestamp when this analysis was produced (Sprint 2 GIS recency). */
@@ -76,11 +86,18 @@ PRIMARY SUBJECT (critical for auto-matching): Pick the SINGLE dominant product o
 - Use "none" ONLY when the photo has no concrete product/service subject (pure venue/background/logo/abstract).
 Never invent a subject that isn't clearly the focus. When two products share the frame, pick the one that dominates.
 
+SUBJECT ALIASES & FAMILY (multilingual matching): Besides primary_subject, list other canonical English tokens this photo could legitimately satisfy in subject_aliases (e.g. a fig-jam jar → ["jam", "fig"]; a haircut photo → ["hairstyle"]). Set subject_family to the broad language-neutral group the subject belongs to (e.g. "jam", "nuts", "dairy", "hair", "nails") so a generic caption like "our jams" / "reçel çeşitlerimiz" can match any specific variant. Use "none" for subject_family when there is no concrete subject.
+
+VISIBLE LABEL TEXT: If the packaging shows product name text, copy it verbatim into visible_label_text exactly as written (any language, e.g. "KURU NANE", " zeytinyağı"). Empty string when no readable label.
+
 Respond ONLY with JSON (no markdown):
 {
   "description": "2–3 sentences. Describe EXACTLY what you see: specific objects, people, setting, activity, atmosphere.",
   "primary_subject": "canonical english snake_case token or none",
   "subject_confidence": 0.0,
+  "subject_aliases": ["canonical english token", "..."],
+  "subject_family": "broad english family token or none",
+  "visible_label_text": "verbatim label text or empty",
   "contentTags": ["specific tag 1", "specific tag 2", ...],
   "bestFor": ["use_case1", ...],
   "notGoodFor": ["use_case1", ...],
@@ -111,6 +128,29 @@ function normalizeSubjectToken(raw: unknown): string | undefined {
   if (!t || t === 'none' || t === 'n/a' || t === 'unknown' || t === 'other') return undefined;
   const normalized = t.replace(/[\s/]+/g, '_').replace(/[^a-z0-9_]/g, '').replace(/_+/g, '_').replace(/^_|_$/g, '');
   return normalized || undefined;
+}
+
+/** Canonicalize a list of subject alias tokens; drops empties/dupes/"none". */
+function normalizeSubjectAliases(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const token = normalizeSubjectToken(item);
+    if (token && !seen.has(token)) {
+      seen.add(token);
+      out.push(token);
+    }
+    if (out.length >= 6) break;
+  }
+  return out.length ? out : undefined;
+}
+
+/** Trim visible label text; empty/placeholder → undefined. */
+function normalizeVisibleLabel(raw: unknown): string | undefined {
+  const t = String(raw ?? '').trim();
+  if (!t || /^(none|n\/a|empty|-)$/i.test(t)) return undefined;
+  return t.slice(0, 120);
 }
 
 function clampConfidence(raw: unknown): number | undefined {
@@ -242,6 +282,9 @@ async function analyzePhoto(
     pairingKeywords: Array.isArray(parsed.pairingKeywords) ? parsed.pairingKeywords.map(String) : [],
     primarySubject: normalizeSubjectToken(parsed.primary_subject ?? parsed.primarySubject),
     subjectConfidence: clampConfidence(parsed.subject_confidence ?? parsed.subjectConfidence),
+    subjectAliases: normalizeSubjectAliases(parsed.subject_aliases ?? parsed.subjectAliases),
+    subjectFamily: normalizeSubjectToken(parsed.subject_family ?? parsed.subjectFamily),
+    visibleLabelText: normalizeVisibleLabel(parsed.visible_label_text ?? parsed.visibleLabelText),
     analyzedAt: new Date().toISOString(),
     analysisSource: 'vision',
   };
@@ -319,6 +362,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           usageContext: String(hit.usageContext ?? ''),
           ...(hit.primarySubject ? { primarySubject: normalizeSubjectToken(hit.primarySubject) } : {}),
           ...(hit.subjectConfidence != null ? { subjectConfidence: clampConfidence(hit.subjectConfidence) } : {}),
+          ...(hit.subjectAliases ? { subjectAliases: normalizeSubjectAliases(hit.subjectAliases) } : {}),
+          ...(hit.subjectFamily ? { subjectFamily: normalizeSubjectToken(hit.subjectFamily) } : {}),
+          ...(hit.visibleLabelText ? { visibleLabelText: normalizeVisibleLabel(hit.visibleLabelText) } : {}),
         });
         continue;
       }

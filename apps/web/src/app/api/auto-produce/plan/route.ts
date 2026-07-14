@@ -235,7 +235,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       galleryAnalysis as Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta> | null,
       pctx.brandBusinessType,
     );
-    const missionGalleryAssignments = buildMissionGalleryAssignments({
+    const missionGalleryAssignments = await buildMissionGalleryAssignments({
+      workspaceId,
       missionId,
       productionLoop: productionQueue,
       galleryPhotos: gctx.photos,

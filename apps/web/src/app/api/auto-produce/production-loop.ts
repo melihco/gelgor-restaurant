@@ -45,6 +45,7 @@ import {
   isHardGalleryThemeMismatch,
   MIN_ACCEPT_SCORE,
   REEL_GALLERY_MIN_SCORE,
+  resolveGalleryMatchSubjectKey,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
@@ -351,6 +352,7 @@ import {
   GALLERY_THEME_MISMATCH_CODE,
   galleryThemeMismatchMessage,
 } from '@/lib/production-slot-failures';
+import { confirmGalleryPickWithAiJudge } from '@/lib/gallery-ai-match-judge';
 import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production';
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
@@ -878,7 +880,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  const missionGalleryAssignments = buildMissionGalleryAssignments({
+  const missionGalleryAssignments = await buildMissionGalleryAssignments({
+    workspaceId,
     missionId,
     // Always assign across the full manifest — factory drain may produce one slot per call.
     productionLoop: fullProductionQueue,
@@ -1013,6 +1016,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const storedIdeationHeadline = rawIdeationHeadline
       ? enforceDisplayHeadline(rawIdeationHeadline, 72)
       : headline;
+    /** Gallery scorer uses the ideation hook, not caption-derived overlay fragments. */
+    const galleryMatchHeadline = storedIdeationHeadline || ideationHeadline;
 
     // Feed Art Director's visual_subject_hint overrides generic caption for gallery matching.
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
@@ -1044,9 +1049,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           .slice(0, 160);
     // Canonical product subject from ideation (AI-produced, language-neutral) —
     // SSOT for caption↔photo matching; keyword dictionary is only a fallback.
-    const ideationSubjectKey = String(
+    let ideationSubjectKey = String(
       ideaRecord.subject_key ?? ideaRecord.subjectKey ?? '',
     ).trim() || undefined;
+    const alignedGallerySubjectKey = resolveGalleryMatchSubjectKey({
+      caption: ideationCaption,
+      headline: galleryMatchHeadline,
+      subjectKey: ideationSubjectKey,
+    });
+    if (alignedGallerySubjectKey && alignedGallerySubjectKey !== ideationSubjectKey) {
+      console.warn(
+        `[auto-produce] gallery subject_key aligned: "${ideationSubjectKey ?? '—'}" → "${alignedGallerySubjectKey}"`,
+      );
+      ideationSubjectKey = alignedGallerySubjectKey;
+    }
     activeGallerySubjectKey = ideationSubjectKey;
     let hashtags = normalizeHashtags(idea.hashtags);
     let cta = getField(idea, 'cta', 'call_to_action');
@@ -1253,7 +1269,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         visualSubjectHint: fdVisualHint,
         creativeBrief: creativeBrief ?? undefined,
         ideationCaption,
-        ideationHeadline,
+        ideationHeadline: galleryMatchHeadline,
         subjectKey: ideationSubjectKey,
         existingCaptions: missionSessionCaptions,
         slotBackfillPass,
@@ -1490,7 +1506,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const ideationPick = resolveBestGalleryUrl(
         {
           caption: ideationCaption,
-          headline: ideationHeadline,
+          headline: galleryMatchHeadline,
           mood,
           contentType: postType,
           businessType: brandBusinessType,
@@ -1519,7 +1535,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         if (pooledAgentUrl) {
           const agentMatchInput = {
             caption: ideationCaption,
-            headline: ideationHeadline,
+            headline: galleryMatchHeadline,
             mood,
             contentType: postType,
             businessType: brandBusinessType,
@@ -1611,7 +1627,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       if (missionId && assignmentUsesGalleryPhoto(assignment)) {
         const batchMatchInput = {
           caption: ideationCaption,
-          headline: ideationHeadline,
+          headline: galleryMatchHeadline,
           mood,
           contentType: postType,
           businessType: brandBusinessType,
@@ -1648,11 +1664,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           } else {
           // Strict captions (nightlife / food / beauty) never use bestEffort ≥10.
           const missionFallbackStrict = captionRequiresStrictGalleryMatch(
-            ideationCaption, ideationHeadline,
-          ) || captionHasExplicitBeautyService(ideationCaption, ideationHeadline);
+            ideationCaption, galleryMatchHeadline,
+          ) || captionHasExplicitBeautyService(ideationCaption, galleryMatchHeadline);
           referenceUrl = pickMissionGallery(
             ideationCaption,
-            ideationHeadline,
+            galleryMatchHeadline,
             mood,
             galleryMeta,
             galleryPhotos,
@@ -1669,7 +1685,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           if (referenceUrl) {
             galleryMatchScore = scoreIdeationPhotoMatch({
               caption: ideationCaption,
-              headline: ideationHeadline,
+              headline: galleryMatchHeadline,
               photoUrl: referenceUrl ?? '',
               galleryAnalysis: galleryMeta,
               businessType: brandBusinessType,
@@ -1683,7 +1699,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         referenceUrl = pickMissionGallery(
           ideationCaption,
-          ideationHeadline,
+          galleryMatchHeadline,
           mood,
           galleryMeta,
           galleryPhotos,
@@ -1698,7 +1714,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         if (!referenceUrl && !missionId) {
           referenceUrl = pickMissionGallery(
             ideationCaption,
-            ideationHeadline,
+            galleryMatchHeadline,
             mood,
             galleryMeta,
             galleryPhotos,
@@ -1720,7 +1736,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (!referenceUrl && hasGallery && galleryPhotos.length && !aiVisualStandard.enabled) {
       referenceUrl = pickMissionGallery(
         ideationCaption,
-        ideationHeadline,
+        galleryMatchHeadline,
         mood,
         galleryMeta,
         galleryPhotos,
@@ -1735,7 +1751,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ideaIndex,
       ) ?? pickMissionGallery(
         ideationCaption,
-        ideationHeadline,
+        galleryMatchHeadline,
         mood,
         galleryMeta,
         galleryPhotos,
@@ -1753,7 +1769,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceIsStock = isStockGalleryPhotoUrl(referenceUrl);
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
-          headline: ideationHeadline,
+          headline: galleryMatchHeadline,
           photoUrl: referenceUrl ?? '',
           galleryAnalysis: galleryMeta,
           businessType: brandBusinessType,
@@ -1773,7 +1789,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       if (venuePhotos.length && (!referenceUrl || referenceIsStock)) {
         const venuePick = pickMissionGallery(
           ideationCaption,
-          ideationHeadline,
+          galleryMatchHeadline,
           mood,
           galleryMeta,
           venuePhotos,
@@ -1788,7 +1804,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ideaIndex,
         ) ?? (missionId ? null : pickMissionGallery(
           ideationCaption,
-          ideationHeadline,
+          galleryMatchHeadline,
           mood,
           galleryMeta,
           venuePhotos,
@@ -1868,7 +1884,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       referenceUrl = repickGalleryIfDuplicateForType({
         referenceUrl,
         caption: ideationCaption,
-        headline: ideationHeadline,
+        headline: galleryMatchHeadline,
         mood,
         galleryAnalysis: galleryMeta,
         candidateUrls: galleryPhotos,
@@ -1897,7 +1913,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const heuristicPick = fallbackCandidates.length
         ? pickMissionGallery(
             ideationCaption,
-            ideationHeadline,
+            galleryMatchHeadline,
             mood,
             galleryMeta,
             fallbackCandidates,
@@ -1980,7 +1996,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const emptyFallback = galleryPhotos.length
         ? pickMissionGallery(
             ideationCaption,
-            ideationHeadline,
+            galleryMatchHeadline,
             mood,
             galleryMeta,
             galleryPhotos,
@@ -2023,7 +2039,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const internalFallback = brokenInternal && galleryPhotos.length
         ? pickMissionGallery(
             ideationCaption,
-            ideationHeadline,
+            galleryMatchHeadline,
             mood,
             galleryMeta,
             galleryPhotos,
@@ -2252,7 +2268,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (pickedFromBrandGallery && !referenceIsStock) {
       const scorePhoto = (url: string) => scoreIdeationPhotoMatch({
         caption: ideationCaption,
-        headline: ideationHeadline,
+        headline: galleryMatchHeadline,
         photoUrl: url,
         galleryAnalysis: galleryMeta,
         businessType: brandBusinessType,
@@ -2293,7 +2309,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         } else if (!missionId) {
           const altUrl = pickMissionGallery(
             ideationCaption,
-            ideationHeadline,
+            galleryMatchHeadline,
             mood,
             galleryMeta,
             galleryPhotos,
@@ -2348,7 +2364,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && isHardGalleryThemeMismatch(
         {
           caption: ideationCaption,
-          headline: ideationHeadline,
+          headline: galleryMatchHeadline,
           visualDirection: String(idea.visual_direction ?? '').trim() || undefined,
           businessType: brandBusinessType,
           subjectKey: ideationSubjectKey,
@@ -2365,7 +2381,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       const rematchedUrl = rematchGalleryAfterHardThemeConflict({
         caption: ideationCaption,
-        headline: ideationHeadline,
+        headline: galleryMatchHeadline,
         mood,
         galleryAnalysis: galleryMeta,
         candidateUrls: galleryPhotos,
@@ -2394,7 +2410,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           )?.[1];
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
-          headline: ideationHeadline,
+          headline: galleryMatchHeadline,
           photoUrl: rematchedUrl,
           galleryAnalysis: galleryMeta,
           businessType: brandBusinessType,
@@ -2411,7 +2427,83 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline,
           imageUrl: galleryPreviewUrl ?? '',
-          error: galleryThemeMismatchMessage(ideationHeadline),
+          error: galleryThemeMismatchMessage(galleryMatchHeadline),
+          errorCode: GALLERY_THEME_MISMATCH_CODE,
+          slotKey,
+        });
+        continue;
+      }
+    }
+
+    // AI match judge — fail-closed confirmation for gray-zone gallery picks.
+    // Strong deterministic matches skip the judge (fast + free). Uncertain picks
+    // are confirmed; low confidence / wrong subject fail closed instead of
+    // shipping a doubtful photo. Multilingual (TR/EN/mixed) aware.
+    if (
+      missionId
+      && pickedFromBrandGallery
+      && resolvedReferenceUrl
+      && !captionDrivenGenerated
+      && !forceAttachedPhotos
+    ) {
+      const judgeExclude = getMissionWideExcludeUrls(
+        galleryUsage,
+        batchUsedByType,
+        batchUsedGalleryMission,
+      );
+      const decision = await confirmGalleryPickWithAiJudge({
+        caption: ideationCaption,
+        headline: galleryMatchHeadline,
+        subjectKey: ideationSubjectKey,
+        businessType: brandBusinessType,
+        contentType: postType,
+        mood,
+        selectedUrl: resolvedReferenceUrl,
+        deterministicScore: galleryMatchScore,
+        galleryAnalysis: galleryMeta,
+        candidateUrls: galleryPhotos,
+        excludeUrls: judgeExclude.filter(
+          (u) => normalizeGalleryUrl(u) !== normalizeGalleryUrl(resolvedReferenceUrl ?? ''),
+        ),
+        missionId,
+        workspaceId,
+        slotKey,
+        slotRole,
+        ideaIndex,
+      });
+      if (decision.action === 'swap' && decision.url) {
+        console.warn(
+          `[auto-produce] ai judge swapped photo (conf ${decision.confidence.toFixed(2)}) for "${ideationHeadline.slice(0, 40)}": ${decision.reason}`,
+        );
+        referenceUrl = decision.url;
+        resolvedReferenceUrl = decision.url;
+        galleryPreviewUrl = toFeedPreviewUrl(decision.url) ?? decision.url;
+        referenceIsStock = isStockGalleryPhotoUrl(decision.url);
+        pickedFromBrandGallery = galleryPhotos.some(
+          (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(decision.url!),
+        );
+        photoMetaForCaption = galleryMeta[normalizeGalleryUrl(decision.url)]
+          ?? Object.entries(galleryMeta).find(
+            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(decision.url!),
+          )?.[1];
+        galleryMatchScore = scoreIdeationPhotoMatch({
+          caption: ideationCaption,
+          headline: galleryMatchHeadline,
+          photoUrl: decision.url,
+          galleryAnalysis: galleryMeta,
+          businessType: brandBusinessType,
+          mood,
+          contentType: kind,
+          subjectKey: ideationSubjectKey,
+        });
+      } else if (decision.action === 'reject') {
+        console.warn(
+          `[auto-produce] ai judge rejected gallery match (conf ${decision.confidence.toFixed(2)}) — fail closed "${ideationHeadline.slice(0, 40)}": ${decision.rejectReason ?? decision.reason}`,
+        );
+        results.push({
+          title: headline,
+          imageUrl: galleryPreviewUrl ?? '',
+          error: galleryThemeMismatchMessage(galleryMatchHeadline),
           errorCode: GALLERY_THEME_MISMATCH_CODE,
           slotKey,
         });
@@ -2553,7 +2645,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         pickedFromBrandGallery = true;
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
-          headline: ideationHeadline,
+          headline: galleryMatchHeadline,
           photoUrl: rematched,
           galleryAnalysis: galleryMeta,
           businessType: brandBusinessType,
