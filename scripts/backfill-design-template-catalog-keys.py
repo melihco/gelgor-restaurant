@@ -88,6 +88,13 @@ async def _load_slots(session, workspace: str, sector: str) -> list[dict]:
     return [dict(r) for r in rows.mappings()]
 
 
+def _normalize_template_for_plan(template: dict) -> dict:
+    out = dict(template)
+    sd = (out.get("design_spec") or {}).get("specialDay") or {}
+    out["special_mmdd"] = sd.get("mmdd")
+    return out
+
+
 async def _load_templates(session, workspace: str) -> list[dict]:
     from sqlalchemy import text
 
@@ -265,6 +272,7 @@ def run_http_backfill(workspace: str, sector: str, web_base: str, *, dry_run: bo
     )
     if not isinstance(templates, list):
         raise RuntimeError("unexpected templates response")
+    templates = [_normalize_template_for_plan(t) for t in templates]
     slots = _load_sector_slots_pack(sector)
     print(f"    {len(templates)} templates · {len(slots)} sector slots")
 
@@ -309,6 +317,7 @@ async def main(dsn: str, workspace: str, sector: str, *, dry_run: bool) -> None:
     async with async_session_factory() as session:
         slots = await _load_slots(session, workspace, sector)
         templates = await _load_templates(session, workspace)
+        templates = [_normalize_template_for_plan(t) for t in templates]
         print(f"==> {len(templates)} active templates · {len(slots)} sector slots ({sector})")
 
         plan = _plan_backfill(templates, slots)
