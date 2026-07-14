@@ -136,8 +136,13 @@ function PackDetailModal({
         onClick={e => e.stopPropagation()}
         style={{
           width: '100%', maxHeight: '88dvh',
-          background: t.isDark ? '#111118' : '#fff',
+          background: t.isDark ? '#0D121B' : '#fff',
           borderRadius: '24px 24px 0 0',
+          border: `0.5px solid ${t.isDark ? 'rgba(176,196,212,0.14)' : 'rgba(30,63,85,0.10)'}`,
+          borderBottom: 'none',
+          boxShadow: t.isDark
+            ? 'inset 0 1px 0 rgba(238,243,247,0.06), 0 -16px 48px rgba(0,0,0,0.5)'
+            : '0 -16px 48px rgba(15,37,53,0.14)',
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
         }}
@@ -162,7 +167,7 @@ function PackDetailModal({
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-              <span style={{ fontSize: 28, fontWeight: 800, color: t.accent,
+              <span className="sa-chrome-text" style={{ fontSize: 28, fontWeight: 800,
                 letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>
                 ₺{pack.price.toLocaleString('tr-TR')}
               </span>
@@ -255,7 +260,7 @@ function PackDetailModal({
         <div style={{
           padding: '12px 20px', paddingBottom: 'max(20px,env(safe-area-inset-bottom,20px))',
           borderTop: `0.5px solid ${t.separator}`,
-          background: t.isDark ? '#111118' : '#fff',
+          background: t.isDark ? '#0D121B' : '#fff',
         }}>
           <button
             onClick={purchaseEnabled ? onBuy : undefined}
@@ -266,10 +271,13 @@ function PackDetailModal({
               cursor: purchaseEnabled ? 'pointer' : 'not-allowed',
               fontSize: 15, fontWeight: 800, letterSpacing: '-0.01em',
               background: purchaseEnabled
-                ? `linear-gradient(135deg, ${t.accent}, #5A82A0)`
+                ? t.gradientAccent
                 : (t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
               color: purchaseEnabled ? '#fff' : t.textMuted,
               opacity: purchaseEnabled ? 1 : 0.85,
+              boxShadow: purchaseEnabled
+                ? 'inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 24px rgba(77,112,136,0.35)'
+                : 'none',
             }}
           >
             {purchaseEnabled
@@ -335,7 +343,7 @@ export function BillingScreen() {
 
         {/* Token Wallet card */}
         <div style={{ padding: '20px 24px 0' }}>
-          <SLabel t={t} text="Kredi Cüzdanı" />
+          <SLabel text="Kredi Cüzdanı" />
           {isLoading ? (
             <div style={{ height: 80, borderRadius: 16,
               background: t.isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6',
@@ -391,37 +399,39 @@ export function BillingScreen() {
         {/* Last 30-day summary */}
         {(artifactCount !== null || (debugMode && totalSpent !== null) || (!debugMode && remaining !== null)) && (
           <div style={{ padding: '20px 24px 0' }}>
-            <SLabel t={t} text="Son 30 Gün" />
+            <SLabel text="Son 30 Gün" />
             <div style={{ display: 'flex', gap: 10 }}>
               {artifactCount !== null && (
-                <div style={{ flex: 1, ...t.surfaceCard, padding: '16px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: t.accent,
-                    letterSpacing: '-0.04em', lineHeight: 1 }}>{artifactCount}</div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, fontWeight: 500 }}>
+                <div className="sa-chrome-card" style={{ flex: 1, padding: '18px 14px', textAlign: 'center' }}>
+                  <div className="sa-chrome-text" style={{ fontSize: 27, fontWeight: 800,
+                    letterSpacing: '-0.04em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {artifactCount}
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, fontWeight: 500 }}>
                     Üretilen İçerik
                   </div>
                 </div>
               )}
               {debugMode && totalSpent !== null && (
-                <div style={{ flex: 1, ...t.surfaceCard, padding: '16px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: t.textPrimary,
+                <div className="sa-chrome-card" style={{ flex: 1, padding: '18px 14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 27, fontWeight: 800, color: t.textPrimary,
                     letterSpacing: '-0.04em', lineHeight: 1,
                     fontVariantNumeric: 'tabular-nums' }}>
                     ${totalSpent.toFixed(2)}
                   </div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, fontWeight: 500 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, fontWeight: 500 }}>
                     AI Harcaması
                   </div>
                 </div>
               )}
               {remaining !== null && (
-                <div style={{ flex: 1, ...t.surfaceCard, padding: '16px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em',
+                <div className="sa-chrome-card" style={{ flex: 1, padding: '18px 14px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 27, fontWeight: 800, letterSpacing: '-0.04em',
                     lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-                    color: remaining > 200 ? t.success : remaining > 50 ? t.warning : '#EF4444' }}>
+                    color: remaining > 200 ? t.success : remaining > 50 ? t.warning : t.danger }}>
                     {remaining.toLocaleString('tr-TR')}
                   </div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, fontWeight: 500 }}>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, fontWeight: 500 }}>
                     Kalan Kredi
                   </div>
                 </div>
@@ -432,7 +442,7 @@ export function BillingScreen() {
 
         {/* Credit pack cards — paket detayları; satın alma yalnızca flag ile açılır */}
         <div style={{ padding: '20px 24px 0' }}>
-          <SLabel t={t} text={purchaseEnabled ? 'Kredi Yükle' : 'Kredi Paketleri'} />
+          <SLabel text={purchaseEnabled ? 'Kredi Yükle' : 'Kredi Paketleri'} />
           {!purchaseEnabled && (
             <div style={{
               marginBottom: 14, padding: '12px 14px', borderRadius: 12,
@@ -449,14 +459,20 @@ export function BillingScreen() {
               <button
                 key={pack.id}
                 onClick={() => setModalPack(pack)}
+                className="sa-press-row"
                 style={{
                   width: '100%', textAlign: 'left', cursor: 'pointer',
                   ...t.surfaceCard,
                   padding: '16px 18px',
-                  border: pack.popular ? `0.5px solid ${t.accent}66` : `0.5px solid ${t.separator}`,
-                  background: pack.popular
-                    ? (t.isDark ? 'rgba(77,112,136,0.08)' : 'rgba(77,112,136,0.04)')
-                    : (t.isDark ? 'rgba(255,255,255,0.035)' : '#fff'),
+                  border: pack.popular
+                    ? `0.5px solid ${t.accent}66`
+                    : (t.surfaceCard.border as string),
+                  ...(pack.popular ? {
+                    background: t.isDark
+                      ? 'linear-gradient(165deg, rgba(77,112,136,0.16) 0%, rgba(12,16,24,0.9) 100%)'
+                      : 'linear-gradient(165deg, rgba(77,112,136,0.08) 0%, #FFFFFF 100%)',
+                    boxShadow: `0 12px 32px ${t.accentGlow}, inset 0 1px 0 rgba(255,255,255,0.08)`,
+                  } : {}),
                   position: 'relative' as const,
                   display: 'flex', alignItems: 'center', gap: 14,
                 }}
@@ -464,24 +480,26 @@ export function BillingScreen() {
                 {/* Left: label + note */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary }}>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.01em' }}>
                       {pack.label}
                     </span>
                     {pack.popular && (
-                      <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px',
-                        borderRadius: 20, background: t.accent, color: '#fff',
-                        letterSpacing: '0.05em' }}>POPÜLER</span>
+                      <span style={{ fontSize: 9, fontWeight: 800, padding: '3px 8px',
+                        borderRadius: 20, background: t.gradientAccent, color: '#fff',
+                        letterSpacing: '0.06em',
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22)' }}>POPÜLER</span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: t.textMuted }}>
+                  <div style={{ fontSize: 12, color: t.textMuted, fontVariantNumeric: 'tabular-nums' }}>
                     {pack.credits.toLocaleString('tr-TR')} kredi · {pack.note}
                   </div>
                   {/* highlight chips — top 2 */}
                   <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
                     {pack.highlights.slice(0, 2).map((h, i) => (
                       <span key={i} style={{
-                        fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 20,
-                        background: t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+                        fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+                        background: t.isDark ? 'rgba(157,190,206,0.08)' : 'rgba(30,63,85,0.05)',
+                        border: `0.5px solid ${t.isDark ? 'rgba(157,190,206,0.14)' : 'rgba(30,63,85,0.08)'}`,
                         color: t.textSecondary,
                       }}>{h}</span>
                     ))}
@@ -490,12 +508,22 @@ export function BillingScreen() {
 
                 {/* Right: price + chevron */}
                 <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                  <div style={{ fontSize: 20, fontWeight: 800,
-                    color: pack.popular ? t.accent : t.textPrimary,
+                  <div className={pack.popular ? 'sa-chrome-text' : undefined}
+                    style={{ fontSize: 20, fontWeight: 800,
+                    ...(pack.popular ? {} : { color: t.textPrimary }),
                     letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
                     ₺{pack.price.toLocaleString('tr-TR')}
                   </div>
-                  <div style={{ fontSize: 10, color: t.textMuted, marginTop: 1 }}>Detay →</div>
+                  <div style={{
+                    fontSize: 10.5, color: t.accent, marginTop: 3, fontWeight: 600,
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                  }}>
+                    Detay
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
+                      stroke={t.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </div>
                 </div>
               </button>
             ))}
@@ -513,11 +541,6 @@ export function BillingScreen() {
   );
 }
 
-function SLabel({ t, text }: { t: T; text: string }) {
-  return (
-    <div style={{ fontSize: 11, fontWeight: 600, color: t.labelColor,
-      letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12 }}>
-      {text}
-    </div>
-  );
+function SLabel({ text }: { text: string }) {
+  return <div className="sa-chrome-eyebrow" style={{ marginBottom: 12 }}>{text}</div>;
 }

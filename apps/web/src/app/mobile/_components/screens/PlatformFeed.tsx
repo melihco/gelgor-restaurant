@@ -1943,6 +1943,27 @@ function PlatformFeedInner() {
     feedScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [feedRefreshNonce]);
 
+  // IG-native header: slides away while scrolling down, returns on scroll up.
+  const [headerHidden, setHeaderHidden] = useState(false);
+  const lastScrollTopRef = useRef(0);
+  useEffect(() => {
+    const el = feedScrollRef.current;
+    if (!el || operatorMode) return;
+    const onScroll = () => {
+      const y = el.scrollTop;
+      const delta = y - lastScrollTopRef.current;
+      lastScrollTopRef.current = y;
+      if (y <= 56) {
+        setHeaderHidden(false);
+        return;
+      }
+      if (delta > 4) setHeaderHidden(true);
+      else if (delta < -4) setHeaderHidden(false);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [operatorMode]);
+
   const mergedRawArtifacts = rawArtifacts;
 
   const dedupedRaw = React.useMemo(
@@ -2719,12 +2740,23 @@ function PlatformFeedInner() {
         </div>
       )}
 
-      {/* ─── Sticky Header ─────────────────────────────────────────── */}
+      {/* ─── Sticky Header — IG-native: opaque, hides on scroll down ── */}
       {!operatorMode ? (
-        <div style={{ position: 'sticky', top: 0, zIndex: 30 }}>
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 30,
+          transform: headerHidden ? 'translateY(-105%)' : 'translateY(0)',
+          transition: 'transform 240ms cubic-bezier(0.32, 0.72, 0, 1)',
+          willChange: 'transform',
+        }}>
           <MobileBrandNavbar
             dark={t.isDark}
             logoCentered
+            style={{
+              background: t.isDark ? '#000' : '#fff',
+              backdropFilter: 'none',
+              WebkitBackdropFilter: 'none',
+              borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+            }}
             rightSlot={(
               <FlowHeaderActions
                 showApproved={showApproved}

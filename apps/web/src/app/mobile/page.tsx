@@ -316,16 +316,18 @@ const CSS = `
     font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
     color: #F2F2F6;
   }
+  /* Onboarding/login watermark — same centered wordmark language as sa-chrome-mark */
   .sa-mobile .onboarding-chrome-mark {
     position: absolute;
-    top: max(8px, env(safe-area-inset-top, 0px));
-    right: max(-8px, calc(env(safe-area-inset-right, 0px) - 8px));
-    width: min(180px, 48vw);
-    height: min(112px, 30vw);
-    opacity: 0.05;
+    top: 50%;
+    left: 5px;
+    right: 5px;
+    aspect-ratio: 525 / 123;
+    transform: translateY(-50%);
+    opacity: 0.04;
     pointer-events: none;
     z-index: 0;
-    background: url('/smartagency-mark.png') right top / contain no-repeat;
+    background: url('/smartagency-logo.png') center / contain no-repeat;
     filter: saturate(0.85) contrast(1.05);
   }
   .sa-mobile .onboarding-chrome-hairline {
@@ -1542,16 +1544,19 @@ const CSS = `
       radial-gradient(ellipse 100% 60% at 50% -5%, rgba(77,112,136,0.10) 0%, transparent 55%),
       radial-gradient(ellipse 45% 35% at 100% 0%, rgba(138,171,189,0.06) 0%, transparent 50%);
   }
+  /* Full wordmark watermark — horizontally centered mid-screen (5px side gutters).
+   * Visible behind content and during screen transitions as a brand backdrop. */
   .sa-mobile .sa-chrome-mark {
     position: absolute;
-    top: max(8px, env(safe-area-inset-top, 0px));
-    right: max(-12px, calc(env(safe-area-inset-right, 0px) - 12px));
-    width: min(200px, 52vw);
-    height: min(124px, 32vw);
-    opacity: 0.055;
+    top: 50%;
+    left: 5px;
+    right: 5px;
+    aspect-ratio: 525 / 123;
+    transform: translateY(-50%);
+    opacity: 0.05;
     pointer-events: none;
     z-index: 0;
-    background: url('/smartagency-mark.png') right top / contain no-repeat;
+    background: url('/smartagency-logo.png') center / contain no-repeat;
     filter: saturate(0.85) contrast(1.05);
   }
   .sa-mobile .sa-chrome-shell--light .sa-chrome-mark {

@@ -12,16 +12,15 @@ import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import type { T } from '../theme-context';
 
-type NType = 'approval' | 'alert' | 'complete' | 'review' | 'system';
-
-const TYPE_CFG: Record<string, { icon: string; color: string }> = {
-  artifact_ready:         { icon: '✦', color: '#9DBECE' },
-  action_pending:         { icon: '◎', color: '#f59e0b' },
-  agent_blocked:          { icon: '⚑', color: '#fb7185' },
-  agent_completed:        { icon: '✓', color: '#34d399' },
-  execution_failed:       { icon: '▲', color: '#fb7185' },
-  review_needed:          { icon: '★', color: '#f59e0b' },
-  default:                { icon: '●', color: '#60a5fa' },
+// Premium stroke icons per type — steel/gold palette, no emoji glyphs
+const TYPE_CFG: Record<string, { path: string; color: string }> = {
+  artifact_ready:   { path: 'M12 3l2.1 5.4 5.9.5-4.5 3.8 1.4 5.8L12 15.4l-4.9 3.1 1.4-5.8L4 8.9l5.9-.5z', color: '#9DBECE' },
+  action_pending:   { path: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 7v5l3.5 2', color: '#C8A86A' },
+  agent_blocked:    { path: 'M4 22V4M4 4h12l-2 4 2 4H4', color: '#D46A6A' },
+  agent_completed:  { path: 'M5 13l4 4L19 7', color: '#3CB87A' },
+  execution_failed: { path: 'M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01', color: '#D46A6A' },
+  review_needed:    { path: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', color: '#C8A86A' },
+  default:          { path: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0', color: '#6AACCB' },
 };
 
 // Mock fallback
@@ -138,8 +137,8 @@ export function NotificationsScreen() {
             style={{
               width: 44,
               height: 44,
-              borderRadius: 12,
-              border: 'none',
+              borderRadius: '50%',
+              border: `0.5px solid ${t.accentBorder}`,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -152,27 +151,49 @@ export function NotificationsScreen() {
         ) : undefined}
       />
       {unread > 0 && (
-        <p style={{ fontSize: 12, color: t.warning, fontWeight: 500, margin: 0, padding: '8px 24px 0' }}>
-          {unread} okunmamış
-        </p>
+        <div style={{ padding: '12px 24px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+            background: t.accent,
+            boxShadow: `0 0 10px ${t.accentGlow}`,
+          }} />
+          <span className="sa-chrome-eyebrow">{unread} okunmamış bildirim</span>
+        </div>
       )}
 
       <div style={{ padding: '12px 24px 0' }}>
         {isLoading ? (
-          <div style={{ ...t.surfaceGroup, padding: '32px', textAlign: 'center', color: t.textMuted, fontSize: 13 }}>Yükleniyor...</div>
+          <div className="sa-chrome-card" style={{ padding: '32px', textAlign: 'center', color: t.textMuted, fontSize: 13 }}>
+            Yükleniyor…
+          </div>
         ) : items.length === 0 ? (
-          <div style={{ ...t.surfaceGroup, padding: '48px 24px', textAlign: 'center' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>🔔</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>Bildirim yok</div>
-            <p style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.6, margin: '0 0 20px' }}>
-              Onay bekleyen içerikler, yeni yorumlar ve üretim tamamlama bildirimleri burada görünür.
+          <div className="sa-chrome-card" style={{ padding: '52px 24px 44px', textAlign: 'center' }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: '50%', margin: '0 auto 18px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: t.accentDim,
+              border: `0.5px solid ${t.accentBorder}`,
+              boxShadow: `0 0 32px ${t.accentGlow}, inset 0 1px 0 rgba(255,255,255,0.08)`,
+            }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+                stroke={t.accent} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', marginBottom: 8 }}>
+              Her şey güncel
+            </div>
+            <p style={{ fontSize: 13, color: t.textTertiary, lineHeight: 1.6, margin: '0 auto 22px', maxWidth: 280 }}>
+              Onay bekleyen içerikler, yeni yorumlar ve üretim bildirimleri burada görünür.
             </p>
             <button
               type="button"
               onClick={() => navigate('feed')}
               style={{
-                padding: '11px 20px', borderRadius: 24, border: 'none', cursor: 'pointer',
-                background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700,
+                padding: '13px 26px', borderRadius: 24, border: 'none', cursor: 'pointer',
+                background: t.gradientAccent, color: '#fff', fontSize: 14, fontWeight: 700,
+                letterSpacing: '-0.01em',
+                boxShadow: `inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 22px ${t.accentGlow}`,
               }}
             >
               İçeriklere Git
@@ -182,8 +203,8 @@ export function NotificationsScreen() {
           <>
             {grouped.unread.length > 0 && (
               <>
-                <SLabel t={t} text="Yeni" />
-                <div style={{ ...t.surfaceGroup, marginBottom: 16 }}>
+                <SLabel text="Yeni" />
+                <div style={{ ...t.surfaceGroup, marginBottom: 20 }}>
                   {grouped.unread.map((n: any, i: number, arr: any[]) => (
                     <NotifRow key={n.id} n={n} t={t} isLast={i === arr.length - 1} onTap={() => handleTap(n)} />
                   ))}
@@ -192,8 +213,8 @@ export function NotificationsScreen() {
             )}
             {grouped.read.length > 0 && (
               <>
-                <SLabel t={t} text="Önceki" />
-                <div style={{ ...t.surfaceGroup }}>
+                <SLabel text="Önceki" />
+                <div style={{ ...t.surfaceGroup, opacity: 0.82 }}>
                   {grouped.read.map((n: any, i: number, arr: any[]) => (
                     <NotifRow key={n.id} n={n} t={t} isLast={i === arr.length - 1} onTap={() => handleTap(n)} />
                   ))}
@@ -210,22 +231,45 @@ export function NotificationsScreen() {
 function NotifRow({ n, t, isLast, onTap }: { n: any; t: T; isLast: boolean; onTap: () => void }) {
   const cfg = TYPE_CFG[n.type] ?? TYPE_CFG['default']!;
   return (
-    <button onClick={onTap} style={{
+    <button onClick={onTap} className="sa-press-row" style={{
       display: 'flex', alignItems: 'flex-start', gap: 14,
-      padding: '15px 18px', width: '100%', textAlign: 'left', cursor: 'pointer',
-      background: n.read ? 'transparent' : (t.isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.008)'),
+      padding: '15px 18px 15px 20px', width: '100%', textAlign: 'left', cursor: 'pointer',
+      background: n.read ? 'transparent' : (t.isDark ? 'rgba(157,190,206,0.03)' : 'rgba(30,63,85,0.02)'),
       ...(!isLast ? t.surfaceRow : {}), position: 'relative',
     }}>
-      {!n.read && <span style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', width: 5, height: 5, borderRadius: '50%', background: t.accent }} />}
-      <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: `${cfg.color}12`, border: `0.5px solid ${cfg.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: cfg.color, fontWeight: 600 }}>
-        {cfg.icon}
+      {!n.read && (
+        <span style={{
+          position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+          width: 5, height: 5, borderRadius: '50%',
+          background: t.accent, boxShadow: `0 0 8px ${t.accentGlow}`,
+        }} />
+      )}
+      <div style={{
+        width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+        background: `${cfg.color}12`,
+        border: `0.5px solid ${cfg.color}26`,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+          stroke={cfg.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d={cfg.path} />
+        </svg>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 3 }}>
-          <span style={{ fontSize: 13, fontWeight: n.read ? 500 : 700, color: t.textPrimary }}>{n.title}</span>
-          <span style={{ fontSize: 10, color: t.textMuted, flexShrink: 0 }}>{timeAgo(n.createdAt)}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 3 }}>
+          <span style={{
+            fontSize: 13.5, fontWeight: n.read ? 500 : 700, color: t.textPrimary,
+            letterSpacing: '-0.01em',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {n.title}
+          </span>
+          <span style={{ fontSize: 10.5, color: t.textMuted, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+            {timeAgo(n.createdAt)}
+          </span>
         </div>
-        <p style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.45, margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+        <p style={{ fontSize: 12.5, color: t.textTertiary, lineHeight: 1.5, margin: 0, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
           {n.message}
         </p>
       </div>
@@ -233,6 +277,6 @@ function NotifRow({ n, t, isLast, onTap }: { n: any; t: T; isLast: boolean; onTa
   );
 }
 
-function SLabel({ t, text }: { t: T; text: string }) {
-  return <div style={{ fontSize: 11, fontWeight: 600, color: t.labelColor, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>{text}</div>;
+function SLabel({ text }: { text: string }) {
+  return <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>{text}</div>;
 }

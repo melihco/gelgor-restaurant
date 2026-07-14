@@ -53,6 +53,7 @@ export const INTERNAL_MOBILE_SCREENS = new Set<MobileScreen>([
   'campaigns',
   'outputs',
   'templates',
+  'visitors',
 ]);
 
 const REDIRECT_MAP: Partial<Record<MobileScreen, MobileScreen>> = {
@@ -65,6 +66,7 @@ const REDIRECT_MAP: Partial<Record<MobileScreen, MobileScreen>> = {
   'brand-rules': 'brand',
   home: 'feed',
   'mission-factory': 'missions',
+  visitors: 'more',
 };
 
 export function resolveClientScreen(screen: MobileScreen): MobileScreen {
@@ -187,7 +189,6 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
       items: [
         { label: 'Google Yorumları', sub: 'Yorum yanıtlama ve itibar', iconBg: '#f59e0b', iconText: '💬', screen: 'reviews' },
         { label: 'Reklamlar', sub: 'Meta ve Google kampanyaları', iconBg: '#f59e0b', iconText: '📣', screen: 'ads' },
-        { label: 'Web Trafiği', sub: 'Site ziyaretçi özeti', iconBg: '#60a5fa', iconText: '🌐', screen: 'visitors' },
       ],
     },
   ];
@@ -199,6 +200,7 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
     {
       title: 'Ajans Operasyonları',
       items: [
+        { label: 'Web Trafiği', sub: 'Site ziyaretçi özeti', iconBg: '#60a5fa', iconText: '🌐', screen: 'visitors', operatorOnly: true },
         { label: 'Performans', sub: 'Sosyal medya özet metrikleri (beta)', iconBg: '#34d399', iconText: '↗', screen: 'insights', operatorOnly: true },
         { label: 'AI Aktivite', sub: 'Ajan logları ve canlı üretim', iconBg: '#10b981', iconText: '◎', screen: 'ai-activity', operatorOnly: true },
         { label: 'AI Ajanlar', sub: 'Ajan sağlığı ve görevler', iconBg: '#9DBECE', iconText: '◉', screen: 'agents', operatorOnly: true },
