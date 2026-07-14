@@ -234,4 +234,46 @@ def build_match_signals(slot_key: str, design_template_type: str) -> dict:
         signals["announcement_types"] = ["product_reveal", "product_showcase"]
     if "venue" in slot_key or "ambiance" in slot_key or "facility" in slot_key:
         signals["announcement_types"] = ["venue_showcase"]
+    if "booking" in slot_key or "reservation" in slot_key:
+        signals["announcement_types"] = ["announcement", "campaign_offer"]
     return signals
+
+
+DEFAULT_DESIGNED_STORY_PREMIUM: dict = {
+    "visual_story": "Designed story poster with typography overlay on brand gallery photo",
+    "premium_score": 85,
+    "layout_strategy": "poster_stack",
+    "motion_approach": "static",
+    "visual_priority": "typography",
+    "composition_type": "poster_design",
+    "graphic_elements": ["gradient_wash"],
+    "object_treatment": "full_bleed_photo",
+    "typography_approach": "bold_display",
+    "composition_description": (
+        "Full-bleed venue or product photo with bold headline stack and CTA band — "
+        "Fal designer story poster."
+    ),
+}
+
+
+def build_designed_story_prompt_pack(label_en: str) -> dict:
+    return {
+        "require_premium_composition": True,
+        "visual_treatment": "story_event",
+        "premium_composition_defaults": {
+            **DEFAULT_DESIGNED_STORY_PREMIUM,
+            "visual_story": f"Designed story poster — {label_en}",
+        },
+        "ideation_hint": (
+            f'Story ideas for "{label_en}" MUST include visual_production_spec.premium_composition '
+            "(poster_design, typography-forward) — never pure_photo / gallery-only."
+        ),
+    }
+
+
+def build_prompt_pack(slot_key: str, label_en: str, inst: dict | None = None) -> dict:
+    inst = inst or {}
+    base = {"scene_hint_template": f"{{brand_name}} — {label_en} content for {{content_brief}}"}
+    if inst.get("requires_premium_composition"):
+        return {**build_designed_story_prompt_pack(label_en), **base}
+    return base

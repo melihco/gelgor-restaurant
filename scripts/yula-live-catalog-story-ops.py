@@ -6,6 +6,9 @@ Usage:
   export LIVE_DATABASE_URL='postgresql+asyncpg://...'
   python3 scripts/yula-live-catalog-story-ops.py
 
+  # No Postgres DSN — uses live web BFF (requires deployed sync-seed endpoint):
+  python3 scripts/yula-live-catalog-story-ops.py --http
+
 Or pass --dsn explicitly (Render external URL + ssl=require).
 """
 
@@ -13,10 +16,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import uuid
 from pathlib import Path
+from urllib import error, request
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
 if str(BACKEND_ROOT) not in sys.path:
@@ -24,9 +29,12 @@ if str(BACKEND_ROOT) not in sys.path:
 
 YULA_WORKSPACE = uuid.UUID("f00e3308-ebbe-4d75-8592-12d52e7ff1aa")
 YULA_SECTOR = "restaurant_cafe"
+DEFAULT_WEB = os.environ.get("WEB_BASE_URL", "https://smartagency-web.onrender.com")
+DEFAULT_INTERNAL_KEY = os.environ.get("INTERNAL_API_KEY", "smartagency-internal-dev-key")
 NEW_STORY_SLOTS = (
     "restaurant_cafe_event_announcement_story",
     "restaurant_cafe_typography_poster_story",
+    "restaurant_cafe_weekend_booking_story",
 )
 
 # Active onboarding templates → catalog slot keys (design_template_type aligned).
@@ -34,6 +42,7 @@ TEMPLATE_CATALOG_BINDINGS: tuple[tuple[str, str], ...] = (
     # template_id, catalog_slot_key
     ("a3d2e724-0dfe-4ca4-a02d-f49d4ebc1778", "restaurant_cafe_event_announcement_story"),
     ("04e6104a-53d7-4bea-8bac-cbc2df340eb8", "restaurant_cafe_typography_poster_story"),
+    ("ea8ed124-cb98-4797-bac2-50be494f751c", "restaurant_cafe_weekend_booking_story"),
 )
 
 
@@ -152,6 +161,121 @@ async def report_state(session) -> None:
     print("\n── Yula enabled assignments:", enabled.scalar(), "──")
 
 
+def _http_json(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    body: dict | None = None,
+) -> object:
+    data = None
+    hdrs = {**headers, "Accept": "application/json"}
+    if body is not None:
+        data = json.dumps(body).encode()
+        hdrs["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=hdrs, method=method)
+    try:
+        with request.urlopen(req, timeout=120) as resp:
+            raw = resp.read().decode()
+            return json.loads(raw) if raw else None
+    except error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise RuntimeError(f"{method} {url} -> {exc.code}: {detail[:500]}") from exc
+
+
+def run_http(web_base: str, *, skip_seed: bool = False) -> None:
+    web = web_base.rstrip("/")
+    tenant = str(YULA_WORKSPACE)
+    tenant_headers = {"X-Tenant-Id": tenant, "X-Office-Id": tenant}
+    internal_headers = {"X-Internal-Api-Key": DEFAULT_INTERNAL_KEY}
+
+    print(f"==> HTTP live ops web={web} workspace={tenant}")
+
+    if not skip_seed:
+        print("==> Sync-seed production slot catalog…")
+        seed_result = _http_json(
+            "POST",
+            f"{web}/api/internal/slot-catalog/sync-seed",
+            internal_headers,
+            {},
+        )
+        print(f"    {seed_result}")
+    else:
+        print("==> Skipping catalog seed (--skip-seed)")
+
+    print("==> Bootstrapping Yula tenant slot assignments…")
+    boot = _http_json(
+        "POST",
+        f"{web}/api/brand-context/{tenant}/slot-catalog",
+        tenant_headers,
+        {"sector_id": YULA_SECTOR},
+    )
+    print(f"    {boot}")
+
+    print("==> Binding onboarding templates to catalog_slot_key…")
+    for template_id, catalog_key in TEMPLATE_CATALOG_BINDINGS:
+        updated = _http_json(
+            "PATCH",
+            f"{web}/api/brand-context/{tenant}/design-templates/{template_id}",
+            tenant_headers,
+            {"catalog_slot_key": catalog_key},
+        )
+        name = (updated or {}).get("template_name") if isinstance(updated, dict) else template_id
+        got = (updated or {}).get("catalog_slot_key") if isinstance(updated, dict) else None
+        if got != catalog_key:
+            raise RuntimeError(
+                f"verify failed {name}: expected {catalog_key}, got {got}"
+            )
+        print(f"    ✓ {name} → {catalog_key}")
+
+    slots = _http_json(
+        "GET",
+        f"{web}/api/brand-context/{tenant}/slot-catalog"
+        f"?view=sector_slots&sector_id={YULA_SECTOR}",
+        tenant_headers,
+    )
+    if not isinstance(slots, list):
+        raise RuntimeError("unexpected sector_slots response")
+
+    print("\n── New story slots (Yula) ──")
+    for row in slots:
+        if row.get("slot_key") in NEW_STORY_SLOTS:
+            print({
+                "slot_key": row.get("slot_key"),
+                "label_tr": row.get("label_tr"),
+                "pipeline": row.get("pipeline"),
+                "design_template_type": row.get("design_template_type"),
+                "require_premium": (row.get("prompt_pack") or {}).get("require_premium_composition"),
+            })
+
+    templates = _http_json(
+        "GET",
+        f"{web}/api/brand-context/{tenant}/design-templates",
+        tenant_headers,
+    )
+    if not isinstance(templates, list):
+        raise RuntimeError("unexpected design-templates response")
+
+    print("\n── Bound design templates ──")
+    for row in templates:
+        key = row.get("catalog_slot_key")
+        if key in NEW_STORY_SLOTS:
+            print({
+                "id": row.get("id"),
+                "template_name": row.get("template_name"),
+                "catalog_slot_key": key,
+                "has_thumb": bool(row.get("thumbnail_url")),
+            })
+
+    assignments = _http_json(
+        "GET",
+        f"{web}/api/brand-context/{tenant}/slot-catalog?enabled_only=true",
+        tenant_headers,
+    )
+    enabled_n = len(assignments) if isinstance(assignments, list) else "?"
+    print(f"\n── Yula enabled assignments: {enabled_n} ──")
+    print("\nDone.")
+
+
 async def main(dsn: str, *, skip_seed: bool = False) -> None:
     os.environ["DATABASE_URL"] = _normalize_dsn(dsn)
 
@@ -187,7 +311,20 @@ if __name__ == "__main__":
         help="Live Postgres DSN (postgresql:// or postgresql+asyncpg://)",
     )
     parser.add_argument("--skip-seed", action="store_true", help="Skip full catalog seed (faster re-run)")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Use live web BFF (no Postgres DSN required)",
+    )
+    parser.add_argument(
+        "--web",
+        default=DEFAULT_WEB,
+        help="Web base URL for --http mode",
+    )
     args = parser.parse_args()
-    if not args.dsn:
-        raise SystemExit("Set LIVE_DATABASE_URL or pass --dsn")
-    asyncio.run(main(args.dsn, skip_seed=args.skip_seed))
+    if args.http:
+        run_http(args.web, skip_seed=args.skip_seed)
+    elif not args.dsn:
+        raise SystemExit("Set LIVE_DATABASE_URL or pass --dsn (or use --http)")
+    else:
+        asyncio.run(main(args.dsn, skip_seed=args.skip_seed))

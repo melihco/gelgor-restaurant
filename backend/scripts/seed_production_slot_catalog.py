@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.data.production_slot_catalog_meta import (
     build_match_signals,
+    build_prompt_pack,
     humanize_slot_key,
     infer_design_template_type,
     infer_format,
@@ -84,9 +85,7 @@ async def seed_slots(session) -> int:
                 "library_slot_key": infer_library_slot_key(slot_key, design_type),
                 "tier": "premium" if "reel" in slot_key or "carousel" in slot_key else "standard",
                 "match_signals": build_match_signals(slot_key, design_type),
-                "prompt_pack": {
-                    "scene_hint_template": f"{{brand_name}} — {label_en} content for {{content_brief}}",
-                },
+                "prompt_pack": build_prompt_pack(slot_key, label_en, inst),
                 "optional_tags": optional_tags,
                 "enabled_by_default": True,
                 "sort_order": (idx + 1) * 10,

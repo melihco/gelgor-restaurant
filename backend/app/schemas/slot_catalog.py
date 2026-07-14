@@ -68,3 +68,9 @@ class BootstrapTenantSlotsResponse(BaseModel):
     created: int
     updated: int
     enabled_count: int
+
+
+class SyncSlotCatalogSeedResponse(BaseModel):
+    sectors_touched: int
+    slots_touched: int
+    total_definitions: int

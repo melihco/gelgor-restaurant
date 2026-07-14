@@ -9,14 +9,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.api.deps import verify_internal_api_key
 from app.schemas.slot_catalog import (
     BootstrapTenantSlotsResponse,
     BulkTenantSlotAssignmentRequest,
     CanonicalSectorOut,
     ProductionSlotDefinitionOut,
+    SyncSlotCatalogSeedResponse,
     TenantSlotAssignmentOut,
 )
-from app.models.slot_catalog import CanonicalSector
+from app.models.slot_catalog import CanonicalSector, ProductionSlotDefinition
 from app.services import slot_catalog_service as svc
 
 logger = structlog.get_logger()
@@ -155,3 +157,26 @@ async def upsert_tenant_slot_assignments(
         ]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/sync-seed",
+    response_model=SyncSlotCatalogSeedResponse,
+    dependencies=[Depends(verify_internal_api_key)],
+)
+async def sync_slot_catalog_seed(db: AsyncSession = Depends(get_db)):
+    """Upsert canonical_sectors + production_slot_definitions from sector_slot_pack (live ops)."""
+    from sqlalchemy import select
+
+    from scripts.seed_production_slot_catalog import seed_sectors, seed_slots
+
+    sectors = await seed_sectors(db)
+    slots = await seed_slots(db)
+    await db.commit()
+    total = len((await db.execute(select(ProductionSlotDefinition))).scalars().all())
+    logger.info("slot_catalog_sync_seed", sectors=sectors, slots=slots, total=total)
+    return SyncSlotCatalogSeedResponse(
+        sectors_touched=sectors,
+        slots_touched=slots,
+        total_definitions=total,
+    )

@@ -19,6 +19,7 @@ class SlotInstance(TypedDict, total=False):
     pipeline: str
     slot_role: str
     design_template_type: str
+    requires_premium_composition: bool
 
 
 class SectorPack(TypedDict):
@@ -40,6 +41,7 @@ def _inst(
     pipeline: str | None = None,
     slot_role: str | None = None,
     design_template_type: str | None = None,
+    requires_premium_composition: bool = False,
 ) -> SlotInstance:
     row: SlotInstance = {
         "suffix": suffix,
@@ -55,6 +57,8 @@ def _inst(
         row["slot_role"] = slot_role
     if design_template_type:
         row["design_template_type"] = design_template_type
+    if requires_premium_composition:
+        row["requires_premium_composition"] = True
     return row
 
 
@@ -128,7 +132,16 @@ SECTOR_SLOT_PACKS: list[SectorPack] = [
             _inst("kitchen_bts_story", "Mutfak kulis story", "Kitchen BTS story", "story"),
             _inst("table_ready_story", "Masa hazır story", "Table ready story", "story"),
             _inst("farm_to_table_story", "Çiftlikten sofraya story", "Farm to table story", "story"),
-            _inst("weekend_booking_story", "Hafta sonu rezervasyon story", "Weekend booking story", "story"),
+            _inst(
+                "weekend_booking_story",
+                "Hafta sonu rezervasyon story",
+                "Weekend booking story",
+                "story",
+                pipeline="fal_story",
+                slot_role="campaign_story_motion",
+                design_template_type="announcement_formal",
+                requires_premium_composition=True,
+            ),
             _inst(
                 "event_announcement_story",
                 "Etkinlik duyuru afişi",
