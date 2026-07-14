@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useContext, useEffect, useState } from 'react';
+import { nativeBridge } from '../_lib/native-bridge';
 
 export interface T {
   bg: string;
@@ -226,6 +227,10 @@ export function MobileThemeProvider({ children }: { children: React.ReactNode })
       frame.style.setProperty('--sa-mobile-bg', bg);
     }
     if (mobile) mobile.dataset.theme = theme;
+
+    // Keep the native status bar in sync when embedded in a WebView.
+    // Dark UI wants light status bar icons, and vice versa.
+    nativeBridge.setStatusBarStyle(isDark ? 'light' : 'dark', bg);
   }, [isDark]);
 
   return (

@@ -10,12 +10,11 @@ import { logoutFromBrowser } from '@/lib/browser-logout';
 import { buildMoreMenuGroups } from '../mobile-client-config';
 import { summarizeMobileIntegrations } from '@/lib/mobile-integration-status';
 import { IcoLogout } from '../Icons';
-import { MobileStackHeader } from '../ui-primitives';
+import { MobileStackHeader, ThemeToggleButton } from '../ui-primitives';
 
 // Icon paths per menu item type — premium SVG, no emoji
 const ITEM_ICONS: Record<string, string> = {
   'İçerik Planı':      'M4 22V3M4 4h14l-4 5 4 5H4',
-  'Marka Ayarları':    'M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM12 8v4M10 12h4',
   'Performans':        'M3 20h18M5 20V12M9 20V8M13 20V4M17 20V10',
   'Entegrasyonlar':    'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
   'Bildirimler':       'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
@@ -96,7 +95,13 @@ export function MoreMenu() {
       minHeight: '100dvh',
       paddingBottom: 104,
     }}>
-      <MobileStackHeader t={t} title="Menü" onBack={goBack} sticky />
+      <MobileStackHeader
+        t={t}
+        title="Menü"
+        onBack={goBack}
+        sticky
+        right={<ThemeToggleButton t={t} onToggle={toggle} />}
+      />
 
       {/* ─── Profile Header ─────────────────────────────────────────── */}
       <div className="sa-chrome-profile-hero" style={{
@@ -175,49 +180,6 @@ export function MoreMenu() {
             </div>
           ))}
         </div>
-      </div>
-
-      {/* ─── Theme Toggle ─────────────────────────────────────────────── */}
-      <div style={{ padding: '14px 22px 0' }}>
-        <button onClick={toggle} className="sa-chrome-card" style={{
-          width: '100%', padding: '13px 16px', borderRadius: 18, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-              background: t.accentDim,
-              border: `0.5px solid ${t.accentBorder}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                stroke={t.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                {t.isDark
-                  ? <><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></>
-                  : <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-                }
-              </svg>
-            </div>
-            <span style={{ fontSize: 14, fontWeight: 600, color: t.textPrimary }}>
-              {t.isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
-            </span>
-          </div>
-          {/* Toggle pill */}
-          <div style={{
-            width: 44, height: 26, borderRadius: 13,
-            background: t.isDark ? t.accent : 'rgba(0,0,0,0.10)',
-            position: 'relative', transition: 'background 200ms', flexShrink: 0,
-          }}>
-            <div style={{
-              position: 'absolute', top: 3,
-              left: t.isDark ? 21 : 3,
-              width: 20, height: 20, borderRadius: '50%',
-              background: '#fff',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-              transition: 'left 200ms',
-            }} />
-          </div>
-        </button>
       </div>
 
       {/* ─── Menu Groups ─────────────────────────────────────────────── */}

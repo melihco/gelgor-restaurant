@@ -171,7 +171,6 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
     {
       title: 'Marka & Ayarlar',
       items: [
-        { label: 'Marka Ayarları', sub: 'Logo, renkler, galeri, AI tercihleri', iconBg: '#60a5fa', iconText: '◈', screen: 'brand' },
         {
           label: 'Entegrasyonlar',
           sub: `${opts.connectedCount}/${opts.integrationTotal} bağlı`,

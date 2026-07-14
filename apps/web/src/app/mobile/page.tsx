@@ -25,6 +25,8 @@ import {
 import { MobileArtifactsPoller } from './_components/MobileArtifactsPoller';
 import { TenantBrandProvider } from './_components/TenantBrandProvider';
 import { MobileScreenRouter } from './_components/MobileScreenRouter';
+import { initNativeBridge } from './_lib/native-bridge';
+import { OfflineBanner } from './_components/OfflineBanner';
 
 /* ─── Mobile-scoped CSS ──────────────────────────────────────────────
  * IMPORTANT: All rules MUST be scoped to .sa-mobile to avoid leaking
@@ -44,6 +46,26 @@ const CSS = `
     -webkit-overflow-scrolling: touch;
   }
   .sa-mobile ::-webkit-scrollbar { display: none; }
+
+  /* ── Touch hardening (native WebView feel) ──
+   * No long-press copy/save callout, no text selection on chrome/controls.
+   * Selection stays enabled where users genuinely edit or copy text. */
+  .sa-mobile, .sa-mobile * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .sa-mobile input,
+  .sa-mobile textarea,
+  .sa-mobile [contenteditable="true"],
+  .sa-mobile [data-selectable="true"],
+  .sa-mobile [data-selectable="true"] * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .sa-mobile img, .sa-mobile video {
+    -webkit-user-drag: none;
+  }
   .sa-mobile button {
     -webkit-appearance: none; appearance: none;
     font-family: inherit; letter-spacing: inherit;
@@ -2075,6 +2097,21 @@ function AppShell() {
   // Show login form vs onboarding
   const [showLogin, setShowLogin] = useState(false);
 
+  // Native WebView bridge — Android hardware back pops the in-app stack;
+  // at the root we hand control back to the host (exitApp).
+  useEffect(() => {
+    return initNativeBridge({
+      onHardwareBack: () => {
+        const s = useMobileStore.getState();
+        if (s.history.length > 1) {
+          s.goBack();
+          return true;
+        }
+        return false;
+      },
+    });
+  }, []);
+
   useEffect(() => {
     // Mobile auth is token-driven. If there is no local JWT, never auto-login
     // from demo/cookie fallback after refresh.
@@ -2224,6 +2261,7 @@ export default function MobilePage() {
           <div className="sa-mobile" style={{ display: 'contents' }}>
             <TenantBrandProvider>
               <MobileArtifactsPoller />
+              <OfflineBanner />
               <AppShell />
             </TenantBrandProvider>
           </div>

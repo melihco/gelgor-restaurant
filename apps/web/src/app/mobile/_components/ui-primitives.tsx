@@ -4,6 +4,7 @@
 import React from 'react';
 import type { T } from './theme-context';
 import { IcoBack, IcoClose } from './Icons';
+import { nativeBridge } from '../_lib/native-bridge';
 
 // ─── Circular Progress Ring (SVG) ─────────────────────────────────────
 export function CircleProgress({
@@ -112,6 +113,79 @@ export function SectionHeader({
         </button>
       )}
     </div>
+  );
+}
+
+// ─── Theme toggle (header action) ──────────────────────────────────────
+// Circular chrome button mirroring the back button. Sun ↔ moon icons
+// cross-fade with a rotate+scale morph — Apple-style restrained motion.
+export function ThemeToggleButton({ t, onToggle }: { t: T; onToggle: () => void }) {
+  const iconBase: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'transform 420ms cubic-bezier(0.22,1,0.36,1), opacity 260ms ease',
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        nativeBridge.haptic('selection');
+        onToggle();
+      }}
+      aria-label={t.isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
+      style={{
+        ...t.backBtn,
+        width: 44,
+        height: 44,
+        borderRadius: '50%',
+        position: 'relative',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        flexShrink: 0,
+      }}
+    >
+      {/* Sun — shown in dark mode (tap → light) */}
+      <span
+        aria-hidden
+        style={{
+          ...iconBase,
+          opacity: t.isDark ? 1 : 0,
+          transform: t.isDark ? 'rotate(0deg) scale(1)' : 'rotate(100deg) scale(0.35)',
+        }}
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+          stroke={t.accent} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="4.4" />
+          <line x1="12" y1="2.2" x2="12" y2="4.4" />
+          <line x1="12" y1="19.6" x2="12" y2="21.8" />
+          <line x1="4.9" y1="4.9" x2="6.5" y2="6.5" />
+          <line x1="17.5" y1="17.5" x2="19.1" y2="19.1" />
+          <line x1="2.2" y1="12" x2="4.4" y2="12" />
+          <line x1="19.6" y1="12" x2="21.8" y2="12" />
+          <line x1="4.9" y1="19.1" x2="6.5" y2="17.5" />
+          <line x1="17.5" y1="6.5" x2="19.1" y2="4.9" />
+        </svg>
+      </span>
+      {/* Moon — shown in light mode (tap → dark) */}
+      <span
+        aria-hidden
+        style={{
+          ...iconBase,
+          opacity: t.isDark ? 0 : 1,
+          transform: t.isDark ? 'rotate(-100deg) scale(0.35)' : 'rotate(0deg) scale(1)',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke={t.accent} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"
+        >
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      </span>
+    </button>
   );
 }
 

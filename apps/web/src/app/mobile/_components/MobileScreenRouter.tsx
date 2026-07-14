@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMobileStore, type MobileScreen, type NavTab } from './mobile-store';
 import { resolveClientScreen, tabForMobileScreen } from './mobile-client-config';
 import {
+  MODAL_MOBILE_SCREENS,
   stackUnderlayTab,
   type MobileNavTransition,
 } from './mobile-nav-transition';
+import { useEdgeSwipeBack } from '../_hooks/use-edge-swipe-back';
+import { nativeBridge } from '../_lib/native-bridge';
 import { SaChromeShell } from './SaChromeShell';
 import { shouldWrapWithSaChrome } from './sa-chrome';
 import {
@@ -122,6 +125,37 @@ export function MobileScreenRouter() {
     ? stackUnderlayTab(history, activeTab, tabForMobileScreen)
     : activeTab;
 
+  // ── Edge-swipe back (iOS interactive pop gesture) ──────────────────
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const stackLayerRef = useRef<HTMLDivElement | null>(null);
+  const swipeUnderlayRef = useRef<HTMLDivElement | null>(null);
+  /** Previous stack screen revealed beneath the dragged layer (depth ≥ 2 only). */
+  const [swipeUnderlay, setSwipeUnderlay] = useState<MobileScreen | null>(null);
+
+  useEdgeSwipeBack({
+    hostRef,
+    getLayer: () => stackLayerRef.current,
+    getUnderlay: () => swipeUnderlayRef.current,
+    isEnabled: () => {
+      const s = useMobileStore.getState();
+      if (s.history.length <= 1 || s.navTransition !== 'none') return false;
+      const top = s.history[s.history.length - 1]!;
+      return !MODAL_MOBILE_SCREENS.has(top); // modals dismiss downward, not via edge
+    },
+    onSwipeStart: () => {
+      const h = useMobileStore.getState().history;
+      setSwipeUnderlay(h.length > 2 ? resolveClientScreen(h[h.length - 2]!) : null);
+    },
+    onCommit: () => {
+      nativeBridge.haptic('selection');
+      useMobileStore.getState().goBack();
+      // The layer was already dragged off-screen — skip the pop animation replay.
+      useMobileStore.setState({ navTransition: 'none' });
+      setSwipeUnderlay(null);
+    },
+    onCancel: () => setSwipeUnderlay(null),
+  });
+
   const prevVisibleTab = useRef(visibleTab);
   const exitingTab =
     !hasStack && (navTransition === 'tab-left' || navTransition === 'tab-right')
@@ -143,7 +177,7 @@ export function MobileScreenRouter() {
   }, [screen, navTransition]);
 
   return (
-    <div className="mobile-screen-host">
+    <div className="mobile-screen-host" ref={hostRef}>
       <div className="mobile-tab-stage" aria-hidden={hasStack}>
         {TAB_CONFIG.map(({ id, screen: tabScreen }) => (
           <div
@@ -157,8 +191,21 @@ export function MobileScreenRouter() {
         ))}
       </div>
 
+      {/* Revealed beneath the dragged layer during an edge-swipe (depth ≥ 2). */}
+      {hasStack && swipeUnderlay && (
+        <div
+          ref={swipeUnderlayRef}
+          className="mobile-stack-layer"
+          style={{ zIndex: 23, boxShadow: 'none' }}
+          aria-hidden
+          inert
+        >
+          {renderScreen(swipeUnderlay)}
+        </div>
+      )}
+
       {hasStack && stackScreen && (
-        <div key={stackScreen} className={stackLayerClass(navTransition)}>
+        <div key={stackScreen} ref={stackLayerRef} className={stackLayerClass(navTransition)}>
           {renderScreen(stackScreen)}
         </div>
       )}
