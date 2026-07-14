@@ -48,7 +48,10 @@ const CSS = `
     -webkit-appearance: none; appearance: none;
     font-family: inherit; letter-spacing: inherit;
   }
-  .sa-mobile button:active { opacity: 0.75; transform: scale(0.975); }
+  .sa-mobile button {
+    transition: transform 160ms cubic-bezier(0.22,1,0.36,1), opacity 160ms ease;
+  }
+  .sa-mobile button:active { opacity: 0.82; transform: scale(0.97); }
   .sa-mobile input, .sa-mobile textarea { font-family: inherit; }
   .sa-mobile input::placeholder, .sa-mobile textarea::placeholder {
     color: rgba(140,140,160,0.4);
