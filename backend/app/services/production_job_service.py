@@ -594,8 +594,36 @@ async def requeue_exhausted(
             "production_jobs.requeue_exhausted",
             mission_id=str(mission_id),
             requeued=len(rows),
+            gallery_theme_retry=include_gallery_theme_retry,
         )
+    if include_gallery_theme_retry and rows:
+        await _clear_gallery_urls_from_job_payloads(mission_id, [str(r[0]) for r in rows])
     return len(rows)
+
+
+async def _clear_gallery_urls_from_job_payloads(
+    mission_id: uuid.UUID,
+    job_ids: list[str],
+) -> None:
+    """Drop stale factory gallery picks so the next drain re-runs batch assignment."""
+    if not job_ids:
+        return
+    factory = _get_session_factory()
+    async with factory() as db:
+        await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET payload = COALESCE(payload, '{}'::jsonb)
+                    - 'galleryPhotoUrl' - 'gallery_photo_url' - 'galleryMatchScore',
+                    updated_at = now()
+                WHERE mission_id = CAST(:mission_id AS UUID)
+                  AND id = ANY(CAST(:ids AS UUID[]))
+                """
+            ),
+            {"mission_id": str(mission_id), "ids": job_ids},
+        )
+        await db.commit()
 
 
 async def requeue_failed(

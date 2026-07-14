@@ -1287,11 +1287,8 @@ export function preferSubjectAlignedCandidates(
     return candidateUrls;
   }
 
-  const resolveMeta = (url: string): GalleryPhotoMeta | undefined => {
-    const base = normalizeGalleryUrl(url);
-    return galleryAnalysis[base]
-      ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
-  };
+  const resolveMeta = (url: string): GalleryPhotoMeta | undefined =>
+    resolveGalleryPhotoMeta(url, galleryAnalysis, candidateUrls);
 
   const exact = candidateUrls.filter((url) => {
     const meta = resolveMeta(url);
