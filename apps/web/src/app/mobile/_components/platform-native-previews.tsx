@@ -670,24 +670,19 @@ function IgFeedReelMediaStage({
         background: chrome.media,
         position: 'relative',
         overflow: 'hidden',
+        cursor: onOpenFullscreen ? 'pointer' : undefined,
       }}
+      onClick={onOpenFullscreen ? (e) => { e.stopPropagation(); onOpenFullscreen(); } : undefined}
+      onKeyDown={onOpenFullscreen ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenFullscreen();
+        }
+      } : undefined}
+      role={onOpenFullscreen ? 'button' : undefined}
+      tabIndex={onOpenFullscreen ? 0 : undefined}
+      aria-label={onOpenFullscreen ? 'Reels tam ekran izle' : undefined}
     >
-      {onOpenFullscreen && (
-        <button
-          type="button"
-          aria-label="Reels tam ekran izle"
-          onClick={onOpenFullscreen}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 1,
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-        />
-      )}
 
       {ambientSrc && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -724,6 +719,7 @@ function IgFeedReelMediaStage({
             objectFit: 'cover',
             objectPosition: 'center',
             display: 'block',
+            pointerEvents: 'none',
           }}
         />
       ) : posterUrl ? (
@@ -740,6 +736,7 @@ function IgFeedReelMediaStage({
             objectFit: 'cover',
             objectPosition: 'center',
             display: 'block',
+            pointerEvents: 'none',
           }}
         />
       ) : (

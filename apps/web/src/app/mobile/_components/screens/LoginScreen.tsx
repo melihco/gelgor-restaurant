@@ -7,6 +7,7 @@ import { setSessionToken } from '@/lib/session-token';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { clearSessionScopedQueries, invalidateTenantBrandQueries } from '@/lib/query-client-bridge';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
+import { OnboardingChromeBackdrop } from '../OnboardingChrome';
 
 interface LoginScreenProps {
   onSignup?: () => void;
@@ -98,7 +99,7 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
 
   return (
     <div className="onboarding-shell onboarding-shell--login">
-      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingChromeBackdrop />
 
       <main className="onboarding-main onboarding-login-main">
         <div className="login-content">

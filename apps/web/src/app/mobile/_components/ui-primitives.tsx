@@ -146,9 +146,6 @@ export function MobileStackHeader({
         WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         paddingTop: 'env(safe-area-inset-top, 0px)',
         borderBottom: 'none',
-        boxShadow: t.isDark
-          ? 'inset 0 -0.5px 0 rgba(176,196,212,0.16)'
-          : 'inset 0 -0.5px 0 rgba(30,63,85,0.14)',
       }}
     >
       <div

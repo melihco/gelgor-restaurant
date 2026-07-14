@@ -47,8 +47,6 @@ const CSS = `
   .sa-mobile button {
     -webkit-appearance: none; appearance: none;
     font-family: inherit; letter-spacing: inherit;
-  }
-  .sa-mobile button {
     transition: transform 160ms cubic-bezier(0.22,1,0.36,1), opacity 160ms ease;
   }
   .sa-mobile button:active { opacity: 0.82; transform: scale(0.97); }
@@ -314,9 +312,38 @@ const CSS = `
     min-height: 100dvh;
     height: 100dvh;
     overflow: hidden;
-    background: #0A0A0E;
+    background: #07090F;
     font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
     color: #F2F2F6;
+  }
+  .sa-mobile .onboarding-chrome-mark {
+    position: absolute;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    right: max(-8px, calc(env(safe-area-inset-right, 0px) - 8px));
+    width: min(180px, 48vw);
+    height: min(112px, 30vw);
+    opacity: 0.05;
+    pointer-events: none;
+    z-index: 0;
+    background: url('/smartagency-mark.png') right top / contain no-repeat;
+    filter: saturate(0.85) contrast(1.05);
+  }
+  .sa-mobile .onboarding-chrome-hairline {
+    position: absolute;
+    top: 0;
+    left: 12%;
+    right: 12%;
+    height: 1px;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(138,171,189,0.32) 38%,
+      rgba(200,168,106,0.18) 50%,
+      rgba(138,171,189,0.32) 62%,
+      transparent 100%
+    );
   }
   .sa-mobile .onboarding-ambient {
     position: absolute;
@@ -575,13 +602,15 @@ const CSS = `
     padding: 14px 16px;
     border: none;
     border-radius: 14px;
-    background: linear-gradient(135deg, #4D7088, #5A82A0);
+    background: linear-gradient(160deg, #6A93AC 0%, #4D7088 45%, #2A4A60 100%);
     color: #fff;
     font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.02em;
     cursor: pointer;
-    box-shadow: 0 6px 28px rgba(77,112,136,0.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.22),
+      0 6px 28px rgba(77,112,136,0.4);
     transition: background 160ms ease, transform 100ms ease, box-shadow 160ms ease;
   }
   .sa-mobile .onboarding-cta:active {
@@ -763,9 +792,9 @@ const CSS = `
     color: rgba(255,255,255,0.3);
   }
   .sa-mobile .onboarding-setup-step.is-done .onboarding-setup-step-dot {
-    background: rgba(52,211,153,0.15);
-    border-color: rgba(52,211,153,0.4);
-    color: #34D399;
+    background: rgba(138,171,189,0.14);
+    border-color: rgba(138,171,189,0.35);
+    color: #8AABBD;
   }
   .sa-mobile .onboarding-setup-step.is-active .onboarding-setup-step-dot {
     background: rgba(77,112,136,0.16);
@@ -818,8 +847,8 @@ const CSS = `
   }
   .sa-mobile .onboarding-ambient--success {
     background:
-      radial-gradient(ellipse 85% 50% at 50% -8%, rgba(77,112,136,0.18) 0%, transparent 58%),
-      radial-gradient(ellipse 55% 38% at 50% 18%, rgba(52,211,153,0.12) 0%, transparent 62%);
+      radial-gradient(ellipse 85% 50% at 50% -8%, rgba(77,112,136,0.20) 0%, transparent 58%),
+      radial-gradient(ellipse 55% 38% at 50% 18%, rgba(200,168,106,0.08) 0%, transparent 62%);
   }
   .sa-mobile .onboarding-welcome-body {
     position: relative;
@@ -841,12 +870,14 @@ const CSS = `
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 32px;
-    font-weight: 700;
-    color: #34D399;
-    background: linear-gradient(180deg, rgba(52,211,153,0.14), rgba(52,211,153,0.07));
-    border: 1px solid rgba(52,211,153,0.35);
-    box-shadow: 0 0 40px rgba(52,211,153,0.22);
+    background: linear-gradient(165deg, rgba(19,26,36,0.94) 0%, rgba(12,16,24,0.88) 100%);
+    border: 1px solid rgba(138,171,189,0.35);
+    box-shadow:
+      0 0 32px rgba(77,112,136,0.28),
+      inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .sa-mobile .onboarding-success-ring svg {
+    display: block;
   }
   .sa-mobile .onboarding-brand-card {
     width: 100%;
@@ -1145,6 +1176,88 @@ const CSS = `
   .sa-mobile .screen-enter { animation: fadeUp 300ms cubic-bezier(0.22,1,0.36,1) both; }
   .sa-mobile .nav-enter   { animation: navPop 360ms cubic-bezier(0.34,1.2,0.64,1) both; }
 
+  /* ── SA Chrome design language (logo-derived) ─────────────────────────
+   * The A mark is machined chrome: bright polished edges over cold steel.
+   * These utilities echo that — gradient hairlines, metallic text, glow. */
+  .sa-mobile .sa-chrome-header {
+    position: relative;
+  }
+  .sa-mobile .sa-chrome-header::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+      transparent 4%,
+      rgba(157,190,206,0.20) 28%,
+      rgba(238,243,247,0.30) 50%,
+      rgba(157,190,206,0.20) 72%,
+      transparent 96%);
+    pointer-events: none;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-header::after,
+  .sa-mobile-frame[data-theme="light"] .sa-chrome-header::after {
+    background: linear-gradient(90deg,
+      transparent 4%,
+      rgba(30,63,85,0.14) 28%,
+      rgba(30,63,85,0.22) 50%,
+      rgba(30,63,85,0.14) 72%,
+      transparent 96%);
+  }
+
+  /* Metallic wordmark-style text — for hero numbers & display titles */
+  .sa-mobile .sa-chrome-text {
+    background: linear-gradient(180deg, #F4F7FA 0%, #C6D6E2 46%, #8FAEC2 62%, #DCE7EF 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-text,
+  .sa-mobile-frame[data-theme="light"] .sa-chrome-text {
+    background: linear-gradient(180deg, #2E4B60 0%, #1E3F55 48%, #4D7088 66%, #16303F 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* Chrome divider hairline — replaces flat separators on hero sections */
+  .sa-mobile .sa-chrome-divider {
+    height: 1px;
+    border: none;
+    margin: 0;
+    background: linear-gradient(90deg,
+      transparent,
+      rgba(157,190,206,0.22) 30%,
+      rgba(238,243,247,0.28) 50%,
+      rgba(157,190,206,0.22) 70%,
+      transparent);
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-divider,
+  .sa-mobile-frame[data-theme="light"] .sa-chrome-divider {
+    background: linear-gradient(90deg,
+      transparent,
+      rgba(30,63,85,0.14) 30%,
+      rgba(30,63,85,0.20) 50%,
+      rgba(30,63,85,0.14) 70%,
+      transparent);
+  }
+
+  /* Premium list rows / tiles — machined press feedback */
+  .sa-mobile .sa-press-row {
+    transition: transform 180ms cubic-bezier(0.22,1,0.36,1), background 180ms ease;
+  }
+  .sa-mobile .sa-press-row:active {
+    opacity: 1;
+    transform: scale(0.985);
+    background: rgba(157,190,206,0.06) !important;
+  }
+  .sa-mobile[data-theme="light"] .sa-press-row:active,
+  .sa-mobile-frame[data-theme="light"] .sa-press-row:active {
+    background: rgba(30,63,85,0.05) !important;
+  }
+
   /* ── Native screen transitions (tab + stack) ── */
   .sa-mobile .mobile-screen-host {
     position: relative;
@@ -1216,7 +1329,7 @@ const CSS = `
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
-    background: #07090F;
+    background: var(--sa-mobile-bg, #05070C);
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.28);
     will-change: transform, opacity;
   }
@@ -1600,6 +1713,39 @@ const CSS = `
     transition: transform 160ms ease;
   }
 
+  .sa-feed-share-channels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: flex-start;
+  }
+  .sa-feed-share-channel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 72px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 4px 0;
+    color: inherit;
+  }
+  .sa-feed-share-channel-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .sa-feed-share-channel:active {
+    transform: scale(0.94);
+    transition: transform 120ms ease;
+  }
+
   /* Reels fullscreen snap pager */
   .sa-reels-root {
     position: fixed;
@@ -1686,16 +1832,35 @@ const CSS = `
 
   /* Story viewer — full-bleed on phone WebView */
   @media (max-width: 767px) {
+    .ig-story-viewer-backdrop {
+      align-items: stretch;
+      justify-content: stretch;
+    }
     .ig-story-viewer-column {
       width: 100%;
-      max-height: 100dvh;
+      max-width: none;
+      max-height: none;
       height: 100dvh;
+      flex: 1 1 auto;
+      position: relative;
     }
     .ig-story-viewer-stage {
-      flex: 1 1 auto;
+      position: absolute;
+      inset: 0;
+      flex: none;
       aspect-ratio: auto;
       height: auto;
       min-height: 0;
+      width: 100%;
+    }
+    .ig-story-viewer-dock {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      background: linear-gradient(to top, rgba(8,8,10,0.98) 0%, rgba(8,8,10,0.88) 70%, transparent 100%);
+      border-top: none;
     }
   }
   .ig-story-viewer-backdrop {
@@ -1706,7 +1871,7 @@ const CSS = `
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.96);
+    background: #000;
     overflow: hidden;
   }
   .ig-story-viewer-column {

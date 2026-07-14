@@ -20,6 +20,14 @@ import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { StoryNavigation } from '../StoryNavigation';
 import {
+  OnboardingChromeBackdrop,
+  OnboardingPreviewIcon,
+  OnboardingStatusPill,
+  OnboardingStepDot,
+  OnboardingSuccessMark,
+} from '../OnboardingChrome';
+import { SA_ONBOARDING } from '../sa-chrome';
+import {
   TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS,
   buildUserConfirmedTypographyPatch,
   isTypographyDesignConfirmed,
@@ -143,7 +151,7 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
 
   return (
     <div className="onboarding-shell">
-      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingChromeBackdrop />
 
       <header className="onboarding-header">
         <OnboardingLogoMark />
@@ -321,7 +329,7 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
 
   return (
     <div className="onboarding-shell">
-      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingChromeBackdrop />
 
       <div className="onboarding-analyze-head">
         <OnboardingLogoMark compact />
@@ -362,19 +370,12 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
             opacity: step.done ? 1 : step.active ? 1 : 0.35,
             transition: 'opacity 300ms',
           }}>
-            {/* State indicator */}
-            <div style={{ flexShrink: 0, marginTop: 2, width: 20, height: 20, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: step.done ? 'rgba(52,211,153,0.15)' : step.active ? 'rgba(77,112,136,0.14)' : 'rgba(255,255,255,0.05)', border: `1px solid ${step.done ? 'rgba(52,211,153,0.35)' : step.active ? 'rgba(77,112,136,0.4)' : 'rgba(255,255,255,0.08)'}` }}>
-              {step.done ? (
-                <span style={{ fontSize: 10, color: '#34D399', fontWeight: 700 }}>✓</span>
-              ) : step.active ? (
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#4D7088', animation: 'breathe 1s ease-in-out infinite' }} />
-              ) : (
-                <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }} />
-              )}
-            </div>
+            <OnboardingStepDot
+              state={step.done ? 'done' : step.active ? 'active' : 'idle'}
+            />
 
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: step.active ? 700 : 500, color: step.done ? '#34D399' : step.active ? '#F4F4F8' : 'rgba(148,163,184,0.5)', marginBottom: 2, transition: 'color 300ms' }}>
+              <div style={{ fontSize: 14, fontWeight: step.active ? 700 : 500, color: step.done ? SA_ONBOARDING.doneBright : step.active ? '#F4F4F8' : 'rgba(148,163,184,0.5)', marginBottom: 2, transition: 'color 300ms' }}>
                 {step.label}
               </div>
               {(step.done || step.active) && (
@@ -420,20 +421,20 @@ function ResultsStep({ result, url, ig, onNext }: {
   const fallbackCards = !hasReal ? [
     {
       label: 'Marka Analizi',
-      icon: '✦',
-      color: '#9DBECE',
+      icon: 'brand' as const,
+      color: SA_ONBOARDING.doneBright,
       desc: `${url ? domain : (ig ? `@${ig}` : 'Markanız')} analiz edildi. Tam marka profili kayıt sonrası oluşturulacak.`,
     },
     {
       label: 'İçerik İhtiyaçları',
-      icon: '◈',
-      color: '#60A5FA',
+      icon: 'content' as const,
+      color: '#6A8EA0',
       desc: 'AI ekibiniz içerik stratejinizi kayıt tamamlandığında otomatik hazırlayacak.',
     },
     {
       label: 'AI Ekibi Hazır',
-      icon: '⚡',
-      color: '#34D399',
+      icon: 'team' as const,
+      color: SA_ONBOARDING.done,
       desc: '6 ajan markanız için çalışmaya başlayacak: içerik, tasarım, analiz ve daha fazlası.',
     },
   ] : [];
@@ -441,16 +442,13 @@ function ResultsStep({ result, url, ig, onNext }: {
   return (
     <div className="onboarding-shell" style={{ overflow: 'hidden' }}>
 
-      <div className="onboarding-ambient onboarding-ambient--success" aria-hidden />
+      <OnboardingChromeBackdrop success />
 
       <div className="onboarding-results-head">
         <OnboardingLogoMark compact />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#34D399', boxShadow: '0 0 10px rgba(52,211,153,0.7)' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#34D399', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            {hasReal ? 'Analiz Tamamlandı' : 'Ön Tarama Tamamlandı'}
-          </span>
-        </div>
+        <OnboardingStatusPill>
+          {hasReal ? 'Analiz Tamamlandı' : 'Ön Tarama Tamamlandı'}
+        </OnboardingStatusPill>
 
         <h1 style={{ fontSize: 28, fontWeight: 800, color: '#F4F4F8', letterSpacing: '-0.03em', lineHeight: 1.15, marginBottom: 6 }}>
           {brandName}
@@ -463,7 +461,7 @@ function ResultsStep({ result, url, ig, onNext }: {
           )}
           {location && (
             <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.06)', color: 'rgba(148,163,184,0.65)' }}>
-              📍 {location}
+              {location}
             </span>
           )}
           {ig && (
@@ -502,8 +500,8 @@ function ResultsStep({ result, url, ig, onNext }: {
 
         {/* Pre-auth info card */}
         {!hasReal && (
-          <div style={{ ...cardStyle, marginBottom: 12, background: 'rgba(77,112,136,0.08)', border: '0.5px solid rgba(77,112,136,0.22)', display: 'flex', gap: 12 }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>✦</span>
+          <div style={{ ...cardStyle, marginBottom: 12, background: 'rgba(77,112,136,0.08)', border: '0.5px solid rgba(77,112,136,0.22)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <OnboardingPreviewIcon name="info" />
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#9DBECE', marginBottom: 4 }}>Tam analiz için kayıt gerekli</div>
               <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.55)', lineHeight: 1.55 }}>
@@ -517,13 +515,13 @@ function ResultsStep({ result, url, ig, onNext }: {
         <ResultCard label="Tespit Edilen Kaynak">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 14 }}>🌐</span>
+              <OnboardingPreviewIcon name="globe" />
               <span style={{ fontSize: 14, fontWeight: 600, color: '#F4F4F8' }}>{domain}</span>
-              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(52,211,153,0.12)', color: '#34D399', fontWeight: 600 }}>Tarandı</span>
+              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: SA_ONBOARDING.doneBg, color: SA_ONBOARDING.doneBright, fontWeight: 600 }}>Tarandı</span>
             </div>
             {ig && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 14 }}>📸</span>
+                <OnboardingPreviewIcon name="camera" />
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#F4F4F8' }}>@{ig}</span>
                 <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(157,190,206,0.12)', color: '#9DBECE', fontWeight: 600 }}>Instagram</span>
               </div>
@@ -544,7 +542,7 @@ function ResultsStep({ result, url, ig, onNext }: {
           <ResultCard label="Hedef Kitle">
             {audience.map((a, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, marginBottom: i < audience.length - 1 ? 7 : 0 }}>
-                <span style={{ color: '#34D399', flexShrink: 0, marginTop: 2, fontSize: 10 }}>●</span>
+                <span style={{ color: SA_ONBOARDING.done, flexShrink: 0, marginTop: 2, fontSize: 10 }}>●</span>
                 <span style={{ fontSize: 13, color: 'rgba(226,232,240,0.72)', lineHeight: 1.5 }}>{a}</span>
               </div>
             ))}
@@ -589,9 +587,7 @@ function ResultsStep({ result, url, ig, onNext }: {
         {/* Fallback preview cards (when no real API data) */}
         {fallbackCards.map((card, i) => (
           <div key={i} style={{ ...cardStyle, marginBottom: 10, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: `${card.color}14`, border: `0.5px solid ${card.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: card.color, flexShrink: 0 }}>
-              {card.icon}
-            </div>
+            <OnboardingPreviewIcon name={card.icon} color={card.color} />
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#F4F4F8', marginBottom: 4 }}>{card.label}</div>
               <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.55)', lineHeight: 1.5 }}>{card.desc}</div>
@@ -600,8 +596,8 @@ function ResultsStep({ result, url, ig, onNext }: {
         ))}
 
         {/* What happens next teaser */}
-        <div style={{ ...cardStyle, background: 'rgba(52,211,153,0.05)', border: '0.5px solid rgba(52,211,153,0.15)', marginTop: 4 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#34D399', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>Kayıt Sonrası</div>
+        <div style={{ ...cardStyle, background: SA_ONBOARDING.warmBg, border: `0.5px solid ${SA_ONBOARDING.doneBorder}`, marginTop: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: SA_ONBOARDING.doneBright, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>Kayıt Sonrası</div>
           {[
             'Tam marka analizini görün',
             'AI ekibinizi aktive edin',
@@ -609,7 +605,7 @@ function ResultsStep({ result, url, ig, onNext }: {
             'Markaya özel şablonlar hazırlanır',
           ].map((item, i) => (
             <div key={i} style={{ fontSize: 13, color: 'rgba(226,232,240,0.65)', marginBottom: i < 3 ? 7 : 0, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <span style={{ color: '#9DBECE', flexShrink: 0 }}>✦</span>
+              <span style={{ color: SA_ONBOARDING.done, flexShrink: 0, fontSize: 10, marginTop: 2 }}>●</span>
               <span>{item}</span>
             </div>
           ))}
@@ -678,7 +674,7 @@ function SetupProgressOverlay({ brandName, status }: { brandName: string; status
 
   return (
     <div className="onboarding-shell">
-      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingChromeBackdrop />
       <div className="onboarding-setup">
         <OnboardingLogoMark compact />
 
@@ -713,9 +709,7 @@ function SetupProgressOverlay({ brandName, status }: { brandName: string; status
             const active = i === phase;
             return (
               <div key={p.id} className={`onboarding-setup-step${done ? ' is-done' : ''}${active ? ' is-active' : ''}`}>
-                <div className="onboarding-setup-step-dot">
-                  {done ? '✓' : active ? <span className="onboarding-setup-spinner" /> : null}
-                </div>
+                <OnboardingStepDot state={done ? 'done' : active ? 'active' : 'idle'} />
                 <div className="onboarding-setup-step-text">
                   <div className="onboarding-setup-step-label">{p.label}</div>
                   {active && <div className="onboarding-setup-step-detail">{p.detail}</div>}
@@ -1070,7 +1064,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
 
   return (
     <div className="onboarding-shell">
-      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingChromeBackdrop />
       <OnboardingLogoHeader compact />
 
       <main className="onboarding-main onboarding-signup-main">
@@ -1251,7 +1245,7 @@ function TypographyConfirmStep({
   if (loading) {
     return (
       <div className="onboarding-shell">
-        <div className="onboarding-ambient" aria-hidden />
+        <OnboardingChromeBackdrop />
         <main className="onboarding-welcome-body">
           <div className="onboarding-setup-shimmer" aria-hidden />
           <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Tipografi stiliniz</h1>
@@ -1278,7 +1272,7 @@ function TypographyConfirmStep({
 
   return (
     <div className="onboarding-shell">
-      <div className="onboarding-ambient" aria-hidden />
+      <OnboardingChromeBackdrop />
       <OnboardingLogoHeader compact />
       <main className="onboarding-welcome-body" style={{ paddingBottom: 24 }}>
         <h1 className="onboarding-title" style={{ marginBottom: 8 }}>Yazı stilinizi seçin</h1>
@@ -1396,7 +1390,7 @@ function TemplatesShowcaseStep({
   if (loading) {
     return (
       <div className="onboarding-shell">
-        <div className="onboarding-ambient" aria-hidden />
+        <OnboardingChromeBackdrop />
         <main className="onboarding-welcome-body">
           <div className="onboarding-setup-shimmer" aria-hidden />
           <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Tasarımlarınız hazırlanıyor</h1>
@@ -1425,9 +1419,9 @@ function TemplatesShowcaseStep({
     >
       {isIntro ? (
         <div className="onboarding-shell">
-          <div className="onboarding-ambient" aria-hidden />
+          <OnboardingChromeBackdrop />
           <main className="onboarding-welcome-body">
-            <div className="onboarding-success-ring" aria-hidden>✦</div>
+            <OnboardingSuccessMark icon="brand" />
             <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
               Markanı tanıdık
             </h1>
@@ -1510,11 +1504,11 @@ function WelcomeStep({
 
   return (
     <div className="onboarding-shell onboarding-shell--welcome">
-      <div className="onboarding-ambient onboarding-ambient--success" aria-hidden />
+      <OnboardingChromeBackdrop success />
       <OnboardingLogoHeader compact />
 
       <main className="onboarding-welcome-body">
-        <div className="onboarding-success-ring" aria-hidden>✓</div>
+        <OnboardingSuccessMark />
 
         <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
           {brandName} hazır!

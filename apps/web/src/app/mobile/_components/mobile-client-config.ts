@@ -18,6 +18,14 @@ export function getMobilePortalRoot(): HTMLElement {
   return document.querySelector<HTMLElement>('.sa-mobile-frame') ?? document.body;
 }
 
+/** Story / Reels tam ekran — viewport'a sabitlenir (phone frame dışına taşar). */
+export function getImmersivePortalRoot(): HTMLElement {
+  if (typeof document === 'undefined') {
+    throw new Error('getImmersivePortalRoot requires document');
+  }
+  return document.body;
+}
+
 /** Maliyet, API dökümü ve operasyon araçları — ajans / geliştirme. */
 export function isDebugUiMode(): boolean {
   return (

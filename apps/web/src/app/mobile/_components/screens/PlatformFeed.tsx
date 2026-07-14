@@ -93,7 +93,7 @@ import {
 } from '@/lib/gallery-photo-matcher';
 import { VisualReviewBadge } from '../VisualReviewSheet';
 import { useTenantBrandContext } from '../TenantBrandProvider';
-import { getMobilePortalRoot, isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
+import { getMobilePortalRoot, getImmersivePortalRoot, isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
 import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
 import { FeedLoadingSkeleton } from '../FeedLoadingSkeleton';
 import { MobileBrandNavbar, FeedNavbarActions, MobileNavMenuButton } from '../MobileBrandNavbar';
@@ -1879,6 +1879,7 @@ function PlatformFeedInner() {
   const [sheetTargetId, setSheetTargetId] = useState<string | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareMode, setShareMode] = useState<'content' | 'referral'>('content');
   const [seenStoryIds, setSeenStoryIds] = useState<Set<string>>(() => new Set());
   const [storyPaused, setStoryPaused] = useState(false);
   const storyHoldRef = useRef(false);
@@ -2723,6 +2724,7 @@ function PlatformFeedInner() {
         <div style={{ position: 'sticky', top: 0, zIndex: 30 }}>
           <MobileBrandNavbar
             dark={t.isDark}
+            logoCentered
             rightSlot={(
               <FlowHeaderActions
                 showApproved={showApproved}
@@ -2730,8 +2732,11 @@ function PlatformFeedInner() {
                 approvedCount={approvedCount}
                 onShowPending={() => setShowApproved(false)}
                 onShowPublished={() => { if (approvedCount > 0) setShowApproved(true); }}
+                onShareReferral={() => {
+                  setShareMode('referral');
+                  setShareOpen(true);
+                }}
                 dark={t.isDark}
-                notificationCount={pendingCount > 0 ? pendingCount : 0}
               />
             )}
           />
@@ -3739,7 +3744,7 @@ function PlatformFeedInner() {
             </div>
             </div>
           </div>,
-          getMobilePortalRoot()
+          getImmersivePortalRoot()
         )
       )}
 
@@ -3768,6 +3773,7 @@ function PlatformFeedInner() {
           }}
           onOpenShare={(id) => {
             setSheetTargetId(id);
+            setShareMode('content');
             setShareOpen(true);
           }}
           sheetOpen={commentsOpen || shareOpen}
@@ -3787,7 +3793,11 @@ function PlatformFeedInner() {
       <ShareBottomSheet
         open={shareOpen}
         onClose={() => setShareOpen(false)}
-        shareText={sheetTargetId ? 'Akış içeriği' : undefined}
+        mode={shareMode}
+        shareText={sheetTargetId && shareMode === 'content' ? 'Akış içeriği' : undefined}
+        referralContext={{
+          brandName: tenantBrand.brandName || feedHandle.replace('@', ''),
+        }}
       />
 
       {/* Feed */}
@@ -3978,6 +3988,7 @@ function PlatformFeedInner() {
                     }}
                     onOpenShare={() => {
                       setSheetTargetId(artifact.id);
+                      setShareMode('content');
                       setShareOpen(true);
                     }}
                     onOpenReelFullscreen={

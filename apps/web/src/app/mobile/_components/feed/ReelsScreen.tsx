@@ -13,7 +13,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { OutputArtifact } from '@/types';
-import { getMobilePortalRoot } from '../mobile-client-config';
+import { getImmersivePortalRoot } from '../mobile-client-config';
 import { artifactToNativeContent, type NativeContentData } from '../platform-native-previews';
 import { DoubleTapHeart } from './DoubleTapHeart';
 import { useMediaPlayback } from './media-playback-context';
@@ -572,6 +572,6 @@ export function ReelsScreen({
         )}
       </div>
     </div>,
-    getMobilePortalRoot(),
+    getImmersivePortalRoot(),
   );
 }

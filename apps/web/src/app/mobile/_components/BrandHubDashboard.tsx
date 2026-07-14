@@ -4,7 +4,7 @@ import React from 'react';
 import type { T } from './theme-context';
 import { PRODUCTION_PROFILE_THRESHOLD } from '@/lib/brand-readiness';
 import { resolveGalleryImageSrc } from '@/lib/gallery-display-url';
-import { SA_STUDIO_ACCENTS } from './sa-chrome';
+import { SA_CHROME, SA_STUDIO_ACCENTS } from './sa-chrome';
 
 type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 
@@ -223,7 +223,7 @@ export function BrandHubDashboard({
   statusBanners,
 }: BrandHubDashboardProps) {
   const readinessGood = readinessScore >= 80;
-  const accentGlow = readinessGood ? 'rgba(52,211,153,0.45)' : 'rgba(245,158,11,0.4)';
+  const accentGlow = readinessGood ? 'rgba(138,171,189,0.45)' : 'rgba(245,158,11,0.4)';
 
   return (
     <div
@@ -307,7 +307,7 @@ export function BrandHubDashboard({
               <div style={{ position: 'relative', width: 54, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <ReadinessRing
                   score={readinessScore}
-                  accent={readinessGood ? '#34D399' : '#F59E0B'}
+                  accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
                   track={t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'}
                 />
                 <span style={{

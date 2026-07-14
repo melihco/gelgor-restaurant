@@ -33,3 +33,17 @@ export const SA_STUDIO_ACCENTS = {
   chatbot: '#9DBECE',
   channels: SA_CHROME.steel500,
 } as const;
+
+/** Login + onboarding — done/success uses steel chrome, not emerald green. */
+export const SA_ONBOARDING = {
+  done: SA_CHROME.steel300,
+  doneBright: '#9DBECE',
+  doneBg: 'rgba(138,171,189,0.14)',
+  doneBorder: 'rgba(138,171,189,0.35)',
+  active: SA_CHROME.steel500,
+  activeBg: 'rgba(77,112,136,0.14)',
+  activeBorder: 'rgba(77,112,136,0.4)',
+  label: SA_CHROME.steel300,
+  warm: SA_CHROME.warmGold,
+  warmBg: SA_CHROME.warmGoldDim,
+} as const;

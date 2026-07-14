@@ -262,6 +262,9 @@ export function MobileNav() {
         WebkitBackdropFilter: 'blur(48px) saturate(180%)',
         borderRadius: 29,
         border: `0.5px solid ${t.navBorder}`,
+        boxShadow: t.isDark
+          ? 'inset 0 1px 0 rgba(238,243,247,0.07), 0 12px 36px rgba(0,0,0,0.45)'
+          : 'inset 0 1px 0 rgba(255,255,255,0.85), 0 12px 36px rgba(15,37,53,0.14)',
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'space-between',

@@ -50,6 +50,7 @@ export function MobileBrandNavbar({
   subtitle,
   showLogo = true,
   showMenuButton = false,
+  logoCentered = false,
   rightSlot,
   onMenu,
   className,
@@ -63,6 +64,8 @@ export function MobileBrandNavbar({
   showBrandName?: boolean;
   /** Sol üst menü — varsayılan kapalı; Menü alt navbar'da. */
   showMenuButton?: boolean;
+  /** Grid layout — logo optically centered regardless of right actions width. */
+  logoCentered?: boolean;
   rightSlot?: ReactNode;
   onMenu?: () => void;
   className?: string;
@@ -87,13 +90,16 @@ export function MobileBrandNavbar({
       }}
     >
       <div style={{
-        display: 'flex',
+        display: logoCentered ? 'grid' : 'flex',
+        gridTemplateColumns: logoCentered ? '1fr auto 1fr' : undefined,
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: logoCentered ? undefined : 'space-between',
         gap: 8,
         minHeight: 44,
       }}>
-        {showMenuButton ? (
+        {logoCentered ? (
+          <div style={{ width: 44, minHeight: 44 }} aria-hidden />
+        ) : showMenuButton ? (
           <MobileNavMenuButton
             onClick={onMenu ?? (() => navigate('more'))}
             dark={dark}
@@ -103,12 +109,13 @@ export function MobileBrandNavbar({
         )}
 
         <div style={{
-          flex: 1,
+          flex: logoCentered ? undefined : 1,
           minWidth: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           gap: 10,
+          justifySelf: logoCentered ? 'center' : undefined,
         }}>
           {showLogo && !hasCustomTitle && (
             <button
@@ -168,12 +175,13 @@ export function MobileBrandNavbar({
         </div>
 
         <div style={{
-          minWidth: SLOT_W,
+          minWidth: logoCentered ? undefined : SLOT_W,
           minHeight: SLOT_W,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-end',
           flexShrink: 0,
+          justifySelf: logoCentered ? 'end' : undefined,
         }}>
           {rightSlot}
         </div>
@@ -182,13 +190,14 @@ export function MobileBrandNavbar({
   );
 }
 
-/** Feed header actions — pending vs published toggle. */
+/** Feed header actions — pending toggle + app referral share. */
 export function FeedNavbarActions({
   showApproved,
   pendingCount,
   approvedCount,
   onShowPending,
   onShowPublished,
+  onShareReferral,
   dark = true,
 }: {
   showApproved: boolean;
@@ -196,6 +205,7 @@ export function FeedNavbarActions({
   approvedCount: number;
   onShowPending: () => void;
   onShowPublished: () => void;
+  onShareReferral: () => void;
   dark?: boolean;
 }) {
   const iconColor = dark ? '#fff' : '#1a1a22';
@@ -207,28 +217,46 @@ export function FeedNavbarActions({
     cursor: 'pointer',
     position: 'relative',
     opacity: active ? 1 : 0.55,
+    minWidth: 44,
+    minHeight: 44,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   });
 
+  const toggleFeedView = () => {
+    if (showApproved) {
+      onShowPending();
+      return;
+    }
+    if (approvedCount > 0) onShowPublished();
+  };
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-      <button type="button" aria-label="Onay bekleyen içerikler" onClick={onShowPending} style={iconBtn(!showApproved)}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button
+        type="button"
+        aria-label={showApproved ? 'Onay bekleyen içeriklere dön' : 'Onay bekleyen içerikler'}
+        aria-pressed={!showApproved}
+        onClick={toggleFeedView}
+        style={iconBtn(!showApproved)}
+      >
         <svg width="22" height="22" viewBox="0 0 24 24" fill={!showApproved ? iconColor : 'none'}
           stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
         </svg>
         {pendingCount > 0 && !showApproved && (
           <span style={{
-            position: 'absolute', top: 2, right: 2, width: 7, height: 7, borderRadius: '50%',
+            position: 'absolute', top: 6, right: 6, width: 7, height: 7, borderRadius: '50%',
             background: '#E1306C', border: `1.5px solid ${badgeBorder}`,
           }} />
         )}
       </button>
       <button
         type="button"
-        aria-label="Yayındaki içerikler"
-        onClick={onShowPublished}
-        disabled={approvedCount === 0}
-        style={{ ...iconBtn(showApproved), opacity: approvedCount === 0 ? 0.25 : showApproved ? 1 : 0.55 }}
+        aria-label="SmartAgency'yi arkadaşına öner"
+        onClick={onShareReferral}
+        style={iconBtn(false)}
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={iconColor}
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
