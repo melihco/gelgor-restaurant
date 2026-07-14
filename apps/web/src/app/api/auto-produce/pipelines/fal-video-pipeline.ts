@@ -111,13 +111,6 @@ export const falVideoHandler: ProductionPipelineHandler = {
     }
     if (!referenceUrl) return;
 
-    if (!serverConfig.fal.configured) {
-      console.warn(
-        `[auto-produce] FAL_API_KEY missing — fal slot skipped: ${inputs.pipeline} "${inputs.headline.slice(0, 40)}"`,
-      );
-      return;
-    }
-
     const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
     const intensityChannel = falPipeline === 'fal_reel' ? ('reel' as const) : ('story' as const);
 
@@ -184,6 +177,21 @@ export const falVideoHandler: ProductionPipelineHandler = {
         templateBinding.brandColors,
       );
 
+      if (templateBinding.matched) {
+        state.brandDesignTemplateId = templateBinding.matched.id;
+        state.brandDesignTemplateType = templateBinding.matched.templateType;
+        state.brandDesignTemplateName = templateBinding.matched.templateName;
+        state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+      }
+
+      if (!serverConfig.fal.configured) {
+        console.warn(
+          `[auto-produce] FAL_API_KEY missing — fal slot skipped: ${inputs.pipeline} "${inputs.headline.slice(0, 40)}"`,
+        );
+        state.pipelineFailureReason = 'fal_api_key_missing';
+        return;
+      }
+
       if (falPipeline === 'fal_story') {
         const poster = await runFalStoryPosterProduction({
           workspaceId: inputs.workspaceId,
@@ -214,12 +222,6 @@ export const falVideoHandler: ProductionPipelineHandler = {
         state.falGrafikerPass = poster.grafikerPass;
         state.videoProduceMeta = { source: 'fal_video' };
         state.costDelta += 0.08;
-        if (templateBinding.matched) {
-          state.brandDesignTemplateId = templateBinding.matched.id;
-          state.brandDesignTemplateType = templateBinding.matched.templateType;
-          state.brandDesignTemplateName = templateBinding.matched.templateName;
-          state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
-        }
         console.log(
           `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
           `template=${templateBinding.matched?.templateType ?? 'none'} ` +

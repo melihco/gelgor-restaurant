@@ -29,6 +29,7 @@ import {
   slotEnabledByFacilities,
   type BrandSlotFacilities,
 } from '@/lib/sector-slot-pack';
+import { applyCatalogSlotVisualDefaults } from '@/lib/catalog-slot-visual-defaults';
 
 export interface BrandActiveSlot {
   slotKey: string;
@@ -43,6 +44,8 @@ export interface BrandActiveSlot {
   enabled: boolean;
   hasTemplate: boolean;
   templateId: string | null;
+  /** From production_slot_definitions.prompt_pack — premium composition defaults, scene hints. */
+  promptPack: Record<string, unknown>;
 }
 
 export interface BrandActiveSlotSet {
@@ -119,6 +122,9 @@ function slotFromDefinition(
     enabled: true,
     hasTemplate: Boolean(template),
     templateId: template?.id ?? null,
+    promptPack: (slot.prompt_pack && typeof slot.prompt_pack === 'object'
+      ? slot.prompt_pack
+      : {}) as Record<string, unknown>,
   };
 }
 
@@ -386,8 +392,9 @@ export function stampIdeasWithBrandCatalogSlots(
     }
     if (!matched) return idea;
     used.add(matched.slotKey);
+    const withVisuals = applyCatalogSlotVisualDefaults(idea, matched.promptPack);
     return {
-      ...idea,
+      ...withVisuals,
       catalog_slot_key: matched.slotKey,
       catalog_slot_label: matched.labelTr,
     };
@@ -447,10 +454,14 @@ export function enrichProductionQueueWithBrandSlots(
     }
     used.add(matched.slotKey);
     const assignment = applyCatalogSlotToAssignment(item.assignment, matched);
+    const ideaWithVisualDefaults = applyCatalogSlotVisualDefaults(
+      item.idea as Record<string, unknown>,
+      matched.promptPack,
+    );
     out.push({
       ...item,
       idea: {
-        ...item.idea,
+        ...ideaWithVisualDefaults,
         catalog_slot_key: matched.slotKey,
         catalog_slot_label: matched.labelTr,
       },

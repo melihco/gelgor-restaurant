@@ -6,6 +6,7 @@
  */
 
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
+import { buildDesignedStoryPromptPack } from '@/lib/catalog-slot-visual-defaults';
 
 export type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
 
@@ -37,6 +38,8 @@ export interface SlotArchetypeInstance {
   slotRole?: string;
   /** Override inferDesignTemplateType() when set. */
   designTemplateType?: string;
+  /** Designed Fal story — ideation + production get premium_composition defaults. */
+  requiresPremiumComposition?: boolean;
 }
 
 export interface SectorSlotPack {
@@ -182,6 +185,9 @@ function buildMatchSignals(slotKey: string, designType: string): Record<string, 
   if (/venue|ambiance|facility|room|suite/.test(slotKey)) {
     signals.announcement_types = ['venue_showcase'];
   }
+  if (/booking|reservation/.test(slotKey)) {
+    signals.announcement_types = ['announcement', 'campaign_offer'];
+  }
   return signals;
 }
 
@@ -256,7 +262,16 @@ export const SECTOR_SLOT_PACKS: SectorSlotPack[] = [
       { suffix: 'kitchen_bts_story', labelTr: 'Mutfak kulis story', labelEn: 'Kitchen BTS story', format: 'story' },
       { suffix: 'table_ready_story', labelTr: 'Masa hazır story', labelEn: 'Table ready story', format: 'story' },
       { suffix: 'farm_to_table_story', labelTr: 'Çiftlikten sofraya story', labelEn: 'Farm to table story', format: 'story' },
-      { suffix: 'weekend_booking_story', labelTr: 'Hafta sonu rezervasyon story', labelEn: 'Weekend booking story', format: 'story' },
+      {
+        suffix: 'weekend_booking_story',
+        labelTr: 'Hafta sonu rezervasyon story',
+        labelEn: 'Weekend booking story',
+        format: 'story',
+        pipeline: 'fal_story',
+        slotRole: 'campaign_story_motion',
+        designTemplateType: 'announcement_formal',
+        requiresPremiumComposition: true,
+      },
       {
         suffix: 'event_announcement_story',
         labelTr: 'Etkinlik duyuru afişi',
@@ -720,9 +735,14 @@ export function instanceToSlotDefinition(
     library_slot_key: inferLibrarySlotKey(slotKey, designType),
     tier: instance.format === 'reel' || instance.format === 'carousel' ? 'premium' : 'standard',
     match_signals: buildMatchSignals(slotKey, designType),
-    prompt_pack: {
-      scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
-    },
+    prompt_pack: instance.requiresPremiumComposition
+      ? {
+        ...buildDesignedStoryPromptPack(instance.labelEn),
+        scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
+      }
+      : {
+        scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
+      },
     optional_tags: instance.optionalTags ?? [],
     enabled_by_default: instance.enabledByDefault ?? true,
     sort_order: sortOrder,
