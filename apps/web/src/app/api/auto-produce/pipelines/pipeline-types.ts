@@ -32,6 +32,8 @@ export interface SlotProductionState {
   brandDesignTemplateId?: string | null;
   brandDesignTemplateType?: string | null;
   brandDesignTemplateName?: string | null;
+  /** How the template bound to the slot: hard (catalog_slot_key) | soft | format_fallback. */
+  brandDesignTemplateMatchQuality?: string | null;
   /** Cost accrued by handlers this slot; the loop adds it to its running estimate. */
   costDelta: number;
   /** Specific Fal/pipeline failure — surfaced on production_jobs.last_error (not generic no_artifact). */

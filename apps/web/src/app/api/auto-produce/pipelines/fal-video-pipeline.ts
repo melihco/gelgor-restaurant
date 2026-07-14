@@ -218,6 +218,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
           state.brandDesignTemplateId = templateBinding.matched.id;
           state.brandDesignTemplateType = templateBinding.matched.templateType;
           state.brandDesignTemplateName = templateBinding.matched.templateName;
+          state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
         }
         console.log(
           `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
@@ -281,6 +282,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         state.brandDesignTemplateId = templateBinding.matched.id;
         state.brandDesignTemplateType = templateBinding.matched.templateType;
         state.brandDesignTemplateName = templateBinding.matched.templateName;
+        state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
       }
       console.log(
         `[auto-produce] [fal-track] ${falPipeline}: "${inputs.headline.slice(0, 40)}" ` +

@@ -222,14 +222,16 @@ describe('filterDesignTemplatesToActiveSlots', () => {
 });
 
 describe('enrichProductionQueueWithBrandSlots', () => {
-  it('replaces legacy Remotion library_slot_key with catalog slot_key', () => {
+  it('sets catalog_slot_key but preserves the legacy library_slot_key for template routing', () => {
+    const djSlot = mockSlot('beach_club_dj_night_teaser_post', 'post', {
+      design_template_type: 'event_special',
+      library_slot_key: 'event_story',
+    });
     const activeSet = resolveBrandActiveSlotKeys({
       workspaceId: 'ws-1',
       sector: 'beach_club',
-      sectorSlots: [
-        mockSlot('beach_club_dj_night_teaser_post', 'post', { library_slot_key: 'event_story' }),
-      ],
-      tenantAssignments: [mockAssignment('beach_club_dj_night_teaser_post', true)],
+      sectorSlots: [djSlot],
+      tenantAssignments: [mockAssignment('beach_club_dj_night_teaser_post', true, djSlot)],
     });
 
     const queue = enrichProductionQueueWithBrandSlots(
@@ -255,8 +257,10 @@ describe('enrichProductionQueueWithBrandSlots', () => {
 
     expect(queue).toHaveLength(1);
     expect(queue[0]!.assignment.catalog_slot_key).toBe('beach_club_dj_night_teaser_post');
-    expect(queue[0]!.assignment.library_slot_key).toBe('beach_club_dj_night_teaser_post');
-    expect(queue[0]!.assignment.library_slot_key).not.toBe('campaign_post');
+    // library_slot_key keeps the legacy template-routing key (from the slot def),
+    // not the full catalog id — so LIBRARY_SLOT_TO_TEMPLATE_TYPES still resolves.
+    expect(queue[0]!.assignment.library_slot_key).toBe('event_story');
+    expect(queue[0]!.assignment.library_slot_key).not.toBe('beach_club_dj_night_teaser_post');
   });
 
   it('keeps all ideas when the brand has fewer enabled catalog slots than queue rows', () => {

@@ -206,6 +206,7 @@ import {
 import {
   isMeaninglessBrandEchoHeadline,
   isLabelStyleHeadline,
+  isUsableVisualDesignCardHeadline,
   resolveMeaningfulProductionHeadline,
   sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
@@ -326,6 +327,7 @@ import {
   isCampaignContentIdea,
   buildEventCanvasPrompt,
   repickGalleryIfDuplicateForType,
+  rematchGalleryAfterHardThemeConflict,
 } from './caption-publish-resolver';
 import {
   generateVibeImage,
@@ -760,6 +762,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   /** Strategist — avoid same venue photo across slots in one mission run. */
   const batchUsedGalleryMission = new Set<string>();
   const globalGalleryUsageCounts = buildGlobalGalleryUsageCounts(galleryUsage);
+  /** Closed over by pickMissionGallery — set per-slot from ideation subject_key. */
+  let activeGallerySubjectKey: string | undefined;
   const pickMissionGallery = (
     caption: string,
     headline: string,
@@ -788,6 +792,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       productionStrict,
       tieBreakSeed,
       globalGalleryUsageCounts,
+      activeGallerySubjectKey,
     );
 
   // galleryMetaRaw alias for code that still references it directly
@@ -952,6 +957,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const vdcHeadline = String(
       slotVisualDesignCard?.headline ?? slotVisualDesignCard?.concept_title ?? '',
     ).trim();
+    /** Prefer mission design-card headline as on-canvas overlay for fal/designed slots. */
+    let visualDesignCardOverlayApplied = Boolean(
+      isFalDesignedPostSlotForHeadline
+      && vdcHeadline
+      && isUsableVisualDesignCardHeadline(vdcHeadline, resolvedBrandName),
+    );
 
     if (
       !rawIdeationHeadline
@@ -975,12 +986,27 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
       headline = headlineFix.headline;
       ideationHeadline = headline;
+      if (headlineFix.reason === 'visual_design_card' || headlineFix.reason === 'label_visual_design_card') {
+        visualDesignCardOverlayApplied = true;
+      }
     } else {
       ideationHeadline = enforceDisplayHeadline(rawIdeationHeadline, 72);
       headline = ideationHeadline;
     }
+    // Designed slots: card headline is the on-canvas SSOT when usable (even if ideation is “good”).
+    if (visualDesignCardOverlayApplied && vdcHeadline) {
+      const cardOverlay = enforceDisplayHeadline(vdcHeadline, 72);
+      if (cardOverlay) {
+        headline = cardOverlay;
+        console.log(
+          `[auto-produce] visual design card headline → overlay: "${cardOverlay.slice(0, 48)}"`,
+        );
+      }
+    }
     /** Ideation marketing hook — preserved for feed metadata; never overwritten by gallery vision. */
-    const storedIdeationHeadline = headline;
+    const storedIdeationHeadline = rawIdeationHeadline
+      ? enforceDisplayHeadline(rawIdeationHeadline, 72)
+      : headline;
 
     // Feed Art Director's visual_subject_hint overrides generic caption for gallery matching.
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
@@ -1015,6 +1041,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const ideationSubjectKey = String(
       ideaRecord.subject_key ?? ideaRecord.subjectKey ?? '',
     ).trim() || undefined;
+    activeGallerySubjectKey = ideationSubjectKey;
     let hashtags = normalizeHashtags(idea.hashtags);
     let cta = getField(idea, 'cta', 'call_to_action');
     if (caption && cta) {
@@ -1093,24 +1120,38 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         kind === 'instagram_reel' ? 'reel'
           : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 'story'
             : 'feed_post';
-      const designCopy = resolveMissionFalDesignCopy({
-        idea: idea as FalDesignCopyIdea,
-        ideationHeadline: headline,
-        caption,
-        cta,
-        brandName: resolvedBrandName,
-        channel: falChannel,
-        businessType: brandBusinessType,
-      });
-      if (designCopy.headline && designCopy.headline !== headline) {
-        console.log(
-          `[auto-produce] fal design copy (${designCopy.source}): `
-          + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
-        );
-        headline = designCopy.headline;
-      }
-      if (designCopy.subtitle?.trim()) {
-        cta = designCopy.subtitle.trim();
+      // Card overlay wins over caption-derived fal design copy (avoids brief truncations).
+      if (visualDesignCardOverlayApplied && vdcHeadline) {
+        const cardOverlay = enforceDisplayHeadline(vdcHeadline, falChannel === 'reel' ? 22 : falChannel === 'story' ? 28 : 32);
+        if (cardOverlay) {
+          headline = cardOverlay;
+        }
+        const cardSub = String(
+          slotVisualDesignCard?.subline ?? slotVisualDesignCard?.cta_text ?? '',
+        ).trim();
+        if (cardSub) {
+          cta = cardSub.slice(0, 48);
+        }
+      } else {
+        const designCopy = resolveMissionFalDesignCopy({
+          idea: idea as FalDesignCopyIdea,
+          ideationHeadline: headline,
+          caption,
+          cta,
+          brandName: resolvedBrandName,
+          channel: falChannel,
+          businessType: brandBusinessType,
+        });
+        if (designCopy.headline && designCopy.headline !== headline) {
+          console.log(
+            `[auto-produce] fal design copy (${designCopy.source}): `
+            + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+          );
+          headline = designCopy.headline;
+        }
+        if (designCopy.subtitle?.trim()) {
+          cta = designCopy.subtitle.trim();
+        }
       }
     }
 
@@ -1207,6 +1248,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         creativeBrief: creativeBrief ?? undefined,
         ideationCaption,
         ideationHeadline,
+        subjectKey: ideationSubjectKey,
         existingCaptions: missionSessionCaptions,
         slotBackfillPass,
         ideaIndex,
@@ -1469,26 +1511,41 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else if (typeof agentUrl === 'string') {
         const pooledAgentUrl = resolveUrlInPool(agentUrl, galleryPhotos);
         if (pooledAgentUrl) {
-          const agentRank = matchPhotoToContent(
-            {
-              caption: ideationCaption,
-              headline: ideationHeadline,
-              mood,
-              contentType: postType,
-              businessType: brandBusinessType,
-              subjectKey: ideationSubjectKey,
-              globalUsageCounts: globalGalleryUsageCounts,
-            },
-            [pooledAgentUrl],
-            galleryMeta,
-            { excludeUrls: missionGalleryExclude, minScore: 0, tieBreakSeed: ideaIndex },
-          );
-          referenceUrl = pooledAgentUrl;
-          galleryMatchScore = agentRank?.score ?? null;
-          agentIdeationGalleryLock = true;
-          console.log(
-            `[auto-produce] ideation gallery lock (agent URL in pool) score=${galleryMatchScore}: "${headline.slice(0, 50)}"`,
-          );
+          const agentMatchInput = {
+            caption: ideationCaption,
+            headline: ideationHeadline,
+            mood,
+            contentType: postType,
+            businessType: brandBusinessType,
+            subjectKey: ideationSubjectKey,
+            globalUsageCounts: globalGalleryUsageCounts,
+          };
+          const agentMeta = galleryMeta[normalizeGalleryUrl(pooledAgentUrl)]
+            ?? Object.entries(galleryMeta).find(
+              ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(pooledAgentUrl),
+            )?.[1];
+          // Never hard-lock an agent URL that fails the theme/subject gate —
+          // let later pick paths find a subject-aligned photo instead.
+          if (!isHardGalleryThemeMismatch(agentMatchInput, agentMeta, pooledAgentUrl)) {
+            const agentRank = matchPhotoToContent(
+              agentMatchInput,
+              [pooledAgentUrl],
+              galleryMeta,
+              { excludeUrls: missionGalleryExclude, minScore: 0, tieBreakSeed: ideaIndex },
+            );
+            if (agentRank && agentRank.score >= MIN_ACCEPT_SCORE) {
+              referenceUrl = pooledAgentUrl;
+              galleryMatchScore = agentRank.score;
+              agentIdeationGalleryLock = true;
+              console.log(
+                `[auto-produce] ideation gallery lock (agent URL in pool) score=${galleryMatchScore}: "${headline.slice(0, 50)}"`,
+              );
+            }
+          } else {
+            console.warn(
+              `[auto-produce] ideation agent URL hard theme mismatch — ignore lock: "${headline.slice(0, 50)}"`,
+            );
+          }
         }
       }
     }
@@ -1818,11 +1875,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         businessType: brandBusinessType,
         ideaIndex,
         globalUsageCounts: globalGalleryUsageCounts,
+        subjectKey: ideationSubjectKey,
       });
       if (referenceUrl) {
         referenceUrl = normalizeExternalPhotoUrl(referenceUrl) ?? referenceUrl;
-        markSourceGalleryUsed(galleryUsage, batchUsedByType, referenceUrl, postType);
-        batchUsedGalleryMission.add(normalizeGalleryUrl(referenceUrl));
+        // Do NOT mark used yet — hard theme veto rematch may replace this URL.
+        // Reservation happens after the gate passes (see mark below).
       }
     }
 
@@ -2278,7 +2336,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       : undefined;
     // Product SKU + nightlife/food/beauty — isHardCaptionPhotoConflict alone misses
     // bal↔zeytinyağı and unlabeled packaging that still ships the wrong product.
-    const hardThemeConflict = Boolean(
+    let hardThemeConflict = Boolean(
       pickedFromBrandGallery
       && resolvedReferenceUrl
       && isHardGalleryThemeMismatch(
@@ -2293,17 +2351,77 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         resolvedReferenceUrl,
       ),
     );
-    if (hardThemeConflict) {
-      console.warn(
-        `[auto-produce] hard caption↔photo theme conflict — skip "${ideationHeadline.slice(0, 40)}"`,
+    if (hardThemeConflict && resolvedReferenceUrl) {
+      const rematchExclude = getMissionWideExcludeUrls(
+        galleryUsage,
+        batchUsedByType,
+        batchUsedGalleryMission,
       );
-      results.push({
-        title: headline,
-        imageUrl: galleryPreviewUrl ?? '',
-        error: `Caption–görsel tema çatışması — "${ideationHeadline.slice(0, 40)}" için uygun galeri fotoğrafı yok`,
-        slotKey,
+      const rematchedUrl = rematchGalleryAfterHardThemeConflict({
+        caption: ideationCaption,
+        headline: ideationHeadline,
+        mood,
+        galleryAnalysis: galleryMeta,
+        candidateUrls: galleryPhotos,
+        excludeUrls: rematchExclude,
+        rejectedUrl: resolvedReferenceUrl,
+        contentType: postType,
+        businessType: brandBusinessType,
+        subjectKey: ideationSubjectKey,
+        maxAttempts: 5,
+        globalUsageCounts: globalGalleryUsageCounts,
+        tieBreakSeed: ideaIndex,
       });
-      continue;
+      if (rematchedUrl) {
+        console.warn(
+          `[auto-produce] hard theme conflict — rematched "${ideationHeadline.slice(0, 40)}" → ${rematchedUrl.slice(0, 72)}`,
+        );
+        referenceUrl = rematchedUrl;
+        resolvedReferenceUrl = rematchedUrl;
+        galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
+        pickedFromBrandGallery = galleryPhotos.some(
+          (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(rematchedUrl),
+        );
+        photoMetaForCaption = galleryMeta[normalizeGalleryUrl(rematchedUrl)]
+          ?? Object.entries(galleryMeta).find(
+            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(rematchedUrl),
+          )?.[1];
+        galleryMatchScore = scoreIdeationPhotoMatch({
+          caption: ideationCaption,
+          headline: ideationHeadline,
+          photoUrl: rematchedUrl,
+          galleryAnalysis: galleryMeta,
+          businessType: brandBusinessType,
+          mood,
+          contentType: postType,
+          subjectKey: ideationSubjectKey,
+        });
+        agentIdeationGalleryLock = false;
+        hardThemeConflict = false;
+      } else {
+        console.warn(
+          `[auto-produce] hard caption↔photo theme conflict — skip "${ideationHeadline.slice(0, 40)}"`,
+        );
+        results.push({
+          title: headline,
+          imageUrl: galleryPreviewUrl ?? '',
+          error: `Caption–görsel tema çatışması — "${ideationHeadline.slice(0, 40)}" için uygun galeri fotoğrafı yok`,
+          slotKey,
+        });
+        continue;
+      }
+    }
+
+    // Reserve gallery URL only after theme gate (or successful rematch).
+    if (
+      resolvedReferenceUrl
+      && hasGallery
+      && !captionDrivenGenerated
+      && !forceAttachedPhotos
+      && pickedFromBrandGallery
+    ) {
+      markSourceGalleryUsed(galleryUsage, batchUsedByType, resolvedReferenceUrl, postType);
+      batchUsedGalleryMission.add(normalizeGalleryUrl(resolvedReferenceUrl));
     }
     // Detect cross-service conflict: gallery score went negative due to beauty sub-service
     // conflict penalty (e.g. nail caption + lash photo → -45). This overrides adaptiveScene
@@ -2886,6 +3004,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let brandDesignTemplateId: string | null = null;
     let brandDesignTemplateType: string | null = null;
     let brandDesignTemplateName: string | null = null;
+    let brandDesignTemplateMatchQuality: string | null = null;
 
     const calendarAnnouncementType = String(
       ideaRecord.calendar_announcement_type
@@ -3044,6 +3163,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ...(calendarEventOverlay?.directives ?? []),
             ...falGridRotationDirectives,
             ...(adPublishChannel ? resolveFalAdCreativeDirectives(adPublishChannel) : []),
+            ...(visualDesignCardOverlayApplied && slotVisualDesignCard
+              ? [
+                `ON-CANVAS HEADLINE (verbatim, mission design card): "${headline.slice(0, 48)}"`,
+                ...(slotVisualDesignCard.image_generation_prompt
+                  ? [`MISSION DESIGN CARD LAYOUT CUES: ${String(slotVisualDesignCard.image_generation_prompt).slice(0, 420)}`]
+                  : []),
+                ...(slotVisualDesignCard.background_intent
+                  ? [`Background intent: ${String(slotVisualDesignCard.background_intent).slice(0, 120)}`]
+                  : []),
+              ]
+              : []),
           ],
           designerMotionCue: falDesignCtx?.brief.motionCue || (adHocBrief ? String((idea as ParsedIdea).motion_cue ?? '') : undefined),
           artDirection: adHocBrief ? String((idea as ParsedIdea).visual_direction ?? '').trim() || undefined : undefined,
@@ -3116,6 +3246,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       brandDesignTemplateId = slotCtx.state.brandDesignTemplateId ?? null;
       brandDesignTemplateType = slotCtx.state.brandDesignTemplateType ?? null;
       brandDesignTemplateName = slotCtx.state.brandDesignTemplateName ?? null;
+      brandDesignTemplateMatchQuality = slotCtx.state.brandDesignTemplateMatchQuality ?? null;
       videoProduceMeta = slotCtx.state.videoProduceMeta;
       costEstimate += slotCtx.state.costDelta;
       if (slotCtx.state.pipelineFailureReason && !reelFailureReason) {
@@ -3651,6 +3782,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       caption: publishCaption || caption,
       brandName: resolvedBrandName,
       conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
+      visualDesignHeadline: vdcHeadline || undefined,
       businessType: brandBusinessType,
       maxLen: adPublishChannel
         ? adHeadlineCharLimit(adPublishChannel)
@@ -3665,6 +3797,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || isGalleryTagHeadline(ideationHeadline)
     ) {
       ideationHeadline = storedIdeationHeadline || designOverlayHeadline;
+    }
+    // Card headline was forced into fal overlay / sanitize → mark prompt_used.
+    if (visualDesignCardOverlayApplied) {
+      missionVisualDesignRendered = true;
     }
 
     const isVideoMediaUrl = (url: string | null | undefined): boolean =>
@@ -3764,6 +3900,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           brand_design_template_id: brandDesignTemplateId,
           brand_design_template_type: brandDesignTemplateType,
           brand_design_template_name: brandDesignTemplateName,
+          ...(brandDesignTemplateMatchQuality
+            ? { brand_design_template_match_quality: brandDesignTemplateMatchQuality }
+            : {}),
         }
         : {}),
       cost_usd_estimate: ideaCostUsd,
@@ -4288,6 +4427,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const caption = getField(idea, 'caption_draft', 'caption');
       const mood = (idea.mood as string | undefined) || '';
       const postType = kindToPostType(detectContentKind(idea));
+      activeGallerySubjectKey = String(
+        (idea as Record<string, unknown>).subject_key
+        ?? (idea as Record<string, unknown>).subjectKey
+        ?? '',
+      ).trim() || undefined;
       const referenceUrl = pickMissionGallery(
         caption,
         headline,

@@ -59,7 +59,16 @@ export interface MatchedDesignTemplate {
   designBriefDirectives?: string[];
   canvaArchetypeId?: string | null;
   canvaArchetypeName?: string | null;
+  /**
+   * How the template was bound to the slot:
+   * - `hard`   — exact `catalog_slot_key` match with compatible format (1A pin)
+   * - `soft`   — type/use-case scored match (no catalog key on template or mission)
+   * - `format_fallback` — last-resort same-format template
+   */
+  matchQuality: DesignTemplateMatchQuality;
 }
+
+export type DesignTemplateMatchQuality = 'hard' | 'soft' | 'format_fallback';
 
 /** Production slot format → design-template formats considered compatible. */
 function compatibleFormats(format: 'story' | 'post' | 'reel'): string[] {
@@ -201,23 +210,44 @@ export function resolveDesignTemplateCandidateTypes(
   return dedupeTypes(DEFAULT_TEMPLATE_TYPES_BY_FORMAT[format]);
 }
 
+function catalogKeyOf(record: BrandDesignTemplateRecord): string | null {
+  return (
+    record.catalog_slot_key
+    ?? (record.design_spec?.catalogSlotKey as string | undefined)
+    ?? null
+  );
+}
+
+/** True when a special-day template is out of its ±window (must never fire off-date). */
+function isOffSeasonSpecialDay(record: BrandDesignTemplateRecord): boolean {
+  if (record.template_type !== 'event_special') return false;
+  const sd = record.design_spec?.specialDay as { mmdd?: string } | undefined;
+  const days = daysUntilMMDD(sd?.mmdd);
+  if (days === null) return false; // generic event template — always eligible
+  return days > SPECIAL_DAY_WINDOW;
+}
+
 function scoreDesignTemplateRecord(
   record: BrandDesignTemplateRecord,
   candidates: string[],
   formats: string[],
   catalogSlotKey?: string | null,
 ): number {
-  const formatOk = formats.includes(record.format);
-  const typeRank = candidates.indexOf(record.template_type);
-  if (typeRank < 0 && !formatOk) return 0;
+  // Format gate — a story template must never win a post slot (and vice versa).
+  // reel↔reel_cover/story compatibility is encoded in `compatibleFormats`.
+  if (!formats.includes(record.format)) return 0;
 
-  const catalogKey = record.catalog_slot_key
-    ?? (record.design_spec?.catalogSlotKey as string | undefined)
-    ?? null;
+  // Off-season special-day templates are excluded outright so a national/religious
+  // day poster can't hijack an ordinary event/teaser slot months early.
+  if (isOffSeasonSpecialDay(record)) return 0;
+
+  const typeRank = candidates.indexOf(record.template_type);
+
+  const catalogKey = catalogKeyOf(record);
   const catalogMatch = catalogSlotKey && catalogKey === catalogSlotKey ? 80 : 0;
 
   const proximity = record.template_type === 'event_special'
-    ? specialDayProximityBonus(record)
+    ? Math.max(0, specialDayProximityBonus(record))
     : 0;
   const hasPreview = Boolean(record.thumbnail_url);
   const hasRecipe = Boolean(record.design_spec?.prompt);
@@ -226,12 +256,36 @@ function scoreDesignTemplateRecord(
   return (
     catalogMatch +
     (typeRank >= 0 ? (candidates.length - typeRank) * 10 : 0) +
-    (formatOk ? 8 : 0) +
+    8 + // format already validated above
     (hasPreview ? 24 : 0) +
     (hasRecipe ? 4 : 0) +
     usageBoost +
     proximity
   );
+}
+
+/**
+ * 1A hard pin — the slot's own `catalog_slot_key` template wins outright when
+ * its format is compatible. Bad data (e.g. a `post` template keyed to a `story`
+ * slot) is rejected so it falls through to the soft path instead of silently
+ * rendering the wrong shell.
+ */
+function findCatalogKeyHardMatch(
+  active: BrandDesignTemplateRecord[],
+  formats: string[],
+  catalogSlotKey: string | null | undefined,
+): BrandDesignTemplateRecord | null {
+  if (!catalogSlotKey) return null;
+  let best: { record: BrandDesignTemplateRecord; score: number } | null = null;
+  for (const record of active) {
+    if (catalogKeyOf(record) !== catalogSlotKey) continue;
+    if (!formats.includes(record.format)) continue;
+    if (isOffSeasonSpecialDay(record)) continue;
+    const score =
+      (record.thumbnail_url ? 2 : 0) + (record.design_spec?.prompt ? 1 : 0);
+    if (!best || score > best.score) best = { record, score };
+  }
+  return best?.record ?? null;
 }
 
 function pickBestDesignTemplate(
@@ -264,6 +318,71 @@ function pickFormatFallbackTemplate(
     if (!best || score > best.score) best = { record, score };
   }
   return best?.record ?? null;
+}
+
+export interface BrandDesignTemplateSelection {
+  record: BrandDesignTemplateRecord;
+  matchQuality: DesignTemplateMatchQuality;
+}
+
+export interface SelectBrandDesignTemplateInput {
+  slotRole: string;
+  librarySlotKey?: string | null;
+  format: 'story' | 'post' | 'reel';
+  caption?: string;
+  headline?: string;
+  announcementType?: string | null;
+  templateUseCase?: string | null;
+  catalogSlotKey?: string | null;
+}
+
+/**
+ * Pure selection SSOT — no network. Picks the best active template for a slot:
+ * 1A hard pin (catalog_slot_key, format-validated) → soft scored match →
+ * 2B same-format fallback. Exported for unit tests and telemetry.
+ */
+export function selectBrandDesignTemplate(
+  active: BrandDesignTemplateRecord[],
+  opts: SelectBrandDesignTemplateInput,
+): BrandDesignTemplateSelection | null {
+  if (active.length === 0) return null;
+
+  const formats = compatibleFormats(opts.format);
+  const candidates = resolveDesignTemplateCandidateTypes({
+    librarySlotKey: opts.librarySlotKey,
+    slotRole: opts.slotRole,
+    caption: opts.caption,
+    headline: opts.headline,
+    announcementType: opts.announcementType,
+    templateUseCase: opts.templateUseCase,
+    format: opts.format,
+  });
+
+  // 1A — hard pin on the slot's own catalog_slot_key (format-validated).
+  const hardMatch = findCatalogKeyHardMatch(active, formats, opts.catalogSlotKey);
+  if (hardMatch) {
+    console.log(
+      `[design-matcher] hard pin catalog_slot_key=${opts.catalogSlotKey} → "${hardMatch.template_name}" (${hardMatch.template_type})`,
+    );
+    return { record: hardMatch, matchQuality: 'hard' };
+  }
+
+  // Soft — type/use-case scored match (format-gated inside the scorer).
+  const scored = pickBestDesignTemplate(active, candidates, formats, opts.catalogSlotKey);
+  if (scored) {
+    return { record: scored.record, matchQuality: 'soft' };
+  }
+
+  // 2B — last-resort same-format fallback so production never stalls; flagged weak.
+  const fallbackRecord = pickFormatFallbackTemplate(active, formats);
+  if (fallbackRecord) {
+    console.log(
+      `[design-matcher] format fallback → "${fallbackRecord.template_name}" (${fallbackRecord.template_type})`,
+    );
+    return { record: fallbackRecord, matchQuality: 'format_fallback' };
+  }
+
+  return null;
 }
 
 function buildDirective(record: BrandDesignTemplateRecord): string {
@@ -351,39 +470,20 @@ export async function matchDesignTemplateToSlot(
   }
   if (active.length === 0) return null;
 
-  const formats = compatibleFormats(opts.format);
-  const candidates = resolveDesignTemplateCandidateTypes({
-    librarySlotKey: opts.librarySlotKey,
+  const selection = selectBrandDesignTemplate(active, {
     slotRole: opts.slotRole,
+    librarySlotKey: opts.librarySlotKey,
+    format: opts.format,
     caption: opts.caption,
     headline: opts.headline,
     announcementType: opts.announcementType,
     templateUseCase: opts.templateUseCase,
-    format: opts.format,
+    catalogSlotKey: opts.catalogSlotKey,
   });
+  if (!selection) return null;
 
-  let best = pickBestDesignTemplate(active, candidates, formats, opts.catalogSlotKey);
-  if (!best) {
-    const fallbackRecord = pickFormatFallbackTemplate(active, formats);
-    if (fallbackRecord) {
-      best = {
-        record: fallbackRecord,
-        score: scoreDesignTemplateRecord(
-          fallbackRecord,
-          candidates,
-          formats,
-          opts.catalogSlotKey,
-        ) || 1,
-      };
-      console.log(
-        `[design-matcher] format fallback → "${fallbackRecord.template_name}" (${fallbackRecord.template_type})`,
-      );
-    }
-  }
-
-  if (!best) return null;
-
-  const r = best.record;
+  const { matchQuality } = selection;
+  const r = selection.record;
   const sd = r.design_spec ?? {};
   const sdSpecial = sd.specialDay as { name?: string; mmdd?: string; category?: string } | undefined;
   const colors = sd.brandColors as { primary?: string; accent?: string } | undefined;
@@ -414,6 +514,7 @@ export async function matchDesignTemplateToSlot(
       : [],
     canvaArchetypeId: typeof sd.canvaArchetypeId === 'string' ? sd.canvaArchetypeId : null,
     canvaArchetypeName: typeof sd.canvaArchetypeName === 'string' ? sd.canvaArchetypeName : null,
+    matchQuality,
   };
 }
 

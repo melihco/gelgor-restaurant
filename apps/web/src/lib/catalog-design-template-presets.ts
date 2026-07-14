@@ -17,7 +17,10 @@ import {
   resolveSectorSlotsWithPackFallback,
   type ProductionSlotDefinition,
 } from '@/lib/production-slot-catalog';
-import { resolveBrandSlotFacilities } from '@/lib/sector-slot-pack';
+import {
+  resolveBrandSlotFacilities,
+  synthesizeSectorSlotDefinitions,
+} from '@/lib/sector-slot-pack';
 
 /** Default onboarding preview count — balances cost vs catalog coverage. */
 export const ONBOARDING_CATALOG_TEMPLATE_CAP = 12;
@@ -100,6 +103,39 @@ export function buildDesignPresetFromCatalogSlot(
     prominentLogo: LOGO_FORWARD_TYPES.has(templateType),
     catalogSlotKey: slot.slot_key,
   };
+}
+
+/**
+ * Legacy sector presets carry no `catalogSlotKey`, so brands onboarded via the
+ * legacy fallback produced templates with an empty `catalog_slot_key` — which
+ * left production unable to hard-pin them (1A). Backfill each legacy preset with
+ * the sector's canonical enabled slot for its (templateType + format), matching
+ * format so we never bind a post template to a story slot. Sector-driven, no
+ * tenant branch. Presets that already carry a key are left untouched.
+ */
+export function attachCatalogKeysToLegacyPresets(
+  sectorId: string,
+  presets: DesignTemplatePreset[],
+): DesignTemplatePreset[] {
+  const sectorSlots = synthesizeSectorSlotDefinitions(sectorId);
+  if (sectorSlots.length === 0) return presets;
+
+  const claimed = new Set<string>();
+  return presets.map((preset) => {
+    if (preset.catalogSlotKey) {
+      claimed.add(preset.catalogSlotKey);
+      return preset;
+    }
+    const slot = sectorSlots.find(
+      (s) =>
+        !claimed.has(s.slot_key) &&
+        s.design_template_type === preset.templateType &&
+        slotFormatToDesignFormat(s.format) === preset.format,
+    );
+    if (!slot) return preset;
+    claimed.add(slot.slot_key);
+    return { ...preset, catalogSlotKey: slot.slot_key };
+  });
 }
 
 /**
@@ -187,7 +223,10 @@ export async function resolveOnboardingDesignPresetsFromCatalog(
   }
 
   if (enabledSlots.length === 0) {
-    const legacy = resolveDesignTemplatePresets(sectorId);
+    const legacy = attachCatalogKeysToLegacyPresets(
+      sectorId,
+      resolveDesignTemplatePresets(sectorId),
+    );
     const limited = typeof options?.limit === 'number' ? legacy.slice(0, options.limit) : legacy;
     return {
       presets: limited,

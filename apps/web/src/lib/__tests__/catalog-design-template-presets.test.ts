@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  attachCatalogKeysToLegacyPresets,
   buildDesignPresetFromCatalogSlot,
   selectCatalogSlotsForOnboarding,
   ONBOARDING_CATALOG_TEMPLATE_CAP,
 } from '@/lib/catalog-design-template-presets';
+import { resolveDesignTemplatePresets } from '@/lib/brand-design-template-presets';
 import { resolveSectorSlotsWithPackFallback } from '@/lib/production-slot-catalog';
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 
@@ -112,6 +114,58 @@ describe('selectCatalogSlotsForOnboarding', () => {
 
     const selectedTypes = new Set(selected.map((s) => s.design_template_type));
     expect(selectedTypes.size).toBe(types.length);
+  });
+});
+
+describe('attachCatalogKeysToLegacyPresets', () => {
+  it('backfills a sector-aligned catalog key with matching format (restaurant_cafe)', () => {
+    const enriched = attachCatalogKeysToLegacyPresets(
+      'restaurant_cafe',
+      resolveDesignTemplatePresets('restaurant_cafe'),
+    );
+    expect(enriched.length).toBeGreaterThan(0);
+    for (const preset of enriched) {
+      if (!preset.catalogSlotKey) continue;
+      expect(preset.catalogSlotKey.startsWith('restaurant_cafe_')).toBe(true);
+      const isStoryKey = preset.catalogSlotKey.endsWith('_story');
+      const isReelKey = preset.catalogSlotKey.endsWith('_reel');
+      // Format must line up: story preset → story slot, reel_cover → reel slot, else post.
+      if (preset.format === 'story') expect(isStoryKey).toBe(true);
+      if (preset.format === 'reel_cover') expect(isReelKey).toBe(true);
+      if (preset.format === 'post') {
+        expect(isStoryKey).toBe(false);
+        expect(isReelKey).toBe(false);
+      }
+    }
+    // At least the campaign_announcement post preset should now carry a key.
+    const campaign = enriched.find((p) => p.templateType === 'campaign_announcement');
+    expect(campaign?.catalogSlotKey).toBeTruthy();
+  });
+
+  it('assigns unique keys per preset for a second sector (beach_club)', () => {
+    const enriched = attachCatalogKeysToLegacyPresets(
+      'beach_club',
+      resolveDesignTemplatePresets('beach_club'),
+    );
+    const keys = enriched.map((p) => p.catalogSlotKey).filter(Boolean) as string[];
+    expect(keys.length).toBeGreaterThan(0);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('leaves presets that already carry a catalogSlotKey untouched', () => {
+    const enriched = attachCatalogKeysToLegacyPresets('restaurant_cafe', [
+      {
+        templateType: 'campaign_announcement',
+        name: 'Pinned',
+        format: 'post',
+        intent: 'campaign',
+        catalogSlotKey: 'restaurant_cafe_reservation_cta_post',
+        preferredAssetTypes: ['product_image'],
+        matchKeywords: 'x',
+        prominentLogo: true,
+      },
+    ]);
+    expect(enriched[0]!.catalogSlotKey).toBe('restaurant_cafe_reservation_cta_post');
   });
 });
 

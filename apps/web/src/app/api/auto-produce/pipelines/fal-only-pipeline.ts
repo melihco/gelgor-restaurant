@@ -452,6 +452,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
         state.brandDesignTemplateId = templateBinding.matched.id;
         state.brandDesignTemplateType = templateBinding.matched.templateType;
         state.brandDesignTemplateName = templateBinding.matched.templateName;
+        state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
       }
     }
   },

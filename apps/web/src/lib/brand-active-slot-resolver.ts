@@ -395,8 +395,12 @@ export function stampIdeasWithBrandCatalogSlots(
 }
 
 /**
- * Catalog slot_key replaces legacy Remotion names (campaign_post, daily_story, …).
- * Template match, artifact metadata, and Fal briefs use the full catalog key.
+ * `catalog_slot_key` carries the full catalog identity (e.g.
+ * `restaurant_cafe_event_announcement_story`). `library_slot_key` stays a
+ * LEGACY Remotion/library key (`event_story`, `campaign_post`, …) so the
+ * `LIBRARY_SLOT_TO_TEMPLATE_TYPES` routing and Remotion BTL lookup keep working.
+ * Overwriting library_slot_key with the catalog id (previous behaviour) broke
+ * both — the matcher then fell back to caption/announcement heuristics.
  */
 export function applyCatalogSlotToAssignment(
   assignment: ProductionAssignment,
@@ -405,7 +409,7 @@ export function applyCatalogSlotToAssignment(
   return {
     ...assignment,
     catalog_slot_key: matched.slotKey,
-    library_slot_key: matched.slotKey,
+    library_slot_key: matched.librarySlotKey ?? assignment.library_slot_key ?? undefined,
   };
 }
 

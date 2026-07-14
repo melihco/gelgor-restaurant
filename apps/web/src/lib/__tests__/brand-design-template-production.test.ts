@@ -40,6 +40,7 @@ const matched: MatchedDesignTemplate = {
   designBriefDirectives: ['Upper headline zone with accent bar'],
   canvaArchetypeId: 'arc-01',
   canvaArchetypeName: 'Diagonal Split',
+  matchQuality: 'hard',
 };
 
 describe('buildTemplateLayoutDirectives', () => {
