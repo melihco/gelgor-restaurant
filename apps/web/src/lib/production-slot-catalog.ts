@@ -45,9 +45,45 @@ export function resolveSectorSlotsWithPackFallback(
   dbSlots: ProductionSlotDefinition[],
   facilities?: BrandSlotFacilities | Record<string, unknown> | null,
 ): ProductionSlotDefinition[] {
-  if (dbSlots.length > 0) return dbSlots;
-  const resolvedFacilities = resolveBrandSlotFacilities(facilities);
-  return synthesizeSectorSlotDefinitions(sectorId, resolvedFacilities);
+  if (dbSlots.length === 0) {
+    const resolvedFacilities = resolveBrandSlotFacilities(facilities);
+    return synthesizeSectorSlotDefinitions(sectorId, resolvedFacilities);
+  }
+  return enrichDbSlotsWithSectorPackDefaults(sectorId, dbSlots, facilities);
+}
+
+/** Overlay sector-pack prompt_pack (and pipeline hints) when live DB rows are stale. */
+export function enrichDbSlotsWithSectorPackDefaults(
+  sectorId: string,
+  dbSlots: ProductionSlotDefinition[],
+  facilities?: BrandSlotFacilities | Record<string, unknown> | null,
+): ProductionSlotDefinition[] {
+  const packSlots = synthesizeSectorSlotDefinitions(
+    sectorId,
+    resolveBrandSlotFacilities(facilities),
+  );
+  if (packSlots.length === 0) return dbSlots;
+
+  const packByKey = new Map(packSlots.map((s) => [s.slot_key, s]));
+  return dbSlots.map((slot) => {
+    const pack = packByKey.get(slot.slot_key);
+    if (!pack) return slot;
+
+    const dbPack = slot.prompt_pack && typeof slot.prompt_pack === 'object' ? slot.prompt_pack : {};
+    const packPack = pack.prompt_pack && typeof pack.prompt_pack === 'object' ? pack.prompt_pack : {};
+    const needsPremium = packPack.require_premium_composition === true
+      && dbPack.require_premium_composition !== true;
+
+    if (!needsPremium) return slot;
+
+    return {
+      ...slot,
+      pipeline: pack.pipeline || slot.pipeline,
+      slot_role: pack.slot_role || slot.slot_role,
+      design_template_type: pack.design_template_type || slot.design_template_type,
+      prompt_pack: { ...dbPack, ...packPack },
+    };
+  });
 }
 
 export interface TenantSlotAssignment {

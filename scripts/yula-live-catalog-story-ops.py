@@ -192,13 +192,19 @@ def run_http(web_base: str, *, skip_seed: bool = False) -> None:
 
     if not skip_seed:
         print("==> Sync-seed production slot catalog…")
-        seed_result = _http_json(
-            "POST",
-            f"{web}/api/internal/slot-catalog/sync-seed",
-            internal_headers,
-            {},
-        )
-        print(f"    {seed_result}")
+        try:
+            seed_result = _http_json(
+                "POST",
+                f"{web}/api/internal/slot-catalog/sync-seed",
+                internal_headers,
+                {},
+            )
+            print(f"    {seed_result}")
+        except RuntimeError as exc:
+            if "-> 404" in str(exc):
+                print(f"    ⚠ sync-seed not deployed yet — continuing ({exc})")
+            else:
+                raise
     else:
         print("==> Skipping catalog seed (--skip-seed)")
 
