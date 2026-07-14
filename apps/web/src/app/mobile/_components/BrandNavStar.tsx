@@ -52,21 +52,21 @@ export function BrandNavStar({
       }}
     >
       <div
+        className={active ? 'sa-chrome-orb-ring sa-chrome-orb-ring--active' : 'sa-chrome-orb-ring'}
         style={{
           width: NAV_ORB_SIZE,
           height: NAV_ORB_SIZE,
           margin: '0 auto',
           borderRadius: '50%',
-          background: t.isDark ? 'rgba(8,8,16,0.92)' : 'rgba(255,255,255,0.96)',
-          border: `1.5px solid ${active ? primary : t.navBorder}`,
-          boxShadow: active
-            ? `0 8px 28px ${primary}55, 0 0 0 3px ${primary}22`
-            : `0 6px 22px ${primary}33, 0 2px 8px rgba(0,0,0,0.18)`,
+          background: t.isDark
+            ? 'linear-gradient(165deg, rgba(19,26,36,0.98) 0%, rgba(7,9,15,0.96) 100%)'
+            : 'linear-gradient(165deg, #FFFFFF 0%, #F4F6F8 100%)',
+          border: `1.5px solid ${active ? t.accent : 'rgba(138,171,189,0.28)'}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
-          transition: 'transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease',
+          transition: 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms ease, border-color 200ms ease',
           transform: active ? 'scale(1.06)' : 'scale(1)',
         }}
       >

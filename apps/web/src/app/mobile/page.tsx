@@ -1213,7 +1213,7 @@ const CSS = `
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
-    background: var(--sa-mobile-bg, #05060f);
+    background: #07090F;
     box-shadow: -8px 0 32px rgba(0, 0, 0, 0.28);
     will-change: transform, opacity;
   }
@@ -1399,6 +1399,187 @@ const CSS = `
   .sa-mobile .ig-feed-post {
     width: 100%;
     max-width: none;
+  }
+
+  /* ── SmartAgency chrome shell (non-feed screens) ── */
+  .sa-mobile .sa-chrome-shell {
+    position: relative;
+    min-height: 100dvh;
+    isolation: isolate;
+    background: #07090F;
+  }
+  .sa-mobile .sa-chrome-shell--light {
+    background: #F4F6F8;
+  }
+  .sa-mobile .sa-chrome-ambient {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 110% 70% at 50% -8%, rgba(77,112,136,0.22) 0%, transparent 58%),
+      radial-gradient(ellipse 55% 45% at 100% 0%, rgba(138,171,189,0.10) 0%, transparent 52%),
+      radial-gradient(ellipse 50% 40% at 0% 12%, rgba(200,168,106,0.06) 0%, transparent 48%);
+  }
+  .sa-mobile .sa-chrome-shell--light .sa-chrome-ambient {
+    background:
+      radial-gradient(ellipse 100% 60% at 50% -5%, rgba(77,112,136,0.10) 0%, transparent 55%),
+      radial-gradient(ellipse 45% 35% at 100% 0%, rgba(138,171,189,0.06) 0%, transparent 50%);
+  }
+  .sa-mobile .sa-chrome-mark {
+    position: absolute;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    right: max(-12px, calc(env(safe-area-inset-right, 0px) - 12px));
+    width: min(200px, 52vw);
+    height: min(124px, 32vw);
+    opacity: 0.055;
+    pointer-events: none;
+    z-index: 0;
+    background: url('/smartagency-mark.png') right top / contain no-repeat;
+    filter: saturate(0.85) contrast(1.05);
+  }
+  .sa-mobile .sa-chrome-shell--light .sa-chrome-mark {
+    opacity: 0.04;
+    filter: saturate(0.7) brightness(0.55);
+  }
+  .sa-mobile .sa-chrome-hairline {
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(138,171,189,0.35) 35%,
+      rgba(200,168,106,0.22) 50%,
+      rgba(138,171,189,0.35) 65%,
+      transparent 100%
+    );
+  }
+  .sa-mobile .sa-chrome-content {
+    position: relative;
+    z-index: 2;
+    min-height: 100dvh;
+  }
+  /* Let ambient chrome show through screen roots */
+  .sa-mobile .sa-chrome-shell > .sa-chrome-content > * {
+    background: transparent !important;
+  }
+  .sa-mobile .sa-chrome-header {
+    background: rgba(7,9,15,0.72) !important;
+    border-bottom-color: rgba(138,171,189,0.12) !important;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-header {
+    background: rgba(244,246,248,0.82) !important;
+    border-bottom-color: rgba(61,104,128,0.12) !important;
+  }
+  .sa-mobile .sa-chrome-card {
+    background: linear-gradient(165deg, rgba(19,26,36,0.94) 0%, rgba(12,16,24,0.88) 100%);
+    border: 0.5px solid rgba(138,171,189,0.14);
+    border-radius: 20px;
+    box-shadow:
+      0 16px 40px rgba(0,0,0,0.28),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-card {
+    background: linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.94) 100%);
+    border-color: rgba(61,104,128,0.12);
+    box-shadow: 0 12px 32px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .sa-mobile .sa-chrome-card:active {
+    transform: scale(0.985);
+  }
+  .sa-mobile .sa-chrome-menu-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 15px 16px;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    border-radius: 18px;
+    background: linear-gradient(155deg, rgba(255,255,255,0.04) 0%, rgba(12,16,24,0.35) 100%);
+    border: 0.5px solid rgba(138,171,189,0.10);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), background 180ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-menu-row {
+    background: linear-gradient(155deg, rgba(255,255,255,0.96) 0%, rgba(244,246,248,0.9) 100%);
+    border-color: rgba(61,104,128,0.10);
+  }
+  .sa-mobile .sa-chrome-menu-row:active {
+    transform: scale(0.985);
+    background: linear-gradient(155deg, rgba(138,171,189,0.08) 0%, rgba(12,16,24,0.4) 100%);
+  }
+  .sa-mobile .sa-chrome-icon-tile {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(77,112,136,0.14);
+    border: 0.5px solid rgba(138,171,189,0.22);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .sa-mobile .sa-chrome-nav-dock {
+    box-shadow:
+      0 0 0 0.5px rgba(138,171,189,0.18),
+      0 20px 50px rgba(0,0,0,0.45),
+      0 4px 16px rgba(0,0,0,0.25),
+      inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    background: rgba(7,9,15,0.88) !important;
+    border-color: rgba(138,171,189,0.14) !important;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-nav-dock {
+    background: rgba(255,255,255,0.92) !important;
+    border-color: rgba(61,104,128,0.14) !important;
+    box-shadow:
+      0 0 0 0.5px rgba(61,104,128,0.12),
+      0 16px 40px rgba(15,23,42,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.95) !important;
+  }
+  .sa-mobile .sa-chrome-orb-ring {
+    box-shadow:
+      0 0 0 1px rgba(138,171,189,0.35),
+      0 10px 32px rgba(77,112,136,0.35),
+      inset 0 1px 0 rgba(255,255,255,0.12) !important;
+  }
+  .sa-mobile .sa-chrome-orb-ring--active {
+    box-shadow:
+      0 0 0 2px rgba(138,171,189,0.45),
+      0 0 24px rgba(138,171,189,0.28),
+      0 12px 36px rgba(77,112,136,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.14) !important;
+  }
+  .sa-mobile .sa-chrome-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(138,171,189,0.72);
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-eyebrow {
+    color: rgba(61,104,128,0.65);
+  }
+  .sa-mobile .sa-chrome-profile-hero {
+    background: linear-gradient(
+      180deg,
+      rgba(77,112,136,0.14) 0%,
+      rgba(7,9,15,0) 100%
+    );
+    border-bottom: 0.5px solid rgba(138,171,189,0.10);
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-profile-hero {
+    background: linear-gradient(180deg, rgba(77,112,136,0.07) 0%, transparent 100%);
   }
 
   /* Brand hub — premium studio tiles */

@@ -7,6 +7,8 @@ import {
   stackUnderlayTab,
   type MobileNavTransition,
 } from './mobile-nav-transition';
+import { SaChromeShell } from './SaChromeShell';
+import { shouldWrapWithSaChrome } from './sa-chrome';
 import {
   AICommandCenter,
   CampaignDetail,
@@ -41,7 +43,7 @@ const TAB_CONFIG: { id: NavTab; screen: MobileScreen }[] = [
   { id: 'missions', screen: 'missions' },
 ];
 
-function renderScreen(screen: MobileScreen): ReactNode {
+function renderScreenContent(screen: MobileScreen): ReactNode {
   switch (screen) {
     case 'home':             return <AICommandCenter />;
     case 'campaigns':        return <Campaigns />;
@@ -70,6 +72,12 @@ function renderScreen(screen: MobileScreen): ReactNode {
     case 'platform-preview': return <PlatformPreviewStudio />;
     default:                 return <AICommandCenter />;
   }
+}
+
+function renderScreen(screen: MobileScreen): ReactNode {
+  const content = renderScreenContent(screen);
+  if (!shouldWrapWithSaChrome(screen)) return content;
+  return <SaChromeShell>{content}</SaChromeShell>;
 }
 
 function tabPaneClass(

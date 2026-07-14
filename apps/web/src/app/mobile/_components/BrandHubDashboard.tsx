@@ -4,6 +4,7 @@ import React from 'react';
 import type { T } from './theme-context';
 import { PRODUCTION_PROFILE_THRESHOLD } from '@/lib/brand-readiness';
 import { resolveGalleryImageSrc } from '@/lib/gallery-display-url';
+import { SA_STUDIO_ACCENTS } from './sa-chrome';
 
 type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 
@@ -128,7 +129,7 @@ export function buildBrandHubNavItems(input: {
       key: 'identity',
       target: 'identity',
       label: 'Kimlik',
-      accent: '#6C8EF5',
+      accent: SA_STUDIO_ACCENTS.identity,
       status: input.constitutionConfirmedAt ? 'done' : 'warn',
       completion: input.constitutionConfirmedAt ? 1 : 0.42,
     },
@@ -136,7 +137,7 @@ export function buildBrandHubNavItems(input: {
       key: 'content',
       target: 'content',
       label: 'İçerik',
-      accent: '#4FB597',
+      accent: SA_STUDIO_ACCENTS.content,
       status: contentDone ? 'done' : 'warn',
       completion: contentDone ? 1 : Math.min(0.85, (input.pillarsCount / 2) * 0.55 + (input.ctasCount > 0 ? 0.25 : 0)),
     },
@@ -144,7 +145,7 @@ export function buildBrandHubNavItems(input: {
       key: 'design',
       target: 'design',
       label: 'Tasarım',
-      accent: '#C79A4B',
+      accent: SA_STUDIO_ACCENTS.design,
       status: input.pprReady ? 'done' : 'warn',
       completion: Math.min(1, input.pprScore / PRODUCTION_PROFILE_THRESHOLD),
     },
@@ -152,7 +153,7 @@ export function buildBrandHubNavItems(input: {
       key: 'gallery',
       target: 'gallery',
       label: 'Galeri',
-      accent: '#5AA0D6',
+      accent: SA_STUDIO_ACCENTS.gallery,
       status: galleryDone ? 'done' : 'warn',
       completion: Math.min(1, input.photoCount / 8),
     },
@@ -160,7 +161,7 @@ export function buildBrandHubNavItems(input: {
       key: 'chatbot',
       target: 'chatbot',
       label: 'Chatbot',
-      accent: '#A985E0',
+      accent: SA_STUDIO_ACCENTS.chatbot,
       status: input.hasChatbot ? 'done' : 'neutral',
       completion: input.hasChatbot ? 1 : 0.18,
     },
@@ -168,7 +169,7 @@ export function buildBrandHubNavItems(input: {
       key: 'channels',
       target: 'identity',
       label: 'Kanallar',
-      accent: '#3FB6AE',
+      accent: SA_STUDIO_ACCENTS.channels,
       status: input.channelsConnected ? 'done' : 'warn',
       completion: input.channelsConnected ? 1 : 0.38,
     },
@@ -249,15 +250,11 @@ export function BrandHubDashboard({
       )}
 
       {/* Hero */}
-      <div className="brand-hub-hero" style={{
-        position: 'relative', marginBottom: 22, padding: '28px 20px 22px', borderRadius: 32, overflow: 'hidden',
+      <div className="brand-hub-hero sa-chrome-card" style={{
+        position: 'relative', marginBottom: 22, padding: '28px 20px 22px', borderRadius: 28, overflow: 'hidden',
         background: t.isDark
-          ? 'radial-gradient(120% 90% at 50% -20%, rgba(255,255,255,0.08) 0%, rgba(8,10,14,0.98) 58%)'
-          : 'radial-gradient(120% 90% at 50% -20%, rgba(255,255,255,0.95) 0%, rgba(244,246,250,0.98) 58%)',
-        border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.11)' : 'rgba(15,23,42,0.07)'}`,
-        boxShadow: t.isDark
-          ? '0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)'
-          : '0 20px 48px rgba(15,23,42,0.08)',
+          ? 'radial-gradient(120% 90% at 50% -20%, rgba(138,171,189,0.12) 0%, rgba(7,9,15,0.98) 58%)'
+          : 'radial-gradient(120% 90% at 50% -20%, rgba(255,255,255,0.98) 0%, rgba(244,246,250,0.98) 58%)',
       }}
       >
         <div style={{
@@ -396,16 +393,8 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      <div style={{
-        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-        margin: '4px 2px 14px',
-      }}
-      >
-        <h2 style={{
-          margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: '0.14em',
-          textTransform: 'uppercase', color: t.textMuted,
-        }}
-        >
+      <div style={{ margin: '4px 2px 14px' }}>
+        <h2 className="sa-chrome-eyebrow" style={{ margin: 0 }}>
           Stüdyo
         </h2>
       </div>
@@ -420,7 +409,7 @@ export function BrandHubDashboard({
             <button
               key={item.key}
               type="button"
-              className="brand-hub-tile"
+              className="brand-hub-tile sa-chrome-card"
               onClick={() => {
                 if (item.key === 'channels') {
                   onOpenSection('identity', { identityGroup: 'channels' });
@@ -429,13 +418,8 @@ export function BrandHubDashboard({
                 }
               }}
               style={{
-                position: 'relative', minHeight: 118, padding: '16px 14px 14px', borderRadius: 22,
-                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.09)' : 'rgba(15,23,42,0.07)'}`,
-                background: t.isDark
-                  ? `linear-gradient(155deg, ${item.accent}18 0%, rgba(255,255,255,0.03) 52%, rgba(8,10,14,0.2) 100%)`
-                  : `linear-gradient(155deg, ${item.accent}12 0%, rgba(255,255,255,0.94) 100%)`,
+                position: 'relative', minHeight: 118, padding: '16px 14px 14px', borderRadius: 20,
                 cursor: 'pointer', textAlign: 'left', overflow: 'hidden',
-                boxShadow: t.isDark ? 'inset 0 1px 0 rgba(255,255,255,0.05)' : '0 8px 24px rgba(15,23,42,0.04)',
               }}
             >
               <div style={{

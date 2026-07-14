@@ -67,10 +67,10 @@ export interface T {
 // ─── DARK — SA Void Black + Steel Chrome ─────────────────────────────────────
 const dark: T = {
   // Background layers: cold ink-black with slight blue cast (matches logo canvas)
-  bg:       '#07090F',
-  surface:  '#0C1018',
-  elevated: '#131A24',
-  glass:    'rgba(7,9,15,0.93)',
+  bg:       '#05070C',
+  surface:  '#0B0F16',
+  elevated: '#121926',
+  glass:    'rgba(5,7,12,0.93)',
 
   // Typography: cool-white hierarchy
   textPrimary:   '#EEF2F6',
@@ -107,28 +107,30 @@ const dark: T = {
   backBtn:    { background: 'rgba(255,255,255,0.05)', border: '0.5px solid rgba(255,255,255,0.08)' },
 
   surfaceCard: {
-    background: '#0C1018',
-    borderRadius: 18,
-    border: '0.5px solid rgba(255,255,255,0.07)',
+    background: 'linear-gradient(165deg, rgba(19,26,36,0.94) 0%, rgba(12,16,24,0.88) 100%)',
+    borderRadius: 20,
+    border: '0.5px solid rgba(138,171,189,0.14)',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.05)',
   },
   surfaceGroup: {
-    background: '#0C1018',
-    borderRadius: 18,
+    background: 'linear-gradient(180deg, rgba(15,21,32,0.96) 0%, rgba(12,16,24,0.92) 100%)',
+    borderRadius: 20,
     overflow: 'hidden' as const,
-    border: '0.5px solid rgba(255,255,255,0.07)',
+    border: '0.5px solid rgba(138,171,189,0.12)',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
   },
   surfaceRow: {
     borderBottom: '0.5px solid rgba(255,255,255,0.05)',
     background: 'transparent',
   },
 
-  // SA Steel gradient: Steel-500 → Steel-700 (cold, precise)
-  gradientAccent:  'linear-gradient(135deg, #4D7088 0%, #2D5068 100%)',
+  // SA Steel chrome gradient: bright machined edge → Steel-500 → deep Steel-700
+  gradientAccent:  'linear-gradient(160deg, #6A93AC 0%, #4D7088 45%, #2A4A60 100%)',
   gradientGold:    'linear-gradient(135deg, #C8963A 0%, #A07828 100%)',
-  gradientSurface: 'linear-gradient(180deg, #0F1520 0%, #0C1018 100%)',
+  gradientSurface: 'linear-gradient(180deg, #0F1520 0%, #0B0F16 100%)',
 
-  navBg:          'rgba(7,9,15,0.90)',
-  navBorder:      'rgba(255,255,255,0.07)',
+  navBg:          'rgba(5,7,12,0.88)',
+  navBorder:      'rgba(138,171,189,0.14)',
   navActiveColor: '#9DBECE',   // Steel-250: bright enough for nav contrast
   navIdleColor:   'rgba(255,255,255,0.20)',
 
@@ -175,27 +177,29 @@ const light: T = {
   backBtn:    { background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.06)' },
 
   surfaceCard: {
-    background: '#FFFFFF',
-    borderRadius: 18,
-    border: '0.5px solid rgba(0,0,0,0.06)',
+    background: 'linear-gradient(165deg, #FFFFFF 0%, #F8FAFC 100%)',
+    borderRadius: 20,
+    border: '0.5px solid rgba(61,104,128,0.12)',
+    boxShadow: '0 10px 28px rgba(15,23,42,0.05), inset 0 1px 0 rgba(255,255,255,0.9)',
   },
   surfaceGroup: {
     background: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: 'hidden' as const,
-    border: '0.5px solid rgba(0,0,0,0.06)',
+    border: '0.5px solid rgba(61,104,128,0.10)',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.8)',
   },
   surfaceRow: {
     borderBottom: '0.5px solid rgba(0,0,0,0.05)',
     background: 'transparent',
   },
 
-  gradientAccent:  'linear-gradient(135deg, #3D6880 0%, #1E4860 100%)',
+  gradientAccent:  'linear-gradient(160deg, #4D7088 0%, #3D6880 45%, #1E4860 100%)',
   gradientGold:    'linear-gradient(135deg, #A07828 0%, #785A18 100%)',
   gradientSurface: 'linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)',
 
-  navBg:          'rgba(244,246,248,0.92)',
-  navBorder:      'rgba(0,0,0,0.08)',
+  navBg:          'rgba(247,249,251,0.90)',
+  navBorder:      'rgba(30,63,85,0.10)',
   navActiveColor: '#3D6880',
   navIdleColor:   'rgba(0,0,0,0.28)',
 
@@ -214,7 +218,7 @@ export function MobileThemeProvider({ children }: { children: React.ReactNode })
     const shell = document.querySelector<HTMLElement>('.mobile-shell');
     const frame = document.querySelector<HTMLElement>('.sa-mobile-frame');
     const mobile = document.querySelector<HTMLElement>('.sa-mobile');
-    const bg = isDark ? '#07090F' : '#F4F6F8';
+    const bg = isDark ? '#05070C' : '#F4F6F8';
 
     if (shell) shell.style.background = bg;
     if (frame) {

@@ -37,17 +37,12 @@ const FALLBACK_ICON = 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 
 function MenuItemIcon({ iconBg, label }: { iconBg: string; label: string }) {
   const path = ITEM_ICONS[label] ?? FALLBACK_ICON;
   return (
-    <div style={{
-      width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-      background: `${iconBg}16`,
-      border: `0.5px solid ${iconBg}28`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-        stroke={iconBg} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d={path} />
-      </svg>
-    </div>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+      stroke={iconBg} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d={path} />
+    </svg>
   );
 }
 
@@ -99,19 +94,13 @@ export function MoreMenu() {
   return (
     <div style={{
       minHeight: '100dvh',
-      background: t.bg,
       paddingBottom: 104,
-      transition: 'background 300ms',
     }}>
       <MobileStackHeader t={t} title="Menü" onBack={goBack} sticky />
 
       {/* ─── Profile Header ─────────────────────────────────────────── */}
-      <div style={{
+      <div className="sa-chrome-profile-hero" style={{
         padding: '16px 22px 22px',
-        background: t.isDark
-          ? 'linear-gradient(180deg, rgba(138,171,189,0.10) 0%, rgba(6,6,14,0) 100%)'
-          : 'linear-gradient(180deg, rgba(77,112,136,0.05) 0%, rgba(244,244,248,0) 100%)',
-        borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)'}`,
       }}>
 
         {/* Avatar + name — tap opens Marka tab */}
@@ -134,10 +123,11 @@ export function MoreMenu() {
         >
           <div style={{
             width: 52, height: 52, borderRadius: 16, flexShrink: 0,
-            background: 'linear-gradient(135deg, #4D7088 0%, #5A82A0 100%)',
+            background: 'linear-gradient(135deg, #4D7088 0%, #6A8EA0 55%, #8AABBD 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 18, fontWeight: 900, color: '#fff',
-            boxShadow: '0 4px 18px rgba(77,112,136,0.35)',
+            boxShadow: '0 6px 22px rgba(77,112,136,0.38), inset 0 1px 0 rgba(255,255,255,0.18)',
+            border: '0.5px solid rgba(138,171,189,0.35)',
           }}>
             {initials}
           </div>
@@ -189,11 +179,9 @@ export function MoreMenu() {
 
       {/* ─── Theme Toggle ─────────────────────────────────────────────── */}
       <div style={{ padding: '14px 22px 0' }}>
-        <button onClick={toggle} style={{
-          width: '100%', padding: '13px 16px', borderRadius: 16, cursor: 'pointer',
-          ...t.surfaceCard,
+        <button onClick={toggle} className="sa-chrome-card" style={{
+          width: '100%', padding: '13px 16px', borderRadius: 18, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
@@ -237,33 +225,22 @@ export function MoreMenu() {
         <div key={group.title} style={{ padding: '18px 22px 0' }}>
 
           {/* Section label */}
-          <div style={{
-            fontSize: 10, fontWeight: 800, letterSpacing: '0.09em',
-            textTransform: 'uppercase', color: t.textMuted,
-            marginBottom: 10,
-          }}>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
             {group.title}
           </div>
 
-          {/* Items card */}
-          <div style={{
-            ...t.surfaceGroup,
-            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
-          }}>
-            {group.items.map((item, i) => (
+          {/* Items */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {group.items.map((item) => (
               <button
                 key={item.label}
+                type="button"
+                className="sa-chrome-menu-row"
                 onClick={() => openMenuItem(item.screen)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 13,
-                  padding: '13px 16px', width: '100%', textAlign: 'left',
-                  cursor: 'pointer', background: 'transparent',
-                  ...(i < group.items.length - 1 ? {
-                    borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}`,
-                  } : {}),
-                }}
               >
-                <MenuItemIcon iconBg={item.iconBg} label={item.label} />
+                <div className="sa-chrome-icon-tile">
+                  <MenuItemIcon iconBg={item.iconBg} label={item.label} />
+                </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{

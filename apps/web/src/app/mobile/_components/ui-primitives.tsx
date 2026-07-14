@@ -101,7 +101,7 @@ export function SectionHeader({
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor, letterSpacing: '0.12em', textTransform: 'uppercase' }} className="sa-chrome-eyebrow">{label}</span>
         {badge !== undefined && (
           <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: t.warningDim, color: t.warning, fontWeight: 700 }}>{badge}</span>
         )}
@@ -134,17 +134,21 @@ export function MobileStackHeader({
   headerBackground?: string;
 }) {
   const headerBg = headerBackground
-    ?? (t.isDark ? 'rgba(20,20,22,0.82)' : 'rgba(250,250,252,0.82)');
+    ?? (t.isDark ? 'rgba(5,7,12,0.78)' : 'rgba(247,249,251,0.84)');
 
   return (
     <header
+      className="sa-chrome-header"
       style={{
         ...(sticky ? { position: 'sticky' as const, top: 0, zIndex: 30 } : {}),
         background: headerBg,
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         paddingTop: 'env(safe-area-inset-top, 0px)',
-        borderBottom: `0.5px solid ${t.separator}`,
+        borderBottom: 'none',
+        boxShadow: t.isDark
+          ? 'inset 0 -0.5px 0 rgba(176,196,212,0.16)'
+          : 'inset 0 -0.5px 0 rgba(30,63,85,0.14)',
       }}
     >
       <div

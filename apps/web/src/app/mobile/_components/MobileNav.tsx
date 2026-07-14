@@ -248,6 +248,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Ana navigasyon"
+      className="sa-chrome-nav-dock"
       style={{
         position: 'fixed',
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
