@@ -329,14 +329,21 @@ app.Logger.LogInformation(
         ? "Python’a HTTP gitmez; DevMock anında yanıt üretir. Gerçek Crew için appsettings’te UseDevMock=false ve uvicorn :8000."
         : $"Python hedefi: {configuration["OrchestrationService:BaseUrl"] ?? "http://localhost:8000"} (POST /internal/v1/orchestration/execute).");
 
-if (app.Environment.IsDevelopment())
+var enableSwagger = app.Environment.IsDevelopment()
+    || configuration.GetValue<bool>("EnableSwagger");
+if (enableSwagger)
 {
     app.UseSwagger();
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "Nexus API v1");
-        options.RoutePrefix = string.Empty;
+        options.RoutePrefix = "docs";
     });
+    if (!app.Environment.IsDevelopment())
+    {
+        app.Logger.LogWarning(
+            "Swagger UI is enabled in Production (EnableSwagger=true). Disable when no longer needed.");
+    }
 }
 
 app.UseExceptionHandler();
@@ -389,6 +396,7 @@ app.Use(async (context, next) =>
     var isAnonymousPath =
         path.StartsWithSegments("/health") ||
         path.StartsWithSegments("/swagger") ||
+        path.StartsWithSegments("/docs") ||
         path == "/" ||
         path.StartsWithSegments("/api/security/login") ||
         path.StartsWithSegments("/api/security/register") ||
