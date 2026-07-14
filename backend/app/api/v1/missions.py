@@ -158,6 +158,11 @@ class HubProductionPackageRequest(BaseModel):
     last_production_telemetry: dict | None = None
 
 
+class RequeueFactoryJobsRequest(BaseModel):
+    """Operator recovery — optionally retry gallery-theme exhausted slots after a gallery fix deploy."""
+    include_gallery_theme_retry: bool = False
+
+
 # MissionFeedProductionRequest lives in mission_feed_production_service (Sprint 2).
 
 
@@ -577,6 +582,7 @@ async def get_mission_production_jobs(
 async def requeue_mission_factory_jobs(
     workspace_id: uuid.UUID,
     mission_id: uuid.UUID,
+    body: RequeueFactoryJobsRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Re-queue exhausted factory slots (e.g. fal no_artifact) and kick the drainer."""
@@ -585,7 +591,10 @@ async def requeue_mission_factory_jobs(
 
     await _load_mission_or_404(db, workspace_id, mission_id)
     reclaimed = await pj.reclaim_inflight_jobs(mission_id)
-    requeued_exhausted = await pj.requeue_exhausted(mission_id)
+    requeued_exhausted = await pj.requeue_exhausted(
+        mission_id,
+        include_gallery_theme_retry=bool((body or RequeueFactoryJobsRequest()).include_gallery_theme_retry),
+    )
     requeued_failed = await pj.requeue_failed(mission_id)
     requeued = requeued_exhausted + requeued_failed
     if requeued or reclaimed or await pj.has_open_jobs(mission_id):

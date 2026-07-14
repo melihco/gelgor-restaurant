@@ -543,30 +543,49 @@ async def requeue_exhausted(
     mission_id: uuid.UUID,
     *,
     attempts_ceiling: int = 12,
+    include_gallery_theme_retry: bool = False,
 ) -> int:
     """Guaranteed-fill: give exhausted slots more retries (bounded) so the drainer
     can fill them (e.g. after the reel Remotion fallback is in place). Returns count
     of rows requeued. The attempts ceiling prevents infinite retry loops."""
+    permanent_filter = ""
+    if not include_gallery_theme_retry:
+        permanent_filter = """
+                  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
+        """
+    attempts_filter = ""
+    if not include_gallery_theme_retry:
+        attempts_filter = "AND attempts < :ceiling"
+    requeue_suffix = " [gallery-retry]" if include_gallery_theme_retry else " [requeued]"
     factory = _get_session_factory()
     async with factory() as db:
         res = await db.execute(
             text(
-                """
+                f"""
                 UPDATE production_jobs
                 SET status = 'pending',
-                    max_attempts = GREATEST(max_attempts, LEAST(:ceiling, attempts + 1)),
+                    attempts = CASE WHEN :gallery_retry THEN 0 ELSE attempts END,
+                    max_attempts = CASE
+                        WHEN :gallery_retry THEN GREATEST(max_attempts, :ceiling)
+                        ELSE GREATEST(max_attempts, LEAST(:ceiling, attempts + 1))
+                    END,
                     run_after = now(),
-                    last_error = COALESCE(last_error, '') || ' [requeued]',
+                    last_error = COALESCE(last_error, '') || :requeue_suffix,
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'exhausted'
-                  AND attempts < :ceiling
-                  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
-                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
+                  {attempts_filter}
+                  {permanent_filter}
                 RETURNING id
                 """
             ),
-            {"mission_id": str(mission_id), "ceiling": int(attempts_ceiling)},
+            {
+                "mission_id": str(mission_id),
+                "ceiling": int(attempts_ceiling),
+                "gallery_retry": bool(include_gallery_theme_retry),
+                "requeue_suffix": requeue_suffix,
+            },
         )
         rows = res.fetchall()
         await db.commit()
