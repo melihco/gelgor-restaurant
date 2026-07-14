@@ -132,6 +132,7 @@ export function buildSlotGalleryMatchInput(input: {
   creativeBrief?: string;
   ideationCaption?: string;
   ideationHeadline?: string;
+  subjectKey?: string;
 }): MatchPhotoInput {
   const format = slotFormatFromAssignment(input.assignment);
   const hint = String(input.visualSubjectHint ?? '').trim();
@@ -144,6 +145,7 @@ export function buildSlotGalleryMatchInput(input: {
   const syntheticCaption = caption
     || [hint, brief, brandLine].filter(Boolean).join(' — ')
     || input.brandName;
+  const subjectKey = String(input.subjectKey ?? '').trim() || undefined;
 
   return {
     caption: syntheticCaption,
@@ -154,6 +156,7 @@ export function buildSlotGalleryMatchInput(input: {
     storySequenceRole: format === 'story'
       ? storySequenceRole(input.storyIndex ?? 0)
       : undefined,
+    ...(subjectKey ? { subjectKey } : {}),
   };
 }
 
@@ -170,6 +173,7 @@ export function pickGalleryPhotoForSlot(input: {
   creativeBrief?: string;
   ideationCaption?: string;
   ideationHeadline?: string;
+  subjectKey?: string;
   slotBackfillPass?: boolean;
   tieBreakSeed?: number;
 }): PhotoMatchResult | null {
@@ -252,6 +256,7 @@ export async function resolveGalleryFirstForSlot(input: {
   language?: string;
   ideationCaption?: string;
   ideationHeadline?: string;
+  subjectKey?: string;
   existingCaptions?: string[];
   slotBackfillPass?: boolean;
   ideaIndex?: number;
@@ -261,6 +266,7 @@ export async function resolveGalleryFirstForSlot(input: {
 }): Promise<GalleryFirstSlotResult | null> {
   const ideationCaption = String(input.ideationCaption ?? '').trim();
   const ideationHeadline = String(input.ideationHeadline ?? '').trim();
+  const subjectKey = String(input.subjectKey ?? '').trim() || undefined;
   const tieBreakSeed = input.ideaIndex;
 
   const matchInput = buildSlotGalleryMatchInput({
@@ -273,6 +279,7 @@ export async function resolveGalleryFirstForSlot(input: {
     creativeBrief: input.creativeBrief,
     ideationCaption,
     ideationHeadline,
+    subjectKey,
   });
 
   let pick: PhotoMatchResult | null = null;
@@ -293,6 +300,7 @@ export async function resolveGalleryFirstForSlot(input: {
           photoUrl: forced,
           galleryAnalysis: input.galleryMeta,
           businessType: input.businessType,
+          subjectKey,
         });
         if (forcedScore >= MIN_ACCEPT_SCORE) {
           pick = {
@@ -311,6 +319,7 @@ export async function resolveGalleryFirstForSlot(input: {
       ...input,
       ideationCaption,
       ideationHeadline,
+      subjectKey,
       tieBreakSeed,
     });
   }
@@ -335,6 +344,7 @@ export async function resolveGalleryFirstForSlot(input: {
     photoUrl,
     galleryAnalysis: input.galleryMeta,
     businessType: input.businessType,
+    subjectKey,
   });
 
   // Ideation caption present → keep caption + headline; only report match score.

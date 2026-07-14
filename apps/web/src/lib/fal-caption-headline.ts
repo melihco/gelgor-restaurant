@@ -628,6 +628,14 @@ export function isRenderedOverlayTextIncomplete(detected: string | undefined | n
   return false;
 }
 
+/** Turkish genitive/possessive fragments without a closed noun phrase — "Ekip üyelerimizin". */
+const INCOMPLETE_TR_POSSESSIVE_TAIL_RX =
+  /\b[\p{L}']+(ımızın|imizin|umuzun|ümüzün|larımızın|lerimizin)\s*$/iu;
+
+/** Mid-campaign fragment — "Ürünlerde geçerli yaz" (season word left dangling). */
+const INCOMPLETE_TR_SEASON_CTA_TAIL_RX =
+  /\bgeçerli\s+(yaz|kış|bahar|sonbahar)\s*$/iu;
+
 /** Headline ends mid-thought — unsuitable for publish or fal canvas. */
 export function isIncompleteOverlayPhrase(text: string): boolean {
   const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
@@ -636,6 +644,8 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_MODIFIER_TAIL_RX.test(text.trim())) return true;
   if (INCOMPLETE_TR_PARTICIPLE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_POSSESSIVE_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_SEASON_CTA_TAIL_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;

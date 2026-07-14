@@ -196,6 +196,24 @@ function genericHeadlineFallback(brandName: string, businessType?: string): stri
   return 'Keşfetmeye Hazır mısın?';
 }
 
+/**
+ * Mission `visual_design_cards` headlines are intentionally short product/atmosphere
+ * hooks ("Doğanın Tazeliği", "Balın Doğallığı"). `isLabelStyleHeadline` rejects many of
+ * those as noun stacks — this gate keeps them as usable on-canvas overlay copy.
+ */
+export function isUsableVisualDesignCardHeadline(headline: string, brandName: string): boolean {
+  const h = stripTrailingOrphanFragment(headline.trim());
+  if (h.length < 4 || h.length > 48) return false;
+  if (isMeaninglessBrandEchoHeadline(h, brandName)) return false;
+  if (isInternalStrategyBriefing(h)) return false;
+  if (isIncompleteOverlayPhrase(h)) return false;
+  if (isGalleryTagHeadline(h)) return false;
+  if (/\b(story|stories|reel|reels|post|posts|carousel|feed)\s*$/i.test(h)) return false;
+  // Reject planning-brief verbs that leak into cards
+  if (/\b(yapacağız|oluşturacağız|vurgulayan|paylaşacağız|tanıtımını)\b/i.test(h)) return false;
+  return true;
+}
+
 export function resolveMeaningfulProductionHeadline(input: {
   headline: string;
   caption?: string;
@@ -212,13 +230,17 @@ export function resolveMeaningfulProductionHeadline(input: {
   const conceptTitle = stripTrailingOrphanFragment((input.conceptTitle ?? '').trim());
   const vdcHeadline = stripTrailingOrphanFragment((input.visualDesignHeadline ?? '').trim());
   const businessType = (input.businessType ?? '').trim();
+  const usableCard = vdcHeadline && isUsableVisualDesignCardHeadline(vdcHeadline, brandName)
+    ? enforceDisplayHeadline(vdcHeadline, maxLen)
+    : '';
 
   if (!headline) {
+    // Prefer mission design-card headline over caption hooks (cards are written for overlay).
+    if (usableCard) {
+      return { headline: usableCard, replaced: true, reason: 'visual_design_card' };
+    }
     const fromCaption = extractHookFromCaption(caption, brandName, maxLen);
     if (fromCaption) return { headline: fromCaption, replaced: true, reason: 'empty_headline' };
-    if (vdcHeadline && !isMeaninglessBrandEchoHeadline(vdcHeadline, brandName)) {
-      return { headline: enforceDisplayHeadline(vdcHeadline, maxLen), replaced: true, reason: 'visual_design_card' };
-    }
     if (conceptTitle && !isMeaninglessBrandEchoHeadline(conceptTitle, brandName)) {
       return { headline: enforceDisplayHeadline(conceptTitle, maxLen), replaced: true, reason: 'concept_title' };
     }
@@ -233,6 +255,10 @@ export function resolveMeaningfulProductionHeadline(input: {
 
   if (!isBadHeadline) {
     return { headline: enforceDisplayHeadline(headline, maxLen), replaced: false };
+  }
+
+  if (usableCard) {
+    return { headline: usableCard, replaced: true, reason: 'label_visual_design_card' };
   }
 
   const fromCaption = extractHookFromCaption(caption, brandName, maxLen);
@@ -253,14 +279,6 @@ export function resolveMeaningfulProductionHeadline(input: {
     };
   }
 
-  if (vdcHeadline && !isMeaninglessBrandEchoHeadline(vdcHeadline, brandName) && !isLabelStyleHeadline(vdcHeadline)) {
-    return {
-      headline: enforceDisplayHeadline(vdcHeadline, maxLen),
-      replaced: true,
-      reason: 'label_visual_design_card',
-    };
-  }
-
   return {
     headline: genericHeadlineFallback(brandName, businessType),
     replaced: true,
@@ -275,6 +293,8 @@ export function sanitizeProductionHeadline(input: {
   caption?: string;
   brandName: string;
   conceptTitle?: string;
+  /** Mission visual_design_cards headline — preferred overlay when usable. */
+  visualDesignHeadline?: string;
   businessType?: string;
   maxLen?: number;
 }): string {
@@ -288,12 +308,20 @@ export function sanitizeProductionHeadline(input: {
       caption: input.caption,
       brandName,
       conceptTitle: input.conceptTitle,
+      visualDesignHeadline: input.visualDesignHeadline,
       businessType: input.businessType,
       maxLen,
     });
     if (isGalleryTagHeadline(resolved.headline)) return '';
     return resolved.headline;
   };
+
+  // Prefer design-card overlay when caller asks sanitize with empty/ideation-only paths.
+  const preferredCard = String(input.visualDesignHeadline ?? '').trim();
+  if (preferredCard && isUsableVisualDesignCardHeadline(preferredCard, brandName)) {
+    const cardOk = tryHeadline(preferredCard);
+    if (cardOk) return cardOk;
+  }
 
   for (const candidate of [input.ideationHeadline, input.headline]) {
     const ok = tryHeadline(candidate ?? '');
@@ -305,6 +333,7 @@ export function sanitizeProductionHeadline(input: {
     caption: input.caption,
     brandName,
     conceptTitle: input.conceptTitle,
+    visualDesignHeadline: input.visualDesignHeadline,
     businessType: input.businessType,
     maxLen,
   }).headline;

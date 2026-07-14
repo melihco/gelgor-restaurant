@@ -1230,6 +1230,51 @@ function matchCaptionBlob(input: MatchPhotoInput): string {
 }
 
 /**
+ * When `subjectKey` is a concrete canonical subject, prefer gallery URLs whose
+ * `primarySubject` matches (or shares the same local-product SKU cluster).
+ * Falls back to the full pool when nothing aligns — never returns empty solely
+ * because of a missing subject label.
+ */
+export function preferSubjectAlignedCandidates(
+  candidateUrls: string[],
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  subjectKey: string | undefined,
+): string[] {
+  const key = String(subjectKey ?? '').trim();
+  if (!key || NON_CONCRETE_SUBJECTS.has(normalizeSubjectForRelation(key))) {
+    return candidateUrls;
+  }
+
+  const resolveMeta = (url: string): GalleryPhotoMeta | undefined => {
+    const base = normalizeGalleryUrl(url);
+    return galleryAnalysis[base]
+      ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+  };
+
+  const exact = candidateUrls.filter((url) => {
+    const meta = resolveMeta(url);
+    return canonicalSubjectRelation(key, meta?.primarySubject) === 'match';
+  });
+  if (exact.length > 0) return exact;
+
+  const captionClusters = subjectClustersFromToken(key);
+  if (captionClusters.size === 0) return candidateUrls;
+
+  const cluster = candidateUrls.filter((url) => {
+    const meta = resolveMeta(url);
+    const photoClusters = resolvePhotoSubjectClusters(
+      buildGalleryPhotoSearchable(meta, url),
+      meta?.primarySubject,
+    );
+    for (const idx of captionClusters) {
+      if (photoClusters.has(idx)) return true;
+    }
+    return false;
+  });
+  return cluster.length > 0 ? cluster : candidateUrls;
+}
+
+/**
  * True when this gallery photo is a hard theme mismatch for the caption
  * (e.g. DJ caption + food plate). Used to block relaxed/diversity fallbacks.
  */
@@ -1285,8 +1330,13 @@ export function rankPhotosForContent(
   }
 
   const results: PhotoMatchResult[] = [];
+  const scopedCandidates = preferSubjectAlignedCandidates(
+    candidateUrls,
+    galleryAnalysis,
+    input.subjectKey,
+  );
 
-  for (const url of candidateUrls) {
+  for (const url of scopedCandidates) {
     const base = normalizeGalleryUrl(url);
     if (excludeBases.has(base)) continue;
 
@@ -1683,6 +1733,11 @@ export function resolveBestGalleryUrl(
     ...options,
     minScore: 0,
   });
+  const agentMeta = galleryAnalysis[agentBase]
+    ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === agentBase)?.[1];
+  if (isHardGalleryThemeMismatch(input, agentMeta, agentUrl)) {
+    return best;
+  }
   const agentMin = Math.max(minScore, GIS_PILOT_MIN_SCORE);
   if (
     agentRank

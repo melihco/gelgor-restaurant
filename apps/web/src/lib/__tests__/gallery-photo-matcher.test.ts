@@ -6,7 +6,6 @@
  * quality tuning is a deliberate, reviewable snapshot change rather than a
  * silent regression. If a change is intentional: `npm run test -- -u`.
  */
-import { describe, it, expect } from 'vitest';
 import {
   classifyMatch,
   galleryMediaFingerprint,
@@ -17,10 +16,13 @@ import {
   buildGalleryLookup,
   pickScoredCarouselSlides,
   isHardGalleryThemeMismatch,
+  preferSubjectAlignedCandidates,
   MIN_ACCEPT_SCORE,
   STRONG_MATCH_SCORE,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
+import { rematchGalleryAfterHardThemeConflict } from '@/app/api/auto-produce/caption-publish-resolver';
+import { describe, it, expect } from 'vitest';
 
 const FOOD_PHOTO = 'https://cdn.example.com/gallery/food-plate-01.jpg';
 const GYM_PHOTO = 'https://cdn.example.com/gallery/gym-equipment-02.jpg';
@@ -371,11 +373,13 @@ describe('local product carousel — honey caption must not pick olive oil', () 
       contentTags: ['product', 'honey', 'jar'],
       description: 'Flower honey jar and honeycomb on wooden table.',
       mood: 'warm',
+      primarySubject: 'honey',
     },
     [OIL_PHOTO]: {
       contentTags: ['product', 'bottle', 'tin'],
       description: 'Three liter olive oil tin cans on wooden table with olives.',
       mood: 'natural',
+      primarySubject: 'olive_oil',
     },
   };
 
@@ -542,5 +546,47 @@ describe('local product carousel — honey caption must not pick olive oil', () 
     expect(slides.length).toBeGreaterThanOrEqual(1);
     expect(slides.every((s) => s.url === HONEY_PHOTO)).toBe(true);
     expect(slides.some((s) => s.url === OIL_PHOTO)).toBe(false);
+  });
+
+  it('preferSubjectAlignedCandidates keeps only primarySubject matches', () => {
+    const aligned = preferSubjectAlignedCandidates(
+      [OIL_PHOTO, HONEY_PHOTO],
+      gallery,
+      'olive_oil',
+    );
+    expect(aligned).toEqual([OIL_PHOTO]);
+  });
+
+  it('rankPhotosForContent with subjectKey prefers olive_oil primarySubject', () => {
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'Cold pressed premium olive oil',
+        headline: 'Erken hasat',
+        businessType: 'local_products_shop',
+        subjectKey: 'olive_oil',
+      },
+      [HONEY_PHOTO, OIL_PHOTO],
+      buildGalleryLookup(gallery, [HONEY_PHOTO, OIL_PHOTO]),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.url).toBe(OIL_PHOTO);
+  });
+
+  it('rematchGalleryAfterHardThemeConflict swaps rejected honey for olive_oil', () => {
+    const rematched = rematchGalleryAfterHardThemeConflict({
+      caption: 'Cold pressed premium olive oil',
+      headline: 'Erken hasat',
+      mood: 'natural',
+      galleryAnalysis: gallery,
+      candidateUrls: [HONEY_PHOTO, OIL_PHOTO],
+      excludeUrls: [],
+      rejectedUrl: HONEY_PHOTO,
+      contentType: 'feed',
+      businessType: 'local_products_shop',
+      subjectKey: 'olive_oil',
+      maxAttempts: 3,
+    });
+    expect(rematched).toBe(OIL_PHOTO);
   });
 });

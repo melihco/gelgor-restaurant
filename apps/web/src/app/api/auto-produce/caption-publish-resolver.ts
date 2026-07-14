@@ -10,8 +10,10 @@ import {
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
 import {
+  isHardGalleryThemeMismatch,
   matchPhotoToContent,
   pickMissionDiverseFallbackPhoto,
+  preferSubjectAlignedCandidates,
   resolveBestGalleryUrl,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
@@ -181,8 +183,15 @@ export function pickGalleryPhotoForIdea(
   productionStrict = true,
   tieBreakSeed?: number,
   globalUsageCounts?: ReadonlyMap<string, number>,
+  subjectKey?: string,
 ): string | null {
   if (!candidateUrls.length) return null;
+
+  const scopedCandidates = preferSubjectAlignedCandidates(
+    candidateUrls,
+    galleryAnalysis,
+    subjectKey,
+  );
 
   const input = {
     caption,
@@ -190,22 +199,23 @@ export function pickGalleryPhotoForIdea(
     mood,
     contentType,
     businessType,
+    ...(subjectKey ? { subjectKey } : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };
-  const displayUrls = candidateUrls;
+  const displayUrls = scopedCandidates;
   const pickOpts = tieBreakSeed != null ? { tieBreakSeed } : {};
 
   const tryPick = (excludeUrls: string[], bestEffort = false): string | null => {
     const resolved = resolveBestGalleryUrl(
       input,
-      candidateUrls,
+      scopedCandidates,
       galleryAnalysis,
       agentUrl,
       { excludeUrls, displayUrls, ...pickOpts },
     );
     if (resolved) return resolved.url;
 
-    const match = matchPhotoToContent(input, candidateUrls, galleryAnalysis, {
+    const match = matchPhotoToContent(input, scopedCandidates, galleryAnalysis, {
       excludeUrls,
       displayUrls,
       bestEffort,
@@ -242,6 +252,7 @@ export function repickGalleryIfDuplicateForType(input: {
   businessType?: string;
   ideaIndex?: number;
   globalUsageCounts?: ReadonlyMap<string, number>;
+  subjectKey?: string;
 }): string | null {
   const { referenceUrl, postType } = input;
   if (!referenceUrl || !isUsableGalleryPhotoUrl(referenceUrl)) return referenceUrl;
@@ -283,6 +294,7 @@ export function repickGalleryIfDuplicateForType(input: {
     false,
     input.ideaIndex,
     input.globalUsageCounts,
+    input.subjectKey,
   );
 
   if (repicked && normalizeGalleryUrl(repicked) !== normalizeGalleryUrl(referenceUrl)) {
@@ -303,6 +315,7 @@ export function repickGalleryIfDuplicateForType(input: {
       mood: input.mood,
       contentType: input.postType,
       businessType: input.businessType,
+      ...(input.subjectKey ? { subjectKey: input.subjectKey } : {}),
     },
   );
   if (diverse?.url && normalizeGalleryUrl(diverse.url) !== normalizeGalleryUrl(referenceUrl)) {
@@ -314,6 +327,72 @@ export function repickGalleryIfDuplicateForType(input: {
 
   // Prefer leaving a duplicate over shipping a semantically wrong photo.
   return referenceUrl;
+}
+
+/**
+ * After a hard caption↔photo theme veto, try up to N unused alternatives with
+ * `subjectKey` preference. Never re-forces a rejected agent URL.
+ */
+export function rematchGalleryAfterHardThemeConflict(input: {
+  caption: string;
+  headline: string;
+  mood: string;
+  galleryAnalysis: Record<string, GalleryPhotoMeta>;
+  candidateUrls: string[];
+  excludeUrls: string[];
+  rejectedUrl: string;
+  contentType?: string;
+  businessType?: string;
+  subjectKey?: string;
+  maxAttempts?: number;
+  globalUsageCounts?: ReadonlyMap<string, number>;
+  tieBreakSeed?: number;
+}): string | null {
+  const rejected = new Set([normalizeGalleryUrl(input.rejectedUrl)]);
+  const maxAttempts = Math.max(1, input.maxAttempts ?? 5);
+  const matchInput = {
+    caption: input.caption,
+    headline: input.headline,
+    mood: input.mood,
+    contentType: input.contentType,
+    businessType: input.businessType,
+    ...(input.subjectKey ? { subjectKey: input.subjectKey } : {}),
+    ...(input.globalUsageCounts ? { globalUsageCounts: input.globalUsageCounts } : {}),
+  };
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const exclude = [
+      ...input.excludeUrls,
+      ...[...rejected],
+    ];
+    const url = pickGalleryPhotoForIdea(
+      input.caption,
+      input.headline,
+      input.mood,
+      input.galleryAnalysis,
+      input.candidateUrls,
+      exclude,
+      exclude,
+      input.contentType,
+      null,
+      input.businessType,
+      true,
+      input.tieBreakSeed != null ? input.tieBreakSeed + attempt + 1 : undefined,
+      input.globalUsageCounts,
+      input.subjectKey,
+    );
+    if (!url) return null;
+    const base = normalizeGalleryUrl(url);
+    if (rejected.has(base)) return null;
+    const meta = input.galleryAnalysis[base]
+      ?? Object.entries(input.galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+    if (isHardGalleryThemeMismatch(matchInput, meta, url)) {
+      rejected.add(base);
+      continue;
+    }
+    return url;
+  }
+  return null;
 }
 
 /** Pick 1–2 extra gallery photos for multi-photo story layouts (excludes primary). */
@@ -328,6 +407,7 @@ export function pickSupplementaryGalleryPhotos(
   count: number,
   contentType?: string,
   businessType?: string,
+  subjectKey?: string,
 ): string[] {
   const extras: string[] = [];
   const exclude = [...batchExcludeUrls, primaryUrl];
@@ -344,6 +424,10 @@ export function pickSupplementaryGalleryPhotos(
       contentType,
       null,
       businessType,
+      true,
+      undefined,
+      undefined,
+      subjectKey,
     );
     if (!url || exclude.includes(url)) break;
     extras.push(url);

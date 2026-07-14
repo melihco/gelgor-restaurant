@@ -129,17 +129,17 @@ export function buildMissionGalleryAssignments(
     const subjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined;
     const matchInput = {
       ...buildSlotGalleryMatchInput({
-      assignment: queueItem.assignment,
-      storyIndex,
-      brandName: input.resolvedBrandName,
-      brandDescription: input.brandDescription,
-      businessType: input.brandBusinessType,
-      visualSubjectHint: String(queueItem.assignment.visual_subject_hint ?? ''),
-      creativeBrief: input.creativeBrief,
-      ideationCaption: caption,
-      ideationHeadline: headline,
-    }),
-      ...(subjectKey ? { subjectKey } : {}),
+        assignment: queueItem.assignment,
+        storyIndex,
+        brandName: input.resolvedBrandName,
+        brandDescription: input.brandDescription,
+        businessType: input.brandBusinessType,
+        visualSubjectHint: String(queueItem.assignment.visual_subject_hint ?? ''),
+        creativeBrief: input.creativeBrief,
+        ideationCaption: caption,
+        ideationHeadline: headline,
+        subjectKey,
+      }),
       ...(globalUsageCounts ? { globalUsageCounts } : {}),
     };
 
