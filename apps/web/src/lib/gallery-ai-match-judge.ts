@@ -25,7 +25,10 @@ import {
   buildGalleryLookup,
   rankPhotosForContent,
   GIS_PILOT_MIN_SCORE,
+  MIN_ACCEPT_SCORE,
   canonicalSubjectFromText,
+  canonicalSubjectRelationForMeta,
+  isHardGalleryThemeMismatch,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
   type PhotoMatchResult,
@@ -466,4 +469,92 @@ export async function gatePhotoMatchResult(
   }
 
   return match;
+}
+
+/**
+ * Judge escalation for sub-threshold picks (Gallery Match Quality Gate, faz 1.2).
+ *
+ * When the deterministic ranker finds NO acceptable photo (best score below
+ * MIN_ACCEPT) but the gallery contains a candidate whose vision subject
+ * canonically MATCHES the caption subject (e.g. caption "bal çeşitlerimiz"
+ * subject_key=honey vs photo primary_subject=thyme_honey), the refusal is a
+ * scoring artifact, not a real theme conflict. Instead of silently failing the
+ * slot, ask the AI judge to confirm the best subject-aligned candidate.
+ *
+ * Strictly fail-closed: returns a pick ONLY when a real judge verdict accepted
+ * it (judge disabled / unavailable / reject → null). Sector-agnostic — driven
+ * entirely by canonical subject tokens from ideation + vision.
+ */
+export async function escalateSubjectAlignedPick(
+  input: MatchPhotoInput,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  candidateUrls: string[],
+  options?: {
+    excludeUrls?: string[];
+    workspaceId?: string | null;
+    missionId?: string | null;
+    slotKey?: string | null;
+    enabled?: boolean;
+    judgeFn?: (input: GalleryJudgeInput) => Promise<GalleryJudgeVerdict | null>;
+  },
+): Promise<PhotoMatchResult | null> {
+  const subjectKey = String(input.subjectKey ?? '').trim()
+    || canonicalSubjectFromText(`${input.headline ?? ''} ${input.caption}`);
+  if (!subjectKey) return null;
+
+  const enabled = options?.enabled ?? galleryJudgeEnabled();
+  if (!enabled && !options?.judgeFn) return null;
+
+  const excludeBases = new Set((options?.excludeUrls ?? []).map(normalizeGalleryUrl));
+  const lookup = buildGalleryLookup(galleryAnalysis, candidateUrls);
+  const ranked = rankPhotosForContent(
+    { ...input, subjectKey },
+    candidateUrls,
+    lookup,
+    excludeBases,
+    galleryAnalysis,
+  );
+
+  const aligned = ranked.find((r) => {
+    const meta = resolveMetaForUrl(r.url, galleryAnalysis);
+    if (canonicalSubjectRelationForMeta(subjectKey, meta) !== 'match') return false;
+    return !isHardGalleryThemeMismatch({ ...input, subjectKey }, meta, r.url);
+  });
+  if (!aligned) return null;
+
+  const decision = await confirmGalleryPickWithAiJudge({
+    caption: input.caption,
+    headline: input.headline ?? '',
+    subjectKey,
+    businessType: input.businessType,
+    contentType: input.contentType,
+    mood: input.mood,
+    selectedUrl: aligned.url,
+    deterministicScore: aligned.score,
+    galleryAnalysis,
+    candidateUrls,
+    excludeUrls: options?.excludeUrls,
+    workspaceId: options?.workspaceId,
+    missionId: options?.missionId,
+    slotKey: options?.slotKey ? `${options.slotKey}::escalation` : 'judge_escalation',
+    enabled,
+    judgeFn: options?.judgeFn,
+  });
+
+  // Escalation may only ship a photo the judge actually confirmed. The one
+  // exception is confirm's strong-score fast path (judged=false but the
+  // deterministic score cleared GIS_PILOT) — as trustworthy as a normal pick.
+  // A judged=false accept from "judge disabled/unavailable" is NOT a verdict.
+  if (decision.action === 'reject' || !decision.url) return null;
+  if (!decision.judged && aligned.score < GIS_PILOT_MIN_SCORE) return null;
+
+  return {
+    url: decision.url,
+    // Judge confirmation lifts the pick to the acceptance floor so downstream
+    // sub-threshold re-pick loops don't override the verdict. The raw
+    // deterministic score was below MIN_ACCEPT by definition of this path.
+    score: Math.max(aligned.score, MIN_ACCEPT_SCORE),
+    reason: decision.action === 'swap' ? 'judge_escalation,ai_judge_swap' : 'judge_escalation',
+    confidence: decision.confidence,
+  };
 }

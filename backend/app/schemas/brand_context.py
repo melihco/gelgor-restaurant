@@ -252,6 +252,11 @@ class GalleryPhotoAnalysisEntry(BaseModel):
     # Canonical, language-neutral subject token for caption↔photo matching.
     primary_subject: str | None = Field(default=None, alias="primarySubject")
     subject_confidence: float | None = Field(default=None, alias="subjectConfidence")
+    # Multilingual matching metadata — aliases/family let a generic caption
+    # ("our jams") match a specific variant photo (fig_jam) in any sector.
+    subject_aliases: list[str] | None = Field(default=None, alias="subjectAliases")
+    subject_family: str | None = Field(default=None, alias="subjectFamily")
+    visible_label_text: str | None = Field(default=None, alias="visibleLabelText")
 
 
 class GalleryAnalysisSaveRequest(BaseModel):

@@ -8,9 +8,22 @@ const GALLERY_THEME_MISMATCH_MESSAGE_MARKERS = [
   'gallery_theme_mismatch',
 ] as const;
 
-export function galleryThemeMismatchMessage(headline: string): string {
+/**
+ * Pipeline stage that produced a gallery-theme failure. Surfaced in
+ * `last_error` so ops can tell WHERE a slot died without replaying the run:
+ * - `hard_veto`     — deterministic caption↔photo conflict, rematch exhausted
+ * - `judge_reject`  — AI judge failed the pick closed
+ * - `no_candidate`  — no gallery photo cleared the pick/escalation chain
+ */
+export type GalleryMismatchStage = 'hard_veto' | 'judge_reject' | 'no_candidate';
+
+export function galleryThemeMismatchMessage(
+  headline: string,
+  stage?: GalleryMismatchStage,
+): string {
   const snippet = headline.trim().slice(0, 40) || 'içerik';
-  return `Caption–görsel tema çatışması — "${snippet}" için uygun galeri fotoğrafı yok`;
+  const base = `Caption–görsel tema çatışması — "${snippet}" için uygun galeri fotoğrafı yok`;
+  return stage ? `${base} [aşama: ${stage}]` : base;
 }
 
 /** Failures that will not succeed on retry without new gallery data or ideation edits. */

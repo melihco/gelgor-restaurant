@@ -12,12 +12,23 @@ describe('production-slot-failures', () => {
     );
   });
 
+  it('appends a machine-readable stage tag when provided', () => {
+    expect(galleryThemeMismatchMessage('Bal Çeşitlerimiz', 'judge_reject')).toBe(
+      'Caption–görsel tema çatışması — "Bal Çeşitlerimiz" için uygun galeri fotoğrafı yok [aşama: judge_reject]',
+    );
+    expect(galleryThemeMismatchMessage('Reçel', 'hard_veto')).toContain('[aşama: hard_veto]');
+  });
+
   it('isNonRetryableProductionFailure matches errorCode and message markers', () => {
     expect(
       isNonRetryableProductionFailure(
         galleryThemeMismatchMessage('Reçel'),
         GALLERY_THEME_MISMATCH_CODE,
       ),
+    ).toBe(true);
+    // Stage-tagged messages must stay non-retryable (marker still present).
+    expect(
+      isNonRetryableProductionFailure(galleryThemeMismatchMessage('Bal', 'judge_reject')),
     ).toBe(true);
     expect(isNonRetryableProductionFailure('Remotion 422')).toBe(false);
   });

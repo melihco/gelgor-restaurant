@@ -31,6 +31,7 @@ import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-produc
 import {
   buildMissionGalleryAssignments,
   missionGallerySlotKey,
+  resolveQueueGalleryCapacityReroutes,
 } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 
@@ -250,19 +251,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       galleryUsage: gctx.usage,
     });
 
+    // Capacity-aware manifest: strict-subject slots with zero aligned gallery
+    // photos are enqueued on the fal_only pipeline (AI visual) instead of a
+    // guaranteed gallery_theme_mismatch. Drain recomputes the same verdict.
+    const capacityReroutes = resolveQueueGalleryCapacityReroutes({
+      productionLoop: productionQueue,
+      galleryMeta: gctx.meta,
+      galleryPhotos: gctx.photos,
+      hasRealBrandPhotos: gctx.hasRealPhotos,
+      resolvedBrandName: pctx.brandName,
+    });
+    if (capacityReroutes.size > 0) {
+      console.warn(
+        `[auto-produce/plan] gallery capacity reroute: ${capacityReroutes.size} slot(s) → fal_only`,
+      );
+    }
+
     const slots = productionQueue.map((item) => {
       const role = item.assignment.slot_role;
       const galleryKey = missionGallerySlotKey(item.ideaIndex, String(role));
       const assigned = missionGalleryAssignments.get(galleryKey);
+      const reroutedPipeline = capacityReroutes.get(galleryKey);
       return {
         ideaIndex: item.ideaIndex,
         slotRole: role,
         format: formatForSlotRole(role),
-        pipeline: item.assignment.pipeline,
+        pipeline: reroutedPipeline ?? item.assignment.pipeline,
         librarySlotKey: item.assignment.library_slot_key ?? null,
         backfillSlotKey: `${item.ideaIndex}:${role}`,
         sourceTrack: 'ideation',
-        payload: assigned?.url
+        payload: assigned?.url && !reroutedPipeline
           ? {
             galleryPhotoUrl: assigned.url,
             galleryMatchScore: assigned.score ?? null,

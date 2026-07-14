@@ -1801,8 +1801,44 @@ export function assignPhotosToContents(
 
   type PendingItem = { key: string; input: MatchPhotoInput; order: number };
 
-  const greedyAssignRound = (pending: PendingItem[], minScore: number): PendingItem[] => {
+  /**
+   * Subject reservation: photos that canonically match a still-pending slot's
+   * concrete subject are held for that slot. Relaxed/diversity rounds must not
+   * hand a sibling's only subject-aligned photo to a generic caption — that
+   * starves the product slot even though the judge could still confirm it.
+   */
+  const buildSubjectReservations = (pending: PendingItem[]): Map<string, Set<string>> => {
+    const reserved = new Map<string, Set<string>>();
+    for (const { key, input } of pending) {
+      const subjectKey = String(input.subjectKey ?? '').trim();
+      if (!subjectKey || NON_CONCRETE_SUBJECTS.has(normalizeSubjectForRelation(subjectKey))) {
+        continue;
+      }
+      for (const url of candidateUrls) {
+        const base = normalizeGalleryUrl(url);
+        if (usedMissionWide.has(base)) continue;
+        const meta = resolveGalleryPhotoMeta(url, galleryAnalysis, candidateUrls);
+        if (canonicalSubjectRelationForMeta(subjectKey, meta) !== 'match') continue;
+        const owners = reserved.get(base) ?? new Set<string>();
+        owners.add(key);
+        reserved.set(base, owners);
+      }
+    }
+    return reserved;
+  };
+
+  const greedyAssignRound = (
+    pending: PendingItem[],
+    minScore: number,
+    reservations?: Map<string, Set<string>>,
+  ): PendingItem[] => {
     const remaining: PendingItem[] = [];
+
+    const photoAllowedFor = (itemKey: string, url: string): boolean => {
+      if (!reservations) return true;
+      const owners = reservations.get(normalizeGalleryUrl(url));
+      return !owners || owners.has(itemKey);
+    };
 
     while (pending.length > 0) {
       let pick: {
@@ -1820,7 +1856,7 @@ export function assignPhotosToContents(
           lookup,
           usedMissionWide,
           galleryAnalysis,
-        )[0];
+        ).find((r) => photoAllowedFor(key, r.url));
         if (!top || top.score < minScore) continue;
         const better =
           !pick
@@ -1847,27 +1883,36 @@ export function assignPhotosToContents(
 
   let pending: PendingItem[] = items.map((item, order) => ({ ...item, order }));
 
-  // Phase 1: semantic matches at production threshold.
+  // Phase 1: semantic matches at production threshold. No reservations —
+  // strength-first greedy already gives the best subject match to its owner.
   pending = greedyAssignRound(pending, strictMinScore);
 
   // Phase 2: still-unassigned — only non-strict captions may take weaker semantic matches.
   // Nightlife / food / beauty captions stay unassigned rather than accept a wrong photo.
+  // Photos subject-reserved for a pending sibling are off limits.
   if (pending.length > 0 && RELAXED_MATCH_SCORE < strictMinScore) {
+    const reservations = buildSubjectReservations(pending);
     const relaxedEligible = pending.filter(
       (p) => !captionRequiresStrictGalleryMatch(p.input.caption ?? '', p.input.headline ?? ''),
     );
     const strictHeld = pending.filter(
       (p) => captionRequiresStrictGalleryMatch(p.input.caption ?? '', p.input.headline ?? ''),
     );
-    const stillOpen = greedyAssignRound(relaxedEligible, RELAXED_MATCH_SCORE);
+    const stillOpen = greedyAssignRound(relaxedEligible, RELAXED_MATCH_SCORE, reservations);
     pending = [...strictHeld, ...stillOpen];
   }
 
-  // Phase 3: tag-diversity fallback — never for strict theme captions; never hard mismatches.
+  // Phase 3: tag-diversity fallback — never for strict theme captions; never hard
+  // mismatches; never a photo subject-reserved for a pending sibling slot.
+  const diversityReservations = buildSubjectReservations(pending);
   for (const { key, input } of pending) {
+    const reservedForOthers = new Set(usedMissionWide);
+    for (const [base, owners] of diversityReservations) {
+      if (!owners.has(key)) reservedForOthers.add(base);
+    }
     const fallback = pickMissionDiverseFallbackPhoto(
       candidateUrls,
-      usedMissionWide,
+      reservedForOthers,
       galleryAnalysis,
       assignedUrls,
       input,

@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   confirmGalleryPickWithAiJudge,
+  escalateSubjectAlignedPick,
   gatePhotoMatchResult,
   type GalleryJudgeInput,
   type GalleryJudgeVerdict,
@@ -231,5 +232,117 @@ describe('gatePhotoMatchResult — batch pre-assignment gate', () => {
       },
     );
     expect(out).toBeNull();
+  });
+});
+
+describe('escalateSubjectAlignedPick — sub-threshold judge escalation', () => {
+  const THYME_HONEY = 'https://cdn.example.com/thyme-honey.jpg';
+  const YOGA_MAT = 'https://cdn.example.com/yoga-mat.jpg';
+
+  /** Sparse vision meta — deterministic score stays low, but the canonical
+   * subject relation to a "honey" caption is a match (thyme_honey ⊃ honey). */
+  const sparseShopGallery = (): Record<string, GalleryPhotoMeta> => ({
+    [THYME_HONEY]: { primarySubject: 'thyme_honey', contentTags: [], description: '' },
+  });
+
+  const gymGallery = (): Record<string, GalleryPhotoMeta> => ({
+    [YOGA_MAT]: { primarySubject: 'yoga_mat', contentTags: ['yoga'], description: 'Yoga mat on floor.' },
+  });
+
+  it('rescues a subject-aligned pick the judge confirms (local_products_shop)', async () => {
+    const out = await escalateSubjectAlignedPick(
+      { caption: 'Bal çeşitlerimiz raflarda', headline: 'Bal Çeşitlerimiz', businessType: 'local_products_shop', subjectKey: 'honey' },
+      sparseShopGallery(),
+      [THYME_HONEY],
+      {
+        enabled: true,
+        judgeFn: fixedJudge({
+          pickIndex: 0,
+          confidence: 0.9,
+          canonicalSubject: 'honey',
+          reason: 'thyme honey jar satisfies generic honey caption',
+          model,
+          usage: null,
+        }),
+      },
+    );
+    expect(out?.url).toBe(THYME_HONEY);
+    expect(out?.reason).toContain('judge_escalation');
+  });
+
+  it('fails closed when the judge rejects the escalated candidate', async () => {
+    const out = await escalateSubjectAlignedPick(
+      { caption: 'Bal çeşitlerimiz', headline: 'Bal', businessType: 'local_products_shop', subjectKey: 'honey' },
+      sparseShopGallery(),
+      [THYME_HONEY],
+      {
+        enabled: true,
+        judgeFn: fixedJudge({
+          pickIndex: null,
+          confidence: 0.9,
+          reason: 'label unreadable, cannot confirm honey',
+          rejectReason: 'uncertain product',
+          model,
+          usage: null,
+        }),
+      },
+    );
+    expect(out).toBeNull();
+  });
+
+  it('returns null when the judge is unavailable (error) — no invented match', async () => {
+    const out = await escalateSubjectAlignedPick(
+      { caption: 'Bal çeşitlerimiz', headline: 'Bal', businessType: 'local_products_shop', subjectKey: 'honey' },
+      sparseShopGallery(),
+      [THYME_HONEY],
+      { enabled: true, judgeFn: fixedJudge(null) },
+    );
+    expect(out).toBeNull();
+  });
+
+  it('returns null without judging when disabled', async () => {
+    const out = await escalateSubjectAlignedPick(
+      { caption: 'Bal çeşitlerimiz', headline: 'Bal', businessType: 'local_products_shop', subjectKey: 'honey' },
+      sparseShopGallery(),
+      [THYME_HONEY],
+      { enabled: false },
+    );
+    expect(out).toBeNull();
+  });
+
+  it('never calls the judge when no candidate subject-aligns (gym sector)', async () => {
+    let called = false;
+    const out = await escalateSubjectAlignedPick(
+      { caption: 'Protein tozu çeşitlerimiz', headline: 'Protein ürünleri', businessType: 'gym', subjectKey: 'protein_powder' },
+      gymGallery(),
+      [YOGA_MAT],
+      {
+        enabled: true,
+        judgeFn: async () => {
+          called = true;
+          return null;
+        },
+      },
+    );
+    expect(out).toBeNull();
+    expect(called).toBe(false);
+  });
+
+  it('returns null when the caption has no concrete subject', async () => {
+    let called = false;
+    const out = await escalateSubjectAlignedPick(
+      { caption: 'Harika bir hafta sonu!', headline: 'Mutlu anlar', businessType: 'gym' },
+      gymGallery(),
+      [YOGA_MAT],
+      {
+        enabled: true,
+        judgeFn: async () => {
+          called = true;
+          return null;
+        },
+      },
+    );
+    expect(out).toBeNull();
+    expect(called).toBe(false);
   });
 });

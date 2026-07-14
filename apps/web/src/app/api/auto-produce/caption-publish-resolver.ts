@@ -19,7 +19,7 @@ import {
   resolveGalleryPhotoMeta,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
-import { gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
+import { escalateSubjectAlignedPick, gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
 import {
   filterUsableGalleryPhotoUrls,
   isUsableGalleryPhotoUrl,
@@ -286,8 +286,6 @@ export async function pickGalleryPhotoForIdeaAsync(
     globalUsageCounts,
     subjectKey,
   );
-  if (!picked) return null;
-
   const alignedSubjectKey = resolveGalleryMatchSubjectKey({ caption, headline, subjectKey });
   const input = {
     caption,
@@ -298,6 +296,23 @@ export async function pickGalleryPhotoForIdeaAsync(
     ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };
+
+  // Sub-threshold refusal + subject-aligned gallery photo → let the judge rule
+  // instead of silently failing the slot (fail-closed: judge must confirm).
+  if (!picked) {
+    const escalated = await escalateSubjectAlignedPick(input, galleryAnalysis, candidateUrls, {
+      excludeUrls: [...typeExcludeUrls, ...batchExcludeUrls],
+      workspaceId: judgeContext?.workspaceId,
+      missionId: judgeContext?.missionId,
+      slotKey: judgeContext?.slotKey,
+    });
+    if (escalated?.url) {
+      console.log(
+        `[gallery-judge] escalation rescued sub-threshold pick (score ${escalated.score}) for "${headline.slice(0, 40)}"`,
+      );
+    }
+    return escalated?.url ?? null;
+  }
   const match = matchPhotoToContent(input, candidateUrls, galleryAnalysis, {
     excludeUrls: [...typeExcludeUrls, ...batchExcludeUrls],
     displayUrls: candidateUrls,

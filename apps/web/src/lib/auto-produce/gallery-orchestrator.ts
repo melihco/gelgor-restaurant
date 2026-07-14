@@ -8,13 +8,17 @@
 
 import {
   assignPhotosToContents,
+  canonicalSubjectRelationForMeta,
   resolveGalleryMatchSubjectKey,
+  resolveGalleryPhotoMeta,
+  type CanonicalSubjectRelation,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
   type PhotoMatchResult,
   MIN_ACCEPT_SCORE,
 } from '@/lib/gallery-photo-matcher';
-import { gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
+import { captionRequiresStrictGalleryMatch } from '@/lib/caption-photo-alignment';
+import { escalateSubjectAlignedPick, gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import {
   isMeaninglessBrandEchoHeadline,
@@ -24,7 +28,11 @@ import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import { buildSlotGalleryMatchInput, assignmentPostType } from '@/lib/gallery-first-production';
 import type { UsedGalleryUsage } from '@/lib/gallery-usage-tracker';
-import { buildGlobalGalleryUsageCounts, getMissionWideExcludeUrls } from '@/lib/gallery-usage-tracker';
+import {
+  buildGlobalGalleryUsageCounts,
+  getMissionWideExcludeUrls,
+  normalizeGalleryUrl,
+} from '@/lib/gallery-usage-tracker';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -58,6 +66,82 @@ export function assignmentUsesGalleryPhoto(
   );
 }
 
+/** Non-photo pipeline a zero-capacity slot falls back to, by post format. */
+function falOnlyPipelineForPostType(postType: 'feed' | 'story' | 'reel' | 'carousel'): string | null {
+  if (postType === 'carousel') return null; // multi-photo slots keep diversity fallback
+  if (postType === 'story') return 'fal_only_story';
+  if (postType === 'reel') return 'fal_only_reel';
+  return 'fal_only_post';
+}
+
+/**
+ * Capacity-aware manifest (faz 3.7): slots whose STRICT caption demands a
+ * concrete subject the gallery simply does not contain are doomed to
+ * `gallery_theme_mismatch` before any photo is picked — the veto/judge chain
+ * can only confirm the absence. Instead of enqueueing guaranteed-permanent
+ * failures, reroute those slots to the format's fal_only (AI visual) pipeline.
+ *
+ * Deterministic and vision-driven (canonical subject relations only), so the
+ * plan phase and every drain call compute the same verdict for any tenant or
+ * sector. Slot roles are preserved — factory job bookkeeping stays intact.
+ *
+ * Returns a Map of `missionGallerySlotKey` → replacement pipeline.
+ */
+export function resolveQueueGalleryCapacityReroutes(input: {
+  productionLoop: ManifestProductionQueueItem[];
+  galleryMeta: Record<string, GalleryPhotoMeta>;
+  galleryPhotos: string[];
+  hasRealBrandPhotos: boolean;
+  resolvedBrandName: string;
+}): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!input.hasRealBrandPhotos || input.galleryPhotos.length === 0) return out;
+
+  // Canonical subject relations per slot — alias/family aware, no dictionary.
+  const relationsForSubject = (subjectKey: string): CanonicalSubjectRelation[] =>
+    input.galleryPhotos.map((url) => {
+      const meta = resolveGalleryPhotoMeta(url, input.galleryMeta, input.galleryPhotos);
+      return canonicalSubjectRelationForMeta(subjectKey, meta);
+    });
+
+  for (const queueItem of input.productionLoop) {
+    if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
+    const postType = assignmentPostType(queueItem.assignment);
+    const fallbackPipeline = falOnlyPipelineForPostType(postType);
+    if (!fallbackPipeline) continue;
+
+    const idea = queueItem.idea as Record<string, unknown>;
+    const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
+    const headline = resolveIdeationHeadline(idea);
+
+    const subjectKey = resolveGalleryMatchSubjectKey({
+      caption,
+      headline,
+      subjectKey: String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined,
+    });
+    if (!subjectKey) continue;
+
+    const relations = relationsForSubject(subjectKey);
+    if (relations.includes('match')) continue;
+
+    // Doom is guaranteed only when NO alternative pick path remains:
+    // - strict captions forbid relaxed/diversity fallbacks entirely, OR
+    // - every photo hard-conflicts with the subject (veto fires on any pick).
+    // 'unknown' relations + non-strict caption → diversity + judge may still
+    // ship a photo; leave those slots on the gallery pipeline.
+    const strict = captionRequiresStrictGalleryMatch(caption, headline);
+    const allConflict = relations.length > 0 && relations.every((r) => r === 'conflict');
+    if (!strict && !allConflict) continue;
+
+    out.set(
+      missionGallerySlotKey(queueItem.ideaIndex, String(queueItem.assignment.slot_role)),
+      fallbackPipeline,
+    );
+  }
+
+  return out;
+}
+
 export interface GalleryOrchestrationInput {
   workspaceId?: string;
   missionId: string | undefined;
@@ -72,6 +156,11 @@ export interface GalleryOrchestrationInput {
   creativeBrief?: string;
   /** Already-used gallery URLs from existing artifacts — seeded into batch matcher. */
   galleryUsage?: UsedGalleryUsage;
+  /**
+   * Photos already reserved by plan-time (factory) slot assignments — excluded
+   * so a drain-time recompute for uncovered slots cannot double-book them.
+   */
+  preassignedUrls?: string[];
 }
 
 /**
@@ -161,14 +250,17 @@ export async function buildMissionGalleryAssignments(
 
   if (assignItems.length === 0) return result;
 
-  const seedExclude = input.galleryUsage
-    ? getMissionWideExcludeUrls(input.galleryUsage, {
-      feed: [],
-      story: [],
-      reel: [],
-      carousel: [],
-    })
-    : [];
+  const seedExclude = [
+    ...(input.galleryUsage
+      ? getMissionWideExcludeUrls(input.galleryUsage, {
+        feed: [],
+        story: [],
+        reel: [],
+        carousel: [],
+      })
+      : []),
+    ...(input.preassignedUrls ?? []),
+  ];
 
   const batchAssigned = assignPhotosToContents(
     assignItems.map(({ key, input: matchIn, postType }) => ({ key, input: matchIn, postType })),
@@ -179,6 +271,8 @@ export async function buildMissionGalleryAssignments(
 
   let judgeRejected = 0;
   let judgeSwapped = 0;
+  let judgeEscalated = 0;
+  let redistributed = 0;
   for (const [key, val] of batchAssigned) {
     const item = assignItems.find((i) => i.key === key);
     if (!item || !val) {
@@ -196,6 +290,69 @@ export async function buildMissionGalleryAssignments(
     result.set(key, gated);
   }
 
+  // Redistribution: judge rejections release their photos back into the pool.
+  // Slots that starved in the greedy pass (photo taken by a rejected sibling)
+  // get one deterministic re-assignment round over the freed pool; each new
+  // pick passes the same judge gate. Single round — no reject/retry loops.
+  if (judgeRejected > 0) {
+    const openItems = assignItems.filter((i) => !result.get(i.key)?.url);
+    if (openItems.length > 0) {
+      const reservedNow = [
+        ...seedExclude,
+        ...[...result.values()].flatMap((v) => (v?.url ? [v.url] : [])),
+      ];
+      const secondPass = assignPhotosToContents(
+        openItems.map(({ key, input: matchIn, postType }) => ({ key, input: matchIn, postType })),
+        input.galleryPhotos,
+        input.galleryMeta,
+        { minScore: MIN_ACCEPT_SCORE, excludeUrls: reservedNow },
+      );
+      for (const item of openItems) {
+        const val = secondPass.get(item.key);
+        if (!val?.url) continue;
+        const gated = await gatePhotoMatchResult(val, item.input, input.galleryMeta, input.galleryPhotos, {
+          excludeUrls: reservedNow,
+          workspaceId: input.workspaceId,
+          missionId: input.missionId,
+          slotKey: `${item.key}::redistribute`,
+        });
+        if (gated?.url) {
+          result.set(item.key, { ...gated, reason: `${gated.reason},redistributed` });
+          reservedNow.push(gated.url);
+          redistributed += 1;
+        }
+      }
+    }
+  }
+
+  // Judge escalation: slots the greedy batch left empty may still have a
+  // subject-aligned gallery photo whose deterministic score fell below the
+  // acceptance floor (e.g. honey caption vs thyme_honey jar). Fail-closed —
+  // only a confirmed judge verdict assigns the photo.
+  const usedBases = new Set(seedExclude.map(normalizeGalleryUrl));
+  for (const v of result.values()) {
+    if (v?.url) usedBases.add(normalizeGalleryUrl(v.url));
+  }
+  for (const item of assignItems) {
+    if (result.get(item.key)?.url) continue;
+    const escalatedPick = await escalateSubjectAlignedPick(
+      item.input,
+      input.galleryMeta,
+      input.galleryPhotos,
+      {
+        excludeUrls: [...usedBases],
+        workspaceId: input.workspaceId,
+        missionId: input.missionId,
+        slotKey: item.key,
+      },
+    );
+    if (escalatedPick?.url) {
+      result.set(item.key, escalatedPick);
+      usedBases.add(normalizeGalleryUrl(escalatedPick.url));
+      judgeEscalated += 1;
+    }
+  }
+
   const assignedCount = [...result.values()].filter(Boolean).length;
   const diversityCount = [...result.values()].filter(
     (v) => v?.reason?.includes('mission_diversity_fallback'),
@@ -204,8 +361,9 @@ export async function buildMissionGalleryAssignments(
   console.log(
     `[auto-produce] Mission gallery batch assign: ${assignItems.length} slots, ` +
     `${assignedCount} assigned (${assignedCount - diversityCount} semantic, ${diversityCount} diversity)` +
-    (judgeRejected || judgeSwapped
-      ? `, judge: ${judgeRejected} rejected, ${judgeSwapped} swapped`
+    (judgeRejected || judgeSwapped || judgeEscalated || redistributed
+      ? `, judge: ${judgeRejected} rejected, ${judgeSwapped} swapped, `
+        + `${judgeEscalated} escalated, ${redistributed} redistributed`
       : ''),
   );
 

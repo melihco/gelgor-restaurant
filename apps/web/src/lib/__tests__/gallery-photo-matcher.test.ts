@@ -367,6 +367,42 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
     expect(urls).toHaveLength(4);
     expect(new Set(urls).size).toBe(4);
   });
+
+  it('reserves a subject-aligned photo for its product slot — generic captions cannot take it (local_products_shop)', () => {
+    const JAM_PHOTO = 'https://cdn.example.com/gallery/fig-jam-jar.jpg';
+    const gallery: Record<string, GalleryPhotoMeta> = {
+      // Sparse meta → the jam slot scores below MIN_ACCEPT (stays pending),
+      // while the generic promo caption would happily take the photo in the
+      // relaxed/diversity rounds without reservations.
+      [JAM_PHOTO]: { primarySubject: 'fig_jam', contentTags: [], description: '' },
+    };
+    const assigned = assignPhotosToContents(
+      [
+        { key: 'promo', input: { caption: 'Hafta sonu indirimleri kaçmaz', businessType: 'local_products_shop' }, postType: 'feed' },
+        { key: 'jam', input: { caption: 'Reçel çeşitlerimiz', headline: 'Reçel', businessType: 'local_products_shop', subjectKey: 'jam' }, postType: 'feed' },
+      ],
+      [JAM_PHOTO],
+      gallery,
+    );
+    // The only jam photo must NOT leak to the generic promo slot.
+    expect(assigned.get('promo')?.url).toBeUndefined();
+  });
+
+  it('reservation logic is sector-agnostic — beauty photo held for its service slot', () => {
+    const NAIL_PHOTO = 'https://cdn.example.com/gallery/nail-art.jpg';
+    const gallery: Record<string, GalleryPhotoMeta> = {
+      [NAIL_PHOTO]: { primarySubject: 'nail_art', contentTags: [], description: '' },
+    };
+    const assigned = assignPhotosToContents(
+      [
+        { key: 'promo', input: { caption: 'Yeni sezon fırsatları başladı', businessType: 'beauty_wellness' }, postType: 'feed' },
+        { key: 'nails', input: { caption: 'Nail art tasarımlarımız', headline: 'Nail art', businessType: 'beauty_wellness', subjectKey: 'nail_art' }, postType: 'feed' },
+      ],
+      [NAIL_PHOTO],
+      gallery,
+    );
+    expect(assigned.get('promo')?.url).toBeUndefined();
+  });
 });
 
 describe('local product carousel — honey caption must not pick olive oil', () => {

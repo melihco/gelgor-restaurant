@@ -286,6 +286,7 @@ import {
   buildMissionGalleryAssignments,
   missionGallerySlotKey,
   assignmentUsesGalleryPhoto,
+  resolveQueueGalleryCapacityReroutes,
 } from '@/lib/auto-produce/gallery-orchestrator';
 import {
   createDefaultNexusClient,
@@ -352,7 +353,10 @@ import {
   GALLERY_THEME_MISMATCH_CODE,
   galleryThemeMismatchMessage,
 } from '@/lib/production-slot-failures';
-import { confirmGalleryPickWithAiJudge } from '@/lib/gallery-ai-match-judge';
+import {
+  confirmGalleryPickWithAiJudge,
+  escalateSubjectAlignedPick,
+} from '@/lib/gallery-ai-match-judge';
 import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production';
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
@@ -880,28 +884,64 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  const missionGalleryAssignments = await buildMissionGalleryAssignments({
-    workspaceId,
-    missionId,
+  // Plan-time (factory) assignments are the SSOT when present: the plan phase
+  // already ran the judge-gated batch once for the whole manifest. Recomputing
+  // per drain call would burn judge tokens AND produce drift (cumulative
+  // excludes change between calls). Only slots the plan left uncovered get a
+  // fresh batch pass, with plan-reserved photos excluded from their pool.
+  const precomputedAssignments = Object.entries(gallerySlotAssignments ?? {})
+    .filter(([, entry]) => String(entry?.url ?? '').trim().length > 0);
+  const precomputedKeys = new Set(precomputedAssignments.map(([key]) => key));
+  const uncoveredQueue = precomputedKeys.size > 0
+    ? fullProductionQueue.filter(
+      (item) => !precomputedKeys.has(
+        missionGallerySlotKey(item.ideaIndex, String(item.assignment.slot_role)),
+      ),
+    )
     // Always assign across the full manifest — factory drain may produce one slot per call.
-    productionLoop: fullProductionQueue,
-    galleryPhotos,
-    galleryMeta,
-    brandBusinessType,
-    resolvedBrandName,
-    hasGallery,
-    hasRealBrandPhotos,
-    brandDescription: String(brandCtx.description ?? ''),
-    creativeBrief: creativeBrief ?? undefined,
-    galleryUsage,
-  });
+    : fullProductionQueue;
 
-  if (gallerySlotAssignments && Object.keys(gallerySlotAssignments).length > 0) {
-    for (const [key, entry] of Object.entries(gallerySlotAssignments)) {
-      const url = String(entry?.url ?? '').trim();
-      if (!url) continue;
+  // Capacity-aware reroute: strict-subject slots with zero aligned gallery
+  // photos switch to the format's fal_only pipeline instead of a guaranteed
+  // gallery_theme_mismatch. Deterministic — plan and drain agree.
+  const missionCapacityReroutes = missionId
+    ? resolveQueueGalleryCapacityReroutes({
+      productionLoop: fullProductionQueue,
+      galleryMeta,
+      galleryPhotos,
+      hasRealBrandPhotos,
+      resolvedBrandName,
+    })
+    : new Map<string, string>();
+  if (missionCapacityReroutes.size > 0) {
+    console.warn(
+      `[auto-produce] gallery capacity reroute: ${missionCapacityReroutes.size} slot(s) → fal_only `
+      + `(${[...missionCapacityReroutes.keys()].join(', ')})`,
+    );
+  }
+
+  const missionGalleryAssignments = uncoveredQueue.length > 0
+    ? await buildMissionGalleryAssignments({
+      workspaceId,
+      missionId,
+      productionLoop: uncoveredQueue,
+      galleryPhotos,
+      galleryMeta,
+      brandBusinessType,
+      resolvedBrandName,
+      hasGallery,
+      hasRealBrandPhotos,
+      brandDescription: String(brandCtx.description ?? ''),
+      creativeBrief: creativeBrief ?? undefined,
+      galleryUsage,
+      preassignedUrls: precomputedAssignments.map(([, entry]) => String(entry.url)),
+    })
+    : new Map<string, import('@/lib/gallery-photo-matcher').PhotoMatchResult | null>();
+
+  if (precomputedAssignments.length > 0) {
+    for (const [key, entry] of precomputedAssignments) {
       missionGalleryAssignments.set(key, {
-        url,
+        url: String(entry.url),
         score: typeof entry.score === 'number' ? entry.score : MIN_ACCEPT_SCORE,
         reason: 'factory_batch_assign',
         confidence: 1,
@@ -909,7 +949,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     console.log(
       `[auto-produce] Factory gallery batch assign: `
-      + `${Object.keys(gallerySlotAssignments).length} precomputed slot(s)`,
+      + `${precomputedAssignments.length} precomputed slot(s), `
+      + `${uncoveredQueue.length} recomputed`,
     );
   }
 
@@ -1123,6 +1164,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           adHocBrief,
         });
       })();
+    // Zero gallery capacity for this slot's strict subject → produce an AI
+    // visual instead of failing permanently. Slot role (job key) is preserved.
+    const capacityReroutePipeline = missionCapacityReroutes.get(
+      missionGallerySlotKey(ideaIndex, String(assignment.slot_role)),
+    );
+    if (capacityReroutePipeline) {
+      console.warn(
+        `[auto-produce] capacity reroute ${ideaIndex}:${assignment.slot_role}: `
+        + `${assignment.pipeline} → ${capacityReroutePipeline} (subject "${ideationSubjectKey ?? '—'}" not in gallery)`,
+      );
+      assignment = {
+        ...assignment,
+        pipeline: capacityReroutePipeline as typeof assignment.pipeline,
+      };
+    }
     // New Brief: kullanıcı story seçtiyse fal_reel pipeline olsa da feed'de story olarak etiketle.
     const kind = adHocBrief && pkgFmt === 'story'
       ? 'instagram_story'
@@ -1695,6 +1751,28 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             });
           }
           }
+          // Last resort before failing the slot: sub-threshold but
+          // subject-aligned photo confirmed by the AI judge (fail-closed).
+          if (!referenceUrl) {
+            const escalatedPick = await escalateSubjectAlignedPick(
+              batchMatchInput,
+              galleryMeta,
+              galleryPhotos,
+              {
+                excludeUrls: missionGalleryExclude,
+                workspaceId,
+                missionId,
+                slotKey,
+              },
+            );
+            if (escalatedPick?.url) {
+              referenceUrl = escalatedPick.url;
+              galleryMatchScore = escalatedPick.score;
+              console.log(
+                `[auto-produce] judge escalation assigned photo (score ${escalatedPick.score}) for "${ideationHeadline.slice(0, 40)}"`,
+              );
+            }
+          }
         }
       } else {
         referenceUrl = pickMissionGallery(
@@ -2265,6 +2343,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       (photoMetaForCaption as GalleryPhotoMeta | undefined)?.description ?? '',
     ).trim();
 
+    // Batch decision SSOT: when this slot's photo IS the judge-gated batch
+    // assignment, the loop must not re-litigate it with a differently composed
+    // caption blob (drift: same photo scores 56 in batch, 26 here). The hard
+    // theme veto and the slot-level judge below remain as safety gates.
+    const slotBatchDecision = missionId && assignmentUsesGalleryPhoto(assignment)
+      ? missionGalleryAssignments.get(missionGallerySlotKey(ideaIndex, String(assignment.slot_role)))
+      : undefined;
+    const batchSourcedGalleryPick = Boolean(
+      slotBatchDecision?.url
+      && normalizedResolvedReferenceUrl
+      && normalizeGalleryUrl(slotBatchDecision.url) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
+    );
+
     if (pickedFromBrandGallery && !referenceIsStock) {
       const scorePhoto = (url: string) => scoreIdeationPhotoMatch({
         caption: ideationCaption,
@@ -2278,8 +2369,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       });
 
       galleryMatchScore = scorePhoto(normalizedResolvedReferenceUrl);
+      if (batchSourcedGalleryPick && slotBatchDecision) {
+        // Loop rescoring may only raise, never sink, a batch-confirmed pick.
+        galleryMatchScore = Math.max(galleryMatchScore, slotBatchDecision.score);
+      }
 
-      if (galleryMatchScore < MIN_ACCEPT_SCORE) {
+      if (galleryMatchScore < MIN_ACCEPT_SCORE && !batchSourcedGalleryPick) {
         let bestUrl = resolvedReferenceUrl ?? '';
         let bestScore = galleryMatchScore;
         for (const candidate of galleryPhotos) {
@@ -2427,7 +2522,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline,
           imageUrl: galleryPreviewUrl ?? '',
-          error: galleryThemeMismatchMessage(galleryMatchHeadline),
+          error: galleryThemeMismatchMessage(galleryMatchHeadline, 'hard_veto'),
           errorCode: GALLERY_THEME_MISMATCH_CODE,
           slotKey,
         });
@@ -2439,12 +2534,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Strong deterministic matches skip the judge (fast + free). Uncertain picks
     // are confirmed; low confidence / wrong subject fail closed instead of
     // shipping a doubtful photo. Multilingual (TR/EN/mixed) aware.
+    // Batch-confirmed picks (photo still equals the judge-gated batch decision)
+    // skip the slot judge — re-judging the same verdict wastes tokens.
+    const stillBatchConfirmedPick = Boolean(
+      slotBatchDecision?.url
+      && resolvedReferenceUrl
+      && normalizeGalleryUrl(slotBatchDecision.url) === normalizeGalleryUrl(resolvedReferenceUrl),
+    );
     if (
       missionId
       && pickedFromBrandGallery
       && resolvedReferenceUrl
       && !captionDrivenGenerated
       && !forceAttachedPhotos
+      && !stillBatchConfirmedPick
     ) {
       const judgeExclude = getMissionWideExcludeUrls(
         galleryUsage,
@@ -2503,7 +2606,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline,
           imageUrl: galleryPreviewUrl ?? '',
-          error: galleryThemeMismatchMessage(galleryMatchHeadline),
+          error: galleryThemeMismatchMessage(galleryMatchHeadline, 'judge_reject'),
           errorCode: GALLERY_THEME_MISMATCH_CODE,
           slotKey,
         });
