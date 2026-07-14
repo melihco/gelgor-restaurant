@@ -347,6 +347,10 @@ import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
 import { runPipelineStages } from './pipelines/pipeline-types';
 import type { SlotProductionContext } from './pipelines/pipeline-types';
 import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
+import {
+  GALLERY_THEME_MISMATCH_CODE,
+  galleryThemeMismatchMessage,
+} from '@/lib/production-slot-failures';
 import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production';
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
@@ -803,6 +807,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     imageUrl: string;
     videoUrl?: string;
     error?: string;
+    /** Machine-readable failure for factory retry policy (Python drainer). */
+    errorCode?: string;
     publishReady?: boolean;
     rendering?: boolean;
     /** `${ideaIndex}:${slot_role}` — lets the durable drainer map a batched
@@ -2405,7 +2411,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline,
           imageUrl: galleryPreviewUrl ?? '',
-          error: `Caption–görsel tema çatışması — "${ideationHeadline.slice(0, 40)}" için uygun galeri fotoğrafı yok`,
+          error: galleryThemeMismatchMessage(ideationHeadline),
+          errorCode: GALLERY_THEME_MISMATCH_CODE,
           slotKey,
         });
         continue;

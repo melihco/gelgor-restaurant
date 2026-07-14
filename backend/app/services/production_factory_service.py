@@ -386,6 +386,67 @@ def _slot_failure_map(produce_data: dict | None) -> dict[str, str]:
     return out
 
 
+def _slot_error_code_map(produce_data: dict | None) -> dict[str, str]:
+    """Map failed slot keys → machine-readable errorCode from auto-produce results."""
+    out: dict[str, str] = {}
+    for row in (produce_data or {}).get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        key = row.get("slotKey")
+        code = row.get("errorCode")
+        if not isinstance(key, str) or not key or not isinstance(code, str) or not code.strip():
+            continue
+        out[key] = code.strip()
+    return out
+
+
+GALLERY_THEME_MISMATCH_CODE = "gallery_theme_mismatch"
+_NON_RETRYABLE_FAILURE_MARKERS = (
+    "caption–görsel tema çatışması",
+    "caption-görsel tema çatışması",
+    "tema çatışması",
+    GALLERY_THEME_MISMATCH_CODE,
+)
+
+
+def _is_non_retryable_slot_failure(
+    reason: str,
+    *,
+    produce_data: dict | None = None,
+    slot_key: str = "",
+) -> bool:
+    """Gallery theme gaps and similar errors cannot succeed without new gallery data."""
+    lower = (reason or "").strip().lower()
+    if any(marker in lower for marker in _NON_RETRYABLE_FAILURE_MARKERS):
+        return True
+    if slot_key:
+        failures = _slot_failure_map(produce_data)
+        row_error = failures.get(slot_key, "")
+        codes = _slot_error_code_map(produce_data)
+        if (
+            row_error
+            and (reason or "").strip() == row_error.strip()
+            and codes.get(slot_key, "").strip().lower() == GALLERY_THEME_MISMATCH_CODE
+        ):
+            return True
+    return False
+
+
+async def _mark_slot_failed(
+    job_id: uuid.UUID | str,
+    produce_data: dict | None,
+    slot_key: str,
+    batch_reason: str,
+) -> str:
+    slot_reason = _resolve_slot_failure_reason(produce_data, slot_key, batch_reason)
+    retryable = not _is_non_retryable_slot_failure(
+        slot_reason,
+        produce_data=produce_data,
+        slot_key=slot_key,
+    )
+    return await jobs.mark_failed(job_id, slot_reason, retryable=retryable)
+
+
 def _resolve_slot_failure_reason(
     produce_data: dict | None,
     slot_key: str,
@@ -617,7 +678,7 @@ async def drain_production_jobs(
                     )
                 else:
                     slot_reason = _resolve_slot_failure_reason(produce_data, key, batch_reason)
-                    status = await jobs.mark_failed(job["id"], slot_reason)
+                    status = await _mark_slot_failed(job["id"], produce_data, key, batch_reason)
                     failed_total += 1
                     logger.info(
                         "production_factory.slot_failed",
@@ -857,7 +918,7 @@ async def apply_bullmq_completion(
                 ready += 1
             else:
                 slot_reason = _resolve_slot_failure_reason(produce_data, key, reason)
-                await jobs.mark_failed(job_uuid, slot_reason)
+                await _mark_slot_failed(job_uuid, produce_data, key, reason)
                 failed += 1
 
     summary_after = await _finalize_mission_production_state(mission_id)

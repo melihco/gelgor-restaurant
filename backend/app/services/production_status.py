@@ -49,6 +49,8 @@ def _dominant_block_reason(slots: list[dict[str, Any]]) -> str | None:
         return "provider_quota"
     if any("production_in_flight" in e or "mission_production" in e for e in errors):
         return "brand_in_flight"
+    if any("tema çatışması" in e or "gallery_theme_mismatch" in e for e in errors):
+        return "gallery_theme_mismatch"
     if any("bullmq" in e or "enqueue" in e for e in errors):
         return "platform_queue"
     return "unknown"
@@ -86,7 +88,13 @@ def resolve_production_phase(
             "lastActivityAt": last_activity_at,
         }
 
-    if complete or ready >= total:
+    if complete and ready >= total:
+        phase = "complete"
+        block_reason = None
+    elif complete and ready > 0:
+        phase = "partial"
+        block_reason = None
+    elif ready >= total:
         phase = "complete"
         block_reason = None
     elif in_flight > 0:

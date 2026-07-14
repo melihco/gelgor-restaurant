@@ -79,6 +79,29 @@ def test_resolve_slot_failure_reason_prefers_per_slot_error() -> None:
     assert pfs._resolve_slot_failure_reason(produce, "9:other", "production_in_flight") == "production_in_flight"
 
 
+def test_is_non_retryable_slot_failure_detects_gallery_theme_mismatch() -> None:
+    produce = {
+        "results": [
+            {
+                "slotKey": "5:campaign_story_motion",
+                "error": 'Caption–görsel tema çatışması — "Zeytinyağı" için uygun galeri fotoğrafı yok',
+                "errorCode": "gallery_theme_mismatch",
+            },
+        ],
+    }
+    assert pfs._is_non_retryable_slot_failure(
+        "Caption–görsel tema çatışması",
+        produce_data=produce,
+        slot_key="5:campaign_story_motion",
+    ) is True
+    assert pfs._is_non_retryable_slot_failure(
+        "withheld_quality_gate",
+        produce_data=produce,
+        slot_key="5:campaign_story_motion",
+    ) is False
+    assert pfs._is_non_retryable_slot_failure("Remotion 422: photo unreachable") is False
+
+
 def test_resolve_bullmq_batch_reason_unreachable_not_in_flight() -> None:
     assert pfs._resolve_bullmq_batch_reason(None, http_status=0) == "auto_produce_unreachable"
     assert pfs._resolve_bullmq_batch_reason(
@@ -125,9 +148,10 @@ class _JobsRecorder:
     async def mark_ready(self, job_id: uuid.UUID, *, artifact_id: str | None = None) -> None:
         self.ready.append((job_id, artifact_id))
 
-    async def mark_failed(self, job_id: uuid.UUID, reason: str) -> str:
-        self.failed.append((job_id, reason))
-        return "failed"
+    async def mark_failed(self, job_id: uuid.UUID, reason: str, **kwargs) -> str:
+        retryable = kwargs.get("retryable", True)
+        self.failed.append((job_id, reason, retryable))
+        return "exhausted" if retryable is False else "failed"
 
     async def mark_deferred(self, job_id: uuid.UUID, reason: str, *, delay_sec: float = 45.0) -> None:
         self.deferred.append((job_id, reason))
@@ -227,7 +251,35 @@ async def test_drain_inline_marks_ready_and_failed_by_slotkey(
     assert out["enqueued"] == 0
     assert jobs.running == [batch[0]["id"], batch[1]["id"]]
     assert jobs.ready == [(batch[0]["id"], "art-story")]
-    assert [jid for jid, _ in jobs.failed] == [batch[1]["id"]]
+    assert [jid for jid, _, _ in jobs.failed] == [batch[1]["id"]]
+
+
+async def test_drain_marks_gallery_theme_mismatch_non_retryable(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=False)
+    batch = [_job(5, "campaign_story_motion")]
+    jobs = _JobsRecorder(
+        claim_batches=[batch],
+        summary={"total": 1, "complete": False, "active": 0, "failed": 1, "ready": 0},
+    )
+    trigger_result = {
+        "results": [
+            {
+                "slotKey": "5:campaign_story_motion",
+                "error": 'Caption–görsel tema çatışması — "Zeytinyağı" için uygun galeri fotoğrafı yok',
+                "errorCode": "gallery_theme_mismatch",
+            },
+        ],
+    }
+    _install_drain_doubles(
+        monkeypatch, jobs=jobs, trigger_result=trigger_result, brand=brand_stub
+    )
+
+    await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert len(jobs.failed) == 1
+    assert jobs.failed[0][2] is False
 
 
 async def test_drain_bullmq_enqueues_only_and_leaves_jobs_running(
@@ -286,7 +338,7 @@ async def test_drain_bullmq_failed_enqueue_marks_batch_failed(
 
     assert out["enqueued"] == 0
     assert out["failed"] == 1
-    assert [reason for _, reason in jobs.failed] == ["nope"]
+    assert [reason for _, reason, _ in jobs.failed] == ["nope"]
 
 
 async def test_drain_bullmq_enqueue_lock_defers_batch(
@@ -326,7 +378,7 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     async def _mark_ready(job_id, *, artifact_id=None):
         ready.append((job_id, artifact_id))
 
-    async def _mark_failed(job_id, reason):
+    async def _mark_failed(job_id, reason, **kwargs):
         failed.append((job_id, reason))
         return "failed"
 

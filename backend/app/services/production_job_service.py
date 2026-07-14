@@ -26,6 +26,11 @@ logger = structlog.get_logger()
 TERMINAL_STATUSES = {"ready", "exhausted", "skipped"}
 ACTIVE_STATUSES = {"pending", "failed", "claimed", "running"}
 
+# SQL fragment — permanent gallery-theme failures must not re-enter the retry loop.
+_PERMANENT_FAILURE_REQUEUE_FILTER = """
+  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
+  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
+"""
 # Backoff: run_after = now() + min(2^attempts * BASE, CAP)
 _BACKOFF_BASE_SEC = 30
 _BACKOFF_CAP_SEC = 900  # 15 min
@@ -347,19 +352,24 @@ async def mission_job_summary(mission_id: uuid.UUID, *, enrich: bool = True) -> 
 
     total = len(rows)
     ready = sum(1 for r in rows if r["status"] == "ready")
-    failed = sum(1 for r in rows if r["status"] in ("failed", "exhausted"))
+    skipped = sum(1 for r in rows if r["status"] == "skipped")
+    exhausted = sum(1 for r in rows if r["status"] == "exhausted")
+    failed = sum(1 for r in rows if r["status"] == "failed") + exhausted
     in_flight = sum(1 for r in rows if r["status"] in ("claimed", "running"))
     queued = sum(1 for r in rows if r["status"] in ("pending", "failed"))
     active = in_flight + queued
+    terminal_unfilled = exhausted + skipped
     summary = {
         "mission_id": str(mission_id),
         "total": total,
         "ready": ready,
         "failed": failed,
+        "skipped": skipped,
         "active": active,
         "inFlight": in_flight,
         "queued": queued,
-        "complete": total > 0 and ready >= total,
+        # Package is done when every slot reached a terminal outcome (ready or permanent skip).
+        "complete": total > 0 and active == 0 and (ready >= total or ready + terminal_unfilled >= total),
         "slots": [
             {
                 "ideaIndex": r["idea_index"],
@@ -551,6 +561,8 @@ async def requeue_exhausted(
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'exhausted'
                   AND attempts < :ceiling
+                  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                 RETURNING id
                 """
             ),
@@ -583,6 +595,8 @@ async def requeue_failed(
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'failed'
                   AND attempts < max_attempts
+                  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                 RETURNING id
                 """
             ),

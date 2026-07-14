@@ -16,6 +16,7 @@ import {
   buildGalleryLookup,
   pickScoredCarouselSlides,
   isHardGalleryThemeMismatch,
+  resolveGalleryPhotoMeta,
   preferSubjectAlignedCandidates,
   MIN_ACCEPT_SCORE,
   STRONG_MATCH_SCORE,
@@ -382,6 +383,24 @@ describe('local product carousel — honey caption must not pick olive oil', () 
       primarySubject: 'olive_oil',
     },
   };
+
+  it('resolveGalleryPhotoMeta matches CDN/R2 display URLs to Wix analysis keys', () => {
+    const mirroredOil = 'https://r2.smartagency.io/tenant/ws/gallery/zeytinyagi-3lt-tin.jpg?w=1200';
+    const meta = resolveGalleryPhotoMeta(mirroredOil, gallery, [mirroredOil, OIL_PHOTO]);
+    expect(meta?.primarySubject).toBe('olive_oil');
+    expect(
+      isHardGalleryThemeMismatch(
+        {
+          caption: 'Erken hasat zeytinyağı faydaları',
+          headline: 'Erken hasat',
+          businessType: 'local_products_shop',
+          subjectKey: 'olive_oil',
+        },
+        meta,
+        mirroredOil,
+      ),
+    ).toBe(false);
+  });
 
   it('hard-vetoes olive oil photo for honey caption', () => {
     expect(

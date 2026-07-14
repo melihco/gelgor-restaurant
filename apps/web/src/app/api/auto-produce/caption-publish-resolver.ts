@@ -15,6 +15,7 @@ import {
   pickMissionDiverseFallbackPhoto,
   preferSubjectAlignedCandidates,
   resolveBestGalleryUrl,
+  resolveGalleryPhotoMeta,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import {
@@ -384,8 +385,7 @@ export function rematchGalleryAfterHardThemeConflict(input: {
     if (!url) return null;
     const base = normalizeGalleryUrl(url);
     if (rejected.has(base)) return null;
-    const meta = input.galleryAnalysis[base]
-      ?? Object.entries(input.galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+    const meta = resolveGalleryPhotoMeta(url, input.galleryAnalysis, input.candidateUrls);
     if (isHardGalleryThemeMismatch(matchInput, meta, url)) {
       rejected.add(base);
       continue;

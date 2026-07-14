@@ -15,6 +15,7 @@ import {
 } from '@/lib/gallery-usage-tracker';
 import {
   enrichGalleryAnalysis,
+  aliasGalleryMetaForPhotoUrls,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import {
@@ -167,7 +168,10 @@ export async function fetchGalleryContext(
   }
 
   // ── Enrich metadata (sector-agnostic NLP tag derivation) ──────────────
-  const meta = enrichGalleryAnalysis(metaRaw);
+  const meta = aliasGalleryMetaForPhotoUrls(
+    photos,
+    enrichGalleryAnalysis(metaRaw),
+  );
 
   return {
     workspaceId,
@@ -232,7 +236,7 @@ export async function ensureGalleryAnalysisForProduction(
   }
   let stats = galleryAnalysisCoverageStats(photos, enriched);
   if (stats.sufficient) {
-    return { meta: enriched };
+    return { meta: aliasGalleryMetaForPhotoUrls(photos, enriched) };
   }
 
   const baseUrl = getNextjsInternalOrigin();
@@ -274,7 +278,7 @@ export async function ensureGalleryAnalysisForProduction(
       enriched = enrichGalleryAnalysis(merged);
       stats = galleryAnalysisCoverageStats(photos, enriched);
       if (stats.sufficient) {
-        return { meta: enriched };
+        return { meta: aliasGalleryMetaForPhotoUrls(photos, enriched) };
       }
     }
   } catch { /* non-fatal */ }
@@ -282,7 +286,7 @@ export async function ensureGalleryAnalysisForProduction(
   // Proceed with partial analysis — production uses SKU conflict + token overlap
   // even without full coverage; better a partial result than a timeout.
   if (stats.analyzed > 0) {
-    return { meta: enriched };
+    return { meta: aliasGalleryMetaForPhotoUrls(photos, enriched) };
   }
 
   return {

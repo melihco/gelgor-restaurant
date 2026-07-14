@@ -467,6 +467,48 @@ function resolveLookupEntry(
   return undefined;
 }
 
+/** Resolve analysis metadata for a display URL (R2/CDN/Wix variants share fingerprints). */
+export function resolveGalleryLookupEntry(
+  url: string,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  displayUrls: string[] = [],
+): GalleryLookupEntry | undefined {
+  const pool = [...new Set([url, ...displayUrls, ...Object.keys(galleryAnalysis)])];
+  const lookup = buildGalleryLookup(galleryAnalysis, pool);
+  const fingerprintIndex = new Map<string, GalleryLookupEntry>();
+  for (const [analysisKey, meta] of Object.entries(galleryAnalysis)) {
+    fingerprintIndex.set(galleryMediaFingerprint(analysisKey), {
+      displayUrl: analysisKey,
+      analysisKey,
+      meta,
+    });
+  }
+  return resolveLookupEntry(url, lookup, fingerprintIndex);
+}
+
+export function resolveGalleryPhotoMeta(
+  url: string,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  displayUrls: string[] = [],
+): GalleryPhotoMeta | undefined {
+  return resolveGalleryLookupEntry(url, galleryAnalysis, displayUrls)?.meta;
+}
+
+/** Alias every production photo URL to its fingerprint-matched analysis row. */
+export function aliasGalleryMetaForPhotoUrls(
+  photos: string[],
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+): Record<string, GalleryPhotoMeta> {
+  const out = { ...galleryAnalysis };
+  for (const url of photos) {
+    const meta = resolveGalleryPhotoMeta(url, galleryAnalysis, photos);
+    if (!meta) continue;
+    out[url] = meta;
+    out[normalizeGalleryUrl(url)] = meta;
+  }
+  return out;
+}
+
 const STOP_WORDS = new Set([
   'bir', 'bu', 've', 'ile', 'için', 'da', 'de', 'mi', 'mı', 'mu', 'mü',
   'the', 'a', 'an', 'of', 'in', 'for', 'and', 'to', 'with', 'your', 'our',
