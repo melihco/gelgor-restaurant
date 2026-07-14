@@ -132,8 +132,8 @@ export function MoreMenu() {
             {initials}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: 17, fontWeight: 800, color: t.textPrimary,
+            <div className="sa-chrome-text" style={{
+              fontSize: 17, fontWeight: 800,
               letterSpacing: '-0.03em', lineHeight: 1.2,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
