@@ -37,6 +37,23 @@ async function processSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknow
 async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
   const { autoProduceBody, factoryJobs, missionId, workspaceId, callbackUrl } = job.data;
 
+  const bodyWorkspace = String(autoProduceBody?.workspaceId ?? '').trim();
+  const bodyMission = String(autoProduceBody?.missionId ?? '').trim();
+  if (
+    (bodyWorkspace && bodyWorkspace.toLowerCase() !== workspaceId.toLowerCase())
+    || (bodyMission && bodyMission.toLowerCase() !== missionId.toLowerCase())
+  ) {
+    throw new Error(
+      `tenant envelope mismatch mission=${missionId} workspace=${workspaceId}`,
+    );
+  }
+
+  const pinnedAutoProduceBody = {
+    ...autoProduceBody,
+    workspaceId,
+    missionId,
+  };
+
   // 1. Execute production via the internal auto-produce route.
   let produceData: Record<string, unknown> = {};
   let httpStatus = 0;
@@ -54,7 +71,7 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
         'X-Internal-Api-Key': INTERNAL_KEY,
         'X-Tenant-Id': workspaceId,
       },
-      body: JSON.stringify(autoProduceBody),
+      body: JSON.stringify(pinnedAutoProduceBody),
       signal: abortController.signal,
     });
     httpStatus = resp.status;

@@ -882,6 +882,23 @@ async def apply_bullmq_completion(
     ``slotKey`` produced a persisted artifact. Then re-syncs mission state and, if
     open jobs remain, schedules the next drain pass (claim + enqueue more).
     """
+    actual_ws = await _workspace_for_mission(mission_id)
+    if actual_ws is None:
+        logger.warning(
+            "production_factory.bullmq_callback_unknown_mission",
+            mission_id=str(mission_id),
+            workspace_id=str(workspace_id),
+        )
+        return {"ready": 0, "failed": 0, "deferred": 0, "complete": False, "rejected": True}
+    if actual_ws != workspace_id:
+        logger.error(
+            "production_factory.bullmq_callback_tenant_mismatch",
+            mission_id=str(mission_id),
+            claimed_workspace=str(workspace_id),
+            actual_workspace=str(actual_ws),
+        )
+        return {"ready": 0, "failed": 0, "deferred": 0, "complete": False, "rejected": True}
+
     ok_map = _succeeded_slot_map(produce_data)
     slot_keys = [str(fj.get("slotKey") or "") for fj in factory_jobs]
     # Single-slot fallback for older responses without slotKey.

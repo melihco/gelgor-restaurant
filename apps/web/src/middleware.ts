@@ -40,16 +40,31 @@ export function middleware(req: NextRequest): NextResponse {
   }
 
   const internal = req.headers.get('X-Internal-Api-Key')?.trim();
-  if (internal && internal === INTERNAL_KEY) {
-    return NextResponse.next();
-  }
-
   const headerTenant = (
     req.headers.get('X-Tenant-Id') ||
     req.headers.get('x-tenant-id') ||
     extractTenantIdFromAuthHeader(req.headers.get('Authorization')) ||
     ''
   ).trim();
+
+  if (internal && internal === INTERNAL_KEY) {
+    // Trusted service calls still cannot cross tenant boundaries on path-scoped routes.
+    if (
+      pathTenant
+      && headerTenant
+      && headerTenant.toLowerCase() !== pathTenant.toLowerCase()
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Path tenant does not match X-Tenant-Id',
+          code: 'tenant_mismatch',
+          pathTenantId: pathTenant,
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.next();
+  }
 
   if (!headerTenant) {
     if (process.env.NODE_ENV === 'production') {

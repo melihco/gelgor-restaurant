@@ -21,6 +21,51 @@ export function isTrustedInternalRequest(req: NextRequest): boolean {
   return Boolean(internal && internal === INTERNAL_KEY);
 }
 
+/** Header tenant from JWT, explicit header, or internal factory/worker caller. */
+export function resolveRequestTenantId(req: NextRequest): string {
+  return (
+    req.headers.get('X-Tenant-Id') ||
+    req.headers.get('x-tenant-id') ||
+    extractTenantIdFromAuthHeader(req.headers.get('Authorization')) ||
+    ''
+  ).trim();
+}
+
+/**
+ * BullMQ enqueue envelope must be self-consistent — a mismatched body would let
+ * the worker save artifacts under one tenant while loading another tenant's brand.
+ */
+export function assertProductionJobEnvelope(input: {
+  workspaceId: string;
+  missionId: string;
+  autoProduceBody: Record<string, unknown>;
+}): NextResponse | null {
+  const ws = input.workspaceId.trim();
+  const mid = input.missionId.trim();
+  const bodyWs = String(input.autoProduceBody.workspaceId ?? '').trim();
+  const bodyMid = String(input.autoProduceBody.missionId ?? '').trim();
+
+  if (bodyWs && bodyWs.toLowerCase() !== ws.toLowerCase()) {
+    return NextResponse.json(
+      {
+        error: 'autoProduceBody.workspaceId does not match workspaceId',
+        code: 'tenant_mismatch',
+      },
+      { status: 403 },
+    );
+  }
+  if (mid && bodyMid && bodyMid.toLowerCase() !== mid.toLowerCase()) {
+    return NextResponse.json(
+      {
+        error: 'autoProduceBody.missionId does not match missionId',
+        code: 'mission_tenant_mismatch',
+      },
+      { status: 403 },
+    );
+  }
+  return null;
+}
+
 /** Forward browser session tenant + JWT to same-origin BFF sub-requests. */
 export function buildTenantForwardHeaders(req: NextRequest): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -51,16 +96,28 @@ export function assertWorkspaceMatchesRequestTenant(
     return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
   }
 
+  const headerTenant = resolveRequestTenantId(req);
+
+  // Internal factory / BullMQ worker: API key alone is NOT sufficient — the
+  // caller must bind X-Tenant-Id to the payload workspace on every hop.
   if (isTrustedInternalRequest(req)) {
+    if (!headerTenant) {
+      return NextResponse.json(
+        { error: 'X-Tenant-Id required for internal production', code: 'tenant_required' },
+        { status: 400 },
+      );
+    }
+    if (headerTenant.toLowerCase() !== ws.toLowerCase()) {
+      return NextResponse.json(
+        {
+          error: 'workspaceId does not match X-Tenant-Id',
+          code: 'tenant_mismatch',
+        },
+        { status: 403 },
+      );
+    }
     return null;
   }
-
-  const headerTenant = (
-    req.headers.get('X-Tenant-Id') ||
-    req.headers.get('x-tenant-id') ||
-    extractTenantIdFromAuthHeader(req.headers.get('Authorization')) ||
-    ''
-  ).trim();
 
   if (!headerTenant) {
     if (process.env.NODE_ENV === 'production') {

@@ -22,6 +22,10 @@ import {
   resolveEnqueuePriority,
 } from '@/lib/production-queue-enqueue';
 import { serverConfig } from '@/lib/server-config';
+import {
+  assertProductionJobEnvelope,
+  assertWorkspaceMatchesRequestTenant,
+} from '@/lib/tenant-production-guard';
 
 export const runtime = 'nodejs';
 
@@ -49,9 +53,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const { autoProduceBody, factoryJobs, missionId, workspaceId, priority } = body;
-  if (!autoProduceBody || !workspaceId) {
-    return NextResponse.json({ error: 'autoProduceBody and workspaceId required' }, { status: 400 });
+  if (!autoProduceBody || !workspaceId || !missionId) {
+    return NextResponse.json(
+      { error: 'autoProduceBody, workspaceId, and missionId required' },
+      { status: 400 },
+    );
   }
+
+  const tenantGuard = assertWorkspaceMatchesRequestTenant(req, workspaceId);
+  if (tenantGuard) return tenantGuard;
+
+  const envelopeGuard = assertProductionJobEnvelope({
+    workspaceId,
+    missionId,
+    autoProduceBody,
+  });
+  if (envelopeGuard) return envelopeGuard;
+
+  // Worker executes this payload verbatim — pin tenant fields to the envelope SSOT.
+  const pinnedBody: Record<string, unknown> = {
+    ...autoProduceBody,
+    workspaceId,
+    missionId,
+  };
 
   const queue = getProductionQueue();
   if (!queue) {
@@ -65,7 +89,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const normalizedJobs = Array.isArray(factoryJobs) ? factoryJobs : [];
   const jobData: ProductionSlotJobData = {
-    autoProduceBody,
+    autoProduceBody: pinnedBody,
     factoryJobs: normalizedJobs,
     missionId,
     workspaceId,
