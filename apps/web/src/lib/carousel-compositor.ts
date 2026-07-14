@@ -10,7 +10,7 @@
  * Returns array of Buffer (JPEG) ready for upload or base64.
  */
 
-import sharp from 'sharp';
+import sharp from '@/lib/sharp-runtime';
 
 export interface CarouselSlide {
   /** Source image Buffer */

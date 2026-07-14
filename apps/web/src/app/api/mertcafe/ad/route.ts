@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import sharp from 'sharp';
+import sharp from '@/lib/sharp-runtime';
 import { generateStorageKey, getPresignedUrl, uploadToR2 } from '@/lib/r2-storage';
 
 export const runtime = 'nodejs';

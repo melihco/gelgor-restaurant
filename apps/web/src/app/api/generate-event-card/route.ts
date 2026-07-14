@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import sharp from 'sharp';
+import sharp from '@/lib/sharp-runtime';
 import OpenAI from 'openai';
 import { shouldPreserveVenuePhotos } from '@/lib/venue-photo-policy';
 import {
@@ -26,7 +26,7 @@ import {
   resolveFormatDimensions,
   resolveTemplateLayout,
 } from '@/lib/announcement-template-library';
-import { Resvg } from '@resvg/resvg-js';
+import { renderAsync } from '@resvg/resvg-js';
 import { loadFontFiles, primaryFamily } from '@/lib/svg-font-loader';
 import { serverConfig } from '@/lib/server-config';
 
@@ -55,7 +55,10 @@ async function rasterizeOverlayWithFonts(
     ].filter(Boolean);
     const fontFiles = await loadFontFiles(families);
     if (fontFiles.length === 0) return null;
-    const resvg = new Resvg(svg, {
+    // renderAsync runs rasterization on a worker thread — identical output to
+    // the sync API, but the event loop stays free (health checks keep passing
+    // while production posters render on a 1 vCPU container).
+    const rendered = await renderAsync(svg, {
       fitTo: { mode: 'width', value: width },
       font: {
         fontFiles,
@@ -63,7 +66,7 @@ async function rasterizeOverlayWithFonts(
         defaultFontFamily: primaryFamily(brandKit.bodyFontStack) || 'Inter',
       },
     });
-    return Buffer.from(resvg.render().asPng());
+    return Buffer.from(rendered.asPng());
   } catch {
     return null;
   }

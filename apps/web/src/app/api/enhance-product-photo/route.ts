@@ -35,7 +35,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import sharp from 'sharp';
+import sharp from '@/lib/sharp-runtime';
 import {
   compositeLogoOnPhoto,
   detectLogoUrl,

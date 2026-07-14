@@ -19,7 +19,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import satori, { type Font } from 'satori';
-import { Resvg } from '@resvg/resvg-js';
+import { renderAsync } from '@resvg/resvg-js';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import type { BrandTheme, LayoutId } from '@/types/brand-theme';
@@ -306,12 +306,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       fonts,
     });
 
-    const resvg = new Resvg(svg, {
+    // Worker-thread rasterization — same bytes as the sync API without
+    // blocking the event loop while a large canvas exports.
+    const pngData = await renderAsync(svg, {
       fitTo: { mode: 'width', value: dims.width },
     });
-    const pngData = resvg.render();
-    const pngUint8 = pngData.asPng();
-    const pngBuffer = Buffer.from(pngUint8);
+    const pngBuffer = Buffer.from(pngData.asPng());
 
     return new NextResponse(pngBuffer as unknown as BodyInit, {
       status: 200,

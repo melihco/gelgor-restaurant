@@ -9,7 +9,7 @@
  * Size: percentage of the base image width (default 12%)
  */
 
-import sharp from 'sharp';
+import sharp from '@/lib/sharp-runtime';
 
 export type LogoPlacement =
   | 'bottom_right'

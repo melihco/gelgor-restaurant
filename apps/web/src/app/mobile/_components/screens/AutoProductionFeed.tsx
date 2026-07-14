@@ -1044,7 +1044,11 @@ export function AutoProductionFeed({
 
   useEffect(() => {
     if (!serverProductionOnly || !missionId) return;
-    const id = setInterval(() => { void refetchServerArtifacts(); }, 12_000);
+    const id = setInterval(() => {
+      // Background tabs must not hammer the artifact API while production runs.
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void refetchServerArtifacts();
+    }, 12_000);
     return () => clearInterval(id);
   }, [serverProductionOnly, missionId, refetchServerArtifacts]);
 
