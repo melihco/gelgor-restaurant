@@ -30,6 +30,7 @@ class DesignTemplateUpdate(BaseModel):
     design_spec: dict[str, Any] | None = None
     sector_category: str | None = None
     locale: str | None = None
+    catalog_slot_key: str | None = Field(default=None, max_length=128)
     status: Literal["active", "archived"] | None = None
     increment_usage: bool = False
 

@@ -22,10 +22,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
+import subprocess
 import sys
 import uuid
 from pathlib import Path
+from urllib import error, request
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
 if str(BACKEND_ROOT) not in sys.path:
@@ -34,6 +37,7 @@ if str(BACKEND_ROOT) not in sys.path:
 # Yula Bodrum — pilot validation default (restaurant_cafe).
 DEFAULT_WORKSPACE = "f00e3308-ebbe-4d75-8592-12d52e7ff1aa"
 DEFAULT_SECTOR = "restaurant_cafe"
+DEFAULT_WEB = os.environ.get("WEB_BASE_URL", "https://smartagency-web.onrender.com")
 
 
 def _normalize_dsn(raw: str) -> str:
@@ -216,6 +220,86 @@ async def _apply(session, workspace: str, plan: list[dict]) -> int:
     return n
 
 
+def _load_sector_slots_pack(sector: str) -> list[dict]:
+    """Synthesize sector catalog slots via apps/web sector-slot-pack (no DB)."""
+    root = Path(__file__).resolve().parents[1]
+    web = root / "apps" / "web"
+    code = f"""
+import {{ synthesizeSectorSlotDefinitions }} from './src/lib/sector-slot-pack.ts';
+const slots = synthesizeSectorSlotDefinitions('{sector}');
+console.log(JSON.stringify(slots.map((s) => ({{
+  slot_key: s.slot_key,
+  design_template_type: s.design_template_type,
+  format: s.format,
+  sort_order: s.sort_order,
+  enabled: s.enabled_by_default,
+}}))));
+"""
+    out = subprocess.check_output(["npx", "tsx", "-e", code], cwd=web, text=True)
+    return json.loads(out.strip())
+
+
+def _http_json(method: str, url: str, workspace: str, body: dict | None = None) -> object:
+    data = None
+    headers = {"X-Tenant-Id": workspace, "Accept": "application/json"}
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with request.urlopen(req, timeout=60) as resp:
+            raw = resp.read().decode()
+            return json.loads(raw) if raw else None
+    except error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise RuntimeError(f"{method} {url} -> {exc.code}: {detail[:400]}") from exc
+
+
+def run_http_backfill(workspace: str, sector: str, web_base: str, *, dry_run: bool) -> None:
+    web = web_base.rstrip("/")
+    print(f"==> HTTP backfill web={web} workspace={workspace} sector={sector}")
+    templates = _http_json(
+        "GET",
+        f"{web}/api/brand-context/{workspace}/design-templates",
+        workspace,
+    )
+    if not isinstance(templates, list):
+        raise RuntimeError("unexpected templates response")
+    slots = _load_sector_slots_pack(sector)
+    print(f"    {len(templates)} templates · {len(slots)} sector slots")
+
+    plan = _plan_backfill(templates, slots)
+    changes = [p for p in plan if p["new_key"]]
+    already_ok = len(templates) - len(plan)
+    skips = [p for p in plan if not p["new_key"]]
+    print(f"\n── Plan: {len(changes)} update(s), {already_ok} already valid, {len(skips)} skip/orphan ──")
+    for p in plan:
+        arrow = p["new_key"] or "‹none›"
+        print(f"  {p['template_name'][:32]:32} {p['old_key']:44} → {arrow:44} [{p['reason']}]")
+
+    if dry_run:
+        print("\n(dry-run) no PATCH sent.")
+        return
+
+    applied = 0
+    for row in changes:
+        updated = _http_json(
+            "PATCH",
+            f"{web}/api/brand-context/{workspace}/design-templates/{row['id']}",
+            workspace,
+            {"catalog_slot_key": row["new_key"]},
+        )
+        got = (updated or {}).get("catalog_slot_key") if isinstance(updated, dict) else None
+        if got != row["new_key"]:
+            raise RuntimeError(
+                f"verify failed {row['template_name']}: expected {row['new_key']}, got {got}. "
+                "Crew deploy may still be rolling — retry in a minute."
+            )
+        applied += 1
+        print(f"    ✓ {row['template_name']} → {row['new_key']}")
+    print(f"\n✓ Applied {applied} catalog_slot_key update(s) via HTTP.")
+
+
 async def main(dsn: str, workspace: str, sector: str, *, dry_run: bool) -> None:
     os.environ["DATABASE_URL"] = _normalize_dsn(dsn)
     uuid.UUID(workspace)  # validate
@@ -256,7 +340,20 @@ if __name__ == "__main__":
     parser.add_argument("--workspace", default=DEFAULT_WORKSPACE, help="Tenant/workspace UUID")
     parser.add_argument("--sector", default=DEFAULT_SECTOR, help="Sector id (business_type)")
     parser.add_argument("--dry-run", action="store_true", help="Preview only; do not write")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Use live web BFF PATCH (no Postgres DSN required)",
+    )
+    parser.add_argument(
+        "--web",
+        default=DEFAULT_WEB,
+        help="Web base URL for --http mode",
+    )
     args = parser.parse_args()
-    if not args.dsn:
-        raise SystemExit("Set LIVE_DATABASE_URL or pass --dsn")
-    asyncio.run(main(args.dsn, args.workspace, args.sector, dry_run=args.dry_run))
+    if args.http:
+        run_http_backfill(args.workspace, args.sector, args.web, dry_run=args.dry_run)
+    else:
+        if not args.dsn:
+            raise SystemExit("Set LIVE_DATABASE_URL or pass --dsn (or use --http)")
+        asyncio.run(main(args.dsn, args.workspace, args.sector, dry_run=args.dry_run))
