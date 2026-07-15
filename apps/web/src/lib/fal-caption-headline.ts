@@ -26,6 +26,11 @@ import {
 const TYPO_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
   [/\bkoketyl\b/gi, 'Kokteyl'],
   [/\bkoctail\b/gi, 'Kokteyl'],
+  // Misplaced apostrophe inside common-noun plural (AI render artifact):
+  // "Koktey'ller" → "Kokteyller", "Lezzet'ler" → "Lezzetler"
+  [/\bkoktey['’]ller\b/gi, 'Kokteyller'],
+  [/\blezzet['’]ler\b/gi, 'Lezzetler'],
+  [/\bfırsat['’]lar\b/gi, 'Fırsatlar'],
   [/\brestarant\b/gi, 'Restoran'],
   [/\brezarvasyon\b/gi, 'Rezervasyon'],
   [/\bindrim\b/gi, 'İndirim'],
@@ -551,6 +556,18 @@ const STRATEGY_BRIEFING_START_RX =
 const STRATEGY_BRIEFING_BODY_RX =
   /\b(exclusivity|awareness|engagement rate|conversion funnel|brand positioning|target audience|call to action strategy|content pillar|strategic purpose|visual hierarchy goal)\b/i;
 
+/**
+ * Turkish content-plan verbs (1st person plural future) — "we will show/share/present…".
+ * These describe what the AGENCY plans to produce, never consumer-facing copy.
+ * e.g. "Mutfaktaki aşçılarımızı ve taze malzemelerimizi göstereceğiz"
+ */
+const TR_PLANNING_VERB_RX =
+  /\b(göstereceğiz|gosterecegiz|paylaşacağız|paylasacagiz|tanıtacağız|tanitacagiz|sunacağız|sunacagiz|anlatacağız|anlatacagiz|vurgulayacağız|vurgulayacagiz|yapacağız|yapacagiz|oluşturacağız|olusturacagiz|çekeceğiz|cekecegiz|hazırlayacağız|hazirlayacagiz|kullanacağız|kullanacagiz|yayınlayacağız|yayinlayacagiz|odaklanacağız|odaklanacagiz|işleyeceğiz|isleyecegiz|ele alacağız|öne çıkaracağız|one cikaracagiz)\b/iu;
+
+/** Turkish planning nouns paired with production intent — "tanıtımını", "lansmanını", "çekimini". */
+const TR_PLANNING_NOUN_RX =
+  /\b(tanıtımını|tanitimini|lansmanını|lansmanini|çekimini|cekimini|paylaşımını|paylasimini|duyurusunu|gösterimini|gosterimini)\b/iu;
+
 /** Trailing words that indicate word-boundary truncation left an incomplete phrase. */
 const DANGLING_TAIL_RX =
   /\b(and|or|the|a|an|for|with|to|of|in|on|at|by|from|that|this|ve|ile|için|icin|bir|bu|da|de|ya|veya)\s*$/iu;
@@ -600,6 +617,10 @@ export function isInternalStrategyBriefing(text: string): boolean {
   if (STRATEGY_BRIEFING_BODY_RX.test(clean) && !/\b(menü|menu|kokteyl|plaj|gece|lezzet|rezervasyon)\b/i.test(clean)) {
     return true;
   }
+  // Turkish plan-brief sentences: "…göstereceğiz", "…tanıtımını yapacağız".
+  // These leak from FD/ideation production notes and must never reach canvas.
+  if (TR_PLANNING_VERB_RX.test(clean)) return true;
+  if (TR_PLANNING_NOUN_RX.test(clean)) return true;
   return false;
 }
 
@@ -632,6 +653,14 @@ export function isRenderedOverlayTextIncomplete(detected: string | undefined | n
 const INCOMPLETE_TR_POSSESSIVE_TAIL_RX =
   /\b[\p{L}']+(ımızın|imizin|umuzun|ümüzün|larımızın|lerimizin)\s*$/iu;
 
+/**
+ * Possessive-accusative object left dangling at phrase end — "Mutfaktaki aşçılarımızı",
+ * "taze malzemelerimizi". Turkish is verb-final (SOV): a headline that ENDS with a
+ * possessive-accusative object lost its verb to truncation — always incomplete.
+ */
+const INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX =
+  /\b[\p{L}']+(ımızı|imizi|umuzu|ümüzü|larımızı|lerimizi|larimizi|lerimizi)\s*$/iu;
+
 /** Mid-campaign fragment — "Ürünlerde geçerli yaz" (season word left dangling). */
 const INCOMPLETE_TR_SEASON_CTA_TAIL_RX =
   /\bgeçerli\s+(yaz|kış|bahar|sonbahar)\s*$/iu;
@@ -645,6 +674,7 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_TR_PARTICIPLE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_POSSESSIVE_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_SEASON_CTA_TAIL_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
@@ -833,7 +863,7 @@ export function buildFalOnCanvasTextContract(input: {
   }
 
   lines.push(
-    'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, extra slogans, URLs, hashtags, dates, auto-translation, mixed-language lines, or any text not listed above.',
+    'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, apostrophes inside words, extra slogans, URLs, hashtags, dates, auto-translation, mixed-language lines, or any text not listed above.',
     'FORBIDDEN META WORDS on canvas: never paint "STORY", "REEL", "POST", "INSTAGRAM", "TIKTOK", "FEED", "ÜNLÜ", "VIRAL", "SHARE", or any platform/format label — only the quoted headline/subtitle above.',
     'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
     'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, or nightlife copy for a food caption.',

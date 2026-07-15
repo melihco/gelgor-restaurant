@@ -334,6 +334,37 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
       ).length,
     ).toBeGreaterThan(0);
   });
+
+  it('rejects Turkish plan-brief sentences ("göstereceğiz" leak) as internal briefing', () => {
+    expect(isInternalStrategyBriefing('Mutfaktaki aşçılarımızı ve taze malzemelerimizi göstereceğiz')).toBe(true);
+    expect(isInternalStrategyBriefing('Yeni menümüzü yakında paylaşacağız')).toBe(true);
+    expect(isInternalStrategyBriefing('Yaz fırsatlarının tanıtımını yapacağız')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Mutfaktaki aşçılarımızı ve taze malzemelerimizi göstereceğiz')).toBe(false);
+    expect(
+      resolveFalProductionOverlayHeadline(
+        'Mutfaktaki aşçılarımızı ve taze malzemelerimizi göstereceğiz',
+        [],
+        'feed_post',
+      ),
+    ).toBe('');
+    // Real consumer copy with similar words must still pass.
+    expect(isInternalStrategyBriefing('Taze malzemelerle hazırlanan lezzetler')).toBe(false);
+    expect(isInternalStrategyBriefing('Şeflerimizden taze lezzetler sofranızda!')).toBe(false);
+  });
+
+  it('rejects truncated accusative-object fragments ("…malzemelerimizi") as incomplete', () => {
+    // Verb-final Turkish: a headline ending in a possessive-accusative object lost its verb.
+    expect(isIncompleteOverlayPhrase('Mutfaktaki aşçılarımızı ve taze malzemelerimizi')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Taze malzemelerimizi')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Mutfaktaki aşçılarımızı')).toBe(false);
+    // Complete phrases must still pass.
+    expect(isIncompleteOverlayPhrase('Ferahlatan Kokteyller')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Lezzet dolu bir gün sizi bekliyor!')).toBe(false);
+  });
+
+  it('corrects misplaced apostrophes in plural suffixes', () => {
+    expect(correctTurkishSpelling("Ferahlatan Koktey'ller", { locale: 'tr' })).toBe('Ferahlatan Kokteyller');
+  });
 });
 
 describe('buildFalOnCanvasTextContract', () => {

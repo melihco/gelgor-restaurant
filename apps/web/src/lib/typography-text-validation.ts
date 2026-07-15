@@ -145,8 +145,11 @@ async function callVisionCanvasValidator(
     '',
     'Rules:',
     '- "headline_matches" = true ONLY if the detected main/largest text matches the intended headline message',
+    '- Transcribe detected text EXACTLY as painted, including any apostrophes, hyphens, or broken words',
+    '- Reject if any word is misspelled, split incorrectly, or contains a misplaced apostrophe (e.g. "Koktey\'ller" instead of "Kokteyller")',
     '- Reject if detected text is mostly platform/meta words: STORY, REEL, POST, INSTAGRAM, TIKTOK, ÜNLÜ, VIRAL',
     '- Reject if detected text is unrelated to the intended headline (invented slogans, random words)',
+    '- Reject if the text looks like an internal production note (e.g. "…göstereceğiz", "…paylaşacağız") rather than consumer copy',
     '- Turkish diacritics must be exact — reject ASCII-only misspellings',
     '- Ignore decorative elements and small logo-area gibberish — focus on designed headline/subtitle only',
     '- If text is partially obscured but readable and matches, still match',
@@ -214,11 +217,13 @@ async function callVisionCanvasValidator(
   const metaOnly = isFalCanvasMetaOnlyHeadline(detectedHeadline);
   const headlineSimilarity = quickTextSimilarity(detectedHeadline, intendedHeadline);
   const lowHeadlineSimilarity = detectedHeadline.length >= 4 && headlineSimilarity < 0.55;
+  const spellingDeviation = hasWordLevelSpellingDeviation(detectedHeadline, intendedHeadline);
   const headlineValid = (parsed.headline_matches ?? parsed.matches) !== false
     && !incompleteHeadline
     && !metaLeak
     && !metaOnly
-    && !lowHeadlineSimilarity;
+    && !lowHeadlineSimilarity
+    && !spellingDeviation;
 
   let subtitleValid = true;
   if (intendedSubtitle) {
@@ -244,13 +249,65 @@ async function callVisionCanvasValidator(
           ? 'detected meta-only canvas text'
           : metaLeak
             ? 'detected platform meta word'
-            : lowHeadlineSimilarity
-              ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
-              : parsed.reason)
+            : spellingDeviation
+              ? `word-level spelling deviation (detected="${detectedHeadline.slice(0, 40)}")`
+              : lowHeadlineSimilarity
+                ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
+                : parsed.reason)
       : !subtitleValid
         ? `subtitle mismatch (detected="${detectedSubtitle.slice(0, 30)}")`
         : parsed.reason,
   };
+}
+
+/**
+ * Word-level render deviation gate — catches painted typos that overall
+ * similarity misses (e.g. "Ferahlatan Koktey'ller" vs "Ferahlatan Kokteyller":
+ * 95% similar globally, but one word carries a misplaced apostrophe).
+ *
+ * A detected word "deviates" when it is close to (but not exactly) its intended
+ * counterpart — an edit distance of 1-2 on an otherwise matching word means the
+ * model garbled the spelling. Completely different words are handled by the
+ * global similarity gate instead.
+ */
+export function hasWordLevelSpellingDeviation(detected: string, intended: string): boolean {
+  if (!detected.trim() || !intended.trim()) return false;
+
+  const normalizeWord = (w: string) =>
+    w.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]/gu, '');
+  const rawWords = (s: string) => s.split(/\s+/).map((w) => w.trim()).filter(Boolean);
+
+  const detectedWords = rawWords(detected);
+  const intendedWords = rawWords(intended);
+  if (detectedWords.length === 0 || intendedWords.length === 0) return false;
+
+  const intendedNormalized = intendedWords.map(normalizeWord).filter(Boolean);
+
+  for (const rawWord of detectedWords) {
+    const word = normalizeWord(rawWord);
+    if (word.length < 4) continue;
+    if (intendedNormalized.includes(word)) {
+      // Letters match an intended word — but punctuation INSIDE the painted word
+      // (apostrophe/hyphen splitting a plain word: "Koktey'ller") is still a typo
+      // unless the intended word carries the same punctuation.
+      const hasInnerPunct = /[\p{L}\p{N}]['’\-][\p{L}\p{N}]/u.test(rawWord);
+      if (!hasInnerPunct) continue;
+      const intendedRawMatch = intendedWords.some(
+        (iw) => normalizeWord(iw) === word && /['’\-]/u.test(iw),
+      );
+      if (intendedRawMatch) continue;
+      return true;
+    }
+    // Near-miss: edit distance 1-2 from an intended word of similar length → painted typo.
+    const nearMiss = intendedNormalized.some((iw) => {
+      if (Math.abs(iw.length - word.length) > 2) return false;
+      if (iw.length < 4) return false;
+      const dist = levenshtein(word, iw);
+      return dist >= 1 && dist <= 2;
+    });
+    if (nearMiss) return true;
+  }
+  return false;
 }
 
 /** @deprecated Use callVisionCanvasValidator */
