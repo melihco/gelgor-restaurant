@@ -20,6 +20,7 @@ import { generateStoryMotionPlate, isPlayableVideoUrl } from '@/lib/fal-story-mo
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
+  dropConflictingLayoutDirectives,
   resolveFalTemplateLockOptions,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
@@ -425,7 +426,10 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       brandReferenceImageUrls: inputs.brandReferenceImageUrls,
       brandDirectives: [
         ...templateBinding.brandDirectives,
-        ...(inputs.designBriefDirectives ?? []),
+        ...dropConflictingLayoutDirectives(
+          inputs.designBriefDirectives ?? [],
+          templateBinding.matched,
+        ),
       ],
       visualDnaTone: falBrand.visualDnaTone,
       designerMotionCue: inputs.designerMotionCue,

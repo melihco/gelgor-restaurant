@@ -7,7 +7,7 @@
  * local_products_shop AND beach_club.
  */
 import { describe, it, expect } from 'vitest';
-import { resolveQueueGalleryCapacityReroutes, missionGallerySlotKey } from '@/lib/auto-produce/gallery-orchestrator';
+import { resolveQueueGalleryCapacityReroutes, missionGallerySlotKey, tryGalleryFailureEscalation } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 
@@ -145,5 +145,28 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
       resolvedBrandName: 'Yerel Lezzetler',
     });
     expect(out.size).toBe(0);
+  });
+});
+
+describe('tryGalleryFailureEscalation', () => {
+  it('reroutes mission feed slots to fal_only_post on gallery veto', () => {
+    const out = tryGalleryFailureEscalation({
+      assignment: { slot_role: 'designed_post', pipeline: 'fal_design' },
+      postType: 'feed',
+      missionId: 'm-1',
+      stage: 'judge_reject',
+    });
+    expect(out?.assignment.pipeline).toBe('fal_only_post');
+    expect(out?.referenceUrl).toBeNull();
+  });
+
+  it('returns null for carousel slots without fal_only mapping', () => {
+    const out = tryGalleryFailureEscalation({
+      assignment: { slot_role: 'organic_carousel', pipeline: 'carousel_gallery' },
+      postType: 'carousel',
+      missionId: 'm-1',
+      stage: 'hard_veto',
+    });
+    expect(out).toBeNull();
   });
 });

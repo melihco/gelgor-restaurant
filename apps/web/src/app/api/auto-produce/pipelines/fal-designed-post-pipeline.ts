@@ -21,6 +21,7 @@ import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
+  dropConflictingLayoutDirectives,
   pickTemplateReferenceUrls,
   resolveFalTemplateLockOptions,
   assertTemplateStyleReference,
@@ -70,8 +71,10 @@ export interface FalDesignedPostInput {
   visualDnaTone?: string;
   /** fal.ai design intensity for feed posts. */
   designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
-  /** Ad-hoc New Brief — gallery-grounded design only. */
+  /** Gallery-grounded design required (venue brands / New Brief / calendar). */
   requireGroundedGallery?: boolean;
+  /** True only for ad-hoc New Brief — weakens template lock options. */
+  adHocBrief?: boolean;
   /** Onboarding brand template lock (layout + vibe + colors). */
   brandTemplateBinding?: import('@/lib/brand-design-template-production').BrandTemplateFalBinding | null;
   /** Calendar story cards use 9:16; feed posts default to 4:5. */
@@ -133,7 +136,7 @@ export async function produceFalDesignedPost(
     const lockOpts = resolveFalTemplateLockOptions({
       binding,
       baseGrafikerMaxRetries: input.grafikerMaxRetries,
-      adHocBrief: input.requireGroundedGallery,
+      adHocBrief: input.adHocBrief,
       defaultCaptionAwareHeadline: input.captionAwareHeadline === true,
     });
     const designVibe =
@@ -266,7 +269,12 @@ export async function produceFalDesignedPost(
         break;
       }
       }
-      if (!imageUrl && input.requireGroundedGallery) {
+      // Template-locked slots may fall through to the Ideogram engine composing on
+      // the same gallery photo — the brand shell is known, so grounding is preserved.
+      const templateLockedFallback = Boolean(
+        binding?.matched && groundedGalleryRef && serverConfig.fal.configured,
+      );
+      if (!imageUrl && input.requireGroundedGallery && !templateLockedFallback) {
         throw new Error(
           'Brand gallery design failed — could not compose on the matched venue photo (OpenAI API/billing).',
         );
@@ -279,9 +287,10 @@ export async function produceFalDesignedPost(
       );
     }
 
-    // Fallback engine — fal Ideogram V4 typography still.
+    // Fallback engine — fal Ideogram V4 typography still. Grounded slots reach this
+    // only with a locked template + gallery photo (composition stays photo-grounded).
     if (
-      !input.requireGroundedGallery
+      (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef))
       && !imageUrl
       && serverConfig.fal.configured
     ) {
@@ -329,6 +338,12 @@ export async function produceFalDesignedPost(
       falGrafikerPass = still.grafikerPass;
       falDesignEngine = 'fal_ideogram';
       costDelta += 0.05;
+    }
+
+    if (!imageUrl && input.requireGroundedGallery) {
+      throw new Error(
+        'Brand gallery design failed — grounded compose and template-locked fallback both failed.',
+      );
     }
 
     console.log(
@@ -429,10 +444,14 @@ export const falDesignHandler: ProductionPipelineHandler = {
       grafikerMaxRetries: inputs.grafikerMaxRetries,
       brandDirectives: [
         ...templateBinding.brandDirectives,
-        ...(inputs.designBriefDirectives ?? []),
+        ...dropConflictingLayoutDirectives(
+          inputs.designBriefDirectives ?? [],
+          templateBinding.matched,
+        ),
       ],
       visualDnaTone: falBrand.visualDnaTone,
       requireGroundedGallery: Boolean(inputs.requireGroundedGallery || inputs.adHocBrief),
+      adHocBrief: Boolean(inputs.adHocBrief),
       designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
       brandTemplateBinding: templateBinding,
       aspectRatio: inputs.falAspectRatio,

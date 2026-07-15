@@ -104,6 +104,7 @@ import {
   resolveProductionAssignment,
   assignmentImpliesReel,
   assignmentImpliesStoryFormat,
+  assignmentRequiresDesignedStoryVisual,
   type ManifestProductionQueueItem,
 } from '@/lib/production-pipeline-router';
 import {
@@ -236,11 +237,6 @@ import { resolveSlotRenderTypography } from '@/lib/brand-template-slot-typograph
 import {
   type PremiumCompositionMeta,
 } from './production-candidate-types';
-import {
-  alignRemotionPosterWithFalTemplate,
-  isRemotionFalAlignedSlot,
-  type RemotionFalTemplateAlignment,
-} from '@/lib/brand-design-template-production';
 import { resolveSlotLogoForRender } from '@/lib/brand-logo-production';
 import {
   fetchBrandThemeForProduction,
@@ -287,6 +283,7 @@ import {
   missionGallerySlotKey,
   assignmentUsesGalleryPhoto,
   resolveQueueGalleryCapacityReroutes,
+  tryGalleryFailureEscalation,
 } from '@/lib/auto-produce/gallery-orchestrator';
 import {
   createDefaultNexusClient,
@@ -344,7 +341,7 @@ import { isFalOnlyPipeline } from '@/lib/pipeline-registry';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { falVideoHandler } from './pipelines/fal-video-pipeline';
 import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
-import { falOnlyHandler } from './pipelines/fal-only-pipeline';
+import { falOnlyHandler, produceFalOnlySlot } from './pipelines/fal-only-pipeline';
 import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
 import { runPipelineStages } from './pipelines/pipeline-types';
 import type { SlotProductionContext } from './pipelines/pipeline-types';
@@ -1278,6 +1275,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const postType = kindToPostType(kind);
+    let galleryEscalatedToFalOnly = false;
     const fmt = kind.replace('instagram_', '');
     const mood = String(
       idea.mood ?? idea.photo_mood ?? idea.visual_direction ?? '',
@@ -2335,6 +2333,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let pickedFromBrandGallery = galleryPhotos.some(
       (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
     );
+    const escalateGalleryFailureToFalOnly = (stage: string): boolean => {
+      if (galleryEscalatedToFalOnly || !missionId) return false;
+      const escalated = tryGalleryFailureEscalation({
+        assignment,
+        postType,
+        missionId,
+        stage,
+      });
+      if (!escalated) return false;
+      console.warn(
+        `[auto-produce] gallery ${stage} → ${String(escalated.assignment.pipeline)} `
+        + `(fal_only escalation) "${headline.slice(0, 40)}"`,
+      );
+      assignment = escalated.assignment;
+      referenceUrl = escalated.referenceUrl;
+      resolvedReferenceUrl = escalated.referenceUrl;
+      galleryPreviewUrl = null;
+      pickedFromBrandGallery = escalated.pickedFromBrandGallery;
+      galleryMatchScore = escalated.galleryMatchScore;
+      captionDrivenGenerated = escalated.captionDrivenGenerated;
+      agentIdeationGalleryLock = escalated.agentIdeationGalleryLock;
+      galleryEscalatedToFalOnly = true;
+      return true;
+    };
     let photoMetaForCaption = galleryMeta[normalizeGalleryUrl(normalizedResolvedReferenceUrl)]
       ?? Object.entries(galleryMeta).find(
         ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
@@ -2519,14 +2541,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.warn(
           `[auto-produce] hard caption↔photo theme conflict — skip "${ideationHeadline.slice(0, 40)}"`,
         );
-        results.push({
-          title: headline,
-          imageUrl: galleryPreviewUrl ?? '',
-          error: galleryThemeMismatchMessage(galleryMatchHeadline, 'hard_veto'),
-          errorCode: GALLERY_THEME_MISMATCH_CODE,
-          slotKey,
-        });
-        continue;
+        if (!escalateGalleryFailureToFalOnly('hard_veto')) {
+          results.push({
+            title: headline,
+            imageUrl: galleryPreviewUrl ?? '',
+            error: galleryThemeMismatchMessage(galleryMatchHeadline, 'hard_veto'),
+            errorCode: GALLERY_THEME_MISMATCH_CODE,
+            slotKey,
+          });
+          continue;
+        }
       }
     }
 
@@ -2603,14 +2627,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.warn(
           `[auto-produce] ai judge rejected gallery match (conf ${decision.confidence.toFixed(2)}) — fail closed "${ideationHeadline.slice(0, 40)}": ${decision.rejectReason ?? decision.reason}`,
         );
-        results.push({
-          title: headline,
-          imageUrl: galleryPreviewUrl ?? '',
-          error: galleryThemeMismatchMessage(galleryMatchHeadline, 'judge_reject'),
-          errorCode: GALLERY_THEME_MISMATCH_CODE,
-          slotKey,
-        });
-        continue;
+        if (!escalateGalleryFailureToFalOnly('judge_reject')) {
+          results.push({
+            title: headline,
+            imageUrl: galleryPreviewUrl ?? '',
+            error: galleryThemeMismatchMessage(galleryMatchHeadline, 'judge_reject'),
+            errorCode: GALLERY_THEME_MISMATCH_CODE,
+            slotKey,
+          });
+          continue;
+        }
       }
     }
 
@@ -2633,7 +2659,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || hardThemeConflict;
     // Fal paints typography on the gallery photo — never ship a weak caption↔photo pair.
     // Calendar slots use brief-driven matching; allow brand-solid fallback instead of hard skip.
-    const falGroundedPipeline = usesFalDesignerTrackEarly && !captionDrivenGenerated && !isCalendarSlot;
+    const falGroundedPipeline = usesFalDesignerTrackEarly
+      && !galleryEscalatedToFalOnly
+      && !captionDrivenGenerated
+      && !isCalendarSlot;
     const galleryFloor = falGroundedPipeline
       ? FAL_GROUNDED_GALLERY_MIN_SCORE
       : MIN_ACCEPT_SCORE;
@@ -2694,22 +2723,25 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.warn(
           `[auto-produce] weak gallery brand_solid failed — skip "${headline.slice(0, 40)}"`,
         );
-        results.push({
-          title: headline,
-          imageUrl: galleryPreviewUrl ?? '',
-          error: `Zayıf galeri eşleşmesi — marka solid üretimi başarısız (${galleryMatchScore}/${galleryFloor})`,
-          slotKey,
-        });
-        continue;
+        if (!escalateGalleryFailureToFalOnly('weak_gallery_brand_solid')) {
+          results.push({
+            title: headline,
+            imageUrl: galleryPreviewUrl ?? '',
+            error: `Zayıf galeri eşleşmesi — marka solid üretimi başarısız (${galleryMatchScore}/${galleryFloor})`,
+            slotKey,
+          });
+          continue;
+        }
+      } else {
+        referenceUrl = aiGenerated;
+        resolvedReferenceUrl = aiGenerated;
+        galleryPreviewUrl = toFeedPreviewUrl(aiGenerated) ?? aiGenerated;
+        galleryMatchScore = null;
+        pickedFromBrandGallery = false;
+        console.log(
+          `[auto-produce] weak gallery → brand solid AI: "${headline.slice(0, 40)}"`,
+        );
       }
-      referenceUrl = aiGenerated;
-      resolvedReferenceUrl = aiGenerated;
-      galleryPreviewUrl = toFeedPreviewUrl(aiGenerated) ?? aiGenerated;
-      galleryMatchScore = null;
-      pickedFromBrandGallery = false;
-      console.log(
-        `[auto-produce] weak gallery → brand solid AI: "${headline.slice(0, 40)}"`,
-      );
     }
 
     if (
@@ -2783,6 +2815,29 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           captionDrivenMode: true,
         });
         if (!recovered) {
+          if (!escalateGalleryFailureToFalOnly('weak_gallery_caption_scratch')) {
+            results.push({
+              title: headline,
+              imageUrl: galleryPreviewUrl ?? '',
+              error: `Galeri–caption eşleşmesi yetersiz (${galleryMatchScore}/${galleryFloor}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
+              slotKey,
+            });
+            continue;
+          }
+        } else {
+          referenceUrl = recovered;
+          resolvedReferenceUrl = recovered;
+          galleryPreviewUrl = toFeedPreviewUrl(recovered) ?? recovered;
+          galleryMatchScore = null;
+          pickedFromBrandGallery = false;
+          referenceIsStock = false;
+          captionDrivenGenerated = true;
+        }
+      } else {
+        console.warn(
+          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — skip "${headline.slice(0, 40)}"`,
+        );
+        if (!escalateGalleryFailureToFalOnly('weak_gallery')) {
           results.push({
             title: headline,
             imageUrl: galleryPreviewUrl ?? '',
@@ -2791,24 +2846,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           });
           continue;
         }
-        referenceUrl = recovered;
-        resolvedReferenceUrl = recovered;
-        galleryPreviewUrl = toFeedPreviewUrl(recovered) ?? recovered;
-        galleryMatchScore = null;
-        pickedFromBrandGallery = false;
-        referenceIsStock = false;
-        captionDrivenGenerated = true;
-      } else {
-        console.warn(
-          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — skip "${headline.slice(0, 40)}"`,
-        );
-        results.push({
-          title: headline,
-          imageUrl: galleryPreviewUrl ?? '',
-          error: `Galeri–caption eşleşmesi yetersiz (${galleryMatchScore}/${galleryFloor}) — "${ideationHeadline.slice(0, 40)}" için uygun foto yok`,
-          slotKey,
-        });
-        continue;
       }
     }
 
@@ -3324,6 +3361,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && hasRealBrandPhotos
       && !referenceUrl
       && !forceAttachedPhotos
+      && !galleryEscalatedToFalOnly
     ) {
       console.warn(
         `[auto-produce] fal slot skipped — brand gallery required, no headline-matched photo: "${headline.slice(0, 48)}"`,
@@ -3395,7 +3433,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             : isCalendarSlot && pkgFmt === 'story'
               ? '9:16'
               : undefined,
-          requireGroundedGallery: resolveFalRequireGroundedGallery({
+          requireGroundedGallery: galleryEscalatedToFalOnly
+            ? false
+            : resolveFalRequireGroundedGallery({
             requireGroundedGallery: isCalendarSlot || adHocBrief || isPaidAdSlot,
             referencePhotoUrl: referenceUrl,
             sector: brandBusinessType,
@@ -3756,26 +3796,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let designedPosterGrafikerPass = true;
     let designedPosterTemplateMeta: Record<string, unknown> = {};
 
-    let remotionFalAlignment: RemotionFalTemplateAlignment | null = null;
-    if (isRemotionFalAlignedSlot(assignment) && !adHocBrief) {
-      remotionFalAlignment = await alignRemotionPosterWithFalTemplate({
-        workspaceId,
-        slotRole: assignment.slot_role,
-        librarySlotKey: assignment.library_slot_key,
-        caption,
-        brandColors: { primary: syncPrimaryColor ?? '', accent: syncAccentColor ?? '' },
-        brandVibe: null,
-        logoUrl: brandLogoUrl || undefined,
-        adHocBrief,
-      });
-      if (remotionFalAlignment) {
-        console.log(
-          `[auto-produce] [remotion-fal-align] "${remotionFalAlignment.matched.templateName}" ` +
-          `(${remotionFalAlignment.matched.templateType}) → ${assignment.slot_role}`,
-        );
-      }
-    }
-
     const isCampaignDesignedPost = !isFalMissionVideo
       && !isFalDesignPost
       && isDesignedPostSlot
@@ -3848,17 +3868,51 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       // Remotion poster path removed — fal_design pipeline + event overlay handle designed posts.
       if (isDesignedPostSlot && !designedPosterSyncUrl) {
         console.warn(
-          `[auto-produce] Designed post slot withheld (no branded poster): "${headline.slice(0, 40)}"`,
+          `[auto-produce] Designed post slot withheld (no branded poster) — trying fal_only fallback: "${headline.slice(0, 40)}"`,
         );
-        results.push({
-          title: headline,
-          imageUrl: '',
-          error: designedPosterGrafikerScore != null
-            ? `Grafiker ${designedPosterGrafikerScore}/10 — tasarım postu yayına alınmadı`
-            : 'Tasarım postu üretilemedi',
-          slotKey,
+        const designedFallback = await produceFalOnlySlot({
+          pipeline: 'fal_only_post',
+          workspaceId,
+          isFalOnlyPost: true,
+          isFalOnlyVideo: false,
+          existingImageUrl: imageUrl,
+          existingVideoUrl: videoUrl,
+          headline,
+          caption,
+          cta,
+          brandName: resolvedBrandName,
+          brandColors: { primary: syncPrimaryColor ?? '', accent: syncAccentColor ?? '' },
+          brandVibe: null,
+          sector: brandBusinessType,
+          location: brandLocation,
+          mood,
+          sceneHint: falSceneHint || undefined,
+          logoUrl: brandLogoUrl || undefined,
+          grafikerMaxRetries,
+          referencePhotoUrl: undefined,
+          brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
+          requireGroundedGallery: false,
+          hasRealBrandGallery: hasRealBrandPhotos,
+          captionDrivenGenerated: true,
         });
-        continue;
+        if (designedFallback?.imageUrl) {
+          imageUrl = designedFallback.imageUrl;
+          designedPosterSyncUrl = designedFallback.imageUrl;
+          falDesignEngine = designedFallback.falDesignEngine;
+          falGrafikerScore = designedFallback.falGrafikerScore;
+          falGrafikerPass = designedFallback.falGrafikerPass;
+          costEstimate += designedFallback.costDelta;
+        } else {
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: designedPosterGrafikerScore != null
+              ? `Grafiker ${designedPosterGrafikerScore}/10 — tasarım postu yayına alınmadı`
+              : 'Tasarım postu üretilemedi',
+            slotKey,
+          });
+          continue;
+        }
       }
     }
 
@@ -3903,7 +3957,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       continue;
     }
     if (missionId && !videoUrl && !imageUrl && referenceUrl) {
-      imageUrl = referenceUrl;
+      if (!assignmentRequiresDesignedStoryVisual(assignment)) {
+        imageUrl = referenceUrl;
+      } else {
+        console.warn(
+          `[auto-produce] designed story slot withheld — refusing plain gallery fallback `
+          + `pipeline=${assignment.pipeline} "${headline.slice(0, 40)}"`,
+        );
+      }
     }
 
     // Stories: event info is baked into the image
@@ -3967,7 +4028,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || assignmentImpliesStoryFormat(assignment.slot_role);
     const bundleReadyNow = designedPosterReady || markyBranded;
 
-    const nexusPrimaryContentUrl = videoUrl ?? imageUrl ?? galleryPreviewUrl ?? '';
+    const designedStoryRequired = assignmentRequiresDesignedStoryVisual(assignment);
+    const nexusPrimaryContentUrl = videoUrl
+      ?? imageUrl
+      ?? (designedStoryRequired ? '' : (galleryPreviewUrl ?? ''));
     if (!nexusPrimaryContentUrl) {
       console.warn(`[auto-produce] no nexus contentUrl for "${headline.slice(0, 50)}", skipping save`);
       results.push({ title: headline, imageUrl: '', error: 'Production failed: no persistable content URL', slotKey });

@@ -86,6 +86,7 @@ vi.mock('@/lib/brand-design-template-production', () => ({
   templateStyleReferenceUrls: h.templateStyleReferenceUrls,
   resolveFalTemplateLockOptions: h.resolveFalTemplateLockOptions,
   assertTemplateStyleReference: () => {},
+  dropConflictingLayoutDirectives: (directives: string[]) => directives,
 }));
 vi.mock('@/lib/brand-design-template-matcher', () => ({
   matchDesignTemplateToSlot: h.matchDesignTemplateToSlot,
@@ -105,6 +106,11 @@ vi.mock('@/lib/fal-caption-headline', () => ({
 }));
 vi.mock('@/lib/typography-text-validation', () => ({
   validateTypographyText: h.validateTypographyText,
+  validateFalCanvasText: vi.fn().mockResolvedValue({
+    valid: true,
+    detectedHeadline: null,
+    detectedSubtitle: null,
+  }),
 }));
 
 import { falVideoHandler } from '../fal-video-pipeline';

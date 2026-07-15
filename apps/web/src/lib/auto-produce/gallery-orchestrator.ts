@@ -67,11 +67,43 @@ export function assignmentUsesGalleryPhoto(
 }
 
 /** Non-photo pipeline a zero-capacity slot falls back to, by post format. */
-function falOnlyPipelineForPostType(postType: 'feed' | 'story' | 'reel' | 'carousel'): string | null {
+export function falOnlyPipelineForPostType(
+  postType: 'feed' | 'story' | 'reel' | 'carousel',
+): string | null {
   if (postType === 'carousel') return null; // multi-photo slots keep diversity fallback
   if (postType === 'story') return 'fal_only_story';
   if (postType === 'reel') return 'fal_only_reel';
   return 'fal_only_post';
+}
+
+/** Runtime gallery gate failure → reroute to AI visual instead of permanent withhold. */
+export function tryGalleryFailureEscalation<
+  A extends { pipeline?: string; slot_role?: string },
+>(input: {
+  assignment: A;
+  postType: 'feed' | 'story' | 'reel' | 'carousel';
+  missionId?: string;
+  stage: string;
+}): {
+  assignment: A;
+  referenceUrl: null;
+  pickedFromBrandGallery: false;
+  galleryMatchScore: null;
+  captionDrivenGenerated: false;
+  agentIdeationGalleryLock: false;
+} | null {
+  if (!input.missionId?.trim()) return null;
+  const fallbackPipeline = falOnlyPipelineForPostType(input.postType);
+  if (!fallbackPipeline) return null;
+  return {
+    // fal_only_* is a valid ProductionPipeline for every assignment shape used here.
+    assignment: { ...input.assignment, pipeline: fallbackPipeline } as A,
+    referenceUrl: null,
+    pickedFromBrandGallery: false,
+    galleryMatchScore: null,
+    captionDrivenGenerated: false,
+    agentIdeationGalleryLock: false,
+  };
 }
 
 /**

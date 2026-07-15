@@ -598,7 +598,38 @@ async def requeue_exhausted(
         )
     if include_gallery_theme_retry and rows:
         await _clear_gallery_urls_from_job_payloads(mission_id, [str(r[0]) for r in rows])
+        await _escalate_gallery_failed_jobs_to_fal_only(mission_id, [str(r[0]) for r in rows])
     return len(rows)
+
+
+async def _escalate_gallery_failed_jobs_to_fal_only(
+    mission_id: uuid.UUID,
+    job_ids: list[str],
+) -> None:
+    """Reroute gallery-veto exhausted slots to fal_only so the next drain skips gallery gates."""
+    if not job_ids:
+        return
+    factory = _get_session_factory()
+    async with factory() as db:
+        await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET pipeline = CASE
+                    WHEN format = 'story' THEN 'fal_only_story'
+                    WHEN format = 'reel' THEN 'fal_only_reel'
+                    WHEN format IN ('post', 'feed') THEN 'fal_only_post'
+                    ELSE pipeline
+                END,
+                    updated_at = now()
+                WHERE mission_id = CAST(:mission_id AS UUID)
+                  AND id = ANY(CAST(:ids AS UUID[]))
+                  AND COALESCE(last_error, '') ILIKE '%tema çatışması%'
+                """
+            ),
+            {"mission_id": str(mission_id), "ids": job_ids},
+        )
+        await db.commit()
 
 
 async def _clear_gallery_urls_from_job_payloads(

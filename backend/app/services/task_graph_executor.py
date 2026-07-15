@@ -1967,7 +1967,7 @@ def _schedule_ensure_mission_feed(
                     from app.tasks.advance_tasks import ensure_mission_feed
 
                     ensure_mission_feed.apply_async(
-                        args=[str(mission_id), str(workspace_id)],
+                        args=[str(mission_id), str(workspace_id), operator_initiated],
                         countdown=max(0.0, float(delay_sec)),
                         queue="advance",
                     )
@@ -1985,7 +1985,7 @@ def _schedule_ensure_mission_feed(
             from app.tasks.advance_tasks import ensure_mission_feed
 
             ensure_mission_feed.apply_async(
-                args=[str(mission_id), str(workspace_id)],
+                args=[str(mission_id), str(workspace_id), operator_initiated],
                 countdown=max(0.0, float(delay_sec)),
                 queue="advance",
             )

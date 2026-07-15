@@ -16,6 +16,7 @@ import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
+  dropConflictingLayoutDirectives,
   resolveFalTemplateLockOptions,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
@@ -76,7 +77,10 @@ export async function runFalStoryPosterProduction(input: {
     sceneHint: input.sceneHint,
     brandDirectives: [
       ...input.templateBinding.brandDirectives,
-      ...(input.designBriefDirectives ?? []),
+      ...dropConflictingLayoutDirectives(
+        input.designBriefDirectives ?? [],
+        input.templateBinding.matched,
+      ),
     ],
     visualDnaTone: input.visualDnaTone,
     designIntensityLevel: input.designIntensityLevel,
@@ -260,7 +264,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
         sceneHint: falBrand.sceneHint,
         brandDirectives: [
           ...templateBinding.brandDirectives,
-          ...(inputs.designBriefDirectives ?? []),
+          ...dropConflictingLayoutDirectives(
+            inputs.designBriefDirectives ?? [],
+            templateBinding.matched,
+          ),
         ],
         visualDnaTone: falBrand.visualDnaTone,
         designerMotionCue: inputs.designerMotionCue,

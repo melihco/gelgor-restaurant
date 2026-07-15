@@ -66,12 +66,23 @@ async def _advance_mission_async(mission_id: str, workspace_id: str) -> dict:
     max_retries=2,
     default_retry_delay=30,
 )
-def ensure_mission_feed(self, mission_id: str, workspace_id: str) -> dict:
+def ensure_mission_feed(
+    self,
+    mission_id: str,
+    workspace_id: str,
+    operator_initiated: bool = False,
+) -> dict:
     """Ensure a mission's feed package is produced (ideation/calendar/cohesion → drain)."""
-    return run_async(_ensure_mission_feed_async(mission_id, workspace_id))
+    return run_async(
+        _ensure_mission_feed_async(mission_id, workspace_id, operator_initiated),
+    )
 
 
-async def _ensure_mission_feed_async(mission_id: str, workspace_id: str) -> dict:
+async def _ensure_mission_feed_async(
+    mission_id: str,
+    workspace_id: str,
+    operator_initiated: bool = False,
+) -> dict:
     from app.services.mission_feed_production_service import ensure_mission_feed_production
     from app.services.redis_lock import distributed_lock
 
@@ -80,7 +91,11 @@ async def _ensure_mission_feed_async(mission_id: str, workspace_id: str) -> dict
     async with distributed_lock(f"ensure:{mid}", ttl_sec=900) as acquired:
         if not acquired:
             return {"skipped": "locked", "mission_id": mission_id}
-        await ensure_mission_feed_production(mid, wid)
+        await ensure_mission_feed_production(
+            mid,
+            wid,
+            operator_initiated=operator_initiated,
+        )
         return {"mission_id": mission_id, "ok": True}
 
 

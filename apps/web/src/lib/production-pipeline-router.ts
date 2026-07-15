@@ -269,7 +269,6 @@ function resolveDeterministicRemotionLibrarySlotKey(input: {
   posterOrdinal?: number;
 }): string | undefined {
   const { assignment, idea } = input;
-  if (assignment.catalog_slot_key) return assignment.catalog_slot_key;
   if (assignment.library_slot_key) return assignment.library_slot_key;
 
   const hasEventDetails = Boolean(
@@ -327,21 +326,23 @@ function enrichAssignment(
 ): ProductionAssignment {
   const catalogKey = assignment.catalog_slot_key
     ?? (idea.catalog_slot_key as string | undefined);
-  if (catalogKey) {
-    return {
-      ...assignment,
-      catalog_slot_key: catalogKey,
-      library_slot_key: assignment.library_slot_key ?? catalogKey,
-    };
-  }
 
+  // library_slot_key stays a LEGACY Remotion/library key (event_story, campaign_post…)
+  // for LIBRARY_SLOT_TO_TEMPLATE_TYPES routing + typography lookup. The catalog id
+  // travels only in catalog_slot_key (SSOT hard pin) — never copied into library_slot_key.
   const librarySlotKey = resolveDeterministicRemotionLibrarySlotKey({
     assignment,
     idea,
     storyOrdinal: opts?.storyOrdinal,
     posterOrdinal: opts?.posterOrdinal,
   });
-  return librarySlotKey ? { ...assignment, library_slot_key: librarySlotKey } : assignment;
+
+  if (!catalogKey && !librarySlotKey) return assignment;
+  return {
+    ...assignment,
+    ...(catalogKey ? { catalog_slot_key: catalogKey } : {}),
+    ...(librarySlotKey ? { library_slot_key: librarySlotKey } : {}),
+  };
 }
 
 /**
@@ -444,6 +445,18 @@ export function assignmentImpliesStoryFormat(role: ProductionSlotRole): boolean 
   return role === 'campaign_story_motion'
     || role === 'organic_story_still'
     || role === 'product_showcase_story';
+}
+
+/**
+ * Story slots that must publish a designed overlay — never a raw gallery photo
+ * when the design pipeline fails silently.
+ */
+export function assignmentRequiresDesignedStoryVisual(
+  assignment: Pick<ProductionAssignment, 'pipeline' | 'slot_role'>,
+): boolean {
+  return assignment.pipeline === 'fal_story'
+    || assignment.pipeline === 'fal_only_story'
+    || assignment.slot_role === 'campaign_story_motion';
 }
 
 /** @deprecated Remotion removed — designed posts use fal_design. */

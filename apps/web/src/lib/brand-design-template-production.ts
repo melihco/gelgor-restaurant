@@ -127,6 +127,22 @@ export function buildTemplateLayoutDirectives(
   return out;
 }
 
+/**
+ * One layout authority: when a brand template is locked, mission-level Canva
+ * archetype rotation and grid-surface rotation directives must not fight the
+ * template's layout recipe. Without a match, rotation directives pass through
+ * so per-mission variety still applies.
+ */
+export function dropConflictingLayoutDirectives(
+  extraDirectives: string[],
+  matched: MatchedDesignTemplate | null | undefined,
+): string[] {
+  if (!matched) return extraDirectives;
+  return extraDirectives.filter(
+    (d) => !/^(CANVA ARCHETYPE:|GRID ROTATION:|FORBIDDEN: )/.test(d.trim()),
+  );
+}
+
 /** Mission gallery photo only — template preview PNGs carry sample copy and must not be edit refs. */
 export function pickTemplateReferenceUrls(input: {
   missionPhotoUrl: string | null | undefined;
@@ -245,7 +261,7 @@ export async function bindBrandTemplateForFalProduction(input: {
           headline: input.headline,
           subtitle: input.subtitle ?? input.caption,
         }),
-        ...input.baseDirectives,
+        ...dropConflictingLayoutDirectives(input.baseDirectives, matched),
       ],
       brandColors: matched.brandColors ?? null,
       logoUrl: matched.prominentLogo ? (input.logoUrl ?? matched.logoUrl) : input.logoUrl,

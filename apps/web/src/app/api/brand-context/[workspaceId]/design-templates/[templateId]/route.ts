@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { invalidateDesignTemplateCache } from '@/lib/brand-design-template-matcher';
 
 export const runtime = 'nodejs';
 
@@ -9,6 +10,7 @@ export async function PATCH(
 ) {
   const { workspaceId, templateId } = await params;
   const body = await req.json().catch(() => ({}));
+  invalidateDesignTemplateCache(workspaceId);
   return proxyToCrewBackend(`/api/v1/design-templates/${workspaceId}/${templateId}`, {
     method: 'PATCH',
     headers: { 'X-Tenant-Id': workspaceId },
@@ -22,6 +24,7 @@ export async function DELETE(
   { params }: { params: Promise<{ workspaceId: string; templateId: string }> },
 ) {
   const { workspaceId, templateId } = await params;
+  invalidateDesignTemplateCache(workspaceId);
   return proxyToCrewBackend(`/api/v1/design-templates/${workspaceId}/${templateId}`, {
     method: 'DELETE',
     headers: { 'X-Tenant-Id': workspaceId },

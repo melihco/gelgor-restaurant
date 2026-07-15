@@ -15,6 +15,7 @@ import {
   alignRemotionPosterWithFalTemplate,
   buildTemplateLayoutDirectives,
   bindBrandTemplateForFalProduction,
+  dropConflictingLayoutDirectives,
   isRemotionFalAlignedSlot,
   mapDesignTemplateTypeToContentIntent,
   pickTemplateReferenceUrls,
@@ -55,6 +56,24 @@ describe('buildTemplateLayoutDirectives', () => {
     expect(dirs.some((d) => d.includes('Bold diagonal panel'))).toBe(false);
     expect(dirs.some((d) => d.includes('second reference image'))).toBe(false);
     expect(dirs.some((d) => d.includes('TEXT LOCK'))).toBe(true);
+  });
+});
+
+describe('dropConflictingLayoutDirectives', () => {
+  const rotationDirectives = [
+    'CANVA ARCHETYPE: Bold Poster (arc-07) — heavy top panel.',
+    'GRID ROTATION: Prior post used a heavy brand-color header — this slot must be photo-first. Full-bleed gallery hero, tiny or no headline at bottom edge only.',
+    'FORBIDDEN: top horizontal color band, upper brand panel, or poster header block.',
+    'Visual DNA: warm amber tones, coastal light.',
+  ];
+
+  it('strips archetype/grid rotation lines when a template is locked', () => {
+    const out = dropConflictingLayoutDirectives(rotationDirectives, matched);
+    expect(out).toEqual(['Visual DNA: warm amber tones, coastal light.']);
+  });
+
+  it('passes all directives through when no template matched', () => {
+    expect(dropConflictingLayoutDirectives(rotationDirectives, null)).toEqual(rotationDirectives);
   });
 });
 

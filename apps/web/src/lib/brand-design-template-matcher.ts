@@ -427,6 +427,48 @@ function specialDayProximityBonus(record: BrandDesignTemplateRecord): number {
 let warnedMissing = false;
 
 /**
+ * Per-workspace short-lived template list cache. A single mission drain binds
+ * templates for 8–12 slots; without this every slot repeats the same backend
+ * fetch (and a transient failure silently drops the template lock for that slot).
+ */
+const templateListCache = new Map<string, { at: number; data: BrandDesignTemplateRecord[] }>();
+const TEMPLATE_LIST_CACHE_TTL_MS = 60_000;
+
+async function fetchDesignTemplateList(
+  workspaceId: string,
+): Promise<BrandDesignTemplateRecord[] | null> {
+  const cached = templateListCache.get(workspaceId);
+  if (cached && Date.now() - cached.at < TEMPLATE_LIST_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const res = await fetchCrewBackendJson<BrandDesignTemplateRecord[]>(
+    `/api/v1/design-templates/${workspaceId}`,
+    { workspaceId, timeoutMs: 30_000 },
+  );
+  if (!res.ok) {
+    if (!warnedMissing) {
+      warnedMissing = true;
+      console.warn(
+        `[design-matcher] design-templates fetch failed workspace=${workspaceId} ` +
+          `status=${res.status} error=${res.error ?? 'unknown'}`,
+      );
+    }
+    // Stale cache beats losing the brand template lock mid-mission.
+    return cached?.data ?? null;
+  }
+  const data = Array.isArray(res.data) ? res.data : [];
+  templateListCache.set(workspaceId, { at: Date.now(), data });
+  return data;
+}
+
+/** Test/ops hook — drop the cached template list (e.g. after template CRUD). */
+export function invalidateDesignTemplateCache(workspaceId?: string): void {
+  if (workspaceId) templateListCache.delete(workspaceId);
+  else templateListCache.clear();
+}
+
+/**
  * Fetch the brand's active design templates and pick the best match for a slot.
  * Returns null when no design set exists (brand pre-dates the feature) so
  * callers fall back to default behavior with zero change.
@@ -446,25 +488,12 @@ export async function matchDesignTemplateToSlot(
     brandActiveSlots?: BrandActiveSlotSet | null;
   },
 ): Promise<MatchedDesignTemplate | null> {
-  const res = await fetchCrewBackendJson<BrandDesignTemplateRecord[]>(
-    `/api/v1/design-templates/${workspaceId}`,
-    { workspaceId, timeoutMs: 30_000 },
-  );
-  if (!res.ok) {
-    if (!warnedMissing) {
-      warnedMissing = true;
-      console.warn(
-        `[design-matcher] design-templates fetch failed workspace=${workspaceId} ` +
-          `status=${res.status} error=${res.error ?? 'unknown'}`,
-      );
-    }
-    return null;
-  }
-  if (!Array.isArray(res.data) || res.data.length === 0) {
+  const records = await fetchDesignTemplateList(workspaceId);
+  if (!records || records.length === 0) {
     return null;
   }
 
-  let active = res.data.filter((t) => t.status === 'active' || t.status === 'approved');
+  let active = records.filter((t) => t.status === 'active' || t.status === 'approved');
   if (opts.brandActiveSlots) {
     active = filterDesignTemplatesToActiveSlots(active, opts.brandActiveSlots);
   }

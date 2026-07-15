@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { invalidateDesignTemplateCache } from '@/lib/brand-design-template-matcher';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,7 @@ export async function POST(
 ) {
   const { workspaceId } = await params;
   const body = await req.json().catch(() => ({}));
+  invalidateDesignTemplateCache(workspaceId);
   return proxyToCrewBackend(`/api/v1/design-templates/${workspaceId}`, {
     method: 'POST',
     headers: { 'X-Tenant-Id': workspaceId },
