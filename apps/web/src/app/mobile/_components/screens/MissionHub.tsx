@@ -616,14 +616,14 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
               <span style={{
-                fontSize: 9, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
-                textTransform: 'uppercase', letterSpacing: '0.04em',
+                fontSize: 10.5, padding: '2px 9px', borderRadius: 20, fontWeight: 700,
+                letterSpacing: '-0.01em',
                 background: hasError ? 'rgba(239,68,68,0.1)' : isWaiting ? 'rgba(160,160,180,0.1)' : `${pColor}14`,
                 color: hasError ? '#EF4444' : isWaiting ? t.textMuted : pColor,
               }}>
                 {statusLabel}
               </span>
-              <span style={{ fontSize: 9, color: t.textMuted }}>
+              <span style={{ fontSize: 10.5, color: t.textMuted }}>
                 {TYPE_LABEL[mission.type] ?? mission.type}
               </span>
             </div>
@@ -807,6 +807,7 @@ function ProposedCard({ mission, workspaceId, onApprove, onReject, isPending }: 
   isPending: boolean;
 }) {
   const { t } = useTheme();
+  const debugMode = isDebugUiMode();
   const pColor = PRIORITY_COLOR[mission.priority] ?? t.accent;
 
   return (
@@ -828,16 +829,12 @@ function ProposedCard({ mission, workspaceId, onApprove, onReject, isPending }: 
              mission.type === 'competitive' ? '🏆' : mission.type === 'recovery' ? '↑' : '✎'}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20,
-                background: `${pColor}14`, color: pColor, fontWeight: 700,
-                textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                {mission.priority}
-              </span>
-              <span style={{ fontSize: 9, color: t.textMuted, fontWeight: 500 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: pColor, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>
                 {TYPE_LABEL[mission.type] ?? mission.type}
               </span>
-              {mission.confidence > 0 && (
+              {debugMode && mission.confidence > 0 && (
                 <span style={{ fontSize: 9, color: t.live, fontWeight: 500 }}>
                   %{Math.round(mission.confidence * 100)} güven
                 </span>
@@ -5381,8 +5378,8 @@ export function MissionHub() {
 
             {isBlockingError && blockingList.length > 0 && (
               <div style={{ padding: '10px 16px', borderTop: `0.5px solid ${t.separator}` }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: t.warning, letterSpacing: '0.08em',
-                  textTransform: 'uppercase', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.warning,
+                  letterSpacing: '-0.01em', marginBottom: 8 }}>
                   Bekleyen / aktif ({blockingList.length})
                 </div>
                 {blockingList.map((m) => (
@@ -5548,8 +5545,8 @@ export function MissionHub() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.warning,
                 animation: 'liveGlow 2s infinite', boxShadow: `0 0 8px ${t.warning}` }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
-                letterSpacing: '0.1em', textTransform: 'uppercase' }}>Onay Bekliyor</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary,
+                letterSpacing: '-0.01em' }}>Onay bekliyor</span>
               <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20,
                 background: 'rgba(245,158,11,0.12)', color: t.warning, fontWeight: 700 }}>
                 {proposed.length}
@@ -5585,8 +5582,8 @@ export function MissionHub() {
           <div style={{ marginBottom: 28 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444' }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#EF4444',
-                letterSpacing: '0.1em', textTransform: 'uppercase' }}>Hatalı Tamamlandı</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#EF4444',
+                letterSpacing: '-0.01em' }}>Tamamlanamadı</span>
               <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20,
                 background: 'rgba(239,68,68,0.10)', color: '#EF4444', fontWeight: 700 }}>
                 {failedCompleted.length}
@@ -5613,8 +5610,8 @@ export function MissionHub() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.live,
                 animation: 'liveGlow 2s infinite', boxShadow: `0 0 8px ${t.live}` }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
-                letterSpacing: '0.1em', textTransform: 'uppercase' }}>{operatorMode ? 'Aktif Kampanyalar' : 'Üretimde'}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary,
+                letterSpacing: '-0.01em' }}>{operatorMode ? 'Aktif kampanyalar' : 'Üretimde'}</span>
               <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20,
                 background: 'rgba(16,185,129,0.10)', color: t.live, fontWeight: 700 }}>
                 {active.length}
@@ -5642,8 +5639,8 @@ export function MissionHub() {
         {completed.length > 0 && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
-                letterSpacing: '0.1em', textTransform: 'uppercase' }}>Tamamlananlar</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary,
+                letterSpacing: '-0.01em' }}>Tamamlananlar</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {completed.map((m) => (

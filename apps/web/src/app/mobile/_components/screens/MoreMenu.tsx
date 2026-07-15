@@ -33,11 +33,11 @@ const ITEM_ICONS: Record<string, string> = {
 
 const FALLBACK_ICON = 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z';
 
-function MenuItemIcon({ iconBg, label }: { iconBg: string; label: string }) {
+function MenuItemIcon({ iconBg, label, size = 18 }: { iconBg: string; label: string; size?: number }) {
   const path = ITEM_ICONS[label] ?? FALLBACK_ICON;
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-      stroke={iconBg} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={iconBg} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
       aria-hidden
     >
       <path d={path} />
@@ -92,55 +92,100 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
 
   return (
     <>
-      {/* ─── Menu Groups ─────────────────────────────────────────────── */}
+      {/* ─── Menu Groups — card grid matching the brand-hub tiles ──────── */}
       {groups.map(group => (
-        <div key={group.title} style={{ padding: `18px ${horizontalPadding}px 0` }}>
+        <div key={group.title} style={{ padding: `16px ${horizontalPadding}px 0` }}>
 
           {/* Section label */}
           <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
             {group.title}
           </div>
 
-          {/* Items */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {group.items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className="sa-chrome-menu-row"
-                onClick={() => openMenuItem(item.screen)}
-              >
-                <div className="sa-chrome-icon-tile">
-                  <MenuItemIcon iconBg={item.iconBg} label={item.label} />
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14, fontWeight: 600, color: t.textPrimary,
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    letterSpacing: '-0.01em',
-                  }}>
-                    {item.label}
+          {/* Items — 2-column premium cards (lone/odd-trailing spans full width) */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10,
+          }}>
+            {group.items.map((item, i) => {
+              const isWide = group.items.length % 2 === 1 && i === group.items.length - 1;
+              const titleBlock = (
+                <div style={{ minWidth: 0, flex: isWide ? 1 : undefined }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 15, fontWeight: 700, color: t.textPrimary,
+                      letterSpacing: '-0.02em', lineHeight: 1.15, overflow: 'hidden',
+                      ...(isWide
+                        ? { textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                        : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }),
+                    }}>
+                      {item.label}
+                    </span>
                     {item.badge !== undefined && (
                       <span style={{
-                        fontSize: 9.5, padding: '2px 6px', borderRadius: 20,
-                        background: t.warningDim, color: t.warning, fontWeight: 800,
+                        flexShrink: 0, minWidth: 16, height: 16, padding: '0 5px',
+                        borderRadius: 20, background: t.warningDim, color: t.warning,
+                        fontSize: 9.5, fontWeight: 800,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       }}>
                         {item.badge}
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11.5, color: t.textTertiary, marginTop: 1.5 }}>
+                  <div style={{
+                    fontSize: 11.5, color: t.textTertiary, marginTop: 2, lineHeight: 1.3,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
                     {item.sub}
                   </div>
                 </div>
+              );
 
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                  stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            ))}
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="sa-chrome-card brand-hub-tile"
+                  onClick={() => openMenuItem(item.screen)}
+                  style={{
+                    gridColumn: isWide ? '1 / -1' : undefined,
+                    position: 'relative', overflow: 'hidden', borderRadius: 20,
+                    cursor: 'pointer', textAlign: 'left', display: 'flex',
+                    ...(isWide
+                      ? { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 74, padding: '14px 16px' }
+                      : { flexDirection: 'column', minHeight: 116, padding: '15px 14px 14px' }),
+                  }}
+                >
+                  {/* accent glow orb */}
+                  <div style={{
+                    position: 'absolute', right: -18, top: -18, width: 70, height: 70, borderRadius: '50%',
+                    background: item.iconBg, opacity: t.isDark ? 0.14 : 0.09,
+                    filter: 'blur(2px)', pointerEvents: 'none',
+                  }} />
+
+                  {/* icon tile */}
+                  <div style={{
+                    width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+                    marginBottom: isWide ? 0 : 'auto',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: t.isDark ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.72)',
+                    border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
+                  }}>
+                    <MenuItemIcon iconBg={item.iconBg} label={item.label} size={25} />
+                  </div>
+
+                  {isWide ? (
+                    <>
+                      {titleBlock}
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}
+                        stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </>
+                  ) : (
+                    <div style={{ marginTop: 14 }}>{titleBlock}</div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}

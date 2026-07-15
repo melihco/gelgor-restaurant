@@ -157,14 +157,10 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
 
   const detailRows: Array<{ label: string; value: string; color?: string }> = [
     { label: 'Format', value: fmt.label, color: fmt.color },
-    { label: 'Slot', value: item.label },
-    { label: 'Üretim hattı', value: pipelineLabel(item.pipeline) },
-    ...(item.ideaIndex != null && item.ideaIndex >= 0
-      ? [{ label: 'İçerik fikri', value: `#${item.ideaIndex + 1}` }]
-      : []),
+    { label: 'Üretim', value: pipelineLabel(item.pipeline) },
     { label: 'Durum', value: status.label, color: status.color },
     ...(item.aiEnhanceLabel
-      ? [{ label: 'AI iyileştirme', value: item.aiEnhanceLabel }]
+      ? [{ label: 'AI rötuş', value: item.aiEnhanceLabel }]
       : []),
   ];
 
@@ -281,8 +277,7 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
             }}>
               <span style={{ fontSize: 9, color: fmt.color, fontWeight: 800 }}>{fmt.glyph}</span>
               <span style={{
-                fontSize: 8.5, fontWeight: 800, color: fmt.color,
-                letterSpacing: '0.09em', textTransform: 'uppercase',
+                fontSize: 10, fontWeight: 700, color: fmt.color, letterSpacing: '0.01em',
               }}>
                 {fmt.label}
               </span>
@@ -319,19 +314,20 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
           }}
         >
           <div style={{
-            fontSize: 8.5, fontWeight: 800, color: GOLD, letterSpacing: '0.14em',
-            textTransform: 'uppercase', marginBottom: 8,
+            fontSize: 12, fontWeight: 800, color: '#fff', letterSpacing: '-0.01em',
+            marginBottom: 10, lineHeight: 1.3,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
           }}>
-            Üretim Künyesi
+            {item.label}
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 7 }}>
             {detailRows.map((row) => (
               <div key={row.label} style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                 <span style={{
-                  fontSize: 8.5, fontWeight: 700, color: 'rgba(157,190,206,0.75)',
-                  letterSpacing: '0.05em', textTransform: 'uppercase', flexShrink: 0,
-                  minWidth: 62,
+                  fontSize: 10.5, fontWeight: 500, color: 'rgba(157,190,206,0.70)',
+                  flexShrink: 0, minWidth: 58,
                 }}>
                   {row.label}
                 </span>
@@ -350,8 +346,8 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
                 borderTop: '0.5px solid rgba(138,171,189,0.20)',
               }}>
                 <div style={{
-                  fontSize: 8.5, fontWeight: 700, color: 'rgba(157,190,206,0.75)',
-                  letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 3,
+                  fontSize: 10.5, fontWeight: 500, color: 'rgba(157,190,206,0.70)',
+                  marginBottom: 3,
                 }}>
                   Başlık
                 </div>
@@ -438,20 +434,19 @@ export function MissionSlotShowcase({ checklist, artifacts, onOpenArtifact, t }:
       <style>{SHOWCASE_CSS}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 3 }}>
         <span style={{
-          fontSize: 10, fontWeight: 800, color: GOLD, letterSpacing: '0.16em',
-          textTransform: 'uppercase',
+          fontSize: 15, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.01em',
         }}>
-          Üretim Galerisi
+          Üretilen içerikler
         </span>
         <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: readyCount === cards.length ? '#10B981' : STEEL }}>
           {readyCount}
           <span style={{ color: t.textMuted, fontWeight: 600 }}>/{cards.length} hazır</span>
         </span>
       </div>
-      <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
-        Karta dokunarak üretim künyesini görüntüleyin — slot, üretim hattı ve başlık detayları.
+      <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
+        Her kartı çevirerek içerik detayını görün.
       </div>
 
       {/* Format filter chips */}
