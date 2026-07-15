@@ -13,6 +13,7 @@ import {
   uploadToR2,
 } from '@/lib/r2-storage';
 import { isR2StorageKeyPath, unwrapMediaProxyUrl } from '@/lib/media-url';
+import { galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 
 function extractMediaKeyFromUrl(url: string): string | null {
   const keyMatch = url.match(/[?&]key=([^&]+)/);
@@ -66,8 +67,10 @@ export function prioritizeTenantStoredGalleryUrls(
   const seen = new Set<string>();
   for (const raw of urls) {
     const u = raw.trim();
-    if (!u || seen.has(u.split('?')[0]!.toLowerCase())) continue;
-    seen.add(u.split('?')[0]!.toLowerCase());
+    if (!u) continue;
+    const dedupKey = galleryUrlIdentityKey(u);
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
     if (isTenantStoredMediaPath(u, workspaceId) || u.startsWith('/api/media')) {
       tenant.push(u);
     } else {

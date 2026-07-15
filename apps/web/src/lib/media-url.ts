@@ -660,7 +660,12 @@ export async function filterReachableGalleryUrls(
   const seen = new Set<string>();
   const urlsOut: string[] = [];
   for (const u of merged) {
-    const key = u.split('?')[0]!.toLowerCase();
+    // /api/media?key=… photos are identified by the R2 key, not the bare path —
+    // otherwise every tenant R2 photo collapses into one dedup slot.
+    const mediaKey = u.toLowerCase().includes('/api/media?')
+      ? new URLSearchParams(u.slice(u.indexOf('?') + 1)).get('key')
+      : null;
+    const key = (mediaKey ?? u.split('?')[0]!).toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     urlsOut.push(u);

@@ -403,7 +403,7 @@ export function AutoProductionFeed({
       const meta = a.metadata as Record<string, unknown> | undefined;
       if (typeof meta?.imageUrl === 'string') urls.push(meta.imageUrl);
       for (const u of urls) {
-        if (isUsableGalleryPhotoUrl(u)) bases.add(u.split('?')[0] as string);
+        if (isUsableGalleryPhotoUrl(u)) bases.add(normalizeGalleryUrl(u));
       }
     }
     return bases;
@@ -418,7 +418,7 @@ export function AutoProductionFeed({
         .filter(u => {
           const l = u.toLowerCase();
           if (['logo','icon','banner','footer','-150x','-300x'].some(p => l.includes(p))) return false;
-          return !usedPreviouslyBases.has(u.split('?')[0] as string);
+          return !usedPreviouslyBases.has(normalizeGalleryUrl(u));
         }),
     );
     return filtered.map(upscaleCdnUrl);

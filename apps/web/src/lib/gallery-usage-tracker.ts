@@ -51,7 +51,15 @@ export function getGlobalGalleryUsageCount(
 }
 
 export function normalizeGalleryUrl(url: string): string {
-  return (url.split('?')[0] ?? url).trim();
+  const trimmed = url.trim();
+  // /api/media?key=... — the R2 object key IS the photo identity; stripping the
+  // query would collapse every tenant R2 photo into the same "/api/media" key.
+  if (trimmed.toLowerCase().includes('/api/media?')) {
+    const q = trimmed.indexOf('?');
+    const key = new URLSearchParams(trimmed.slice(q + 1)).get('key');
+    if (key) return `/api/media?key=${key}`;
+  }
+  return (trimmed.split('?')[0] ?? trimmed);
 }
 
 export function kindToPostType(kind: string): PostTypeBucket {
@@ -323,7 +331,10 @@ export async function fetchWorkspaceArtifacts(
   internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
 ): Promise<Record<string, unknown>[]> {
   try {
-    const res = await fetch(`${nexusApi}/api/artifacts`, {
+    // limit is required: unbounded responses grow past ~20 MB on mature tenants
+    // and get truncated mid-stream, which made res.json() throw and silently
+    // disabled all gallery usage tracking (same photo picked repeatedly).
+    const res = await fetch(`${nexusApi}/api/artifacts?limit=300`, {
       headers: {
         'X-Tenant-Id': workspaceId,
         'X-Internal-Api-Key': internalKey,
