@@ -2,11 +2,7 @@
 
 import { useTheme } from './theme-context';
 import { useTenantBrandContext } from './TenantBrandProvider';
-import { useActiveTenantId } from '@/hooks/useActiveTenantId';
-import { useBrandThemePalette } from './use-brand-theme-palette';
-
-const STAR_PATH =
-  'M12 2.5l2.8 8.6h9.1l-7.4 5.4 2.8 8.6L12 19.6l-7.3 5.5 2.8-8.6-7.4-5.4h9.1z';
+import { BrandLogoAvatar } from './BrandLogoAvatar';
 
 /** Center nav orb — ~10% larger than legacy 58px circle for thumb reach + logo legibility. */
 const NAV_ORB_OUTER = 79;
@@ -24,12 +20,7 @@ export function BrandNavStar({
   onPointerEnter?: () => void;
 }) {
   const { t } = useTheme();
-  const tenantId = useActiveTenantId();
   const tenantBrand = useTenantBrandContext();
-  const palette = useBrandThemePalette();
-  const { primary, accent } = palette;
-
-  const gradId = `brand-nav-star-${tenantId ?? 'default'}`;
 
   return (
     <button
@@ -70,31 +61,11 @@ export function BrandNavStar({
           transform: active ? 'scale(1.06)' : 'scale(1)',
         }}
       >
-        {tenantBrand.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={tenantBrand.logoUrl}
-            alt=""
-            style={{
-              width: NAV_LOGO_SIZE,
-              height: NAV_LOGO_SIZE,
-              objectFit: 'contain',
-              objectPosition: 'center center',
-              display: 'block',
-            }}
-          />
-        ) : (
-          <svg width={40} height={40} viewBox="0 0 24 24" aria-hidden>
-            <defs>
-              <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={primary} />
-                <stop offset="55%" stopColor={accent} />
-                <stop offset="100%" stopColor={primary} />
-              </linearGradient>
-            </defs>
-            <path d={STAR_PATH} fill={`url(#${gradId})`} />
-          </svg>
-        )}
+        <BrandLogoAvatar
+          logoUrl={tenantBrand.logoUrl}
+          brandName={tenantBrand.brandName}
+          size={NAV_LOGO_SIZE}
+        />
       </div>
     </button>
   );

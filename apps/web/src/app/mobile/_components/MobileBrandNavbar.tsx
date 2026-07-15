@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
+import { BrandLogoAvatar } from './BrandLogoAvatar';
 import { useMobileStore } from './mobile-store';
 import { IcoGrid } from './Icons';
 import {
@@ -49,6 +50,8 @@ export function MobileBrandNavbar({
   title,
   subtitle,
   showLogo = true,
+  brandLogoUrl,
+  brandName,
   showMenuButton = false,
   logoCentered = false,
   rightSlot,
@@ -60,6 +63,9 @@ export function MobileBrandNavbar({
   title?: string;
   subtitle?: string;
   showLogo?: boolean;
+  /** Tenant marka logosu — verildiğinde Smart Agency logosu yerine gösterilir. */
+  brandLogoUrl?: string | null;
+  brandName?: string;
   /** @deprecated Tenant adı artık üst barda gösterilmez — yalnızca Smart Agency logosu. */
   showBrandName?: boolean;
   /** Sol üst menü — varsayılan kapalı; Menü alt navbar'da. */
@@ -132,13 +138,23 @@ export function MobileBrandNavbar({
                 padding: 4,
                 margin: 0,
                 minHeight: 44,
+                gap: 8,
               }}
             >
-              <SmartAgencyLogo
-                variant="full"
-                priority
-                className={dark ? 'h-8 max-w-[min(200px,58vw)]' : 'h-8 max-w-[min(200px,58vw)] brightness-0'}
-              />
+              {brandLogoUrl || brandName ? (
+                <BrandLogoAvatar
+                  logoUrl={brandLogoUrl}
+                  brandName={brandName}
+                  size={36}
+                  borderRadius={10}
+                />
+              ) : (
+                <SmartAgencyLogo
+                  variant="full"
+                  priority
+                  className={dark ? 'h-8 max-w-[min(200px,58vw)]' : 'h-8 max-w-[min(200px,58vw)] brightness-0'}
+                />
+              )}
             </button>
           )}
           {(hasCustomTitle || subtitle) && (

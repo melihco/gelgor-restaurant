@@ -47,9 +47,30 @@ export function useTenantBrand(workspaceId?: string | null): TenantBrandContext 
     enabled: Boolean(tenantId),
   });
 
+  const { data: brandContextData } = useQuery({
+    queryKey: ['brand-context-data', tenantId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      try {
+        return await apiClient.getBrandContextData(tenantId);
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 5 * 60_000,
+    enabled: Boolean(tenantId),
+  });
+
   return useMemo(() => {
     if (!tenantId) return emptyTenantBrandContext();
-    const brandCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
-    return buildTenantBrandContext(profile, (brandCtx ?? null) as Record<string, unknown> | null);
-  }, [tenantId, profile, productionSnapshot]);
+    const snapshotCtx = productionSnapshotToLegacyBrandContext(productionSnapshot);
+    const mergedCtx: Record<string, unknown> = {
+      ...(snapshotCtx ?? {}),
+      ...(brandContextData ?? {}),
+    };
+    if (!mergedCtx.logo_url && brandContextData?.logo_url) {
+      mergedCtx.logo_url = brandContextData.logo_url;
+    }
+    return buildTenantBrandContext(profile, mergedCtx);
+  }, [tenantId, profile, productionSnapshot, brandContextData]);
 }

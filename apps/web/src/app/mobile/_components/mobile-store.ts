@@ -81,6 +81,7 @@ interface MobileStore {
   openFeedForMission: (missionId: string | null) => void;
   clearFeedMissionFilter: () => void;
   enqueueBriefProduction: (job: PendingBriefJob) => void;
+  clearPendingBriefJob: (jobId: string) => void;
   bumpFeedRefresh: () => void;
   goBack: () => void;
 }
@@ -220,6 +221,11 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   enqueueBriefProduction: (job) =>
     set((s) => ({
       pendingBriefJobs: [...s.pendingBriefJobs.filter((j) => j.id !== job.id), job],
+    })),
+
+  clearPendingBriefJob: (jobId) =>
+    set((s) => ({
+      pendingBriefJobs: s.pendingBriefJobs.filter((j) => j.id !== jobId),
     })),
 
   goBack: () => {

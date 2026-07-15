@@ -3,7 +3,8 @@
  * Never use hardcoded demo brand names, sectors, or handles in production UI/prompts.
  */
 
-import { resolveCoherentLogoUrl, resolveCoherentInstagramHandle } from '@/lib/brand-identity-coherence';
+import { resolveCoherentLogoUrl, resolveCoherentInstagramHandle, shouldPreferBrandContextIdentity } from '@/lib/brand-identity-coherence';
+import { resolveProductionLogoUrl } from '@/lib/brand-logo-production';
 import { resolveTenantCanonicalSector } from '@/lib/canonical-sector';
 import { resolveSectorPack } from '@/lib/context-signals/sector-packs';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
@@ -72,6 +73,33 @@ export function resolveTenantSector(
   );
 }
 
+function strField(v: unknown): string {
+  return String(v ?? '').trim();
+}
+
+/** Workspace-scoped logo — coherent identity + production-safe URL candidates. */
+export function resolveTenantBrandLogoUrl(
+  profile?: Partial<CompanyProfile> | null,
+  brandCtx?: Record<string, unknown> | null,
+): string {
+  const preferCtx = shouldPreferBrandContextIdentity(profile, brandCtx);
+  const websiteUrl = preferCtx
+    ? strField(brandCtx?.website_url || brandCtx?.websiteUrl)
+    : strField(profile?.websiteUrl || brandCtx?.website_url || brandCtx?.websiteUrl);
+  const coherent = resolveCoherentLogoUrl(profile, brandCtx);
+  const ctxLogo = strField(brandCtx?.logo_url ?? brandCtx?.logoUrl);
+  const profileLogo = strField(profile?.logoUrl);
+  const gallery = Array.isArray(brandCtx?.gallery) ? brandCtx.gallery : [];
+  const galleryLogo = gallery.find(
+    (item) => item && typeof item === 'object' && (item as { kind?: string }).kind === 'logo',
+  ) as { url?: string } | undefined;
+
+  return resolveProductionLogoUrl(
+    [coherent, ctxLogo, strField(galleryLogo?.url), profileLogo],
+    { websiteUrl },
+  );
+}
+
 /** Merge Nexus company profile + Python brand context into one struct. */
 export function buildTenantBrandContext(
   profile?: Partial<CompanyProfile> | null,
@@ -98,7 +126,7 @@ export function buildTenantBrandContext(
     outputLanguage: resolveOutputLanguage(languages),
     instagramHandle: handle,
     displayHandle: handle || slugFromBrandName(brandName),
-    logoUrl: resolveCoherentLogoUrl(profile, brandCtx),
+    logoUrl: resolveTenantBrandLogoUrl(profile, brandCtx),
     brandTone: String(profile?.brandTone || brandCtx?.brand_tone || brandCtx?.brandTone || '').trim(),
     description,
     isReady: Boolean(brandName && businessType !== 'general_business'),

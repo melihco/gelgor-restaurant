@@ -75,6 +75,11 @@ import {
   MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
   refetchMobileFeedPool,
 } from '../../_lib/mobile-artifacts';
+import {
+  countNewBriefArtifacts,
+  isPendingBriefJobComplete,
+  pendingBriefOutputLabel,
+} from '@/lib/pending-brief-job';
 import { useFeedPullToRefresh } from '../../_hooks/use-feed-pull-to-refresh';
 import { FeedLazyPostList } from '../FeedLazyPostList';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
@@ -1872,6 +1877,8 @@ function PlatformFeedInner() {
   const queryClient = useQueryClient();
   const tenantId = useActiveTenantId();
   const feedRefreshNonce = useMobileStore((s) => s.feedRefreshNonce);
+  const pendingBriefJobs = useMobileStore((s) => s.pendingBriefJobs);
+  const clearPendingBriefJob = useMobileStore((s) => s.clearPendingBriefJob);
   const feedScrollRef = useRef<HTMLDivElement>(null);
   const { storyMusicUrl } = useBrandStoryAudio(tenantId);
   const engagementApi = useFeedEngagement();
@@ -1918,6 +1925,26 @@ function PlatformFeedInner() {
     subscribeOnly: true,
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
   });
+
+  const BRIEF_JOB_STALE_MS = 15 * 60 * 1000;
+
+  useEffect(() => {
+    if (pendingBriefJobs.length === 0) return;
+    const now = Date.now();
+    for (const job of pendingBriefJobs) {
+      if (isPendingBriefJobComplete(rawArtifacts, job) || now - job.startedAt > BRIEF_JOB_STALE_MS) {
+        clearPendingBriefJob(job.id);
+      }
+    }
+  }, [rawArtifacts, pendingBriefJobs, clearPendingBriefJob]);
+
+  useEffect(() => {
+    if (pendingBriefJobs.length === 0 || !tenantId) return;
+    const interval = window.setInterval(() => {
+      void refetchMobileFeedPool(queryClient, tenantId);
+    }, 15_000);
+    return () => window.clearInterval(interval);
+  }, [pendingBriefJobs.length, tenantId, queryClient]);
 
   const refreshFeed = useCallback(async () => {
     if (!tenantId) return;
@@ -2751,6 +2778,8 @@ function PlatformFeedInner() {
           <MobileBrandNavbar
             dark={t.isDark}
             logoCentered
+            brandLogoUrl={feedLogoUrl}
+            brandName={tenantBrand.brandName}
             style={{
               background: t.isDark ? '#000' : '#fff',
               backdropFilter: 'none',
@@ -3105,6 +3134,41 @@ function PlatformFeedInner() {
               {message}
             </div>
           ))}
+        </div>
+      )}
+
+      {!operatorMode && pendingBriefJobs.length > 0 && !showApproved && (
+        <div style={{
+          margin: '10px 16px 4px',
+          padding: '12px 14px',
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(77,112,136,0.14), rgba(157,190,206,0.06))',
+          border: '0.5px solid rgba(157,190,206,0.22)',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          {pendingBriefJobs.map((job) => {
+            const ready = countNewBriefArtifacts(rawArtifacts, job);
+            return (
+              <div key={job.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{
+                  width: 10, height: 10, borderRadius: '50%', flexShrink: 0, marginTop: 3,
+                  border: '1.5px solid rgba(157,190,206,0.35)',
+                  borderTop: '1.5px solid #9DBECE',
+                  animation: ready < job.count ? 'spinSlow 1s linear infinite' : 'none',
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#9DBECE', marginBottom: 2 }}>
+                    Fikriniz üretiliyor
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5 }}>
+                    <span style={{ fontWeight: 600, color: 'rgba(248,250,252,0.85)' }}>{job.title}</span>
+                    {' · '}{ready}/{job.count} {pendingBriefOutputLabel(job.outputType)}
+                    {ready < job.count ? ' — birkaç dakika sürebilir' : ' — Akış\'a eklendi'}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
