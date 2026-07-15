@@ -393,12 +393,6 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      <div style={{ margin: '4px 2px 14px' }}>
-        <h2 className="sa-chrome-eyebrow" style={{ margin: 0 }}>
-          Stüdyo
-        </h2>
-      </div>
-
       <div className="brand-hub-grid" style={{
         display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 12,
       }}
@@ -427,13 +421,13 @@ export function BrandHubDashboard({
                 background: item.accent, opacity: t.isDark ? 0.12 : 0.08, filter: 'blur(2px)', pointerEvents: 'none',
               }} />
               <div style={{
-                width: 42, height: 42, borderRadius: 14, marginBottom: 22,
+                width: 48, height: 48, borderRadius: 15, marginBottom: 20,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: t.isDark ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.72)',
                 border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
               }}
               >
-                <SectionIcon name={item.key} color={item.accent} size={21} />
+                <SectionIcon name={item.key} color={item.accent} size={26} />
               </div>
               <div style={{
                 fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.15,
