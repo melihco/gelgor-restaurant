@@ -230,7 +230,9 @@ class Settings(BaseSettings):
     # Operator kick / reproduce bumps open slot priority (claim_batch orders DESC).
     production_operator_job_priority: int = 5
     # Min seconds between force drain kicks per mission (watchdog/callback).
-    production_drain_force_min_interval_sec: float = 45.0
+    # Reduced from 45 → 20 to improve throughput when worker concurrency=1
+    # (one slot at a time means many sequential drain kicks needed for large missions).
+    production_drain_force_min_interval_sec: float = 20.0
     # Factory watchdog tick interval (seconds).
     production_watchdog_interval_sec: float = 60.0
 

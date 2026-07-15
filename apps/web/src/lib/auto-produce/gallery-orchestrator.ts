@@ -66,13 +66,34 @@ export function assignmentUsesGalleryPhoto(
   );
 }
 
-/** Non-photo pipeline a zero-capacity slot falls back to, by post format. */
+/** Non-photo pipeline a zero-capacity slot falls back to, by post format.
+ *
+ * Returns null for carousel because plan-time capacity reroutes preserve the
+ * multi-photo diversity fallback; runtime escalation uses `tryGalleryFailureEscalation`
+ * which additionally allows carousel → fal_only_post as a last resort.
+ */
 export function falOnlyPipelineForPostType(
   postType: 'feed' | 'story' | 'reel' | 'carousel',
 ): string | null {
-  if (postType === 'carousel') return null; // multi-photo slots keep diversity fallback
+  if (postType === 'carousel') return null; // capacity reroutes: keep diversity fallback
   if (postType === 'story') return 'fal_only_story';
   if (postType === 'reel') return 'fal_only_reel';
+  return 'fal_only_post';
+}
+
+/**
+ * Last-resort pipeline mapping used only in runtime escalation (after gallery
+ * gating actually fires). Carousel escalates to fal_only_post (single AI image)
+ * rather than exhausting — one solid image is better than a permanent failure
+ * when the gallery has no suitable photos for the slot (e.g. testimonial carousel
+ * with no customer review photos in the gallery).
+ */
+function falLastResortPipelineForPostType(
+  postType: 'feed' | 'story' | 'reel' | 'carousel',
+): string {
+  if (postType === 'story') return 'fal_only_story';
+  if (postType === 'reel') return 'fal_only_reel';
+  // carousel → single AI-generated post (format downgrade, but avoids exhaustion)
   return 'fal_only_post';
 }
 
@@ -93,8 +114,7 @@ export function tryGalleryFailureEscalation<
   agentIdeationGalleryLock: false;
 } | null {
   if (!input.missionId?.trim()) return null;
-  const fallbackPipeline = falOnlyPipelineForPostType(input.postType);
-  if (!fallbackPipeline) return null;
+  const fallbackPipeline = falLastResortPipelineForPostType(input.postType);
   return {
     // fal_only_* is a valid ProductionPipeline for every assignment shape used here.
     assignment: { ...input.assignment, pipeline: fallbackPipeline } as A,

@@ -581,7 +581,7 @@ export function InstagramFeedNative({
               width: '100%',
               height: '100%',
               display: 'block',
-              objectFit: 'cover',
+              objectFit: 'contain',
               objectPosition: 'center',
             }} />
         ) : (
@@ -716,7 +716,7 @@ function IgFeedReelMediaStage({
             inset: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            objectFit: 'contain',
             objectPosition: 'center',
             display: 'block',
             pointerEvents: 'none',
@@ -733,7 +733,7 @@ function IgFeedReelMediaStage({
             inset: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            objectFit: 'contain',
             objectPosition: 'center',
             display: 'block',
             pointerEvents: 'none',
@@ -871,7 +871,7 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending, immer
           poster={content.imageUrl ?? undefined}
           loop
           muted={muted}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center' }}
         />
       ) : (
         <div style={{
@@ -974,7 +974,7 @@ export function StoryCoverImage({ src, style }: {
       referrerPolicy="no-referrer"
       style={{
         position: 'absolute', inset: 0, width: '100%', height: '100%',
-        objectFit: 'cover', objectPosition: 'center',
+        objectFit: 'contain', objectPosition: 'center',
         ...rest,
       }}
     />
@@ -1156,7 +1156,7 @@ export function StoryPreviewVideo({ src, poster, style, backgroundMusicUrl }: {
           inset: 0,
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
+          objectFit: 'contain',
           objectPosition: 'center',
           zIndex: 1,
           opacity: videoReady ? 1 : 0,

@@ -160,11 +160,24 @@ describe('tryGalleryFailureEscalation', () => {
     expect(out?.referenceUrl).toBeNull();
   });
 
-  it('returns null for carousel slots without fal_only mapping', () => {
+  it('reroutes carousel slots to fal_only_post (last-resort, avoids exhaustion)', () => {
+    // Carousel gallery failures (e.g. testimonial slot with no customer photos)
+    // now escalate to fal_only_post so the slot produces something rather than exhausting.
     const out = tryGalleryFailureEscalation({
       assignment: { slot_role: 'organic_carousel', pipeline: 'carousel_gallery' },
       postType: 'carousel',
       missionId: 'm-1',
+      stage: 'hard_veto',
+    });
+    expect(out?.assignment.pipeline).toBe('fal_only_post');
+    expect(out?.referenceUrl).toBeNull();
+  });
+
+  it('returns null when no missionId is provided', () => {
+    const out = tryGalleryFailureEscalation({
+      assignment: { slot_role: 'organic_carousel', pipeline: 'carousel_gallery' },
+      postType: 'carousel',
+      missionId: undefined,
       stage: 'hard_veto',
     });
     expect(out).toBeNull();

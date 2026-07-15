@@ -1519,7 +1519,7 @@ const CSS = `
     background: #000;
   }
 
-  /* Reels in home feed — fixed 4:5 crop (IG shows reels in feed as 4:5, not full 9:16) */
+  /* Reels in home feed — fixed 4:5 frame; media contained inside (no crop) */
   .sa-mobile .ig-feed-reel-stage {
     width: 100%;
     max-width: none;
@@ -1527,7 +1527,7 @@ const CSS = `
     margin-inline: 0;
   }
 
-  /* Posts — IG clamped aspect (4:5 … 1.91:1), cover crop inside frame */
+  /* Posts — IG clamped aspect (4:5 … 1.91:1), media contained inside frame */
   .sa-mobile .ig-feed-post-stage {
     width: 100%;
     max-width: none;

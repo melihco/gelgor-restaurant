@@ -154,7 +154,8 @@ function ReelSlide({
             inset: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            objectFit: 'contain',
+            objectPosition: 'center',
             background: '#000',
           }}
         />
@@ -166,7 +167,8 @@ function ReelSlide({
           onClick={onMediaTap}
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
-            objectFit: 'cover',
+            objectFit: 'contain',
+            objectPosition: 'center',
           }}
         />
       ) : (
