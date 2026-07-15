@@ -256,6 +256,14 @@ export const serverConfig = {
     },
   },
 
+  /** Local Satori typography rendering for text-heavy design slots. */
+  localTypography: {
+    /** Master switch — enable with LOCAL_TYPOGRAPHY_ENABLED=true (canary default off). */
+    get enabled(): boolean {
+      return readEnv('LOCAL_TYPOGRAPHY_ENABLED') === 'true';
+    },
+  },
+
   r2: {
     get accountId(): string | undefined {
       return readEnv('CLOUDFLARE_ACCOUNT_ID');

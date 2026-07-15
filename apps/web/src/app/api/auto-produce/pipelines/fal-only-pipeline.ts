@@ -25,6 +25,8 @@ import {
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { serverConfig } from '@/lib/server-config';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export interface FalOnlyVideoMeta {
@@ -400,6 +402,65 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
     });
+    // Local-first: fal_only_story (drops Kling motion) + fal_only_post render
+    // typography locally when enabled + a gallery photo is available.
+    const localReferenceUrl = templateBinding.referencePhotoUrl ?? inputs.referenceUrl;
+    if (
+      !state.imageUrl
+      && !state.videoUrl
+      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline)
+      && localReferenceUrl
+      && isUsableGalleryPhotoUrl(localReferenceUrl)
+    ) {
+      const localVibe = templateBinding.lockedVibe ?? resolveTypographyVibeFromContext({
+        caption: inputs.caption,
+        headline: inputs.headline,
+        sector: inputs.brandBusinessType,
+        brandVibe: falBrand.vibe,
+        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
+          inputs.brandBusinessType ?? '',
+        ),
+      });
+      const local = await renderLocalTypography({
+        workspaceId: inputs.workspaceId,
+        headline: inputs.headline,
+        subtitle: inputs.cta,
+        brandName: inputs.resolvedBrandName,
+        brandColors: resolveFalProductionBrandColors(
+          falBrand.brandColors,
+          templateBinding.brandColors,
+        ),
+        vibe: localVibe,
+        aspectRatio: inputs.isFalOnlyPost ? '4:5' : '9:16',
+        referencePhotoUrl: localReferenceUrl,
+        logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
+        sector: inputs.brandBusinessType,
+        occasion: templateBinding.occasion,
+        templateType: templateBinding.matched?.templateType,
+        slotRole: inputs.slotRole,
+      });
+      if (local) {
+        state.imageUrl = local.imageUrl;
+        state.videoUrl = null;
+        state.falGrafikerScore = local.grafikerScore;
+        state.falGrafikerPass = local.grafikerPass;
+        state.falDesignEngine = 'satori_local';
+        if (!inputs.isFalOnlyPost) state.videoProduceMeta = { source: 'fal_video' };
+        state.costDelta += 0.002;
+        if (templateBinding.matched) {
+          state.brandDesignTemplateId = templateBinding.matched.id;
+          state.brandDesignTemplateType = templateBinding.matched.templateType;
+          state.brandDesignTemplateName = templateBinding.matched.templateName;
+          state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+        }
+        console.log(
+          `[auto-produce] [fal-only] local typography: "${inputs.headline.slice(0, 40)}" ` +
+          `layout=${local.layoutFamily} pipeline=${inputs.pipeline}`,
+        );
+        return;
+      }
+    }
+
     const falOnly = await produceFalOnlySlot({
       pipeline: inputs.pipeline,
       workspaceId: inputs.workspaceId,

@@ -4275,6 +4275,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo))
         || falReelStillFallback
         || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine)),
+      ...(falDesignEngine === 'satori_local' ? { typography_model: 'satori_local' } : {}),
       ...(isFalMissionVideo && videoProduceMeta ? { fal_video_model: videoProduceMeta.source } : {}),
       ...(videoProduceMeta ? {
         video_source: videoProduceMeta.source,
@@ -4484,7 +4485,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         missionId: missionId ?? null,
         artifactId: saved.id,
         amountUsd: ideaCostUsd,
-        pipeline: String(assignment.pipeline ?? ''),
+        pipeline: falDesignEngine === 'satori_local'
+          ? 'local_typography'
+          : String(assignment.pipeline ?? ''),
         slotRole: assignment.slot_role,
         ideaIndex: resolvedIdeaIndex,
         slotKey: `${ideaIndex}:${assignment.slot_role}`,

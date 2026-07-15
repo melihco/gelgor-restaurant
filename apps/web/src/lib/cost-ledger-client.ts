@@ -77,6 +77,7 @@ export interface MissionCostLedgerSummary {
 /** Map production pipeline → ledger category for artifact rollup. */
 export function ledgerCategoryForPipeline(pipeline: string | undefined | null): string {
   const p = String(pipeline ?? '').toLowerCase();
+  if (p === 'local_typography' || p === 'satori_local') return 'local_typography';
   if (p.includes('runway')) return 'video_runway';
   if (p.includes('fal_only') || p.includes('fal_reel') || p.includes('fal_story') || p === 'fal_design') {
     return 'fal_production';

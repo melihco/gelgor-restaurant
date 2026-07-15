@@ -32,6 +32,7 @@ import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
+import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import {
   detectedCanvasTextOffCaption,
@@ -418,6 +419,63 @@ export const falDesignHandler: ProductionPipelineHandler = {
       console.log(
         `[auto-produce] [fal-design] brand template "${templateBinding.matched.templateName}" (${templateBinding.matched.templateType})`,
       );
+    }
+
+    // Local-first: designed_typography + fal_designed_post render typography
+    // locally (Satori) when enabled. Hero `designed_post` is excluded by role.
+    const localReferenceUrl = templateBinding.referencePhotoUrl ?? inputs.referenceUrl;
+    if (
+      !inputs.adHocBrief
+      && !state.imageUrl
+      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline)
+      && localReferenceUrl
+      && isUsableGalleryPhotoUrl(localReferenceUrl)
+    ) {
+      const localVibe = templateBinding.lockedVibe ?? resolveTypographyVibeFromContext({
+        caption: inputs.caption,
+        headline: inputs.headline,
+        sector: inputs.brandBusinessType,
+        brandVibe: falBrand.vibe,
+        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
+          inputs.brandBusinessType ?? '',
+        ),
+      });
+      const local = await renderLocalTypography({
+        workspaceId: inputs.workspaceId,
+        headline: inputs.headline,
+        subtitle: inputs.falSubtitle || inputs.cta,
+        brandName: inputs.resolvedBrandName,
+        brandColors: resolveFalProductionBrandColors(
+          falBrand.brandColors,
+          templateBinding.brandColors,
+        ),
+        vibe: localVibe,
+        aspectRatio: inputs.falAspectRatio ?? '4:5',
+        referencePhotoUrl: localReferenceUrl,
+        logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
+        sector: inputs.brandBusinessType,
+        occasion: templateBinding.occasion,
+        templateType: templateBinding.matched?.templateType,
+        slotRole: inputs.slotRole,
+      });
+      if (local) {
+        state.imageUrl = local.imageUrl;
+        state.falGrafikerScore = local.grafikerScore;
+        state.falGrafikerPass = local.grafikerPass;
+        state.falDesignEngine = 'satori_local';
+        state.costDelta += 0.002;
+        if (templateBinding.matched) {
+          state.brandDesignTemplateId = templateBinding.matched.id;
+          state.brandDesignTemplateType = templateBinding.matched.templateType;
+          state.brandDesignTemplateName = templateBinding.matched.templateName;
+          state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+        }
+        console.log(
+          `[auto-produce] [fal-design] local typography: "${inputs.headline.slice(0, 40)}" ` +
+          `layout=${local.layoutFamily} template=${templateBinding.matched?.templateType ?? 'none'}`,
+        );
+        return;
+      }
     }
 
     const designed = await produceFalDesignedPost({

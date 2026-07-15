@@ -22,6 +22,7 @@ import {
 } from '@/lib/brand-design-template-production';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import { serverConfig } from '@/lib/server-config';
+import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export async function runFalStoryPosterProduction(input: {
@@ -197,6 +198,39 @@ export const falVideoHandler: ProductionPipelineHandler = {
       }
 
       if (falPipeline === 'fal_story') {
+        // Local-first: render the story poster typography locally (Satori) when
+        // enabled + role-appropriate. Falls through to gpt-image on null.
+        if (shouldUseLocalTypography(inputs.slotRole, falPipeline)) {
+          const local = await renderLocalTypography({
+            workspaceId: inputs.workspaceId,
+            headline: inputs.headline,
+            subtitle: inputs.cta || inputs.falSubtitle,
+            brandName: inputs.resolvedBrandName,
+            brandColors,
+            vibe: designVibe,
+            aspectRatio: '9:16',
+            referencePhotoUrl: photoUrl,
+            logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
+            sector: inputs.brandBusinessType,
+            occasion: templateBinding.occasion,
+            templateType: templateBinding.matched?.templateType,
+            slotRole: inputs.slotRole,
+          });
+          if (local) {
+            state.videoUrl = null;
+            state.imageUrl = local.imageUrl;
+            state.falGrafikerScore = local.grafikerScore;
+            state.falGrafikerPass = local.grafikerPass;
+            state.falDesignEngine = 'satori_local';
+            state.videoProduceMeta = { source: 'fal_video' };
+            state.costDelta += 0.002;
+            console.log(
+              `[auto-produce] [fal-track] fal_story local typography: "${inputs.headline.slice(0, 40)}" ` +
+              `layout=${local.layoutFamily} template=${templateBinding.matched?.templateType ?? 'none'}`,
+            );
+            return;
+          }
+        }
         const poster = await runFalStoryPosterProduction({
           workspaceId: inputs.workspaceId,
           headline: inputs.headline,

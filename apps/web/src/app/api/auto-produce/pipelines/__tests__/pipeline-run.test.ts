@@ -16,7 +16,7 @@ import {
 } from '../pipeline-types';
 
 const h = vi.hoisted(() => ({
-  serverConfig: { fal: { configured: true } },
+  serverConfig: { fal: { configured: true }, localTypography: { enabled: false } },
   produceFalDesignerVideo: vi.fn(),
   produceFalMissionVideo: vi.fn(),
   produceFalDesignedPostStill: vi.fn(),

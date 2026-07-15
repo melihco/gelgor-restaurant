@@ -171,6 +171,9 @@ services:
         value: "true"
       - key: VIDEO_TIER_SCOPE
         value: "true"
+      # Lokal Satori tipografi hattı — lokalde 4/4 slot doğrulandı (font UA + tr-TR fix), canlıda aktif.
+      - key: LOCAL_TYPOGRAPHY_ENABLED
+        value: "true"
       - key: NEXT_PUBLIC_SITE_URL
         fromService:
           name: smartagency-web
@@ -312,6 +315,9 @@ services:
       - key: SKIP_ENHANCE_FOR_REMOTION_GRADE
         value: "true"
       - key: VIDEO_TIER_SCOPE
+        value: "true"
+      # Lokal Satori tipografi hattı — lokalde 4/4 slot doğrulandı (font UA + tr-TR fix), canlıda aktif.
+      - key: LOCAL_TYPOGRAPHY_ENABLED
         value: "true"
       # Yayınlanan içerikteki mutlak URL'ler kamuya açık web adresini kullanmalı.
       - key: NEXT_PUBLIC_SITE_URL
