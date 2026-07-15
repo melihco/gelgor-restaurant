@@ -2778,8 +2778,6 @@ function PlatformFeedInner() {
           <MobileBrandNavbar
             dark={t.isDark}
             logoCentered
-            brandLogoUrl={feedLogoUrl}
-            brandName={tenantBrand.brandName}
             style={{
               background: t.isDark ? '#000' : '#fff',
               backdropFilter: 'none',

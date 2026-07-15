@@ -65,6 +65,7 @@ import {
   type BrandGalleryGroup,
 } from '@/lib/brand-readiness-navigation';
 import { isCanvaEnabledClient } from '@/lib/canva-config';
+import { isDebugUiMode } from '../mobile-client-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import type { VisualSourceMode } from '@/lib/brand-theme-ai-settings';
@@ -136,6 +137,71 @@ function ChevronRight({ color }: { color: string }) {
   );
 }
 
+/** Mission statement per design group — hero copy for group screens. */
+const DESIGN_GROUP_MISSIONS: Record<string, string> = {
+  colors: 'Markanızın görsel imzası. Palet, tipografi ve görsel dil buradaki kararlarla her üretime yansır.',
+  templates: 'Şablon kütüphaneniz. Beğendiğiniz tasarımlar üretimde otomatik kullanılır.',
+  engines: 'İçeriklerinizin nasıl canlanacağı: hareket stili, müzik ve üretim motorları.',
+  dna: 'AI\'ın markanızdan öğrendiği görsel karakter. Analizi yenileyerek güncel tutun.',
+  rules: 'Üretim sınırları ve onay akışı. AI\'ın neyi, nasıl ve ne zaman yayınlayacağını belirleyin.',
+};
+
+/** Premium hero header for a design sub-screen — mission-specific identity. */
+function DesignGroupHero({
+  t, groupKey, label, accent, onBack,
+}: {
+  t: T; groupKey: string; label: string; accent: string; onBack: () => void;
+}) {
+  return (
+    <div style={{
+      position: 'relative', borderRadius: 20, padding: '16px 18px 18px', marginBottom: 18,
+      overflow: 'hidden',
+      background: t.isDark
+        ? `linear-gradient(150deg, ${accent}1f 0%, ${accent}08 55%, transparent 100%)`
+        : `linear-gradient(150deg, ${accent}17 0%, ${accent}06 55%, transparent 100%)`,
+      border: `0.5px solid ${accent}30`,
+    }}>
+      <div style={{
+        position: 'absolute', top: -36, right: -28, width: 130, height: 130, borderRadius: '50%',
+        background: accent, opacity: t.isDark ? 0.1 : 0.07, filter: 'blur(28px)', pointerEvents: 'none',
+      }} />
+      <button
+        type="button"
+        onClick={onBack}
+        style={{
+          position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6,
+          border: 'none', background: 'none', cursor: 'pointer', padding: '2px 0',
+          color: t.textTertiary, fontSize: 12.5, fontWeight: 600, marginBottom: 12, minHeight: 32,
+        }}
+      >
+        <svg width="7" height="12" viewBox="0 0 9 15" fill="none" aria-hidden>
+          <path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Tasarım
+      </button>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{
+          width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: `linear-gradient(135deg, ${accent}32, ${accent}14)`,
+          border: `0.5px solid ${accent}45`,
+          boxShadow: `0 6px 18px ${accent}22, inset 0 1px 0 rgba(255,255,255,0.08)`,
+        }}>
+          <SectionIcon name={groupKey} color={accent} size={23} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 19, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.15 }}>
+            {label}
+          </div>
+          <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 4, lineHeight: 1.5 }}>
+            {DESIGN_GROUP_MISSIONS[groupKey] ?? ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Bespoke monoline section icons (premium, brand-agnostic) ──────────
 function SectionIcon({ name, color, size = 22 }: { name: string; color: string; size?: number }) {
   const common = {
@@ -201,6 +267,15 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
           <rect x="13.5" y="3.5" width="7" height="7" rx="1.6" />
           <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
           <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
+        </svg>
+      );
+    case 'colors':
+      return (
+        <svg {...common}>
+          <path d="M12 3.2c-4.9 0-8.8 3.7-8.8 8.4 0 4.6 3.7 8 8.2 8 1.3 0 2.2-1 2.2-2.1 0-.6-.2-1-.6-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.8 1.9-1.8h1.4c2.6 0 4.6-2 4.6-4.6 0-3.2-3.5-5.6-8.4-5.6Z" />
+          <circle cx="7.4" cy="11.8" r="1.05" fill={color} stroke="none" />
+          <circle cx="9.8" cy="7.8" r="1.05" fill={color} stroke="none" />
+          <circle cx="14.4" cy="7.6" r="1.05" fill={color} stroke="none" />
         </svg>
       );
     case 'engines':
@@ -2895,6 +2970,7 @@ export function BrandConstitution() {
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const brandGaps = useBrandCompleteGaps(tenantId);
   const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix, history } = useMobileStore();
+  const debugUi = isDebugUiMode();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
   type ContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
   type IdentityGroup = 'basics' | 'channels' | 'about';
@@ -4146,16 +4222,15 @@ export function BrandConstitution() {
           </>
         )}
 
-        {/* Design group sticky sub-header */}
-        {tab === 'design' && designGroup !== null && (
-          <button
-            type="button"
-            onClick={() => openDesignGroup(null)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
-          >
-            <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            Tasarım · <span style={{ color: t.textPrimary }}>{activeDesignGroup?.label}</span>
-          </button>
+        {/* Design group hero — mission-specific screen identity */}
+        {tab === 'design' && designGroup !== null && activeDesignGroup && (
+          <DesignGroupHero
+            t={t}
+            groupKey={activeDesignGroup.key}
+            label={activeDesignGroup.label}
+            accent={activeDesignGroup.accent}
+            onBack={() => openDesignGroup(null)}
+          />
         )}
 
         {tab === 'design' && designGroup === 'colors' && (
@@ -4298,8 +4373,10 @@ export function BrandConstitution() {
           <>
             <CollapsibleGroup
               t={t}
-              title="Kurallar, yetenekler & şablonlar"
-              subtitle="Özel kurallar, risk sınırları, işletme yetenekleri ve Canva şablonları"
+              title="Kurallar & yetenekler"
+              subtitle={debugUi
+                ? 'Özel kurallar, risk sınırları, işletme yetenekleri ve Canva şablonları'
+                : 'Özel kurallar, risk sınırları ve işletme yetenekleri'}
               defaultOpen
             >
             <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
@@ -4331,7 +4408,9 @@ export function BrandConstitution() {
                     );
                   })}
                 </div>
-                <Field t={t} label="Risk Kuralları (JSON)" value={JSON.stringify(riskRules, null, 2)} onSave={save('riskRules')} multiline />
+                {debugUi && (
+                  <Field t={t} label="Risk Kuralları (JSON)" value={JSON.stringify(riskRules, null, 2)} onSave={save('riskRules')} multiline />
+                )}
               </SCard>
             )}
 
@@ -4353,7 +4432,7 @@ export function BrandConstitution() {
               />
             </SCard>
 
-            {contentNeeds.length > 0 && (
+            {debugUi && contentNeeds.length > 0 && (
               <SCard t={t} title="Kayıtlı içerik ihtiyaçları">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 12 }}>
                   {contentNeeds.map(cn => <TagChip key={cn} text={cn} color="#34D399" t={t} />)}
@@ -4361,7 +4440,7 @@ export function BrandConstitution() {
               </SCard>
             )}
 
-            {templateFams.length > 0 && (
+            {debugUi && templateFams.length > 0 && (
               <SCard t={t} title="Template Aileleri">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {templateFams.map((tf, i) => (
@@ -4373,7 +4452,7 @@ export function BrandConstitution() {
               </SCard>
             )}
 
-            {templates.length > 0 && (
+            {debugUi && templates.length > 0 && (
               <SCard t={t} title={`Canva Şablonları (${templates.length})`}>
                 {(templates as any[]).slice(0, 8).map((tmpl, i) => (
                   <div key={tmpl.id ?? i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: i < templates.length - 1 ? `0.5px solid ${t.separator}` : 'none' }}>
@@ -4422,7 +4501,9 @@ export function BrandConstitution() {
             <CollapsibleGroup
               t={t}
               title="Analiz & performans"
-              subtitle="AI değerlendirmesi, sistem analizi, ham veriler ve Meta reklam özeti"
+              subtitle={debugUi
+                ? 'AI değerlendirmesi, sistem analizi, ham veriler ve Meta reklam özeti'
+                : 'AI değerlendirmesi ve marka tamamlanma durumu'}
               defaultOpen
             >
             <SCard t={t} title="AI Değerlendirmesi" accent={t.accent}>
@@ -4435,7 +4516,8 @@ export function BrandConstitution() {
               )}
             </SCard>
 
-            {/* Sistem Analizi — Python brand context (live, authoritative) */}
+            {/* Sistem Analizi + ham analiz raporu — operatör/teşhis görünümü */}
+            {debugUi && (<>
             <SCard t={t} title="Sistem Analizi">
               {pyCtx ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -4581,6 +4663,7 @@ export function BrandConstitution() {
                 </div>
               )}
             </SCard>
+            </>)}
             </CollapsibleGroup>
           </div>
         )}

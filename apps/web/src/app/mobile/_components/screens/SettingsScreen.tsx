@@ -6,8 +6,6 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { MobileStackHeader } from '../ui-primitives';
 import { apiClient } from '@/lib/api-client';
 import { MertcafeAccountSwitcher } from '../MertcafeAccountSwitcher';
-import { PlanUsagePanel } from '../PlanUsagePanel';
-import { isDebugUiMode } from '../mobile-client-config';
 import { summarizeMobileIntegrations, formatIntegrationStatusLabel } from '@/lib/mobile-integration-status';
 import type { T } from '../theme-context';
 
@@ -61,22 +59,8 @@ function IntegrationStatusChip({ t, connected, status }: { t: T; connected: bool
 // ── Main screen ───────────────────────────────────────────────────────────────
 export function SettingsScreen() {
   const { t } = useTheme();
-  const { goBack } = useMobileStore();
+  const { goBack, navigate } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
-  const debugMode = isDebugUiMode();
-
-  const { data: quotaData } = useQuery({
-    queryKey: ['usage-quota'],
-    queryFn: async () => { try { return await apiClient.getUsageQuota(); } catch { return null; } },
-    staleTime: 60_000,
-  });
-
-  const { data: usageCost } = useQuery({
-    queryKey: ['usage-cost', tenantId, quotaData?.packageSlug],
-    queryFn: () => apiClient.getWorkspaceUsageCost(tenantId!, 30, quotaData?.packageSlug),
-    enabled: Boolean(tenantId),
-    staleTime: 60_000,
-  });
 
   const { data: integrationConnections = [] } = useQuery({
     queryKey: ['integrations'],
@@ -134,7 +118,7 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        <SLabel text="Instagram Yayın (Mertcafe)" />
+        <SLabel text="Yayın Hesabı" />
         {tenantId ? (
           <MertcafeAccountSwitcher t={t} workspaceId={tenantId} compact />
         ) : (
@@ -178,16 +162,39 @@ export function SettingsScreen() {
           ))}
         </div>
 
-        <SLabel text="Kullanım & Plan" />
-        <div style={{ marginBottom: 24 }}>
-          <PlanUsagePanel
-            quota={quotaData ?? undefined}
-            wallet={usageCost?.token_wallet}
-            packageSlug={quotaData?.packageSlug}
-            debugMode={debugMode}
-            t={t}
-          />
-        </div>
+        {/* Kullanım & Plan detayı kendi ekranında — burada sadece kısayol */}
+        <button
+          type="button"
+          onClick={() => navigate('billing')}
+          className="sa-chrome-card"
+          style={{
+            width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 24,
+            padding: '15px 18px', display: 'flex', alignItems: 'center', gap: 14,
+          }}
+        >
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+            background: t.accentDim, border: `0.5px solid ${t.accentBorder}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke={t.accent} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: t.textPrimary, letterSpacing: '-0.01em' }}>
+              Kullanım & Plan
+            </div>
+            <div style={{ fontSize: 11.5, color: t.textTertiary, marginTop: 2 }}>
+              Kredi, aylık kullanım ve paket detayları
+            </div>
+          </div>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
 
       </div>
     </div>
