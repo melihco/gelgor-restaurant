@@ -41,7 +41,6 @@ import {
   type ProductionProfile,
 } from './production-profile';
 import { resolveContentIntent } from './brand-motion-profile';
-import type { StoryCompositionId } from './story-composition-types';
 import { resolveIdeationHeadline } from './production-idea-parse';
 
 export type { ProductionAssignment } from './mission-production-manifest';
@@ -457,30 +456,6 @@ export function assignmentRequiresDesignedStoryVisual(
   return assignment.pipeline === 'fal_story'
     || assignment.pipeline === 'fal_only_story'
     || assignment.slot_role === 'campaign_story_motion';
-}
-
-/** @deprecated Remotion removed — designed posts use fal_design. */
-export function shouldRenderRemotionPoster(_assignment: ProductionAssignment): boolean {
-  return false;
-}
-
-/** @deprecated Remotion removed — story motion uses fal_story / fal_reel. */
-export function shouldRenderRemotionStory(
-  _assignment: ProductionAssignment,
-  _opts?: { forceEvent?: boolean },
-): boolean {
-  return false;
-}
-
-/** APO-6 — campaign motion story uses CampaignHero composition. */
-export function preferredStoryCompositionForAssignment(
-  assignment: ProductionAssignment,
-  fallback: StoryCompositionId,
-  opts?: { forceEvent?: boolean },
-): StoryCompositionId {
-  if (assignment.slot_role === 'campaign_story_motion') return 'CampaignHeroStory';
-  if (opts?.forceEvent) return 'EventAnnouncementStory';
-  return fallback;
 }
 
 export function shouldUseGalleryOnlyPost(assignment: ProductionAssignment): boolean {

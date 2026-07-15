@@ -207,22 +207,6 @@ export const serverConfig = {
     },
   },
 
-  /** Remotion render concurrency + lite-mode flags. */
-  remotion: {
-    /** Global cap on concurrent renders across the process (min 1). */
-    get globalMaxConcurrentRenders(): number {
-      return Math.max(1, Number(readEnv('REMOTION_GLOBAL_MAX_CONCURRENT_RENDERS') ?? 8));
-    },
-    /** Skip the heavier grafiker review pass on economy/agency tiers. */
-    get grafikerLite(): boolean {
-      return readEnv('GRAFIKER_LITE') === 'true';
-    },
-    /** Lite creative-director mode. */
-    get cdLite(): boolean {
-      return readEnv('CD_LITE') === 'true';
-    },
-  },
-
   /** Auto-produce budget / operator ceilings (package limits apply first). */
   autoProduce: {
     /** Master switch — disable with AUTO_PRODUCE_ENABLE=false. */

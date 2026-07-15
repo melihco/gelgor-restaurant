@@ -8,8 +8,13 @@ import {
   type ReelPacing,
 } from './sector-production-profile';
 import type { MultiReelPhotoInput } from './reel-multi-production';
-import type { RunwayDirectorGuardrailOptions } from './tenant-reel-motion-seed';
 import { resolveReelDirectorVariant } from './sector-reel-motion-standard';
+
+export interface RunwayDirectorGuardrailOptions {
+  workspaceId?: string;
+  sector?: string;
+  productSpotlightReel?: boolean;
+}
 
 /** Strip guardrail blocks appended for full-reel prompts — sequential clips add their own. */
 function stripEmbeddedGuardrailBlocks(prompt: string): string {

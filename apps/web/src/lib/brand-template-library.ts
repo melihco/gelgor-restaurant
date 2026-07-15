@@ -874,15 +874,6 @@ export function resolveStoryLibrarySlotKey(input: {
   return undefined;
 }
 
-/** @deprecated Use storyLayoutFamilyForSlotKey */
-export function storyTemplateFamilyForSlot(
-  library: BrandTemplateLibrary | null | undefined,
-  slotKey: string | undefined,
-  seed = 0,
-): RemotionLayoutFamily | undefined {
-  return storyLayoutFamilyForSlotKey(slotKey, library?.sector, seed);
-}
-
 export function listStoryTemplateOptions(sector: string, slotKey: string): TemplateOption[] {
   const spec = getSlotSpec(slotKey);
   const families = spec?.storyFamilies ?? [];

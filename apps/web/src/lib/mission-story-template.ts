@@ -81,31 +81,6 @@ export function resolveMissionStorySlot(input: {
   return { slot, kitId: library.kitId, intent, library };
 }
 
-/** @deprecated Remotion removed — use resolveMissionStorySlot */
-export function resolveMissionStoryTemplate(input: {
-  theme: Record<string, unknown> | null | undefined;
-  sector: string;
-  tenantId: string;
-  idea: Record<string, unknown>;
-  ideaIndex: number;
-  usedTemplateIds?: string[];
-  librarySlotKey?: string;
-}): MissionStorySlotPick & {
-  storyTemplateId?: string;
-  compositionId: string;
-  templateName: string;
-  collection?: string;
-} {
-  const pick = resolveMissionStorySlot(input);
-  return {
-    ...pick,
-    storyTemplateId: undefined,
-    compositionId: 'SpecStory',
-    templateName: pick.slot.labelTr,
-    collection: undefined,
-  };
-}
-
 /** Manual slot override (expanded panel in Mission Factory). */
 export function resolveStoryTemplateForSlot(
   library: BrandTemplateLibrary,

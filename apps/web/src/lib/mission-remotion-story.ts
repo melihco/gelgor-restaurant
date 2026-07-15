@@ -24,11 +24,6 @@ export function shouldApplyMissionFalStory(assignment: ProductionAssignment): bo
     || assignment.slot_role === 'fal_story_motion';
 }
 
-/** Legacy Remotion story phase — always skip (Fal posters only). */
-export function shouldSkipRemotionStoryCandidate(_slotRole: string | undefined): boolean {
-  return true;
-}
-
 export function applyMissionFalStoryAssignment(
   assignment: ProductionAssignment,
   storyIndex: number,

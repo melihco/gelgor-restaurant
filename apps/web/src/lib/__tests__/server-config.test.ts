@@ -32,9 +32,6 @@ const TOUCHED = [
   'PREFER_FAL_DESIGNED_POSTS',
   'SMART_AGENCY_IMAGE_EXPAND_SCENE',
   'SMART_AGENCY_IMAGE_EXPAND_MODEL',
-  'REMOTION_GLOBAL_MAX_CONCURRENT_RENDERS',
-  'GRAFIKER_LITE',
-  'CD_LITE',
   'AUTO_PRODUCE_ENABLE',
   'AUTO_PRODUCE_GALLERY_ONLY',
   'AUTO_PRODUCE_MAX_DAILY',
@@ -248,28 +245,6 @@ describe('serverConfig', () => {
       expect(serverConfig.imageGen.expandScene).toBe(false);
       process.env.SMART_AGENCY_IMAGE_EXPAND_SCENE = 'true';
       expect(serverConfig.imageGen.expandScene).toBe(true);
-    });
-  });
-
-  describe('remotion', () => {
-    it('defaults the global render cap to 8', () => {
-      expect(serverConfig.remotion.globalMaxConcurrentRenders).toBe(8);
-    });
-
-    it('honors and floors the global render cap at 1', () => {
-      process.env.REMOTION_GLOBAL_MAX_CONCURRENT_RENDERS = '16';
-      expect(serverConfig.remotion.globalMaxConcurrentRenders).toBe(16);
-      process.env.REMOTION_GLOBAL_MAX_CONCURRENT_RENDERS = '0';
-      expect(serverConfig.remotion.globalMaxConcurrentRenders).toBe(1);
-    });
-
-    it('lite flags are off by default and on for "true"', () => {
-      expect(serverConfig.remotion.grafikerLite).toBe(false);
-      expect(serverConfig.remotion.cdLite).toBe(false);
-      process.env.GRAFIKER_LITE = 'true';
-      process.env.CD_LITE = 'true';
-      expect(serverConfig.remotion.grafikerLite).toBe(true);
-      expect(serverConfig.remotion.cdLite).toBe(true);
     });
   });
 

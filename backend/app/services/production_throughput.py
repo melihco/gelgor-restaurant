@@ -1,4 +1,4 @@
-"""Production throughput — factory drain batch sizing (mirrors apps/web production-throughput.ts)."""
+"""Production throughput — factory drain batch sizing."""
 
 from __future__ import annotations
 

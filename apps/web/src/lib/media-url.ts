@@ -184,69 +184,7 @@ export async function pickReachableProductionGalleryUrl(
   return pickServer(workspaceId, primaryUrl, candidateUrls, opts);
 }
 
-/**
- * Remotion multi-photo layouts — resolve each gallery slot to a reachable tenant/R2 URL
- * before headless materialize (brand-site URLs often timeout in dev/production workers).
- */
-export async function resolveProductionGalleryUrlsForRemotion(
-  workspaceId: string,
-  urls: string[],
-  opts: {
-    primaryUrl: string;
-    candidateUrls?: string[];
-    timeoutMs?: number;
-  },
-): Promise<string[]> {
-  if (!urls.length) return [];
-  const pool = [
-    opts.primaryUrl,
-    ...(opts.candidateUrls ?? []),
-    ...urls,
-  ];
-  const resolved: string[] = [];
-  for (const url of urls) {
-    const picked = await pickReachableProductionGalleryUrl(
-      workspaceId,
-      url,
-      pool,
-      { timeoutMs: opts.timeoutMs ?? 18_000 },
-    );
-    const finalUrl = picked?.url ?? opts.primaryUrl;
-    if (picked?.fallbackFrom) {
-      console.log(
-        `[remotion] galleryPhotoUrls fallback: ${picked.fallbackFrom.slice(0, 72)} → ${finalUrl.slice(0, 72)}`,
-      );
-    }
-    resolved.push(normalizePhotoUrlForRemotionRender(finalUrl));
-  }
-  return resolved;
-}
-
-/** Omit broken external logos rather than failing the whole Remotion story render. */
-export async function resolveRemotionLogoUrlForRender(
-  workspaceId: string,
-  logoUrl: string | undefined,
-  opts?: { timeoutMs?: number },
-): Promise<string | undefined> {
-  const trimmed = String(logoUrl ?? '').trim();
-  if (!trimmed) return undefined;
-  if (trimmed.startsWith('data:')) return trimmed;
-
-  const { ensureProductionGalleryPhotoUrlServer } = await import('@/lib/gallery-mirror-server');
-  const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, trimmed, opts);
-  if (ensured) return normalizePhotoUrlForRemotionRender(ensured);
-
-  const external = resolveExternalGalleryPhotoTarget(trimmed);
-  if (external) {
-    console.warn('[remotion] logo unreachable — omitting from render:', external.slice(0, 80));
-    return undefined;
-  }
-
-  return normalizePhotoUrlForRemotionRender(trimmed);
-}
-
-/**
- * Resolve a media URL to one accessible by external services (fal.ai, Kling, Luma).
+/** Resolve a media URL to one accessible by external services (fal.ai, Kling, Luma).
  * - Unwraps `/api/media-proxy?url=…` (including localhost absolute wrappers) to the underlying HTTPS URL
  * - Converts `/api/media?key=…` to R2 public URL or pre-signed HTTPS URL
  * - Mirrors non-HTTPS / unreachable URLs to R2 when needed

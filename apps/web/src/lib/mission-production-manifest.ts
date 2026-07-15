@@ -261,13 +261,6 @@ export function resolveMissionRequiredSlotCount(input: {
   return manifest.slots.filter((s) => s.required).length;
 }
 
-/** @deprecated use resolveMissionRequiredSlotCount — kept for simple call sites */
-export function resolveMissionPackageOrganicTarget(
-  missionType?: MissionProductionPackageType | null,
-): number {
-  return resolveMissionRequiredSlotCount({ missionType });
-}
-
 /** Meta + Google ad kreatifi — designed_post'tan türetilir (ek LLM yok). */
 export const MISSION_AD_PAIR_COUNTS = {
   meta: 1,

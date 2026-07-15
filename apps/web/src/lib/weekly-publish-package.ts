@@ -899,32 +899,6 @@ export function isPrimaryPublishArtifact(
   return selection.primaryIds.has(artifact.id);
 }
 
-/**
- * Mission-scoped Feed — one publish-ready artifact per manifest assignment (max ~7).
- * @deprecated Feed UI uses filterMissionFeedArtifacts to show all production runs.
- */
-export function filterMissionPrimaryFeedArtifacts(
-  artifacts: OutputArtifact[],
-  missionId: string,
-  nodes?: MissionNodeProgress[],
-): OutputArtifact[] {
-  const missionPublishable = filterFeedPublishableArtifacts(
-    artifacts.filter((a) => parseArtifactMissionId(a) === missionId),
-  );
-  const selection = nodes?.length
-    ? buildWeeklySelectionFromMissionNodes(missionPublishable, missionId, nodes)
-    : selectWeeklyPublishPackage(missionPublishable, missionId);
-  return selection.primary.filter(isArtifactFeedReady);
-}
-
-/** @deprecated Prefer filterMissionPrimaryFeedArtifacts when mission filter is active. */
-export function filterFeedPrimaryArtifacts(
-  artifacts: OutputArtifact[],
-  _selectionsByMission?: Map<string, WeeklyPublishSelection>,
-): OutputArtifact[] {
-  return filterFeedPublishableArtifacts(artifacts);
-}
-
 export function formatWeeklyPackageTarget(): string {
   const parts: string[] = [];
   if (TARGET.story > 0) parts.push(`${TARGET.story} story`);

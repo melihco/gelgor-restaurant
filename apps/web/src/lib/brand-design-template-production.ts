@@ -6,7 +6,6 @@
  */
 
 import type { TypographyVibe } from '@/types/brand-theme';
-import type { ContentIntent } from '@/lib/brand-motion-profile';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import {
@@ -272,96 +271,6 @@ export async function bindBrandTemplateForFalProduction(input: {
   } catch {
     return empty;
   }
-}
-
-/** Phase 2 — Remotion poster slots inherit fal onboarding template colors + CD hints. */
-export interface RemotionFalTemplateAlignment {
-  matched: MatchedDesignTemplate;
-  primaryColor: string;
-  accentColor: string;
-  contentIntent?: ContentIntent;
-  sceneBrief: string;
-  typographyVibe?: TypographyVibe;
-}
-
-const DESIGN_TEMPLATE_CONTENT_INTENT: Partial<Record<string, ContentIntent>> = {
-  campaign_announcement: 'campaign_offer',
-  seasonal_promo: 'campaign_offer',
-  event_special: 'event',
-  menu_highlight: 'product_spotlight',
-  venue_showcase: 'product_spotlight',
-  social_proof: 'social_proof',
-  daily_story: 'daily_moment',
-  announcement_formal: 'announcement',
-  brand_identity: 'announcement',
-  reel_cover: 'event',
-};
-
-export function mapDesignTemplateTypeToContentIntent(
-  templateType: string,
-): ContentIntent | undefined {
-  return DESIGN_TEMPLATE_CONTENT_INTENT[templateType];
-}
-
-/** fal.ai designed post slots that receive brand template alignment hints. */
-export function isRemotionFalAlignedSlot(assignment: {
-  pipeline: string;
-  slot_role: string;
-}): boolean {
-  return (
-    (assignment.pipeline === 'fal_design' || assignment.pipeline === 'remotion_poster')
-    && (assignment.slot_role === 'designed_post' || assignment.slot_role === 'designed_typography')
-  );
-}
-
-/**
- * Feed fal onboarding template colors/vibe/layout hints into Remotion poster renders
- * without replacing Remotion template selection (variety preserved).
- */
-export async function alignRemotionPosterWithFalTemplate(input: {
-  workspaceId: string;
-  slotRole: string;
-  librarySlotKey?: string | null;
-  caption?: string;
-  brandColors: { primary: string; accent: string };
-  brandVibe: TypographyVibe | null;
-  logoUrl?: string;
-  adHocBrief?: boolean;
-}): Promise<RemotionFalTemplateAlignment | null> {
-  if (input.adHocBrief) return null;
-
-  const binding = await bindBrandTemplateForFalProduction({
-    workspaceId: input.workspaceId,
-    slotRole: input.slotRole,
-    librarySlotKey: input.librarySlotKey,
-    format: 'post',
-    caption: input.caption,
-    adHocBrief: false,
-    missionReferenceUrl: null,
-    baseDirectives: [],
-    brandColors: input.brandColors,
-    logoUrl: input.logoUrl,
-    brandVibe: input.brandVibe,
-  });
-
-  if (!binding.matched) return null;
-
-  const layoutHint = binding.brandDirectives
-    .filter((d) => d.includes('LAYOUT TEMPLATE') || d.includes('TEXT LOCK'))
-    .slice(0, 2)
-    .join(' ')
-    .slice(0, 420);
-
-  return {
-    matched: binding.matched,
-    primaryColor: input.brandColors.primary,
-    accentColor: input.brandColors.accent,
-    contentIntent: mapDesignTemplateTypeToContentIntent(binding.matched.templateType),
-    sceneBrief:
-      `Align with fal brand template "${binding.matched.templateName}" (${binding.matched.templateType}). ` +
-      `${layoutHint || binding.matched.directive}`,
-    typographyVibe: binding.lockedVibe ?? undefined,
-  };
 }
 
 /** Extra brand refs for fal designer — never include template preview (sample copy). */

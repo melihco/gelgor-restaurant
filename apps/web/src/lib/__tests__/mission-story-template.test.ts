@@ -4,7 +4,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveMissionStorySlot,
-  resolveMissionStoryTemplate,
   missionStoryLibrarySlotKey,
   listEnabledStorySlots,
 } from '@/lib/mission-story-template';
@@ -111,20 +110,6 @@ describe('resolveMissionStorySlot', () => {
         },
       ]
     `);
-  });
-});
-
-describe('resolveMissionStoryTemplate (compat)', () => {
-  it('returns slot label as templateName without Remotion IDs', () => {
-    const pick = resolveMissionStoryTemplate({
-      theme: null,
-      sector: SECTOR,
-      tenantId: TENANT,
-      idea: storyIdea(0),
-      ideaIndex: 0,
-    });
-    expect(pick.storyTemplateId).toBeUndefined();
-    expect(pick.templateName).toBe(pick.slot.labelTr);
   });
 });
 

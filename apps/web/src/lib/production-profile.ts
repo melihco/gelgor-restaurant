@@ -105,24 +105,6 @@ export function shouldUseMarkyLayer(profile: ProductionProfile): boolean {
   return !profile.requireDesignedVisuals;
 }
 
-/** @deprecated Remotion removed — designed posts use fal_design. */
-export function slotUsesRemotionPost(
-  _profile: ProductionProfile,
-  _assignment: { pipeline: string; slot_role: string },
-  _contentKind: string,
-): boolean {
-  return false;
-}
-
-/** @deprecated Remotion removed — story motion uses fal_story. */
-export function slotUsesRemotionStory(
-  _profile: ProductionProfile,
-  _assignment: { pipeline: string; slot_role: string },
-  _contentKind: string,
-): boolean {
-  return false;
-}
-
 export function isFeedDirectorFallback(report: Record<string, unknown> | null | undefined): boolean {
   return report?._fallback === true;
 }

@@ -12,12 +12,9 @@ vi.mock('@/lib/media-url', () => ({
 
 import { matchDesignTemplateToSlot } from '@/lib/brand-design-template-matcher';
 import {
-  alignRemotionPosterWithFalTemplate,
   buildTemplateLayoutDirectives,
   bindBrandTemplateForFalProduction,
   dropConflictingLayoutDirectives,
-  isRemotionFalAlignedSlot,
-  mapDesignTemplateTypeToContentIntent,
   pickTemplateReferenceUrls,
   resolveFalTemplateLockOptions,
 } from '@/lib/brand-design-template-production';
@@ -191,63 +188,6 @@ describe('bindBrandTemplateForFalProduction', () => {
     });
     expect(binding.matched).toBeNull();
     expect(binding.brandDirectives).toEqual(['only-base']);
-    expect(matchDesignTemplateToSlot).not.toHaveBeenCalled();
-  });
-});
-
-describe('mapDesignTemplateTypeToContentIntent', () => {
-  it('maps campaign templates to campaign_offer', () => {
-    expect(mapDesignTemplateTypeToContentIntent('campaign_announcement')).toBe('campaign_offer');
-    expect(mapDesignTemplateTypeToContentIntent('seasonal_promo')).toBe('campaign_offer');
-  });
-
-  it('returns undefined for unknown types', () => {
-    expect(mapDesignTemplateTypeToContentIntent('unknown_type')).toBeUndefined();
-  });
-});
-
-describe('isRemotionFalAlignedSlot', () => {
-  it('matches designed_post and designed_typography on fal_design pipeline', () => {
-    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'designed_post' })).toBe(true);
-    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'designed_typography' })).toBe(true);
-    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'fal_designed_post' })).toBe(false);
-    expect(isRemotionFalAlignedSlot({ pipeline: 'fal_design', slot_role: 'organic_post' })).toBe(false);
-  });
-});
-
-describe('alignRemotionPosterWithFalTemplate', () => {
-  beforeEach(() => {
-    vi.mocked(matchDesignTemplateToSlot).mockReset();
-  });
-
-  it('returns color and CD hints when template matches', async () => {
-    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue({
-      ...matched,
-      templateType: 'campaign_announcement',
-      templateName: 'Kampanya Duyuru',
-    });
-    const alignment = await alignRemotionPosterWithFalTemplate({
-      workspaceId: 'ws-yula',
-      slotRole: 'designed_post',
-      brandColors: { primary: '#000', accent: '#fff' },
-      brandVibe: null,
-    });
-    expect(alignment?.primaryColor).toBe('#000');
-    expect(alignment?.accentColor).toBe('#fff');
-    expect(alignment?.contentIntent).toBe('campaign_offer');
-    expect(alignment?.sceneBrief).toContain('Kampanya Duyuru');
-    expect(alignment?.typographyVibe).toBe('neon_glow');
-  });
-
-  it('returns null for ad-hoc brief', async () => {
-    const alignment = await alignRemotionPosterWithFalTemplate({
-      workspaceId: 'ws-yula',
-      slotRole: 'designed_typography',
-      brandColors: { primary: '#000', accent: '#fff' },
-      brandVibe: null,
-      adHocBrief: true,
-    });
-    expect(alignment).toBeNull();
     expect(matchDesignTemplateToSlot).not.toHaveBeenCalled();
   });
 });

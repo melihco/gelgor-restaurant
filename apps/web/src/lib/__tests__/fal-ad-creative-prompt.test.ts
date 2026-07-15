@@ -9,7 +9,6 @@ import {
   applyMissionFalAdAssignment,
   shouldApplyMissionFalAd,
 } from '@/lib/mission-fal-ad';
-import { shouldRenderRemotionStory } from '@/lib/production-pipeline-router';
 
 describe('fal-ad-creative-prompt', () => {
   it('detects paid ad production slots', () => {
@@ -52,18 +51,5 @@ describe('mission-fal-ad assignment', () => {
     expect(out.pipeline).toBe('fal_design');
     expect(out.fal_design_hint).toBe('google_ads_display_creative');
     expect(shouldApplyMissionFalAd(out)).toBe(true);
-  });
-
-  it('does not route default paid ad slots to Remotion story', () => {
-    expect(
-      shouldRenderRemotionStory({
-        idea_index: 0,
-        slot_role: 'paid_ad_creative',
-        pipeline: 'fal_design',
-        publish_channel: 'meta_ads',
-        rationale: 'test',
-        copy_bundle_id: 'week',
-      }),
-    ).toBe(false);
   });
 });

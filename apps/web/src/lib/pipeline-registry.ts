@@ -130,11 +130,6 @@ export function isFalOnlyPostPipeline(pipeline: string | undefined | null): bool
   return desc?.family === 'fal_only' && !desc.isVideo;
 }
 
-/** Legacy Remotion pipelines — normalized at ingest; no render gate. */
-export function isRenderBoundPipeline(_pipeline: string | undefined | null): boolean {
-  return false;
-}
-
 /** Whether the pipeline produces a video artifact. */
 export function isVideoPipeline(pipeline: string | undefined | null): boolean {
   return getPipelineDescriptor(pipeline)?.isVideo ?? false;

@@ -7,7 +7,6 @@ import {
   isFalOnlyPostPipeline,
   isFalOnlyVideoPipeline,
   isFalVideoPipeline,
-  isRenderBoundPipeline,
   isVideoPipeline,
 } from '@/lib/pipeline-registry';
 
@@ -73,14 +72,6 @@ describe('pipeline-registry descriptors', () => {
     for (const [key, desc] of Object.entries(PIPELINE_REGISTRY)) {
       expect(desc.key).toBe(key);
     }
-  });
-
-  it('no pipelines use the legacy render gate after Remotion removal', () => {
-    expect(isRenderBoundPipeline('remotion_story')).toBe(false);
-    expect(isRenderBoundPipeline('remotion_poster')).toBe(false);
-    expect(isRenderBoundPipeline('fal_only_reel')).toBe(false);
-    expect(isRenderBoundPipeline('gallery_photo')).toBe(false);
-    expect(isRenderBoundPipeline('fal_story')).toBe(false);
   });
 
   it('marks video pipelines correctly', () => {
