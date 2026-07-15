@@ -30,6 +30,8 @@ import {
   buildCompanyProfilePatchFromPython,
   isCompanyProfileSparse,
 } from '@/lib/sync-company-profile-from-python';
+import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
+import { resolveCoherentLogoUrl, isCrossTenantPollutionName } from '@/lib/brand-identity-coherence';
 import { resolveTenantCanonicalSector, shouldRefreshIndustryFromPython } from '@/lib/canonical-sector';
 import { TENANT_INDUSTRY_PLAYBOOKS } from '@/lib/tenant-operating-policy';
 import {
@@ -2971,7 +2973,7 @@ export function BrandConstitution() {
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['company-profile', tenantId],
-    queryFn: () => apiClient.getCompanyProfile(),
+    queryFn: () => apiClient.getCompanyProfile(tenantId ?? undefined),
     staleTime: 60_000,
     enabled: Boolean(tenantId),
   });
@@ -3038,7 +3040,9 @@ export function BrandConstitution() {
     const patch: Record<string, string> = {};
     const profileName = String(p.brandName || '').trim();
     const pyName = String(b.business_name || '').trim();
-    if (profileName && profileName !== pyName) patch.business_name = profileName;
+    if (profileName && profileName !== pyName && !isCrossTenantPollutionName(profileName, b)) {
+      patch.business_name = profileName;
+    }
     if (!b.location && p.location?.trim()) patch.location = p.location.trim();
     if (!b.description && p.description?.trim()) patch.description = p.description.trim();
     if (!b.target_audience && p.targetAudience?.trim()) patch.target_audience = p.targetAudience.trim();
@@ -3352,7 +3356,14 @@ export function BrandConstitution() {
 
   const p = profile as CompanyProfile & Record<string, unknown>;
   const showStackBack = history.length > 1;
-  const brandNameDisplay = String(p.brandName || (pyCtx as any)?.business_name || '');
+  const brandNameDisplay = resolveCanonicalBrandName(
+    p as CompanyProfile,
+    pyCtx as Record<string, unknown> | undefined,
+  ) || String((pyCtx as any)?.business_name || '');
+  const brandLogoDisplay = resolveCoherentLogoUrl(
+    p as CompanyProfile,
+    pyCtx as Record<string, unknown> | undefined,
+  );
   const industrySlug = resolveTenantCanonicalSector(
     p,
     pyCtx as Record<string, unknown> | undefined,
@@ -3364,7 +3375,7 @@ export function BrandConstitution() {
   const instagramDisplay = String((p as any).instagramHandle || (pyCtx as any)?.instagram_handle || '');
   const descriptionDisplay = String(p.description || (pyCtx as any)?.description || (pyCtx as any)?.website_summary || '');
   const score         = productionReadiness?.score ?? (p as any).discoveryConfidence ?? 0;
-  const logoCandidate = p.logoUrl || (pyCtx as any)?.logo_url || '';
+  const logoCandidate = brandLogoDisplay || p.logoUrl || (pyCtx as any)?.logo_url || '';
   const logoUrl = resolveBrandLogoDisplayUrl(logoCandidate);
   const contentNeeds  = parseArr((p as any).contentNeeds);
   const templateFams  = parseArr((p as any).templateFamilies);

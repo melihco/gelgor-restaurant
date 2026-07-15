@@ -3,6 +3,7 @@
  * Never use hardcoded demo brand names, sectors, or handles in production UI/prompts.
  */
 
+import { resolveCoherentLogoUrl, resolveCoherentInstagramHandle } from '@/lib/brand-identity-coherence';
 import { resolveTenantCanonicalSector } from '@/lib/canonical-sector';
 import { resolveSectorPack } from '@/lib/context-signals/sector-packs';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
@@ -82,7 +83,8 @@ export function buildTenantBrandContext(
   const languages = String(brandCtx?.languages || profile?.languages || 'tr').trim();
   const description = String(profile?.description || brandCtx?.description || '').trim();
   const pack = resolveSectorPack(businessType, brandName, description);
-  const handle = resolveInstagramHandle(profile, brandCtx);
+  const handle = resolveCoherentInstagramHandle(profile, brandCtx)
+    || resolveInstagramHandle(profile, brandCtx);
 
   return {
     brandName,
@@ -96,7 +98,7 @@ export function buildTenantBrandContext(
     outputLanguage: resolveOutputLanguage(languages),
     instagramHandle: handle,
     displayHandle: handle || slugFromBrandName(brandName),
-    logoUrl: String(profile?.logoUrl || brandCtx?.logo_url || brandCtx?.logoUrl || '').trim(),
+    logoUrl: resolveCoherentLogoUrl(profile, brandCtx),
     brandTone: String(profile?.brandTone || brandCtx?.brand_tone || brandCtx?.brandTone || '').trim(),
     description,
     isReady: Boolean(brandName && businessType !== 'general_business'),

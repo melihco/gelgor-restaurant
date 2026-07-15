@@ -35,6 +35,9 @@ export function clearSessionScopedQueries(): void {
   void bridge.removeQueries({ queryKey: ['missions'] });
   void bridge.removeQueries({ queryKey: ['missions-list-feed'] });
   void bridge.removeQueries({ queryKey: ['usage-cost'] });
+  void bridge.removeQueries({ queryKey: ['company-profile'] });
+  void bridge.removeQueries({ queryKey: ['production-context-snapshot'] });
+  void bridge.removeQueries({ queryKey: ['brand-theme-kit'] });
 }
 
 /** Oturum / tenant değişince marka profili cache'ini temizle. */
