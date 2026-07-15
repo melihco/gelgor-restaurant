@@ -138,6 +138,7 @@ import {
   formatMissionAiCostRange,
   type MissionAiCostSummary,
 } from '@/lib/mission-ai-cost';
+import { MissionSlotShowcase, MissionCompletedCard } from '../MissionSlotShowcase';
 
 interface BasSubScore {
   id: string;
@@ -3969,6 +3970,16 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
             />
           )}
 
+          {/* Premium slot gallery — flip cards with produced visual + slot record */}
+          {(isCompleted || mission.status === 'in_flight') && (
+            <MissionSlotShowcase
+              checklist={slotChecklist}
+              artifacts={feedArtifacts ?? []}
+              onOpenArtifact={openArtifactPreview}
+              t={t}
+            />
+          )}
+
           {isCompleted && !hasPreviewContent && (() => {
             const productionError = prog?.performance_summary?.production_error;
             const errMsg = String(productionError?.message ?? '').toLowerCase();
@@ -4340,55 +4351,6 @@ function missionOutputBadges(mission: MissionSummary): string {
   }
 
   return parts.join(' · ');
-}
-
-function CompletedRow({ mission, onTap }: { mission: MissionSummary; onTap: () => void }) {
-  const { t } = useTheme();
-  const rate = mission.total_nodes > 0
-    ? Math.round((mission.completed_nodes / mission.total_nodes) * 100)
-    : 0;
-  const badges = missionOutputBadges(mission);
-  const isFullyDone = rate >= 80;
-
-  return (
-    <button onClick={onTap} style={{
-      width: '100%', padding: '14px 16px', marginBottom: 8,
-      borderRadius: 14, cursor: 'pointer',
-      background: t.isDark ? 'rgba(255,255,255,0.04)' : '#fff',
-      border: `0.5px solid ${t.separator}`,
-      textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12,
-    }}>
-      {/* Icon */}
-      <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-        background: isFullyDone ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.10)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 16, color: isFullyDone ? '#10B981' : '#F59E0B' }}>
-        {isFullyDone ? '✓' : '◔'}
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Mission title */}
-        <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          marginBottom: 3 }}>
-          {mission.title}
-        </div>
-        {/* What was produced */}
-        {badges && (
-          <div style={{ fontSize: 11, color: isFullyDone ? '#10B981' : t.textMuted,
-            fontWeight: isFullyDone ? 600 : 400, marginBottom: 2 }}>
-            {badges}
-          </div>
-        )}
-        {/* Time */}
-        <div style={{ fontSize: 10, color: t.textMuted }}>
-          {TYPE_LABEL[mission.type] ?? mission.type} · {timeAgo(mission.completed_at)}
-        </div>
-      </div>
-
-      <span style={{ fontSize: 14, color: t.accent, flexShrink: 0 }}>›</span>
-    </button>
-  );
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -4825,6 +4787,15 @@ export function MissionHub() {
     refetchInterval: 60_000,
     enabled: Boolean(wsId) && operatorMode,
     ...mobileQueryDefaults,
+  });
+
+  // Shared artifact pool — feeds the produced-visual filmstrips on completed
+  // mission cards (same cache key as the detail sheet, so no extra request cost).
+  const hasCompletedMissions = missions.some((m) => m.status === 'completed');
+  const { data: hubArtifactPool = [] } = useMobileArtifacts({
+    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
+    subscribeOnly: true,
+    enabled: Boolean(wsId) && hasCompletedMissions,
   });
 
   // Brand readiness gate (Sprint 1) — missions cannot be proposed until BRS >= 80.
@@ -5670,18 +5641,22 @@ export function MissionHub() {
         {/* ── Completed ── */}
         {completed.length > 0 && (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
                 letterSpacing: '0.1em', textTransform: 'uppercase' }}>Tamamlananlar</span>
             </div>
-            <div style={{ borderRadius: 16, overflow: 'hidden',
-              background: t.isDark ? 'rgba(255,255,255,0.03)' : '#fff',
-              border: `0.5px solid ${t.separator}`,
-              padding: '0 14px' }}>
-              {completed.map((m, i) => (
-                <div key={m.id} style={{ borderBottom: i < completed.length - 1 ? undefined : 'none' }}>
-                  <CompletedRow mission={m} onTap={() => setDetailMission(m)} />
-                </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {completed.map((m) => (
+                <MissionCompletedCard
+                  key={m.id}
+                  mission={m}
+                  artifacts={filterArtifactsForMission(hubArtifactPool, m.id)}
+                  onTap={() => setDetailMission(m)}
+                  t={t}
+                  typeLabel={TYPE_LABEL[m.type] ?? m.type}
+                  timeLabel={timeAgo(m.completed_at)}
+                  summaryFallback={missionOutputBadges(m)}
+                />
               ))}
             </div>
           </div>
