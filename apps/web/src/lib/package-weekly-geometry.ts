@@ -8,17 +8,17 @@ import type { PackageGeometry } from '@/lib/mission-production-manifest';
 
 export const STARTER_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
   post: 4,
-  story: 3,
+  story: 6,
   carousel: 1,
-  reel: 4,
+  reel: 1,
   total: 12,
 };
 
 export const AGENCY_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
   post: 6,
-  story: 3,
+  story: 8,
   carousel: 1,
-  reel: 6,
+  reel: 1,
   total: 16,
 };
 
