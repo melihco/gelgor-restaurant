@@ -543,7 +543,7 @@ function buildReferenceEditDirective(
       'PHOTO HERO ZONE (CRITICAL): keep the lower 45–55% as the natural, recognizable venue photo — do NOT replace, blur, or globally recolor it.',
       'Scale the full gallery photo to fit — object-fit contain. Never crop hero food, faces, or products.',
       'DESIGN ZONE: upper area or diagonal split gets bold branded graphics and text exactly as specified below.',
-      'SAFE ZONE (MANDATORY): All text and design elements must stay inside the inner 85% of the frame. Keep minimum 8% margin from top edge, 15% from bottom edge (Instagram UI). Nothing should be cropped or cut off at any edge.',
+      'SAFE ZONE (MANDATORY): The canvas will be center-cropped to a 9:16 vertical frame in post-production. All text, logos, and design elements must stay inside the central 76% of the width — keep minimum 12% margin from left and right edges, 8% from top edge, 15% from bottom edge (Instagram UI). Nothing may touch or be cut off at any edge.',
       'Apply headline, subtitle, shapes, and brand colors exactly as described.',
       '',
       basePrompt,
@@ -567,7 +567,7 @@ function buildReferenceEditDirective(
       'Brand colors belong on text and graphic blocks only — never as a full-image filter.',
       'If the layout uses a diagonal or split design, one zone stays the untouched photo; the other is a flat brand color block with headline text.',
       'Apply the text overlays, color blocks, typography, and CTA exactly as described.',
-      'SAFE ZONE (MANDATORY): All text, logos, and design elements must remain inside the inner 85% of the frame with at least 7.5% margin from every edge. Nothing should be cropped or cut off.',
+      'SAFE ZONE (MANDATORY): The canvas will be center-cropped to a 4:5 feed frame in post-production. All text, logos, and design elements must remain inside the frame with at least 8% margin from left/right edges and 13% margin from top/bottom edges. Nothing should be cropped or cut off.',
       'The final output is a complete designed social media graphic where the real photo is still clearly recognizable.',
       '',
       basePrompt,
@@ -1449,9 +1449,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl);
     }
 
+    // Canvas contract: post → 4:5, story/reel → 9:16. GPT-image only renders
+    // 1024×1536 portrait, so crop generated (non-passthrough) frames onto the
+    // exact channel canvas before persisting.
+    let finalImageUrl = generated.imageUrl;
+    if (generated.provider !== 'original') {
+      const { resolveTargetCanvas, normalizeGeneratedImageAspect } = await import('@/lib/design-canvas-aspect');
+      const targetCanvas = resolveTargetCanvas(contentType, isDesignedCard);
+      if (targetCanvas) {
+        const normalized = await normalizeGeneratedImageAspect(generated.imageUrl, targetCanvas);
+        if (normalized) {
+          finalImageUrl = normalized;
+          console.log(
+            `[generate-instagram-image] canvas normalized to ${targetCanvas.label} (${targetCanvas.width}x${targetCanvas.height}) contentType=${contentType} designCard=${isDesignedCard}`,
+          );
+        }
+      }
+    }
+
     // Upload to R2 for permanent storage (required for Meta API publishing)
-    const r2Url = await uploadToR2IfConfigured(generated.imageUrl, input.brandName);
-    let persistedImageUrl = r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : await materializeImageUrl(generated.imageUrl);
+    const r2Url = await uploadToR2IfConfigured(finalImageUrl, input.brandName);
+    let persistedImageUrl = r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : await materializeImageUrl(finalImageUrl);
 
     if (isDesignedCard && input.logoUrl?.trim() && !input.deferLogoComposite) {
       const logoChannel = designCardMode === 'reel' || contentType.includes('story')
@@ -1475,7 +1493,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     persistCreativeArtifact({
       title: input.title,
       imageUrl: persistedImageUrl,
-      contentUrl: r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : contentUrlForPersistence(generated.imageUrl),
+      contentUrl: r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : contentUrlForPersistence(finalImageUrl),
       prompt,
       caption: input.caption,
       contentType,

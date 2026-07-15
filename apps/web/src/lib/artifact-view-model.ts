@@ -70,7 +70,8 @@ export function detectFeedArtifactKind(artifact: OutputArtifact): FeedArtifactKi
   const contentKind = String(content.kind ?? '').toLowerCase();
   const previewKind = String(renderedPreview.kind ?? '').toLowerCase();
   const metaKind = String(
-    meta.content_kind
+    meta.kind
+    ?? meta.content_kind
     ?? meta.contentKind
     ?? content.content_kind
     ?? content.contentKind
