@@ -275,7 +275,7 @@ services:
     dockerContext: .
     dockerCommand: node start-worker.mjs
     plan: standard
-    numInstances: 1
+    numInstances: 2
     envVars:
       - fromGroup: smartagency-shared
       - key: PORT
