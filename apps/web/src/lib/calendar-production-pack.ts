@@ -249,9 +249,15 @@ export function normalizeCalendarPlanToProductionIdea(
     || String(plan.event_name ?? plan.tagline ?? '').trim();
   const tagline = String(plan.tagline ?? plan.subline ?? '').trim();
   const contentBrief = String(
-    plan.content_brief ?? plan.description ?? plan.brief ?? plan.caption ?? '',
+    plan.content_brief ?? plan.description ?? plan.brief ?? '',
   ).trim();
-  const caption = contentBrief || [tagline, headline].filter(Boolean).join(' — ');
+  // Publish caption = calendar copy or tagline+headline — NEVER the visual brief.
+  // The brief is a scene description for gallery matching / fal prompts and flows
+  // through content_brief + visual_production_spec (see calendarGalleryMatchCaption).
+  const planCaption = String(plan.caption_draft ?? plan.caption ?? '').trim();
+  const caption = planCaption
+    || [tagline, headline].filter(Boolean).join(' — ')
+    || contentBrief;
   const photoMood = String(
     plan.photo_mood ?? plan.visual_direction ?? plan.visual_style ?? plan.visual_mood ?? '',
   ).trim();

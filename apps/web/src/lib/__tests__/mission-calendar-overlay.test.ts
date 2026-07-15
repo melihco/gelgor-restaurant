@@ -55,6 +55,17 @@ describe('applyCalendarProductionEnrichment', () => {
     expect(ideas[0]?.fal_design_hint).toContain('sunlit grove');
   });
 
+  it('keeps the ideation publish caption — visual brief never becomes caption_draft', () => {
+    const { ideas } = applyCalendarProductionEnrichment(ideation, calendarPlans);
+
+    // Real ideation copy stays as the feed caption for both sectors' content shapes.
+    expect(ideas[0]?.caption_draft).toBe('Datça zeytinyağı hikayesi.');
+    expect(ideas[0]?.caption).toBe('Datça zeytinyağı hikayesi.');
+    expect(ideas[1]?.caption_draft).toBe('Brunch menüsü duyurusu.');
+    // The scene-describing brief stays in content_brief / VPS only.
+    expect(ideas[0]?.caption_draft).not.toContain('launch brief');
+  });
+
   it('preserves ideation marketing title when calendar event_name differs', () => {
     const ideation = [
       {

@@ -226,3 +226,60 @@ def test_build_calendar_production_ideas_additive_track() -> None:
     assert ideas[0]["calendar_announcement_type"] == "event_teaser"
     assert ideas[0]["photo_mood"] == "cozy artisan workshop or studio vibe"
     assert ideas[0]["content_kind"] == "instagram_story"
+
+
+def test_calendar_production_idea_caption_never_uses_visual_brief() -> None:
+    from app.services.mission_ideation_merge import build_calendar_production_ideas
+
+    ideas = build_calendar_production_ideas([
+        {
+            "event_name": "Meet the Maker: Local Artisans",
+            "tagline": "Discover the stories behind our products",
+            "content_brief": "Introduce the Meet the Maker series showcasing local artisans.",
+            "photo_mood": "cozy artisan workshop",
+            "format": "story",
+        },
+        {
+            "event_name": "Sunset DJ Night",
+            "caption": "Bu cumartesi gün batımında DJ performansı bizimle!",
+            "content_brief": "Vibrant DJ night announcement by the beach with colorful crowd.",
+            "format": "story",
+        },
+    ])
+
+    # Publish caption = tagline + headline copy; brief stays in content_brief only.
+    assert ideas[0]["caption_draft"] == (
+        "Discover the stories behind our products — Meet the Maker: Local Artisans"
+    )
+    assert "showcasing" not in ideas[0]["caption_draft"]
+    assert ideas[0]["content_brief"] == (
+        "Introduce the Meet the Maker series showcasing local artisans."
+    )
+    # Explicit calendar caption wins when provided.
+    assert ideas[1]["caption_draft"] == "Bu cumartesi gün batımında DJ performansı bizimle!"
+
+
+def test_calendar_enrichment_keeps_ideation_caption_over_brief() -> None:
+    from app.services.mission_ideation_merge import _enrich_ideation_with_calendar_plan
+
+    row = _enrich_ideation_with_calendar_plan(
+        {
+            "concept_title": "Erken Hasat Zeytinyağı",
+            "caption_draft": "Datça zeytinyağı hikayesi burada başlıyor.",
+            "content_type": "instagram_post",
+        },
+        {
+            "event_name": "Erken Hasat Zeytinyağı",
+            "format": "post",
+            "content_brief": "Premium early harvest olive oil launch scene with sunlit grove.",
+            "photo_mood": "sunlit grove, golden hour",
+        },
+        plan_index=0,
+        idea_index=0,
+    )
+
+    assert row["caption_draft"] == "Datça zeytinyağı hikayesi burada başlıyor."
+    assert row["caption"] == "Datça zeytinyağı hikayesi burada başlıyor."
+    assert row["content_brief"] == (
+        "Premium early harvest olive oil launch scene with sunlit grove."
+    )

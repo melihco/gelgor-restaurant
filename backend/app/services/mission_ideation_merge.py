@@ -275,14 +275,16 @@ def _resolve_planning_caption(idea: dict[str, Any] | None, plan: dict[str, Any])
         plan.get("tagline") or plan.get("subline")
         or (idea or {}).get("tagline") or (idea or {}).get("subline") or ""
     ).strip()
-    brief = str(
+    headline = _calendar_item_headline(plan) or _idea_headline(idea or {})
+    # Publish copy fallback: tagline + headline. The content_brief is a visual
+    # scene description for production — it must never become the feed caption.
+    parts = [p for p in (tagline, headline) if p]
+    if parts:
+        return " — ".join(parts)
+    return str(
         plan.get("content_brief") or plan.get("description") or plan.get("brief")
         or (idea or {}).get("brief") or ""
     ).strip()
-    parts = [p for p in (tagline, brief) if p]
-    if parts:
-        return " — ".join(parts)
-    return _calendar_item_headline(plan) or _idea_headline(idea or {})
 
 
 def _pick_ideation_for_calendar_strict(
@@ -590,7 +592,7 @@ def _enrich_ideation_with_calendar_plan(
     cal_title = _calendar_item_headline(plan)
     tagline = str(plan.get("tagline") or plan.get("subline") or "").strip()
     brief = str(
-        plan.get("content_brief") or plan.get("description") or plan.get("brief") or plan.get("caption") or ""
+        plan.get("content_brief") or plan.get("description") or plan.get("brief") or ""
     ).strip()
     mood = str(
         plan.get("photo_mood") or plan.get("mood") or plan.get("visual_direction") or plan.get("visual_style") or ""
@@ -598,7 +600,10 @@ def _enrich_ideation_with_calendar_plan(
     fmt = _calendar_format(plan)
     announcement = str(plan.get("announcement_type") or plan.get("type") or plan.get("template_use_case") or "").strip()
     ideation_caption = str(idea.get("caption_draft") or idea.get("caption") or "").strip()
-    caption = brief or ideation_caption or " — ".join(p for p in (tagline, cal_title) if p)
+    plan_caption = str(plan.get("caption_draft") or plan.get("caption") or "").strip()
+    # Publish caption = ideation/calendar copy — NEVER the visual brief.
+    # The brief is a scene description for production and stays in content_brief/VPS.
+    caption = ideation_caption or plan_caption or " — ".join(p for p in (tagline, cal_title) if p)
     headline = cal_title or _idea_headline(idea)
     vps = dict(idea.get("visual_production_spec") or {}) if isinstance(idea.get("visual_production_spec"), dict) else {}
 
@@ -906,9 +911,11 @@ def build_calendar_production_ideas(
             continue
         tagline = str(plan.get("tagline") or plan.get("subline") or "").strip()
         content_brief = str(
-            plan.get("content_brief") or plan.get("description") or plan.get("brief") or plan.get("caption") or ""
+            plan.get("content_brief") or plan.get("description") or plan.get("brief") or ""
         ).strip()
-        caption = content_brief or " — ".join(p for p in (tagline, headline) if p)
+        # Publish caption = calendar copy or tagline+headline — NEVER the visual brief.
+        plan_caption = str(plan.get("caption_draft") or plan.get("caption") or "").strip()
+        caption = plan_caption or " — ".join(p for p in (tagline, headline) if p) or content_brief
         photo_mood = str(
             plan.get("photo_mood") or plan.get("visual_direction") or plan.get("visual_style") or plan.get("visual_mood") or ""
         ).strip()

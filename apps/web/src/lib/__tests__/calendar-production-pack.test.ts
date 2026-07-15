@@ -36,6 +36,27 @@ describe('calendar-production-pack', () => {
     expect(idea.posting_time_suggestion).toContain('July 1, 2026');
   });
 
+  it('publish caption is tagline+headline copy — the visual brief never leaks into it', () => {
+    const idea = normalizeCalendarPlanToProductionIdea(meetTheMakerPlan, 0);
+    expect(idea.caption_draft).toBe(
+      'Discover the stories behind our products — Meet the Maker: Local Artisans',
+    );
+    expect(String(idea.caption_draft)).not.toContain('Introduce the');
+    expect(String(idea.caption_draft)).not.toContain('showcasing');
+    // Brief stays available for gallery matching / fal prompts.
+    expect(idea.content_brief).toContain('showcasing local artisans');
+
+    // Second sector shape: explicit calendar caption wins when provided.
+    const beachIdea = normalizeCalendarPlanToProductionIdea({
+      event_name: 'Sunset DJ Night',
+      caption: 'Bu cumartesi gün batımında DJ performansı bizimle! 🎧',
+      content_brief: 'Vibrant DJ night announcement by the beach with colorful crowd.',
+      format: 'story',
+      announcement_type: 'event_teaser',
+    }, 1);
+    expect(beachIdea.caption_draft).toBe('Bu cumartesi gün batımında DJ performansı bizimle! 🎧');
+  });
+
   it('builds fal scene hint from announcement type, mood, and brief', () => {
     const idea = normalizeCalendarPlanToProductionIdea(meetTheMakerPlan, 0);
     const hint = buildCalendarFalSceneHint(idea);

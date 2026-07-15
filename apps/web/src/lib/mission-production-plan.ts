@@ -228,8 +228,10 @@ function enrichIdeationWithCalendarPlan(
   const calHeadline = calendarItemHeadline(plan);
   const tagline = String(plan.tagline ?? plan.subline ?? '').trim();
   const brief = String(
-    plan.content_brief ?? plan.description ?? plan.brief ?? plan.caption ?? '',
+    plan.content_brief ?? plan.description ?? plan.brief ?? '',
   ).trim();
+  /** Calendar rows may carry real publish copy — separate from the visual brief. */
+  const planCaption = String(plan.caption_draft ?? plan.caption ?? '').trim();
   const mood = String(
     plan.photo_mood ?? plan.mood ?? plan.visual_direction ?? plan.visual_style ?? '',
   ).trim();
@@ -241,8 +243,11 @@ function enrichIdeationWithCalendarPlan(
   const ideationSubjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim();
   const subjectKey = ideationSubjectKey || calendarSubjectKey || undefined;
   const ideationCaption = String(idea.caption_draft ?? idea.caption ?? '').trim();
-  const caption = brief
-    || ideationCaption
+  // Publish caption = ideation/calendar copy — NEVER the visual brief. The brief
+  // ("1-2 sentences describing the visual concept") is a scene description for the
+  // production pipeline and stays in content_brief / visual_production_spec only.
+  const caption = ideationCaption
+    || planCaption
     || [tagline, calHeadline].filter(Boolean).join(' — ');
   const ideationTitle = ideationHeadline(idea);
   const headline = ideationTitle || calHeadline;
