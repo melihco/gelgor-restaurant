@@ -308,6 +308,16 @@ export const PlatformPreviewStudio = dynamic(
     import('./screens/PlatformPreviewStudio').then((m) => ({ default: m.PlatformPreviewStudio }))),
   { loading: () => <ScreenSkeleton />, ssr: false },
 );
+export function InstagramProfile() {
+  return (
+    <LazyMobileScreen
+      loadKey="InstagramProfile"
+      screenLabel="Profil"
+      loading={null}
+      importer={() => import('./screens/InstagramProfile').then((m) => ({ default: m.InstagramProfile }))}
+    />
+  );
+}
 export const LoginScreen = dynamic(
   importWithChunkRetry('LoginScreen', () =>
     import('./screens/LoginScreen').then((m) => ({ default: m.LoginScreen }))),

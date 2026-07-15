@@ -6,13 +6,14 @@ import { useTheme } from './theme-context';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import {
   CLIENT_NAV_TABS,
-  CLIENT_NAV_MENU,
   isMobileOperatorMode,
   isMoreMenuScreen,
 } from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
 import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT, refetchMobileFeedPool } from '../_lib/mobile-artifacts';
 import { filterFeedDisplayArtifacts } from '@/lib/weekly-publish-package';
+import { useTenantBrandContext } from './TenantBrandProvider';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 import { BrandNavStar } from './BrandNavStar';
 
 /** Hover prefetch — stale dev chunks after HMR must not surface as runtime errors. */
@@ -129,15 +130,19 @@ function SideNavButton({
   );
 }
 
-function MenuNavButton({
+function ProfileNavButton({
   isActive,
   showLabel,
+  avatarUrl,
+  monogram,
   onSelect,
   onPointerEnter,
   t,
 }: {
   isActive: boolean;
   showLabel: boolean;
+  avatarUrl?: string;
+  monogram: string;
   onSelect: () => void;
   onPointerEnter: () => void;
   t: ReturnType<typeof useTheme>['t'];
@@ -147,7 +152,7 @@ function MenuNavButton({
       type="button"
       onClick={onSelect}
       onPointerEnter={onPointerEnter}
-      aria-label={CLIENT_NAV_MENU.label}
+      aria-label="Profil"
       aria-current={isActive ? 'page' : undefined}
       style={{
         flex: 1,
@@ -169,19 +174,29 @@ function MenuNavButton({
         outline: 'none',
       }}
     >
-      <svg
-        width={22}
-        height={22}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={isActive ? t.navActiveColor : t.navIdleColor}
-        strokeWidth={isActive ? 2.2 : 1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ transition: 'stroke 150ms ease, stroke-width 150ms ease' }}
-      >
-        <path d={CLIENT_NAV_MENU.icon} />
-      </svg>
+      <div style={{
+        width: 24,
+        height: 24,
+        borderRadius: '50%',
+        overflow: 'hidden',
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: avatarUrl
+          ? (t.isDark ? '#000' : '#fff')
+          : 'linear-gradient(145deg,#4D7088,#8AABBD)',
+        boxShadow: isActive ? `0 0 0 2px ${t.navActiveColor}` : `0 0 0 1px ${t.navIdleColor}66`,
+        transition: 'box-shadow 150ms ease',
+      }}>
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatarUrl} alt="" referrerPolicy="no-referrer"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em' }}>{monogram}</span>
+        )}
+      </div>
       <span style={{
         fontSize: 9,
         fontWeight: 700,
@@ -194,7 +209,7 @@ function MenuNavButton({
         transition: 'opacity 150ms ease, max-height 150ms ease',
         whiteSpace: 'nowrap',
       }}>
-        {CLIENT_NAV_MENU.label}
+        Profil
       </span>
     </button>
   );
@@ -204,10 +219,11 @@ function MenuNavButton({
  * 3-item bottom nav: Akış · Marka (center) · Menü
  */
 export function MobileNav() {
-  const { activeTab, setTab, navigate, screen, bumpFeedRefresh } = useMobileStore();
+  const { activeTab, setTab, screen, bumpFeedRefresh, openProfile } = useMobileStore();
   const { t } = useTheme();
   const tenantId = useActiveTenantId();
   const queryClient = useQueryClient();
+  const brand = useTenantBrandContext();
   const { data: artifacts = [] } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     enabled: Boolean(tenantId),
@@ -218,9 +234,14 @@ export function MobileNav() {
     [artifacts],
   );
   const showAllLabels = !isMobileOperatorMode();
-  const menuActive = isMoreMenuScreen(screen) || activeTab === 'missions';
+  const profileActive = screen === 'profile';
+  // On the More-menu stack or the missions tab neither side tab is "current"
+  // (those live inside the Marka hub now) — dim feed + brand.
+  const onHubScreen = isMoreMenuScreen(screen) || activeTab === 'missions';
 
   const feedTab = CLIENT_NAV_TABS.find((tab) => tab.id === 'feed')!;
+  const avatarUrl = brand.logoUrl ? (resolveClientMediaUrl(brand.logoUrl) ?? brand.logoUrl) : undefined;
+  const monogram = (brand.brandName || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
   const prefetchTab = (tabId: SideTab['id']) => {
     if (tabId === 'feed') {
@@ -240,9 +261,9 @@ export function MobileNav() {
     setTab(tabId);
   };
 
-  const openMenu = () => {
-    safePrefetch(() => import('./screens/MoreMenu'));
-    navigate('more');
+  const openProfileScreen = () => {
+    safePrefetch(() => import('./screens/InstagramProfile'));
+    openProfile();
   };
 
   return (
@@ -273,7 +294,7 @@ export function MobileNav() {
     >
       <SideNavButton
         tab={feedTab}
-        isActive={activeTab === 'feed' && !menuActive}
+        isActive={activeTab === 'feed' && !profileActive && !onHubScreen}
         badgeCount={pendingApprovalCount}
         showLabel={showAllLabels}
         onSelect={() => selectTab('feed')}
@@ -282,16 +303,18 @@ export function MobileNav() {
       />
 
       <BrandNavStar
-        active={activeTab === 'brand' && !menuActive}
+        active={activeTab === 'brand' && !profileActive && !onHubScreen}
         onClick={() => selectTab('brand')}
         onPointerEnter={() => prefetchTab('brand')}
       />
 
-      <MenuNavButton
-        isActive={menuActive}
+      <ProfileNavButton
+        isActive={profileActive}
         showLabel={showAllLabels}
-        onSelect={openMenu}
-        onPointerEnter={() => safePrefetch(() => import('./screens/MoreMenu'))}
+        avatarUrl={avatarUrl}
+        monogram={monogram}
+        onSelect={openProfileScreen}
+        onPointerEnter={() => safePrefetch(() => import('./screens/InstagramProfile'))}
         t={t}
       />
     </nav>

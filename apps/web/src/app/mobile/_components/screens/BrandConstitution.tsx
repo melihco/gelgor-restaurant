@@ -83,6 +83,7 @@ import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConf
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
 import { BrandHubDashboard, buildBrandHubNavItems } from '../BrandHubDashboard';
+import { MoreMenuPanel } from './MoreMenu';
 
 const BrandChatbotProfileCard = dynamic(
   () => import('../BrandChatbotProfileCard').then((m) => ({ default: m.BrandChatbotProfileCard })),
@@ -3710,27 +3711,33 @@ export function BrandConstitution() {
 
       {/* ── DASHBOARD VIEW ── */}
       {view === 'dashboard' && (
-        <BrandHubDashboard
-          t={t}
-          showStackBack={showStackBack}
-          onBack={goBack}
-          brandName={brandNameDisplay}
-          logoUrl={logoUrl}
-          monogram={monogram}
-          brandPrimary={brandPrimary}
-          industryLabel={industryDisplay || null}
-          locationLabel={locationDisplay || null}
-          readinessScore={Number(score) || 0}
-          navItems={HUB_NAV_ITEMS}
-          constitutionConfirmedAt={constitutionConfirmedAt}
-          confirmingConstitution={confirmingConstitution}
-          constitutionConfirmError={constitutionConfirmError}
-          onConfirmConstitution={() => void handleConfirmConstitution()}
-          onOpenSection={openSection}
-          showPprBanner={Boolean(productionReadiness?.productionProfile && !pprReady)}
-          pprScore={pprScore}
-          statusBanners={sharedStatusBanners}
-        />
+        <>
+          <BrandHubDashboard
+            t={t}
+            showStackBack={showStackBack}
+            onBack={goBack}
+            brandName={brandNameDisplay}
+            logoUrl={logoUrl}
+            monogram={monogram}
+            brandPrimary={brandPrimary}
+            industryLabel={industryDisplay || null}
+            locationLabel={locationDisplay || null}
+            readinessScore={Number(score) || 0}
+            navItems={HUB_NAV_ITEMS}
+            constitutionConfirmedAt={constitutionConfirmedAt}
+            confirmingConstitution={confirmingConstitution}
+            constitutionConfirmError={constitutionConfirmError}
+            onConfirmConstitution={() => void handleConfirmConstitution()}
+            onOpenSection={openSection}
+            showPprBanner={Boolean(productionReadiness?.productionProfile && !pprReady)}
+            pprScore={pprScore}
+            statusBanners={sharedStatusBanners}
+          />
+          {/* Menü artık Marka ekranında yaşıyor — alt navdaki Profil butonu IG profilini açar. */}
+          <div style={{ marginTop: 8, borderTop: `0.5px solid ${t.separator}`, paddingTop: 2 }}>
+            <MoreMenuPanel horizontalPadding={18} />
+          </div>
+        </>
       )}
 
       {/* ── SECTION HEADER (sticky) ── */}

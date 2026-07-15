@@ -38,6 +38,7 @@ export type MobileScreen =
   | 'mission-factory'
   | 'feed'
   | 'platform-preview'
+  | 'profile'
 
 export type NavTab = 'feed' | 'missions' | 'brand';
 
@@ -67,6 +68,7 @@ interface MobileStore {
   feedRefreshNonce: number;
 
   navigate: (screen: MobileScreen) => void;
+  openProfile: () => void;
   setFeedListLimit: (limit: number) => void;
   openBrand: (fix?: string, checkId?: string) => void;
   openStoryTemplates: () => void;
@@ -116,6 +118,16 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       navTransition: transitionForNavigate(resolved, s.activeTab, MODAL_MOBILE_SCREENS.has(resolved)),
       ...(tab ? { activeTab: tab } : {}),
     }));
+  },
+
+  openProfile: () => {
+    set((s) => (s.screen === 'profile'
+      ? s
+      : {
+          screen: 'profile',
+          history: [...s.history, 'profile'],
+          navTransition: 'forward',
+        }));
   },
 
   openBrand: (fix, checkId) => {

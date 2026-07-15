@@ -45,11 +45,15 @@ function MenuItemIcon({ iconBg, label }: { iconBg: string; label: string }) {
   );
 }
 
-export function MoreMenu() {
-  const { t, toggle } = useTheme();
-  const tenantBrand = useTenantBrandContext();
-  const { navigate, goBack, setTab } = useMobileStore();
-  const { user, setUser } = useAuthStore();
+/**
+ * Menu body (groups + logout + footer) without the stack header/hero.
+ * Rendered both inside the Marka hub (brand logo tap) and the legacy
+ * `more` stack screen (reachable from the Instagram profile hamburger).
+ */
+export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: number }) {
+  const { t } = useTheme();
+  const { navigate, setTab } = useMobileStore();
+  const { setUser } = useAuthStore();
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -61,16 +65,12 @@ export function MoreMenu() {
     }
   };
 
-  const displayName = user?.displayName ?? tenantBrand.brandName ?? 'İşletme';
-  const initials    = displayName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const email       = user?.email ?? 'Smart Agency müşteri paneli';
-
   const { data: integrationConnections = [] } = useQuery({
     queryKey: ['integrations'],
     queryFn: () => apiClient.getIntegrations(),
     staleTime: 60_000,
   });
-  const { items: integrations, connectedCount, total: integrationTotal } =
+  const { connectedCount, total: integrationTotal } =
     summarizeMobileIntegrations(integrationConnections);
 
   const groups = buildMoreMenuGroups({
@@ -89,6 +89,128 @@ export function MoreMenu() {
     }
     navigate(screen);
   };
+
+  return (
+    <>
+      {/* ─── Menu Groups ─────────────────────────────────────────────── */}
+      {groups.map(group => (
+        <div key={group.title} style={{ padding: `18px ${horizontalPadding}px 0` }}>
+
+          {/* Section label */}
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
+            {group.title}
+          </div>
+
+          {/* Items */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {group.items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                className="sa-chrome-menu-row"
+                onClick={() => openMenuItem(item.screen)}
+              >
+                <div className="sa-chrome-icon-tile">
+                  <MenuItemIcon iconBg={item.iconBg} label={item.label} />
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 14, fontWeight: 600, color: t.textPrimary,
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    letterSpacing: '-0.01em',
+                  }}>
+                    {item.label}
+                    {item.badge !== undefined && (
+                      <span style={{
+                        fontSize: 9.5, padding: '2px 6px', borderRadius: 20,
+                        background: t.warningDim, color: t.warning, fontWeight: 800,
+                      }}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: t.textTertiary, marginTop: 1.5 }}>
+                    {item.sub}
+                  </div>
+                </div>
+
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                  stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* ─── Logout ───────────────────────────────────────────────────── */}
+      <div style={{ padding: `18px ${horizontalPadding}px 0` }}>
+        <button
+          onClick={handleLogout}
+          disabled={loggingOut}
+          style={{
+            width: '100%', padding: '13px 16px', borderRadius: 16,
+            cursor: loggingOut ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: t.dangerDim,
+            border: `0.5px solid rgba(248,113,113,0.20)`,
+            opacity: loggingOut ? 0.55 : 1,
+            transition: 'opacity 160ms ease',
+          }}
+        >
+          <div style={{
+            width: 34, height: 34, borderRadius: 10,
+            background: 'rgba(248,113,113,0.12)',
+            border: '0.5px solid rgba(248,113,113,0.20)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IcoLogout size={15} color={t.danger} />
+          </div>
+          <span style={{ fontSize: 14, fontWeight: 700, color: t.danger, letterSpacing: '-0.01em' }}>
+            {loggingOut ? 'Çıkış yapılıyor…' : 'Çıkış Yap'}
+          </span>
+        </button>
+      </div>
+
+      {/* ─── Footer ───────────────────────────────────────────────────── */}
+      <div style={{ padding: `24px ${horizontalPadding}px 0`, textAlign: 'center' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '6px 14px', borderRadius: 20,
+          background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+          border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
+        }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: t.accent, opacity: 0.6,
+          }} />
+          <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>
+            Smart Agency · Müşteri paneli
+          </span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function MoreMenu() {
+  const { t, toggle } = useTheme();
+  const tenantBrand = useTenantBrandContext();
+  const { goBack, setTab } = useMobileStore();
+  const { user } = useAuthStore();
+
+  const displayName = user?.displayName ?? tenantBrand.brandName ?? 'İşletme';
+  const initials    = displayName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+  const email       = user?.email ?? 'Smart Agency müşteri paneli';
+
+  const { data: integrationConnections = [] } = useQuery({
+    queryKey: ['integrations'],
+    queryFn: () => apiClient.getIntegrations(),
+    staleTime: 60_000,
+  });
+  const { items: integrations } = summarizeMobileIntegrations(integrationConnections);
 
   return (
     <div style={{
@@ -182,105 +304,7 @@ export function MoreMenu() {
         </div>
       </div>
 
-      {/* ─── Menu Groups ─────────────────────────────────────────────── */}
-      {groups.map(group => (
-        <div key={group.title} style={{ padding: '18px 22px 0' }}>
-
-          {/* Section label */}
-          <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
-            {group.title}
-          </div>
-
-          {/* Items */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {group.items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                className="sa-chrome-menu-row"
-                onClick={() => openMenuItem(item.screen)}
-              >
-                <div className="sa-chrome-icon-tile">
-                  <MenuItemIcon iconBg={item.iconBg} label={item.label} />
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14, fontWeight: 600, color: t.textPrimary,
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    letterSpacing: '-0.01em',
-                  }}>
-                    {item.label}
-                    {item.badge !== undefined && (
-                      <span style={{
-                        fontSize: 9.5, padding: '2px 6px', borderRadius: 20,
-                        background: t.warningDim, color: t.warning, fontWeight: 800,
-                      }}>
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: t.textTertiary, marginTop: 1.5 }}>
-                    {item.sub}
-                  </div>
-                </div>
-
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                  stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {/* ─── Logout ───────────────────────────────────────────────────── */}
-      <div style={{ padding: '18px 22px 0' }}>
-        <button
-          onClick={handleLogout}
-          disabled={loggingOut}
-          style={{
-            width: '100%', padding: '13px 16px', borderRadius: 16,
-            cursor: loggingOut ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', gap: 12,
-            background: t.dangerDim,
-            border: `0.5px solid rgba(248,113,113,0.20)`,
-            opacity: loggingOut ? 0.55 : 1,
-            transition: 'opacity 160ms ease',
-          }}
-        >
-          <div style={{
-            width: 34, height: 34, borderRadius: 10,
-            background: 'rgba(248,113,113,0.12)',
-            border: '0.5px solid rgba(248,113,113,0.20)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <IcoLogout size={15} color={t.danger} />
-          </div>
-          <span style={{ fontSize: 14, fontWeight: 700, color: t.danger, letterSpacing: '-0.01em' }}>
-            {loggingOut ? 'Çıkış yapılıyor…' : 'Çıkış Yap'}
-          </span>
-        </button>
-      </div>
-
-      {/* ─── Footer ───────────────────────────────────────────────────── */}
-      <div style={{ padding: '24px 22px 0', textAlign: 'center' }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '6px 14px', borderRadius: 20,
-          background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-          border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-        }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: t.accent, opacity: 0.6,
-          }} />
-          <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>
-            Smart Agency · Müşteri paneli
-          </span>
-        </div>
-      </div>
+      <MoreMenuPanel />
     </div>
   );
 }
