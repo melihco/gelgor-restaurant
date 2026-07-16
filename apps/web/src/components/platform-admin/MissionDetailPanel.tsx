@@ -166,8 +166,9 @@ export function MissionDetailPanel({
       artifacts,
       missionInFlight: mission.status === 'in_flight' || mission.status === 'approved',
       debugMode: true,
+      factorySlots: factory?.slots,
     });
-  }, [progress?.nodes, missionId, mission.type, mission.title, mission.status, artifacts]);
+  }, [progress?.nodes, missionId, mission.type, mission.title, mission.status, artifacts, factory?.slots]);
 
   const completionPct = progress?.completion_pct ?? mission.completion_pct ?? 0;
 

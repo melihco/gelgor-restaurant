@@ -94,9 +94,18 @@ describe('resolveCanvasDimensions', () => {
 });
 
 describe('selectLayoutFamily', () => {
-  it('stories always use the bottom panel', () => {
-    expect(selectLayoutFamily({ format: 'story' })).toBe('bottom_panel');
-    expect(selectLayoutFamily({ format: 'story', layoutFamilyHint: 'split' })).toBe('bottom_panel');
+  it('maps campaign_hero story templates to hero_footer (template-library look)', () => {
+    expect(selectLayoutFamily({
+      format: 'story',
+      canvaArchetypeId: 'campaign_hero_block',
+      layoutPattern: 'dominant offer headline on brand slab',
+    })).toBe('hero_footer');
+    expect(selectLayoutFamily({ format: 'story', templateType: 'campaign_announcement' })).toBe('hero_footer');
+  });
+
+  it('defaults story to hero_footer; explicit cream slab hint keeps bottom_panel', () => {
+    expect(selectLayoutFamily({ format: 'story' })).toBe('hero_footer');
+    expect(selectLayoutFamily({ format: 'story', layoutFamilyHint: 'bottom_cream_slab' })).toBe('bottom_panel');
   });
 
   it('posts honor split/photo_top hints', () => {
@@ -121,7 +130,7 @@ describe('contrast QA (multi-sector)', () => {
   });
 
   it('resolvePanelColors produces AA-legible panels for every layout + sector', () => {
-    const families: LayoutFamily[] = ['bottom_panel', 'split_panel', 'photo_top'];
+    const families: LayoutFamily[] = ['bottom_panel', 'split_panel', 'photo_top', 'hero_footer'];
     for (const sector of SECTORS) {
       const brandColors = brandColorsFor(sector);
       for (const family of families) {
@@ -148,7 +157,7 @@ describe('buildOverlayElement (Turkish glyph fidelity + geometry)', () => {
     const fonts = fontsForVibe('warm_coastal');
     return {
       family,
-      format: family === 'bottom_panel' ? 'story' : 'post',
+      format: family === 'bottom_panel' || family === 'hero_footer' ? 'story' : 'post',
       headline: TURKISH_HEADLINE,
       subtitle: 'Rezervasyon için bize ulaşın',
       overline: 'Sarnıç Beach',

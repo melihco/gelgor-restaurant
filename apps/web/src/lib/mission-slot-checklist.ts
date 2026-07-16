@@ -60,6 +60,9 @@ export interface MissionSlotChecklistItem {
 export interface FactoryJobSlotLike {
   ideaIndex: number;
   slotRole: string;
+  pipeline?: string;
+  status?: string;
+  artifactId?: string | null;
   catalogSlotKey?: string | null;
   catalogSlotLabel?: string | null;
 }
@@ -161,6 +164,7 @@ function parseFdAssignments(raw: unknown): ProductionAssignment[] {
       layout_family_hint: a.layout_family_hint as string | undefined,
       library_slot_key: a.library_slot_key as string | undefined,
       catalog_slot_key: a.catalog_slot_key as string | undefined,
+      catalog_slot_label: a.catalog_slot_label as string | undefined,
       rationale: a.rationale as string | undefined,
     }))
     .filter((a) => Boolean(a.slot_role));
@@ -296,6 +300,164 @@ function matchArtifactForAssignment(
   return candidates[0] ?? null;
 }
 
+function mapFactoryJobStatus(
+  factoryStatus: string | undefined,
+  artifact: OutputArtifact | null,
+  role: ProductionSlotRole,
+  missionInFlight: boolean,
+): SlotDeliveryStatus {
+  if (artifact) {
+    return resolveArtifactSlotStatus(artifact, role);
+  }
+  const st = String(factoryStatus ?? '').toLowerCase();
+  if (st === 'ready') return 'ready';
+  if (st === 'running' || st === 'claimed') return 'rendering';
+  if (st === 'failed' || st === 'exhausted') return 'failed';
+  if (st === 'pending') return missionInFlight ? 'pending' : 'missing';
+  return missionInFlight ? 'pending' : 'missing';
+}
+
+function matchArtifactForFactorySlot(
+  missionId: string,
+  slot: FactoryJobSlotLike,
+  artifacts: OutputArtifact[],
+  usedIds: Set<string>,
+): OutputArtifact | null {
+  const role = slot.slotRole as ProductionSlotRole;
+
+  if (slot.artifactId) {
+    const direct = artifacts.find(
+      (a) => a.id === slot.artifactId && !usedIds.has(a.id) && parseArtifactMissionId(a) === missionId,
+    );
+    if (direct) return direct;
+  }
+
+  const assignment: ProductionAssignment = {
+    idea_index: slot.ideaIndex,
+    slot_role: role,
+    pipeline: (slot.pipeline as ProductionAssignment['pipeline']) ?? 'gallery_photo',
+    copy_bundle_id: '',
+    publish_channel: 'instagram_organic',
+    catalog_slot_key: slot.catalogSlotKey ?? undefined,
+  };
+  const matched = matchArtifactForAssignment(missionId, assignment, artifacts, usedIds);
+  if (matched) return matched;
+
+  if (slot.catalogSlotKey) {
+    const candidates = artifacts.filter((a) => {
+      if (usedIds.has(a.id)) return false;
+      if (parseArtifactMissionId(a) !== missionId) return false;
+      const meta = parseArtifactMetadata(a.metadata);
+      return meta.catalog_slot_key === slot.catalogSlotKey;
+    });
+    if (candidates.length) {
+      candidates.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      return candidates[0] ?? null;
+    }
+  }
+
+  return null;
+}
+
+function finalizeMissionSlotChecklist(
+  missionId: string,
+  missionType: MissionProductionManifest['missionType'],
+  items: MissionSlotChecklistItem[],
+): MissionSlotChecklist {
+  const requiredItems = items.filter((i) => i.required);
+  const requiredTotal = requiredItems.length || items.length;
+  const readyRequired = requiredItems.filter((i) => i.status === 'ready').length;
+  const readyTotal = items.filter((i) => i.status === 'ready').length;
+  const failedCount = items.filter((i) => i.status === 'failed').length;
+  const renderingCount = items.filter((i) => i.status === 'rendering').length;
+  const coveragePct = requiredTotal
+    ? Math.round((readyRequired / requiredTotal) * 100)
+    : (items.length ? Math.round((readyTotal / items.length) * 100) : 0);
+
+  return {
+    missionId,
+    missionType,
+    items,
+    requiredTotal,
+    readyRequired,
+    readyTotal,
+    failedCount,
+    renderingCount,
+    coveragePct,
+  };
+}
+
+/** Faz 5 — flip cards read durable plan rows (production_jobs), not FD generic roles. */
+function buildChecklistFromFactorySlots(input: {
+  missionId: string;
+  missionType?: string;
+  missionTitle?: string | null;
+  assignments?: ProductionAssignment[];
+  artifacts: OutputArtifact[];
+  missionInFlight?: boolean;
+  debugMode?: boolean;
+  factorySlots: FactoryJobSlotLike[];
+}): MissionSlotChecklist {
+  const debugMode = Boolean(input.debugMode);
+  const manifestType = inferManifestMissionType({
+    missionType: input.missionType,
+    title: input.missionTitle,
+    assignments: input.assignments ?? [],
+  });
+  const missionArtifacts = input.artifacts.filter(
+    (a) => parseArtifactMissionId(a) === input.missionId,
+  );
+  const usedIds = new Set<string>();
+  const items: MissionSlotChecklistItem[] = input.factorySlots.map((slot, assignmentIndex) => {
+    const role = slot.slotRole as ProductionSlotRole;
+    const artifact = matchArtifactForFactorySlot(
+      input.missionId,
+      slot,
+      missionArtifacts,
+      usedIds,
+    );
+    if (artifact) usedIds.add(artifact.id);
+
+    const status = mapFactoryJobStatus(
+      slot.status,
+      artifact,
+      role,
+      Boolean(input.missionInFlight),
+    );
+    const meta = parseArtifactMetadata(artifact?.metadata);
+    const content = artifact ? parseArtifactContent(artifact.content) : {};
+    const headline = String(
+      meta.headline || content.headline || artifact?.title || '',
+    ).trim() || null;
+    const roleLabel = SLOT_ROLE_LABEL_TR[role] ?? slot.slotRole;
+    const catalogSlotKey = slot.catalogSlotKey
+      ?? (typeof meta.catalog_slot_key === 'string' ? meta.catalog_slot_key : null);
+    const catalogSlotLabel = slot.catalogSlotLabel
+      ?? (typeof meta.catalog_slot_label === 'string' ? meta.catalog_slot_label : null);
+
+    return {
+      assignmentIndex,
+      ideaIndex: slot.ideaIndex,
+      role,
+      pipeline: slot.pipeline ?? 'gallery_photo',
+      label: catalogSlotLabel || roleLabel,
+      required: true,
+      status,
+      artifactId: artifact?.id ?? null,
+      headline,
+      satoriEligible: isSatoriEligibleSlotRole(role),
+      catalogSlotKey: catalogSlotKey ?? null,
+      catalogSlotLabel: catalogSlotLabel ?? null,
+      ...engineChipFromArtifact(artifact),
+      ...resolveAiEnhanceFromArtifact(artifact, debugMode),
+    };
+  });
+
+  return finalizeMissionSlotChecklist(input.missionId, manifestType, items);
+}
+
 export function buildMissionSlotChecklist(input: {
   missionId: string;
   missionType?: string;
@@ -314,6 +476,14 @@ export function buildMissionSlotChecklist(input: {
     ? (input.assignments as ProductionAssignment[])
     : parseFdAssignments(input.assignments);
 
+  if ((input.factorySlots?.length ?? 0) > 0) {
+    return buildChecklistFromFactorySlots({
+      ...input,
+      assignments,
+      factorySlots: input.factorySlots!,
+    });
+  }
+
   const factoryByKey = new Map<string, FactoryJobSlotLike>();
   for (const row of input.factorySlots ?? []) {
     if (row.catalogSlotKey || row.catalogSlotLabel) {
@@ -331,6 +501,7 @@ export function buildMissionSlotChecklist(input: {
       ?? assignment?.catalog_slot_key
       ?? (typeof artifactMeta.catalog_slot_key === 'string' ? artifactMeta.catalog_slot_key : null);
     const label = factory?.catalogSlotLabel
+      ?? assignment?.catalog_slot_label
       ?? (typeof artifactMeta.catalog_slot_label === 'string' ? artifactMeta.catalog_slot_label : null);
     if (!key && !label) return {};
     return { catalogSlotKey: key ?? null, catalogSlotLabel: label ?? null };
@@ -380,19 +551,22 @@ export function buildMissionSlotChecklist(input: {
       ).trim() || null;
       const productionBadge = engineChipFromArtifact(artifact);
       const ideaIndex = typeof assignment.idea_index === 'number' ? assignment.idea_index : null;
+      const catalogBinding = resolveCatalogBinding(ideaIndex, assignment.slot_role, assignment, meta);
 
       items.push({
         assignmentIndex,
         ideaIndex,
         role: assignment.slot_role,
         pipeline: assignment.pipeline,
-        label: SLOT_ROLE_LABEL_TR[assignment.slot_role] ?? assignment.slot_role,
+        label: catalogBinding.catalogSlotLabel
+          || SLOT_ROLE_LABEL_TR[assignment.slot_role]
+          || assignment.slot_role,
         required: requiredRoles.has(assignment.slot_role),
         status,
         artifactId: artifact?.id ?? null,
         headline,
         satoriEligible: isSatoriEligibleSlotRole(assignment.slot_role),
-        ...resolveCatalogBinding(ideaIndex, assignment.slot_role, assignment, meta),
+        ...catalogBinding,
         ...productionBadge,
         ...resolveAiEnhanceFromArtifact(artifact, debugMode),
       });
@@ -400,28 +574,32 @@ export function buildMissionSlotChecklist(input: {
   }
 
   // FD hedef slot sayısından az atasa bile manifest zorunlu slotlarını göster (pending).
+  // Catalog-first FD reports already carry full slot geometry — skip static manifest padding.
+  const catalogFirstFd = assignments.some((a) => Boolean(a.catalog_slot_key));
   const coveredRoles = new Map<ProductionSlotRole, number>();
   for (const item of items) {
     coveredRoles.set(item.role, (coveredRoles.get(item.role) ?? 0) + 1);
   }
-  for (const slot of manifest.slots.filter((s) => s.required)) {
-    const covered = coveredRoles.get(slot.role) ?? 0;
-    if (covered > 0) {
-      coveredRoles.set(slot.role, covered - 1);
-      continue;
+  if (!catalogFirstFd) {
+    for (const slot of manifest.slots.filter((s) => s.required)) {
+      const covered = coveredRoles.get(slot.role) ?? 0;
+      if (covered > 0) {
+        coveredRoles.set(slot.role, covered - 1);
+        continue;
+      }
+      items.push({
+        assignmentIndex: items.length,
+        ideaIndex: null,
+        role: slot.role,
+        pipeline: slot.pipeline,
+        label: SLOT_ROLE_LABEL_TR[slot.role] ?? slot.role,
+        required: true,
+        status: input.missionInFlight ? 'pending' : 'missing',
+        artifactId: null,
+        headline: null,
+        satoriEligible: isSatoriEligibleSlotRole(slot.role),
+      });
     }
-    items.push({
-      assignmentIndex: items.length,
-      ideaIndex: null,
-      role: slot.role,
-      pipeline: slot.pipeline,
-      label: SLOT_ROLE_LABEL_TR[slot.role] ?? slot.role,
-      required: true,
-      status: input.missionInFlight ? 'pending' : 'missing',
-      artifactId: null,
-      headline: null,
-      satoriEligible: isSatoriEligibleSlotRole(slot.role),
-    });
   }
 
   if (items.length === 0) {
@@ -453,27 +631,7 @@ export function buildMissionSlotChecklist(input: {
     }
   }
 
-  const requiredItems = items.filter((i) => i.required);
-  const requiredTotal = requiredItems.length || manifest.slots.filter((s) => s.required).length;
-  const readyRequired = requiredItems.filter((i) => i.status === 'ready').length;
-  const readyTotal = items.filter((i) => i.status === 'ready').length;
-  const failedCount = items.filter((i) => i.status === 'failed').length;
-  const renderingCount = items.filter((i) => i.status === 'rendering').length;
-  const coveragePct = requiredTotal
-    ? Math.round((readyRequired / requiredTotal) * 100)
-    : (items.length ? Math.round((readyTotal / items.length) * 100) : 0);
-
-  return {
-    missionId: input.missionId,
-    missionType: manifestType,
-    items,
-    requiredTotal,
-    readyRequired,
-    readyTotal,
-    failedCount,
-    renderingCount,
-    coveragePct,
-  };
+  return finalizeMissionSlotChecklist(input.missionId, manifestType, items);
 }
 
 export function formatSlotChecklistSummary(checklist: MissionSlotChecklist): string {

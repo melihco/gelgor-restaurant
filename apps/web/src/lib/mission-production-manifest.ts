@@ -109,6 +109,8 @@ export interface ProductionAssignment {
    * Bridge until production_jobs.slot_key (Faz 5); set by brand-active-slot-resolver.
    */
   catalog_slot_key?: string;
+  /** Brand-facing catalog label (label_tr) — set by catalog-first Feed Director. */
+  catalog_slot_label?: string;
   /**
    * Feed Art Director's visual direction for gallery photo selection.
    * Comma-separated specific subject keywords the gallery photo must show.

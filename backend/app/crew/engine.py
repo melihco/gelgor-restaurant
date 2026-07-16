@@ -371,6 +371,7 @@ def _adapt_feed_cohesion_review(brand, data, llm):
         creative_brief=data.get("creative_brief", ""),
         production_package=data.get("production_package"),
         production_profile=data.get("production_profile"),
+        catalog_slots=data.get("catalog_slots"),
         llm=llm,
     )
     return {

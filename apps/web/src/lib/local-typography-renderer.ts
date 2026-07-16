@@ -26,7 +26,14 @@ import { fontsForVibe, loadSatoriFontSet } from '@/lib/satori-fonts';
 import { isLocalTypographyEnabledForBrand } from '@/lib/brand-production-engines';
 import { LOCAL_TYPOGRAPHY_ROLES } from '@/lib/local-typography-meta';
 
-export type LayoutFamily = 'bottom_panel' | 'split_panel' | 'photo_top';
+/**
+ * Layout families:
+ * - bottom_panel / photo_top — cream text slab under/over photo
+ * - split_panel — solid brand color column beside photo (posts)
+ * - hero_footer — full-bleed photo + centered overlay type + thin brand footer
+ *   (matches Canva `campaign_hero_block` / story template library previews)
+ */
+export type LayoutFamily = 'bottom_panel' | 'split_panel' | 'photo_top' | 'hero_footer';
 export type SlotFormat = 'story' | 'post';
 
 // Client-safe helpers live in local-typography-meta.ts; re-exported for server callers.
@@ -115,22 +122,56 @@ export function formatForAspect(aspectRatio: string): SlotFormat {
   return aspectRatio === '9:16' ? 'story' : 'post';
 }
 
+/**
+ * Pick a Satori layout from format + brand template archetype/pattern.
+ * Catalog templates carry `canvaArchetypeId` / `layoutPattern` — those must win
+ * over the old "every story is bottom_panel" default so production resembles
+ * the template library preview (same geometry, mission photo + copy swapped).
+ */
 export function selectLayoutFamily(input: {
   format: SlotFormat;
   layoutFamilyHint?: string | null;
   templateType?: string | null;
+  /** From brand_design_templates.design_spec.canvaArchetypeId */
+  canvaArchetypeId?: string | null;
+  /** From brand_design_templates.design_spec.layoutPattern */
+  layoutPattern?: string | null;
 }): LayoutFamily {
   const hint = String(input.layoutFamilyHint ?? '').toLowerCase();
   const templateType = String(input.templateType ?? '').toLowerCase();
+  const archetype = String(input.canvaArchetypeId ?? '').toLowerCase();
+  const pattern = String(input.layoutPattern ?? '').toLowerCase();
+  const recipe = `${archetype} ${pattern} ${hint}`;
 
-  if (input.format === 'story') return 'bottom_panel';
+  if (input.format === 'story') {
+    // Explicit overrides first
+    if (hint.includes('bottom') || hint.includes('cream') || hint.includes('slab')) {
+      return 'bottom_panel';
+    }
+    if (
+      /campaign_hero|hero_block|hero_slab|offer.?block|brand.?slab/.test(recipe)
+      || /campaign|promo|offer|announce/.test(templateType)
+    ) {
+      return 'hero_footer';
+    }
+    if (/event_ticket|ticket_stub|masthead/.test(recipe) || /event/.test(templateType)) {
+      // Event templates in the library also use a solid brand footer bar.
+      return 'hero_footer';
+    }
+    // Default story: match the common template-library look (photo + brand footer)
+    // rather than a large cream panel that never appears in Yula/Sarnıç previews.
+    return 'hero_footer';
+  }
 
-  if (hint.includes('split') || hint.includes('side')) return 'split_panel';
+  if (hint.includes('split') || hint.includes('side') || /split|side_panel/.test(recipe)) {
+    return 'split_panel';
+  }
   if (hint.includes('photo_top') || hint.includes('top') || hint.includes('stacked')) {
     return 'photo_top';
   }
-  // Announcement / promo / event templates read best as bold side blocks.
-  if (/event|promo|campaign|announce|special/.test(templateType)) return 'split_panel';
+  if (/event|promo|campaign|announce|special/.test(templateType) || /campaign_hero|split/.test(recipe)) {
+    return 'split_panel';
+  }
   return 'photo_top';
 }
 
@@ -317,6 +358,110 @@ export function buildOverlayElement(content: OverlayContent) {
     };
   }
 
+  // campaign_hero_block: full-bleed photo, centered overlay type, thin brand footer.
+  if (content.family === 'hero_footer') {
+    const headlineEl = headlineNode(content)!;
+    const overlayHeadline = {
+      type: headlineEl.type,
+      props: {
+        ...headlineEl.props,
+        style: {
+          ...headlineEl.props.style,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          textShadow: '0 2px 18px rgba(0,0,0,0.45)',
+        },
+      },
+    };
+    const overlaySubtitle = content.subtitle?.trim()
+      ? {
+          type: 'div',
+          props: {
+            style: {
+              fontFamily: content.bodyFontFamily,
+              fontWeight: 500,
+              fontSize: 34,
+              lineHeight: 1.3,
+              color: '#FFFFFF',
+              opacity: 0.92,
+              display: 'flex',
+              textAlign: 'center',
+              textShadow: '0 1px 12px rgba(0,0,0,0.4)',
+            },
+            children: content.subtitle.trim().slice(0, 120),
+          },
+        }
+      : null;
+    const footerLabel = content.overline
+      ? {
+          type: 'div',
+          props: {
+            style: {
+              fontFamily: content.bodyFontFamily,
+              fontWeight: 700,
+              fontSize: 28,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: content.textColor,
+              display: 'flex',
+            },
+            children: displayUppercase(
+              content.overline,
+              `${content.headline} ${content.subtitle ?? ''}`,
+            ).slice(0, 42),
+          },
+        }
+      : null;
+
+    return {
+      type: 'div',
+      props: {
+        style: {
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'transparent',
+        },
+        children: [
+          {
+            type: 'div',
+            props: {
+              style: {
+                flex: 1,
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 72,
+                gap: 22,
+                background: 'transparent',
+              },
+              children: [overlayHeadline, overlaySubtitle].filter(Boolean),
+            },
+          },
+          {
+            type: 'div',
+            props: {
+              style: {
+                width: '100%',
+                height: '14%',
+                background: content.panelColor,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 28,
+              },
+              children: footerLabel ? [footerLabel] : [],
+            },
+          },
+        ],
+      },
+    };
+  }
+
   const panelHeight = content.family === 'bottom_panel' ? '36%' : '38%';
   return {
     type: 'div',
@@ -367,6 +512,9 @@ export interface LocalTypographyInput {
   occasion?: { name: string; mood?: string } | null;
   layoutFamilyHint?: string | null;
   templateType?: string | null;
+  /** Brand template Canva archetype — drives hero_footer vs bottom_panel. */
+  canvaArchetypeId?: string | null;
+  layoutPattern?: string | null;
   slotRole?: string;
 }
 
@@ -393,6 +541,24 @@ export function resolvePanelColors(
     // Accent must read against the panel too; fall back to the text color.
     const accentColor = contrastRatio(accent, primary) >= 2.2 ? accent : textColor;
     return { panelColor: primary, textColor, accentColor };
+  }
+
+  if (family === 'hero_footer') {
+    // Thin brand footer bar — choose accent or primary for the highest AA text contrast.
+    const candidates = [accent, primary].filter((c) => Boolean(hexToRgb(c)));
+    let panelColor = primary;
+    let textColor = pickReadableTextColor(primary);
+    let best = contrastRatio(panelColor, textColor);
+    for (const c of candidates) {
+      const t = pickReadableTextColor(c);
+      const r = contrastRatio(c, t);
+      if (r > best) {
+        panelColor = c;
+        textColor = t;
+        best = r;
+      }
+    }
+    return { panelColor, textColor, accentColor: accent };
   }
 
   // Warm cream panel — brand primary text when legible, accent divider from brand.
@@ -471,6 +637,8 @@ export async function renderLocalTypography(
       format,
       layoutFamilyHint: input.layoutFamilyHint,
       templateType: input.templateType,
+      canvaArchetypeId: input.canvaArchetypeId,
+      layoutPattern: input.layoutPattern,
     });
 
     const photoBuf = await fetchReferencePhotoBuffer(input.referencePhotoUrl);
@@ -521,7 +689,12 @@ export async function renderLocalTypography(
       .composite([{ input: overlayPng, top: 0, left: 0 }])
       .jpeg({ quality: 92 })
       .toBuffer();
-    composite = await compositeLogoBadge(composite, input.logoUrl, dims);
+    composite = await compositeLogoBadge(
+      composite,
+      // hero_footer puts brand name in the footer bar — corner logo fights the template look.
+      family === 'hero_footer' ? undefined : input.logoUrl,
+      dims,
+    );
 
     const imageUrl = await persistImageBuffer(composite, input.workspaceId, 'image/jpeg');
     if (!imageUrl) return null;

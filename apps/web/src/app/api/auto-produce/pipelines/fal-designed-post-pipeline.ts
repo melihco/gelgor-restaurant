@@ -456,6 +456,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
         sector: inputs.brandBusinessType,
         occasion: templateBinding.occasion,
         templateType: templateBinding.matched?.templateType,
+        canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
+        layoutPattern: templateBinding.matched?.layoutPattern,
         layoutFamilyHint: inputs.layoutFamilyHint,
         slotRole: inputs.slotRole,
       });

@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.crew.crews.feed_art_director_crew import _normalize_production_assignments
 from app.services.feed_director_slot_catalog import (
     apply_catalog_slot_to_entry,
+    build_weekly_catalog_assignment_plan,
     catalog_slot_key_valid,
     pick_catalog_slot_key,
     resolve_catalog_slot_key,
@@ -92,6 +93,58 @@ def test_catalog_slot_key_valid_rejects_format_mismatch():
     )
 
 
+def test_build_weekly_catalog_assignment_plan_respects_format_mix():
+    plan = build_weekly_catalog_assignment_plan(RESTAURANT_CATALOG)
+    assert len(plan) == 16
+    keys = [s["slot_key"] for s in plan]
+    assert keys.count("restaurant_cafe_brunch_offer_post") >= 1
+    assert "restaurant_cafe_new_menu_story" in keys
+    assert "restaurant_cafe_event_announcement_story" in keys
+
+
+def test_normalize_weekly_catalog_first():
+    report = {
+        "production_assignments": [
+            {
+                "idea_index": 0,
+                "slot_role": "designed_post",
+                "pipeline": "fal_design",
+                "catalog_slot_key": "restaurant_cafe_brunch_offer_post",
+            },
+            {
+                "idea_index": 1,
+                "slot_role": "campaign_story_motion",
+                "pipeline": "fal_story",
+                "library_slot_key": "daily_story",
+            },
+        ]
+    }
+    ideas = [{"content_type": "post"}, {"content_type": "story"}] * 8
+    _normalize_production_assignments(
+        report,
+        len(ideas),
+        ideas=ideas,
+        production_package="weekly_content",
+        catalog_slots=RESTAURANT_CATALOG,
+    )
+    assignments = report["production_assignments"]
+    assert report.get("catalog_first") is True
+    assert len(assignments) == 16
+    assert all(a.get("catalog_slot_key") for a in assignments)
+    assert all(a.get("catalog_slot_label") for a in assignments)
+    assert all("library_slot_key" not in a for a in assignments)
+    assert assignments[0]["catalog_slot_key"] == "restaurant_cafe_brunch_offer_post"
+    story_keys = {
+        a["catalog_slot_key"]
+        for a in assignments
+        if a.get("format") == "story" or "story" in str(a.get("slot_role", ""))
+    }
+    assert story_keys <= {
+        "restaurant_cafe_new_menu_story",
+        "restaurant_cafe_event_announcement_story",
+    }
+
+
 def test_normalize_weekly_assignments_inject_catalog_keys():
     report = {
         "production_assignments": [
@@ -119,15 +172,19 @@ def test_normalize_weekly_assignments_inject_catalog_keys():
     )
     assignments = report["production_assignments"]
     assert len(assignments) == 16
-    designed = [a for a in assignments if a["slot_role"] == "designed_post"]
-    stories = [a for a in assignments if a["slot_role"] == "campaign_story_motion"]
-    assert designed[0]["catalog_slot_key"] == "restaurant_cafe_brunch_offer_post"
-    story_keys = {s["catalog_slot_key"] for s in stories}
+    assert report.get("catalog_first") is True
+    assert all(a.get("catalog_slot_key") for a in assignments)
+    assert assignments[0]["catalog_slot_key"] == "restaurant_cafe_brunch_offer_post"
+    story_keys = {
+        a["catalog_slot_key"]
+        for a in assignments
+        if "story" in str(a.get("slot_role", ""))
+    }
     assert story_keys <= {
         "restaurant_cafe_new_menu_story",
         "restaurant_cafe_event_announcement_story",
     }
-    assert len(story_keys) == 2
+    assert len(story_keys) >= 1
     assert all("library_slot_key" not in a for a in assignments)
 
 

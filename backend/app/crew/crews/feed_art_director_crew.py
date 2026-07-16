@@ -27,7 +27,10 @@ from app.config import get_settings
 from app.crew.agents.feed_art_director_agent import create_feed_art_director_agent
 from app.crew.context import BrandInfo
 from app.crew.tasks.feed_art_director_tasks import create_feed_cohesion_task
-from app.services.feed_director_slot_catalog import apply_catalog_slot_to_entry
+from app.services.feed_director_slot_catalog import (
+    apply_catalog_slot_to_entry,
+    build_weekly_catalog_assignment_plan,
+)
 from app.crew.token_usage import total_tokens_from_crew
 
 logger = structlog.get_logger()
@@ -146,6 +149,81 @@ def _publish_channel_for_role(role: str) -> str:
     return "instagram_organic"
 
 
+def _normalize_weekly_catalog_first(
+    report: dict[str, Any],
+    idea_count: int,
+    production_profile: str | None,
+    ideas: list[dict[str, Any]] | None,
+    catalog_slots: list[dict[str, str]],
+) -> None:
+    """Catalog-first weekly normalize — slot list comes from tenant catalog, not static specs."""
+    raw = report.get("production_assignments")
+    if not isinstance(raw, list):
+        raw = []
+
+    donors_by_key: dict[str, dict[str, Any]] = {}
+    donors_by_idea: dict[int, list[dict[str, Any]]] = {}
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("catalog_slot_key") or "").strip()
+        if key:
+            donors_by_key[key] = item
+        try:
+            idx = int(item.get("idea_index", -1))
+        except (TypeError, ValueError):
+            continue
+        if idx >= 0:
+            donors_by_idea.setdefault(idx, []).append(item)
+
+    effective_ideas = max(idea_count, 1)
+    plan = build_weekly_catalog_assignment_plan(catalog_slots, production_profile)
+    final_assignments: list[dict[str, Any]] = []
+
+    for slot_i, catalog_row in enumerate(plan):
+        slot_key = str(catalog_row.get("slot_key") or "")
+        role = str(catalog_row.get("slot_role") or "fal_designed_post")
+        pipeline = str(catalog_row.get("pipeline") or "fal_design")
+        label = str(catalog_row.get("label_tr") or "").strip()
+        donor = donors_by_key.get(slot_key)
+        if not donor:
+            idea_i = slot_i % effective_ideas
+            pool = donors_by_idea.get(idea_i) or []
+            donor = pool[0] if pool else {}
+        else:
+            try:
+                idea_i = int(donor.get("idea_index", slot_i % effective_ideas))
+            except (TypeError, ValueError):
+                idea_i = slot_i % effective_ideas
+
+        entry: dict[str, Any] = {
+            "idea_index": idea_i,
+            "slot_role": role,
+            "pipeline": pipeline,
+            "catalog_slot_key": slot_key,
+            "copy_bundle_id": str(donor.get("copy_bundle_id") or "mission-week"),
+            "publish_channel": str(donor.get("publish_channel") or _publish_channel_for_role(role)),
+            "rationale": str(donor.get("rationale") or f"catalog_slot_{slot_key}"),
+        }
+        if label:
+            entry["catalog_slot_label"] = label
+        for hint_key in (
+            "visual_subject_hint",
+            "fal_design_hint",
+            "layout_family_hint",
+            "hero_reel_index",
+        ):
+            if donor.get(hint_key) is not None:
+                entry[hint_key] = donor[hint_key]
+        entry.pop("library_slot_key", None)
+        final_assignments.append(entry)
+
+    report["production_assignments"] = final_assignments
+    report["format_distribution"] = _format_distribution_from_assignments(final_assignments)
+    report["manifest_coverage_pct"] = 100 if final_assignments else 0
+    report["catalog_first"] = True
+
+
 def _normalize_production_assignments(
     report: dict[str, Any],
     idea_count: int,
@@ -235,6 +313,16 @@ def _normalize_production_assignments(
             assigned_counts[role] = assigned_counts.get(role, 0) + 1
         filled = sum(min(need, assigned_counts.get(role, 0)) for role, need in required_counts.items())
         report["manifest_coverage_pct"] = int(round(100 * filled / 3))
+        return
+
+    if catalog_slots and pkg != "opportunity":
+        _normalize_weekly_catalog_first(
+            report,
+            idea_count,
+            production_profile,
+            ideas,
+            catalog_slots,
+        )
         return
 
     raw = report.get("production_assignments")

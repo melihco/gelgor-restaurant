@@ -19,6 +19,83 @@ from app.services.slot_catalog_service import (
 # Cap prompt size — FD only needs format/pipeline/role routing hints.
 FD_CATALOG_SLOTS_PROMPT_MAX = 48
 
+WEEKLY_FORMAT_TARGETS_AGENCY: dict[str, int] = {
+    "post": 6,
+    "story": 7,
+    "reel": 2,
+    "carousel": 1,
+}
+WEEKLY_MISSION_SLOT_TOTAL = 16
+
+
+def weekly_format_targets_from_catalog(
+    catalog_slots: list[dict[str, str]],
+    production_profile: str | None = None,
+) -> dict[str, int]:
+    """Cap weekly geometry by what the tenant catalog actually enables."""
+    tier = (production_profile or "").strip().lower()
+    base = dict(WEEKLY_FORMAT_TARGETS_AGENCY)
+    if tier == "economy":
+        base = {"post": 6, "story": 6, "reel": 2, "carousel": 0}
+    available: dict[str, int] = {"post": 0, "story": 0, "reel": 0, "carousel": 0}
+    for slot in catalog_slots:
+        fmt = str(slot.get("format") or "post")
+        if fmt in available:
+            available[fmt] += 1
+    return {fmt: min(base.get(fmt, 0), available.get(fmt, 0)) for fmt in base}
+
+
+def build_weekly_catalog_assignment_plan(
+    catalog_slots: list[dict[str, str]],
+    production_profile: str | None = None,
+    total: int = WEEKLY_MISSION_SLOT_TOTAL,
+) -> list[dict[str, str]]:
+    """Ordered catalog rows for a weekly mission — format mix capped by enabled slots."""
+    if not catalog_slots:
+        return []
+    targets = weekly_format_targets_from_catalog(catalog_slots, production_profile)
+    by_format: dict[str, list[dict[str, str]]] = {}
+    for slot in catalog_slots:
+        fmt = str(slot.get("format") or "post")
+        by_format.setdefault(fmt, []).append(slot)
+    for fmt in by_format:
+        by_format[fmt].sort(key=lambda s: str(s.get("slot_key") or ""))
+
+    plan: list[dict[str, str]] = []
+    used: set[str] = set()
+
+    def take(fmt: str, count: int) -> None:
+        pool = by_format.get(fmt) or []
+        if not pool or count <= 0:
+            return
+        for i in range(count):
+            unused = [s for s in pool if str(s.get("slot_key") or "") not in used]
+            pick_from = unused if unused else pool
+            slot = pick_from[i % len(pick_from)]
+            key = str(slot.get("slot_key") or "")
+            if key:
+                used.add(key)
+            plan.append(slot)
+
+    for fmt, count in targets.items():
+        take(fmt, count)
+
+    guard = 0
+    while len(plan) < total and guard < total * 4:
+        guard += 1
+        remaining = [
+            s for s in catalog_slots if str(s.get("slot_key") or "") not in used
+        ]
+        if remaining:
+            slot = remaining[0]
+            key = str(slot.get("slot_key") or "")
+            if key:
+                used.add(key)
+            plan.append(slot)
+        else:
+            plan.append(catalog_slots[len(plan) % len(catalog_slots)])
+    return plan[:total]
+
 
 def slot_definition_to_fd_dict(slot: Any) -> dict[str, str]:
     return {
@@ -172,5 +249,11 @@ def apply_catalog_slot_to_entry(
     if key:
         entry["catalog_slot_key"] = key
         used_keys.add(key)
+        if catalog_slots:
+            by_key = {str(s.get("slot_key") or ""): s for s in catalog_slots}
+            label = str((by_key.get(key) or {}).get("label_tr") or "").strip()
+            if label:
+                entry["catalog_slot_label"] = label
     else:
         entry.pop("catalog_slot_key", None)
+        entry.pop("catalog_slot_label", None)

@@ -249,6 +249,9 @@ export function parseProductionAssignments(
       catalog_slot_key: (item as ProductionAssignment).catalog_slot_key
         ? String((item as ProductionAssignment).catalog_slot_key)
         : undefined,
+      catalog_slot_label: (item as ProductionAssignment).catalog_slot_label
+        ? String((item as ProductionAssignment).catalog_slot_label)
+        : undefined,
       visual_subject_hint: (item as ProductionAssignment).visual_subject_hint
         ? String((item as ProductionAssignment).visual_subject_hint)
         : undefined,

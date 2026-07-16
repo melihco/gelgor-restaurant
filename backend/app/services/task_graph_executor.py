@@ -538,6 +538,12 @@ async def _execute_node_body(
             "production_package": ctx.get("production_package") or None,
             "production_profile": ctx.get("production_profile") or None,
         }
+        from app.services.feed_director_slot_catalog import load_feed_director_catalog_slots
+
+        async with factory() as db:
+            catalog_slots = await load_feed_director_catalog_slots(db, workspace_id)
+        if catalog_slots:
+            input_data["catalog_slots"] = catalog_slots
         # Fall through to standard execution path (Step 2+)
 
     # ── Step 2: Load brand + inject learning context ───────────────────────────

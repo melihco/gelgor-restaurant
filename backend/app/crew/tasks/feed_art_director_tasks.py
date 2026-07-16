@@ -23,21 +23,47 @@ def _weekly_theme_slug(weekly_theme: str) -> str:
     return slug or "mission-week"
 
 
-def _production_assignment_directive(production_package: str, idea_count: int = 0) -> str:
+def _production_assignment_directive(
+    production_package: str,
+    idea_count: int = 0,
+    catalog_slots: list[dict[str, str]] | None = None,
+) -> str:
     if production_package == "opportunity":
-        return """
+        catalog_note = (
+            "Pick catalog_slot_key from the brand catalog for designed/story/reel slots."
+            if catalog_slots
+            else ""
+        )
+        return f"""
 ### 8. Production assignments (MANDATORY — exactly 3 opportunity slots)
 Return **exactly 3** entries in production_assignments — one per opportunity package slot.
 Reuse idea_index round-robin when fewer than 3 ideas exist. Do NOT assign paid ads or carousel.
+{catalog_note}
 
 Required slot mix (opportunity):
-- exactly 1 designed_post
+- exactly 1 designed_post (catalog_slot_key required when catalog loaded)
 - exactly 1 campaign_story_motion (catalog_slot_key required — story format from brand catalog)
 - exactly 1 organic_reel (set hero_reel_index to that idea_index)
 
 manifest_coverage_pct must be 100 when all 3 slots are assigned.
 """
     n = max(int(idea_count), 1)
+    if catalog_slots:
+        return f"""
+### 8. Production assignments (MANDATORY — catalog-first, {WEEKLY_MANIFEST_SLOT_TOTAL} weekly slots)
+Return **exactly {WEEKLY_MANIFEST_SLOT_TOTAL}** entries in production_assignments.
+
+**Catalog-first rules (mandatory when brand catalog is loaded):**
+1. Pick `catalog_slot_key` ONLY from the brand catalog JSON below — one unique key per slot when alternatives exist.
+2. Set `slot_role` and `pipeline` to **exactly match** the chosen catalog row (do not invent generic fal_only_* roles).
+3. Include `catalog_slot_label` copied from the catalog row's `label_tr`.
+4. Reuse idea_index round-robin across the {n} ideas (same idea may appear on multiple slots).
+5. Do NOT use legacy Remotion names or generic slot names without a catalog key.
+
+Format mix target (cap by enabled catalog): ~6 post · ~7 story · ~2 reel · ~1 carousel.
+
+manifest_coverage_pct must be 100 when all {WEEKLY_MANIFEST_SLOT_TOTAL} slots are assigned.
+"""
     return f"""
 ### 8. Production assignments (MANDATORY — exactly {WEEKLY_MANIFEST_SLOT_TOTAL} weekly slots)
 Return **exactly {WEEKLY_MANIFEST_SLOT_TOTAL}** entries in production_assignments — one per manifest slot, NOT one per idea.
@@ -89,7 +115,11 @@ def create_feed_cohesion_task(
             idea_count = len(parsed)
     except Exception:
         pass
-    slot_directive = _production_assignment_directive(production_package, idea_count)
+    slot_directive = _production_assignment_directive(
+        production_package,
+        idea_count,
+        catalog_slots,
+    )
     catalog_block = format_catalog_slots_for_prompt(catalog_slots)
 
     mission_block = ""
