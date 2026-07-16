@@ -104,7 +104,7 @@ import {
 import {
   collectMissionPreviewArtifacts,
 } from '../MissionFeedPreviewGrid';
-import { filterMissionRenderRetryArtifacts, filterMissionRemotionStoryRetryArtifacts } from '@/lib/mission-render-retry';
+import { filterMissionRenderRetryArtifacts, filterMissionStoryRetryArtifacts } from '@/lib/mission-render-retry';
 import type { OutputArtifact } from '@/types';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { useMissionProgress } from '../../_hooks/use-mission-progress';
@@ -2556,7 +2556,7 @@ function MissionAiCostPanel({
           const fb = summary.feedBreakdown!;
           const buckets: Array<{ label: string; usd: number }> = [
             { label: 'Video (Runway/fal)', usd: fb.runwayUsd },
-            { label: 'Tasarım (fal/Grafiker)', usd: fb.remotionUsd },
+            { label: 'Tasarım (fal/Grafiker)', usd: fb.designUsd },
             { label: 'Görsel/enhance', usd: fb.imageUsd },
             { label: 'Diğer', usd: fb.otherUsd },
           ].filter((b) => b.usd > 0);
@@ -3224,7 +3224,7 @@ function MissionPublishPackageCard({
 
   const failedStoryCount = useMemo(() => {
     if (!missionId) return 0;
-    return filterMissionRemotionStoryRetryArtifacts(previewArtifacts, missionId).length;
+    return filterMissionStoryRetryArtifacts(previewArtifacts, missionId).length;
   }, [previewArtifacts, missionId]);
 
   const failedRenderCount = failedRenderTargets.length;

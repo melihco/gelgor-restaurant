@@ -228,7 +228,7 @@ export async function deriveAdCreativesFromDesignedPost(
 
     let adImageUrl = snapshot.imageUrl;
     let adDedicatedRender = false;
-    let adRenderEngine: 'fal' | 'remotion' | 'reuse' = 'reuse';
+    let adRenderEngine: 'fal' | 'reuse' = 'reuse';
     let falDesignEngine: string | null = null;
     let costUsd = 0.001;
 

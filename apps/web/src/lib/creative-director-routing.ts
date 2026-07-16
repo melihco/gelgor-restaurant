@@ -4,17 +4,17 @@
 import type { ContentIntent } from './brand-motion-profile';
 import type { StoryCompositionId } from '@/lib/story-composition-types';
 import {
-  REMOTION_FAMILY_META,
+  STORY_FAMILY_META,
   listTemplatesByFamily,
   listTemplatesForIntent,
-  getRemotionTemplate,
+  getStoryTemplate,
 } from './story-template-catalog';
-import type { RemotionLayoutFamily, RemotionLayoutSpec } from './remotion-template-types';
+import type { StoryLayoutFamily, StoryLayoutSpec } from './story-template-types';
 import { resolveTemplateId } from './story-template-registry';
 
-export const LAYOUT_FAMILY_IDS = REMOTION_FAMILY_META.map((f) => f.family);
+export const LAYOUT_FAMILY_IDS = STORY_FAMILY_META.map((f) => f.family);
 
-const LEGACY_TO_FAMILY: Partial<Record<StoryCompositionId, RemotionLayoutFamily>> = {
+const LEGACY_TO_FAMILY: Partial<Record<StoryCompositionId, StoryLayoutFamily>> = {
   EditorialStory: 'editorial_bottom',
   MagazineCoverStory: 'magazine_cover',
   LuxurySplitStory: 'split_panel',
@@ -25,23 +25,23 @@ const LEGACY_TO_FAMILY: Partial<Record<StoryCompositionId, RemotionLayoutFamily>
 };
 
 export interface CreativeDirectorLayoutOverrides {
-  duotoneWash?: RemotionLayoutSpec['duotoneWash'];
+  duotoneWash?: StoryLayoutSpec['duotoneWash'];
   duotoneOpacity?: number;
-  vignette?: RemotionLayoutSpec['vignette'];
+  vignette?: StoryLayoutSpec['vignette'];
   heroUppercase?: boolean;
   heroTracking?: number;
   heroScale?: number;
   gradientStart?: number;
   gradientEnd?: number;
-  accentLine?: RemotionLayoutSpec['accentLine'];
-  frame?: RemotionLayoutSpec['frame'];
-  fontPersonality?: RemotionLayoutSpec['fontPersonality'];
+  accentLine?: StoryLayoutSpec['accentLine'];
+  frame?: StoryLayoutSpec['frame'];
+  fontPersonality?: StoryLayoutSpec['fontPersonality'];
   showCtaPill?: boolean;
   frostedCard?: boolean;
 }
 
 export interface CreativeDirectorRoutingInput {
-  layoutFamily?: RemotionLayoutFamily;
+  layoutFamily?: StoryLayoutFamily;
   variantIndex?: number;
   compositionId?: StoryCompositionId;
   currentTemplateId?: string;
@@ -50,7 +50,7 @@ export interface CreativeDirectorRoutingInput {
   galleryPhotoCount?: number;
 }
 
-export function compositionToLayoutFamily(compositionId?: StoryCompositionId): RemotionLayoutFamily | undefined {
+export function compositionToLayoutFamily(compositionId?: StoryCompositionId): StoryLayoutFamily | undefined {
   if (!compositionId) return undefined;
   return LEGACY_TO_FAMILY[compositionId];
 }
@@ -60,7 +60,7 @@ function scoreTemplate(
   intent?: ContentIntent,
   sector?: string,
 ): number {
-  const tpl = getRemotionTemplate(templateId);
+  const tpl = getStoryTemplate(templateId);
   if (!tpl) return 0;
   let score = 0;
   if (intent && tpl.bestFor.includes(intent)) score += 3;
@@ -74,7 +74,7 @@ function scoreTemplate(
 export function resolveTemplateFromDirector(input: CreativeDirectorRoutingInput): string {
   const family = input.layoutFamily
     ?? compositionToLayoutFamily(input.compositionId)
-    ?? getRemotionTemplate(input.currentTemplateId ?? '')?.family;
+    ?? getStoryTemplate(input.currentTemplateId ?? '')?.family;
 
   if (family) {
     const pool = listTemplatesByFamily(family);
@@ -85,7 +85,7 @@ export function resolveTemplateFromDirector(input: CreativeDirectorRoutingInput)
     }
   }
 
-  if (input.currentTemplateId && getRemotionTemplate(input.currentTemplateId)) {
+  if (input.currentTemplateId && getStoryTemplate(input.currentTemplateId)) {
     return input.currentTemplateId;
   }
 
@@ -103,7 +103,7 @@ export function resolveTemplateFromDirector(input: CreativeDirectorRoutingInput)
 }
 
 export function buildFamilyCatalogForPrompt(): string {
-  return REMOTION_FAMILY_META.map((f) =>
+  return STORY_FAMILY_META.map((f) =>
     `${f.family} — ${f.nameEn} (${f.collection}): ${f.descTr} | best: ${f.bestFor.join(', ')}`,
   ).join('\n');
 }

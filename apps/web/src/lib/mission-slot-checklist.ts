@@ -223,7 +223,8 @@ function resolveAiEnhanceFromArtifact(
   const rawSkip = String(meta.ai_enhance_skip_reason ?? '').trim();
   const skipCode = rawSkip as GptEnhanceSkipCode;
   const validCodes: GptEnhanceSkipCode[] = [
-    'disabled', 'format_excluded', 'remotion_story', 'remotion_post', 'gallery_match_ok', 'stock_only',
+    'disabled', 'format_excluded', 'fal_story', 'designed_post', 'designed_grade',
+    'gallery_match_ok', 'stock_only', 'non_venue_saas',
   ];
   const code = validCodes.includes(skipCode) ? skipCode : undefined;
   if (meta.ai_enhance_api_failed) {
@@ -235,7 +236,7 @@ function resolveAiEnhanceFromArtifact(
   }
   return {
     aiEnhanceStatus: 'skipped',
-    aiEnhanceLabel: labelAiEnhanceStatus('skipped', code ?? 'remotion_story', debugMode),
+    aiEnhanceLabel: labelAiEnhanceStatus('skipped', code ?? 'fal_story', debugMode),
     ...(code ? { aiEnhanceSkipCode: code } : {}),
   };
 }

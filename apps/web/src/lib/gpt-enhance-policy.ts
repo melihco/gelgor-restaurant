@@ -1,5 +1,6 @@
 /**
- * Cost-aware GPT image enhance — skip when gallery + Remotion already deliver quality.
+ * Cost-aware GPT image enhance — skip when the gallery photo + designed overlay
+ * (fal/Satori) already deliver quality.
  */
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import { GIS_PILOT_MIN_SCORE, MIN_ACCEPT_SCORE } from '@/lib/gallery-photo-matcher';
@@ -20,15 +21,15 @@ export interface GptEnhancePolicyInput {
   galleryMatchScore: number | null;
   pickedFromBrandGallery: boolean;
   referenceIsStock: boolean;
-  willRemotionStory?: boolean;
-  willRemotionPost?: boolean;
+  willStoryOverlay?: boolean;
+  willDesignedPost?: boolean;
   designedPosterSync?: boolean;
-  /** Photo-quality-only enhance for designed_post background before Remotion overlay. */
+  /** Photo-quality-only enhance for designed_post background before the design overlay. */
   designedPostPhotoEnhance?: boolean;
   /** Faz 1.4 — render-zamanı cinematic grade güçlü galeri fotoğraflarında designed_post
-   * arka-plan enhance'ini gereksiz kılar. Flag (SKIP_ENHANCE_FOR_REMOTION_GRADE) açıkken
+   * arka-plan enhance'ini gereksiz kılar. Flag (SKIP_ENHANCE_FOR_DESIGNED_GRADE) açıkken
    * ve fotoğraf güçlü bir marka-galeri eşleşmesiyse enhance atlanır. */
-  skipEnhanceForRemotionGrade?: boolean;
+  skipEnhanceForDesignedGrade?: boolean;
   productionProfile?: ProductionProfile | null;
 }
 
@@ -38,10 +39,9 @@ export interface GptEnhancePolicyInput {
 export type GptEnhanceSkipCode =
   | 'disabled'
   | 'format_excluded'
-  | 'remotion_story'
   | 'fal_story'
-  | 'remotion_post'
-  | 'remotion_grade'
+  | 'designed_post'
+  | 'designed_grade'
   | 'gallery_match_ok'
   | 'stock_only'
   | 'non_venue_saas';
@@ -52,7 +52,7 @@ export type GptEnhanceSkipCode =
  */
 function canSkipDesignedPostEnhanceForGrade(input: GptEnhancePolicyInput): boolean {
   return Boolean(
-    input.skipEnhanceForRemotionGrade
+    input.skipEnhanceForDesignedGrade
     && input.designedPostPhotoEnhance
     && input.pickedFromBrandGallery
     && !input.referenceIsStock
@@ -84,24 +84,23 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
   if (input.referenceIsStock) return null;
 
   // Faz 1.4 — güçlü galeri fotoğrafında designed_post arka-plan enhance'i atla (flag).
-  if (canSkipDesignedPostEnhanceForGrade(input)) return 'remotion_grade';
+  if (canSkipDesignedPostEnhanceForGrade(input)) return 'designed_grade';
 
   const pipeline = input.assignment.pipeline;
   const role = input.assignment.slot_role;
 
   // designedPostPhotoEnhance: photo-quality-only pass for designed_post background — allow through.
   if (!input.designedPostPhotoEnhance) {
-    if (input.designedPosterSync || input.willRemotionPost) return 'remotion_post';
-    if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return 'remotion_post';
+    if (input.designedPosterSync || input.willDesignedPost) return 'designed_post';
+    if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return 'designed_post';
   }
 
-  // Fal/Remotion story adds headline overlay — skip GPT enhance on story photos (gibberish UI in-image).
+  // Fal/Satori story adds headline overlay — skip GPT enhance on story photos (gibberish UI in-image).
   if (
-    (input.willRemotionStory && pipeline === 'remotion_story')
-    || pipeline === 'fal_story'
+    pipeline === 'fal_story'
     || (role === 'campaign_story_motion' && pipeline !== 'story_still')
   ) {
-    return pipeline === 'fal_story' || role === 'campaign_story_motion' ? 'fal_story' : 'remotion_story';
+    return 'fal_story';
   }
 
   const adaptiveScene = input.visualStandard.adaptiveScene;
@@ -133,7 +132,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
   if (input.businessType && isNonVenueSectorProfile(input.businessType)) {
     return false;
   }
-  // Remotion+Grafiker yolu ham galeri kullanır — enhance Marky kısayolunu tetiklemesin.
+  // Tasarım+Grafiker yolu ham galeri kullanır — enhance Marky kısayolunu tetiklemesin.
   if (input.productionProfile?.requireDesignedVisuals) {
     return false;
   }
@@ -168,15 +167,11 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
   const role = input.assignment.slot_role;
 
   if (!input.designedPostPhotoEnhance) {
-    if (input.designedPosterSync || input.willRemotionPost) return false;
-    if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return false;
+    if (input.designedPosterSync || input.willDesignedPost) return false;
+    if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return false;
   }
 
   const adaptiveScene = input.visualStandard.adaptiveScene;
-
-  if (!adaptiveScene && input.willRemotionStory && pipeline === 'remotion_story') {
-    return false;
-  }
 
   if (!adaptiveScene) {
     if (

@@ -46,14 +46,14 @@ export function isGalleryOnlyVisualPolicy(
   return false;
 }
 
-/** Multi-photo story slideshow (Remotion GallerySeries sequence). */
+/** Multi-photo story slideshow (gallery-series sequence). */
 export function prefersGallerySequenceStory(
   assignment: ProductionAssignment,
   idea: Record<string, unknown>,
   photoCount: number,
 ): boolean {
   if (photoCount < 2) return false;
-  if (assignment.pipeline === 'fal_story' || assignment.pipeline === 'remotion_story') return false;
+  if (assignment.pipeline === 'fal_story') return false;
   if (assignment.slot_role === 'campaign_story_motion') return false;
   if (normalizeUseCase(idea) === 'social_proof' && photoCount >= 2) return true;
   return photoCount >= 3;
@@ -65,7 +65,7 @@ export function gallerySequencePhotoTarget(
   contentKind: string,
 ): number {
   if (assignment.pipeline === 'carousel_gallery' || contentKind === 'instagram_carousel') return 4;
-  if (assignment.pipeline === 'fal_story' || assignment.pipeline === 'remotion_story') return 1;
+  if (assignment.pipeline === 'fal_story') return 1;
   return 3;
 }
 

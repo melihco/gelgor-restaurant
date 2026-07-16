@@ -1,12 +1,11 @@
 /**
  * POST /api/production-bundle/reconcile-stale
- * Marks stuck `rendering` bundles as ready when a gallery still exists (Remotion timeout / no R2).
+ * Marks stuck `rendering` bundles as ready when a gallery still exists (render timeout / no R2).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { assertWorkspaceMatchesRequestTenant } from '@/lib/tenant-production-guard';
 import {
   isBundleStaleRendering,
-  expectsRemotionStoryVideo,
   resolveGalleryPhotoForRender,
   resolvePosterUrl,
 } from '@/lib/production-bundle';
@@ -100,7 +99,6 @@ export async function POST(req: NextRequest) {
     } as unknown as import('@/types').OutputArtifact;
 
     if (!isBundleStaleRendering(stub)) continue;
-    if (expectsRemotionStoryVideo(stub)) continue;
     candidates += 1;
     if (candidates > 5) break;
 

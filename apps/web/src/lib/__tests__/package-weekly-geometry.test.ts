@@ -12,7 +12,7 @@ import {
 } from '@/lib/mission-production-manifest';
 
 describe('package-weekly-geometry', () => {
-  it('resolves Starter 4+3+1+4', () => {
+  it('resolves Starter 4+6+1+1', () => {
     expect(resolveWeeklyPackageGeometry('starter')).toEqual(STARTER_WEEKLY_PACKAGE_COUNTS);
     expect(resolveWeeklyPackageGeometry('studio')).toEqual(STARTER_WEEKLY_PACKAGE_COUNTS);
   });
@@ -41,9 +41,9 @@ describe('buildMissionProductionManifest plan geometry', () => {
     const organic = manifest.slots.filter((s) => s.role !== 'paid_ad_creative' && s.role !== 'paid_ad_google_creative');
     expect(organic).toHaveLength(12);
     expect(organic.filter((s) => s.format === 'post')).toHaveLength(4);
-    expect(organic.filter((s) => s.format === 'story')).toHaveLength(3);
+    expect(organic.filter((s) => s.format === 'story')).toHaveLength(6);
     expect(organic.filter((s) => s.format === 'carousel')).toHaveLength(1);
-    expect(organic.filter((s) => s.format === 'reel')).toHaveLength(4);
+    expect(organic.filter((s) => s.format === 'reel')).toHaveLength(1);
     expect(organic.some((s) => s.role.startsWith('product_showcase'))).toBe(false);
   });
 

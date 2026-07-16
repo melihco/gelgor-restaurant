@@ -8,15 +8,15 @@ import {
   AGENCY_BRAND_KITS,
   getBrandKit,
 } from './agency-brand-kits';
-import type { AgencyBrandKit } from './remotion-template-types';
+import type { AgencyBrandKit } from './story-template-types';
 import {
   LEGACY_COMPOSITION_TEMPLATE,
-  REMOTION_TEMPLATE_CATALOG,
-  REMOTION_TEMPLATE_BY_ID,
-  getRemotionTemplate,
+  STORY_TEMPLATE_CATALOG,
+  STORY_TEMPLATE_BY_ID,
+  getStoryTemplate,
   listTemplatesForIntent,
 } from './story-template-catalog';
-import type { RemotionShowcaseJob, RemotionTemplateDefinition } from './remotion-template-types';
+import type { StoryShowcaseJob, StoryTemplateDefinition } from './story-template-types';
 import { resolveKitSectorForVibe } from './sector-template-vibes';
 
 const SHOWCASE_PHOTOS = [
@@ -89,11 +89,11 @@ export function resolveTemplateId(input: {
   kitId?: string;
   seed?: number;
 }): string {
-  if (input.templateId && REMOTION_TEMPLATE_BY_ID.has(input.templateId)) {
+  if (input.templateId && STORY_TEMPLATE_BY_ID.has(input.templateId)) {
     return input.templateId;
   }
   if (input.compositionId) {
-    const familyTemplates = REMOTION_TEMPLATE_CATALOG.filter(
+    const familyTemplates = STORY_TEMPLATE_CATALOG.filter(
       (t) => t.legacyComposition === input.compositionId,
     );
     if (familyTemplates.length) {
@@ -112,16 +112,16 @@ export function resolveTemplateId(input: {
     const matches = listTemplatesForIntent(input.intent);
     if (matches.length) return matches[(input.seed ?? 0) % matches.length]!.id;
   }
-  return REMOTION_TEMPLATE_CATALOG[0]!.id;
+  return STORY_TEMPLATE_CATALOG[0]!.id;
 }
 
 export function resolveLegacyComposition(templateId: string): StoryCompositionId {
-  return getRemotionTemplate(templateId)?.legacyComposition ?? 'EditorialStory';
+  return getStoryTemplate(templateId)?.legacyComposition ?? 'EditorialStory';
 }
 
-export function buildShowcaseJobs(limit = 100): RemotionShowcaseJob[] {
-  const jobs: RemotionShowcaseJob[] = [];
-  const templates = REMOTION_TEMPLATE_CATALOG.slice(0, limit);
+export function buildShowcaseJobs(limit = 100): StoryShowcaseJob[] {
+  const jobs: StoryShowcaseJob[] = [];
+  const templates = STORY_TEMPLATE_CATALOG.slice(0, limit);
 
   for (let i = 0; i < templates.length; i++) {
     const template = templates[i]!;
@@ -143,7 +143,7 @@ export function buildShowcaseJobs(limit = 100): RemotionShowcaseJob[] {
   return jobs;
 }
 
-export function getTemplateEvaluation(template: RemotionTemplateDefinition) {
+export function getTemplateEvaluation(template: StoryTemplateDefinition) {
   const s = template.spec;
   return {
     font: {
@@ -179,10 +179,10 @@ export function getTemplateEvaluation(template: RemotionTemplateDefinition) {
 
 export function listRegistrySummary() {
   return {
-    templateCount: REMOTION_TEMPLATE_CATALOG.length,
+    templateCount: STORY_TEMPLATE_CATALOG.length,
     kitCount: AGENCY_BRAND_KITS.length,
-    families: [...new Set(REMOTION_TEMPLATE_CATALOG.map((t) => t.family))].length,
-    collections: [...new Set(REMOTION_TEMPLATE_CATALOG.map((t) => t.collection))],
+    families: [...new Set(STORY_TEMPLATE_CATALOG.map((t) => t.family))].length,
+    collections: [...new Set(STORY_TEMPLATE_CATALOG.map((t) => t.collection))],
   };
 }
 
@@ -285,4 +285,4 @@ export function kitMatchesSector(kitId: string | undefined | null, sector: strin
   return candidates.some((k) => k.sector === kit.sector);
 }
 
-export { AGENCY_BRAND_KITS, REMOTION_TEMPLATE_CATALOG, getRemotionTemplate, getBrandKit };
+export { AGENCY_BRAND_KITS, STORY_TEMPLATE_CATALOG, getStoryTemplate, getBrandKit };

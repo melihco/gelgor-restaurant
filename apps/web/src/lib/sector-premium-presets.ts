@@ -11,7 +11,7 @@
  * All constants are typed so future sectors can be added without breaking callers.
  */
 
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { StoryLayoutFamily } from './story-template-types';
 import type { StorySequenceRole } from './story-sequence-rules';
 
 // ─── Motion lanes ─────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ export interface SectorPremiumPreset {
   /** Override motion lane per sequence role */
   motionLaneByRole?: Partial<Record<StorySequenceRole, MotionLane>>;
   /** Preferred layout families per sequence role (ordered by preference) */
-  layoutsByRole: Record<StorySequenceRole, RemotionLayoutFamily[]>;
+  layoutsByRole: Record<StorySequenceRole, StoryLayoutFamily[]>;
   /** Logo restraint policy */
   logoRestraint: LogoRestraint;
   /** Asset-role routing preferences */
@@ -341,7 +341,7 @@ export function resolveMotionLane(sector: string | undefined, role?: StorySequen
 export function resolveSectorLayoutHints(
   sector: string | undefined,
   role: StorySequenceRole,
-): RemotionLayoutFamily[] {
+): StoryLayoutFamily[] {
   return resolveSectorPreset(sector).layoutsByRole[role];
 }
 

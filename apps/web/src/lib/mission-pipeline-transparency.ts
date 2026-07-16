@@ -132,8 +132,7 @@ export function isMissionProducedArtifact(artifact: OutputArtifact): boolean {
     || meta.production_bundle === true
     || meta.production_role != null
     || meta.ad_creative === true
-    || meta.source === 'auto-produce'
-    || meta.source === 'remotion';
+    || meta.source === 'auto-produce';
 }
 
 /** Mission-scoped auto-produce outputs (includes rendering bundles). */

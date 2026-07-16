@@ -6,7 +6,7 @@
 import type { ContentIntent } from './brand-motion-profile';
 import type { StoryCompositionId } from './story-composition-types';
 
-export type RemotionLayoutFamily =
+export type StoryLayoutFamily =
   | 'editorial_bottom'
   | 'editorial_left'
   | 'split_panel'
@@ -33,7 +33,7 @@ export type RemotionLayoutFamily =
   | 'glassmorphism_showcase'
   | 'editorial_product_stage';
 
-export type RemotionTextZone =
+export type StoryTextZone =
   | 'bottom_left'
   | 'bottom_center'
   | 'bottom_right'
@@ -41,11 +41,11 @@ export type RemotionTextZone =
   | 'top_center'
   | 'split_panel';
 
-export type RemotionAccentLine = 'none' | 'above' | 'left_bar' | 'both' | 'underline';
+export type StoryAccentLine = 'none' | 'above' | 'left_bar' | 'both' | 'underline';
 
-export type RemotionFrameStyle = 'none' | 'thin' | 'double' | 'inset';
+export type StoryFrameStyle = 'none' | 'thin' | 'double' | 'inset';
 
-export type RemotionCollection =
+export type StoryCollection =
   | 'Luxury'
   | 'Editorial'
   | 'Magazine'
@@ -86,9 +86,9 @@ export interface TemplateColorPolicy {
 }
 
 /** Parametric layout knobs — consumed by StoryLayoutEngine */
-export interface RemotionLayoutSpec {
-  family: RemotionLayoutFamily;
-  collection: RemotionCollection;
+export interface StoryLayoutSpec {
+  family: StoryLayoutFamily;
+  collection: StoryCollection;
 
   // ── Font ──────────────────────────────────────────────────────
   fontPersonality: FontPersonality;
@@ -114,11 +114,11 @@ export interface RemotionLayoutSpec {
   duotoneOpacity: number;
 
   // ── Design / layout ───────────────────────────────────────────
-  textZone: RemotionTextZone;
+  textZone: StoryTextZone;
   align: 'left' | 'center' | 'right';
-  accentLine: RemotionAccentLine;
+  accentLine: StoryAccentLine;
   accentLineWidth: number;
-  frame: RemotionFrameStyle;
+  frame: StoryFrameStyle;
   frostedCard: boolean;
   frostedY: number;
   sideBar: 'none' | 'left' | 'right';
@@ -133,10 +133,10 @@ export interface RemotionLayoutSpec {
   colorPolicy?: TemplateColorPolicy;
 }
 
-export interface RemotionTemplateDefinition {
+export interface StoryTemplateDefinition {
   id: string;
-  family: RemotionLayoutFamily;
-  collection: RemotionCollection;
+  family: StoryLayoutFamily;
+  collection: StoryCollection;
   variantIndex: number;
   nameTr: string;
   nameEn: string;
@@ -145,7 +145,7 @@ export interface RemotionTemplateDefinition {
   bestFor: ContentIntent[];
   /** Legacy composition fallback for routing */
   legacyComposition: StoryCompositionId;
-  spec: RemotionLayoutSpec;
+  spec: StoryLayoutSpec;
   /** Recommended brand kit sectors */
   sectors: string[];
   status: 'active' | 'beta' | 'deprecated';
@@ -169,7 +169,7 @@ export interface AgencyBrandKit {
   showcaseCategory: string;
 }
 
-export interface RemotionShowcaseJob {
+export interface StoryShowcaseJob {
   templateId: string;
   kitId: string;
   headline: string;

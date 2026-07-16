@@ -8,25 +8,23 @@ export type AiEnhanceUiStatus = 'applied' | 'skipped' | 'off' | 'failed';
 const SKIP_LABEL_PROD: Record<GptEnhanceSkipCode, string> = {
   disabled: 'Kapalı',
   format_excluded: 'Bu format için uygulanmıyor',
-  remotion_story: 'Tasarımlı story (fal.ai) kullanıldı',
   fal_story: 'fal.ai story poster tasarımı kullanıldı',
-  remotion_post: 'Tasarımlı post kullanıldı',
+  designed_post: 'Tasarımlı post kullanıldı',
   gallery_match_ok: 'Galeri yeterli — atlandı',
   stock_only: 'Stok görsel',
   non_venue_saas: 'Mekan dışı işletme — atlandı',
-  remotion_grade: 'Tasarım katmanı uygulandı — atlandı',
+  designed_grade: 'Tasarım katmanı uygulandı — atlandı',
 };
 
 const SKIP_LABEL_DEBUG: Record<GptEnhanceSkipCode, string> = {
   disabled: 'ai_photo_enhance kapalı',
   format_excluded: 'Format filtresi (ai_enhance_formats)',
-  remotion_story: 'Policy: designed_story',
   fal_story: 'Policy: fal_story',
-  remotion_post: 'Policy: designed_post',
+  designed_post: 'Policy: designed_post',
   gallery_match_ok: 'Policy: galeri skoru yeterli',
   stock_only: 'Stok galeri',
   non_venue_saas: 'Policy: non_venue_saas (sektör venue dışı)',
-  remotion_grade: 'Policy: designed_grade (render-time grade)',
+  designed_grade: 'Policy: designed_grade (render-time grade)',
 };
 
 export function labelAiEnhanceSkip(

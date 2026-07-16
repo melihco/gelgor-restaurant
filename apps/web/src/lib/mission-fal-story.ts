@@ -14,7 +14,7 @@ export function missionTemplateIdeaIndex(missionId: string): number {
   return Math.abs(h);
 }
 
-/** Weekly mission: campaign story slots use Fal.ai poster (not Remotion MP4). */
+/** Weekly mission: campaign story slots use the Fal.ai poster track. */
 export function isFalStorySlot(_storyIndex: number): boolean {
   return true;
 }

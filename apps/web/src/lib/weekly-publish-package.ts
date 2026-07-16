@@ -213,7 +213,7 @@ function isHttpMediaUrl(url: string): boolean {
   return isPublishableMediaUrl(url);
 }
 
-/** Mission Hub auto-produce / Remotion bundle (source may become "remotion" after attach-video). */
+/** Mission Hub auto-produce bundle artifact. */
 function isMissionProductionArtifact(
   meta: Record<string, unknown>,
   content: Record<string, unknown>,
@@ -227,31 +227,29 @@ function isMissionProductionArtifact(
     || meta.production_bundle
     || meta.production_role
     || meta.source === 'auto-produce'
-    || meta.source === 'remotion'
     || content.source === 'auto-produce'
-    || content.source === 'remotion'
     || content.production_bundle,
   );
 }
 
-/** Remotion / designed slots — gallery still alone is not a finished deliverable. */
+/** Designed slots — gallery still alone is not a finished deliverable. */
 export function isPremiumMotionOrDesignedPipeline(
   pipeline: string,
   role: string,
 ): boolean {
   const p = pipeline.trim().toLowerCase();
   const r = role.trim().toLowerCase();
-  if (p === 'remotion_story' || p === 'remotion_poster' || p === 'fal_design') return true;
+  if (p === 'fal_design') return true;
   if (r === 'designed_post' || r === 'designed_typography' || r === 'fal_designed_post') return true;
   if (r.includes('story_motion') || r.includes('campaign_story')) return true;
   return false;
 }
 
-/** Remotion MP4 story — may show poster in Feed while render queue runs or after failure. */
-export function isRemotionStoryPipeline(pipeline: string, role: string): boolean {
+/** Designed story — may show poster in Feed while production runs or after failure. */
+export function isDesignedStoryPipeline(pipeline: string, role: string): boolean {
   const p = pipeline.trim().toLowerCase();
   const r = role.trim().toLowerCase();
-  return p === 'remotion_story' || r.includes('story_motion') || r.includes('campaign_story');
+  return p === 'fal_story' || r.includes('story_motion') || r.includes('campaign_story');
 }
 
 function storyPreviewStillReady(
@@ -342,7 +340,7 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   }
 
   if (bundleStatus === 'rendering' || isBundleRendering(artifact)) {
-    if (isRemotionStoryPipeline(pipeline, role)) {
+    if (isDesignedStoryPipeline(pipeline, role)) {
       return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
     }
     if (premiumPipeline) return hasPreviewStill;
@@ -350,7 +348,7 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   }
 
   if (isBundleFailed(artifact)) {
-    if (isRemotionStoryPipeline(pipeline, role)) {
+    if (isDesignedStoryPipeline(pipeline, role)) {
       return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
     }
     if (premiumPipeline) return storyPreviewStillReady(artifact, posterUrl, contentUrl, isVideoUrl);
@@ -370,12 +368,10 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   }
 
   if (fmt === 'story') {
-    const storyPipeline = String(meta.pipeline ?? content.pipeline ?? '').trim();
     if (videoUrl && isHttpMediaUrl(videoUrl)) return true;
     if (
       missionProduction
       || isProductionBundle(artifact)
-      || storyPipeline === 'remotion_story'
       || isProductionBundleStory(artifact)
     ) {
       if (bundleStatus === 'ready') return Boolean(videoUrl && isHttpMediaUrl(videoUrl));
@@ -413,7 +409,7 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
     const poster = resolvePosterUrl(artifact);
     const contentUrl = String(artifact.contentUrl ?? '').trim();
     const isVideoUrl = /\.(mp4|mov|webm)(\?|$)/i.test(contentUrl);
-    if (isRemotionStoryPipeline(pipeline, role)) {
+    if (isDesignedStoryPipeline(pipeline, role)) {
       return storyPreviewStillReady(artifact, poster, contentUrl, isVideoUrl);
     }
     if (isPremiumMotionOrDesignedPipeline(pipeline, role)) return false;
@@ -432,8 +428,7 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
   }
 
   if (
-    pipeline === 'remotion_story'
-    || role.includes('story_motion')
+    role.includes('story_motion')
     || role.includes('campaign_story')
   ) {
     const videoUrl = resolveStoryVideoUrl(artifact);
@@ -447,7 +442,7 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
     return false;
   }
 
-  if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') {
+  if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') {
     if (status === 'failed') return false;
     if (meta.grafiker_pass === false) return false;
     if (status !== 'ready') {

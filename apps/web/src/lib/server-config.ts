@@ -245,8 +245,11 @@ export const serverConfig = {
     get storyTypographyEnabled(): boolean {
       return readEnv('STORY_TYPOGRAPHY_ENABLED') !== 'false';
     },
-    get skipEnhanceForRemotionGrade(): boolean {
-      return readEnv('SKIP_ENHANCE_FOR_REMOTION_GRADE') === 'true';
+    /** Skip designed_post background enhance when render-time grade covers it. */
+    get skipEnhanceForDesignedGrade(): boolean {
+      return readEnv('SKIP_ENHANCE_FOR_DESIGNED_GRADE') === 'true'
+        // Legacy env name — remove after Render env vars are migrated.
+        || readEnv('SKIP_ENHANCE_FOR_REMOTION_GRADE') === 'true';
     },
     get carouselHeroEnhanceOnly(): boolean {
       return readEnv('CAROUSEL_HERO_ENHANCE_ONLY') === 'true';

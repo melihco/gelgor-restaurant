@@ -11,41 +11,36 @@ export type FdFallbackPolicy = 'block' | 'allow_warn';
 
 export interface ProductionProfile {
   tier: ProductionProfileTier;
-  remotionStoryMotionSlots: number;
-  remotionStoryStillSlots: number;
+  campaignStoryMotionSlots: number;
+  campaignStoryStillSlots: number;
   grafikerMaxRetries: number;
   fdFallbackPolicy: FdFallbackPolicy;
   skipAggressiveEnhance: boolean;
-  /** @deprecated Reels never use Remotion — kept for profile shape compatibility. */
-  reelRemotionMotionFallback: boolean;
   /** Agency+Premium: Marky kapalı — post/story fal designed + Grafiker zorunlu (reel değil). */
   requireDesignedVisuals: boolean;
 }
 
 const TIER_DEFAULTS: Record<ProductionProfileTier, Omit<ProductionProfile, 'tier' | 'requireDesignedVisuals'>> = {
   economy: {
-    remotionStoryMotionSlots: 2,
-    remotionStoryStillSlots: 1,
+    campaignStoryMotionSlots: 2,
+    campaignStoryStillSlots: 1,
     grafikerMaxRetries: 0,
     fdFallbackPolicy: 'block',
     skipAggressiveEnhance: true,
-    reelRemotionMotionFallback: false,
   },
   agency: {
-    remotionStoryMotionSlots: 3,
-    remotionStoryStillSlots: 0,
+    campaignStoryMotionSlots: 3,
+    campaignStoryStillSlots: 0,
     grafikerMaxRetries: 1,
     fdFallbackPolicy: 'allow_warn',
     skipAggressiveEnhance: false,
-    reelRemotionMotionFallback: false,
   },
   premium: {
-    remotionStoryMotionSlots: 3,
-    remotionStoryStillSlots: 0,
+    campaignStoryMotionSlots: 3,
+    campaignStoryStillSlots: 0,
     grafikerMaxRetries: 2,
     fdFallbackPolicy: 'allow_warn',
     skipAggressiveEnhance: false,
-    reelRemotionMotionFallback: false,
   },
 };
 
@@ -95,7 +90,6 @@ export function resolveProductionProfile(input: {
   return {
     tier,
     ...defaults,
-    reelRemotionMotionFallback: false,
     requireDesignedVisuals: tier === 'agency' || tier === 'premium',
   };
 }

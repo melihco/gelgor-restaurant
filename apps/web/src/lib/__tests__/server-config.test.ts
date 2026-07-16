@@ -41,6 +41,7 @@ const TOUCHED = [
   'AD_REUSE_DESIGNED_POST_STILL',
   'STORY_MOTION_PLATES_ENABLED',
   'STORY_TYPOGRAPHY_ENABLED',
+  'SKIP_ENHANCE_FOR_DESIGNED_GRADE',
   'SKIP_ENHANCE_FOR_REMOTION_GRADE',
   'CAROUSEL_HERO_ENHANCE_ONLY',
   'VIDEO_TIER_SCOPE',
@@ -278,7 +279,7 @@ describe('serverConfig', () => {
     it('story flags default on, enhance flags default off', () => {
       expect(serverConfig.productionFlags.storyMotionPlatesEnabled).toBe(true);
       expect(serverConfig.productionFlags.storyTypographyEnabled).toBe(true);
-      expect(serverConfig.productionFlags.skipEnhanceForRemotionGrade).toBe(false);
+      expect(serverConfig.productionFlags.skipEnhanceForDesignedGrade).toBe(false);
       expect(serverConfig.productionFlags.carouselHeroEnhanceOnly).toBe(false);
       expect(serverConfig.productionFlags.videoTierScope).toBe(false);
     });

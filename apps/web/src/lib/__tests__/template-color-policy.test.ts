@@ -36,7 +36,7 @@ describe('resolveTemplateColorProps', () => {
   it('keeps editorial story headlines on text color by default', () => {
     expect(
       resolveTemplateColorProps({
-        templateId: 'remotion_editorial_bottom_01',
+        templateId: 'story_editorial_bottom_01',
         tokens: TOKENS,
       }),
     ).toMatchObject({
@@ -49,7 +49,7 @@ describe('resolveTemplateColorProps', () => {
   it('lets bold story templates shift headline to accent', () => {
     expect(
       resolveTemplateColorProps({
-        templateId: 'remotion_campaign_hero_01',
+        templateId: 'story_campaign_hero_01',
         tokens: TOKENS,
       }),
     ).toMatchObject({
@@ -77,7 +77,7 @@ describe('applyBrandTokensToRenderProps', () => {
   it('injects template-driven colors without overriding explicit props', () => {
     const result = applyBrandTokensToRenderProps(
       {
-        templateId: 'remotion_campaign_hero_01',
+        templateId: 'story_campaign_hero_01',
         headline: 'Launch',
         photoUrl: 'https://example.com/photo.jpg',
         headlineColor: '#ff00ff',
@@ -97,7 +97,7 @@ describe('applyBrandTokensToRenderProps', () => {
 describe('buildTemplateColorPreview', () => {
   it('builds a readable summary for story templates', () => {
     const preview = buildTemplateColorPreview({
-      templateId: 'remotion_campaign_hero_01',
+      templateId: 'story_campaign_hero_01',
       tokens: TOKENS,
     });
 

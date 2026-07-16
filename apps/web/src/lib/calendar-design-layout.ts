@@ -11,7 +11,7 @@ import {
 } from '@/lib/canva-archetype-catalog';
 import type { FalDesignChannel } from '@/lib/fal-design-intensity';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
-import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
+import type { StoryLayoutFamily } from '@/lib/story-template-types';
 
 /** Calendar / ideation field — maps 1:1 to Canva archetype ids. */
 export type CalendarDesignLayoutFamily = CanvaArchetypeId;
@@ -60,7 +60,7 @@ const SECTOR_CALENDAR_LAYOUT_OVERRIDES: Record<
 };
 
 /** Canva archetype → Remotion layout_family_hint for production-stack diversity. */
-export const CANVA_TO_REMOTION_LAYOUT: Partial<Record<CanvaArchetypeId, RemotionLayoutFamily>> = {
+export const CANVA_TO_REMOTION_LAYOUT: Partial<Record<CanvaArchetypeId, StoryLayoutFamily>> = {
   cinematic_full_bleed: 'cinematic_center',
   product_hero_card: 'editorial_product_stage',
   split_feature_panel: 'split_panel',
@@ -93,9 +93,9 @@ export function isKnownCalendarDesignLayoutFamily(value: unknown): value is Cale
   return typeof value === 'string' && Boolean(getCanvaArchetype(value));
 }
 
-export function remotionLayoutHintForCanvaArchetype(
+export function storyLayoutHintForCanvaArchetype(
   archetypeId: CanvaArchetypeId,
-): RemotionLayoutFamily {
+): StoryLayoutFamily {
   return CANVA_TO_REMOTION_LAYOUT[archetypeId] ?? 'split_panel';
 }
 
@@ -125,7 +125,7 @@ export function resolveCalendarDesignLayout(input: {
   explicitLayoutFamily?: string | null;
 }): {
   canvaArchetypeId: CanvaArchetypeId;
-  layoutFamilyHint: RemotionLayoutFamily;
+  layoutFamilyHint: StoryLayoutFamily;
   source: string;
 } {
   const channel = normalizeLayoutChannel(input.channel);
@@ -134,7 +134,7 @@ export function resolveCalendarDesignLayout(input: {
     const archetype = explicit as CanvaArchetypeId;
     return {
       canvaArchetypeId: archetype,
-      layoutFamilyHint: remotionLayoutHintForCanvaArchetype(archetype),
+      layoutFamilyHint: storyLayoutHintForCanvaArchetype(archetype),
       source: 'calendar:design_layout_family',
     };
   }
@@ -146,7 +146,7 @@ export function resolveCalendarDesignLayout(input: {
     const sectorSpecific = SECTOR_CALENDAR_LAYOUT_OVERRIDES[sectorKey]?.[key]?.[channel];
     return {
       canvaArchetypeId: fromMatrix,
-      layoutFamilyHint: remotionLayoutHintForCanvaArchetype(fromMatrix),
+      layoutFamilyHint: storyLayoutHintForCanvaArchetype(fromMatrix),
       source: sectorSpecific
         ? `sector_matrix:${sectorKey}:${key}`
         : `announcement_matrix:${key}`,
@@ -156,7 +156,7 @@ export function resolveCalendarDesignLayout(input: {
   const fallback: CanvaArchetypeId = 'split_feature_panel';
   return {
     canvaArchetypeId: fallback,
-    layoutFamilyHint: remotionLayoutHintForCanvaArchetype(fallback),
+    layoutFamilyHint: storyLayoutHintForCanvaArchetype(fallback),
     source: 'default_split_feature_panel',
   };
 }

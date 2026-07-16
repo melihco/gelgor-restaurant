@@ -19,8 +19,8 @@ function hasDeliverableStill(artifact: OutputArtifact): boolean {
   return Boolean(resolveBrandedPostUrl(artifact) || resolvePosterUrl(artifact));
 }
 
-/** Legacy remotion_story / fal_story — poster is the final deliverable (no MP4). */
-export function missionRemotionStoryNeedsRetry(artifact: OutputArtifact): boolean {
+/** fal_story poster slot — poster is the final deliverable (no MP4). */
+export function missionStoryPosterNeedsRetry(artifact: OutputArtifact): boolean {
   if (resolveStoryVideoUrl(artifact)) return false;
   if (hasDeliverableStill(artifact)) return false;
 
@@ -39,7 +39,7 @@ export function missionRemotionStoryNeedsRetry(artifact: OutputArtifact): boolea
 }
 
 export function missionArtifactNeedsRenderRetry(artifact: OutputArtifact): boolean {
-  if (missionRemotionStoryNeedsRetry(artifact)) return true;
+  if (missionStoryPosterNeedsRetry(artifact)) return true;
 
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const content = parseArtifactContent(artifact.content);
@@ -77,12 +77,12 @@ export function filterMissionRenderRetryArtifacts(
   });
 }
 
-export function filterMissionRemotionStoryRetryArtifacts(
+export function filterMissionStoryRetryArtifacts(
   artifacts: OutputArtifact[],
   missionId: string,
 ): OutputArtifact[] {
   return artifacts.filter((a) => {
     if (parseArtifactMissionId(a) !== missionId) return false;
-    return missionRemotionStoryNeedsRetry(a);
+    return missionStoryPosterNeedsRetry(a);
   });
 }

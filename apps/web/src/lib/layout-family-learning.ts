@@ -1,7 +1,7 @@
 /**
  * APO-8 — Reddedilen tasarım postlarından layout family rotasyonu.
  */
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { StoryLayoutFamily } from './story-template-types';
 import { LAYOUT_FAMILY_IDS } from './creative-director-routing';
 
 function parseJsonRecord(raw: unknown): Record<string, unknown> {
@@ -24,36 +24,35 @@ function isRejectedArtifact(artifact: Record<string, unknown>): boolean {
   return review === '2' || review === 'rejected' || review === '3' || review.includes('revision');
 }
 
-function layoutFamilyFromArtifact(artifact: Record<string, unknown>): RemotionLayoutFamily | null {
+function layoutFamilyFromArtifact(artifact: Record<string, unknown>): StoryLayoutFamily | null {
   const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
   const trace = parseJsonRecord(meta.creative_trace);
   const raw = String(
     meta.layout_family_hint
     ?? trace.layout_family_hint
-    ?? meta.remotion_layout_family
     ?? '',
   ).trim();
-  if (LAYOUT_FAMILY_IDS.includes(raw as RemotionLayoutFamily)) {
-    return raw as RemotionLayoutFamily;
+  if (LAYOUT_FAMILY_IDS.includes(raw as StoryLayoutFamily)) {
+    return raw as StoryLayoutFamily;
   }
   return null;
 }
 
-/** Son reddedilen designed/remotion artifact'lardan kaçınılmaması gereken layout'lar. */
+/** Son reddedilen designed artifact'lardan kaçınılması gereken layout'lar. */
 export function collectRejectedLayoutFamilies(
   artifacts: Record<string, unknown>[],
   opts?: { maxAgeDays?: number },
-): RemotionLayoutFamily[] {
+): StoryLayoutFamily[] {
   const maxAgeMs = (opts?.maxAgeDays ?? 45) * 86_400_000;
   const cutoff = Date.now() - maxAgeMs;
-  const blocked = new Set<RemotionLayoutFamily>();
+  const blocked = new Set<StoryLayoutFamily>();
 
   for (const artifact of artifacts) {
     if (!isRejectedArtifact(artifact)) continue;
     const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
     const role = String(meta.production_role ?? '');
     const pipeline = String(meta.pipeline ?? '');
-    const designed = role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'remotion_poster' || pipeline === 'fal_design' || meta.ad_creative === true;
+    const designed = role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'fal_design' || meta.ad_creative === true;
     if (!designed) continue;
 
     const created = String(artifact.createdAt ?? artifact.CreatedAt ?? '');
@@ -73,7 +72,7 @@ export async function fetchRejectedLayoutFamilies(
   workspaceId: string,
   nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
   internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
-): Promise<RemotionLayoutFamily[]> {
+): Promise<StoryLayoutFamily[]> {
   try {
     const res = await fetch(`${nexusApi}/api/artifacts?limit=120`, {
       headers: {

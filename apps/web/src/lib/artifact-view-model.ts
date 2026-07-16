@@ -57,7 +57,7 @@ function readRecord(value: unknown): Record<string, unknown> {
 
 /**
  * Canonical Feed kind — parity with legacy PlatformFeed.detectKind.
- * Story is checked before reel so Remotion stories with MP4 are not mislabeled.
+ * Story is checked before reel so video stories with MP4 are not mislabeled.
  */
 export function detectFeedArtifactKind(artifact: OutputArtifact): FeedArtifactKind {
   if (isPaidAdArtifact(artifact)) return 'ad';
@@ -122,7 +122,7 @@ export function detectFeedArtifactKind(artifact: OutputArtifact): FeedArtifactKi
   if (signals.includes('ad')) return 'ad';
 
   if (resolveStoryVideoUrl(artifact)) {
-    if (role.includes('story') || meta.remotion_mission_story === true) return 'story';
+    if (role.includes('story')) return 'story';
     if (!signals.includes('reel')) return 'story';
     return 'reel';
   }
@@ -190,7 +190,7 @@ function shouldPreferContentUrlExport(artifact: OutputArtifact, contentUrl: stri
 
 /**
  * Feed preview only — map persisted `contentUrl` export to still/video preview fields.
- * Covers fal posts/stories/reels and ready Remotion/Runway bundles.
+ * Covers fal posts/stories/reels and ready video bundles.
  */
 export function resolveFeedProducedMedia(
   artifact: OutputArtifact,
@@ -279,8 +279,7 @@ export function buildFeedArtifactViewModel(
   const isRendering = isBundleRendering(artifact) && !hasVideo;
   const isAdCreative = isPaidAdArtifact(artifact);
   const adChannel = adChannelFromArtifact(artifact);
-  const isDesignedPost = String(meta.production_role ?? '') === 'designed_post'
-    || String(meta.pipeline ?? '') === 'remotion_poster';
+  const isDesignedPost = String(meta.production_role ?? '') === 'designed_post';
 
   return {
     artifact,

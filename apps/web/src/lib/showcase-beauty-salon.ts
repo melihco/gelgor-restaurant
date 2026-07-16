@@ -2,7 +2,7 @@
  * Güzellik salonu showcase — ajans seviyesi copy + slot demo (vibe_beauty_salon, kit_27).
  */
 import type { ShowcaseDemoProps } from './showcase-demo-props';
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { StoryLayoutFamily } from './story-template-types';
 
 export const BEAUTY_SALON_SLOT_DEMO: Record<string, ShowcaseDemoProps> = {
   daily_story: {
@@ -36,7 +36,7 @@ export const BEAUTY_SALON_SLOT_DEMO: Record<string, ShowcaseDemoProps> = {
   },
 };
 
-export const BEAUTY_SALON_FAMILY_DEMO: Partial<Record<RemotionLayoutFamily, ShowcaseDemoProps>> = {
+export const BEAUTY_SALON_FAMILY_DEMO: Partial<Record<StoryLayoutFamily, ShowcaseDemoProps>> = {
   frosted_glass: { headline: 'Quiet\nLuxury', subtitle: 'Buzlu cam · yumuşak ışık', categoryLabel: 'CALM' },
   minimal_luxury: { headline: 'Pure\nGlow', subtitle: 'El yapımı bakım detayı', categoryLabel: 'LUXURY' },
   asymmetric_editorial: { headline: 'Bold\nBeauty', subtitle: 'Editorial renk blokları', categoryLabel: 'EDIT' },

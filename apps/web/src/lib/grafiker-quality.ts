@@ -2,7 +2,7 @@
  * Grafiker quality — headline safety, layout refinement, and vision QA thresholds.
  */
 import type { CreativeDirectorLayoutOverrides } from './creative-director-routing';
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { StoryLayoutFamily } from './story-template-types';
 import { sanitizePosterText } from './announcement-text-fit';
 
 export const GRAFIKER_PASS_THRESHOLD = 8;
@@ -14,7 +14,7 @@ export function resolveGrafikerMaxRetries(profileMax?: number | null): number {
   return Math.max(0, Math.min(2, Math.floor(profileMax)));
 }
 
-const PHOTO_OVERLAY_FAMILIES: RemotionLayoutFamily[] = [
+const PHOTO_OVERLAY_FAMILIES: StoryLayoutFamily[] = [
   'editorial_bottom',
   'frosted_glass',
   'magazine_cover',
@@ -69,10 +69,10 @@ export function refineCategoryLabel(
 
 /** campaign_hero orange blocks only for real promos — food/lifestyle → editorial layouts. */
 export function refineLayoutFamilyForContent(
-  family: RemotionLayoutFamily,
+  family: StoryLayoutFamily,
   headline: string,
   caption: string,
-): RemotionLayoutFamily {
+): StoryLayoutFamily {
   const text = `${headline} ${caption}`.toLowerCase();
   const isPromo = PROMO_KEYWORDS.test(text);
   if ((family === 'campaign_hero' || family === 'bold_impact') && !isPromo) {
@@ -83,7 +83,7 @@ export function refineLayoutFamilyForContent(
 }
 
 export function applyPremiumDirectorDefaults(
-  layoutFamily: RemotionLayoutFamily,
+  layoutFamily: StoryLayoutFamily,
   overlayOpacity: number,
   layoutOverrides: CreativeDirectorLayoutOverrides,
 ): { overlayOpacity: number; layoutOverrides: CreativeDirectorLayoutOverrides } {

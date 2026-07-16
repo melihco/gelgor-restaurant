@@ -3,7 +3,7 @@
  */
 
 import type { StoryCompositionId } from '@/lib/story-composition-types';
-import type { TemplateColorPolicy } from './remotion-template-types';
+import type { TemplateColorPolicy } from './story-template-types';
 
 export type PosterLayoutFamily =
   | 'lineup_tiered'

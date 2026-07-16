@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStandardRemotionLibrarySlotKey } from '@/lib/brand-template-library';
+import { resolveStandardLibrarySlotKey } from '@/lib/brand-template-library';
 
-describe('resolveStandardRemotionLibrarySlotKey', () => {
+describe('resolveStandardLibrarySlotKey', () => {
   it('pins the global Remotion story slot order for every brand', () => {
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'campaign_story_motion',
       pipeline: 'remotion_story',
       storyOrdinal: 0,
     })).toBe('event_story');
 
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'campaign_story_motion',
       pipeline: 'remotion_story',
       storyOrdinal: 1,
     })).toBe('editorial_story');
 
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'campaign_story_motion',
       pipeline: 'remotion_story',
       storyOrdinal: 2,
@@ -23,13 +23,13 @@ describe('resolveStandardRemotionLibrarySlotKey', () => {
   });
 
   it('pins the global designed post slot order for every brand', () => {
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'designed_post',
       pipeline: 'fal_design',
       posterOrdinal: 0,
     })).toBe('campaign_post');
 
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'designed_typography',
       pipeline: 'fal_design',
       posterOrdinal: 1,
@@ -37,20 +37,20 @@ describe('resolveStandardRemotionLibrarySlotKey', () => {
   });
 
   it('routes designed ad slots to the ad creative slot', () => {
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'paid_ad_creative',
       pipeline: 'fal_design',
     })).toBe('ad_creative_post');
   });
 
   it('assigns standard template slots for fal story pipelines', () => {
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'organic_post',
       pipeline: 'gallery_photo',
       posterOrdinal: 0,
     })).toBeUndefined();
 
-    expect(resolveStandardRemotionLibrarySlotKey({
+    expect(resolveStandardLibrarySlotKey({
       slotRole: 'fal_story_motion',
       pipeline: 'fal_story',
       storyOrdinal: 0,

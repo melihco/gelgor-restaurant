@@ -59,7 +59,6 @@ export function assignmentUsesGalleryPhoto(
     pipeline === 'gallery_photo'
     || pipeline === 'story_still'
     || pipeline === 'carousel_gallery'
-    || pipeline === 'remotion_story'
     || pipeline === 'fal_story'
     || pipeline === 'runway_reel'
     || pipeline === 'fal_reel'
@@ -267,7 +266,6 @@ export async function buildMissionGalleryAssignments(
     }
 
     const isStory = String(queueItem.assignment.slot_role ?? '').includes('story')
-      || queueItem.assignment.pipeline === 'remotion_story'
       || queueItem.assignment.pipeline === 'story_still';
     const storyIndex = isStory ? storyOrdinal++ : 0;
 

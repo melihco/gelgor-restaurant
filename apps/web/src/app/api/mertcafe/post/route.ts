@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import sharp from '@/lib/sharp-runtime';
 import { generateStorageKey, getPresignedUrl, uploadToR2 } from '@/lib/r2-storage';
 import {
@@ -128,38 +126,12 @@ async function mirrorAppMediaToR2(url: string, postType: PostType): Promise<stri
 const R2_KEY_BARE = /^\/([0-9a-f-]{36}\/(?:stories|video|reel|image)\/[^?#]+\.(?:mp4|mov|webm))$/i;
 const R2_KEY_NO_SLASH = /^([0-9a-f-]{36}\/(?:stories|video|reel|image)\/[^?#]+\.(?:mp4|mov|webm))$/i;
 
-async function resolveRemotionLocalVideo(rawUrl: string, workspaceId?: string): Promise<string | undefined> {
-  const match = rawUrl.match(/\/api\/remotion\/video\/([^/?#]+\.mp4)/i);
-  if (!match?.[1]) return undefined;
-  const filename = match[1];
-  if (filename.includes('/') || filename.includes('..')) return undefined;
-  const filePath = path.join('/tmp/remotion-serve', filename);
-  if (!fs.existsSync(filePath)) return undefined;
-
-  if (serverConfig.r2.bucketConfigured && workspaceId) {
-    try {
-      const buffer = fs.readFileSync(filePath);
-      const key = `${workspaceId}/stories/publish-${filename}`;
-      await uploadToR2(buffer, key, 'video/mp4');
-      const presigned = await getPresignedUrl(key, 3 * 3600);
-      console.log('[mertcafe/post] Uploaded local Remotion video to R2:', key.slice(0, 60));
-      return presigned;
-    } catch (err) {
-      console.warn('[mertcafe/post] Remotion local → R2 upload failed:', err);
-    }
-  }
-  return undefined;
-}
-
 async function resolveVideoUrlForPublish(
   rawUrl: string | undefined,
   workspaceId?: string,
 ): Promise<string | undefined> {
   if (!rawUrl?.trim()) return undefined;
   const trimmed = rawUrl.trim();
-
-  const remotionLocal = await resolveRemotionLocalVideo(trimmed, workspaceId);
-  if (remotionLocal) return remotionLocal;
 
   // Bare R2 storage key — presign before adding origin (Instagram needs public HTTPS)
   const keyMatch = trimmed.match(R2_KEY_BARE) ?? trimmed.match(R2_KEY_NO_SLASH);

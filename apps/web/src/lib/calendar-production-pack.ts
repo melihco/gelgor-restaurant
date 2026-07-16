@@ -24,7 +24,7 @@ import {
 } from '@/lib/calendar-design-layout';
 import { normalizeCalendarPlanDesignLayout } from '@/lib/calendar-agent-schema';
 import { detectIdeaPackageFormat } from '@/lib/weekly-publish-package';
-import { applyMissionFalStoryAssignment } from '@/lib/mission-remotion-story';
+import { applyMissionFalStoryAssignment } from '@/lib/mission-fal-story';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 
 /** Avoid collision with ideation idea_index 0–15 in production_jobs. */

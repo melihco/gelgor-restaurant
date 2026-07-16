@@ -50,7 +50,6 @@ export function isDesignedPostArtifact(meta: Record<string, unknown>): boolean {
   }
   if (
     pipeline.includes('fal_design')
-    || pipeline === 'remotion_poster'
     || pipeline === 'meta_ad'
     || pipeline === 'google_ad'
   ) {

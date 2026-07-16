@@ -55,8 +55,8 @@ Required slot mix (weekly_content / agency):
 - exactly 1 fal_only_post (fal_only_post)
 - exactly 2 fal_only_reel (fal_only_reel)
 
-Campaign story slots use fal.ai grounded 9:16 posters (gallery photo + ideation headline) — NOT Remotion.
-Do NOT assign remotion_story or fal_only_story in weekly missions.
+Campaign story slots use fal.ai grounded 9:16 posters (gallery photo + ideation headline).
+Do NOT assign fal_only_story in weekly missions.
 
 manifest_coverage_pct must be 100 when all {WEEKLY_MANIFEST_SLOT_TOTAL} slots are assigned.
 """

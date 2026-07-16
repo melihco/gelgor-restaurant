@@ -2,14 +2,14 @@
  * Agency template standard — tüm story/poster şablonları bu çizgide etiketlenir ve yükseltilir.
  * Mevcut template ID'leri ve slot akışı değişmez; sadece collection + spec kalitesi normalize edilir.
  */
-import type { RemotionLayoutFamily, RemotionLayoutSpec } from './remotion-template-types';
+import type { StoryLayoutFamily, StoryLayoutSpec } from './story-template-types';
 import type { PosterLayoutFamily, PosterLayoutSpec } from './poster-template-types';
 
 export const AGENCY_STORY_COLLECTION = 'Agency' as const;
 export const AGENCY_STORY_TAG = 'agency';
 
 /** Legacy (pre-Agency) story aileleri — premium spec ile ajans seviyesine çekilir */
-const LEGACY_STORY_FAMILIES = new Set<RemotionLayoutFamily>([
+const LEGACY_STORY_FAMILIES = new Set<StoryLayoutFamily>([
   'editorial_bottom',
   'editorial_left',
   'split_panel',
@@ -22,7 +22,7 @@ const LEGACY_STORY_FAMILIES = new Set<RemotionLayoutFamily>([
   'noir_editorial',
 ]);
 
-export const AGENCY_STORY_FAMILY_UPGRADES: Partial<Record<RemotionLayoutFamily, Partial<RemotionLayoutSpec>>> = {
+export const AGENCY_STORY_FAMILY_UPGRADES: Partial<Record<StoryLayoutFamily, Partial<StoryLayoutSpec>>> = {
   editorial_bottom: {
     fontPersonality: 'luxury_serif',
     heroWeight: 700,
@@ -100,21 +100,21 @@ export const AGENCY_POSTER_FAMILY_UPGRADES: Partial<Record<PosterLayoutFamily, P
   art_deco: { fontPersonality: 'serif_editorial', frame: 'double' },
 };
 
-export function getAgencyStoryFamilyUpgrade(family: RemotionLayoutFamily): Partial<RemotionLayoutSpec> | undefined {
+export function getAgencyStoryFamilyUpgrade(family: StoryLayoutFamily): Partial<StoryLayoutSpec> | undefined {
   return AGENCY_STORY_FAMILY_UPGRADES[family];
 }
 
-export function isLegacyStoryFamily(family: RemotionLayoutFamily): boolean {
+export function isLegacyStoryFamily(family: StoryLayoutFamily): boolean {
   return LEGACY_STORY_FAMILIES.has(family);
 }
 
 export function normalizeAgencyStorySpec(
-  family: RemotionLayoutFamily,
-  spec: RemotionLayoutSpec,
+  family: StoryLayoutFamily,
+  spec: StoryLayoutSpec,
   vibeCollection?: string,
-): RemotionLayoutSpec {
+): StoryLayoutSpec {
   const upgrade = getAgencyStoryFamilyUpgrade(family);
-  const next: RemotionLayoutSpec = {
+  const next: StoryLayoutSpec = {
     ...spec,
     ...(upgrade ?? {}),
     collection: AGENCY_STORY_COLLECTION,
@@ -122,7 +122,7 @@ export function normalizeAgencyStorySpec(
   return next;
 }
 
-export function agencyStoryTags(family: RemotionLayoutFamily, vibeCollection: string, extra: string[]): string[] {
+export function agencyStoryTags(family: StoryLayoutFamily, vibeCollection: string, extra: string[]): string[] {
   const vibe = vibeCollection === 'Agency'
     ? (extra[0] ?? family)
     : vibeCollection.toLowerCase().replace(/\s+/g, '_');
@@ -146,31 +146,31 @@ export function isAgencyStoryTemplate(input: {
 
 /** Showcase / dropdown — her layout ailesinden bir öne çıkan varyant */
 export const AGENCY_FEATURED_STORY_TEMPLATE_IDS = [
-  'remotion_editorial_bottom_01',
-  'remotion_editorial_left_01',
-  'remotion_split_panel_02',
-  'remotion_magazine_cover_07',
-  'remotion_cinematic_center_04',
-  'remotion_campaign_hero_03',
-  'remotion_gallery_series_04',
-  'remotion_frosted_glass_02',
-  'remotion_bold_impact_03',
-  'remotion_noir_editorial_03',
-  'remotion_event_ticket_03',
-  'remotion_diptych_collage_02',
-  'remotion_minimal_luxury_03',
-  'remotion_mosaic_pinterest_03',
-  'remotion_asymmetric_editorial_04',
-  'remotion_polaroid_single_02',
-  'remotion_polaroid_stack_03',
-  'remotion_vibe_fullscreen_04',
-  'remotion_bento_story_07',
-  'remotion_neon_night_02',
-  'remotion_quote_card_05',
-  'remotion_location_pin_01',
-  'remotion_luxury_kinetic_type_01',
-  'remotion_glassmorphism_showcase_01',
-  'remotion_editorial_product_stage_01',
+  'story_editorial_bottom_01',
+  'story_editorial_left_01',
+  'story_split_panel_02',
+  'story_magazine_cover_07',
+  'story_cinematic_center_04',
+  'story_campaign_hero_03',
+  'story_gallery_series_04',
+  'story_frosted_glass_02',
+  'story_bold_impact_03',
+  'story_noir_editorial_03',
+  'story_event_ticket_03',
+  'story_diptych_collage_02',
+  'story_minimal_luxury_03',
+  'story_mosaic_pinterest_03',
+  'story_asymmetric_editorial_04',
+  'story_polaroid_single_02',
+  'story_polaroid_stack_03',
+  'story_vibe_fullscreen_04',
+  'story_bento_story_07',
+  'story_neon_night_02',
+  'story_quote_card_05',
+  'story_location_pin_01',
+  'story_luxury_kinetic_type_01',
+  'story_glassmorphism_showcase_01',
+  'story_editorial_product_stage_01',
 ] as const;
 
 const FEATURED_SET = new Set<string>(AGENCY_FEATURED_STORY_TEMPLATE_IDS);

@@ -8,10 +8,10 @@ import {
   normalizeAgencyStorySpec,
 } from './agency-template-standard';
 import type {
-  RemotionLayoutFamily,
-  RemotionLayoutSpec,
-  RemotionTemplateDefinition,
-} from './remotion-template-types';
+  StoryLayoutFamily,
+  StoryLayoutSpec,
+  StoryTemplateDefinition,
+} from './story-template-types';
 
 type TemplateIntent =
   | 'daily_moment'
@@ -23,7 +23,7 @@ type TemplateIntent =
   | 'social_proof'
   | 'educational';
 
-const BASE_SPEC: RemotionLayoutSpec = {
+const BASE_SPEC: StoryLayoutSpec = {
   family: 'editorial_bottom',
   collection: 'Agency',
   fontPersonality: 'brand',
@@ -67,17 +67,17 @@ const BASE_SPEC: RemotionLayoutSpec = {
 };
 
 type FamilyMeta = {
-  family: RemotionLayoutFamily;
-  collection: RemotionLayoutSpec['collection'];
-  legacyComposition: RemotionTemplateDefinition['legacyComposition'];
+  family: StoryLayoutFamily;
+  collection: StoryLayoutSpec['collection'];
+  legacyComposition: StoryTemplateDefinition['legacyComposition'];
   nameTr: string;
   nameEn: string;
   descTr: string;
   tags: string[];
   bestFor: TemplateIntent[];
   sectors: string[];
-  base: Partial<RemotionLayoutSpec>;
-  variants: Array<{ suffix: string; suffixTr: string; patch: Partial<RemotionLayoutSpec> }>;
+  base: Partial<StoryLayoutSpec>;
+  variants: Array<{ suffix: string; suffixTr: string; patch: Partial<StoryLayoutSpec> }>;
 };
 
 const FAMILY_CATALOG: FamilyMeta[] = [
@@ -974,11 +974,11 @@ const FAMILY_CATALOG: FamilyMeta[] = [
   },
 ];
 
-function mergeSpec(...layers: Partial<RemotionLayoutSpec>[]): RemotionLayoutSpec {
-  return { ...BASE_SPEC, ...Object.assign({}, ...layers) } as RemotionLayoutSpec;
+function mergeSpec(...layers: Partial<StoryLayoutSpec>[]): StoryLayoutSpec {
+  return { ...BASE_SPEC, ...Object.assign({}, ...layers) } as StoryLayoutSpec;
 }
 
-function buildTemplate(family: FamilyMeta, variantIndex: number, variant: FamilyMeta['variants'][0]): RemotionTemplateDefinition {
+function buildTemplate(family: FamilyMeta, variantIndex: number, variant: FamilyMeta['variants'][0]): StoryTemplateDefinition {
   const vibeCollection = family.collection;
   const agencyUpgrade = getAgencyStoryFamilyUpgrade(family.family);
   const merged = mergeSpec(
@@ -989,7 +989,7 @@ function buildTemplate(family: FamilyMeta, variantIndex: number, variant: Family
   );
   const spec = normalizeAgencyStorySpec(family.family, merged, vibeCollection);
   const nn = String(variantIndex + 1).padStart(2, '0');
-  const id = `remotion_${family.family}_${nn}`;
+  const id = `story_${family.family}_${nn}`;
   const variantTag = variant.suffix.toLowerCase().replace(/\s+/g, '_');
 
   return {
@@ -1009,31 +1009,44 @@ function buildTemplate(family: FamilyMeta, variantIndex: number, variant: Family
   };
 }
 
-export const REMOTION_TEMPLATE_CATALOG: RemotionTemplateDefinition[] = FAMILY_CATALOG.flatMap((family) =>
+export const STORY_TEMPLATE_CATALOG: StoryTemplateDefinition[] = FAMILY_CATALOG.flatMap((family) =>
   family.variants.map((variant, i) => buildTemplate(family, i, variant)),
 );
 
-export const REMOTION_TEMPLATE_BY_ID = new Map(REMOTION_TEMPLATE_CATALOG.map((t) => [t.id, t]));
-
-export const REMOTION_TEMPLATE_COUNT = REMOTION_TEMPLATE_CATALOG.length;
-
-export function getRemotionTemplate(templateId: string): RemotionTemplateDefinition | undefined {
-  return REMOTION_TEMPLATE_BY_ID.get(templateId);
+/**
+ * Legacy id valve — catalog ids were `remotion_*` before the Remotion stack was
+ * removed. Old brand themes / LLM template bindings may still carry the prefix.
+ */
+export function normalizeStoryTemplateId(templateId: string | null | undefined): string {
+  const key = String(templateId ?? '').trim();
+  return key.startsWith('remotion_') ? key.replace(/^remotion_/, 'story_') : key;
 }
 
-export function listTemplatesByFamily(family: RemotionLayoutFamily): RemotionTemplateDefinition[] {
-  return REMOTION_TEMPLATE_CATALOG.filter((t) => t.family === family);
+export const STORY_TEMPLATE_BY_ID = new Map(STORY_TEMPLATE_CATALOG.flatMap((t) => [
+  [t.id, t] as const,
+  // Legacy alias — accept pre-rename ids from stored brand themes.
+  [t.id.replace(/^story_/, 'remotion_'), t] as const,
+]));
+
+export const STORY_TEMPLATE_COUNT = STORY_TEMPLATE_CATALOG.length;
+
+export function getStoryTemplate(templateId: string): StoryTemplateDefinition | undefined {
+  return STORY_TEMPLATE_BY_ID.get(normalizeStoryTemplateId(templateId));
 }
 
-export function listTemplatesByCollection(collection: RemotionLayoutSpec['collection']): RemotionTemplateDefinition[] {
-  return REMOTION_TEMPLATE_CATALOG.filter((t) => t.collection === collection);
+export function listTemplatesByFamily(family: StoryLayoutFamily): StoryTemplateDefinition[] {
+  return STORY_TEMPLATE_CATALOG.filter((t) => t.family === family);
 }
 
-export function listTemplatesForIntent(intent: string): RemotionTemplateDefinition[] {
-  return REMOTION_TEMPLATE_CATALOG.filter((t) => t.bestFor.includes(intent as TemplateIntent));
+export function listTemplatesByCollection(collection: StoryLayoutSpec['collection']): StoryTemplateDefinition[] {
+  return STORY_TEMPLATE_CATALOG.filter((t) => t.collection === collection);
 }
 
-export const REMOTION_FAMILY_META = FAMILY_CATALOG.map(({ family, nameTr, nameEn, collection, descTr, tags, bestFor, variants }) => ({
+export function listTemplatesForIntent(intent: string): StoryTemplateDefinition[] {
+  return STORY_TEMPLATE_CATALOG.filter((t) => t.bestFor.includes(intent as TemplateIntent));
+}
+
+export const STORY_FAMILY_META = FAMILY_CATALOG.map(({ family, nameTr, nameEn, collection, descTr, tags, bestFor, variants }) => ({
   family,
   nameTr,
   nameEn,
@@ -1046,11 +1059,11 @@ export const REMOTION_FAMILY_META = FAMILY_CATALOG.map(({ family, nameTr, nameEn
 
 /** Legacy composition → default catalog template */
 export const LEGACY_COMPOSITION_TEMPLATE: Partial<Record<string, string>> = {
-  EditorialStory: 'remotion_editorial_bottom_01',
-  LuxurySplitStory: 'remotion_split_panel_01',
-  CinematicStory: 'remotion_cinematic_center_01',
-  CampaignHeroStory: 'remotion_campaign_hero_01',
-  MagazineCoverStory: 'remotion_magazine_cover_01',
-  GallerySeriesStory: 'remotion_gallery_series_01',
-  EventAnnouncementStory: 'remotion_event_ticket_01',
+  EditorialStory: 'story_editorial_bottom_01',
+  LuxurySplitStory: 'story_split_panel_01',
+  CinematicStory: 'story_cinematic_center_01',
+  CampaignHeroStory: 'story_campaign_hero_01',
+  MagazineCoverStory: 'story_magazine_cover_01',
+  GallerySeriesStory: 'story_gallery_series_01',
+  EventAnnouncementStory: 'story_event_ticket_01',
 };

@@ -31,7 +31,7 @@ export type ContentIntent =
   | 'social_proof'
   | 'educational';
 
-export type RemotionCompositionId =
+export type MotionCompositionId =
   | StoryCompositionId
   | 'BrandedFeedPost'
   | 'BrandedFeedPortrait';

@@ -59,8 +59,8 @@ export function buildAiVisualStandardMetadata(
 export type VisualPipelineStep =
   | 'scene_brief'
   | 'gpt_image_enhance'
-  | 'remotion_motion'
-  | 'remotion_still'
+  | 'designed_motion'
+  | 'designed_still'
   | 'runway_reel'
   | 'gallery_only';
 
@@ -69,8 +69,8 @@ export function resolveVisualPipelineSteps(
   contentKind: string,
   assignment: ProductionAssignment,
   flags: {
-    willRemotionStory?: boolean;
-    willRemotionPost?: boolean;
+    willStoryOverlay?: boolean;
+    willDesignedPost?: boolean;
     isReel?: boolean;
     designedPosterSync?: boolean;
     postBrandLayer?: boolean;
@@ -84,12 +84,12 @@ export function resolveVisualPipelineSteps(
 
   if (flags.isReel) {
     steps.push('runway_reel');
-  } else if (flags.willRemotionStory) {
-    steps.push('remotion_motion');
-  } else if (flags.designedPosterSync || flags.willRemotionPost || flags.postBrandLayer) {
-    steps.push('remotion_still');
+  } else if (flags.willStoryOverlay) {
+    steps.push('designed_motion');
+  } else if (flags.designedPosterSync || flags.willDesignedPost || flags.postBrandLayer) {
+    steps.push('designed_still');
   } else if (standard.enabled && contentKindToAiFormat(contentKind)) {
-    steps.push('remotion_still');
+    steps.push('designed_still');
   } else {
     steps.push('gallery_only');
   }

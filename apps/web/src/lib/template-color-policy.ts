@@ -1,6 +1,6 @@
 import { getPosterTemplate } from './poster-template-catalog';
-import { getRemotionTemplate } from './story-template-catalog';
-import type { TemplateColorPolicy, TemplateColorToken } from './remotion-template-types';
+import { getStoryTemplate } from './story-template-catalog';
+import type { TemplateColorPolicy, TemplateColorToken } from './story-template-types';
 
 export interface TemplateColorTokensLike {
   primaryColor: string;
@@ -79,7 +79,7 @@ export function resolveTemplateColorPolicy(
     return getPosterTemplate(input.posterTemplateId)?.spec.colorPolicy;
   }
   if (input.templateId) {
-    return getRemotionTemplate(input.templateId)?.spec.colorPolicy;
+    return getStoryTemplate(input.templateId)?.spec.colorPolicy;
   }
   return undefined;
 }

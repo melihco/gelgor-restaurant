@@ -1,6 +1,6 @@
 import type { OutputArtifact } from '@/types';
 import { parseArtifactMetadata } from '@/lib/artifact-utils';
-import { isRemotionVideoStoryArtifact } from '@/lib/mission-feed-package';
+import { isVideoStoryArtifact } from '@/lib/mission-feed-package';
 import { resolveStoryVideoUrl } from '@/lib/production-bundle';
 
 /** APO-5 — secondary Feed filters by production slot (tenant-agnostic metadata). */
@@ -42,7 +42,6 @@ export function artifactMatchesSlotFilter(
       || role === 'fal_only_post'
       || role === 'designed_typography'
       || role === 'paid_ad_creative'
-      || pipeline === 'remotion_poster'
       || pipeline === 'fal_design'
       || pipeline === 'fal_only'
       || pipeline === 'meta_ad'
@@ -59,8 +58,7 @@ export function artifactMatchesSlotFilter(
     if (kind !== 'story') return false;
     if (
       role === 'campaign_story_motion'
-      || pipeline === 'remotion_story'
-      || isRemotionVideoStoryArtifact(artifact)
+      || isVideoStoryArtifact(artifact)
     ) {
       return true;
     }

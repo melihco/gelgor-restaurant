@@ -18,14 +18,14 @@ import { isPromoOfferCopy } from './poster-quality';
 import {
   applyMissionFalStoryAssignment,
   shouldApplyMissionFalStory,
-} from './mission-remotion-story';
+} from './mission-fal-story';
 import {
   applyMissionFalAdAssignment,
   shouldApplyMissionFalAd,
 } from './mission-fal-ad';
 import {
   mapProductionContextToLibrarySlotKey,
-  resolveStandardRemotionLibrarySlotKey,
+  resolveStandardLibrarySlotKey,
 } from './brand-template-library';
 import { isAgencyServiceSector } from './agency-production-defaults';
 import {
@@ -261,7 +261,7 @@ export function parseProductionAssignments(
   return out;
 }
 
-function resolveDeterministicRemotionLibrarySlotKey(input: {
+function resolveDeterministicLibrarySlotKey(input: {
   assignment: ProductionAssignment;
   idea: Record<string, unknown>;
   storyOrdinal?: number;
@@ -296,7 +296,7 @@ function resolveDeterministicRemotionLibrarySlotKey(input: {
     hasEventDetails,
   });
 
-  const standardKey = resolveStandardRemotionLibrarySlotKey({
+  const standardKey = resolveStandardLibrarySlotKey({
     slotRole: assignment.slot_role,
     pipeline: assignment.pipeline,
     storyOrdinal: input.storyOrdinal,
@@ -329,7 +329,7 @@ function enrichAssignment(
   // library_slot_key stays a LEGACY Remotion/library key (event_story, campaign_post…)
   // for LIBRARY_SLOT_TO_TEMPLATE_TYPES routing + typography lookup. The catalog id
   // travels only in catalog_slot_key (SSOT hard pin) — never copied into library_slot_key.
-  const librarySlotKey = resolveDeterministicRemotionLibrarySlotKey({
+  const librarySlotKey = resolveDeterministicLibrarySlotKey({
     assignment,
     idea,
     storyOrdinal: opts?.storyOrdinal,
@@ -744,7 +744,7 @@ function resolveIdeaDrivenFinalAssignments(
  *
  * This is the *single* place that resolves FD assignments → manifest backfill →
  * heuristic → idea-index assignment → `enrichAssignment` (library slot) →
- * `applyMissionRemotionStoryAssignment` (story rotation). Both the production
+ * `applyMissionFalStoryAssignment` (story rotation). Both the production
  * queue (`buildManifestProductionQueue`) and the gate/stack-context prep
  * (`prepareMissionFdAssignments`) consume this so the gate validates exactly what
  * is produced. Extracted behaviour-identical from the queue builder — golden
@@ -928,8 +928,7 @@ export function resolveContentKindForAssignment(
     return 'instagram_post';
   }
   if (
-    assignment.pipeline === 'remotion_poster'
-    || assignment.slot_role === 'designed_post'
+    assignment.slot_role === 'designed_post'
     || assignment.slot_role === 'designed_typography'
   ) {
     return 'instagram_post';
@@ -942,7 +941,6 @@ export function resolveContentKindForAssignment(
   }
   if (
     assignment.pipeline === 'fal_story'
-    || assignment.pipeline === 'remotion_story'
     || assignment.slot_role === 'fal_story_motion'
     || assignment.slot_role === 'campaign_story_motion'
   ) {

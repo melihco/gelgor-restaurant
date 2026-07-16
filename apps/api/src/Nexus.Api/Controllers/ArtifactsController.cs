@@ -405,7 +405,7 @@ public class ArtifactsController : ControllerBase
         {
             contentObj["bundle_status"] = "ready";
             contentObj["production_bundle"] = true;
-            contentObj["source"] = "remotion";
+            contentObj["source"] = "auto-produce";
             if (!string.IsNullOrWhiteSpace(request.CompositionId))
                 contentObj["compositionId"] = request.CompositionId;
             if (!string.IsNullOrWhiteSpace(request.PosterTemplateId))
@@ -434,8 +434,7 @@ public class ArtifactsController : ControllerBase
             metaObj["imageUrl"] = request.ImageUrl;
             metaObj["bundle_status"] = "ready";
             metaObj["production_bundle"] = true;
-            metaObj["source"] = "remotion";
-            metaObj["remotion_render"] = true;
+            metaObj["source"] = "auto-produce";
             metaObj["agency_produced"] = true;
             if (!string.IsNullOrWhiteSpace(request.CompositionId))
                 metaObj["compositionId"] = request.CompositionId;
@@ -460,7 +459,7 @@ public class ArtifactsController : ControllerBase
 
     // ── PATCH /api/artifacts/{id}/attach-video ─────────────────────────────
     /// <summary>
-    /// Attaches a Remotion MP4 to an existing production bundle artifact.
+    /// Attaches a rendered MP4 to an existing production bundle artifact.
     /// Keeps poster in Content JSON; updates ContentUrl to the video.
     /// </summary>
     [HttpPatch("{id}/attach-video")]
@@ -496,7 +495,7 @@ public class ArtifactsController : ControllerBase
         contentObj["videoUrl"] = request.VideoUrl;
         contentObj["bundle_status"] = "ready";
         contentObj["production_bundle"] = true;
-        contentObj["source"] = "remotion";
+        contentObj["source"] = "auto-produce";
 
         if (!string.IsNullOrWhiteSpace(request.CompositionId))
             contentObj["compositionId"] = request.CompositionId;
@@ -522,13 +521,11 @@ public class ArtifactsController : ControllerBase
         metaObj["videoUrl"] = request.VideoUrl;
         metaObj["bundle_status"] = "ready";
         metaObj["production_bundle"] = true;
-        // Preserve mission / auto-produce flags for Feed (source becomes remotion after render).
+        // Preserve mission / auto-produce flags for Feed.
         if (metaObj["auto_produced"] == null)
             metaObj["auto_produced"] = true;
-        var prevSource = metaObj["source"]?.ToString() ?? "";
-        if (string.IsNullOrWhiteSpace(prevSource) || prevSource == "auto-produce")
-            metaObj["source"] = "remotion";
-        metaObj["remotion_render"] = true;
+        if (string.IsNullOrWhiteSpace(metaObj["source"]?.ToString()))
+            metaObj["source"] = "auto-produce";
         metaObj["agency_produced"] = true;
 
         if (!string.IsNullOrWhiteSpace(request.CompositionId))

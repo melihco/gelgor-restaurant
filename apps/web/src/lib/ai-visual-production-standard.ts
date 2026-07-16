@@ -149,7 +149,6 @@ export function shouldUseCaptionDrivenVisual(
   const pipeline = assignment?.pipeline;
   if (
     pipeline === 'runway_reel'
-    || pipeline === 'remotion_story'
     || pipeline === 'fal_story'
     || pipeline === 'fal_reel'
     || pipeline === 'fal_design'

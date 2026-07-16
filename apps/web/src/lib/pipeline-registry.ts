@@ -30,8 +30,6 @@ export interface PipelineDescriptor {
   readonly family: PipelineFamily;
   /** Produces a video artifact (vs. a still image). */
   readonly isVideo: boolean;
-  /** Competes for the global render concurrency gate (legacy — always false post-Remotion). */
-  readonly isRenderBound: boolean;
   /** Routes through the fal.ai designer (typography/design card) path. */
   readonly usesFalDesigner: boolean;
   /** Whether a failed slot of this pipeline is worth retrying. */
@@ -47,29 +45,23 @@ function d(
     key,
     family,
     isVideo: opts.isVideo ?? false,
-    isRenderBound: opts.isRenderBound ?? false,
     usesFalDesigner: opts.usesFalDesigner ?? false,
     retryable: opts.retryable ?? false,
   };
 }
 
-/** Canonical table. Add a new pipeline by adding one row here. */
+/**
+ * Canonical table. Add a new pipeline by adding one row here.
+ * Legacy ids (remotion_*, runway_reel) are not listed — `getPipelineDescriptor`
+ * runs `normalizeProductionPipeline` first, which maps them to fal rows.
+ */
 export const PIPELINE_REGISTRY: Readonly<Record<string, PipelineDescriptor>> = {
   // fal.ai designer video track
   fal_story: d('fal_story', 'fal_video', { usesFalDesigner: true, retryable: true }),
   fal_reel: d('fal_reel', 'fal_video', { isVideo: true, usesFalDesigner: true, retryable: true }),
-  /** @deprecated — legacy assignments; routes same as fal_reel. */
-  runway_reel: d('runway_reel', 'fal_video', { isVideo: true, usesFalDesigner: true, retryable: true }),
 
   // fal.ai / GPT-image designed still post
   fal_design: d('fal_design', 'fal_design', { usesFalDesigner: true, retryable: true }),
-  /** @deprecated — legacy assignments; routes same as fal_design. */
-  remotion_poster: d('remotion_poster', 'fal_design', { usesFalDesigner: true, retryable: true }),
-  /** @deprecated — legacy assignments; routes same as fal_design. */
-  remotion_post: d('remotion_post', 'fal_design', { usesFalDesigner: true, retryable: true }),
-
-  /** @deprecated — legacy assignments; routes same as fal_story (still poster). */
-  remotion_story: d('remotion_story', 'fal_video', { usesFalDesigner: true, retryable: true }),
 
   // pure fal.ai slots
   fal_only_post: d('fal_only_post', 'fal_only', { usesFalDesigner: true, retryable: true }),

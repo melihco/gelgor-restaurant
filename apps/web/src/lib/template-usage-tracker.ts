@@ -42,7 +42,6 @@ export function extractTemplateIdsFromArtifact(artifact: Record<string, unknown>
     'posterTemplateId', 'poster_template_id',
     'announcementTemplateId', 'announcement_template_id',
     'canvaTemplateId', 'canva_template_id',
-    'remotionTemplateId', 'remotion_template_id',
   ]) {
     pushId(ids, meta[key]);
     pushId(ids, content[key]);

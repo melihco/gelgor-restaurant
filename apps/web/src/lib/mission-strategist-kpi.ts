@@ -34,8 +34,7 @@ function isProductionArtifact(artifact: OutputArtifact): boolean {
   return meta.auto_produced === true
     || meta.production_bundle === true
     || Boolean(meta.production_role)
-    || meta.source === 'auto-produce'
-    || meta.source === 'remotion';
+    || meta.source === 'auto-produce';
 }
 
 export function summarizeMissionStrategistKpi(input: {

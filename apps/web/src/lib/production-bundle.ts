@@ -86,11 +86,11 @@ function readRawBundleStatus(artifact: OutputArtifact): string {
   ).toLowerCase();
 }
 
-/** Remotion story queue — Grafiker retries + parallel renders can exceed 90s. */
-export const REMOTION_BUNDLE_STALE_MS = 360_000;
+/** Production bundle staleness — Grafiker retries + parallel renders can exceed 90s. */
+export const PRODUCTION_BUNDLE_STALE_MS = 360_000;
 
 /** Stuck render queue (no video, older than maxAgeMs). Uses raw status only to avoid recursion. */
-function isRenderingTimedOut(artifact: OutputArtifact, maxAgeMs = REMOTION_BUNDLE_STALE_MS): boolean {
+function isRenderingTimedOut(artifact: OutputArtifact, maxAgeMs = PRODUCTION_BUNDLE_STALE_MS): boolean {
   if (resolveStoryVideoUrl(artifact)) return false;
   const created = new Date(artifact.createdAt).getTime();
   if (!Number.isFinite(created)) return true;
@@ -114,9 +114,6 @@ export function getProductionBundleStatus(artifact: OutputArtifact): ProductionB
   const looksRendering = raw === 'rendering'
     || (raw === '' && hasProductionBundleFlag(artifact) && !resolveStoryVideoUrl(artifact));
   if (looksRendering && isRenderingTimedOut(artifact)) {
-    if (expectsRemotionStoryVideo(artifact) && !resolveStoryVideoUrl(artifact)) {
-      return 'failed';
-    }
     const poster = resolvePosterUrl(artifact);
     const url = String(artifact.contentUrl ?? '').trim();
     const hasStill = Boolean(poster || (url && !/\.(mp4|mov|webm)(\?|$)/i.test(url)));
@@ -125,14 +122,6 @@ export function getProductionBundleStatus(artifact: OutputArtifact): ProductionB
   }
 
   if (raw === 'rendering' || raw === 'ready' || raw === 'failed') {
-    if (
-      raw === 'ready'
-      && expectsRemotionStoryVideo(artifact)
-      && !resolveStoryVideoUrl(artifact)
-    ) {
-      const galleryOnly = Boolean(meta.gallery_only ?? meta.galleryOnly ?? content.gallery_only);
-      if (!galleryOnly) return 'failed';
-    }
     return raw;
   }
   if (role === 'organic_story_still' && resolvePosterUrl(artifact)) return 'ready';
@@ -204,7 +193,7 @@ function artifactUsesGalleryProxyPreview(artifact: OutputArtifact): boolean {
   ].some((candidate) => isGalleryProxyPreviewUrl(String(candidate ?? '')));
 }
 
-/** Production export in contentUrl — fal/R2/Remotion output, not gallery reference still. */
+/** Production export in contentUrl — fal/R2 output, not gallery reference still. */
 function resolveProductionExportImageUrl(artifact: OutputArtifact): string | null {
   const contentUrl = String(artifact.contentUrl ?? '').trim();
   if (!contentUrl || /\.(mp4|mov|webm)(\?|$)/i.test(contentUrl)) return null;
@@ -280,7 +269,7 @@ export function resolvePublishImageUrl(artifact: OutputArtifact): string | null 
   return null;
 }
 
-/** Branded PNG from Remotion poster pipeline (feed post bundle). */
+/** Branded PNG from the designed poster pipeline (feed post bundle). */
 export function resolveBrandedPostUrl(artifact: OutputArtifact): string | null {
   if (!isPostKind(artifact)) return null;
   const productionExport = resolveProductionExportImageUrl(artifact);
@@ -294,7 +283,7 @@ export function resolveBrandedPostUrl(artifact: OutputArtifact): string | null {
   return normalizeBrandedPostUrl(raw);
 }
 
-/** Raw gallery photo for Remotion render — never use text-baked branded stills as photo input. */
+/** Raw gallery photo for design render — never use text-baked branded stills as photo input. */
 export function resolveGalleryPhotoForRender(artifact: OutputArtifact): string | null {
   const content = parseArtifactContent(artifact.content);
   const meta = parseArtifactMetadata(artifact.metadata);
@@ -454,9 +443,7 @@ function bundlePriority(artifact: OutputArtifact): number {
   const status = getProductionBundleStatus(artifact);
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const hasVideo = Boolean(resolveStoryVideoUrl(artifact));
-  if (expectsRemotionStoryVideo(artifact) && !hasVideo) return 8;
   if (status === 'ready' && hasVideo) return 100;
-  if (String(meta.source || '') === 'remotion' && hasVideo) return 90;
   if (status === 'rendering' && isProductionBundle(artifact)) return 70;
   if (status === 'rendering') return 50;
   if (hasVideo) return 40;
@@ -466,7 +453,7 @@ function bundlePriority(artifact: OutputArtifact): number {
 
 /**
  * One idea = one artifact. Collapses duplicate runs (same headline/format) and legacy
- * bundle pairs (image placeholder + Remotion video).
+ * bundle pairs (image placeholder + produced video).
  */
 function dedupeByKey(
   artifacts: OutputArtifact[],
@@ -531,7 +518,6 @@ export function filterConsumerStoryBar(
   const maxRings = opts?.maxRings ?? 4;
   let pool = dedupeStoryBarArtifacts(artifacts).filter((a) => {
     if (isBundleFailed(a) && !resolveStoryVideoUrl(a) && !resolvePosterUrl(a)) return false;
-    if (isBundleFailed(a) && !resolveStoryVideoUrl(a) && expectsRemotionStoryVideo(a)) return false;
     if (isBundleStaleRendering(a)) return false;
     return true;
   });
@@ -565,11 +551,6 @@ export function filterConsumerStoryBar(
   return pool
     .sort(compareArtifactsByProductionTime)
     .slice(0, maxRings);
-}
-
-/** Story slot that historically expected a Remotion MP4 — now fal still poster is sufficient. */
-export function expectsRemotionStoryVideo(_artifact: OutputArtifact): boolean {
-  return false;
 }
 
 function storyExpectsVideoArtifact(artifact: OutputArtifact): boolean {
@@ -614,14 +595,14 @@ export function isBundleFailed(artifact: OutputArtifact): boolean {
 /** Rendering longer than maxAgeMs with no video — likely queue timeout or server restart. */
 export function isBundleStaleRendering(
   artifact: OutputArtifact,
-  maxAgeMs = REMOTION_BUNDLE_STALE_MS,
+  maxAgeMs = PRODUCTION_BUNDLE_STALE_MS,
 ): boolean {
   const status = getProductionBundleStatus(artifact);
   if (status !== 'rendering') return false;
   return isRenderingTimedOut(artifact, maxAgeMs);
 }
 
-/** Story/post expected to get Remotion output but asset is still missing. */
+/** Story/post expected to get a produced asset that is still missing. */
 export function isAwaitingStoryVideo(artifact: OutputArtifact): boolean {
   if (isStoryKind(artifact)) {
     if (resolveStoryVideoUrl(artifact)) return false;

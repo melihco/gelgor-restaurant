@@ -9,7 +9,7 @@ import {
 import { resolveTextOverlayPrefs } from '@/lib/brand-text-overlay-prefs';
 import { resolveSectorColorPreset } from '@/lib/sector-color-presets';
 import { resolveProductionStoryFonts } from '@/lib/premium-font-registry';
-import type { FontPersonality } from '@/lib/remotion-template-types';
+import type { FontPersonality } from '@/lib/story-template-types';
 import { resolveTemplateColorProps } from '@/lib/template-color-policy';
 
 export interface BrandProductionTokens {

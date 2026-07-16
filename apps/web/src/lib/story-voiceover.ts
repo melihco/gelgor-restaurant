@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
 import OpenAI from 'openai';
 import { serverConfig } from '@/lib/server-config';
 import {
@@ -9,7 +8,7 @@ import {
   type StoryTtsVoiceId,
 } from './story-voice-catalog';
 
-const VOICEOVER_SERVE_DIR = '/tmp/remotion-serve';
+const VOICEOVER_SERVE_DIR = '/tmp/story-audio-serve';
 
 function storyAudioServeBaseUrl(): string {
   return (process.env.NEXTJS_INTERNAL_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -221,7 +220,7 @@ export function isStoryVoiceoverEnabled(): boolean {
 }
 
 /**
- * OpenAI TTS → /tmp/remotion-serve MP3.
+ * OpenAI TTS → /tmp/story-audio-serve MP3.
  * playbackUrl = HTTP (UI önizleme); render route ayrı port üzerinden servis eder.
  */
 async function synthesizeSpeechMp3(input: {
@@ -252,27 +251,6 @@ async function synthesizeSpeechMp3(input: {
   return {
     filePath,
     playbackUrl: voiceoverPlaybackUrl(input.filename),
-  };
-}
-
-export async function generateStoryVoiceoverFile(input: {
-  script: string;
-  locale?: string;
-  voiceId?: string | null;
-}): Promise<{ filePath: string; playbackUrl: string; script: string; voiceId: StoryTtsVoiceId } | null> {
-  const locale = String(input.locale ?? 'tr').toLowerCase();
-  const voice = resolveStoryTtsVoiceId(input.voiceId, locale);
-  const script = truncateScript(captionTextForSpeech(input.script));
-  if (!script) return null;
-
-  const filename = `story-vo-${randomUUID()}.mp3`;
-  const audio = await synthesizeSpeechMp3({ script, locale, voice, filename });
-  if (!audio) return null;
-
-  return {
-    ...audio,
-    script,
-    voiceId: voice,
   };
 }
 

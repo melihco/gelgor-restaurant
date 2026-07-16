@@ -20,16 +20,10 @@ import {
 /** Görsel üretim hattı — birbirine karıştırılmaz. */
 export type ProductionPipeline =
   | 'gallery_photo'      // Ham / hafif galeri gönderisi (caption feed'de)
-  /** @deprecated Legacy artifact/FD — normalize → fal_design */
-  | 'remotion_poster'
-  /** @deprecated Legacy artifact/FD — normalize → fal_story */
-  | 'remotion_story'
-  /** @deprecated Legacy artifact/FD — normalize → fal_design */
-  | 'remotion_post'
   | 'fal_story'          // fal.ai grounded story poster (9:16) — galeri + ideation
   | 'story_still'        // Story: statik galeri görseli (caption feed'de yok)
   | 'runway_reel'        // @deprecated — fal_reel kullan; legacy FD atamaları normalize edilir
-  | 'fal_reel'           // fal.ai reel — Remotion/Runway alternatifi
+  | 'fal_reel'           // fal.ai reel — designer video (Kling I2V)
   | 'fal_design'         // fal.ai/GPT-image tasarımsal feed post (Canva benzeri, galeri + tipografi)
   | 'fal_only_story'     // Tam fal.ai story — galeri/GPT yok, Ideogram + I2V
   | 'fal_only_post'      // Tam fal.ai post — galeri/GPT yok, Ideogram/Flux still
@@ -645,7 +639,7 @@ export function applyProductionProfileToWeeklySlots(
   let stillStoryCount = 0;
   for (const slot of slots) {
     if (slot.role === 'campaign_story_motion') {
-      if (motionKept < profile.remotionStoryMotionSlots) {
+      if (motionKept < profile.campaignStoryMotionSlots) {
         trimmed.push(slot);
         motionKept += 1;
       }
@@ -667,7 +661,7 @@ export function applyProductionProfileToWeeklySlots(
     trimmed.push(slot);
   }
 
-  const additionalStillSlots = Math.max(0, profile.remotionStoryStillSlots - stillStoryCount);
+  const additionalStillSlots = Math.max(0, profile.campaignStoryStillSlots - stillStoryCount);
   for (let i = 0; i < additionalStillSlots; i += 1) {
     trimmed.push({
       role: 'organic_story_still',
@@ -784,14 +778,17 @@ export function slotRoleToFeedTab(role: ProductionSlotRole): 'post' | 'story' | 
   return 'post';
 }
 
-/** Legacy FD / cached assignments: runway_reel → fal_reel (Runway kapalı). */
+/**
+ * Ingest valve for FD/LLM-emitted pipeline strings. Legacy ids (remotion_*,
+ * runway_reel) are no longer part of the type union — DB production data is
+ * clean — but the LLM may still emit them, so map them to fal equivalents here.
+ */
 export function normalizeProductionPipeline(
   pipeline: string | null | undefined,
 ): ProductionPipeline {
   const key = String(pipeline ?? '').trim();
   if (key === 'runway_reel') return 'fal_reel';
-  if (key === 'remotion_post') return 'fal_design';
-  if (key === 'remotion_poster') return 'fal_design';
+  if (key === 'remotion_post' || key === 'remotion_poster') return 'fal_design';
   if (key === 'remotion_story') return 'fal_story';
   if (key === 'meta_ad' || key === 'google_ad') return 'fal_design';
   return (key as ProductionPipeline) || 'gallery_photo';

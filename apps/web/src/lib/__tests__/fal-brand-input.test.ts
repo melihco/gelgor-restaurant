@@ -43,7 +43,7 @@ const LIBRARY: BrandTemplateLibrary = {
       labelEn: 'Event Story',
       format: 'story',
       useCase: 'event',
-      storyTemplateId: 'remotion_campaign_hero_01',
+      storyTemplateId: 'story_campaign_hero_01',
       enabled: true,
       fontMode: 'template',
       fontPersonality: 'display_bold',

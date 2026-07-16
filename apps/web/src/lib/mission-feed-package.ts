@@ -86,8 +86,8 @@ export function resolveMissionSlotProgress(input: {
   return { ready: fallback, target: manifestTarget };
 }
 
-/** Remotion MP4 story — video must be present (legacy + bundle-ready). */
-export function isRemotionVideoStoryArtifact(artifact: OutputArtifact): boolean {
+/** Video story artifact — production bundle story with an attached MP4. */
+export function isVideoStoryArtifact(artifact: OutputArtifact): boolean {
   try {
     const content = parseArtifactContent(artifact.content);
     const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
@@ -122,7 +122,7 @@ function countByProductionRole(
     else if (role === 'campaign_story_motion') storyMotion += 1;
     else if (role?.includes('reel')) reels += 1;
     else if (isReelArtifact(a)) reels += 1;
-    else if (isRemotionVideoStoryArtifact(a)) storyMotion += 1;
+    else if (isVideoStoryArtifact(a)) storyMotion += 1;
     else if (isFeedPostArtifact(a)) organicPosts += 1;
   }
 
@@ -171,8 +171,7 @@ export function summarizeMissionFeedPackage(
       || meta.production_bundle === true
       || meta.production_role != null
       || meta.ad_creative === true
-      || meta.source === 'auto-produce'
-      || meta.source === 'remotion';
+      || meta.source === 'auto-produce';
   });
   const mine = selection?.primary.length
     ? selection.primary
@@ -181,7 +180,7 @@ export function summarizeMissionFeedPackage(
     0,
     allProduced.length - mine.length,
   );
-  const storyVideos = mine.filter(isRemotionVideoStoryArtifact).length;
+  const storyVideos = mine.filter(isVideoStoryArtifact).length;
   const posts = mine.filter(isFeedPostArtifact).length;
   const reels = mine.filter(isReelArtifact).length;
   const roleCounts = countByProductionRole(mine);

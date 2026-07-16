@@ -74,7 +74,6 @@ function parseArtifactContent(content: string | null | undefined): Record<string
 
 function isStoryFormatQueueItem(item: ManifestProductionQueueItem): boolean {
   return assignmentImpliesStoryFormat(item.assignment.slot_role)
-    || item.assignment.pipeline === 'remotion_story'
     || item.assignment.pipeline === 'story_still';
 }
 

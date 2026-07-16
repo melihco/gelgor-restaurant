@@ -168,9 +168,9 @@ export async function ensureProductionGalleryPhotoUrl(
   const trimmed = photoUrl.trim();
   if (!trimmed || !workspaceId) return null;
   const timeoutMs = opts?.timeoutMs ?? 12_000;
-  const reachable = await confirmGalleryPhotoReachableForRemotion(trimmed, { timeoutMs });
+  const reachable = await confirmGalleryPhotoReachableForRender(trimmed, { timeoutMs });
   if (!reachable) return null;
-  return normalizePhotoUrlForRemotionRender(trimmed);
+  return normalizePhotoUrlForRender(trimmed);
 }
 
 /** Try primary + candidate gallery URLs — tenant R2 keys first when brand site is down. */
@@ -402,7 +402,6 @@ export function filterUsableGalleryPhotoUrls(urls: string[]): string[] {
 export function isLikelyRenderedVideoUrl(url: string): boolean {
   const u = url.trim().toLowerCase();
   if (!u) return false;
-  if (u.includes('/api/remotion/video/')) return true;
   if (u.includes('/api/media?key=') && (u.includes('/stories/') || u.includes('.mp4'))) return true;
   if (/\/stories\/[^?]+\.mp4/.test(u)) return true;
   return /\.(mp4|mov|webm)(\?|#|$)/i.test(u);
@@ -505,7 +504,7 @@ export async function probeMediaUrlReliable(
 /**
  * Remotion render + probe — relative /api paths stay local; external URLs → media-proxy.
  */
-export function normalizePhotoUrlForRemotionRender(photoUrl: string): string {
+export function normalizePhotoUrlForRender(photoUrl: string): string {
   const trimmed = photoUrl.trim();
   if (!trimmed || trimmed.startsWith('data:')) return trimmed;
   if (trimmed.startsWith('/api/media-proxy?')) return trimmed;
@@ -530,7 +529,7 @@ export function resolveExternalGalleryPhotoTarget(photoUrl: string): string | nu
  * Remotion pre-render gate — proxy-wrapped Feed URLs must unwrap before external fetch.
  * Dev media-proxy can take 8–15s during cold compile; use generous timeouts.
  */
-export async function confirmGalleryPhotoReachableForRemotion(
+export async function confirmGalleryPhotoReachableForRender(
   photoUrl: string,
   opts?: { timeoutMs?: number },
 ): Promise<boolean> {
@@ -553,7 +552,7 @@ export async function confirmGalleryPhotoReachableForRemotion(
   const proxyPath = trimmed.startsWith('/api/media-proxy')
     ? trimmed
     : externalTarget
-      ? normalizePhotoUrlForRemotionRender(externalTarget)
+      ? normalizePhotoUrlForRender(externalTarget)
       : null;
 
   if (proxyPath?.startsWith('/api/media-proxy')) {
@@ -711,7 +710,6 @@ export function resolveClientMediaUrl(url: string | null | undefined): string | 
 
   if (
     trimmed.startsWith('/api/media')
-    || trimmed.startsWith('/api/remotion/')
     || trimmed.startsWith('/api/generate-')
   ) {
     return trimmed;

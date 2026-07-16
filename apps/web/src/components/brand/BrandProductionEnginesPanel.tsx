@@ -3,23 +3,11 @@
 import React, { useState } from 'react';
 import {
   defaultProductionEngines,
-  STORY_FAMILY_LABELS,
-  TIER1_STORY_FAMILIES,
-  TIER2_STORY_FAMILIES,
-  TIER3_STORY_FAMILIES,
   type BrandProductionEnginesConfig,
 } from '@/lib/brand-production-engines';
-import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
 import type { T } from '@/app/mobile/_components/theme-context';
 
 type ThemeRecord = Record<string, unknown>;
-
-const ALL_FAMILIES = [
-  ...TIER1_STORY_FAMILIES,
-  ...TIER2_STORY_FAMILIES,
-  ...TIER3_STORY_FAMILIES,
-  'event_ticket', 'noir_editorial', 'split_panel', 'editorial_left',
-] as RemotionLayoutFamily[];
 
 function readEngines(theme: ThemeRecord): BrandProductionEnginesConfig {
   const raw = (theme.production_engines ?? theme.productionEngines) as
@@ -30,35 +18,11 @@ function readEngines(theme: ThemeRecord): BrandProductionEnginesConfig {
     fal: { ...defaults.fal, ...raw.fal },
     satori: { ...defaults.satori, ...raw.satori },
     showcase: { ...defaults.showcase!, ...raw.showcase },
-    remotion: {
-      premium_motion_families: raw.remotion?.premium_motion_families?.length
-        ? raw.remotion.premium_motion_families
-        : defaults.remotion.premium_motion_families,
-      typography_fallback_families: raw.remotion?.typography_fallback_families?.length
-        ? raw.remotion.typography_fallback_families
-        : defaults.remotion.typography_fallback_families,
-      blocked_story_families: raw.remotion?.blocked_story_families?.length
-        ? raw.remotion.blocked_story_families
-        : defaults.remotion.blocked_story_families,
-    },
     throughput: {
       factory_drain_batch: raw.throughput?.factory_drain_batch ?? defaults.throughput?.factory_drain_batch,
-      remotion_max_concurrent: raw.throughput?.remotion_max_concurrent ?? defaults.throughput?.remotion_max_concurrent,
     },
   };
 }
-
-function tierForFamily(
-  family: RemotionLayoutFamily,
-  engines: BrandProductionEnginesConfig,
-): 'premium' | 'typography' | 'blocked' | 'remotion_only' {
-  if (engines.remotion.blocked_story_families.includes(family)) return 'blocked';
-  if (engines.remotion.premium_motion_families.includes(family)) return 'premium';
-  if (engines.remotion.typography_fallback_families.includes(family)) return 'typography';
-  return 'remotion_only';
-}
-
-const TIER_CYCLE = ['premium', 'typography', 'remotion_only', 'blocked'] as const;
 
 export function BrandProductionEnginesPanel({
   tenantId,
@@ -102,53 +66,8 @@ export function BrandProductionEnginesPanel({
       fal: { ...engines.fal, ...patch.fal },
       satori: { ...engines.satori, ...patch.satori },
       showcase: { ...engines.showcase!, ...patch.showcase },
-      remotion: { ...engines.remotion, ...patch.remotion },
       throughput: { ...engines.throughput, ...patch.throughput },
     });
-  };
-
-  const cycleFamily = (family: RemotionLayoutFamily) => {
-    const current = tierForFamily(family, engines);
-    const idx = TIER_CYCLE.indexOf(current);
-    const nextTier = TIER_CYCLE[(idx + 1) % TIER_CYCLE.length]!;
-
-    const premium = new Set(engines.remotion.premium_motion_families);
-    const typo = new Set(engines.remotion.typography_fallback_families);
-    const blocked = new Set(engines.remotion.blocked_story_families);
-
-    premium.delete(family);
-    typo.delete(family);
-    blocked.delete(family);
-
-    if (nextTier === 'premium') premium.add(family);
-    else if (nextTier === 'typography') typo.add(family);
-    else if (nextTier === 'blocked') blocked.add(family);
-
-    savePatch({
-      remotion: {
-        premium_motion_families: [...premium],
-        typography_fallback_families: [...typo],
-        blocked_story_families: [...blocked],
-      },
-    });
-  };
-
-  const tierBadge = (tier: ReturnType<typeof tierForFamily>) => {
-    const map = {
-      premium: { label: 'FAL Motion', color: '#8B5CF6', bg: 'rgba(139,92,246,0.15)' },
-      typography: { label: 'FAL Tipografi', color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
-      remotion_only: { label: 'Şablon', color: '#10B981', bg: 'rgba(16,185,129,0.12)' },
-      blocked: { label: 'Kapalı', color: '#6B7280', bg: 'rgba(107,114,128,0.12)' },
-    };
-    const m = map[tier];
-    return (
-      <span style={{
-        fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
-        color: m.color, background: m.bg,
-      }}>
-        {m.label}
-      </span>
-    );
   };
 
   const toggleStyle = (on: boolean, color = t.accent) => ({
@@ -311,87 +230,26 @@ export function BrandProductionEnginesPanel({
       <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
         Üretim Hızı
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Factory batch (slot/batch)</div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {[3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                disabled={saving}
-                onClick={() => savePatch({ throughput: { ...engines.throughput, factory_drain_batch: n } })}
-                style={{
-                  flex: 1, padding: '6px 0', borderRadius: 8, border: 'none',
-                  background: (engines.throughput?.factory_drain_batch ?? 4) === n ? '#10B981' : t.separator,
-                  color: (engines.throughput?.factory_drain_batch ?? 4) === n ? '#fff' : t.textMuted,
-                  fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer',
-                }}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Paralel tasarım</div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {[1, 2].map((n) => (
-              <button
-                key={n}
-                type="button"
-                disabled={saving}
-                onClick={() => savePatch({ throughput: { ...engines.throughput, remotion_max_concurrent: n } })}
-                style={{
-                  flex: 1, padding: '6px 0', borderRadius: 8, border: 'none',
-                  background: (engines.throughput?.remotion_max_concurrent ?? 2) === n ? '#10B981' : t.separator,
-                  color: (engines.throughput?.remotion_max_concurrent ?? 2) === n ? '#fff' : t.textMuted,
-                  fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer',
-                }}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Story layout families */}
-      <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-        Story Layout Aileleri — Dokun = sıra değişir
-      </div>
-      <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
-        FAL Motion → FAL Tipografi → Şablon → Kapalı
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 280, overflowY: 'auto' }}>
-        {ALL_FAMILIES.map((family) => {
-          const tier = tierForFamily(family, engines);
-          const meta = STORY_FAMILY_LABELS[family];
-          return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Factory batch (slot/batch)</div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[3, 4, 5].map((n) => (
             <button
-              key={family}
+              key={n}
               type="button"
               disabled={saving}
-              onClick={() => cycleFamily(family)}
+              onClick={() => savePatch({ throughput: { ...engines.throughput, factory_drain_batch: n } })}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '8px 10px', borderRadius: 10, border: `0.5px solid ${t.separator}`,
-                background: t.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
-                cursor: saving ? 'default' : 'pointer', textAlign: 'left',
+                flex: 1, padding: '6px 0', borderRadius: 8, border: 'none',
+                background: (engines.throughput?.factory_drain_batch ?? 4) === n ? '#10B981' : t.separator,
+                color: (engines.throughput?.factory_drain_batch ?? 4) === n ? '#fff' : t.textMuted,
+                fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer',
               }}
             >
-              <div>
-                <span style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary }}>
-                  {meta?.tr ?? family}
-                </span>
-                {meta?.tier === 1 && (
-                  <span style={{ fontSize: 9, marginLeft: 6, color: '#8B5CF6', fontWeight: 700 }}>★ Premium</span>
-                )}
-              </div>
-              {tierBadge(tier)}
+              {n}
             </button>
-          );
-        })}
+          ))}
+        </div>
       </div>
     </div>
   );

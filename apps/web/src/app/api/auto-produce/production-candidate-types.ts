@@ -1,4 +1,4 @@
-import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
+import type { StoryLayoutFamily } from '@/lib/story-template-types';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import type { StorySequenceRole } from '@/lib/story-sequence-rules';
 
@@ -30,7 +30,7 @@ export type StoryCandidate = {
   templateUseCase?: string;
   event_details?: Record<string, string>;
   sceneBriefBlock?: string;
-  preferredLayoutFamily?: RemotionLayoutFamily;
+  preferredLayoutFamily?: StoryLayoutFamily;
   slotRole?: ProductionSlotRole;
   publishChannel?: string;
   ideaIndex?: number;

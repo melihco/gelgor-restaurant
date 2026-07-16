@@ -42,7 +42,6 @@ const ENHANCE_PIPELINES = new Set([
   'carousel_gallery',
   'runway_reel',
   'fal_reel',
-  'remotion_story',
 ]);
 
 export function isAiEnhanceEnabled(brandTheme: Record<string, unknown> | null | undefined): boolean {
@@ -84,7 +83,7 @@ export function multiGalleryPhotoCount(
   if (assignment.pipeline === 'carousel_gallery' || contentKind === 'instagram_carousel') {
     return 4;
   }
-  if (assignment.pipeline === 'fal_story' || assignment.pipeline === 'remotion_story') {
+  if (assignment.pipeline === 'fal_story') {
     return 1;
   }
   if (assignment.slot_role === 'campaign_story_motion') {

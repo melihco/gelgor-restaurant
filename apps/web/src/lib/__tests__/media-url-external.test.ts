@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import {
-  confirmGalleryPhotoReachableForRemotion,
+  confirmGalleryPhotoReachableForRender,
   ensureProductionGalleryPhotoUrl,
   isFalAccessibleMediaUrl,
   mirrorGalleryPhotoToTenantStorage,
@@ -82,14 +82,14 @@ describe('resolveExternalGalleryPhotoTarget', () => {
   });
 });
 
-describe('confirmGalleryPhotoReachableForRemotion', () => {
+describe('confirmGalleryPhotoReachableForRender', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it('accepts proxy-wrapped gallery when external fetch succeeds', async () => {
     vi.mocked(fetchExternalImageBuffer).mockResolvedValueOnce(Buffer.alloc(120, 0xff));
-    const ok = await confirmGalleryPhotoReachableForRemotion(RELATIVE_PROXY, { timeoutMs: 5_000 });
+    const ok = await confirmGalleryPhotoReachableForRender(RELATIVE_PROXY, { timeoutMs: 5_000 });
     expect(ok).toBe(true);
     expect(fetchExternalImageBuffer).toHaveBeenCalledWith(SARNIC_HTTPS, 5_000);
   });
@@ -99,7 +99,7 @@ describe('confirmGalleryPhotoReachableForRemotion', () => {
     const fetchMock = vi.fn(async () => ({ ok: true, headers: { get: () => 'image/jpeg' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const ok = await confirmGalleryPhotoReachableForRemotion(RELATIVE_PROXY, { timeoutMs: 5_000 });
+    const ok = await confirmGalleryPhotoReachableForRender(RELATIVE_PROXY, { timeoutMs: 5_000 });
     expect(ok).toBe(true);
     expect(fetchMock.mock.calls.some((call: unknown[]) => String(call[0]).includes('/api/media-proxy'))).toBe(true);
   });

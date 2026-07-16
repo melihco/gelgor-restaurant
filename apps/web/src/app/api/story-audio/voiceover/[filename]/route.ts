@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
-const VOICEOVER_SERVE_DIR = '/tmp/remotion-serve';
+const VOICEOVER_SERVE_DIR = '/tmp/story-audio-serve';
 
 export async function GET(
   _req: NextRequest,

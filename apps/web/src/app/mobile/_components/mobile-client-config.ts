@@ -204,7 +204,7 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
         { label: 'AI Aktivite', sub: 'Ajan logları ve canlı üretim', iconBg: '#10b981', iconText: '◎', screen: 'ai-activity', operatorOnly: true },
         { label: 'AI Ajanlar', sub: 'Ajan sağlığı ve görevler', iconBg: '#9DBECE', iconText: '◉', screen: 'agents', operatorOnly: true },
         { label: 'Marka Kuralları', sub: 'Öğrenme ve onay önerileri', iconBg: '#10b981', iconText: '◈', screen: 'brand-rules', operatorOnly: true },
-        { label: 'Story Şablonları', sub: 'Remotion kütüphanesi', iconBg: '#60a5fa', iconText: '▶', screen: 'templates', operatorOnly: true },
+        { label: 'Story Şablonları', sub: 'Şablon kütüphanesi', iconBg: '#60a5fa', iconText: '▶', screen: 'templates', operatorOnly: true },
         { label: 'Çıktılar (ham)', sub: 'Tüm artifact listesi', iconBg: '#64748b', iconText: '▤', screen: 'outputs', operatorOnly: true },
       ],
     },

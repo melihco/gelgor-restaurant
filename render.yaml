@@ -167,7 +167,7 @@ services:
         value: "true"
       - key: CD_LITE
         value: "true"
-      - key: SKIP_ENHANCE_FOR_REMOTION_GRADE
+      - key: SKIP_ENHANCE_FOR_DESIGNED_GRADE
         value: "true"
       - key: VIDEO_TIER_SCOPE
         value: "true"
@@ -312,7 +312,7 @@ services:
         value: "true"
       - key: CD_LITE
         value: "true"
-      - key: SKIP_ENHANCE_FOR_REMOTION_GRADE
+      - key: SKIP_ENHANCE_FOR_DESIGNED_GRADE
         value: "true"
       - key: VIDEO_TIER_SCOPE
         value: "true"

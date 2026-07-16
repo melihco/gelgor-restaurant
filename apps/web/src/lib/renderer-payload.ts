@@ -287,13 +287,10 @@ export function resolveProductionRenderer(
   switch (pipeline) {
     case 'runway_reel':
       return 'runway';
-    case 'remotion_story':
     case 'marky_event':
-      return 'announcement';
-    case 'remotion_poster':
     case 'meta_ad':
     case 'google_ad':
-      // Canva retired — designed posts & ads use Remotion/announcement stack
+      // Canva retired — designed posts & ads use the announcement stack
       return 'announcement';
     case 'gallery_photo':
     case 'story_still':

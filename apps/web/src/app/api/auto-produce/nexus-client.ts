@@ -151,9 +151,7 @@ export function createNexusClient(config: NexusClientConfig) {
     }
 
     const attachStill = opts.attachGalleryStill ?? !(
-      opts.pipeline === 'remotion_story'
-      || opts.pipeline === 'remotion_poster'
-      || opts.slotRole === 'designed_post'
+      opts.slotRole === 'designed_post'
       || (opts.slotRole ?? '').includes('story_motion')
     );
     if (!attachStill) return;

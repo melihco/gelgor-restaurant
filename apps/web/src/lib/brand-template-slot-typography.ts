@@ -2,8 +2,8 @@
  * Template kütüphanesi slot → tipografi (fontPersonality + heading/body).
  * Marka renkleri ayrı kalır; font şablon veya marka/özel moda göre seçilir.
  */
-import type { FontPersonality } from './remotion-template-types';
-import { getRemotionTemplate } from './story-template-catalog';
+import type { FontPersonality } from './story-template-types';
+import { getStoryTemplate } from './story-template-catalog';
 import { getPosterTemplate } from './poster-template-catalog';
 import {
   GOOGLE_FONT_SPECS,
@@ -60,7 +60,7 @@ export function typographyFromTemplateId(
       bodyFont: stack.families[1],
     };
   }
-  const story = getRemotionTemplate(templateId);
+  const story = getStoryTemplate(templateId);
   if (!story) return { fontPersonality: 'brand' };
   const stack = resolveFontStack(story.spec.fontPersonality);
   return {

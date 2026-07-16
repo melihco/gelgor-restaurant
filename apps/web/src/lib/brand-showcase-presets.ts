@@ -2,7 +2,7 @@
  * Remotion showcase vibes — gerçek markalar + sektör/motion stili kombinasyonları.
  * Her preset: renk, font, copy ve foto havuzu ile aynı şablonu farklı hissiyatla önizletir.
  */
-import type { AgencyBrandKit } from './remotion-template-types';
+import type { AgencyBrandKit } from './story-template-types';
 import { AGENCY_BRAND_KITS, getBrandKit } from './agency-brand-kits';
 import type { MotionStyle } from './brand-motion-profile';
 import { pickBeachClubPhotoPool, pickBeautySalonPhotoPool, pickVerifiedPhotoPool } from './story-template-registry';

@@ -83,8 +83,6 @@ export function ledgerCategoryForPipeline(pipeline: string | undefined | null): 
     return 'fal_production';
   }
   if (p.includes('fal')) return 'fal_production';
-  if (p.includes('remotion_story')) return 'remotion_story';
-  if (p.includes('remotion')) return 'remotion_poster';
   if (p.includes('carousel')) return 'carousel';
   if (p.includes('story_still')) return 'story_still';
   if (p.includes('gallery')) return 'gallery_post';
@@ -221,9 +219,6 @@ export async function recordArtifactProductionCost(input: {
 
   await recordCostLedgerBatch(input.workspaceId, { artifactLines });
 }
-
-/** Remotion async render — CD + Grafiker + encode (estimated when not metered). */
-export const REMOTION_STORY_RENDER_USD = 0.03;
 
 export async function fetchMissionCostLedgerSummary(
   workspaceId: string,

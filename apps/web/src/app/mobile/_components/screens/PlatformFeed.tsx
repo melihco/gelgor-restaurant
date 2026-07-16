@@ -31,7 +31,7 @@ import {
   storyRetryLabel,
   storyRetryIsBusy,
   isProductionBundleStory,
-  isRemotionVideoStoryArtifact,
+  isVideoStoryArtifact,
   parseArtifactMissionId,
   resolvePosterUrl,
   resolveBrandedPostUrl,
@@ -219,7 +219,7 @@ function FeedArtifactQualityStrip({
   );
 }
 
-/** Story bar: all story kinds (Remotion, poster still, legacy). */
+/** Story bar: all story kinds (video, poster still, legacy). */
 function isFeedStoryItem(artifact: OutputArtifact): boolean {
   return detectKind(artifact) === 'story';
 }
@@ -229,10 +229,10 @@ function productionRoleBadge(meta: Record<string, unknown>): string | null {
   const role = String(meta.production_role ?? '').trim();
   const pipeline = String(meta.pipeline ?? '').trim();
   if (role === 'organic_post' || pipeline === 'gallery_photo') return 'Galeri';
-  if (role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'fal_design' || pipeline === 'remotion_poster') return 'Tasarım';
+  if (role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post' || pipeline === 'fal_design') return 'Tasarım';
   if (role === 'organic_story_still' || pipeline === 'story_still') return 'Story';
-  if (pipeline === 'remotion_story' || pipeline === 'fal_story' || meta.remotion_mission_story) return 'Story';
-  if (role.includes('campaign') || pipeline.includes('remotion')) return 'Kampanya';
+  if (pipeline === 'fal_story') return 'Story';
+  if (role.includes('campaign')) return 'Kampanya';
   if (role.includes('reel') || pipeline === 'runway_reel') return 'Reel';
   if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'Carousel';
   if (role === 'paid_ad_google_creative' || pipeline === 'google_ad') return 'Google Ads';
@@ -836,8 +836,8 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   && prev.consumerMode === next.consumerMode,
 );
 
-function isRemotionVideoStory(artifact: OutputArtifact): boolean {
-  return isRemotionVideoStoryArtifact(artifact);
+function isVideoStory(artifact: OutputArtifact): boolean {
+  return isVideoStoryArtifact(artifact);
 }
 
 /**
@@ -895,8 +895,7 @@ function resolveArtifactImg(artifact: { contentUrl?: string | null; content?: st
   ];
   // Helper: skip video files — they can't be displayed as images
   const isVideoUrl = (u: unknown) => typeof u === 'string' && (
-    u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov') ||
-    u.includes('/api/remotion/video/') || u.includes('remotion-serve')
+    u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.mov')
   );
 
   for (const c of candidates) {
@@ -919,7 +918,7 @@ function isCanvaEditUrl(u: string): boolean {
 function isPublishableMediaUrl(u: string): boolean {
   if (!u.trim()) return false;
   if (isCanvaEditUrl(u)) return false;
-  if (u.includes('/api/remotion/') || u.includes('/api/media')) return true;
+  if (u.includes('/api/media')) return true;
   if (/^\/[0-9a-f-]{36}\/(stories|video|reel|posts|image)\//i.test(u)) return true;
   if (/^[0-9a-f-]{36}\/(stories|video|reel|posts|image)\//i.test(u.replace(/^\//, ''))) return true;
   if (u.startsWith('http') || u.startsWith('data:')) return !isCanvaEditUrl(u);
@@ -1616,7 +1615,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
   };
   const storyVideoUrl = resolveVideoUrl(rawVideoUrl);
   // Consider any story with a valid video URL as a Remotion story (play as video)
-  const isRemotionStory = Boolean(storyVideoUrl);
+  const isVideoStoryArt = Boolean(storyVideoUrl);
   const handle = '@' + resolveFeedHandle(meta, tenantBrand);
   const brandLabel = resolveFeedBrandName(meta, tenantBrand);
   const isApproved = artifact.status === 'approved';
@@ -1659,7 +1658,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
       {/* Full-width 9:16 story frame — NO caption below */}
       <div className="ig-vertical-media-stage">
         {/* Remotion MP4 story — plays inline; poster = original gallery photo */}
-        {isRemotionStory && storyVideoUrl ? (
+        {isVideoStoryArt && storyVideoUrl ? (
           <>
             <video
               ref={storyVideoRef}
@@ -1724,7 +1723,7 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
             fontSize: 48, opacity: 0.3 }}>↕</div>
         )}
         {/* Remotion badge + Grafiker quality score */}
-        {isRemotionStory && (
+        {isVideoStoryArt && (
           <div style={{ position: 'absolute', top: 48, right: 14, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             {/* Composition ID chip */}
             <div style={{ padding: '3px 8px', borderRadius: 8,
@@ -3229,15 +3228,15 @@ function PlatformFeedInner() {
             const isFailed = isBundleFailed(art) && !vid;
             const initials = brandName ? brandName.slice(0, 2).toUpperCase() : 'S';
             const grafikerScore = typeof meta.grafiker_score === 'number' ? meta.grafiker_score : null;
-            const isRemotionVid = Boolean(vid);
+            const isVideoStoryRing = Boolean(vid);
             // Remotion stories: purple-to-gold gradient | Rendering: amber | Failed: red | Viewed: grey
             const ringBg = isViewed || !isPending
               ? t.separator
               : isFailed
               ? 'linear-gradient(135deg, #dc2626, #ef4444, #f87171)'
-              : isRendering && !isRemotionVid
+              : isRendering && !isVideoStoryRing
               ? 'linear-gradient(135deg, #f59e0b, #fbbf24, #fcd34d)'
-              : isRemotionVid
+              : isVideoStoryRing
               ? 'linear-gradient(135deg, #4D7088, #8AABBD, #c9a96e, #f59e0b)'
               : 'linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)';
 
@@ -3311,7 +3310,7 @@ function PlatformFeedInner() {
                   }}>
                     {brandName || 'Story'}
                   </div>
-                  {operatorMode && storyRetryIsBusy(art) && !isRemotionVid && !isViewed && (
+                  {operatorMode && storyRetryIsBusy(art) && !isVideoStoryRing && !isViewed && (
                     <div style={{ fontSize: 9, color: '#F59E0B', fontWeight: 700, marginTop: 1 }}>
                       Render…
                     </div>
@@ -3322,7 +3321,7 @@ function PlatformFeedInner() {
                     onRetry={() => { void retryStoryRender(art.id); }}
                     variant="bubble"
                   />
-                  {operatorMode && isRemotionVid && !isViewed && (
+                  {operatorMode && isVideoStoryRing && !isViewed && (
                     <div style={{ fontSize: 9, color: '#9DBECE', fontWeight: 700, marginTop: 1 }}>
                       ▶ Video
                     </div>
@@ -3701,17 +3700,16 @@ function PlatformFeedInner() {
                 const c = parseArtifactContent(art.content);
                 const m = (art.metadata ?? {}) as Record<string, unknown>;
                 const vid = resolveStoryVideo(art);
-                const isRemotionVideo = Boolean(vid);
+                const isStoryVideoReady = Boolean(vid);
                 const isRendering = isBundleRendering(art);
-                const canApprove = isPending && !isRendering && (isRemotionVideo || !isProductionBundleStory(art));
+                const canApprove = isPending && !isRendering && (isStoryVideoReady || !isProductionBundleStory(art));
                 const grafiker = typeof m.grafiker_score === 'number' ? m.grafiker_score : null;
                 const compositionId = String((c as any)?.compositionId || m?.compositionId || '');
-                const isLocalVideo = vid?.startsWith('/api/remotion/video/');
 
                 return (
                   <>
                     {/* Remotion info bar */}
-                    {debugMode && isRemotionVideo && (
+                    {debugMode && isStoryVideoReady && (
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         padding: '6px 10px', borderRadius: 10,
@@ -3733,7 +3731,7 @@ function PlatformFeedInner() {
                         </div>
                         {/* Download button for Instagram */}
                         {vid && (
-                          <a href={vid} download={`remotion-story-${art.id?.slice(0,8)}.mp4`}
+                          <a href={vid} download={`story-${art.id?.slice(0,8)}.mp4`}
                             style={{
                               fontSize: 10, padding: '4px 10px', borderRadius: 8,
                               background: 'rgba(255,255,255,0.15)', color: '#fff',
@@ -3743,16 +3741,6 @@ function PlatformFeedInner() {
                             ↓ İndir
                           </a>
                         )}
-                      </div>
-                    )}
-
-                    {/* Local video warning */}
-                    {isLocalVideo && (
-                      <div style={{
-                        fontSize: 10, color: 'rgba(255,255,255,0.55)', textAlign: 'center',
-                        fontStyle: 'italic',
-                      }}>
-                        Dev ortamı: R2 olmadan doğrudan Instagram yayını yapılamaz
                       </div>
                     )}
 
@@ -3808,7 +3796,7 @@ function PlatformFeedInner() {
                         {approveMutation.isPending ? (
                           <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Paylaşılıyor…</>
                         ) : (
-                          <>{isRemotionVideo ? '▶ Story paylaş' : '✓ Onayla'}</>
+                          <>{isStoryVideoReady ? '▶ Story paylaş' : '✓ Onayla'}</>
                         )}
                       </button>
                     )}

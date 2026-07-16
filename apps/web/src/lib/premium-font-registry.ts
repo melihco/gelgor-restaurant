@@ -4,7 +4,7 @@
  * Replaces generic Montserrat/Inter defaults with editorial display + refined body pairs.
  */
 
-import type { FontPersonality } from './remotion-template-types';
+import type { FontPersonality } from './story-template-types';
 
 /** Google Fonts CSS2 family specs (weights the engine uses). */
 export const GOOGLE_FONT_SPECS: Record<string, string> = {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isKnownCalendarDesignLayoutFamily,
   resolveCalendarDesignLayout,
-  remotionLayoutHintForCanvaArchetype,
+  storyLayoutHintForCanvaArchetype,
 } from '@/lib/calendar-design-layout';
 
 describe('resolveCalendarDesignLayout', () => {
@@ -90,6 +90,6 @@ describe('isKnownCalendarDesignLayoutFamily', () => {
   it('validates catalog archetype ids', () => {
     expect(isKnownCalendarDesignLayoutFamily('event_ticket_stub')).toBe(true);
     expect(isKnownCalendarDesignLayoutFamily('festival_poster')).toBe(false);
-    expect(remotionLayoutHintForCanvaArchetype('event_ticket_stub')).toBe('event_ticket');
+    expect(storyLayoutHintForCanvaArchetype('event_ticket_stub')).toBe('event_ticket');
   });
 });

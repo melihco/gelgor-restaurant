@@ -7,7 +7,7 @@
  * Persisted: brand_contexts.brand_theme.template_library (JSONB) — typography only.
  */
 import type { ContentIntent } from './brand-motion-profile';
-import type { RemotionCompositionId } from './brand-motion-profile';
+import type { MotionCompositionId } from './brand-motion-profile';
 import type { StoryCompositionId } from '@/lib/story-composition-types';
 import type { ProductionSlotRole } from './mission-production-manifest';
 import { AGENCY_BRAND_KITS, getBrandKit } from './agency-brand-kits';
@@ -17,11 +17,11 @@ import {
 } from './poster-template-catalog';
 import type { PosterLayoutFamily } from './poster-template-types';
 import {
-  REMOTION_TEMPLATE_CATALOG,
-  REMOTION_TEMPLATE_BY_ID,
-  getRemotionTemplate,
+  STORY_TEMPLATE_CATALOG,
+  STORY_TEMPLATE_BY_ID,
+  getStoryTemplate,
 } from './story-template-catalog';
-import type { FontPersonality, RemotionLayoutFamily } from './remotion-template-types';
+import type { FontPersonality, StoryLayoutFamily } from './story-template-types';
 import { kitMatchesSector, resolveKitForSector } from './story-template-registry';
 import { diversificationSeed, hashTenantSeed, tenantKitSeed } from './tenant-template-seed';
 import { resolveTextOverlayPrefs } from './brand-text-overlay-prefs';
@@ -86,7 +86,7 @@ interface SlotSpec {
   labelEn: string;
   format: BrandTemplateSlotFormat;
   useCase: BrandTemplateLibrarySlot['useCase'];
-  storyFamilies?: RemotionLayoutFamily[];
+  storyFamilies?: StoryLayoutFamily[];
   posterFamilies?: PosterLayoutFamily[];
   legacyComposition?: StoryCompositionId;
   intents: ContentIntent[];
@@ -187,24 +187,24 @@ export const STANDARD_REMOTION_POST_SLOT_ORDER = [
   'social_proof_post',
 ] as const;
 
-export type StandardRemotionStorySlotKey = typeof STANDARD_REMOTION_STORY_SLOT_ORDER[number];
-export type StandardRemotionPostSlotKey = typeof STANDARD_REMOTION_POST_SLOT_ORDER[number] | 'ad_creative_post';
+export type StandardStorySlotKey = typeof STANDARD_REMOTION_STORY_SLOT_ORDER[number];
+export type StandardPostSlotKey = typeof STANDARD_REMOTION_POST_SLOT_ORDER[number] | 'ad_creative_post';
 
 /**
  * Global Remotion standard:
  * every brand uses the same Brand Template Library slot routing for Remotion
  * story/post production, while the chosen template/font differs per brand.
  */
-export function resolveStandardRemotionLibrarySlotKey(input: {
+export function resolveStandardLibrarySlotKey(input: {
   slotRole?: ProductionSlotRole | string;
   pipeline?: string | null;
   storyOrdinal?: number;
   posterOrdinal?: number;
-}): StandardRemotionStorySlotKey | StandardRemotionPostSlotKey | undefined {
+}): StandardStorySlotKey | StandardPostSlotKey | undefined {
   const role = String(input.slotRole ?? '').trim().toLowerCase();
   const pipeline = String(input.pipeline ?? '').trim().toLowerCase();
 
-  if (role === 'campaign_story_motion' || pipeline === 'remotion_story' || pipeline === 'fal_story') {
+  if (role === 'campaign_story_motion' || pipeline === 'fal_story') {
     const idx = Math.max(0, input.storyOrdinal ?? 0) % STANDARD_REMOTION_STORY_SLOT_ORDER.length;
     return STANDARD_REMOTION_STORY_SLOT_ORDER[idx]!;
   }
@@ -216,7 +216,7 @@ export function resolveStandardRemotionLibrarySlotKey(input: {
   if (role === 'designed_post') return 'campaign_post';
   if (role === 'designed_typography') return 'social_proof_post';
 
-  if (pipeline === 'remotion_poster' || pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography') {
+  if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography') {
     const idx = Math.max(0, input.posterOrdinal ?? 0) % STANDARD_REMOTION_POST_SLOT_ORDER.length;
     return STANDARD_REMOTION_POST_SLOT_ORDER[idx]!;
   }
@@ -236,13 +236,13 @@ function sectorMatchesTemplate(sector: string, templateSectors: string[]): boole
 
 function pickStoryTemplate(
   sector: string,
-  families: RemotionLayoutFamily[],
+  families: StoryLayoutFamily[],
   seed: number,
   avoidIds: string[] = [],
-  avoidFamilies: RemotionLayoutFamily[] = [],
+  avoidFamilies: StoryLayoutFamily[] = [],
 ): string | undefined {
-  const sectorPool = REMOTION_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
-  const pool = sectorPool.length >= 5 ? sectorPool : REMOTION_TEMPLATE_CATALOG;
+  const sectorPool = STORY_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
+  const pool = sectorPool.length >= 5 ? sectorPool : STORY_TEMPLATE_CATALOG;
   const allMatches = families.flatMap((family) => pool.filter((t) => t.family === family));
   const unique = Array.from(new Map(allMatches.map((t) => [t.id, t])).values());
   const familyFiltered = avoidFamilies.length
@@ -294,13 +294,13 @@ function pickPosterTemplate(
 export function compositionIdForStoryTemplate(
   storyTemplateId: string | undefined,
   slot: BrandTemplateLibrarySlot,
-): RemotionCompositionId {
-  if (storyTemplateId && REMOTION_TEMPLATE_BY_ID.has(storyTemplateId)) {
+): MotionCompositionId {
+  if (storyTemplateId && STORY_TEMPLATE_BY_ID.has(storyTemplateId)) {
     return 'SpecStory';
   }
   if (slot.legacyComposition) return slot.legacyComposition;
   if (storyTemplateId) {
-    return getRemotionTemplate(storyTemplateId)?.legacyComposition ?? 'SpecStory';
+    return getStoryTemplate(storyTemplateId)?.legacyComposition ?? 'SpecStory';
   }
   return 'SpecStory';
 }
@@ -512,7 +512,7 @@ export function resolveProductionTemplate(input: {
   slot: BrandTemplateLibrarySlot;
   storyTemplateId?: string;
   posterTemplateId?: string;
-  compositionId: RemotionCompositionId;
+  compositionId: MotionCompositionId;
   kitId: string;
 } {
   let slot: BrandTemplateLibrarySlot;
@@ -594,7 +594,7 @@ export function librarySlotToCatalogEntry(
 
   const storyId = slot.storyTemplateId;
   if (!storyId) return null;
-  const story = REMOTION_TEMPLATE_BY_ID.get(storyId);
+  const story = STORY_TEMPLATE_BY_ID.get(storyId);
   if (!story) return null;
   return {
     kind: 'story',
@@ -666,7 +666,7 @@ export function mapProductionContextToLibrarySlotKey(input: {
 export interface BrandStoryProductionPick {
   slot: BrandTemplateLibrarySlot;
   storyTemplateId: string;
-  compositionId: RemotionCompositionId;
+  compositionId: MotionCompositionId;
   kitId: string;
   intent: ContentIntent;
   templateNameTr: string;
@@ -680,7 +680,7 @@ function storyPickFromSlot(
 ): BrandStoryProductionPick | null {
   const storyTemplateId = slot.storyTemplateId;
   if (!storyTemplateId || !slot.enabled || slot.format !== 'story') return null;
-  const tpl = getRemotionTemplate(storyTemplateId);
+  const tpl = getStoryTemplate(storyTemplateId);
   return {
     slot,
     storyTemplateId,
@@ -753,8 +753,8 @@ export function resolveBrandStoryProductionTemplate(input: {
 
   const storyTemplateId = production.storyTemplateId
     ?? pickStoryTemplate(sector, ['editorial_bottom'], input.ideaIndex ?? 0)
-    ?? 'remotion_editorial_bottom_01';
-  const tpl = getRemotionTemplate(storyTemplateId);
+    ?? 'story_editorial_bottom_01';
+  const tpl = getStoryTemplate(storyTemplateId);
 
   return {
     slot: production.slot,
@@ -774,7 +774,7 @@ export function resolveStoryCompositionForBrandTemplate(input: {
   slotRole?: ProductionSlotRole | string;
   forceEvent?: boolean;
 }): StoryCompositionId {
-  if (REMOTION_TEMPLATE_BY_ID.has(input.storyTemplateId)) {
+  if (STORY_TEMPLATE_BY_ID.has(input.storyTemplateId)) {
     const fromCatalog = compositionIdForStoryTemplate(input.storyTemplateId, input.slot);
     if (fromCatalog === 'SpecStory') return 'SpecStory';
     if (input.slot.legacyComposition) return input.slot.legacyComposition;
@@ -798,7 +798,7 @@ export interface TemplateOption {
   fontPreview?: string;
 }
 
-const STORY_FAMILY_GROUP_TR: Partial<Record<RemotionLayoutFamily, string>> = {
+const STORY_FAMILY_GROUP_TR: Partial<Record<StoryLayoutFamily, string>> = {
   luxury_kinetic_type: 'Premium · kinetic type',
   glassmorphism_showcase: 'Premium · glass showcase',
   editorial_product_stage: 'Premium · product stage',
@@ -806,7 +806,7 @@ const STORY_FAMILY_GROUP_TR: Partial<Record<RemotionLayoutFamily, string>> = {
   polaroid_stack: 'Polaroid · 2–3 foto',
 };
 
-const STORY_FAMILY_BADGE_TR: Partial<Record<RemotionLayoutFamily, string>> = {
+const STORY_FAMILY_BADGE_TR: Partial<Record<StoryLayoutFamily, string>> = {
   luxury_kinetic_type: 'Premium',
   glassmorphism_showcase: 'Premium',
   editorial_product_stage: 'Premium',
@@ -821,7 +821,7 @@ export function storyLayoutFamilyForSlotKey(
   slotKey: string | undefined,
   sector?: string,
   seed = 0,
-): RemotionLayoutFamily | undefined {
+): StoryLayoutFamily | undefined {
   if (!slotKey) return undefined;
   const spec = getSlotSpec(slotKey);
   const families = getSectorSlotStoryFamilies(sector ?? '', slotKey, spec?.storyFamilies)
@@ -877,8 +877,8 @@ export function resolveStoryLibrarySlotKey(input: {
 export function listStoryTemplateOptions(sector: string, slotKey: string): TemplateOption[] {
   const spec = getSlotSpec(slotKey);
   const families = spec?.storyFamilies ?? [];
-  const sectorPool = REMOTION_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
-  const pool = sectorPool.length >= 5 ? sectorPool : REMOTION_TEMPLATE_CATALOG;
+  const sectorPool = STORY_TEMPLATE_CATALOG.filter((t) => sectorMatchesTemplate(sector, t.sectors));
+  const pool = sectorPool.length >= 5 ? sectorPool : STORY_TEMPLATE_CATALOG;
   const filtered = families.length ? pool.filter((t) => families.includes(t.family)) : pool;
   const baseList = filtered.length ? filtered : pool;
 
@@ -886,7 +886,7 @@ export function listStoryTemplateOptions(sector: string, slotKey: string): Templ
   const curatedSet = new Set(curatedIds);
   const ordered: typeof baseList = [];
   for (const id of curatedIds) {
-    const tpl = REMOTION_TEMPLATE_BY_ID.get(id);
+    const tpl = STORY_TEMPLATE_BY_ID.get(id);
     if (tpl && baseList.some((t) => t.id === id)) ordered.push(tpl);
   }
   const agencyRanked = [...baseList]

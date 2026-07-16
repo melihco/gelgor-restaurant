@@ -94,26 +94,26 @@ describe('Faz 1.4 — designed_post enhance skip flag', () => {
   });
 
   it('DEFAULT (flag off): designed_post bg enhance still allowed', () => {
-    const input = baseInput({ skipEnhanceForRemotionGrade: false });
-    expect(resolveGptEnhanceSkipReason(input)).not.toBe('remotion_grade');
+    const input = baseInput({ skipEnhanceForDesignedGrade: false });
+    expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
   });
 
-  it('flag on + strong gallery match → skip with remotion_grade', () => {
-    const input = baseInput({ skipEnhanceForRemotionGrade: true });
-    expect(resolveGptEnhanceSkipReason(input)).toBe('remotion_grade');
+  it('flag on + strong gallery match → skip with designed_grade', () => {
+    const input = baseInput({ skipEnhanceForDesignedGrade: true });
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_grade');
     expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
   it('flag on but weak match → NOT skipped (quality preserved)', () => {
     const input = baseInput({
-      skipEnhanceForRemotionGrade: true,
+      skipEnhanceForDesignedGrade: true,
       galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE - 10,
     });
-    expect(resolveGptEnhanceSkipReason(input)).not.toBe('remotion_grade');
+    expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
   });
 
   it('flag on but stock photo → NOT skipped', () => {
-    const input = baseInput({ skipEnhanceForRemotionGrade: true, referenceIsStock: true });
-    expect(resolveGptEnhanceSkipReason(input)).not.toBe('remotion_grade');
+    const input = baseInput({ skipEnhanceForDesignedGrade: true, referenceIsStock: true });
+    expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
   });
 });

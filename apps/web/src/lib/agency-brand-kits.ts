@@ -3,7 +3,7 @@
  * Each tenant can bind to a kit_id + overrides in brand_theme.
  */
 
-import type { AgencyBrandKit } from './remotion-template-types';
+import type { AgencyBrandKit } from './story-template-types';
 
 const SECTORS = [
   'beach_club', 'fine_dining', 'hotel_resort', 'nightclub', 'rooftop_bar',

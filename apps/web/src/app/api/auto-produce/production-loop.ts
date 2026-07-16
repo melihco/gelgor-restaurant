@@ -190,12 +190,11 @@ import {
   releaseAllProductionLocks,
   releaseProductionLock,
 } from '@/lib/production-in-process-lock';
-import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
+import type { StoryLayoutFamily } from '@/lib/story-template-types';
 import {
   parseMotionProfileFromTheme,
   resolveContentIntent,
 } from '@/lib/brand-motion-profile';
-import { resolveStoryAudioMood } from '@/lib/story-audio-mood';
 import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import {
@@ -1433,7 +1432,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     pisScores.push(pisGate.score);
 
     const layoutFamilyCandidates = (((feedDirectorReport as any)?.recommended_layout_families ?? []) as unknown[])
-      .filter((f): f is RemotionLayoutFamily => typeof f === 'string');
+      .filter((f): f is StoryLayoutFamily => typeof f === 'string');
     // Sprint 4 — Mission Originality: prefer unused layout families first.
     // Fresh families come first so the resolver picks them as primary candidates.
     // Already-used families are appended as fallback (resolver may still pick them
@@ -1465,7 +1464,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       assignment,
       galleryOnlyVisual,
       isHeroReel,
-      willRemotionStory: false,
+      willStoryOverlay: false,
       designedPosterSync: false,
     })) {
       // Retry when previous fetch failed (null) and this is a high-value visual slot.
@@ -2882,7 +2881,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || assignment.slot_role === 'designed_post'
       || assignment.slot_role === 'designed_typography'
       || assignment.slot_role === 'fal_designed_post';
-    const willRemotionStoryForEnhance = bundleCards !== false
+    const willStoryOverlayForEnhance = bundleCards !== false
       && isStoryIdeaForEnhance
       && Boolean(resolvedReferenceUrl)
       && (!isOrganicStoryStillSlot || productionProfile.requireDesignedVisuals)
@@ -2982,11 +2981,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           galleryMatchScore,
           pickedFromBrandGallery,
           referenceIsStock,
-          willRemotionStory: false,
-          willRemotionPost: false,
+          willStoryOverlay: false,
+          willDesignedPost: false,
           designedPosterSync: false,
           designedPostPhotoEnhance: true,
-          skipEnhanceForRemotionGrade: serverConfig.productionFlags.skipEnhanceForRemotionGrade,
+          skipEnhanceForDesignedGrade: serverConfig.productionFlags.skipEnhanceForDesignedGrade,
           productionProfile,
         },
       });
@@ -3044,8 +3043,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryMatchScore,
         pickedFromBrandGallery,
         referenceIsStock,
-        willRemotionStory: willRemotionStoryForEnhance,
-        willRemotionPost: false,
+        willStoryOverlay: willStoryOverlayForEnhance,
+        willDesignedPost: false,
         designedPosterSync: isDesignedPostSlotEarly,
         productionProfile,
       },
@@ -3202,7 +3201,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (calendarDesignLayout) {
       console.log(
         `[auto-produce] [calendar-layout] archetype=${calendarDesignLayout.canvaArchetypeId} ` +
-        `remotion=${calendarDesignLayout.layoutFamilyHint} source=${calendarDesignLayout.source}`,
+        `layout=${calendarDesignLayout.layoutFamilyHint} source=${calendarDesignLayout.source}`,
       );
     }
     const falDesignCtx = usesFalDesignerTrack && !adHocBrief
@@ -3699,10 +3698,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         }
       }
     }
-    const willRemotionStorySoon = bundleCards !== false && isStoryIdeaEarly && Boolean(referenceUrl)
+    const willStoryOverlaySoon = bundleCards !== false && isStoryIdeaEarly && Boolean(referenceUrl)
       && !isOrganicStoryStill && !isFalDesignedPostSlot && !isFalMissionVideo && !isFalOnlyVideo;
     const skipMarkyLayer = Boolean(videoUrl) || isReel || (isCarousel && carouselUrls.length >= 2)
-      || willRemotionStorySoon
+      || willStoryOverlaySoon
       || (isOrganicStoryStill && isStoryIdeaEarly && !productionProfile.requireDesignedVisuals)
       || galleryOnlyVisual
       || !shouldUseMarkyLayer(productionProfile);
@@ -4229,9 +4228,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         }
         if (videoUrl) return normalizeProductionPipeline(assignment.pipeline) === 'fal_reel' ? 'fal_reel' : 'runway_reel';
         if (missionVisualDesignRendered) return 'mission_visual_design_card';
-        if (designedPosterSyncUrl) return 'remotion_poster_sync';
+        if (designedPosterSyncUrl) return 'designed_poster_sync';
         if (markyBranded && imageUrl && referenceUrl && imageUrl !== referenceUrl) {
-          return 'remotion_poster_marky';
+          return 'marky_poster';
         }
         if (aiEnhanceApplied && !productionProfile.requireDesignedVisuals) {
           return 'gpt_image_enhance';
@@ -4341,8 +4340,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ai_visual_standard: buildAiVisualStandardMetadata(aiVisualStandard, aiPhotoEnhanceLevel),
       ai_visual_subject_resolved: resolvedVisualSubject,
       visual_pipeline_steps: resolveVisualPipelineSteps(aiVisualStandard, kind, assignment, {
-        willRemotionStory: false,
-        willRemotionPost: false,
+        willStoryOverlay: false,
+        willDesignedPost: false,
         isReel,
         designedPosterSync: designedPosterReady,
         postBrandLayer: false,

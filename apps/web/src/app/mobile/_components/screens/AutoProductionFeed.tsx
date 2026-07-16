@@ -132,8 +132,7 @@ function findMissionProductionArtifact(
       meta.production_bundle
       || meta.auto_produced
       || content.production_bundle
-      || meta.source === 'auto-produce'
-      || meta.source === 'remotion',
+      || meta.source === 'auto-produce',
     );
   });
 }
@@ -781,17 +780,17 @@ export function AutoProductionFeed({
       }
 
       const isReel = kind.includes('reel');
-      // Story with Remotion video: finalUrl is the MP4.
+      // Story with a produced video: finalUrl is the MP4.
       // imageUrl must be the ORIGINAL gallery photo, videoUrl must be the MP4.
-      const hasRemotionVideo = kind === 'instagram_story' && item.reelUrl && vm === 'reel';
-      const videoUrlToSave = (isReel || hasRemotionVideo) ? finalUrl : undefined;
-      const imageUrlToSave = hasRemotionVideo
+      const hasStoryVideo = kind === 'instagram_story' && item.reelUrl && vm === 'reel';
+      const videoUrlToSave = (isReel || hasStoryVideo) ? finalUrl : undefined;
+      const imageUrlToSave = hasStoryVideo
         ? (item.referencePhotoUrl || item.imageUrl || undefined)
         : isReel ? undefined
         : finalUrl;
       const referencePhoto = item.referencePhotoUrl || item.imageUrl || undefined;
       const markyBranded = Boolean(item.brandKitUrl && referencePhoto && item.brandKitUrl !== referencePhoto);
-      const bundleReady = Boolean(hasRemotionVideo || (isReel && finalUrl) || markyBranded);
+      const bundleReady = Boolean(hasStoryVideo || (isReel && finalUrl) || markyBranded);
 
       return apiClient.saveCreativeArtifact({
         title: item.headline || `${brandName} — ${fmt}`,
@@ -804,7 +803,7 @@ export function AutoProductionFeed({
           reference_photo_url: referencePhoto,
           videoUrl: videoUrlToSave,
           agency_branded: markyBranded,
-          source: hasRemotionVideo ? 'remotion' : isReel ? 'fal' : undefined,
+          source: hasStoryVideo ? 'auto-produce' : isReel ? 'fal' : undefined,
           idea_index: item.ideaIndex,
           ...(bundleReady ? { production_bundle: true, bundle_status: 'ready' } : {}),
         }),

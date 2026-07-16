@@ -1,7 +1,7 @@
 /**
  * Per-family showcase demo copy — each template family gets distinct headline/subtitle.
  */
-import type { RemotionLayoutFamily, AgencyBrandKit } from './remotion-template-types';
+import type { StoryLayoutFamily, AgencyBrandKit } from './story-template-types';
 import {
   BEACH_CLUB_FAMILY_DEMO,
   BEACH_CLUB_SLOT_DEMO,
@@ -22,7 +22,7 @@ export interface ShowcaseDemoProps {
   cta?: string;
 }
 
-const FAMILY_DEMO: Record<RemotionLayoutFamily, ShowcaseDemoProps> = {
+const FAMILY_DEMO: Record<StoryLayoutFamily, ShowcaseDemoProps> = {
   editorial_bottom: { headline: 'Akşam\nBaşlıyor', subtitle: 'Rezervasyon için DM', categoryLabel: 'EVENING' },
   editorial_left: { headline: 'Season\nCollection', subtitle: 'Limited edition experience', categoryLabel: 'NEW' },
   split_panel: { headline: 'Chef\'s Table', subtitle: '8 kişilik özel masa · Cuma', categoryLabel: 'RESERVE' },
@@ -59,7 +59,7 @@ const SLOT_DEMO: Record<string, ShowcaseDemoProps> = {
 };
 
 export function resolveShowcaseDemoProps(input: {
-  family: RemotionLayoutFamily;
+  family: StoryLayoutFamily;
   kit: AgencyBrandKit;
   slotKey?: string;
   variantIndex?: number;

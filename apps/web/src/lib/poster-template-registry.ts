@@ -16,7 +16,7 @@ import type {
   PosterShowcaseJob,
   PosterTemplateDefinition,
 } from './poster-template-types';
-import type { AgencyBrandKit } from './remotion-template-types';
+import type { AgencyBrandKit } from './story-template-types';
 
 const PHOTOS_NIGHTLIFE = [
   'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1080&q=85',

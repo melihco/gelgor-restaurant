@@ -2,7 +2,7 @@
  * Production Stack — sequential enrichment for Mission Hub → auto-produce.
  * Galeri → Feed Art Director → Scene Brief → Render routing → bundle metadata.
  */
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { StoryLayoutFamily } from './story-template-types';
 import type { ProductionAssignment, ProductionSlotRole } from './mission-production-manifest';
 import type { FeedArtDirectorReport } from './weekly-publish-package';
 import { LAYOUT_FAMILY_IDS } from './creative-director-routing';
@@ -135,10 +135,10 @@ export function toReelSceneBrief(
 export interface ProductionStackContext {
   feedDirectorReport?: FeedArtDirectorReport | null;
   heroReelIndex: number | null;
-  layoutFamilyUsage: Map<RemotionLayoutFamily, number>;
+  layoutFamilyUsage: Map<StoryLayoutFamily, number>;
   maxSameLayoutFamily: number;
   /** APO-8 — reddedilen layout'lar bir sonraki üretimde atlanır */
-  blockedLayoutFamilies: Set<RemotionLayoutFamily>;
+  blockedLayoutFamilies: Set<StoryLayoutFamily>;
 }
 
 export interface CreativeTraceMetadata {
@@ -147,7 +147,7 @@ export interface CreativeTraceMetadata {
   feed_director_source: 'feed_art_director' | 'heuristic';
   hero_reel: boolean;
   scene_brief_used: boolean;
-  layout_family_hint?: RemotionLayoutFamily;
+  layout_family_hint?: StoryLayoutFamily;
   scene_mood?: string;
   scene_lighting?: string;
 }
@@ -157,7 +157,7 @@ export function createProductionStackContext(
   opts?: {
     assignments?: Array<{ idea_index: number; slot_role: string }>;
     ideas?: Record<string, unknown>[];
-    blockedLayoutFamilies?: Iterable<RemotionLayoutFamily>;
+    blockedLayoutFamilies?: Iterable<StoryLayoutFamily>;
   },
 ): ProductionStackContext {
   return {
@@ -320,8 +320,8 @@ export function resolveHeroReelIndexFromAssignments(
 
 function filterLayoutCandidates(
   ctx: ProductionStackContext,
-  candidates: RemotionLayoutFamily[],
-): RemotionLayoutFamily[] {
+  candidates: StoryLayoutFamily[],
+): StoryLayoutFamily[] {
   const blocked = ctx.blockedLayoutFamilies;
   if (!blocked.size) return candidates;
   const filtered = candidates.filter((f) => !blocked.has(f));
@@ -330,8 +330,8 @@ function filterLayoutCandidates(
 
 export function pickLayoutFamilyHint(
   ctx: ProductionStackContext,
-  candidates: RemotionLayoutFamily[],
-): RemotionLayoutFamily | undefined {
+  candidates: StoryLayoutFamily[],
+): StoryLayoutFamily | undefined {
   const pool = filterLayoutCandidates(ctx, candidates);
   if (!pool.length) return undefined;
   const sorted = [...pool].sort((a, b) => {
@@ -350,11 +350,11 @@ export function pickLayoutFamilyHint(
 export function resolveLayoutFamilyForAssignment(
   ctx: ProductionStackContext,
   assignment: ProductionAssignment,
-  candidates: RemotionLayoutFamily[],
-): RemotionLayoutFamily | undefined {
+  candidates: StoryLayoutFamily[],
+): StoryLayoutFamily | undefined {
   const raw = assignment.layout_family_hint;
-  const hint = typeof raw === 'string' && LAYOUT_FAMILY_IDS.includes(raw as RemotionLayoutFamily)
-    ? (raw as RemotionLayoutFamily)
+  const hint = typeof raw === 'string' && LAYOUT_FAMILY_IDS.includes(raw as StoryLayoutFamily)
+    ? (raw as StoryLayoutFamily)
     : undefined;
   if (hint && !ctx.blockedLayoutFamilies.has(hint)) {
     ctx.layoutFamilyUsage.set(hint, (ctx.layoutFamilyUsage.get(hint) ?? 0) + 1);
@@ -443,7 +443,7 @@ export function buildCreativeTrace(
   ctx: ProductionStackContext,
   opts: {
     ideaIndex: number;
-    layoutFamilyHint?: RemotionLayoutFamily;
+    layoutFamilyHint?: StoryLayoutFamily;
     sceneBrief?: ProductSceneBrief | null;
     isHeroReel?: boolean;
   },

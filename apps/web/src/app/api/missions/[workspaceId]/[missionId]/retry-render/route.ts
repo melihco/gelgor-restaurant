@@ -64,10 +64,8 @@ export async function POST(
     const storyFirst = [...targets].sort((a, b) => {
       const metaA = (a.metadata ?? {}) as Record<string, unknown>;
       const metaB = (b.metadata ?? {}) as Record<string, unknown>;
-      const storyA = String(metaA.production_role ?? '').includes('story')
-        || String(metaA.pipeline ?? '') === 'remotion_story';
-      const storyB = String(metaB.production_role ?? '').includes('story')
-        || String(metaB.pipeline ?? '') === 'remotion_story';
+      const storyA = String(metaA.production_role ?? '').includes('story');
+      const storyB = String(metaB.production_role ?? '').includes('story');
       if (storyA === storyB) return 0;
       return storyA ? -1 : 1;
     });

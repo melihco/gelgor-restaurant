@@ -8,7 +8,7 @@ export interface MissionProductionCostSummary {
   totalUsd: number;
   artifactCount: number;
   runwayUsd: number;
-  remotionUsd: number;
+  designUsd: number;
   imageUsd: number;
   otherUsd: number;
   qualityTier: string | null;
@@ -20,10 +20,10 @@ function artifactCostUsd(meta: Record<string, unknown>): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function rendererBucket(meta: Record<string, unknown>): 'runway' | 'remotion' | 'image' | 'other' {
+function rendererBucket(meta: Record<string, unknown>): 'runway' | 'design' | 'image' | 'other' {
   const r = String(meta.renderer_executed ?? meta.pipeline ?? '').toLowerCase();
   if (r.includes('runway')) return 'runway';
-  if (r.includes('remotion')) return 'remotion';
+  if (r.includes('fal') || r.includes('typography') || r.includes('designed')) return 'design';
   if (r.includes('gpt') || r.includes('gallery') || r.includes('enhance') || r.includes('overlay')) {
     return 'image';
   }
@@ -46,21 +46,21 @@ export function summarizeMissionProductionCost(
 
   let totalUsd = 0;
   let runwayUsd = 0;
-  let remotionUsd = 0;
+  let designUsd = 0;
   let imageUsd = 0;
   let otherUsd = 0;
   let counted = 0;
 
   for (const a of missionArts) {
     const meta = (a.metadata ?? {}) as Record<string, unknown>;
-    if (meta.auto_produced !== true && meta.source !== 'auto-produce' && meta.source !== 'remotion') continue;
+    if (meta.auto_produced !== true && meta.source !== 'auto-produce') continue;
     const cost = artifactCostUsd(meta);
     if (cost <= 0) continue;
     counted += 1;
     totalUsd += cost;
     const bucket = rendererBucket(meta);
     if (bucket === 'runway') runwayUsd += cost;
-    else if (bucket === 'remotion') remotionUsd += cost;
+    else if (bucket === 'design') designUsd += cost;
     else if (bucket === 'image') imageUsd += cost;
     else otherUsd += cost;
   }
@@ -73,7 +73,7 @@ export function summarizeMissionProductionCost(
     totalUsd: Math.round(totalUsd * 1000) / 1000,
     artifactCount: counted,
     runwayUsd: Math.round(runwayUsd * 1000) / 1000,
-    remotionUsd: Math.round(remotionUsd * 1000) / 1000,
+    designUsd: Math.round(designUsd * 1000) / 1000,
     imageUsd: Math.round(imageUsd * 1000) / 1000,
     otherUsd: Math.round(otherUsd * 1000) / 1000,
     qualityTier: tier,

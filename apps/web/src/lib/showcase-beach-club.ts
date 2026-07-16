@@ -2,7 +2,7 @@
  * Beach club showcase — ajans seviyesi copy + slot demo (Yula, vibe_beach_club, kit_01).
  */
 import type { ShowcaseDemoProps } from './showcase-demo-props';
-import type { RemotionLayoutFamily } from './remotion-template-types';
+import type { StoryLayoutFamily } from './story-template-types';
 
 export const BEACH_CLUB_SLOT_DEMO: Record<string, ShowcaseDemoProps> = {
   daily_story: {
@@ -36,7 +36,7 @@ export const BEACH_CLUB_SLOT_DEMO: Record<string, ShowcaseDemoProps> = {
   },
 };
 
-export const BEACH_CLUB_FAMILY_DEMO: Partial<Record<RemotionLayoutFamily, ShowcaseDemoProps>> = {
+export const BEACH_CLUB_FAMILY_DEMO: Partial<Record<StoryLayoutFamily, ShowcaseDemoProps>> = {
   vibe_fullscreen: { headline: 'Main\nCharacter\nEnergy', subtitle: 'Bu akşamın vibe\'ı', categoryLabel: 'VIBE' },
   cinematic_center: { headline: 'Into\nThe Blue', subtitle: 'Ege · cinematic series', categoryLabel: 'FILM' },
   split_panel: { headline: 'Chef\'s\nBeach', subtitle: 'Özel masa · Cuma', categoryLabel: 'TABLE', cta: 'Rezervasyon' },
