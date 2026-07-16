@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
+  diagnoseCatalogHardPinMiss,
   resolveDesignTemplateCandidateTypes,
   selectBrandDesignTemplate,
   type BrandDesignTemplateRecord,
@@ -97,8 +98,39 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
     expect(sel?.matchQuality).toBe('hard');
   });
 
-  it('rejects a wrong-format keyed template and falls back to a soft same-format match', () => {
-    // Yula bug: a `post` template is keyed to a `story` slot — must not hard-pin.
+  it('hard-pins beach_club and local_products_shop catalog keys independently', () => {
+    const beach = [
+      tpl({
+        id: 'dj',
+        template_type: 'event_special',
+        format: 'post',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+      }),
+      tpl({ id: 'other', template_type: 'campaign_announcement', format: 'post' }),
+    ];
+    const shop = [
+      tpl({
+        id: 'harvest',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_harvest_post',
+      }),
+      tpl({ id: 'campaign', template_type: 'campaign_announcement', format: 'post' }),
+    ];
+    expect(selectBrandDesignTemplate(beach, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'beach_club_dj_night_teaser_post',
+    })?.record.id).toBe('dj');
+    expect(selectBrandDesignTemplate(shop, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'local_products_shop_harvest_post',
+    })?.record.id).toBe('harvest');
+  });
+
+  it('Faz B: format-mismatch hard miss fails closed (no soft foreign template)', () => {
+    // Data bug: a `post` template is keyed to a `story` slot — must not soft-bind daily_story.
     const active = [
       tpl({
         id: 'poster_post',
@@ -114,8 +146,51 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
       format: 'story',
       catalogSlotKey: 'restaurant_cafe_typography_poster_story',
     });
+    expect(sel).toBeNull();
+    expect(diagnoseCatalogHardPinMiss(active, 'story', 'restaurant_cafe_typography_poster_story')).toEqual({
+      reason: 'format_mismatch',
+      catalogSlotKey: 'restaurant_cafe_typography_poster_story',
+      foundFormats: ['post'],
+    });
+  });
+
+  it('Faz B: missing catalog template fails closed even when soft candidates exist', () => {
+    const active = [
+      tpl({ id: 'popular', template_type: 'campaign_announcement', format: 'post', usage_count: 99 }),
+      tpl({ id: 'daily', template_type: 'daily_story', format: 'story', usage_count: 50 }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'fal_designed_post',
+      librarySlotKey: 'campaign_post',
+      format: 'post',
+      catalogSlotKey: 'beach_club_sunset_golden_story',
+      announcementType: 'offer_campaign',
+    });
+    expect(sel).toBeNull();
+    expect(
+      diagnoseCatalogHardPinMiss(active, 'post', 'beach_club_sunset_golden_story').reason,
+    ).toBe('missing_template');
+  });
+
+  it('allowSoftFallbackWhenHardMiss re-enables soft path for migration/debug', () => {
+    const active = [
+      tpl({
+        id: 'poster_post',
+        template_type: 'campaign_announcement',
+        format: 'post',
+        catalog_slot_key: 'restaurant_cafe_typography_poster_story',
+      }),
+      tpl({ id: 'daily_story', template_type: 'daily_story', format: 'story' }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'fal_only_story',
+      format: 'story',
+      catalogSlotKey: 'restaurant_cafe_typography_poster_story',
+      allowSoftFallbackWhenHardMiss: true,
+    });
     expect(sel?.record.id).toBe('daily_story');
-    expect(sel?.matchQuality).not.toBe('hard');
+    expect(sel?.matchQuality).toBe('soft');
+    expect(sel?.hardPinMiss?.reason).toBe('format_mismatch');
   });
 });
 
@@ -155,6 +230,21 @@ describe('selectBrandDesignTemplate — format gate', () => {
     });
     // reel compat = reel_cover|story; a post template is not format-compatible → no match.
     expect(sel).toBeNull();
+  });
+
+  it('without catalog key, soft match still works (pre-catalog brands)', () => {
+    const active = [
+      tpl({ id: 'campaign', template_type: 'campaign_announcement', format: 'post' }),
+      tpl({ id: 'menu', template_type: 'menu_highlight', format: 'post' }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'fal_designed_post',
+      librarySlotKey: 'campaign_post',
+      format: 'post',
+      announcementType: 'offer_campaign',
+    });
+    expect(sel?.matchQuality).toBe('soft');
+    expect(sel?.record.id).toBe('campaign');
   });
 });
 

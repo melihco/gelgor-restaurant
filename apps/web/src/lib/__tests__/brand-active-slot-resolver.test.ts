@@ -6,6 +6,7 @@ import {
   enrichProductionQueueWithBrandSlots,
   resolveBrandActiveSlotKeys,
   resolveBrandProductionFormatTargets,
+  summarizeCatalogSlotStampCoverage,
 } from '@/lib/brand-active-slot-resolver';
 import type { BrandDesignTemplateRecord } from '@/lib/brand-design-template-matcher';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
@@ -300,6 +301,16 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     const queue = enrichProductionQueueWithBrandSlots(queueItems, activeSet);
     expect(queue).toHaveLength(8);
     expect(queue.every((row) => row.assignment.catalog_slot_key)).toBe(true);
+  });
+});
+
+describe('summarizeCatalogSlotStampCoverage (Faz B)', () => {
+  it('counts stamped vs missing catalog keys', () => {
+    expect(summarizeCatalogSlotStampCoverage([
+      { assignment: { catalog_slot_key: 'beach_club_dj_night_teaser_post' } },
+      { idea: { catalog_slot_key: 'local_products_shop_harvest_post' } },
+      { assignment: { catalog_slot_key: null }, idea: {} },
+    ])).toEqual({ total: 3, stamped: 2, missing: 1 });
   });
 });
 

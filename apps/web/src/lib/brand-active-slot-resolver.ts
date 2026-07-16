@@ -492,3 +492,26 @@ export function enrichProductionQueueWithBrandSlots(
   }
   return out;
 }
+
+/**
+ * Faz B — stamp coverage for a production queue. Used to warn when catalog-first
+ * brands still have unbound slots (soft-match only → shared geometries).
+ */
+export function summarizeCatalogSlotStampCoverage(
+  queue: Array<{
+    idea?: Record<string, unknown>;
+    assignment?: { catalog_slot_key?: string | null };
+  }>,
+): { total: number; stamped: number; missing: number } {
+  let stamped = 0;
+  for (const item of queue) {
+    const key =
+      item.assignment?.catalog_slot_key
+      ?? (item.idea?.catalog_slot_key as string | undefined)
+      ?? null;
+    if (String(key ?? '').trim()) stamped += 1;
+  }
+  const total = queue.length;
+  return { total, stamped, missing: Math.max(0, total - stamped) };
+}
+

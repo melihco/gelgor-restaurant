@@ -103,6 +103,22 @@ describe('selectLayoutFamily', () => {
     expect(selectLayoutFamily({ format: 'story', templateType: 'campaign_announcement' })).toBe('hero_footer');
   });
 
+  it('maps distinct Canva archetypes to distinct geometries (not one shell)', () => {
+    expect(selectLayoutFamily({ format: 'story', canvaArchetypeId: 'frosted_quote_card' })).toBe('frosted_quote');
+    expect(selectLayoutFamily({ format: 'story', canvaArchetypeId: 'polaroid_memory' })).toBe('polaroid');
+    expect(selectLayoutFamily({ format: 'story', canvaArchetypeId: 'neon_night_promo' })).toBe('neon_night');
+    expect(selectLayoutFamily({ format: 'story', canvaArchetypeId: 'event_ticket_stub' })).toBe('ticket_stub');
+    expect(selectLayoutFamily({ format: 'story', canvaArchetypeId: 'cinematic_full_bleed' })).toBe('cinematic');
+    expect(selectLayoutFamily({ format: 'story', canvaArchetypeId: 'noir_editorial' })).toBe('cinematic');
+  });
+
+  it('uses vibe for story geometry when archetype is absent (brand personality)', () => {
+    expect(selectLayoutFamily({ format: 'story', vibe: 'warm_coastal' })).toBe('frosted_quote');
+    expect(selectLayoutFamily({ format: 'story', vibe: 'neon_glow' })).toBe('neon_night');
+    expect(selectLayoutFamily({ format: 'story', vibe: 'editorial_serif' })).toBe('cinematic');
+    expect(selectLayoutFamily({ format: 'story', vibe: 'retro_poster' })).toBe('bottom_panel');
+  });
+
   it('defaults story to hero_footer; explicit cream slab hint keeps bottom_panel', () => {
     expect(selectLayoutFamily({ format: 'story' })).toBe('hero_footer');
     expect(selectLayoutFamily({ format: 'story', layoutFamilyHint: 'bottom_cream_slab' })).toBe('bottom_panel');
@@ -118,6 +134,14 @@ describe('selectLayoutFamily', () => {
     expect(selectLayoutFamily({ format: 'post', templateType: 'daily_post' })).toBe('photo_top');
     expect(selectLayoutFamily({ format: 'post' })).toBe('photo_top');
   });
+
+  it('archetype wins over vibe when both are present', () => {
+    expect(selectLayoutFamily({
+      format: 'story',
+      canvaArchetypeId: 'campaign_hero_block',
+      vibe: 'neon_glow',
+    })).toBe('hero_footer');
+  });
 });
 
 describe('contrast QA (multi-sector)', () => {
@@ -130,11 +154,22 @@ describe('contrast QA (multi-sector)', () => {
   });
 
   it('resolvePanelColors produces AA-legible panels for every layout + sector', () => {
-    const families: LayoutFamily[] = ['bottom_panel', 'split_panel', 'photo_top', 'hero_footer'];
+    const families: LayoutFamily[] = [
+      'bottom_panel',
+      'split_panel',
+      'photo_top',
+      'hero_footer',
+      'frosted_quote',
+      'polaroid',
+      'neon_night',
+      'ticket_stub',
+      'cinematic',
+    ];
     for (const sector of SECTORS) {
       const brandColors = brandColorsFor(sector);
       for (const family of families) {
         const { panelColor, textColor } = resolvePanelColors(family, brandColors);
+        // cinematic / neon render white type on photo/dark scrim — panel vs text is still AA.
         expect(contrastRatio(panelColor, textColor)).toBeGreaterThanOrEqual(4.5);
       }
     }
@@ -155,9 +190,18 @@ describe('buildOverlayElement (Turkish glyph fidelity + geometry)', () => {
   function content(family: LayoutFamily, sector: (typeof SECTORS)[number]): OverlayContent {
     const colors = resolvePanelColors(family, brandColorsFor(sector));
     const fonts = fontsForVibe('warm_coastal');
+    const storyFamilies = new Set<LayoutFamily>([
+      'bottom_panel',
+      'hero_footer',
+      'frosted_quote',
+      'polaroid',
+      'neon_night',
+      'ticket_stub',
+      'cinematic',
+    ]);
     return {
       family,
-      format: family === 'bottom_panel' || family === 'hero_footer' ? 'story' : 'post',
+      format: storyFamilies.has(family) ? 'story' : 'post',
       headline: TURKISH_HEADLINE,
       subtitle: 'Rezervasyon için bize ulaşın',
       overline: 'Sarnıç Beach',
@@ -184,6 +228,20 @@ describe('buildOverlayElement (Turkish glyph fidelity + geometry)', () => {
     const bottom = buildOverlayElement(content('bottom_panel', 'beach_club'));
     expect((bottom as { props: { style: Record<string, unknown> } }).props.style.flexDirection).toBe('column');
     expect((bottom as { props: { style: Record<string, unknown> } }).props.style.justifyContent).toBe('flex-end');
+  });
+
+  it('frosted / neon / polaroid / ticket geometries diverge structurally', () => {
+    const frosted = buildOverlayElement(content('frosted_quote', 'beach_club'));
+    expect(collectStyles(frosted).some((s) => String(s.background ?? '').includes('rgba(245'))).toBe(true);
+
+    const neon = buildOverlayElement(content('neon_night', 'local_products_shop'));
+    expect(collectStyles(neon).some((s) => s.color === '#FFFFFF')).toBe(true);
+
+    const polaroid = buildOverlayElement(content('polaroid', 'beach_club'));
+    expect(collectStyles(polaroid).some((s) => s.background === '#FFFFFF')).toBe(true);
+
+    const ticket = buildOverlayElement(content('ticket_stub', 'local_products_shop'));
+    expect(collectStyles(ticket).some((s) => String(s.borderTop ?? '').includes('dashed'))).toBe(true);
   });
 
   it('overline uppercases with the Turkish dotted-İ when the slot copy is Turkish', () => {

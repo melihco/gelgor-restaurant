@@ -257,6 +257,7 @@ import {
   enrichProductionQueueWithBrandSlots,
   loadBrandActiveSlotSet,
   stampIdeasWithBrandCatalogSlots,
+  summarizeCatalogSlotStampCoverage,
   type BrandActiveSlotSet,
 } from '@/lib/brand-active-slot-resolver';
 import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
@@ -858,6 +859,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const brandAwareQueue = brandActiveSlots
     ? enrichProductionQueueWithBrandSlots(boundQueue, brandActiveSlots)
     : boundQueue;
+
+  if (brandActiveSlots && brandActiveSlots.enabledSlotKeys.size > 0) {
+    const coverage = summarizeCatalogSlotStampCoverage(brandAwareQueue);
+    const level = coverage.missing > 0 ? 'warn' : 'log';
+    console[level](
+      `[auto-produce] catalog stamp coverage ${coverage.stamped}/${coverage.total}` +
+        (coverage.missing > 0
+          ? ` (${coverage.missing} unbound → soft match only)`
+          : ' (all hard-pin ready)'),
+    );
+  }
 
   const fullProductionQueue = brandAwareQueue;
 

@@ -231,13 +231,16 @@ export async function bindBrandTemplateForFalProduction(input: {
       console.warn(
         `[design-matcher] no template match workspace=${input.workspaceId} ` +
         `role=${input.slotRole} library=${input.librarySlotKey ?? '-'} ` +
-        `announcement=${input.announcementType ?? '-'} format=${input.format}`,
+        `catalog=${input.catalogSlotKey ?? '-'} ` +
+        `announcement=${input.announcementType ?? '-'} format=${input.format}` +
+        (input.catalogSlotKey ? ' (hard-pin fail-closed or empty library)' : ''),
       );
       return empty;
     }
 
     console.log(
       `[design-matcher] locked "${matched.templateName}" (${matched.templateType}) ` +
+      `quality=${matched.matchQuality} catalog=${input.catalogSlotKey ?? '-'} ` +
       `role=${input.slotRole} announcement=${input.announcementType ?? '-'}`,
     );
 

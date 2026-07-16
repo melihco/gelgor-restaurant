@@ -70,6 +70,20 @@ export interface MatchedDesignTemplate {
 
 export type DesignTemplateMatchQuality = 'hard' | 'soft' | 'format_fallback';
 
+/** Why a requested catalog_slot_key hard pin failed (Faz B telemetry). */
+export type CatalogHardPinMissReason =
+  | 'empty_active_set'
+  | 'missing_template'
+  | 'format_mismatch'
+  | 'off_season';
+
+export interface CatalogHardPinMiss {
+  reason: CatalogHardPinMissReason;
+  catalogSlotKey: string;
+  /** Formats of templates that share this catalog key (when any). */
+  foundFormats: string[];
+}
+
 /** Production slot format → design-template formats considered compatible. */
 function compatibleFormats(format: 'story' | 'post' | 'reel'): string[] {
   switch (format) {
@@ -288,6 +302,37 @@ function findCatalogKeyHardMatch(
   return best?.record ?? null;
 }
 
+/**
+ * Diagnose a hard-pin miss for ops/telemetry. Pure — no network.
+ * Call when `catalogSlotKey` was requested but `findCatalogKeyHardMatch` returned null.
+ */
+export function diagnoseCatalogHardPinMiss(
+  active: BrandDesignTemplateRecord[],
+  format: 'story' | 'post' | 'reel',
+  catalogSlotKey: string,
+): CatalogHardPinMiss {
+  const key = catalogSlotKey.trim();
+  if (active.length === 0) {
+    return { reason: 'empty_active_set', catalogSlotKey: key, foundFormats: [] };
+  }
+  const formats = compatibleFormats(format);
+  const keyed = active.filter((r) => catalogKeyOf(r) === key);
+  if (keyed.length === 0) {
+    return { reason: 'missing_template', catalogSlotKey: key, foundFormats: [] };
+  }
+  const foundFormats = [...new Set(keyed.map((r) => r.format))];
+  const formatOk = keyed.filter((r) => formats.includes(r.format));
+  if (formatOk.length === 0) {
+    return { reason: 'format_mismatch', catalogSlotKey: key, foundFormats };
+  }
+  const seasonOk = formatOk.filter((r) => !isOffSeasonSpecialDay(r));
+  if (seasonOk.length === 0) {
+    return { reason: 'off_season', catalogSlotKey: key, foundFormats };
+  }
+  // Defensive — keyed + format + season should have been a hard match.
+  return { reason: 'missing_template', catalogSlotKey: key, foundFormats };
+}
+
 function pickBestDesignTemplate(
   active: BrandDesignTemplateRecord[],
   candidates: string[],
@@ -311,6 +356,7 @@ function pickFormatFallbackTemplate(
   let best: { record: BrandDesignTemplateRecord; score: number } | null = null;
   for (const record of active) {
     if (!formats.includes(record.format)) continue;
+    if (isOffSeasonSpecialDay(record)) continue;
     const score =
       (record.thumbnail_url ? 30 : 0) +
       (record.design_spec?.prompt ? 6 : 0) +
@@ -323,6 +369,8 @@ function pickFormatFallbackTemplate(
 export interface BrandDesignTemplateSelection {
   record: BrandDesignTemplateRecord;
   matchQuality: DesignTemplateMatchQuality;
+  /** Populated when a catalog key was requested but hard pin failed and soft was allowed. */
+  hardPinMiss?: CatalogHardPinMiss;
 }
 
 export interface SelectBrandDesignTemplateInput {
@@ -334,12 +382,21 @@ export interface SelectBrandDesignTemplateInput {
   announcementType?: string | null;
   templateUseCase?: string | null;
   catalogSlotKey?: string | null;
+  /**
+   * Faz B default: when `catalogSlotKey` is set and hard pin fails, return null
+   * (fail-closed) so production does not silently bind a foreign template.
+   * Set true only for migration/debug.
+   */
+  allowSoftFallbackWhenHardMiss?: boolean;
 }
 
 /**
  * Pure selection SSOT — no network. Picks the best active template for a slot:
  * 1A hard pin (catalog_slot_key, format-validated) → soft scored match →
- * 2B same-format fallback. Exported for unit tests and telemetry.
+ * 2B same-format fallback.
+ *
+ * Faz B: if `catalogSlotKey` is present and hard pin misses, fail closed unless
+ * `allowSoftFallbackWhenHardMiss` is explicitly true.
  */
 export function selectBrandDesignTemplate(
   active: BrandDesignTemplateRecord[],
@@ -348,6 +405,7 @@ export function selectBrandDesignTemplate(
   if (active.length === 0) return null;
 
   const formats = compatibleFormats(opts.format);
+  const catalogKey = String(opts.catalogSlotKey ?? '').trim() || null;
   const candidates = resolveDesignTemplateCandidateTypes({
     librarySlotKey: opts.librarySlotKey,
     slotRole: opts.slotRole,
@@ -359,16 +417,40 @@ export function selectBrandDesignTemplate(
   });
 
   // 1A — hard pin on the slot's own catalog_slot_key (format-validated).
-  const hardMatch = findCatalogKeyHardMatch(active, formats, opts.catalogSlotKey);
+  const hardMatch = findCatalogKeyHardMatch(active, formats, catalogKey);
   if (hardMatch) {
     console.log(
-      `[design-matcher] hard pin catalog_slot_key=${opts.catalogSlotKey} → "${hardMatch.template_name}" (${hardMatch.template_type})`,
+      `[design-matcher] hard pin catalog_slot_key=${catalogKey} → "${hardMatch.template_name}" (${hardMatch.template_type})`,
     );
     return { record: hardMatch, matchQuality: 'hard' };
   }
 
-  // Soft — type/use-case scored match (format-gated inside the scorer).
-  const scored = pickBestDesignTemplate(active, candidates, formats, opts.catalogSlotKey);
+  // Faz B — catalog key requested but no valid hard pin: do not soft-bind a
+  // foreign template (same-colors / wrong-geometry leak across brands).
+  if (catalogKey) {
+    const miss = diagnoseCatalogHardPinMiss(active, opts.format, catalogKey);
+    console.warn(
+      `[design-matcher] hard pin MISS catalog_slot_key=${catalogKey} reason=${miss.reason}` +
+        (miss.foundFormats.length ? ` found_formats=${miss.foundFormats.join(',')}` : '') +
+        ` role=${opts.slotRole} format=${opts.format}` +
+        (opts.allowSoftFallbackWhenHardMiss ? ' (soft fallback allowed)' : ' (fail-closed)'),
+    );
+    if (!opts.allowSoftFallbackWhenHardMiss) {
+      return null;
+    }
+    const scored = pickBestDesignTemplate(active, candidates, formats, catalogKey);
+    if (scored) {
+      return { record: scored.record, matchQuality: 'soft', hardPinMiss: miss };
+    }
+    const fallbackRecord = pickFormatFallbackTemplate(active, formats);
+    if (fallbackRecord) {
+      return { record: fallbackRecord, matchQuality: 'format_fallback', hardPinMiss: miss };
+    }
+    return null;
+  }
+
+  // Soft — type/use-case scored match (only when no catalog key on the slot).
+  const scored = pickBestDesignTemplate(active, candidates, formats, catalogKey);
   if (scored) {
     return { record: scored.record, matchQuality: 'soft' };
   }
@@ -486,6 +568,8 @@ export async function matchDesignTemplateToSlot(
     catalogSlotKey?: string | null;
     /** When set, templates bound to disabled catalog slots are excluded. */
     brandActiveSlots?: BrandActiveSlotSet | null;
+    /** Escape hatch — see SelectBrandDesignTemplateInput. */
+    allowSoftFallbackWhenHardMiss?: boolean;
   },
 ): Promise<MatchedDesignTemplate | null> {
   const records = await fetchDesignTemplateList(workspaceId);
@@ -499,6 +583,19 @@ export async function matchDesignTemplateToSlot(
   }
   if (active.length === 0) return null;
 
+  const catalogKey = String(opts.catalogSlotKey ?? '').trim() || null;
+  if (
+    !catalogKey
+    && opts.brandActiveSlots
+    && opts.brandActiveSlots.enabledSlotKeys.size > 0
+  ) {
+    console.warn(
+      `[design-matcher] catalog_slot_key missing while brand has ` +
+        `${opts.brandActiveSlots.enabledSlotKeys.size} active catalog slots — soft match only ` +
+        `role=${opts.slotRole} format=${opts.format}`,
+    );
+  }
+
   const selection = selectBrandDesignTemplate(active, {
     slotRole: opts.slotRole,
     librarySlotKey: opts.librarySlotKey,
@@ -508,6 +605,7 @@ export async function matchDesignTemplateToSlot(
     announcementType: opts.announcementType,
     templateUseCase: opts.templateUseCase,
     catalogSlotKey: opts.catalogSlotKey,
+    allowSoftFallbackWhenHardMiss: opts.allowSoftFallbackWhenHardMiss,
   });
   if (!selection) return null;
 
