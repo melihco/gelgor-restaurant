@@ -309,7 +309,7 @@ async def trigger_auto_produce(
             return {"reason": "enqueue_failed", "error": eresp.text[:300]}
 
         # 320s matches Next.js route maxDuration=300s plus startup buffer.
-        # Runway reels can take 3+ minutes, so 30s was timing out before artifacts
+        # AI video reels can take 3+ minutes, so 30s was timing out before artifacts
         # were created. Fire-and-forget: caller ignores the timeout warning.
         internal_key = getattr(settings, "internal_api_key", None) or ""
         # X-Tenant-Id is always required — Nexus saves artifact under this tenant.
@@ -318,7 +318,7 @@ async def trigger_auto_produce(
             headers["X-Internal-Api-Key"] = internal_key
 
         # connect_timeout: fast (local) — just confirm the POST is accepted.
-        # read_timeout: generous (360s) — Runway reels + Remotion stories take 3-5 min.
+        # read_timeout: generous (360s) — reel + story renders take 3-5 min.
         # RemoteProtocolError / ReadTimeout are treated as fire-and-forget below:
         # the Next.js route keeps running in background even if Python disconnects.
         _timeout = httpx.Timeout(connect=15.0, read=580.0, write=30.0, pool=5.0)

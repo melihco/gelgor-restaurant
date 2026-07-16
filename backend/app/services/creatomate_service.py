@@ -1,7 +1,7 @@
 """
 Creatomate Video Production Service — ajans kalitesinde branded video paketi.
 
-Tek Runway videosu (ham, overlay yok) alıp 5 format çıktısı üretir:
+Tek AI videosu (ham, overlay yok) alıp 5 format çıktısı üretir:
   1. Reel     9:16 · 15s  — Vision-guided minimal overlay + 1 satır başlık + ince accent çizgi
   2. Story    9:16 · 8s   — Logo top + tek kelime/kısa cümle bottom
   3. Feed     1:1 · 8s    — Square crop + sadece ince bottom accent bar + business name

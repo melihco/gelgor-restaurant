@@ -1,8 +1,8 @@
 """
-Video Production Crew — generates Runway video specs for Instagram Reels.
+Video Production Crew — generates AI video specs for Instagram Reels.
 
 Input: reel content concept + gallery photo list
-Output: video_production_spec with selected photo URL + Runway prompt
+Output: video_production_spec with selected photo URL + video prompt
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def run_video_production(
     llm: Any = None,
 ) -> dict[str, Any]:
     """
-    Run Video Production Agent to select best photo and craft Runway prompt.
+    Run Video Production Agent to select best photo and craft the video prompt.
 
     gallery_photos: list of dicts with keys: url, tags, description, assetType
     Returns: video_production_spec dict
@@ -66,7 +66,7 @@ def run_video_production(
         lines = ["## 📌 Pinterest Trend Intelligence (real data, sector-specific)"]
         if brand.pinterest_visual_themes:
             lines.append(f"Trending visual themes: {', '.join(brand.pinterest_visual_themes[:6])}")
-            lines.append("→ Runway prompt MUST reflect these aesthetics (lighting, mood, color palette, motion style).")
+            lines.append("→ Video prompt MUST reflect these aesthetics (lighting, mood, color palette, motion style).")
         if brand.pinterest_top_pins:
             lines.append("Top pinned compositions to reference:")
             for pin in brand.pinterest_top_pins[:4]:
@@ -90,7 +90,7 @@ def run_video_production(
     task = Task(
         description=task_description,
         expected_output=(
-            "A JSON object with selected_photo_url, runway_prompt, camera_motion, "
+            "A JSON object with selected_photo_url, reel_prompt, camera_motion, "
             "duration, style_notes, urgency_level, recommended_creatomate_formats"
         ),
         agent=agent,
@@ -116,7 +116,7 @@ def run_video_production(
         logger.warning("video_production_parse_failed", error=str(exc))
 
     # Validate essential fields
-    if not spec.get("selected_photo_url") or not spec.get("runway_prompt"):
+    if not spec.get("selected_photo_url") or not spec.get("reel_prompt"):
         logger.warning("video_production_incomplete_spec", raw=raw[:200])
         fallback_photo = gallery_photos[0]["url"] if gallery_photos else None
         # Urgency-aware fallback prompt
@@ -128,7 +128,7 @@ def run_video_production(
         spec = {
             "selected_photo_url": fallback_photo,
             "selected_photo_reason": "Fallback selection — agent output was incomplete",
-            "runway_prompt": f"Animate this exact scene faithfully. {urgency_style} {title}",
+            "reel_prompt": f"Animate this exact scene faithfully. {urgency_style} {title}",
             "camera_motion": "static",
             "duration": 5,
             "style_notes": f"Agent output parse failed — urgency={urgency_sig['urgency_level']}",

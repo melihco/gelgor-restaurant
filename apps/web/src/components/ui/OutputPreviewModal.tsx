@@ -32,8 +32,6 @@ interface OutputPreviewModalProps {
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(url) ||
-    url.includes('runwayml.com') ||
-    url.includes('runway-assets') ||
     url.startsWith('blob:');
 }
 
@@ -52,9 +50,9 @@ type ReelGenState = {
   ideaIndex: number;
   status: 'idle' | 'generating' | 'done' | 'error';
   videoUrl?: string;
-  /** Full promptText sent to Runway image-to-video API */
-  runwayPrompt?: string;
-  runwayModel?: string;
+  /** Full promptText sent to the fal.ai image-to-video API */
+  reelPrompt?: string;
+  reelModel?: string;
   error?: string;
 };
 
@@ -95,8 +93,8 @@ export default function OutputPreviewModal({
           ideaIndex: index,
           status: 'done',
           videoUrl: data.outputUrls[0],
-          runwayPrompt: typeof data.promptText === 'string' ? data.promptText : undefined,
-          runwayModel: typeof data.model === 'string' ? data.model : undefined,
+          reelPrompt: typeof data.promptText === 'string' ? data.promptText : undefined,
+          reelModel: typeof data.model === 'string' ? data.model : undefined,
         });
       } else {
         setReelGen({ ideaIndex: index, status: 'error', error: data.error ?? 'Reel üretilemedi' });
@@ -311,7 +309,7 @@ export default function OutputPreviewModal({
                         <div className="flex flex-col gap-2 px-3 py-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-zinc-500">
-                              Runway {reelGen.runwayModel ?? 'gen4.5'} · 5 sn
+                              fal.ai {reelGen.reelModel ?? 'video'} · 5 sn
                             </span>
                             <a
                               href={reelGen.videoUrl}
@@ -324,11 +322,11 @@ export default function OutputPreviewModal({
                               İndir
                             </a>
                           </div>
-                          {reelGen.runwayPrompt ? (
+                          {reelGen.reelPrompt ? (
                             <div className="rounded-lg border border-white/10 bg-black/40 p-2">
-                              <p className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500">Runway prompt (tam)</p>
+                              <p className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500">Video prompt (tam)</p>
                               <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-snug text-zinc-300 scrollbar-thin">
-                                {reelGen.runwayPrompt}
+                                {reelGen.reelPrompt}
                               </pre>
                             </div>
                           ) : null}

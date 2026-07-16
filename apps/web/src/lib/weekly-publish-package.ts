@@ -161,7 +161,7 @@ export interface FeedArtDirectorReport {
   recommended_order?: number[];
   flagged_ideas?: Array<{ index: number; reason?: string; severity?: 'warning' | 'error' }>;
   art_director_verdict?: string;
-  /** Idea index that gets the hero Runway reel slot (budget-controlled) */
+  /** Idea index that gets the hero reel slot (budget-controlled) */
   hero_reel_index?: number;
   /** Suggested layout families for visual variety this week */
   recommended_layout_families?: string[];
@@ -286,7 +286,7 @@ function readArtifactPipelineRole(artifact: OutputArtifact): {
 
 /**
  * Feed / Outputs gate — show produced content when media + pipeline are ready.
- * Includes organic gallery, designed posters, Remotion stories, Runway reels, carousels.
+ * Includes organic gallery, designed posters, designed stories, reels, carousels.
  */
 export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   const { pipeline, role, meta, content } = readArtifactPipelineRole(artifact);

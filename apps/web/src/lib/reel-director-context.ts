@@ -1,5 +1,5 @@
 /**
- * Runway reel director context — ties idea brief, caption, gallery match,
+ * Reel director context — ties idea brief, caption, gallery match,
  * sector/product, and AI visual production settings into one generate-reel body.
  */
 
@@ -41,13 +41,13 @@ export interface ReelDirectorExtras {
   strategicPurpose?: string;
   productType?: string;
   workspaceId?: string;
-  /** Mission hero reel slot — enables Runway gen4.5 */
+  /** Mission hero reel slot — premium motion model */
   isHeroReel?: boolean;
   /** Tenant reel defaults from brand_theme.motion_profile */
   brandReel?: BrandReelProductionParams;
 }
 
-/** English-safe slice for Runway director (identity + scene blocks stay server-side in GPT user msg). */
+/** English-safe slice for reel director (identity + scene blocks stay server-side in GPT user msg). */
 export function buildReelAgentVisualDirection(
   idea: ProductionIdea,
   brand: RendererBrandContext,
@@ -143,7 +143,7 @@ export function buildReelAgentVisualDirection(
   return parts.join(' | ').slice(0, 900);
 }
 
-/** Rich concept string for Runway when AI director falls back to template path. */
+/** Rich concept string for I2V when AI director falls back to template path. */
 export function buildReelConceptFromIdea(
   idea: ProductionIdea,
   brand: RendererBrandContext,
@@ -310,7 +310,7 @@ export function reelDirectorExtrasFromIdeaRecord(
     brandContextForVisual: opts.brandContextForVisual,
     sceneBrief: opts.sceneBrief,
     reelMotionSpec: reelSpec,
-    reelPromptFromAgent: firstStr(rec, 'runway_prompt', 'runwayPrompt', 'reel_prompt', 'reelPrompt'),
+    reelPromptFromAgent: firstStr(rec, 'reel_prompt', 'reelPrompt'),
     strategicPurpose:
       opts.strategicPurpose
       ?? firstStr(rec, 'strategic_purpose', 'strategicPurpose', 'purpose'),

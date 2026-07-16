@@ -42,7 +42,7 @@ class AgentDesignConsultTool(BaseTool):
     name: str = "agent_design_consult"
     description: str = (
         "Premium visual direction for social content. Returns layout_family, visual_subject, "
-        "typography hierarchy, forbidden elements, image_edit_prompt, runway director brief, "
+        "typography hierarchy, forbidden elements, image_edit_prompt, reel director brief, "
         "and story scene brief. Use for posts, stories, and reels — especially for ambiguous "
         "sectors (SaaS vs venue) or when content type is reel/story. "
         "Does NOT replace your final JSON output."

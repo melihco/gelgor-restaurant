@@ -1068,7 +1068,7 @@ export default function ContentPage() {
   });
   /** Reel outputs — persisted to localStorage so videos survive navigation. */
   const [generatedVideos, setGeneratedVideosState] = useState<
-    Record<string, { videoUrl: string; runwayPrompt: string; model: string }>
+    Record<string, { videoUrl: string; reelPrompt: string; model: string }>
   >(() => {
     try {
       const stored = localStorage.getItem('sa_generated_videos');
@@ -1076,9 +1076,9 @@ export default function ContentPage() {
     } catch { return {}; }
   });
   const setGeneratedVideos = (
-    updater: Record<string, { videoUrl: string; runwayPrompt: string; model: string }> |
-             ((prev: Record<string, { videoUrl: string; runwayPrompt: string; model: string }>) =>
-               Record<string, { videoUrl: string; runwayPrompt: string; model: string }>)
+    updater: Record<string, { videoUrl: string; reelPrompt: string; model: string }> |
+             ((prev: Record<string, { videoUrl: string; reelPrompt: string; model: string }>) =>
+               Record<string, { videoUrl: string; reelPrompt: string; model: string }>)
   ) => {
     setGeneratedVideosState((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -1093,7 +1093,7 @@ export default function ContentPage() {
   // Per-card gallery cycle index — each enhance tap advances to the next photo
   const [enhanceCycleIdx, setEnhanceCycleIdx] = useState<Record<string, number>>({});
   const [generatingReels, setGeneratingReels] = useState<Record<string, boolean>>({});
-  // Global reel lock — only ONE video can generate at a time (Runway concurrency + credit protection)
+  // Global reel lock — only ONE video can generate at a time (video concurrency + credit protection)
   const anyReelGenerating = Object.values(generatingReels).some(Boolean);
   const [generatingVideoPack, setGeneratingVideoPack] = useState<Record<string, boolean>>({});
 
@@ -1988,8 +1988,8 @@ export default function ContentPage() {
         ...cur,
         [key]: {
           videoUrl,
-          runwayPrompt: typeof result.promptText === 'string' ? result.promptText : '',
-          model: typeof result.model === 'string' ? result.model : 'gen4.5',
+          reelPrompt: typeof result.promptText === 'string' ? result.promptText : '',
+          model: typeof result.model === 'string' ? result.model : 'video',
         },
       }));
       await queryClient.invalidateQueries({ queryKey: ['dashboard-snapshot'] });
@@ -2907,13 +2907,13 @@ export default function ContentPage() {
             )}
             {(() => {
               const reelMeta = generatedVideos[selectedItem.key];
-              return reelMeta?.runwayPrompt ? (
+              return reelMeta?.reelPrompt ? (
               <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-400/[0.06] p-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200/80">
-                  Runway · {reelMeta.model} · video prompt (tam metin)
+                  fal.ai · {reelMeta.model} · video prompt (tam metin)
                 </p>
                 <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-gray-600 dark:text-gray-300 scrollbar-thin">
-                  {reelMeta.runwayPrompt}
+                  {reelMeta.reelPrompt}
                 </pre>
               </div>
               ) : null;
@@ -2985,7 +2985,7 @@ export default function ContentPage() {
                 {selectedReelGenerating ? 'Reel üretiliyor…' : selected.videoUrl ? 'Reel yenile' : 'AI reel üret'}
               </button>
             )}
-            {/* Video Paketi — Creatomate: 1 Runway video → 5 format çıktısı */}
+            {/* Video Paketi — Creatomate: 1 AI video → 5 format çıktısı */}
             {(generatedVideos[selectedItem.key]?.videoUrl ?? selected.videoUrl) && (
               <>
                 <button

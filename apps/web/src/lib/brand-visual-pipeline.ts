@@ -1,6 +1,6 @@
 /**
  * Brand Hub AI Görsel Geliştirme → sıralı üretim hattı.
- * Hedef sıra: Scene Brief → gpt-image-2 (galeri) → Remotion / Runway.
+ * Hedef sıra: Scene Brief → gpt-image-2 (galeri) → tasarım / fal.ai video.
  */
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import type { AiVisualProductionStandard } from '@/lib/ai-visual-production-standard';
@@ -61,7 +61,7 @@ export type VisualPipelineStep =
   | 'gpt_image_enhance'
   | 'designed_motion'
   | 'designed_still'
-  | 'runway_reel'
+  | 'fal_reel'
   | 'gallery_only';
 
 export function resolveVisualPipelineSteps(
@@ -83,7 +83,7 @@ export function resolveVisualPipelineSteps(
   }
 
   if (flags.isReel) {
-    steps.push('runway_reel');
+    steps.push('fal_reel');
   } else if (flags.willStoryOverlay) {
     steps.push('designed_motion');
   } else if (flags.designedPosterSync || flags.willDesignedPost || flags.postBrandLayer) {

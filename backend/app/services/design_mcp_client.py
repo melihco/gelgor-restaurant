@@ -138,11 +138,11 @@ async def consult_design_via_mcp(
     except Exception as exc:
         logger.debug("design_mcp.qa_skipped", error=str(exc)[:120])
 
-    # Reel: Runway director brief
-    runway_raw = ""
+    # Reel: AI-video director brief
+    reel_raw = ""
     if content_type == "reel":
         try:
-            runway_raw = await _call_tool("build_runway_director_prompt_tool", {
+            reel_raw = await _call_tool("build_reel_director_prompt_tool", {
                 "business_type": bt,
                 "headline": headline or brand_name,
                 "caption": caption or brief[:300],
@@ -154,7 +154,7 @@ async def consult_design_via_mcp(
                 "anti_patterns": _extract_vibe_field(brief, "anti_patterns"),
             })
         except Exception as exc:
-            logger.debug("design_mcp.runway_brief_skipped", error=str(exc)[:120])
+            logger.debug("design_mcp.reel_brief_skipped", error=str(exc)[:120])
 
     # Story: scene brief with layout + animation
     story_raw = ""
@@ -225,7 +225,7 @@ async def consult_design_via_mcp(
         "layout_recommendation": json.loads(layout_raw),
         "image_edit_prompt_block": json.loads(prompt_raw),
         "validation": json.loads(qa_raw) if qa_raw else None,
-        "runway_director": json.loads(runway_raw) if runway_raw else None,
+        "reel_director": json.loads(reel_raw) if reel_raw else None,
         "story_scene": json.loads(story_raw) if story_raw else None,
         "carousel_brief": json.loads(carousel_raw) if carousel_raw else None,
         "caption_qa": json.loads(caption_qa_raw) if caption_qa_raw else None,
@@ -264,14 +264,14 @@ def format_mcp_consult_response(payload: dict[str, Any]) -> str:
     if validation and not validation.get("pass"):
         lines.append("qa_issues: " + "; ".join(validation.get("issues") or []))
 
-    # Reel: Runway director brief
-    runway = payload.get("runway_director")
-    if runway:
+    # Reel: AI-video director brief
+    reel = payload.get("reel_director")
+    if reel:
         lines.append("--- REEL DIRECTOR BRIEF ---")
-        lines.append(f"camera_motion: {runway.get('camera_motion')}")
-        lines.append(f"cinematic_concept: {runway.get('cinematic_concept', '')[:200]}")
-        lines.append(f"director_brief: {runway.get('director_brief', '')[:300]}")
-        fv = runway.get("forbidden_visuals") or []
+        lines.append(f"camera_motion: {reel.get('camera_motion')}")
+        lines.append(f"cinematic_concept: {reel.get('cinematic_concept', '')[:200]}")
+        lines.append(f"director_brief: {reel.get('director_brief', '')[:300]}")
+        fv = reel.get("forbidden_visuals") or []
         if fv:
             lines.append("forbidden_visuals: " + "; ".join(str(f) for f in fv[:4]))
 

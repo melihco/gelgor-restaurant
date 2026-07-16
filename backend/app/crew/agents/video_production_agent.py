@@ -1,5 +1,5 @@
 """
-Video Production Agent — selects best gallery photo and writes Runway prompt.
+Video Production Agent — selects best gallery photo and writes the reel video prompt.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from app.crew.prompts.video_production_prompts import (
 def create_video_production_agent(brand: BrandInfo, llm: LLM | None = None) -> Agent:
     settings = get_settings()
     # "video" profile: includes industry calendar (urgency/phase) + market intel + Pinterest
-    # Critical: video agent must know current season urgency to choose the right Runway style
+    # Critical: video agent must know current season urgency to choose the right motion style
     brand_context = build_brand_context_prompt(brand, profile="video")
 
     backstory = VIDEO_PRODUCTION_AGENT_BACKSTORY.format(

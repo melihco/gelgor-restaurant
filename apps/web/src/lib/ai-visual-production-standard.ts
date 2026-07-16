@@ -148,8 +148,7 @@ export function shouldUseCaptionDrivenVisual(
   const role = assignment?.slot_role;
   const pipeline = assignment?.pipeline;
   if (
-    pipeline === 'runway_reel'
-    || pipeline === 'fal_story'
+    pipeline === 'fal_story'
     || pipeline === 'fal_reel'
     || pipeline === 'fal_design'
     || pipeline === 'fal_only_reel'

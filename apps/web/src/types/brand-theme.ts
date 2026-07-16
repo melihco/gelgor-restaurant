@@ -257,7 +257,7 @@ export interface BrandTheme {
   product_showcase?: BrandProductShowcaseConfig;
   productShowcase?: BrandProductShowcaseConfig;
 
-  /** Runway / Remotion / FAL engine routing — story & reel quality controls */
+  /** FAL engine routing — story ve reel kalite kontrolleri */
   production_engines?: import('@/lib/brand-production-engines').BrandProductionEnginesConfig;
   productionEngines?: import('@/lib/brand-production-engines').BrandProductionEnginesConfig;
 

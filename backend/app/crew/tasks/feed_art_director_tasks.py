@@ -134,7 +134,7 @@ Are any subject/topic clusters over-represented (>2 similar ideas)?
 Flag the excess and suggest cutting or pivoting.
 
 ### 5. Hero reel slot
-Pick ONE idea index (0-based) for the premium Runway motion reel this week.
+Pick ONE idea index (0-based) for the premium motion reel this week.
 Prefer high-visual-impact ideas with strong gallery photos. Only one hero reel per batch.
 
 ### 6. Layout family variety
@@ -196,11 +196,11 @@ slot_role options:
 - fal_designed_post — fal.ai/GPT-image hybrid designed feed post; exactly ONE per weekly mission (uses gallery photo).
 - fal_only_post — tam fal.ai designed feed post; exactly ONE per weekly mission (NO gallery, NO GPT — pure Ideogram/Flux).
 - fal_only_story — tam fal.ai motion story; exactly ONE (NO gallery, NO Remotion — pure Ideogram + I2V).
-- fal_only_reel — tam fal.ai motion reel; exactly ONE (NO gallery, NO Runway — pure Ideogram + I2V).
+- fal_only_reel — tam fal.ai motion reel; exactly ONE (NO gallery — pure Ideogram + I2V).
 - campaign_story_motion — Remotion motion story MP4; exactly TWO designed story variants per weekly mission
 - organic_story_still — static gallery story buffer for daily publishing resilience
-- organic_reel — Runway reel (organic); hero_reel_index must point here
-- campaign_reel_motion — Runway reel (campaign/promo)
+- organic_reel — motion reel (organic); hero_reel_index must point here
+- campaign_reel_motion — motion reel (campaign/promo)
 - organic_carousel — multi-slide gallery carousel (2–4 photos)
 
 pipeline must match role:

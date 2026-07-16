@@ -287,7 +287,7 @@ function InstagramReelPreview({ content, handle, logoUrl, isPending }: {
 
   return (
     <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
-      {/* Full-bleed background — video preferred for Runway reels */}
+      {/* Full-bleed background — video preferred for reels */}
       {content.videoUrl ? (
         // eslint-disable-next-line jsx-a11y/media-has-caption
         <video src={content.videoUrl} autoPlay loop muted playsInline

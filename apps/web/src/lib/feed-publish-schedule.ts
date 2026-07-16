@@ -162,7 +162,7 @@ export function resolveScheduleDisplayFormat(
 
   const role = String(meta.production_role ?? '').toLowerCase();
   const pipeline = String(meta.pipeline ?? '').toLowerCase();
-  if (role.includes('reel') || pipeline.includes('runway_reel') || pipeline === 'fal_reel') return 'reel';
+  if (role.includes('reel') || pipeline === 'fal_reel') return 'reel';
   if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'carousel';
   if (role.includes('story') || pipeline.includes('story')) return 'story';
 

@@ -143,7 +143,7 @@ class BundleSlot:
 BUNDLE_SLOTS: list[BundleSlot] = [
     # Production rule: Creatomate generates STORIES only.
     # Posts → plain photo + caption (no overlay renderer).
-    # Reels → Runway handles; Creatomate not needed.
+    # Reels → fal.ai video hattı; Creatomate not needed.
     BundleSlot("story", "Story Lüks",  "mp4"),
     BundleSlot("story", "Story Güçlü", "mp4"),
 ]

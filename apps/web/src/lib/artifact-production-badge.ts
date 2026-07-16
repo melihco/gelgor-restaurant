@@ -20,7 +20,6 @@ export interface ArtifactProductionBadge {
 const ENGINE_COLORS: Record<string, string> = {
   Satori: '#0D9488',
   'fal.ai': '#C084FC',
-  Runway: '#F472B6',
   Kling: '#E879F9',
   Luma: '#A78BFA',
   Tasarım: '#60A5FA',
@@ -48,13 +47,11 @@ function slotLabel(role: string): string {
   return role.replace(/_/g, ' ').slice(0, 28) || 'Slot';
 }
 
-function engineFromRunwaySource(source: string): string {
+function engineFromVideoSource(source: string): string {
   const s = source.toLowerCase();
   if (s.includes('kling')) return 'Kling';
   if (s.includes('luma')) return 'Luma';
-  if (s === 'fal_video') return 'fal.ai';
-  if (s.includes('runway')) return 'Runway';
-  return 'Runway';
+  return 'fal.ai';
 }
 
 function resolveEngine(meta: Record<string, unknown>): string {
@@ -67,10 +64,10 @@ function resolveEngine(meta: Record<string, unknown>): string {
 
   const executed = String(meta.renderer_executed ?? '').toLowerCase();
   if (executed === 'local_typography' || executed === 'satori_local') return 'Satori';
-  if (executed.includes('fal') || executed === 'fal_reel' || executed === 'fal_designer_video') return 'fal.ai';
-  if (executed === 'runway_reel') {
-    return engineFromRunwaySource(String(meta.runway_source ?? 'runway'));
+  if (executed === 'fal_raw_i2v') {
+    return engineFromVideoSource(String(meta.video_source ?? meta.fal_video_model ?? ''));
   }
+  if (executed.includes('fal') || executed === 'fal_reel' || executed === 'fal_designer_video') return 'fal.ai';
   if (executed === 'designed_poster_sync') return 'Tasarım';
   if (executed === 'marky_poster') return 'Marky';
   if (executed === 'gpt_image_enhance' || executed === 'caption_driven_ai') return 'GPT Image';
@@ -78,17 +75,13 @@ function resolveEngine(meta: Record<string, unknown>): string {
   if (executed === 'mission_visual_design_card') return 'Tasarım kartı';
 
   const pipeline = String(meta.pipeline ?? '').toLowerCase();
-  if (pipeline === 'fal_story' || pipeline === 'fal_reel' || pipeline === 'runway_reel') return 'fal.ai';
+  if (pipeline === 'fal_story' || pipeline === 'fal_reel') return 'fal.ai';
   if (pipeline.startsWith('fal_only_')) return 'fal.ai';
   if (pipeline === 'fal_design') return 'fal.ai';
   if (pipeline === 'gallery_photo' || pipeline === 'story_still') return 'Galeri';
   if (pipeline === 'carousel_gallery') return 'Carousel';
   if (pipeline === 'product_showcase') return 'Showcase';
   if (pipeline === 'marky_event') return 'Canvas';
-
-  if (meta.runway_produced === true) {
-    return engineFromRunwaySource(String(meta.runway_source ?? 'runway'));
-  }
 
   const route = String(meta.production_route ?? '').toLowerCase();
   if (route === 'fal_ai') return 'fal.ai';

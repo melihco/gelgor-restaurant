@@ -30,7 +30,7 @@ import { type ParsedIdea } from './caption-publish-resolver';
 import { runProduction, type RunProductionParams } from './production-loop';
 
 export const runtime = 'nodejs';
-// Vercel Pro max; locally unlimited. Runway gen4 ~90s + multiple images + stories.
+// Vercel Pro max; locally unlimited. I2V video ~90s + multiple images + stories.
 export const maxDuration = 600;
 
 interface AutoProduceRequest {

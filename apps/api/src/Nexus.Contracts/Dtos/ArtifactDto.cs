@@ -14,7 +14,7 @@ public record ArtifactDto(
     DateTime CreatedAt,
     DateTime UpdatedAt,
     /// <summary>
-    /// CDN URL for video artifacts (Runway mp4) or image artifacts.
+    /// CDN URL for video artifacts (AI-generated mp4) or image artifacts.
     /// Empty string if not applicable.
     /// </summary>
     string ContentUrl = "");

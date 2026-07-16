@@ -1,5 +1,5 @@
 /**
- * Canva-level Reel archetypes — hook patterns for Runway director prompts.
+ * Canva-level Reel archetypes — hook patterns for reel director prompts.
  * Maps Instagram Reels best practices → motion + framing guidance.
  */
 

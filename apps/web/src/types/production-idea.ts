@@ -1,6 +1,6 @@
 /**
  * ProductionIdea — unified, normalised contract for a single content idea as it
- * flows from agent output → renderer (Canva / Runway / announcement / photo).
+ * flows from agent output → renderer (Canva / reel / announcement / photo).
  *
  * Sprint 1 deliverable (S1.6): the *type* is defined now as the convergence
  * target. The actual single-parse pipeline (`parseIdeas → ProductionIdea[]`) and
@@ -18,7 +18,7 @@ export type ProductionRenderer =
   | 'photo'
   | 'canva'
   | 'announcement'
-  | 'runway'
+  | 'reel'
   | 'canvas';
 
 export type ProductionFormat = 'feed' | 'post' | 'story' | 'reel' | 'carousel';

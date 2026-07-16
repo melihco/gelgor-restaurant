@@ -1,5 +1,5 @@
 /**
- * Sector Runway / Reel motion standards — template-library pattern for reel production.
+ * Sector reel motion standards — template-library pattern for reel production.
  *
  * - Onboarding seeds motion_profile from sector standard → persisted in brand_theme (DB).
  * - Runtime parse fills only unset fields when legacy brands lack reel keys.
@@ -50,7 +50,7 @@ const DEFAULT_STANDARD: SectorReelMotionStandard = {
   directorPromptVariant: 'venue_atmosphere',
 };
 
-/** Canonical sector → Runway reel defaults (single source of truth in TS). */
+/** Canonical sector → reel motion defaults (single source of truth in TS). */
 export const SECTOR_REEL_MOTION_STANDARDS: Record<string, SectorReelMotionStandard> = {
   local_products_shop: {
     sectorId: 'local_products_shop',
@@ -271,7 +271,7 @@ export const SECTOR_REEL_MOTION_STANDARDS: Record<string, SectorReelMotionStanda
 };
 
 const DIRECTOR_VARIANT_LABELS: Record<ReelDirectorVariant, string> = {
-  product_tvc: 'Ürün reklam filmi — gerçek galeri karelerinde TVC tarzı Runway motion',
+  product_tvc: 'Ürün reklam filmi — gerçek galeri karelerinde TVC tarzı motion',
   venue_atmosphere: 'Mekan atmosferi — venue galeri karelerinde ambient motion',
   digital_editorial: 'Dijital editorial — salon/UI karelerinde minimal stabil motion',
 };

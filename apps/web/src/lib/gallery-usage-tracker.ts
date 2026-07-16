@@ -120,7 +120,6 @@ function looksGenerated(url: string): boolean {
     url.includes('cdn.creatomate') ||
     url.includes('storage.googleapis.com') ||
     url.includes('blob.core.windows.net') ||
-    url.includes('runway') ||
     url.includes('fal.ai')
   );
 }

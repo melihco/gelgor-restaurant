@@ -105,7 +105,7 @@ export function isFalDesignPipeline(pipeline: string | undefined | null): boolea
   return inFamily(pipeline, 'fal_design');
 }
 
-/** Pure fal.ai slots (no gallery/GPT/Remotion/Runway): `fal_only_*`. */
+/** Pure fal.ai slots (no gallery/GPT): `fal_only_*`. */
 export function isFalOnlyPipeline(pipeline: string | undefined | null): boolean {
   return inFamily(pipeline, 'fal_only');
 }

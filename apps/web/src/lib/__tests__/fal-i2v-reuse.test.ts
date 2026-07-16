@@ -9,13 +9,13 @@ import {
 describe('fal-i2v-reuse', () => {
   it('accepts raw gallery I2V by motion type and renderer', () => {
     expect(isRawGalleryI2vArtifact(
-      { i2v_motion_type: 'raw_gallery', runway_source: 'kling' },
+      { i2v_motion_type: 'raw_gallery', video_source: 'kling' },
       { videoUrl: 'https://cdn.example.com/a.mp4' },
       'https://cdn.example.com/a.mp4',
     )).toBe(true);
 
     expect(isRawGalleryI2vArtifact(
-      { renderer_executed: 'fal_raw_i2v', runway_source: 'fal_video' },
+      { renderer_executed: 'fal_raw_i2v', video_source: 'fal_video' },
       { videoUrl: '/api/media/tenant/v.mp4' },
       '/api/media/tenant/v.mp4',
     )).toBe(true);
@@ -26,7 +26,7 @@ describe('fal-i2v-reuse', () => {
       {
         fal_designer_produced: true,
         fal_design_engine: 'fal_ideogram_only',
-        runway_source: 'kling',
+        video_source: 'kling',
         reference_photo_url: 'https://cdn.example.com/gallery/a.jpg',
         imageUrl: 'https://fal.media/designed.png',
       },

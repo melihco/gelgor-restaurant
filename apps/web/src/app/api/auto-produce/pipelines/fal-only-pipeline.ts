@@ -1,5 +1,5 @@
 /**
- * fal-only Pipeline — pure fal.ai production (no Remotion, no Runway).
+ * fal-only Pipeline — pure fal.ai production.
  *
  * Reel slots (`fal_only_reel`) → designed video first:
  *   gallery photo + GPT-image grounded design card (headline + subtitle + brand)

@@ -9,7 +9,7 @@ export const maxDuration = 300;
  *
  * Three cases:
  * 1. /api/media?key=...  → proxy URL (localhost-relative) → generate R2 presigned URL
- * 2. Runway CloudFront   → signed JWT, may be inaccessible externally → upload to R2
+ * 2. Expiring CDN (CloudFront) → signed JWT, may be inaccessible externally → upload to R2
  * 3. Already public https:// (R2 with public domain, other CDN) → pass through
  */
 async function resolvePublicVideoUrl(videoUrl: string, workspaceId: string): Promise<string> {
@@ -24,8 +24,8 @@ async function resolvePublicVideoUrl(videoUrl: string, workspaceId: string): Pro
     return signed;
   }
 
-  // Case 2: Runway CloudFront signed URL → re-upload to R2 for stable access
-  if (videoUrl.includes('cloudfront.net') || videoUrl.includes('runway')) {
+  // Case 2: expiring CDN signed URL → re-upload to R2 for stable access
+  if (videoUrl.includes('cloudfront.net')) {
     if (!isR2Configured()) return videoUrl; // fallback: hope it works
     try {
       const key = generateStorageKey(workspaceId, 'video', 'mp4');

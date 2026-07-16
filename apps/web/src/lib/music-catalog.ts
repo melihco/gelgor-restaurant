@@ -33,7 +33,7 @@ export interface MusicTrack {
   url: string;
   /** Pixabay category for live API fallback */
   pixabayCategory: string;
-  /** BPM hint for Runway camera-motion sync */
+  /** BPM hint for reel camera-motion sync */
   bpm: number;
 }
 

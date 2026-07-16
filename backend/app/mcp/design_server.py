@@ -158,7 +158,7 @@ def build_image_edit_prompt_tool(
 
 
 @mcp.tool
-def build_runway_director_prompt_tool(
+def build_reel_director_prompt_tool(
     business_type: str,
     headline: str,
     caption: str,
@@ -170,7 +170,7 @@ def build_runway_director_prompt_tool(
     anti_patterns: str = "",
 ) -> str:
     """
-    Build a Runway Gen4 cinematic director prompt for Reels.
+    Build a cinematic AI-video director prompt for Reels.
     Returns camera_motion, cinematic_concept, director_brief, and forbidden_visuals.
     Sector-aware: SaaS brands get digital/urban concepts; venue brands get location-based cinematics.
     """
@@ -214,7 +214,7 @@ def build_runway_director_prompt_tool(
         )
 
     director_brief = (
-        f"Runway Gen4 Turbo — 5s, 720:1280 (9:16 Reels). "
+        f"AI I2V video — 5s, 720:1280 (9:16 Reels). "
         f"Concept: {cinematic_concept} "
         f"Caption context: {caption[:200]}. "
         f"Forbidden: {', '.join((rules['forbidden_elements'][:3] + anti_list)[:5]) or 'none'}."

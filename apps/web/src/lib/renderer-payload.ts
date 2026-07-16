@@ -41,7 +41,7 @@ export interface RendererGalleryMeta {
   tags?: string[];
   /** Match score 0..100 of the chosen photo (Sprint 2 GIS). */
   matchScore?: number;
-  /** One-line frame summary from gallery vision (Runway fidelity). */
+  /** One-line frame summary from gallery vision (I2V fidelity). */
   sceneMoment?: string;
   /** Subtle i2v motions derived from visible subjects. */
   microMotions?: string[];
@@ -51,7 +51,7 @@ export interface RendererGalleryMeta {
   hasPeople?: boolean;
 }
 
-// ── Reel (Runway) ──────────────────────────────────────────────────────────────
+// ── Reel (fal.ai I2V) ─────────────────────────────────────────────────────────
 
 export interface ReelPayload {
   title: string;
@@ -238,7 +238,7 @@ export function buildCanvaIdeaRecord(
 
 const REQUIRED_BY_RENDERER: Record<ProductionRenderer, string[]> = {
   canva: ['title', 'kind', 'canvaFieldCopy.headline'],
-  runway: ['title', 'caption', 'concept', 'promptImage'],
+  reel: ['title', 'caption', 'concept', 'promptImage'],
   announcement: ['photoUrl', 'templateId', 'eventName', 'brandName'],
   photo: ['title', 'contentType', 'referenceImageUrls'],
   canvas: ['photoUrl', 'eventName'],
@@ -285,8 +285,6 @@ export function resolveProductionRenderer(
   idea: ProductionIdea,
 ): ProductionRenderer {
   switch (pipeline) {
-    case 'runway_reel':
-      return 'runway';
     case 'marky_event':
     case 'meta_ad':
     case 'google_ad':
@@ -312,7 +310,7 @@ export function buildPayloadForIntegrityCheck(
   gallery: RendererGalleryMeta,
 ): Record<string, unknown> {
   switch (renderer) {
-    case 'runway':
+    case 'reel':
       return buildReelPayload(idea, brand, gallery) as unknown as Record<string, unknown>;
     case 'photo':
       return buildInstagramImagePayload(idea, brand, gallery) as unknown as Record<string, unknown>;

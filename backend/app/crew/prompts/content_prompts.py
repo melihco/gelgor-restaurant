@@ -470,7 +470,7 @@ For each concept, return a JSON object with:
 
   - "reel_motion_spec": object — ONLY fill when content_type is "reel". Empty object {{}} otherwise.
       Fields:
-        "camera_movement": MUST be EXACTLY one of this unified enum (used by Runway AI):
+        "camera_movement": MUST be EXACTLY one of this unified enum (used by the AI video engine):
             "static" | "slow_pan" | "dolly_in" | "dolly_out" | "orbit" | "tracking" | "handheld" | "tilt_up" | "tilt_down"
           Guide: luxury/interior → "dolly_in"; outdoor/landscape → "slow_pan" or "dolly_out";
                  event/crowd → "tracking"; product closeup → "orbit"; wellness/calm/studio → "static" or "handheld";

@@ -147,10 +147,6 @@ services:
       - fromGroup: smartagency-shared
       - key: FAL_API_KEY
         sync: false
-      - key: RUNWAY_API_SECRET
-        sync: false
-      - key: RUNWAYML_API_SECRET
-        sync: false
       - key: SMART_AGENCY_IMAGE_PROVIDER
         value: flux
       - key: SMART_AGENCY_IMAGE_MODEL
@@ -214,8 +210,6 @@ services:
         value: "false"
       - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "true"
-      - key: AUTO_PRODUCE_RUNWAY
-        value: "false"
       - key: AUTO_PRODUCE_MAX_DAILY
         value: "500"
       - key: MISSION_AUTO_PRODUCE_MAX_PER_RUN
@@ -224,16 +218,6 @@ services:
         value: "50"
       - key: AUTO_PRODUCE_MAX_REELS_DAILY
         value: "15"
-      - key: RUNWAY_MODEL
-        value: gen4_turbo
-      - key: RUNWAY_API_VERSION
-        value: "2024-11-06"
-      - key: RUNWAY_DEFAULT_DURATION
-        value: "5"
-      - key: RUNWAY_DEFAULT_RATIO
-        value: "720:1280"
-      - key: RUNWAY_TIMEOUT_MS
-        value: "240000"
       - key: NEXT_PUBLIC_API_URL
         fromService:
           name: smartagency-api
@@ -291,10 +275,6 @@ services:
       - key: SHARP_CONCURRENCY
         value: "2"
       - key: FAL_API_KEY
-        sync: false
-      - key: RUNWAY_API_SECRET
-        sync: false
-      - key: RUNWAYML_API_SECRET
         sync: false
       - key: SMART_AGENCY_IMAGE_PROVIDER
         value: flux
@@ -360,8 +340,6 @@ services:
         value: "false"
       - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "true"
-      - key: AUTO_PRODUCE_RUNWAY
-        value: "false"
       - key: AUTO_PRODUCE_MAX_DAILY
         value: "500"
       - key: MISSION_AUTO_PRODUCE_MAX_PER_RUN
@@ -370,16 +348,6 @@ services:
         value: "50"
       - key: AUTO_PRODUCE_MAX_REELS_DAILY
         value: "15"
-      - key: RUNWAY_MODEL
-        value: gen4_turbo
-      - key: RUNWAY_API_VERSION
-        value: "2024-11-06"
-      - key: RUNWAY_DEFAULT_DURATION
-        value: "5"
-      - key: RUNWAY_DEFAULT_RATIO
-        value: "720:1280"
-      - key: RUNWAY_TIMEOUT_MS
-        value: "240000"
       - key: BACKEND_ORIGIN
         fromService:
           name: smartagency-api

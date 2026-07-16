@@ -81,7 +81,7 @@ interface ProducedItem {
   contentType: string;
   imageUrl: string | null;       // raw gallery photo (reference — preserved for reel/story video)
   referencePhotoUrl: string | null;
-  reelUrl: string | null;        // Remotion MP4 (stories) or Runway MP4 (reels)
+  reelUrl: string | null;        // story MP4 or fal.ai reel MP4
   reelBuilding: boolean;
   reelError: string | null;
   // ── Deprecated (kept for type compat, always null) ──────────
@@ -941,7 +941,7 @@ export function AutoProductionFeed({
       cameraMotion,
     });
     const reelBody = buildReelGenerateReelRequest(pIdea, brandCtx, galleryMeta, promptImage, directorExtras);
-    auditRendererPayload('runway', reelBody);
+    auditRendererPayload('reel', reelBody);
 
     const res = await fetch('/api/generate-reel', {
       method: 'POST',
@@ -1024,7 +1024,7 @@ export function AutoProductionFeed({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [producing, items]);
 
-  // Ajans Still → Runway: generate 9:16 agency design then animate it
+  // Ajans Still → AI video: generate 9:16 agency design then animate it
   const generateAgencyReel = async (_item: ProducedItem) => { /* stub — removed */ };
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
 
@@ -1087,7 +1087,7 @@ export function AutoProductionFeed({
             Sunucu üretimi aktif
           </div>
           <p style={{ fontSize: 14, color: t.textSecondary, lineHeight: 1.55, marginBottom: 12 }}>
-            Bu mission için görseller <strong>auto-produce</strong> (fal.ai + galeri + Runway) ile sunucuda üretilir.
+            Bu mission için görseller <strong>auto-produce</strong> (fal.ai + galeri) ile sunucuda üretilir.
             İstemci tarafı otonom üretim ve Canva devre dışı — çift kart oluşmaz.
           </p>
           <div style={{ padding: '12px 14px', borderRadius: 12, marginBottom: 16,
@@ -1198,7 +1198,7 @@ export function AutoProductionFeed({
           const shownCaption = captionMode === 'alt' && item.captionAlt ? item.captionAlt : item.caption;
           const visualMode = activeVisual[item.ideaIndex] ?? (normalizeContentFormat(item.contentType) === 'reel' ? 'reel' : 'photo');
           const isReelFmt = normalizeContentFormat(item.contentType) === 'reel';
-          // Simplified: photo | reel (Remotion/Runway)
+          // Simplified: photo | reel
           const shownImage =
             visualMode === 'reel'  && item.reelUrl            ? item.reelUrl    :
             item.brandKitUrl ?? item.imageUrl;
@@ -1233,7 +1233,7 @@ export function AutoProductionFeed({
                     )}
                     <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.separator}`, borderTop: '3px solid #F59E0B', animation: 'spinSlow 0.9s linear infinite' }} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>Runway reel üretiliyor…</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>Reel üretiliyor…</span>
                       <span style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', maxWidth: 220 }}>~1–2 dk sürebilir</span>
                     </div>
                   </div>
@@ -1506,7 +1506,7 @@ export function AutoProductionFeed({
                     {expandedPanel[item.ideaIndex] && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 0' }}>
 
-                        {/* Reel (raw photo → Runway) */}
+                        {/* Reel (raw photo → AI video) */}
                         <button onClick={() => {
                           reelAttemptedRef.current.delete(item.ideaIndex);
                           void generateReel(item);
@@ -1519,7 +1519,7 @@ export function AutoProductionFeed({
                           <span style={{ fontSize: 15 }}>{item.reelBuilding ? '⏳' : '▶'}</span>
                           <span style={{ marginLeft: 6 }}>{item.reelBuilding ? 'Video üretiliyor…' : 'Reel Üret'}</span>
                           <span style={{ display: 'block', fontSize: 10, color: item.reelError ? '#F87171' : t.textMuted, marginTop: 2 }}>
-                            {item.reelError || 'Fotoğraf → Runway'}
+                            {item.reelError || 'Fotoğraf → AI video'}
                           </span>
                         </button>
 

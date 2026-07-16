@@ -20,7 +20,6 @@ export type AiCallType =
   | 'fal_designed_post'
   | 'fal_only'
   | 'fal_typography'
-  | 'video_runway'
   | 'video_fal'
   | 'card_overlay'
   | 'sharp_composite'

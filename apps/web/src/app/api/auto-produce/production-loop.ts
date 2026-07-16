@@ -824,7 +824,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // designed_post     → Remotion agency poster (SVG+Sharp)
   // organic_story_still → static gallery story
   // campaign_story_motion → Remotion MP4
-  // organic_reel / campaign_reel_motion → fal_reel (fal designer video; Runway kapalı)
+  // organic_reel / campaign_reel_motion → fal_reel (fal designer video)
   // ─────────────────────────────────────────────────────────────────────────
 
   const existingArtifactKeys = missionId && !skipArtifactDedupe
@@ -3150,9 +3150,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Event overlay (story/post/canvas with event_details)
     //              → GPT-image-1 eventOverlayMode: photo bg + minimal gradient + text
     // Carousel     → 3-4 gallery photos enhanced with vibe DNA → media_urls
-    // Reel         → Runway Gen4 Turbo image-to-video (~$0.10/5s)
+    // Reel         → fal.ai image-to-video (~$0.10/5s)
     // Post/Story   → gpt-image-2 (AI ayar açık) → Remotion motion/still (marka token + şablon)
-    // Reel         → Runway Gen4 / fal.ai designer (Remotion kullanılmaz)
+    // Reel         → fal.ai designer video
     let imageUrl: string | null = null;
     let videoUrl: string | null = null;
     let carouselUrls: string[] = [];
@@ -3933,7 +3933,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline,
           imageUrl: referenceUrl ?? '',
-          error: reelFailureReason ?? 'Reel videosu üretilemedi (Runway/fal.ai)',
+          error: reelFailureReason ?? 'Reel videosu üretilemedi (fal.ai)',
           slotKey,
         });
         continue;
@@ -4226,7 +4226,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ? 'gpt_image_designed_post'
             : 'fal_designer_post';
         }
-        if (videoUrl) return normalizeProductionPipeline(assignment.pipeline) === 'fal_reel' ? 'fal_reel' : 'runway_reel';
+        if (videoUrl) return 'fal_reel';
         if (missionVisualDesignRendered) return 'mission_visual_design_card';
         if (designedPosterSyncUrl) return 'designed_poster_sync';
         if (markyBranded && imageUrl && referenceUrl && imageUrl !== referenceUrl) {

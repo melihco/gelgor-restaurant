@@ -357,7 +357,7 @@ async def render_style_variants(
     # ── 1. Tüm stil variantlarını paralel üret
     all_variants = await generate_all_style_variants(inp, formats, openai_api_key, styles)
 
-    # Video süresi: Runway gen4_turbo her zaman 5s üretir
+    # Video süresi: I2V hattı her zaman 5s üretir
     video_duration = 5.0
 
     # ── 2. Her stil + format için Creatomate'e gönder (hepsi paralel)

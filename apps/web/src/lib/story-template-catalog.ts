@@ -1,5 +1,12 @@
 /**
- * Remotion template catalog — 100 parametric story layouts (10 families × 10 variants).
+ * Story template catalog — parametric story layout definitions (families × variants).
+ *
+ * This is the static DESIGN SYSTEM: each entry is a deterministic layout spec
+ * (typography, panel geometry, color policy) rendered by Satori/fal at produce
+ * time. Which template a brand actually uses is DYNAMIC — per-brand records in
+ * brand_theme.template_library.slots / brand_design_templates reference these
+ * ids (story_*). Adding or tuning a design happens here; assigning it to a
+ * brand/slot happens in data.
  */
 
 import {

@@ -257,7 +257,7 @@ async def get_usage_summary(
         "week_days": days,
         "category_totals": category_totals,
         "daily_series": daily_series,
-        "currency_note": "Tahmini API maliyeti (USD); gerçek fatura OpenAI/Runway/Apify'dan gelir.",
+        "currency_note": "Tahmini API maliyeti (USD); gerçek fatura OpenAI/fal.ai/Apify'dan gelir.",
     }
 
     from app.services.ai_cost_service import ESTIMATED_COST_USD

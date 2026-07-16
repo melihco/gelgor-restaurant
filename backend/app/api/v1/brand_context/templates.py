@@ -120,7 +120,7 @@ async def generate_video_production_spec(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Video Production Agent: selects best gallery photo + crafts Runway prompt.
+    Video Production Agent: selects best gallery photo + crafts the reel video prompt.
     Called from Content Studio when user clicks 'AI Reel Üret'.
     """
     from app.crew.crews.video_production_crew import run_video_production
@@ -154,7 +154,7 @@ async def create_brand_video_pack(
 ) -> dict:
     """
     Render a branded video pack via Creatomate.
-    Takes one Runway video URL and produces up to 5 format outputs.
+    Takes one AI video URL and produces up to 5 format outputs.
     """
     from app.services.creatomate_service import (
         BrandTemplate,

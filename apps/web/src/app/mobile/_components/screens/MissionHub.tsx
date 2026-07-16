@@ -2555,7 +2555,7 @@ function MissionAiCostPanel({
         (() => {
           const fb = summary.feedBreakdown!;
           const buckets: Array<{ label: string; usd: number }> = [
-            { label: 'Video (Runway/fal)', usd: fb.runwayUsd },
+            { label: 'Video (fal.ai)', usd: fb.videoUsd },
             { label: 'Tasarım (fal/Grafiker)', usd: fb.designUsd },
             { label: 'Görsel/enhance', usd: fb.imageUsd },
             { label: 'Diğer', usd: fb.otherUsd },

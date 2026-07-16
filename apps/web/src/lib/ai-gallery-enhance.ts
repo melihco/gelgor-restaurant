@@ -40,7 +40,6 @@ const ENHANCE_PIPELINES = new Set([
   'gallery_photo',
   'story_still',
   'carousel_gallery',
-  'runway_reel',
   'fal_reel',
 ]);
 
@@ -71,7 +70,6 @@ export function shouldUseMultiGalleryPhotos(
   if (assignment.pipeline === 'carousel_gallery') {
     return true;
   }
-  if (assignment.pipeline === 'runway_reel') return true;
   if (contentKind === 'instagram_carousel') return true;
   return false;
 }

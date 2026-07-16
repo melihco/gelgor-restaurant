@@ -233,7 +233,7 @@ function productionRoleBadge(meta: Record<string, unknown>): string | null {
   if (role === 'organic_story_still' || pipeline === 'story_still') return 'Story';
   if (pipeline === 'fal_story') return 'Story';
   if (role.includes('campaign')) return 'Kampanya';
-  if (role.includes('reel') || pipeline === 'runway_reel') return 'Reel';
+  if (role.includes('reel') || pipeline === 'fal_reel') return 'Reel';
   if (role === 'organic_carousel' || pipeline === 'carousel_gallery') return 'Carousel';
   if (role === 'paid_ad_google_creative' || pipeline === 'google_ad') return 'Google Ads';
   if (role === 'paid_ad_creative' || pipeline === 'meta_ad') return 'Meta Ads';

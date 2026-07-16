@@ -170,7 +170,6 @@ function isImageUrl(u: unknown): boolean {
 function isVideoUrl(u: unknown): boolean {
   if (typeof u !== 'string') return false;
   return /\.(mp4|mov|webm|avi)(\?|$)/i.test(u)
-    || u.includes('runway')
     || u.includes('video')
     || u.includes('/generated/');
 }

@@ -85,13 +85,13 @@ export interface BrandMotionProfile {
   learning?: MotionLearningHints;
   /** Set when operator overrides auto-derived defaults */
   operatorOverride?: boolean;
-  /** Runway reel default pace — `auto` or unset uses motion style / sector */
+  /** Reel default pace — `auto` or unset uses motion style / sector */
   reelPace?: ReelPacing | 'auto' | string;
-  /** Runway default camera — `auto` or unset uses motion style / fidelity rules */
+  /** Default camera — `auto` or unset uses motion style / fidelity rules */
   reelCameraMotion?: string;
   /** Force single | sequential | multi_ref when set */
   reelStrategy?: ReelMontageStrategy | 'auto';
-  /** TVC-style Runway reels on real product gallery frames (tenant seed or explicit) */
+  /** TVC-style reels on real product gallery frames (tenant seed or explicit) */
   productSpotlightReel?: boolean;
 }
 

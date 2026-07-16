@@ -8,7 +8,7 @@ export const maxDuration = 300;
  * Resolve video URL to a publicly accessible HTTPS URL.
  * Shotstack (and Creatomate) need to download the video from a public URL.
  * - /api/media?key=... → R2 presigned URL (2h validity)
- * - Runway CloudFront JWT URL → re-upload to R2 for stable access
+ * - Expiring CDN (CloudFront) JWT URL → re-upload to R2 for stable access
  * - Already public https:// → pass through
  */
 async function resolvePublicVideoUrl(videoUrl: string, workspaceId: string): Promise<string> {
@@ -22,8 +22,8 @@ async function resolvePublicVideoUrl(videoUrl: string, workspaceId: string): Pro
       if (key) return await getPresignedUrl(key, 7200);
     }
 
-    // Case 2: Runway CloudFront signed URL → re-upload to R2
-    if (videoUrl.includes('cloudfront.net') || videoUrl.includes('runway')) {
+    // Case 2: expiring CDN signed URL → re-upload to R2
+    if (videoUrl.includes('cloudfront.net')) {
       if (!isR2Configured()) return videoUrl;
       const res = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
       if (!res.ok) return videoUrl;

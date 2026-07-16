@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     # Free key at: https://www.eventbrite.com/platform/api (500 req/day free)
     eventbrite_api_key: str = ""
 
-    # Creatomate — branded video pack (1 Runway video → 5 formats with overlays)
+    # Creatomate — branded video pack (1 AI video → 5 formats with overlays)
     # €89/mo starter (100 renders), €0.89/extra render
     # Get key at: https://creatomate.com/
     creatomate_api_key: str = ""
@@ -218,7 +218,7 @@ class Settings(BaseSettings):
     auto_content_enabled: bool = False
     auto_content_hour: int = 9       # UTC (TR 12:00) — kept for env override; scheduler now runs every 6h
     auto_content_max_daily: int = 12  # max auto-missions per workspace per day (pilot testing)
-    workspace_daily_budget_usd: float = 50.0  # full-quality runs (Runway + Remotion + GPT enhance)
+    workspace_daily_budget_usd: float = 50.0  # full-quality runs (fal video + design + GPT enhance)
     # Varsayılan kapalı kota; AUTO_PRODUCE_BYPASS_LIMITS=false ile günlük USD limiti açılır
     auto_produce_bypass_limits: bool = True
     # Max missions draining concurrently per workspace (serial queue = 1)

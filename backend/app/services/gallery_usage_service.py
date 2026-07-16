@@ -69,7 +69,6 @@ _GENERATED_URL_MARKERS = (
     "cdn.creatomate",
     "storage.googleapis.com",
     "blob.core.windows.net",
-    "runway",
     "fal.ai",
 )
 

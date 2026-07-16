@@ -2024,7 +2024,7 @@ function IdeaCard({
         promptImage,
         directorExtras,
       );
-      auditRendererPayload('runway', reelBody);
+      auditRendererPayload('reel', reelBody);
 
       const res = await fetch('/api/generate-reel', {
         method: 'POST',
@@ -2046,20 +2046,20 @@ function IdeaCard({
         platform: 'instagram',
         contentType: 'instagram_reel',
         content: JSON.stringify({ videoUrl: resolvedVideoUrl, caption, kind: 'instagram_reel' }),
-        metadata: { videoUrl: resolvedVideoUrl, caption, source: 'runway' },
+        metadata: { videoUrl: resolvedVideoUrl, caption, source: 'fal' },
       });
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Runway hatası';
+      const msg = e instanceof Error ? e.message : 'Video üretim hatası';
       setReelError(msg.slice(0, 100));
     } finally {
       setIsGeneratingReel(false);
     }
   }
 
-  // ── Ajans Still → Runway Reel (2-step pipeline) ──────────────────────────
+  // ── Ajans Still → AI Reel (2-step pipeline) ───────────────────────────────
   const [isGeneratingAgencyReel, setIsGeneratingAgencyReel] = useState(false);
-  const [agencyReelStep, setAgencyReelStep] = useState<'idle' | 'agency' | 'runway'>('idle');
+  const [agencyReelStep, setAgencyReelStep] = useState<'idle' | 'agency' | 'animate'>('idle');
 
   async function generateAgencyReel() {
     if (isGeneratingAgencyReel) return;
@@ -2114,8 +2114,8 @@ function IdeaCard({
 
       if (!agencyStillUrl) throw new Error('Ajans görseli üretilemedi');
 
-      // Step 2: Animate with Runway
-      setAgencyReelStep('runway');
+      // Step 2: Animate with fal.ai I2V
+      setAgencyReelStep('animate');
       const vibeClause = brandTheme
         ? `Visual style: ${brandTheme.grading?.look ?? ''}. ${brandTheme.grading?.lutDirective ?? ''}. Color: ${brandTheme.palette?.description ?? ''}.`
         : '';
@@ -2155,7 +2155,7 @@ function IdeaCard({
         platform:    'instagram',
         contentType: 'instagram_reel',
         content:     JSON.stringify({ videoUrl, agencyStillUrl, caption, kind: 'instagram_reel' }),
-        metadata:    { videoUrl, agencyStillUrl, caption, source: 'runway_agency_story' },
+        metadata:    { videoUrl, agencyStillUrl, caption, source: 'fal_agency_story' },
       });
       queryClient.invalidateQueries({ queryKey: ['artifacts'] });
     } catch (e: any) {
@@ -3729,18 +3729,18 @@ function IdeaCard({
                   icon: '▶',
                   label: brandRefImages.filter(isUsableReelPhotoUrl).length >= 2 ? 'Reel Üret (Montaj)' : 'Reel Üret',
                   sub: brandRefImages.filter(isUsableReelPhotoUrl).length >= 2
-                    ? `${Math.min(brandRefImages.filter(isUsableReelPhotoUrl).length, 3)} foto → Runway montaj veya blend`
-                    : 'Seçili fotoğraf → Runway video',
+                    ? `${Math.min(brandRefImages.filter(isUsableReelPhotoUrl).length, 3)} foto → AI video montaj veya blend`
+                    : 'Seçili fotoğraf → AI video',
                   disabled: isGeneratingReel || isGeneratingMultiReel,
                   action: () => { generateReelVideo(); setShowOverflowSheet(false); },
                 },
                 ...(isPortrait ? [{
-                  icon: '🎬', label: 'Ajans Story → Reel', sub: '3D logo story kartı → Runway gen4',
+                  icon: '🎬', label: 'Ajans Story → Reel', sub: '3D logo story kartı → AI video',
                   disabled: isGeneratingAgencyReel || isGeneratingReel || isGeneratingMultiReel,
                   action: () => { generateAgencyReel(); setShowOverflowSheet(false); },
                 }] : []),
                 ...(brandRefImages.filter(isUsableReelPhotoUrl).length >= 2 ? [{
-                  icon: '🎞', label: 'Sıralı Montaj Reel', sub: '3 ayrı klip → FFmpeg birleştir · Runway',
+                  icon: '🎞', label: 'Sıralı Montaj Reel', sub: '3 ayrı klip → FFmpeg birleştir · AI video',
                   disabled: isGeneratingMultiReel || isGeneratingReel || isGeneratingAgencyReel,
                   action: () => { generateMultiPhotoReel('sequential'); setShowOverflowSheet(false); },
                 }] : []),

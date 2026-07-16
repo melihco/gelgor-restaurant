@@ -237,9 +237,7 @@ export function resolveMaxHeroReelsPerMission(
 ): number {
   if (packageMonthlyReels === 0) return 0;
   const raw = brandTheme?.max_hero_reels_per_mission
-    ?? brandTheme?.maxHeroReelsPerMission
-    ?? brandTheme?.max_runway_reels_per_mission
-    ?? brandTheme?.maxRunwayReelsPerMission;
+    ?? brandTheme?.maxHeroReelsPerMission;
   const n = typeof raw === 'number' ? raw : Number(raw);
   let cap = 1;
   if (Number.isFinite(n) && n >= 1) {

@@ -976,7 +976,7 @@ def extract_urgency_signal(brand: "BrandInfo") -> dict:
     Parse brand.industry_calendar JSON and return a compact urgency signal dict.
 
     Used by:
-    - video_production_crew   → drive Runway style (energetic vs calm)
+    - video_production_crew   → drive reel motion style (energetic vs calm)
     - content_tasks           → prepend urgency directive to content ideation
     - Creatomate service      → auto-select "event" format when urgency=HIGH
 
@@ -1086,7 +1086,7 @@ def build_urgency_directive(brand: "BrandInfo") -> str:
         "HIGH": (
             "\n🚨 **MANDATE**: Urgency is HIGH. ALL content concepts must reflect peak-season energy. "
             "CTAs must be direct and time-bound ('Rezervasyon Yap — Bu Hafta Sonu', 'Kaçırma'). "
-            "Runway prompts must use dynamic motion, dramatic lighting. "
+            "Video prompts must use dynamic motion, dramatic lighting. "
             "Do NOT produce relaxed, evergreen, or generic content."
         ),
         "MEDIUM": (

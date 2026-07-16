@@ -10,7 +10,7 @@ import {
 import type { MultiReelPhotoInput } from './reel-multi-production';
 import { resolveReelDirectorVariant } from './sector-reel-motion-standard';
 
-export interface RunwayDirectorGuardrailOptions {
+export interface ReelDirectorGuardrailOptions {
   workspaceId?: string;
   sector?: string;
   productSpotlightReel?: boolean;
@@ -223,7 +223,7 @@ function sanitizeClipCaption(text: string): string {
 
 /** Compact guardrails for sequential clips — rules first, always preserved. */
 export function buildCompactSequentialGuardrailPrefix(
-  opts: RunwayDirectorGuardrailOptions,
+  opts: ReelDirectorGuardrailOptions,
   cameraMotion?: string,
 ): string {
   const variant = resolveReelDirectorVariant({
@@ -284,7 +284,7 @@ export function buildSequentialClipDirectorPrompt(input: {
   };
   caption?: string;
   cameraMotion?: string;
-  guardrails?: RunwayDirectorGuardrailOptions;
+  guardrails?: ReelDirectorGuardrailOptions;
   /** Short photo-specific creative line (no guardrail blocks) */
   creativeBrief?: string;
 }): string {

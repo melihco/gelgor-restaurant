@@ -22,7 +22,6 @@ export type ProductionPipeline =
   | 'gallery_photo'      // Ham / hafif galeri gönderisi (caption feed'de)
   | 'fal_story'          // fal.ai grounded story poster (9:16) — galeri + ideation
   | 'story_still'        // Story: statik galeri görseli (caption feed'de yok)
-  | 'runway_reel'        // @deprecated — fal_reel kullan; legacy FD atamaları normalize edilir
   | 'fal_reel'           // fal.ai reel — designer video (Kling I2V)
   | 'fal_design'         // fal.ai/GPT-image tasarımsal feed post (Canva benzeri, galeri + tipografi)
   | 'fal_only_story'     // Tam fal.ai story — galeri/GPT yok, Ideogram + I2V
@@ -63,13 +62,13 @@ export type ProductionSlotRole =
   | 'campaign_reel_motion'
   /** fal.ai I2V story — ayrı üretim hattı (Remotion değil) */
   | 'fal_story_motion'
-  /** fal.ai I2V reel — ayrı üretim hattı (Runway/Remotion değil) */
+  /** fal.ai I2V reel — ayrı üretim hattı */
   | 'fal_reel_motion'
   /** Tam fal.ai story — galeri/GPT/Remotion yok */
   | 'fal_only_story'
   /** Tam fal.ai feed post — galeri/GPT/Remotion yok */
   | 'fal_only_post'
-  /** Tam fal.ai reel — galeri/GPT/Runway yok */
+  /** Tam fal.ai reel — galeri/GPT yok */
   | 'fal_only_reel'
   /** Carousel */
   | 'organic_carousel'
@@ -648,16 +647,6 @@ export function applyProductionProfileToWeeklySlots(
     if (slot.role === 'organic_story_still') {
       stillStoryCount += 1;
     }
-    if (
-      (slot.role === 'organic_reel' || slot.role === 'campaign_reel_motion')
-      && slot.pipeline === 'runway_reel'
-    ) {
-      trimmed.push({
-        ...slot,
-        pipeline: 'fal_reel',
-      });
-      continue;
-    }
     trimmed.push(slot);
   }
 
@@ -699,7 +688,7 @@ export function buildMissionProductionManifest(input: {
   missionType?: MissionProductionManifest['missionType'];
   selectedIntents?: CreativeIntent[];
   includeAds?: boolean;
-  /** When true, campaign_reel_motion is required (agency tier / 2 Runway). */
+  /** When true, campaign_reel_motion is required (agency tier / 2 reels). */
   requireCampaignReel?: boolean;
   productionProfile?: ProductionProfile | null;
   packageSlug?: string | null;

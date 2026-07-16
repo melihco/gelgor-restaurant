@@ -73,7 +73,6 @@ const PIPELINE_LABEL: Record<string, string> = {
   fal_only_post: 'AI editorial görsel',
   fal_only_story: 'AI sinematik story',
   fal_only_reel: 'AI sinematik reel',
-  runway_video: 'Runway video',
   product_showcase: 'Ürün showcase',
 };
 

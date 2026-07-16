@@ -26,7 +26,7 @@ import type { StorySequenceRole } from './story-sequence-rules';
 export type MotionLane = 'whisper' | 'editorial' | 'pulse' | 'impact';
 
 export interface MotionLaneSpec {
-  /** Runway camera motion directive for this lane */
+  /** Camera motion directive for this lane */
   cameraMotion: string;
   /** Suggested overlay opacity range [min, max] */
   overlayOpacityRange: [number, number];

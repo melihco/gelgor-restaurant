@@ -1,5 +1,5 @@
 /**
- * Brand-level Runway reel defaults — stored on brand_theme.motion_profile.
+ * Brand-level reel motion defaults — stored on brand_theme.motion_profile.
  * Priority at production time: ideation reel_motion_spec → brand → vibe → sector.
  */
 import { normalizeCameraMotion, type UnifiedCameraMotion } from './camera-motion';

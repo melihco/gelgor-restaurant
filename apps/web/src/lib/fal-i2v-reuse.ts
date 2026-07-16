@@ -9,7 +9,7 @@ import type { OutputArtifact } from '@/types';
 
 const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
 
-const RAW_I2V_RUNWAY_SOURCES = new Set(['kling', 'luma', 'fal_video']);
+const RAW_I2V_VIDEO_SOURCES = new Set(['kling', 'luma', 'fal_video']);
 
 const DESIGNED_RENDERER_EXECUTED = new Set([
   'fal_designer_post',
@@ -122,8 +122,8 @@ export function isRawGalleryI2vArtifact(
     return false;
   }
 
-  const runwaySource = strField(meta.runway_source, meta.fal_video_model);
-  if (runwaySource && RAW_I2V_RUNWAY_SOURCES.has(runwaySource)) {
+  const videoSource = strField(meta.video_source, meta.fal_video_model);
+  if (videoSource && RAW_I2V_VIDEO_SOURCES.has(videoSource)) {
     return true;
   }
 

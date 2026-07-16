@@ -183,7 +183,7 @@ export function inferProductionAssignment(
 
 /**
  * Ad-hoc "New Brief" → fal.ai art-director track (designed post / designed reel).
- * Uses brand DNA + user intent; skips Remotion/Runway heuristics.
+ * Uses brand DNA + user intent; legacy engine heuristics yok.
  */
 export function inferAdHocBriefAssignment(
   ideaIndex: number,

@@ -90,7 +90,7 @@ public class ArtifactsController : ControllerBase
 
     // ── POST /api/artifacts/video ──────────────────────────────────────────
     /// <summary>
-    /// Saves a Runway-generated video as an OutputArtifact so it appears
+    /// Saves an AI-generated video as an OutputArtifact so it appears
     /// in the UI (Outputs page, Approvals, Content page).
     /// Called internally by the Next.js /api/generate-reel endpoint.
     /// </summary>
@@ -108,7 +108,7 @@ public class ArtifactsController : ControllerBase
 
         var metadata = request.Metadata != null
             ? JsonSerializer.Serialize(request.Metadata)
-            : JsonSerializer.Serialize(new { source = "runway" });
+            : JsonSerializer.Serialize(new { source = "fal" });
 
         var artifact = new OutputArtifact
         {
@@ -632,11 +632,11 @@ public record BundleStatusRequest(string Status, string? Error);
 public class VideoArtifactRequest
 {
     public string Title { get; set; } = string.Empty;
-    /// <summary>CDN URL of the generated mp4 from Runway</summary>
+    /// <summary>CDN URL of the generated mp4</summary>
     public string ContentUrl { get; set; } = string.Empty;
     /// <summary>Prompt or caption text</summary>
     public string? Content { get; set; }
-    /// <summary>Optional metadata (runwayTaskId, model, duration, ratio)</summary>
+    /// <summary>Optional metadata (taskId, model, duration, ratio)</summary>
     public Dictionary<string, object>? Metadata { get; set; }
 }
 

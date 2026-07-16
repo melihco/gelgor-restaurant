@@ -903,7 +903,7 @@ export interface SuggestedActionDto {
     title: string;
     summary: string;
     imageUrl?: string | null;
-    /** CDN URL of a Runway-generated mp4 */
+    /** CDN URL of an AI-generated mp4 */
     videoUrl?: string | null;
     caption?: string;
     hashtags?: string[];

@@ -5,7 +5,7 @@
 import type { BrandProductionTokens } from '@/lib/brand-production-tokens';
 import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
 
-/** Video-source metadata refined by the fal/runway video pipelines. */
+/** Video-source metadata refined by the fal.ai video pipelines. */
 export interface VideoProduceMeta {
   source: 'kling' | 'luma' | 'fal_video';
   strategy?: string;
