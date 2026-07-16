@@ -22,6 +22,8 @@ import {
   bindBrandTemplateForFalProduction,
   dropConflictingLayoutDirectives,
   resolveFalTemplateLockOptions,
+  templateLayoutReferenceUrl,
+  templateReplicaSpecFromBinding,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { serverConfig } from '@/lib/server-config';
@@ -186,6 +188,8 @@ export async function produceFalOnlySlot(
         designIntensityLevel: input.designIntensityLevel,
         occasion: binding?.occasion,
         logoPlacement: input.logoPlacement,
+        templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
+        templateReplica: templateReplicaSpecFromBinding(binding),
       });
       console.log(
         `[auto-produce] [fal-only] ${input.pipeline} designed video: "${designer.resolvedHeadline ?? input.headline.slice(0, 40)}" ` +
@@ -325,6 +329,8 @@ export async function produceFalOnlySlot(
         }),
         designIntensityLevel: input.designIntensityLevel,
         occasion: binding?.occasion,
+        templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
+        templateReplica: templateReplicaSpecFromBinding(binding),
       });
       console.log(
         `[auto-produce] [fal-only] post designed: "${still.resolvedHeadline ?? input.headline.slice(0, 40)}" ` +

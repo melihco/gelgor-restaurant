@@ -234,6 +234,9 @@ export async function POST(
       persistRes.error,
       persistRes.data,
     );
+  } else {
+    const { invalidateDesignTemplateCache } = await import('@/lib/brand-design-template-matcher');
+    invalidateDesignTemplateCache(workspaceId);
   }
 
   return NextResponse.json({

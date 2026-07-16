@@ -25,6 +25,7 @@ import {
 import { FAL_DESIGN_INTENSITY_LABELS, type FalDesignIntensityLevel } from '@/lib/fal-design-intensity';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
 import { isTypographyDesignConfirmed, resolveSuggestedTypographyConfig } from '@/lib/typography-design-policy';
+import { invalidateDesignTemplateCache } from '@/lib/brand-design-template-matcher';
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 
 export const runtime = 'nodejs';
@@ -254,6 +255,10 @@ export async function POST(
         ? createRes.data[0]
         : null;
     }
+
+    // Next production must bind the fresh thumbnail immediately — not the
+    // 60s-stale cached list.
+    if (persisted) invalidateDesignTemplateCache(workspaceId);
   }
 
   return NextResponse.json({

@@ -84,9 +84,28 @@ vi.mock('@/lib/brand-design-template-production', () => ({
   bindBrandTemplateForFalProduction: h.bindBrandTemplateForFalProduction,
   pickTemplateReferenceUrls: h.pickTemplateReferenceUrls,
   templateStyleReferenceUrls: h.templateStyleReferenceUrls,
+  templateLayoutReferenceUrl: (
+    binding: { matched?: { matchQuality?: string } | null; styleReferenceUrl?: string | null } | null | undefined,
+  ) => {
+    const m = binding?.matched;
+    const renderable = !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft');
+    return renderable && binding?.styleReferenceUrl ? binding.styleReferenceUrl : undefined;
+  },
   resolveFalTemplateLockOptions: h.resolveFalTemplateLockOptions,
   assertTemplateStyleReference: () => {},
   dropConflictingLayoutDirectives: (directives: string[]) => directives,
+  templateReplicaSpecFromBinding: (
+    binding: { matched?: { matchQuality?: string; designSpecPrompt?: string | null } | null } | null | undefined,
+  ) => {
+    const m = binding?.matched;
+    const renderable = !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft');
+    if (!renderable || !m?.designSpecPrompt) return null;
+    return { prompt: m.designSpecPrompt, sampleHeadline: null, sampleSubtitle: null, forbiddenTexts: [] };
+  },
+  buildTemplateReplicaPrompt: (
+    spec: { prompt: string },
+    mission: { headline: string },
+  ) => `REPLICA:${mission.headline}\n${spec.prompt}`,
 }));
 vi.mock('@/lib/brand-design-template-matcher', () => ({
   matchDesignTemplateToSlot: h.matchDesignTemplateToSlot,
@@ -275,6 +294,50 @@ describe('falVideoHandler.run', () => {
     expect(ctx.state.imageUrl).toBeNull();
     expect(ctx.state.costDelta).toBe(0);
   });
+
+  it('fal_story with a matched template bypasses Satori and passes the template layout ref', async () => {
+    h.serverConfig.localTypography.enabled = true;
+    try {
+      h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+      h.produceFalDesignedPostStill.mockResolvedValue({
+        imageUrl: 'story-template-replica',
+        grafikerScore: 8,
+        grafikerPass: true,
+        typographyModel: 'gpt-image-1',
+        resolvedHeadline: 'Sunset Session',
+      });
+      h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+        matched: {
+          id: 'tpl-story',
+          templateType: 'daily_story',
+          templateName: 'Günlük Story',
+          matchQuality: 'hard',
+          canvaArchetypeId: 'arc-01',
+          layoutPattern: 'diagonal_split',
+        },
+        lockedVibe: null,
+        referencePhotoUrl: 'https://x/photo.jpg',
+        styleReferenceUrl: 'https://x/story-template.png',
+        brandDirectives: ['dir-1'],
+        brandColors: null,
+        logoUrl: 'https://x/logo.png',
+        occasion: undefined,
+      } as never);
+
+      const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
+      await falVideoHandler.run(ctx);
+
+      expect(h.produceFalDesignedPostStill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templateLayoutImageUrl: 'https://x/story-template.png',
+        }),
+      );
+      expect(ctx.state.imageUrl).toBe('story-template-replica');
+      expect(ctx.state.falDesignEngine).not.toBe('satori_local');
+    } finally {
+      h.serverConfig.localTypography.enabled = false;
+    }
+  });
 });
 
 describe('productShowcaseHandler.run', () => {
@@ -440,6 +503,45 @@ describe('falDesignHandler.run', () => {
     } finally {
       h.serverConfig.localTypography.enabled = false;
     }
+  });
+
+  it('passes the template preview as layout replica reference to GPT edit', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue('designed-url');
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: {
+        id: 'tpl-2',
+        templateType: 'campaign_promo',
+        templateName: 'Özel Kampanya',
+        matchQuality: 'hard',
+        canvaArchetypeId: 'arc-05',
+        layoutPattern: 'diagonal_split',
+        designSpecPrompt: 'Yellow diagonal split with serif headline block.',
+      },
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/photo.jpg',
+      styleReferenceUrl: 'https://x/template-preview.png',
+      brandDirectives: ['dir-1'],
+      brandColors: null,
+      logoUrl: 'https://x/logo.png',
+      occasion: undefined,
+    } as never);
+
+    const ctx = makeCtx({
+      isFalDesignPost: true,
+      slotRole: 'fal_designed_post',
+      catalogSlotKey: 'beach_club_campaign_post',
+    });
+    await falDesignHandler.run(ctx);
+
+    expect(h.generateDesignedPostImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateLayoutImageUrl: 'https://x/template-preview.png',
+        // Stored template spec is reused verbatim ("Yeniden üret" semantics).
+        designCardPrompt: expect.stringContaining('Yellow diagonal split with serif headline block.'),
+      }),
+    );
+    expect(ctx.state.imageUrl).toBe('designed-url');
   });
 });
 

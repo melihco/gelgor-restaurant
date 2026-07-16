@@ -193,6 +193,8 @@ export async function generateDesignedPostImage(opts: {
   deferLogoComposite?: boolean;
   overlayColor?: string;
   backgroundIntent?: string;
+  /** Approved brand template preview — second edit image for exact layout replica. */
+  templateLayoutImageUrl?: string | null;
 }): Promise<string | null> {
   const refs = opts.referenceImageUrls.filter((u) => u && isUsableGalleryPhotoUrl(u)).slice(0, 1);
   if (!opts.designCardPrompt.trim() || refs.length === 0) {
@@ -220,6 +222,7 @@ export async function generateDesignedPostImage(opts: {
       logoUrl: opts.logoUrl,
       logoPlacement: opts.logoPlacement,
       deferLogoComposite: opts.deferLogoComposite,
+      templateLayoutImageUrl: opts.templateLayoutImageUrl ?? undefined,
     });
     let res: Response | null = null;
     let lastFetchErr: unknown;

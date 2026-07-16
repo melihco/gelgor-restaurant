@@ -18,9 +18,12 @@ import {
   bindBrandTemplateForFalProduction,
   dropConflictingLayoutDirectives,
   resolveFalTemplateLockOptions,
+  templateLayoutReferenceUrl,
+  templateReplicaSpecFromBinding,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
+import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import type { ProductionPipelineHandler } from './pipeline-types';
@@ -54,6 +57,9 @@ export async function runFalStoryPosterProduction(input: {
   typographyModel: string;
   resolvedHeadline?: string;
 }> {
+  // Matched library template preview = layout law for the grounded compose.
+  const templateLayoutImageUrl = templateLayoutReferenceUrl(input.templateBinding);
+  const templateReplica = templateReplicaSpecFromBinding(input.templateBinding);
   const still = await produceFalDesignedPostStill({
     workspaceId: input.workspaceId,
     headline: input.headline,
@@ -87,6 +93,8 @@ export async function runFalStoryPosterProduction(input: {
     designIntensityLevel: input.designIntensityLevel,
     occasion: input.templateBinding.occasion,
     logoPlacement: input.falLogoPlacement,
+    templateLayoutImageUrl,
+    templateReplica,
   });
   return {
     imageUrl: still.imageUrl,
@@ -198,9 +206,12 @@ export const falVideoHandler: ProductionPipelineHandler = {
       }
 
       if (falPipeline === 'fal_story') {
+        // A real (hard/soft) library template match must render the actual
+        // template design via GPT replica — Satori would collapse the layout.
+        const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
         // Local-first: render the story poster typography locally (Satori) when
-        // enabled + role-appropriate. Falls through to gpt-image on null.
-        if (shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)) {
+        // enabled + role-appropriate and no real template is matched.
+        if (!templateIsRenderable && shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)) {
           const local = await renderLocalTypography({
             workspaceId: inputs.workspaceId,
             headline: inputs.headline,
@@ -239,41 +250,88 @@ export const falVideoHandler: ProductionPipelineHandler = {
             return;
           }
         }
-        const poster = await runFalStoryPosterProduction({
-          workspaceId: inputs.workspaceId,
-          headline: inputs.headline,
-          caption: inputs.caption,
-          cta: inputs.cta,
-          resolvedBrandName: inputs.resolvedBrandName,
-          brandBusinessType: inputs.brandBusinessType,
-          brandLocation: inputs.brandLocation,
-          mood: inputs.mood,
-          artDirection: inputs.artDirection,
-          referenceUrl: photoUrl,
-          styleRefs,
-          designVibe,
-          brandColors,
-          backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
-          lockOpts,
-          templateBinding,
-          designBriefDirectives: inputs.designBriefDirectives,
-          visualDnaTone: falBrand.visualDnaTone,
-          sceneHint: falBrand.sceneHint,
-          designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
-          falLogoPlacement: inputs.falLogoPlacement,
-        });
-        state.videoUrl = null;
-        state.imageUrl = poster.imageUrl;
-        state.falGrafikerScore = poster.grafikerScore;
-        state.falGrafikerPass = poster.grafikerPass;
-        state.videoProduceMeta = { source: 'fal_video' };
-        state.costDelta += 0.08;
-        console.log(
-          `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
-          `template=${templateBinding.matched?.templateType ?? 'none'} ` +
-          `model=${poster.typographyModel} grafiker=${poster.grafikerScore ?? '—'}/10`,
-        );
-        return;
+        try {
+          const poster = await runFalStoryPosterProduction({
+            workspaceId: inputs.workspaceId,
+            headline: inputs.headline,
+            caption: inputs.caption,
+            cta: inputs.cta,
+            resolvedBrandName: inputs.resolvedBrandName,
+            brandBusinessType: inputs.brandBusinessType,
+            brandLocation: inputs.brandLocation,
+            mood: inputs.mood,
+            artDirection: inputs.artDirection,
+            referenceUrl: photoUrl,
+            styleRefs,
+            designVibe,
+            brandColors,
+            backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
+            lockOpts,
+            templateBinding,
+            designBriefDirectives: inputs.designBriefDirectives,
+            visualDnaTone: falBrand.visualDnaTone,
+            sceneHint: falBrand.sceneHint,
+            designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
+            falLogoPlacement: inputs.falLogoPlacement,
+          });
+          state.videoUrl = null;
+          state.imageUrl = poster.imageUrl;
+          state.falGrafikerScore = poster.grafikerScore;
+          state.falGrafikerPass = poster.grafikerPass;
+          state.videoProduceMeta = { source: 'fal_video' };
+          state.costDelta += 0.08;
+          console.log(
+            `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
+            `template=${templateBinding.matched?.templateType ?? 'none'} ` +
+            `model=${poster.typographyModel} grafiker=${poster.grafikerScore ?? '—'}/10`,
+          );
+          return;
+        } catch (posterErr) {
+          // Safety net: template replica failed — a Satori overlay beats an
+          // empty slot when local typography is enabled for this role.
+          if (
+            !templateIsRenderable
+            || !shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)
+          ) {
+            throw posterErr;
+          }
+          console.warn(
+            '[auto-produce] [fal-track] template poster failed — Satori safety net:',
+            posterErr instanceof Error ? posterErr.message : String(posterErr),
+          );
+          const local = await renderLocalTypography({
+            workspaceId: inputs.workspaceId,
+            headline: inputs.headline,
+            subtitle: inputs.cta || inputs.falSubtitle,
+            brandName: inputs.resolvedBrandName,
+            brandColors,
+            vibe: designVibe,
+            aspectRatio: '9:16',
+            referencePhotoUrl: photoUrl,
+            logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
+            sector: inputs.brandBusinessType,
+            occasion: templateBinding.occasion,
+            templateType: templateBinding.matched?.templateType,
+            canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
+            layoutPattern: templateBinding.matched?.layoutPattern,
+            layoutFamilyHint: inputs.layoutFamilyHint,
+            slotRole: inputs.slotRole,
+            slotSeed:
+              inputs.catalogSlotKey
+              ?? templateBinding.matched?.id
+              ?? templateBinding.matched?.templateName
+              ?? inputs.slotRole,
+          });
+          if (!local) throw posterErr;
+          state.videoUrl = null;
+          state.imageUrl = local.imageUrl;
+          state.falGrafikerScore = local.grafikerScore;
+          state.falGrafikerPass = local.grafikerPass;
+          state.falDesignEngine = 'satori_local';
+          state.videoProduceMeta = { source: 'fal_video' };
+          state.costDelta += 0.002;
+          return;
+        }
       }
 
       const designer = await produceFalDesignerVideo({

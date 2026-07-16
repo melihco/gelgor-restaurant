@@ -58,6 +58,12 @@ type InstagramImageInput = {
   /** HTTPS URLs of real brand photos — enables OpenAI images.edit with high input fidelity when using gpt-image-* */
   referenceImageUrls?: string[];
   /**
+   * Approved brand template preview (design-card mode only). Attached as a second
+   * edit image so the model replicates its exact layout geometry, typography and
+   * color blocks — swapping only the photo zone and on-canvas text.
+   */
+  templateLayoutImageUrl?: string;
+  /**
    * When set, this IS the complete image generation prompt from the visual design card agent.
    * Bypasses buildPrompt() entirely — the agent already wrote the full designed card spec.
    * Used by visual_design_cards task output.
@@ -530,19 +536,38 @@ function buildReferenceEditDirective(
   basePrompt: string,
   isDesignCard = false,
   isVideoReel = false,
+  hasTemplateLayoutRef = false,
 ): string {
+  // Two-image replica contract: image 1 = venue photo (content), image 2 =
+  // approved brand template (layout law). Copy geometry/typography/colors 1:1,
+  // swap only photo + text. Placeholder-text guards run downstream.
+  const templateReplicaBlock = hasTemplateLayoutRef
+    ? [
+        '═══ TEMPLATE LAYOUT REPLICA (HIGHEST PRIORITY) ═══',
+        'You are given TWO images. IMAGE 1 is a REAL PHOTOGRAPH from the brand\'s venue. IMAGE 2 is the brand\'s APPROVED DESIGN TEMPLATE.',
+        'REPLICATE IMAGE 2\'s layout EXACTLY: same panel geometry (diagonal/split/block shapes and their exact positions and proportions), same typography style, weight, size scale and alignment, same brand color blocks, same decorative rhythm and spacing.',
+        'ONLY TWO SUBSTITUTIONS ARE ALLOWED: (1) replace the photo zone content with IMAGE 1, (2) replace ALL on-canvas text with the ON-CANVAS TEXT CONTRACT below.',
+        'NEVER copy any words visible in IMAGE 2 — its text is placeholder sample copy. The layout is law; the text and photo are variable.',
+        'The result must look like the SAME template from the brand\'s design system, produced with a new photo and new copy.',
+        '',
+      ]
+    : [];
+
   if (isDesignCard && isVideoReel) {
     return compactLines([
+      ...templateReplicaBlock,
       '═══ ABSOLUTE TEXT FIDELITY RULE ═══',
       'Render ONLY the text listed in the ON-CANVAS TEXT CONTRACT below. Do NOT translate, paraphrase, or invent slogans. Zero tolerance for gibberish or misspelled words.',
       'If an official brand logo is configured, follow BRAND LOGO CONTRACT — leave the reserved logo zone empty; the exact logo file is composited after generation. Do NOT draw or reinterpret the mark.',
       '',
       'You are the in-house ART DIRECTOR. You are given a REAL PHOTOGRAPH from the brand\'s actual venue.',
       'Transform it into a hand-crafted 9:16 Instagram Story/Reel cover — premium social design, NOT a generic template.',
-      'MUST ADD visible design layers ON TOP of the photo: large stacked headline typography, brand color blocks, accent bars, decorative cues from the brand world.',
-      'PHOTO HERO ZONE (CRITICAL): keep the lower 45–55% as the natural, recognizable venue photo — do NOT replace, blur, or globally recolor it.',
+      hasTemplateLayoutRef
+        ? 'Design layers must follow the TEMPLATE LAYOUT REPLICA contract above — copy IMAGE 2\'s composition instead of inventing a new one.'
+        : 'MUST ADD visible design layers ON TOP of the photo: large stacked headline typography, brand color blocks, accent bars, decorative cues from the brand world.',
+      'PHOTO HERO ZONE (CRITICAL): keep the natural, recognizable venue photo zone — do NOT replace, blur, or globally recolor it.',
       'Scale the full gallery photo to fit — object-fit contain. Never crop hero food, faces, or products.',
-      'DESIGN ZONE: upper area or diagonal split gets bold branded graphics and text exactly as specified below.',
+      'DESIGN ZONE: branded graphics and text exactly as specified below.',
       'SAFE ZONE (MANDATORY): The canvas will be center-cropped to a 9:16 vertical frame in post-production. All text, logos, and design elements must stay inside the central 76% of the width — keep minimum 12% margin from left and right edges, 8% from top edge, 15% from bottom edge (Instagram UI). Nothing may touch or be cut off at any edge.',
       'Apply headline, subtitle, shapes, and brand colors exactly as described.',
       '',
@@ -555,6 +580,7 @@ function buildReferenceEditDirective(
 
   if (isDesignCard) {
     return compactLines([
+      ...templateReplicaBlock,
       '═══ ABSOLUTE TEXT FIDELITY RULE ═══',
       'Render ONLY the text listed in the ON-CANVAS TEXT CONTRACT below. Do NOT translate, paraphrase, or invent slogans. Zero tolerance for gibberish or misspelled words.',
       'If an official brand logo is configured, follow BRAND LOGO CONTRACT — leave the reserved logo zone empty; the exact logo file is composited after generation. Do NOT draw or reinterpret the mark.',
@@ -918,6 +944,7 @@ async function generateWithOpenAI(
   isDesignCard = false,
   designCardMode: 'post' | 'reel' = 'post',
   logoUrl?: string,
+  templateLayoutImageUrl?: string,
 ) {
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
@@ -960,11 +987,28 @@ async function generateWithOpenAI(
         // gpt-image-2 supports up to 32 000 chars; gpt-image-1 was safe to 4000.
         const promptLimit = isDesignCard ? 4000 : 1500;
         const isVideoReel = isDesignCard && designCardMode === 'reel';
-        const editPrompt = buildReferenceEditDirective(prompt, isDesignCard, isVideoReel).slice(0, promptLimit);
+
+        // Template layout replica: second edit image = approved brand template
+        // preview. The model copies its exact geometry/typography/colors and only
+        // swaps the photo zone (image 1) + on-canvas text (prompt contract).
+        let templateFile: Awaited<ReturnType<typeof toFile>> | null = null;
+        if (isDesignCard && templateLayoutImageUrl?.trim()) {
+          templateFile = await fetchUrlAsOpenAIUpload(templateLayoutImageUrl.trim());
+          if (!templateFile) {
+            console.warn('[generate-instagram-image] template layout ref unreachable — proceeding without replica lock');
+          }
+        }
+
+        const editPrompt = buildReferenceEditDirective(
+          prompt,
+          isDesignCard,
+          isVideoReel,
+          Boolean(templateFile),
+        ).slice(0, promptLimit);
 
         // Logo is composited in post-production (sharp) — never as a GPT edit reference
         // (models tend to redraw/morph the mark instead of copying pixels faithfully).
-        const imageInput: unknown = file;
+        const imageInput: unknown = templateFile ? [file, templateFile] : file;
 
         const editPayload = {
           model: editModel,
@@ -1428,11 +1472,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? undefined
     : referenceImageUrls;
 
+  const templateLayoutImageUrl = typeof input.templateLayoutImageUrl === 'string'
+    && isUsableGalleryPhotoUrl(input.templateLayoutImageUrl)
+    ? input.templateLayoutImageUrl
+    : undefined;
+
   try {
     let generated: GeneratedImage;
     try {
       generated = preferredProvider === 'openai'
-        ? await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl)
+        ? await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl, templateLayoutImageUrl)
         : await generateWithFlux(prompt, contentType);
     } catch (primaryError) {
       if (preferredProvider === 'openai') throw primaryError;
@@ -1446,7 +1495,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           label: contentType,
         });
       } catch { /* telemetri üretimi bozmamalı */ }
-      generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl);
+      generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl, templateLayoutImageUrl);
     }
 
     // Canvas contract: post → 4:5, story/reel → 9:16. GPT-image only renders

@@ -22,10 +22,13 @@ import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal
 import {
   bindBrandTemplateForFalProduction,
   dropConflictingLayoutDirectives,
+  buildTemplateReplicaPrompt,
   pickTemplateReferenceUrls,
   resolveFalTemplateLockOptions,
   assertTemplateStyleReference,
+  templateLayoutReferenceUrl,
   templateLockUsesGrafikerPass,
+  templateReplicaSpecFromBinding,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
@@ -190,7 +193,16 @@ export async function produceFalDesignedPost(
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
-      const designCardPrompt = (aspectRatio === '9:16'
+      // "Yeniden üret" semantics: reuse the template's stored generation prompt
+      // (design_spec.prompt) with mission copy swapped in, instead of rebuilding
+      // a fresh prompt that may fight the template layout reference.
+      const replicaSpec = templateReplicaSpecFromBinding(binding);
+      const designCardPrompt = replicaSpec
+        ? buildTemplateReplicaPrompt(replicaSpec, {
+            headline: canvasHeadline,
+            subtitle: dedupedSubtitle,
+          })
+        : (aspectRatio === '9:16'
         ? buildDesignedVideoReelDesignCardPrompt
         : buildDesignedPostDesignCardPrompt)({
         vibe: designVibe,
@@ -213,6 +225,14 @@ export async function produceFalDesignedPost(
         logoUrl,
         logoPlacement: input.logoPlacement,
       });
+      if (replicaSpec) {
+        console.log(
+          `[auto-produce] [fal-design] template replica prompt active: "${binding?.matched?.templateName ?? '-'}"`,
+        );
+      }
+      // Template replica: the approved library preview is the layout law for
+      // hard/soft matched slots — GPT copies its geometry, swaps photo + text.
+      const templateLayoutImageUrl = templateLayoutReferenceUrl(binding);
       const maxGptAttempts = binding?.matched ? 1 + lockOpts.grafikerMaxRetries : 1;
       for (let attempt = 0; attempt < maxGptAttempts; attempt += 1) {
         const designedUrl = await generateDesignedPostImage({
@@ -228,6 +248,7 @@ export async function produceFalDesignedPost(
           businessType: input.sector,
           logoUrl: logoUrl || undefined,
           logoPlacement: input.logoPlacement,
+          templateLayoutImageUrl,
         });
         if (!designedUrl) break;
         const textCheck = await validateFalCanvasText(designedUrl, {
@@ -339,6 +360,8 @@ export async function produceFalDesignedPost(
         captionAwareHeadline: lockOpts.captionAwareHeadline,
         requireGroundedGallery: false,
         designIntensityLevel: input.designIntensityLevel,
+        templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
+        templateReplica: templateReplicaSpecFromBinding(binding),
       });
       imageUrl = still.imageUrl;
       falGrafikerScore = still.grafikerScore;

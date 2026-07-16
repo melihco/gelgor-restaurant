@@ -116,6 +116,17 @@ export interface FalDesignerInput {
    * Uses a single Ideogram typography pass (~30–90s). Mission production keeps full QA.
    */
   templatePreviewMode?: boolean;
+  /**
+   * Approved brand template preview — second GPT edit image so the grounded
+   * compose replicates the template's exact layout (photo + text swapped).
+   */
+  templateLayoutImageUrl?: string | null;
+  /**
+   * Stored template generation prompt (design_spec.prompt) + sample copy.
+   * When set, the grounded compose reuses it verbatim with mission text swapped
+   * in — "Yeniden üret" semantics instead of a freshly built prompt.
+   */
+  templateReplica?: import('@/lib/brand-design-template-production').TemplateReplicaSpec | null;
 }
 
 export interface FalDesignerStillResult {
@@ -1017,7 +1028,17 @@ export async function produceFalDesignerStill(
           : isVerticalVideo
             ? buildDesignedStoryDesignCardPrompt
             : buildDesignedPostDesignCardPrompt;
-      const groundedPrompt = buildPrompt({
+      // Template replica: reuse the stored template spec with mission copy
+      // swapped — keeps the prompt aligned with the layout reference image.
+      let replicaPrompt: string | null = null;
+      if (input.templateReplica) {
+        const { buildTemplateReplicaPrompt } = await import('@/lib/brand-design-template-production');
+        replicaPrompt = buildTemplateReplicaPrompt(input.templateReplica, {
+          headline: displayHeadline,
+          subtitle: captionSubtitle,
+        });
+      }
+      const groundedPrompt = replicaPrompt ?? buildPrompt({
         vibe: input.vibe,
         headline: displayHeadline,
         subtitle: captionSubtitle,
@@ -1058,6 +1079,7 @@ export async function produceFalDesignerStill(
           deferLogoComposite: true,
           overlayColor: input.brandColors.primary,
           backgroundIntent: input.sceneHint,
+          templateLayoutImageUrl: input.templateLayoutImageUrl ?? undefined,
         });
         if (!groundedUrl) {
           console.warn(

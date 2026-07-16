@@ -4,6 +4,8 @@ import type { MatchedDesignTemplate } from '@/lib/brand-design-template-matcher'
 vi.mock('@/lib/brand-design-template-matcher', () => ({
   matchDesignTemplateToSlot: vi.fn(),
   recordDesignTemplateUsage: vi.fn(),
+  isRenderableDesignTemplateMatch: (m: { matchQuality?: string } | null | undefined) =>
+    !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft'),
 }));
 
 vi.mock('@/lib/media-url', () => ({
@@ -13,10 +15,14 @@ vi.mock('@/lib/media-url', () => ({
 import { matchDesignTemplateToSlot } from '@/lib/brand-design-template-matcher';
 import {
   buildTemplateLayoutDirectives,
+  buildTemplateReplicaPrompt,
   bindBrandTemplateForFalProduction,
   dropConflictingLayoutDirectives,
   pickTemplateReferenceUrls,
   resolveFalTemplateLockOptions,
+  templateLayoutReferenceUrl,
+  templateReplicaSpecFromBinding,
+  type BrandTemplateFalBinding,
 } from '@/lib/brand-design-template-production';
 
 const matched: MatchedDesignTemplate = {
@@ -132,6 +138,105 @@ describe('pickTemplateReferenceUrls', () => {
       brandReferenceImageUrls: [],
     });
     expect(urls).toEqual(['https://cdn.example.com/gallery-a.jpg']);
+  });
+});
+
+describe('templateLayoutReferenceUrl', () => {
+  const baseBinding: BrandTemplateFalBinding = {
+    matched,
+    lockedVibe: 'neon_glow',
+    referencePhotoUrl: 'https://cdn.example.com/mission.jpg',
+    styleReferenceUrl: 'https://cdn.example.com/preview-daily.jpg',
+    brandDirectives: [],
+    brandColors: matched.brandColors,
+    logoUrl: matched.logoUrl,
+    occasion: undefined,
+  };
+
+  it('returns the template preview for a hard match', () => {
+    expect(templateLayoutReferenceUrl(baseBinding)).toBe('https://cdn.example.com/preview-daily.jpg');
+  });
+
+  it('returns the template preview for a soft match', () => {
+    expect(templateLayoutReferenceUrl({
+      ...baseBinding,
+      matched: { ...matched, matchQuality: 'soft' },
+    })).toBe('https://cdn.example.com/preview-daily.jpg');
+  });
+
+  it('returns undefined for format fallback matches — never clone a foreign layout', () => {
+    expect(templateLayoutReferenceUrl({
+      ...baseBinding,
+      matched: { ...matched, matchQuality: 'format_fallback' },
+    })).toBeUndefined();
+  });
+
+  it('returns undefined when binding has no preview or no match', () => {
+    expect(templateLayoutReferenceUrl({ ...baseBinding, styleReferenceUrl: null })).toBeUndefined();
+    expect(templateLayoutReferenceUrl({ ...baseBinding, matched: null })).toBeUndefined();
+    expect(templateLayoutReferenceUrl(null)).toBeUndefined();
+  });
+});
+
+describe('template replica prompt', () => {
+  const binding: BrandTemplateFalBinding = {
+    matched,
+    lockedVibe: 'neon_glow',
+    referencePhotoUrl: 'https://cdn.example.com/mission.jpg',
+    styleReferenceUrl: matched.thumbnailUrl,
+    brandDirectives: [],
+    brandColors: matched.brandColors,
+    logoUrl: matched.logoUrl,
+    occasion: undefined,
+  };
+
+  it('builds a replica spec from a hard-matched binding', () => {
+    const spec = templateReplicaSpecFromBinding(binding);
+    expect(spec).not.toBeNull();
+    expect(spec!.prompt).toBe('Bold diagonal panel with neon headline block.');
+    expect(spec!.sampleHeadline).toBe('Gün batımı');
+    expect(spec!.forbiddenTexts).toContain('Gün batımı');
+  });
+
+  it('returns null for format fallback or missing stored prompt', () => {
+    expect(templateReplicaSpecFromBinding({
+      ...binding,
+      matched: { ...matched, matchQuality: 'format_fallback' },
+    })).toBeNull();
+    expect(templateReplicaSpecFromBinding({
+      ...binding,
+      matched: { ...matched, designSpecPrompt: null },
+    })).toBeNull();
+    expect(templateReplicaSpecFromBinding(null)).toBeNull();
+  });
+
+  it('swaps sample copy with mission copy inside the stored prompt', () => {
+    const spec = templateReplicaSpecFromBinding({
+      ...binding,
+      matched: {
+        ...matched,
+        designSpecPrompt: 'HEADLINE: "Gün batımı" — SUBTITLE: "Sınırlı süre" on diagonal panel.',
+      },
+    })!;
+    const prompt = buildTemplateReplicaPrompt(spec, {
+      headline: 'Datça erken hasat',
+      subtitle: 'Bu hafta sonu',
+    });
+    expect(prompt).toContain('HEADLINE: "Datça erken hasat" — SUBTITLE: "Bu hafta sonu" on diagonal panel.');
+    expect(prompt).toContain('MISSION COPY OVERRIDE');
+    expect(prompt).toContain('FORBIDDEN TEXT');
+    // Sample copy survives only inside the forbidden-list warning, not the layout spec.
+    const specBody = prompt.split('\n\n').pop() ?? '';
+    expect(specBody).toContain('diagonal panel');
+    expect(specBody).not.toContain('Gün batımı');
+  });
+
+  it('keeps the stored layout spec and declares no-subtitle when mission has none', () => {
+    const spec = templateReplicaSpecFromBinding(binding)!;
+    const prompt = buildTemplateReplicaPrompt(spec, { headline: 'Yeni sezon' });
+    expect(prompt).toContain('Bold diagonal panel with neon headline block.');
+    expect(prompt).toContain('NO SUBTITLE');
+    expect(prompt).toContain('"Yeni sezon"');
   });
 });
 

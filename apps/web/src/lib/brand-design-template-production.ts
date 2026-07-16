@@ -9,6 +9,7 @@ import type { TypographyVibe } from '@/types/brand-theme';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import {
+  isRenderableDesignTemplateMatch,
   matchDesignTemplateToSlot,
   recordDesignTemplateUsage,
   type MatchedDesignTemplate,
@@ -96,9 +97,11 @@ export function buildTemplateLayoutDirectives(
 
   out.unshift(
     `BRAND LAYOUT TEMPLATE "${matched.templateName}" (${matched.templateType}): ` +
-      'This onboarding template is a reusable LAYOUT RECIPE only — not final publish copy. ' +
-      'Reuse the same panel geometry, typographic hierarchy, color-block placement, and decorative rhythm. ' +
+      'This approved brand template is the LAYOUT LAW — replicate it exactly, do not redesign. ' +
+      'Copy 1:1: panel geometry (shapes, positions, proportions), typographic hierarchy (font style, weight, size scale, alignment), ' +
+      'brand color-block placement, and decorative rhythm. ' +
       'ONLY swap: (1) the photo/content zone with the mission gallery photo, (2) ALL on-canvas text with the mission copy below. ' +
+      'The output must read as the SAME template re-issued with new photo and new copy. ' +
       'Never reuse sample placeholder text from the template library preview.',
   );
 
@@ -274,6 +277,85 @@ export async function bindBrandTemplateForFalProduction(input: {
   } catch {
     return empty;
   }
+}
+
+/**
+ * Saved template generation prompt + its sample copy — the exact spec the
+ * library preview was rendered with (`design_spec.prompt`).
+ */
+export interface TemplateReplicaSpec {
+  prompt: string;
+  sampleHeadline: string | null;
+  sampleSubtitle: string | null;
+  forbiddenTexts: string[];
+}
+
+/**
+ * Replica spec for real (hard/soft) template matches. The stored onboarding
+ * prompt is reused verbatim in production so the textual instruction and the
+ * thumbnail layout reference describe the SAME design instead of fighting.
+ */
+export function templateReplicaSpecFromBinding(
+  binding: BrandTemplateFalBinding | null | undefined,
+): TemplateReplicaSpec | null {
+  const matched = binding?.matched ?? null;
+  if (!isRenderableDesignTemplateMatch(matched)) return null;
+  const prompt = matched?.designSpecPrompt?.trim();
+  if (!prompt) return null;
+  return {
+    prompt,
+    sampleHeadline: matched?.sampleHeadline ?? null,
+    sampleSubtitle: matched?.sampleSubtitle ?? null,
+    forbiddenTexts: collectTemplatePlaceholderTexts(matched),
+  };
+}
+
+/**
+ * "Yeniden üret" semantics for mission production: run the template's original
+ * generation prompt again, with only the on-canvas copy swapped to the mission
+ * text (the photo swap happens via the edit reference image). Sample copy is
+ * replaced in place; a compact override header wins if any residue survives.
+ */
+export function buildTemplateReplicaPrompt(
+  spec: TemplateReplicaSpec,
+  mission: { headline: string; subtitle?: string | null },
+): string {
+  let prompt = spec.prompt.trim();
+  const missionSubtitle = (mission.subtitle ?? '').trim();
+
+  const swap = (from: string | null, to: string) => {
+    const needle = from?.trim();
+    if (!needle || needle.length < 3 || !prompt.includes(needle)) return;
+    prompt = prompt.split(needle).join(to);
+  };
+  swap(spec.sampleHeadline, mission.headline);
+  swap(spec.sampleSubtitle, missionSubtitle);
+
+  const header = [
+    '═══ MISSION COPY OVERRIDE (FINAL AUTHORITY) ═══',
+    `ON-CANVAS HEADLINE (exact, Turkish diacritics preserved): "${mission.headline}"`,
+    missionSubtitle
+      ? `ON-CANVAS SUBTITLE (exact): "${missionSubtitle}"`
+      : 'NO SUBTITLE — render only the headline above.',
+    spec.forbiddenTexts.length
+      ? `FORBIDDEN TEXT (template placeholders — never render): ${spec.forbiddenTexts.map((t) => `"${t}"`).join(', ')}`
+      : '',
+    'This is the brand\'s SAVED template spec re-issued: keep its layout, typography system, and colors exactly — only the text above and the mission photo change.',
+  ].filter(Boolean).join('\n');
+
+  return `${header}\n\n${prompt}`;
+}
+
+/**
+ * Approved library preview as the GPT edit layout reference — only for real
+ * (hard/soft) template matches. Format fallbacks must not clone a foreign layout.
+ */
+export function templateLayoutReferenceUrl(
+  binding: BrandTemplateFalBinding | null | undefined,
+): string | undefined {
+  if (!isRenderableDesignTemplateMatch(binding?.matched ?? null)) return undefined;
+  const url = binding?.styleReferenceUrl;
+  return url && isUsableGalleryPhotoUrl(url) ? url : undefined;
 }
 
 /** Extra brand refs for fal designer — never include template preview (sample copy). */
