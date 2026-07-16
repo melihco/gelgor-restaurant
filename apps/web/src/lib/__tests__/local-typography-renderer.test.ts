@@ -237,4 +237,13 @@ describe('shouldUseLocalTypography (role matrix + flag gate)', () => {
     expect(shouldUseLocalTypography(undefined, 'fal_only_post')).toBe(true);
     expect(shouldUseLocalTypography(null, 'fal_reel')).toBe(false);
   });
+
+  it('respects brand production_engines.satori.local_typography_enabled opt-out', () => {
+    process.env.LOCAL_TYPOGRAPHY_ENABLED = 'true';
+    const disabledTheme = { production_engines: { satori: { local_typography_enabled: false } } };
+    expect(shouldUseLocalTypography('designed_typography', 'fal_design', disabledTheme)).toBe(false);
+    expect(shouldUseLocalTypography('designed_typography', 'fal_design', {
+      production_engines: { satori: { local_typography_enabled: true } },
+    })).toBe(true);
+  });
 });

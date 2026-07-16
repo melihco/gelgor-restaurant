@@ -52,14 +52,24 @@ export function isMissionFeedProductionActive(opts: {
   );
 }
 
-export function shouldPollCompletedMissionFeed(opts: {
+/**
+ * Should the mission detail surface poll the artifact pool so slot cards
+ * fill in as production completes?
+ *
+ * - in_flight / approved: the factory produces during flight — always poll
+ *   while the package is incomplete (progress polling alone doesn't refresh
+ *   artifacts, which is what the flip cards render).
+ * - completed: poll only while a re-production is actively running.
+ */
+export function shouldPollMissionFeedArtifacts(opts: {
   missionStatus: string;
   feedPackageIncomplete: boolean;
   feedProductionActive: boolean;
 }): boolean {
-  if (opts.missionStatus !== 'completed') return false;
   if (!opts.feedPackageIncomplete) return false;
-  return opts.feedProductionActive;
+  if (opts.missionStatus === 'in_flight' || opts.missionStatus === 'approved') return true;
+  if (opts.missionStatus === 'completed') return opts.feedProductionActive;
+  return false;
 }
 
 type MissionProgressQueryOpts = {

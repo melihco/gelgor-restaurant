@@ -5,6 +5,7 @@
 import type { OutputArtifact } from '@/types';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { SLOT_ROLE_LABEL_TR } from '@/lib/mission-slot-checklist';
+import { isSatoriTypographyMeta } from '@/lib/local-typography-renderer';
 import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-utils';
 
 export interface ArtifactProductionBadge {
@@ -17,6 +18,7 @@ export interface ArtifactProductionBadge {
 }
 
 const ENGINE_COLORS: Record<string, string> = {
+  Satori: '#0D9488',
   'fal.ai': '#C084FC',
   Runway: '#F472B6',
   Kling: '#E879F9',
@@ -57,12 +59,15 @@ function engineFromRunwaySource(source: string): string {
 }
 
 function resolveEngine(meta: Record<string, unknown>): string {
+  if (isSatoriTypographyMeta(meta)) return 'Satori';
+
   const track = String(meta.production_track ?? '').toLowerCase();
   if (track === 'fal_ai' || meta.fal_designer_produced === true || meta.fal_video_produced === true) {
     return 'fal.ai';
   }
 
   const executed = String(meta.renderer_executed ?? '').toLowerCase();
+  if (executed === 'local_typography' || executed === 'satori_local') return 'Satori';
   if (executed.includes('fal') || executed === 'fal_reel' || executed === 'fal_designer_video') return 'fal.ai';
   if (executed === 'runway_reel') {
     return engineFromRunwaySource(String(meta.runway_source ?? 'runway'));

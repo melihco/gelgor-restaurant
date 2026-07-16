@@ -22,9 +22,16 @@ import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { persistImageBuffer } from '@/lib/persist-enhanced-images';
 import sharp from '@/lib/sharp-runtime';
 import { fontsForVibe, loadSatoriFontSet } from '@/lib/satori-fonts';
+import { isLocalTypographyEnabledForBrand } from '@/lib/brand-production-engines';
 
 export type LayoutFamily = 'bottom_panel' | 'split_panel' | 'photo_top';
 export type SlotFormat = 'story' | 'post';
+
+/** True when artifact metadata indicates the Satori local renderer produced the still. */
+export function isSatoriTypographyMeta(meta: Record<string, unknown> | null | undefined): boolean {
+  if (!meta) return false;
+  return meta.typography_model === 'satori_local' || meta.fal_design_engine === 'satori_local';
+}
 
 /** Slot roles whose text-heavy stills route to local rendering (flag-gated). */
 export const LOCAL_TYPOGRAPHY_ROLES: ReadonlySet<string> = new Set([
@@ -43,8 +50,10 @@ export const LOCAL_TYPOGRAPHY_ROLES: ReadonlySet<string> = new Set([
 export function shouldUseLocalTypography(
   slotRole: string | null | undefined,
   pipeline?: string | null,
+  brandTheme?: Record<string, unknown> | null,
 ): boolean {
   if (!serverConfig.localTypography?.enabled) return false;
+  if (!isLocalTypographyEnabledForBrand(brandTheme)) return false;
   const role = String(slotRole ?? '').trim();
   if (role && LOCAL_TYPOGRAPHY_ROLES.has(role)) return true;
   // Pipeline-level fallback for callers that only know the pipeline id.

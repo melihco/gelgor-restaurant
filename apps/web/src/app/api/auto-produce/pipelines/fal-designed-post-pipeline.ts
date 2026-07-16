@@ -427,7 +427,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
     if (
       !inputs.adHocBrief
       && !state.imageUrl
-      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline)
+      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme)
       && localReferenceUrl
       && isUsableGalleryPhotoUrl(localReferenceUrl)
     ) {

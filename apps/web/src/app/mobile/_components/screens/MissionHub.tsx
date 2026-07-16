@@ -10,7 +10,7 @@
  * "Yeni Misyon Öner" button calls POST /missions/propose — triggers the
  * StrategistAgent (30–90s); shows a pulsing loading state with timeout message.
  */
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { ResponsiveAppSheet } from '../responsive-app-sheet';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
@@ -114,7 +114,7 @@ import {
 } from '../../_lib/mobile-artifacts';
 import {
   isMissionFeedProductionActive,
-  shouldPollCompletedMissionFeed,
+  shouldPollMissionFeedArtifacts,
 } from '../../_lib/mobile-mission-progress';
 import { mobileQueryDefaults } from '../../_lib/mobile-query';
 import {
@@ -139,6 +139,7 @@ import {
   type MissionAiCostSummary,
 } from '@/lib/mission-ai-cost';
 import { MissionSlotShowcase, MissionCompletedCard } from '../MissionSlotShowcase';
+import { resolveSlotShowcaseConfig } from '@/lib/brand-production-engines';
 
 interface BasSubScore {
   id: string;
@@ -3000,6 +3001,22 @@ function MissionSlotChecklistPanel({
           {summary} · %{pct}
         </span>
       </div>
+      {(() => {
+        const satoriReady = checklist.items.filter((i) => i.engineLabel === 'Satori' && i.status === 'ready').length;
+        const satoriEligible = checklist.items.filter((i) => i.satoriEligible).length;
+        if (satoriEligible === 0) return null;
+        return (
+          <div style={{
+            fontSize: 10, color: t.textMuted, marginBottom: 8, lineHeight: 1.45,
+            padding: '6px 10px', borderRadius: 8,
+            background: t.isDark ? 'rgba(13,148,136,0.08)' : 'rgba(13,148,136,0.06)',
+            border: '0.5px solid rgba(13,148,136,0.2)',
+          }}>
+            Satori tipografi: {satoriReady}/{satoriEligible} slot
+            {satoriReady < satoriEligible ? ' — story ve tipografi postları lokal renderer ile üretilir' : ''}
+          </div>
+        );
+      })()}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {checklist.items.map((item) => {
           const color = SLOT_STATUS_COLOR[item.status];
@@ -3018,6 +3035,23 @@ function MissionSlotChecklistPanel({
                   <span style={{ color: t.textMuted, fontWeight: 600 }}> #{item.ideaIndex}</span>
                 )}
               </span>
+              {item.engineLabel && (
+                <span style={{
+                  fontSize: 8, fontWeight: 800, padding: '2px 6px', borderRadius: 6, flexShrink: 0,
+                  background: `${item.engineColor ?? '#9CA3AF'}22`,
+                  color: item.engineColor ?? '#9CA3AF',
+                }}>
+                  {item.engineLabel}
+                </span>
+              )}
+              {!item.engineLabel && item.satoriEligible && item.status !== 'ready' && (
+                <span style={{
+                  fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 6, flexShrink: 0,
+                  background: 'rgba(13,148,136,0.12)', color: '#0D9488',
+                }}>
+                  Satori
+                </span>
+              )}
               {item.headline && (
                 <span style={{ fontSize: 9, color: t.textMuted, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {item.headline.slice(0, 28)}
@@ -3496,16 +3530,43 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     return describeStoryAudioPolicy(parseMotionProfileFromTheme(theme));
   }, [brandThemePayload]);
 
-  const { data: feedArtifactPool = [], isLoading: feedPkgLoading, refetch: refetchMissionArtifacts } = useMobileArtifacts({
+  const showcaseConfig = useMemo(
+    () => resolveSlotShowcaseConfig(brandThemePayload?.theme),
+    [brandThemePayload],
+  );
+
+  const { data: feedArtifactPool = [], isLoading: feedPkgLoading, refetch: refetchSharedArtifactPool } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     subscribeOnly: !pollCompletedFeed,
     pollMissionFeed: pollCompletedFeed,
     enabled: showFeedPackage,
   });
-  const feedArtifacts = useMemo(
-    () => filterArtifactsForMission(feedArtifactPool, mission.id),
-    [feedArtifactPool, mission.id],
-  );
+
+  // Mission-scoped fetch — the shared pool is capped, so a busy tenant can push
+  // this mission's artifacts out of it; the flip cards would then show empty
+  // slots even though production is done.
+  const { data: missionScopedArtifacts = [], refetch: refetchMissionScopedArtifacts } = useQuery({
+    queryKey: ['mission-artifacts', workspaceId, mission.id],
+    queryFn: () => apiClient.getArtifacts({ missionId: mission.id, limit: 80 }, workspaceId),
+    enabled: showFeedPackage && Boolean(workspaceId && mission.id),
+    staleTime: 15_000,
+    refetchInterval: pollCompletedFeed ? 20_000 : false,
+    ...mobileQueryDefaults,
+  });
+
+  const refetchMissionArtifacts = useCallback(() => Promise.all([
+    refetchSharedArtifactPool(),
+    refetchMissionScopedArtifacts(),
+  ]), [refetchSharedArtifactPool, refetchMissionScopedArtifacts]);
+
+  const feedArtifacts = useMemo(() => {
+    const seen = new Set(feedArtifactPool.map((a) => a.id));
+    const merged = [
+      ...feedArtifactPool,
+      ...missionScopedArtifacts.filter((a) => !seen.has(a.id)),
+    ];
+    return filterArtifactsForMission(merged, mission.id);
+  }, [feedArtifactPool, missionScopedArtifacts, mission.id]);
 
   const weeklySelection = useMemo(() => {
     if (!feedArtifacts || !prog?.nodes?.length) return null;
@@ -3637,6 +3698,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   const queryClient = useQueryClient();
   const refreshFeedPackage = () => {
     invalidateMobileArtifactPool(queryClient, workspaceId);
+    void queryClient.invalidateQueries({ queryKey: ['mission-artifacts', workspaceId, mission.id] });
   };
 
   const [reproduceFeedError, setReproduceFeedError] = useState<string | null>(null);
@@ -3744,7 +3806,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   });
 
   useEffect(() => {
-    const shouldPoll = shouldPollCompletedMissionFeed({
+    const shouldPoll = shouldPollMissionFeedArtifacts({
       missionStatus: mission.status,
       feedPackageIncomplete,
       feedProductionActive,
@@ -3758,6 +3820,20 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     feedPackageIncomplete,
     feedProductionActive,
   ]);
+
+  // Each time the durable factory reports another slot ready, pull the artifact
+  // pool immediately so the flip cards show the new visual without waiting for
+  // the next poll tick.
+  const lastFactoryReadyRef = useRef<number | null>(null);
+  useEffect(() => {
+    const ready = factoryJobsSummary?.ready;
+    if (typeof ready !== 'number') return;
+    if (lastFactoryReadyRef.current !== null && ready > lastFactoryReadyRef.current) {
+      void refetchMissionArtifacts();
+      void queryClient.invalidateQueries({ queryKey: ['mission-progress', mission.id] });
+    }
+    lastFactoryReadyRef.current = ready;
+  }, [factoryJobsSummary?.ready, refetchMissionArtifacts, queryClient, mission.id]);
 
   // Auto-kick removed: production is driven exclusively by the backend scheduler
   // and factory drain loop — UI opening a detail sheet must never trigger fal/Remotion costs.
@@ -3968,11 +4044,12 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
           )}
 
           {/* Premium slot gallery — flip cards with produced visual + slot record */}
-          {(isCompleted || mission.status === 'in_flight') && (
+          {showcaseConfig.enabled && (isCompleted || mission.status === 'in_flight') && (
             <MissionSlotShowcase
               checklist={slotChecklist}
               artifacts={feedArtifacts ?? []}
               onOpenArtifact={openArtifactPreview}
+              showFormatFilters={showcaseConfig.format_filters_enabled}
               t={t}
             />
           )}

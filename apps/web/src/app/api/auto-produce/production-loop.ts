@@ -4217,8 +4217,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             && !falDesignEngine;
           return rawFalI2v ? 'fal_raw_i2v' : 'fal_designer_video';
         }
-        if (isFalOnlyPost && imageUrl && falDesignEngine) return 'fal_only_post';
+        if (isFalOnlyPost && imageUrl && falDesignEngine) {
+          return falDesignEngine === 'satori_local' ? 'local_typography' : 'fal_only_post';
+        }
         if (isFalDesignPost && imageUrl && falDesignEngine) {
+          if (falDesignEngine === 'satori_local') return 'local_typography';
           return falDesignEngine === 'gpt_image_designed'
             ? 'gpt_image_designed_post'
             : 'fal_designer_post';

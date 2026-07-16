@@ -396,11 +396,13 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
 
 type FormatFilter = 'all' | SlotFormat;
 
-export function MissionSlotShowcase({ checklist, artifacts, onOpenArtifact, t }: {
+export function MissionSlotShowcase({ checklist, artifacts, onOpenArtifact, t, showFormatFilters = true }: {
   checklist: MissionSlotChecklist | null;
   artifacts: OutputArtifact[];
   onOpenArtifact?: (artifactId: string) => void;
   t: T;
+  /** Brand-level toggle — hide the Tümü/Post/Story filter chips. */
+  showFormatFilters?: boolean;
 }) {
   const [filter, setFilter] = useState<FormatFilter>('all');
 
@@ -450,7 +452,7 @@ export function MissionSlotShowcase({ checklist, artifacts, onOpenArtifact, t }:
       </div>
 
       {/* Format filter chips */}
-      {filters.length > 2 && (
+      {showFormatFilters && filters.length > 2 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           {filters.map((f) => {
             const isActive = filter === f;

@@ -18,6 +18,7 @@ import {
   type ProductionAssignment,
   type ProductionSlotRole,
 } from '@/lib/mission-production-manifest';
+import { LOCAL_TYPOGRAPHY_ROLES, isSatoriTypographyMeta } from '@/lib/local-typography-renderer';
 import {
   getProductionBundleStatus,
   isBundleFailed,
@@ -44,6 +45,11 @@ export interface MissionSlotChecklistItem {
   aiEnhanceStatus?: AiEnhanceUiStatus;
   aiEnhanceLabel?: string;
   aiEnhanceSkipCode?: GptEnhanceSkipCode;
+  /** Production engine when artifact exists (Satori, fal.ai, Galeri, …) */
+  engineLabel?: string;
+  engineColor?: string;
+  /** True when this slot role is eligible for Satori local typography */
+  satoriEligible?: boolean;
 }
 
 export interface MissionSlotChecklist {
@@ -60,14 +66,14 @@ export interface MissionSlotChecklist {
 
 export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   organic_post: 'Organik post',
-  designed_post: 'Tasarım post',
-  designed_typography: 'AI Tipografi post',
-  fal_designed_post: 'fal.ai tasarım post',
+  designed_post: 'Hero tasarım post',
+  designed_typography: 'Tipografi post',
+  fal_designed_post: 'Tasarım post',
   fal_only_story: 'fal.ai sinematik reel (legacy)',
   fal_only_post: 'fal.ai editorial post',
   fal_only_reel: 'fal.ai sinematik reel',
   organic_story_still: 'Story (galeri)',
-  campaign_story_motion: 'Kampanya story (fal.ai poster)',
+  campaign_story_motion: 'Kampanya story',
   organic_reel: 'Organik reel (Runway)',
   campaign_reel_motion: 'Kampanya reel (Runway)',
   fal_story_motion: 'fal.ai designer reel (legacy)',
@@ -78,6 +84,30 @@ export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   product_showcase_post: 'Ürün showcase post',
   product_showcase_story: 'Ürün showcase story',
 };
+
+/** Slot roles that route to Satori when global + brand flags are on. */
+export function isSatoriEligibleSlotRole(role: ProductionSlotRole | string): boolean {
+  return LOCAL_TYPOGRAPHY_ROLES.has(String(role));
+}
+
+function engineChipFromArtifact(
+  artifact: OutputArtifact | null | undefined,
+): { engineLabel?: string; engineColor?: string } {
+  if (!artifact) return {};
+  const meta = parseArtifactMetadata(artifact.metadata);
+  if (isSatoriTypographyMeta(meta)) return { engineLabel: 'Satori', engineColor: '#0D9488' };
+  const executed = String(meta.renderer_executed ?? '').toLowerCase();
+  if (executed === 'local_typography' || executed === 'satori_local') {
+    return { engineLabel: 'Satori', engineColor: '#0D9488' };
+  }
+  const falEngine = String(meta.fal_design_engine ?? '');
+  if (falEngine.includes('gpt_image')) return { engineLabel: 'GPT Image', engineColor: '#34D399' };
+  if (falEngine || meta.fal_designer_produced === true || meta.fal_video_produced === true) {
+    return { engineLabel: 'fal.ai', engineColor: '#C084FC' };
+  }
+  if (String(meta.pipeline ?? '') === 'gallery_photo') return { engineLabel: 'Galeri', engineColor: '#94A3B8' };
+  return {};
+}
 
 const STATUS_TR: Record<SlotDeliveryStatus, string> = {
   ready: 'Hazır',
@@ -310,6 +340,7 @@ export function buildMissionSlotChecklist(input: {
       const headline = String(
         meta.headline || content.headline || artifact?.title || '',
       ).trim() || null;
+      const productionBadge = engineChipFromArtifact(artifact);
 
       items.push({
         assignmentIndex,
@@ -321,6 +352,8 @@ export function buildMissionSlotChecklist(input: {
         status,
         artifactId: artifact?.id ?? null,
         headline,
+        satoriEligible: isSatoriEligibleSlotRole(assignment.slot_role),
+        ...productionBadge,
         ...resolveAiEnhanceFromArtifact(artifact, debugMode),
       });
     });
@@ -347,6 +380,7 @@ export function buildMissionSlotChecklist(input: {
       status: input.missionInFlight ? 'pending' : 'missing',
       artifactId: null,
       headline: null,
+      satoriEligible: isSatoriEligibleSlotRole(slot.role),
     });
   }
 
@@ -360,6 +394,7 @@ export function buildMissionSlotChecklist(input: {
       let status: SlotDeliveryStatus = artifact
         ? resolveArtifactSlotStatus(artifact, slot.role)
         : (input.missionInFlight ? 'pending' : 'missing');
+      const productionBadge = engineChipFromArtifact(artifact);
       items.push({
         assignmentIndex: items.length,
         ideaIndex: null,
@@ -370,6 +405,8 @@ export function buildMissionSlotChecklist(input: {
         status,
         artifactId: artifact?.id ?? null,
         headline: artifact?.title ?? null,
+        satoriEligible: isSatoriEligibleSlotRole(slot.role),
+        ...productionBadge,
       });
     }
   }

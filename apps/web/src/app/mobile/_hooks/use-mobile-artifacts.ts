@@ -26,7 +26,7 @@ type Options = {
 export function useMobileArtifacts(options?: Options) {
   const tenantId = useActiveTenantId();
   const unchangedPollsRef = useRef(0);
-  const lastCountRef = useRef<number | null>(null);
+  const lastSignatureRef = useRef<string | null>(null);
   const base = getMobileArtifactsQueryOptions(tenantId ?? '', options?.params);
   return useQuery({
     ...base,
@@ -34,12 +34,14 @@ export function useMobileArtifacts(options?: Options) {
     refetchInterval: options?.pollMissionFeed
       ? (query) => {
           const artifacts = query.state.data as OutputArtifact[] | undefined;
-          const count = artifacts?.length ?? 0;
-          if (lastCountRef.current === count) {
+          // Count alone misses churn when the pool is at its limit (new artifact
+          // pushes an old one out) — include the newest artifact id in the signal.
+          const signature = `${artifacts?.length ?? 0}:${artifacts?.[0]?.id ?? ''}`;
+          if (lastSignatureRef.current === signature) {
             unchangedPollsRef.current += 1;
           } else {
             unchangedPollsRef.current = 0;
-            lastCountRef.current = count;
+            lastSignatureRef.current = signature;
           }
           return completedMissionFeedPollIntervalMs(unchangedPollsRef.current);
         }

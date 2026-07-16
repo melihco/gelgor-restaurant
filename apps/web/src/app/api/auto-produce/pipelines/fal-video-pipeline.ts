@@ -200,7 +200,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
       if (falPipeline === 'fal_story') {
         // Local-first: render the story poster typography locally (Satori) when
         // enabled + role-appropriate. Falls through to gpt-image on null.
-        if (shouldUseLocalTypography(inputs.slotRole, falPipeline)) {
+        if (shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)) {
           const local = await renderLocalTypography({
             workspaceId: inputs.workspaceId,
             headline: inputs.headline,

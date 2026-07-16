@@ -270,7 +270,7 @@ export const MISSION_AD_PAIR_COUNTS = {
 
 const OPPORTUNITY_ORGANIC: MissionProductionSlot[] = [
   {
-    role: 'designed_post',
+    role: 'designed_typography',
     pipeline: 'fal_design',
     format: 'post',
     captionSurface: 'feed_card',

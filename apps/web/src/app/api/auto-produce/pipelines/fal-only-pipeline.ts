@@ -408,7 +408,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
     if (
       !state.imageUrl
       && !state.videoUrl
-      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline)
+      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme)
       && localReferenceUrl
       && isUsableGalleryPhotoUrl(localReferenceUrl)
     ) {
