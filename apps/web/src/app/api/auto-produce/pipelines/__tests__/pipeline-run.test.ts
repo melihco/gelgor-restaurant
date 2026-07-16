@@ -91,6 +91,9 @@ vi.mock('@/lib/brand-design-template-production', () => ({
 vi.mock('@/lib/brand-design-template-matcher', () => ({
   matchDesignTemplateToSlot: h.matchDesignTemplateToSlot,
   recordDesignTemplateUsage: h.recordDesignTemplateUsage,
+  isRenderableDesignTemplateMatch: (
+    m: { matchQuality?: string } | null | undefined,
+  ) => !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft'),
 }));
 vi.mock('@/app/api/auto-produce/handlers/image-generators', () => ({
   generateDesignedPostImage: h.generateDesignedPostImage,
@@ -395,6 +398,48 @@ describe('falDesignHandler.run', () => {
     expect(h.produceFalDesignedPostStill).not.toHaveBeenCalled();
     expect(ctx.state.imageUrl).toBe('existing-image');
     expect(ctx.state.costDelta).toBe(0);
+  });
+
+  it('skips Satori and renders the real design when a hard template is matched', async () => {
+    // Karaman regression guard: local typography enabled + a real (hard) library
+    // template must render the actual design (GPT/fal), not collapse to Satori.
+    h.serverConfig.localTypography.enabled = true;
+    try {
+      h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+      h.generateDesignedPostImage.mockResolvedValue('designed-url');
+      h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+        matched: {
+          id: 'tpl-1',
+          templateType: 'menu_highlight',
+          templateName: 'Ürün hero',
+          matchQuality: 'hard',
+          canvaArchetypeId: null,
+          layoutPattern: null,
+        },
+        lockedVibe: null,
+        referencePhotoUrl: 'https://x/photo.jpg',
+        styleReferenceUrl: null,
+        brandDirectives: ['dir-1'],
+        brandColors: null,
+        logoUrl: 'https://x/logo.png',
+        occasion: undefined,
+      } as never);
+
+      const ctx = makeCtx({
+        isFalDesignPost: true,
+        slotRole: 'fal_designed_post',
+        catalogSlotKey: 'local_products_shop_product_hero_post',
+      });
+      await falDesignHandler.run(ctx);
+
+      expect(h.generateDesignedPostImage).toHaveBeenCalledTimes(1);
+      expect(ctx.state.imageUrl).toBe('designed-url');
+      expect(ctx.state.falDesignEngine).toBe('gpt_image_designed');
+      expect(ctx.state.falDesignEngine).not.toBe('satori_local');
+      expect(ctx.state.brandDesignTemplateMatchQuality).toBe('hard');
+    } finally {
+      h.serverConfig.localTypography.enabled = false;
+    }
   });
 });
 

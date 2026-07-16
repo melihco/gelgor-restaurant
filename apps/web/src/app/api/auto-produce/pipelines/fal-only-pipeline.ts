@@ -441,6 +441,11 @@ export const falOnlyHandler: ProductionPipelineHandler = {
         layoutPattern: templateBinding.matched?.layoutPattern,
         layoutFamilyHint: inputs.layoutFamilyHint,
         slotRole: inputs.slotRole,
+        slotSeed:
+          inputs.catalogSlotKey
+          ?? templateBinding.matched?.id
+          ?? templateBinding.matched?.templateName
+          ?? inputs.slotRole,
       });
       if (local) {
         state.imageUrl = local.imageUrl;

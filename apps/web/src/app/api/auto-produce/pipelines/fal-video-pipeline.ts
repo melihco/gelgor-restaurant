@@ -218,6 +218,11 @@ export const falVideoHandler: ProductionPipelineHandler = {
             layoutPattern: templateBinding.matched?.layoutPattern,
             layoutFamilyHint: inputs.layoutFamilyHint,
             slotRole: inputs.slotRole,
+            slotSeed:
+              inputs.catalogSlotKey
+              ?? templateBinding.matched?.id
+              ?? templateBinding.matched?.templateName
+              ?? inputs.slotRole,
           });
           if (local) {
             state.videoUrl = null;

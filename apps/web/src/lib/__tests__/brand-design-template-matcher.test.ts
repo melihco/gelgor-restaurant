@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   diagnoseCatalogHardPinMiss,
+  isRenderableDesignTemplateMatch,
   resolveDesignTemplateCandidateTypes,
   selectBrandDesignTemplate,
   type BrandDesignTemplateRecord,
@@ -294,5 +295,18 @@ describe('selectBrandDesignTemplate — off-season special-day exclude', () => {
       announcementType: 'event_teaser',
     });
     expect(sel?.record.id).toBe('imminent');
+  });
+});
+
+describe('isRenderableDesignTemplateMatch', () => {
+  it('treats hard/soft pins as renderable (route to real designed pipeline)', () => {
+    expect(isRenderableDesignTemplateMatch({ matchQuality: 'hard' })).toBe(true);
+    expect(isRenderableDesignTemplateMatch({ matchQuality: 'soft' })).toBe(true);
+  });
+
+  it('treats format_fallback and null as non-renderable (cheap Satori path OK)', () => {
+    expect(isRenderableDesignTemplateMatch({ matchQuality: 'format_fallback' })).toBe(false);
+    expect(isRenderableDesignTemplateMatch(null)).toBe(false);
+    expect(isRenderableDesignTemplateMatch(undefined)).toBe(false);
   });
 });

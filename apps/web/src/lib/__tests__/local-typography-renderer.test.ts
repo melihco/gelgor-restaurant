@@ -11,6 +11,7 @@ import { SECTOR_DEFAULT_THEMES } from '@/types/brand-theme';
 import {
   buildOverlayElement,
   contrastRatio,
+  diversifiedLayoutFamily,
   displayUppercase,
   formatForAspect,
   hexToRgb,
@@ -141,6 +142,64 @@ describe('selectLayoutFamily', () => {
       canvaArchetypeId: 'campaign_hero_block',
       vibe: 'neon_glow',
     })).toBe('hero_footer');
+  });
+
+  it('diversifies per-slot when archetype/pattern absent (no single-style feed)', () => {
+    // Karaman regression: 16 templates, all vibe=retro_poster, no archetype →
+    // without a seed every slot collapses to one family. A stable slot seed must
+    // spread distinct slots across multiple geometries.
+    const commonVibe = 'retro_poster' as const;
+    const storySlots = [
+      'shop_new_arrival_story',
+      'shop_production_bts_story',
+      'shop_farm_visit_story',
+      'shop_weekend_hours_story',
+    ];
+    const storyFamilies = new Set(
+      storySlots.map((slotSeed) =>
+        selectLayoutFamily({ format: 'story', vibe: commonVibe, slotSeed }),
+      ),
+    );
+    expect(storyFamilies.size).toBeGreaterThan(1);
+
+    const postSlots = [
+      'shop_product_hero_post',
+      'shop_maker_story_post',
+      'shop_seasonal_harvest_post',
+      'shop_customer_favorite_post',
+    ];
+    const postFamilies = new Set(
+      postSlots.map((slotSeed) =>
+        selectLayoutFamily({ format: 'post', vibe: commonVibe, slotSeed }),
+      ),
+    );
+    expect(postFamilies.size).toBeGreaterThan(1);
+  });
+
+  it('archetype still overrides the per-slot seed (hard pin wins)', () => {
+    expect(selectLayoutFamily({
+      format: 'story',
+      canvaArchetypeId: 'polaroid_memory',
+      vibe: 'retro_poster',
+      slotSeed: 'any-slot-key',
+    })).toBe('polaroid');
+  });
+});
+
+describe('diversifiedLayoutFamily', () => {
+  it('is deterministic for a given seed (no run-to-run drift)', () => {
+    const a = diversifiedLayoutFamily('post', 'warm_coastal', 'product_hero_post');
+    const b = diversifiedLayoutFamily('post', 'warm_coastal', 'product_hero_post');
+    expect(a).toBe(b);
+  });
+
+  it('only returns families from the format-appropriate pool', () => {
+    const storyPool = new Set<LayoutFamily>([
+      'bottom_panel', 'hero_footer', 'cinematic', 'frosted_quote', 'neon_night', 'ticket_stub',
+    ]);
+    for (let i = 0; i < 20; i += 1) {
+      expect(storyPool.has(diversifiedLayoutFamily('story', 'retro_poster', `slot-${i}`))).toBe(true);
+    }
   });
 });
 

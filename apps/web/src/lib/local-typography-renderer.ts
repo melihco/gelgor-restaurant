@@ -213,6 +213,53 @@ export function layoutFamilyForVibe(
   }
 }
 
+/** Format-appropriate geometry rotation used when a slot has no archetype/pattern. */
+const POST_LAYOUT_POOL: readonly LayoutFamily[] = [
+  'photo_top',
+  'split_panel',
+  'frosted_quote',
+  'cinematic',
+  'bottom_panel',
+  'polaroid',
+];
+const STORY_LAYOUT_POOL: readonly LayoutFamily[] = [
+  'bottom_panel',
+  'hero_footer',
+  'cinematic',
+  'frosted_quote',
+  'neon_night',
+  'ticket_stub',
+];
+
+/** Stable FNV-1a hash → deterministic per-slot geometry (no run-to-run drift). */
+function seedHash(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * When a brand's templates carry no Canva archetype / layout pattern (common for
+ * bootstrapped catalogs), every slot would otherwise collapse to the single
+ * vibe-default geometry — producing one repeating look across the whole feed.
+ * A stable per-slot seed rotates each slot to a distinct family, anchored on the
+ * vibe default so the brand still reads coherently.
+ */
+export function diversifiedLayoutFamily(
+  format: SlotFormat,
+  vibe: TypographyVibe | null | undefined,
+  slotSeed: string,
+): LayoutFamily {
+  const pool = format === 'story' ? STORY_LAYOUT_POOL : POST_LAYOUT_POOL;
+  const base = layoutFamilyForVibe(format, vibe);
+  const baseIdx = Math.max(0, pool.indexOf(base));
+  const offset = seedHash(slotSeed) % pool.length;
+  return pool[(baseIdx + offset) % pool.length]!;
+}
+
 function layoutFromArchetypeRecipe(recipe: string): LayoutFamily | null {
   for (const [id, family] of Object.entries(ARCHETYPE_LAYOUT)) {
     if (recipe.includes(id)) return family;
@@ -244,6 +291,8 @@ export function selectLayoutFamily(input: {
   layoutPattern?: string | null;
   /** Brand typography vibe — geometry accent when archetype is absent */
   vibe?: TypographyVibe | null;
+  /** Stable per-slot id (catalog_slot_key/template id) — diversifies vibe fallback. */
+  slotSeed?: string | null;
 }): LayoutFamily {
   const hint = String(input.layoutFamilyHint ?? '').toLowerCase();
   const templateType = String(input.templateType ?? '').toLowerCase();
@@ -286,7 +335,9 @@ export function selectLayoutFamily(input: {
   if (input.format === 'story') {
     if (/campaign|promo|offer|announce/.test(templateType)) return 'hero_footer';
     if (/event/.test(templateType)) return 'ticket_stub';
-    return layoutFamilyForVibe('story', input.vibe);
+    return input.slotSeed
+      ? diversifiedLayoutFamily('story', input.vibe, input.slotSeed)
+      : layoutFamilyForVibe('story', input.vibe);
   }
 
   if (hint.includes('split') || hint.includes('side') || /split|side_panel/.test(recipe)) {
@@ -298,7 +349,9 @@ export function selectLayoutFamily(input: {
   if (/event|promo|campaign|announce|special/.test(templateType) || /campaign_hero|split/.test(recipe)) {
     return 'split_panel';
   }
-  return layoutFamilyForVibe('post', input.vibe);
+  return input.slotSeed
+    ? diversifiedLayoutFamily('post', input.vibe, input.slotSeed)
+    : layoutFamilyForVibe('post', input.vibe);
 }
 
 export function resolveCanvasDimensions(aspectRatio: string): { width: number; height: number } {
@@ -1071,6 +1124,8 @@ export interface LocalTypographyInput {
   canvaArchetypeId?: string | null;
   layoutPattern?: string | null;
   slotRole?: string;
+  /** Stable per-slot id (catalog_slot_key/template id) — diversifies vibe fallback. */
+  slotSeed?: string | null;
 }
 
 export interface LocalTypographyResult {
@@ -1214,6 +1269,7 @@ export async function renderLocalTypography(
       canvaArchetypeId: input.canvaArchetypeId,
       layoutPattern: input.layoutPattern,
       vibe: input.vibe,
+      slotSeed: input.slotSeed,
     });
 
     const photoBuf = await fetchReferencePhotoBuffer(input.referencePhotoUrl);

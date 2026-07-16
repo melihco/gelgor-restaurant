@@ -29,6 +29,8 @@ import {
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
+import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
@@ -40,7 +42,11 @@ import {
 } from '@/lib/overlay-caption-grounding';
 import { validateFalCanvasText } from '@/lib/typography-text-validation';
 import { textMatchesTemplatePlaceholder } from '@/lib/template-placeholder-guard';
-import type { ProductionPipelineHandler } from './pipeline-types';
+import type {
+  ProductionPipelineHandler,
+  SlotProductionInputs,
+  SlotProductionState,
+} from './pipeline-types';
 
 export interface FalDesignedPostInput {
   isFalDesignPost: boolean;
@@ -369,6 +375,71 @@ export async function produceFalDesignedPost(
 }
 
 /**
+ * Render the designed-post typography locally (Satori). Shared by the primary
+ * (no real template) path and the safety-net fallback (real template but the
+ * fal/GPT designed pipeline produced nothing).
+ */
+async function renderDesignedPostLocalTypography(args: {
+  inputs: SlotProductionInputs;
+  templateBinding: BrandTemplateFalBinding;
+  falBrandColors: { primary: string; accent: string };
+  falBrandVibe: TypographyVibe | null;
+  localReferenceUrl: string;
+}): Promise<Awaited<ReturnType<typeof renderLocalTypography>>> {
+  const { inputs, templateBinding, falBrandColors, falBrandVibe, localReferenceUrl } = args;
+  const localVibe = templateBinding.lockedVibe ?? resolveTypographyVibeFromContext({
+    caption: inputs.caption,
+    headline: inputs.headline,
+    sector: inputs.brandBusinessType,
+    brandVibe: falBrandVibe,
+    lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
+      inputs.brandBusinessType ?? '',
+    ),
+  });
+  return renderLocalTypography({
+    workspaceId: inputs.workspaceId,
+    headline: inputs.headline,
+    subtitle: inputs.falSubtitle || inputs.cta,
+    brandName: inputs.resolvedBrandName,
+    brandColors: resolveFalProductionBrandColors(falBrandColors, templateBinding.brandColors),
+    vibe: localVibe,
+    aspectRatio: inputs.falAspectRatio ?? '4:5',
+    referencePhotoUrl: localReferenceUrl,
+    logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
+    sector: inputs.brandBusinessType,
+    occasion: templateBinding.occasion,
+    templateType: templateBinding.matched?.templateType,
+    canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
+    layoutPattern: templateBinding.matched?.layoutPattern,
+    layoutFamilyHint: inputs.layoutFamilyHint,
+    slotRole: inputs.slotRole,
+    slotSeed:
+      inputs.catalogSlotKey
+      ?? templateBinding.matched?.id
+      ?? templateBinding.matched?.templateName
+      ?? inputs.slotRole,
+  });
+}
+
+function applyLocalTypographyToState(
+  state: SlotProductionState,
+  local: NonNullable<Awaited<ReturnType<typeof renderLocalTypography>>>,
+  templateBinding: BrandTemplateFalBinding,
+): void {
+  state.imageUrl = local.imageUrl;
+  state.falGrafikerScore = local.grafikerScore;
+  state.falGrafikerPass = local.grafikerPass;
+  state.falDesignEngine = 'satori_local';
+  state.costDelta += 0.002;
+  if (templateBinding.matched) {
+    state.brandDesignTemplateId = templateBinding.matched.id;
+    state.brandDesignTemplateType = templateBinding.matched.templateType;
+    state.brandDesignTemplateName = templateBinding.matched.templateName;
+    state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+  }
+}
+
+/**
  * Pipeline handler wrapper for the slot-loop dispatch (b2b). Resolves the fal
  * brand input, produces the designed post, and merges the result into the shared
  * slot state. Behavior is identical to the previous inline production-loop block.
@@ -421,64 +492,39 @@ export const falDesignHandler: ProductionPipelineHandler = {
       );
     }
 
-    // Local-first: designed_typography + fal_designed_post render typography
-    // locally (Satori) when enabled. Hero `designed_post` is excluded by role.
+    // Local-first ONLY when the slot has no real library design to render.
+    // When a template is hard/soft matched, Satori is skipped so the actual
+    // template design renders via the fal/GPT designed pipeline below — Satori
+    // cannot reproduce a template's layout/graphics, only text-on-photo.
     const localReferenceUrl = templateBinding.referencePhotoUrl ?? inputs.referenceUrl;
-    if (
+    const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
+    const localTypographyEligible = Boolean(
       !inputs.adHocBrief
-      && !state.imageUrl
       && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme)
       && localReferenceUrl
-      && isUsableGalleryPhotoUrl(localReferenceUrl)
-    ) {
-      const localVibe = templateBinding.lockedVibe ?? resolveTypographyVibeFromContext({
-        caption: inputs.caption,
-        headline: inputs.headline,
-        sector: inputs.brandBusinessType,
-        brandVibe: falBrand.vibe,
-        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
-          inputs.brandBusinessType ?? '',
-        ),
-      });
-      const local = await renderLocalTypography({
-        workspaceId: inputs.workspaceId,
-        headline: inputs.headline,
-        subtitle: inputs.falSubtitle || inputs.cta,
-        brandName: inputs.resolvedBrandName,
-        brandColors: resolveFalProductionBrandColors(
-          falBrand.brandColors,
-          templateBinding.brandColors,
-        ),
-        vibe: localVibe,
-        aspectRatio: inputs.falAspectRatio ?? '4:5',
-        referencePhotoUrl: localReferenceUrl,
-        logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
-        sector: inputs.brandBusinessType,
-        occasion: templateBinding.occasion,
-        templateType: templateBinding.matched?.templateType,
-        canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
-        layoutPattern: templateBinding.matched?.layoutPattern,
-        layoutFamilyHint: inputs.layoutFamilyHint,
-        slotRole: inputs.slotRole,
+      && isUsableGalleryPhotoUrl(localReferenceUrl),
+    );
+    if (!state.imageUrl && !templateIsRenderable && localTypographyEligible) {
+      const local = await renderDesignedPostLocalTypography({
+        inputs,
+        templateBinding,
+        falBrandColors: falBrand.brandColors,
+        falBrandVibe: falBrand.vibe,
+        localReferenceUrl: localReferenceUrl as string,
       });
       if (local) {
-        state.imageUrl = local.imageUrl;
-        state.falGrafikerScore = local.grafikerScore;
-        state.falGrafikerPass = local.grafikerPass;
-        state.falDesignEngine = 'satori_local';
-        state.costDelta += 0.002;
-        if (templateBinding.matched) {
-          state.brandDesignTemplateId = templateBinding.matched.id;
-          state.brandDesignTemplateType = templateBinding.matched.templateType;
-          state.brandDesignTemplateName = templateBinding.matched.templateName;
-          state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
-        }
+        applyLocalTypographyToState(state, local, templateBinding);
         console.log(
-          `[auto-produce] [fal-design] local typography: "${inputs.headline.slice(0, 40)}" ` +
-          `layout=${local.layoutFamily} template=${templateBinding.matched?.templateType ?? 'none'}`,
+          `[auto-produce] [fal-design] local typography (no template): "${inputs.headline.slice(0, 40)}" ` +
+          `layout=${local.layoutFamily}`,
         );
         return;
       }
+    } else if (templateIsRenderable) {
+      console.log(
+        `[auto-produce] [fal-design] template "${templateBinding.matched?.templateName}" ` +
+        `(${templateBinding.matched?.matchQuality}) — rendering real design (Satori skipped)`,
+      );
     }
 
     const designed = await produceFalDesignedPost({
@@ -537,6 +583,32 @@ export const falDesignHandler: ProductionPipelineHandler = {
         state.brandDesignTemplateType = templateBinding.matched.templateType;
         state.brandDesignTemplateName = templateBinding.matched.templateName;
         state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+      }
+    }
+
+    // Safety net: a renderable template skipped Satori above, but the real
+    // designed pipeline produced nothing (e.g. OpenAI/fal outage). Fall back to
+    // Satori so the slot ships a branded still instead of an empty job.
+    if (
+      !state.imageUrl
+      && templateIsRenderable
+      && localTypographyEligible
+      && !inputs.requireGroundedGallery
+    ) {
+      const local = await renderDesignedPostLocalTypography({
+        inputs,
+        templateBinding,
+        falBrandColors: falBrand.brandColors,
+        falBrandVibe: falBrand.vibe,
+        localReferenceUrl: localReferenceUrl as string,
+      });
+      if (local) {
+        applyLocalTypographyToState(state, local, templateBinding);
+        state.pipelineFailureReason = null;
+        console.log(
+          `[auto-produce] [fal-design] designed pipeline empty — Satori fallback: ` +
+          `"${inputs.headline.slice(0, 40)}" layout=${local.layoutFamily}`,
+        );
       }
     }
   },

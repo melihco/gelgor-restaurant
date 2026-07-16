@@ -70,6 +70,19 @@ export interface MatchedDesignTemplate {
 
 export type DesignTemplateMatchQuality = 'hard' | 'soft' | 'format_fallback';
 
+/**
+ * True when the match represents a real library design intent that the fal/GPT
+ * designed pipeline should render (hard/soft pins). `format_fallback` is a
+ * last-resort same-format pick with no real design intent, so callers may still
+ * route it to the cheap Satori text-overlay path.
+ */
+export function isRenderableDesignTemplateMatch(
+  matched: Pick<MatchedDesignTemplate, 'matchQuality'> | null | undefined,
+): boolean {
+  if (!matched) return false;
+  return matched.matchQuality === 'hard' || matched.matchQuality === 'soft';
+}
+
 /** Why a requested catalog_slot_key hard pin failed (Faz B telemetry). */
 export type CatalogHardPinMissReason =
   | 'empty_active_set'
