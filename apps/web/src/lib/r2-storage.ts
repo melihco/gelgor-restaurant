@@ -38,6 +38,24 @@ export type UploadResult = {
   contentType: string;
 };
 
+/** Read an R2 object's bytes directly (no HTTP self-loopback). */
+export async function readR2ObjectBuffer(key: string): Promise<Buffer | null> {
+  if (!serverConfig.r2.configured || !key.trim()) return null;
+  try {
+    const client = getClient();
+    const res = await client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+    const bytes = await res.Body?.transformToByteArray();
+    return bytes && bytes.length > 0 ? Buffer.from(bytes) : null;
+  } catch (err) {
+    console.warn(
+      '[r2-storage] object read failed:',
+      key.slice(0, 60),
+      err instanceof Error ? err.message : err,
+    );
+    return null;
+  }
+}
+
 /**
  * Upload a file (Buffer or base64 data URI) to R2.
  * Returns the permanent public URL.

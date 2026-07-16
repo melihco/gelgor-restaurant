@@ -19,6 +19,7 @@ import { renderAsync } from '@resvg/resvg-js';
 import type { TypographyVibe } from '@/types/brand-theme';
 import { serverConfig } from '@/lib/server-config';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import { resolveExternalGalleryPhotoTarget } from '@/lib/media-url';
 import { persistImageBuffer } from '@/lib/persist-enhanced-images';
 import sharp from '@/lib/sharp-runtime';
 import { fontsForVibe, loadSatoriFontSet } from '@/lib/satori-fonts';
@@ -424,6 +425,35 @@ async function compositeLogoBadge(
   }
 }
 
+/** Extract the R2 object key from a `/api/media?key=…` proxy URL (relative or absolute). */
+function mediaProxyKeyFromUrl(url: string): string | null {
+  const idx = url.indexOf('/api/media?');
+  if (idx === -1) return null;
+  const q = url.indexOf('?', idx);
+  try {
+    return new URLSearchParams(url.slice(q + 1)).get('key');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the reference photo bytes. Tenant gallery photos are often served via
+ * the relative `/api/media?key=…` R2 proxy, which a plain HTTP fetch cannot
+ * load from inside the worker — read the R2 object directly instead.
+ */
+async function fetchReferencePhotoBuffer(url: string): Promise<Buffer | null> {
+  const key = mediaProxyKeyFromUrl(url);
+  if (key) {
+    const { readR2ObjectBuffer } = await import('@/lib/r2-storage');
+    const buf = await readR2ObjectBuffer(key);
+    if (buf) return buf;
+  }
+  const external = resolveExternalGalleryPhotoTarget(url);
+  if (external) return fetchExternalImageBuffer(external, 20_000);
+  return null;
+}
+
 /**
  * Render a text-heavy design still locally. Returns `null` on any failure so the
  * caller can fall back to the existing gpt-image / Ideogram pipeline.
@@ -443,8 +473,13 @@ export async function renderLocalTypography(
       templateType: input.templateType,
     });
 
-    const photoBuf = await fetchExternalImageBuffer(input.referencePhotoUrl, 20_000);
-    if (!photoBuf || photoBuf.length < 100) return null;
+    const photoBuf = await fetchReferencePhotoBuffer(input.referencePhotoUrl);
+    if (!photoBuf || photoBuf.length < 100) {
+      console.warn(
+        `[local-typography] reference photo unreachable, falling back: ${input.referencePhotoUrl.slice(0, 100)}`,
+      );
+      return null;
+    }
 
     const base = await sharp(photoBuf)
       .resize(dims.width, dims.height, { fit: 'cover', position: 'attention' })
