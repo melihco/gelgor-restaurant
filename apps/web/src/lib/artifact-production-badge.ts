@@ -5,7 +5,7 @@
 import type { OutputArtifact } from '@/types';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { SLOT_ROLE_LABEL_TR } from '@/lib/mission-slot-checklist';
-import { isSatoriTypographyMeta } from '@/lib/local-typography-renderer';
+import { isSatoriTypographyMeta } from '@/lib/local-typography-meta';
 import { parseArtifactContent, parseArtifactMetadata } from '@/lib/artifact-utils';
 
 export interface ArtifactProductionBadge {

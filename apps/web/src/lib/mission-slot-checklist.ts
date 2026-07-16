@@ -18,7 +18,7 @@ import {
   type ProductionAssignment,
   type ProductionSlotRole,
 } from '@/lib/mission-production-manifest';
-import { LOCAL_TYPOGRAPHY_ROLES, isSatoriTypographyMeta } from '@/lib/local-typography-renderer';
+import { LOCAL_TYPOGRAPHY_ROLES, isSatoriTypographyMeta } from '@/lib/local-typography-meta';
 import {
   getProductionBundleStatus,
   isBundleFailed,

@@ -23,25 +23,13 @@ import { persistImageBuffer } from '@/lib/persist-enhanced-images';
 import sharp from '@/lib/sharp-runtime';
 import { fontsForVibe, loadSatoriFontSet } from '@/lib/satori-fonts';
 import { isLocalTypographyEnabledForBrand } from '@/lib/brand-production-engines';
+import { LOCAL_TYPOGRAPHY_ROLES } from '@/lib/local-typography-meta';
 
 export type LayoutFamily = 'bottom_panel' | 'split_panel' | 'photo_top';
 export type SlotFormat = 'story' | 'post';
 
-/** True when artifact metadata indicates the Satori local renderer produced the still. */
-export function isSatoriTypographyMeta(meta: Record<string, unknown> | null | undefined): boolean {
-  if (!meta) return false;
-  return meta.typography_model === 'satori_local' || meta.fal_design_engine === 'satori_local';
-}
-
-/** Slot roles whose text-heavy stills route to local rendering (flag-gated). */
-export const LOCAL_TYPOGRAPHY_ROLES: ReadonlySet<string> = new Set([
-  'campaign_story_motion',
-  'fal_story_motion',
-  'designed_typography',
-  'fal_designed_post',
-  'fal_only_story',
-  'fal_only_post',
-]);
+// Client-safe helpers live in local-typography-meta.ts; re-exported for server callers.
+export { isSatoriTypographyMeta, LOCAL_TYPOGRAPHY_ROLES } from '@/lib/local-typography-meta';
 
 /**
  * Single routing authority. `designed_post` (hero) and any reel role stay on the
