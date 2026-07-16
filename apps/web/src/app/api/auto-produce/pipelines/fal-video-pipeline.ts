@@ -374,6 +374,8 @@ export const falVideoHandler: ProductionPipelineHandler = {
         designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
         occasion: templateBinding.occasion,
         logoPlacement: inputs.falLogoPlacement,
+        templateLayoutImageUrl: templateLayoutReferenceUrl(templateBinding),
+        templateReplica: templateReplicaSpecFromBinding(templateBinding),
       });
       state.videoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
       state.imageUrl = designer.imageUrl || photoUrl || referenceUrl;
