@@ -39,6 +39,13 @@ export function missionGallerySlotKey(ideaIndex: number, slotRole: string): stri
   return `${ideaIndex}::${slotRole}`;
 }
 
+/**
+ * Yield to the event loop between heavy sync matching phases so the health
+ * endpoint keeps answering on single-CPU instances (Render restarts the
+ * instance when /api/health/live stalls > 5 s — this crashed mission kicks).
+ */
+const yieldEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 /** Returns true when this pipeline type needs a real gallery photo as input. */
 export function assignmentUsesGalleryPhoto(
   assignment: { pipeline?: string; slot_role?: string },
@@ -60,7 +67,6 @@ export function assignmentUsesGalleryPhoto(
     || pipeline === 'story_still'
     || pipeline === 'carousel_gallery'
     || pipeline === 'fal_story'
-    || pipeline === 'runway_reel'
     || pipeline === 'fal_reel'
   );
 }
@@ -149,11 +155,11 @@ export function resolveQueueGalleryCapacityReroutes(input: {
   if (!input.hasRealBrandPhotos || input.galleryPhotos.length === 0) return out;
 
   // Canonical subject relations per slot — alias/family aware, no dictionary.
+  // Metadata is resolved once per photo (not per slot × photo).
+  const photoMetas = input.galleryPhotos.map((url) =>
+    resolveGalleryPhotoMeta(url, input.galleryMeta, input.galleryPhotos));
   const relationsForSubject = (subjectKey: string): CanonicalSubjectRelation[] =>
-    input.galleryPhotos.map((url) => {
-      const meta = resolveGalleryPhotoMeta(url, input.galleryMeta, input.galleryPhotos);
-      return canonicalSubjectRelationForMeta(subjectKey, meta);
-    });
+    photoMetas.map((meta) => canonicalSubjectRelationForMeta(subjectKey, meta));
 
   for (const queueItem of input.productionLoop) {
     if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
@@ -312,12 +318,14 @@ export async function buildMissionGalleryAssignments(
     ...(input.preassignedUrls ?? []),
   ];
 
+  await yieldEventLoop();
   const batchAssigned = assignPhotosToContents(
     assignItems.map(({ key, input: matchIn, postType }) => ({ key, input: matchIn, postType })),
     input.galleryPhotos,
     input.galleryMeta,
     { minScore: MIN_ACCEPT_SCORE, excludeUrls: seedExclude },
   );
+  await yieldEventLoop();
 
   let judgeRejected = 0;
   let judgeSwapped = 0;
@@ -351,12 +359,14 @@ export async function buildMissionGalleryAssignments(
         ...seedExclude,
         ...[...result.values()].flatMap((v) => (v?.url ? [v.url] : [])),
       ];
+      await yieldEventLoop();
       const secondPass = assignPhotosToContents(
         openItems.map(({ key, input: matchIn, postType }) => ({ key, input: matchIn, postType })),
         input.galleryPhotos,
         input.galleryMeta,
         { minScore: MIN_ACCEPT_SCORE, excludeUrls: reservedNow },
       );
+      await yieldEventLoop();
       for (const item of openItems) {
         const val = secondPass.get(item.key);
         if (!val?.url) continue;

@@ -568,8 +568,28 @@ export function classifyMatch(score: number): MatchClassification {
   return { quality: 'rejected', usable: false, needsReview: true, label: 'Eşleşme yok' };
 }
 
+/**
+ * Fingerprint memo — production ranks the same URLs millions of times per
+ * mission (slots × candidates × greedy rounds); the regex work here was a
+ * measured event-loop blocker on single-CPU instances. Bounded FIFO cache.
+ */
+const FINGERPRINT_CACHE = new Map<string, string>();
+const FINGERPRINT_CACHE_MAX = 10_000;
+
 /** Stable media id across CDN resize variants (Wix, Cloudinary, R2, etc.). */
 export function galleryMediaFingerprint(url: string): string {
+  const cached = FINGERPRINT_CACHE.get(url);
+  if (cached !== undefined) return cached;
+  const fp = computeGalleryMediaFingerprint(url);
+  if (FINGERPRINT_CACHE.size >= FINGERPRINT_CACHE_MAX) {
+    const oldest = FINGERPRINT_CACHE.keys().next().value;
+    if (oldest !== undefined) FINGERPRINT_CACHE.delete(oldest);
+  }
+  FINGERPRINT_CACHE.set(url, fp);
+  return fp;
+}
+
+function computeGalleryMediaFingerprint(url: string): string {
   const normalized = normalizeGalleryUrl(url).toLowerCase();
 
   const wix = normalized.match(/\/media\/([^/?#]+)/i);
@@ -653,23 +673,52 @@ function resolveLookupEntry(
   return undefined;
 }
 
+/**
+ * Per-analysis resolver cache. Building the lookup + fingerprint index costs
+ * O(analysis size) regex work; production code resolves metadata for the same
+ * (analysis, url) pairs thousands of times per mission plan. The WeakMap keys
+ * on the analysis object identity, so caches die with the request payload.
+ */
+interface GalleryResolverIndex {
+  lookup: Map<string, GalleryLookupEntry>;
+  fingerprintIndex: Map<string, GalleryLookupEntry>;
+  byUrl: Map<string, GalleryLookupEntry | null>;
+}
+
+const RESOLVER_INDEX_CACHE = new WeakMap<
+  Record<string, GalleryPhotoMeta>,
+  GalleryResolverIndex
+>();
+
+function getResolverIndex(
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+): GalleryResolverIndex {
+  const cached = RESOLVER_INDEX_CACHE.get(galleryAnalysis);
+  if (cached) return cached;
+  const lookup = new Map<string, GalleryLookupEntry>();
+  const fingerprintIndex = new Map<string, GalleryLookupEntry>();
+  for (const [analysisKey, meta] of Object.entries(galleryAnalysis)) {
+    const entry: GalleryLookupEntry = { displayUrl: analysisKey, analysisKey, meta };
+    lookup.set(normalizeGalleryUrl(analysisKey), entry);
+    fingerprintIndex.set(galleryMediaFingerprint(analysisKey), entry);
+  }
+  const index: GalleryResolverIndex = { lookup, fingerprintIndex, byUrl: new Map() };
+  RESOLVER_INDEX_CACHE.set(galleryAnalysis, index);
+  return index;
+}
+
 /** Resolve analysis metadata for a display URL (R2/CDN/Wix variants share fingerprints). */
 export function resolveGalleryLookupEntry(
   url: string,
   galleryAnalysis: Record<string, GalleryPhotoMeta>,
-  displayUrls: string[] = [],
+  _displayUrls: string[] = [],
 ): GalleryLookupEntry | undefined {
-  const pool = [...new Set([url, ...displayUrls, ...Object.keys(galleryAnalysis)])];
-  const lookup = buildGalleryLookup(galleryAnalysis, pool);
-  const fingerprintIndex = new Map<string, GalleryLookupEntry>();
-  for (const [analysisKey, meta] of Object.entries(galleryAnalysis)) {
-    fingerprintIndex.set(galleryMediaFingerprint(analysisKey), {
-      displayUrl: analysisKey,
-      analysisKey,
-      meta,
-    });
-  }
-  return resolveLookupEntry(url, lookup, fingerprintIndex);
+  const index = getResolverIndex(galleryAnalysis);
+  const memo = index.byUrl.get(url);
+  if (memo !== undefined) return memo ?? undefined;
+  const resolved = resolveLookupEntry(url, index.lookup, index.fingerprintIndex);
+  index.byUrl.set(url, resolved ?? null);
+  return resolved;
 }
 
 export function resolveGalleryPhotoMeta(
@@ -1547,6 +1596,42 @@ export function isHardGalleryThemeMismatch(
   return false;
 }
 
+/**
+ * Fingerprint index memo for ranking. Greedy mission assignment calls
+ * rankPhotosForContent O(slots²) times with the SAME lookup + analysis
+ * objects; rebuilding the regex-heavy index per call blocked the event loop.
+ */
+const RANK_FP_INDEX_CACHE = new WeakMap<
+  Map<string, GalleryLookupEntry>,
+  WeakMap<Record<string, GalleryPhotoMeta>, Map<string, GalleryLookupEntry>>
+>();
+
+function getRankFingerprintIndex(
+  lookup: Map<string, GalleryLookupEntry>,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+): Map<string, GalleryLookupEntry> {
+  let byAnalysis = RANK_FP_INDEX_CACHE.get(lookup);
+  if (!byAnalysis) {
+    byAnalysis = new WeakMap();
+    RANK_FP_INDEX_CACHE.set(lookup, byAnalysis);
+  }
+  const cached = byAnalysis.get(galleryAnalysis);
+  if (cached) return cached;
+
+  const fingerprintIndex = new Map<string, GalleryLookupEntry>();
+  for (const [key, entry] of lookup) {
+    fingerprintIndex.set(galleryMediaFingerprint(key), entry);
+  }
+  for (const [analysisKey, meta] of Object.entries(galleryAnalysis)) {
+    const fp = galleryMediaFingerprint(analysisKey);
+    if (!fingerprintIndex.has(fp)) {
+      fingerprintIndex.set(fp, { displayUrl: analysisKey, analysisKey, meta });
+    }
+  }
+  byAnalysis.set(galleryAnalysis, fingerprintIndex);
+  return fingerprintIndex;
+}
+
 export function rankPhotosForContent(
   input: MatchPhotoInput,
   candidateUrls: string[],
@@ -1554,22 +1639,7 @@ export function rankPhotosForContent(
   excludeBases: Set<string> = new Set(),
   galleryAnalysis: Record<string, GalleryPhotoMeta> = {},
 ): PhotoMatchResult[] {
-  const fingerprintIndex = new Map<string, GalleryLookupEntry>();
-  for (const [key, entry] of lookup) {
-    fingerprintIndex.set(galleryMediaFingerprint(key), entry);
-  }
-  if (Object.keys(galleryAnalysis).length > 0) {
-    for (const [analysisKey, meta] of Object.entries(galleryAnalysis)) {
-      const fp = galleryMediaFingerprint(analysisKey);
-      if (!fingerprintIndex.has(fp)) {
-        fingerprintIndex.set(fp, {
-          displayUrl: analysisKey,
-          analysisKey,
-          meta,
-        });
-      }
-    }
-  }
+  const fingerprintIndex = getRankFingerprintIndex(lookup, galleryAnalysis);
 
   const results: PhotoMatchResult[] = [];
   const scopedCandidates = preferSubjectAlignedCandidates(
@@ -1738,18 +1808,17 @@ export function pickMissionDiverseFallbackPhoto(
     return null;
   }
 
-  const assignedMeta = assignedUrls.map((url) => {
-    const base = normalizeGalleryUrl(url);
-    return galleryAnalysis[base]
-      ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
-  });
+  const baseIndex = getResolverIndex(galleryAnalysis).lookup;
+  const metaForBase = (base: string): GalleryPhotoMeta | undefined =>
+    galleryAnalysis[base] ?? baseIndex.get(base)?.meta;
+
+  const assignedMeta = assignedUrls.map((url) => metaForBase(normalizeGalleryUrl(url)));
 
   let best: { url: string; diversity: number } | null = null;
   for (const url of candidateUrls) {
     const base = normalizeGalleryUrl(url);
     if (usedBases.has(base)) continue;
-    const meta = galleryAnalysis[base]
-      ?? Object.entries(galleryAnalysis).find(([k]) => normalizeGalleryUrl(k) === base)?.[1];
+    const meta = metaForBase(base);
     if (matchInput && isHardGalleryThemeMismatch(matchInput, meta, url)) {
       continue;
     }
@@ -1809,15 +1878,21 @@ export function assignPhotosToContents(
    */
   const buildSubjectReservations = (pending: PendingItem[]): Map<string, Set<string>> => {
     const reserved = new Map<string, Set<string>>();
+    // Resolve each candidate's metadata once — not per (slot × photo) pair.
+    const metaByUrl = new Map<string, { base: string; meta: GalleryPhotoMeta | undefined }>();
+    for (const url of candidateUrls) {
+      metaByUrl.set(url, {
+        base: normalizeGalleryUrl(url),
+        meta: resolveGalleryPhotoMeta(url, galleryAnalysis, candidateUrls),
+      });
+    }
     for (const { key, input } of pending) {
       const subjectKey = String(input.subjectKey ?? '').trim();
       if (!subjectKey || NON_CONCRETE_SUBJECTS.has(normalizeSubjectForRelation(subjectKey))) {
         continue;
       }
-      for (const url of candidateUrls) {
-        const base = normalizeGalleryUrl(url);
+      for (const { base, meta } of metaByUrl.values()) {
         if (usedMissionWide.has(base)) continue;
-        const meta = resolveGalleryPhotoMeta(url, galleryAnalysis, candidateUrls);
         if (canonicalSubjectRelationForMeta(subjectKey, meta) !== 'match') continue;
         const owners = reserved.get(base) ?? new Set<string>();
         owners.add(key);
@@ -1840,7 +1915,21 @@ export function assignPhotosToContents(
       return !owners || owners.has(itemKey);
     };
 
-    while (pending.length > 0) {
+    // Rank each pending item ONCE. Scores do not depend on the exclude set
+    // (it is only a candidate filter), so "re-rank after every commit" is
+    // exactly equivalent to filtering the precomputed ranking by the used
+    // pool — but O(N) full rankings instead of O(N²), which kept a 20-slot ×
+    // 120-photo mission from blocking the event loop for minutes.
+    const rankedByKey = new Map<string, PhotoMatchResult[]>();
+    for (const { key, input } of pending) {
+      rankedByKey.set(
+        key,
+        rankPhotosForContent(input, candidateUrls, lookup, excludeBases, galleryAnalysis),
+      );
+    }
+
+    const live = [...pending];
+    while (live.length > 0) {
       let pick: {
         listIndex: number;
         key: string;
@@ -1848,15 +1937,11 @@ export function assignPhotosToContents(
         order: number;
       } | null = null;
 
-      for (let i = 0; i < pending.length; i += 1) {
-        const { key, input, order } = pending[i]!;
-        const top = rankPhotosForContent(
-          input,
-          candidateUrls,
-          lookup,
-          usedMissionWide,
-          galleryAnalysis,
-        ).find((r) => photoAllowedFor(key, r.url));
+      for (let i = 0; i < live.length; i += 1) {
+        const { key, order } = live[i]!;
+        const top = rankedByKey.get(key)?.find(
+          (r) => !usedMissionWide.has(normalizeGalleryUrl(r.url)) && photoAllowedFor(key, r.url),
+        );
         if (!top || top.score < minScore) continue;
         const better =
           !pick
@@ -1868,14 +1953,14 @@ export function assignPhotosToContents(
       }
 
       if (!pick) {
-        remaining.push(...pending);
+        remaining.push(...live);
         break;
       }
 
       assigned.set(pick.key, pick.result);
       usedMissionWide.add(normalizeGalleryUrl(pick.result.url));
       assignedUrls.push(pick.result.url);
-      pending.splice(pick.listIndex, 1);
+      live.splice(pick.listIndex, 1);
     }
 
     return remaining;
