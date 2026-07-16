@@ -202,6 +202,16 @@ builder.Services.AddHttpClient("CrewService", client =>
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
     client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
 });
+builder.Services.AddHttpClient<IPlatformCrewClient, PlatformCrewClient>(client =>
+{
+    var baseUrl = NormalizeHttpBaseUrl(configuration["OrchestrationService:BaseUrl"]);
+    var timeoutSeconds = ClampOrchestrationTimeoutSeconds(configuration);
+    var apiKey = OrchestrationApiKey(configuration);
+
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+    client.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+});
 
 var useDevMockOrchestration =
     builder.Environment.IsDevelopment()

@@ -15,6 +15,8 @@ public static class Permissions
     public const string UsersManage = "users.manage";
     public const string OperationsView = "operations.view";
     public const string AgentsExecute = "agents.execute";
+    /// <summary>Super Admin / platform console — cross-tenant crew proxies.</summary>
+    public const string PlatformOperate = "platform.operate";
 }
 
 public record CurrentUserSecurityDto(
@@ -46,7 +48,8 @@ public sealed class PermissionService : IPermissionService
         Permissions.BillingManage,
         Permissions.UsersManage,
         Permissions.OperationsView,
-        Permissions.AgentsExecute
+        Permissions.AgentsExecute,
+        Permissions.PlatformOperate,
     };
 
     private static readonly IReadOnlyDictionary<string, string[]> RolePermissions =
