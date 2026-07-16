@@ -192,7 +192,6 @@ import {
 } from '@/lib/production-in-process-lock';
 import type { RemotionLayoutFamily } from '@/lib/remotion-template-types';
 import {
-  allowedCompositionsForDirector,
   parseMotionProfileFromTheme,
   resolveContentIntent,
 } from '@/lib/brand-motion-profile';
@@ -225,7 +224,6 @@ import {
   hasPublishableIdeationHeadline,
 } from '@/lib/feed-display-caption';
 import { resolvePlanningIdeaIndex } from '@/lib/content-calendar-artifact-link';
-import { resolveProductionEngines } from '@/lib/brand-production-engines';
 import { isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { getBrandKit } from '@/lib/agency-brand-kits';
 import {
@@ -3456,6 +3454,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           falFontPersonality: falSlotTypography?.fontPersonality,
           falHeadingFont: falSlotTypography?.headingFont,
           falBodyFont: falSlotTypography?.bodyFont,
+          layoutFamilyHint: calendarDesignLayout?.layoutFamilyHint
+            ?? assignment.layout_family_hint
+            ?? null,
         },
         state: {
           imageUrl,

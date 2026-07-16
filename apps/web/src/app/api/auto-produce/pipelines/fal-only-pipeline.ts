@@ -437,6 +437,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
         sector: inputs.brandBusinessType,
         occasion: templateBinding.occasion,
         templateType: templateBinding.matched?.templateType,
+        layoutFamilyHint: inputs.layoutFamilyHint,
         slotRole: inputs.slotRole,
       });
       if (local) {

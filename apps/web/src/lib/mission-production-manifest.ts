@@ -158,13 +158,13 @@ export interface MissionProductionManifest {
 }
 
 /**
- * Standard weekly mission deliverable: 16 generated slots.
+ * Standard weekly mission deliverable: 16 generated slots (see WEEKLY_ORGANIC).
  *
- * Post mix (6): 2 organic gallery + 3 fal_designed (designed_post + designed_typography + fal_designed_post)
- * + 1 fal_only_post (tam fal). Feed designed posts are fal.ai/GPT-image (gallery match + agent brief).
- * Story (3): Remotion motion ×2 + organic still.
- * Reel (6): fal_reel ×2 + fal_reel_motion ×2 + fal_only_reel ×2 — Remotion kullanılmaz.
- * (Story için fal.ai kullanılmaz — Remotion karşılar. Reels Runway + fal.ai.)
+ * Post mix (6): 2 organic gallery + designed_post (fal hero) + designed_typography
+ * + fal_designed_post (Satori-eligible) + 1 fal_only_post.
+ * Story (8): fal_story posters (Satori-first when LOCAL_TYPOGRAPHY_ENABLED) + organic still + fal_only_story.
+ * Reel (1): fal designer video (Kling I2V). Carousel (1): gallery.
+ * Remotion is no longer on the render path — remotion_* pipelines normalize to fal.
  */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
   story: 7,
@@ -807,6 +807,7 @@ export function pipelineForSlotRole(role: ProductionSlotRole): ProductionPipelin
   }
   // Legacy FD slot roles → canonical fal story / fal reel pipelines
   if (role === 'fal_story_motion') return 'fal_story';
+  if (role === 'fal_reel_motion' || role === 'campaign_reel_motion') return 'fal_reel';
   if (role === 'fal_only_story') return 'fal_only_story';
   if (role === 'fal_only_post') return 'fal_only_post';
   if (role === 'fal_only_reel') return 'fal_only_reel';

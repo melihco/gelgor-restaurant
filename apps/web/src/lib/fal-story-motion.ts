@@ -1,17 +1,11 @@
 /**
  * fal.ai Motion Plate Generator — Kling v3 Pro / Standard / Luma I2V
  *
- * Two call sites:
- *   1. fal.ai designer video track (`produceFalDesignerVideo`):
- *      Animates a clean atmospheric Ideogram background plate (no baked text).
- *      `preserveExistingText` is always false — prompt explicitly forbids any text.
- *
- *   2. Remotion premium story track (`remotion-render-phase.ts`):
- *      Animates a gallery/product photo. Remotion's own template overlays the
- *      text on top; motion plate must stay text-free.
- *
- * In both cases the motion plate is purely visual — text is never part of the
- * video frame. Remotion or the mobile app caption layer handles text separately.
+ * Call site: fal.ai designer video track (`produceFalDesignerVideo`) —
+ * animates a clean atmospheric background plate (no baked text).
+ * `preserveExistingText` is always false — the prompt explicitly forbids any
+ * text so the motion plate stays purely visual; captions/typography are
+ * overlaid downstream (designed still or the mobile caption layer).
  */
 
 import {

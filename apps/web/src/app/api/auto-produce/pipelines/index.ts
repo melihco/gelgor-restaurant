@@ -10,9 +10,9 @@
  *   - produceFalOnlySlot     (fal_only_*)
  *   - produceFalDesignedPost (fal_design)
  *
- * Remotion (story/post/poster) and gallery-photo attachment are still driven
- * inline by production-loop.ts / remotion-render-phase.ts and are scheduled for
- * extraction behind the same pattern.
+ * Gallery-photo attachment (organic slots) is still driven inline by
+ * production-loop.ts. Remotion rendering has been removed from the production
+ * path — legacy remotion_* pipeline ids normalize to fal equivalents.
  */
 
 export { falVideoHandler } from './fal-video-pipeline';

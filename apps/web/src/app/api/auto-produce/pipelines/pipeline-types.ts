@@ -108,6 +108,8 @@ export interface SlotProductionInputs {
   falFontPersonality?: string;
   falHeadingFont?: string;
   falBodyFont?: string;
+  /** FD/calendar layout family hint — guides Satori panel family + fal prompt. */
+  layoutFamilyHint?: string | null;
 }
 
 export interface SlotProductionContext {
