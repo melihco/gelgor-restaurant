@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyCatalogSlotBindingsToQueue,
   filterDesignTemplatesToActiveSlots,
   matchIdeaToBrandCatalogSlot,
   enrichProductionQueueWithBrandSlots,
@@ -7,6 +8,7 @@ import {
   resolveBrandProductionFormatTargets,
 } from '@/lib/brand-active-slot-resolver';
 import type { BrandDesignTemplateRecord } from '@/lib/brand-design-template-matcher';
+import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import type { ProductionSlotDefinition, TenantSlotAssignment } from '@/lib/production-slot-catalog';
 
 function mockSlot(
@@ -277,7 +279,7 @@ describe('enrichProductionQueueWithBrandSlots', () => {
       ],
     });
 
-    const queueItems = Array.from({ length: 8 }, (_, i) => ({
+    const queueItems: ManifestProductionQueueItem[] = Array.from({ length: 8 }, (_, i) => ({
       queueIndex: i,
       ideaIndex: i,
       idea: {
@@ -298,6 +300,78 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     const queue = enrichProductionQueueWithBrandSlots(queueItems, activeSet);
     expect(queue).toHaveLength(8);
     expect(queue.every((row) => row.assignment.catalog_slot_key)).toBe(true);
+  });
+});
+
+describe('applyCatalogSlotBindingsToQueue (Faz 5 — production_jobs.slot_key)', () => {
+  const makeQueueItem = (
+    ideaIndex: number,
+    slotRole: 'fal_designed_post' | 'fal_only_story' | 'designed_typography',
+  ): ManifestProductionQueueItem => ({
+    queueIndex: ideaIndex,
+    ideaIndex,
+    idea: {
+      headline: `Idea ${ideaIndex}`,
+      content_type: 'instagram_post',
+    },
+    assignment: {
+      idea_index: ideaIndex,
+      slot_role: slotRole,
+      pipeline: 'fal_design',
+      copy_bundle_id: 'week',
+      publish_channel: 'instagram_organic',
+    },
+  });
+
+  it('pins the persisted slot_key on idea + assignment (beach_club)', () => {
+    const queue = applyCatalogSlotBindingsToQueue(
+      [makeQueueItem(0, 'fal_designed_post'), makeQueueItem(1, 'fal_only_story')],
+      {
+        '0:fal_designed_post': 'beach_club_dj_night_teaser_post',
+        '1:fal_only_story': 'beach_club_sunset_golden_story',
+      },
+    );
+
+    expect(queue[0]!.idea.catalog_slot_key).toBe('beach_club_dj_night_teaser_post');
+    expect(queue[0]!.assignment.catalog_slot_key).toBe('beach_club_dj_night_teaser_post');
+    expect(queue[1]!.assignment.catalog_slot_key).toBe('beach_club_sunset_golden_story');
+  });
+
+  it('leaves unbound rows untouched and is a no-op without bindings (local_products_shop)', () => {
+    const items = [makeQueueItem(0, 'fal_designed_post'), makeQueueItem(1, 'designed_typography')];
+    const partial = applyCatalogSlotBindingsToQueue(items, {
+      '1:designed_typography': 'local_products_shop_harvest_post',
+    });
+    expect(partial[0]!.assignment.catalog_slot_key).toBeUndefined();
+    expect(partial[1]!.assignment.catalog_slot_key).toBe('local_products_shop_harvest_post');
+
+    expect(applyCatalogSlotBindingsToQueue(items, null)).toBe(items);
+    expect(applyCatalogSlotBindingsToQueue(items, {})).toBe(items);
+  });
+
+  it('binding survives enrichment as the preferred catalog slot (beach_club)', () => {
+    const djSlot = mockSlot('beach_club_dj_night_teaser_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const sunsetSlot = mockSlot('beach_club_sunset_golden_story', 'story', {
+      design_template_type: 'daily_story',
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-1',
+      sector: 'beach_club',
+      sectorSlots: [djSlot, sunsetSlot],
+      tenantAssignments: [
+        mockAssignment('beach_club_dj_night_teaser_post', true, djSlot),
+        mockAssignment('beach_club_sunset_golden_story', true, sunsetSlot),
+      ],
+    });
+
+    const bound = applyCatalogSlotBindingsToQueue(
+      [makeQueueItem(0, 'fal_designed_post')],
+      { '0:fal_designed_post': 'beach_club_sunset_golden_story' },
+    );
+    const enriched = enrichProductionQueueWithBrandSlots(bound, activeSet);
+    expect(enriched[0]!.assignment.catalog_slot_key).toBe('beach_club_sunset_golden_story');
   });
 });
 

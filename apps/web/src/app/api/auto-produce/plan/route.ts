@@ -267,17 +267,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    const catalogSlotByKey = new Map(
+      (brandActiveSlots?.slots ?? []).map((s) => [s.slotKey, s]),
+    );
     const slots = productionQueue.map((item) => {
       const role = item.assignment.slot_role;
       const galleryKey = missionGallerySlotKey(item.ideaIndex, String(role));
       const assigned = missionGalleryAssignments.get(galleryKey);
       const reroutedPipeline = capacityReroutes.get(galleryKey);
+      const catalogSlotKey = item.assignment.catalog_slot_key
+        ?? (item.idea.catalog_slot_key as string | undefined)
+        ?? null;
+      const catalogSlot = catalogSlotKey ? catalogSlotByKey.get(catalogSlotKey) : undefined;
       return {
         ideaIndex: item.ideaIndex,
         slotRole: role,
         format: formatForSlotRole(role),
         pipeline: reroutedPipeline ?? item.assignment.pipeline,
         librarySlotKey: item.assignment.library_slot_key ?? null,
+        /** Faz 5 — tenant catalog binding persisted to production_jobs.slot_key. */
+        catalogSlotKey,
+        catalogSlotLabel: catalogSlot?.labelTr
+          ?? (item.idea.catalog_slot_label as string | undefined)
+          ?? null,
         backfillSlotKey: `${item.ideaIndex}:${role}`,
         sourceTrack: 'ideation',
         payload: assigned?.url && !reroutedPipeline

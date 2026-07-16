@@ -138,7 +138,7 @@ import {
   formatMissionAiCostRange,
   type MissionAiCostSummary,
 } from '@/lib/mission-ai-cost';
-import { MissionSlotShowcase, MissionCompletedCard } from '../MissionSlotShowcase';
+import { MissionSlotShowcase, MissionCompletedCard, type SlotShowcaseTemplate } from '../MissionSlotShowcase';
 import { resolveSlotShowcaseConfig } from '@/lib/brand-production-engines';
 
 interface BasSubScore {
@@ -3535,6 +3535,21 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     [brandThemePayload],
   );
 
+  // Faz 5 — brand template library for catalog-bound slot previews on flip cards.
+  const { data: brandDesignTemplates = [] } = useQuery({
+    queryKey: ['brand-design-templates', workspaceId],
+    queryFn: async (): Promise<SlotShowcaseTemplate[]> => {
+      const res = await fetch(`/api/brand-context/${workspaceId}/design-templates`, {
+        headers: { 'X-Tenant-Id': workspaceId },
+      });
+      if (!res.ok) return [];
+      const raw = (await res.json()) as SlotShowcaseTemplate[];
+      return Array.isArray(raw) ? raw : [];
+    },
+    staleTime: 120_000,
+    enabled: Boolean(workspaceId) && showFeedPackage && showcaseConfig.enabled,
+  });
+
   const { data: feedArtifactPool = [], isLoading: feedPkgLoading, refetch: refetchSharedArtifactPool } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     subscribeOnly: !pollCompletedFeed,
@@ -3625,8 +3640,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       artifacts: feedArtifacts ?? [],
       missionInFlight: mission.status === 'in_flight' || mission.status === 'approved',
       debugMode,
+      factorySlots: factoryJobsSummary?.slots,
     });
-  }, [debugMode, feedArtifacts, mission.id, mission.type, mission.title, mission.status, fdReport]);
+  }, [debugMode, feedArtifacts, mission.id, mission.type, mission.title, mission.status, fdReport, factoryJobsSummary?.slots]);
 
   const pipelineSummary = useMemo(() => {
     const fdAssignments = Array.isArray(fdReport?.production_assignments)
@@ -4050,6 +4066,7 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               artifacts={feedArtifacts ?? []}
               onOpenArtifact={openArtifactPreview}
               showFormatFilters={showcaseConfig.format_filters_enabled}
+              designTemplates={brandDesignTemplates}
               t={t}
             />
           )}

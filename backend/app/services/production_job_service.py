@@ -96,17 +96,25 @@ async def upsert_jobs(
             library_slot_key = (
                 slot.get("library_slot_key") or slot.get("librarySlotKey") or None
             )
+            # Faz 5 — tenant catalog slot binding (production_slot_definitions.slot_key)
+            catalog_slot_key = (
+                slot.get("catalog_slot_key") or slot.get("catalogSlotKey") or None
+            )
             payload = slot.get("payload")
+            catalog_label = slot.get("catalog_slot_label") or slot.get("catalogSlotLabel")
+            if catalog_label:
+                payload = {**(payload or {}), "catalogSlotLabel": str(catalog_label)}
             res = await db.execute(
                 text(
                     """
                     INSERT INTO production_jobs (
                         workspace_id, mission_id, node_key, idea_index, slot_role,
-                        format, pipeline, library_slot_key, status, max_attempts, payload
+                        format, pipeline, library_slot_key, slot_key, status,
+                        max_attempts, payload
                     ) VALUES (
                         :workspace_id, :mission_id, :node_key, :idea_index, :slot_role,
-                        :format, :pipeline, :library_slot_key, 'pending', :max_attempts,
-                        CAST(:payload AS JSONB)
+                        :format, :pipeline, :library_slot_key, :slot_key, 'pending',
+                        :max_attempts, CAST(:payload AS JSONB)
                     )
                     ON CONFLICT (mission_id, idea_index, slot_role) DO NOTHING
                     RETURNING id
@@ -121,6 +129,7 @@ async def upsert_jobs(
                     "format": fmt,
                     "pipeline": pipeline,
                     "library_slot_key": library_slot_key,
+                    "slot_key": str(catalog_slot_key) if catalog_slot_key else None,
                     "max_attempts": int(max_attempts),
                     "payload": json.dumps(payload) if payload is not None else None,
                 },
@@ -340,7 +349,8 @@ async def mission_job_summary(mission_id: uuid.UUID, *, enrich: bool = True) -> 
             text(
                 """
                 SELECT id, idea_index, slot_role, format, pipeline, status,
-                       attempts, max_attempts, artifact_id, last_error, updated_at
+                       attempts, max_attempts, artifact_id, last_error, updated_at,
+                       slot_key, payload
                 FROM production_jobs
                 WHERE mission_id = CAST(:mission_id AS UUID)
                 ORDER BY idea_index ASC, slot_role ASC
@@ -382,6 +392,13 @@ async def mission_job_summary(mission_id: uuid.UUID, *, enrich: bool = True) -> 
                 "artifactId": r.get("artifact_id"),
                 "lastError": r.get("last_error"),
                 "updatedAt": str(r["updated_at"]) if r.get("updated_at") else None,
+                # Faz 5 — tenant catalog binding for Mission Hub slot cards
+                "catalogSlotKey": r.get("slot_key"),
+                "catalogSlotLabel": (
+                    (r.get("payload") or {}).get("catalogSlotLabel")
+                    if isinstance(r.get("payload"), dict)
+                    else None
+                ),
             }
             for r in rows
         ],

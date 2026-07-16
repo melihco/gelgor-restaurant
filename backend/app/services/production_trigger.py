@@ -39,6 +39,7 @@ async def trigger_auto_produce(
     factory_jobs: list[dict] | None = None,
     completion_pass: bool = False,
     gallery_slot_assignments: dict[str, dict] | None = None,
+    catalog_slot_bindings: dict[str, str] | None = None,
     enqueue_priority: int | None = None,
 ) -> dict | None:
     """
@@ -226,6 +227,9 @@ async def trigger_auto_produce(
             payload["skipArtifactDedupe"] = True
         if gallery_slot_assignments:
             payload["gallerySlotAssignments"] = gallery_slot_assignments
+        # Faz 5 — persisted production_jobs.slot_key → hard catalog pin at render time
+        if catalog_slot_bindings:
+            payload["catalogSlotBindings"] = catalog_slot_bindings
 
         # ── Durable factory: slot planning (no render) ──────────────────────
         if plan_only and not completion_pass:

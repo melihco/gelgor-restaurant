@@ -22,7 +22,35 @@ import type {
 } from '@/lib/mission-slot-checklist';
 import { resolveArtifactHubPreviewUrl } from '@/lib/content-calendar-artifact-link';
 import { detectFeedArtifactKind, type FeedArtifactKind } from '@/lib/artifact-view-model';
+import { resolveClientMediaUrl } from '@/lib/media-url';
 import { SafeCoverImage } from './SafeCoverImage';
+
+/** Brand design template row subset consumed for slot template previews (Faz 5). */
+export interface SlotShowcaseTemplate {
+  id: string;
+  template_name?: string | null;
+  thumbnail_url?: string | null;
+  catalog_slot_key?: string | null;
+  design_spec?: { catalogSlotKey?: string } | null;
+  status?: string | null;
+}
+
+function buildTemplateIndex(
+  templates: SlotShowcaseTemplate[] | undefined,
+): Map<string, { thumbnailUrl: string | null; name: string | null }> {
+  const map = new Map<string, { thumbnailUrl: string | null; name: string | null }>();
+  for (const tmpl of templates ?? []) {
+    if (tmpl.status === 'archived') continue;
+    const key = tmpl.catalog_slot_key ?? tmpl.design_spec?.catalogSlotKey ?? null;
+    if (!key || map.has(key)) continue;
+    const raw = tmpl.thumbnail_url ?? null;
+    map.set(key, {
+      thumbnailUrl: raw ? (resolveClientMediaUrl(raw) ?? raw) : null,
+      name: tmpl.template_name ?? null,
+    });
+  }
+  return map;
+}
 
 // ── Visual language ───────────────────────────────────────────────────────────
 
@@ -117,23 +145,33 @@ interface SlotCardVm {
   format: SlotFormat;
   previewUrl: string | null;
   isVideo: boolean;
+  /** Brand template bound to this slot's catalog key (Faz 5). */
+  templateThumbUrl: string | null;
+  templateName: string | null;
+  /** Catalog label_tr when the slot is catalog-bound, else the role label. */
+  displayLabel: string;
 }
 
 function buildSlotCards(
   checklist: MissionSlotChecklist,
   artifacts: OutputArtifact[],
+  templateIndex: Map<string, { thumbnailUrl: string | null; name: string | null }>,
 ): SlotCardVm[] {
   const byId = new Map(artifacts.map((a) => [a.id, a]));
   return checklist.items.map((item) => {
     const artifact = item.artifactId ? byId.get(item.artifactId) ?? null : null;
     const previewUrl = artifact ? resolveArtifactHubPreviewUrl(artifact) : null;
     const format = slotFormat(item.role);
+    const template = item.catalogSlotKey ? templateIndex.get(item.catalogSlotKey) : undefined;
     return {
       key: `${item.role}-${item.assignmentIndex}`,
       item,
       format,
       previewUrl,
       isVideo: format === 'reel' || (format === 'story' && item.pipeline.includes('fal')),
+      templateThumbUrl: template?.thumbnailUrl ?? null,
+      templateName: template?.name ?? null,
+      displayLabel: item.catalogSlotLabel || item.label,
     };
   });
 }
@@ -156,6 +194,9 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
     { label: 'Format', value: fmt.label, color: fmt.color },
     { label: 'Üretim', value: pipelineLabel(item.pipeline) },
     { label: 'Durum', value: status.label, color: status.color },
+    ...(vm.templateName
+      ? [{ label: 'Şablon', value: vm.templateName, color: GOLD }]
+      : []),
     ...(item.aiEnhanceLabel
       ? [{ label: 'AI rötuş', value: item.aiEnhanceLabel }]
       : []),
@@ -167,7 +208,7 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
       data-flipped={flipped}
       role="button"
       tabIndex={0}
-      aria-label={`${item.label} — ${status.label}. Detay için dokunun.`}
+      aria-label={`${vm.displayLabel} — ${status.label}. Detay için dokunun.`}
       onClick={() => setFlipped((f) => !f)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFlipped((f) => !f); }
@@ -190,7 +231,7 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
           {previewUrl ? (
             <SafeCoverImage
               src={previewUrl}
-              alt={item.headline ?? item.label}
+              alt={item.headline ?? vm.displayLabel}
               style={{
                 position: 'absolute', inset: 0, width: '100%', height: '100%',
                 objectFit: 'cover',
@@ -202,13 +243,25 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
               alignItems: 'center', justifyContent: 'center', gap: 8,
               background: `radial-gradient(120% 90% at 50% 0%, rgba(138,171,189,0.10), transparent 60%), ${cardBg}`,
             }}>
+              {/* Catalog-bound slots show the brand template as a dimmed reference */}
+              {vm.templateThumbUrl && (
+                <SafeCoverImage
+                  src={vm.templateThumbUrl}
+                  alt=""
+                  style={{
+                    position: 'absolute', inset: 0, width: '100%', height: '100%',
+                    objectFit: 'cover', opacity: 0.22, filter: 'saturate(0.7)',
+                  }}
+                />
+              )}
               <span style={{
+                position: 'relative',
                 fontSize: 26, color: fmt.color, opacity: 0.75,
                 animation: item.status === 'rendering' ? 'saMscPulse 1.6s ease-in-out infinite' : undefined,
               }}>
                 {fmt.glyph}
               </span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em' }}>
+              <span style={{ position: 'relative', fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em' }}>
                 {item.status === 'rendering'
                   ? 'Görsel üretiliyor…'
                   : item.status === 'pending'
@@ -217,6 +270,14 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
                       ? 'Üretim hatası'
                       : 'Henüz üretilmedi'}
               </span>
+              {vm.templateThumbUrl && (
+                <span style={{
+                  position: 'relative', fontSize: 8.5, fontWeight: 700,
+                  color: 'rgba(201,169,110,0.85)', letterSpacing: '0.05em',
+                }}>
+                  Marka şablonu eşleşti
+                </span>
+              )}
             </div>
           )}
 
@@ -282,7 +343,7 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
                 fontSize: 8.5, color: 'rgba(255,255,255,0.45)', fontWeight: 600,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
-                · {item.label}
+                · {vm.displayLabel}
               </span>
             </div>
             {item.headline ? (
@@ -316,7 +377,7 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
           }}>
-            {item.label}
+            {vm.displayLabel}
           </div>
 
           <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -393,19 +454,33 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
 
 type FormatFilter = 'all' | SlotFormat;
 
-export function MissionSlotShowcase({ checklist, artifacts, onOpenArtifact, t, showFormatFilters = true }: {
+export function MissionSlotShowcase({
+  checklist,
+  artifacts,
+  onOpenArtifact,
+  t,
+  showFormatFilters = true,
+  designTemplates,
+}: {
   checklist: MissionSlotChecklist | null;
   artifacts: OutputArtifact[];
   onOpenArtifact?: (artifactId: string) => void;
   t: T;
   /** Brand-level toggle — hide the Tümü/Post/Story filter chips. */
   showFormatFilters?: boolean;
+  /** Faz 5 — brand template library rows for catalog-bound slot previews. */
+  designTemplates?: SlotShowcaseTemplate[];
 }) {
   const [filter, setFilter] = useState<FormatFilter>('all');
 
+  const templateIndex = useMemo(
+    () => buildTemplateIndex(designTemplates),
+    [designTemplates],
+  );
+
   const cards = useMemo(
-    () => (checklist ? buildSlotCards(checklist, artifacts) : []),
-    [checklist, artifacts],
+    () => (checklist ? buildSlotCards(checklist, artifacts, templateIndex) : []),
+    [checklist, artifacts, templateIndex],
   );
 
   const formatCounts = useMemo(() => {

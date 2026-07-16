@@ -67,6 +67,8 @@ interface AutoProduceRequest {
   backfillSlotKeys?: string[];
   /** Factory plan-phase gallery picks keyed by `${ideaIndex}::${slot_role}`. */
   gallerySlotAssignments?: Record<string, { url: string; score?: number | null }>;
+  /** Faz 5 — persisted catalog slot bindings keyed by `${ideaIndex}:${slot_role}`. */
+  catalogSlotBindings?: Record<string, string>;
   /** New Brief form — fal.ai art-director pipelines. */
   adHocBrief?: boolean;
 }
@@ -102,6 +104,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     slotBackfillPass,
     backfillSlotKeys,
     gallerySlotAssignments,
+    catalogSlotBindings,
     adHocBrief,
   } = body;
   if (!workspaceId) {
@@ -228,36 +231,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       backfillSlotKeys: Array.isArray(backfillSlotKeys) ? backfillSlotKeys : undefined,
       calendarPlans: calendarPlans.length > 0 ? calendarPlans : undefined,
       gallerySlotAssignments: gallerySlotAssignments ?? undefined,
+      catalogSlotBindings: catalogSlotBindings ?? undefined,
       adHocBrief: adHocBrief === true,
     });
-    // #region agent log
-    try {
-      const summary = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
-      const results = Array.isArray(summary?.results) ? summary.results as Array<Record<string, unknown>> : [];
-      fetch('http://127.0.0.1:7345/ingest/99ae7570-1dee-4324-9824-f9c7b3143cc0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c5a590' },
-        body: JSON.stringify({
-          sessionId: 'c5a590',
-          hypothesisId: 'H2',
-          location: 'auto-produce/route.ts:POST',
-          message: 'auto-produce response',
-          data: {
-            missionId,
-            status: response.status,
-            produced: summary?.produced,
-            withheld: summary?.withheld,
-            rendering: summary?.rendering,
-            publishReady: summary?.publishReady,
-            slotKeys: results.map((r) => r.slotKey).filter(Boolean),
-            errors: results.filter((r) => r.error).map((r) => ({ slotKey: r.slotKey, error: String(r.error).slice(0, 120) })),
-          },
-          timestamp: Date.now(),
-          runId: 'pre-fix',
-        }),
-      }).catch(() => {});
-    } catch { /* noop */ }
-    // #endregion
     return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Auto-produce failed';

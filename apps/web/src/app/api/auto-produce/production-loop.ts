@@ -253,6 +253,7 @@ import {
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
 import {
+  applyCatalogSlotBindingsToQueue,
   enrichProductionQueueWithBrandSlots,
   loadBrandActiveSlotSet,
   stampIdeasWithBrandCatalogSlots,
@@ -429,6 +430,12 @@ export interface RunProductionParams {
   calendarPlans?: Record<string, unknown>[];
   /** Factory plan-phase gallery picks keyed by `${ideaIndex}::${slot_role}`. */
   gallerySlotAssignments?: Record<string, { url: string; score?: number | null }>;
+  /**
+   * Faz 5 — persisted production_jobs.slot_key bindings keyed by
+   * `${ideaIndex}:${slot_role}`. Hard-pins the tenant catalog slot chosen at
+   * plan time so drain passes render the exact brand template (no re-match drift).
+   */
+  catalogSlotBindings?: Record<string, string>;
   /** Internal nested calendar backfill — skip lock release (outer pass owns locks). */
   internalNestedPass?: boolean;
   /** Skip main slot loop — only post→story + calendar backfill + retries (factory completion). */
@@ -485,6 +492,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     backfillSlotKeys,
     calendarPlans = [],
     gallerySlotAssignments,
+    catalogSlotBindings,
     internalNestedPass = false,
     completionPassOnly = false,
     adHocBrief = false,
@@ -843,9 +851,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     adHocBrief,
   });
 
+  // Faz 5 — apply durable factory bindings (production_jobs.slot_key) before
+  // enrichment so the matcher treats the plan-time catalog slot as preferred.
+  const boundQueue = applyCatalogSlotBindingsToQueue(manifestQueue, catalogSlotBindings);
+
   const brandAwareQueue = brandActiveSlots
-    ? enrichProductionQueueWithBrandSlots(manifestQueue, brandActiveSlots)
-    : manifestQueue;
+    ? enrichProductionQueueWithBrandSlots(boundQueue, brandActiveSlots)
+    : boundQueue;
 
   const fullProductionQueue = brandAwareQueue;
 
@@ -4360,6 +4372,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       production_role: assignment.slot_role,
       pipeline: assignment.pipeline,
       ...(resolvedCatalogSlotKey ? { catalog_slot_key: resolvedCatalogSlotKey } : {}),
+      ...(typeof ideaRecord.catalog_slot_label === 'string' && ideaRecord.catalog_slot_label
+        ? { catalog_slot_label: ideaRecord.catalog_slot_label }
+        : {}),
       ...(resolvedProductionSlotKey ? { library_slot_key: resolvedProductionSlotKey } : {}),
       visual_policy: galleryOnlyVisual ? 'gallery_only' : 'designed',
       copy_bundle_id: assignment.copy_bundle_id,

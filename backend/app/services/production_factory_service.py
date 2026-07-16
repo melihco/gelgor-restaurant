@@ -489,6 +489,17 @@ def _gallery_assignments_from_batch(batch: list[dict[str, Any]]) -> dict[str, di
     return out
 
 
+def _catalog_bindings_from_batch(batch: list[dict[str, Any]]) -> dict[str, str]:
+    """Faz 5 — map persisted job slot_key → ``ideaIndex:slot_role`` catalog bindings."""
+    out: dict[str, str] = {}
+    for job in batch:
+        slot_key = str(job.get("slot_key") or "").strip()
+        if not slot_key:
+            continue
+        out[f"{job['idea_index']}:{job['slot_role']}"] = slot_key
+    return out
+
+
 async def drain_production_jobs(
     mission_id: uuid.UUID,
     workspace_id: uuid.UUID,
@@ -550,6 +561,7 @@ async def drain_production_jobs(
         claimed_total += len(batch)
         slot_keys = [f"{job['idea_index']}:{job['slot_role']}" for job in batch]
         gallery_slot_assignments = _gallery_assignments_from_batch(batch)
+        catalog_slot_bindings = _catalog_bindings_from_batch(batch)
 
         # ── BullMQ executor: enqueue claimed batch, leave jobs 'running' ─────
         # The Next.js worker executes the pipeline and calls back to mark each
@@ -573,6 +585,7 @@ async def drain_production_jobs(
                     enqueue_only=True,
                     factory_jobs=factory_jobs,
                     gallery_slot_assignments=gallery_slot_assignments or None,
+                    catalog_slot_bindings=catalog_slot_bindings or None,
                     enqueue_priority=batch_priority or None,
                 )
             except Exception as exc:
@@ -615,6 +628,7 @@ async def drain_production_jobs(
                 feed_director_report=fd_report,
                 backfill_slot_keys=slot_keys,
                 gallery_slot_assignments=gallery_slot_assignments or None,
+                catalog_slot_bindings=catalog_slot_bindings or None,
             )
         except Exception as exc:
             for job in batch:

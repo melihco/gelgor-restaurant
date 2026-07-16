@@ -70,6 +70,10 @@ export interface MissionProductionJobSlot {
   maxAttempts: number;
   artifactId: string | null;
   lastError: string | null;
+  /** Faz 5 — tenant catalog slot binding (production_slot_definitions.slot_key). */
+  catalogSlotKey?: string | null;
+  /** Brand-facing catalog label (label_tr) resolved at plan time. */
+  catalogSlotLabel?: string | null;
 }
 
 export interface MissionProductionJobsSummary {

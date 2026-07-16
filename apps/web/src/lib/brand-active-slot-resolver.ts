@@ -421,6 +421,28 @@ export function applyCatalogSlotToAssignment(
 }
 
 /**
+ * Faz 5 — apply persisted production_jobs.slot_key bindings to a manifest queue.
+ * Keys are `${ideaIndex}:${slot_role}`; bound items get the catalog key pinned on
+ * both the idea and the assignment so the matcher honors it as preferred (a drain
+ * pass then renders the exact template chosen at plan time — no re-match drift).
+ */
+export function applyCatalogSlotBindingsToQueue(
+  queue: ManifestProductionQueueItem[],
+  bindings: Record<string, string> | null | undefined,
+): ManifestProductionQueueItem[] {
+  if (!bindings || Object.keys(bindings).length === 0) return queue;
+  return queue.map((item) => {
+    const bound = bindings[`${item.ideaIndex}:${item.assignment.slot_role}`];
+    if (!bound) return item;
+    return {
+      ...item,
+      idea: { ...item.idea, catalog_slot_key: bound },
+      assignment: { ...item.assignment, catalog_slot_key: bound },
+    };
+  });
+}
+
+/**
  * Attach catalog_slot_key to each queue item.
  * Prefer unique enabled slots first; when the brand has fewer slots than ideas,
  * reuse the best-matching slot rather than dropping content-scoped rows.

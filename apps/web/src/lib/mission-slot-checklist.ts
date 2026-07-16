@@ -50,6 +50,18 @@ export interface MissionSlotChecklistItem {
   engineColor?: string;
   /** True when this slot role is eligible for Satori local typography */
   satoriEligible?: boolean;
+  /** Faz 5 — tenant catalog slot binding (production_slot_definitions.slot_key). */
+  catalogSlotKey?: string | null;
+  /** Brand-facing catalog label (label_tr) — preferred over the role label in UI. */
+  catalogSlotLabel?: string | null;
+}
+
+/** Minimal factory job slot shape consumed for catalog enrichment (API summary rows). */
+export interface FactoryJobSlotLike {
+  ideaIndex: number;
+  slotRole: string;
+  catalogSlotKey?: string | null;
+  catalogSlotLabel?: string | null;
 }
 
 export interface MissionSlotChecklist {
@@ -69,14 +81,14 @@ export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   designed_post: 'Hero tasarım post',
   designed_typography: 'Tipografi post',
   fal_designed_post: 'Tasarım post',
-  fal_only_story: 'fal.ai sinematik reel (legacy)',
+  fal_only_story: 'fal.ai sinematik story',
   fal_only_post: 'fal.ai editorial post',
   fal_only_reel: 'fal.ai sinematik reel',
   organic_story_still: 'Story (galeri)',
   campaign_story_motion: 'Kampanya story',
   organic_reel: 'Organik reel',
   campaign_reel_motion: 'Kampanya reel',
-  fal_story_motion: 'fal.ai designer reel (legacy)',
+  fal_story_motion: 'fal.ai designer story',
   fal_reel_motion: 'fal.ai designer reel',
   organic_carousel: 'Carousel',
   paid_ad_creative: 'Meta reklam kreatifi',
@@ -148,6 +160,7 @@ function parseFdAssignments(raw: unknown): ProductionAssignment[] {
       publish_channel: (a.publish_channel as ProductionAssignment['publish_channel']) ?? 'instagram_organic',
       layout_family_hint: a.layout_family_hint as string | undefined,
       library_slot_key: a.library_slot_key as string | undefined,
+      catalog_slot_key: a.catalog_slot_key as string | undefined,
       rationale: a.rationale as string | undefined,
     }))
     .filter((a) => Boolean(a.slot_role));
@@ -293,11 +306,35 @@ export function buildMissionSlotChecklist(input: {
   missionInFlight?: boolean;
   /** Operator UI — teknik enhance etiketleri */
   debugMode?: boolean;
+  /** Faz 5 — durable factory rows carrying persisted catalog slot bindings. */
+  factorySlots?: FactoryJobSlotLike[];
 }): MissionSlotChecklist {
   const debugMode = Boolean(input.debugMode);
   const assignments = Array.isArray(input.assignments)
     ? (input.assignments as ProductionAssignment[])
     : parseFdAssignments(input.assignments);
+
+  const factoryByKey = new Map<string, FactoryJobSlotLike>();
+  for (const row of input.factorySlots ?? []) {
+    if (row.catalogSlotKey || row.catalogSlotLabel) {
+      factoryByKey.set(`${row.ideaIndex}:${row.slotRole}`, row);
+    }
+  }
+  const resolveCatalogBinding = (
+    ideaIndex: number | null,
+    role: ProductionSlotRole,
+    assignment: ProductionAssignment | null,
+    artifactMeta: Record<string, unknown>,
+  ): Pick<MissionSlotChecklistItem, 'catalogSlotKey' | 'catalogSlotLabel'> => {
+    const factory = ideaIndex != null ? factoryByKey.get(`${ideaIndex}:${role}`) : undefined;
+    const key = factory?.catalogSlotKey
+      ?? assignment?.catalog_slot_key
+      ?? (typeof artifactMeta.catalog_slot_key === 'string' ? artifactMeta.catalog_slot_key : null);
+    const label = factory?.catalogSlotLabel
+      ?? (typeof artifactMeta.catalog_slot_label === 'string' ? artifactMeta.catalog_slot_label : null);
+    if (!key && !label) return {};
+    return { catalogSlotKey: key ?? null, catalogSlotLabel: label ?? null };
+  };
 
   const manifestType = inferManifestMissionType({
     missionType: input.missionType,
@@ -342,10 +379,11 @@ export function buildMissionSlotChecklist(input: {
         meta.headline || content.headline || artifact?.title || '',
       ).trim() || null;
       const productionBadge = engineChipFromArtifact(artifact);
+      const ideaIndex = typeof assignment.idea_index === 'number' ? assignment.idea_index : null;
 
       items.push({
         assignmentIndex,
-        ideaIndex: typeof assignment.idea_index === 'number' ? assignment.idea_index : null,
+        ideaIndex,
         role: assignment.slot_role,
         pipeline: assignment.pipeline,
         label: SLOT_ROLE_LABEL_TR[assignment.slot_role] ?? assignment.slot_role,
@@ -354,6 +392,7 @@ export function buildMissionSlotChecklist(input: {
         artifactId: artifact?.id ?? null,
         headline,
         satoriEligible: isSatoriEligibleSlotRole(assignment.slot_role),
+        ...resolveCatalogBinding(ideaIndex, assignment.slot_role, assignment, meta),
         ...productionBadge,
         ...resolveAiEnhanceFromArtifact(artifact, debugMode),
       });
@@ -396,6 +435,7 @@ export function buildMissionSlotChecklist(input: {
         ? resolveArtifactSlotStatus(artifact, slot.role)
         : (input.missionInFlight ? 'pending' : 'missing');
       const productionBadge = engineChipFromArtifact(artifact);
+      const artifactMeta = parseArtifactMetadata(artifact?.metadata);
       items.push({
         assignmentIndex: items.length,
         ideaIndex: null,
@@ -407,6 +447,7 @@ export function buildMissionSlotChecklist(input: {
         artifactId: artifact?.id ?? null,
         headline: artifact?.title ?? null,
         satoriEligible: isSatoriEligibleSlotRole(slot.role),
+        ...resolveCatalogBinding(null, slot.role, null, artifactMeta),
         ...productionBadge,
       });
     }
