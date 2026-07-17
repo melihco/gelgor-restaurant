@@ -128,7 +128,7 @@ export function buildBrandHubNavItems(input: {
     {
       key: 'identity',
       target: 'identity',
-      label: 'Kimlik',
+      label: 'Marka Profili',
       accent: SA_STUDIO_ACCENTS.identity,
       status: input.constitutionConfirmedAt ? 'done' : 'warn',
       completion: input.constitutionConfirmedAt ? 1 : 0.42,
@@ -164,14 +164,6 @@ export function buildBrandHubNavItems(input: {
       accent: SA_STUDIO_ACCENTS.chatbot,
       status: input.hasChatbot ? 'done' : 'neutral',
       completion: input.hasChatbot ? 1 : 0.18,
-    },
-    {
-      key: 'channels',
-      target: 'identity',
-      label: 'Kanallar',
-      accent: SA_STUDIO_ACCENTS.channels,
-      status: input.channelsConnected ? 'done' : 'warn',
-      completion: input.channelsConnected ? 1 : 0.38,
     },
   ];
 }
@@ -393,9 +385,16 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      <div className="brand-hub-grid" style={{
-        display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 12,
-      }}
+      <div
+        className="brand-hub-list"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          width: '70%',
+          maxWidth: 280,
+          margin: '0 auto 12px',
+        }}
       >
         {navItems.map((item) => {
           const barColor = item.status === 'done' ? item.accent : item.status === 'warn' ? '#F59E0B' : t.textMuted;
@@ -404,48 +403,83 @@ export function BrandHubDashboard({
               key={item.key}
               type="button"
               className="brand-hub-tile sa-chrome-card"
-              onClick={() => {
-                if (item.key === 'channels') {
-                  onOpenSection('identity', { identityGroup: 'channels' });
-                } else {
-                  onOpenSection(item.target);
-                }
-              }}
+              onClick={() => onOpenSection(item.target)}
               style={{
-                position: 'relative', minHeight: 118, padding: '16px 14px 14px', borderRadius: 20,
-                cursor: 'pointer', textAlign: 'left', overflow: 'hidden',
+                position: 'relative',
+                width: '100%',
+                minHeight: 64,
+                padding: '12px 14px',
+                borderRadius: 16,
+                cursor: 'pointer',
+                textAlign: 'left',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
               }}
             >
-              <div style={{
-                position: 'absolute', right: -18, top: -18, width: 72, height: 72, borderRadius: '50%',
-                background: item.accent, opacity: t.isDark ? 0.12 : 0.08, filter: 'blur(2px)', pointerEvents: 'none',
-              }} />
-              <div style={{
-                width: 48, height: 48, borderRadius: 15, marginBottom: 20,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: t.isDark ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.72)',
-                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
-              }}
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  top: -20,
+                  left: -20,
+                  width: 64,
+                  height: 64,
+                  borderRadius: '50%',
+                  background: item.accent,
+                  opacity: t.isDark ? 0.14 : 0.09,
+                  filter: 'blur(14px)',
+                  pointerEvents: 'none',
+                }}
+              />
+              <div
+                style={{
+                  position: 'relative',
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: `linear-gradient(135deg, ${item.accent}2e, ${item.accent}14)`,
+                  border: `0.5px solid ${item.accent}3d`,
+                }}
               >
-                <SectionIcon name={item.key} color={item.accent} size={26} />
+                <SectionIcon name={item.key} color={item.accent} size={22} />
               </div>
-              <div style={{
-                fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.15,
-              }}
-              >
-                {item.label}
-              </div>
-              <div style={{
-                position: 'absolute', left: 14, right: 14, bottom: 12, height: 2.5, borderRadius: 999,
-                background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)', overflow: 'hidden',
-              }}
-              >
+              <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
                 <div style={{
-                  width: `${Math.max(8, item.completion * 100)}%`, height: '100%', borderRadius: 999,
-                  background: barColor, opacity: item.status === 'neutral' ? 0.45 : 0.95,
-                  boxShadow: item.status === 'done' ? `0 0 10px ${item.accent}55` : 'none',
-                }} />
+                  fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', lineHeight: 1.2,
+                }}
+                >
+                  {item.label}
+                </div>
+                <div style={{
+                  marginTop: 6, height: 2.5, borderRadius: 999, overflow: 'hidden',
+                  background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+                }}
+                >
+                  <div style={{
+                    width: `${Math.max(8, item.completion * 100)}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    background: barColor,
+                    opacity: item.status === 'neutral' ? 0.45 : 0.95,
+                  }}
+                  />
+                </div>
               </div>
+              <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}>
+                <path
+                  d="M1.5 1.5 7.5 7.5l-6 6"
+                  stroke={t.textTertiary}
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
           );
         })}
