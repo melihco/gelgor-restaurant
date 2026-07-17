@@ -455,7 +455,7 @@ describe('catalog key ↔ role/pipeline alignment', () => {
         slot_role: 'fal_only_story',
         pipeline: 'fal_story',
         copy_bundle_id: 'week',
-        publish_channel: 'instagram_story',
+        publish_channel: 'instagram_organic',
       },
       activeSlots: activeSet,
       usedSlotKeys: new Set([story.slot_key]),
