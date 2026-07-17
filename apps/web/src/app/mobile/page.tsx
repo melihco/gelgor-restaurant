@@ -359,12 +359,9 @@ const CSS = `
     animation: laserCoreFloat 6.4s ease-in-out infinite, splashLogoIn 820ms cubic-bezier(0.16,1,0.3,1) both;
   }
 
-  .sa-mobile .brand-loader-breathe {
-    animation: brandLoaderBreathe 3.2s ease-in-out infinite;
-  }
-  @keyframes brandLoaderBreathe {
-    0%, 100% { opacity: 0.94; transform: scale(0.992); }
-    50% { opacity: 1; transform: scale(1.01); }
+  /* Splash / loading: logo scales in only — no orbit chrome */
+  .sa-mobile .brand-loader-entrance {
+    animation: splashLogoIn 820ms cubic-bezier(0.16,1,0.3,1) both;
   }
 
   .sa-mobile .brand-loader-logo {

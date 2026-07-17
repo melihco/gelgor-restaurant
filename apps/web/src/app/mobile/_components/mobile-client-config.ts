@@ -225,7 +225,7 @@ export function buildMoreMenuGroups(opts: {
           badge: notifBadge,
           badgeKind: 'count',
         },
-        { label: 'Kullanım & Plan', sub: 'Kredi ve aylık kullanım', iconBg: '#9DBECE', iconText: '◇', screen: 'billing' },
+        { label: 'Kullanım & Plan', sub: 'Kredi, plan ve ödeme', iconBg: '#9DBECE', iconText: '◇', screen: 'billing' },
       ],
     },
   ];

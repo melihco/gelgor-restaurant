@@ -3,10 +3,9 @@
 import type React from 'react';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { useTheme } from './theme-context';
-import { BrandLaserShow } from './BrandLaserShow';
 
 /**
- * App open / route splash — diamond-orbit stage + platinum logo entrance.
+ * App open / route splash — clean logo entrance (scale up), no orbit chrome.
  */
 export function BrandLoadingScreen({
   fillViewport = true,
@@ -46,16 +45,14 @@ export function BrandLoadingScreen({
         overflow: 'hidden',
       }}
     >
-      <BrandLaserShow size={compact ? 'sm' : 'md'}>
-        <div className="brand-loader-breathe">
-          <SmartAgencyLogo
-            variant={compact ? 'mark' : 'full'}
-            priority={!compact}
-            framed={compact}
-            className={`brand-loader-logo block h-auto${compact ? ' brand-loader-logo--sm' : ''}`}
-          />
-        </div>
-      </BrandLaserShow>
+      <div className="brand-loader-entrance">
+        <SmartAgencyLogo
+          variant={compact ? 'mark' : 'full'}
+          priority={!compact}
+          framed={compact}
+          className={`brand-loader-logo block h-auto${compact ? ' brand-loader-logo--sm' : ''}`}
+        />
+      </div>
       {showLabel && label ? (
         <span
           className="sa-chrome-eyebrow"

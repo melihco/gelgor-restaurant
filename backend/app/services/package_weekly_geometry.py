@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+# Live mix: ~10 organic + 1 reel (idea_count production). Keep in sync with
+# apps/web/src/lib/package-weekly-geometry.ts
 STARTER_WEEKLY_GEOMETRY: dict[str, int] = {
     "post": 4,
-    "story": 3,
+    "story": 5,
     "carousel": 1,
-    "reel": 4,
-    "total": 12,
+    "reel": 1,
+    "total": 11,
 }
 
 AGENCY_WEEKLY_GEOMETRY: dict[str, int] = {
-    "post": 6,
-    "story": 3,
+    "post": 4,
+    "story": 5,
     "carousel": 1,
-    "reel": 6,
-    "total": 16,
+    "reel": 1,
+    "total": 11,
 }
 
 
@@ -35,11 +37,18 @@ def resolve_weekly_package_geometry(package_slug: str | None = None) -> dict[str
 
 
 def resolve_content_ideation_iterations(package_slug: str | None = None) -> int:
-    return 1 if is_starter_plan_slug(package_slug) else 2
+    """
+    Ideation A/B passes. Default 1 for all plans (cost-safe).
+    Opt into 2 only via CREWAI_CONTENT_ITERATIONS=2 — package slug no longer forces 2×.
+    """
+    from app.config import get_settings
+
+    configured = max(1, min(2, int(get_settings().crewai_content_iterations)))
+    return configured
 
 
 def resolve_content_ideation_agent_timeout_seconds(count: int) -> int:
-    """Per kickoff() run — scales with weekly slot count (16-slot agency needs >180s)."""
+    """Per kickoff() run — scales with weekly slot count."""
     from app.config import get_settings
 
     settings = get_settings()

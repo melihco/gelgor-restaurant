@@ -163,20 +163,15 @@ export interface MissionProductionManifest {
 }
 
 /**
- * Standard weekly mission deliverable: 16 generated slots (see WEEKLY_ORGANIC).
- *
- * Post mix (6): 2 organic gallery + designed_post (fal hero) + designed_typography
- * + fal_designed_post (Satori-eligible) + 1 fal_only_post.
- * Story (8): fal_story posters (template GPT replica when hard/soft match; Satori only if no library template) + organic still + fal_only_story.
- * Reel (1): fal designer video (Kling I2V). Carousel (1): gallery.
- * Remotion is no longer on the render path — remotion_* pipelines normalize to fal.
+ * Default weekly mission mix when package geometry is unavailable.
+ * Aligned with live idea_count production: ~10 organic + 1 reel.
  */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
-  story: 7,
-  post: 6,
+  story: 5,
+  post: 4,
   carousel: 1,
-  reel: 2,
-  total: 16,
+  reel: 1,
+  total: 11,
 } as const;
 
 export type PackageGeometry = {
@@ -189,7 +184,7 @@ export type PackageGeometry = {
 
 /**
  * Resolve package geometry from brand theme overrides or plan tier.
- * Falls back to the default 16-slot weekly package (6 post · 3 story · 1 carousel · 6 reel).
+ * Falls back to the default ~11-slot weekly package (4 post · 5 story · 1 carousel · 1 reel).
  */
 export function resolvePackageGeometry(
   brandOverride?: Partial<PackageGeometry> | null,
@@ -431,7 +426,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
 ];
 
-/** Starter weekly organic — 4 post · 3 story · 1 carousel · 4 reel (12 slots). */
+/** Live mix — 4 post · 5 story · 1 carousel · 1 reel (11 slots). */
 const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   {
     role: 'organic_post',
@@ -512,14 +507,6 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
     captionSurface: 'visual_only',
     required: true,
     intentHint: 'product_highlight',
-  },
-  {
-    role: 'fal_story_motion',
-    pipeline: 'fal_story',
-    format: 'story',
-    captionSurface: 'visual_only',
-    required: true,
-    intentHint: 'behind_the_scenes',
   },
   {
     role: 'organic_reel',

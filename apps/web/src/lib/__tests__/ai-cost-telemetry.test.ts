@@ -116,4 +116,17 @@ describe('Faz 1.4 — designed_post enhance skip flag', () => {
     const input = baseInput({ skipEnhanceForDesignedGrade: true, referenceIsStock: true });
     expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
   });
+
+  it('strong gallery still skips enhance when adaptiveScene is on', () => {
+    const input = baseInput({
+      designedPostPhotoEnhance: false,
+      assignment: { pipeline: 'gallery_photo', slot_role: 'organic_post' } as GptEnhancePolicyInput['assignment'],
+      visualStandard: {
+        ...visualStandard,
+        adaptiveScene: true,
+      },
+    });
+    expect(resolveGptEnhanceSkipReason(input)).toBe('gallery_match_ok');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
+  });
 });

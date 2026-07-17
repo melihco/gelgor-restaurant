@@ -8,7 +8,7 @@ import {
   formatOutputLimit,
   formatPlanMonthlyPrice,
   getPlanSpec,
-  PACKAGE_PLAN_TIERS,
+  SELLABLE_PACKAGE_PLAN_TIERS,
   PLAN_API_UNIT_COSTS,
   type PlanSpec,
 } from '@/lib/package-plan-config';
@@ -140,7 +140,7 @@ export function PlanUsagePanel({
           Paketler
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {PACKAGE_PLAN_TIERS.map((tier) => {
+          {SELLABLE_PACKAGE_PLAN_TIERS.map((tier) => {
             const active = tier.slug === slug;
             return (
               <div

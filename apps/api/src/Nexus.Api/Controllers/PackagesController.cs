@@ -12,15 +12,18 @@ public class PackagesController : ControllerBase
     private readonly IPackageService _packageService;
     private readonly IUsageQuotaService _usageQuotaService;
     private readonly IRequestContext _requestContext;
+    private readonly IConfiguration _configuration;
 
     public PackagesController(
         IPackageService packageService,
         IUsageQuotaService usageQuotaService,
-        IRequestContext requestContext)
+        IRequestContext requestContext,
+        IConfiguration configuration)
     {
         _packageService = packageService;
         _usageQuotaService = usageQuotaService;
         _requestContext = requestContext;
+        _configuration = configuration;
     }
 
     [HttpGet]
@@ -78,5 +81,36 @@ public class PackagesController : ControllerBase
     {
         var subscription = await _packageService.SelectPackageAsync(_requestContext.TenantId, request, cancellationToken);
         return Ok(subscription);
+    }
+
+    /// <summary>
+    /// PayTR (or other PSP) server callback fulfillment. Requires X-Internal-Api-Key.
+    /// </summary>
+    [HttpPost("activate-paid")]
+    public async Task<ActionResult<TenantSubscriptionDto>> ActivatePaid(
+        [FromBody] ActivatePaidPackageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsTrustedInternalRequest())
+            return Unauthorized(new { error = "internal_key_required" });
+
+        if (request.TenantId == Guid.Empty)
+            return BadRequest(new { error = "tenant_id_required" });
+
+        var subscription = await _packageService.ActivatePaidPackageAsync(request, cancellationToken);
+        return Ok(subscription);
+    }
+
+    private bool IsTrustedInternalRequest()
+    {
+        var configured = Environment.GetEnvironmentVariable("INTERNAL_API_KEY");
+        if (string.IsNullOrWhiteSpace(configured))
+            configured = _configuration["OrchestrationService:ApiKey"];
+        if (string.IsNullOrWhiteSpace(configured))
+            configured = "smartagency-internal-dev-key";
+
+        var provided = Request.Headers["X-Internal-Api-Key"].FirstOrDefault()?.Trim();
+        return !string.IsNullOrEmpty(provided)
+            && string.Equals(provided, configured.Trim(), StringComparison.Ordinal);
     }
 }

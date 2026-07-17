@@ -103,26 +103,24 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
     return 'fal_story';
   }
 
-  const adaptiveScene = input.visualStandard.adaptiveScene;
+  // Strong brand-gallery match: skip GPT enhance (~$0.21) even when adaptiveScene
+  // is on — rewriting a good venue photo rarely improves organic stills.
+  if (
+    input.pickedFromBrandGallery
+    && input.galleryMatchScore != null
+    && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
+    && (pipeline === 'gallery_photo' || pipeline === 'story_still')
+  ) {
+    return 'gallery_match_ok';
+  }
 
-  if (!adaptiveScene) {
-    if (
-      input.pickedFromBrandGallery
-      && input.galleryMatchScore != null
-      && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
-      && (pipeline === 'gallery_photo' || pipeline === 'story_still')
-    ) {
-      return 'gallery_match_ok';
-    }
-
-    if (
-      input.pickedFromBrandGallery
-      && input.galleryMatchScore != null
-      && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
-      && pipeline === 'carousel_gallery'
-    ) {
-      return 'gallery_match_ok';
-    }
+  if (
+    input.pickedFromBrandGallery
+    && input.galleryMatchScore != null
+    && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
+    && pipeline === 'carousel_gallery'
+  ) {
+    return 'gallery_match_ok';
   }
 
   return null;
@@ -171,26 +169,22 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
     if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return false;
   }
 
-  const adaptiveScene = input.visualStandard.adaptiveScene;
+  if (
+    input.pickedFromBrandGallery
+    && input.galleryMatchScore != null
+    && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
+    && (pipeline === 'gallery_photo' || pipeline === 'story_still')
+  ) {
+    return false;
+  }
 
-  if (!adaptiveScene) {
-    if (
-      input.pickedFromBrandGallery
-      && input.galleryMatchScore != null
-      && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
-      && (pipeline === 'gallery_photo' || pipeline === 'story_still')
-    ) {
-      return false;
-    }
-
-    if (
-      input.pickedFromBrandGallery
-      && input.galleryMatchScore != null
-      && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
-      && pipeline === 'carousel_gallery'
-    ) {
-      return false;
-    }
+  if (
+    input.pickedFromBrandGallery
+    && input.galleryMatchScore != null
+    && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
+    && pipeline === 'carousel_gallery'
+  ) {
+    return false;
   }
 
   return true;

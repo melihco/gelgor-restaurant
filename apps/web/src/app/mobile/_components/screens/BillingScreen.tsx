@@ -1,14 +1,12 @@
 'use client';
+
 /**
- * BillingScreen — Kullandığın Kadar Öde (Token Wallet)
- *
- * Plan/abonelik mantığı kaldırıldı. Ekran artık yalnızca:
- *  1. Token cüzdanı (bakiye, harcama, yükleme)
- *  2. Son 30 günlük gerçek AI kullanım özeti
- *  3. Kredi yükleme (her pakete tıklayınca ne kapsadığını gösteren modal)
+ * Kullanım & Plan — lean customer billing.
+ * Real data: token wallet (Python) + usage quota / subscription (.NET).
+ * Checkout: PayTR iFrame when PAYTR_* env credentials are set.
  */
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -18,291 +16,85 @@ import { TokenWalletCard } from '../TokenWalletCard';
 import { ClientCreditSummary } from '../ClientCreditSummary';
 import { AiCostBreakdownCard } from '../AiCostBreakdownCard';
 import { PlanUsagePanel } from '../PlanUsagePanel';
+import { PaytrCheckoutSheet } from '../PaytrCheckoutSheet';
 import { isDebugUiMode } from '../mobile-client-config';
-import { estimateRemainingPosts } from '@/lib/mobile-customer-copy';
+import {
+  formatOutputLimit,
+  getPlanSpec,
+  SELLABLE_PACKAGE_PLAN_TIERS,
+  type PlanSpec,
+} from '@/lib/package-plan-config';
 import type { T } from '../theme-context';
 
-// ── Kredi Paket Tanımları ──────────────────────────────────────────────
+const PLAN_LABEL_TR: Record<string, string> = {
+  starter: 'Başlangıç',
+  growth: 'Büyüme',
+  performance: 'Pro', // legacy — not sellable
+  executive: 'Executive',
+};
 
-interface CreditPack {
-  id: string;
-  credits: number;
-  price: number;
-  label: string;
-  note: string;
-  popular?: boolean;
-  // Her bir AI işlemi için tahmini kullanım
-  breakdown: Array<{ action: string; creditsEach: number; qty: number }>;
-  highlights: string[];
+function planLabel(plan: PlanSpec): string {
+  return PLAN_LABEL_TR[plan.slug] ?? plan.name;
 }
 
-const CREDIT_PACKS: CreditPack[] = [
-  {
-    id: 'pack_500',
-    credits: 5000,
-    price: 4992,
-    label: 'Başlangıç',
-    note: '~14 misyon',
-    breakdown: [
-      { action: 'Misyon stratejisi',                    creditsEach: 60, qty: 14 },
-      { action: 'İçerik ideasyonu',                     creditsEach: 90, qty: 14 },
-      { action: '16-slot mission üretimi',             creditsEach: 130, qty: 14 },
-      { action: 'Meta + Google reklam türevi',         creditsEach: 40, qty: 14 },
-      { action: 'Galeri analizi (foto başına)',        creditsEach: 13, qty: 40 },
-    ],
-    highlights: [
-      '14 tam misyon döngüsü / ay',
-      '168 organik içerik + 56 reel',
-      '14 Meta Ads + 14 Google Ads kreatifi',
-      '40 galeri analizi + sınırsız caption',
-    ],
-  },
-  {
-    id: 'pack_2000',
-    credits: 15000,
-    price: 9984,
-    label: 'Standart',
-    note: '~28 misyon',
-    popular: true,
-    breakdown: [
-      { action: 'Misyon stratejisi',                    creditsEach: 70, qty: 28 },
-      { action: 'İçerik ideasyonu',                     creditsEach: 100, qty: 28 },
-      { action: '16-slot mission üretimi',             creditsEach: 220, qty: 28 },
-      { action: 'Meta + Google reklam türevi',         creditsEach: 50, qty: 28 },
-      { action: 'Galeri analizi (foto başına)',        creditsEach: 22, qty: 120 },
-    ],
-    highlights: [
-      '28 tam misyon döngüsü',
-      '336 organik içerik + 112 reel',
-      '28 Meta Ads + 28 Google Ads kreatifi',
-      '120 fotoğraf galeri analizi',
-      'Ajans kullanımına uygun büyüme paketi',
-    ],
-  },
-  {
-    id: 'pack_5000',
-    credits: 40000,
-    price: 23008,
-    label: 'Pro',
-    note: '~65 misyon',
-    breakdown: [
-      { action: 'Misyon stratejisi',                    creditsEach: 80, qty: 65 },
-      { action: 'İçerik ideasyonu',                     creditsEach: 110, qty: 65 },
-      { action: '16-slot mission üretimi',             creditsEach: 340, qty: 65 },
-      { action: 'Meta + Google reklam türevi',         creditsEach: 60, qty: 65 },
-      { action: 'Galeri analizi (foto başına)',        creditsEach: 7, qty: 250 },
-    ],
-    highlights: [
-      '65 tam misyon döngüsü',
-      '780 organik içerik + 260 reel',
-      '65 Meta Ads + 65 Google Ads kreatifi',
-      '250 fotoğraf galeri analizi',
-      'Yoğun ajans operasyonu için yüksek hacim',
-    ],
-  },
-];
-
-// ── Pack Detail Modal ─────────────────────────────────────────────────
-
-function PackDetailModal({
-  pack,
-  t,
-  onClose,
-  onBuy,
-  purchaseEnabled,
-}: {
-  pack: CreditPack;
-  t: T;
-  onClose: () => void;
-  onBuy: () => void;
-  purchaseEnabled: boolean;
-}) {
-  const totalEstimate = pack.breakdown.reduce(
-    (s, b) => s + b.creditsEach * b.qty, 0,
-  );
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'flex-end',
-        padding: '0',
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          width: '100%', maxHeight: '88dvh',
-          background: t.isDark ? '#0D121B' : '#fff',
-          borderRadius: '24px 24px 0 0',
-          border: `0.5px solid ${t.isDark ? 'rgba(176,196,212,0.14)' : 'rgba(30,63,85,0.10)'}`,
-          borderBottom: 'none',
-          boxShadow: t.isDark
-            ? 'inset 0 1px 0 rgba(238,243,247,0.06), 0 -16px 48px rgba(0,0,0,0.5)'
-            : '0 -16px 48px rgba(15,37,53,0.14)',
-          overflow: 'hidden',
-          display: 'flex', flexDirection: 'column',
-        }}
-      >
-        {/* Pull handle */}
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0' }}>
-          <div style={{ width: 40, height: 4, borderRadius: 2,
-            background: t.isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)' }} />
-        </div>
-
-        {/* Header */}
-        <div style={{ padding: '14px 20px 12px', borderBottom: `0.5px solid ${t.separator}`,
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary,
-                letterSpacing: '-0.02em' }}>{pack.label}</span>
-              {pack.popular && (
-                <span style={{ fontSize: 9, fontWeight: 800, padding: '3px 8px',
-                  borderRadius: 20, background: t.accent, color: '#fff',
-                  letterSpacing: '0.05em' }}>POPÜLER</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-              <span className="sa-chrome-text" style={{ fontSize: 28, fontWeight: 800,
-                letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>
-                ₺{pack.price.toLocaleString('tr-TR')}
-              </span>
-              <span style={{ fontSize: 13, color: t.textMuted }}>
-                = {pack.credits.toLocaleString('tr-TR')} kredi
-              </span>
-            </div>
-          </div>
-          <button onClick={onClose} style={{
-            width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
-            background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: t.textSecondary, fontSize: 16, fontWeight: 300,
-          }}>✕</button>
-        </div>
-
-        {/* Scrollable body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex',
-          flexDirection: 'column', gap: 18 }}>
-
-          {/* Neler yapabilirsiniz */}
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
-              letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
-              Neler Yapabilirsiniz
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {pack.highlights.map((h, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                    background: `${t.accent}20`, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', marginTop: 1 }}>
-                    <span style={{ color: t.accent, fontSize: 9, fontWeight: 800 }}>✓</span>
-                  </div>
-                  <span style={{ fontSize: 14, color: t.textPrimary, lineHeight: 1.45 }}>{h}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Kredi dağılımı */}
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: t.labelColor,
-              letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
-              Tahmini Kredi Dağılımı
-            </div>
-            <div style={{ borderRadius: 14, overflow: 'hidden',
-              border: `0.5px solid ${t.separator}` }}>
-              {pack.breakdown.map((b, i) => {
-                const subtotal = b.creditsEach * b.qty;
-                const pct = Math.round((subtotal / totalEstimate) * 100);
-                return (
-                  <div key={i} style={{
-                    padding: '12px 14px',
-                    background: i % 2 === 0
-                      ? (t.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)')
-                      : 'transparent',
-                    borderBottom: i < pack.breakdown.length - 1 ? `0.5px solid ${t.separator}` : 'none',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between',
-                      alignItems: 'center', marginBottom: 5 }}>
-                      <span style={{ fontSize: 12, color: t.textSecondary, flex: 1,
-                        paddingRight: 8, lineHeight: 1.3 }}>{b.action}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: t.textPrimary,
-                        fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-                        ~{Math.round(subtotal).toLocaleString('tr-TR')} kr
-                      </span>
-                    </div>
-                    {/* mini progress bar */}
-                    <div style={{ height: 3, borderRadius: 2,
-                      background: t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)' }}>
-                      <div style={{ height: '100%', borderRadius: 2,
-                        width: `${pct}%`, background: t.accent, opacity: 0.6 }} />
-                    </div>
-                    <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3 }}>
-                      {b.qty}× {b.creditsEach < 1 ? b.creditsEach.toFixed(1) : Math.round(b.creditsEach)} kredi
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 11, color: t.textMuted, lineHeight: 1.5 }}>
-              Gerçek kullanım içerik türü ve galeri boyutuna göre değişebilir.
-              Kalan krediler bir sonraki yüklemede birikerek devam eder.
-            </div>
-          </div>
-        </div>
-
-        {/* Buy button */}
-        <div style={{
-          padding: '12px 20px', paddingBottom: 'max(20px,env(safe-area-inset-bottom,20px))',
-          borderTop: `0.5px solid ${t.separator}`,
-          background: t.isDark ? '#0D121B' : '#fff',
-        }}>
-          <button
-            onClick={purchaseEnabled ? onBuy : undefined}
-            disabled={!purchaseEnabled}
-            style={{
-              width: '100%', padding: '16px',
-              borderRadius: 16, border: 'none',
-              cursor: purchaseEnabled ? 'pointer' : 'not-allowed',
-              fontSize: 15, fontWeight: 800, letterSpacing: '-0.01em',
-              background: purchaseEnabled
-                ? t.gradientAccent
-                : (t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
-              color: purchaseEnabled ? '#fff' : t.textMuted,
-              opacity: purchaseEnabled ? 1 : 0.85,
-              boxShadow: purchaseEnabled
-                ? 'inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 24px rgba(77,112,136,0.35)'
-                : 'none',
-            }}
-          >
-            {purchaseEnabled
-              ? `${pack.credits.toLocaleString('tr-TR')} Kredi Yükle — ₺${pack.price.toLocaleString('tr-TR')}`
-              : 'Online yükleme yakında — destek ekibimizle iletişime geçin'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function planOneLiner(plan: PlanSpec): string {
+  const missions = formatOutputLimit(plan.outputs.missions);
+  const content = formatOutputLimit(plan.outputs.socialContent);
+  const reels = formatOutputLimit(plan.outputs.reels);
+  return `${missions} misyon · ~${content} içerik + ${reels} reel / ay`;
 }
-
-// ── Ana Ekran ─────────────────────────────────────────────────────────
 
 export function BillingScreen() {
   const { t } = useTheme();
-  const { goBack } = useMobileStore();
+  const { goBack, navigate } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const debugMode = isDebugUiMode();
-  const purchaseEnabled = debugMode && process.env.NEXT_PUBLIC_CREDIT_PURCHASE_ENABLED === 'true';
-  const [modalPack, setModalPack] = useState<CreditPack | null>(null);
+  const queryClient = useQueryClient();
+
+  const [selected, setSelected] = useState<PlanSpec | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [iframeToken, setIframeToken] = useState<string | null>(null);
+  const [banner, setBanner] = useState<'ok' | 'fail' | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const billing = params.get('billing');
+    if (billing === 'ok' || billing === 'fail') {
+      setBanner(billing);
+      params.delete('billing');
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`;
+      window.history.replaceState({}, '', next);
+      if (billing === 'ok') {
+        void queryClient.invalidateQueries({ queryKey: ['usage-quota'] });
+        void queryClient.invalidateQueries({ queryKey: ['usage-cost'] });
+      }
+    }
+  }, [queryClient]);
+
+  const { data: paytrStatus } = useQuery({
+    queryKey: ['paytr-status'],
+    queryFn: async () => {
+      // Next.js BFF — do not use getApiFetchUrl (that proxies to .NET)
+      const res = await fetch('/api/paytr/status');
+      if (!res.ok) return { enabled: false };
+      return (await res.json()) as { enabled: boolean; testMode?: boolean };
+    },
+    staleTime: 60_000,
+  });
+
+  const purchaseEnabled = Boolean(paytrStatus?.enabled);
 
   const { data: quotaData } = useQuery({
     queryKey: ['usage-quota'],
-    queryFn: async () => { try { return await apiClient.getUsageQuota(); } catch { return null; } },
+    queryFn: async () => {
+      try {
+        return await apiClient.getUsageQuota();
+      } catch {
+        return null;
+      }
+    },
     staleTime: 60_000,
   });
 
@@ -313,78 +105,193 @@ export function BillingScreen() {
     staleTime: 60_000,
   });
 
-  const wallet      = usageCost?.token_wallet;
-  const remaining   = wallet?.remaining_tokens ?? null;
-  const totalSpent  = typeof usageCost?.week_cost_usd === 'number' ? usageCost.week_cost_usd : null;
-  const artifactCount = usageCost?.week_artifact_count ?? null;
+  const wallet = usageCost?.token_wallet;
+  const activePlan = useMemo(
+    () => getPlanSpec(quotaData?.packageSlug) ?? null,
+    [quotaData?.packageSlug],
+  );
 
-  const handleBuy = (pack: CreditPack) => {
-    if (!purchaseEnabled) return;
-    setModalPack(null);
-    // Stripe payment intent → pack.id (enabled via NEXT_PUBLIC_CREDIT_PURCHASE_ENABLED)
+  const sellablePlans = SELLABLE_PACKAGE_PLAN_TIERS;
+
+  const startCheckout = async (plan: PlanSpec) => {
+    if (!purchaseEnabled || !tenantId) return;
+    setCheckoutError(null);
+    setCheckoutLoading(true);
+    try {
+      let email = '';
+      let userName = '';
+      try {
+        const me = await apiClient.getCurrentUserSecurity();
+        email = me.email ?? '';
+        userName = me.displayName ?? '';
+      } catch {
+        /* email required — surface error below */
+      }
+      if (!email.includes('@')) {
+        setCheckoutError('Ödeme için hesap e-postası gerekli. Lütfen tekrar giriş yapın.');
+        return;
+      }
+
+      const res = await fetch('/api/paytr/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant-Id': tenantId,
+        },
+        body: JSON.stringify({
+          packageSlug: plan.slug,
+          email,
+          userName,
+        }),
+      });
+      const data = (await res.json()) as {
+        iframeToken?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.iframeToken) {
+        setCheckoutError(data.message || 'Ödeme başlatılamadı.');
+        return;
+      }
+      setSelected(null);
+      setIframeToken(data.iframeToken);
+    } catch {
+      setCheckoutError('Bağlantı hatası. Tekrar deneyin.');
+    } finally {
+      setCheckoutLoading(false);
+    }
   };
 
   return (
     <>
-      {modalPack && (
-        <PackDetailModal
-          pack={modalPack}
+      {iframeToken && (
+        <PaytrCheckoutSheet
+          iframeToken={iframeToken}
+          title="Güvenli ödeme"
           t={t}
-          onClose={() => setModalPack(null)}
-          onBuy={() => handleBuy(modalPack)}
-          purchaseEnabled={purchaseEnabled}
+          onClose={() => {
+            setIframeToken(null);
+            void queryClient.invalidateQueries({ queryKey: ['usage-quota'] });
+            void queryClient.invalidateQueries({ queryKey: ['usage-cost'] });
+          }}
         />
       )}
 
-      <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100,
-        transition: 'background 300ms' }}>
+      {selected && (
+        <ConfirmPlanSheet
+          plan={selected}
+          t={t}
+          purchaseEnabled={purchaseEnabled}
+          loading={checkoutLoading}
+          error={checkoutError}
+          onClose={() => {
+            setSelected(null);
+            setCheckoutError(null);
+          }}
+          onConfirm={() => void startCheckout(selected)}
+        />
+      )}
 
-        <MobileStackHeader t={t} title="Kredi & Kullanım" onBack={goBack} />
+      <div
+        style={{
+          minHeight: '100dvh',
+          background: t.bg,
+          paddingBottom: 100,
+          transition: 'background 300ms',
+        }}
+      >
+        <MobileStackHeader t={t} title="Kullanım & Plan" onBack={goBack} />
 
-        {/* Token Wallet card */}
-        <div style={{ padding: '20px 24px 0' }}>
-          <SLabel text="Kredi Cüzdanı" />
-          {isLoading ? (
-            <div style={{ height: 80, borderRadius: 16,
-              background: t.isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6',
-              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 20, height: 20, borderRadius: '50%',
-                border: `2px solid ${t.separator}`,
-                borderTop: `2px solid ${t.accent}`,
-                animation: 'spinSlow 1s linear infinite' }} />
+        {banner && (
+          <div style={{ padding: '12px 24px 0' }}>
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: 12,
+                fontSize: 13,
+                lineHeight: 1.45,
+                background:
+                  banner === 'ok'
+                    ? 'rgba(34,197,94,0.12)'
+                    : 'rgba(239,68,68,0.10)',
+                color: banner === 'ok' ? t.success : t.danger,
+                border: `0.5px solid ${banner === 'ok' ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.3)'}`,
+              }}
+            >
+              {banner === 'ok'
+                ? 'Ödeme alındı. Planınız güncelleniyor…'
+                : 'Ödeme tamamlanamadı. Tekrar deneyebilirsiniz.'}
             </div>
+          </div>
+        )}
+
+        {/* Kredi */}
+        <div style={{ padding: '20px 24px 0' }}>
+          <SLabel text="Bu ay" />
+          {isLoading ? (
+            <Skeleton t={t} />
           ) : wallet ? (
-            <>
+            debugMode ? (
               <TokenWalletCard wallet={wallet} t={t} />
-              {!debugMode && remaining !== null && remaining > 0 && (
-                <div style={{ ...t.surfaceCard, padding: '14px 16px', marginTop: 10 }}>
-                  <div style={{ fontSize: 13, color: t.textSecondary, lineHeight: 1.55 }}>
-                    Bu ay yaklaşık{' '}
-                    <strong style={{ color: t.textPrimary }}>{estimateRemainingPosts(remaining)}</strong>
-                    {' '}içerik daha üretebilirsiniz (post + story paketi tahmini).
-                  </div>
-                </div>
-              )}
-            </>
+            ) : (
+              <ClientCreditSummary wallet={wallet} t={t} />
+            )
           ) : (
-            <div style={{ ...t.surfaceCard, padding: '18px', textAlign: 'center' }}>
-              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 6 }}>
-                Cüzdan bilgisi yüklenemedi.
-              </div>
-              <div style={{ fontSize: 12, color: t.textMuted, opacity: 0.7 }}>
-                Sunucu bağlantısını kontrol edin.
-              </div>
+            <div style={{ ...t.surfaceCard, padding: '16px', fontSize: 13, color: t.textMuted }}>
+              Kredi bilgisi yüklenemedi.
             </div>
           )}
         </div>
 
-        {quotaData && (
+        {/* Aktif plan */}
+        <div style={{ padding: '20px 24px 0' }}>
+          <SLabel text="Aktif plan" />
+          <div className="sa-chrome-card" style={{ padding: '16px 18px' }}>
+            {activePlan || quotaData ? (
+              <>
+                <div
+                  style={{
+                    fontSize: 17,
+                    fontWeight: 800,
+                    color: t.textPrimary,
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {activePlan ? planLabel(activePlan) : quotaData?.packageName || 'Plan'}
+                </div>
+                <div style={{ fontSize: 13, color: t.textSecondary, marginTop: 4 }}>
+                  {activePlan
+                    ? planOneLiner(activePlan)
+                    : `${quotaData?.packageSlug ?? ''} · ${quotaData?.status ?? ''}`}
+                </div>
+                {activePlan && (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: t.textMuted,
+                      marginTop: 8,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    ₺{activePlan.monthlyPriceTry.toLocaleString('tr-TR')} / ay
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: t.textMuted }}>
+                Henüz aktif bir plan yok. Aşağıdan seçebilirsiniz.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {debugMode && quotaData && (
           <div style={{ padding: '20px 24px 0' }}>
             <PlanUsagePanel
               quota={quotaData}
               wallet={usageCost?.token_wallet}
               packageSlug={quotaData.packageSlug}
-              debugMode={debugMode}
+              debugMode
               t={t}
             />
           </div>
@@ -396,151 +303,310 @@ export function BillingScreen() {
           </div>
         )}
 
-        {/* Last 30-day summary */}
-        {(artifactCount !== null || (debugMode && totalSpent !== null) || (!debugMode && remaining !== null)) && (
-          <div style={{ padding: '20px 24px 0' }}>
-            <SLabel text="Son 30 Gün" />
-            <div style={{ display: 'flex', gap: 10 }}>
-              {artifactCount !== null && (
-                <div className="sa-chrome-card" style={{ flex: 1, padding: '18px 14px', textAlign: 'center' }}>
-                  <div className="sa-chrome-text" style={{ fontSize: 27, fontWeight: 800,
-                    letterSpacing: '-0.04em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {artifactCount}
-                  </div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, fontWeight: 500 }}>
-                    Üretilen İçerik
-                  </div>
-                </div>
-              )}
-              {debugMode && totalSpent !== null && (
-                <div className="sa-chrome-card" style={{ flex: 1, padding: '18px 14px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 27, fontWeight: 800, color: t.textPrimary,
-                    letterSpacing: '-0.04em', lineHeight: 1,
-                    fontVariantNumeric: 'tabular-nums' }}>
-                    ${totalSpent.toFixed(2)}
-                  </div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, fontWeight: 500 }}>
-                    AI Harcaması
-                  </div>
-                </div>
-              )}
-              {remaining !== null && (
-                <div className="sa-chrome-card" style={{ flex: 1, padding: '18px 14px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 27, fontWeight: 800, letterSpacing: '-0.04em',
-                    lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-                    color: remaining > 200 ? t.success : remaining > 50 ? t.warning : t.danger }}>
-                    {remaining.toLocaleString('tr-TR')}
-                  </div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, fontWeight: 500 }}>
-                    Kalan Kredi
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Credit pack cards — paket detayları; satın alma yalnızca flag ile açılır */}
+        {/* Planlar */}
         <div style={{ padding: '20px 24px 0' }}>
-          <SLabel text={purchaseEnabled ? 'Kredi Yükle' : 'Kredi Paketleri'} />
+          <SLabel text={purchaseEnabled ? 'Plan seç / yükselt' : 'Planlar'} />
           {!purchaseEnabled && (
-            <div style={{
-              marginBottom: 14, padding: '12px 14px', borderRadius: 12,
-              background: t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)',
-              border: `0.5px solid ${t.accentBorder}`,
-              fontSize: 13, color: t.textSecondary, lineHeight: 1.55,
-            }}>
-              Online kredi yükleme yakında aktif olacak. Paket detaylarını inceleyebilir;
-              yükleme için destek ekibimizle iletişime geçin.
+            <div
+              style={{
+                marginBottom: 12,
+                padding: '12px 14px',
+                borderRadius: 12,
+                background: t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)',
+                border: `0.5px solid ${t.accentBorder}`,
+                fontSize: 13,
+                color: t.textSecondary,
+                lineHeight: 1.5,
+              }}
+            >
+              Online ödeme henüz açılmadı. Plan detaylarını görebilirsiniz; aktivasyon için
+              destek ile iletişime geçin.
             </div>
           )}
+          {paytrStatus?.testMode && purchaseEnabled && (
+            <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 10 }}>
+              PayTR test modu açık
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {CREDIT_PACKS.map(pack => (
-              <button
-                key={pack.id}
-                onClick={() => setModalPack(pack)}
-                className="sa-press-row"
-                style={{
-                  width: '100%', textAlign: 'left', cursor: 'pointer',
-                  ...t.surfaceCard,
-                  padding: '16px 18px',
-                  border: pack.popular
-                    ? `0.5px solid ${t.accent}66`
-                    : (t.surfaceCard.border as string),
-                  ...(pack.popular ? {
-                    background: t.isDark
-                      ? 'linear-gradient(165deg, rgba(77,112,136,0.16) 0%, rgba(12,16,24,0.9) 100%)'
-                      : 'linear-gradient(165deg, rgba(77,112,136,0.08) 0%, #FFFFFF 100%)',
-                    boxShadow: `0 12px 32px ${t.accentGlow}, inset 0 1px 0 rgba(255,255,255,0.08)`,
-                  } : {}),
-                  position: 'relative' as const,
-                  display: 'flex', alignItems: 'center', gap: 14,
-                }}
-              >
-                {/* Left: label + note */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.01em' }}>
-                      {pack.label}
-                    </span>
-                    {pack.popular && (
-                      <span style={{ fontSize: 9, fontWeight: 800, padding: '3px 8px',
-                        borderRadius: 20, background: t.gradientAccent, color: '#fff',
-                        letterSpacing: '0.06em',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22)' }}>POPÜLER</span>
-                    )}
+            {sellablePlans.map((plan) => {
+              const isActive = activePlan?.slug === plan.slug;
+              const popular = plan.slug === 'growth';
+              return (
+                <button
+                  key={plan.slug}
+                  type="button"
+                  onClick={() => setSelected(plan)}
+                  className="sa-press-row"
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    ...t.surfaceCard,
+                    padding: '16px 18px',
+                    border: popular
+                      ? `0.5px solid ${t.accent}66`
+                      : (t.surfaceCard.border as string),
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 700,
+                          color: t.textPrimary,
+                        }}
+                      >
+                        {planLabel(plan)}
+                      </span>
+                      {isActive && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: t.accent,
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          AKTİF
+                        </span>
+                      )}
+                      {popular && !isActive && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: 20,
+                            background: t.gradientAccent,
+                            color: '#fff',
+                          }}
+                        >
+                          ÖNERİLEN
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: t.textMuted,
+                        marginTop: 4,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {planOneLiner(plan)}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: t.textMuted, fontVariantNumeric: 'tabular-nums' }}>
-                    {pack.credits.toLocaleString('tr-TR')} kredi · {pack.note}
+                  <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                    <div
+                      className={popular ? 'sa-chrome-text' : undefined}
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 800,
+                        letterSpacing: '-0.03em',
+                        fontVariantNumeric: 'tabular-nums',
+                        ...(popular ? {} : { color: t.textPrimary }),
+                      }}
+                    >
+                      ₺{plan.monthlyPriceTry.toLocaleString('tr-TR')}
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>/ ay</div>
                   </div>
-                  {/* highlight chips — top 2 */}
-                  <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
-                    {pack.highlights.slice(0, 2).map((h, i) => (
-                      <span key={i} style={{
-                        fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
-                        background: t.isDark ? 'rgba(157,190,206,0.08)' : 'rgba(30,63,85,0.05)',
-                        border: `0.5px solid ${t.isDark ? 'rgba(157,190,206,0.14)' : 'rgba(30,63,85,0.08)'}`,
-                        color: t.textSecondary,
-                      }}>{h}</span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Right: price + chevron */}
-                <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                  <div className={pack.popular ? 'sa-chrome-text' : undefined}
-                    style={{ fontSize: 20, fontWeight: 800,
-                    ...(pack.popular ? {} : { color: t.textPrimary }),
-                    letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
-                    ₺{pack.price.toLocaleString('tr-TR')}
-                  </div>
-                  <div style={{
-                    fontSize: 10.5, color: t.accent, marginTop: 3, fontWeight: 600,
-                    display: 'inline-flex', alignItems: 'center', gap: 3,
-                  }}>
-                    Detay
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
-                      stroke={t.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
 
-          <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 12,
-            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-            fontSize: 11, color: t.textMuted, lineHeight: 1.6 }}>
-            Krediler AI görev maliyetlerine karşı düşer. Bakiye sıfırlanınca pipeline durur,
-            bildirim gönderilir. Kredilerin son kullanma tarihi yoktur.
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate('settings')}
+            style={{
+              marginTop: 16,
+              width: '100%',
+              padding: '14px',
+              borderRadius: 14,
+              border: `0.5px solid ${t.separator}`,
+              background: 'transparent',
+              color: t.textSecondary,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Destek / ayarlar
+          </button>
         </div>
       </div>
     </>
   );
 }
 
+function ConfirmPlanSheet({
+  plan,
+  t,
+  purchaseEnabled,
+  loading,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  plan: PlanSpec;
+  t: T;
+  purchaseEnabled: boolean;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const bullets = [
+    planOneLiner(plan),
+    `${formatOutputLimit(plan.outputs.socialContent)} organik içerik / ay`,
+    `${formatOutputLimit(plan.outputs.reels)} reel kapasitesi`,
+  ];
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
+        background: 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: t.isDark ? '#0D121B' : '#fff',
+          borderRadius: '24px 24px 0 0',
+          border: `0.5px solid ${t.isDark ? 'rgba(176,196,212,0.14)' : 'rgba(30,63,85,0.10)'}`,
+          borderBottom: 'none',
+          paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0' }}>
+          <div
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 2,
+              background: t.isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+            }}
+          />
+        </div>
+        <div style={{ padding: '14px 20px 8px' }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary }}>
+            {planLabel(plan)}
+          </div>
+          <div
+            className="sa-chrome-text"
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              marginTop: 6,
+              letterSpacing: '-0.04em',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            ₺{plan.monthlyPriceTry.toLocaleString('tr-TR')}
+            <span style={{ fontSize: 14, fontWeight: 600, color: t.textMuted, marginLeft: 6 }}>
+              / ay
+            </span>
+          </div>
+        </div>
+        <div style={{ padding: '8px 20px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {bullets.map((b) => (
+            <div
+              key={b}
+              style={{
+                fontSize: 14,
+                color: t.textSecondary,
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+              }}
+            >
+              <span style={{ color: t.accent, fontWeight: 700 }}>·</span>
+              {b}
+            </div>
+          ))}
+          {error && (
+            <div style={{ fontSize: 13, color: t.danger, marginTop: 4 }}>{error}</div>
+          )}
+        </div>
+        <div style={{ padding: '0 20px 8px' }}>
+          <button
+            type="button"
+            disabled={!purchaseEnabled || loading}
+            onClick={purchaseEnabled ? onConfirm : undefined}
+            style={{
+              width: '100%',
+              padding: '16px',
+              borderRadius: 16,
+              border: 'none',
+              cursor: purchaseEnabled && !loading ? 'pointer' : 'not-allowed',
+              fontSize: 15,
+              fontWeight: 800,
+              background: purchaseEnabled
+                ? t.gradientAccent
+                : t.isDark
+                  ? 'rgba(255,255,255,0.08)'
+                  : 'rgba(0,0,0,0.06)',
+              color: purchaseEnabled ? '#fff' : t.textMuted,
+              minHeight: 48,
+            }}
+          >
+            {loading
+              ? 'Ödeme hazırlanıyor…'
+              : purchaseEnabled
+                ? 'PayTR ile öde'
+                : 'Online ödeme yakında'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              marginTop: 8,
+              padding: '12px',
+              border: 'none',
+              background: 'transparent',
+              color: t.textMuted,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              minHeight: 44,
+            }}
+          >
+            Vazgeç
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SLabel({ text }: { text: string }) {
   return <div className="sa-chrome-eyebrow" style={{ marginBottom: 12 }}>{text}</div>;
+}
+
+function Skeleton({ t }: { t: T }) {
+  return (
+    <div
+      style={{
+        height: 96,
+        borderRadius: 16,
+        background: t.isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6',
+      }}
+    />
+  );
 }

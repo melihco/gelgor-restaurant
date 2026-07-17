@@ -7,4 +7,5 @@ public interface IPackageService
     Task<List<PackageDefinitionDto>> GetPackagesAsync(CancellationToken cancellationToken = default);
     Task<TenantSubscriptionDto?> GetSubscriptionAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<TenantSubscriptionDto> SelectPackageAsync(Guid tenantId, SelectPackageRequest request, CancellationToken cancellationToken = default);
+    Task<TenantSubscriptionDto> ActivatePaidPackageAsync(ActivatePaidPackageRequest request, CancellationToken cancellationToken = default);
 }

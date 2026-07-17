@@ -35,6 +35,15 @@ public record SubscriptionAgentDto(
 
 public record SelectPackageRequest(Guid PackageId);
 
+/// <summary>
+/// Internal PayTR (or other PSP) fulfillment — activates a package by slug after paid callback.
+/// </summary>
+public record ActivatePaidPackageRequest(
+    Guid TenantId,
+    string PackageSlug,
+    string MerchantOid,
+    decimal? AmountTry = null);
+
 public record PlanMonthlyOutputsDto(
     int Missions,
     int SocialContent,

@@ -499,43 +499,9 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
     )
   ) : null;
 
-  const swipeStartX = React.useRef<number | null>(null);
-  const [swipeDx, setSwipeDx] = React.useState(0);
-  const SWIPE_THRESHOLD = 72;
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (!isPending || isRendering) return;
-    // Reel media stage owns its own tap → fullscreen; don't start approve/reject swipe there.
-    if ((e.target as HTMLElement | null)?.closest?.('.ig-feed-reel-stage')) return;
-    swipeStartX.current = e.clientX;
-  };
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (swipeStartX.current === null) return;
-    const dx = e.clientX - swipeStartX.current;
-    if (Math.abs(dx) > 4) setSwipeDx(dx);
-  };
-  const handlePointerUp = () => {
-    if (swipeStartX.current === null) return;
-    swipeStartX.current = null;
-    if (swipeDx >= SWIPE_THRESHOLD) {
-      onApprove(artifact.id);
-    } else if (swipeDx <= -SWIPE_THRESHOLD) {
-      onRevision(artifact.id);
-    }
-    setSwipeDx(0);
-  };
-
-  const swipeOpacity = Math.min(Math.abs(swipeDx) / SWIPE_THRESHOLD, 1);
-  const isSwipingRight = swipeDx > 12;
-  const isSwipingLeft = swipeDx < -12;
-
   return (
     <div
       className={igHome ? 'ig-feed-post' : undefined}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
       style={{
         marginBottom: igHome ? 0 : 10,
         borderRadius: igHome ? 0 : 18,
@@ -545,10 +511,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
         borderBottom: igHome ? `0.5px solid ${igHomeChrome.separator}` : undefined,
         contentVisibility: 'auto',
         containIntrinsicSize: mode === 'reel' ? '0 700px' : '0 680px',
-        transform: `translateX(${Math.max(-48, Math.min(48, swipeDx * 0.4))}px)`,
-        transition: swipeDx === 0 ? 'transform 200ms cubic-bezier(0.22,1,0.36,1)' : 'none',
         position: 'relative',
-        touchAction: 'pan-y',
       }}>
       <div style={{ position: 'relative' }}>
         <PlatformNativePreview
@@ -586,30 +549,6 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           }}>
             {isAdCreative ? adBadge : scheduleLabel}
           </span>
-        )}
-
-        {/* Swipe intent overlay */}
-        {(isSwipingRight || isSwipingLeft) && isPending && !isRendering && (
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 10,
-            background: isSwipingRight
-              ? `rgba(52,211,153,${swipeOpacity * 0.25})`
-              : `rgba(157,190,206,${swipeOpacity * 0.2})`,
-            display: 'flex', alignItems: 'center', justifyContent: isSwipingRight ? 'flex-start' : 'flex-end',
-            padding: '0 24px',
-            pointerEvents: 'none',
-            transition: 'background 60ms ease',
-          }}>
-            <div style={{
-              fontSize: 28, fontWeight: 900,
-              opacity: swipeOpacity,
-              transform: `scale(${0.7 + swipeOpacity * 0.4})`,
-              transition: 'opacity 60ms, transform 60ms',
-              color: isSwipingRight ? '#34d399' : '#9DBECE',
-            }}>
-              {isSwipingRight ? '✓' : '↺'}
-            </div>
-          </div>
         )}
 
         {/* Rendering overlay — minimal */}

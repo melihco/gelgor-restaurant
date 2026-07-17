@@ -715,9 +715,9 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
 
     var packageQuotaPatches = new[]
     {
-        new { Slug = "starter", TaskLimit = 14, Features = "[\"14 misyon/ay\",\"168 organik içerik + 56 reel\",\"14 Meta + 14 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
-        new { Slug = "growth", TaskLimit = 28, Features = "[\"28 misyon/ay\",\"336 organik içerik + 112 reel\",\"28 Meta + 28 Google reklam\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"Blog + SEO\"]" },
-        new { Slug = "performance", TaskLimit = 65, Features = "[\"65 misyon/ay\",\"780 organik içerik + 260 reel\",\"65 Meta + 65 Google reklam\",\"40.000 SA Kredi\",\"250 galeri analizi\",\"Growth Recovery\"]" },
+        new { Slug = "starter", TaskLimit = 14, Features = "[\"14 misyon/ay\",\"~140 içerik + 14 reel\",\"14 Meta + 14 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
+        new { Slug = "growth", TaskLimit = 28, Features = "[\"28 misyon/ay\",\"~280 içerik + 28 reel\",\"28 Meta + 28 Google reklam\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"Blog + SEO\"]" },
+        new { Slug = "performance", TaskLimit = 65, Features = "[\"65 misyon/ay\",\"~650 içerik + 65 reel\",\"65 Meta + 65 Google reklam\",\"40.000 SA Kredi\",\"250 galeri analizi\",\"Growth Recovery\"]" },
         new { Slug = "executive", TaskLimit = -1, Features = "[\"Sınırsız misyon & içerik\",\"150.000 SA Kredi\",\"Tüm agentlar\",\"AI CEO\",\"Öncelikli destek\"]" },
     };
 
@@ -743,6 +743,15 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
         package.Features = patch.Features;
         package.UpdatedBy = userId;
         package.UpdatedAt = DateTime.UtcNow;
+    }
+
+    // Retire Performance (Pro) from new sales; existing subscriptions keep entitlements.
+    var performancePkg = await ctx.PackageDefinitions.FirstOrDefaultAsync(p => p.Slug == "performance");
+    if (performancePkg is not null && performancePkg.IsActive)
+    {
+        performancePkg.IsActive = false;
+        performancePkg.UpdatedBy = userId;
+        performancePkg.UpdatedAt = DateTime.UtcNow;
     }
 
     await ctx.SaveChangesAsync();

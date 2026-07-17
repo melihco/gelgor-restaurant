@@ -39,27 +39,28 @@ GRANT_BY_PACKAGE: dict[str, int] = {
 
 # Mirrors package-plan-config.ts / PackagePlanCatalog.cs
 OUTPUTS_BY_PACKAGE: dict[str, dict[str, int]] = {
+    # Per mission ≈ 10 organic + 1 reel (idea_count production)
     "starter": {
         "missions": 14,
-        "social_content": 168,
+        "social_content": 140,
         "gallery_analysis": 40,
-        "reels": 56,
+        "reels": 14,
         "meta_ad_creatives": 14,
         "google_ad_creatives": 14,
     },
     "studio": {
         "missions": 14,
-        "social_content": 168,
+        "social_content": 140,
         "gallery_analysis": 40,
-        "reels": 56,
+        "reels": 14,
         "meta_ad_creatives": 14,
         "google_ad_creatives": 14,
     },
-    "growth": {"missions": 28, "social_content": 336, "gallery_analysis": 120, "reels": 112, "meta_ad_creatives": 28, "google_ad_creatives": 28},
-    "agency": {"missions": 28, "social_content": 336, "gallery_analysis": 120, "reels": 112, "meta_ad_creatives": 28, "google_ad_creatives": 28},
-    "performance": {"missions": 65, "social_content": 780, "gallery_analysis": 250, "reels": 260, "meta_ad_creatives": 65, "google_ad_creatives": 65},
-    "signature": {"missions": 65, "social_content": 780, "gallery_analysis": 250, "reels": 260, "meta_ad_creatives": 65, "google_ad_creatives": 65},
-    "premium": {"missions": 65, "social_content": 780, "gallery_analysis": 250, "reels": 260, "meta_ad_creatives": 65, "google_ad_creatives": 65},
+    "growth": {"missions": 28, "social_content": 280, "gallery_analysis": 120, "reels": 28, "meta_ad_creatives": 28, "google_ad_creatives": 28},
+    "agency": {"missions": 28, "social_content": 280, "gallery_analysis": 120, "reels": 28, "meta_ad_creatives": 28, "google_ad_creatives": 28},
+    "performance": {"missions": 65, "social_content": 650, "gallery_analysis": 250, "reels": 65, "meta_ad_creatives": 65, "google_ad_creatives": 65},
+    "signature": {"missions": 65, "social_content": 650, "gallery_analysis": 250, "reels": 65, "meta_ad_creatives": 65, "google_ad_creatives": 65},
+    "premium": {"missions": 65, "social_content": 650, "gallery_analysis": 250, "reels": 65, "meta_ad_creatives": 65, "google_ad_creatives": 65},
     "executive": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1, "meta_ad_creatives": -1, "google_ad_creatives": -1},
     "collective": {"missions": -1, "social_content": -1, "gallery_analysis": -1, "reels": -1, "meta_ad_creatives": -1, "google_ad_creatives": -1},
 }

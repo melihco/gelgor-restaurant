@@ -51,6 +51,44 @@ public class PackageService : IPackageService
             .FirstOrDefaultAsync(p => p.Id == request.PackageId && p.IsActive, cancellationToken)
             ?? throw new NotFoundException("Package not found");
 
+        return await UpsertActiveSubscriptionAsync(tenantId, package, externalSubscriptionId: null, cancellationToken);
+    }
+
+    public async Task<TenantSubscriptionDto> ActivatePaidPackageAsync(
+        ActivatePaidPackageRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var slug = (request.PackageSlug ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(slug))
+            throw new ArgumentException("PackageSlug is required");
+        if (string.IsNullOrWhiteSpace(request.MerchantOid))
+            throw new ArgumentException("MerchantOid is required");
+
+        // Idempotent: same PayTR merchant_oid must not re-activate / reset period.
+        var already = await _context.TenantSubscriptions
+            .Include(s => s.Package)
+            .Include(s => s.AddOnAgents)
+            .FirstOrDefaultAsync(s => s.ExternalSubscriptionId == request.MerchantOid, cancellationToken);
+        if (already != null)
+            return MapToDto(already);
+
+        var package = await _context.PackageDefinitions
+            .FirstOrDefaultAsync(p => p.Slug == slug && p.IsActive, cancellationToken)
+            ?? throw new NotFoundException($"Package not found: {slug}");
+
+        return await UpsertActiveSubscriptionAsync(
+            request.TenantId,
+            package,
+            externalSubscriptionId: request.MerchantOid.Trim(),
+            cancellationToken);
+    }
+
+    private async Task<TenantSubscriptionDto> UpsertActiveSubscriptionAsync(
+        Guid tenantId,
+        PackageDefinition package,
+        string? externalSubscriptionId,
+        CancellationToken cancellationToken)
+    {
         var existing = await _context.TenantSubscriptions
             .Include(s => s.AddOnAgents)
             .Where(s => s.TenantId == tenantId && s.Status != SubscriptionStatus.Cancelled)
@@ -58,11 +96,13 @@ public class PackageService : IPackageService
 
         if (existing != null)
         {
-            existing.PackageId = request.PackageId;
+            existing.PackageId = package.Id;
             existing.Status = SubscriptionStatus.Active;
             existing.CurrentPeriodStart = DateTime.UtcNow.Date;
             existing.CurrentPeriodEnd = DateTime.UtcNow.Date.AddMonths(1);
             existing.TasksUsedThisPeriod = 0;
+            if (!string.IsNullOrWhiteSpace(externalSubscriptionId))
+                existing.ExternalSubscriptionId = externalSubscriptionId;
 
             await _context.SaveChangesAsync(cancellationToken);
 
@@ -73,11 +113,12 @@ public class PackageService : IPackageService
         var sub = new TenantSubscription
         {
             TenantId = tenantId,
-            PackageId = request.PackageId,
+            PackageId = package.Id,
             Status = SubscriptionStatus.Active,
             CurrentPeriodStart = DateTime.UtcNow.Date,
             CurrentPeriodEnd = DateTime.UtcNow.Date.AddMonths(1),
             TasksUsedThisPeriod = 0,
+            ExternalSubscriptionId = externalSubscriptionId ?? string.Empty,
         };
 
         _context.TenantSubscriptions.Add(sub);

@@ -39,13 +39,13 @@ const UNLIMITED = -1;
 export const PLAN_USD_TRY_RATE = 32;
 
 /**
- * Tuned API unit costs (USD) — aligned with current 16-slot mission telemetry
- * and kept slightly conservative so list prices still target ~200% profit on cost.
+ * Tuned API unit costs (USD) — aligned with idea_count production (~10–11 slots, 1 reel).
+ * Kept slightly conservative so list prices still target ~200% profit on cost.
  *
- * Current weekly mission promise:
- * - 12 organic outputs (6 post, 5 story, 1 carousel)
- * - 4 reels
- * - 1 Meta ad + 1 Google ad creative derivative
+ * Per mission (live average):
+ * - ~10 organic (post / story / carousel)
+ * - 1 reel
+ * - 1 Meta + 1 Google ad creative derivative
  */
 export const PLAN_API_UNIT_COSTS = {
   missionPropose: 0.28,
@@ -68,17 +68,18 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
       monthlyGrantTokens: 5_000,
     },
     outputs: {
+      // 14 missions × (~10 organic + 1 reel) — idea_count production
       missions: 14,
-      socialContent: 168,
+      socialContent: 140,
       galleryAnalysis: 40,
-      reels: 56,
+      reels: 14,
       metaAdCreatives: 14,
       googleAdCreatives: 14,
     },
     outputHighlights: [
-      '14 tam misyon döngüsü / ay',
-      '168 organik içerik + 56 reel + 14 Meta + 14 Google reklam kreatifi',
-      '40 galeri fotoğraf analizi',
+      '14 misyon / ay',
+      '~140 içerik + 14 reel (misyon başına ~10–11 fikir)',
+      '14 Meta + 14 Google reklam kreatifi',
       '5.000 SA Kredi aylık',
     ],
   },
@@ -96,17 +97,16 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputs: {
       missions: 28,
-      socialContent: 336,
+      socialContent: 280,
       galleryAnalysis: 120,
-      reels: 112,
+      reels: 28,
       metaAdCreatives: 28,
       googleAdCreatives: 28,
     },
     outputHighlights: [
-      '28 misyon döngüsü / ay',
-      '336 organik içerik · 112 reel',
+      '28 misyon / ay',
+      '~280 içerik + 28 reel (misyon başına ~10–11 fikir)',
       '28 Meta + 28 Google reklam kreatifi',
-      '120 galeri analizi',
       '15.000 SA Kredi aylık',
     ],
   },
@@ -124,17 +124,16 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputs: {
       missions: 65,
-      socialContent: 780,
+      socialContent: 650,
       galleryAnalysis: 250,
-      reels: 260,
+      reels: 65,
       metaAdCreatives: 65,
       googleAdCreatives: 65,
     },
     outputHighlights: [
-      '65 misyon döngüsü / ay',
-      '780 organik içerik · 260 reel',
+      '65 misyon / ay',
+      '~650 içerik + 65 reel (legacy plan)',
       '65 Meta + 65 Google reklam kreatifi',
-      '250 galeri analizi',
       '40.000 SA Kredi aylık',
     ],
   },
@@ -208,12 +207,27 @@ export function formatOutputLimit(value: number): string {
   return value < 0 ? 'Sınırsız' : value.toLocaleString('tr-TR');
 }
 
+/** All known plan specs (incl. legacy / inactive for existing tenants). */
 export const PACKAGE_PLAN_TIERS: PlanSpec[] = [
   PACKAGE_PLANS.starter!,
   PACKAGE_PLANS.growth!,
   PACKAGE_PLANS.performance!,
   PACKAGE_PLANS.executive!,
 ];
+
+/** Plans offered for new purchase / upgrade in customer UI + PayTR. */
+export const SELLABLE_PACKAGE_SLUGS = ['starter', 'growth'] as const;
+export type SellablePackageSlug = (typeof SELLABLE_PACKAGE_SLUGS)[number];
+
+export const SELLABLE_PACKAGE_PLAN_TIERS: PlanSpec[] = SELLABLE_PACKAGE_SLUGS.map(
+  (slug) => PACKAGE_PLANS[slug]!,
+);
+
+export function isSellablePackageSlug(slug: string | null | undefined): boolean {
+  if (!slug) return false;
+  const key = slug.trim().toLowerCase();
+  return (SELLABLE_PACKAGE_SLUGS as readonly string[]).includes(key);
+}
 
 export function formatPlanMonthlyPrice(plan: PlanSpec): string {
   return `$${plan.monthlyPriceUsd}/ay · ${plan.monthlyPriceTry.toLocaleString('tr-TR')}₺`;
