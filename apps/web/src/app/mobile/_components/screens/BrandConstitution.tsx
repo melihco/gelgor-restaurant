@@ -512,8 +512,8 @@ function Field({ t, label, value, onSave, multiline = false, hint }: {
       <div style={{ padding: '14px 16px' }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: t.textTertiary, marginBottom: 8 }}>{label}</div>
         {multiline ? (
-          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={4}
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, resize: 'vertical', outline: 'none', boxSizing: 'border-box', fontSize: 16, lineHeight: 1.45, background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)', border: 'none', color: t.textPrimary }} autoFocus
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={6}
+            style={{ width: '100%', minHeight: 140, padding: '12px 14px', borderRadius: 12, resize: 'vertical', outline: 'none', boxSizing: 'border-box', fontSize: 16, lineHeight: 1.45, background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)', border: 'none', color: t.textPrimary }} autoFocus
           />
         ) : (
           <input value={draft} onChange={e => setDraft(e.target.value)}
@@ -534,6 +534,32 @@ function Field({ t, label, value, onSave, multiline = false, hint }: {
 
   const display = value || hint || 'Ekle';
   const isPlaceholder = !value;
+
+  if (multiline) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setDraft(value); setEditing(true); }}
+        style={{
+          width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8,
+          padding: '14px 16px', minHeight: 44, cursor: 'pointer', background: 'transparent', border: 'none', textAlign: 'left',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 16, fontWeight: 400, color: t.textPrimary }}>{label}</span>
+          <ChevronRight color={t.textMuted} />
+        </div>
+        <span style={{
+          fontSize: 15, lineHeight: 1.45, color: isPlaceholder ? t.textMuted : t.textTertiary,
+          overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical' as const,
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        }}
+        >
+          {display}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <button type="button" onClick={() => { setDraft(value); setEditing(true); }} style={{

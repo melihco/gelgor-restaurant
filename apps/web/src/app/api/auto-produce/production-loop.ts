@@ -195,6 +195,7 @@ import {
   parseMotionProfileFromTheme,
   resolveContentIntent,
 } from '@/lib/brand-motion-profile';
+import { resolveStoryAudioMood } from '@/lib/story-audio-mood';
 import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import {
@@ -1237,6 +1238,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           brandName: resolvedBrandName,
           channel: falChannel,
           businessType: brandBusinessType,
+          brandTone: String(brandCtx.brand_tone ?? ''),
         });
         if (designCopy.headline && designCopy.headline !== headline) {
           console.log(
@@ -4184,6 +4186,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const slotFalRequests = getCapturedFalRequests();
+    const needsStoryAudioStamp = isReel
+      || kind === 'instagram_story'
+      || kind === 'instagram_canvas'
+      || effectiveKind === 'instagram_story'
+      || effectiveKind === 'instagram_reel'
+      || assignmentImpliesStoryFormat(assignment.slot_role);
+    const storyAudioSlotIndex = assignmentImpliesStoryFormat(assignment.slot_role)
+      ? storyIndex
+      : ideaIndex;
+    const resolvedStoryAudioMood = needsStoryAudioStamp
+      ? resolveStoryAudioMood({
+        selected: motionProfile.storyAudioMood,
+        pool: motionProfile.audioMoodPool,
+        slotIndex: storyAudioSlotIndex,
+        sector: brandBusinessType,
+      })
+      : null;
     const metadata: Record<string, unknown> = {
       ...(brandDesignTemplateId
         ? {
@@ -4198,6 +4217,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       cost_usd_estimate: ideaCostUsd,
       contentType: effectiveFmt,
       kind: effectiveKind,
+      ...(resolvedStoryAudioMood
+        ? {
+          story_audio_mood: resolvedStoryAudioMood,
+          story_audio_slot_index: storyAudioSlotIndex,
+        }
+        : {}),
       platform: 'instagram',
       headline: designOverlayHeadline,
       design_overlay_headline: designOverlayHeadline,

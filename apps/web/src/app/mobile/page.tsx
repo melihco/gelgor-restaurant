@@ -1720,6 +1720,194 @@ const CSS = `
     transition: transform 160ms ease;
   }
 
+  /* Brand hub hero — open-with-wow stage */
+  @keyframes brandHubHeroIn {
+    from { opacity: 0; transform: translateY(18px) scale(0.965); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes brandHubAuroraDrift {
+    0%   { transform: translate3d(-6%, -4%, 0) scale(1); opacity: 0.55; }
+    50%  { transform: translate3d(8%, 6%, 0) scale(1.08); opacity: 0.9; }
+    100% { transform: translate3d(-6%, -4%, 0) scale(1); opacity: 0.55; }
+  }
+  @keyframes brandHubSweep {
+    0%   { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+    18%  { opacity: 0.7; }
+    55%  { opacity: 0.45; }
+    100% { transform: translateX(160%) skewX(-18deg); opacity: 0; }
+  }
+  @keyframes brandHubOrbitSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes brandHubLogoIn {
+    from { opacity: 0; transform: scale(0.82); filter: blur(6px); }
+    to   { opacity: 1; transform: scale(1); filter: blur(0); }
+  }
+  @keyframes brandHubTitleIn {
+    from { opacity: 0; transform: translateY(12px); letter-spacing: 0.04em; }
+    to   { opacity: 1; transform: translateY(0); letter-spacing: -0.045em; }
+  }
+  @keyframes brandHubMetaIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes brandHubRuleIn {
+    from { opacity: 0; transform: scaleX(0.35); }
+    to   { opacity: 1; transform: scaleX(1); }
+  }
+  @keyframes brandHubPulse {
+    0%, 100% { opacity: 0.45; transform: scale(1); }
+    50%      { opacity: 0.85; transform: scale(1.06); }
+  }
+
+  .sa-mobile .brand-hub-hero {
+    --hub-brand: #8AABBD;
+    --hub-accent: #4D7088;
+    isolation: isolate;
+    animation: brandHubHeroIn 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    box-shadow:
+      0 0 0 0.5px rgba(138, 171, 189, 0.18),
+      0 24px 48px rgba(0, 0, 0, 0.38),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .sa-mobile[data-theme="light"] .brand-hub-hero {
+    box-shadow:
+      0 0 0 0.5px rgba(77, 112, 136, 0.14),
+      0 18px 36px rgba(15, 23, 42, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  }
+  .sa-mobile .brand-hub-hero-aurora,
+  .sa-mobile .brand-hub-hero-aurora-2 {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    filter: blur(28px);
+    will-change: transform, opacity;
+  }
+  .sa-mobile .brand-hub-hero-aurora {
+    width: 72%;
+    height: 70%;
+    top: -28%;
+    left: 14%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 55%, transparent) 0%, transparent 70%);
+    animation: brandHubAuroraDrift 7.5s ease-in-out infinite;
+  }
+  .sa-mobile .brand-hub-hero-aurora-2 {
+    width: 58%;
+    height: 56%;
+    right: -12%;
+    bottom: -22%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--hub-accent) 42%, transparent) 0%, transparent 72%);
+    animation: brandHubAuroraDrift 9.2s ease-in-out infinite reverse;
+  }
+  .sa-mobile .brand-hub-hero-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.22;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 20%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 20%, transparent 75%);
+  }
+  .sa-mobile .brand-hub-hero-sweep {
+    position: absolute;
+    top: -10%;
+    bottom: -10%;
+    width: 38%;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.14) 45%,
+      rgba(138, 171, 189, 0.22) 50%,
+      rgba(255, 255, 255, 0.1) 55%,
+      transparent 100%
+    );
+    animation: brandHubSweep 1.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+  }
+  .sa-mobile .brand-hub-hero-mark {
+    position: relative;
+    margin-bottom: 18px;
+    animation: brandHubLogoIn 780ms cubic-bezier(0.34, 1.25, 0.64, 1) 0.08s both;
+  }
+  .sa-mobile .brand-hub-hero-orbit {
+    position: absolute;
+    inset: -14px;
+    border-radius: 40px;
+    pointer-events: none;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      color-mix(in srgb, var(--hub-brand) 70%, transparent) 48deg,
+      transparent 110deg,
+      color-mix(in srgb, var(--hub-accent) 55%, transparent) 210deg,
+      transparent 280deg
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    padding: 1.5px;
+    animation: brandHubOrbitSpin 10s linear infinite;
+    opacity: 0.85;
+  }
+  .sa-mobile .brand-hub-hero-glow {
+    position: absolute;
+    inset: -10px;
+    border-radius: 38px;
+    pointer-events: none;
+    background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 48%, transparent) 0%, transparent 70%);
+    filter: blur(10px);
+    animation: brandHubPulse 3.6s ease-in-out infinite;
+  }
+  .sa-mobile .brand-hub-hero-title {
+    animation: brandHubTitleIn 700ms cubic-bezier(0.22, 1, 0.36, 1) 0.28s both;
+  }
+  .sa-mobile .brand-hub-hero-meta {
+    animation: brandHubMetaIn 640ms cubic-bezier(0.22, 1, 0.36, 1) 0.42s both;
+  }
+  .sa-mobile .brand-hub-hero-rule {
+    width: 56px;
+    height: 2px;
+    margin: 14px auto 0;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--hub-brand) 85%, #fff) 40%,
+      color-mix(in srgb, var(--hub-accent) 80%, #fff) 70%,
+      transparent
+    );
+    transform-origin: center;
+    animation: brandHubRuleIn 620ms cubic-bezier(0.22, 1, 0.36, 1) 0.5s both;
+  }
+  .sa-mobile .brand-hub-hero-score {
+    animation: brandHubMetaIn 620ms cubic-bezier(0.22, 1, 0.36, 1) 0.36s both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sa-mobile .brand-hub-hero,
+    .sa-mobile .brand-hub-hero-aurora,
+    .sa-mobile .brand-hub-hero-aurora-2,
+    .sa-mobile .brand-hub-hero-sweep,
+    .sa-mobile .brand-hub-hero-orbit,
+    .sa-mobile .brand-hub-hero-glow,
+    .sa-mobile .brand-hub-hero-mark,
+    .sa-mobile .brand-hub-hero-title,
+    .sa-mobile .brand-hub-hero-meta,
+    .sa-mobile .brand-hub-hero-rule,
+    .sa-mobile .brand-hub-hero-score {
+      animation: none !important;
+      filter: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+  }
+
   .sa-feed-share-channels {
     display: flex;
     flex-wrap: wrap;
@@ -1753,13 +1941,18 @@ const CSS = `
     transition: transform 120ms ease;
   }
 
-  /* Reels fullscreen snap pager */
+  /* Reels fullscreen snap pager — above bottom nav / sheets */
   .sa-reels-root {
     position: fixed;
     inset: 0;
-    z-index: 820;
+    z-index: 1200;
     background: #000;
     animation: saReelsEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  body.sa-reels-open .sa-chrome-nav-dock,
+  html.sa-reels-open .sa-chrome-nav-dock {
+    visibility: hidden;
+    pointer-events: none;
   }
   .sa-reels-scroller {
     height: 100%;

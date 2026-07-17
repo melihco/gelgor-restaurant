@@ -60,7 +60,10 @@ import {
   type FeedSlotFilter,
 } from '@/lib/feed-slot-filter';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
-import { useBrandStoryAudio } from '@/hooks/useBrandStoryAudio';
+import {
+  storyAudioResolveFromArtifactMeta,
+  useBrandStoryAudio,
+} from '@/hooks/useBrandStoryAudio';
 import { resolveActiveFeedTemplates, type ScheduledTemplateConfig, type ScheduledTemplateFeedItem } from '@/lib/scheduled-template-feed';
 import { getTenantBffHeaders } from '@/lib/runtime-config';
 
@@ -363,6 +366,7 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   onOpenGoogleAd?: () => void;
   onOpenReelFullscreen?: () => void;
   t: ReturnType<typeof useTheme>['t'];
+  /** Per-artifact story/reel BGM (pool rotation); falls back to brand primary. */
   storyMusicUrl?: string | null;
   missionIdeationLookup?: ReadonlyMap<string, string>;
   engagement?: FeedEngagementState;
@@ -500,6 +504,8 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!isPending || isRendering) return;
+    // Reel media stage owns its own tap → fullscreen; don't start approve/reject swipe there.
+    if ((e.target as HTMLElement | null)?.closest?.('.ig-feed-reel-stage')) return;
     swipeStartX.current = e.clientX;
   };
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -552,12 +558,16 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
           logoUrl={logoUrl}
           isPending={isPending}
           timeLabel={timeAgo(artifact.createdAt)}
-          backgroundMusicUrl={mode === 'story' && !content.videoUrl ? storyMusicUrl : undefined}
+          backgroundMusicUrl={
+            (mode === 'story' || mode === 'reel') && storyMusicUrl
+              ? storyMusicUrl
+              : undefined
+          }
           afterMedia={publishBar}
-          inFeedScroll={igHome}
+          inFeedScroll={platform === 'instagram'}
           formatTag={formatTag}
           igChromeDark={t.isDark}
-          onReelOpen={igHome && mode === 'reel' ? onOpenReelFullscreen : undefined}
+          onReelOpen={mode === 'reel' ? onOpenReelFullscreen : undefined}
           engagementId={artifact.id}
           engagement={engagement}
           onToggleLike={onToggleLike}
@@ -1879,7 +1889,7 @@ function PlatformFeedInner() {
   const pendingBriefJobs = useMobileStore((s) => s.pendingBriefJobs);
   const clearPendingBriefJob = useMobileStore((s) => s.clearPendingBriefJob);
   const feedScrollRef = useRef<HTMLDivElement>(null);
-  const { storyMusicUrl } = useBrandStoryAudio(tenantId);
+  const { storyMusicUrl, resolveMusicUrl } = useBrandStoryAudio(tenantId);
   const engagementApi = useFeedEngagement();
   const { setGloballyPaused, pauseAll } = useMediaPlayback();
   const [sheetTargetId, setSheetTargetId] = useState<string | null>(null);
@@ -3544,13 +3554,19 @@ function PlatformFeedInner() {
                             key={url}
                             src={url}
                             poster={poster ?? undefined}
-                            backgroundMusicUrl={undefined}
+                            backgroundMusicUrl={resolveMusicUrl({
+                              slotIndex: storyViewIdx ?? 0,
+                              artifactId: item.template.template_id,
+                            })}
                             style={mediaStyle}
                           />
                         ) : url ? (
                           <StoryStillPreview
                             src={url}
-                            backgroundMusicUrl={storyMusicUrl}
+                            backgroundMusicUrl={resolveMusicUrl({
+                              slotIndex: storyViewIdx ?? 0,
+                              artifactId: item.template.template_id,
+                            })}
                             style={mediaStyle}
                           />
                         ) : (
@@ -3571,6 +3587,10 @@ function PlatformFeedInner() {
                 const art = item.artifact;
                 const vid = resolveStoryVideo(art);
                 const poster = resolveStoryPoster(art);
+                const artMeta = (art.metadata ?? {}) as Record<string, unknown>;
+                const artMusicUrl = resolveMusicUrl(
+                  storyAudioResolveFromArtifactMeta(artMeta, art.id),
+                );
                 return (
                   <>
                     {poster ? (
@@ -3593,16 +3613,16 @@ function PlatformFeedInner() {
                     }}>
                     {vid ? (
                       <StoryPreviewVideo
-                        key={vid}
+                        key={`${vid}:${artMusicUrl}`}
                         src={vid}
                         poster={poster ?? undefined}
-                        backgroundMusicUrl={undefined}
+                        backgroundMusicUrl={artMusicUrl}
                         style={mediaStyle}
                       />
                     ) : poster ? (
                       <StoryStillPreview
                         src={poster}
-                        backgroundMusicUrl={storyMusicUrl}
+                        backgroundMusicUrl={artMusicUrl}
                         style={mediaStyle}
                       />
                     ) : (
@@ -4050,7 +4070,12 @@ function PlatformFeedInner() {
                     platform={operatorMode ? platformView : 'instagram'}
                     workspaceId={tenantId ?? undefined}
                     t={t}
-                    storyMusicUrl={storyMusicUrl}
+                    storyMusicUrl={resolveMusicUrl(
+                      storyAudioResolveFromArtifactMeta(
+                        (artifact.metadata ?? {}) as Record<string, unknown>,
+                        artifact.id,
+                      ),
+                    )}
                     missionIdeationLookup={missionIdeationLookup}
                     approving={isApproving}
                     revisioning={isRevisioning}
@@ -4074,9 +4099,12 @@ function PlatformFeedInner() {
                       setShareOpen(true);
                     }}
                     onOpenReelFullscreen={
-                      !operatorMode && detectFeedArtifactKind(artifact) === 'reel'
-                        ? () => setReelViewerArtifact(artifact)
-                        : undefined
+                      (() => {
+                        const k = detectFeedArtifactKind(artifact);
+                        return k === 'reel' || detectPreviewMode(artifact, k) === 'reel'
+                          ? () => setReelViewerArtifact(artifact)
+                          : undefined;
+                      })()
                     }
                   />
                 </div>

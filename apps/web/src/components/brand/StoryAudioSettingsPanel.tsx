@@ -14,6 +14,7 @@ import {
 } from '@/lib/story-audio-catalog';
 import type { StoryMusicCategory } from '@/lib/story-music-tracks.generated';
 import { STORY_VOICE_OPTIONS } from '@/lib/story-voice-catalog';
+import { STORY_AUDIO_POOL_MAX, buildStoryAudioPool } from '@/lib/story-audio-mood';
 import type { T } from '@/app/mobile/_components/theme-context';
 
 type ThemeRecord = Record<string, unknown>;
@@ -38,6 +39,10 @@ export function StoryAudioSettingsPanel({
   const [selectedMood, setSelectedMood] = useState(
     profile.storyAudioMood ?? STORY_MUSIC_OPTIONS[0]!.id,
   );
+  const [musicPool, setMusicPool] = useState<string[]>(() => buildStoryAudioPool({
+    selected: profile.storyAudioMood,
+    pool: profile.audioMoodPool,
+  }));
   const [selectedVoice, setSelectedVoice] = useState(
     profile.storyVoiceId ?? STORY_VOICE_OPTIONS[0]!.id,
   );
@@ -264,7 +269,8 @@ export function StoryAudioSettingsPanel({
         Arka plan müziği
       </div>
       <div style={{ fontSize: 11, color: t.textTertiary, lineHeight: 1.5, marginBottom: 10 }}>
-        {STORY_MUSIC_OPTIONS.length} modern ve eğlenceli alternatif — dans, pop, synth, tropical ve daha fazlası.
+        Birden fazla parça seçin — mission içindeki her story/reel sırayla farklı müzik çalar.
+        {' '}Havuz: {musicPool.length}/{STORY_AUDIO_POOL_MAX}. Birincil: listedeki ilk seçim.
       </div>
       <input
         type="search"
@@ -311,7 +317,8 @@ export function StoryAudioSettingsPanel({
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
         {filteredMusic.map((opt) => {
-          const active = selectedMood === opt.id;
+          const inPool = musicPool.includes(opt.id);
+          const isPrimary = selectedMood === opt.id;
           const isPlaying = playingId === opt.id;
           const isLoading = musicPreviewLoading === opt.id;
           return (
@@ -319,8 +326,8 @@ export function StoryAudioSettingsPanel({
               key={opt.id}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12,
-                border: `0.5px solid ${active ? t.accentBorder : t.separator}`,
-                background: active
+                border: `0.5px solid ${inPool ? t.accentBorder : t.separator}`,
+                background: inPool
                   ? (t.isDark ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.06)')
                   : 'transparent',
               }}
@@ -343,23 +350,60 @@ export function StoryAudioSettingsPanel({
                 type="button"
                 disabled={saving}
                 onClick={() => {
-                  setSelectedMood(opt.id);
+                  let nextPool: string[];
+                  if (inPool) {
+                    if (musicPool.length <= 1) return;
+                    nextPool = musicPool.filter((id) => id !== opt.id);
+                  } else if (musicPool.length >= STORY_AUDIO_POOL_MAX) {
+                    return;
+                  } else {
+                    nextPool = [...musicPool, opt.id];
+                  }
+                  const nextPrimary = nextPool.includes(selectedMood) ? selectedMood : nextPool[0]!;
+                  setMusicPool(nextPool);
+                  setSelectedMood(nextPrimary);
                   void save({
-                    storyAudioMood: opt.id,
-                    audioMoodPool: [opt.id, ...profile.audioMoodPool.filter((m) => m !== opt.id)].slice(0, 4),
+                    storyAudioMood: nextPrimary,
+                    audioMoodPool: nextPool,
                   });
                 }}
                 style={{
                   flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0,
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>
+                <div style={{ fontSize: 13, fontWeight: inPool ? 700 : 600, color: inPool ? t.accent : t.textPrimary }}>
                   {opt.label}
                 </div>
                 <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{opt.categoryLabel}</div>
               </button>
-              {active && (
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#10B981' }}>Seçili</span>
+              {inPool && (
+                <button
+                  type="button"
+                  disabled={saving || isPrimary}
+                  onClick={() => {
+                    const nextPool = buildStoryAudioPool({
+                      selected: opt.id,
+                      pool: musicPool,
+                    });
+                    setMusicPool(nextPool);
+                    setSelectedMood(opt.id);
+                    void save({
+                      storyAudioMood: opt.id,
+                      audioMoodPool: nextPool,
+                    });
+                  }}
+                  style={{
+                    fontSize: 10, fontWeight: 700, border: 'none', cursor: isPrimary ? 'default' : 'pointer',
+                    background: 'transparent', color: isPrimary ? '#10B981' : t.textMuted, padding: 0,
+                  }}
+                >
+                  {isPrimary ? 'Birincil' : 'Birincil yap'}
+                </button>
+              )}
+              {inPool && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: t.accent }}>
+                  #{musicPool.indexOf(opt.id) + 1}
+                </span>
               )}
             </div>
           );

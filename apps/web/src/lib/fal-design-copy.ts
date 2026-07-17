@@ -19,6 +19,7 @@ import {
   resolveMeaningfulProductionHeadline,
 } from '@/lib/production-headline-quality';
 import { rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
+import { preferBrandToneHeadline } from '@/lib/brand-tone-headline';
 
 export interface FalDesignCopyIdea {
   headline?: string;
@@ -85,6 +86,7 @@ function finalizeMissionOverlay(input: {
   channel: 'reel' | 'feed_post' | 'story';
   brandName: string;
   businessType?: string;
+  brandTone?: string;
   lockIdeationCopy?: boolean;
 }): { headline: string; subtitle?: string } {
   const overlay = resolveFalOverlayCopy({
@@ -105,6 +107,33 @@ function finalizeMissionOverlay(input: {
     channel: input.channel,
     cta: input.cta,
   });
+
+  // Story/reel: if caption yields a more on-tone hook, prefer it over a flat promo title.
+  if (
+    (input.channel === 'story' || input.channel === 'reel')
+    && input.brandTone?.trim()
+    && input.caption.trim().length >= 24
+  ) {
+    const captionHook = resolveFalDisplayHeadline({
+      caption: input.caption,
+      missionTitle: rebased.headline,
+      brandName: input.brandName,
+      cta: input.cta,
+      maxLen: input.channel === 'reel' ? 22 : 28,
+    }).headline;
+    const toned = preferBrandToneHeadline({
+      current: rebased.headline,
+      alternatives: [captionHook],
+      brandTone: input.brandTone,
+    });
+    if (toned && toned !== rebased.headline) {
+      return {
+        headline: resolveFalProductionOverlayHeadline(toned, [rebased.headline], input.channel),
+        subtitle: rebased.subtitle,
+      };
+    }
+  }
+
   return { headline: rebased.headline, subtitle: rebased.subtitle };
 }
 
@@ -120,6 +149,7 @@ export function resolveMissionFalDesignCopy(input: {
   brandName: string;
   channel: 'reel' | 'feed_post' | 'story';
   businessType?: string;
+  brandTone?: string;
 }): {
   headline: string;
   subtitle?: string;
@@ -146,6 +176,7 @@ export function resolveMissionFalDesignCopy(input: {
       channel,
       brandName,
       businessType: input.businessType,
+      brandTone: input.brandTone,
       lockIdeationCopy: true,
     });
     return { ...overlay, source: 'ideation_title' };
@@ -165,6 +196,7 @@ export function resolveMissionFalDesignCopy(input: {
         channel,
         brandName,
         businessType: input.businessType,
+        brandTone: input.brandTone,
         lockIdeationCopy: true,
       });
       return { ...overlay, source: extracted.source };
@@ -212,6 +244,7 @@ export function resolveMissionFalDesignCopy(input: {
       channel,
       brandName,
       businessType: input.businessType,
+      brandTone: input.brandTone,
       lockIdeationCopy: true,
     });
     return { ...overlay, source: 'caption_design_copy' };
@@ -224,6 +257,7 @@ export function resolveMissionFalDesignCopy(input: {
     channel,
     brandName,
     businessType: input.businessType,
+    brandTone: input.brandTone,
     lockIdeationCopy: true,
   });
 

@@ -415,16 +415,23 @@ export function shouldEnableStoryVoiceover(profile: BrandMotionProfile): boolean
 }
 
 export function describeStoryAudioPolicy(profile: BrandMotionProfile): string {
+  const poolSize = Math.max(
+    1,
+    (profile.audioMoodPool ?? []).filter(Boolean).length,
+    profile.storyAudioMood ? 1 : 0,
+  );
   const mood = resolveStoryAudioMood({
     selected: profile.storyAudioMood,
     pool: profile.audioMoodPool,
+    slotIndex: 0,
   });
   const music = storyMusicLabel(mood);
+  const rotateNote = poolSize > 1 ? ` · ${poolSize} parça rotasyon` : '';
   if (!shouldEnableStoryVoiceover(profile)) {
-    return `${music} · Sadece müzik`;
+    return `${music}${rotateNote} · Sadece müzik`;
   }
   const voiceName = storyVoiceLabel(profile.storyVoiceId);
-  return `${music} · Ses: ${voiceName} (doğal tempo)`;
+  return `${music}${rotateNote} · Ses: ${voiceName} (doğal tempo)`;
 }
 
 /** PUT /brand-context/{id}/theme — motion_profile JSON */

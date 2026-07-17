@@ -241,33 +241,42 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      {/* Hero */}
-      <div className="brand-hub-hero sa-chrome-card" style={{
-        position: 'relative', marginBottom: 22, padding: '28px 20px 22px', borderRadius: 28, overflow: 'hidden',
-        background: t.isDark
-          ? 'radial-gradient(120% 90% at 50% -20%, rgba(138,171,189,0.12) 0%, rgba(7,9,15,0.98) 58%)'
-          : 'radial-gradient(120% 90% at 50% -20%, rgba(255,255,255,0.98) 0%, rgba(244,246,250,0.98) 58%)',
-      }}
+      {/* Hero — brand stage with open-with-wow motion */}
+      <div
+        className="brand-hub-hero sa-chrome-card"
+        style={{
+          position: 'relative',
+          marginBottom: 22,
+          padding: '30px 20px 24px',
+          borderRadius: 28,
+          overflow: 'hidden',
+          ['--hub-brand' as string]: brandPrimary || SA_CHROME.steel300,
+          ['--hub-accent' as string]: t.accent || SA_CHROME.steel500,
+          background: t.isDark
+            ? `radial-gradient(130% 100% at 50% -18%, ${brandPrimary}28 0%, rgba(7,9,15,0.98) 52%),
+               linear-gradient(165deg, rgba(12,16,22,0.98) 0%, rgba(5,7,12,1) 100%)`
+            : `radial-gradient(130% 100% at 50% -18%, ${brandPrimary}22 0%, rgba(255,255,255,0.98) 52%),
+               linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(244,246,250,0.98) 100%)`,
+        }}
       >
-        <div style={{
-          position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: `conic-gradient(from 210deg at 80% 0%, ${brandPrimary}22, transparent 42%, ${t.accent}14, transparent 78%)`,
-        }} />
+        <div className="brand-hub-hero-aurora" aria-hidden />
+        <div className="brand-hub-hero-aurora-2" aria-hidden />
+        <div className="brand-hub-hero-grid" aria-hidden />
+        <div className="brand-hub-hero-sweep" aria-hidden />
 
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div style={{ position: 'relative', marginBottom: 16 }}>
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div className="brand-hub-hero-mark">
+            <div className="brand-hub-hero-orbit" aria-hidden />
+            <div className="brand-hub-hero-glow" aria-hidden style={{ background: `radial-gradient(circle, ${accentGlow} 0%, transparent 70%)` }} />
             <div style={{
-              position: 'absolute', inset: -8, borderRadius: 36,
-              background: `radial-gradient(circle, ${accentGlow} 0%, transparent 70%)`,
-              filter: 'blur(8px)',
-            }} />
-            <div style={{
-              width: 108, height: 108, borderRadius: 28, overflow: 'hidden', position: 'relative',
+              width: 112, height: 112, borderRadius: 30, overflow: 'hidden', position: 'relative',
               background: logoUrl
-                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.92)')
+                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.94)')
                 : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
-              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.06)'}`,
-              boxShadow: t.isDark ? '0 16px 40px rgba(0,0,0,0.45)' : '0 14px 32px rgba(15,23,42,0.12)',
+              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)'}`,
+              boxShadow: t.isDark
+                ? `0 18px 44px rgba(0,0,0,0.5), 0 0 0 1px ${brandPrimary}33`
+                : '0 16px 34px rgba(15,23,42,0.12)',
             }}
             >
               {logoUrl ? (
@@ -287,14 +296,18 @@ export function BrandHubDashboard({
                 </div>
               )}
             </div>
-            <div style={{
-              position: 'absolute', right: -6, bottom: -6,
-              width: 58, height: 58, borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: t.isDark ? 'rgba(12,14,18,0.92)' : 'rgba(255,255,255,0.94)',
-              border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'}`,
-              boxShadow: t.isDark ? '0 8px 24px rgba(0,0,0,0.35)' : '0 8px 20px rgba(15,23,42,0.1)',
-            }}
+            <div
+              className="brand-hub-hero-score"
+              style={{
+                position: 'absolute', right: -6, bottom: -6,
+                width: 58, height: 58, borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: t.isDark ? 'rgba(12,14,18,0.94)' : 'rgba(255,255,255,0.96)',
+                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)'}`,
+                boxShadow: t.isDark
+                  ? `0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px ${readinessGood ? brandPrimary : '#F59E0B'}44`
+                  : '0 8px 20px rgba(15,23,42,0.1)',
+              }}
             >
               <div style={{ position: 'relative', width: 54, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <ReadinessRing
@@ -313,23 +326,30 @@ export function BrandHubDashboard({
             </div>
           </div>
 
-          <h1 style={{
-            margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.045em', lineHeight: 1.05,
-            color: t.textPrimary, textAlign: 'center', maxWidth: '100%',
-          }}
+          <h1
+            className="brand-hub-hero-title"
+            style={{
+              margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.045em', lineHeight: 1.05,
+              color: t.textPrimary, textAlign: 'center', maxWidth: '100%',
+              textShadow: t.isDark ? '0 2px 24px rgba(0,0,0,0.45)' : 'none',
+            }}
           >
             {brandName || 'Markanız'}
           </h1>
 
           {(industryLabel || locationLabel) && (
-            <p style={{
-              margin: '10px 0 0', fontSize: 13, fontWeight: 500, letterSpacing: '0.02em',
-              color: t.textMuted, textAlign: 'center', lineHeight: 1.45,
-            }}
+            <p
+              className="brand-hub-hero-meta"
+              style={{
+                margin: '10px 0 0', fontSize: 13, fontWeight: 500, letterSpacing: '0.04em',
+                color: t.textMuted, textAlign: 'center', lineHeight: 1.45, textTransform: 'uppercase' as const,
+              }}
             >
               {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
             </p>
           )}
+
+          <div className="brand-hub-hero-rule" aria-hidden />
 
           {!constitutionConfirmedAt && (
             <button
@@ -391,9 +411,8 @@ export function BrandHubDashboard({
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
-          width: '70%',
-          maxWidth: 280,
-          margin: '0 auto 12px',
+          width: '100%',
+          margin: '0 0 12px',
         }}
       >
         {navItems.map((item) => {
@@ -407,15 +426,15 @@ export function BrandHubDashboard({
               style={{
                 position: 'relative',
                 width: '100%',
-                minHeight: 64,
-                padding: '12px 14px',
-                borderRadius: 16,
+                minHeight: 74,
+                padding: '14px 16px',
+                borderRadius: 20,
                 cursor: 'pointer',
                 textAlign: 'left',
                 overflow: 'hidden',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
+                gap: 14,
               }}
             >
               <div
@@ -436,9 +455,9 @@ export function BrandHubDashboard({
               <div
                 style={{
                   position: 'relative',
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
+                  width: 46,
+                  height: 46,
+                  borderRadius: 14,
                   flexShrink: 0,
                   display: 'flex',
                   alignItems: 'center',
@@ -447,7 +466,7 @@ export function BrandHubDashboard({
                   border: `0.5px solid ${item.accent}3d`,
                 }}
               >
-                <SectionIcon name={item.key} color={item.accent} size={22} />
+                <SectionIcon name={item.key} color={item.accent} size={25} />
               </div>
               <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
                 <div style={{

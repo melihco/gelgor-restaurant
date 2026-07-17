@@ -661,6 +661,19 @@ function IgFeedReelMediaStage({
   mediaId?: string;
 }) {
   const ambientSrc = posterUrl ?? videoUrl ?? null;
+  const tapOrigin = useRef<{ x: number; y: number } | null>(null);
+  const lastOpenAt = useRef(0);
+
+  const openFullscreen = (e: React.SyntheticEvent) => {
+    if (!onOpenFullscreen) return;
+    e.stopPropagation();
+    e.preventDefault();
+    // pointerup + click can both fire on mobile WebView — open once.
+    const now = Date.now();
+    if (now - lastOpenAt.current < 450) return;
+    lastOpenAt.current = now;
+    onOpenFullscreen();
+  };
 
   return (
     <div
@@ -671,12 +684,28 @@ function IgFeedReelMediaStage({
         position: 'relative',
         overflow: 'hidden',
         cursor: onOpenFullscreen ? 'pointer' : undefined,
+        touchAction: onOpenFullscreen ? 'manipulation' : undefined,
+        WebkitTapHighlightColor: 'transparent',
       }}
-      onClick={onOpenFullscreen ? (e) => { e.stopPropagation(); onOpenFullscreen(); } : undefined}
+      onPointerDown={onOpenFullscreen ? (e) => {
+        // Only primary finger/mouse — ignore scroll gestures that start elsewhere.
+        if (e.button != null && e.button !== 0) return;
+        tapOrigin.current = { x: e.clientX, y: e.clientY };
+      } : undefined}
+      onPointerUp={onOpenFullscreen ? (e) => {
+        const origin = tapOrigin.current;
+        tapOrigin.current = null;
+        if (!origin) return;
+        const dx = Math.abs(e.clientX - origin.x);
+        const dy = Math.abs(e.clientY - origin.y);
+        // Treat as tap when finger barely moved (scroll should not open viewer).
+        if (dx <= 12 && dy <= 12) openFullscreen(e);
+      } : undefined}
+      onPointerCancel={() => { tapOrigin.current = null; }}
+      onClick={onOpenFullscreen ? openFullscreen : undefined}
       onKeyDown={onOpenFullscreen ? (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpenFullscreen();
+          openFullscreen(e);
         }
       } : undefined}
       role={onOpenFullscreen ? 'button' : undefined}
@@ -749,10 +778,14 @@ function IgFeedReelMediaStage({
         </div>
       )}
 
-      <div style={{
-        position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6,
-        padding: '5px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.55)', zIndex: 2,
-      }}>
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 6,
+          padding: '5px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.55)', zIndex: 2,
+          pointerEvents: 'none',
+        }}
+      >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" aria-hidden>
           <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l4 3 4-6-4 3-4-3z"/>
         </svg>
@@ -764,14 +797,18 @@ function IgFeedReelMediaStage({
           type="button"
           aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
           aria-pressed={!muted}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
+            e.preventDefault();
             onToggleMute();
           }}
           style={{
             position: 'absolute', bottom: 12, right: 12, width: 44, height: 44, borderRadius: '50%',
             border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, zIndex: 3,
+            touchAction: 'manipulation',
           }}
         >
           {muted ? '🔇' : '🔊'}

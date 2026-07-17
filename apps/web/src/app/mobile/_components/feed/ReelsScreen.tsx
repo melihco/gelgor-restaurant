@@ -437,8 +437,12 @@ export function ReelsScreen({
     pauseAll();
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    document.documentElement.classList.add('sa-reels-open');
+    document.body.classList.add('sa-reels-open');
     return () => {
       document.body.style.overflow = prev;
+      document.documentElement.classList.remove('sa-reels-open');
+      document.body.classList.remove('sa-reels-open');
       setGloballyPaused(false);
     };
   }, [setGloballyPaused, pauseAll]);
