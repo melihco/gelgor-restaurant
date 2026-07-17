@@ -443,6 +443,21 @@ ALSO include "fal_design_hint": one sentence from a senior social designer — l
 graphic accents, and how the caption message should LOOK (Canva Pro quality). Example:
 "fal_design_hint": "diagonal_brand_split — mustard headline stack on teal block, venue photo hero lower-right, accent bar under CTA"
 
+### MANDATORY for EVERY reel slot (organic_reel, campaign_reel_motion, fal_reel_motion, fal_only_reel)
+Fal reels are our niche premium output — quiet luxury, not carnival motion graphics.
+Include:
+1. `"reel_art_direction"`: 1–2 sentences for the motion director — photo-zone motion only
+   (push-in / light breath / parallax). Explicitly say typography stays frozen pixels.
+   Example: "Ultra-slow push-in on cocktail glass; soft Aegean light breath; headline locked frozen — no kinetic type."
+2. `"fal_design_hint"`: still-frame design (9:16 cover) — restrained hierarchy, generous negative space,
+   one clear headline, no sticker spam / neon chaos / emoji.
+3. Optional `"reel_supporting_subjects"`: array of 1–3 gallery subject phrases for multi-beat storyboard
+   (different unused gallery clusters when available). Example: ["cocktail close-up","terrace sunset","guests toast"].
+   Production may use these for multi-image curated reels; primary hero stays visual_subject_hint.
+
+FORBIDDEN in reel_art_direction: kinetic text, bouncing letters, particle storms, whip pans, neon flashes,
+"Canva party intro", rewriting on-screen copy during motion.
+
 {canva_archetypes}
 
 Rules for visual_subject_hint:

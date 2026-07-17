@@ -34,11 +34,14 @@ describe('buildStoryMotionPrompt', () => {
       designerMotionCue: 'Gentle push-in on product hero zone with soft shimmer.',
     });
 
-    expect(prompt.length).toBeGreaterThan(1000);
+    expect(prompt.length).toBeGreaterThan(800);
     expect(prompt.length).toBeLessThanOrEqual(FAL_VIDEO_PROMPT_MAX_CHARS);
-    expect(prompt).toContain('FORBIDDEN: any text distortion');
+    expect(prompt).toContain('FROZEN TEXT');
+    expect(prompt).toContain('gibberish');
+    expect(prompt).not.toContain('Brand content:');
+    expect(prompt).not.toContain('Our happy customers');
     expect(prompt.endsWith('distor')).toBe(false);
     expect(prompt).toContain('LOCKED LOGO');
-    expect(prompt).toContain('Designer motion note');
+    expect(prompt).toContain('Art director motion');
   });
 });

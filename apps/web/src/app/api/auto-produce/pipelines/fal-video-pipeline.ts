@@ -11,8 +11,6 @@ import {
   resolveFalRequireGroundedGallery,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
-import { produceFalMissionVideo } from '@/lib/fal-video';
-import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
@@ -22,7 +20,10 @@ import {
   templateReplicaSpecFromBinding,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
-import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
+import {
+  generateStoryMotionPlateWithRetry,
+  isPlayableVideoUrl,
+} from '@/lib/fal-story-motion';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
@@ -457,26 +458,17 @@ export const falVideoHandler: ProductionPipelineHandler = {
         state.falGrafikerPass = poster.grafikerPass;
         state.costDelta += 0.08;
 
-        const motionPrompt = finalizeFalPrompt(
-          [
-            inputs.headline,
-            inputs.sceneHint,
-            inputs.caption,
-            inputs.mood ? `Mood: ${inputs.mood}` : '',
-            inputs.resolvedBrandName ? `Brand: ${inputs.resolvedBrandName}` : '',
-            inputs.brandBusinessType ? `Sector: ${inputs.brandBusinessType}` : '',
-            'Vertical Instagram Reel 9:16 — keep the designed frame composition locked.',
-          ].filter(Boolean).join('. '),
-          { kind: 'video', label: 'fal-video-fallback-916' },
-        );
-        const fal = await produceFalMissionVideo({
+        // Same locked I2V path as primary designer track — never pass headline into motion
+        // (models rewrite letters into gibberish when copy is in the prompt).
+        const fal = await generateStoryMotionPlateWithRetry({
           imageUrl: poster.imageUrl,
-          headline: inputs.headline,
-          caption: motionPrompt,
+          style: 'social_reel_graphics',
+          sector: inputs.brandBusinessType,
+          brandName: inputs.resolvedBrandName,
           mood: inputs.mood,
-          brandBusinessType: inputs.brandBusinessType,
-          pipeline: falPipeline,
-          workspaceId: inputs.workspaceId,
+          preserveExistingText: true,
+          pipeline: 'fal_reel',
+          designerMotionCue: inputs.designerMotionCue,
         });
         state.videoUrl = isPlayableVideoUrl(fal.videoUrl) ? fal.videoUrl : null;
         if (!state.videoUrl) {
@@ -484,17 +476,14 @@ export const falVideoHandler: ProductionPipelineHandler = {
             ?? 'fal_reel_video_no_artifact_still_fallback';
         }
         state.videoProduceMeta = {
-          source: fal.reused
-            ? 'fal_video'
-            : fal.model.includes('kling')
-              ? 'kling'
-              : fal.model.includes('luma')
-                ? 'luma'
-                : 'fal_video',
-          ...(fal.reused ? { i2vReused: true, reusedFromArtifactId: fal.reusedFromArtifactId } : {}),
+          source: fal.model.includes('kling')
+            ? 'kling'
+            : fal.model.includes('luma')
+              ? 'luma'
+              : 'fal_video',
         };
         console.log(
-          `[auto-produce] [fal-track] fal_reel 9:16 fallback poster→motion: "${inputs.headline.slice(0, 40)}"`,
+          `[auto-produce] [fal-track] fal_reel 9:16 fallback poster→locked-motion: "${inputs.headline.slice(0, 40)}"`,
         );
       } catch (rawErr) {
         const rawMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);

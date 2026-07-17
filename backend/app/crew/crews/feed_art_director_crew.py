@@ -223,6 +223,8 @@ def _normalize_weekly_catalog_first(
             "fal_design_hint",
             "layout_family_hint",
             "hero_reel_index",
+            "reel_art_direction",
+            "reel_supporting_subjects",
         ):
             if donor.get(hint_key) is not None:
                 entry[hint_key] = donor[hint_key]

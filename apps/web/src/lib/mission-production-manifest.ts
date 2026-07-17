@@ -124,6 +124,16 @@ export interface ProductionAssignment {
    * One sentence: layout + typography + graphic intent for this specific caption.
    */
   fal_design_hint?: string;
+  /**
+   * Feed Art Director motion brief for fal reels — photo/light only; typography stays frozen.
+   * Consumed as Kling/Luma designerMotionCue (never used to rewrite on-canvas copy).
+   */
+  reel_art_direction?: string;
+  /**
+   * Optional multi-beat gallery subjects for curated multi-image reels (1–3 phrases).
+   * Primary hero remains visual_subject_hint.
+   */
+  reel_supporting_subjects?: string[];
   rationale?: string;
 }
 

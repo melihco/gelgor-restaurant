@@ -99,4 +99,21 @@ describe('fal-design-brief', () => {
     expect(brief.graphicAccents.join(' ')).toMatch(/circle/i);
     expect(brief.motionCue).toContain('gentle push');
   });
+
+  it('prefers Feed Art Director reel_art_direction as motionCue and adds reel premium bar', () => {
+    const brief = resolveFalDesignBrief({
+      caption: 'Sunset cocktails on the terrace',
+      headline: 'Golden Hour',
+      format: 'reel',
+      falDesignHint: 'editorial split — quiet type, photo lower half',
+      reelArtDirection: 'Ultra-slow push-in on glass; soft light breath; typography frozen',
+      reelSupportingSubjects: ['cocktail close-up', 'terrace sunset'],
+    });
+
+    expect(brief.motionCue).toContain('Ultra-slow push-in');
+    expect(brief.designerRationale).toMatch(/Supporting gallery beats/);
+    const directives = buildFalDesignBriefDirectives(brief, 'reel');
+    expect(directives.some((d) => d.includes('REEL PREMIUM BAR'))).toBe(true);
+    expect(directives.some((d) => d.includes('MOTION CUE') && d.includes('never alter text'))).toBe(true);
+  });
 });

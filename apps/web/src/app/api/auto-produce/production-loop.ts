@@ -1107,7 +1107,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Brief-aware scene hint for fal-only / fal-designed prompts: combines the Feed
     // Art Director's specific subject keywords with the mission visual brief so the
     // AI-generated background reflects the post's topic instead of a generic gradient.
-    const falSceneHint = isCalendarProductionIdea(ideaRecord)
+    let falSceneHint = isCalendarProductionIdea(ideaRecord)
       ? buildCalendarFalSceneHint(ideaRecord)
       : adHocBrief
         ? [String(idea.scene_hint ?? idea.visual_direction ?? '').trim(), fdVisualHint].filter(Boolean).join(' — ').slice(0, 260)
@@ -1116,6 +1116,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           .filter(Boolean)
           .join(' — ')
           .slice(0, 160);
+    const reelSupport = (assignment.reel_supporting_subjects ?? [])
+      .map((s) => String(s).trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    if (reelSupport.length > 0 && String(assignment.pipeline ?? '').includes('reel')) {
+      falSceneHint = [
+        falSceneHint,
+        `Multi-beat gallery storyboard (curated): ${reelSupport.join(' → ')}`,
+      ].filter(Boolean).join(' — ').slice(0, 280);
+    }
     // Canonical product subject from ideation (AI-produced, language-neutral) —
     // SSOT for caption↔photo matching; keyword dictionary is only a fallback.
     let ideationSubjectKey = String(
@@ -3257,6 +3267,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           layoutFamilyHint: calendarDesignLayout?.layoutFamilyHint ?? assignment.layout_family_hint,
           explicitCanvaArchetypeId: calendarDesignLayout?.canvaArchetypeId,
           falDesignHint: assignment.fal_design_hint,
+          reelArtDirection: assignment.reel_art_direction,
+          reelSupportingSubjects: assignment.reel_supporting_subjects,
           referencePhotoUrl: referenceUrl || undefined,
           premiumComposition: extractPremiumComposition(idea),
           agentFalDesignBrief: readAgentFalDesignBrief(idea as Record<string, unknown>),

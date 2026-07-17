@@ -51,7 +51,7 @@ const MOTION_PROMPTS: Record<StoryMotionStyle, string> = {
   product_hero:
     'Ultra-slow 360-degree subtle rotation showcasing the product from slightly different angle. Premium studio lighting. Clean background.',
   social_reel_graphics:
-    'Premium social media reel motion graphics. Gentle slow push-in on the photo hero zone. Microscopic parallax between the graphic color block and photo panel. Soft light sweep across the design. Subtle ambient shimmer — Canva Pro reel intro energy, polished creator content.',
+    'Quiet luxury Instagram Reel motion. Ultra-slow push-in on the photo hero only. Microscopic parallax between color panel and photo. Soft light breath — editorial, restrained, premium. No party energy, no neon chaos, no busy motion graphics.',
 };
 
 export function resolveMotionStyle(sector?: string, mood?: string): StoryMotionStyle {
@@ -81,22 +81,25 @@ export function buildStoryMotionPrompt(input: {
   const isReelGraphics = input.style === 'social_reel_graphics' || input.pipeline === 'fal_reel';
 
   if (input.preserveExistingText) {
+    // Do NOT pass headline/copy into I2V — models rewrite letters into gibberish.
     const context = [
       input.sector ? `Industry: ${input.sector}.` : '',
-      input.headline ? `Brand content: "${input.headline.slice(0, 50)}".` : '',
+      'FROZEN TEXT (NON-NEGOTIABLE): Treat every letter, number, diacritic, and glyph as frozen pixels. Zero new characters. Zero OCR rewrite. Zero language change. Zero word morphing. If text exists, it must be identical in every frame.',
       isReelGraphics
-        ? 'LOCKED TYPOGRAPHY: This is a finished Canva Pro reel cover frame with headline, subtitle, and graphic design layers. All text and shapes must stay pixel-perfect from frame 1 to frame 5s.'
-        : 'LOCKED COMPOSITION: This is a professional branded design frame. The existing typography is the hero element — it MUST remain pixel-perfect from frame 1 to frame 5s.',
-      'LOCKED LOGO: If a brand logo appears in the frame, it must stay pixel-perfect — same shape, colors, and position. Allowed: subtle opacity pulse or glow matching vibe. FORBIDDEN: redrawing, morphing, recoloring, or replacing the logo.',
+        ? 'LOCKED TYPOGRAPHY: Finished premium reel cover — headline/subtitle/panels stay pixel-perfect from frame 1 to end. Quiet luxury, not carnival motion graphics.'
+        : 'LOCKED COMPOSITION: Professional branded design frame — typography stays pixel-perfect from frame 1 to end.',
+      'LOCKED LOGO: Brand mark stays identical — same shape, colors, position. Allowed: tiny opacity breath only. FORBIDDEN: redraw, morph, recolor, replace.',
       isReelGraphics
-        ? 'Allowed motion: gentle slow zoom on the photo hero panel only, microscopic parallax between color block and photo zone, soft light sweep, subtle ambient shimmer. Creator-grade reel intro — dynamic but polished.'
-        : 'Allowed motion: microscopic ambient light shift, ultra-subtle bokeh breath, barely-perceptible depth-of-field pulse. NOTHING else.',
-      'FORBIDDEN: any text distortion, letter mutation, text blur, typography movement, reframing that crops headline, or mutation of graphic design elements.',
+        ? 'Allowed motion ONLY: ultra-slow push-in on the photo zone, microscopic panel parallax, soft light breath. FORBIDDEN motion: shake, whip pans, particle storms, neon flashes, sticker pop-ins, emoji, kinetic type, bouncing UI.'
+        : 'Allowed motion: microscopic ambient light shift, ultra-subtle bokeh breath. NOTHING else.',
+      'FORBIDDEN: text distortion, letter mutation, blurred/warped type, typography movement, gibberish words, invented slogans, cropped headline, mutating shapes.',
       isReelGraphics
-        ? 'Duration: 5 seconds. Aspect ratio: 9:16 vertical. Output must feel like a premium Instagram Reel from a social media manager — not raw cinematic footage.'
-        : 'Duration: 5 seconds. Aspect ratio: 9:16 vertical. Output must look like a premium breathing still, not a generative animation.',
-      'Quality: agency-grade social media brand content.',
-      input.designerMotionCue ? `Designer motion note: ${input.designerMotionCue.slice(0, 180)}.` : '',
+        ? 'Duration: 5s. Aspect 9:16. Output = restrained agency Reel — editorial breathing still with design locked, not a generative party video.'
+        : 'Duration: 5s. Aspect 9:16. Premium breathing still, not generative animation.',
+      'Quality: niche high-end brand content — less clutter wins.',
+      input.designerMotionCue
+        ? `Art director motion (photo/light only — never alter text): ${input.designerMotionCue.slice(0, 220)}.`
+        : '',
     ].filter(Boolean).join(' ');
     return finalizeFalPrompt(`${base} ${context}`, { kind: 'video', label: 'story-motion-locked' });
   }

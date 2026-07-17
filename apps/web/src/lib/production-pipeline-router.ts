@@ -258,6 +258,15 @@ export function parseProductionAssignments(
       fal_design_hint: (item as ProductionAssignment).fal_design_hint
         ? String((item as ProductionAssignment).fal_design_hint)
         : undefined,
+      reel_art_direction: (item as ProductionAssignment).reel_art_direction
+        ? String((item as ProductionAssignment).reel_art_direction).slice(0, 400)
+        : undefined,
+      reel_supporting_subjects: Array.isArray((item as ProductionAssignment).reel_supporting_subjects)
+        ? (item as ProductionAssignment).reel_supporting_subjects!
+            .map((s) => String(s).trim())
+            .filter(Boolean)
+            .slice(0, 3)
+        : undefined,
       rationale: (item as ProductionAssignment).rationale,
     });
   }

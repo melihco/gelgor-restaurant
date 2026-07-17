@@ -68,6 +68,10 @@ export interface ResolveFalDesignPromptContextInput {
   sceneHint?: string;
   layoutFamilyHint?: string;
   falDesignHint?: string;
+  /** Feed Art Director reel motion brief — becomes motionCue (photo/light only). */
+  reelArtDirection?: string;
+  /** Optional multi-beat gallery subjects for curated reel storyboards. */
+  reelSupportingSubjects?: string[];
   referencePhotoUrl?: string;
   premiumComposition?: PremiumCompositionMeta | null;
   sector?: string;
@@ -271,7 +275,7 @@ function synthesizeFalDesignBrief(
     designerRationale: input.falDesignHint || input.sceneHint || archetype.description,
     avoidPatterns: [...FAL_AVOID_DEFAULTS],
     motionCue: isReel
-      ? (archetype.motionCue ?? 'gentle photo push-in + locked typography — creator reel intro energy')
+      ? (archetype.motionCue ?? 'ultra-slow photo push-in + soft light breath — typography frozen pixels')
       : undefined,
     canvaArchetypeId: archetype.id,
     canvaArchetypeName: archetype.name,
@@ -335,7 +339,30 @@ export function resolveFalDesignBrief(input: ResolveFalDesignPromptContextInput)
     ? { designerRationale: input.falDesignHint }
     : null;
 
-  const merged = mergeBrief(synthesized, fromPremium, fromAgent, falHintLayer);
+  const reelArt = (input.reelArtDirection ?? '').trim();
+  const supporting = (input.reelSupportingSubjects ?? [])
+    .map((s) => String(s).trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const reelLayer: Partial<FalDesignBrief> | null = reelArt || supporting.length
+    ? {
+        motionCue: reelArt
+          || (supporting.length
+            ? `Multi-beat photo storyboard: ${supporting.join(' → ')}; ultra-slow cuts feel; typography frozen`
+            : undefined),
+        designerRationale: [
+          input.falDesignHint,
+          supporting.length ? `Supporting gallery beats: ${supporting.join(' · ')}` : '',
+        ].filter(Boolean).join(' | ') || undefined,
+        avoidPatterns: [
+          'kinetic / bouncing on-screen text during video',
+          'neon carnival motion graphics or sticker spam',
+          'rewriting or morphing headline letters in I2V',
+        ],
+      }
+    : null;
+
+  const merged = mergeBrief(synthesized, fromPremium, fromAgent, falHintLayer, reelLayer);
 
   // Agent overrides layout but keep archetype id/name unless agent set canva_archetype
   if (!fromAgent?.canvaArchetypeId) {
@@ -367,8 +394,17 @@ export function buildFalDesignBriefDirectives(
     ? buildCanvaArchetypeDirective(spec, brief.motionCue ? 'reel' : 'post')
     : undefined;
 
+  const reelPremium = format === 'reel'
+    ? [
+        'REEL PREMIUM BAR (niche quality): Quiet luxury Instagram Reel cover — generous negative space, one clear headline, restrained palette accents.',
+        'REEL REJECT: neon carnival energy, sticker spam, emoji as design, busy kinetic UI, multiple competing text blocks, party flyer look.',
+        'REEL TEXT LOCK: On-canvas headline/subtitle must be short, sharp, and stable — I2V will freeze these pixels; never design for moving type.',
+      ]
+    : [];
+
   const lines = [
     archetypeDirective,
+    ...reelPremium,
     `DESIGNER BRIEF: ${brief.creativeHook}`,
     `LAYOUT: ${brief.layoutPattern}`,
     `TYPOGRAPHY MODE: ${brief.typographyMode}`,
@@ -378,13 +414,13 @@ export function buildFalDesignBriefDirectives(
       ? `GRAPHIC ACCENTS (include visibly): ${brief.graphicAccents.join(', ')}.`
       : undefined,
     brief.designerRationale
-      ? `DESIGNER RATIONALE: ${brief.designerRationale.slice(0, 200)}`
+      ? `DESIGNER RATIONALE: ${brief.designerRationale.slice(0, 220)}`
       : undefined,
     brief.differentiator
       ? `DIFFERENTIATOR: ${brief.differentiator.slice(0, 160)}`
       : undefined,
     brief.motionCue && brief.motionCue !== 'static'
-      ? `MOTION CUE (start frame): ${brief.motionCue}`
+      ? `MOTION CUE (photo/light only — never alter text): ${brief.motionCue}`
       : undefined,
     brief.logoPlacement
       ? `LOGO PLACEMENT: ${formatFalLogoPlacementDirective(brief.logoPlacement, channel)}`
