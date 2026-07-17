@@ -49,6 +49,10 @@ TABLE_CHECKS = (
 
 COLUMN_CHECKS = (
     ColumnCheck("brand_contexts", "chatbot_profile", "0022_brand_chatbot_profile.sql"),
+    ColumnCheck("brand_contexts", "instagram_profile_pic_url", "0040_instagram_profile_stats.sql"),
+    ColumnCheck("brand_contexts", "instagram_followers", "0040_instagram_profile_stats.sql", "integer"),
+    ColumnCheck("brand_contexts", "instagram_following", "0040_instagram_profile_stats.sql", "integer"),
+    ColumnCheck("brand_contexts", "instagram_posts_count", "0040_instagram_profile_stats.sql", "integer"),
     ColumnCheck("production_jobs", "priority", "0024_production_jobs_priority.sql", "integer"),
     ColumnCheck("brand_scheduled_templates", "media_items", "0025_brand_scheduled_templates.sql", "jsonb"),
     ColumnCheck("brand_scheduled_templates", "schedule_days", "0025_brand_scheduled_templates.sql", "jsonb"),
