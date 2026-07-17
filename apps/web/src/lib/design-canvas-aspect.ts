@@ -55,8 +55,11 @@ export function canvasNeedsNormalization(
 }
 
 /**
- * Center-crop + resize a raw image buffer onto the target canvas.
- * Returns null when the buffer already matches the target ratio.
+ * Fit + pad a raw image onto the target canvas (never crop).
+ *
+ * GPT-image returns 1024×1536 (2:3). Cover-cropping that to 4:5 / 9:16
+ * chops the top/bottom (or sides) — exactly where designed headlines/CTAs live.
+ * Contain + letterbox keeps every pixel of typography readable in the feed.
  */
 export async function normalizeCanvasBuffer(
   buffer: Buffer,
@@ -67,7 +70,11 @@ export async function normalizeCanvasBuffer(
   if (!meta.width || !meta.height) return null;
   if (!canvasNeedsNormalization(meta.width, meta.height, target)) return null;
   return sharp(buffer)
-    .resize(target.width, target.height, { fit: 'cover', position: 'centre' })
+    .resize(target.width, target.height, {
+      fit: 'contain',
+      position: 'centre',
+      background: { r: 8, g: 10, b: 14, alpha: 1 },
+    })
     .jpeg({ quality: 92 })
     .toBuffer();
 }

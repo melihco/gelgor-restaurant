@@ -593,7 +593,7 @@ function buildReferenceEditDirective(
       'Brand colors belong on text and graphic blocks only — never as a full-image filter.',
       'If the layout uses a diagonal or split design, one zone stays the untouched photo; the other is a flat brand color block with headline text.',
       'Apply the text overlays, color blocks, typography, and CTA exactly as described.',
-      'SAFE ZONE (MANDATORY): The canvas will be center-cropped to a 4:5 feed frame in post-production. All text, logos, and design elements must remain inside the frame with at least 8% margin from left/right edges and 13% margin from top/bottom edges. Nothing should be cropped or cut off.',
+      'SAFE ZONE (MANDATORY): Keep all text, logos, and design elements inside the frame with at least 8% margin from every edge. Prefer the central reading zone — never place critical type flush against the canvas border.',
       'The final output is a complete designed social media graphic where the real photo is still clearly recognizable.',
       '',
       basePrompt,

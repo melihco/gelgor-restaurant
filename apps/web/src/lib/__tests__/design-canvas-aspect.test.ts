@@ -47,7 +47,7 @@ describe('canvasNeedsNormalization', () => {
 });
 
 describe('normalizeCanvasBuffer', () => {
-  it('crops a 2:3 design card to exact 4:5 post canvas', async () => {
+  it('fits a 2:3 design card onto exact 4:5 post canvas without cropping', async () => {
     const img = await makeImage(1024, 1536);
     const out = await normalizeCanvasBuffer(img, POST_CANVAS);
     expect(out).not.toBeNull();
@@ -56,7 +56,7 @@ describe('normalizeCanvasBuffer', () => {
     expect(meta.height).toBe(1350);
   });
 
-  it('crops a 2:3 design card to exact 9:16 story canvas', async () => {
+  it('fits a 2:3 design card onto exact 9:16 story canvas without cropping', async () => {
     const img = await makeImage(1024, 1536);
     const out = await normalizeCanvasBuffer(img, STORY_CANVAS);
     expect(out).not.toBeNull();

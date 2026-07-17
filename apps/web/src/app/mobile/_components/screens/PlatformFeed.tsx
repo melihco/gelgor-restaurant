@@ -1404,7 +1404,7 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
         ) : thumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbUrl} alt="" referrerPolicy="no-referrer"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }} />
+            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
             justifyContent: 'center', background: 'linear-gradient(135deg,#1a1a2e,#16213e)',
@@ -1723,10 +1723,11 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
             )}
           </>
         ) : img ? (
+          // contain — cover would crop top/bottom headlines on non-9:16 designed stills
           <SafeCoverImage
             src={img}
             fallbacks={[storyPosterImg, resolveImg(resolvePosterUrl(artifact) ?? undefined)]}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }}
           />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
