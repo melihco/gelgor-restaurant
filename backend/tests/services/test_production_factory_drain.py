@@ -368,6 +368,8 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
     j1, j2 = uuid.uuid4(), uuid.uuid4()
+    mission_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
     factory_jobs = [
         {"id": str(j1), "slotKey": "0:story"},
         {"id": str(j2), "slotKey": "1:post"},
@@ -385,9 +387,13 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     async def _has_open(mission_id):
         return True
 
+    async def _workspace_for_mission(_mission_id):
+        return workspace_id
+
     monkeypatch.setattr(pfs.jobs, "mark_ready", _mark_ready, raising=True)
     monkeypatch.setattr(pfs.jobs, "mark_failed", _mark_failed, raising=True)
     monkeypatch.setattr(pfs.jobs, "has_open_jobs", _has_open, raising=True)
+    monkeypatch.setattr(pfs, "_workspace_for_mission", _workspace_for_mission, raising=True)
 
     async def _fake_finalize(mission_id):
         return {"total": 2, "complete": False, "ready": 1, "active": 0, "failed": 1}
@@ -398,7 +404,7 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     monkeypatch.setattr(pfs, "schedule_drain", lambda *a, **k: rekicks.append((a, k)), raising=True)
 
     produce_data = {"results": [{"slotKey": "0:story", "id": "art-0"}]}
-    out = await pfs.apply_bullmq_completion(uuid.uuid4(), uuid.uuid4(), factory_jobs, produce_data)
+    out = await pfs.apply_bullmq_completion(mission_id, workspace_id, factory_jobs, produce_data)
 
     assert out["ready"] == 1
     assert out["failed"] == 1
