@@ -88,7 +88,7 @@ function defaultCopyBundleId(missionId: string): string {
   return missionId ? `${missionId.slice(0, 8)}-week` : 'default-week';
 }
 
-function publishChannelForRole(role: ProductionSlotRole): ProductionAssignment['publish_channel'] {
+export function publishChannelForRole(role: ProductionSlotRole): ProductionAssignment['publish_channel'] {
   if (role === 'paid_ad_google_creative') return 'google_ads';
   if (role === 'paid_ad_creative') return 'meta_ads';
   if (CAMPAIGN_ROLES.has(role)) return 'instagram_campaign';

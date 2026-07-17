@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyCatalogSlotBindingsToQueue,
+  applyCatalogSlotToAssignment,
   filterDesignTemplatesToActiveSlots,
+  formatFromSlotRole,
   matchIdeaToBrandCatalogSlot,
   enrichProductionQueueWithBrandSlots,
   resolveBrandActiveSlotKeys,
@@ -301,6 +303,165 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     const queue = enrichProductionQueueWithBrandSlots(queueItems, activeSet);
     expect(queue).toHaveLength(8);
     expect(queue.every((row) => row.assignment.catalog_slot_key)).toBe(true);
+  });
+});
+
+describe('catalog key ↔ role/pipeline alignment', () => {
+  it('formatFromSlotRole maps reel/carousel/story roles', () => {
+    expect(formatFromSlotRole('organic_reel')).toBe('reel');
+    expect(formatFromSlotRole('campaign_reel_motion')).toBe('reel');
+    expect(formatFromSlotRole('organic_carousel')).toBe('carousel');
+    expect(formatFromSlotRole('fal_only_story')).toBe('story');
+    expect(formatFromSlotRole('fal_designed_post')).toBe('post');
+  });
+
+  it('applyCatalogSlotToAssignment realigns carousel role when catalog key is reel (Yula drift)', () => {
+    const reelSlot = mockSlot('restaurant_cafe_cocktail_bar_reel', 'reel', {
+      sector_id: 'restaurant_cafe',
+      slot_role: 'organic_reel',
+      pipeline: 'fal_reel',
+      library_slot_key: 'atmosphere_reel',
+      design_template_type: 'reel_cover',
+    });
+    const active = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-yula',
+      sector: 'restaurant_cafe',
+      sectorSlots: [reelSlot],
+      tenantAssignments: [mockAssignment(reelSlot.slot_key, true, reelSlot)],
+    }).slots[0]!;
+
+    const next = applyCatalogSlotToAssignment(
+      {
+        idea_index: 4,
+        slot_role: 'organic_carousel',
+        pipeline: 'carousel_gallery',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'restaurant_cafe_cocktail_bar_reel',
+      },
+      active,
+    );
+
+    expect(next.slot_role).toBe('organic_reel');
+    expect(next.pipeline).toBe('fal_reel');
+    expect(next.catalog_slot_key).toBe('restaurant_cafe_cocktail_bar_reel');
+    expect(next.publish_channel).toBe('instagram_organic');
+  });
+
+  it('enrich realigns role/pipeline + idea format from catalog (restaurant_cafe + local_products)', () => {
+    const cocktailReel = mockSlot('restaurant_cafe_cocktail_bar_reel', 'reel', {
+      sector_id: 'restaurant_cafe',
+      slot_role: 'organic_reel',
+      pipeline: 'fal_reel',
+      library_slot_key: 'atmosphere_reel',
+    });
+    const tastingCarousel = mockSlot('restaurant_cafe_menu_tasting_carousel', 'carousel', {
+      sector_id: 'restaurant_cafe',
+      slot_role: 'organic_carousel',
+      pipeline: 'carousel_gallery',
+      library_slot_key: 'menu_carousel',
+    });
+    const harvestPost = mockSlot('local_products_shop_harvest_post', 'post', {
+      sector_id: 'ecommerce_retail',
+      slot_role: 'fal_designed_post',
+      pipeline: 'fal_design',
+    });
+
+    const cafeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-cafe',
+      sector: 'restaurant_cafe',
+      sectorSlots: [cocktailReel, tastingCarousel],
+      tenantAssignments: [
+        mockAssignment(cocktailReel.slot_key, true, cocktailReel),
+        mockAssignment(tastingCarousel.slot_key, true, tastingCarousel),
+      ],
+    });
+    const shopSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-shop',
+      sector: 'local_products_shop',
+      sectorSlots: [harvestPost],
+      tenantAssignments: [mockAssignment(harvestPost.slot_key, true, harvestPost)],
+    });
+
+    const cafeQueue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 4,
+        idea: {
+          headline: 'Cocktail bar',
+          catalog_slot_key: 'restaurant_cafe_cocktail_bar_reel',
+          content_type: 'instagram_carousel',
+          format: 'carousel',
+        },
+        assignment: {
+          idea_index: 4,
+          slot_role: 'organic_carousel',
+          pipeline: 'carousel_gallery',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: 'restaurant_cafe_cocktail_bar_reel',
+        },
+      }],
+      cafeSet,
+    );
+
+    expect(cafeQueue[0]!.assignment.slot_role).toBe('organic_reel');
+    expect(cafeQueue[0]!.assignment.pipeline).toBe('fal_reel');
+    expect(cafeQueue[0]!.idea.format).toBe('reel');
+    expect(cafeQueue[0]!.idea.content_type).toBe('instagram_reel');
+
+    const shopQueue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: { headline: 'Harvest', content_type: 'instagram_post' },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+        },
+      }],
+      shopSet,
+    );
+    expect(shopQueue[0]!.assignment.catalog_slot_key).toBe('local_products_shop_harvest_post');
+    expect(shopQueue[0]!.assignment.slot_role).toBe('fal_designed_post');
+  });
+
+  it('matchIdeaToBrandCatalogSlot does not cross-format without preferred key', () => {
+    const story = mockSlot('beach_club_sunset_golden_story', 'story', {
+      slot_role: 'fal_only_story',
+      pipeline: 'fal_story',
+    });
+    const reel = mockSlot('beach_club_atmosphere_reel', 'reel', {
+      slot_role: 'organic_reel',
+      pipeline: 'fal_reel',
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-1',
+      sector: 'beach_club',
+      sectorSlots: [story, reel],
+      tenantAssignments: [
+        mockAssignment(story.slot_key, true, story),
+        mockAssignment(reel.slot_key, true, reel),
+      ],
+    });
+
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: { headline: 'Sunset', content_type: 'instagram_story', format: 'story' },
+      assignment: {
+        idea_index: 0,
+        slot_role: 'fal_only_story',
+        pipeline: 'fal_story',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_story',
+      },
+      activeSlots: activeSet,
+      usedSlotKeys: new Set([story.slot_key]),
+    });
+    // Story slot used — must not fall back to the only remaining reel slot.
+    expect(matched).toBeNull();
   });
 });
 

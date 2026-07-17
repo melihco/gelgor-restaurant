@@ -15,9 +15,13 @@
 import type { BrandDesignTemplateRecord } from '@/lib/brand-design-template-matcher';
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import type { PackageGeometry } from '@/lib/mission-production-manifest';
-import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
+import {
+  publishChannelForRole,
+  type ManifestProductionQueueItem,
+} from '@/lib/production-pipeline-router';
 import { resolveWeeklyPackageGeometry } from '@/lib/package-weekly-geometry';
 import { detectIdeaPackageFormat } from '@/lib/weekly-publish-package';
+import type { ProductionPipeline, ProductionSlotRole } from '@/lib/mission-production-manifest';
 import {
   fetchSectorSlotDefinitions,
   fetchTenantSlotAssignments,
@@ -243,6 +247,26 @@ function normalizeToken(value: string | null | undefined): string {
   return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '_');
 }
 
+/** Package format implied by a production role (assignment SSOT). */
+export function formatFromSlotRole(role: string | null | undefined): BrandActiveSlot['format'] | null {
+  const r = String(role ?? '').toLowerCase();
+  if (!r) return null;
+  if (r.includes('carousel')) return 'carousel';
+  if (r.includes('reel')) return 'reel';
+  if (r.includes('story') || r.includes('canvas')) return 'story';
+  if (r.includes('post') || r.includes('ad') || r.includes('typography') || r.includes('showcase')) {
+    return 'post';
+  }
+  return null;
+}
+
+function contentTypeForCatalogFormat(format: BrandActiveSlot['format']): string {
+  if (format === 'story') return 'instagram_story';
+  if (format === 'reel') return 'instagram_reel';
+  if (format === 'carousel') return 'instagram_carousel';
+  return 'instagram_post';
+}
+
 function ideaHaystack(idea: Record<string, unknown>): string {
   return [
     idea.headline,
@@ -266,13 +290,15 @@ function scoreSlotForIdea(
   let score = slot.priority;
 
   const fmt = detectIdeaPackageFormat(idea);
+  const roleFmt = formatFromSlotRole(assignment?.slot_role);
   const formatMap: Record<string, BrandActiveSlot['format']> = {
     post: 'post',
     story: 'story',
     reel: 'reel',
     carousel: 'carousel',
   };
-  const targetFormat = formatMap[fmt];
+  // Assignment role wins when idea labels drift (e.g. reel idea stamped carousel).
+  const targetFormat = roleFmt ?? formatMap[fmt];
   if (targetFormat && slot.format === targetFormat) score += 40;
   else if (targetFormat && slot.format !== targetFormat) return 0;
 
@@ -329,6 +355,8 @@ export interface CatalogSlotMatchInput {
 /**
  * Map a production idea to the best enabled catalog slot.
  * Falls back within the same format when the preferred/disabled slot is unavailable.
+ * Never cross-format (reel key must not stamp a carousel idea unless preferred
+ * catalog key explicitly wins — then role/pipeline are realigned on apply).
  */
 export function matchIdeaToBrandCatalogSlot(
   input: CatalogSlotMatchInput,
@@ -341,6 +369,8 @@ export function matchIdeaToBrandCatalogSlot(
   if (preferred && activeSlots.enabledSlotKeys.has(preferred)) {
     const exact = activeSlots.slots.find((s) => s.slotKey === preferred);
     if (exact && (!usedSlotKeys || !usedSlotKeys.has(exact.slotKey))) {
+      // Explicit catalog pin always wins — applyCatalogSlotToAssignment realigns
+      // slot_role/pipeline to the catalog row (fixes reel-key-on-carousel drift).
       return exact;
     }
   }
@@ -355,18 +385,20 @@ export function matchIdeaToBrandCatalogSlot(
 
   if (best) return best.slot;
 
-  // Format-only fallback — any unused enabled slot of matching format.
+  // Format-only fallback — same format only (never stamp a reel key onto a story).
   const fmt = detectIdeaPackageFormat(idea);
+  const roleFmt = formatFromSlotRole(assignment?.slot_role);
   const formatMap: Record<string, BrandActiveSlot['format']> = {
     post: 'post',
     story: 'story',
     reel: 'reel',
     carousel: 'carousel',
   };
-  const targetFormat = formatMap[fmt];
+  const targetFormat = roleFmt ?? formatMap[fmt];
+  if (!targetFormat) return null;
   return activeSlots.slots.find(
     (s) => s.format === targetFormat && !usedSlotKeys?.has(s.slotKey),
-  ) ?? activeSlots.slots.find((s) => !usedSlotKeys?.has(s.slotKey)) ?? null;
+  ) ?? null;
 }
 
 export function filterDesignTemplatesToActiveSlots(
@@ -406,17 +438,24 @@ export function stampIdeasWithBrandCatalogSlots(
  * `restaurant_cafe_event_announcement_story`). `library_slot_key` stays a
  * LEGACY Remotion/library key (`event_story`, `campaign_post`, …) so the
  * `LIBRARY_SLOT_TO_TEMPLATE_TYPES` routing and Remotion BTL lookup keep working.
- * Overwriting library_slot_key with the catalog id (previous behaviour) broke
- * both — the matcher then fell back to caption/announcement heuristics.
+ *
+ * Catalog row is SSOT for role/pipeline/format — a `_reel` key must never keep
+ * an `organic_carousel` assignment (Yula 76ddef0b drift).
  */
 export function applyCatalogSlotToAssignment(
   assignment: ProductionAssignment,
   matched: BrandActiveSlot,
 ): ProductionAssignment {
+  const slotRole = (matched.slotRole || assignment.slot_role) as ProductionSlotRole;
+  const pipeline = (matched.pipeline || assignment.pipeline) as ProductionPipeline;
   return {
     ...assignment,
     catalog_slot_key: matched.slotKey,
+    catalog_slot_label: matched.labelTr,
     library_slot_key: matched.librarySlotKey ?? assignment.library_slot_key ?? undefined,
+    slot_role: slotRole,
+    pipeline,
+    publish_channel: publishChannelForRole(slotRole),
   };
 }
 
@@ -486,6 +525,11 @@ export function enrichProductionQueueWithBrandSlots(
         ...ideaWithVisualDefaults,
         catalog_slot_key: matched.slotKey,
         catalog_slot_label: matched.labelTr,
+        // Keep idea format fields in sync so rematch / detectIdeaPackageFormat
+        // do not re-drift toward the old carousel/story label.
+        format: matched.format,
+        publish_schedule_format: matched.format,
+        content_type: contentTypeForCatalogFormat(matched.format),
       },
       assignment,
     });
