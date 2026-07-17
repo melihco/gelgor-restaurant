@@ -89,7 +89,7 @@ export interface SlotProductionInputs {
   /** New Brief form — user-intent driven fal art-director production. */
   adHocBrief?: boolean;
   /** Calendar story cards — vertical fal designed output. */
-  falAspectRatio?: '9:16' | '4:5';
+  falAspectRatio?: '9:16' | '4:5' | '1:1';
   /** Calendar gallery-designed track — must compose on matched gallery photo. */
   requireGroundedGallery?: boolean;
   /** Brand has analyzed venue/product gallery — never skip headline-matched photo. */

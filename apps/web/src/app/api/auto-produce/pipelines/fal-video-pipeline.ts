@@ -378,7 +378,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
         templateReplica: templateReplicaSpecFromBinding(templateBinding),
       });
       state.videoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
-      state.imageUrl = designer.imageUrl || photoUrl || referenceUrl;
+      // Reels: only keep the designed 9:16 still — never fall back to a raw gallery 4:5.
+      state.imageUrl = designer.imageUrl
+        || (falPipeline === 'fal_reel' ? null : (photoUrl || referenceUrl));
       if (falPipeline === 'fal_reel' && !state.videoUrl && state.imageUrl) {
         state.pipelineFailureReason = state.pipelineFailureReason
           ?? 'fal_reel_video_no_artifact_still_fallback';
@@ -409,7 +411,36 @@ export const falVideoHandler: ProductionPipelineHandler = {
       if (falPipeline === 'fal_story') {
         return;
       }
+      // Reels MUST stay 9:16 — never I2V a raw 4:5 gallery photo into a "reel".
       try {
+        const poster = await runFalStoryPosterProduction({
+          workspaceId: inputs.workspaceId,
+          headline: inputs.headline,
+          caption: inputs.caption,
+          cta: inputs.cta,
+          resolvedBrandName: inputs.resolvedBrandName,
+          brandBusinessType: inputs.brandBusinessType,
+          brandLocation: inputs.brandLocation,
+          mood: inputs.mood,
+          artDirection: inputs.artDirection,
+          referenceUrl: photoUrl,
+          styleRefs,
+          designVibe,
+          brandColors,
+          backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
+          lockOpts,
+          templateBinding,
+          designBriefDirectives: inputs.designBriefDirectives,
+          visualDnaTone: falBrand.visualDnaTone,
+          sceneHint: falBrand.sceneHint,
+          designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
+          falLogoPlacement: inputs.falLogoPlacement,
+        });
+        state.imageUrl = poster.imageUrl;
+        state.falGrafikerScore = poster.grafikerScore;
+        state.falGrafikerPass = poster.grafikerPass;
+        state.costDelta += 0.08;
+
         const motionPrompt = finalizeFalPrompt(
           [
             inputs.headline,
@@ -418,12 +449,12 @@ export const falVideoHandler: ProductionPipelineHandler = {
             inputs.mood ? `Mood: ${inputs.mood}` : '',
             inputs.resolvedBrandName ? `Brand: ${inputs.resolvedBrandName}` : '',
             inputs.brandBusinessType ? `Sector: ${inputs.brandBusinessType}` : '',
-            'Keep the real venue photo recognizable — subtle premium motion only.',
+            'Vertical Instagram Reel 9:16 — keep the designed frame composition locked.',
           ].filter(Boolean).join('. '),
-          { kind: 'video', label: 'fal-video-fallback' },
+          { kind: 'video', label: 'fal-video-fallback-916' },
         );
         const fal = await produceFalMissionVideo({
-          imageUrl: referenceUrl,
+          imageUrl: poster.imageUrl,
           headline: inputs.headline,
           caption: motionPrompt,
           mood: inputs.mood,
@@ -432,7 +463,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
           workspaceId: inputs.workspaceId,
         });
         state.videoUrl = isPlayableVideoUrl(fal.videoUrl) ? fal.videoUrl : null;
-        state.imageUrl = referenceUrl;
+        if (!state.videoUrl) {
+          state.pipelineFailureReason = state.pipelineFailureReason
+            ?? 'fal_reel_video_no_artifact_still_fallback';
+        }
         state.videoProduceMeta = {
           source: fal.reused
             ? 'fal_video'
@@ -443,14 +477,17 @@ export const falVideoHandler: ProductionPipelineHandler = {
                 : 'fal_video',
           ...(fal.reused ? { i2vReused: true, reusedFromArtifactId: fal.reusedFromArtifactId } : {}),
         };
+        console.log(
+          `[auto-produce] [fal-track] fal_reel 9:16 fallback poster→motion: "${inputs.headline.slice(0, 40)}"`,
+        );
       } catch (rawErr) {
         const rawMsg = rawErr instanceof Error ? rawErr.message : String(rawErr);
-        console.warn('[auto-produce] [fal-track] raw fallback failed:', rawMsg);
+        console.warn('[auto-produce] [fal-track] 9:16 reel fallback failed:', rawMsg);
         state.pipelineFailureReason = `fal_video: ${rawMsg}`.slice(0, 480);
-        // Keep the grounded gallery/design reference publishable when video
-        // providers return no_artifact. The production loop will persist this
-        // as a still fallback for fal_reel slots instead of stalling the package.
-        state.imageUrl = referenceUrl;
+        // Do not publish a raw gallery 4:5 still as a reel artifact.
+        if (!state.imageUrl) {
+          state.imageUrl = null;
+        }
         state.videoUrl = null;
       }
     }

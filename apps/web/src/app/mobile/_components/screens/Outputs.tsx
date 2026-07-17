@@ -432,7 +432,7 @@ function IGNativePost({ artifact, res, t, onApprove, onTap, approving, brandProf
       {(() => {
         const fmtKind = (content.contentType as string || kind).toLowerCase();
         const isCarousel = fmtKind.includes('carousel');
-        const ratio = isStory ? '4/5' : isCarousel ? '1/1' : detectedRatio;
+        const ratio = isStory ? '9/16' : isCarousel ? '1/1' : detectedRatio;
         return (
       <div onClick={onTap} style={{ cursor: 'pointer',
         aspectRatio: ratio,

@@ -1566,11 +1566,11 @@ const CSS = `
     background: #000;
   }
 
-  /* Reels in home feed — fixed 4:5 frame; media contained inside (no crop) */
+  /* Reels in home feed — native 9:16 frame; media contained inside (no crop) */
   .sa-mobile .ig-feed-reel-stage {
     width: 100%;
     max-width: none;
-    aspect-ratio: 4 / 5;
+    aspect-ratio: 9 / 16;
     margin-inline: 0;
   }
 

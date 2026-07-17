@@ -196,6 +196,7 @@ import {
   resolveContentIntent,
 } from '@/lib/brand-motion-profile';
 import { resolveStoryAudioMood } from '@/lib/story-audio-mood';
+import { resolveFalSlotAspectRatio } from '@/lib/fal-slot-aspect-ratio';
 import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import {
@@ -3451,11 +3452,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           templateUseCase: templateUseCase || undefined,
           catalogSlotKey: assignment.catalog_slot_key ?? (ideaRecord.catalog_slot_key as string | undefined),
           brandActiveSlots,
-          falAspectRatio: isPaidAdSlot
-            ? '4:5'
-            : isCalendarSlot && pkgFmt === 'story'
-              ? '9:16'
-              : undefined,
+          falAspectRatio: resolveFalSlotAspectRatio({
+            isPaidAd: isPaidAdSlot,
+            pipeline: assignment.pipeline,
+            slotRole: assignment.slot_role,
+            formatHint: pkgFmt,
+            kind,
+            explicit: isCalendarSlot && pkgFmt === 'story' ? '9:16' : null,
+          }),
           requireGroundedGallery: galleryEscalatedToFalOnly
             ? false
             : resolveFalRequireGroundedGallery({

@@ -642,7 +642,7 @@ export function InstagramFeedNative({
   );
 }
 
-/** Reel shared to Instagram home feed — 4:5 in-scroll (not full-screen Reels tab). */
+/** Reel shared to Instagram home feed — 9:16 in-scroll (native Reels frame). */
 function IgFeedReelMediaStage({
   videoUrl,
   posterUrl,
@@ -1460,7 +1460,7 @@ export function PlatformNativePreview({
   backgroundMusicUrl?: string | null;
   /** Slot below media — e.g. Paylaş / Zamanla bar (Instagram home feed). */
   afterMedia?: React.ReactNode;
-  /** Reels in home feed scroll use 4:5 post layout instead of full 9:16. */
+  /** Reels in home feed scroll use native 9:16 (same as Reels tab). */
   inFeedScroll?: boolean;
   formatTag?: FeedFormatTag;
   /** Instagram home feed chrome — false in client light mode. */

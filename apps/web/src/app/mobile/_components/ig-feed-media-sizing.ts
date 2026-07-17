@@ -8,8 +8,8 @@ export const IG_FEED_PORTRAIT_RATIO = 4 / 5;
 /** Instagram feed — en geniş yatay (1.91:1). width / height */
 export const IG_FEED_LANDSCAPE_RATIO = 1.91;
 
-/** Reels in home feed scroll — 4:5 crop. */
-export const IG_FEED_REEL_RATIO = 4 / 5;
+/** Reels in home feed scroll — native 9:16. */
+export const IG_FEED_REEL_RATIO = 9 / 16;
 
 export const IG_FEED_DEFAULT_RATIO = IG_FEED_PORTRAIT_RATIO;
 

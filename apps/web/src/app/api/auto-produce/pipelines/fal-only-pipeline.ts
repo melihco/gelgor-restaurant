@@ -4,7 +4,7 @@
  * Reel slots (`fal_only_reel`) → designed video first:
  *   gallery photo + GPT-image grounded design card (headline + subtitle + brand)
  *   → Kling locked-composition animation.
- * Cinematic gallery-only animation is fallback when designer path fails.
+ * Fallback when designer fails: 9:16 designed still → motion (never raw 4:5 I2V).
  *
  * Post slot (`fal_only_post`) → designed still when no gallery; editorial photo when gallery exists.
  */
@@ -214,33 +214,64 @@ export async function produceFalOnlySlot(
       );
     }
 
-    // Fallback: animate gallery photo directly (no typography) when designer fails
-    if (input.referencePhotoUrl) {
+    // Fallback: 9:16 designed still → motion. Never I2V a raw 4:5 gallery photo as a reel.
+    if (photoUrl || input.referencePhotoUrl) {
+      const stillRef = photoUrl ?? input.referencePhotoUrl!;
       try {
+        const poster = await produceFalDesignedPostStill({
+          workspaceId: input.workspaceId,
+          headline: input.headline,
+          subtitle: input.cta || undefined,
+          caption: input.caption,
+          brandName: input.brandName,
+          brandColors,
+          vibe: designVibe,
+          backgroundStyle: input.backgroundStyle ?? (stillRef ? 'photo_overlay' : 'gradient_mesh'),
+          aspectRatio: '9:16',
+          referencePhotoUrl: stillRef,
+          sceneHint: input.sceneHint || undefined,
+          brandDirectives: binding?.brandDirectives ?? input.brandDirectives,
+          visualDnaTone: input.visualDnaTone,
+          logoUrl: binding?.logoUrl ?? input.logoUrl,
+          location: input.location,
+          brandReferenceImageUrls: styleRefs,
+          sector: input.sector,
+          mood: input.mood,
+          grafikerMaxRetries: lockOpts.grafikerMaxRetries,
+          captionAwareHeadline: lockOpts.captionAwareHeadline,
+          requireGroundedGallery: groundedRequired,
+          designIntensityLevel: input.designIntensityLevel,
+          occasion: binding?.occasion,
+          templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
+          templateReplica: templateReplicaSpecFromBinding(binding),
+        });
         const motion = await generateStoryMotionPlate({
-          imageUrl: input.referencePhotoUrl,
+          imageUrl: poster.imageUrl,
           headline: input.headline,
           sector: input.sector,
           brandName: input.brandName,
           mood: input.mood,
           style: 'product_hero',
           timeoutMs: 150_000,
-          preserveExistingText: false,
+          preserveExistingText: true,
         });
+        console.log(
+          `[auto-produce] [fal-only] ${input.pipeline} 9:16 poster→motion fallback: "${input.headline.slice(0, 40)}"`,
+        );
         return {
-          imageUrl: input.referencePhotoUrl,
-          videoUrl: motion.videoUrl,
-          falGrafikerScore: null,
-          falGrafikerPass: true,
-          falDesignEngine: 'fal_cinematic_motion',
+          imageUrl: poster.imageUrl,
+          videoUrl: isPlayableVideoUrl(motion.videoUrl) ? motion.videoUrl : null,
+          falGrafikerScore: poster.grafikerScore,
+          falGrafikerPass: poster.grafikerPass,
+          falDesignEngine: 'fal_grounded_designer',
           videoProduceMeta: {
             source: motion.model.includes('kling') ? 'kling' : 'luma',
           },
-          costDelta: 0.14,
+          costDelta: falPipeline === 'fal_reel' ? 0.18 : 0.14,
         };
       } catch (cinematicErr) {
         const cinematicMsg = cinematicErr instanceof Error ? cinematicErr.message : String(cinematicErr);
-        console.warn('[auto-produce] [fal-only] cinematic fallback failed:', cinematicMsg);
+        console.warn('[auto-produce] [fal-only] 9:16 reel fallback failed:', cinematicMsg);
         return {
           imageUrl: null,
           videoUrl: null,
@@ -249,7 +280,7 @@ export async function produceFalOnlySlot(
           falDesignEngine: null,
           videoProduceMeta: null,
           costDelta: 0,
-          failureReason: `fal_only_video: ${cinematicMsg}`.slice(0, 480),
+          failureReason: `fal_only_video: ${cinematicMsg || designFailMsg}`.slice(0, 480),
         };
       }
     }
@@ -261,7 +292,7 @@ export async function produceFalOnlySlot(
       falDesignEngine: null,
       videoProduceMeta: null,
       costDelta: 0,
-      failureReason: `fal_only_video: ${designFailMsg || 'no gallery photo for cinematic fallback'}`.slice(0, 480),
+      failureReason: `fal_only_video: ${designFailMsg || 'no gallery photo for 9:16 reel fallback'}`.slice(0, 480),
     };
   }
 

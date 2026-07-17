@@ -106,6 +106,7 @@ function MediaCanvas({ signal, idea, fullHeight = false, kind }: {
   // Correct aspect ratio per content type
   const aspectRatio = (() => {
     if (fullHeight) return undefined;
+    if (kind === 'story' || kind === 'reel') return '9/16';
     if (kind === 'carousel') return '4/5';
     if (kind === 'post')     return '4/5';   // modern Instagram post standard
     if (kind === 'ad')       return '4/5';
