@@ -115,10 +115,9 @@ _LITE_MODEL_TASKS = {
 }
 
 # Faz 3.2 — structured/planning tasks that can run on the lite model when
-# LITE_STRUCTURAL_TASKS_ENABLED is set. These shape/route existing creative output
-# (calendar slotting, visual design cards, feed cohesion assignment) rather than
-# author it. content_ideation / content_strategy are intentionally excluded — they
-# remain on the full model. Default OFF → no behavior change.
+# LITE_STRUCTURAL_TASKS_ENABLED is set (default ON). These shape/route existing
+# creative output rather than author it. content_ideation / content_strategy stay
+# on the full content model.
 _STRUCTURAL_LITE_TASKS = {
     "content_calendar",
     "visual_design_cards",

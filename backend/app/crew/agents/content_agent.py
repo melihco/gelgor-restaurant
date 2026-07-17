@@ -52,12 +52,11 @@ def create_content_agent(
     degrade gracefully (return "not_configured") when keys are missing.
     """
     settings = get_settings()
-    # Faz 1.2 — ideation task'ı zengin gallery scene block taşır; flag açıkken
-    # backstory'deki kaba gallery envanteri kopyasını çıkararak input token tasarrufu.
-    # Varsayılan: mevcut davranış (envanter dahil).
-    import os as _os
-    _dedup_gallery = (
-        for_ideation and _os.getenv("DEDUP_GALLERY_BACKSTORY") == "true"
+    # Ideation task already carries the rich gallery scene block — default ON
+    # drops the duplicate inventory from the backstory (input-token win).
+    # Opt out: DEDUP_GALLERY_BACKSTORY=false
+    _dedup_gallery = for_ideation and bool(
+        getattr(settings, "dedup_gallery_backstory", True)
     )
     brand_context_block = build_brand_context_prompt(
         brand, include_gallery_inventory=not _dedup_gallery

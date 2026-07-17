@@ -167,11 +167,14 @@ class Settings(BaseSettings):
     # Hard cap for a single internal orchestration call (Python side); keep slightly below .NET HttpClient timeout.
     crew_execution_timeout_seconds: int = 420  # 7 min — content_ideation with quality iterations can take 5-6 min
     # Content crew: lower max_iter + fewer tools on ideation reduces LLM round-trips (faster, more predictable).
-    # Quality iterations: 1 = standard (Starter/Pro), 2 = high-quality (Business/Enterprise)
-    # 2 iterations = ~40% better output, ~2x LLM cost for content_ideation
-    crewai_content_iterations: int = 2
+    # Quality iterations: 1 = standard (default — ~2x cheaper), 2 = high-quality A/B pick.
+    # Opt into 2 via CREWAI_CONTENT_ITERATIONS=2 when a tenant needs the quality pass.
+    crewai_content_iterations: int = 1
     crewai_content_max_iter: int = 7
     crewai_content_ideation_max_iter: int = 5
+    # Ideation task already embeds a rich gallery scene block — drop the duplicate
+    # inventory from the agent backstory (large input-token win). Set false to restore.
+    dedup_gallery_backstory: bool = True
     # When False, content_ideation skips Instagram tools (often “not connected” anyway) — big latency win.
     crewai_content_ideation_instagram_tools: bool = False
     # Content calendar is mostly LLM planning; skipping Meta tools reduces tool loops and hang risk.

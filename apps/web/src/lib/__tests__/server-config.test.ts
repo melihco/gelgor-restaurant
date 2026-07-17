@@ -250,21 +250,23 @@ describe('serverConfig', () => {
   });
 
   describe('autoProduce', () => {
-    it('applies defaults (enabled, gallery-only)', () => {
+    it('applies defaults (enabled, gallery-only, cost-safe reuse)', () => {
       expect(serverConfig.autoProduce.enabled).toBe(true);
       expect(serverConfig.autoProduce.galleryOnly).toBe(true);
       expect(serverConfig.autoProduce.maxDaily).toBe(200);
       expect(serverConfig.autoProduce.maxPerRun).toBe(24);
       expect(serverConfig.autoProduce.maxReelsDaily).toBe(15);
       expect(serverConfig.autoProduce.dailyBudgetUsd).toBe(50);
-      expect(serverConfig.autoProduce.reuseDesignedPostStill).toBe(false);
+      expect(serverConfig.autoProduce.reuseDesignedPostStill).toBe(true);
     });
 
     it('toggles off only via the literal "false"', () => {
       process.env.AUTO_PRODUCE_ENABLE = 'false';
       process.env.AUTO_PRODUCE_GALLERY_ONLY = 'false';
+      process.env.AD_REUSE_DESIGNED_POST_STILL = 'false';
       expect(serverConfig.autoProduce.enabled).toBe(false);
       expect(serverConfig.autoProduce.galleryOnly).toBe(false);
+      expect(serverConfig.autoProduce.reuseDesignedPostStill).toBe(false);
     });
 
     it('parses numeric overrides', () => {
@@ -276,19 +278,23 @@ describe('serverConfig', () => {
   });
 
   describe('productionFlags', () => {
-    it('story flags default on, enhance flags default off', () => {
+    it('story + cost-safe enhance flags default on', () => {
       expect(serverConfig.productionFlags.storyMotionPlatesEnabled).toBe(true);
       expect(serverConfig.productionFlags.storyTypographyEnabled).toBe(true);
-      expect(serverConfig.productionFlags.skipEnhanceForDesignedGrade).toBe(false);
-      expect(serverConfig.productionFlags.carouselHeroEnhanceOnly).toBe(false);
-      expect(serverConfig.productionFlags.videoTierScope).toBe(false);
+      expect(serverConfig.productionFlags.skipEnhanceForDesignedGrade).toBe(true);
+      expect(serverConfig.productionFlags.carouselHeroEnhanceOnly).toBe(true);
+      expect(serverConfig.productionFlags.videoTierScope).toBe(true);
     });
 
-    it('honors explicit toggles', () => {
+    it('honors explicit opt-out via false', () => {
       process.env.STORY_MOTION_PLATES_ENABLED = 'false';
-      process.env.VIDEO_TIER_SCOPE = 'true';
+      process.env.VIDEO_TIER_SCOPE = 'false';
+      process.env.SKIP_ENHANCE_FOR_DESIGNED_GRADE = 'false';
+      process.env.CAROUSEL_HERO_ENHANCE_ONLY = 'false';
       expect(serverConfig.productionFlags.storyMotionPlatesEnabled).toBe(false);
-      expect(serverConfig.productionFlags.videoTierScope).toBe(true);
+      expect(serverConfig.productionFlags.videoTierScope).toBe(false);
+      expect(serverConfig.productionFlags.skipEnhanceForDesignedGrade).toBe(false);
+      expect(serverConfig.productionFlags.carouselHeroEnhanceOnly).toBe(false);
     });
   });
 

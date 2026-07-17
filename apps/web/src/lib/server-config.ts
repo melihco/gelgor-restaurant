@@ -229,9 +229,9 @@ export const serverConfig = {
     get dailyBudgetUsd(): number {
       return parseFloat(readEnv('AUTO_PRODUCE_DAILY_BUDGET_USD') ?? '50');
     },
-    /** Reuse the designed-post still for ad derivation. */
+    /** Reuse the designed-post still for ad derivation (default ON — same asset). */
     get reuseDesignedPostStill(): boolean {
-      return readEnv('AD_REUSE_DESIGNED_POST_STILL') === 'true';
+      return readEnv('AD_REUSE_DESIGNED_POST_STILL') !== 'false';
     },
   },
 
@@ -245,17 +245,27 @@ export const serverConfig = {
     get storyTypographyEnabled(): boolean {
       return readEnv('STORY_TYPOGRAPHY_ENABLED') !== 'false';
     },
-    /** Skip designed_post background enhance when render-time grade covers it. */
+    /**
+     * Skip designed_post background enhance when render-time grade covers it.
+     * Default ON (cost-safe). Opt out: SKIP_ENHANCE_FOR_DESIGNED_GRADE=false
+     * (or legacy SKIP_ENHANCE_FOR_REMOTION_GRADE=false).
+     */
     get skipEnhanceForDesignedGrade(): boolean {
-      return readEnv('SKIP_ENHANCE_FOR_DESIGNED_GRADE') === 'true'
-        // Legacy env name — remove after Render env vars are migrated.
-        || readEnv('SKIP_ENHANCE_FOR_REMOTION_GRADE') === 'true';
+      const designed = readEnv('SKIP_ENHANCE_FOR_DESIGNED_GRADE');
+      const legacy = readEnv('SKIP_ENHANCE_FOR_REMOTION_GRADE');
+      if (designed === 'false' || legacy === 'false') return false;
+      return true;
     },
+    /** Carousel: enhance cover only (default ON). */
     get carouselHeroEnhanceOnly(): boolean {
-      return readEnv('CAROUSEL_HERO_ENHANCE_ONLY') === 'true';
+      return readEnv('CAROUSEL_HERO_ENHANCE_ONLY') !== 'false';
     },
+    /**
+     * Economy/agency: collapse multi-clip Runway to one clip (default ON).
+     * Premium tier logic still applies inside the video path; opt out with false.
+     */
     get videoTierScope(): boolean {
-      return readEnv('VIDEO_TIER_SCOPE') === 'true';
+      return readEnv('VIDEO_TIER_SCOPE') !== 'false';
     },
   },
 

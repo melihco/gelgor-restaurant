@@ -84,6 +84,14 @@ services:
         value: gpt-4o-mini
       - key: AI_MODEL_TIER
         value: starter
+      - key: LITE_STRUCTURAL_TASKS_ENABLED
+        value: "true"
+      - key: LLM_MAX_TOKENS_CAP
+        value: "8192"
+      - key: CREWAI_CONTENT_ITERATIONS
+        value: "1"
+      - key: DEDUP_GALLERY_BACKSTORY
+        value: "true"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: CREATOMATE_API_KEY
@@ -159,9 +167,15 @@ services:
         value: starter
       - key: PREFER_FAL_DESIGNED_POSTS
         value: "true"
+      # GRAFIKER_LITE must stay false (quality regression). Tier profiles already
+      # use mini+low detail for starter/agency via ai-model-tier.ts.
       - key: GRAFIKER_LITE
-        value: "true"
+        value: "false"
       - key: CD_LITE
+        value: "true"
+      - key: AD_REUSE_DESIGNED_POST_STILL
+        value: "true"
+      - key: CAROUSEL_HERO_ENHANCE_ONLY
         value: "true"
       - key: SKIP_ENHANCE_FOR_DESIGNED_GRADE
         value: "true"
@@ -288,9 +302,15 @@ services:
         value: starter
       - key: PREFER_FAL_DESIGNED_POSTS
         value: "true"
+      # GRAFIKER_LITE must stay false (quality regression). Tier profiles already
+      # use mini+low detail for starter/agency via ai-model-tier.ts.
       - key: GRAFIKER_LITE
-        value: "true"
+        value: "false"
       - key: CD_LITE
+        value: "true"
+      - key: AD_REUSE_DESIGNED_POST_STILL
+        value: "true"
+      - key: CAROUSEL_HERO_ENHANCE_ONLY
         value: "true"
       - key: SKIP_ENHANCE_FOR_DESIGNED_GRADE
         value: "true"
