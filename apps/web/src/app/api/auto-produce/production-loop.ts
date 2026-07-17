@@ -362,6 +362,7 @@ import {
 import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production';
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
+  classifyFalGridSurface,
   fetchRecentFalGridSurfaces,
   rotateFalDesignSurfaceForGrid,
   type FalGridSurfaceKind,
@@ -1017,7 +1018,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const isTypographyDesignSlot = assignment.slot_role === 'designed_typography';
     let slotVisualDesignCard: MissionVisualDesignCard | null = null;
     let slotVisualDesignCardIndex: number | null = null;
-    if (isFalDesignedPostSlotForHeadline && visualDesignCards.length) {
+    // Library catalog pin = template layout + mission copy SSOT.
+    // Mission visual_design_cards must not override on-canvas headline/layout.
+    const libraryCatalogPinned = Boolean(
+      String(
+        assignment.catalog_slot_key
+        ?? (ideaRecord.catalog_slot_key as string | undefined)
+        ?? '',
+      ).trim(),
+    );
+    if (isFalDesignedPostSlotForHeadline && visualDesignCards.length && !libraryCatalogPinned) {
       const chosen = pickMissionVisualDesignCard({
         cards: visualDesignCards,
         idea: ideaRecord,
@@ -3362,27 +3372,43 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const baseBackground: TypographyBackgroundStyle = referenceUrl
         ? 'photo_overlay'
         : (typoConfig?.background_style ?? 'gradient_mesh');
-      const gridRotation = rotateFalDesignSurfaceForGrid({
-        channel: intensityChannel,
-        baseIntensity,
-        baseBackgroundStyle: baseBackground,
-        hasReferencePhoto: Boolean(referenceUrl),
-        archetypeId: falDesignCtx?.brief.canvaArchetypeId,
-        layoutPattern: falDesignCtx?.brief.layoutPattern,
-        recentSurfaceKinds: missionFalGridSurfacesUsed,
-      });
-      if (gridRotation.rotated) {
+      // Catalog-pinned library templates own layout — do not rotate surfaces/intensity.
+      if (libraryCatalogPinned) {
+        slotFalGridSurface = classifyFalGridSurface({
+          intensityLevel: baseIntensity,
+          backgroundStyle: baseBackground,
+          hasReferencePhoto: Boolean(referenceUrl),
+          archetypeId: falDesignCtx?.brief.canvaArchetypeId,
+          layoutPattern: falDesignCtx?.brief.layoutPattern,
+        });
+        missionFalGridSurfacesUsed.unshift(slotFalGridSurface);
         console.log(
-          `[auto-produce] fal grid surface rotation: ${gridRotation.surfaceKind} ` +
-          `intensity=${gridRotation.designIntensityLevel} bg=${gridRotation.backgroundStyle} ` +
-          `(avoid repeat of ${missionFalGridSurfacesUsed[0] ?? 'none'})`,
+          `[auto-produce] fal grid surface locked to library template: ${slotFalGridSurface} ` +
+          `catalog=${assignment.catalog_slot_key ?? ideaRecord.catalog_slot_key ?? '-'}`,
         );
+      } else {
+        const gridRotation = rotateFalDesignSurfaceForGrid({
+          channel: intensityChannel,
+          baseIntensity,
+          baseBackgroundStyle: baseBackground,
+          hasReferencePhoto: Boolean(referenceUrl),
+          archetypeId: falDesignCtx?.brief.canvaArchetypeId,
+          layoutPattern: falDesignCtx?.brief.layoutPattern,
+          recentSurfaceKinds: missionFalGridSurfacesUsed,
+        });
+        if (gridRotation.rotated) {
+          console.log(
+            `[auto-produce] fal grid surface rotation: ${gridRotation.surfaceKind} ` +
+            `intensity=${gridRotation.designIntensityLevel} bg=${gridRotation.backgroundStyle} ` +
+            `(avoid repeat of ${missionFalGridSurfacesUsed[0] ?? 'none'})`,
+          );
+        }
+        falGridRotationDirectives = gridRotation.gridRotationDirectives;
+        falGridIntensityOverride = gridRotation.designIntensityLevel;
+        falGridBackgroundOverride = gridRotation.backgroundStyle;
+        slotFalGridSurface = gridRotation.surfaceKind;
+        missionFalGridSurfacesUsed.unshift(gridRotation.surfaceKind);
       }
-      falGridRotationDirectives = gridRotation.gridRotationDirectives;
-      falGridIntensityOverride = gridRotation.designIntensityLevel;
-      falGridBackgroundOverride = gridRotation.backgroundStyle;
-      slotFalGridSurface = gridRotation.surfaceKind;
-      missionFalGridSurfacesUsed.unshift(gridRotation.surfaceKind);
     }
 
     const falIntensityChannel = falBriefFormat === 'post'

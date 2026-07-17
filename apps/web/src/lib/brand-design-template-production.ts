@@ -56,11 +56,30 @@ export function resolveFalTemplateLockOptions(input: {
       requireTemplateStyleRef: false,
     };
   }
+  // Library template lock (post/story/reel): mission/ideation copy is SSOT.
+  // Caption-aware rewrite fights replica "sample → mission" text swap.
   return {
-    captionAwareHeadline: input.defaultCaptionAwareHeadline ?? true,
+    captionAwareHeadline: false,
     grafikerMaxRetries: Math.min(2, Math.max(base, 1)),
     requireTemplateStyleRef: false,
   };
+}
+
+/**
+ * When a catalog slot is pinned, only that library template may bind (fail-closed).
+ * Without a pin, soft same-format match is allowed for pre-catalog missions.
+ */
+export function allowSoftTemplateFallbackForCatalogPin(
+  catalogSlotKey?: string | null,
+): boolean {
+  return !String(catalogSlotKey ?? '').trim();
+}
+
+/** Hard/soft library match — production must clone layout + swap photo/copy. */
+export function requiresLibraryTemplateReplica(
+  matched: MatchedDesignTemplate | null | undefined,
+): boolean {
+  return isRenderableDesignTemplateMatch(matched);
 }
 
 export function templateLockUsesGrafikerPass(score: number | null, pass: boolean | undefined): boolean {
@@ -229,10 +248,11 @@ export async function bindBrandTemplateForFalProduction(input: {
       templateUseCase: input.templateUseCase,
       catalogSlotKey: input.catalogSlotKey,
       brandActiveSlots: input.brandActiveSlots,
-      // Catalog key miss must still soft-match another same-brand story/post
-      // template — fail-closed → empty binding was pushing LOCAL_TYPOGRAPHY
-      // (Satori) instead of GPT replica of a real library design.
-      allowSoftFallbackWhenHardMiss: true,
+      // Catalog pin = exact library template only (post/story/reel_cover).
+      // Soft same-format match only when the slot has no catalog key.
+      allowSoftFallbackWhenHardMiss: allowSoftTemplateFallbackForCatalogPin(
+        input.catalogSlotKey,
+      ),
     });
     if (!matched) {
       console.warn(

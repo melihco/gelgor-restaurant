@@ -1136,11 +1136,26 @@ export async function produceFalDesignerStill(
         );
       }
       if (last) {
+        // Library template replica: accept best grounded compose — Ideogram would
+        // invent a new layout and abandon the approved library shell.
+        if (input.templateReplica) {
+          console.warn(
+            '[fal-designer] template replica grounded compose below Grafiker threshold — keeping grounded result (Ideogram disabled)',
+          );
+          return finalizeFalStillWithOfficialLogo(last, input);
+        }
         console.warn(
           '[fal-designer] grounded photo edit below threshold after retries — falling back to Ideogram',
         );
       }
     } catch (groundedErr) {
+      if (input.templateReplica) {
+        throw new Error(
+          `library template replica grounded compose failed — Ideogram disabled when template is locked: ${
+            groundedErr instanceof Error ? groundedErr.message : String(groundedErr)
+          }`,
+        );
+      }
       console.warn(
         '[fal-designer] grounded photo edit failed, falling back to Ideogram:',
         groundedErr instanceof Error ? groundedErr.message : groundedErr,
@@ -1148,12 +1163,14 @@ export async function produceFalDesignerStill(
     }
   }
 
-  if (groundedOnly) {
+  if (groundedOnly || input.templateReplica) {
     throw new Error(
-      input.pipeline === 'fal_story'
-        ? 'fal_story: grounded gallery design failed — synthetic Ideogram fallback disabled for story slots'
-        : 'Brand gallery design failed — could not compose the art-director design on the matched venue photo. ' +
-          'Synthetic Ideogram fallback disabled when a brand gallery photo is available.',
+      input.templateReplica
+        ? 'library template replica: grounded gallery design failed — synthetic Ideogram fallback disabled when a library template is locked'
+        : input.pipeline === 'fal_story'
+          ? 'fal_story: grounded gallery design failed — synthetic Ideogram fallback disabled for story slots'
+          : 'Brand gallery design failed — could not compose the art-director design on the matched venue photo. ' +
+            'Synthetic Ideogram fallback disabled when a brand gallery photo is available.',
     );
   }
 

@@ -442,6 +442,16 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
     });
+    const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
+    if (
+      catalogPinned
+      && !isRenderableDesignTemplateMatch(templateBinding.matched)
+    ) {
+      state.pipelineFailureReason =
+        `library_template_required: no renderable template for catalog_slot_key=${inputs.catalogSlotKey}`;
+      console.warn(`[auto-produce] [fal-only] withheld: ${state.pipelineFailureReason}`);
+      return;
+    }
     // Local typography only when there is NO hard/soft template — never skip a
     // real library design for Satori (mirrors fal_story / fal_designed_post).
     const localReferenceUrl = templateBinding.referencePhotoUrl ?? inputs.referenceUrl;

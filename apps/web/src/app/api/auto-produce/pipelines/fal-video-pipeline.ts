@@ -15,6 +15,7 @@ import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal
 import {
   bindBrandTemplateForFalProduction,
   dropConflictingLayoutDirectives,
+  requiresLibraryTemplateReplica,
   resolveFalTemplateLockOptions,
   templateLayoutReferenceUrl,
   templateReplicaSpecFromBinding,
@@ -205,6 +206,19 @@ export const falVideoHandler: ProductionPipelineHandler = {
       state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
     }
 
+    // Catalog-pinned story/reel slots must clone the library template (same as posts).
+    // Fail closed rather than inventing a generic Ideogram/Satori layout.
+    const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
+    const libraryReplicaRequired = catalogPinned || requiresLibraryTemplateReplica(templateBinding.matched);
+    if (catalogPinned && !requiresLibraryTemplateReplica(templateBinding.matched)) {
+      state.pipelineFailureReason =
+        `library_template_required: no renderable ${falPipeline === 'fal_reel' ? 'reel_cover' : 'story'} template for catalog_slot_key=${inputs.catalogSlotKey}`;
+      console.warn(
+        `[auto-produce] [fal-track] withheld ${falPipeline}: ${state.pipelineFailureReason}`,
+      );
+      return;
+    }
+
     if (!serverConfig.fal.configured) {
       console.warn(
         `[auto-produce] FAL_API_KEY missing — fal slot skipped: ${inputs.pipeline} "${inputs.headline.slice(0, 40)}"`,
@@ -367,14 +381,16 @@ export const falVideoHandler: ProductionPipelineHandler = {
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         pipeline: falPipeline,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
-        requireGroundedGallery: resolveFalRequireGroundedGallery({
-          requireGroundedGallery: inputs.requireGroundedGallery || inputs.adHocBrief,
-          referencePhotoUrl: photoUrl,
-          sector: inputs.brandBusinessType,
-          pipeline: falPipeline,
-          hasRealBrandGallery: inputs.hasRealBrandGallery,
-          captionDrivenGenerated: inputs.captionDrivenGenerated,
-        }),
+        requireGroundedGallery:
+          libraryReplicaRequired
+          || resolveFalRequireGroundedGallery({
+            requireGroundedGallery: inputs.requireGroundedGallery || inputs.adHocBrief,
+            referencePhotoUrl: photoUrl,
+            sector: inputs.brandBusinessType,
+            pipeline: falPipeline,
+            hasRealBrandGallery: inputs.hasRealBrandGallery,
+            captionDrivenGenerated: inputs.captionDrivenGenerated,
+          }),
         sceneHint: falBrand.sceneHint,
         brandDirectives: [
           ...templateBinding.brandDirectives,

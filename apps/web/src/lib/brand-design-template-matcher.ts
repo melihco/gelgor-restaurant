@@ -104,8 +104,10 @@ function compatibleFormats(format: 'story' | 'post' | 'reel'): string[] {
       return ['post'];
     case 'story':
       return ['story'];
+    // Reels bind only reel_cover library templates — never story posters.
+    // (Story soft-bind made Scorpios/Yula reels look like wrong library shells.)
     case 'reel':
-      return ['reel_cover', 'story'];
+      return ['reel_cover'];
     default:
       return [format];
   }
@@ -142,7 +144,8 @@ const LIBRARY_SLOT_TO_TEMPLATE_TYPES: Record<string, string[]> = {
 const DEFAULT_TEMPLATE_TYPES_BY_FORMAT: Record<'story' | 'post' | 'reel', string[]> = {
   post: ['campaign_announcement', 'announcement_formal', 'brand_identity', 'venue_showcase'],
   story: ['daily_story', 'event_special', 'venue_showcase', 'social_proof'],
-  reel: ['reel_cover', 'event_special', 'daily_story', 'campaign_announcement'],
+  // Types commonly stamped on reel_cover library rows (venue/menu/event + reel_cover).
+  reel: ['reel_cover', 'venue_showcase', 'menu_highlight', 'event_special'],
 };
 
 function normalizeSignalToken(value: string | null | undefined): string {
@@ -207,7 +210,7 @@ export function resolveDesignTemplateCandidateTypes(
   }
 
   if (format === 'reel' || /reel|video|motion|fal_reel/.test(hay)) {
-    return dedupeTypes(['reel_cover', 'event_special', 'daily_story', 'campaign_announcement']);
+    return dedupeTypes(['reel_cover', 'venue_showcase', 'menu_highlight', 'event_special']);
   }
   if (/campaign|ad_creative|promo|indirim|discount|offer|fırsat|teklif|%|kampanya/.test(hay)) {
     return dedupeTypes(['campaign_announcement', 'seasonal_promo', 'announcement_formal']);
@@ -260,8 +263,7 @@ function scoreDesignTemplateRecord(
   formats: string[],
   catalogSlotKey?: string | null,
 ): number {
-  // Format gate — a story template must never win a post slot (and vice versa).
-  // reel↔reel_cover/story compatibility is encoded in `compatibleFormats`.
+  // Format gate — post/story/reel_cover shells never cross (see compatibleFormats).
   if (!formats.includes(record.format)) return 0;
 
   // Off-season special-day templates are excluded outright so a national/religious

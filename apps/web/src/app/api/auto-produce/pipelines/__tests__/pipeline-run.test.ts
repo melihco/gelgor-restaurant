@@ -24,6 +24,7 @@ const h = vi.hoisted(() => ({
   buildDesignedPostDesignCardPrompt: vi.fn(() => 'design-card-prompt'),
   resolveIdeogramBackgroundStyle: vi.fn(() => 'gradient_mesh'),
   generateStoryMotionPlate: vi.fn(),
+  generateStoryMotionPlateWithRetry: vi.fn(),
   resolveFalBrandInput: vi.fn(),
   isUsableGalleryPhotoUrl: vi.fn(() => true),
   generateDesignedPostImage: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock('@/lib/fal-designer-production', async (importOriginal) => {
 vi.mock('@/lib/fal-video', () => ({ produceFalMissionVideo: h.produceFalMissionVideo }));
 vi.mock('@/lib/fal-story-motion', () => ({
   generateStoryMotionPlate: h.generateStoryMotionPlate,
+  generateStoryMotionPlateWithRetry: h.generateStoryMotionPlateWithRetry,
   isPlayableVideoUrl: (url: string | null | undefined) =>
     Boolean(url && /\.(mp4|mov|webm)(\?|$)/i.test(String(url).trim())),
 }));
@@ -94,6 +96,11 @@ vi.mock('@/lib/brand-design-template-production', () => ({
   resolveFalTemplateLockOptions: h.resolveFalTemplateLockOptions,
   assertTemplateStyleReference: () => {},
   dropConflictingLayoutDirectives: (directives: string[]) => directives,
+  requiresLibraryTemplateReplica: (
+    m: { matchQuality?: string } | null | undefined,
+  ) => !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft'),
+  allowSoftTemplateFallbackForCatalogPin: (catalogSlotKey?: string | null) =>
+    !String(catalogSlotKey ?? '').trim(),
   templateReplicaSpecFromBinding: (
     binding: { matched?: { matchQuality?: string; designSpecPrompt?: string | null } | null } | null | undefined,
   ) => {
@@ -271,7 +278,7 @@ describe('falVideoHandler.run', () => {
       grafikerPass: true,
       typographyModel: 'gpt-image-1',
     });
-    h.produceFalMissionVideo.mockResolvedValue({
+    h.generateStoryMotionPlateWithRetry.mockResolvedValue({
       videoUrl: 'https://cdn.example.com/raw-vid.mp4',
       model: 'luma-dream',
     });
@@ -281,7 +288,7 @@ describe('falVideoHandler.run', () => {
 
     // Never I2V a raw gallery 4:5 — motion starts from the designed 9:16 still.
     expect(h.produceFalDesignedPostStill).toHaveBeenCalled();
-    expect(h.produceFalMissionVideo).toHaveBeenCalledWith(
+    expect(h.generateStoryMotionPlateWithRetry).toHaveBeenCalledWith(
       expect.objectContaining({ imageUrl: 'story-poster-img', pipeline: 'fal_reel' }),
     );
     expect(ctx.state.videoUrl).toBe('https://cdn.example.com/raw-vid.mp4');

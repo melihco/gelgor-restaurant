@@ -17,7 +17,9 @@ import {
   buildTemplateLayoutDirectives,
   buildTemplateReplicaPrompt,
   bindBrandTemplateForFalProduction,
+  allowSoftTemplateFallbackForCatalogPin,
   dropConflictingLayoutDirectives,
+  requiresLibraryTemplateReplica,
   pickTemplateReferenceUrls,
   resolveFalTemplateLockOptions,
   templateLayoutReferenceUrl,
@@ -80,8 +82,23 @@ describe('dropConflictingLayoutDirectives', () => {
   });
 });
 
+describe('library template production standard', () => {
+  it('allows soft fallback only when catalog is not pinned', () => {
+    expect(allowSoftTemplateFallbackForCatalogPin(null)).toBe(true);
+    expect(allowSoftTemplateFallbackForCatalogPin('')).toBe(true);
+    expect(allowSoftTemplateFallbackForCatalogPin('beach_club_atmosphere_reel')).toBe(false);
+  });
+
+  it('requires replica for hard/soft matches only', () => {
+    expect(requiresLibraryTemplateReplica(matched)).toBe(true);
+    expect(requiresLibraryTemplateReplica({ ...matched, matchQuality: 'soft' })).toBe(true);
+    expect(requiresLibraryTemplateReplica({ ...matched, matchQuality: 'format_fallback' })).toBe(false);
+    expect(requiresLibraryTemplateReplica(null)).toBe(false);
+  });
+});
+
 describe('resolveFalTemplateLockOptions', () => {
-  it('locks caption and bumps grafiker when template matched', () => {
+  it('locks mission copy (no caption rewrite) and bumps grafiker when template matched', () => {
     const opts = resolveFalTemplateLockOptions({
       binding: {
         matched,
@@ -96,7 +113,7 @@ describe('resolveFalTemplateLockOptions', () => {
       baseGrafikerMaxRetries: 0,
       defaultCaptionAwareHeadline: true,
     });
-    expect(opts.captionAwareHeadline).toBe(true);
+    expect(opts.captionAwareHeadline).toBe(false);
     expect(opts.grafikerMaxRetries).toBe(1);
     expect(opts.requireTemplateStyleRef).toBe(false);
   });

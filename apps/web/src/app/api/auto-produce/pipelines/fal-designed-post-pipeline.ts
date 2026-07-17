@@ -24,6 +24,7 @@ import {
   dropConflictingLayoutDirectives,
   buildTemplateReplicaPrompt,
   pickTemplateReferenceUrls,
+  requiresLibraryTemplateReplica,
   resolveFalTemplateLockOptions,
   assertTemplateStyleReference,
   templateLayoutReferenceUrl,
@@ -513,6 +514,14 @@ export const falDesignHandler: ProductionPipelineHandler = {
       console.log(
         `[auto-produce] [fal-design] brand template "${templateBinding.matched.templateName}" (${templateBinding.matched.templateType})`,
       );
+    }
+
+    const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
+    if (catalogPinned && !requiresLibraryTemplateReplica(templateBinding.matched)) {
+      state.pipelineFailureReason =
+        `library_template_required: no renderable post/story template for catalog_slot_key=${inputs.catalogSlotKey}`;
+      console.warn(`[auto-produce] [fal-design] withheld: ${state.pipelineFailureReason}`);
+      return;
     }
 
     // Local-first ONLY when the slot has no real library design to render.

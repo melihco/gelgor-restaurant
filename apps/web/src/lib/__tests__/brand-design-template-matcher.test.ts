@@ -229,8 +229,57 @@ describe('selectBrandDesignTemplate — format gate', () => {
       librarySlotKey: null,
       format: 'reel',
     });
-    // reel compat = reel_cover|story; a post template is not format-compatible → no match.
+    // reel compat = reel_cover only; a post template is not format-compatible → no match.
     expect(sel).toBeNull();
+  });
+
+  it('never soft-binds a story template onto a reel slot', () => {
+    const active = [
+      tpl({
+        id: 'golden_story',
+        template_type: 'campaign_announcement',
+        format: 'story',
+        catalog_slot_key: 'beach_club_sunset_golden_story',
+        usage_count: 40,
+      }),
+      tpl({
+        id: 'atmosphere_reel',
+        template_type: 'venue_showcase',
+        format: 'reel_cover',
+        catalog_slot_key: 'beach_club_atmosphere_reel',
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'organic_reel',
+      format: 'reel',
+      announcementType: 'venue_showcase',
+    });
+    expect(sel?.record.format).toBe('reel_cover');
+    expect(sel?.record.id).toBe('atmosphere_reel');
+  });
+
+  it('hard-pins reel_cover by catalog key and rejects story shells', () => {
+    const active = [
+      tpl({
+        id: 'wrong_story',
+        template_type: 'campaign_announcement',
+        format: 'story',
+        catalog_slot_key: 'beach_club_cocktail_craft_reel',
+      }),
+      tpl({
+        id: 'craft_reel',
+        template_type: 'menu_highlight',
+        format: 'reel_cover',
+        catalog_slot_key: 'beach_club_cocktail_craft_reel',
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'organic_reel',
+      format: 'reel',
+      catalogSlotKey: 'beach_club_cocktail_craft_reel',
+    });
+    expect(sel?.matchQuality).toBe('hard');
+    expect(sel?.record.id).toBe('craft_reel');
   });
 
   it('without catalog key, soft match still works (pre-catalog brands)', () => {
