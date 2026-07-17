@@ -292,6 +292,14 @@ describe('buildOverlayElement (Turkish glyph fidelity + geometry)', () => {
   it('frosted / neon / polaroid / ticket geometries diverge structurally', () => {
     const frosted = buildOverlayElement(content('frosted_quote', 'beach_club'));
     expect(collectStyles(frosted).some((s) => String(s.background ?? '').includes('rgba(245'))).toBe(true);
+    // Story frosted card must clear the photo focal center (upper third).
+    expect((frosted as { props: { style: Record<string, unknown> } }).props.style.justifyContent).toBe('flex-start');
+
+    const frostedPost = buildOverlayElement({
+      ...content('frosted_quote', 'beach_club'),
+      format: 'post',
+    });
+    expect((frostedPost as { props: { style: Record<string, unknown> } }).props.style.justifyContent).toBe('flex-end');
 
     const neon = buildOverlayElement(content('neon_night', 'local_products_shop'));
     expect(collectStyles(neon).some((s) => s.color === '#FFFFFF')).toBe(true);
@@ -301,6 +309,14 @@ describe('buildOverlayElement (Turkish glyph fidelity + geometry)', () => {
 
     const ticket = buildOverlayElement(content('ticket_stub', 'local_products_shop'));
     expect(collectStyles(ticket).some((s) => String(s.borderTop ?? '').includes('dashed'))).toBe(true);
+  });
+
+  it('hero_footer keeps type in the upper third so mid-frame subject stays open', () => {
+    const hero = buildOverlayElement(content('hero_footer', 'beach_club'));
+    const typeRegion = (hero as {
+      props: { children: Array<{ props: { style: Record<string, unknown> } }> };
+    }).props.children[0]!;
+    expect(typeRegion.props.style.justifyContent).toBe('flex-start');
   });
 
   it('overline uppercases with the Turkish dotted-İ when the slot copy is Turkish', () => {

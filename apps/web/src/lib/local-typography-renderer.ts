@@ -540,6 +540,9 @@ export function buildOverlayElement(content: OverlayContent) {
   }
 
   if (content.family === 'frosted_quote') {
+    // Never park the glass card on the photo's focal center — product/venue
+    // subjects live mid-frame. Stories → upper third; posts → lower third.
+    const isStory = content.format === 'story';
     return {
       type: 'div',
       props: {
@@ -549,16 +552,17 @@ export function buildOverlayElement(content: OverlayContent) {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent: isStory ? 'flex-start' : 'flex-end',
           background: 'transparent',
-          padding: content.format === 'story' ? 64 : 56,
+          padding: isStory ? '120px 56px 64px 56px' : '56px 52px 72px 52px',
         },
         children: [
           {
             type: 'div',
             props: {
               style: {
-                width: '82%',
+                width: isStory ? '78%' : '82%',
+                maxWidth: isStory ? 820 : undefined,
                 background: 'rgba(245, 239, 228, 0.90)',
                 borderRadius: 28,
                 border: `2px solid ${content.accentColor}33`,
@@ -566,8 +570,8 @@ export function buildOverlayElement(content: OverlayContent) {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: content.format === 'story' ? 64 : 48,
-                gap: 18,
+                padding: isStory ? '48px 44px' : 48,
+                gap: 16,
               },
               children: [textStack({ ...content, panelColor: WARM_CREAM, textColor: content.textColor }, 'center')],
             },
@@ -618,8 +622,9 @@ export function buildOverlayElement(content: OverlayContent) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
-                padding: 48,
+                // Frame sits high so mid/lower photo subject stays readable.
+                justifyContent: 'flex-start',
+                padding: content.format === 'story' ? '72px 48px 24px 48px' : '40px 48px 20px 48px',
                 background: 'transparent',
               },
               children: [
@@ -628,7 +633,7 @@ export function buildOverlayElement(content: OverlayContent) {
                   props: {
                     style: {
                       width: '78%',
-                      height: content.format === 'story' ? '58%' : '62%',
+                      height: content.format === 'story' ? '48%' : '54%',
                       background: '#FFFFFF',
                       borderRadius: 6,
                       display: 'flex',
@@ -966,7 +971,8 @@ export function buildOverlayElement(content: OverlayContent) {
     };
   }
 
-  // campaign_hero_block: full-bleed photo, centered overlay type, thin brand footer.
+  // campaign_hero_block: full-bleed photo, type in upper third + thin brand footer.
+  // Mid-frame stays open so the gallery subject (cocktail, dish, venue) remains visible.
   if (content.family === 'hero_footer') {
     const headlineEl = headlineNode(content)!;
     const overlayHeadline = {
@@ -1041,9 +1047,9 @@ export function buildOverlayElement(content: OverlayContent) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
-                padding: 72,
-                gap: 22,
+                justifyContent: 'flex-start',
+                padding: content.format === 'story' ? '120px 64px 48px 64px' : '64px 56px 40px 56px',
+                gap: 18,
                 background: 'transparent',
               },
               children: [overlayHeadline, overlaySubtitle].filter(Boolean),
