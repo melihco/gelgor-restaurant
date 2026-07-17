@@ -15,15 +15,47 @@ from app.services.feed_director_slot_catalog import format_catalog_slots_for_pro
 FD_CONTENT_IDEAS_PROMPT_MAX_CHARS = 12_000
 FD_CONTENT_IDEAS_INPUT_MAX_CHARS = 24_000
 FD_CREATIVE_BRIEF_PROMPT_MAX_CHARS = 1_200
-FD_BRIEFING_CONTEXT_MAX_CHARS = 2_400
+FD_BRIEFING_CONTEXT_MAX_CHARS = 2_800
 WEEKLY_MANIFEST_SLOT_TOTAL = 16
+
+
+def _fd_gallery_url_base(url: str) -> str:
+    """Normalize gallery URL identity for used/unused comparison."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    lower = u.lower()
+    if "/api/media?" in lower:
+        q = u.find("?")
+        if q >= 0:
+            from urllib.parse import parse_qs
+
+            key = (parse_qs(u[q + 1:]).get("key") or [None])[0]
+            if key:
+                return f"/api/media?key={key}"
+    return u.split("?")[0]
+
+
+def _fd_used_gallery_bases(brand) -> set[str]:
+    bases: set[str] = set()
+    for u in getattr(brand, "used_image_urls", None) or []:
+        b = _fd_gallery_url_base(str(u))
+        if b:
+            bases.add(b)
+    for urls in (getattr(brand, "used_images_by_type", None) or {}).values():
+        for u in urls or []:
+            b = _fd_gallery_url_base(str(u))
+            if b:
+                bases.add(b)
+    return bases
 
 
 def build_fd_gallery_coverage_block(brand) -> str:
     """Compact gallery topic inventory for Feed Art Director (no per-URL dump).
 
     Ideation already gets the full scene block; FD only needs coverage topics so
-    ``visual_subject_hint`` stays grounded in photos the brand actually has.
+    ``visual_subject_hint`` stays grounded in photos the brand actually has —
+    with explicit pressure to use never-published gallery photos.
     """
     gallery_raw = getattr(brand, "gallery_analysis", None) or ""
     if not gallery_raw:
@@ -41,21 +73,25 @@ def build_fd_gallery_coverage_block(brand) -> str:
         )
 
     try:
-        from collections import Counter
+        from collections import Counter, defaultdict
 
         data = json.loads(gallery_raw) if isinstance(gallery_raw, str) else gallery_raw
         if not isinstance(data, dict) or not data:
             return "## Gallery coverage\n- Empty gallery analysis."
 
+        used_bases = _fd_used_gallery_bases(brand)
         tag_counts: Counter[str] = Counter()
         scene_counts: Counter[str] = Counter()
         best_for_counts: Counter[str] = Counter()
+        unused_by_scene: dict[str, list[str]] = defaultdict(list)
         skip_tags = {
             "logo", "marka", "brand", "interior", "mekan", "decor", "decoration",
             "photo", "image", "picture",
         }
+        used_count = 0
+        unused_count = 0
 
-        for _url, meta in data.items():
+        for url, meta in data.items():
             if not isinstance(meta, dict):
                 continue
             tags = [str(t).strip().lower() for t in (meta.get("contentTags") or []) if str(t).strip()]
@@ -69,13 +105,27 @@ def build_fd_gallery_coverage_block(brand) -> str:
                 if bf_s:
                     best_for_counts[bf_s] += 1
 
+            is_used = _fd_gallery_url_base(str(url)) in used_bases
+            if is_used:
+                used_count += 1
+            else:
+                unused_count += 1
+                hint_bits = tags[:3] or [
+                    str(meta.get("description") or meta.get("usageContext") or label)[:48]
+                ]
+                hint = ", ".join(str(x) for x in hint_bits if x).strip(" ,")
+                if hint and len(unused_by_scene[label]) < 4:
+                    unused_by_scene[label].append(hint)
+
         top_topics = [t for t, _ in tag_counts.most_common(14)]
         top_scenes = [f"{label}×{n}" for label, n in scene_counts.most_common(10)]
         top_best = [b for b, _ in best_for_counts.most_common(8)]
         total = len(data)
+        unused_pct = int(round(100 * unused_count / total)) if total else 0
 
         lines = [
-            f"## Gallery coverage ({total} analyzed photos)",
+            f"## Gallery coverage ({total} analyzed photos — {unused_count} NEVER published, "
+            f"{used_count} already used, {unused_pct}% fresh)",
             "Topics the brand can VISUALLY support (from gallery tags):",
             "  " + (", ".join(top_topics) if top_topics else "(general venue)"),
             "Scene clusters:",
@@ -83,12 +133,36 @@ def build_fd_gallery_coverage_block(brand) -> str:
         ]
         if top_best:
             lines.append("bestFor signals: " + ", ".join(top_best))
+
+        if unused_count > 0 and unused_by_scene:
+            lines.append("")
+            lines.append(
+                f"### UNUSED gallery subjects (priority — {unused_count} photos never used in feed/story/reel/carousel)"
+            )
+            lines.append(
+                "Spread assignments across these fresh clusters; do NOT keep recycling the same "
+                "cocktail/terrace/crowd heroes when unused alternatives exist."
+            )
+            for scene, hints in sorted(
+                unused_by_scene.items(), key=lambda kv: (-len(kv[1]), kv[0])
+            )[:8]:
+                sample = " | ".join(hints[:3])
+                lines.append(f"- {scene} ({len(hints)}+ fresh): {sample}")
+        elif used_count > 0 and unused_count == 0:
+            lines.append("")
+            lines.append(
+                "### UNUSED gallery subjects\n"
+                "- All analyzed photos were already published at least once — "
+                "still rotate scene clusters; avoid consecutive identical subjects."
+            )
+
         lines.extend(
             [
                 "",
                 "GALLERY GROUNDING (mandatory for FD):",
                 "- visual_subject_hint MUST use subjects from the coverage list above.",
-                "- Prefer under-used scene clusters when spreading the week.",
+                "- PREFER unused/fresh scene clusters when writing visual_subject_hint "
+                "(matcher will lock those photos).",
                 "- NEVER invent glassware/vehicles/crowds/products absent from coverage — "
                 "pick a different idea/pipeline or a weaker but real gallery subject.",
                 "- If an idea topic is missing from coverage, flag it or route to a format "

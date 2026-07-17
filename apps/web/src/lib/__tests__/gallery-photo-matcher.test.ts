@@ -323,7 +323,22 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
     );
     const foodPlain = rankedPlain.find((r) => r.url === FOOD_PHOTO)!.score;
     const foodPenalized = rankedPenalized.find((r) => r.url === FOOD_PHOTO)!.score;
-    expect(foodPenalized).toBe(foodPlain - 60);
+    expect(foodPenalized).toBe(foodPlain - 90); // 5 uses × GALLERY_USAGE_COUNT_PENALTY(18)
+  });
+
+  it('boosts never-published photos when usage history is present', () => {
+    const counts = new Map<string, number>([[FOOD_PHOTO, 2]]);
+    const caption = 'gourmet pasta food dish plate gourmet';
+    const lookup = buildGalleryLookup(restaurantGallery(), [FOOD_PHOTO, VENUE_PHOTO]);
+    const ranked = rankPhotosForContent(
+      { caption, businessType: 'restaurant', globalUsageCounts: counts },
+      [FOOD_PHOTO, VENUE_PHOTO],
+      lookup,
+      new Set(),
+      restaurantGallery(),
+    );
+    const venue = ranked.find((r) => r.url === VENUE_PHOTO);
+    expect(venue?.reason ?? '').toMatch(/unused:\+10/);
   });
 
   it('does not assign the same photo across post-type buckets (mission-wide)', () => {

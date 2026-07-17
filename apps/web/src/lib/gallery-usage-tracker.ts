@@ -18,7 +18,10 @@ const EMPTY_USAGE: UsedGalleryUsage = {
 };
 
 /** Per prior-use penalty in semantic ranking — higher spreads gallery diversity. */
-export const GALLERY_USAGE_COUNT_PENALTY = 12;
+export const GALLERY_USAGE_COUNT_PENALTY = 18;
+
+/** Boost never-published gallery photos so missions stop recycling the same heroes. */
+export const GALLERY_UNUSED_PHOTO_BOOST = 10;
 
 /** Cross post-type usage counts — drives matcher diversity (multi-tenant). */
 export function buildGlobalGalleryUsageCounts(

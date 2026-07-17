@@ -17,7 +17,13 @@ import {
   captionRequiresStrictGalleryMatch,
   isHardCaptionPhotoConflict,
 } from '@/lib/caption-photo-alignment';
-import { normalizeGalleryUrl, GALLERY_USAGE_COUNT_PENALTY, getGlobalGalleryUsageCount, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
+import {
+  normalizeGalleryUrl,
+  GALLERY_USAGE_COUNT_PENALTY,
+  GALLERY_UNUSED_PHOTO_BOOST,
+  getGlobalGalleryUsageCount,
+  type PostTypeBucket,
+} from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
 
@@ -1667,6 +1673,10 @@ export function rankPhotosForContent(
       const penalty = GALLERY_USAGE_COUNT_PENALTY * usageCount;
       totalScore -= penalty;
       reasons.push(`usage:-${penalty}`);
+    } else if (input.globalUsageCounts && input.globalUsageCounts.size > 0) {
+      // Only boost when we know usage history — avoid favoring random URLs with empty maps.
+      totalScore += GALLERY_UNUSED_PHOTO_BOOST;
+      reasons.push(`unused:+${GALLERY_UNUSED_PHOTO_BOOST}`);
     }
 
     if (totalScore <= 0 && !entry) continue;

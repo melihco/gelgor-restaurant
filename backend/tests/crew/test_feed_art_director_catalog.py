@@ -265,12 +265,17 @@ def test_fd_gallery_coverage_lists_topics_and_grounding_rules():
             }
         ),
         reference_image_urls=[],
+        used_image_urls=["https://ex.com/a.jpg"],
+        used_images_by_type={"feed": ["https://ex.com/a.jpg"]},
     )
     block = build_fd_gallery_coverage_block(brand)
     assert "cocktail" in block
     assert "terrace" in block
     assert "GALLERY GROUNDING" in block
     assert "NEVER invent" in block
+    assert "NEVER published" in block
+    assert "UNUSED gallery subjects" in block
+    assert "terrace" in block
     assert "https://ex.com" not in block  # compact — no URL dump
 
 

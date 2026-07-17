@@ -566,13 +566,14 @@ async def _execute_node_body(
                 logger.warning("node_learning_load_failed", node_key=node_key,
                                error=str(lc_exc)[:200])
 
-        if task_type == "content_ideation":
+        if task_type in ("content_ideation", "feed_cohesion_review"):
             try:
                 await apply_gallery_usage(brand, ws_str)
             except Exception as gu_exc:
                 logger.warning("node_gallery_usage_load_failed", node_key=node_key,
                                error=str(gu_exc)[:200])
 
+        if task_type == "content_ideation":
             # Enrich with operating policy (gallery/AI capability blocks).
             # Previously only called from orchestration.py; adding here ensures
             # mission content_ideation nodes also respect the brand's production policy.
@@ -2714,6 +2715,17 @@ async def _run_feed_art_director_report(
 
     from app.crew.tasks.feed_art_director_tasks import truncate_content_ideas_json_for_fd
     from app.services.feed_director_slot_catalog import load_feed_director_catalog_slots
+
+    # Prefer never-published gallery photos in FD visual_subject_hint routing.
+    if not getattr(brand, "used_image_urls", None):
+        try:
+            await apply_gallery_usage(brand, str(workspace_id))
+        except Exception as gu_exc:
+            logger.warning(
+                "feed_art_director_gallery_usage_load_failed",
+                mission_id=str(mission_id),
+                error=str(gu_exc)[:200],
+            )
 
     catalog_slots: list[dict[str, str]] = []
     factory = _get_session_factory()
