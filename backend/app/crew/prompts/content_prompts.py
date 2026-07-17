@@ -500,59 +500,55 @@ Selection rules:
 Keep the field names stable. The app maps these fields into Canva template contracts and tenant asset selection.
 """
 
-CONTENT_CALENDAR_TASK = """Create {count} weekly publish plan rows for {business_name}.
+CONTENT_CALENDAR_TASK = """Create exactly {count} publish-plan rows for {business_name}.
 
-PURPOSE: Each row is a scheduled content slot for the 7-day Instagram package — story, post, reel,
-or carousel. Rows feed the production pipeline: matched ideation gets enriched brief/schedule;
-unused rows backfill empty manifest slots after the main production pass.
+PURPOSE: Enrich the EXISTING ideation ideas below — one calendar row per idea.
+You do NOT create new deliverables. Production count = ideation count.
+Each row stamps schedule + visual brief onto the linked idea (idea_index).
 
 TODAY'S DATE: {current_date}
 Business: {business_name} | Location: {location} | Type: {business_type}
 Campaign brief: {brief}
 Active seasonal signals: {signals}
-Weekly format mix (distribute across rows): {format_mix}
+Format guidance: {format_mix}
 
-ANNOUNCEMENT TYPES to consider (pick the most relevant for THIS brand's actual business type):
-- venue_showcase   → physical space reveal (terrace, studio, showroom, clinic interior, gym floor) — adapt to what this business has
-- product_reveal   → new product, service, collection, dish, menu item, or feature launch
-- event_teaser     → upcoming class, live session, pop-up, open day, webinar, DJ night, workshop
-- offer_campaign   → limited-time deal, seasonal promo, membership offer, bundle campaign
-- social_proof     → client testimonial, milestone, award, before/after (where permitted), case study
-- behind_the_scenes → team moment, process shot, production/craft, day-in-life content
+## Ideation ideas to schedule (source of truth — {count} ideas)
+{ideation_ideas_json}
 
-⚠️ Do NOT default to hospitality (cocktails, pool, sunset) unless this business IS a beach club / hotel / restaurant.
-Match the type to what {business_name} actually sells: a gym → fitness class teaser; a clinic → service reveal; a bakery → product launch.
+ANNOUNCEMENT TYPES (pick the most relevant for THIS brand):
+- venue_showcase | product_reveal | event_teaser | offer_campaign | social_proof | behind_the_scenes
+
+⚠️ Do NOT default to hospitality unless this business IS a beach club / hotel / restaurant.
 
 RULES:
-- NEVER reference a past holiday or event. Today is {current_date}.
-- Each row must work as a self-contained Instagram slot for its format.
-- Keep event_name short (≤6 words) — headline for the card or caption hook.
+- Return exactly {count} rows — one for each idea_index 0..{count_minus_one}.
+- Every row MUST include `"idea_index": <int>` matching the ideation list. Each index exactly once.
+- Prefer ideation `posting_time_suggestion` / `event_date` as hints; YOU set final `date` + `time`.
+- Keep event_name aligned with the idea headline (≤6 words). Do not invent a new concept.
 - tagline is the visual sub-line (≤10 words).
-- Choose template_use_case from: event, campaign, announcement.
-- Choose format from: story, post, reel, carousel.
-- Cover the weekly format mix above — include reel and carousel rows when count allows.
-- Reel rows: motion-forward brief (camera movement, hook in first 2 seconds).
-- Carousel rows: multi-slide narrative brief (hero + supporting angles).
-- Spread publish days across Mon–Sun; include date and time when sensible.
-- Optional design_layout_family: Canva archetype id (e.g. neon_night_promo, event_ticket_stub).
-  Omit to let production derive layout from announcement_type + format + sector.
-- For event rows, optional artist_name or dj_lineup for overlay copy.
+- format: prefer the idea's format/content_type; only refine if clearly wrong (story|post|reel|carousel).
+- content_brief: 1-2 sentences for visual production (NOT the publish caption).
+- photo_mood: ideal background / scene mood.
+- Spread publish days across Mon–Sun; resolve collisions.
+- NEVER reference a past holiday. Today is {current_date}.
+- Optional design_layout_family: Canva archetype id; omit to derive from announcement_type + format.
 
-Return a JSON array of {count} publish plan rows:
+Return a JSON array of {count} rows:
 [
   {{
+    "idea_index": 0,
     "announcement_type": "one of the types above",
-    "event_name": "short headline for the card (≤6 words)",
+    "event_name": "short headline aligned with the idea (≤6 words)",
     "tagline": "visual sub-line (≤10 words)",
-    "date": "date string if applicable, else ''",
-    "time": "time string if applicable, else ''",
-    "venue_area": "specific area name (e.g. 'Rooftop Terrace') if applicable, else ''",
-    "artist_name": "DJ or performer name if applicable, else ''",
+    "date": "publish date string",
+    "time": "publish time e.g. 18:30",
+    "venue_area": "optional area name, else ''",
+    "artist_name": "optional, else ''",
     "design_layout_family": "optional Canva archetype id, else omit",
     "template_use_case": "event | campaign | announcement",
     "format": "story | post | reel | carousel",
-    "content_brief": "1-2 sentences describing the visual concept and message",
-    "photo_mood": "brief description of ideal background photo mood/scene",
+    "content_brief": "1-2 sentences visual concept for production",
+    "photo_mood": "ideal background photo mood/scene",
     "priority": "must_post | recommended | optional"
   }}
 ]

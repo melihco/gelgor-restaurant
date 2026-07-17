@@ -1,25 +1,20 @@
 /**
  * Calendar → empty manifest slot backfill.
  *
- * After a mission production run, unused content_calendar rows can fill failed or
- * missing slots while preserving weekly format diversity.
+ * Disabled: calendar is enrich-only (1 idea → 1 deliverable). Unused calendar rows
+ * must not invent extra production donors.
  */
 import type { ManifestProductionQueueItem } from '@/lib/auto-produce/build-production-queue';
-import { calendarItemFormat, calendarItemHeadline } from '@/lib/content-calendar-artifact-link';
+import { calendarItemFormat } from '@/lib/content-calendar-artifact-link';
 import {
   buildCalendarFalSceneHint,
   MAX_CALENDAR_PLANS_PER_MISSION,
   normalizeCalendarPlanToProductionIdea,
 } from '@/lib/calendar-production-pack';
-import { slotFormatFromAssignment } from '@/lib/gallery-first-production';
-import {
-  applyCalendarProductionEnrichment,
-  parseCalendarPlanRecords,
-} from '@/lib/mission-production-plan';
+import { parseCalendarPlanRecords } from '@/lib/mission-production-plan';
 import { nodeOutputArray } from '@/lib/mission-node-output';
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import {
-  findMissionSlotBackfillItems,
   missionSlotRunKey,
   type ProductionRunResultRow,
 } from '@/lib/mission-slot-backfill';
@@ -114,9 +109,9 @@ export function buildCalendarBackfillIdea(
 
 /**
  * Match unused calendar plans to empty/failed manifest slots.
- * Orphan calendar rows (no ideation link) are preferred over linked rows.
+ * Disabled under enrich-only / idea_count production — always returns [].
  */
-export function matchCalendarPlansToEmptySlots(input: {
+export function matchCalendarPlansToEmptySlots(_input: {
   queue: ManifestProductionQueueItem[];
   results: ProductionRunResultRow[];
   calendarPlans: Record<string, unknown>[];
@@ -124,84 +119,7 @@ export function matchCalendarPlansToEmptySlots(input: {
   linkedPlanIndices?: Set<number>;
   ideationIdeas?: Record<string, unknown>[];
 }): CalendarSlotBackfillPlan[] {
-  const {
-    queue,
-    results,
-    calendarPlans,
-    usedPlanIndices: usedInput,
-    linkedPlanIndices: linkedInput,
-    ideationIdeas,
-  } = input;
-
-  if (!calendarPlans.length) return [];
-
-  const emptySlots = findMissionSlotBackfillItems(queue, results);
-  if (!emptySlots.length) return [];
-
-  const usedPlans = new Set(usedInput ?? []);
-  let linked = linkedInput;
-  if (!linked && ideationIdeas?.length) {
-    linked = applyCalendarProductionEnrichment(ideationIdeas, calendarPlans).linkedPlanIndices;
-  }
-
-  const availableIndices = calendarPlans
-    .map((_, index) => index)
-    .filter((index) => !usedPlans.has(index))
-    .sort((a, b) => {
-      const aOrphan = linked?.has(a) ? 1 : 0;
-      const bOrphan = linked?.has(b) ? 1 : 0;
-      if (aOrphan !== bOrphan) return aOrphan - bOrphan;
-      return a - b;
-    });
-
-  const plans: CalendarSlotBackfillPlan[] = [];
-  const usedHeadlines = new Set<string>();
-
-  const pickPlanIndex = (
-    slotFormat: PackageFormat,
-    strictFormat: boolean,
-  ): number | null => {
-    return availableIndices.find((index) => {
-      if (usedPlans.has(index)) return false;
-      const plan = calendarPlans[index]!;
-      if (strictFormat && calendarPlanPackageFormat(plan) !== slotFormat) return false;
-      const headline = normalizeHeadline(calendarItemHeadline(plan));
-      if (headline && usedHeadlines.has(headline)) return false;
-      return true;
-    }) ?? null;
-  };
-
-  for (const slot of emptySlots) {
-    const slotFormat = slotFormatFromAssignment(slot.assignment);
-
-    const planIndex = pickPlanIndex(slotFormat, true)
-      ?? pickPlanIndex(slotFormat, false);
-
-    if (planIndex == null) continue;
-
-    const plan = calendarPlans[planIndex]!;
-    usedPlans.add(planIndex);
-    const headline = normalizeHeadline(calendarItemHeadline(plan));
-    if (headline) usedHeadlines.add(headline);
-
-    const slotKey = missionSlotRunKey(slot.ideaIndex, slot.assignment.slot_role);
-    plans.push({
-      slotKey,
-      ideaIndex: slot.ideaIndex,
-      planIndex,
-      calendarIdea: buildCalendarBackfillIdea(slot, plan, planIndex),
-      assignmentOverrides: buildCalendarAssignmentOverrides(
-        plan,
-        planIndex,
-        slot.assignment,
-      ),
-    });
-
-    const removeAt = availableIndices.indexOf(planIndex);
-    if (removeAt >= 0) availableIndices.splice(removeAt, 1);
-  }
-
-  return plans;
+  return [];
 }
 
 export function applyCalendarBackfillToIdeas(

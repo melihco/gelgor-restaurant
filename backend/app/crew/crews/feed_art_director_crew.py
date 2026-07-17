@@ -26,11 +26,11 @@ from crewai import Crew, LLM, Process
 from app.config import get_settings
 from app.crew.agents.feed_art_director_agent import create_feed_art_director_agent
 from app.crew.context import BrandInfo
-from app.crew.tasks.feed_art_director_tasks import create_feed_cohesion_task
-from app.services.feed_director_slot_catalog import (
-    apply_catalog_slot_to_entry,
-    build_weekly_catalog_assignment_plan,
+from app.crew.tasks.feed_art_director_tasks import (
+    create_feed_cohesion_task,
+    parse_content_ideas_json,
 )
+from app.services.feed_director_slot_catalog import apply_catalog_slot_to_entry
 from app.crew.token_usage import total_tokens_from_crew
 
 logger = structlog.get_logger()
@@ -149,6 +149,23 @@ def _publish_channel_for_role(role: str) -> str:
     return "instagram_organic"
 
 
+def _default_role_pipeline_for_format(
+    fmt: str,
+    production_profile: str | None = None,
+) -> tuple[str, str]:
+    """One role/pipeline per idea format — no multi-slot fan-out."""
+    tier = (production_profile or "").strip().lower()
+    if fmt == "story":
+        return "campaign_story_motion", "fal_story"
+    if fmt == "reel":
+        if tier == "economy":
+            return "organic_story_still", "story_still"
+        return "organic_reel", "fal_reel"
+    if fmt == "carousel":
+        return "organic_carousel", "carousel_gallery"
+    return "fal_designed_post", "fal_design"
+
+
 def _normalize_weekly_catalog_first(
     report: dict[str, Any],
     idea_count: int,
@@ -156,57 +173,50 @@ def _normalize_weekly_catalog_first(
     ideas: list[dict[str, Any]] | None,
     catalog_slots: list[dict[str, str]],
 ) -> None:
-    """Catalog-first weekly normalize — slot list comes from tenant catalog, not static specs."""
+    """Catalog-first normalize — exactly one assignment per idea (no 16-slot pad)."""
     raw = report.get("production_assignments")
     if not isinstance(raw, list):
         raw = []
 
-    donors_by_key: dict[str, dict[str, Any]] = {}
-    donors_by_idea: dict[int, list[dict[str, Any]]] = {}
+    donors_by_idea: dict[int, dict[str, Any]] = {}
     for item in raw:
         if not isinstance(item, dict):
             continue
-        key = str(item.get("catalog_slot_key") or "").strip()
-        if key:
-            donors_by_key[key] = item
         try:
             idx = int(item.get("idea_index", -1))
         except (TypeError, ValueError):
             continue
-        if idx >= 0:
-            donors_by_idea.setdefault(idx, []).append(item)
+        if idx >= 0 and idx not in donors_by_idea:
+            donors_by_idea[idx] = item
 
     effective_ideas = max(idea_count, 1)
-    plan = build_weekly_catalog_assignment_plan(catalog_slots, production_profile)
+    used_catalog_keys: set[str] = set()
     final_assignments: list[dict[str, Any]] = []
 
-    for slot_i, catalog_row in enumerate(plan):
-        slot_key = str(catalog_row.get("slot_key") or "")
-        role = str(catalog_row.get("slot_role") or "fal_designed_post")
-        pipeline = str(catalog_row.get("pipeline") or "fal_design")
-        label = str(catalog_row.get("label_tr") or "").strip()
-        donor = donors_by_key.get(slot_key)
-        if not donor:
-            idea_i = slot_i % effective_ideas
-            pool = donors_by_idea.get(idea_i) or []
-            donor = pool[0] if pool else {}
-        else:
-            try:
-                idea_i = int(donor.get("idea_index", slot_i % effective_ideas))
-            except (TypeError, ValueError):
-                idea_i = slot_i % effective_ideas
+    for idea_i in range(effective_ideas):
+        idea = ideas[idea_i] if (ideas and idea_i < len(ideas)) else {}
+        fmt = _idea_content_format(idea) if idea else "post"
+        role, pipeline = _default_role_pipeline_for_format(fmt, production_profile)
+        donor = donors_by_idea.get(idea_i) or {}
+        donor_role = str(donor.get("slot_role") or "").strip()
+        donor_pipeline = str(donor.get("pipeline") or "").strip()
+        if donor_role:
+            role = donor_role
+        if donor_pipeline:
+            pipeline = donor_pipeline
 
         entry: dict[str, Any] = {
             "idea_index": idea_i,
             "slot_role": role,
             "pipeline": pipeline,
-            "catalog_slot_key": slot_key,
             "copy_bundle_id": str(donor.get("copy_bundle_id") or "mission-week"),
-            "publish_channel": str(donor.get("publish_channel") or _publish_channel_for_role(role)),
-            "rationale": str(donor.get("rationale") or f"catalog_slot_{slot_key}"),
+            "publish_channel": str(
+                donor.get("publish_channel") or _publish_channel_for_role(role)
+            ),
+            "rationale": str(donor.get("rationale") or f"idea_{idea_i}_{fmt}"),
         }
-        if label:
-            entry["catalog_slot_label"] = label
+        if donor.get("catalog_slot_key"):
+            entry["catalog_slot_key"] = donor.get("catalog_slot_key")
         for hint_key in (
             "visual_subject_hint",
             "fal_design_hint",
@@ -215,6 +225,7 @@ def _normalize_weekly_catalog_first(
         ):
             if donor.get(hint_key) is not None:
                 entry[hint_key] = donor[hint_key]
+        apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
         entry.pop("library_slot_key", None)
         final_assignments.append(entry)
 
@@ -232,9 +243,9 @@ def _normalize_production_assignments(
     production_package: str = "weekly_content",
     catalog_slots: list[dict[str, str]] | None = None,
 ) -> None:
-    """Normalize FD output to fixed weekly manifest geometry (16 agency slots).
+    """Normalize FD output to one assignment per idea (idea_count deliverables).
 
-    Opportunity missions: exactly 3 slots. Weekly/seasonal: `_WEEKLY_SLOT_SPECS` order.
+    Opportunity missions: exactly 3 slots. Weekly/seasonal: len == idea_count.
     """
     _pipeline_map = {
         "organic_post": "gallery_photo",
@@ -356,147 +367,38 @@ def _normalize_production_assignments(
             "publish_channel": channel,
         }
 
-    post_n = carousel_n = story_n = reel_n = 0
-    tier = (production_profile or "").strip().lower()
-
-    for i in range(max(idea_count, 1)):
-        if i in by_index:
-            role = str(by_index[i].get("slot_role") or "")
-            if role in ("organic_post", "designed_post", "designed_typography", "fal_designed_post"):
-                post_n += 1
-            elif role == "organic_carousel":
-                carousel_n += 1
-            elif "story" in role:
-                story_n += 1
-            elif "reel" in role:
-                reel_n += 1
-            continue
-
-        idea_fmt = _idea_content_format(ideas[i]) if (ideas and i < len(ideas)) else None
-
-        def _assign(slot_role: str, pipeline: str, rationale: str, **extra: Any) -> None:
-            by_index[i] = {
-                "idea_index": i,
-                "slot_role": slot_role,
+    effective_ideas = max(idea_count, 1)
+    final_assignments: list[dict[str, Any]] = []
+    for idea_i in range(effective_ideas):
+        idea = ideas[idea_i] if (ideas and idea_i < len(ideas)) else {}
+        fmt = _idea_content_format(idea) if idea else "post"
+        role, pipeline = _default_role_pipeline_for_format(fmt, production_profile)
+        if idea_i in by_index:
+            entry = dict(by_index[idea_i])
+            role = str(entry.get("slot_role") or role)
+            pipeline = str(entry.get("pipeline") or pipeline)
+        else:
+            entry = {
+                "idea_index": idea_i,
+                "slot_role": role,
                 "pipeline": pipeline,
                 "copy_bundle_id": "mission-week",
-                "publish_channel": (
-                    "instagram_campaign" if "campaign" in slot_role else "instagram_organic"
-                ),
-                "rationale": rationale,
-                **extra,
+                "publish_channel": _publish_channel_for_role(role),
+                "rationale": f"auto_fill_idea_{idea_i}_{fmt}",
             }
-
-        if idea_fmt == "story" and story_n < 3:
-            _assign(
-                "campaign_story_motion",
-                "fal_story",
-                "auto_fill_story_fmt",
-            )
-            story_n += 1
-        elif idea_fmt == "reel" and reel_n == 0:
-            if tier == "economy":
-                _assign("organic_story_still", "story_still", "auto_fill_economy_story_still_fmt")
-                story_n += 1
-            else:
-                _assign("organic_reel", "fal_reel", "auto_fill_reel_fmt")
-                reel_n += 1
-        elif idea_fmt == "carousel" and carousel_n == 0:
-            _assign("organic_carousel", "carousel_gallery", "auto_fill_carousel_fmt")
-            carousel_n += 1
-        elif idea_fmt in ("post", None) and post_n == 0:
-            _assign("organic_post", "gallery_photo", "auto_fill_organic_post_fmt")
-            post_n += 1
-        elif idea_fmt in ("post", None) and post_n == 1:
-            _assign("designed_post", "fal_design", "auto_fill_designed_post_fmt")
-            post_n += 1
-        elif post_n == 0:
-            _assign("organic_post", "gallery_photo", "auto_fill_organic_post")
-            post_n += 1
-        elif post_n == 1:
-            _assign("designed_post", "fal_design", "auto_fill_designed_post")
-            post_n += 1
-        elif carousel_n == 0:
-            _assign("organic_carousel", "carousel_gallery", "auto_fill_carousel")
-            carousel_n += 1
-        elif story_n < 3:
-            _assign(
-                "campaign_story_motion",
-                "fal_story",
-                "auto_fill_fal_story",
-            )
-            story_n += 1
-        elif reel_n == 0:
-            if tier == "economy":
-                _assign("organic_story_still", "story_still", "auto_fill_economy_story_still")
-                story_n += 1
-            else:
-                _assign("organic_reel", "fal_reel", "auto_fill_reel")
-                reel_n += 1
-        else:
-            role, pipeline = _post_slot_role_for(post_n)
-            _assign(role, pipeline, f"auto_fill_{role}")
-            post_n += 1
-
-    by_role: dict[str, list[dict[str, Any]]] = {}
-    for entry in by_index.values():
-        r = str(entry.get("slot_role") or "unknown")
-        by_role.setdefault(r, []).append(entry)
-    for entries in by_role.values():
-        entries.sort(key=lambda e: int(e.get("idea_index", 0)))
-
-    slot_specs = _weekly_slot_specs(production_profile)
-    effective_ideas = max(idea_count, 1)
-    all_sorted = [by_index[k] for k in sorted(by_index.keys())]
-
-    final_assignments = []
-
-    for slot_i, (role, pipeline) in enumerate(slot_specs):
-        if by_role.get(role):
-            donor = by_role[role].pop(0)
-        elif all_sorted:
-            donor = all_sorted[slot_i % len(all_sorted)]
-        else:
-            donor = {"idea_index": slot_i % effective_ideas}
-
-        idea_i = int(donor.get("idea_index", slot_i % effective_ideas))
-        channel = str(donor.get("publish_channel") or "instagram_organic")
-        entry = {
-            k: v
-            for k, v in donor.items()
-            if k
-            not in (
-                "slot_role",
-                "pipeline",
-                "idea_index",
-                "library_slot_key",
-                "catalog_slot_key",
-            )
-        }
-        entry.update({
-            "idea_index": idea_i,
-            "slot_role": role,
-            "pipeline": pipeline,
-            "copy_bundle_id": str(donor.get("copy_bundle_id") or "mission-week"),
-            "publish_channel": channel,
-            "rationale": str(donor.get("rationale") or f"weekly_slot_{slot_i}"),
-        })
-        if donor.get("catalog_slot_key"):
-            entry["catalog_slot_key"] = donor.get("catalog_slot_key")
+        entry["idea_index"] = idea_i
+        entry["slot_role"] = role
+        entry["pipeline"] = pipeline
+        entry["publish_channel"] = str(
+            entry.get("publish_channel") or _publish_channel_for_role(role)
+        )
         apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
         entry.pop("library_slot_key", None)
         final_assignments.append(entry)
 
     report["production_assignments"] = final_assignments
     report["format_distribution"] = _format_distribution_from_assignments(final_assignments)
-    required_counts = _manifest_required_counts(production_profile)
-    assigned_counts: dict[str, int] = {}
-    for a in final_assignments:
-        role = str(a.get("slot_role") or "")
-        assigned_counts[role] = assigned_counts.get(role, 0) + 1
-    filled = sum(min(need, assigned_counts.get(role, 0)) for role, need in required_counts.items())
-    need_total = sum(required_counts.values())
-    report["manifest_coverage_pct"] = int(round(100 * filled / max(need_total, 1)))
+    report["manifest_coverage_pct"] = 100 if final_assignments else 0
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -628,14 +530,35 @@ def run_feed_art_director(
                 catalog_slots=catalog_slots,
             )
 
-        try:
-            parsed_ideas = json.loads(
-                content_ideas_json.replace("```json", "").replace("```", "").strip()
+        parsed_ideas = parse_content_ideas_json(content_ideas_json)
+        idea_count = len(parsed_ideas)
+        # Catalog-first must still run when ideation JSON was truncated/unparseable
+        # but brand catalog slots were loaded (otherwise LLM sparse keys stick forever).
+        if idea_count == 0 and catalog_slots:
+            expected_for_pkg = 3 if production_package == "opportunity" else 0
+            raw_assign = report.get("production_assignments")
+            idxs: list[int] = []
+            if isinstance(raw_assign, list):
+                for a in raw_assign:
+                    if not isinstance(a, dict):
+                        continue
+                    try:
+                        idxs.append(int(a.get("idea_index", 0)))
+                    except (TypeError, ValueError):
+                        continue
+            if idxs:
+                idea_count = max(idxs) + 1
+            elif expected_for_pkg:
+                idea_count = expected_for_pkg
+            else:
+                idea_count = len(raw_assign) if isinstance(raw_assign, list) and raw_assign else 0
+            parsed_ideas = [{} for _ in range(idea_count)] if idea_count else []
+            logger.warning(
+                "feed_art_director_crew.ideas_unparseable_catalog_normalize",
+                brand=brand.business_name,
+                idea_count=idea_count,
+                catalog_slots=len(catalog_slots),
             )
-            idea_count = len(parsed_ideas) if isinstance(parsed_ideas, list) else 0
-        except Exception:
-            parsed_ideas = []
-            idea_count = 0
         if idea_count > 0:
             _normalize_production_assignments(
                 report,
@@ -646,7 +569,7 @@ def run_feed_art_director(
                 catalog_slots=catalog_slots,
             )
             assignments = report.get("production_assignments")
-            expected_slots = 3 if production_package == "opportunity" else _WEEKLY_PACKAGE_TOTAL
+            expected_slots = 3 if production_package == "opportunity" else idea_count
             if not isinstance(assignments, list) or len(assignments) != expected_slots:
                 raise RuntimeError(
                     f"Feed Art Director schema: expected {expected_slots} production_assignments, "
@@ -705,13 +628,15 @@ def _fallback_report(
         "_fallback_reason": reason,
     }
     try:
-        ideas = json.loads(
-            content_ideas_json.replace("```json", "").replace("```", "").strip()
-        )
-        if isinstance(ideas, list) and ideas:
+        ideas = parse_content_ideas_json(content_ideas_json)
+        idea_count = len(ideas)
+        if idea_count == 0 and catalog_slots:
+            idea_count = 3 if production_package == "opportunity" else _WEEKLY_PACKAGE_TOTAL
+            ideas = [{} for _ in range(idea_count)]
+        if idea_count > 0:
             _normalize_production_assignments(
                 report,
-                len(ideas),
+                idea_count,
                 production_profile=production_profile,
                 ideas=ideas,
                 production_package=production_package,

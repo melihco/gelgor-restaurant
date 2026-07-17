@@ -18,6 +18,55 @@ FD_CREATIVE_BRIEF_PROMPT_MAX_CHARS = 1_200
 WEEKLY_MANIFEST_SLOT_TOTAL = 16
 
 
+def parse_content_ideas_json(raw: str) -> list:
+    """Parse ideation JSON array; tolerate markdown fences."""
+    if not raw or not str(raw).strip():
+        return []
+    cleaned = str(raw).replace("```json", "").replace("```", "").strip()
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def truncate_content_ideas_json_for_fd(
+    raw: str,
+    max_chars: int = FD_CONTENT_IDEAS_INPUT_MAX_CHARS,
+) -> str:
+    """Truncate ideation payload on complete idea objects — never mid-JSON.
+
+    Blind ``raw[:max_chars]`` breaks ``json.loads`` on large weekly batches (~30k),
+    which skips catalog-first normalize in Feed Art Director (idea_count == 0).
+    """
+    if not raw:
+        return ""
+    cleaned = str(raw).replace("```json", "").replace("```", "").strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    ideas = parse_content_ideas_json(cleaned)
+    if not ideas:
+        # Last-resort: keep prefix only when parse already failed on full string.
+        return cleaned[:max_chars]
+    # Compact re-dump often fits under the limit even when pretty/raw exceeded it.
+    compact_all = json.dumps(ideas, ensure_ascii=False)
+    if len(compact_all) <= max_chars:
+        return compact_all
+    kept: list = []
+    for idea in ideas:
+        candidate = json.dumps(kept + [idea], ensure_ascii=False)
+        if len(candidate) > max_chars and kept:
+            break
+        kept.append(idea)
+        if len(candidate) > max_chars:
+            break
+    if not kept:
+        # Single oversized idea — still emit a valid one-element array if possible.
+        one = json.dumps([ideas[0]], ensure_ascii=False)
+        return one if len(one) <= max_chars else cleaned[:max_chars]
+    return json.dumps(kept, ensure_ascii=False)
+
+
 def _weekly_theme_slug(weekly_theme: str) -> str:
     slug = re.sub(r"[^\w\-]+", "-", (weekly_theme or "").lower().strip())[:40].strip("-")
     return slug or "mission-week"
@@ -50,41 +99,31 @@ manifest_coverage_pct must be 100 when all 3 slots are assigned.
     n = max(int(idea_count), 1)
     if catalog_slots:
         return f"""
-### 8. Production assignments (MANDATORY — catalog-first, {WEEKLY_MANIFEST_SLOT_TOTAL} weekly slots)
-Return **exactly {WEEKLY_MANIFEST_SLOT_TOTAL}** entries in production_assignments.
+### 8. Production assignments (MANDATORY — catalog-first, exactly {n} slots)
+Return **exactly {n}** entries in production_assignments — **one per idea** (idea_index 0..{n - 1}).
+Do NOT reuse the same idea_index on multiple slots. Do NOT pad to 16.
 
 **Catalog-first rules (mandatory when brand catalog is loaded):**
-1. Pick `catalog_slot_key` ONLY from the brand catalog JSON below — one unique key per slot when alternatives exist.
-2. Set `slot_role` and `pipeline` to **exactly match** the chosen catalog row (do not invent generic fal_only_* roles).
+1. Pick `catalog_slot_key` ONLY from the brand catalog JSON below — prefer unique keys.
+2. Set `slot_role` and `pipeline` to match the chosen catalog row AND the idea's format.
 3. Include `catalog_slot_label` copied from the catalog row's `label_tr`.
-4. Reuse idea_index round-robin across the {n} ideas (same idea may appear on multiple slots).
-5. Do NOT use legacy Remotion names or generic slot names without a catalog key.
+4. Format comes from each idea (`format` / `content_type`) — calendar may already have stamped it.
+5. Do NOT use legacy Remotion names or invent slots without a catalog key when catalog is loaded.
 
-Format mix target (cap by enabled catalog): ~6 post · ~7 story · ~2 reel · ~1 carousel.
-
-manifest_coverage_pct must be 100 when all {WEEKLY_MANIFEST_SLOT_TOTAL} slots are assigned.
+manifest_coverage_pct must be 100 when all {n} idea slots are assigned.
 """
     return f"""
-### 8. Production assignments (MANDATORY — exactly {WEEKLY_MANIFEST_SLOT_TOTAL} weekly slots)
-Return **exactly {WEEKLY_MANIFEST_SLOT_TOTAL}** entries in production_assignments — one per manifest slot, NOT one per idea.
-Reuse idea_index round-robin across the {n} ideas in this batch (same idea_index may appear on multiple slots).
+### 8. Production assignments (MANDATORY — exactly {n} slots, one per idea)
+Return **exactly {n}** entries in production_assignments — one per idea_index 0..{n - 1}.
+Do NOT reuse idea_index. Do NOT pad to a fixed weekly 16.
 
-Required slot mix (weekly_content / agency):
-- exactly 2 organic_post (gallery_photo)
-- exactly 1 designed_post + 1 designed_typography (fal_design — gallery match + agent design brief)
-- exactly 1 fal_designed_post (fal_design)
-- exactly 1 organic_carousel (carousel_gallery)
-- exactly 2 campaign_story_motion (fal_story) — different catalog_slot_key each
-- exactly 1 organic_story_still (story_still)
-- exactly 1 organic_reel + 1 campaign_reel_motion (fal_reel) — set hero_reel_index on organic_reel
-- exactly 2 fal_reel_motion (fal_reel)
-- exactly 1 fal_only_post (fal_only_post)
-- exactly 2 fal_only_reel (fal_only_reel)
+For each idea, pick slot_role/pipeline from the idea's format:
+- post → fal_designed_post / fal_design (or organic_post / gallery_photo when clearly gallery-only)
+- story → campaign_story_motion / fal_story
+- reel → organic_reel / fal_reel
+- carousel → organic_carousel / carousel_gallery
 
-Campaign story slots use fal.ai grounded 9:16 posters (gallery photo + ideation headline).
-Do NOT assign fal_only_story in weekly missions.
-
-manifest_coverage_pct must be 100 when all {WEEKLY_MANIFEST_SLOT_TOTAL} slots are assigned.
+manifest_coverage_pct must be 100 when all {n} idea slots are assigned.
 """
 
 

@@ -312,9 +312,8 @@ export function isCalendarProductionDonor(idea: Record<string, unknown>): boolea
 }
 
 /**
- * Link every calendar plan onto ideation when possible; enrich with full publish brief.
- * Also collects EVERY calendar plan as a production donor (matched or orphan).
- * Matched plans still enrich the ideation row — and are produced as separate calendar items.
+ * Link calendar plans onto ideation (1:1) and enrich with schedule/brief/mood/layout.
+ * Enrich-only: unlinked calendar rows are telemetry orphans — never production donors.
  */
 export function applyCalendarProductionEnrichment(
   ideationRecords: Record<string, unknown>[],
@@ -322,9 +321,12 @@ export function applyCalendarProductionEnrichment(
 ): {
   ideas: Record<string, unknown>[];
   linkedPlanIndices: Set<number>;
-  /** @deprecated Prefer calendarProductionIdeas — orphans only kept for callers. */
+  /** Unlinked calendar rows (telemetry only — not produced). */
   orphanCalendarIdeas: Record<string, unknown>[];
-  /** All calendar rows that should become production items (ideas + calendar = additive). */
+  /**
+   * @deprecated Empty — calendar no longer adds production twins.
+   * Kept for call-site compatibility; always [].
+   */
   calendarProductionIdeas: Array<{
     planIndex: number;
     idea: Record<string, unknown>;
@@ -340,18 +342,14 @@ export function applyCalendarProductionEnrichment(
   }));
 
   const linkedPlanIndices = new Set<number>();
-  const calendarProductionIdeas: Array<{
-    planIndex: number;
-    idea: Record<string, unknown>;
-    linkedIdeaIndex: number | null;
-  }> = [];
+  const orphanCalendarIdeas: Record<string, unknown>[] = [];
 
   if (calendarPlans.length === 0) {
     return {
       ideas,
       linkedPlanIndices,
-      orphanCalendarIdeas: [],
-      calendarProductionIdeas,
+      orphanCalendarIdeas,
+      calendarProductionIdeas: [],
     };
   }
 
@@ -363,41 +361,25 @@ export function applyCalendarProductionEnrichment(
 
     const { index } = pickIdeationForCalendarStrict(plan, ideas, usedIdeation);
     if (index == null || index < 0 || index >= ideas.length) {
-      calendarProductionIdeas.push({
-        planIndex,
-        idea: calendarIdea,
-        linkedIdeaIndex: null,
-      });
+      orphanCalendarIdeas.push(calendarIdea);
       continue;
     }
     usedIdeation.add(index);
     linkedPlanIndices.add(planIndex);
     ideas[index] = enrichIdeationWithCalendarPlan(ideas[index]!, plan, planIndex, index);
-    calendarProductionIdeas.push({
-      planIndex,
-      idea: {
-        ...calendarIdea,
-        calendar_linked_idea_index: index,
-        planning_idea_index: index,
-      },
-      linkedIdeaIndex: index,
-    });
   }
 
   return {
     ideas,
     linkedPlanIndices,
-    orphanCalendarIdeas: calendarProductionIdeas
-      .filter((row) => row.linkedIdeaIndex == null)
-      .map((row) => row.idea),
-    calendarProductionIdeas,
+    orphanCalendarIdeas,
+    calendarProductionIdeas: [],
   };
 }
 
 /**
- * Merge ideation + calendar into an additive production pool.
- * Every unique ideation row AND every calendar plan becomes its own production item.
- * Matched calendars still enrich the ideation caption/schedule, but are also produced.
+ * Production pool = enriched ideation only (1 idea → 1 deliverable).
+ * Calendar stamps schedule/brief onto ideas; never adds rows.
  */
 export function mergeCalendarPlansForProduction(
   ideationRecords: Record<string, unknown>[],
@@ -411,7 +393,7 @@ function buildContentProductionItemsFromRecords(
   ideationRecords: Record<string, unknown>[],
   calendarPlans: Record<string, unknown>[],
 ): Record<string, unknown>[] {
-  const { ideas, calendarProductionIdeas } = applyCalendarProductionEnrichment(
+  const { ideas } = applyCalendarProductionEnrichment(
     ideationRecords.map((idea, index) => ({
       ...idea,
       idea_index: index,
@@ -420,7 +402,7 @@ function buildContentProductionItemsFromRecords(
     calendarPlans,
   );
 
-  if (ideas.length === 0 && calendarProductionIdeas.length === 0) {
+  if (ideas.length === 0) {
     return ideationRecords.map((idea, index) => ({
       ...idea,
       idea_index: index,
@@ -429,20 +411,12 @@ function buildContentProductionItemsFromRecords(
     }));
   }
 
-  const enrichedItems = ideas.map((idea, index) => ({
+  return ideas.map((idea, index) => ({
     ...idea,
     idea_index: index,
     planning_idea_index: resolvePlanningIdeaIndex(idea) ?? index,
     production_scope: 'ideation',
   }));
-
-  const calendarItems = calendarProductionIdeas.map((row, i) => ({
-    ...row.idea,
-    idea_index: enrichedItems.length + i,
-    production_scope: row.linkedIdeaIndex == null ? 'calendar_orphan' : 'calendar_plan',
-  }));
-
-  return [...enrichedItems, ...calendarItems];
 }
 
 export interface MissionContentProductionScope {
@@ -464,13 +438,8 @@ export interface MissionContentProductionStatus {
 }
 
 /**
- * SSOT — how many unique content rows this mission must produce.
- * No calendar → ideation count only.
- * With calendar → every ideation row + every calendar plan (additive).
- */
-/**
- * Feed/factory completion target — content-scoped missions use merged ideation+calendar count,
- * not fixed weekly geometry (16/12).
+ * Feed/factory completion target = idea_count (1 idea → 1 deliverable).
+ * Calendar enriches ideas but must not change the count.
  */
 export function resolveMissionProductionTargetCount(input: {
   hasCalendar: boolean;
@@ -478,7 +447,7 @@ export function resolveMissionProductionTargetCount(input: {
   missionType?: string | null;
   packageSlug?: string | null;
 }): number {
-  if (input.hasCalendar && input.mergedItemCount > 0) {
+  if (input.mergedItemCount > 0) {
     return input.mergedItemCount;
   }
   return resolveWeeklyPackageGeometry(input.packageSlug ?? undefined).total;
@@ -516,20 +485,22 @@ export function resolveMissionContentProductionScope(params: {
     .filter((n) => n.status === 'completed' && nodeHasOutput(n))
     .flatMap(parseCalendarPlanRecordsFromNode);
 
-  const items = buildContentProductionItemsFromRecords(uniqueIdeation, calendarPlans);
-
-  const orphanCalendarCount = items.filter(
-    (row) => {
-      const scope = String(row.production_scope ?? '');
-      return scope === 'calendar_orphan' || scope === 'calendar_plan';
-    },
-  ).length;
+  const { ideas, orphanCalendarIdeas } = applyCalendarProductionEnrichment(
+    uniqueIdeation,
+    calendarPlans,
+  );
+  const items = ideas.map((idea, index) => ({
+    ...idea,
+    idea_index: index,
+    planning_idea_index: resolvePlanningIdeaIndex(idea) ?? index,
+    production_scope: 'ideation',
+  }));
 
   return {
     hasCalendar: true,
     items,
-    ideationItemCount: items.filter((row) => row.production_scope === 'ideation').length,
-    orphanCalendarCount,
+    ideationItemCount: items.length,
+    orphanCalendarCount: orphanCalendarIdeas.length,
     requiredProductionCount: items.length,
   };
 }
@@ -654,92 +625,27 @@ export function isContentScopedProductionPool(
 }
 
 /**
- * P1-5 — Ensure the weekly mission has enough ideas for the plan manifest
- * (Starter 4+3+1+4 · Agency 6+3+1+6).
- * Calendar rows and ideation overflow backfill missing format buckets.
- * Do NOT use on content-scoped additive pools (ideation+calendar) — those keep every row.
+ * Production pool is idea_count-scoped — do not pad/clone to weekly geometry.
+ * Kept as a pass-through for call-site compatibility.
  */
 export function ensureWeeklyFormatCoverage(
   primary: Record<string, unknown>[],
-  pool: Record<string, unknown>[],
-  packageSlug?: string | null,
-  brandFormatTargets?: PackageGeometry | null,
+  _pool: Record<string, unknown>[],
+  _packageSlug?: string | null,
+  _brandFormatTargets?: PackageGeometry | null,
 ): Record<string, unknown>[] {
-  const FORMAT_TARGETS = brandFormatTargets
-    ? {
-        story: brandFormatTargets.story,
-        post: brandFormatTargets.post,
-        carousel: brandFormatTargets.carousel,
-        reel: brandFormatTargets.reel,
-      }
-    : formatTargetsForPlan(packageSlug);
-  const packageTotal = brandFormatTargets?.total
-    ?? resolveWeeklyPackageGeometry(packageSlug).total;
-  const buckets: Record<PackageFormat, Record<string, unknown>[]> = {
-    story: [],
-    post: [],
-    carousel: [],
-    reel: [],
-  };
-  const usedKeys = new Set<string>();
-
-  for (const idea of primary) {
-    const fmt = detectIdeaPackageFormat(idea);
-    if (buckets[fmt].length < FORMAT_TARGETS[fmt]) {
-      buckets[fmt].push(idea);
-      usedKeys.add(ideaTrackKey(idea));
-    }
-  }
-
-  const pickDonor = (fmt: PackageFormat): Record<string, unknown> | null => {
-    const calendarSameFmt = pool.find(
-      (idea) => isCalendarProductionDonor(idea)
-        && detectIdeaPackageFormat(idea) === fmt
-        && !usedKeys.has(ideaTrackKey(idea)),
-    );
-    if (calendarSameFmt) return calendarSameFmt;
-    const sameFmt = pool.find(
-      (idea) => detectIdeaPackageFormat(idea) === fmt && !usedKeys.has(ideaTrackKey(idea)),
-    );
-    if (sameFmt) return sameFmt;
-    const calendarAny = pool.find(
-      (idea) => isCalendarProductionDonor(idea) && !usedKeys.has(ideaTrackKey(idea)),
-    );
-    if (calendarAny) return calendarAny;
-    return pool.find((idea) => !usedKeys.has(ideaTrackKey(idea))) ?? null;
-  };
-
-  for (const fmt of ['story', 'post', 'carousel', 'reel'] as const) {
-    while (buckets[fmt].length < FORMAT_TARGETS[fmt]) {
-      const donor = pickDonor(fmt) ?? primary[0] ?? pool[0];
-      if (!donor) break;
-      const next = detectIdeaPackageFormat(donor) === fmt
-        ? { ...donor }
-        : cloneIdeaForFormat(donor, fmt, buckets[fmt].length);
-      buckets[fmt].push(next);
-      usedKeys.add(ideaTrackKey(next));
-    }
-  }
-
-  return [
-    ...buckets.story,
-    ...buckets.post,
-    ...buckets.carousel,
-    ...buckets.reel,
-  ]
-    .slice(0, packageTotal)
-    .map((idea, index) => {
-      const planningIdx = typeof idea.planning_idea_index === 'number'
-        ? idea.planning_idea_index
-        : typeof idea.calendar_linked_idea_index === 'number'
-          ? idea.calendar_linked_idea_index
-          : (idea.manifest_slot_backfill ? undefined : idea.idea_index);
-      return {
-        ...idea,
-        idea_index: index,
-        ...(typeof planningIdx === 'number' ? { planning_idea_index: planningIdx } : {}),
-      };
-    });
+  return primary.map((idea, index) => {
+    const planningIdx = typeof idea.planning_idea_index === 'number'
+      ? idea.planning_idea_index
+      : typeof idea.calendar_linked_idea_index === 'number'
+        ? idea.calendar_linked_idea_index
+        : (idea.manifest_slot_backfill ? undefined : idea.idea_index);
+    return {
+      ...idea,
+      idea_index: index,
+      ...(typeof planningIdx === 'number' ? { planning_idea_index: planningIdx } : {}),
+    };
+  });
 }
 
 /** Planning UI — one card per distinct ideation idea (no slot format backfill). */

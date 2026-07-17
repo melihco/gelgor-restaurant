@@ -512,7 +512,9 @@ async def _execute_node_body(
 
         mission_ctx = await _load_mission_production_context(mission_id)
         ctx = mission_ctx or {}
-        from app.crew.tasks.feed_art_director_tasks import FD_CONTENT_IDEAS_INPUT_MAX_CHARS
+        from app.crew.tasks.feed_art_director_tasks import (
+            truncate_content_ideas_json_for_fd,
+        )
 
         weekly_theme = ""
         try:
@@ -530,7 +532,7 @@ async def _execute_node_body(
 
         input_data = {
             **(input_data or {}),
-            "content_ideas_json": merged_summary[:FD_CONTENT_IDEAS_INPUT_MAX_CHARS],
+            "content_ideas_json": truncate_content_ideas_json_for_fd(merged_summary),
             "weekly_theme": weekly_theme,
             "mission_type": ctx.get("mission_type") or "",
             "mission_title": title,
@@ -760,6 +762,38 @@ async def _execute_node_body(
                     task_type=task_type,
                     strategy_chars=len(strategy_brief),
                 )
+
+    # Calendar enrich-only: row count + idea payload from completed ideation (1:1).
+    if task_type == "content_calendar":
+        try:
+            from app.crew.tasks.feed_art_director_tasks import (
+                parse_content_ideas_json,
+                truncate_content_ideas_json_for_fd,
+            )
+            from app.services.mission_ideation_merge import collect_unique_ideation_from_nodes
+
+            ideation_nodes = await _load_content_ideation_nodes(mission_id)
+            ideation_records = collect_unique_ideation_from_nodes(ideation_nodes)
+            if ideation_records:
+                effective_input["count"] = len(ideation_records)
+                compact = truncate_content_ideas_json_for_fd(
+                    json.dumps(ideation_records, ensure_ascii=False),
+                )
+                # Prefer compact projection for the calendar prompt when available.
+                if not parse_content_ideas_json(compact):
+                    compact = json.dumps(ideation_records, ensure_ascii=False)[:24_000]
+                effective_input["ideation_ideas_json"] = compact
+                logger.info(
+                    "content_calendar_ideation_bound",
+                    node_key=node_key,
+                    idea_count=len(ideation_records),
+                )
+        except Exception as cal_bind_exc:
+            logger.warning(
+                "content_calendar_ideation_bind_failed",
+                node_key=node_key,
+                error=str(cal_bind_exc)[:200],
+            )
 
     # ── Step 4: Execute (with per-tenant lock for content_agent) ──────────────
     timeout = float(settings.crew_execution_timeout_seconds)
@@ -2678,7 +2712,7 @@ async def _run_feed_art_director_report(
     if brief and brief not in weekly_theme:
         weekly_theme = f"{weekly_theme} | {brief[:120]}".strip(" |")
 
-    from app.crew.tasks.feed_art_director_tasks import FD_CONTENT_IDEAS_INPUT_MAX_CHARS
+    from app.crew.tasks.feed_art_director_tasks import truncate_content_ideas_json_for_fd
     from app.services.feed_director_slot_catalog import load_feed_director_catalog_slots
 
     catalog_slots: list[dict[str, str]] = []
@@ -2689,7 +2723,7 @@ async def _run_feed_art_director_report(
     report = await asyncio.to_thread(
         run_feed_art_director,
         brand=brand,
-        content_ideas_json=output_summary[:FD_CONTENT_IDEAS_INPUT_MAX_CHARS],
+        content_ideas_json=truncate_content_ideas_json_for_fd(output_summary),
         weekly_theme=weekly_theme,
         mission_type=ctx.get("mission_type") or "",
         mission_title=title,

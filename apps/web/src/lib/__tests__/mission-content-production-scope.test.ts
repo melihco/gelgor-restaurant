@@ -25,7 +25,7 @@ describe('resolveMissionContentProductionScope', () => {
     expect(scope.items).toHaveLength(2);
   });
 
-  it('produces every ideation row plus every calendar plan (additive)', () => {
+  it('enriches ideation and does not produce calendar twins or orphans', () => {
     const scope = resolveMissionContentProductionScope({
       nodes: [
         {
@@ -47,16 +47,16 @@ describe('resolveMissionContentProductionScope', () => {
       ],
     });
     expect(scope.hasCalendar).toBe(true);
-    // 2 ideation + 2 calendar = 4 (matched calendar is ALSO produced)
-    expect(scope.requiredProductionCount).toBe(4);
+    expect(scope.requiredProductionCount).toBe(2);
     expect(scope.ideationItemCount).toBe(2);
-    expect(scope.orphanCalendarCount).toBe(2);
-    expect(scope.items.filter((row) => row.production_scope === 'calendar_plan')).toHaveLength(1);
-    expect(scope.items.filter((row) => row.production_scope === 'calendar_orphan')).toHaveLength(1);
-    expect(scope.items.some((row) => row.headline === 'Orphan DJ Night')).toBe(true);
+    expect(scope.orphanCalendarCount).toBe(1);
+    expect(scope.items.every((row) => row.production_scope === 'ideation')).toBe(true);
+    expect(scope.items.some((row) => row.headline === 'Orphan DJ Night')).toBe(false);
+    expect(scope.items.find((row) => String(row.concept_title ?? row.headline) === 'Matched')?.content_brief)
+      .toBe('Calendar brief');
   });
 
-  it('sums 10 ideas + 12 calendar plans into production target', () => {
+  it('production target stays at ideation count when calendar has extras', () => {
     const ideas = Array.from({ length: 10 }, (_, i) => ({
       concept_title: `Idea ${i + 1}`,
       caption_draft: `caption ${i + 1}`,
@@ -82,47 +82,30 @@ describe('resolveMissionContentProductionScope', () => {
         },
       ],
     });
-    expect(scope.requiredProductionCount).toBe(22);
+    expect(scope.requiredProductionCount).toBe(10);
     expect(scope.ideationItemCount).toBe(10);
-    expect(scope.orphanCalendarCount).toBe(12);
-  });
-  it('appends orphan calendar rows when calendar node is completed', () => {
-    const scope = resolveMissionContentProductionScope({
-      nodes: [
-        {
-          task_type: 'content_ideation',
-          status: 'completed',
-          output_summary: JSON.stringify([
-            { concept_title: 'Matched', caption_draft: 'x', content_type: 'instagram_post' },
-          ]),
-        },
-        {
-          task_type: 'content_calendar',
-          status: 'completed',
-          output_summary: JSON.stringify([
-            { event_name: 'Matched', format: 'post', content_brief: 'Calendar brief' },
-            { event_name: 'Orphan DJ Night', format: 'story', content_brief: 'DJ teaser' },
-          ]),
-        },
-      ],
-    });
-    expect(scope.hasCalendar).toBe(true);
-    expect(scope.requiredProductionCount).toBe(3);
     expect(scope.orphanCalendarCount).toBe(2);
-    expect(scope.items.some((row) => row.headline === 'Orphan DJ Night')).toBe(true);
   });
-  it('resolveMissionProductionTargetCount uses merged pool when calendar present', () => {
+
+  it('resolveMissionProductionTargetCount follows idea_count with or without calendar', () => {
     expect(
       resolveMissionProductionTargetCount({
         hasCalendar: true,
-        mergedItemCount: 25,
+        mergedItemCount: 11,
         missionType: 'weekly_content',
       }),
-    ).toBe(25);
+    ).toBe(11);
     expect(
       resolveMissionProductionTargetCount({
         hasCalendar: false,
         mergedItemCount: 8,
+        missionType: 'weekly_content',
+      }),
+    ).toBe(8);
+    expect(
+      resolveMissionProductionTargetCount({
+        hasCalendar: false,
+        mergedItemCount: 0,
         missionType: 'weekly_content',
       }),
     ).toBe(16);

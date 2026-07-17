@@ -608,6 +608,7 @@ def create_content_calendar_task(
     *,
     count: int | None = None,
     format_mix: str = "",
+    ideation_ideas_json: str = "",
 ) -> Task:
     from datetime import datetime, timezone
     now_utc = datetime.now(timezone.utc)
@@ -625,30 +626,31 @@ def create_content_calendar_task(
     else:
         signals_summary = "Current season, weekly rhythm"
 
-    # Match weekly package slot count so backfill has enough format-diverse donors.
-    row_count = max(3, min(int(count or 0) or duration_days, 16))
+    # One calendar row per ideation idea (enrich-only). Cap prevents runaway prompts.
+    row_count = max(1, min(int(count or 0) or duration_days, 24))
+    ideas_block = (ideation_ideas_json or "").strip() or "[]"
 
     description = CONTENT_CALENDAR_TASK.format(
         business_name=brand.business_name,
         count=row_count,
+        count_minus_one=max(row_count - 1, 0),
         current_date=current_date_str,
         location=brand.location or "Turkey",
         business_type=brand.business_type or "hospitality",
         brief=brand.campaign_goals or "increase engagement and brand awareness",
         signals=signals_summary,
-        format_mix=format_mix or f"{duration_days}-day weekly mix (story, post, reel, carousel)",
+        format_mix=format_mix or f"{duration_days}-day schedule across story/post/reel/carousel",
+        ideation_ideas_json=ideas_block[:24_000],
     )
 
     return Task(
         description=description,
         expected_output=(
-            f"A JSON array of {row_count} publish plan rows, each with: "
-            "announcement_type, event_name, tagline, date, time, venue_area, "
-            "optional artist_name, optional design_layout_family, "
-            "subject_key (ONE canonical lowercase english snake_case token for the single dominant "
-            "product/service — e.g. honey, olive_oil, soap, nail_service; language-neutral, ALWAYS "
-            "english; \"none\" for pure brand/atmosphere rows), "
-            "template_use_case, format (story|post|reel|carousel), content_brief, photo_mood, priority."
+            f"A JSON array of exactly {row_count} publish plan rows, each with required "
+            "idea_index (0..N-1, unique), plus: announcement_type, event_name, tagline, "
+            "date, time, venue_area, optional artist_name, optional design_layout_family, "
+            "subject_key (english snake_case or \"none\"), template_use_case, "
+            "format (story|post|reel|carousel), content_brief, photo_mood, priority."
         ),
         agent=agent,
     )

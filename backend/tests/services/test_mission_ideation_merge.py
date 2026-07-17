@@ -14,10 +14,11 @@ def idea(title: str, fmt: str) -> dict:
     }
 
 
-def test_resolve_mission_production_target_uses_merged_count_with_calendar() -> None:
+def test_resolve_mission_production_target_uses_idea_count() -> None:
     assert resolve_mission_production_target(25, has_calendar=True, mission_type="seasonal") == 25
     assert resolve_mission_production_target(0, has_calendar=True, mission_type="seasonal") == 16
-    assert resolve_mission_production_target(8, has_calendar=False, mission_type="seasonal") == 16
+    assert resolve_mission_production_target(8, has_calendar=False, mission_type="seasonal") == 8
+    assert resolve_mission_production_target(11, has_calendar=True, mission_type="seasonal") == 11
 
 
     assert resolve_feed_package_total("opportunity") == 3

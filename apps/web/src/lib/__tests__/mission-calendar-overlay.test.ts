@@ -120,7 +120,7 @@ describe('applyCalendarProductionEnrichment', () => {
 });
 
 describe('mergeCalendarPlansForProduction', () => {
-  it('returns ideation + orphan calendar rows without weekly format backfill', () => {
+  it('keeps ideation-only pool when calendar orphan does not match', () => {
     const production = mergeCalendarPlansForProduction(
       [{ concept_title: 'Generic post', content_type: 'instagram_post', caption_draft: 'x' }],
       [{
@@ -134,13 +134,12 @@ describe('mergeCalendarPlansForProduction', () => {
       }],
       'agency',
     );
-    const calendarRow = production.find((row) => row.headline === 'Fresh Seafood Menu Launch');
-    expect(calendarRow).toBeDefined();
-    expect(calendarRow?.calendar_gallery_designed).toBe(true);
-    expect(production).toHaveLength(2);
+    expect(production).toHaveLength(1);
+    expect(production[0]?.production_scope).toBe('ideation');
+    expect(production.some((row) => row.headline === 'Fresh Seafood Menu Launch')).toBe(false);
   });
 
-  it('also produces matched calendar plans as separate rows (additive)', () => {
+  it('enriches matched ideation without adding a calendar twin row', () => {
     const production = mergeCalendarPlansForProduction(
       [{ concept_title: 'Sunset Ritual', content_type: 'instagram_post', caption_draft: 'golden hour' }],
       [{
@@ -151,13 +150,14 @@ describe('mergeCalendarPlansForProduction', () => {
         time: '18:00',
       }],
     );
-    expect(production).toHaveLength(2);
-    expect(production.filter((row) => row.production_scope === 'ideation')).toHaveLength(1);
-    expect(production.filter((row) => row.production_scope === 'calendar_plan')).toHaveLength(1);
-    expect(production.find((row) => row.production_scope === 'ideation')?.calendar_enriched).toBe(true);
+    expect(production).toHaveLength(1);
+    expect(production[0]?.production_scope).toBe('ideation');
+    expect(production[0]?.calendar_enriched).toBe(true);
+    expect(production[0]?.content_brief).toBe('Calendar publish brief.');
+    expect(production[0]?.publish_schedule_day).toBe('Fri');
   });
 
-  it('isContentScopedProductionPool detects additive rows so weekly trim is skipped', () => {
+  it('idea_count pool is not padded or trimmed by ensureWeeklyFormatCoverage', () => {
     const production = mergeCalendarPlansForProduction(
       Array.from({ length: 10 }, (_, i) => ({
         concept_title: `Idea ${i}`,
@@ -165,19 +165,18 @@ describe('mergeCalendarPlansForProduction', () => {
         caption_draft: `caption ${i}`,
       })),
       Array.from({ length: 12 }, (_, i) => ({
-        event_name: `Cal ${i}`,
+        event_name: `Idea ${i}`,
         format: 'post',
         content_brief: `brief ${i}`,
         day: 'Mon',
         time: '10:00',
+        idea_index: i < 10 ? i : undefined,
       })),
     );
-    expect(production.length).toBe(22);
+    expect(production.length).toBe(10);
     expect(isContentScopedProductionPool(production)).toBe(true);
-    // Regression: weekly coverage must not be applied by callers on content-scoped pools.
-    // If mis-applied it would shrink toward package geometry (~12-16).
-    const wronglyTrimmed = ensureWeeklyFormatCoverage(production, production, 'agency');
-    expect(wronglyTrimmed.length).toBeLessThan(production.length);
+    const passThrough = ensureWeeklyFormatCoverage(production, production, 'agency');
+    expect(passThrough.length).toBe(10);
   });
 });
 
@@ -192,7 +191,7 @@ describe('applyCalendarScheduleOverlay (compat)', () => {
 });
 
 describe('buildMissionProductionIdeas with calendar overlay', () => {
-  it('uses calendar brief on matched rows and orphans in production pool', () => {
+  it('enriches matched ideation and drops orphan calendar from production pool', () => {
     const nodes = [
       {
         node_key: 'content_ideation',
@@ -230,15 +229,11 @@ describe('buildMissionProductionIdeas with calendar overlay', () => {
 
     const production = buildMissionProductionIdeas({ nodes });
     const matched = production.find((row) => row.concept_title === 'Tek fikir');
-    const orphan = production.find((row) => row.headline === 'Weekend DJ Nights');
-    const calendarMatched = production.find(
-      (row) => row.production_scope === 'calendar_plan',
-    );
 
-    expect(production).toHaveLength(3);
+    expect(production).toHaveLength(1);
     expect(matched?.publish_schedule_day).toBe('Mon');
     expect(matched?.content_brief).toBe('Calendar brief wins when richer.');
-    expect(orphan?.source_track).toBe('calendar');
-    expect(calendarMatched?.content_brief).toBe('Calendar brief wins when richer.');
+    expect(matched?.caption_draft).toBe('Caption korunmalı.');
+    expect(production.some((row) => row.headline === 'Weekend DJ Nights')).toBe(false);
   });
 });

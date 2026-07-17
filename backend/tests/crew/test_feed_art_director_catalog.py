@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 from app.crew.crews.feed_art_director_crew import _normalize_production_assignments
+from app.crew.tasks.feed_art_director_tasks import (
+    parse_content_ideas_json,
+    truncate_content_ideas_json_for_fd,
+)
 from app.services.feed_director_slot_catalog import (
     apply_catalog_slot_to_entry,
     build_weekly_catalog_assignment_plan,
@@ -119,7 +125,12 @@ def test_normalize_weekly_catalog_first():
             },
         ]
     }
-    ideas = [{"content_type": "post"}, {"content_type": "story"}] * 8
+    ideas = [
+        {"content_type": "post"},
+        {"content_type": "story"},
+        {"content_type": "reel"},
+        {"content_type": "post"},
+    ]
     _normalize_production_assignments(
         report,
         len(ideas),
@@ -129,7 +140,9 @@ def test_normalize_weekly_catalog_first():
     )
     assignments = report["production_assignments"]
     assert report.get("catalog_first") is True
-    assert len(assignments) == 16
+    assert len(assignments) == 4
+    assert [a["idea_index"] for a in assignments] == [0, 1, 2, 3]
+    assert len({a["idea_index"] for a in assignments}) == 4
     assert all(a.get("catalog_slot_key") for a in assignments)
     assert all(a.get("catalog_slot_label") for a in assignments)
     assert all("library_slot_key" not in a for a in assignments)
@@ -137,7 +150,7 @@ def test_normalize_weekly_catalog_first():
     story_keys = {
         a["catalog_slot_key"]
         for a in assignments
-        if a.get("format") == "story" or "story" in str(a.get("slot_role", ""))
+        if "story" in str(a.get("slot_role", ""))
     }
     assert story_keys <= {
         "restaurant_cafe_new_menu_story",
@@ -162,7 +175,11 @@ def test_normalize_weekly_assignments_inject_catalog_keys():
             },
         ]
     }
-    ideas = [{"content_type": "post"}, {"content_type": "story"}] * 8
+    ideas = [
+        {"content_type": "post"},
+        {"content_type": "story"},
+        {"content_type": "post"},
+    ]
     _normalize_production_assignments(
         report,
         len(ideas),
@@ -171,7 +188,7 @@ def test_normalize_weekly_assignments_inject_catalog_keys():
         catalog_slots=RESTAURANT_CATALOG,
     )
     assignments = report["production_assignments"]
-    assert len(assignments) == 16
+    assert len(assignments) == 3
     assert report.get("catalog_first") is True
     assert all(a.get("catalog_slot_key") for a in assignments)
     assert assignments[0]["catalog_slot_key"] == "restaurant_cafe_brunch_offer_post"
@@ -193,3 +210,35 @@ def test_apply_catalog_slot_skips_organic_post():
     used: set[str] = set()
     apply_catalog_slot_to_entry(entry, RESTAURANT_CATALOG, used)
     assert "catalog_slot_key" not in entry
+
+
+def test_truncate_content_ideas_json_preserves_valid_array():
+    """Blind char-slice used to break json.loads and skip catalog-first normalize."""
+    ideas = [
+        {
+            "title": f"Idea {i}",
+            "caption": ("Yaz atmosferi Bodrum sahil deneyimi " * 80).strip(),
+            "hook": ("Akşam ışığı ve soğuk meze " * 40).strip(),
+            "content_type": "post",
+        }
+        for i in range(16)
+    ]
+    raw = json.dumps(ideas, ensure_ascii=False, indent=2)
+    assert len(raw) > 24_000
+    sliced_blind = raw[:24_000]
+    assert parse_content_ideas_json(sliced_blind) == []
+
+    truncated = truncate_content_ideas_json_for_fd(raw, max_chars=24_000)
+    parsed = parse_content_ideas_json(truncated)
+    assert len(parsed) >= 1
+    assert len(truncated) <= 24_000
+    assert all(isinstance(item, dict) for item in parsed)
+
+
+def test_truncate_content_ideas_json_keeps_all_when_compact_fits():
+    ideas = [{"title": f"i{i}", "caption": "x" * 200} for i in range(8)]
+    raw = json.dumps(ideas, ensure_ascii=False, indent=4)
+    compact = json.dumps(ideas, ensure_ascii=False)
+    assert len(raw) > len(compact)
+    out = truncate_content_ideas_json_for_fd(raw, max_chars=len(compact) + 10)
+    assert parse_content_ideas_json(out) == ideas

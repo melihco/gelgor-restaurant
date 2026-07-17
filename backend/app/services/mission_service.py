@@ -157,11 +157,11 @@ def _seasonal_task_graph(
         depends_on=["content_strategy"],
     ))
 
-    # Weekly publish schedule — feeds empty manifest slots via calendar-slot-backfill.
+    # Weekly publish schedule — enrich ideation 1:1 (schedule/brief/mood); not a second pool.
     nodes.append(TaskNodeCreate(
         node_key="content_calendar",
         phase_index=2,
-        title=f"{phase_name} — Yayın Takvimi ({weekly_count} slot / backfill havuzu)",
+        title=f"{phase_name} — Yayın Takvimi (idea başına schedule + brief)",
         task_type="content_calendar",
         agent_role="content_agent",
         input_data={

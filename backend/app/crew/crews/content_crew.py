@@ -971,8 +971,9 @@ def run_content_calendar(
     *,
     count: int | None = None,
     format_mix: str = "",
+    ideation_ideas_json: str = "",
 ) -> dict[str, Any]:
-    """Generate a content calendar for a brand."""
+    """Generate a content calendar that enriches existing ideation ideas 1:1."""
     content_agent = create_content_agent(brand, llm=llm, for_calendar=True)
     calendar_task = create_content_calendar_task(
         content_agent,
@@ -981,6 +982,7 @@ def run_content_calendar(
         frequency,
         count=count,
         format_mix=format_mix,
+        ideation_ideas_json=ideation_ideas_json,
     )
 
     crew = Crew(

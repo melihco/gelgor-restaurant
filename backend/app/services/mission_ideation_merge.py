@@ -669,11 +669,11 @@ def apply_calendar_production_enrichment(
     calendar_plans: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """
-    Enrich matched ideation rows with calendar brief/schedule.
-    Returns (enriched_ideas, orphan_calendar_ideas, all_calendar_production_ideas).
+    Enrich matched ideation rows with calendar brief/schedule (1:1).
+    Returns (enriched_ideas, orphan_calendar_ideas, calendar_production_ideas).
 
-    Additive production: every calendar plan becomes a production row (matched or orphan).
-    Matched plans still enrich their ideation twin for caption/schedule quality.
+    Enrich-only: unlinked calendar rows are telemetry orphans.
+    ``calendar_production_ideas`` is always empty (TS parity — no production twins).
     """
     result: list[dict[str, Any]] = []
     for index, idea in enumerate(ideation_records):
@@ -684,9 +684,8 @@ def apply_calendar_production_enrichment(
         result.append(row)
 
     orphan_ideas: list[dict[str, Any]] = []
-    calendar_production_ideas: list[dict[str, Any]] = []
     if not calendar_plans:
-        return result, orphan_ideas, calendar_production_ideas
+        return result, orphan_ideas, []
 
     used: set[int] = set()
     for plan_index, plan in enumerate(calendar_plans):
@@ -696,60 +695,43 @@ def apply_calendar_production_enrichment(
         calendar_row = dict(built[0])
         _, idea_index = _pick_ideation_for_calendar_strict(plan, result, used)
         if idea_index is None or idea_index < 0 or idea_index >= len(result):
-            orphan_ideas.append(calendar_row)
-            calendar_row = {**calendar_row, "production_scope": "calendar_orphan"}
-            calendar_production_ideas.append(calendar_row)
+            orphan_ideas.append({**calendar_row, "production_scope": "calendar_orphan"})
             continue
         used.add(idea_index)
         result[idea_index] = _enrich_ideation_with_calendar_plan(
             result[idea_index], plan, plan_index, idea_index,
         )
-        calendar_row = {
-            **calendar_row,
-            "calendar_linked_idea_index": idea_index,
-            "planning_idea_index": idea_index,
-            "production_scope": "calendar_plan",
-        }
-        calendar_production_ideas.append(calendar_row)
-    return result, orphan_ideas, calendar_production_ideas
+    return result, orphan_ideas, []
 
 
 def build_content_production_items_from_records(
     ideation_records: list[dict[str, Any]],
     calendar_plans: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Additive pool: every unique ideation + every calendar plan. No format backfill."""
+    """Production pool = enriched ideation only (1 idea → 1 deliverable)."""
     seeded = [
         {**idea, "idea_index": index, "planning_idea_index": index}
         for index, idea in enumerate(ideation_records)
     ]
-    enriched, _orphan_ideas, calendar_ideas = apply_calendar_production_enrichment(
+    enriched, _orphan_ideas, _calendar_ideas = apply_calendar_production_enrichment(
         seeded, calendar_plans,
     )
-    if not enriched and not calendar_ideas:
+    if not enriched:
         return [
             {**idea, "idea_index": index, "planning_idea_index": index, "production_scope": "ideation"}
             for index, idea in enumerate(ideation_records)
         ]
-    enriched_items = [
+    return [
         {
             **idea,
             "idea_index": index,
-            "planning_idea_index": idea.get("planning_idea_index", idea.get("calendar_linked_idea_index", index)),
+            "planning_idea_index": idea.get(
+                "planning_idea_index", idea.get("calendar_linked_idea_index", index)
+            ),
             "production_scope": "ideation",
         }
         for index, idea in enumerate(enriched)
     ]
-    calendar_items = [
-        {
-            **idea,
-            "idea_index": len(enriched_items) + i,
-            "production_scope": idea.get("production_scope")
-            or ("calendar_plan" if idea.get("calendar_linked_idea_index") is not None else "calendar_orphan"),
-        }
-        for i, idea in enumerate(calendar_ideas)
-    ]
-    return enriched_items + calendar_items
 
 
 def merge_calendar_plans_for_production(
@@ -759,7 +741,7 @@ def merge_calendar_plans_for_production(
     mission_type: str | None = None,
     subscription_plan_slug: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Ideation + every calendar plan — content-scoped additive pool (TS parity)."""
+    """Enriched ideation pool — calendar stamps schedule/brief, does not add rows."""
     _ = mission_type, subscription_plan_slug
     return build_content_production_items_from_records(ideation_records, calendar_plans)
 
@@ -849,13 +831,14 @@ def resolve_mission_production_target(
     hub_production_package: str | None = None,
     subscription_plan_slug: str | None = None,
 ) -> int:
-    """Content-scoped missions: produce every merged ideation+calendar row, not weekly 16 cap."""
+    """Produce one artifact per ideation idea. Calendar enriches; does not change count."""
+    _ = has_calendar
     package_total = resolve_feed_package_total(
         mission_type,
         hub_production_package=hub_production_package,
         subscription_plan_slug=subscription_plan_slug,
     )
-    if has_calendar and idea_count > 0:
+    if idea_count > 0:
         return idea_count
     return package_total
 
@@ -867,8 +850,8 @@ def merge_mission_production_ideas_from_nodes(
     subscription_plan_slug: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """
-    Ideation + calendar → additive content-scoped production pool (TS parity).
-    Every unique ideation row AND every calendar plan becomes a production item.
+    Ideation + calendar enrich → production pool (TS parity).
+    One row per unique ideation idea; calendar never adds deliverables.
     """
     calendar_nodes = [
         n for n in nodes
