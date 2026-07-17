@@ -150,6 +150,7 @@ export function resolveMissionFalDesignCopy(input: {
   channel: 'reel' | 'feed_post' | 'story';
   businessType?: string;
   brandTone?: string;
+  language?: string | null;
 }): {
   headline: string;
   subtitle?: string;
@@ -228,6 +229,7 @@ export function resolveMissionFalDesignCopy(input: {
         caption,
         brandName,
         businessType: input.businessType,
+        language: input.language,
         maxLen,
       });
       headline = resolveFalProductionOverlayHeadline(qa.headline, [], channel);

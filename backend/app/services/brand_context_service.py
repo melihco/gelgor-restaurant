@@ -1556,17 +1556,13 @@ async def persist_discovery_result(
                 workspace_id=str(ctx.workspace_id),
                 logo_url=reconciled[:120],
             )
-    # Only update languages from analysis if the user has NOT explicitly set it
-    # via the language selector (set-language endpoint). We detect "explicitly set"
-    # by checking if languages is already non-default (i.e. not 'tr' from a previous
-    # inference). Actually, we should NEVER override a user-set language with inference.
-    # The safest rule: only set languages if it's currently unset or still the same
-    # as the newly inferred value (i.e. don't override a deliberate user choice).
+    # Never override an explicit user language choice (set-language) with inference.
+    # Prior bug: `languages == "en"` was treated as "unset" and Bodrum IG inference
+    # flipped English brands back to Turkish.
     inferred = analysis_result.get("inferred_language")
-    if inferred and (not ctx.languages or ctx.languages == "en"):
-        ctx.languages = inferred
-    elif not ctx.languages:
-        ctx.languages = "tr"
+    if not ctx.languages:
+        ctx.languages = inferred or "tr"
+    # else: keep ctx.languages as-is (user or prior deliberate value)
 
     # Google Business signals — always refresh
     gb_rating = google.get("rating") or google.get("totalScore")

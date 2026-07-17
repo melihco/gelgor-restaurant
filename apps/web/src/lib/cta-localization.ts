@@ -144,7 +144,9 @@ export function normalizeBrandLanguagesInput(raw: unknown): string {
 
 export function resolveBrandLanguageCode(raw: unknown): 'tr' | 'en' {
   const primary = normalizeBrandLanguagesInput(raw).split(',')[0]?.trim().toLowerCase() || 'tr';
-  return primary === 'en' || primary.startsWith('en-') ? 'en' : 'tr';
+  // Match Python resolve_language_code: "en", "en-US", "english", "eng"
+  if (primary === 'en' || primary.startsWith('en-') || primary.startsWith('eng')) return 'en';
+  return 'tr';
 }
 
 /** Align caption + CTA to the same language (caption wins on mismatch). */

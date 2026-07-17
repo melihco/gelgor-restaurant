@@ -69,4 +69,30 @@ describe('visual design card headline preference', () => {
     });
     expect(h).toBe('Badem Ezmesi');
   });
+
+  it('generic fallback respects English brand language (never Keşfetmeye…)', () => {
+    const r = resolveMeaningfulProductionHeadline({
+      headline: '',
+      caption: '',
+      brandName: 'Yula Bodrum',
+      businessType: 'beach_club',
+      language: 'en',
+      maxLen: 32,
+    });
+    expect(r.reason).toBe('generic_fallback');
+    expect(r.headline).toBe('Summer Mode: On');
+    expect(r.headline).not.toMatch(/Keşfetmeye|Hazır mısın/i);
+  });
+
+  it('generic fallback stays Turkish for TR brands', () => {
+    const r = resolveMeaningfulProductionHeadline({
+      headline: '',
+      caption: '',
+      brandName: 'Yula Bodrum',
+      businessType: 'beach_club',
+      language: 'tr',
+      maxLen: 32,
+    });
+    expect(r.headline).toBe('Yaz Moduna Geçtik!');
+  });
 });

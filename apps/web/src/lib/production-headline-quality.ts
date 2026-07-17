@@ -186,14 +186,34 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
   return '';
 }
 
-function genericHeadlineFallback(brandName: string, businessType?: string): string {
-  if (businessType && isNonVenueSectorProfile(businessType)) return 'Randevunuz Hazır!';
-  const sectorish = normalizeKey(brandName);
-  if (/\b(haber|medya|news|magazine|gazete)\b/.test(sectorish)) return 'Bu Hafta Öne Çıkanlar';
-  if (/beach|plaj|club/.test(sectorish)) return 'Yaz Moduna Geçtik!';
-  if (/cafe|coffee|kahve/.test(sectorish)) return 'Yeni Lezzetler Keşfet';
-  if (/bal|honey|gida|food|lezzet|mutfak/.test(sectorish)) return 'Doğadan Sofranıza';
-  return 'Keşfetmeye Hazır mısın?';
+function isEnglishOutputLanguage(language?: string | null): boolean {
+  const raw = String(language ?? '').trim().toLowerCase();
+  return raw === 'en' || raw.startsWith('en-') || raw.startsWith('eng');
+}
+
+function genericHeadlineFallback(
+  brandName: string,
+  businessType?: string,
+  language?: string | null,
+): string {
+  const en = isEnglishOutputLanguage(language);
+  if (businessType && isNonVenueSectorProfile(businessType)) {
+    return en ? 'Your Appointment Awaits!' : 'Randevunuz Hazır!';
+  }
+  const sectorish = normalizeKey(`${brandName} ${businessType ?? ''}`);
+  if (/\b(haber|medya|news|magazine|gazete)\b/.test(sectorish)) {
+    return en ? 'This Week’s Highlights' : 'Bu Hafta Öne Çıkanlar';
+  }
+  if (/beach|plaj|club|resort|hotel/.test(sectorish)) {
+    return en ? 'Summer Mode: On' : 'Yaz Moduna Geçtik!';
+  }
+  if (/cafe|coffee|kahve|restaurant|restoran/.test(sectorish)) {
+    return en ? 'Discover New Flavors' : 'Yeni Lezzetler Keşfet';
+  }
+  if (/bal|honey|gida|food|lezzet|mutfak|local_products/.test(sectorish)) {
+    return en ? 'From Nature to Your Table' : 'Doğadan Sofranıza';
+  }
+  return en ? 'Ready to Explore?' : 'Keşfetmeye Hazır mısın?';
 }
 
 /**
@@ -221,6 +241,8 @@ export function resolveMeaningfulProductionHeadline(input: {
   conceptTitle?: string;
   visualDesignHeadline?: string;
   businessType?: string;
+  /** Brand content language — drives generic fallback locale (`en` | `tr` | `English`). */
+  language?: string | null;
   maxLen?: number;
 }): { headline: string; replaced: boolean; reason?: string } {
   const maxLen = input.maxLen ?? 32;
@@ -230,6 +252,7 @@ export function resolveMeaningfulProductionHeadline(input: {
   const conceptTitle = stripTrailingOrphanFragment((input.conceptTitle ?? '').trim());
   const vdcHeadline = stripTrailingOrphanFragment((input.visualDesignHeadline ?? '').trim());
   const businessType = (input.businessType ?? '').trim();
+  const language = input.language ?? null;
   const usableCard = vdcHeadline && isUsableVisualDesignCardHeadline(vdcHeadline, brandName)
     ? enforceDisplayHeadline(vdcHeadline, maxLen)
     : '';
@@ -244,7 +267,11 @@ export function resolveMeaningfulProductionHeadline(input: {
     if (conceptTitle && !isMeaninglessBrandEchoHeadline(conceptTitle, brandName)) {
       return { headline: enforceDisplayHeadline(conceptTitle, maxLen), replaced: true, reason: 'concept_title' };
     }
-    return { headline: genericHeadlineFallback(brandName, businessType), replaced: true, reason: 'generic_fallback' };
+    return {
+      headline: genericHeadlineFallback(brandName, businessType, language),
+      replaced: true,
+      reason: 'generic_fallback',
+    };
   }
 
   const isBadHeadline =
@@ -280,7 +307,7 @@ export function resolveMeaningfulProductionHeadline(input: {
   }
 
   return {
-    headline: genericHeadlineFallback(brandName, businessType),
+    headline: genericHeadlineFallback(brandName, businessType, language),
     replaced: true,
     reason: 'label_generic',
   };
@@ -296,6 +323,7 @@ export function sanitizeProductionHeadline(input: {
   /** Mission visual_design_cards headline — preferred overlay when usable. */
   visualDesignHeadline?: string;
   businessType?: string;
+  language?: string | null;
   maxLen?: number;
 }): string {
   const maxLen = input.maxLen ?? 72;
@@ -310,6 +338,7 @@ export function sanitizeProductionHeadline(input: {
       conceptTitle: input.conceptTitle,
       visualDesignHeadline: input.visualDesignHeadline,
       businessType: input.businessType,
+      language: input.language,
       maxLen,
     });
     if (isGalleryTagHeadline(resolved.headline)) return '';
@@ -335,6 +364,7 @@ export function sanitizeProductionHeadline(input: {
     conceptTitle: input.conceptTitle,
     visualDesignHeadline: input.visualDesignHeadline,
     businessType: input.businessType,
+    language: input.language,
     maxLen,
   }).headline;
 }

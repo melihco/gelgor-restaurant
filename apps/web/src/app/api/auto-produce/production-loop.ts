@@ -75,7 +75,11 @@ import {
 } from '@/lib/sector-production-profile';
 import { resolveBrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
-import { harmonizeCaptionAndCta, normalizeBrandLanguagesInput } from '@/lib/cta-localization';
+import {
+  harmonizeCaptionAndCta,
+  normalizeBrandLanguagesInput,
+  resolveBrandLanguageCode,
+} from '@/lib/cta-localization';
 import {
   isAiEnhanceEnabled,
   resolveAiEnhanceLevel,
@@ -533,6 +537,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // Alias to legacy variable names used throughout the rest of the function
   // These all reference pctx, ensuring tenant isolation
   const brandCtx = pctx.raw;
+  const brandLanguageCode = resolveBrandLanguageCode(
+    brandCtx.languages ?? brandCtx.inferred_language,
+  );
   const hasVibe = pctx.hasVibe;
   const brandLocation = pctx.brandLocation;
   const brandBusinessType = pctx.brandBusinessType;
@@ -1047,6 +1054,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         conceptTitle: getField(idea, 'concept_title', 'idea_title', 'title'),
         visualDesignHeadline: vdcHeadline || undefined,
         businessType: brandBusinessType,
+        language: brandLanguageCode,
         maxLen: 72,
       });
       if (headlineFix.replaced) {
@@ -1154,9 +1162,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ) {
         const conceptTitle = getField(idea, 'concept_title', 'idea_title', 'title').trim();
         if (conceptTitle && !isIncompleteOverlayPhrase(conceptTitle)) {
+          const waitLine = brandLanguageCode === 'en'
+            ? `${resolvedBrandName} is waiting for you.`
+            : `${resolvedBrandName}'de sizi bekliyoruz.`;
           caption = cta
             ? `${conceptTitle}. ${cta}`
-            : `${conceptTitle}. ${resolvedBrandName}'de sizi bekliyoruz.`;
+            : `${conceptTitle}. ${waitLine}`;
           console.warn(
             `[auto-produce] caption QA: replaced incomplete fragment with concept title`,
           );
@@ -1240,6 +1251,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           channel: falChannel,
           businessType: brandBusinessType,
           brandTone: String(brandCtx.brand_tone ?? ''),
+          language: brandLanguageCode,
         });
         if (designCopy.headline && designCopy.headline !== headline) {
           console.log(
@@ -1374,6 +1386,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               brandName: resolvedBrandName,
               conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
               businessType: brandBusinessType,
+              language: brandLanguageCode,
               maxLen: 72,
             });
           }
@@ -4080,6 +4093,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
       visualDesignHeadline: vdcHeadline || undefined,
       businessType: brandBusinessType,
+      language: brandLanguageCode,
       maxLen: adPublishChannel
         ? adHeadlineCharLimit(adPublishChannel)
         : usesFalDesignCopy
