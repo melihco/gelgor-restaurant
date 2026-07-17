@@ -41,6 +41,10 @@ async def get_brand_context_snapshot(
         "brand_dna": ctx.brand_dna or "",
         "website_summary": ctx.website_summary or "",
         "instagram_bio": ctx.instagram_bio or "",
+        "instagram_profile_pic_url": getattr(ctx, "instagram_profile_pic_url", None) or "",
+        "instagram_followers": getattr(ctx, "instagram_followers", None),
+        "instagram_following": getattr(ctx, "instagram_following", None),
+        "instagram_posts_count": getattr(ctx, "instagram_posts_count", None),
         "location": ctx.location or "",
         "languages": list(ctx.languages or []),
         "reference_image_urls": brand_context_service._parse_reference_image_urls(

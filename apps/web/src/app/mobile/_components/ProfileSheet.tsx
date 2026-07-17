@@ -15,6 +15,7 @@ import { clearSessionScopedQueries } from '@/lib/query-client-bridge';
 import { useTenantBrandContext } from './TenantBrandProvider';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { formatMobileCountBadge } from '@/lib/mobile-integration-status';
 
 interface ProfileSheetProps {
   onClose: () => void;
@@ -71,33 +72,39 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
       ? `${Math.max(0, usageCost.token_wallet.remaining_tokens ?? 0).toLocaleString('tr-TR')} kredi kaldı`
       : 'Kredi ve kullanım özeti';
 
+  const notifBadge = formatMobileCountBadge(unreadNotifications);
+
   const menuItems = [
     {
       label: 'Menü',
       sub: 'Performans, yorumlar, reklamlar ve daha fazlası',
-      icon: '⊞',
+      icon: '⊞' as const,
       color: '#4D7088',
+      badge: undefined as string | number | undefined,
       onTap: () => { navigate('more'); onClose(); },
     },
     {
       label: 'Bildirimler',
       sub: unreadNotifications > 0 ? `${unreadNotifications} okunmamış` : 'Güncel',
-      icon: '◍',
+      icon: 'bell' as const,
       color: '#60a5fa',
+      badge: notifBadge,
       onTap: () => { navigate('notifications'); onClose(); },
     },
     {
       label: 'Ayarlar',
       sub: 'Entegrasyonlar & plan',
-      icon: '⟳',
+      icon: '⟳' as const,
       color: '#34d399',
+      badge: undefined as string | number | undefined,
       onTap: () => { navigate('settings'); onClose(); },
     },
     {
       label: 'Kredi & Kullanım',
       sub: planSub,
-      icon: '◇',
+      icon: '◇' as const,
       color: '#9DBECE',
+      badge: undefined as string | number | undefined,
       onTap: () => { navigate('billing'); onClose(); },
     },
   ];
@@ -215,12 +222,38 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
               }}
             >
               <div style={{
+                position: 'relative',
                 width: 36, height: 36, borderRadius: 10, flexShrink: 0,
                 background: `${item.color}12`, border: `0.5px solid ${item.color}20`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 15, color: item.color, fontWeight: 600,
               }}>
-                {item.icon}
+                {item.icon === 'bell'
+                  ? <IcoNotification size={18} color={item.color} />
+                  : item.icon}
+                {item.badge !== undefined && (
+                  <span
+                    aria-label={`${item.badge} bildirim`}
+                    style={{
+                      position: 'absolute',
+                      top: -5,
+                      right: -5,
+                      minWidth: 17,
+                      height: 17,
+                      padding: '0 4px',
+                      borderRadius: 999,
+                      background: '#EF4444',
+                      color: '#fff',
+                      fontSize: 9.5,
+                      fontWeight: 800,
+                      lineHeight: '17px',
+                      textAlign: 'center',
+                      border: `1.5px solid ${t.isDark ? '#111116' : '#f2f2f7'}`,
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: t.textPrimary }}>{item.label}</div>

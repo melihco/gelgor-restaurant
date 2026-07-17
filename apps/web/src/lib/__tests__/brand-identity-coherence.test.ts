@@ -13,6 +13,11 @@ const YULA_CTX = {
   website_url: 'https://yulabodrum.com/',
   instagram_handle: 'yulabodrum',
   logo_url: 'https://yulabodrum.com/yula-bodrum-logo.png',
+  instagram_bio: 'Bodrum’da Yula · kitchen & garden',
+  instagram_profile_pic_url: 'https://cdninstagram.com/yula-avatar.jpg',
+  instagram_followers: 12500,
+  instagram_following: 420,
+  instagram_posts_count: 890,
 };
 
 const KARAMAN_PROFILE = {
@@ -44,5 +49,10 @@ describe('brand-identity-coherence', () => {
     expect(ctx.brandName).toBe('Yulabodrum');
     expect(ctx.logoUrl).toContain('yulabodrum.com');
     expect(ctx.instagramHandle).toBe('yulabodrum');
+    expect(ctx.instagramBio).toBe('Bodrum’da Yula · kitchen & garden');
+    expect(ctx.instagramProfilePicUrl).toContain('yula-avatar');
+    expect(ctx.instagramFollowers).toBe(12500);
+    expect(ctx.instagramFollowing).toBe(420);
+    expect(ctx.instagramPostsCount).toBe(890);
   });
 });

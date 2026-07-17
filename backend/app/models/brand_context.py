@@ -75,6 +75,11 @@ class BrandContext(BaseModel):
     instagram_top_hashtags: Mapped[str | None] = mapped_column(Text)
     website_summary: Mapped[str | None] = mapped_column(Text)
     instagram_bio: Mapped[str | None] = mapped_column(Text)
+    # Live Instagram profile surface (Apify) — profile UI, not production logo
+    instagram_profile_pic_url: Mapped[str | None] = mapped_column(Text)
+    instagram_followers: Mapped[int | None] = mapped_column(Integer)
+    instagram_following: Mapped[int | None] = mapped_column(Integer)
+    instagram_posts_count: Mapped[int | None] = mapped_column(Integer)
     reference_image_urls: Mapped[str | None] = mapped_column(Text)
     competitor_brief: Mapped[str | None] = mapped_column(Text)
     # Weekly seasonal + location trend context (refreshed every 7 days).

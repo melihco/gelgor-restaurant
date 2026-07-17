@@ -1,14 +1,20 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../theme-context';
 import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useMobileStore } from '../mobile-store';
 import { useAuthStore } from '../auth-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { apiClient } from '@/lib/api-client';
 import { logoutFromBrowser } from '@/lib/browser-logout';
 import { buildMoreMenuGroups } from '../mobile-client-config';
-import { summarizeMobileIntegrations } from '@/lib/mobile-integration-status';
+import {
+  resolveMobileGrowthGates,
+  summarizeMobileIntegrations,
+} from '@/lib/mobile-integration-status';
+import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import { IcoLogout } from '../Icons';
 import { MobileStackHeader, ThemeToggleButton } from '../ui-primitives';
 
@@ -54,6 +60,7 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
   const { t } = useTheme();
   const { navigate, setTab } = useMobileStore();
   const { setUser } = useAuthStore();
+  const { tenantId } = useWorkspaceStore();
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -73,9 +80,45 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
   const { connectedCount, total: integrationTotal } =
     summarizeMobileIntegrations(integrationConnections);
 
+  const { data: mertcafeStatus } = useQuery({
+    queryKey: ['mertcafe-status', tenantId],
+    queryFn: () => apiClient.getMertcafeStatus(tenantId!),
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
+
+  const { data: rawNotifs = [] } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      try { return await apiClient.getNotifications(); } catch { return []; }
+    },
+    staleTime: 30_000,
+  });
+
+  const { data: artifacts = [] } = useMobileArtifacts({
+    params: { limit: 40 },
+    enabled: Boolean(tenantId),
+    subscribeOnly: true,
+  });
+
+  const notificationCount = useMemo(() => {
+    if (rawNotifs.length > 0) {
+      return rawNotifs.filter((n: { read?: boolean }) => !n.read).length;
+    }
+    return filterFeedPublishableArtifacts(artifacts).filter((a) => a.status === 'pending_review').length;
+  }, [rawNotifs, artifacts]);
+
+  const growthGates = useMemo(
+    () => resolveMobileGrowthGates(integrationConnections, mertcafeStatus),
+    [integrationConnections, mertcafeStatus],
+  );
+
   const groups = buildMoreMenuGroups({
     connectedCount,
     integrationTotal,
+    showGoogleReviews: growthGates.showGoogleReviews,
+    showAds: growthGates.showAds,
+    notificationCount,
   });
 
   const openMenuItem = (screen: Parameters<typeof navigate>[0]) => {
@@ -105,13 +148,15 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
           >
             {group.items.map((item) => {
               const accent = item.iconBg;
-              const warn = item.badge !== undefined;
+              const hasBadge = item.badge !== undefined && item.badge !== '';
+              const isWarn = hasBadge && (item.badgeKind ?? 'warn') === 'warn';
+              const isCount = hasBadge && item.badgeKind === 'count';
               const completion = item.label === 'Entegrasyonlar' && integrationTotal > 0
                 ? Math.max(0.08, connectedCount / integrationTotal)
-                : warn
+                : isWarn
                   ? 0.42
                   : 0.72;
-              const barColor = warn ? '#F59E0B' : accent;
+              const barColor = isWarn ? '#F59E0B' : accent;
 
               return (
                 <button
@@ -163,6 +208,30 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                     }}
                   >
                     <MenuItemIcon iconBg={accent} label={item.label} size={25} />
+                    {isCount && (
+                      <span
+                        aria-label={`${item.badge} bildirim`}
+                        style={{
+                          position: 'absolute',
+                          top: -4,
+                          right: -4,
+                          minWidth: 18,
+                          height: 18,
+                          padding: '0 5px',
+                          borderRadius: 999,
+                          background: '#EF4444',
+                          color: '#fff',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          lineHeight: '18px',
+                          textAlign: 'center',
+                          boxShadow: '0 2px 6px rgba(239,68,68,0.45)',
+                          border: `1.5px solid ${t.isDark ? '#1a1a1f' : '#fff'}`,
+                        }}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
                   </div>
                   <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
                     <div style={{
@@ -177,7 +246,7 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                       >
                         {item.label}
                       </span>
-                      {warn && (
+                      {isWarn && (
                         <span style={{
                           flexShrink: 0, minWidth: 16, height: 16, padding: '0 5px',
                           borderRadius: 20, background: t.warningDim, color: t.warning,

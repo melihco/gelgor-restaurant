@@ -4,7 +4,7 @@ import { useTheme } from './theme-context';
 import { useTenantBrandContext } from './TenantBrandProvider';
 import { BrandLogoAvatar } from './BrandLogoAvatar';
 
-/** Center nav orb — ~10% larger than legacy 58px circle for thumb reach + logo legibility. */
+/** Center nav orb — diamond-facet halo + chrome mark. */
 const NAV_ORB_OUTER = 79;
 const NAV_ORB_SIZE = 64;
 const NAV_ORB_LIFT = -18;
@@ -42,23 +42,30 @@ export function BrandNavStar({
         outline: 'none',
       }}
     >
+      {/* Slow diamond facet ring behind the orb */}
+      <span
+        className={active ? 'sa-chrome-orb-diamond sa-chrome-orb-diamond--active' : 'sa-chrome-orb-diamond'}
+        aria-hidden
+      />
       <div
         className={active ? 'sa-chrome-orb-ring sa-chrome-orb-ring--active' : 'sa-chrome-orb-ring'}
         style={{
+          position: 'relative',
+          zIndex: 1,
           width: NAV_ORB_SIZE,
           height: NAV_ORB_SIZE,
           margin: '0 auto',
           borderRadius: '50%',
           background: t.isDark
-            ? 'linear-gradient(165deg, rgba(19,26,36,0.98) 0%, rgba(7,9,15,0.96) 100%)'
-            : 'linear-gradient(165deg, #FFFFFF 0%, #F4F6F8 100%)',
-          border: `1.5px solid ${active ? t.accent : 'rgba(138,171,189,0.28)'}`,
+            ? 'linear-gradient(165deg, rgba(28,36,48,0.98) 0%, rgba(7,9,15,0.97) 100%)'
+            : 'linear-gradient(165deg, #FFFFFF 0%, #EEF3F7 55%, #E4EBF1 100%)',
+          border: `1.5px solid ${active ? 'rgba(214,228,238,0.72)' : 'rgba(138,171,189,0.32)'}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
-          transition: 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 200ms ease, border-color 200ms ease',
-          transform: active ? 'scale(1.06)' : 'scale(1)',
+          transition: 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, border-color 220ms ease',
+          transform: active ? 'scale(1.07)' : 'scale(1)',
         }}
       >
         <BrandLogoAvatar

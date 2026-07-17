@@ -376,6 +376,9 @@ async def analyze_brand_endpoint(request: BrandAnalysisRequest):
             "website_description": result.get("website", {}).get("description", ""),
             "instagram_bio": result["instagram"].get("bio", ""),
             "instagram_followers": result["instagram"].get("follower_count"),
+            "instagram_following": result["instagram"].get("following_count"),
+            "instagram_posts_count": result["instagram"].get("post_count"),
+            "instagram_profile_pic_url": result["instagram"].get("profile_pic_url") or "",
             "fetch_ok": (
                 result.get("website", {}).get("raw_fetch_ok", False)
                 or result["instagram"].get("raw_fetch_ok", False)

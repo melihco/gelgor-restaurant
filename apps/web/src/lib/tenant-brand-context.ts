@@ -25,6 +25,13 @@ export interface TenantBrandContext {
   logoUrl: string;
   brandTone: string;
   description: string;
+  /** Live Instagram account bio from Apify / brand_contexts.instagram_bio */
+  instagramBio: string;
+  /** Live Instagram avatar (not production logo_url) */
+  instagramProfilePicUrl: string;
+  instagramFollowers: number | null;
+  instagramFollowing: number | null;
+  instagramPostsCount: number | null;
   isReady: boolean;
 }
 
@@ -110,6 +117,16 @@ export function buildTenantBrandContext(
   const location = String(profile?.location || brandCtx?.location || '').trim();
   const languages = String(brandCtx?.languages || profile?.languages || 'tr').trim();
   const description = String(profile?.description || brandCtx?.description || '').trim();
+  const instagramBio = String(
+    brandCtx?.instagram_bio
+    || brandCtx?.instagramBio
+    || '',
+  ).trim();
+  const instagramProfilePicUrl = String(
+    brandCtx?.instagram_profile_pic_url
+    || brandCtx?.instagramProfilePicUrl
+    || '',
+  ).trim();
   const pack = resolveSectorPack(businessType, brandName, description);
   const handle = resolveCoherentInstagramHandle(profile, brandCtx)
     || resolveInstagramHandle(profile, brandCtx);
@@ -129,8 +146,20 @@ export function buildTenantBrandContext(
     logoUrl: resolveTenantBrandLogoUrl(profile, brandCtx),
     brandTone: String(profile?.brandTone || brandCtx?.brand_tone || brandCtx?.brandTone || '').trim(),
     description,
+    instagramBio,
+    instagramProfilePicUrl,
+    instagramFollowers: parseOptionalCount(brandCtx?.instagram_followers ?? brandCtx?.instagramFollowers),
+    instagramFollowing: parseOptionalCount(brandCtx?.instagram_following ?? brandCtx?.instagramFollowing),
+    instagramPostsCount: parseOptionalCount(brandCtx?.instagram_posts_count ?? brandCtx?.instagramPostsCount),
     isReady: Boolean(brandName && businessType !== 'general_business'),
   };
+}
+
+function parseOptionalCount(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.floor(n);
 }
 
 export function emptyTenantBrandContext(): TenantBrandContext {

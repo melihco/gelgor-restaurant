@@ -1536,6 +1536,24 @@ async def persist_discovery_result(
     if instagram.get("bio"):
         ctx.instagram_bio = instagram["bio"][:500]
 
+    # Live Instagram profile surface (avatar + counts) — always refresh when
+    # Apify/scrape returns values so the mobile profile matches the real account.
+    pic = str(instagram.get("profile_pic_url") or "").strip()
+    if pic.startswith(("http://", "https://")):
+        ctx.instagram_profile_pic_url = pic[:2000]
+    for src_key, attr in (
+        ("follower_count", "instagram_followers"),
+        ("following_count", "instagram_following"),
+        ("post_count", "instagram_posts_count"),
+    ):
+        raw = instagram.get(src_key)
+        if raw is None:
+            continue
+        try:
+            setattr(ctx, attr, int(raw))
+        except (TypeError, ValueError):
+            pass
+
     # Brand logo — captured from the website during onboarding. Only fill when
     # empty so a user-uploaded logo is never overwritten by a scraped one.
     canonical_site = (ctx.website_url or website_url or "").strip()

@@ -218,11 +218,18 @@ export function InstagramProfile() {
     return { gridCards: grid, reelCards: reels, storyCards: stories };
   }, [artifacts]);
 
-  const logoUrl = brand.logoUrl ? (resolveClientMediaUrl(brand.logoUrl) ?? brand.logoUrl) : undefined;
+  // Avatar = live IG profile pic; brand logo_url is for production overlays only.
+  const avatarRaw = brand.instagramProfilePicUrl || brand.logoUrl || '';
+  const logoUrl = avatarRaw ? (resolveClientMediaUrl(avatarRaw) ?? avatarRaw) : undefined;
   const monogram = (brand.brandName || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   const handle = brand.displayHandle || brand.instagramHandle || 'markam';
   const category = brand.sectorLabel || brand.businessType || '';
-  const bio = (brand.description || '').trim();
+  // Profile bio must match live Instagram account bio (Apify → brand_contexts.instagram_bio).
+  // Do not use CompanyProfile.description (longer brand blurb / website summary).
+  const bio = (brand.instagramBio || '').trim();
+  const postsStat = brand.instagramPostsCount ?? gridCards.length;
+  const followersStat = brand.instagramFollowers;
+  const followingStat = brand.instagramFollowing;
 
   const bg = t.bg;
   const borderCol = t.separator;
@@ -288,9 +295,17 @@ export function InstagramProfile() {
           </div>
 
           <div style={{ flex: 1, display: 'flex', justifyContent: 'space-around', gap: 4 }}>
-            <StatColumn value={formatCount(gridCards.length)} label="gönderi" t={t} />
-            <StatColumn value={formatCount(reelCards.length)} label="reels" t={t} />
-            <StatColumn value={formatCount(storyCards.length)} label="hikaye" t={t} />
+            <StatColumn value={formatCount(postsStat)} label="gönderi" t={t} />
+            <StatColumn
+              value={followersStat != null ? formatCount(followersStat) : '—'}
+              label="takipçi"
+              t={t}
+            />
+            <StatColumn
+              value={followingStat != null ? formatCount(followingStat) : '—'}
+              label="takip"
+              t={t}
+            />
           </div>
         </div>
 
@@ -304,7 +319,7 @@ export function InstagramProfile() {
           )}
           {bio && (
             <div style={{ fontSize: 14, color: t.textPrimary, marginTop: 3, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
-              {bio.length > 160 ? `${bio.slice(0, 160)}…` : bio}
+              {bio}
             </div>
           )}
           {brand.location && (

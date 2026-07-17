@@ -82,7 +82,9 @@ async def fetch_instagram_apify(handle: str, api_key: str, timeout: int = 60) ->
         "bio": "",
         "full_name": "",
         "follower_count": None,
+        "following_count": None,
         "post_count": None,
+        "profile_pic_url": "",
         "recent_captions": [],
         "top_hashtags": [],
         "content_themes": [],
@@ -113,7 +115,17 @@ async def fetch_instagram_apify(handle: str, api_key: str, timeout: int = 60) ->
     result["bio"] = profile.get("biography") or profile.get("bio") or ""
     result["full_name"] = profile.get("fullName") or profile.get("full_name") or ""
     result["follower_count"] = profile.get("followersCount") or profile.get("followers_count")
+    result["following_count"] = profile.get("followsCount") or profile.get("followingCount") or profile.get("following_count")
     result["post_count"] = profile.get("postsCount") or profile.get("posts_count")
+    pic = (
+        profile.get("profilePicUrlHD")
+        or profile.get("profilePicUrl")
+        or profile.get("profile_pic_url_hd")
+        or profile.get("profile_pic_url")
+        or ""
+    )
+    if isinstance(pic, str) and pic.startswith("http"):
+        result["profile_pic_url"] = pic.split("?")[0] if "cdninstagram" not in pic else pic
     result["raw_fetch_ok"] = True
 
     # Recent posts — Apify returns them nested under latestPosts or posts

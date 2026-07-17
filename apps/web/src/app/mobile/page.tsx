@@ -168,13 +168,23 @@ const CSS = `
     100% { opacity: 1; transform: translateY(0) scale(1); }
   }
   @keyframes splashLogoIn {
-    from { opacity: 0; transform: scale(0.9) translateY(10px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
+    0%   { opacity: 0; transform: scale(0.86) translateY(14px); filter: blur(6px) brightness(1.35); }
+    55%  { opacity: 1; filter: blur(0) brightness(1.08); }
+    100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0) brightness(1); }
   }
-  @keyframes laserHaloOrbit {
-    0%   { transform: rotateX(68deg) rotateZ(0deg) scale(0.995); opacity: 0.34; }
-    50%  { transform: rotateX(68deg) rotateZ(180deg) scale(1.022); opacity: 0.48; }
-    100% { transform: rotateX(68deg) rotateZ(360deg) scale(0.995); opacity: 0.34; }
+  @keyframes diamondHaloOrbit {
+    0%   { transform: rotateX(62deg) rotateZ(0deg) scale(0.992); opacity: 0.42; }
+    50%  { transform: rotateX(62deg) rotateZ(180deg) scale(1.018); opacity: 0.62; }
+    100% { transform: rotateX(62deg) rotateZ(360deg) scale(0.992); opacity: 0.42; }
+  }
+  @keyframes diamondFacetSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes diamondBrilliance {
+    0%, 100% { opacity: 0.22; transform: scale(0.96); }
+    45%      { opacity: 0.55; transform: scale(1.04); }
+    55%      { opacity: 0.4; transform: scale(1.01); }
   }
   @keyframes laserScanMove {
     0%   { left: -20%; opacity: 0; }
@@ -186,24 +196,29 @@ const CSS = `
     0%, 100% { opacity: 0.2; transform: scale(0.6); }
     50%      { opacity: 1; transform: scale(1.2); }
   }
-  @keyframes laserGridPulse {
-    0%, 100% { opacity: 0.18; }
-    50%      { opacity: 0.3; }
+  @keyframes diamondFloorPulse {
+    0%, 100% { opacity: 0.14; }
+    50%      { opacity: 0.26; }
   }
   @keyframes laserCoreFloat {
     0%, 100% { transform: translateY(0) scale(1); }
-    50%      { transform: translateY(-3px) scale(1.012); }
+    50%      { transform: translateY(-2px) scale(1.008); }
+  }
+  @keyframes diamondBloomIn {
+    0%   { opacity: 0; transform: scale(0.7); }
+    40%  { opacity: 0.55; }
+    100% { opacity: 1; transform: scale(1); }
   }
 
-  .sa-mobile .splash-logo { animation: splashLogoIn 520ms cubic-bezier(0.34,1.2,0.64,1) both; }
+  .sa-mobile .splash-logo { animation: splashLogoIn 720ms cubic-bezier(0.16,1,0.3,1) both; }
 
-  /* ── 3D Laser / Drone Show ── */
+  /* ── Diamond / platinum brand stage (splash + onboarding) ── */
   .sa-mobile .brand-laser-stage {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    perspective: 900px;
+    perspective: 1100px;
   }
   .sa-mobile .brand-laser-stage--md { width: min(390px, 94vw); height: min(360px, 86vw); }
   .sa-mobile .brand-laser-stage--onboarding { width: min(220px, 58vw); height: min(200px, 52vw); margin: 0 auto -12px; }
@@ -218,25 +233,83 @@ const CSS = `
     display: flex;
     align-items: center;
     justify-content: center;
+    animation: diamondBloomIn 900ms cubic-bezier(0.16,1,0.3,1) both;
   }
 
   .sa-mobile .brand-laser-grid {
     position: absolute;
-    width: 140%;
-    height: 55%;
-    bottom: -8%;
-    left: -20%;
+    width: 150%;
+    height: 58%;
+    bottom: -10%;
+    left: -25%;
     background:
-      linear-gradient(rgba(77,112,136,0.12) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(77,112,136,0.12) 1px, transparent 1px);
-    background-size: 28px 28px;
+      radial-gradient(ellipse 55% 40% at 50% 0%, rgba(238,243,247,0.14), transparent 70%),
+      linear-gradient(rgba(157,190,206,0.10) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(157,190,206,0.10) 1px, transparent 1px);
+    background-size: 100% 100%, 32px 32px, 32px 32px;
     transform: rotateX(68deg);
     transform-origin: center bottom;
-    mask-image: radial-gradient(ellipse 70% 80% at 50% 100%, #000 20%, transparent 75%);
-    -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 100%, #000 20%, transparent 75%);
-    opacity: 0.28;
-    animation: laserGridPulse 7.5s ease-in-out infinite;
+    mask-image: radial-gradient(ellipse 68% 78% at 50% 100%, #000 18%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 68% 78% at 50% 100%, #000 18%, transparent 78%);
+    opacity: 0.22;
+    animation: diamondFloorPulse 8.5s ease-in-out infinite;
     pointer-events: none;
+  }
+
+  .sa-mobile .brand-diamond-bloom {
+    position: absolute;
+    inset: 18% 16%;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 38% 32%, rgba(255,255,255,0.42) 0%, transparent 28%),
+      radial-gradient(circle at 50% 50%, rgba(214,228,238,0.18) 0%, transparent 62%),
+      radial-gradient(circle at 62% 68%, rgba(157,190,206,0.12) 0%, transparent 45%);
+    filter: blur(10px);
+    animation: diamondBrilliance 5.6s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .sa-mobile .brand-diamond-facet {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 118%;
+    height: 118%;
+    margin-left: -59%;
+    margin-top: -59%;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 2;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(255,255,255,0.0) 18deg,
+      rgba(238,243,247,0.22) 32deg,
+      transparent 48deg,
+      transparent 110deg,
+      rgba(157,190,206,0.18) 128deg,
+      transparent 150deg,
+      transparent 210deg,
+      rgba(255,255,255,0.14) 228deg,
+      transparent 250deg,
+      transparent 300deg,
+      rgba(176,196,212,0.16) 318deg,
+      transparent 340deg
+    );
+    mask-image: radial-gradient(circle, transparent 42%, #000 52%, #000 58%, transparent 68%);
+    -webkit-mask-image: radial-gradient(circle, transparent 42%, #000 52%, #000 58%, transparent 68%);
+    animation: diamondFacetSpin 18s linear infinite;
+    opacity: 0.85;
+  }
+  .sa-mobile .brand-diamond-facet--inner {
+    width: 96%;
+    height: 96%;
+    margin-left: -48%;
+    margin-top: -48%;
+    animation-direction: reverse;
+    animation-duration: 26s;
+    opacity: 0.55;
   }
 
   .sa-mobile .brand-laser-ring {
@@ -247,61 +320,68 @@ const CSS = `
     top: 50%;
     left: 50%;
     transform-style: preserve-3d;
-    box-shadow: 0 0 18px rgba(157,190,206,0.12);
-    filter: blur(0.15px);
+    z-index: 3;
   }
   .sa-mobile .brand-laser-ring--halo-1 {
-    width: 122%;
-    height: 70%;
-    margin-left: -61%;
-    margin-top: -35%;
-    border-color: rgba(157,190,206,0.2);
-    border-top-color: rgba(34,211,238,0.3);
-    border-bottom-color: rgba(77,112,136,0.14);
+    width: 124%;
+    height: 68%;
+    margin-left: -62%;
+    margin-top: -34%;
+    border-color: rgba(176,196,212,0.14);
+    border-top-color: rgba(255,255,255,0.42);
+    border-right-color: rgba(157,190,206,0.28);
+    border-bottom-color: rgba(77,112,136,0.16);
+    border-left-color: rgba(214,228,238,0.22);
     box-shadow:
-      0 0 28px rgba(157,190,206,0.12),
-      inset 0 0 18px rgba(255,255,255,0.02);
-    animation: laserHaloOrbit 12.5s ease-in-out infinite;
+      0 0 36px rgba(214,228,238,0.14),
+      0 0 1px rgba(255,255,255,0.35),
+      inset 0 0 22px rgba(255,255,255,0.04);
+    animation: diamondHaloOrbit 16s cubic-bezier(0.45,0.05,0.55,0.95) infinite;
   }
   .sa-mobile .brand-laser-ring--halo-2 {
-    width: 102%;
-    height: 58%;
-    margin-left: -51%;
-    margin-top: -29%;
-    border-color: rgba(176,196,212,0.12);
-    border-top-color: rgba(255,255,255,0.16);
-    border-bottom-color: rgba(34,211,238,0.1);
+    width: 100%;
+    height: 54%;
+    margin-left: -50%;
+    margin-top: -27%;
+    border-color: rgba(138,171,189,0.10);
+    border-top-color: rgba(255,255,255,0.28);
+    border-bottom-color: rgba(157,190,206,0.12);
     box-shadow:
-      0 0 20px rgba(176,196,212,0.08),
-      inset 0 0 14px rgba(255,255,255,0.015);
-    animation: laserHaloOrbit 12.5s ease-in-out infinite;
-    animation-delay: -6.25s;
+      0 0 22px rgba(157,190,206,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.08);
+    animation: diamondHaloOrbit 16s cubic-bezier(0.45,0.05,0.55,0.95) infinite;
+    animation-delay: -8s;
   }
 
   .sa-mobile .brand-laser-core {
     position: relative;
     z-index: 5;
-    animation: laserCoreFloat 5.8s ease-in-out infinite, splashLogoIn 700ms cubic-bezier(0.22,1,0.36,1) both;
+    animation: laserCoreFloat 6.4s ease-in-out infinite, splashLogoIn 820ms cubic-bezier(0.16,1,0.3,1) both;
   }
 
   .sa-mobile .brand-loader-breathe {
-    animation: brandLoaderBreathe 2.8s ease-in-out infinite;
+    animation: brandLoaderBreathe 3.2s ease-in-out infinite;
   }
   @keyframes brandLoaderBreathe {
-    0%, 100% { opacity: 0.9; transform: scale(0.988); }
-    50% { opacity: 1; transform: scale(1); }
+    0%, 100% { opacity: 0.94; transform: scale(0.992); }
+    50% { opacity: 1; transform: scale(1.01); }
   }
 
   .sa-mobile .brand-loader-logo {
     width: min(280px, 72vw);
     max-width: 280px;
     height: auto !important;
-    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.18));
+    filter:
+      drop-shadow(0 2px 0 rgba(255,255,255,0.18))
+      drop-shadow(0 12px 28px rgba(15,23,42,0.28))
+      drop-shadow(0 0 40px rgba(214,228,238,0.18));
   }
   .sa-mobile .brand-loader-logo--sm {
     width: auto;
     max-width: none;
-    filter: drop-shadow(0 6px 18px rgba(0,0,0,0.14));
+    filter:
+      drop-shadow(0 1px 0 rgba(255,255,255,0.14))
+      drop-shadow(0 8px 20px rgba(15,23,42,0.22));
   }
 
   .sa-mobile .brand-grouped-fields > *:not(:last-child) {
@@ -334,8 +414,8 @@ const CSS = `
     width: 28%;
     height: 4px;
     border-radius: 4px;
-    background: linear-gradient(90deg, transparent, #22D3EE, #9DBECE, #fff, #9DBECE, transparent);
-    box-shadow: 0 0 12px rgba(34,211,238,0.8), 0 0 24px rgba(157,190,206,0.5);
+    background: linear-gradient(90deg, transparent, rgba(214,228,238,0.2), #EEF3F7, #fff, #9DBECE, transparent);
+    box-shadow: 0 0 12px rgba(214,228,238,0.55), 0 0 22px rgba(157,190,206,0.28);
     animation: laserScanMove 2.4s ease-in-out infinite;
   }
   .sa-mobile .brand-laser-scan-dots {
@@ -1719,16 +1799,58 @@ const CSS = `
   }
   .sa-mobile .sa-chrome-orb-ring {
     box-shadow:
-      0 0 0 1px rgba(138,171,189,0.35),
-      0 10px 32px rgba(77,112,136,0.35),
-      inset 0 1px 0 rgba(255,255,255,0.12) !important;
+      0 0 0 1px rgba(214,228,238,0.28),
+      0 10px 28px rgba(15,23,42,0.38),
+      0 0 20px rgba(157,190,206,0.16),
+      inset 0 1px 0 rgba(255,255,255,0.16) !important;
   }
   .sa-mobile .sa-chrome-orb-ring--active {
     box-shadow:
-      0 0 0 2px rgba(138,171,189,0.45),
-      0 0 24px rgba(138,171,189,0.28),
-      0 12px 36px rgba(77,112,136,0.4),
-      inset 0 1px 0 rgba(255,255,255,0.14) !important;
+      0 0 0 1.5px rgba(238,243,247,0.42),
+      0 0 28px rgba(214,228,238,0.28),
+      0 12px 34px rgba(15,23,42,0.42),
+      inset 0 1px 0 rgba(255,255,255,0.22) !important;
+  }
+  .sa-mobile .sa-chrome-orb-diamond {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 74px;
+    height: 74px;
+    margin: -37px 0 0 -37px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(255,255,255,0.0) 20deg,
+      rgba(238,243,247,0.55) 34deg,
+      transparent 52deg,
+      transparent 120deg,
+      rgba(157,190,206,0.4) 138deg,
+      transparent 160deg,
+      transparent 220deg,
+      rgba(255,255,255,0.35) 238deg,
+      transparent 260deg,
+      transparent 310deg,
+      rgba(176,196,212,0.38) 328deg,
+      transparent 348deg
+    );
+    mask-image: radial-gradient(circle, transparent 48%, #000 56%, #000 62%, transparent 72%);
+    -webkit-mask-image: radial-gradient(circle, transparent 48%, #000 56%, #000 62%, transparent 72%);
+    animation: diamondFacetSpin 14s linear infinite;
+    opacity: 0.55;
+  }
+  .sa-mobile .sa-chrome-orb-diamond--active {
+    opacity: 0.88;
+    animation-duration: 10s;
+    filter: drop-shadow(0 0 8px rgba(214,228,238,0.35));
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-orb-diamond {
+    opacity: 0.42;
+  }
+  .sa-mobile[data-theme="light"] .sa-chrome-orb-diamond--active {
+    opacity: 0.7;
   }
   .sa-mobile .sa-chrome-eyebrow {
     font-size: 11px;

@@ -54,6 +54,10 @@ class BrandContextUpdate(BaseModel):
     instagram_top_hashtags: str | None = None
     website_summary: str | None = None
     instagram_bio: str | None = None
+    instagram_profile_pic_url: str | None = None
+    instagram_followers: int | None = None
+    instagram_following: int | None = None
+    instagram_posts_count: int | None = None
     reference_image_urls: str | None = None
     google_review_signals: str | None = None
     google_rating: str | None = None
@@ -102,6 +106,10 @@ class BrandContextRead(OrmBase):
     instagram_top_hashtags: str | None = None
     website_summary: str | None = None
     instagram_bio: str | None = None
+    instagram_profile_pic_url: str | None = None
+    instagram_followers: int | None = None
+    instagram_following: int | None = None
+    instagram_posts_count: int | None = None
     reference_image_urls: str | None = None
     # Sprint 1: Google Business signals
     google_review_signals: str | None = None

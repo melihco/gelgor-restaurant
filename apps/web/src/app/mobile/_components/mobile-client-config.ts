@@ -148,13 +148,51 @@ export type MoreMenuItem = {
   iconText: string;
   screen: MobileScreen;
   badge?: string | number;
+  /** warn = amber attention; count = accent numeric badge on the icon/row */
+  badgeKind?: 'warn' | 'count';
   operatorOnly?: boolean;
 };
 
-export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCount: number; integrationTotal: number }): {
+export function buildMoreMenuGroups(opts: {
+  canvaEnabled?: boolean;
+  connectedCount: number;
+  integrationTotal: number;
+  /** Google Business bağlıysa Google Yorumları satırını göster */
+  showGoogleReviews?: boolean;
+  /** Meta (IG/Ads) veya Google Ads bağlıysa Reklamlar satırını göster */
+  showAds?: boolean;
+  /** Okunmamış bildirim sayısı — Bildirimler rozeti */
+  notificationCount?: number;
+}): {
   title: string;
   items: MoreMenuItem[];
 }[] {
+  const notifBadge = (() => {
+    const n = Math.floor(Number(opts.notificationCount) || 0);
+    if (n <= 0) return undefined;
+    return n > 9 ? '9+' : n;
+  })();
+
+  const growthItems: MoreMenuItem[] = [];
+  if (opts.showGoogleReviews) {
+    growthItems.push({
+      label: 'Google Yorumları',
+      sub: 'Yorum yanıtlama ve itibar',
+      iconBg: '#f59e0b',
+      iconText: '💬',
+      screen: 'reviews',
+    });
+  }
+  if (opts.showAds) {
+    growthItems.push({
+      label: 'Reklamlar',
+      sub: 'Meta ve Google kampanyaları',
+      iconBg: '#f59e0b',
+      iconText: '📣',
+      screen: 'ads',
+    });
+  }
+
   const clientGroups: { title: string; items: MoreMenuItem[] }[] = [
     {
       title: 'Plan & Üretim',
@@ -178,19 +216,27 @@ export function buildMoreMenuGroups(opts: { canvaEnabled?: boolean; connectedCou
           iconText: '⟳',
           screen: 'settings',
           badge: opts.connectedCount < opts.integrationTotal ? '!' : undefined,
+          badgeKind: 'warn',
         },
-        { label: 'Bildirimler', sub: 'Onay ve üretim bildirimleri', iconBg: '#60a5fa', iconText: '◍', screen: 'notifications' },
+        {
+          label: 'Bildirimler',
+          sub: notifBadge
+            ? `${notifBadge} okunmamış bildirim`
+            : 'Onay ve üretim bildirimleri',
+          iconBg: '#60a5fa',
+          iconText: '◍',
+          screen: 'notifications',
+          badge: notifBadge,
+          badgeKind: 'count',
+        },
         { label: 'Kullanım & Plan', sub: 'Kredi ve aylık kullanım', iconBg: '#9DBECE', iconText: '◇', screen: 'billing' },
       ],
     },
-    {
-      title: 'Büyüme',
-      items: [
-        { label: 'Google Yorumları', sub: 'Yorum yanıtlama ve itibar', iconBg: '#f59e0b', iconText: '💬', screen: 'reviews' },
-        { label: 'Reklamlar', sub: 'Meta ve Google kampanyaları', iconBg: '#f59e0b', iconText: '📣', screen: 'ads' },
-      ],
-    },
   ];
+
+  if (growthItems.length > 0) {
+    clientGroups.push({ title: 'Büyüme', items: growthItems });
+  }
 
   if (!isMobileOperatorMode()) return clientGroups;
 

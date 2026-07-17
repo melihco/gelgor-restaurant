@@ -291,7 +291,9 @@ async def fetch_instagram_profile(handle: str) -> dict[str, Any]:
         "bio": "",
         "full_name": "",
         "follower_count": None,
+        "following_count": None,
         "post_count": None,
+        "profile_pic_url": "",
         "recent_captions": [],
         "top_hashtags": [],
         "content_themes": [],
@@ -317,7 +319,11 @@ async def fetch_instagram_profile(handle: str) -> dict[str, Any]:
                 result["bio"] = user.get("biography", "")
                 result["full_name"] = user.get("full_name", "")
                 result["follower_count"] = user.get("edge_followed_by", {}).get("count")
+                result["following_count"] = user.get("edge_follow", {}).get("count")
                 result["post_count"] = user.get("edge_owner_to_timeline_media", {}).get("count")
+                pic = user.get("profile_pic_url_hd") or user.get("profile_pic_url") or ""
+                if isinstance(pic, str) and pic.startswith("http"):
+                    result["profile_pic_url"] = pic
                 result["raw_fetch_ok"] = True
 
                 # Extract recent post captions

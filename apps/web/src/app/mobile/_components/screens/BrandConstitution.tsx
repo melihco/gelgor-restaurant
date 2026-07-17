@@ -4655,15 +4655,28 @@ export function BrandConstitution() {
                   </div>
                 )}
 
-                {/* Instagram bio */}
-                {pyCtx?.instagram_bio && (
+                {/* Instagram bio + live profile stats (Apify) */}
+                {(pyCtx?.instagram_bio || pyCtx?.instagram_followers != null) && (
                   <div>
                     <p style={{ fontSize: 10, fontWeight: 700, color: '#E1306C', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
-                      📸 Instagram Bio
+                      📸 Instagram Profil
                     </p>
-                    <p style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6, background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', padding: '10px 12px', borderRadius: 10, margin: 0 }}>
-                      {pyCtx.instagram_bio}
-                    </p>
+                    <div style={{ background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)', padding: '10px 12px', borderRadius: 10 }}>
+                      {pyCtx?.instagram_bio && (
+                        <p style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>
+                          {pyCtx.instagram_bio}
+                        </p>
+                      )}
+                      {(pyCtx?.instagram_followers != null || pyCtx?.instagram_posts_count != null) && (
+                        <p style={{ fontSize: 11, color: t.textMuted, margin: pyCtx?.instagram_bio ? '8px 0 0' : 0 }}>
+                          {[
+                            pyCtx?.instagram_posts_count != null ? `${pyCtx.instagram_posts_count} gönderi` : null,
+                            pyCtx?.instagram_followers != null ? `${pyCtx.instagram_followers} takipçi` : null,
+                            pyCtx?.instagram_following != null ? `${pyCtx.instagram_following} takip` : null,
+                          ].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
 

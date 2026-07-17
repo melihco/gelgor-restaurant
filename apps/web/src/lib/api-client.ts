@@ -451,6 +451,10 @@ class ApiClient {
     logo_url?: string;
     website_summary?: string;
     instagram_bio?: string;
+    instagram_profile_pic_url?: string;
+    instagram_followers?: number | null;
+    instagram_following?: number | null;
+    instagram_posts_count?: number | null;
     target_audience?: string;
     business_type?: string;
     website_url?: string;

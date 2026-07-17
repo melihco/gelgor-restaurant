@@ -3,9 +3,10 @@
 import type React from 'react';
 import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
 import { useTheme } from './theme-context';
+import { BrandLaserShow } from './BrandLaserShow';
 
 /**
- * Branded splash / loading — minimal Apple-style logo breathe (no scan bar, no orbit).
+ * App open / route splash — diamond-orbit stage + platinum logo entrance.
  */
 export function BrandLoadingScreen({
   fillViewport = true,
@@ -32,30 +33,37 @@ export function BrandLoadingScreen({
     <div
       style={{
         ...shellStyle,
-        background: t.bg,
+        position: 'relative',
+        background: t.isDark
+          ? 'radial-gradient(ellipse 90% 70% at 50% 42%, rgba(77,112,136,0.16) 0%, transparent 58%), #07090F'
+          : 'radial-gradient(ellipse 90% 70% at 50% 42%, rgba(214,228,238,0.55) 0%, transparent 58%), #F4F6F8',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 16,
+        gap: compact ? 10 : 18,
         padding: compact ? '32px 24px' : '0 24px',
+        overflow: 'hidden',
       }}
     >
-      <div className="brand-loader-breathe">
-        <SmartAgencyLogo
-          variant={compact ? 'mark' : 'full'}
-          priority={!compact}
-          framed={compact}
-          className={`brand-loader-logo block h-auto${compact ? ' brand-loader-logo--sm' : ''}`}
-        />
-      </div>
+      <BrandLaserShow size={compact ? 'sm' : 'md'}>
+        <div className="brand-loader-breathe">
+          <SmartAgencyLogo
+            variant={compact ? 'mark' : 'full'}
+            priority={!compact}
+            framed={compact}
+            className={`brand-loader-logo block h-auto${compact ? ' brand-loader-logo--sm' : ''}`}
+          />
+        </div>
+      </BrandLaserShow>
       {showLabel && label ? (
         <span
+          className="sa-chrome-eyebrow"
           style={{
-            fontSize: compact ? 12 : 13,
-            fontWeight: 500,
-            color: t.textMuted,
-            letterSpacing: '-0.01em',
+            fontSize: compact ? 10 : 11,
+            opacity: 0.85,
+            animation: 'splashLogoIn 900ms cubic-bezier(0.16,1,0.3,1) both',
+            animationDelay: '180ms',
           }}
         >
           {label}
