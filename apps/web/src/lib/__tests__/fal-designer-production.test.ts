@@ -4,6 +4,7 @@ import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
   buildIntensityTypographyBlock,
+  FAL_SUBJECT_CLEARANCE_DIRECTIVE,
   resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
@@ -87,6 +88,8 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).toContain('TYPOGRAPHY STANDARD (MANDATORY)');
     expect(prompt).toContain('Reject amateur output');
     expect(prompt).toContain('PHOTO HERO ZONE');
+    expect(prompt).toContain('SUBJECT CLEARANCE (MANDATORY)');
+    expect(prompt).toContain(FAL_SUBJECT_CLEARANCE_DIRECTIVE);
   });
 
   it('maps Ideogram photo_overlay to gradient_mesh when a gallery reference exists', () => {

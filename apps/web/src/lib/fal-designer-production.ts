@@ -48,6 +48,14 @@ import { finalizeFalPrompt } from '@/lib/fal-prompt';
 
 type AspectRatio = '9:16' | '1:1' | '4:5';
 
+/**
+ * Keep typography/panels off photo heroes without changing the design system.
+ * Injected early into every fal designer card prompt (post / story / reel).
+ * Kept short so finalizeFalPrompt maxChars trim cannot drop it or crowd logo rules.
+ */
+export const FAL_SUBJECT_CLEARANCE_DIRECTIVE =
+  'SUBJECT CLEARANCE (MANDATORY): Put headlines/CTAs/panels only on empty areas (sky, wall, blur, letterbox). NEVER cover faces, hands, glassware, plates, vehicles/scooters, seated groups, or the product hero — flip type to the opposite clear third/side; shrink type before overlapping.';
+
 export interface FalDesignerInput {
   workspaceId?: string;
   headline: string;
@@ -724,9 +732,10 @@ function buildDesignedDesignCardPrompt(
   });
 
   const logoBlock = [logoRefNote, brandMarkInstruction].filter(Boolean).join(' ');
+  // +280 reserves room for FAL_SUBJECT_CLEARANCE_DIRECTIVE without trimming logo/photo contracts.
   const promptLimit = (isReel || input.aspectRatio === '9:16' ? 3800 : 3200)
-    + (input.logoUrl ? 400 : 0);
-
+    + (input.logoUrl ? 400 : 0)
+    + 280;
   // Keep contract + scene + brand directives early so finalizeFalPrompt trim cannot drop them.
   const promptBody = [
     role,
@@ -734,6 +743,8 @@ function buildDesignedDesignCardPrompt(
     ...(input.brandDirectives ?? []),
     ...intensityDirectives.forbiddenLayouts,
     onCanvasTextContract,
+    // Before long typography blocks — must survive finalizeFalPrompt maxChars trim.
+    FAL_SUBJECT_CLEARANCE_DIRECTIVE,
     captionMessageLock,
     premiumBar,
     input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',
