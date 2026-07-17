@@ -136,11 +136,16 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
   return (
     <>
       {/* ─── Menu groups — same full-width list rows as brand-hub nav ─── */}
-      {groups.map(group => (
-        <div key={group.title} style={{ padding: `16px ${horizontalPadding}px 0` }}>
-          <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
-            {group.title}
-          </div>
+      {groups.map((group, groupIdx) => (
+        <div
+          key={group.title || group.items[0]?.label || `group-${groupIdx}`}
+          style={{ padding: `16px ${horizontalPadding}px 0` }}
+        >
+          {group.title ? (
+            <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
+              {group.title}
+            </div>
+          ) : null}
 
           <div
             className="brand-hub-list"

@@ -195,7 +195,8 @@ export function buildMoreMenuGroups(opts: {
 
   const clientGroups: { title: string; items: MoreMenuItem[] }[] = [
     {
-      title: 'Plan & Üretim',
+      // No section eyebrow — flat list under Marka hub
+      title: '',
       items: [
         {
           label: 'İçerik Planı',
@@ -204,11 +205,6 @@ export function buildMoreMenuGroups(opts: {
           iconText: '▣',
           screen: 'missions',
         },
-      ],
-    },
-    {
-      title: 'Marka & Ayarlar',
-      items: [
         {
           label: 'Entegrasyonlar',
           sub: `${opts.connectedCount}/${opts.integrationTotal} bağlı`,
