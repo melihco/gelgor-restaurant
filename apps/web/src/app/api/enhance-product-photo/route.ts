@@ -9,8 +9,9 @@
  *   Falls back to Python CrewAI ProductSceneDirectorAgent for richer brand context
  *   when workspaceId is provided.
  *
- * Stage 2 — GPT image-2 Enhancement (~30-40s)
+ * Stage 2 — GPT image Enhancement (~30-40s)
  *   Uses the scene brief as a production-ready prompt for images.edit.
+ *   Model/quality from serverConfig.imageGen (tier/env — not hardcoded gpt-image-2).
  *   Product, label, logo on packaging are NEVER modified.
  *
  * Stage 3 — Logo Compositor (sharp, ~1s)
@@ -374,15 +375,17 @@ async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
   }
 
   const imageFile = new File([new Uint8Array(imageBuffer)], 'product.jpg', { type: 'image/jpeg' });
+  const editModel = serverConfig.imageGen.editModel;
+  const editQuality = serverConfig.imageGen.quality;
   let response;
   try {
     response = await openai.images.edit({
-      model: 'gpt-image-2',
+      model: editModel,
       image: imageFile,
       prompt: enhancePrompt,
       n: 1,
       size: '1024x1024',
-      quality: 'high',
+      quality: editQuality as 'low' | 'medium' | 'high' | 'auto',
     });
   } catch (err: unknown) {
     if (isOpenAiQuotaOrBillingError(err)) {
@@ -396,9 +399,9 @@ async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
   const b64 = response.data?.[0]?.b64_json;
   const rawUrl = response.data?.[0]?.url;
   if (!b64 && !rawUrl) {
-    throw new Error('No image returned from GPT image-2');
+    throw new Error(`No image returned from ${editModel}`);
   }
-  stages.push('gpt_image2');
+  stages.push(`gpt_image_edit:${editModel}:${editQuality}`);
 
   let enhancedBuffer: Buffer;
   if (b64) {
@@ -622,7 +625,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       photoCount: photoUrls.length,
       results,
       level,
-      model: 'gpt-image-2',
+      model: serverConfig.imageGen.editModel,
+      quality: serverConfig.imageGen.quality,
       sceneBrief: {
         sector_archetype: sceneBrief.sector_archetype,
         background_concept: sceneBrief.background_concept,

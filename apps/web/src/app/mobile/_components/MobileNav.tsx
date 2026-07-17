@@ -208,12 +208,12 @@ function ProfileNavButton({
  * 3-item bottom nav: Akış · Marka (center) · Menü
  */
 export function MobileNav() {
-  const { activeTab, setTab, screen, bumpFeedRefresh, openProfile } = useMobileStore();
+  const { activeTab, setTab, screen, bumpFeedRefresh, openProfile, feedListLimit } = useMobileStore();
   const { t } = useTheme();
   const tenantId = useActiveTenantId();
   const queryClient = useQueryClient();
   const { data: artifacts = [] } = useMobileArtifacts({
-    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
+    params: { limit: Math.max(MOBILE_ARTIFACT_MISSION_POOL_LIMIT, feedListLimit) },
     enabled: Boolean(tenantId),
     subscribeOnly: true,
   });

@@ -12,12 +12,15 @@ export interface FeedLazyPostListProps<T> {
   pageSize?: number;
   /** Called when user scrolls near the end — parent can prefetch more artifacts. */
   onNearEnd?: () => void;
+  /** Parent still has older pages to fetch from the API. */
+  hasMoreRemote?: boolean;
   loadMoreLabel?: string;
 }
 
 /**
  * Renders feed posts incrementally as the user scrolls.
- * Keeps first paint fast (6 cards) without mounting hundreds of heavy previews.
+ * Keeps first paint fast without mounting hundreds of heavy previews.
+ * When the parent grows `items` (API window expand), scroll position is preserved.
  */
 export function FeedLazyPostList<T>({
   items,
@@ -25,28 +28,44 @@ export function FeedLazyPostList<T>({
   renderItem,
   pageSize = DEFAULT_PAGE,
   onNearEnd,
+  hasMoreRemote = false,
   loadMoreLabel = 'Daha fazla yükleniyor…',
 }: FeedLazyPostListProps<T>) {
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const nearEndFiredRef = useRef(false);
+  const prevLenRef = useRef(items.length);
+  const prevHeadRef = useRef(items.length ? itemKey(items[0]!, 0) : '');
 
   useEffect(() => {
-    setVisibleCount(pageSize);
+    const head = items.length ? itemKey(items[0]!, 0) : '';
+    const sameHead = head === prevHeadRef.current;
+    const grewOrSame = items.length >= prevLenRef.current && sameHead;
+    if (!grewOrSame) {
+      setVisibleCount(pageSize);
+    }
     nearEndFiredRef.current = false;
-  }, [items, pageSize]);
+    prevLenRef.current = items.length;
+    prevHeadRef.current = head;
+  }, [items, pageSize, itemKey]);
 
   useEffect(() => {
     if (items.length === 0) return;
-    if (visibleCount < items.length - pageSize) return;
+    const nearDomEnd = visibleCount >= Math.max(0, items.length - pageSize);
+    const paintedAll = visibleCount >= items.length;
+    if (!nearDomEnd && !paintedAll) return;
+    if (!hasMoreRemote && paintedAll) return;
     if (nearEndFiredRef.current) return;
     nearEndFiredRef.current = true;
     onNearEnd?.();
-  }, [visibleCount, items.length, pageSize, onNearEnd]);
+  }, [visibleCount, items.length, pageSize, onNearEnd, hasMoreRemote]);
+
+  const hasMoreDom = visibleCount < items.length;
+  const showSentinel = hasMoreDom || hasMoreRemote;
 
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || visibleCount >= items.length) return;
+    if (!el || !hasMoreDom) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -58,10 +77,28 @@ export function FeedLazyPostList<T>({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [items.length, visibleCount, pageSize]);
+  }, [items.length, visibleCount, pageSize, hasMoreDom]);
+
+  // When DOM is fully painted but older API pages remain, keep asking for more
+  // while the sentinel stays in view (IntersectionObserver alone won't fire again).
+  useEffect(() => {
+    if (!hasMoreRemote || hasMoreDom) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        if (nearEndFiredRef.current) return;
+        nearEndFiredRef.current = true;
+        onNearEnd?.();
+      },
+      { rootMargin: '480px 0px', threshold: 0.01 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreRemote, hasMoreDom, onNearEnd, items.length]);
 
   const visible = items.slice(0, visibleCount);
-  const hasMore = visibleCount < items.length;
 
   return (
     <>
@@ -70,7 +107,7 @@ export function FeedLazyPostList<T>({
           {renderItem(item, idx)}
         </React.Fragment>
       ))}
-      {hasMore && (
+      {showSentinel && (
         <div
           ref={sentinelRef}
           aria-hidden

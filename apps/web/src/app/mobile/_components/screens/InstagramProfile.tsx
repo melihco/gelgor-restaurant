@@ -8,12 +8,15 @@
  *
  * Sector/tenant agnostic: tenant brand context + artifact pool only.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../theme-context';
 import { useTenantBrandContext } from '../TenantBrandProvider';
 import { useMobileStore } from '../mobile-store';
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
-import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT } from '../../_lib/mobile-artifacts';
+import {
+  MOBILE_ARTIFACT_FEED_LIMIT,
+  MOBILE_ARTIFACT_FEED_PAGE,
+} from '../../_lib/mobile-artifacts';
 import { filterFeedDisplayArtifacts } from '@/lib/weekly-publish-package';
 import { isOrganicFeedArtifact } from '@/lib/ad-publish-utils';
 import {
@@ -195,13 +198,24 @@ function TabButton({ active, onClick, children, ariaLabel }: {
 export function InstagramProfile() {
   const { t } = useTheme();
   const brand = useTenantBrandContext();
-  const { navigate, openPlatformPreview } = useMobileStore();
+  const navigate = useMobileStore((s) => s.navigate);
+  const openPlatformPreview = useMobileStore((s) => s.openPlatformPreview);
+  const feedListLimit = useMobileStore((s) => s.feedListLimit);
+  const setFeedListLimit = useMobileStore((s) => s.setFeedListLimit);
   const [tab, setTab] = useState<ProfileTab>('grid');
+  const gridSentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data: artifacts = [], isLoading } = useMobileArtifacts({
-    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
+  const { data: artifacts = [], isLoading, isFetching } = useMobileArtifacts({
+    params: { limit: feedListLimit },
     subscribeOnly: true,
   });
+
+  const growArchive = useCallback(() => {
+    setFeedListLimit(Math.min(feedListLimit + MOBILE_ARTIFACT_FEED_PAGE, MOBILE_ARTIFACT_FEED_LIMIT));
+  }, [feedListLimit, setFeedListLimit]);
+
+  const hasMoreArchive = artifacts.length >= feedListLimit
+    && feedListLimit < MOBILE_ARTIFACT_FEED_LIMIT;
 
   const { gridCards, reelCards, storyCards } = useMemo(() => {
     // Same visibility pool as Akış for now: all produced organic deliverables
@@ -244,6 +258,21 @@ export function InstagramProfile() {
 
   const activeCards = tab === 'grid' ? gridCards : tab === 'reels' ? reelCards : [];
   const cellAspect = tab === 'reels' ? '9 / 16' : '1 / 1';
+
+  useEffect(() => {
+    if (!hasMoreArchive) return;
+    const el = gridSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        growArchive();
+      },
+      { rootMargin: '640px 0px', threshold: 0.01 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreArchive, growArchive, activeCards.length, tab]);
 
   return (
     <div style={{ minHeight: '100dvh', background: bg, paddingBottom: 108 }}>
@@ -416,11 +445,27 @@ export function InstagramProfile() {
           ))}
         </div>
       ) : activeCards.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1.5 }}>
-          {activeCards.map((c) => (
-            <GridCell key={c.artifact.id} vm={c} aspect={cellAspect} onOpen={openPlatformPreview} />
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1.5 }}>
+            {activeCards.map((c) => (
+              <GridCell key={c.artifact.id} vm={c} aspect={cellAspect} onOpen={openPlatformPreview} />
+            ))}
+          </div>
+          {(hasMoreArchive || isFetching) && (
+            <div
+              ref={gridSentinelRef}
+              aria-hidden
+              style={{
+                padding: '18px 16px 28px',
+                textAlign: 'center',
+                fontSize: 12,
+                color: t.textMuted,
+              }}
+            >
+              Daha eski üretimler yükleniyor…
+            </div>
+          )}
+        </>
       ) : (
         <EmptyState tab={tab} t={t} onCreate={() => navigate('new-brief')} />
       )}

@@ -1297,7 +1297,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         image: file,
         prompt: overlayPrompt,
         size: contentType === 'story' ? '1024x1536' : '1024x1024',
-        quality: 'high',
+        quality: serverConfig.imageGen.quality,
       } as Parameters<typeof openaiForOverlay.images.edit>[0]);
 
       const editedOverlay = editResponse as { data?: Array<{ b64_json?: string }> };

@@ -8,18 +8,19 @@ import {
 } from '@/lib/mission-feed-package';
 import { mobileQueryDefaults } from './mobile-query';
 
-/** Default list cap — full history on Outputs uses a higher screen-specific limit. */
+/** Default list cap — mission hub / nav badge recent pool. */
 export const MOBILE_ARTIFACT_LIST_LIMIT = 48;
 
 /** Shared pool for mission hub, nav badges, and detail sheets — must match MobileArtifactsPoller on missions screen. */
 export const MOBILE_ARTIFACT_MISSION_POOL_LIMIT = MOBILE_ARTIFACT_LIST_LIMIT;
 
+/** Invalidate every artifact list window for the tenant (grown feed limits included). */
 export function invalidateMobileArtifactPool(
   queryClient: { invalidateQueries: (opts: { queryKey: readonly unknown[] }) => void },
   tenantId: string,
 ) {
   queryClient.invalidateQueries({
-    queryKey: mobileArtifactsQueryKey(tenantId, { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT }),
+    queryKey: ['artifacts', 'list', tenantId],
   });
 }
 
@@ -32,7 +33,7 @@ export async function refetchMobileFeedPool(
 ) {
   await Promise.all([
     queryClient.refetchQueries({
-      queryKey: mobileArtifactsQueryKey(tenantId, { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT }),
+      queryKey: ['artifacts', 'list', tenantId],
     }),
     queryClient.refetchQueries({
       queryKey: ['scheduled-templates', tenantId],
@@ -41,25 +42,25 @@ export async function refetchMobileFeedPool(
 }
 
 /**
- * Feed first paint — small payload for instant TTFB (Instagram-style first page).
- * The feed grows this window in `MOBILE_ARTIFACT_FEED_PAGE` steps on scroll.
+ * Feed / profile first paint — matches mission pool so badge + Akış share one cache key.
+ * Grows by `MOBILE_ARTIFACT_FEED_PAGE` on scroll until `MOBILE_ARTIFACT_FEED_LIMIT`.
  */
-export const MOBILE_ARTIFACT_FEED_INITIAL = 10;
+export const MOBILE_ARTIFACT_FEED_INITIAL = MOBILE_ARTIFACT_LIST_LIMIT;
 
 /** Grow step when the user scrolls near the end of the loaded window. */
-export const MOBILE_ARTIFACT_FEED_PAGE = 10;
+export const MOBILE_ARTIFACT_FEED_PAGE = 24;
 
 /** Cards rendered per scroll sentinel (DOM lazy paint within the loaded API window). */
 export const MOBILE_ARTIFACT_FEED_RENDER_PAGE = 5;
 
-/** Feed full scroll window — upper bound for progressive loading. */
-export const MOBILE_ARTIFACT_FEED_LIMIT = 80;
+/** Feed / profile archive upper bound — matches ArtifactsController max Take(500). */
+export const MOBILE_ARTIFACT_FEED_LIMIT = 500;
 
 /** Outputs archive: slightly larger window when that tab is active. */
 export const MOBILE_ARTIFACT_OUTPUTS_LIMIT = 150;
 
 export function mobileArtifactsListLimitForScreen(screen: string): number {
-  if (screen === 'feed') return MOBILE_ARTIFACT_FEED_INITIAL;
+  if (screen === 'feed' || screen === 'profile') return MOBILE_ARTIFACT_FEED_INITIAL;
   if (screen === 'outputs') return MOBILE_ARTIFACT_OUTPUTS_LIMIT;
   return MOBILE_ARTIFACT_LIST_LIMIT;
 }
@@ -101,6 +102,7 @@ export function getMobileArtifactsQueryOptions(
 /** Screens that benefit from live artifact polling (single poller in AppShell). */
 export const ARTIFACT_POLL_SCREENS = new Set([
   'feed',
+  'profile',
   'outputs',
   'missions',
   'mission-factory',

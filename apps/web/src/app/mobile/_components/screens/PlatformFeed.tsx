@@ -75,8 +75,8 @@ type StoryBarItem =
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import {
   MOBILE_ARTIFACT_FEED_LIMIT,
+  MOBILE_ARTIFACT_FEED_PAGE,
   MOBILE_ARTIFACT_FEED_RENDER_PAGE,
-  MOBILE_ARTIFACT_MISSION_POOL_LIMIT,
   refetchMobileFeedPool,
 } from '../../_lib/mobile-artifacts';
 import {
@@ -1829,6 +1829,8 @@ function PlatformFeedInner() {
   const feedRefreshNonce = useMobileStore((s) => s.feedRefreshNonce);
   const pendingBriefJobs = useMobileStore((s) => s.pendingBriefJobs);
   const clearPendingBriefJob = useMobileStore((s) => s.clearPendingBriefJob);
+  const feedListLimit = useMobileStore((s) => s.feedListLimit);
+  const setFeedListLimit = useMobileStore((s) => s.setFeedListLimit);
   const feedScrollRef = useRef<HTMLDivElement>(null);
   const { storyMusicUrl, resolveMusicUrl } = useBrandStoryAudio(tenantId);
   const engagementApi = useFeedEngagement();
@@ -1863,7 +1865,7 @@ function PlatformFeedInner() {
     [scheduledTemplatesRaw],
   );
 
-  // Same artifact pool as nav badge / mission hub — one cache key so badge count matches feed.
+  // Growing archive window (scroll near-end → +MOBILE_ARTIFACT_FEED_PAGE, up to 500).
   // DOM lazy paint is handled by FeedLazyPostList (MOBILE_ARTIFACT_FEED_RENDER_PAGE).
   const {
     data: rawArtifacts = [],
@@ -1873,8 +1875,15 @@ function PlatformFeedInner() {
     refetch: refetchArtifacts,
   } = useMobileArtifacts({
     subscribeOnly: true,
-    params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
+    params: { limit: feedListLimit },
   });
+
+  const growFeedArchive = useCallback(() => {
+    setFeedListLimit(Math.min(feedListLimit + MOBILE_ARTIFACT_FEED_PAGE, MOBILE_ARTIFACT_FEED_LIMIT));
+  }, [feedListLimit, setFeedListLimit]);
+
+  const hasMoreFeedArchive = rawArtifacts.length >= feedListLimit
+    && feedListLimit < MOBILE_ARTIFACT_FEED_LIMIT;
 
   const BRIEF_JOB_STALE_MS = 15 * 60 * 1000;
 
@@ -3996,6 +4005,8 @@ function PlatformFeedInner() {
             items={artifacts}
             itemKey={(artifact) => artifact.id}
             pageSize={MOBILE_ARTIFACT_FEED_RENDER_PAGE}
+            onNearEnd={growFeedArchive}
+            hasMoreRemote={hasMoreFeedArchive || artifactsFetching}
             loadMoreLabel="Daha fazla gönderi yükleniyor…"
             renderItem={(artifact, idx) => {
               const isApproving = approveMutation.isPending && approveMutation.variables?.id === artifact.id;

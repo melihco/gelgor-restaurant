@@ -20,6 +20,7 @@ import {
  */
 export function MobileArtifactsPoller() {
   const screen = resolveClientScreen(useMobileStore((s) => s.screen));
+  const feedListLimit = useMobileStore((s) => s.feedListLimit);
   const tenantId = useActiveTenantId();
 
   const poll = shouldPollArtifactsGlobally(screen);
@@ -27,9 +28,9 @@ export function MobileArtifactsPoller() {
   const unchangedPollsRef = useRef(0);
   const lastArtifactCountRef = useRef<number | null>(null);
 
-  // Feed shares the mission pool cache key with MobileNav badge and PlatformFeed.
-  const listLimit = screen === 'feed'
-    ? MOBILE_ARTIFACT_MISSION_POOL_LIMIT
+  // Feed + profile share the growing archive window; mission hub keeps the recent pool.
+  const listLimit = screen === 'feed' || screen === 'profile'
+    ? Math.max(MOBILE_ARTIFACT_MISSION_POOL_LIMIT, feedListLimit)
     : mobileArtifactsListLimitForScreen(screen);
 
   useQuery({

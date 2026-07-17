@@ -73,7 +73,7 @@ services:
       - key: META_USD_TRY_RATE
         value: "32.0"
       - key: AUTO_PRODUCE_BYPASS_LIMITS
-        value: "true"
+        value: "false"
       - key: AUTO_FEED_PRODUCTION_ENABLED
         value: "false"
       - key: OPENAI_MODEL
@@ -217,13 +217,13 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: VENUE_PHOTO_PRESERVE
-        value: "false"
+        value: "true"
       - key: AUTO_PRODUCE_SUBTLE_ENHANCE
         value: "false"
       - key: AUTO_PRODUCE_GALLERY_ONLY
-        value: "false"
-      - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "true"
+      - key: AUTO_PRODUCE_BYPASS_LIMITS
+        value: "false"
       - key: AUTO_PRODUCE_MAX_DAILY
         value: "500"
       - key: MISSION_AUTO_PRODUCE_MAX_PER_RUN
@@ -353,13 +353,13 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: VENUE_PHOTO_PRESERVE
-        value: "false"
+        value: "true"
       - key: AUTO_PRODUCE_SUBTLE_ENHANCE
         value: "false"
       - key: AUTO_PRODUCE_GALLERY_ONLY
-        value: "false"
-      - key: AUTO_PRODUCE_BYPASS_LIMITS
         value: "true"
+      - key: AUTO_PRODUCE_BYPASS_LIMITS
+        value: "false"
       - key: AUTO_PRODUCE_MAX_DAILY
         value: "500"
       - key: MISSION_AUTO_PRODUCE_MAX_PER_RUN
