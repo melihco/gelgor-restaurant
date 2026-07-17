@@ -50,6 +50,12 @@ export async function runFalStoryPosterProduction(input: {
   sceneHint?: string;
   designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
   falLogoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
+  /**
+   * Story posters stay fal_story + grounded-only.
+   * Reel 9:16 still fallbacks must use fal_reel so Ideogram can recover when
+   * gallery-grounded compose fails (otherwise reels exhaust with story error).
+   */
+  pipeline?: 'fal_story' | 'fal_reel';
 }): Promise<{
   imageUrl: string;
   grafikerScore: number | null;
@@ -57,6 +63,7 @@ export async function runFalStoryPosterProduction(input: {
   typographyModel: string;
   resolvedHeadline?: string;
 }> {
+  const pipeline = input.pipeline ?? 'fal_story';
   // Matched library template preview = layout law for the grounded compose.
   const templateLayoutImageUrl = templateLayoutReferenceUrl(input.templateBinding);
   const templateReplica = templateReplicaSpecFromBinding(input.templateBinding);
@@ -78,9 +85,10 @@ export async function runFalStoryPosterProduction(input: {
     mood: input.mood,
     artDirection: input.artDirection,
     grafikerMaxRetries: input.lockOpts.grafikerMaxRetries,
-    pipeline: 'fal_story',
+    pipeline,
     captionAwareHeadline: input.lockOpts.captionAwareHeadline,
-    requireGroundedGallery: true,
+    // Stories: grounded-only. Reels: try gallery first, allow Ideogram if grounded fails.
+    requireGroundedGallery: pipeline === 'fal_story',
     sceneHint: input.sceneHint,
     brandDirectives: [
       ...input.templateBinding.brandDirectives,
@@ -417,6 +425,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         return;
       }
       // Reels MUST stay 9:16 — never I2V a raw 4:5 gallery photo into a "reel".
+      // Use fal_reel still path (not fal_story) so Ideogram can recover if grounded fails.
       try {
         const poster = await runFalStoryPosterProduction({
           workspaceId: inputs.workspaceId,
@@ -440,6 +449,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
           sceneHint: falBrand.sceneHint,
           designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
           falLogoPlacement: inputs.falLogoPlacement,
+          pipeline: 'fal_reel',
         });
         state.imageUrl = poster.imageUrl;
         state.falGrafikerScore = poster.grafikerScore;
