@@ -3435,6 +3435,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           referenceUrl: referenceUrl || null,
           sceneHint: falSceneHint || undefined,
           grafikerMaxRetries,
+          productionTier: productionProfile.tier,
           designBriefDirectives: [
             ...(falDesignCtx?.promptDirectives ?? []),
             ...(calendarEventOverlay?.directives ?? []),

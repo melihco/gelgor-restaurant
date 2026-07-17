@@ -4,6 +4,7 @@
 
 import { sanitizePhotoDescriptionForVideo } from '@/lib/gallery-scene-package';
 import type { ReelPacing } from '@/lib/sector-production-profile';
+import { applyVideoTierScopeToMontageStrategy } from '@/lib/video-tier-scope';
 
 export type ReelMontageStrategy = 'single' | 'multi_ref' | 'sequential';
 
@@ -34,8 +35,12 @@ export function resolveReelMontageStrategy(input: {
   contentType?: string;
   reelPacing?: ReelPacing | string;
   strategyOverride?: ReelMontageStrategy;
+  /** When VIDEO_TIER_SCOPE is on, non-premium collapses to single. */
+  productionTier?: string | null;
 }): ReelMontageStrategy {
-  if (input.strategyOverride) return input.strategyOverride;
+  if (input.strategyOverride) {
+    return applyVideoTierScopeToMontageStrategy(input.strategyOverride, input.productionTier);
+  }
   if (input.photoCount < 2) return 'single';
 
   const pacing = String(input.reelPacing ?? '').toLowerCase();
@@ -48,38 +53,30 @@ export function resolveReelMontageStrategy(input: {
     pacing,
   ].join(' ').toLowerCase();
 
+  let strategy: ReelMontageStrategy = 'sequential';
+
   if (
     (pacing === 'slow_burn' || /\bslow\b/.test(pacing))
     && !/montage|sequential|hard.?cut|multi.?clip/.test(trans)
     && input.photoCount >= 2
   ) {
-    return 'single';
-  }
-
-  if (/multi_ref|blend_only|single_frame_blend/.test(trans)) {
-    return 'multi_ref';
-  }
-
-  if (/montage|sequential|hard.?cut|wipe|slide|story.?beat|multi.?clip/.test(trans)) {
-    return 'sequential';
-  }
-
-  if (pacing === 'fast_cut' && input.photoCount >= 2) {
-    return 'sequential';
-  }
-
-  if (
+    strategy = 'single';
+  } else if (/multi_ref|blend_only|single_frame_blend/.test(trans)) {
+    strategy = 'multi_ref';
+  } else if (/montage|sequential|hard.?cut|wipe|slide|story.?beat|multi.?clip/.test(trans)) {
+    strategy = 'sequential';
+  } else if (pacing === 'fast_cut' && input.photoCount >= 2) {
+    strategy = 'sequential';
+  } else if (
     input.photoCount >= 2
     && /behind|menu|gallery|recap|tour|service|product|spotlight|ugc|social.?proof|carousel|multi/.test(ctx)
   ) {
-    return 'sequential';
+    strategy = 'sequential';
+  } else if (input.photoCount >= 2 && /energetic|dynamic|night|event|dj|party|fast_cut/.test(ctx)) {
+    strategy = 'sequential';
   }
 
-  if (input.photoCount >= 2 && /energetic|dynamic|night|event|dj|party|fast_cut/.test(ctx)) {
-    return 'sequential';
-  }
-
-  return 'sequential';
+  return applyVideoTierScopeToMontageStrategy(strategy, input.productionTier);
 }
 
 export function maxPhotosForStrategy(strategy: ReelMontageStrategy): number {

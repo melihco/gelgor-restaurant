@@ -14,6 +14,7 @@ import {
   resolveFalI2vModelChain,
 } from '@/lib/fal-i2v-models';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
+import { resolveFalReelMotionAttemptBudget } from '@/lib/video-tier-scope';
 import { serverConfig } from './server-config';
 
 const FAL_QUEUE_BASE = 'https://queue.fal.run';
@@ -299,10 +300,16 @@ export async function generateStoryMotionPlate(input: {
 export async function generateStoryMotionPlateWithRetry(
   input: Parameters<typeof generateStoryMotionPlate>[0] & {
     pipeline?: 'fal_story' | 'fal_reel';
+    /** economy/agency/starter → 1 reel attempt when VIDEO_TIER_SCOPE is on. */
+    productionTier?: string | null;
   },
 ): Promise<StoryMotionResult> {
   const pipeline = input.pipeline ?? 'fal_story';
-  const maxAttempts = pipeline === 'fal_reel' ? FAL_REEL_MOTION_ATTEMPTS : 1;
+  const maxAttempts = resolveFalReelMotionAttemptBudget(
+    pipeline,
+    FAL_REEL_MOTION_ATTEMPTS,
+    input.productionTier,
+  );
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

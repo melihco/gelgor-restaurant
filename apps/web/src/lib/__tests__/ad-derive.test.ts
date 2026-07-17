@@ -1,12 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/server-config', () => ({
-  serverConfig: {
+const { serverConfigState } = vi.hoisted(() => ({
+  serverConfigState: {
     fal: { configured: true },
     autoProduce: { reuseDesignedPostStill: false },
     crewBackend: { baseUrl: 'http://127.0.0.1:8000' },
     internal: { apiKey: 'test-internal-key' },
   },
+}));
+
+vi.mock('@/lib/server-config', () => ({
+  serverConfig: serverConfigState,
 }));
 
 vi.mock('@/lib/brand-design-template-production', () => ({
@@ -69,6 +73,27 @@ const baseCtx = {
 describe('deriveAdCreativesFromDesignedPost', () => {
   beforeEach(() => {
     vi.mocked(produceFalDesignedPost).mockReset();
+    serverConfigState.autoProduce.reuseDesignedPostStill = false;
+  });
+
+  it('reuses designed_post still when AD_REUSE is on (skips fal)', async () => {
+    serverConfigState.autoProduce.reuseDesignedPostStill = true;
+    const saveArtifact = vi.fn().mockResolvedValue({ id: 'art-reuse' });
+    const derived = await deriveAdCreativesFromDesignedPost(
+      'tenant-1',
+      baseSnapshot,
+      'weekly_content',
+      'Gel Gör Restaurant',
+      baseCtx as unknown as import('@/app/api/auto-produce/ad-derive').AdDeriveRenderContext,
+      { saveArtifact } as unknown as import('@/app/api/auto-produce/nexus-client').NexusClient,
+    );
+
+    expect(produceFalDesignedPost).not.toHaveBeenCalled();
+    expect(derived).toHaveLength(2);
+    expect(derived[0]?.imageUrl).toBe(baseSnapshot.imageUrl);
+    const metaMeta = saveArtifact.mock.calls[0]?.[1]?.metadata as Record<string, unknown>;
+    expect(metaMeta.ad_render_engine).toBe('reuse');
+    expect(metaMeta.ad_render_dedicated).toBe(false);
   });
 
   it('uses FAL for Meta and Google ad derivatives', async () => {

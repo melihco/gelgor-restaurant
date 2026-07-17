@@ -11,7 +11,6 @@ import { generateTypographyDesignWithRetry, getVibePromptSpec } from '@/lib/fal-
 import {
   generateStoryMotionPlateWithRetry,
   resolveMotionStyle,
-  FAL_REEL_MOTION_ATTEMPTS,
   type StoryMotionResult,
 } from '@/lib/fal-story-motion';
 import { validateFalCanvasText, validateTypographyText } from '@/lib/typography-text-validation';
@@ -127,6 +126,8 @@ export interface FalDesignerInput {
    * in — "Yeniden üret" semantics instead of a freshly built prompt.
    */
   templateReplica?: import('@/lib/brand-design-template-production').TemplateReplicaSpec | null;
+  /** economy/agency/starter — VIDEO_TIER_SCOPE caps reel I2V retries. */
+  productionTier?: string | null;
 }
 
 export interface FalDesignerStillResult {
@@ -1259,12 +1260,13 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
       preserveExistingText: true,
       pipeline: input.pipeline,
       designerMotionCue: input.designerMotionCue,
+      productionTier: input.productionTier,
     });
   } catch (motionErr) {
     const message = motionErr instanceof Error ? motionErr.message : String(motionErr);
     if (input.pipeline === 'fal_reel') {
       throw new Error(
-        `fal reel motion failed after ${FAL_REEL_MOTION_ATTEMPTS} Kling attempts — will not save PNG as video: ${message}`,
+        `fal reel motion failed after Kling/Luma attempts — will not save PNG as video: ${message}`,
       );
     }
     console.warn(

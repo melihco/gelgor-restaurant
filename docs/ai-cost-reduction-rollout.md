@@ -12,10 +12,10 @@
 | `DEDUP_GALLERY_BACKSTORY` | python | **true** | Ideation backstory'den duplicate gallery inventory düşer | Düşük |
 | `LITE_STRUCTURAL_TASKS_ENABLED` | python | **true** | calendar / design cards / feed cohesion → lite model | Düşük |
 | `LLM_MAX_TOKENS_CAP` | python | **8192** | Completion token tavanı | Düşük |
-| `AD_REUSE_DESIGNED_POST_STILL` | web | **true** | Reklam türevi designed_post still reuse | Yok |
+| `AD_REUSE_DESIGNED_POST_STILL` | web | **true** | Meta/Google ad: fal redesign **atlanır**, designed_post still reuse | Yok |
 | `SKIP_ENHANCE_FOR_DESIGNED_GRADE` | web | **true** | Grade'li slotlarda GPT enhance atla (legacy: `SKIP_ENHANCE_FOR_REMOTION_GRADE`) | Düşük |
 | `CAROUSEL_HERO_ENHANCE_ONLY` | web | **true** | Carousel'de sadece kapak enhance | Düşük-orta |
-| `VIDEO_TIER_SCOPE` | web | **true** | economy/agency çok-klipli Runway → tek klip | Orta (hareket) |
+| `VIDEO_TIER_SCOPE` | web | **true** | Non-premium: montage → single + reel I2V retry 1 (premium full) | Orta (hareket) |
 | `CD_LITE` | web | env only | Legacy; starter/agency zaten `ai-model-tier` ile mini creative | Düşük |
 | `GRAFIKER_LITE` | web | **false** | Açma — false-negative QA | **YÜKSEK** |
 | `AI_COST_TELEMETRY` | web | açık | `[ai-cost]` / `[ai-quality]` log | Yok |

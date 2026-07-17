@@ -232,7 +232,15 @@ export async function deriveAdCreativesFromDesignedPost(
     let falDesignEngine: string | null = null;
     let costUsd = 0.001;
 
-    if (useFalPrimary) {
+    // Cost-safe default: reuse the designed_post still (skip Meta+Google fal redesign).
+    // Opt out with AD_REUSE_DESIGNED_POST_STILL=false to force dedicated fal renders.
+    if (reuseDesignedPostStill && snapshot.imageUrl) {
+      console.log(
+        `[auto-produce] Ad creative reuse (${channel}): designed_post still — fal render skipped`,
+      );
+      adRenderEngine = 'reuse';
+      costUsd = 0.001;
+    } else if (useFalPrimary) {
       try {
         const fal = await renderAdCreativeWithFal(
           workspaceId,
@@ -256,14 +264,10 @@ export async function deriveAdCreativesFromDesignedPost(
         console.warn(
           `[auto-produce] Ad FAL failed (${channel}), reusing designed_post still: ${String(falErr).slice(0, 100)}`,
         );
+        adRenderEngine = 'reuse';
+        costUsd = 0.001;
       }
-    }
-
-    if (!adDedicatedRender && reuseDesignedPostStill) {
-      console.log(`[auto-produce] Ad creative reuse (${channel}): designed_post still — render atlandı`);
-      adRenderEngine = 'reuse';
-      costUsd = 0.001;
-    } else if (!adDedicatedRender) {
+    } else {
       console.warn(
         `[auto-produce] Ad FAL unavailable (${channel}) — reusing designed_post still (no Remotion)`,
       );

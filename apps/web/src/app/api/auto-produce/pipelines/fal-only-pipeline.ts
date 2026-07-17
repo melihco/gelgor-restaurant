@@ -75,6 +75,7 @@ export interface FalOnlySlotInput {
   requireGroundedGallery?: boolean;
   hasRealBrandGallery?: boolean;
   captionDrivenGenerated?: boolean;
+  productionTier?: string | null;
 }
 
 export interface FalOnlySlotResult {
@@ -191,6 +192,7 @@ export async function produceFalOnlySlot(
         logoPlacement: input.logoPlacement,
         templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
         templateReplica: templateReplicaSpecFromBinding(binding),
+        productionTier: input.productionTier,
       });
       console.log(
         `[auto-produce] [fal-only] ${input.pipeline} designed video: "${designer.resolvedHeadline ?? input.headline.slice(0, 40)}" ` +
@@ -549,6 +551,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       requireGroundedGallery: inputs.requireGroundedGallery,
       hasRealBrandGallery: inputs.hasRealBrandGallery,
       captionDrivenGenerated: inputs.captionDrivenGenerated,
+      productionTier: inputs.productionTier,
     });
     if (falOnly) {
       if (falOnly.imageUrl != null) state.imageUrl = falOnly.imageUrl;

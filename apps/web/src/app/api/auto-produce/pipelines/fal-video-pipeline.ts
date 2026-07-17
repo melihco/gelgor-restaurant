@@ -389,6 +389,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         logoPlacement: inputs.falLogoPlacement,
         templateLayoutImageUrl: templateLayoutReferenceUrl(templateBinding),
         templateReplica: templateReplicaSpecFromBinding(templateBinding),
+        productionTier: inputs.productionTier,
       });
       state.videoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
       // Reels: only keep the designed 9:16 still — never fall back to a raw gallery 4:5.
