@@ -2776,14 +2776,16 @@ function PlatformFeedInner() {
         </div>
       )}
 
-      {/* ─── Sticky Header — IG-native: opaque, hides on scroll down ── */}
+      {/* ─── Sticky Header — edge-to-edge under Dynamic Island; hides on scroll ── */}
       {!operatorMode ? (
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 30,
-          transform: headerHidden ? 'translateY(-105%)' : 'translateY(0)',
-          transition: 'transform 240ms cubic-bezier(0.32, 0.72, 0, 1)',
-          willChange: 'transform',
-        }}>
+        <div
+          className={`ig-feed-header${t.isDark ? '' : ' ig-feed-header--light'}`}
+          style={{
+            transform: headerHidden ? 'translateY(-105%)' : 'translateY(0)',
+            transition: 'transform 240ms cubic-bezier(0.32, 0.72, 0, 1)',
+            willChange: 'transform',
+          }}
+        >
           <MobileBrandNavbar
             dark={t.isDark}
             logoCentered
@@ -2810,12 +2812,14 @@ function PlatformFeedInner() {
           />
         </div>
       ) : (
-      <div style={{
-        position: 'sticky', top: 0, zIndex: 30,
-        ...brandNavbarBackground(brandPalette, { dark: platformView === 'instagram' || t.isDark }),
-        borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
-        paddingTop: 'calc(env(safe-area-inset-top,0px) + 8px)',
-      }}>
+      <div
+        className={`ig-feed-header${(platformView === 'instagram' || t.isDark) ? '' : ' ig-feed-header--light'}`}
+        style={{
+          ...brandNavbarBackground(brandPalette, { dark: platformView === 'instagram' || t.isDark }),
+          borderBottom: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.07)'}`,
+          paddingTop: 'calc(env(safe-area-inset-top,0px) + 8px)',
+        }}
+      >
         <>
         {/* Title row — agency */}
         <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>

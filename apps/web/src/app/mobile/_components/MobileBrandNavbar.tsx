@@ -87,10 +87,14 @@ export function MobileBrandNavbar({
 
   return (
     <div
-      className={className}
+      className={['sa-edge-header', className].filter(Boolean).join(' ')}
       style={{
         ...brandNavbarBackground(palette, { dark }),
-        padding: 'calc(env(safe-area-inset-top, 0px) + 6px) 12px 10px',
+        // Paint under Dynamic Island; content sits below safe-area.
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
+        paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
+        paddingBottom: 10,
+        paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
         borderBottom: `0.5px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)'}`,
         ...style,
       }}

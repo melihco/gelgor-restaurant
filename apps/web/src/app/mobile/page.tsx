@@ -33,6 +33,34 @@ import { OfflineBanner } from './_components/OfflineBanner';
  * into the admin panel. Never target html/body/::webkit-scrollbar globally.
  * ─────────────────────────────────────────────────────────────────── */
 const CSS = `
+  /* ── Edge-to-edge document paint (Dynamic Island / home indicator) ──
+   * viewport-fit=cover (layout.tsx) lets the page draw into unsafe areas.
+   * Shell fills 100dvh; chrome pads with env(safe-area-inset-*). */
+  html:has(.mobile-shell),
+  body:has(.mobile-shell) {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+  .mobile-shell {
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    background: #07090F;
+    width: 100%;
+    position: relative;
+  }
+  @media (max-width: 1279px) {
+    .mobile-shell,
+    .sa-mobile-outer,
+    .sa-mobile-frame {
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+    }
+  }
+
   /* Scoped wrapper — all mobile styles must live under .sa-mobile */
   .sa-mobile, .sa-mobile *,
   .sa-mobile *::before, .sa-mobile *::after {
@@ -1481,11 +1509,30 @@ const CSS = `
     overflow: hidden;
   }
 
-  /* Instagram home feed — full column width, no side gutters on media */
+  /* Instagram home feed — full column width, edge-to-edge under status bar */
   .sa-mobile .ig-feed-shell {
     width: 100%;
     max-width: 100%;
     position: relative;
+    min-height: 100%;
+    background: #000;
+  }
+  .sa-mobile[data-theme="light"] .ig-feed-shell {
+    background: #fff;
+  }
+
+  /* Sticky feed header — solid fill into Dynamic Island; logo/actions below inset */
+  .sa-mobile .ig-feed-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: #000;
+  }
+  .sa-mobile .ig-feed-header--light {
+    background: #fff;
+  }
+  .sa-mobile .sa-edge-header {
+    width: 100%;
   }
 
   .sa-mobile .ig-feed-pull-indicator {
@@ -2360,7 +2407,10 @@ function AppShell() {
   }, []);
 
   const base: React.CSSProperties = {
-    position: 'fixed', inset: 0,
+    position: 'fixed',
+    inset: 0,
+    width: '100%',
+    height: '100dvh',
     background: t.bg,
     fontFamily: '-apple-system,"SF Pro Display","SF Pro Text",system-ui,sans-serif',
     color: t.textPrimary,

@@ -228,9 +228,11 @@ export function MobileThemeProvider({ children }: { children: React.ReactNode })
     }
     if (mobile) mobile.dataset.theme = theme;
 
-    // Keep the native status bar in sync when embedded in a WebView.
+    // Edge-to-edge: translucent status bar so web paints under Dynamic Island.
     // Dark UI wants light status bar icons, and vice versa.
-    nativeBridge.setStatusBarStyle(isDark ? 'light' : 'dark', bg);
+    nativeBridge.setStatusBarStyle(isDark ? 'light' : 'dark', 'transparent');
+    document.documentElement.style.setProperty('--sa-safe-top', 'env(safe-area-inset-top, 0px)');
+    document.documentElement.style.setProperty('--sa-safe-bottom', 'env(safe-area-inset-bottom, 0px)');
   }, [isDark]);
 
   return (
