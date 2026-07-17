@@ -193,6 +193,7 @@ export function BillingScreen() {
       )}
 
       <div
+        className="sa-stack-screen"
         style={{
           minHeight: '100dvh',
           background: t.bg,

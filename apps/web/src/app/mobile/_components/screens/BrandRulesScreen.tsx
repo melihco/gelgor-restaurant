@@ -252,7 +252,7 @@ export function BrandRulesScreen() {
   });
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 88 }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 88 }}>
       {/* Header */}
       <div style={{
         padding: 'calc(env(safe-area-inset-top,0px) + 14px) 22px 0',

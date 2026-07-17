@@ -113,10 +113,11 @@ function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags
 
   return (
     <div role="dialog" aria-modal="true"
+      className="sa-legacy-sheet-root"
       style={{ position: 'fixed', inset: 0, zIndex: 500,
         background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'flex-end' }}
       onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
+      <div className="sa-legacy-sheet-panel" onClick={e => e.stopPropagation()}
         style={{ width: '100%', borderRadius: '20px 20px 0 0',
           background: t.isDark ? '#0d0d1a' : '#fff',
           border: `0.5px solid ${t.separator}`,
@@ -135,7 +136,7 @@ function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags
             </div>
           </div>
           <button onClick={onClose} aria-label="Kapat"
-            style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
+            style={{ width: 44, height: 44, borderRadius: '50%', border: 'none', cursor: 'pointer',
               background: t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
               color: t.textMuted, fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
@@ -181,7 +182,7 @@ function SheetBody({ onClose, publishType, imageUrl, videoUrl, caption, hashtags
             <input type="datetime-local"
               value={isoToLocalInput(selectedISO)}
               onChange={e => { if (e.target.value) setSelectedISO(localInputToISO(e.target.value)); }}
-              style={{ width: '100%', padding: '12px 14px', borderRadius: 12, fontSize: 14,
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 12, fontSize: 16,
                 background: t.isDark ? 'rgba(255,255,255,0.06)' : '#f5f5f8',
                 border: `1px solid ${t.separator}`, color: t.textPrimary, outline: 'none',
                 boxSizing: 'border-box', marginBottom: 8 }} />

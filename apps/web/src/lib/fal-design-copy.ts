@@ -3,10 +3,16 @@
  *
  * Ideation `headline` is often a calendar/signal label ("Yaz sezonu", "15 Temmuz anması").
  * Overlay text must be a short, caption-aligned marketing line in the caption's language.
+ *
+ * Priority (feed): canva_field_copy / text_layers → calendar tagline → punchy ideation
+ * title → caption-derived complete sentence (never mid-phrase 32-char stubs).
  */
 
 import {
   detectOverlayLocale,
+  FAL_FEED_OVERLAY_MAX_CHARS,
+  isIncompleteOverlayPhrase,
+  isMeaningfulFalOverlayText,
   resolveFalDisplayHeadline,
   resolveFalOverlayCopy,
   resolveFalProductionOverlayHeadline,
@@ -23,6 +29,9 @@ import { preferBrandToneHeadline } from '@/lib/brand-tone-headline';
 
 export interface FalDesignCopyIdea {
   headline?: string;
+  concept_title?: string;
+  title?: string;
+  tagline?: string;
   caption?: string;
   caption_draft?: string;
   cta?: string;
@@ -77,6 +86,20 @@ export function extractIdeationDesignCopy(idea: FalDesignCopyIdea): {
 function localesClash(captionLoc: OverlayLocale, headlineLoc: OverlayLocale): boolean {
   if (captionLoc === 'unknown' || headlineLoc === 'unknown') return false;
   return captionLoc !== headlineLoc;
+}
+
+function isPublishableOverlayLine(
+  line: string,
+  brandName: string,
+  captionLoc: OverlayLocale,
+): boolean {
+  const clean = line.trim();
+  if (!clean || clean.length < 8) return false;
+  if (isLabelStyleHeadline(clean)) return false;
+  if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
+  if (isIncompleteOverlayPhrase(clean)) return false;
+  if (localesClash(captionLoc, detectOverlayLocale(clean))) return false;
+  return true;
 }
 
 function finalizeMissionOverlay(input: {
@@ -139,7 +162,7 @@ function finalizeMissionOverlay(input: {
 
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
- * Priority: ideation title → canva_field_copy → caption-derived hook (label/locale fallback).
+ * Priority: canva/calendar marketing line → ideation title → caption sentence.
  */
 export function resolveMissionFalDesignCopy(input: {
   idea: FalDesignCopyIdea;
@@ -160,16 +183,49 @@ export function resolveMissionFalDesignCopy(input: {
   const brandName = input.brandName.trim();
   const channel = input.channel;
   const captionLoc = detectOverlayLocale(caption);
-  const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : 32;
+  const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
 
-  const ideation = input.ideationHeadline.trim();
-  const ideationPublishable =
-    Boolean(ideation)
-    && !isLabelStyleHeadline(ideation)
-    && !isMeaninglessBrandEchoHeadline(ideation, brandName)
-    && !localesClash(captionLoc, detectOverlayLocale(ideation));
+  const acceptClampedMarketingLine = (line: string): boolean => {
+    if (!line || isIncompleteOverlayPhrase(line)) return false;
+    if (!isMeaningfulFalOverlayText(line)) return false;
+    if (isMeaninglessBrandEchoHeadline(line, brandName)) return false;
+    if (localesClash(captionLoc, detectOverlayLocale(line))) return false;
+    return true;
+  };
 
-  if (ideationPublishable) {
+  // 1) Purpose-built overlay from canva_field_copy / text_layers (calendar hooks live here).
+  // Do NOT run caption rebias — it was replacing full marketing lines with mid-phrase stubs.
+  const extracted = extractIdeationDesignCopy(input.idea);
+  if (extracted.headline && isPublishableOverlayLine(extracted.headline, brandName, captionLoc)) {
+    const headline = resolveFalProductionOverlayHeadline(extracted.headline, [], channel);
+    if (headline && acceptClampedMarketingLine(headline)) {
+      const subtitle = resolveFalSubtitle({
+        caption,
+        headline,
+        cta: extracted.subtitle || input.cta,
+      }) ?? undefined;
+      return { headline, subtitle, source: extracted.source };
+    }
+  }
+
+  // 2) Calendar tagline / subline — often the real marketing sentence.
+  const tagline = String(input.idea.tagline ?? input.idea.subline ?? '').trim();
+  if (tagline && isPublishableOverlayLine(tagline, brandName, captionLoc)) {
+    const headline = resolveFalProductionOverlayHeadline(tagline, [], channel);
+    if (headline && acceptClampedMarketingLine(headline)) {
+      const subtitle = resolveFalSubtitle({
+        caption,
+        headline,
+        cta: input.cta,
+      }) ?? undefined;
+      return { headline, subtitle, source: 'calendar_tagline' };
+    }
+  }
+
+  // 3) Punchy ideation / concept title (not series labels).
+  const ideation = input.ideationHeadline.trim()
+    || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim();
+  if (isPublishableOverlayLine(ideation, brandName, captionLoc)) {
     const overlay = finalizeMissionOverlay({
       headline: ideation,
       cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
@@ -180,37 +236,13 @@ export function resolveMissionFalDesignCopy(input: {
       brandTone: input.brandTone,
       lockIdeationCopy: true,
     });
-    return { ...overlay, source: 'ideation_title' };
-  }
-
-  const extracted = extractIdeationDesignCopy(input.idea);
-  if (extracted.headline) {
-    const bad =
-      isLabelStyleHeadline(extracted.headline)
-      || isMeaninglessBrandEchoHeadline(extracted.headline, brandName)
-      || localesClash(captionLoc, detectOverlayLocale(extracted.headline));
-    if (!bad) {
-      const overlay = finalizeMissionOverlay({
-        headline: extracted.headline,
-        cta: extracted.subtitle || input.cta,
-        caption,
-        channel,
-        brandName,
-        businessType: input.businessType,
-        brandTone: input.brandTone,
-        lockIdeationCopy: true,
-      });
-      return { ...overlay, source: extracted.source };
+    if (overlay.headline && !isIncompleteOverlayPhrase(overlay.headline)) {
+      return { ...overlay, source: 'ideation_title' };
     }
   }
 
-  const ideationBad =
-    !ideation
-    || isLabelStyleHeadline(ideation)
-    || isMeaninglessBrandEchoHeadline(ideation, brandName)
-    || localesClash(captionLoc, detectOverlayLocale(ideation));
-
-  if (ideationBad && caption.length >= 24) {
+  // 4) Caption → complete sentence (never mid-phrase stubs).
+  if (caption.length >= 24) {
     const fromCaption = resolveFalDisplayHeadline({
       caption,
       missionTitle: ideation || brandName,
@@ -223,7 +255,7 @@ export function resolveMissionFalDesignCopy(input: {
       [ideation, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
       channel,
     );
-    if (!headline || isLabelStyleHeadline(headline)) {
+    if (!headline || isLabelStyleHeadline(headline) || isIncompleteOverlayPhrase(headline)) {
       const qa = resolveMeaningfulProductionHeadline({
         headline: '',
         caption,
@@ -263,7 +295,6 @@ export function resolveMissionFalDesignCopy(input: {
     lockIdeationCopy: true,
   });
 
-  // Final safety: if locked ideation still looks like a label, force caption path.
   if (overlay.headline && isLabelStyleHeadline(overlay.headline) && caption.length >= 24) {
     const forced = resolveFalDisplayHeadline({
       caption,
@@ -273,7 +304,7 @@ export function resolveMissionFalDesignCopy(input: {
       maxLen,
     });
     const headline = resolveFalProductionOverlayHeadline(forced.headline, [overlay.headline], channel);
-    if (headline && !isLabelStyleHeadline(headline)) {
+    if (headline && !isLabelStyleHeadline(headline) && !isIncompleteOverlayPhrase(headline)) {
       return {
         headline,
         subtitle: resolveFalSubtitle({ caption, headline, cta: input.cta }) ?? undefined,

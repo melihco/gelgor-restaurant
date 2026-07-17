@@ -148,7 +148,9 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
       />
 
       {/* Sheet */}
-      <div style={{
+      <div
+        className="sa-legacy-sheet-panel--fixed"
+        style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 201,
         background: t.isDark ? '#111116' : '#f2f2f7',
         borderRadius: '24px 24px 0 0',
@@ -185,9 +187,11 @@ export function ProfileSheet({ onClose }: ProfileSheetProps) {
             </div>
             {/* Theme toggle */}
             <button
+              type="button"
               onClick={toggle}
+              aria-label={t.isDark ? 'Açık tema' : 'Koyu tema'}
               style={{
-                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
                 ...t.iconBtn,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', fontSize: 16,

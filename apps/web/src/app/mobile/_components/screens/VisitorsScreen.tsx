@@ -166,7 +166,7 @@ export function VisitorsScreen() {
   const fmtNum = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
       <MobileStackHeader
         t={t}
         title="Web Trafiği"

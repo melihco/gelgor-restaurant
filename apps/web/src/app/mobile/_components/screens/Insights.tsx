@@ -12,7 +12,7 @@ export function Insights() {
   const { navigate, goBack } = useMobileStore();
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 300ms' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 300ms' }}>
       <MobileStackHeader t={t} title="Performans" onBack={goBack} />
 
       <div style={{ padding: '32px 24px', textAlign: 'center' }}>

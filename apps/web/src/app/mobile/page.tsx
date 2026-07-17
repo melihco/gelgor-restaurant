@@ -67,7 +67,18 @@ const CSS = `
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    box-sizing: border-box;
+    /* Prefer tap over accidental double-zoom; scroll/pan still work via axis gestures */
+  }
+  .sa-mobile button,
+  .sa-mobile a,
+  .sa-mobile [role="button"] {
+    touch-action: manipulation;
+  }
+  /* iOS zoom guard — text fields stay ≥16px (beats smaller inline fontSize) */
+  .sa-mobile input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="hidden"]),
+  .sa-mobile textarea,
+  .sa-mobile select {
+    font-size: 16px !important;
   }
   .sa-mobile {
     overscroll-behavior: none;
@@ -1553,7 +1564,7 @@ const CSS = `
       position: relative;
       /* IG web feed column ~470–630px; comfortable dev preview without over-narrowing */
       width: min(630px, calc(100vw - 48px));
-      height: 100vh;
+      height: 100dvh;
       max-height: 100dvh;
       overflow: hidden;
       flex-shrink: 0;
@@ -2187,6 +2198,7 @@ const CSS = `
     display: flex;
     flex-direction: column;
     animation: saSheetUp 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .sa-feed-comments-panel {
     height: min(88dvh, 720px);
@@ -2202,6 +2214,62 @@ const CSS = `
   @keyframes saSheetUp {
     from { transform: translateY(24%); opacity: 0.6; }
     to { transform: translateY(0); opacity: 1; }
+  }
+  @media (min-width: 768px) {
+    .sa-feed-sheet-root {
+      align-items: center;
+      padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 0px));
+    }
+    .sa-feed-sheet-panel {
+      width: min(480px, 100%);
+      max-height: min(78dvh, 680px);
+      border-radius: 20px;
+      padding-bottom: 0;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    }
+    .sa-feed-comments-panel {
+      height: min(78dvh, 680px);
+    }
+  }
+
+  /* Legacy bottom sheets (Profile / Assign / Activity / Boost / Schedule / VisualReview) */
+  .sa-legacy-sheet-root {
+    justify-content: center;
+  }
+  .sa-legacy-sheet-panel {
+    -webkit-overflow-scrolling: touch;
+  }
+  @media (min-width: 768px) {
+    .sa-legacy-sheet-root {
+      align-items: center !important;
+      padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+    }
+    .sa-legacy-sheet-panel {
+      position: relative !important;
+      left: auto !important;
+      right: auto !important;
+      bottom: auto !important;
+      top: auto !important;
+      width: min(520px, 100%) !important;
+      max-width: min(520px, calc(100vw - 40px));
+      max-height: min(78dvh, 680px) !important;
+      border-radius: 20px !important;
+      margin: 0 auto;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    }
+    .sa-legacy-sheet-panel--fixed {
+      position: fixed !important;
+      left: 50% !important;
+      right: auto !important;
+      bottom: auto !important;
+      top: 50% !important;
+      transform: translate(-50%, -50%);
+      width: min(520px, calc(100vw - 40px)) !important;
+      max-height: min(78dvh, 680px) !important;
+      border-radius: 20px !important;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    }
   }
 
   /* Story viewer — full-bleed on phone WebView */
@@ -2288,13 +2356,34 @@ const CSS = `
     .sa-mobile-frame { display: contents; }
   }
 
-  /* Stack screens (Plan, Ayarlar, …) — centered column on tablet, feed stays full bleed */
+  /* Stack / hub screens — centered column on tablet; Akış stays intentional full-bleed below */
   @media (min-width: 768px) and (max-width: 1279px) {
     .sa-mobile .sa-stack-screen {
       max-width: 720px;
       width: 100%;
       margin-left: auto;
       margin-right: auto;
+    }
+    /* Feed column — readable post width without desktop-preview chrome */
+    .sa-mobile .ig-feed-shell {
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .sa-mobile .onboarding-feature-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .sa-mobile .onboarding-main {
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+      width: 100%;
+    }
+    .sa-mobile .login-content {
+      max-width: 380px;
+    }
+    .sa-mobile .sa-chrome-nav-dock {
+      width: min(480px, calc(100% - 48px)) !important;
     }
   }
 

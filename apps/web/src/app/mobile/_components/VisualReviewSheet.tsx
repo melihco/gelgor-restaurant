@@ -150,19 +150,23 @@ export function VisualReviewSheet({ imageUrl, context, thumbnailUrl, onClose }: 
   useEffect(() => { run(); }, [run]);
 
   return (
-    <div style={{
+    <div
+      className="sa-legacy-sheet-root"
+      style={{
       position: 'fixed', inset: 0, zIndex: 9999,
       background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'flex-end',
     }} onClick={onClose}>
       <div
+        className="sa-legacy-sheet-panel"
         style={{
-          width: '100%', maxWidth: 480, maxHeight: '88vh',
+          width: '100%', maxWidth: 480, maxHeight: '88dvh',
           background: 'linear-gradient(180deg,#13131f 0%,#0d0d1a 100%)',
           borderRadius: '20px 20px 0 0',
           border: '1px solid rgba(255,255,255,0.1)',
-          overflowY: 'auto', padding: '0 0 40px',
+          overflowY: 'auto',
+          padding: '0 0 max(40px, env(safe-area-inset-bottom, 0px))',
         }}
         onClick={e => e.stopPropagation()}
       >

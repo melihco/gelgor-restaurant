@@ -107,7 +107,7 @@ export function CampaignDetail() {
   ];
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, transition: 'background 300ms', fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, transition: 'background 300ms', fontFamily: '-apple-system, "SF Pro Display", sans-serif' }}>
 
       {/* Hero header */}
       <div style={{ padding: 'calc(env(safe-area-inset-top,0px) + 16px) 20px 20px', background: t.isDark ? 'linear-gradient(180deg, rgba(77,112,136,0.07) 0%, transparent 100%)' : 'linear-gradient(180deg, rgba(77,112,136,0.03) 0%, transparent 100%)', borderBottom: `0.5px solid ${t.separator}` }}>

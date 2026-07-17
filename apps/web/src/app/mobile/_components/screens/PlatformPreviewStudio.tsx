@@ -480,6 +480,7 @@ export function PlatformPreviewStudio() {
   if (isLoading || !artifact || !content || !nativeContent) {
     return (
       <div
+        className="sa-stack-screen"
         style={{
           minHeight: '100dvh',
           background: t.bg,
@@ -516,6 +517,7 @@ export function PlatformPreviewStudio() {
   return (
     <MediaPlaybackProvider>
       <div
+        className="sa-stack-screen"
         style={{
           minHeight: '100dvh',
           height: '100dvh',

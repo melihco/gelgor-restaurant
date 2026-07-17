@@ -286,6 +286,20 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(result.length).toBeLessThanOrEqual(22);
   });
 
+  it('keeps complete Turkish marketing sentences on feed (≤48)', () => {
+    const line = 'Doğal lezzetlerimizin tadını çıkarın.';
+    // sanitize strips trailing punctuation for canvas paint
+    expect(clampFalOverlayHeadlineForCanvas(line, 'feed_post')).toBe(
+      'Doğal lezzetlerimizin tadını çıkarın',
+    );
+    expect(isIncompleteOverlayPhrase('Artık alışveriş yaparken kargo')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Karaman Datçanın el yapımı')).toBe(true);
+  });
+
+  it('corrects siparis → sipariş', () => {
+    expect(correctTurkishSpelling('Hızlı siparis ver')).toMatch(/sipariş/i);
+  });
+
   it('preserves short Turkish hooks', () => {
     expect(clampFalOverlayHeadlineForCanvas('Yaz Lezzetleri', 'reel')).toBe('Yaz Lezzetleri');
   });

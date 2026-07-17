@@ -26,7 +26,7 @@ export function Templates() {
   const sector = brandCtx?.business_type ?? brandCtx?.industry ?? 'beach_club';
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100 }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100 }}>
       <MobileStackHeader t={t} title="Story Şablonları" onBack={goBack} />
 
       <div style={{ padding: '12px 16px 0' }}>

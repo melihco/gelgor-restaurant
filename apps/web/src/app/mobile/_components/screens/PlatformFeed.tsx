@@ -105,7 +105,7 @@ import { useTenantBrandContext } from '../TenantBrandProvider';
 import { getMobilePortalRoot, getImmersivePortalRoot, isDebugUiMode, isMobileOperatorMode } from '../mobile-client-config';
 import { isProductionLimitsBypassed } from '@/lib/production-budget-policy';
 import { FeedLoadingSkeleton } from '../FeedLoadingSkeleton';
-import { MobileBrandNavbar, FeedNavbarActions, MobileNavMenuButton } from '../MobileBrandNavbar';
+import { MobileBrandNavbar, FeedNavbarActions } from '../MobileBrandNavbar';
 import { brandNavbarBackground, useBrandThemePalette } from '../use-brand-theme-palette';
 import { resolveFeedBrandName, resolveFeedHandle } from '@/lib/tenant-brand-context';
 import { resolveClientMediaUrl } from '@/lib/media-url';
@@ -966,7 +966,7 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={currentImg} alt="" referrerPolicy="no-referrer"
               style={{ display: 'block', position: 'relative', width: '100%', height: 'auto',
-                maxHeight: '80vw', objectFit: 'contain',
+                maxHeight: 'min(80vw, 560px)', objectFit: 'contain',
                 imageRendering: '-webkit-optimize-contrast' as const }}
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
           </>
@@ -990,10 +990,25 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
             <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0,
               display: 'flex', justifyContent: 'center', gap: 5, pointerEvents: 'auto' }}>
               {images.map((_, i) => (
-                <div key={i} onClick={() => setSlide(i)}
-                  style={{ width: i === slide ? 16 : 6, height: 6, borderRadius: 3,
-                    background: i === slide ? '#fff' : 'rgba(255,255,255,0.45)',
-                    cursor: 'pointer', transition: 'all 0.2s' }} />
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSlide(i)}
+                  aria-label={`Slayt ${i + 1}`}
+                  aria-current={i === slide}
+                  style={{
+                    minWidth: 44, minHeight: 44, padding: 0, border: 'none', background: 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: i === slide ? 16 : 6, height: 6, borderRadius: 3,
+                      background: i === slide ? '#fff' : 'rgba(255,255,255,0.45)',
+                      transition: 'all 0.2s', display: 'block',
+                    }}
+                  />
+                </button>
               ))}
             </div>
           )}
@@ -1201,7 +1216,7 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
                 position: 'relative',
                 width: '100%',
                 height: 'auto',
-                maxHeight: '80vw',
+                maxHeight: 'min(80vw, 560px)',
                 objectFit: 'contain',
               }}
             />
@@ -1385,9 +1400,9 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
               <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
                 background: 'rgba(245,158,11,0.9)', color: '#000', fontWeight: 700 }}>Bekliyor</span>
             )}
-            <button onClick={() => openApproval(artifact.id)}
+            <button type="button" onClick={() => openApproval(artifact.id)} aria-label="Daha fazla"
               style={{ background: 'rgba(0,0,0,0.35)', border: 'none', borderRadius: '50%',
-                width: 24, height: 24, cursor: 'pointer', color: '#fff', fontSize: 13,
+                width: 44, height: 44, cursor: 'pointer', color: '#fff', fontSize: 15,
                 display: 'flex', alignItems: 'center', justifyContent: 'center' }}>···</button>
           </div>
         </div>
@@ -1754,9 +1769,9 @@ function StoryCard({ artifact, onApprove, onRetryRender, retryingRender, approvi
             <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8,
               background: 'rgba(245,158,11,0.9)', color: '#000', fontWeight: 700 }}>Bekliyor</span>
           )}
-          <button onClick={() => openApproval(artifact.id)}
+          <button type="button" onClick={() => openApproval(artifact.id)} aria-label="Daha fazla"
             style={{ background: 'rgba(0,0,0,0.35)', border: 'none', borderRadius: '50%',
-              width: 24, height: 24, cursor: 'pointer', color: '#fff', fontSize: 13,
+              width: 44, height: 44, cursor: 'pointer', color: '#fff', fontSize: 15,
               display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             ···
           </button>
@@ -2772,10 +2787,6 @@ function PlatformFeedInner() {
         <>
         {/* Title row — agency */}
         <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <MobileNavMenuButton
-            onClick={() => navigate('more')}
-            dark={platformView === 'instagram' || t.isDark}
-          />
           <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 20, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em' }}>
               İçerik

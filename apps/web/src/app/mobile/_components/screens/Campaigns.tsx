@@ -175,7 +175,7 @@ export function Campaigns() {
   ];
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, transition: 'background 300ms', fontFamily: '-apple-system, "SF Pro Display", sans-serif', paddingBottom: 96 }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, transition: 'background 300ms', fontFamily: '-apple-system, "SF Pro Display", sans-serif', paddingBottom: 96 }}>
       <MobileStackHeader
         t={t}
         title="Kampanyalar"

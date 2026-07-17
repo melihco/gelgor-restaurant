@@ -119,10 +119,12 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
 
   return (
     <div
+      className="sa-legacy-sheet-root"
       style={{ position: 'fixed', inset: 0, zIndex: 500,
         background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'flex-end' }}
       onClick={onClose}>
       <div
+        className="sa-legacy-sheet-panel"
         onClick={e => e.stopPropagation()}
         style={{
           width: '100%', borderRadius: '20px 20px 0 0',
@@ -140,7 +142,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
               Mertcafe Ads endpointleri ile kampanya oluştur
             </div>
           </div>
-          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: '50%',
+          <button type="button" onClick={onClose} aria-label="Kapat" style={{ width: 44, height: 44, borderRadius: '50%',
             border: 'none', cursor: 'pointer', background: t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
             color: t.textMuted, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             ×
@@ -164,7 +166,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
               onChange={(e) => setAdsAccountId(e.target.value)}
               placeholder="act_1234567890"
               style={{
-                flex: 1, padding: '11px 12px', borderRadius: 12, fontSize: 13,
+                flex: 1, padding: '11px 12px', borderRadius: 12, fontSize: 16,
                 background: t.isDark ? 'rgba(255,255,255,0.06)' : '#f5f5f8',
                 border: `1px solid ${t.separator}`, color: t.textPrimary, outline: 'none',
               }}
@@ -234,7 +236,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: showCustom ? 10 : 20 }}>
           {BUDGET_PRESETS.map(b => (
             <button key={b} onClick={() => { setBudgetTl(b); setShowCustom(false); }} style={{
-              padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
+              minHeight: 44, padding: '10px 16px', borderRadius: 20, cursor: 'pointer',
               border: `${!showCustom && budgetTl === b ? '1.5px' : '0.5px'} solid ${!showCustom && budgetTl === b ? t.accent : t.separator}`,
               background: !showCustom && budgetTl === b ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
               color: !showCustom && budgetTl === b ? t.accent : t.textSecondary,
@@ -255,7 +257,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
               onChange={e => setCustomBudget(e.target.value)}
               placeholder="Min. 20₺"
               style={{
-                width: '100%', padding: '12px 14px', borderRadius: 12, fontSize: 14,
+                width: '100%', padding: '12px 14px', borderRadius: 12, fontSize: 16,
                 background: t.isDark ? 'rgba(255,255,255,0.06)' : '#f5f5f8',
                 border: `1px solid ${t.separator}`, color: t.textPrimary, outline: 'none',
                 boxSizing: 'border-box',
@@ -269,7 +271,7 @@ function BoostSheetInner({ artifactId: _artifactId, workspaceId, igMediaId, capt
         <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
           {DAY_PRESETS.map(d => (
             <button key={d} onClick={() => setDurationDays(d)} style={{
-              flex: 1, padding: '8px 4px', borderRadius: 14, cursor: 'pointer',
+              flex: 1, minHeight: 44, padding: '10px 4px', borderRadius: 14, cursor: 'pointer',
               border: `${durationDays === d ? '1.5px' : '0.5px'} solid ${durationDays === d ? t.accent : t.separator}`,
               background: durationDays === d ? (t.isDark ? 'rgba(77,112,136,0.1)' : 'rgba(77,112,136,0.06)') : 'transparent',
               color: durationDays === d ? t.accent : t.textSecondary,

@@ -461,7 +461,7 @@ export function AgentsScreen() {
 
   return (
     <>
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 300ms' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 300ms' }}>
       <MobileStackHeader t={t} title="AI Ajanlar" onBack={goBack} />
 
       <div style={{ padding: '16px 22px 20px' }}>

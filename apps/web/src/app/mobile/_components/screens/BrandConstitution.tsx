@@ -1249,11 +1249,11 @@ function PaletteColorEditor({
         placeholder="#000000"
         spellCheck={false}
         style={{
-          width: '100%', maxWidth: 92, textAlign: 'center',
-          fontSize: 10, fontFamily: 'monospace', padding: '6px 8px',
+          width: '100%', maxWidth: 110, textAlign: 'center',
+          fontSize: 16, fontFamily: 'monospace', padding: '8px 8px',
           borderRadius: 8, border: `0.5px solid ${t.separator}`,
           background: t.isDark ? '#1e1e1e' : '#f5f5f5',
-          color: t.textPrimary,
+          color: t.textPrimary, letterSpacing: '-0.02em',
         }}
       />
     </div>
@@ -2674,20 +2674,21 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
                   onChange={e => { const next = [...handles]; next[i] = e.target.value; setHandles(next); }}
                   placeholder="markaniz"
                   disabled={loading}
-                  style={{ width: '100%', paddingLeft: 28, paddingRight: 12, paddingTop: 11, paddingBottom: 11, borderRadius: 12, outline: 'none', boxSizing: 'border-box', fontSize: 14, background: t.isDark ? 'rgba(255,255,255,0.06)' : '#fff', border: `1px solid ${t.separator}`, color: t.textPrimary }}
+                  style={{ width: '100%', paddingLeft: 28, paddingRight: 12, paddingTop: 11, paddingBottom: 11, borderRadius: 12, outline: 'none', boxSizing: 'border-box', fontSize: 16, background: t.isDark ? 'rgba(255,255,255,0.06)' : '#fff', border: `1px solid ${t.separator}`, color: t.textPrimary }}
                 />
               </div>
               {handles.length > 1 && (
-                <button onClick={() => setHandles(handles.filter((_, j) => j !== i))} disabled={loading}
-                  style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '0.5px solid rgba(239,68,68,0.3)', color: '#EF4444', fontSize: 16, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button type="button" onClick={() => setHandles(handles.filter((_, j) => j !== i))} disabled={loading}
+                  aria-label="Hesabı kaldır"
+                  style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '0.5px solid rgba(239,68,68,0.3)', color: '#EF4444', fontSize: 18, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   ×
                 </button>
               )}
             </div>
           ))}
           {handles.length < 5 && (
-            <button onClick={() => setHandles([...handles, ''])} disabled={loading}
-              style={{ fontSize: 13, color: t.accent, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0', fontWeight: 600 }}>
+            <button type="button" onClick={() => setHandles([...handles, ''])} disabled={loading}
+              style={{ fontSize: 13, color: t.accent, background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 44, padding: '10px 0', fontWeight: 600 }}>
               + hesap ekle
             </button>
           )}
@@ -3739,7 +3740,7 @@ export function BrandConstitution() {
   );
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 250ms' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 96, transition: 'background 250ms' }}>
 
       {/* ── DASHBOARD VIEW ── */}
       {view === 'dashboard' && (
@@ -3786,7 +3787,7 @@ export function BrandConstitution() {
             type="button"
             onClick={() => setView('dashboard')}
             aria-label="Marka ayarlarına dön"
-            style={{ display: 'flex', alignItems: 'center', gap: 3, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 15, fontWeight: 500, padding: '4px 4px 4px 0', flexShrink: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 3, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 15, fontWeight: 500, minWidth: 44, minHeight: 44, padding: '10px 8px 10px 0', flexShrink: 0 }}
           >
             <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
             Marka

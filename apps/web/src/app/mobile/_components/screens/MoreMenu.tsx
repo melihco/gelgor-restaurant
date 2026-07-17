@@ -362,7 +362,7 @@ export function MoreMenu() {
   const { items: integrations } = summarizeMobileIntegrations(integrationConnections);
 
   return (
-    <div style={{
+    <div className="sa-stack-screen" style={{
       minHeight: '100dvh',
       paddingBottom: 104,
     }}>

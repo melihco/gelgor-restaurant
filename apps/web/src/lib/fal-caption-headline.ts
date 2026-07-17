@@ -38,6 +38,11 @@ const TYPO_CORRECTIONS: ReadonlyArray<[RegExp, string]> = [
   [/\bpazartsi\b/gi, 'Pazartesi'],
   [/\bpersembe\b/gi, 'Perşembe'],
   [/\bjubilesyon\b/gi, 'Jubilasyon'],
+  // Retail CTA — LLM often drops Turkish diacritics / image models garble sipariş
+  [/\bsiparis\b/gi, 'sipariş'],
+  [/\bsipari[sş]\s*ver\b/gi, 'sipariş ver'],
+  [/\bsiparts\b/gi, 'sipariş'],
+  [/\bsipar[ıi]s\b/gi, 'sipariş'],
 ];
 
 /** Turkish copy normalization — never translate English words when locale is unknown/en. */
@@ -177,7 +182,7 @@ function resolveCaptionAlignedOverlayWhenThemeConflicts(input: {
     missionTitle: input.headline,
     brandName: '',
     cta: input.cta,
-    maxLen: input.channel === 'reel' ? 22 : 32,
+    maxLen: input.channel === 'reel' ? 22 : FAL_FEED_OVERLAY_MAX_CHARS,
   });
   let headline = resolveFalProductionOverlayHeadline(
     resolved.headline,
@@ -261,7 +266,7 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
     missionTitle: input.headline,
     brandName: '',
     cta: input.cta,
-    maxLen: input.channel === 'reel' ? 22 : 32,
+    maxLen: input.channel === 'reel' ? 22 : FAL_FEED_OVERLAY_MAX_CHARS,
   });
   headline = resolveFalProductionOverlayHeadline(
     resolved.headline,
@@ -665,6 +670,14 @@ const INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX =
 const INCOMPLETE_TR_SEASON_CTA_TAIL_RX =
   /\bgeçerli\s+(yaz|kış|bahar|sonbahar)\s*$/iu;
 
+/** "…yaparken kargo" — while-clause truncated before the real object/verb finishes. */
+const INCOMPLETE_TR_WHILE_CLAUSE_RX =
+  /\b(yaparken|ederken|alırken|seçerken|gezerken|bakarken|sipariş\s+verirken)\s+\S+\s*$/iu;
+
+/** Brand genitive + dangling modifier — "Karaman Datçanın el yapımı" (noun missing). */
+const INCOMPLETE_TR_GENITIVE_MODIFIER_RX =
+  /\b[\p{L}']+(nın|nin|nun|nün|'nın|'nin|'nun|'nün)\s+(el\s+yapımı|doğal|taze|yeni|özel|organik)\s*$/iu;
+
 /** Headline ends mid-thought — unsuitable for publish or fal canvas. */
 export function isIncompleteOverlayPhrase(text: string): boolean {
   const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
@@ -676,6 +689,8 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_TR_POSSESSIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_SEASON_CTA_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_WHILE_CLAUSE_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_GENITIVE_MODIFIER_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
@@ -779,9 +794,12 @@ export function formatFalOnImageSubtitleDirective(subtitle: string): string {
   return `Secondary tagline below headline (ONLY this copy): «${safe}». Designed complement font — not plain body text.`;
 }
 
+/** Feed designed posts — allow full marketing sentences (calendar/canva hooks ~28–48). */
+export const FAL_FEED_OVERLAY_MAX_CHARS = 48;
+
 /**
  * Clamp overlay copy to lengths image models can spell reliably.
- * Reels/stories: ≤3 words / 22 chars — long headlines become garbled ("Cııçogra pry").
+ * Reels/stories stay short; feed posts keep complete calendar/marketing lines ≤48.
  */
 export function clampFalOverlayHeadlineForCanvas(
   headline: string,
@@ -790,12 +808,25 @@ export function clampFalOverlayHeadlineForCanvas(
   const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
   if (!clean) return '';
   if (isInternalStrategyBriefing(clean)) return '';
+  if (isIncompleteOverlayPhrase(clean) && clean.length > FAL_FEED_OVERLAY_MAX_CHARS) return '';
   if (channel === 'reel') return tightenVideoHeadline(clean, 22, 3);
   if (channel === 'story') return tightenVideoHeadline(clean, 28, 4);
-  const result = truncateAtWordBoundary(clean, 32);
-  if (result && isMeaningfulFalOverlayText(result)) return result;
-  const shortHook = tightenVideoHeadline(clean, 32, 3);
-  if (shortHook && isMeaningfulFalOverlayText(shortHook)) return shortHook;
+  if (clean.length <= FAL_FEED_OVERLAY_MAX_CHARS && !isIncompleteOverlayPhrase(clean)) {
+    return clean;
+  }
+  const result = truncateAtWordBoundary(clean, FAL_FEED_OVERLAY_MAX_CHARS);
+  if (result && isMeaningfulFalOverlayText(result) && !isIncompleteOverlayPhrase(result)) {
+    return result;
+  }
+  // Prefer a closed short sentence over a mid-phrase 3-word stub.
+  const sentence = clean.split(/[.!?…]/)[0]?.trim() ?? '';
+  if (
+    sentence.length >= 8
+    && sentence.length <= FAL_FEED_OVERLAY_MAX_CHARS
+    && !isIncompleteOverlayPhrase(sentence)
+  ) {
+    return sentence;
+  }
   return '';
 }
 
@@ -812,7 +843,7 @@ export function shortenFalOverlayForImageRetry(
   if (!clean) return '';
   if (attempt <= 0) return clampFalOverlayHeadlineForCanvas(clean, channel) || clean;
 
-  const baseMax = channel === 'reel' ? 22 : channel === 'story' ? 28 : 32;
+  const baseMax = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
   const maxLen = Math.max(10, baseMax - attempt * 5);
   const baseWords = channel === 'reel' ? 3 : channel === 'story' ? 4 : 5;
   const maxWords = Math.max(2, baseWords - attempt);

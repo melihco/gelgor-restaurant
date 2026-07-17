@@ -25,24 +25,24 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
 });
 
 describe('resolveMissionFalDesignCopy', () => {
-  it('prefers concept_title over caption fragment headline', () => {
+  it('prefers canva_field_copy marketing line over series-style ideation', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {
-        concept_title: 'Dive into OUR SUNSET RITUAL!!',
-        headline: 'Join us for a taste',
+        concept_title: 'Yerel Üretim Hikayeleri Serisi',
+        headline: 'Yerel Üretim Hikayeleri Serisi',
         canva_field_copy: {
-          headline: 'Keşfetmeye Hazır mısın?',
+          headline: 'Doğal lezzetlerimizin tadını çıkarın.',
         },
       },
-      ideationHeadline: 'Dive into OUR SUNSET RITUAL!!',
-      caption: 'Join us for a taste of paradise. Book your sunset ritual tonight.',
-      brandName: 'Scorpios Bodrum',
+      ideationHeadline: 'Yerel Üretim Hikayeleri Serisi',
+      caption: 'Çilek reçelimizi mutfağımızdan sofranıza taşıyoruz. Hızlı sipariş verin.',
+      brandName: 'Karaman Datça',
       channel: 'feed_post',
-      businessType: 'beach_club',
+      businessType: 'local_products_shop',
     });
-    expect(result.source).toBe('ideation_title');
-    expect(result.headline).toMatch(/SUNSET RITUAL/i);
-    expect(result.headline).not.toMatch(/Join us for a taste|Keşfetmeye/i);
+    expect(result.source).toBe('canva_field_copy');
+    expect(result.headline.toLowerCase()).toMatch(/doğal lezzet|tadını/);
+    expect(result.headline.toLowerCase()).not.toMatch(/serisi|yaparken kargo|el yapımı$/);
   });
 
   it('prefers canva_field_copy over label ideation headline', () => {
@@ -78,7 +78,8 @@ describe('resolveMissionFalDesignCopy', () => {
     });
     expect(result.source).toMatch(/caption_design_copy/);
     expect(result.headline.toLowerCase()).not.toMatch(/çiftlik ziyareti|story/);
-    expect(result.headline.length).toBeLessThanOrEqual(32);
+    expect(result.headline.length).toBeLessThanOrEqual(48);
+    expect(result.headline.toLowerCase()).not.toMatch(/yaparken kargo|el yapımı$/);
   });
 
   it('derives overlay from caption when ideation is a season label', () => {

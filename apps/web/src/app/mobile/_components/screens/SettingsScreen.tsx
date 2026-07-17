@@ -71,7 +71,7 @@ export function SettingsScreen() {
   const connectedCount = integrationItems.filter((i) => i.connected).length;
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
 
       <MobileStackHeader t={t} title="Entegrasyonlar" onBack={goBack} />
 

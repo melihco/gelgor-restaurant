@@ -130,7 +130,7 @@ export function AssignMissionSheet({ agentId, agentName, agentTypeString, agentC
     return createPortal(
       <>
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }} />
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 501, background: t.isDark ? '#0D0D1A' : '#f2f2f7', borderRadius: '26px 26px 0 0', padding: '28px 24px', paddingBottom: 'max(28px, env(safe-area-inset-bottom))', animation: 'slideUp 280ms cubic-bezier(0.4,0,0.2,1) both' }}>
+        <div className="sa-legacy-sheet-panel--fixed" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 501, background: t.isDark ? '#0D0D1A' : '#f2f2f7', borderRadius: '26px 26px 0 0', padding: '28px 24px', paddingBottom: 'max(28px, env(safe-area-inset-bottom))', animation: 'slideUp 280ms cubic-bezier(0.4,0,0.2,1) both' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>⚙</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>Görev atama henüz hazır değil</div>
@@ -151,7 +151,9 @@ export function AssignMissionSheet({ agentId, agentName, agentTypeString, agentC
       <div onClick={phase === 'pick' ? onClose : undefined} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'fadeIn 180ms ease both' }} />
 
       {/* Sheet */}
-      <div style={{
+      <div
+        className="sa-legacy-sheet-panel--fixed"
+        style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 501,
         maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
         background: t.isDark ? '#0D0D1A' : '#f2f2f7',
@@ -386,7 +388,7 @@ export function AssignMissionSheet({ agentId, agentName, agentTypeString, agentC
                   }
                   rows={3}
                   style={{
-                    width: '100%', padding: '12px 14px', borderRadius: 14, resize: 'none', outline: 'none', boxSizing: 'border-box', fontSize: 14, lineHeight: 1.55,
+                    width: '100%', padding: '12px 14px', borderRadius: 14, resize: 'none', outline: 'none', boxSizing: 'border-box', fontSize: 16, lineHeight: 1.55,
                     background: t.isDark ? 'rgba(255,255,255,0.05)' : '#fff',
                     border: `0.5px solid ${t.separator}`,
                     color: t.textPrimary,

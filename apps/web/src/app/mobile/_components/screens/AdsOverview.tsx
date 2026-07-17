@@ -128,7 +128,7 @@ export function AdsOverview() {
   const insights = buildInsights(metaCampaigns);
 
   return (
-    <div style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
+    <div className="sa-stack-screen" style={{ minHeight: '100dvh', background: t.bg, paddingBottom: 100, transition: 'background 300ms' }}>
       <MobileStackHeader t={t} title="Reklamlar" onBack={goBack} />
 
       {/* Summary KPIs — derived from real Meta campaign data */}

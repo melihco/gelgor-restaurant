@@ -262,7 +262,7 @@ export function MobileNav() {
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 100,
-        width: 'min(420px, calc(100% - 28px))',
+        width: 'min(480px, calc(100% - 28px))',
         minHeight: 58,
         background: t.navBg,
         backdropFilter: 'blur(48px) saturate(180%)',

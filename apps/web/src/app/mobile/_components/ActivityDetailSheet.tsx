@@ -111,7 +111,9 @@ export function ActivityDetailSheet({ item, content, onClose }: Props) {
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', animation: 'fadeIn 200ms ease both' }} />
 
       {/* Sheet */}
-      <div style={{
+      <div
+        className="sa-legacy-sheet-panel--fixed"
+        style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 301,
         maxHeight: '90dvh', display: 'flex', flexDirection: 'column',
         background: t.isDark ? '#111116' : '#f2f2f7',
@@ -142,7 +144,7 @@ export function ActivityDetailSheet({ item, content, onClose }: Props) {
                 )}
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Kapat" style={{ width: 28, height: 28, borderRadius: 10, background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: `0.5px solid ${t.separator}`, cursor: 'pointer', fontSize: 13, fontWeight: 400, color: t.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>×</button>
+            <button type="button" onClick={onClose} aria-label="Kapat" style={{ width: 44, height: 44, borderRadius: 12, background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', border: `0.5px solid ${t.separator}`, cursor: 'pointer', fontSize: 18, fontWeight: 400, color: t.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>×</button>
           </div>
 
           {/* Metrics strip */}

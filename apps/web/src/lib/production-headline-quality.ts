@@ -161,15 +161,17 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
     if (isVisionAnalysisDescription(chunk)) continue;
     if (isMeaninglessBrandEchoHeadline(chunk, brandName)) continue;
     if (isIncompleteOverlayPhrase(chunk)) continue;
+    // Prefer a complete short sentence over a 5-word mid-phrase stub.
     const clause = chunk.split(/[,—–-]/)[0]?.trim() ?? chunk;
-    const words = clause.split(/\s+/).filter(Boolean);
-    const hook = words.length > 6 ? words.slice(0, 5).join(' ') : clause;
+    const hook = clause.length <= maxLen
+      ? clause
+      : enforceDisplayHeadline(clause, maxLen);
     if (
       hook.length >= 8
       && !isMeaninglessBrandEchoHeadline(hook, brandName)
       && !isIncompleteOverlayPhrase(hook)
     ) {
-      return enforceDisplayHeadline(hook, maxLen);
+      return hook.length <= maxLen ? hook : enforceDisplayHeadline(hook, maxLen);
     }
   }
 
