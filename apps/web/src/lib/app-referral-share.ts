@@ -54,6 +54,13 @@ export function buildSmsShareUrl(text: string): string {
   return `sms:?&body=${encodeURIComponent(text)}`;
 }
 
+export function buildMailtoShareUrl(input: { subject: string; body: string }): string {
+  return `mailto:?${new URLSearchParams({
+    subject: input.subject,
+    body: input.body,
+  }).toString()}`;
+}
+
 export function buildTelegramShareUrl(text: string, url: string): string {
   return `https://t.me/share/url?${new URLSearchParams({
     url,

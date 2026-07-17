@@ -2097,13 +2097,21 @@ const CSS = `
   .sa-feed-share-channel-icon {
     width: 52px;
     height: 52px;
-    border-radius: 50%;
+    min-width: 52px;
+    min-height: 52px;
+    border-radius: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 15px;
     font-weight: 800;
     letter-spacing: -0.02em;
+  }
+  .sa-feed-share-channel-icon--brand {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+  }
+  .sa-mobile[data-theme="light"] .sa-feed-share-channel-icon--brand {
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
   }
   .sa-feed-share-channel:active {
     transform: scale(0.94);

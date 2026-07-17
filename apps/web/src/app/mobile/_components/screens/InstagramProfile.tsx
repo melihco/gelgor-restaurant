@@ -2,14 +2,11 @@
 /**
  * InstagramProfile — pixel-faithful Instagram profile clone for /mobile.
  *
- * Purpose (customer benefit): show the brand ONLY the content that was
- * approved + published through Smart Agency's own Akış (feed), laid out
- * exactly like a real Instagram profile grid. This lets the customer see how
- * the content WE produce looks together as a cohesive, on-brand whole —
- * separate from their real Instagram (which also holds their manual posts).
+ * Temporary feed parity: grid/reels/stories are filled from the same produced
+ * organic pool as Akış (pending_review + approved), so the customer sees all
+ * Smart Agency outputs together — not only published items.
  *
- * Sector/tenant agnostic: everything is driven by the tenant brand context +
- * the approved artifact pool. No brand-specific branches.
+ * Sector/tenant agnostic: tenant brand context + artifact pool only.
  */
 import React, { useMemo, useState } from 'react';
 import { useTheme } from '../theme-context';
@@ -207,11 +204,15 @@ export function InstagramProfile() {
   });
 
   const { gridCards, reelCards, storyCards } = useMemo(() => {
-    // Only content the customer APPROVED for publishing via our app — this is
-    // the "published through Smart Agency" set the screen is meant to showcase.
-    const approved = artifacts.filter((a) => a.status === 'approved');
-    const display = filterFeedDisplayArtifacts(approved).filter(isOrganicFeedArtifact);
-    const cards = display.map(buildCard);
+    // Same visibility pool as Akış for now: all produced organic deliverables
+    // (pending review + approved), not only published/approved rows.
+    const produced = artifacts.filter(
+      (a) => a.status === 'pending_review' || a.status === 'approved',
+    );
+    const display = filterFeedDisplayArtifacts(produced).filter(isOrganicFeedArtifact);
+    const cards = display
+      .map(buildCard)
+      .filter((c) => Boolean(c.previewUrl || c.stillUrl));
     const grid = cards.filter((c) => c.kind !== 'story');
     const reels = grid.filter((c) => c.kind === 'reel');
     const stories = cards.filter((c) => c.kind === 'story');
@@ -350,8 +351,8 @@ export function InstagramProfile() {
           border: `0.5px solid ${t.isDark ? 'rgba(138,171,189,0.18)' : 'rgba(77,112,136,0.14)'}`,
           fontSize: 11.5, color: t.textSecondary, lineHeight: 1.45,
         }}>
-          Bu galeri yalnızca Smart Agency üzerinden <strong style={{ color: t.textPrimary, fontWeight: 600 }}>onaylayıp
-          yayınladığınız</strong> içeriklerden oluşur — markanızın bütünlüğünü tek ekranda gösterir.
+          Bu galeri Smart Agency’de <strong style={{ color: t.textPrimary, fontWeight: 600 }}>üretilen
+          içerikleri</strong> (Akış ile aynı havuz) Instagram profili gibi gösterir — taslak ve onaylılar birlikte.
         </div>
       </div>
 
@@ -444,8 +445,8 @@ function EmptyState({ tab, t, onCreate }: { tab: ProfileTab; t: T; onCreate: () 
   const copy = tab === 'tagged'
     ? { title: 'Henüz etiketli içerik yok', sub: 'Etiketlendiğiniz içerikler burada görünür.' }
     : tab === 'reels'
-      ? { title: 'Henüz Reels yok', sub: 'Onaylanan reels içerikleriniz burada listelenir.' }
-      : { title: 'Henüz gönderi yok', sub: 'Akış sayfasından bir içeriği onaylayıp paylaşın — burada Instagram profili gibi görünür.' };
+      ? { title: 'Henüz Reels yok', sub: 'Üretilen reels içerikleri Akış ile birlikte burada listelenir.' }
+      : { title: 'Henüz gönderi yok', sub: 'Akış’ta üretilen içerikler burada Instagram profili gibi görünür.' };
   return (
     <div style={{ padding: '54px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       <div style={{
