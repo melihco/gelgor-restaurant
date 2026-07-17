@@ -43,9 +43,10 @@ import {
   resolveStoryPublishImageUrl,
 } from '@/lib/mission-feed-package';
 import {
-  filterFeedDisplayArtifacts,
+  filterFeedPublishableArtifacts,
   filterMissionFeedArtifacts,
   isArtifactFeedPublishable,
+  isArtifactFeedReady,
 } from '@/lib/weekly-publish-package';
 import {
   extractWeeklyThemeFromNodes,
@@ -2270,18 +2271,18 @@ function PlatformFeedInner() {
   }, [missionFilterId, dedupedRaw, filteredMissionProg?.nodes, missionTitleById]);
 
   const allArtifacts = React.useMemo(() => {
-    // Galeri görünümünde (showApproved) tam geçmiş, approved olan her şeyi göster
+    // Galeri + Akış: only final deliverables — no "Reel hazırlanıyor" / mid-render placeholders.
     const sourcePool = dedupedFull;
     if (showApproved) {
       return sourcePool
         .filter((a) => a.status === 'approved')
+        .filter(isArtifactFeedReady)
         .sort(compareArtifactsByProductionTime);
     }
-    const publishable = filterFeedDisplayArtifacts(sourcePool);
     if (missionFilterId) {
       return filterMissionFeedArtifacts(sourcePool, missionFilterId);
     }
-    return publishable;
+    return filterFeedPublishableArtifacts(sourcePool);
   }, [dedupedFull, showApproved, missionFilterId]);
 
   const rawPendingCount = React.useMemo(
@@ -2620,8 +2621,7 @@ function PlatformFeedInner() {
   const filteredFeedArtifacts = useMemo(() => allArtifacts
     // allArtifacts zaten galeri modunda approved, pending modunda pending_review içeriyor
     .filter(a => showApproved ? a.status === 'approved' : a.status === 'pending_review')
-    // isArtifactFeedReady (via filterFeedDisplayArtifacts) already gates display-ready items,
-    // including failed Remotion bundles with a poster still — do not hide them again here.
+    // isArtifactFeedReady (via filterFeedPublishableArtifacts) already gates final media.
     .filter(a => {
       // Exclude old SVG announcement_calendar stories — replaced by Remotion
       try {

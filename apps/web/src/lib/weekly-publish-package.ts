@@ -335,7 +335,8 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
     (u) => typeof u === 'string' && isHttpMediaUrl(String(u).trim()),
   );
 
-  if (autoProduced && hasPreviewStill) {
+  // Auto-produced stills are enough for posts/stories — not for reels (need MP4).
+  if (autoProduced && hasPreviewStill && fmt !== 'reel') {
     return true;
   }
 
@@ -361,9 +362,9 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   }
 
   if (fmt === 'reel') {
+    // Never treat a still / mid-render placeholder as a feed-ready reel.
     if (videoUrl && isHttpMediaUrl(videoUrl)) return true;
     if (isVideoUrl && isHttpMediaUrl(contentUrl)) return true;
-    if (isBundleRendering(artifact) && hasPreviewStill) return true;
     return false;
   }
 
@@ -474,7 +475,10 @@ export function filterFeedPublishableArtifacts(artifacts: OutputArtifact[]): Out
     .sort(compareArtifactsByProductionTime);
 }
 
-/** Feed UI — show every distinct production run with preview media (includes in-progress renders). */
+/**
+ * Feed UI — publishable artifacts (may still include mid-render posts/stories with a still).
+ * Prefer {@link filterFeedPublishableArtifacts} for the customer Akış tab.
+ */
 export function filterFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputArtifact[] {
   return dedupeFeedDisplayArtifacts(artifacts)
     .filter(isArtifactFeedPublishable)
@@ -482,13 +486,13 @@ export function filterFeedDisplayArtifacts(artifacts: OutputArtifact[]): OutputA
 }
 
 /**
- * Mission-scoped Feed — all publish-ready outputs for this mission (includes reproduce runs).
+ * Mission-scoped Feed — final deliverables only (no "hazırlanıyor" placeholders).
  */
 export function filterMissionFeedArtifacts(
   artifacts: OutputArtifact[],
   missionId: string,
 ): OutputArtifact[] {
-  return filterFeedDisplayArtifacts(
+  return filterFeedPublishableArtifacts(
     artifacts.filter((a) => parseArtifactMissionId(a) === missionId),
   );
 }

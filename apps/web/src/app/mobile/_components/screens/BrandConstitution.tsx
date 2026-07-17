@@ -3765,8 +3765,8 @@ export function BrandConstitution() {
             pprScore={pprScore}
             statusBanners={sharedStatusBanners}
           />
-          {/* Menü artık Marka ekranında yaşıyor — alt navdaki Profil butonu IG profilini açar. */}
-          <div style={{ marginTop: 8, borderTop: `0.5px solid ${t.separator}`, paddingTop: 2 }}>
+          {/* Menü — aynı full-width list rows as hub nav (no grid cards). */}
+          <div style={{ marginTop: 4 }}>
             <MoreMenuPanel horizontalPadding={18} />
           </div>
         </>

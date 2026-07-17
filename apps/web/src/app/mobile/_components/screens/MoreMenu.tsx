@@ -92,97 +92,127 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
 
   return (
     <>
-      {/* ─── Menu Groups — card grid matching the brand-hub tiles ──────── */}
+      {/* ─── Menu groups — same full-width list rows as brand-hub nav ─── */}
       {groups.map(group => (
         <div key={group.title} style={{ padding: `16px ${horizontalPadding}px 0` }}>
-
-          {/* Section label */}
           <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
             {group.title}
           </div>
 
-          {/* Items — 2-column premium cards (lone/odd-trailing spans full width) */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10,
-          }}>
-            {group.items.map((item, i) => {
-              const isWide = group.items.length % 2 === 1 && i === group.items.length - 1;
-              const titleBlock = (
-                <div style={{ minWidth: 0, flex: isWide ? 1 : undefined }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{
-                      fontSize: 15, fontWeight: 700, color: t.textPrimary,
-                      letterSpacing: '-0.02em', lineHeight: 1.15, overflow: 'hidden',
-                      ...(isWide
-                        ? { textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-                        : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }),
-                    }}>
-                      {item.label}
-                    </span>
-                    {item.badge !== undefined && (
-                      <span style={{
-                        flexShrink: 0, minWidth: 16, height: 16, padding: '0 5px',
-                        borderRadius: 20, background: t.warningDim, color: t.warning,
-                        fontSize: 9.5, fontWeight: 800,
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize: 11.5, color: t.textTertiary, marginTop: 2, lineHeight: 1.3,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {item.sub}
-                  </div>
-                </div>
-              );
+          <div
+            className="brand-hub-list"
+            style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}
+          >
+            {group.items.map((item) => {
+              const accent = item.iconBg;
+              const warn = item.badge !== undefined;
+              const completion = item.label === 'Entegrasyonlar' && integrationTotal > 0
+                ? Math.max(0.08, connectedCount / integrationTotal)
+                : warn
+                  ? 0.42
+                  : 0.72;
+              const barColor = warn ? '#F59E0B' : accent;
 
               return (
                 <button
                   key={item.label}
                   type="button"
-                  className="sa-chrome-card brand-hub-tile"
+                  className="brand-hub-tile sa-chrome-card"
                   onClick={() => openMenuItem(item.screen)}
                   style={{
-                    gridColumn: isWide ? '1 / -1' : undefined,
-                    position: 'relative', overflow: 'hidden', borderRadius: 20,
-                    cursor: 'pointer', textAlign: 'left', display: 'flex',
-                    ...(isWide
-                      ? { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 74, padding: '14px 16px' }
-                      : { flexDirection: 'column', minHeight: 116, padding: '15px 14px 14px' }),
+                    position: 'relative',
+                    width: '100%',
+                    minHeight: 74,
+                    padding: '14px 16px',
+                    borderRadius: 20,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
                   }}
                 >
-                  {/* accent glow orb */}
-                  <div style={{
-                    position: 'absolute', right: -18, top: -18, width: 70, height: 70, borderRadius: '50%',
-                    background: item.iconBg, opacity: t.isDark ? 0.14 : 0.09,
-                    filter: 'blur(2px)', pointerEvents: 'none',
-                  }} />
-
-                  {/* icon tile */}
-                  <div style={{
-                    width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-                    marginBottom: isWide ? 0 : 'auto',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: t.isDark ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.72)',
-                    border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
-                  }}>
-                    <MenuItemIcon iconBg={item.iconBg} label={item.label} size={25} />
+                  <div
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      top: -20,
+                      left: -20,
+                      width: 64,
+                      height: 64,
+                      borderRadius: '50%',
+                      background: accent,
+                      opacity: t.isDark ? 0.14 : 0.09,
+                      filter: 'blur(14px)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: 46,
+                      height: 46,
+                      borderRadius: 14,
+                      flexShrink: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: `linear-gradient(135deg, ${accent}2e, ${accent}14)`,
+                      border: `0.5px solid ${accent}3d`,
+                    }}
+                  >
+                    <MenuItemIcon iconBg={accent} label={item.label} size={25} />
                   </div>
-
-                  {isWide ? (
-                    <>
-                      {titleBlock}
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}
-                        stroke={t.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    </>
-                  ) : (
-                    <div style={{ marginTop: 14 }}>{titleBlock}</div>
-                  )}
+                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
+                    }}
+                    >
+                      <span style={{
+                        fontSize: 15, fontWeight: 700, color: t.textPrimary,
+                        letterSpacing: '-0.02em', lineHeight: 1.2,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                      >
+                        {item.label}
+                      </span>
+                      {warn && (
+                        <span style={{
+                          flexShrink: 0, minWidth: 16, height: 16, padding: '0 5px',
+                          borderRadius: 20, background: t.warningDim, color: t.warning,
+                          fontSize: 9.5, fontWeight: 800,
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{
+                      marginTop: 6, height: 2.5, borderRadius: 999, overflow: 'hidden',
+                      background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+                    }}
+                    >
+                      <div style={{
+                        width: `${Math.max(8, completion * 100)}%`,
+                        height: '100%',
+                        borderRadius: 999,
+                        background: barColor,
+                        opacity: 0.95,
+                      }}
+                      />
+                    </div>
+                  </div>
+                  <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}>
+                    <path
+                      d="M1.5 1.5 7.5 7.5l-6 6"
+                      stroke={t.textTertiary}
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
               );
             })}

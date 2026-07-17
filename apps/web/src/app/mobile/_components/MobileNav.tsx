@@ -11,10 +11,12 @@ import {
 } from './mobile-client-config';
 import { useMobileArtifacts } from '../_hooks/use-mobile-artifacts';
 import { MOBILE_ARTIFACT_MISSION_POOL_LIMIT, refetchMobileFeedPool } from '../_lib/mobile-artifacts';
-import { filterFeedDisplayArtifacts } from '@/lib/weekly-publish-package';
-import { useTenantBrandContext } from './TenantBrandProvider';
-import { resolveClientMediaUrl } from '@/lib/media-url';
+import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import { BrandNavStar } from './BrandNavStar';
+
+/** Stroke profile icon — same weight/feel as Akış feed path icons. */
+const PROFILE_ICON_BODY = 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2';
+const PROFILE_ICON_HEAD = 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z';
 
 /** Hover prefetch — stale dev chunks after HMR must not surface as runtime errors. */
 function safePrefetch(importer: () => Promise<unknown>) {
@@ -133,16 +135,12 @@ function SideNavButton({
 function ProfileNavButton({
   isActive,
   showLabel,
-  avatarUrl,
-  monogram,
   onSelect,
   onPointerEnter,
   t,
 }: {
   isActive: boolean;
   showLabel: boolean;
-  avatarUrl?: string;
-  monogram: string;
   onSelect: () => void;
   onPointerEnter: () => void;
   t: ReturnType<typeof useTheme>['t'];
@@ -174,29 +172,20 @@ function ProfileNavButton({
         outline: 'none',
       }}
     >
-      <div style={{
-        width: 24,
-        height: 24,
-        borderRadius: '50%',
-        overflow: 'hidden',
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: avatarUrl
-          ? (t.isDark ? '#000' : '#fff')
-          : 'linear-gradient(145deg,#4D7088,#8AABBD)',
-        boxShadow: isActive ? `0 0 0 2px ${t.navActiveColor}` : `0 0 0 1px ${t.navIdleColor}66`,
-        transition: 'box-shadow 150ms ease',
-      }}>
-        {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatarUrl} alt="" referrerPolicy="no-referrer"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', letterSpacing: '-0.03em' }}>{monogram}</span>
-        )}
-      </div>
+      <svg
+        width={22}
+        height={22}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={isActive ? t.navActiveColor : t.navIdleColor}
+        strokeWidth={isActive ? 2.2 : 1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ transition: 'stroke 150ms ease, stroke-width 150ms ease' }}
+      >
+        <path d={PROFILE_ICON_BODY} />
+        <path d={PROFILE_ICON_HEAD} />
+      </svg>
       <span style={{
         fontSize: 9,
         fontWeight: 700,
@@ -223,14 +212,13 @@ export function MobileNav() {
   const { t } = useTheme();
   const tenantId = useActiveTenantId();
   const queryClient = useQueryClient();
-  const brand = useTenantBrandContext();
   const { data: artifacts = [] } = useMobileArtifacts({
     params: { limit: MOBILE_ARTIFACT_MISSION_POOL_LIMIT },
     enabled: Boolean(tenantId),
     subscribeOnly: true,
   });
   const pendingApprovalCount = useMemo(
-    () => filterFeedDisplayArtifacts(artifacts).filter((a) => a.status === 'pending_review').length,
+    () => filterFeedPublishableArtifacts(artifacts).filter((a) => a.status === 'pending_review').length,
     [artifacts],
   );
   const showAllLabels = !isMobileOperatorMode();
@@ -240,8 +228,6 @@ export function MobileNav() {
   const onHubScreen = isMoreMenuScreen(screen) || activeTab === 'missions';
 
   const feedTab = CLIENT_NAV_TABS.find((tab) => tab.id === 'feed')!;
-  const avatarUrl = brand.logoUrl ? (resolveClientMediaUrl(brand.logoUrl) ?? brand.logoUrl) : undefined;
-  const monogram = (brand.brandName || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
   const prefetchTab = (tabId: SideTab['id']) => {
     if (tabId === 'feed') {
@@ -311,8 +297,6 @@ export function MobileNav() {
       <ProfileNavButton
         isActive={profileActive}
         showLabel={showAllLabels}
-        avatarUrl={avatarUrl}
-        monogram={monogram}
         onSelect={openProfileScreen}
         onPointerEnter={() => safePrefetch(() => import('./screens/InstagramProfile'))}
         t={t}

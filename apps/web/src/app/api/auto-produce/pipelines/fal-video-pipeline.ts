@@ -127,84 +127,84 @@ export const falVideoHandler: ProductionPipelineHandler = {
     const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
     const intensityChannel = falPipeline === 'fal_reel' ? ('reel' as const) : ('story' as const);
 
-    try {
-      const falBrand = resolveFalBrandInput({
-        brandTheme: inputs.brandTheme,
-        templateLibrary: inputs.templateLibrary,
-        librarySlotKey: inputs.librarySlotKey,
-        tokens: inputs.brandTokens,
+    const falBrand = resolveFalBrandInput({
+      brandTheme: inputs.brandTheme,
+      templateLibrary: inputs.templateLibrary,
+      librarySlotKey: inputs.librarySlotKey,
+      tokens: inputs.brandTokens,
+      sector: inputs.brandBusinessType,
+      caption: inputs.caption,
+      headline: inputs.headline,
+      referencePhotoUrl: referenceUrl,
+      sceneHint: inputs.sceneHint || undefined,
+      format: intensityChannel,
+      visualDna: inputs.visualDna,
+      brandTone: inputs.brandTone,
+      brandDescription: inputs.brandDescription,
+      designBriefDirectives: inputs.designBriefDirectives,
+      preferExplicitSceneHint: inputs.adHocBrief,
+    });
+
+    const templateBinding = await bindBrandTemplateForFalProduction({
+      workspaceId: inputs.workspaceId,
+      slotRole: inputs.slotRole,
+      librarySlotKey: inputs.librarySlotKey,
+      format: intensityChannel,
+      caption: inputs.caption,
+      headline: inputs.headline,
+      subtitle: inputs.cta,
+      announcementType: inputs.announcementType,
+      templateUseCase: inputs.templateUseCase,
+      catalogSlotKey: inputs.catalogSlotKey,
+      brandActiveSlots: inputs.brandActiveSlots,
+      adHocBrief: Boolean(inputs.adHocBrief),
+      missionReferenceUrl: referenceUrl,
+      baseDirectives: falBrand.promptDirectives,
+      brandColors: falBrand.brandColors,
+      logoUrl: inputs.brandLogoUrl || undefined,
+      brandVibe: falBrand.vibe,
+    });
+
+    const designVibe =
+      templateBinding.lockedVibe ??
+      resolveTypographyVibeFromContext({
+        caption: inputs.caption,
+        headline: inputs.headline,
         sector: inputs.brandBusinessType,
-        caption: inputs.caption,
-        headline: inputs.headline,
-        referencePhotoUrl: referenceUrl,
-        sceneHint: inputs.sceneHint || undefined,
-        format: intensityChannel,
-        visualDna: inputs.visualDna,
-        brandTone: inputs.brandTone,
-        brandDescription: inputs.brandDescription,
-        designBriefDirectives: inputs.designBriefDirectives,
-        preferExplicitSceneHint: inputs.adHocBrief,
-      });
-
-      const templateBinding = await bindBrandTemplateForFalProduction({
-        workspaceId: inputs.workspaceId,
-        slotRole: inputs.slotRole,
-        librarySlotKey: inputs.librarySlotKey,
-        format: intensityChannel,
-        caption: inputs.caption,
-        headline: inputs.headline,
-        subtitle: inputs.cta,
-        announcementType: inputs.announcementType,
-        templateUseCase: inputs.templateUseCase,
-        catalogSlotKey: inputs.catalogSlotKey,
-        brandActiveSlots: inputs.brandActiveSlots,
-        adHocBrief: Boolean(inputs.adHocBrief),
-        missionReferenceUrl: referenceUrl,
-        baseDirectives: falBrand.promptDirectives,
-        brandColors: falBrand.brandColors,
-        logoUrl: inputs.brandLogoUrl || undefined,
         brandVibe: falBrand.vibe,
+        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
+          inputs.brandBusinessType ?? '',
+        ),
       });
 
-      const designVibe =
-        templateBinding.lockedVibe ??
-        resolveTypographyVibeFromContext({
-          caption: inputs.caption,
-          headline: inputs.headline,
-          sector: inputs.brandBusinessType,
-          brandVibe: falBrand.vibe,
-          lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
-            inputs.brandBusinessType ?? '',
-          ),
-        });
+    const photoUrl = templateBinding.referencePhotoUrl ?? referenceUrl;
+    const styleRefs = templateStyleReferenceUrls(templateBinding, inputs.brandReferenceImageUrls);
+    const lockOpts = resolveFalTemplateLockOptions({
+      binding: templateBinding,
+      baseGrafikerMaxRetries: inputs.grafikerMaxRetries,
+      adHocBrief: inputs.adHocBrief,
+    });
+    const brandColors = resolveFalProductionBrandColors(
+      falBrand.brandColors,
+      templateBinding.brandColors,
+    );
 
-      const photoUrl = templateBinding.referencePhotoUrl ?? referenceUrl;
-      const styleRefs = templateStyleReferenceUrls(templateBinding, inputs.brandReferenceImageUrls);
-      const lockOpts = resolveFalTemplateLockOptions({
-        binding: templateBinding,
-        baseGrafikerMaxRetries: inputs.grafikerMaxRetries,
-        adHocBrief: inputs.adHocBrief,
-      });
-      const brandColors = resolveFalProductionBrandColors(
-        falBrand.brandColors,
-        templateBinding.brandColors,
+    if (templateBinding.matched) {
+      state.brandDesignTemplateId = templateBinding.matched.id;
+      state.brandDesignTemplateType = templateBinding.matched.templateType;
+      state.brandDesignTemplateName = templateBinding.matched.templateName;
+      state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+    }
+
+    if (!serverConfig.fal.configured) {
+      console.warn(
+        `[auto-produce] FAL_API_KEY missing — fal slot skipped: ${inputs.pipeline} "${inputs.headline.slice(0, 40)}"`,
       );
+      state.pipelineFailureReason = 'fal_api_key_missing';
+      return;
+    }
 
-      if (templateBinding.matched) {
-        state.brandDesignTemplateId = templateBinding.matched.id;
-        state.brandDesignTemplateType = templateBinding.matched.templateType;
-        state.brandDesignTemplateName = templateBinding.matched.templateName;
-        state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
-      }
-
-      if (!serverConfig.fal.configured) {
-        console.warn(
-          `[auto-produce] FAL_API_KEY missing — fal slot skipped: ${inputs.pipeline} "${inputs.headline.slice(0, 40)}"`,
-        );
-        state.pipelineFailureReason = 'fal_api_key_missing';
-        return;
-      }
-
+    try {
       if (falPipeline === 'fal_story') {
         // A real (hard/soft) library template match must render the actual
         // template design via GPT replica — Satori would collapse the layout.
