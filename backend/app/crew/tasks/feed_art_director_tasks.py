@@ -15,7 +15,127 @@ from app.services.feed_director_slot_catalog import format_catalog_slots_for_pro
 FD_CONTENT_IDEAS_PROMPT_MAX_CHARS = 12_000
 FD_CONTENT_IDEAS_INPUT_MAX_CHARS = 24_000
 FD_CREATIVE_BRIEF_PROMPT_MAX_CHARS = 1_200
+FD_BRIEFING_CONTEXT_MAX_CHARS = 2_400
 WEEKLY_MANIFEST_SLOT_TOTAL = 16
+
+
+def build_fd_gallery_coverage_block(brand) -> str:
+    """Compact gallery topic inventory for Feed Art Director (no per-URL dump).
+
+    Ideation already gets the full scene block; FD only needs coverage topics so
+    ``visual_subject_hint`` stays grounded in photos the brand actually has.
+    """
+    gallery_raw = getattr(brand, "gallery_analysis", None) or ""
+    if not gallery_raw:
+        refs = getattr(brand, "reference_image_urls", None) or []
+        if refs:
+            return (
+                "## Gallery coverage\n"
+                f"- {len(refs)} reference photos (unanalyzed) — prefer concrete venue/product subjects; "
+                "avoid inventing scenes not visible in brand media."
+            )
+        return (
+            "## Gallery coverage\n"
+            "- No gallery analysis — prefer organic/designed slots carefully; "
+            "do NOT invent specific products, vehicles, or crowds in visual_subject_hint."
+        )
+
+    try:
+        from collections import Counter
+
+        data = json.loads(gallery_raw) if isinstance(gallery_raw, str) else gallery_raw
+        if not isinstance(data, dict) or not data:
+            return "## Gallery coverage\n- Empty gallery analysis."
+
+        tag_counts: Counter[str] = Counter()
+        scene_counts: Counter[str] = Counter()
+        best_for_counts: Counter[str] = Counter()
+        skip_tags = {
+            "logo", "marka", "brand", "interior", "mekan", "decor", "decoration",
+            "photo", "image", "picture",
+        }
+
+        for _url, meta in data.items():
+            if not isinstance(meta, dict):
+                continue
+            tags = [str(t).strip().lower() for t in (meta.get("contentTags") or []) if str(t).strip()]
+            for t in tags:
+                if t not in skip_tags and len(t) > 2:
+                    tag_counts[t] += 1
+            label = tags[0] if tags else str(meta.get("suggestedAssetType") or "venue").lower()
+            scene_counts[label] += 1
+            for bf in meta.get("bestFor") or []:
+                bf_s = str(bf).strip()
+                if bf_s:
+                    best_for_counts[bf_s] += 1
+
+        top_topics = [t for t, _ in tag_counts.most_common(14)]
+        top_scenes = [f"{label}×{n}" for label, n in scene_counts.most_common(10)]
+        top_best = [b for b, _ in best_for_counts.most_common(8)]
+        total = len(data)
+
+        lines = [
+            f"## Gallery coverage ({total} analyzed photos)",
+            "Topics the brand can VISUALLY support (from gallery tags):",
+            "  " + (", ".join(top_topics) if top_topics else "(general venue)"),
+            "Scene clusters:",
+            "  " + (", ".join(top_scenes) if top_scenes else "(unclustered)"),
+        ]
+        if top_best:
+            lines.append("bestFor signals: " + ", ".join(top_best))
+        lines.extend(
+            [
+                "",
+                "GALLERY GROUNDING (mandatory for FD):",
+                "- visual_subject_hint MUST use subjects from the coverage list above.",
+                "- Prefer under-used scene clusters when spreading the week.",
+                "- NEVER invent glassware/vehicles/crowds/products absent from coverage — "
+                "pick a different idea/pipeline or a weaker but real gallery subject.",
+                "- If an idea topic is missing from coverage, flag it or route to a format "
+                "that does not require a mismatched hero photo.",
+            ]
+        )
+        return "\n".join(lines)
+    except Exception:
+        return "## Gallery coverage\n- Gallery analysis unavailable (parse error)."
+
+
+def build_fd_brand_dynamics_brief(brand, *, max_chars: int = 900) -> str:
+    """Season/sector/location angles for FD routing (truncated Strategist block)."""
+    try:
+        from app.services.context_signal_service import build_brand_dynamics_block
+
+        block = (build_brand_dynamics_block(brand) or "").strip()
+    except Exception:
+        return ""
+    if not block:
+        return ""
+    header = "## Brand dynamics (use when choosing hero reel, schedule, and subject hints)\n"
+    body = block
+    budget = max_chars - len(header)
+    if budget < 120:
+        return ""
+    if len(body) > budget:
+        body = body[:budget].rsplit("\n", 1)[0].rstrip() + "\n…"
+    return header + body
+
+
+def build_feed_director_briefing_block(
+    brand,
+    *,
+    max_chars: int = FD_BRIEFING_CONTEXT_MAX_CHARS,
+) -> str:
+    """Gallery coverage + brand dynamics for Feed Art Director task description."""
+    parts = [
+        build_fd_gallery_coverage_block(brand),
+        build_fd_brand_dynamics_brief(brand),
+    ]
+    text = "\n\n".join(p for p in parts if (p or "").strip()).strip()
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit("\n", 1)[0].rstrip() + "\n…"
 
 
 def parse_content_ideas_json(raw: str) -> list:
@@ -138,11 +258,13 @@ def create_feed_cohesion_task(
     creative_brief: str = "",
     production_package: str = "weekly_content",
     catalog_slots: list[dict[str, str]] | None = None,
+    briefing_context: str = "",
 ) -> Task:
     """
     Task: Review full weekly content batch → produce feed_art_director_report.
 
     `content_ideas_json` is the raw JSON array from content_ideation output.
+    `briefing_context` is gallery coverage + brand dynamics (optional).
     """
     weekly_theme_slug = _weekly_theme_slug(weekly_theme)
     idea_count = 0
@@ -171,6 +293,15 @@ def create_feed_cohesion_task(
 - Production package (Mission Hub): **{production_package}** — enforce matching slot counts and layout variety.
 """
 
+    briefing_block = ""
+    if (briefing_context or "").strip():
+        briefing_block = f"""
+## Brand visual briefing (gallery diversity + dynamics)
+Use this when scoring cohesion, picking hero_reel, and writing visual_subject_hint.
+Do not invent subjects the gallery cannot show.
+{briefing_context.strip()}
+"""
+
     canva_archetypes = CANVA_ARCHETYPE_AGENT_PROMPT_BLOCK
 
     description = f"""
@@ -178,6 +309,7 @@ You are the Feed Art Director for {brand_name} ({business_type}).
 
 Weekly theme: "{weekly_theme}"
 {mission_block}
+{briefing_block}
 
 ## Content batch to review (combined pool from two independent sources):
 - source_node "content_ideation": creative ideas from the ideation agent — concept_title / headline / caption_draft
@@ -230,6 +362,7 @@ Optional: layout_family_hint (designed_post / stories), fal_design_hint.
 For ALL slots that use real brand gallery photos (organic_post, organic_story_still, campaign_story_motion, organic_carousel, organic_reel),
 include "visual_subject_hint": a comma-separated list of 2-4 specific visual subject keywords the gallery photo MUST show.
 These keywords are matched against the photo's vision analysis tags — they act as a photo selection filter.
+When Gallery coverage is provided above, every hint keyword should map to that coverage (or a close synonym).
 
 For fal.ai design slots (designed_post, designed_typography, fal_designed_post, fal_reel_motion, fal_only_post, fal_only_reel, fal_only_story),
 ALSO include "fal_design_hint": one sentence from a senior social designer — layout pattern, typography emphasis,

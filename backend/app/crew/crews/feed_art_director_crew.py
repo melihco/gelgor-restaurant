@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.crew.agents.feed_art_director_agent import create_feed_art_director_agent
 from app.crew.context import BrandInfo
 from app.crew.tasks.feed_art_director_tasks import (
+    build_feed_director_briefing_block,
     create_feed_cohesion_task,
     parse_content_ideas_json,
 )
@@ -491,6 +492,7 @@ def run_feed_art_director(
 
     try:
         agent = create_feed_art_director_agent(brand, llm=llm)
+        briefing_context = build_feed_director_briefing_block(brand)
         task = create_feed_cohesion_task(
             agent=agent,
             brand_name=brand.business_name,
@@ -502,6 +504,7 @@ def run_feed_art_director(
             creative_brief=creative_brief,
             production_package=production_package,
             catalog_slots=catalog_slots,
+            briefing_context=briefing_context,
         )
 
         crew = Crew(

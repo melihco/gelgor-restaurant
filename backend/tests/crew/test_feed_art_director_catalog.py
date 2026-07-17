@@ -5,7 +5,13 @@ from __future__ import annotations
 import json
 
 from app.crew.crews.feed_art_director_crew import _normalize_production_assignments
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 from app.crew.tasks.feed_art_director_tasks import (
+    build_fd_gallery_coverage_block,
+    build_feed_director_briefing_block,
+    create_feed_cohesion_task,
     parse_content_ideas_json,
     truncate_content_ideas_json_for_fd,
 )
@@ -242,3 +248,70 @@ def test_truncate_content_ideas_json_keeps_all_when_compact_fits():
     assert len(raw) > len(compact)
     out = truncate_content_ideas_json_for_fd(raw, max_chars=len(compact) + 10)
     assert parse_content_ideas_json(out) == ideas
+
+
+def test_fd_gallery_coverage_lists_topics_and_grounding_rules():
+    brand = SimpleNamespace(
+        gallery_analysis=json.dumps(
+            {
+                "https://ex.com/a.jpg": {
+                    "contentTags": ["cocktail", "citrus"],
+                    "bestFor": ["food_showcase"],
+                },
+                "https://ex.com/b.jpg": {
+                    "contentTags": ["terrace", "sunset"],
+                    "bestFor": ["venue_photo"],
+                },
+            }
+        ),
+        reference_image_urls=[],
+    )
+    block = build_fd_gallery_coverage_block(brand)
+    assert "cocktail" in block
+    assert "terrace" in block
+    assert "GALLERY GROUNDING" in block
+    assert "NEVER invent" in block
+    assert "https://ex.com" not in block  # compact — no URL dump
+
+
+def test_create_feed_cohesion_task_includes_briefing_context():
+    briefing = build_feed_director_briefing_block(
+        SimpleNamespace(
+            gallery_analysis=json.dumps(
+                {
+                    "https://ex.com/a.jpg": {
+                        "contentTags": ["cocktail", "glass"],
+                        "bestFor": ["food_showcase"],
+                    }
+                }
+            ),
+            reference_image_urls=[],
+            business_type="beach_club",
+            description="Bodrum beach cocktails",
+            location="Bodrum",
+            city="Bodrum",
+            business_name="Yula",
+        )
+    )
+    assert "Gallery coverage" in briefing
+    captured: dict = {}
+
+    def _fake_task(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(**kwargs)
+
+    with patch("app.crew.tasks.feed_art_director_tasks.Task", side_effect=_fake_task):
+        create_feed_cohesion_task(
+            agent=MagicMock(),
+            brand_name="Yula",
+            business_type="beach_club",
+            weekly_theme="Citrus week",
+            content_ideas_json=json.dumps(
+                [{"title": "Sunset", "format": "post", "caption_draft": "Cheers"}]
+            ),
+            briefing_context=briefing,
+        )
+    desc = str(captured.get("description") or "")
+    assert "Brand visual briefing" in desc
+    assert "cocktail" in desc
+    assert "visual_subject_hint" in desc
