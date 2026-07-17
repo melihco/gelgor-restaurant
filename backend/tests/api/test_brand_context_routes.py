@@ -87,11 +87,32 @@ EXPECTED_ROUTES: frozenset[str] = frozenset(
 
 
 def _actual_routes() -> frozenset[str]:
+    """Collect method+path pairs across nested ``include_router`` wrappers.
+
+    FastAPI >=0.139 keeps included routers as ``_IncludedRouter`` nodes instead
+    of flattening ``APIRoute``s onto the parent; walk ``original_router`` so the
+    characterization stays valid on both old and new routing layouts.
+    """
     out: set[str] = set()
-    for route in router.routes:
-        methods = getattr(route, "methods", None) or set()
-        for method in methods:
-            out.add(f"{method} {route.path}")
+
+    def walk(api_router) -> None:
+        for route in api_router.routes:
+            original = getattr(route, "original_router", None)
+            if original is not None:
+                walk(original)
+                continue
+            nested = getattr(route, "routes", None)
+            if nested is not None and not getattr(route, "methods", None):
+                walk(route)
+                continue
+            methods = getattr(route, "methods", None) or set()
+            path = getattr(route, "path", None)
+            if not path:
+                continue
+            for method in methods:
+                out.add(f"{method} {path}")
+
+    walk(router)
     return frozenset(out)
 
 

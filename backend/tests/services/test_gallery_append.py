@@ -34,6 +34,8 @@ def test_append_reference_image_urls_merges_without_dropping_existing():
     import asyncio
     import uuid
 
+    import pytest
+
     from app.database import async_session_factory
     from app.services.brand_context_service import append_reference_image_urls
 
@@ -58,4 +60,8 @@ def test_append_reference_image_urls_merges_without_dropping_existing():
             assert m2[0] == u2[0]
             assert m2[1] == u1[0]
 
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    except OSError as exc:
+        # CI Python-tests job has no Postgres; unit suite must stay DB-free.
+        pytest.skip(f"postgres unavailable: {exc}")
