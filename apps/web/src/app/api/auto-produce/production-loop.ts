@@ -4310,6 +4310,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           production_route: 'fal_ai',
           production_track: 'fal_ai',
           marky_disabled: true,
+          ...(falDesignEngine ? { fal_design_engine: falDesignEngine } : {}),
           ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
           typography_text_valid: falGrafikerPass !== false,
         }

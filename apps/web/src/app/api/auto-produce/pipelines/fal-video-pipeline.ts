@@ -209,9 +209,14 @@ export const falVideoHandler: ProductionPipelineHandler = {
         // A real (hard/soft) library template match must render the actual
         // template design via GPT replica — Satori would collapse the layout.
         const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
-        // Local-first: render the story poster typography locally (Satori) when
-        // enabled + role-appropriate and no real template is matched.
-        if (!templateIsRenderable && shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)) {
+        // Satori only when there is NO library template at all. format_fallback
+        // still has a brand template — prefer GPT poster over cream-card overlay.
+        const noLibraryTemplate = !templateBinding.matched;
+        if (
+          noLibraryTemplate
+          && !templateIsRenderable
+          && shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)
+        ) {
           const local = await renderLocalTypography({
             workspaceId: inputs.workspaceId,
             headline: inputs.headline,

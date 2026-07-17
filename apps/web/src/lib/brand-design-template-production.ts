@@ -229,6 +229,10 @@ export async function bindBrandTemplateForFalProduction(input: {
       templateUseCase: input.templateUseCase,
       catalogSlotKey: input.catalogSlotKey,
       brandActiveSlots: input.brandActiveSlots,
+      // Catalog key miss must still soft-match another same-brand story/post
+      // template — fail-closed → empty binding was pushing LOCAL_TYPOGRAPHY
+      // (Satori) instead of GPT replica of a real library design.
+      allowSoftFallbackWhenHardMiss: true,
     });
     if (!matched) {
       console.warn(

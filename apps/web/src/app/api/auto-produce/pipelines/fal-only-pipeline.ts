@@ -28,6 +28,7 @@ import {
 } from '@/lib/brand-design-template-production';
 import { serverConfig } from '@/lib/server-config';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
@@ -439,12 +440,14 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
     });
-    // Local-first: fal_only_story (drops Kling motion) + fal_only_post render
-    // typography locally when enabled + a gallery photo is available.
+    // Local typography only when there is NO hard/soft template — never skip a
+    // real library design for Satori (mirrors fal_story / fal_designed_post).
     const localReferenceUrl = templateBinding.referencePhotoUrl ?? inputs.referenceUrl;
+    const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
     if (
       !state.imageUrl
       && !state.videoUrl
+      && !templateIsRenderable
       && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme)
       && localReferenceUrl
       && isUsableGalleryPhotoUrl(localReferenceUrl)

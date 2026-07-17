@@ -263,8 +263,14 @@ describe('falVideoHandler.run', () => {
     expect(ctx.state.imageUrl).toBe('designer-img');
   });
 
-  it('falls back to raw image-to-video when the designer path throws on fal_reel', async () => {
+  it('falls back to 9:16 poster→motion when the designer path throws on fal_reel', async () => {
     h.produceFalDesignerVideo.mockRejectedValue(new Error('designer boom'));
+    h.produceFalDesignedPostStill.mockResolvedValue({
+      imageUrl: 'story-poster-img',
+      grafikerScore: 8,
+      grafikerPass: true,
+      typographyModel: 'gpt-image-1',
+    });
     h.produceFalMissionVideo.mockResolvedValue({
       videoUrl: 'https://cdn.example.com/raw-vid.mp4',
       model: 'luma-dream',
@@ -273,13 +279,15 @@ describe('falVideoHandler.run', () => {
     const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_reel' });
     await falVideoHandler.run(ctx);
 
+    // Never I2V a raw gallery 4:5 — motion starts from the designed 9:16 still.
+    expect(h.produceFalDesignedPostStill).toHaveBeenCalled();
     expect(h.produceFalMissionVideo).toHaveBeenCalledWith(
-      expect.objectContaining({ imageUrl: 'https://x/photo.jpg', pipeline: 'fal_reel' }),
+      expect.objectContaining({ imageUrl: 'story-poster-img', pipeline: 'fal_reel' }),
     );
     expect(ctx.state.videoUrl).toBe('https://cdn.example.com/raw-vid.mp4');
-    expect(ctx.state.imageUrl).toBe('https://x/photo.jpg');
+    expect(ctx.state.imageUrl).toBe('story-poster-img');
     expect(ctx.state.videoProduceMeta).toEqual({ source: 'luma' });
-    expect(ctx.state.costDelta).toBe(0);
+    expect(ctx.state.costDelta).toBe(0.08);
   });
 
   it('skips entirely (no producer call, no state change) when FAL is not configured', async () => {

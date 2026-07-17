@@ -157,7 +157,7 @@ export interface MissionProductionManifest {
  *
  * Post mix (6): 2 organic gallery + designed_post (fal hero) + designed_typography
  * + fal_designed_post (Satori-eligible) + 1 fal_only_post.
- * Story (8): fal_story posters (Satori-first when LOCAL_TYPOGRAPHY_ENABLED) + organic still + fal_only_story.
+ * Story (8): fal_story posters (template GPT replica when hard/soft match; Satori only if no library template) + organic still + fal_only_story.
  * Reel (1): fal designer video (Kling I2V). Carousel (1): gallery.
  * Remotion is no longer on the render path — remotion_* pipelines normalize to fal.
  */
