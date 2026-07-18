@@ -61,10 +61,21 @@ export interface SlotProductionInputs {
   brandReferenceImageUrls: string[];
   visualDna: string;
   brandDescription: string;
+  /** brand_contexts.brand_vibe_profile — agency grading/composition/soul for fal reels. */
+  brandVibeProfile?: Record<string, unknown> | null;
+  /** brand_contexts.visual_style */
+  visualStyle?: string;
   caption: string;
   headline: string;
   cta: string;
   mood: string | undefined;
+  /** Idea visual_direction — feeds reel art direction when present. */
+  visualDirection?: string;
+  /** Idea strategic_purpose — why this reel exists. */
+  strategicPurpose?: string;
+  /** FD reel_art_direction (also mirrored in designerMotionCue). */
+  reelArtDirection?: string;
+  reelSupportingSubjects?: string[];
   referenceUrl: string | null;
   sceneHint: string | undefined;
   grafikerMaxRetries: number | undefined;

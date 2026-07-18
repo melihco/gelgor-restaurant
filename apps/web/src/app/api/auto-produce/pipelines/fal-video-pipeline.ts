@@ -25,6 +25,10 @@ import {
   generateStoryMotionPlateWithRetry,
   isPlayableVideoUrl,
 } from '@/lib/fal-story-motion';
+import {
+  buildFalReelAgencyPack,
+  mergeFalReelMotionCue,
+} from '@/lib/fal-reel-agency-directives';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
@@ -153,7 +157,34 @@ export const falVideoHandler: ProductionPipelineHandler = {
       brandDescription: inputs.brandDescription,
       designBriefDirectives: inputs.designBriefDirectives,
       preferExplicitSceneHint: inputs.adHocBrief,
+      postMood: inputs.mood,
     });
+
+    // fal_reel only — agency pack from brand vibe + mission/calendar (not stories/posts).
+    const reelAgencyPack = falPipeline === 'fal_reel'
+      ? buildFalReelAgencyPack({
+          brandName: inputs.resolvedBrandName,
+          sector: inputs.brandBusinessType,
+          brandTheme: inputs.brandTheme,
+          brandVibeProfile: inputs.brandVibeProfile,
+          brandTone: inputs.brandTone,
+          visualStyle: inputs.visualStyle,
+          visualDna: inputs.visualDna,
+          headline: inputs.headline,
+          caption: inputs.caption,
+          mood: inputs.mood,
+          visualDirection: inputs.visualDirection,
+          strategicPurpose: inputs.strategicPurpose,
+          announcementType: inputs.announcementType,
+          slotRole: inputs.slotRole,
+          catalogSlotKey: inputs.catalogSlotKey,
+          reelArtDirection: inputs.reelArtDirection,
+          reelSupportingSubjects: inputs.reelSupportingSubjects,
+        })
+      : null;
+    const reelMotionCue = falPipeline === 'fal_reel'
+      ? mergeFalReelMotionCue(inputs.designerMotionCue, reelAgencyPack?.motionCue)
+      : inputs.designerMotionCue;
 
     const templateBinding = await bindBrandTemplateForFalProduction({
       workspaceId: inputs.workspaceId,
@@ -398,9 +429,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
             inputs.designBriefDirectives ?? [],
             templateBinding.matched,
           ),
+          ...(reelAgencyPack?.stillDirectives ?? []),
         ],
         visualDnaTone: falBrand.visualDnaTone,
-        designerMotionCue: inputs.designerMotionCue,
+        designerMotionCue: reelMotionCue,
         designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
         occasion: templateBinding.occasion,
         logoPlacement: inputs.falLogoPlacement,
@@ -408,6 +440,15 @@ export const falVideoHandler: ProductionPipelineHandler = {
         templateReplica: templateReplicaSpecFromBinding(templateBinding),
         productionTier: inputs.productionTier,
       });
+      if (falPipeline === 'fal_reel' && reelAgencyPack) {
+        console.log(
+          `[auto-produce] [fal-track] reel agency pack: `
+          + `directives=${reelAgencyPack.stillDirectives.length} `
+          + `motion=${reelAgencyPack.summary.motion?.slice(0, 60) ?? '—'} `
+          + `agency=${reelAgencyPack.summary.agencyLevel ? 'yes' : 'no'} `
+          + `grading=${reelAgencyPack.summary.grading ? 'yes' : 'no'}`,
+        );
+      }
       state.videoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
       // Reels: only keep the designed 9:16 still — never fall back to a raw gallery 4:5.
       state.imageUrl = designer.imageUrl
@@ -420,6 +461,13 @@ export const falVideoHandler: ProductionPipelineHandler = {
       state.falGrafikerPass = designer.grafikerPass;
       state.videoProduceMeta = {
         source: designer.motionModel.includes('kling') ? 'kling' : 'fal_video',
+        ...(reelAgencyPack?.motionParams
+          ? {
+              reelPace: reelAgencyPack.motionParams.reelPacing,
+              cameraMotion: reelAgencyPack.motionParams.cameraMotion,
+              strategy: reelAgencyPack.motionParams.strategy,
+            }
+          : {}),
       };
       state.costDelta += 0.18;
       if (templateBinding.matched) {
@@ -433,7 +481,8 @@ export const falVideoHandler: ProductionPipelineHandler = {
         `template=${templateBinding.matched?.templateType ?? 'none'} ` +
         `typo=${designer.typographyModel} motion=${designer.motionModel} ` +
         `grafiker=${designer.grafikerScore ?? '—'}/10 ` +
-        `gallery=${photoUrl.split('/').pop()?.slice(0, 48) ?? 'none'}`,
+        `gallery=${photoUrl.split('/').pop()?.slice(0, 48) ?? 'none'}` +
+        (reelAgencyPack ? ` agencyDirectives=${reelAgencyPack.stillDirectives.length}` : ''),
       );
     } catch (falErr) {
       const falMsg = falErr instanceof Error ? falErr.message : String(falErr);
@@ -462,7 +511,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
           backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
           lockOpts,
           templateBinding,
-          designBriefDirectives: inputs.designBriefDirectives,
+          designBriefDirectives: [
+            ...(inputs.designBriefDirectives ?? []),
+            ...(reelAgencyPack?.stillDirectives ?? []),
+          ],
           visualDnaTone: falBrand.visualDnaTone,
           sceneHint: falBrand.sceneHint,
           designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
@@ -484,7 +536,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
           mood: inputs.mood,
           preserveExistingText: true,
           pipeline: 'fal_reel',
-          designerMotionCue: inputs.designerMotionCue,
+          designerMotionCue: reelMotionCue,
         });
         state.videoUrl = isPlayableVideoUrl(fal.videoUrl) ? fal.videoUrl : null;
         if (!state.videoUrl) {

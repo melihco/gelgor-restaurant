@@ -3571,10 +3571,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
           visualDna: String(brandCtx.visual_dna ?? ''),
           brandDescription: String(brandCtx.description ?? ''),
+          brandVibeProfile: hasVibe
+            ? (brandCtx.brand_vibe_profile as Record<string, unknown>)
+            : null,
+          visualStyle: String(brandCtx.visual_style ?? ''),
           caption,
           headline,
           cta,
           mood,
+          visualDirection: String(idea.visual_direction ?? '').trim() || undefined,
+          strategicPurpose: String(idea.strategic_purpose ?? '').trim() || undefined,
+          reelArtDirection: falDesignCtx?.brief.motionCue
+            || String(assignment.reel_art_direction ?? '').trim()
+            || undefined,
+          reelSupportingSubjects: Array.isArray(assignment.reel_supporting_subjects)
+            ? assignment.reel_supporting_subjects
+            : undefined,
           referenceUrl: referenceUrl || null,
           sceneHint: falSceneHint || undefined,
           grafikerMaxRetries,
@@ -3597,7 +3609,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               : []),
           ],
           designerMotionCue: falDesignCtx?.brief.motionCue || (adHocBrief ? String((idea as ParsedIdea).motion_cue ?? '') : undefined),
-          artDirection: adHocBrief ? String((idea as ParsedIdea).visual_direction ?? '').trim() || undefined : undefined,
+          // Reels need brief-specific art direction on every mission — not only ad-hoc.
+          artDirection: String(idea.visual_direction ?? '').trim() || undefined,
           falLogoPlacement: falDesignCtx?.brief.logoPlacement,
           isFalMissionVideo,
           isFalDesignPost,
