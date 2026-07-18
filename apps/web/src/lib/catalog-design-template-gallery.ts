@@ -135,10 +135,16 @@ export function buildCatalogDesignGalleryRows(input: {
   }
 
   // Pass 2 — legacy fallback when onboarding rows lack catalog_slot_key.
+  // Format must match so a 9:16 story thumbnail never lands on a post slot card.
   for (const slot of input.slots) {
     if (matches.has(slot.slot_key)) continue;
     const typeCandidates = byType.get(slot.design_template_type) ?? [];
-    const fallback = typeCandidates.find((t) => !claimedIds.has(t.id));
+    const slotFormat = slot.format === 'reel' ? 'reel_cover' : slot.format;
+    const fallback = typeCandidates.find((t) => {
+      if (claimedIds.has(t.id)) return false;
+      const templateFormat = t.format === 'reel' ? 'reel_cover' : t.format;
+      return templateFormat === slotFormat;
+    });
     if (!fallback) continue;
     matches.set(slot.slot_key, { template: fallback, matchSource: 'template_type' });
     claimedIds.add(fallback.id);

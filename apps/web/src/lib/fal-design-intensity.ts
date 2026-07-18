@@ -207,16 +207,19 @@ export function resolveFalDesignIntensityDirectives(
             'Text zone: found painted/flat surface preferred; else bottom 18–28% soft gradient scrim (40–55% opacity) — no solid opaque blocks.',
           ]
           : [
-            'PHOTO FIDELITY: Keep 72–82% of the frame as the original photograph — crisp, authentic, unfiltered.',
-            'Prefer found-surface headline placement; else localized soft gradient scrim in the lower third — photo upper region stays fully visible.',
+            'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
+            'PHOTO FIDELITY: Keep 72–82% of the feed frame as the original photograph — crisp, authentic, unfiltered.',
+            'Prefer found-surface headline placement; else localized soft gradient scrim in a corner or short lower band — never a tall story header.',
           ],
         typographyAnchor:
           'Headline: medium-small, refined display type — seat it on a found photo surface when available, else translucent scrim. Max 15% frame height. Premium, never loud.',
-        layoutNote:
-          'Luxury minimal — generous breathing room; type integrates with real surfaces when present, otherwise whispers on soft scrim.',
+        layoutNote: isVertical
+          ? 'Luxury minimal — generous breathing room; type integrates with real surfaces when present, otherwise whispers on soft scrim.'
+          : 'Luxury minimal feed post on 4:5 — photo leads; never compose like a vertical story.',
         forbiddenLayouts: [
           'FORBIDDEN: solid opaque color blocks covering more than 25% of frame.',
           'FORBIDDEN: diagonal split layouts, poster-style upper bands, or neon campaign graphics.',
+          ...(isVertical ? [] : ['FORBIDDEN: story-style tall upper panel or 9:16 composition on a 4:5 feed post.']),
           'FORBIDDEN: headline in top half of frame or larger than 15% frame height.',
           'FORBIDDEN: multiple competing text zones or layered graphic shapes.',
           'FORBIDDEN: inventing a fake painted wall/panel to host typography.',
@@ -233,19 +236,30 @@ export function resolveFalDesignIntensityDirectives(
             'DESIGN ZONE: Upper 52–62% — solid brand-color panel with bold headline, shapes, and campaign energy.',
           ]
           : [
-            'PHOTO FIDELITY: Photo occupies lower 38–48% — authentic colors only.',
-            'Upper zone: strong brand-color block or diagonal panel with bold headline — intentional campaign poster composition.',
+            'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
+            'PHOTO FIDELITY: Keep 45–60% of the feed frame as the ORIGINAL photograph — natural colors only.',
+            'Prefer feed-native layouts: left/right editorial split, magazine corner lockup, or a short lower-third band (≤32% height). Avoid tall upper story panels.',
           ],
-        typographyAnchor:
-          'Headline: bold designer display type on solid brand-color panel — high contrast, 25–35% frame height, upper zone. Optional: a clear found photo surface may replace the invented panel (one plate only).',
-        layoutNote:
-          'Campaign-ready — clear graphic/text zone vs photo zone. Designer hierarchy, not a photo with a caption.',
-        forbiddenLayouts: [
-          'FORBIDDEN: photo occupying more than 50% of frame (photo must be supporting strip, not dominant).',
-          'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
-          'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
-          'FORBIDDEN: stacking a brand color block over a found painted surface that already holds the headline.',
-        ],
+        typographyAnchor: isVertical
+          ? 'Headline: bold designer display type on solid brand-color panel — high contrast, 25–35% frame height, upper zone. Optional: a clear found photo surface may replace the invented panel (one plate only).'
+          : 'Headline: bold designer display type on a compact brand-color plate or side column — high contrast, 18–28% of frame height. Feed poster energy, not story stack.',
+        layoutNote: isVertical
+          ? 'Campaign-ready — clear graphic/text zone vs photo zone. Designer hierarchy, not a photo with a caption.'
+          : 'Feed campaign card — designed hierarchy on 4:5. Look like an Instagram feed post, never a cropped story.',
+        forbiddenLayouts: isVertical
+          ? [
+            'FORBIDDEN: photo occupying more than 50% of frame (photo must be supporting strip, not dominant).',
+            'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
+            'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
+            'FORBIDDEN: stacking a brand color block over a found painted surface that already holds the headline.',
+          ]
+          : [
+            'FORBIDDEN: story-style stacked layout (upper ≥45% solid panel + thin photo strip) on a 4:5 feed post.',
+            'FORBIDDEN: rendering a 9:16 story canvas or letterboxing a story into the feed frame.',
+            'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
+            'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
+            'FORBIDDEN: stacking a brand color block over a found painted surface that already holds the headline.',
+          ],
         foundSurfaceAnchor,
       };
     case 'bold_editorial':
@@ -258,20 +272,31 @@ export function resolveFalDesignIntensityDirectives(
             'EDITORIAL ZONE: Upper 65–78% — oversized ALL-CAPS headline, layered brand-color blocks, maximum typographic impact.',
           ]
           : [
-            'PHOTO FIDELITY: Photo occupies 22–35% as supporting visual strip — natural colors only.',
-            'Editorial poster: oversized headline fills upper zone, layered shapes, magazine-cover energy.',
+            'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
+            'PHOTO FIDELITY: Photo as a supporting accent (28–42%) — natural colors only; prefer side column, inset frame, or short lower band.',
+            'Editorial feed poster: oversized headline with magazine-cover energy inside 4:5 — not a vertical story stack.',
           ],
-        typographyAnchor:
-          'Headline: OVERSIZED all-caps display type — 35–50% of frame height, stacked lines, poster-level impact. Typography LEADS (brand panel or one found surface — not both).',
-        layoutNote:
-          'Bold editorial poster — viewer reads headline first, photo second. Maximum typographic presence.',
-        forbiddenLayouts: [
-          'FORBIDDEN: photo occupying more than 38% of frame.',
-          'FORBIDDEN: small or medium headline — must be poster-scale, dominant, upper-zone.',
-          'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
-          'FORBIDDEN: balanced 50/50 photo-text split — typography must clearly dominate.',
-          'FORBIDDEN: inventing a fake painted wall solely to host type when using a graphic panel layout.',
-        ],
+        typographyAnchor: isVertical
+          ? 'Headline: OVERSIZED all-caps display type — 35–50% of frame height, stacked lines, poster-level impact. Typography LEADS (brand panel or one found surface — not both).'
+          : 'Headline: OVERSIZED display type — 28–40% of the 4:5 frame, stacked lines, magazine-cover impact. Typography leads without turning the post into a 9:16 story.',
+        layoutNote: isVertical
+          ? 'Bold editorial poster — viewer reads headline first, photo second. Maximum typographic presence.'
+          : 'Bold editorial feed post — headline-first on 4:5, photo second. Never mimic Instagram Story proportions.',
+        forbiddenLayouts: isVertical
+          ? [
+            'FORBIDDEN: photo occupying more than 38% of frame.',
+            'FORBIDDEN: small or medium headline — must be poster-scale, dominant, upper-zone.',
+            'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
+            'FORBIDDEN: balanced 50/50 photo-text split — typography must clearly dominate.',
+            'FORBIDDEN: inventing a fake painted wall solely to host type when using a graphic panel layout.',
+          ]
+          : [
+            'FORBIDDEN: story-style upper-panel stack that makes a 4:5 post read as 9:16.',
+            'FORBIDDEN: rendering or padding to 9:16 story dimensions.',
+            'FORBIDDEN: small or medium headline — must be poster-scale and dominant inside the feed frame.',
+            'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
+            'FORBIDDEN: inventing a fake painted wall solely to host type when using a graphic panel layout.',
+          ],
         foundSurfaceAnchor,
       };
     case 'balanced':
@@ -285,19 +310,31 @@ export function resolveFalDesignIntensityDirectives(
             'GRAPHIC ZONE: Upper 38–48% — found painted surface if clear, else brand-color panel or rounded badge with headline.',
           ]
           : [
-            'PHOTO FIDELITY (CRITICAL): Keep 52–62% of the frame as the ORIGINAL photograph — natural colors unchanged.',
-            'Upper zone: found-surface headline when clear; else localized brand-color block or gradient scrim — photo lower zone stays crisp.',
+            'CANVAS: Instagram feed 4:5 (1080×1350) — shorter than Stories; do NOT compose like a 9:16 story.',
+            'PHOTO FIDELITY (CRITICAL): Keep 55–70% of the feed frame as the ORIGINAL photograph — natural colors unchanged.',
+            'Typography placement: found-surface, corner lockup, side caption column, or short bottom scrim (≤28% height) — not a tall upper story band.',
           ],
-        typographyAnchor:
-          'Headline on ONE text plate — prefer a clear found photo surface, else brand-color panel in upper zone — crisp, high-contrast, 18–25% frame height.',
-        layoutNote:
-          'Balanced editorial — intentional hierarchy: designed text plate + authentic photo zone (found surface preferred when obvious).',
-        forbiddenLayouts: [
-          'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
-          'FORBIDDEN: photo strip smaller than 45% (that is level 4–5).',
-          'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
-          'FORBIDDEN: stacking found-surface type and a brand color panel on the same region.',
-        ],
+        typographyAnchor: isVertical
+          ? 'Headline on ONE text plate — prefer a clear found photo surface, else brand-color panel in upper zone — crisp, high-contrast, 18–25% frame height.'
+          : 'Headline on ONE text plate — found surface, corner badge, or compact brand panel — crisp, high-contrast, 14–22% of the 4:5 frame height.',
+        layoutNote: isVertical
+          ? 'Balanced editorial — intentional hierarchy: designed text plate + authentic photo zone (found surface preferred when obvious).'
+          : 'Balanced Instagram feed editorial on 4:5 — photo-led with a designed accent, never a cropped story layout.',
+        forbiddenLayouts: isVertical
+          ? [
+            'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
+            'FORBIDDEN: photo strip smaller than 45% (that is level 4–5).',
+            'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
+            'FORBIDDEN: stacking found-surface type and a brand color panel on the same region.',
+          ]
+          : [
+            'FORBIDDEN: story-style stacked layout (tall upper color band + thin lower photo) on a 4:5 feed post.',
+            'FORBIDDEN: outputting or composing for 9:16 story dimensions.',
+            'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
+            'FORBIDDEN: photo share smaller than 50% (that is level 4–5).',
+            'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
+            'FORBIDDEN: stacking found-surface type and a brand color panel on the same region.',
+          ],
         foundSurfaceAnchor,
       };
   }

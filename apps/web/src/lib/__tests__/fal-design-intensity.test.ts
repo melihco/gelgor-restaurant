@@ -60,6 +60,14 @@ describe('resolveFalDesignIntensityDirectives', () => {
     expect(d.foundSurfaceAnchor).toMatch(/XOR brand panel/i);
   });
 
+  it('balanced feed_post forbids story-stack composition on 4:5', () => {
+    const d = resolveFalDesignIntensityDirectives('balanced', 'feed_post');
+    expect(d.photoRules.join(' ')).toMatch(/4:5/);
+    expect(d.photoRules.join(' ')).toMatch(/55–70%/);
+    expect(d.forbiddenLayouts.join(' ')).toMatch(/story-style/i);
+    expect(d.forbiddenLayouts.join(' ')).toMatch(/9:16/);
+  });
+
   it('bold_editorial forbids large photo share', () => {
     const d = resolveFalDesignIntensityDirectives('bold_editorial', 'reel');
     expect(d.forbiddenLayouts.join(' ')).toMatch(/more than 38%/);

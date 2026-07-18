@@ -110,6 +110,27 @@ describe('buildCatalogDesignGalleryRows', () => {
     expect(first.matchSource).toBe('template_type');
   });
 
+  it('does not attach a story thumbnail to a post slot via template_type fallback', () => {
+    const slots = [
+      mockSlot({
+        slot_key: 'slot_post',
+        design_template_type: 'campaign_announcement',
+        format: 'post',
+      }),
+    ];
+    const templates = [
+      mockTemplate({
+        id: 't-story',
+        template_type: 'campaign_announcement',
+        format: 'story',
+        thumbnail_url: 'https://cdn.example/story.png',
+      }),
+    ];
+
+    const rows = buildCatalogDesignGalleryRows({ slots, templates });
+    expect(rows[0]?.template).toBeNull();
+  });
+
   it('collects orphan templates not mapped to catalog slots', () => {
     const slots = [mockSlot({ slot_key: 'only_slot' })];
     const templates = [

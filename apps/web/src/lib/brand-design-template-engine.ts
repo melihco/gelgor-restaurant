@@ -12,11 +12,13 @@
 import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   buildDesignedPostDesignCardPrompt,
+  buildDesignedStoryDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
   produceFalDesignedPostStill,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
+import { normalizeGeneratedImageAspect, POST_CANVAS, STORY_CANVAS } from '@/lib/design-canvas-aspect';
 import {
   resolveFalTemplateIntensityForChannel,
   resolveFalTemplateBackgroundStyle,
@@ -434,10 +436,14 @@ async function generateOne(
     : undefined;
 
   const aspect = aspectForFormat(preset.format);
-  const isReel = preset.format === 'reel_cover' || aspect === '9:16';
-  const buildPrompt = isReel
+  // Keep prompt channel aligned with slot format — do not treat every 9:16 as reel
+  // (that made story/post previews inherit vertical story-stack language).
+  const buildPrompt = preset.format === 'reel_cover'
     ? buildDesignedVideoReelDesignCardPrompt
-    : buildDesignedPostDesignCardPrompt;
+    : preset.format === 'story'
+      ? buildDesignedStoryDesignCardPrompt
+      : buildDesignedPostDesignCardPrompt;
+  const gptDesignCardMode: 'post' | 'reel' = preset.format === 'post' ? 'post' : 'reel';
 
   const prompt = buildPrompt({
     vibe,
@@ -455,6 +461,9 @@ async function generateOne(
       ...brandIntelligenceDirectives,
       ...(input.experimentalFalDirectives ?? []),
       'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
+      preset.format === 'post'
+        ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'
+        : '',
       'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
       'FORBIDDEN LOGO: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone.',
       'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
@@ -510,7 +519,8 @@ async function generateOne(
       });
       if (!still.imageUrl) return false;
       generator = still.typographyModel.includes('gpt-image-1') ? 'gpt-image-1' : 'fal-ideogram';
-      thumbnailUrl = (await mirrorPreview(still.imageUrl, input.workspaceId)) ?? still.imageUrl;
+      const aspectLocked = await lockTemplatePreviewAspect(still.imageUrl, preset.format);
+      thumbnailUrl = (await mirrorPreview(aspectLocked, input.workspaceId)) ?? aspectLocked;
       return Boolean(thumbnailUrl);
     } catch (err) {
       console.warn(
@@ -532,7 +542,7 @@ async function generateOne(
       const generated = await generateDesignedPostImage({
         workspaceId: input.workspaceId,
         designCardPrompt: prompt,
-        designCardMode: isReel ? 'reel' : 'post',
+        designCardMode: gptDesignCardMode,
         headline: headline || input.brandName,
         caption: subtitle ?? headline ?? preset.name,
         referenceImageUrls: [picked.url],
@@ -546,7 +556,8 @@ async function generateOne(
       });
       if (generated) {
         generator = 'gpt-image-1';
-        thumbnailUrl = await mirrorPreview(generated, input.workspaceId) ?? generated;
+        const aspectLocked = await lockTemplatePreviewAspect(generated, preset.format);
+        thumbnailUrl = await mirrorPreview(aspectLocked, input.workspaceId) ?? aspectLocked;
       }
     } catch (err) {
       console.warn(
@@ -597,10 +608,21 @@ async function generateOne(
   };
 }
 
+async function lockTemplatePreviewAspect(
+  url: string,
+  format: DesignTemplateFormat,
+): Promise<string> {
+  const target = format === 'post' ? POST_CANVAS : STORY_CANVAS;
+  const normalized = await normalizeGeneratedImageAspect(url, target);
+  return normalized ?? url;
+}
+
 async function mirrorPreview(url: string, workspaceId: string): Promise<string | null> {
   if (!isR2Configured()) return null;
   try {
-    const ext = url.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+    const ext = url.startsWith('data:image/png') || url.toLowerCase().endsWith('.png')
+      ? 'png'
+      : 'jpg';
     const key = generateStorageKey(`${workspaceId}/design-templates`, 'image', ext);
     const result = await uploadImageFromUrl(url, key);
     return result?.url ?? null;
