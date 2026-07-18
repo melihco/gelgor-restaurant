@@ -178,3 +178,104 @@ export async function upsertTenantSlotAssignments(
   );
   return res.ok && Array.isArray(res.data) ? res.data : [];
 }
+
+/** Fixed 7-shelf legend from Python SSOT. */
+export async function fetchLibraryShelves(
+  workspaceId: string,
+): Promise<Array<{
+  key: string;
+  label_tr: string;
+  label_en: string;
+  format: string;
+  sort_order: number;
+}>> {
+  const res = await fetchCrewBackendJson<Array<{
+    key: string;
+    label_tr: string;
+    label_en: string;
+    format: string;
+    sort_order: number;
+  }>>('/api/v1/slot-catalog/library-shelves', { workspaceId, timeoutMs: 10_000 });
+  return res.ok && Array.isArray(res.data) ? res.data : [];
+}
+
+export async function fetchTenantSlotFacilities(
+  workspaceId: string,
+): Promise<{
+  workspace_id: string;
+  sector_id: string | null;
+  facilities: Record<string, boolean>;
+  options: Array<{ key: string; enabled: boolean; label_tr: string; hint_tr: string }>;
+  defaults: Record<string, boolean>;
+} | null> {
+  const res = await fetchCrewBackendJson<{
+    workspace_id: string;
+    sector_id: string | null;
+    facilities: Record<string, boolean>;
+    options: Array<{ key: string; enabled: boolean; label_tr: string; hint_tr: string }>;
+    defaults: Record<string, boolean>;
+  }>(`/api/v1/slot-catalog/tenants/${workspaceId}/facilities`, {
+    workspaceId,
+    timeoutMs: 10_000,
+  });
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function upsertTenantSlotFacilities(
+  workspaceId: string,
+  facilities: Record<string, boolean>,
+  opts?: { syncAssignments?: boolean },
+): Promise<{
+  facilities: Record<string, boolean>;
+  synced_disabled: number;
+  coverage_ok: boolean;
+  coverage_errors: string[];
+} | null> {
+  const res = await fetchCrewBackendJson<{
+    facilities: Record<string, boolean>;
+    synced_disabled: number;
+    coverage_ok: boolean;
+    coverage_errors: string[];
+  }>(`/api/v1/slot-catalog/tenants/${workspaceId}/facilities`, {
+    workspaceId,
+    method: 'PUT',
+    timeoutMs: 15_000,
+    body: {
+      facilities,
+      sync_assignments: Boolean(opts?.syncAssignments),
+    },
+  });
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function fetchTenantSlotOverview(
+  workspaceId: string,
+): Promise<Record<string, unknown> | null> {
+  const res = await fetchCrewBackendJson<Record<string, unknown>>(
+    `/api/v1/slot-catalog/tenants/${workspaceId}/overview`,
+    { workspaceId, timeoutMs: 15_000 },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function previewTenantSlotChanges(
+  workspaceId: string,
+  input: {
+    facilities?: Record<string, boolean> | null;
+    assignments?: TenantSlotAssignmentUpsert[] | null;
+  },
+): Promise<Record<string, unknown> | null> {
+  const res = await fetchCrewBackendJson<Record<string, unknown>>(
+    `/api/v1/slot-catalog/tenants/${workspaceId}/preview`,
+    {
+      workspaceId,
+      method: 'POST',
+      timeoutMs: 15_000,
+      body: {
+        facilities: input.facilities ?? null,
+        assignments: input.assignments ?? null,
+      },
+    },
+  );
+  return res.ok && res.data ? res.data : null;
+}

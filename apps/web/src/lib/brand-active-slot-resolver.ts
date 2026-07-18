@@ -35,6 +35,10 @@ import {
 } from '@/lib/sector-slot-pack';
 import { applyCatalogSlotVisualDefaults } from '@/lib/catalog-slot-visual-defaults';
 
+/** Soft penalty per prior use of the same catalog slot (reuse pass only). */
+const CATALOG_SLOT_REUSE_PENALTY = 22;
+const CATALOG_SLOT_REUSE_PENALTY_CAP = 66;
+
 export interface BrandActiveSlot {
   slotKey: string;
   labelTr: string;
@@ -50,6 +54,8 @@ export interface BrandActiveSlot {
   templateId: string | null;
   /** From production_slot_definitions.prompt_pack — premium composition defaults, scene hints. */
   promptPack: Record<string, unknown>;
+  /** From production_slot_definitions.match_signals — keywords / announcement_types. */
+  matchSignals: Record<string, unknown>;
 }
 
 export interface BrandActiveSlotSet {
@@ -128,6 +134,9 @@ function slotFromDefinition(
     templateId: template?.id ?? null,
     promptPack: (slot.prompt_pack && typeof slot.prompt_pack === 'object'
       ? slot.prompt_pack
+      : {}) as Record<string, unknown>,
+    matchSignals: (slot.match_signals && typeof slot.match_signals === 'object'
+      ? slot.match_signals
       : {}) as Record<string, unknown>,
   };
 }
@@ -282,10 +291,51 @@ function ideaHaystack(idea: Record<string, unknown>): string {
   ].join(' ').toLowerCase();
 }
 
+function scoreMatchSignals(
+  slot: BrandActiveSlot,
+  idea: Record<string, unknown>,
+  announcement: string,
+  hay: string,
+): number {
+  const signals = slot.matchSignals ?? {};
+  let bonus = 0;
+
+  const announcementTypes = Array.isArray(signals.announcement_types)
+    ? signals.announcement_types
+    : [];
+  if (announcement && announcementTypes.length > 0) {
+    for (const raw of announcementTypes) {
+      const at = normalizeToken(String(raw ?? ''));
+      if (!at) continue;
+      if (announcement === at || announcement.includes(at) || at.includes(announcement)) {
+        bonus += 28;
+        break;
+      }
+    }
+  }
+
+  const keywords = Array.isArray(signals.keywords) ? signals.keywords : [];
+  for (const raw of keywords) {
+    const kw = normalizeToken(String(raw ?? ''));
+    if (kw.length >= 3 && hay.includes(kw)) bonus += 14;
+  }
+
+  const signalDesignType = normalizeToken(String(signals.design_template_type ?? ''));
+  if (signalDesignType) {
+    const useCase = normalizeToken(String(idea.template_use_case ?? ''));
+    if (useCase && (signalDesignType.includes(useCase.replace(/_post$/, '')) || useCase.includes(signalDesignType))) {
+      bonus += 10;
+    }
+  }
+
+  return bonus;
+}
+
 function scoreSlotForIdea(
   slot: BrandActiveSlot,
   idea: Record<string, unknown>,
   assignment?: ProductionAssignment,
+  usageCount = 0,
 ): number {
   let score = slot.priority;
 
@@ -335,9 +385,16 @@ function scoreSlotForIdea(
     if (slot.slotKey.includes('pool') && !/pool|havuz/.test(hay)) score -= 40;
   }
 
+  score += scoreMatchSignals(slot, idea, announcement, hay);
+
   if (slot.designTemplateType) {
     const useCase = normalizeToken(String(idea.template_use_case ?? ''));
     if (useCase && slot.designTemplateType.includes(useCase.replace(/_post$/, ''))) score += 12;
+  }
+
+  // Soft reuse penalty — prefer unused peers; never beats a strong semantic match alone.
+  if (usageCount > 0) {
+    score -= Math.min(CATALOG_SLOT_REUSE_PENALTY_CAP, usageCount * CATALOG_SLOT_REUSE_PENALTY);
   }
 
   return score;
@@ -347,7 +404,10 @@ export interface CatalogSlotMatchInput {
   idea: Record<string, unknown>;
   assignment?: ProductionAssignment;
   activeSlots: BrandActiveSlotSet;
+  /** Hard-skip these keys (prefer unused slots first). */
   usedSlotKeys?: Set<string>;
+  /** Soft reuse penalty when allowing previously used slots. */
+  slotUsageCounts?: Map<string, number>;
   /** Explicit catalog key from ideation/calendar — honored when enabled. */
   preferredCatalogSlotKey?: string | null;
 }
@@ -361,7 +421,7 @@ export interface CatalogSlotMatchInput {
 export function matchIdeaToBrandCatalogSlot(
   input: CatalogSlotMatchInput,
 ): BrandActiveSlot | null {
-  const { activeSlots, idea, assignment, usedSlotKeys } = input;
+  const { activeSlots, idea, assignment, usedSlotKeys, slotUsageCounts } = input;
   const preferred = input.preferredCatalogSlotKey
     ?? (idea.catalog_slot_key as string | undefined)
     ?? assignment?.catalog_slot_key;
@@ -378,7 +438,8 @@ export function matchIdeaToBrandCatalogSlot(
   let best: { slot: BrandActiveSlot; score: number } | null = null;
   for (const slot of activeSlots.slots) {
     if (usedSlotKeys?.has(slot.slotKey)) continue;
-    const score = scoreSlotForIdea(slot, idea, assignment);
+    const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
+    const score = scoreSlotForIdea(slot, idea, assignment, usage);
     if (score <= 0) continue;
     if (!best || score > best.score) best = { slot, score };
   }
@@ -396,9 +457,15 @@ export function matchIdeaToBrandCatalogSlot(
   };
   const targetFormat = roleFmt ?? formatMap[fmt];
   if (!targetFormat) return null;
-  return activeSlots.slots.find(
-    (s) => s.format === targetFormat && !usedSlotKeys?.has(s.slotKey),
-  ) ?? null;
+
+  let fallback: { slot: BrandActiveSlot; usage: number } | null = null;
+  for (const slot of activeSlots.slots) {
+    if (slot.format !== targetFormat) continue;
+    if (usedSlotKeys?.has(slot.slotKey)) continue;
+    const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
+    if (!fallback || usage < fallback.usage) fallback = { slot, usage };
+  }
+  return fallback?.slot ?? null;
 }
 
 export function filterDesignTemplatesToActiveSlots(
@@ -416,14 +483,24 @@ export function stampIdeasWithBrandCatalogSlots(
   ideas: Record<string, unknown>[],
   activeSlots: BrandActiveSlotSet,
 ): Record<string, unknown>[] {
-  const used = new Set<string>();
+  const usage = new Map<string, number>();
   return ideas.map((idea) => {
-    let matched = matchIdeaToBrandCatalogSlot({ idea, activeSlots, usedSlotKeys: used });
+    const usedKeys = new Set(usage.keys());
+    let matched = matchIdeaToBrandCatalogSlot({
+      idea,
+      activeSlots,
+      usedSlotKeys: usedKeys,
+    });
+    // Prefer unused first; if catalog is smaller than idea count, reuse with soft penalty.
     if (!matched && activeSlots.slots.length > 0) {
-      matched = matchIdeaToBrandCatalogSlot({ idea, activeSlots });
+      matched = matchIdeaToBrandCatalogSlot({
+        idea,
+        activeSlots,
+        slotUsageCounts: usage,
+      });
     }
     if (!matched) return idea;
-    used.add(matched.slotKey);
+    usage.set(matched.slotKey, (usage.get(matched.slotKey) ?? 0) + 1);
     const withVisuals = applyCatalogSlotVisualDefaults(idea, matched.promptPack);
     return {
       ...withVisuals,
@@ -484,36 +561,38 @@ export function applyCatalogSlotBindingsToQueue(
 /**
  * Attach catalog_slot_key to each queue item.
  * Prefer unique enabled slots first; when the brand has fewer slots than ideas,
- * reuse the best-matching slot rather than dropping content-scoped rows.
+ * reuse the best-matching slot (soft penalty) rather than dropping rows.
  * Unmatched ideas keep their FD/inferred assignment so production count stays intact.
  */
 export function enrichProductionQueueWithBrandSlots(
   queue: ManifestProductionQueueItem[],
   activeSlots: BrandActiveSlotSet,
 ): ManifestProductionQueueItem[] {
-  const used = new Set<string>();
+  const usage = new Map<string, number>();
   const out: ManifestProductionQueueItem[] = [];
 
   for (const item of queue) {
+    const usedKeys = new Set(usage.keys());
     let matched = matchIdeaToBrandCatalogSlot({
       idea: item.idea,
       assignment: item.assignment,
       activeSlots,
-      usedSlotKeys: used,
+      usedSlotKeys: usedKeys,
     });
-    // Content packages often exceed enabled catalog size — rotate templates, never drop.
+    // Content packages often exceed enabled catalog size — rotate with soft penalty, never drop.
     if (!matched && activeSlots.slots.length > 0) {
       matched = matchIdeaToBrandCatalogSlot({
         idea: item.idea,
         assignment: item.assignment,
         activeSlots,
+        slotUsageCounts: usage,
       });
     }
     if (!matched) {
       out.push(item);
       continue;
     }
-    used.add(matched.slotKey);
+    usage.set(matched.slotKey, (usage.get(matched.slotKey) ?? 0) + 1);
     const assignment = applyCatalogSlotToAssignment(item.assignment, matched);
     const ideaWithVisualDefaults = applyCatalogSlotVisualDefaults(
       item.idea as Record<string, unknown>,

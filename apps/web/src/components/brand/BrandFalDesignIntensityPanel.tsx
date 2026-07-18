@@ -24,7 +24,7 @@ export function BrandFalDesignIntensityPanel({
   tenantId: string;
   theme: ThemeRecord;
   t: T;
-  onSaved?: () => void;
+  onSaved?: (theme?: ThemeRecord | null) => void;
 }) {
   const resolved = resolveFalDesignIntensityConfig(theme);
   const [local, setLocal] = useState<Required<BrandFalDesignIntensityConfig>>(resolved);
@@ -33,7 +33,9 @@ export function BrandFalDesignIntensityPanel({
   const [statusKind, setStatusKind] = useState<'success' | 'error' | 'info'>('info');
 
   useEffect(() => {
+    if (saving) return;
     setLocal(resolveFalDesignIntensityConfig(theme));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync from theme only
   }, [theme]);
 
   const saveLevel = async (channel: FalDesignChannel, level: FalDesignIntensityLevel) => {
@@ -57,9 +59,15 @@ export function BrandFalDesignIntensityPanel({
         },
       );
       if (res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          theme?: ThemeRecord | null;
+        } | null;
+        if (data?.theme && typeof data.theme === 'object') {
+          setLocal(resolveFalDesignIntensityConfig(data.theme));
+        }
         setStatusKind('success');
         setStatus('Tasarım yoğunluğu kaydedildi');
-        onSaved?.();
+        onSaved?.(data?.theme ?? null);
       } else {
         setLocal(prev);
         setStatusKind('error');
@@ -80,9 +88,7 @@ export function BrandFalDesignIntensityPanel({
     }
   };
 
-  const themeReady = Boolean(
-    theme?.workspaceId || theme?.workspace_id || theme?.derivedAt || theme?.derived_at,
-  );
+  const controlsLocked = saving || !tenantId;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -90,12 +96,6 @@ export function BrandFalDesignIntensityPanel({
         fal.ai tasarımlarında fotoğraf ile tipografi arasındaki dengeyi kanal bazında ayarlayın.
         Varsayılan <strong style={{ color: t.textSecondary }}>Dengeli</strong> mevcut üretim kalitesine karşılık gelir.
       </p>
-
-      {!themeReady && (
-        <p style={{ margin: 0, fontSize: 12, color: t.warning }}>
-          Marka teması yükleniyor… Seçim yapmadan önce birkaç saniye bekleyin.
-        </p>
-      )}
 
       {(['story', 'reel', 'post'] as FalDesignChannel[]).map((channel) => (
         <div key={channel}>
@@ -118,7 +118,7 @@ export function BrandFalDesignIntensityPanel({
                 <button
                   key={level}
                   type="button"
-                  disabled={saving || !themeReady}
+                  disabled={controlsLocked}
                   onClick={() => void saveLevel(channel, level)}
                   style={{
                     display: 'flex',
@@ -126,13 +126,13 @@ export function BrandFalDesignIntensityPanel({
                     gap: 10,
                     padding: '10px 12px',
                     borderRadius: 12,
-                    cursor: (saving || !themeReady) ? 'not-allowed' : 'pointer',
+                    cursor: controlsLocked ? 'not-allowed' : 'pointer',
                     textAlign: 'left',
                     background: selected
                       ? 'rgba(90,130,160,0.14)'
                       : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
                     border: `1px solid ${selected ? 'rgba(90,130,160,0.45)' : t.separator}`,
-                    opacity: (saving || !themeReady) ? 0.6 : 1,
+                    opacity: controlsLocked ? 0.6 : 1,
                   }}
                 >
                   <span style={{

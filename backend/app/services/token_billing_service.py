@@ -39,7 +39,7 @@ GRANT_BY_PACKAGE: dict[str, int] = {
 
 # Mirrors package-plan-config.ts / PackagePlanCatalog.cs
 OUTPUTS_BY_PACKAGE: dict[str, dict[str, int]] = {
-    # Per mission ≈ 10 organic + 1 reel (idea_count production)
+    # Per mission ≈ 4 post + 8 story + 1 carousel + 2 reel (idea_count production)
     "starter": {
         "missions": 14,
         "social_content": 140,

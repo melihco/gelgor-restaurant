@@ -3,6 +3,8 @@
 import json
 
 from app.services.production_design_profile_service import (
+    build_production_design_llm_prompt,
+    collect_production_design_context,
     derive_production_design_profile,
     ensure_visual_dna_palette_hex,
 )
@@ -89,3 +91,62 @@ def test_derive_injects_palette_from_brand_kit():
     profile = derive_production_design_profile(ctx, openai_api_key="")
     assert "#87CEEB" in profile["visual_dna"]
     assert "#FF69B4" in profile["visual_dna"]
+
+
+def test_collect_context_includes_vibe_website_and_ig_signals():
+    ctx = _FakeCtx(
+        business_name="Yula Bodrum",
+        business_type="beach_club",
+        website_summary="Drink & Chill daybeds",
+        instagram_handle="yulabodrum",
+        instagram_recent_captions=["Sunset spritz on the daybed", "Citrus chill"],
+        website_intelligence={"menu_highlights": ["passion fruit spritz", "mandarin sour"]},
+        instagram_intelligence={"aesthetic": "citrus coastal cocktails"},
+        brand_vibe_profile={
+            "motion": {"pace": "slow_observational"},
+            "palette": {"primary": "#00C5CC"},
+            "anti_patterns": ["neon EDM"],
+        },
+        gallery_analysis={
+            "https://example.com/a.jpg": {
+                "tags": ["daybed", "cocktail"],
+                "description": "turquoise daybed with citrus garnish",
+            }
+        },
+        brand_service_profile={
+            "category": "beach_club_bar",
+            "signature_offerings": ["Drink & Chill"],
+        },
+    )
+    data = collect_production_design_context(ctx)
+    assert data["brand_vibe_profile"]["motion"]["pace"] == "slow_observational"
+    assert "passion fruit spritz" in data["menu_or_catalog_signals"]
+    assert "Sunset spritz" in data["instagram_recent_captions"][0]
+    assert "daybed" in data["gallery_scene_summary"].lower()
+    assert data["instagram_intelligence"]["aesthetic"]
+
+
+def test_llm_prompt_includes_rich_signals_and_forbids_generic_boilerplate():
+    data = collect_production_design_context(
+        _FakeCtx(
+            business_name="Yula Bodrum",
+            business_type="beach_club",
+            website_summary="Drink & Chill",
+            instagram_handle="yulabodrum",
+            instagram_recent_captions=["Citrus chill by the sea"],
+            website_intelligence={"menu_highlights": ["mandarin sour"]},
+            brand_vibe_profile={"grading": {"look": "citrus_golden_coastal"}},
+            brand_service_profile={
+                "category": "beach_club_bar",
+                "signature_offerings": ["Drink & Chill"],
+            },
+        )
+    )
+    prompt = build_production_design_llm_prompt(data, "beach_club")
+    assert "Yula Bodrum" in prompt
+    assert "mandarin sour" in prompt
+    assert "citrus_golden_coastal" in prompt
+    assert "Citrus chill" in prompt
+    assert "FORBIDDEN generic boilerplate" in prompt
+    assert "Cycladic" in prompt  # named as forbidden example
+    assert "Brand-SPECIFIC" in prompt or "BRAND-SPECIFIC" in prompt

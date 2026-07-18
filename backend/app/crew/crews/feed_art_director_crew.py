@@ -37,7 +37,7 @@ from app.crew.token_usage import total_tokens_from_crew
 logger = structlog.get_logger()
 
 # Haftalık Feed paketi — her misyonda tam 16 üretim slotu (7 günlük yayın hedefi + buffer)
-_WEEKLY_PACKAGE_TOTAL = 16
+_WEEKLY_PACKAGE_TOTAL = 15
 _WEEKLY_SLOT_SPECS: list[tuple[str, str]] = [
     ("organic_post", "gallery_photo"),
     ("organic_post", "gallery_photo"),

@@ -497,13 +497,23 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
       detail: calRes.ok ? 'calendar refreshed' : calRes.error ?? `HTTP ${calRes.status}`,
     });
 
-    // 6e. Production design profile — Scorpios-grade visual_dna + Fal theme layers
+    // 6d2. Visual identity enrich — gallery skip-scrape vibe (motion/audio/caption_voice)
+    const { runVisualIdentityEnrich } = await import('@/lib/visual-identity-enrich');
+    const vibeEnrich = await runVisualIdentityEnrich(tenantId, headers, { timeoutMs: 240_000 });
+    steps.push({
+      id: 'visual_identity_enrich',
+      ok: vibeEnrich.ok,
+      detail: vibeEnrich.detail,
+    });
+    // Non-fatal: PDP heuristic still runs if vibe enrich fails
+
+    // 6e. Production design profile — brand-specific Fal visual_dna + theme layers
     const pdpRes = await fetchCrewBackendJson<{
       ok?: boolean;
       profile?: { source?: string; sector?: string };
     }>(
       `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
-      { method: 'POST', workspaceId: tenantId, timeoutMs: 120_000 },
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 180_000 },
     );
     steps.push({
       id: 'production_design_profile',
@@ -515,8 +525,26 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     if (!pdpRes.ok) {
       errors.push(`Üretim tasarım profili: ${pdpRes.error ?? pdpRes.status}`);
     }
+
+    // Theme re-derive so vibe_profile wins waterfall before finalize locks kit
+    if (pdpRes.ok || vibeEnrich.ok) {
+      const themeRes = await postJson<{ ok?: boolean; source?: string }>(
+        `${origin}/api/brand-context/${tenantId}/theme/derive`,
+        {},
+        headers,
+        90_000,
+      );
+      steps.push({
+        id: 'theme_derive_after_vibe',
+        ok: themeRes.ok,
+        detail: themeRes.ok
+          ? (themeRes.data?.source ?? 'derived')
+          : (themeRes.error ?? 'theme_derive_failed'),
+      });
+    }
   } else {
     steps.push({ id: 'industry_calendar', ok: false, detail: 'constitution_not_confirmed' });
+    steps.push({ id: 'visual_identity_enrich', ok: false, detail: 'constitution_not_confirmed' });
     steps.push({ id: 'production_design_profile', ok: false, detail: 'constitution_not_confirmed' });
   }
 

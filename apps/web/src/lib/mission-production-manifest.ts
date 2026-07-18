@@ -164,14 +164,14 @@ export interface MissionProductionManifest {
 
 /**
  * Default weekly mission mix when package geometry is unavailable.
- * Aligned with live idea_count production: ~10 organic + 1 reel.
+ * 4 post · 8 story · 1 carousel · 2 reel.
  */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
-  story: 5,
+  story: 8,
   post: 4,
   carousel: 1,
-  reel: 1,
-  total: 11,
+  reel: 2,
+  total: 15,
 } as const;
 
 export type PackageGeometry = {
@@ -184,7 +184,7 @@ export type PackageGeometry = {
 
 /**
  * Resolve package geometry from brand theme overrides or plan tier.
- * Falls back to the default ~11-slot weekly package (4 post · 5 story · 1 carousel · 1 reel).
+ * Falls back to the default ~15-slot weekly package (4 post · 8 story · 1 carousel · 2 reel).
  */
 export function resolvePackageGeometry(
   brandOverride?: Partial<PackageGeometry> | null,
@@ -213,7 +213,7 @@ export const MISSION_OPPORTUNITY_PACKAGE_COUNTS = {
 
 /**
  * Only opportunity missions use one-slot-per-raw-idea routing.
- * Weekly / seasonal / campaign missions use fixed package geometry (16 agency · 12 starter).
+ * Weekly / seasonal / campaign missions use fixed package geometry (15: 4/8/1/2).
  */
 export function isIdeaDrivenMissionProduction(
   missionType?: MissionProductionPackageType | null,
@@ -426,7 +426,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
 ];
 
-/** Live mix — 4 post · 5 story · 1 carousel · 1 reel (11 slots). */
+/** Mix — 4 post · 8 story · 1 carousel · 2 reel (15 slots). */
 const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   {
     role: 'organic_post',
@@ -493,6 +493,14 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
     intentHint: 'daily_story',
   },
   {
+    role: 'organic_story_still',
+    pipeline: 'story_still',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
+    intentHint: 'product_highlight',
+  },
+  {
     role: 'fal_story_motion',
     pipeline: 'fal_story',
     format: 'story',
@@ -509,12 +517,36 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
     intentHint: 'product_highlight',
   },
   {
+    role: 'fal_only_story',
+    pipeline: 'fal_only_story',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
+    intentHint: 'brand_awareness',
+  },
+  {
+    role: 'fal_only_story',
+    pipeline: 'fal_only_story',
+    format: 'story',
+    captionSurface: 'visual_only',
+    required: true,
+    intentHint: 'campaign_offer',
+  },
+  {
     role: 'organic_reel',
     pipeline: 'fal_reel',
     format: 'reel',
     captionSurface: 'feed_card',
     required: true,
     intentHint: 'educational_post',
+  },
+  {
+    role: 'organic_reel',
+    pipeline: 'fal_reel',
+    format: 'reel',
+    captionSurface: 'feed_card',
+    required: true,
+    intentHint: 'behind_the_scenes',
   },
 ];
 

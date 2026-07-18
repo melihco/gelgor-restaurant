@@ -1,27 +1,26 @@
 /**
  * Weekly mission slot geometry by subscription plan.
- * Production target is idea_count (~10–11); geometry is the fallback mix.
- * Both tiers: ~10 organic + 1 reel (matches live average).
+ * Production target is idea_count; geometry is the fallback mix + ideation prompt count.
  */
 
 import type { PackageGeometry } from '@/lib/mission-production-manifest';
 
-/** ~11 deliverables: 4 post · 5 story · 1 carousel · 1 reel */
+/** ~15 deliverables: 4 post · 8 story · 1 carousel · 2 reel */
 export const STARTER_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
   post: 4,
-  story: 5,
+  story: 8,
   carousel: 1,
-  reel: 1,
-  total: 11,
+  reel: 2,
+  total: 15,
 };
 
-/** Growth: same real-world mix (idea_count still wins at produce time). */
+/** Growth: same mix (idea_count still wins at produce time). */
 export const AGENCY_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
   post: 4,
-  story: 5,
+  story: 8,
   carousel: 1,
-  reel: 1,
-  total: 11,
+  reel: 2,
+  total: 15,
 };
 
 function normalizePlanSlug(packageSlug?: string | null): string {

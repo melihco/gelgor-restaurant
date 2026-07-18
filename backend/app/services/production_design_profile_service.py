@@ -105,7 +105,63 @@ _PRODUCTION_DNA_SECTIONS = (
 )
 
 
-def _ctx_dict(ctx: Any) -> dict[str, Any]:
+def _as_dict(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _as_str_list(raw: Any, *, limit: int = 12) -> list[str]:
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()][:limit]
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()][:limit]
+        except json.JSONDecodeError:
+            return [raw.strip()][:limit]
+    return []
+
+
+def _gallery_scene_summary(ctx: Any, *, limit: int = 8) -> str:
+    """Compact scene catalog from gallery_analysis for LLM grounding."""
+    ga = _as_dict(getattr(ctx, "gallery_analysis", None))
+    if not ga:
+        return ""
+    lines: list[str] = []
+    for url, meta in list(ga.items())[:40]:
+        if not isinstance(meta, dict):
+            continue
+        tags = meta.get("tags") or meta.get("labels") or []
+        if isinstance(tags, str):
+            tag_s = tags.strip()
+        elif isinstance(tags, list):
+            tag_s = ", ".join(str(t) for t in tags[:6] if str(t).strip())
+        else:
+            tag_s = ""
+        desc = str(
+            meta.get("description")
+            or meta.get("scene_summary")
+            or meta.get("caption")
+            or ""
+        ).strip()
+        bit = " — ".join(p for p in (tag_s, desc[:120]) if p)
+        if bit:
+            lines.append(f"- {bit}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+def collect_production_design_context(ctx: Any) -> dict[str, Any]:
+    """Gather discovery + vibe signals for production DNA derivation (testable)."""
     sp = _read_service_profile(ctx)
     pillars_raw = getattr(ctx, "content_pillars", None)
     pillars: list[str] = []
@@ -119,6 +175,19 @@ def _ctx_dict(ctx: Any) -> dict[str, Any]:
         except json.JSONDecodeError:
             pillars = [p.strip() for p in pillars_raw.split(",") if p.strip()]
 
+    vibe = _as_dict(getattr(ctx, "brand_vibe_profile", None))
+    website_intel = _as_dict(getattr(ctx, "website_intelligence", None))
+    ig_intel = _as_dict(getattr(ctx, "instagram_intelligence", None))
+    captions = _as_str_list(getattr(ctx, "instagram_recent_captions", None), limit=10)
+
+    menu_bits: list[str] = []
+    for key in ("menu_highlights", "signature_dishes", "catalog_highlights", "products", "menu_categories"):
+        val = website_intel.get(key)
+        if isinstance(val, list):
+            menu_bits.extend(str(x) for x in val[:6] if str(x).strip())
+        elif isinstance(val, str) and val.strip():
+            menu_bits.append(val.strip()[:200])
+
     return {
         "business_name": getattr(ctx, "business_name", "") or "",
         "business_type": getattr(ctx, "business_type", "") or "",
@@ -131,7 +200,100 @@ def _ctx_dict(ctx: Any) -> dict[str, Any]:
         "website_summary": getattr(ctx, "website_summary", "") or "",
         "content_pillars": pillars,
         "brand_service_profile": sp,
+        "brand_vibe_profile": vibe,
+        "website_intelligence": website_intel,
+        "instagram_intelligence": ig_intel,
+        "instagram_recent_captions": captions,
+        "gallery_scene_summary": _gallery_scene_summary(ctx),
+        "menu_or_catalog_signals": menu_bits[:10],
+        "instagram_handle": getattr(ctx, "instagram_handle", "") or "",
     }
+
+
+# Backward-compatible alias used by older call sites / tests.
+_ctx_dict = collect_production_design_context
+
+
+def build_production_design_llm_prompt(data: dict[str, Any], sector: str) -> str:
+    """Build the art-director prompt — exported for unit tests."""
+    sp = data.get("brand_service_profile") or {}
+    vibe = data.get("brand_vibe_profile") or {}
+    ig_intel = data.get("instagram_intelligence") or {}
+    captions = data.get("instagram_recent_captions") or []
+    menu_signals = data.get("menu_or_catalog_signals") or []
+    gallery_summary = str(data.get("gallery_scene_summary") or "").strip()
+
+    vibe_compact = ""
+    if isinstance(vibe, dict) and vibe:
+        vibe_compact = json.dumps(
+            {
+                "palette": vibe.get("palette"),
+                "grading": vibe.get("grading"),
+                "typography": vibe.get("typography"),
+                "motion": vibe.get("motion"),
+                "composition": vibe.get("composition"),
+                "audio": vibe.get("audio"),
+                "caption_voice": vibe.get("caption_voice"),
+                "anti_patterns": vibe.get("anti_patterns"),
+                "content_pillars_visual": vibe.get("content_pillars_visual"),
+            },
+            ensure_ascii=False,
+        )[:2200]
+
+    ig_compact = ""
+    if isinstance(ig_intel, dict) and ig_intel:
+        ig_compact = json.dumps(
+            {
+                "content_themes": ig_intel.get("content_themes") or ig_intel.get("themes"),
+                "aesthetic": ig_intel.get("aesthetic") or ig_intel.get("visual_style"),
+                "audience": ig_intel.get("audience") or ig_intel.get("target_audience"),
+                "summary": ig_intel.get("summary") or ig_intel.get("overview"),
+            },
+            ensure_ascii=False,
+        )[:900]
+
+    caption_block = "\n".join(f"- {c[:160]}" for c in captions[:8] if c)
+    menu_block = ", ".join(str(m)[:80] for m in menu_signals[:8])
+
+    return f"""You are a senior art director onboarding a brand into an AI social production system.
+
+Brand: {data.get("business_name")}
+Sector (guardrail only — do NOT invent a generic sector cliché): {sector}
+Location: {data.get("location")}
+Languages: {data.get("languages")}
+Instagram: @{str(data.get("instagram_handle") or "").lstrip("@")}
+Description: {str(data.get("description") or "")[:600]}
+Website summary: {str(data.get("website_summary") or "")[:500]}
+Service profile category: {sp.get("category")}
+Signature offerings: {sp.get("signature_offerings")}
+Content guardrails: {sp.get("content_guardrails")}
+Menu / catalog signals: {menu_block or "(none)"}
+Gallery scene catalog:
+{gallery_summary or "(none)"}
+Instagram intelligence: {ig_compact or "(none)"}
+Recent captions:
+{caption_block or "(none)"}
+Brand vibe profile (authoritative when present — fuse into DNA):
+{vibe_compact or "(none — derive from gallery/captions/website)"}
+Existing visual_dna (rewrite for production Fal format): {str(data.get("visual_dna") or "")[:800]}
+
+Return JSON only:
+{{
+  "visual_dna": "multi-line string with EXACT section headers: Mood, Aesthetic, Palette words, Lighting, Photography, Typography feel, Anti-look",
+  "brand_tone": "3-5 comma-separated tone words matching brand language",
+  "visual_style": "one line production visual style directive",
+  "content_pillars": ["pillar_id", "..."] — use sector-appropriate playbook ids only
+}}
+
+Rules:
+- Be BRAND-SPECIFIC: name signature offerings, materials, rituals, or menu items from the signals above.
+- Sector is a guardrail only. FORBIDDEN generic boilerplate such as "Cycladic / Mediterranean beach club", "bohemian-luxe agora", or copy-pasted wellness spa DNA when the brand is a beach club / bar / shop.
+- For beach_club / hotel / premium hospitality: NEVER wellness/skincare as primary identity
+- visual_dna must be production-ready for Fal overlay prompts (no markdown headers like **Brand**)
+- Palette words MUST mention brand hex codes when provided in existing DNA or vibe palette
+- Anti-look must list 4+ concrete things THIS brand would never post
+- content_pillars must NOT include educational_post/service_intro for beach clubs unless brand is pure spa
+"""
 
 
 def _sector_from_ctx(data: dict[str, Any]) -> str:
@@ -233,33 +395,7 @@ def _llm_production_design_profile(data: dict[str, Any], sector: str, api_key: s
 
     client = OpenAI(api_key=api_key)
     model = os.getenv("OPENAI_MODEL", "gpt-4o")
-    sp = data.get("brand_service_profile") or {}
-    prompt = f"""You are a senior art director onboarding a brand into an AI social production system.
-
-Brand: {data.get("business_name")}
-Sector: {sector}
-Location: {data.get("location")}
-Languages: {data.get("languages")}
-Description: {str(data.get("description") or "")[:600]}
-Website summary: {str(data.get("website_summary") or "")[:400]}
-Service profile category: {sp.get("category")}
-Signature offerings: {sp.get("signature_offerings")}
-Content guardrails: {sp.get("content_guardrails")}
-Existing visual_dna (rewrite for production): {str(data.get("visual_dna") or "")[:800]}
-
-Return JSON only:
-{{
-  "visual_dna": "multi-line string with EXACT section headers: Mood, Aesthetic, Palette words, Lighting, Photography, Typography feel, Anti-look",
-  "brand_tone": "3-5 comma-separated tone words matching brand language",
-  "visual_style": "one line production visual style directive",
-  "content_pillars": ["pillar_id", "..."] — use sector-appropriate playbook ids only
-}}
-
-Rules:
-- For beach_club / hotel / premium hospitality: NEVER wellness/skincare as primary identity
-- visual_dna must be production-ready for Fal overlay prompts (no markdown headers like **Brand**)
-- content_pillars must NOT include educational_post/service_intro for beach clubs unless brand is pure spa
-"""
+    prompt = build_production_design_llm_prompt(data, sector)
 
     try:
         resp = client.chat.completions.create(
@@ -267,7 +403,7 @@ Rules:
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.4,
-            max_tokens=900,
+            max_tokens=1100,
         )
         raw = resp.choices[0].message.content or "{}"
         parsed = json.loads(raw)
@@ -280,7 +416,7 @@ Rules:
 
 def derive_production_design_profile(ctx: Any, *, openai_api_key: str = "") -> dict[str, Any]:
     """Pure derivation — no DB writes."""
-    data = _ctx_dict(ctx)
+    data = collect_production_design_context(ctx)
     sector = _sector_from_ctx(data)
     sp = data.get("brand_service_profile") or {}
 

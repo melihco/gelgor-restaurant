@@ -39,12 +39,11 @@ const UNLIMITED = -1;
 export const PLAN_USD_TRY_RATE = 32;
 
 /**
- * Tuned API unit costs (USD) — aligned with idea_count production (~10–11 slots, 1 reel).
+ * Tuned API unit costs (USD) — aligned with idea_count production (~15 slots).
  * Kept slightly conservative so list prices still target ~200% profit on cost.
  *
- * Per mission (live average):
- * - ~10 organic (post / story / carousel)
- * - 1 reel
+ * Per mission (target mix):
+ * - 4 post / 8 story / 1 carousel / 2 reel
  * - 1 Meta + 1 Google ad creative derivative
  */
 export const PLAN_API_UNIT_COSTS = {
@@ -68,9 +67,9 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
       monthlyGrantTokens: 5_000,
     },
     outputs: {
-      // 14 missions × (~10 organic + 1 reel) — idea_count production
+      // 14 missions × (~15 fikir) — idea_count production
       missions: 14,
-      socialContent: 140,
+      socialContent: 210,
       galleryAnalysis: 40,
       reels: 14,
       metaAdCreatives: 14,
@@ -78,7 +77,7 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputHighlights: [
       '14 misyon / ay',
-      '~140 içerik + 14 reel (misyon başına ~10–11 fikir)',
+      '~210 içerik (misyon başına ~15 fikir: 4 post · 8 story · 2 reel)',
       '14 Meta + 14 Google reklam kreatifi',
       '5.000 SA Kredi aylık',
     ],
@@ -105,7 +104,7 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
     },
     outputHighlights: [
       '28 misyon / ay',
-      '~280 içerik + 28 reel (misyon başına ~10–11 fikir)',
+      '~280 içerik (misyon başına ~15 fikir: 4 post · 8 story · 2 reel)',
       '28 Meta + 28 Google reklam kreatifi',
       '15.000 SA Kredi aylık',
     ],

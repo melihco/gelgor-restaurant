@@ -1,9 +1,8 @@
 """
 Merge multiple content_ideation node outputs into one weekly Feed package batch.
 
-Target per mission (plan-aware):
-  Starter: 4 post · 3 story · 1 carousel · 4 reel (12)
-  Agency:  6 post · 3 story · 1 carousel · 6 reel (16)
+Target per mission (plan-aware, package_weekly_geometry SSOT):
+  4 post · 8 story · 1 carousel · 2 reel (15).
 """
 
 from __future__ import annotations

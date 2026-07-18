@@ -107,7 +107,7 @@ def test_catalog_slot_key_valid_rejects_format_mismatch():
 
 def test_build_weekly_catalog_assignment_plan_respects_format_mix():
     plan = build_weekly_catalog_assignment_plan(RESTAURANT_CATALOG)
-    assert len(plan) == 16
+    assert len(plan) == 15
     keys = [s["slot_key"] for s in plan]
     assert keys.count("restaurant_cafe_brunch_offer_post") >= 1
     assert "restaurant_cafe_new_menu_story" in keys

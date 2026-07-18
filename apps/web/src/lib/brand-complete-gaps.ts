@@ -179,6 +179,47 @@ export async function runCompleteBrandGaps(
     ));
   }
 
+  // Visual identity enrich when vibe missing (even if PPR already passes)
+  if (gapIds.has('vibe_profile_missing')) {
+    try {
+      const { runVisualIdentityEnrich } = await import('@/lib/visual-identity-enrich');
+      const vibeEnrich = await runVisualIdentityEnrich(tenantId, forwardHeaders, {
+        force: true,
+        timeoutMs: 240_000,
+      });
+      steps.push({
+        id: 'visual_identity_enrich',
+        ok: vibeEnrich.ok,
+        detail: vibeEnrich.detail,
+      });
+      if (vibeEnrich.ok) {
+        const pdpRes = await fetchCrewBackendJson<{ ok?: boolean; profile?: { source?: string } }>(
+          `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
+          {
+            method: 'POST',
+            workspaceId: tenantId,
+            timeoutMs: 180_000,
+            headers: forwardHeaders,
+            body: {},
+          },
+        );
+        steps.push({
+          id: 'production_design_profile',
+          ok: pdpRes.ok,
+          detail: pdpRes.ok
+            ? (pdpRes.data?.profile?.source ?? 'derived')
+            : (pdpRes.error ?? `HTTP ${pdpRes.status}`),
+        });
+      }
+    } catch (err) {
+      steps.push({
+        id: 'visual_identity_enrich',
+        ok: false,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // PPR repair — Fal production visual_dna + confirmed typography layers
   try {
     const origin = getNextjsInternalOrigin();
@@ -200,7 +241,26 @@ export async function runCompleteBrandGaps(
       const needsVisualDna = pprMissing.has('production_visual_dna');
       const needsThemeLayers = pprMissing.has('production_theme_layers');
 
-      if (needsVisualDna || needsThemeLayers) {
+      // Gallery skip-scrape vibe before PDP when DNA/theme thin (skip if already ran above)
+      if (
+        (needsVisualDna || needsThemeLayers)
+        && !steps.some((s) => s.id === 'visual_identity_enrich')
+      ) {
+        const { runVisualIdentityEnrich } = await import('@/lib/visual-identity-enrich');
+        const vibeEnrich = await runVisualIdentityEnrich(tenantId, forwardHeaders, {
+          timeoutMs: 240_000,
+        });
+        steps.push({
+          id: 'visual_identity_enrich',
+          ok: vibeEnrich.ok,
+          detail: vibeEnrich.detail,
+        });
+      }
+
+      if (
+        (needsVisualDna || needsThemeLayers)
+        && !steps.some((s) => s.id === 'production_design_profile')
+      ) {
         const pdpRes = await fetchCrewBackendJson<{ ok?: boolean; profile?: { source?: string } }>(
           `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
           {

@@ -20,12 +20,12 @@ from app.services.slot_catalog_service import (
 FD_CATALOG_SLOTS_PROMPT_MAX = 48
 
 WEEKLY_FORMAT_TARGETS_AGENCY: dict[str, int] = {
-    "post": 6,
-    "story": 7,
+    "post": 4,
+    "story": 8,
     "reel": 2,
     "carousel": 1,
 }
-WEEKLY_MISSION_SLOT_TOTAL = 16
+WEEKLY_MISSION_SLOT_TOTAL = 15
 
 
 def weekly_format_targets_from_catalog(
@@ -36,7 +36,7 @@ def weekly_format_targets_from_catalog(
     tier = (production_profile or "").strip().lower()
     base = dict(WEEKLY_FORMAT_TARGETS_AGENCY)
     if tier == "economy":
-        base = {"post": 6, "story": 6, "reel": 2, "carousel": 0}
+        base = {"post": 3, "story": 6, "reel": 1, "carousel": 0}
     available: dict[str, int] = {"post": 0, "story": 0, "reel": 0, "carousel": 0}
     for slot in catalog_slots:
         fmt = str(slot.get("format") or "post")

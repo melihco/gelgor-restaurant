@@ -181,6 +181,64 @@ describe('matchIdeaToBrandCatalogSlot', () => {
     });
     expect(matched?.slotKey).toBe('beach_club_dj_night_teaser_post');
   });
+
+  it('boosts slots via match_signals.announcement_types', () => {
+    const venue = mockSlot('beach_club_aerial_venue_post', 'post', {
+      match_signals: { announcement_types: ['venue_showcase'] },
+      design_template_type: 'venue_showcase',
+    });
+    const offer = mockSlot('beach_club_daybed_offer_post', 'post', {
+      match_signals: { announcement_types: ['offer_campaign'] },
+      design_template_type: 'campaign_announcement',
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-signals',
+      sector: 'beach_club',
+      sectorSlots: [venue, offer],
+      tenantAssignments: [
+        mockAssignment(venue.slot_key, true, venue),
+        mockAssignment(offer.slot_key, true, offer),
+      ],
+    });
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        calendar_announcement_type: 'offer_campaign',
+        headline: 'Daybed indirimi',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+    });
+    expect(matched?.slotKey).toBe('beach_club_daybed_offer_post');
+  });
+
+  it('soft-penalizes reuse so a less-used peer wins when fit is similar', () => {
+    const a = mockSlot('beach_club_sunset_ambiance_post', 'post', {
+      match_signals: { announcement_types: ['venue_showcase'] },
+    });
+    const b = mockSlot('beach_club_aerial_venue_post', 'post', {
+      match_signals: { announcement_types: ['venue_showcase'] },
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-reuse',
+      sector: 'beach_club',
+      sectorSlots: [a, b],
+      tenantAssignments: [
+        mockAssignment(a.slot_key, true, a),
+        mockAssignment(b.slot_key, true, b),
+      ],
+    });
+    const usage = new Map<string, number>([[a.slot_key, 2]]);
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        calendar_announcement_type: 'venue_showcase',
+        headline: 'Mekan manzarası',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+      slotUsageCounts: usage,
+    });
+    expect(matched?.slotKey).toBe('beach_club_aerial_venue_post');
+  });
 });
 
 describe('filterDesignTemplatesToActiveSlots', () => {

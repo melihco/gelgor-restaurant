@@ -650,7 +650,18 @@ export function BrandFalTemplateGalleryPanel({
           tenantId={tenantId}
           theme={brandTheme}
           t={t}
-          onSaved={() => {
+          onSaved={(savedTheme) => {
+            if (savedTheme) {
+              queryClient.setQueryData(
+                ['brand-theme-kit', tenantId],
+                (prev: unknown) => {
+                  if (prev && typeof prev === 'object' && prev !== null && 'theme' in prev) {
+                    return { ...(prev as Record<string, unknown>), theme: savedTheme };
+                  }
+                  return savedTheme;
+                },
+              );
+            }
             void queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
           }}
         />

@@ -139,7 +139,8 @@ export function BrandFalTemplateProductionPanel({
   tenantId: string;
   theme: ThemeRecord;
   t: T;
-  onSaved?: () => void;
+  /** Called after successful PATCH; receives saved theme when API returns it. */
+  onSaved?: (theme?: ThemeRecord | null) => void;
 }) {
   const resolved = resolveFalTemplateProductionSettings(theme);
   const [local, setLocal] = useState<BrandFalTemplateProductionConfig>(resolved);
@@ -148,7 +149,11 @@ export function BrandFalTemplateProductionPanel({
   const [statusKind, setStatusKind] = useState<'success' | 'error' | 'info'>('info');
 
   useEffect(() => {
+    // Avoid clobbering in-flight optimistic edits while a PATCH is open.
+    if (saving) return;
     setLocal(resolveFalTemplateProductionSettings(theme));
+    // saving intentionally omitted: ending a save must not reset from a stale theme prop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync from theme only
   }, [theme]);
 
   const persist = useCallback(async (next: BrandFalTemplateProductionConfig) => {
@@ -166,9 +171,15 @@ export function BrandFalTemplateProductionPanel({
         },
       );
       if (res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          theme?: ThemeRecord | null;
+        } | null;
+        if (data?.theme && typeof data.theme === 'object') {
+          setLocal(resolveFalTemplateProductionSettings(data.theme));
+        }
         setStatusKind('success');
         setStatus('Üretim parametreleri kaydedildi');
-        onSaved?.();
+        onSaved?.(data?.theme ?? null);
         return true;
       }
       setStatusKind('error');
@@ -199,9 +210,12 @@ export function BrandFalTemplateProductionPanel({
     });
   };
 
-  const themeReady = Boolean(
-    theme?.workspaceId || theme?.workspace_id || theme?.derivedAt || theme?.derived_at,
+  const themeHydrated = Boolean(
+    theme?.workspaceId || theme?.workspace_id || theme?.derivedAt || theme?.derived_at
+    || theme?.falTemplateProduction || theme?.fal_template_production
+    || theme?.falDesignIntensity || theme?.fal_design_intensity,
   );
+  const controlsLocked = saving || !tenantId;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -213,9 +227,9 @@ export function BrandFalTemplateProductionPanel({
         {' '}veya mission üretiminde uygulanır.
       </p>
 
-      {!themeReady && (
+      {!themeHydrated && (
         <p style={{ margin: 0, fontSize: 12, color: t.warning }}>
-          Marka teması yükleniyor…
+          Marka teması henüz tam yüklenmedi — seçimler yine de kaydedilir; ilk PATCH temayı oluşturur.
         </p>
       )}
 
@@ -246,7 +260,7 @@ export function BrandFalTemplateProductionPanel({
                       key={level}
                       t={t}
                       selected={local.intensity[channel] === level}
-                      disabled={saving || !themeReady}
+                      disabled={controlsLocked}
                       badge={meta.level}
                       title={meta.tr}
                       subtitle={meta.desc}
@@ -269,7 +283,7 @@ export function BrandFalTemplateProductionPanel({
                 key={style}
                 t={t}
                 selected={local.background_style === style}
-                disabled={saving || !themeReady}
+                disabled={controlsLocked}
                 title={meta.tr}
                 subtitle={meta.desc}
                 onClick={() => void update({ background_style: style })}
@@ -283,13 +297,13 @@ export function BrandFalTemplateProductionPanel({
             marginTop: 8,
             fontSize: 12,
             color: t.textSecondary,
-            cursor: (saving || !themeReady) ? 'not-allowed' : 'pointer',
+            cursor: controlsLocked ? 'not-allowed' : 'pointer',
           }}
           >
             <input
               type="checkbox"
               checked={local.prefer_gallery_photo}
-              disabled={saving || !themeReady}
+              disabled={controlsLocked}
               onChange={(e) => void update({ prefer_gallery_photo: e.target.checked })}
             />
             Galeri fotoğrafı varsa her zaman fotoğraf üstü kullan
@@ -306,7 +320,7 @@ export function BrandFalTemplateProductionPanel({
                 key={treatment}
                 t={t}
                 selected={local.logo_treatment === treatment}
-                disabled={saving || !themeReady}
+                disabled={controlsLocked}
                 title={meta.tr}
                 subtitle={meta.desc}
                 onClick={() => void update({ logo_treatment: treatment })}
@@ -327,14 +341,14 @@ export function BrandFalTemplateProductionPanel({
                 <button
                   key={cap}
                   type="button"
-                  disabled={saving || !themeReady}
+                  disabled={controlsLocked}
                   onClick={() => void update({ preview_cap: cap })}
                   style={{
                     padding: '6px 10px',
                     borderRadius: 8,
                     fontSize: 12,
                     fontWeight: 600,
-                    cursor: (saving || !themeReady) ? 'not-allowed' : 'pointer',
+                    cursor: controlsLocked ? 'not-allowed' : 'pointer',
                     border: `1px solid ${local.preview_cap === cap ? t.accentBorder : t.separator}`,
                     background: local.preview_cap === cap
                       ? (t.isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)')
@@ -356,14 +370,14 @@ export function BrandFalTemplateProductionPanel({
                 <button
                   key={c}
                   type="button"
-                  disabled={saving || !themeReady}
+                  disabled={controlsLocked}
                   onClick={() => void update({ concurrency: c })}
                   style={{
                     padding: '6px 10px',
                     borderRadius: 8,
                     fontSize: 12,
                     fontWeight: 600,
-                    cursor: (saving || !themeReady) ? 'not-allowed' : 'pointer',
+                    cursor: controlsLocked ? 'not-allowed' : 'pointer',
                     border: `1px solid ${local.concurrency === c ? t.accentBorder : t.separator}`,
                     background: local.concurrency === c
                       ? (t.isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)')

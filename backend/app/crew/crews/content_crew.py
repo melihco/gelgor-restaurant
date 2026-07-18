@@ -610,10 +610,6 @@ def _run_single_ideation(
     return raw, tokens
 
 
-_FORMAT_TARGETS_16 = {"post": 6, "story": 5, "carousel": 1, "reel": 4}
-_FORMAT_TARGETS_12 = {"post": 4, "story": 4, "carousel": 1, "reel": 3}
-
-
 def _idea_format(item: dict) -> str:
     blob = " ".join(
         str(item.get(k) or "") for k in ("content_type", "format", "content_kind")
@@ -632,7 +628,12 @@ def _norm_title(value: str) -> str:
 
 
 def _missing_format_breakdown(concepts: list, count: int) -> tuple[dict[str, int], int]:
-    """Return (missing-by-format, total_gap) needed to reach `count`."""
+    """Return (missing-by-format, total_gap) needed to reach `count`.
+
+    Mix follows package_weekly_geometry SSOT; remainder prefers story.
+    """
+    from app.services.package_weekly_geometry import resolve_weekly_package_geometry
+
     have: dict[str, int] = {}
     valid = [c for c in concepts if isinstance(c, dict)]
     for c in valid:
@@ -641,22 +642,40 @@ def _missing_format_breakdown(concepts: list, count: int) -> tuple[dict[str, int
     total_gap = max(0, count - len(valid))
     if total_gap <= 0:
         return {}, 0
+
+    geo = resolve_weekly_package_geometry(None)
+    targets = {
+        "story": int(geo.get("story", 0)),
+        "post": int(geo.get("post", 0)),
+        "carousel": int(geo.get("carousel", 0)),
+        "reel": int(geo.get("reel", 0)),
+    }
     missing: dict[str, int] = {}
-    if count >= 16:
-        targets = _FORMAT_TARGETS_16
-    elif count >= 12:
-        targets = _FORMAT_TARGETS_12
-    elif count >= 10:
-        targets = _FORMAT_TARGETS_12
-    else:
-        targets = {}
     for fmt, target in targets.items():
         gap = target - have.get(fmt, 0)
         if gap > 0:
             missing[fmt] = gap
     assigned = sum(missing.values())
     if assigned < total_gap:
-        missing["post"] = missing.get("post", 0) + (total_gap - assigned)
+        # Prefer story, then post for shortfall fill.
+        remainder = total_gap - assigned
+        story_extra = (remainder + 1) // 2
+        post_extra = remainder - story_extra
+        missing["story"] = missing.get("story", 0) + story_extra
+        if post_extra:
+            missing["post"] = missing.get("post", 0) + post_extra
+    elif assigned > total_gap:
+        # Cap requested top-up to remaining seats; prefer keeping story gaps.
+        overflow = assigned - total_gap
+        for fmt in ("post", "carousel", "reel", "story"):
+            if overflow <= 0:
+                break
+            take = min(overflow, missing.get(fmt, 0))
+            if take:
+                missing[fmt] -= take
+                overflow -= take
+                if missing[fmt] <= 0:
+                    missing.pop(fmt, None)
     return missing, total_gap
 
 

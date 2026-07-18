@@ -59,6 +59,7 @@ import { resolveKitForSector } from '@/lib/story-template-registry';
 import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePicker';
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
+import { BrandSlotFacilitiesPanel } from '../BrandSlotFacilitiesPanel';
 import { BrandContentStrategyPanel } from '@/components/brand/BrandContentStrategyPanel';
 import { useBrandCompleteGaps } from '@/components/brand/BrandCompleteGapsButton';
 import { BrandSpecialDaysPanel } from '@/components/brand/BrandSpecialDaysPanel';
@@ -145,7 +146,7 @@ function ChevronRight({ color }: { color: string }) {
 /** Mission statement per design group — hero copy for group screens. */
 const DESIGN_GROUP_MISSIONS: Record<string, string> = {
   colors: 'Markanızın görsel imzası. Palet, tipografi ve görsel dil buradaki kararlarla her üretime yansır.',
-  templates: 'Şablon kütüphaneniz. Beğendiğiniz tasarımlar üretimde otomatik kullanılır.',
+  templates: 'Tesis özelliklerini ayarlayın, rafları görün ve şablonlarınızı yönetin. Beğendiğiniz tasarımlar üretimde otomatik kullanılır.',
   engines: 'İçeriklerinizin nasıl canlanacağı: hareket stili, müzik ve üretim motorları.',
   dna: 'AI\'ın markanızdan öğrendiği görsel karakter. Analizi yenileyerek güncel tutun.',
   rules: 'Üretim sınırları ve onay akışı. AI\'ın neyi, nasıl ve ne zaman yayınlayacağını belirleyin.',
@@ -3698,7 +3699,7 @@ export function BrandConstitution() {
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
-    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Gönderi ve story şablonları', accent: '#5AA0D6' },
+    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Tesis özellikleri, raflar, şablonlar', accent: '#5AA0D6' },
     { key: 'engines', label: 'Üretim & Ses', hint: 'Hareket, müzik, motor ayarları', accent: '#A985E0' },
     { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
     { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
@@ -4358,12 +4359,19 @@ export function BrandConstitution() {
         )}
 
         {tab === 'design' && designGroup === 'templates' && (
-          <div data-brand-fix="story-templates">
+          <div data-brand-fix="story-templates" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {tenantId && (
+              <BrandSlotFacilitiesPanel
+                tenantId={tenantId}
+                sector={industrySlug}
+                t={t}
+              />
+            )}
             {tenantId && (
               <BrandFalTemplateGalleryPanel
                 tenantId={tenantId}
                 sector={industrySlug}
-                theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
+                theme={(brandThemePayload?.theme ?? null) as Record<string, unknown> | null}
                 t={t}
               />
             )}

@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-# Live mix: ~10 organic + 1 reel (idea_count production). Keep in sync with
-# apps/web/src/lib/package-weekly-geometry.ts
+# Keep in sync with apps/web/src/lib/package-weekly-geometry.ts
 STARTER_WEEKLY_GEOMETRY: dict[str, int] = {
     "post": 4,
-    "story": 5,
+    "story": 8,
     "carousel": 1,
-    "reel": 1,
-    "total": 11,
+    "reel": 2,
+    "total": 15,
 }
 
 AGENCY_WEEKLY_GEOMETRY: dict[str, int] = {
     "post": 4,
-    "story": 5,
+    "story": 8,
     "carousel": 1,
-    "reel": 1,
-    "total": 11,
+    "reel": 2,
+    "total": 15,
 }
 
 

@@ -108,7 +108,7 @@ describe('resolveMissionContentProductionScope', () => {
         mergedItemCount: 0,
         missionType: 'weekly_content',
       }),
-    ).toBe(16);
+    ).toBe(15);
   });
 });
 
