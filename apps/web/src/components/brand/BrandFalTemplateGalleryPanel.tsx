@@ -24,6 +24,7 @@ import {
 } from '@/lib/fal-archetype-gallery';
 import type { ProductionSlotDefinition, TenantSlotAssignment } from '@/lib/production-slot-catalog';
 import { BrandFalTemplateProductionPanel } from '@/components/brand/BrandFalTemplateProductionPanel';
+import { FalBrandSignatureCompareModal } from '@/components/brand/FalBrandSignatureCompareModal';
 import { FalSlotPreviewCompareModal } from '@/components/brand/FalSlotPreviewCompareModal';
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { resolveClientMediaUrl } from '@/lib/media-url';
@@ -102,6 +103,7 @@ function GalleryCard({
   t,
   orphan,
   onPreviewSlot,
+  onSignatureCompare,
   onGenerateSlot,
   slotGenerating,
   onToggleSlot,
@@ -112,6 +114,7 @@ function GalleryCard({
   t: T;
   orphan?: BrandDesignTemplateRow;
   onPreviewSlot?: (row: CatalogDesignGalleryRow) => void;
+  onSignatureCompare?: (row: CatalogDesignGalleryRow) => void;
   onGenerateSlot?: (row: CatalogDesignGalleryRow) => void;
   slotGenerating?: boolean;
   onToggleSlot?: (row: CatalogDesignGalleryRow, enabled: boolean) => void;
@@ -293,6 +296,27 @@ function GalleryCard({
             Yoğunlukları karşılaştır
           </button>
         )}
+        {row && onSignatureCompare && (
+          <button
+            type="button"
+            disabled={slotGenerating}
+            onClick={() => onSignatureCompare(row)}
+            style={{
+              marginTop: 6,
+              width: '100%',
+              padding: '7px 10px',
+              borderRadius: 8,
+              border: `1px solid ${t.goldBorder ?? t.accentBorder}`,
+              background: t.isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.08)',
+              color: t.gold ?? t.accent,
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: slotGenerating ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Marka imzası dene
+          </button>
+        )}
       </div>
     </div>
   );
@@ -319,6 +343,7 @@ export function BrandFalTemplateGalleryPanel({
   const [generating, setGenerating] = useState(false);
   const [generatingSlotKey, setGeneratingSlotKey] = useState<string | null>(null);
   const [compareRow, setCompareRow] = useState<CatalogDesignGalleryRow | null>(null);
+  const [signatureRow, setSignatureRow] = useState<CatalogDesignGalleryRow | null>(null);
   const [status, setStatus] = useState('');
   const [statusKind, setStatusKind] = useState<'success' | 'error' | 'info'>('info');
   const [slotSavingKey, setSlotSavingKey] = useState<string | null>(null);
@@ -797,6 +822,7 @@ export function BrandFalTemplateGalleryPanel({
                 row={row}
                 t={t}
                 onPreviewSlot={row.enabled ? setCompareRow : undefined}
+                onSignatureCompare={row.enabled ? setSignatureRow : undefined}
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
                 slotGenerating={generatingSlotKey === row.slotKey}
@@ -822,6 +848,7 @@ export function BrandFalTemplateGalleryPanel({
                 row={row}
                 t={t}
                 onPreviewSlot={row.enabled ? setCompareRow : undefined}
+                onSignatureCompare={row.enabled ? setSignatureRow : undefined}
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
                 slotGenerating={generatingSlotKey === row.slotKey}
@@ -842,6 +869,16 @@ export function BrandFalTemplateGalleryPanel({
           onApplied={() => {
             void queryClient.invalidateQueries({ queryKey: ['brand-design-templates', tenantId] });
           }}
+        />
+      )}
+
+      {signatureRow && (
+        <FalBrandSignatureCompareModal
+          tenantId={tenantId}
+          sector={sector}
+          row={signatureRow}
+          t={t}
+          onClose={() => setSignatureRow(null)}
         />
       )}
 

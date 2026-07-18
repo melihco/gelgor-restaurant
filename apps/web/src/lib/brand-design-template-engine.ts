@@ -112,6 +112,12 @@ export interface DesignTemplateEngineInput {
   productionOverrides?: Partial<BrandFalTemplateProductionConfig>;
   /** Ideogram-only fast path for onboarding batch (~60s/slot). Default true. */
   templatePreviewMode?: boolean;
+  /**
+   * Preview-only fal prompt extras (e.g. brand signature A/B).
+   * When set, these lines are injected into fal designer prompts.
+   * Default production paths must leave this undefined so live output is unchanged.
+   */
+  experimentalFalDirectives?: string[];
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -447,6 +453,7 @@ async function generateOne(
     occasion,
     brandDirectives: [
       ...brandIntelligenceDirectives,
+      ...(input.experimentalFalDirectives ?? []),
       'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
       'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
       'FORBIDDEN LOGO: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone.',
@@ -458,6 +465,10 @@ async function generateOne(
       ...(antiPatternDirective ? [antiPatternDirective] : []),
     ].filter(Boolean),
   });
+
+  const experimentalFalDirectives = (input.experimentalFalDirectives ?? [])
+    .map((line) => String(line).trim())
+    .filter(Boolean);
 
   let thumbnailUrl: string | null = null;
   let generator: 'gpt-image-1' | 'fal-ideogram' | 'none' = 'none';
@@ -492,6 +503,10 @@ async function generateOne(
         grafikerMaxRetries: 1,
         templatePreviewMode: input.templatePreviewMode !== false,
         occasion,
+        // Opt-in only — default production leaves this undefined.
+        brandDirectives: experimentalFalDirectives.length
+          ? experimentalFalDirectives
+          : undefined,
       });
       if (!still.imageUrl) return false;
       generator = still.typographyModel.includes('gpt-image-1') ? 'gpt-image-1' : 'fal-ideogram';
