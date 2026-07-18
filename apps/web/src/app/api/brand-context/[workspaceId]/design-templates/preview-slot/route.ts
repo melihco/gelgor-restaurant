@@ -1,7 +1,7 @@
 /**
  * POST /api/brand-context/{workspaceId}/design-templates/preview-slot
  *
- * Per catalog slot: regenerate one Fal preview or compare intensity variants.
+ * Per catalog slot: regenerate one template preview or compare intensity variants.
  * Optional persist updates the locked brand_design_templates row.
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -24,7 +24,6 @@ import {
 } from '@/lib/fal-template-production-settings';
 import { FAL_DESIGN_INTENSITY_LABELS, type FalDesignIntensityLevel } from '@/lib/fal-design-intensity';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
-import { buildBrandSignaturePack } from '@/lib/brand-signature-directives';
 import { isTypographyDesignConfirmed, resolveSuggestedTypographyConfig } from '@/lib/typography-design-policy';
 import { invalidateDesignTemplateCache } from '@/lib/brand-design-template-matcher';
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
@@ -32,7 +31,7 @@ import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 export const runtime = 'nodejs';
 export const maxDuration = 600;
 
-type PreviewMode = 'regenerate' | 'compare' | 'compare_signature';
+type PreviewMode = 'regenerate' | 'compare';
 
 interface PreviewVariantResult {
   label: string;
@@ -40,8 +39,6 @@ interface PreviewVariantResult {
   thumbnail_url: string | null;
   design_spec: GeneratedDesignTemplate['design_spec'];
   generator: GeneratedDesignTemplate['design_spec']['generator'];
-  /** Experimental A/B arm — never persisted as production default. */
-  arm?: 'baseline' | 'signature';
 }
 
 export async function POST(
@@ -64,11 +61,7 @@ export async function POST(
     return NextResponse.json({ error: 'catalog_slot_key_required' }, { status: 400 });
   }
 
-  const mode: PreviewMode = body.mode === 'compare_signature'
-    ? 'compare_signature'
-    : body.mode === 'compare'
-      ? 'compare'
-      : 'regenerate';
+  const mode: PreviewMode = body.mode === 'compare' ? 'compare' : 'regenerate';
 
   const [ctxRes, analysisRes, themeRes] = await Promise.all([
     fetchCrewBackendJson<Record<string, unknown>>(
@@ -165,7 +158,6 @@ export async function POST(
 
   const variants: PreviewVariantResult[] = [];
   let regenerateResult: GeneratedDesignTemplate | null = null;
-  let signatureSummary: ReturnType<typeof buildBrandSignaturePack>['summary'] | null = null;
 
   if (mode === 'compare') {
     const levels = (Array.isArray(body.compare_intensities) && body.compare_intensities.length
@@ -194,53 +186,6 @@ export async function POST(
         generator: generated.design_spec.generator,
       });
     }
-  } else if (mode === 'compare_signature') {
-    // Preview-only A/B — never writes brand_design_templates / mission production.
-    const vibeProfile = (typeof brandCtx.brand_vibe_profile === 'object'
-      && brandCtx.brand_vibe_profile)
-      ? brandCtx.brand_vibe_profile as Record<string, unknown>
-      : null;
-    const signaturePack = buildBrandSignaturePack({
-      brandName: String(brandCtx.business_name ?? 'Brand'),
-      sector,
-      brandTheme,
-      brandVibeProfile: vibeProfile,
-      brandTone: brandCtx.brand_tone as string | undefined,
-      visualStyle: brandCtx.visual_style as string | undefined,
-      visualDna: brandCtx.visual_dna as string | undefined,
-    });
-    signatureSummary = signaturePack.summary;
-
-    const baseline = await generateSingleDesignTemplatePreset(
-      engineBase,
-      preset,
-      { productionOverrides: body.parameter_overrides },
-    );
-    variants.push({
-      label: 'Mevcut üretim',
-      arm: 'baseline',
-      intensity: baseSettings.intensity[channel],
-      thumbnail_url: baseline.thumbnail_url,
-      design_spec: baseline.design_spec,
-      generator: baseline.design_spec.generator,
-    });
-
-    const signed = await generateSingleDesignTemplatePreset(
-      {
-        ...engineBase,
-        experimentalFalDirectives: signaturePack.directives,
-      },
-      preset,
-      { productionOverrides: body.parameter_overrides },
-    );
-    variants.push({
-      label: 'Marka imzası',
-      arm: 'signature',
-      intensity: baseSettings.intensity[channel],
-      thumbnail_url: signed.thumbnail_url,
-      design_spec: signed.design_spec,
-      generator: signed.design_spec.generator,
-    });
   } else {
     const generated = await generateSingleDesignTemplatePreset(
       engineBase,
@@ -260,8 +205,7 @@ export async function POST(
   let persisted = false;
   let persistedTemplate: unknown = null;
 
-  // Signature A/B is screen-only — ignore persist even if a client sends it.
-  if (mode !== 'compare_signature' && body.persist && variants[0]?.thumbnail_url) {
+  if (body.persist && variants[0]?.thumbnail_url) {
     const chosen = variants[0];
     const designSpec = {
       ...chosen.design_spec,
@@ -330,7 +274,5 @@ export async function POST(
     production_settings: resolveFalTemplateProductionSettings(
       applyFalProductionOverridesToTheme(brandTheme, body.parameter_overrides),
     ),
-    affects_production: mode !== 'compare_signature',
-    signature_summary: signatureSummary,
   });
 }

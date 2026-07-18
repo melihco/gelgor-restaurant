@@ -112,14 +112,12 @@ export interface DesignTemplateEngineInput {
   presets?: DesignTemplatePreset[];
   /** Transient fal_template_production overrides (slot preview / compare). */
   productionOverrides?: Partial<BrandFalTemplateProductionConfig>;
-  /** Ideogram-only fast path for onboarding batch (~60s/slot). Default true. */
-  templatePreviewMode?: boolean;
   /**
-   * Preview-only fal prompt extras (e.g. brand signature A/B).
-   * When set, these lines are injected into fal designer prompts.
-   * Default production paths must leave this undefined so live output is unchanged.
+   * When true, fal still path may use a faster Ideogram-only pass (no gallery).
+   * Template library generation prefers GPT-image when a gallery photo exists;
+   * this flag only affects the fal fallback path. Default true.
    */
-  experimentalFalDirectives?: string[];
+  templatePreviewMode?: boolean;
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -459,7 +457,6 @@ async function generateOne(
     occasion,
     brandDirectives: [
       ...brandIntelligenceDirectives,
-      ...(input.experimentalFalDirectives ?? []),
       'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
       preset.format === 'post'
         ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'
@@ -475,69 +472,13 @@ async function generateOne(
     ].filter(Boolean),
   });
 
-  const experimentalFalDirectives = (input.experimentalFalDirectives ?? [])
-    .map((line) => String(line).trim())
-    .filter(Boolean);
-
   let thumbnailUrl: string | null = null;
   let generator: 'gpt-image-1' | 'fal-ideogram' | 'none' = 'none';
 
-  const tryFalPreview = async (): Promise<boolean> => {
-    if (!serverConfig.fal.configured) return false;
-    try {
-      const still = await produceFalDesignedPostStill({
-        workspaceId: input.workspaceId,
-        headline: headline || input.brandName,
-        subtitle,
-        caption: subtitle ?? headline ?? preset.name,
-        brandName: input.brandName,
-        brandColors: input.brandColors,
-        vibe,
-        backgroundStyle: resolveIdeogramBackgroundStyle(
-          backgroundStyle,
-          picked?.url,
-        ),
-        aspectRatio: aspect,
-        referencePhotoUrl: picked?.url,
-        brandReferenceImageUrls: picked?.url ? [picked.url] : undefined,
-        sceneHint,
-        visualDnaTone: input.visualDnaTone,
-        designIntensityLevel,
-        logoUrl: prominentLogo ? input.logoUrl : undefined,
-        logoPlacement: layoutBrief.logoPlacement ?? undefined,
-        location: input.location,
-        sector: input.sector,
-        captionAwareHeadline: false,
-        requireGroundedGallery: Boolean(picked?.url),
-        grafikerMaxRetries: 1,
-        templatePreviewMode: input.templatePreviewMode !== false,
-        occasion,
-        // Opt-in only — default production leaves this undefined.
-        brandDirectives: experimentalFalDirectives.length
-          ? experimentalFalDirectives
-          : undefined,
-      });
-      if (!still.imageUrl) return false;
-      generator = still.typographyModel.includes('gpt-image-1') ? 'gpt-image-1' : 'fal-ideogram';
-      const aspectLocked = await lockTemplatePreviewAspect(still.imageUrl, preset.format);
-      thumbnailUrl = (await mirrorPreview(aspectLocked, input.workspaceId)) ?? aspectLocked;
-      return Boolean(thumbnailUrl);
-    } catch (err) {
-      console.warn(
-        `[design-template-engine] fal preview failed for ${preset.templateType}:`,
-        err instanceof Error ? err.message : err,
-      );
-      return false;
-    }
-  };
-
-  if (picked || serverConfig.fal.configured) {
-    await tryFalPreview();
-  }
-
-  const allowGptFallback = !serverConfig.imageGen.preferFalDesignedPosts
-    || input.templatePreviewMode !== false;
-  if (!thumbnailUrl && picked && allowGptFallback) {
+  // Agency template quality: GPT-image grounded on the gallery photo first.
+  // Fal/Ideogram is last-resort only — templatePreviewMode previously let Ideogram
+  // win after a soft grafiker miss and looked like "production flipped to fal".
+  if (picked) {
     try {
       const generated = await generateDesignedPostImage({
         workspaceId: input.workspaceId,
@@ -565,7 +506,53 @@ async function generateOne(
         err instanceof Error ? err.message : err,
       );
     }
-  } else if (!thumbnailUrl && !picked) {
+  }
+
+  if (!thumbnailUrl && serverConfig.fal.configured) {
+    try {
+      const still = await produceFalDesignedPostStill({
+        workspaceId: input.workspaceId,
+        headline: headline || input.brandName,
+        subtitle,
+        caption: subtitle ?? headline ?? preset.name,
+        brandName: input.brandName,
+        brandColors: input.brandColors,
+        vibe,
+        backgroundStyle: resolveIdeogramBackgroundStyle(
+          backgroundStyle,
+          picked?.url,
+        ),
+        aspectRatio: aspect,
+        referencePhotoUrl: picked?.url,
+        brandReferenceImageUrls: picked?.url ? [picked.url] : undefined,
+        sceneHint,
+        visualDnaTone: input.visualDnaTone,
+        designIntensityLevel,
+        logoUrl: prominentLogo ? input.logoUrl : undefined,
+        logoPlacement: layoutBrief.logoPlacement ?? undefined,
+        location: input.location,
+        sector: input.sector,
+        captionAwareHeadline: false,
+        requireGroundedGallery: Boolean(picked?.url),
+        grafikerMaxRetries: 1,
+        // With a gallery photo, keep fal fallback grounded (no Ideogram-only shortcut).
+        templatePreviewMode: picked ? false : input.templatePreviewMode !== false,
+        occasion,
+      });
+      if (still.imageUrl) {
+        generator = still.typographyModel.includes('gpt-image-1') ? 'gpt-image-1' : 'fal-ideogram';
+        const aspectLocked = await lockTemplatePreviewAspect(still.imageUrl, preset.format);
+        thumbnailUrl = (await mirrorPreview(aspectLocked, input.workspaceId)) ?? aspectLocked;
+      }
+    } catch (err) {
+      console.warn(
+        `[design-template-engine] fal fallback failed for ${preset.templateType}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if (!thumbnailUrl && !picked) {
     console.warn(
       `[design-template-engine] no gallery photo for ${preset.templateType} — recipe only`,
     );
