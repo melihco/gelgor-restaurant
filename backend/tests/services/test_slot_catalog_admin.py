@@ -52,6 +52,10 @@ def test_resolve_facilities_opt_out_defaults():
     assert resolve_facilities_dict({"pool": False})["pool"] is False
     assert resolve_facilities_dict({"pool": False})["dj_stage"] is True
     assert "unknown" not in resolve_facilities_dict({"unknown": False})
+    # Opt-in service surface defaults OFF
+    assert resolve_facilities_dict(None)["hiring"] is False
+    assert resolve_facilities_dict(None)["events_calendar"] is False
+    assert resolve_facilities_dict({"hiring": True})["hiring"] is True
 
 
 def test_facility_options_include_labels():
@@ -60,6 +64,12 @@ def test_facility_options_include_labels():
     pool = next(o for o in opts if o["key"] == "pool")
     assert pool["label_tr"]
     assert pool["enabled"] is True
+    hiring = next(o for o in opts if o["key"] == "hiring")
+    assert hiring["enabled"] is False
+    assert hiring["opt_in"] is True
+    events = next(o for o in opts if o["key"] == "events_calendar")
+    assert events["enabled"] is False
+    assert events["opt_in"] is True
 
 
 def test_required_facilities_from_tags():

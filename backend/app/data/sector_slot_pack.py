@@ -42,6 +42,7 @@ def _inst(
     slot_role: str | None = None,
     design_template_type: str | None = None,
     requires_premium_composition: bool = False,
+    enabled_by_default: bool | None = None,
 ) -> SlotInstance:
     row: SlotInstance = {
         "suffix": suffix,
@@ -59,11 +60,62 @@ def _inst(
         row["design_template_type"] = design_template_type
     if requires_premium_composition:
         row["requires_premium_composition"] = True
+    if enabled_by_default is not None:
+        row["enabled_by_default"] = enabled_by_default
     return row
 
 
-# Keep aligned with sector-slot-pack.ts SECTOR_SLOT_PACKS
-SECTOR_SLOT_PACKS: list[SectorPack] = [
+# Cross-sector service-surface — mirrors apps/web CROSS_SECTOR_SERVICE_SLOTS
+CROSS_SECTOR_SERVICE_SLOTS: list[SlotInstance] = [
+    _inst(
+        "hiring_open_role_post",
+        "İş ilanı",
+        "Open role hiring",
+        "post",
+        ["requires:hiring"],
+        design_template_type="announcement_formal",
+    ),
+    _inst(
+        "hiring_team_story",
+        "Ekibe katıl story",
+        "Join the team story",
+        "story",
+        ["requires:hiring"],
+        pipeline="fal_story",
+        slot_role="campaign_story_motion",
+        design_template_type="announcement_formal",
+    ),
+    _inst(
+        "events_calendar_post",
+        "Etkinlik takvimi",
+        "Events calendar",
+        "post",
+        ["requires:events_calendar"],
+        design_template_type="event_special",
+    ),
+    _inst(
+        "events_calendar_story",
+        "Etkinlik takvimi story",
+        "Events calendar story",
+        "story",
+        ["requires:events_calendar"],
+        pipeline="fal_story",
+        slot_role="campaign_story_motion",
+        design_template_type="event_special",
+    ),
+]
+
+
+def _with_cross_sector_slots(pack: SectorPack) -> SectorPack:
+    existing = {inst["suffix"] for inst in pack["instances"]}
+    extras = [s for s in CROSS_SECTOR_SERVICE_SLOTS if s["suffix"] not in existing]
+    if not extras:
+        return pack
+    return {**pack, "instances": [*pack["instances"], *extras]}
+
+
+# Keep aligned with sector-slot-pack.ts SECTOR_SLOT_PACKS (base + cross-sector)
+_SECTOR_SLOT_PACKS_BASE: list[SectorPack] = [
     {
         "sector_id": "beach_club",
         "label_tr": "Beach Club",
@@ -573,6 +625,10 @@ SECTOR_SLOT_PACKS: list[SectorPack] = [
             _inst("highlights_carousel", "Öne çıkanlar carousel", "Highlights carousel", "carousel"),
         ],
     },
+]
+
+SECTOR_SLOT_PACKS: list[SectorPack] = [
+    _with_cross_sector_slots(pack) for pack in _SECTOR_SLOT_PACKS_BASE
 ]
 
 

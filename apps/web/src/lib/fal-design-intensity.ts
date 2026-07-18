@@ -115,6 +115,51 @@ export interface FalDesignIntensityDirectives {
   layoutNote: string;
   /** Hard layout prohibitions for this level. */
   forbiddenLayouts: string[];
+  /**
+   * Found-surface typography — place type on real painted/flat photo regions
+   * when available (intensity-aware priority vs invented brand panels).
+   */
+  foundSurfaceAnchor: string;
+}
+
+/**
+ * Intensity-aware found-surface typography.
+ * Levels 1–2: prefer real photo surfaces over invented scrims/blocks.
+ * Levels 3–5: found surface OR intentional brand panel — never both stacked.
+ */
+export function resolveFoundSurfaceTypographyDirective(
+  level: FalDesignIntensityLevel,
+): string {
+  const surfaces =
+    'FOUND SURFACE = real flat photo region (painted wall/door/pillar, awning, menu board, fabric) with readable contrast.';
+
+  switch (level) {
+    case 'photo_first':
+      return (
+        `FOUND-SURFACE TYPOGRAPHY (L1 PRIORITY): ${surfaces} `
+        + 'Seat headline INSIDE its bounds/axis (vertical band→vertical stack). '
+        + 'Else thin bottom scrim only. NEVER invent a fake painted panel.'
+      );
+    case 'elegant_light':
+      return (
+        `FOUND-SURFACE TYPOGRAPHY (L2 PRIORITY): ${surfaces} `
+        + 'Prefer found surface over large scrim; keep type inside edges. '
+        + 'Fallback: soft scrim. FORBIDDEN: inventing opaque painted blocks.'
+      );
+    case 'designed':
+    case 'bold_editorial':
+      return (
+        `FOUND-SURFACE TYPOGRAPHY (L4–5 OPTIONAL): ${surfaces} `
+        + 'Brand graphic panels OK. If using a found surface, it is the sole text plate — do NOT stack a brand block on it.'
+      );
+    case 'balanced':
+    default:
+      return (
+        `FOUND-SURFACE TYPOGRAPHY (L3 PREFERRED WHEN CLEAR): ${surfaces} `
+        + 'Prefer found surface over floating overlay; else brand panel OR scrim. '
+        + 'ONE text plate: found surface XOR brand panel — never both overlapping.'
+      );
+  }
 }
 
 /** Prompt fragments injected into fal designer cards (GPT edit + Ideogram). */
@@ -123,6 +168,7 @@ export function resolveFalDesignIntensityDirectives(
   mode: 'feed_post' | 'reel',
 ): FalDesignIntensityDirectives {
   const isVertical = mode === 'reel';
+  const foundSurfaceAnchor = resolveFoundSurfaceTypographyDirective(level);
 
   switch (level) {
     case 'photo_first':
@@ -132,22 +178,24 @@ export function resolveFalDesignIntensityDirectives(
         photoRules: isVertical
           ? [
             'PHOTO HERO (MAXIMUM): The provided brand photo must fill 88–95% of the frame — full-bleed, edge-to-edge, natural colors unchanged.',
-            'Text zone: bottom 8–12% ONLY — one small refined caption line OR omit text entirely. Photo pixels above that line stay 100% untouched.',
+            'Text zone: prefer a found painted/flat surface in the photo; else bottom 8–12% thin scrim — omit text if neither works cleanly.',
           ]
           : [
             'PHOTO FIDELITY (MAXIMUM): Keep 88–95% of the frame as the ORIGINAL photograph — natural colors, exposure, and venue details unchanged.',
-            'Text zone: bottom corner or bottom 10% strip only — tiny designed caption, max 5 words.',
+            'Text zone: found-surface first; else bottom corner / bottom 10% strip — tiny designed caption, max 5 words.',
           ],
         typographyAnchor:
-          'Typography: ONE small tagline max — refined custom letterforms on a thin translucent scrim at the bottom edge only. Headline must NOT exceed 8% of frame height.',
+          'Typography: ONE small tagline max — prefer letterforms seated on a real painted/flat photo surface; else thin translucent bottom scrim. Headline must NOT exceed 8% of frame height.',
         layoutNote:
-          'Gallery-first editorial — the photograph IS the post. Design is invisible; restraint is luxury.',
+          'Gallery-first editorial — the photograph IS the post. When type appears, it should feel integrated into a real surface, not glued on.',
         forbiddenLayouts: [
           'FORBIDDEN: top horizontal color band or header block covering more than 12% of frame height.',
           'FORBIDDEN: split-screen, diagonal panels, large solid-color zones, poster layouts, or campaign cards.',
           'FORBIDDEN: headline larger than 8% of frame height or placed in upper half of frame.',
           'FORBIDDEN: recoloring, blurring, or replacing any part of the gallery photograph.',
+          'FORBIDDEN: inventing a fake painted panel or solid color plate that was not in the source photo.',
         ],
+        foundSurfaceAnchor,
       };
     case 'elegant_light':
       return {
@@ -156,22 +204,24 @@ export function resolveFalDesignIntensityDirectives(
         photoRules: isVertical
           ? [
             'PHOTO HERO: Brand photo fills 72–82% of frame — lower two-thirds full-bleed, natural colors preserved.',
-            'Text zone: bottom 18–28% — soft gradient scrim (40–55% opacity) behind headline ONLY. No solid opaque blocks.',
+            'Text zone: found painted/flat surface preferred; else bottom 18–28% soft gradient scrim (40–55% opacity) — no solid opaque blocks.',
           ]
           : [
             'PHOTO FIDELITY: Keep 72–82% of the frame as the original photograph — crisp, authentic, unfiltered.',
-            'Add a localized soft gradient scrim in the lower third behind text — photo upper region stays fully visible.',
+            'Prefer found-surface headline placement; else localized soft gradient scrim in the lower third — photo upper region stays fully visible.',
           ],
         typographyAnchor:
-          'Headline: medium-small, refined display type on translucent scrim — max 15% frame height, bottom-aligned. Premium, never loud.',
+          'Headline: medium-small, refined display type — seat it on a found photo surface when available, else translucent scrim. Max 15% frame height. Premium, never loud.',
         layoutNote:
-          'Luxury minimal — generous breathing room, delicate hierarchy, photo always wins over graphics.',
+          'Luxury minimal — generous breathing room; type integrates with real surfaces when present, otherwise whispers on soft scrim.',
         forbiddenLayouts: [
           'FORBIDDEN: solid opaque color blocks covering more than 25% of frame.',
           'FORBIDDEN: diagonal split layouts, poster-style upper bands, or neon campaign graphics.',
           'FORBIDDEN: headline in top half of frame or larger than 15% frame height.',
           'FORBIDDEN: multiple competing text zones or layered graphic shapes.',
+          'FORBIDDEN: inventing a fake painted wall/panel to host typography.',
         ],
+        foundSurfaceAnchor,
       };
     case 'designed':
       return {
@@ -187,14 +237,16 @@ export function resolveFalDesignIntensityDirectives(
             'Upper zone: strong brand-color block or diagonal panel with bold headline — intentional campaign poster composition.',
           ],
         typographyAnchor:
-          'Headline: bold designer display type on solid brand-color panel — high contrast, 25–35% frame height, upper zone.',
+          'Headline: bold designer display type on solid brand-color panel — high contrast, 25–35% frame height, upper zone. Optional: a clear found photo surface may replace the invented panel (one plate only).',
         layoutNote:
           'Campaign-ready — clear graphic/text zone vs photo zone. Designer hierarchy, not a photo with a caption.',
         forbiddenLayouts: [
           'FORBIDDEN: photo occupying more than 50% of frame (photo must be supporting strip, not dominant).',
           'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
           'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
+          'FORBIDDEN: stacking a brand color block over a found painted surface that already holds the headline.',
         ],
+        foundSurfaceAnchor,
       };
     case 'bold_editorial':
       return {
@@ -210,7 +262,7 @@ export function resolveFalDesignIntensityDirectives(
             'Editorial poster: oversized headline fills upper zone, layered shapes, magazine-cover energy.',
           ],
         typographyAnchor:
-          'Headline: OVERSIZED all-caps display type — 35–50% of frame height, stacked lines, poster-level impact. Typography LEADS.',
+          'Headline: OVERSIZED all-caps display type — 35–50% of frame height, stacked lines, poster-level impact. Typography LEADS (brand panel or one found surface — not both).',
         layoutNote:
           'Bold editorial poster — viewer reads headline first, photo second. Maximum typographic presence.',
         forbiddenLayouts: [
@@ -218,7 +270,9 @@ export function resolveFalDesignIntensityDirectives(
           'FORBIDDEN: small or medium headline — must be poster-scale, dominant, upper-zone.',
           'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
           'FORBIDDEN: balanced 50/50 photo-text split — typography must clearly dominate.',
+          'FORBIDDEN: inventing a fake painted wall solely to host type when using a graphic panel layout.',
         ],
+        foundSurfaceAnchor,
       };
     case 'balanced':
     default:
@@ -228,21 +282,23 @@ export function resolveFalDesignIntensityDirectives(
         photoRules: isVertical
           ? [
             'PHOTO HERO ZONE: Brand photo in lower 52–62% of frame — natural colors, faces, venue details unchanged.',
-            'GRAPHIC ZONE: Upper 38–48% — brand-color panel or rounded badge with headline. Clear zone separation.',
+            'GRAPHIC ZONE: Upper 38–48% — found painted surface if clear, else brand-color panel or rounded badge with headline.',
           ]
           : [
             'PHOTO FIDELITY (CRITICAL): Keep 52–62% of the frame as the ORIGINAL photograph — natural colors unchanged.',
-            'Upper zone: localized brand-color block or gradient scrim for headline — photo lower zone stays crisp.',
+            'Upper zone: found-surface headline when clear; else localized brand-color block or gradient scrim — photo lower zone stays crisp.',
           ],
         typographyAnchor:
-          'Headline on brand-color panel in upper zone — crisp, high-contrast, 18–25% frame height. Photo and design zones clearly separated.',
+          'Headline on ONE text plate — prefer a clear found photo surface, else brand-color panel in upper zone — crisp, high-contrast, 18–25% frame height.',
         layoutNote:
-          'Balanced editorial — intentional hierarchy: designed upper zone + authentic photo lower zone.',
+          'Balanced editorial — intentional hierarchy: designed text plate + authentic photo zone (found surface preferred when obvious).',
         forbiddenLayouts: [
           'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
           'FORBIDDEN: photo strip smaller than 45% (that is level 4–5).',
           'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
+          'FORBIDDEN: stacking found-surface type and a brand color panel on the same region.',
         ],
+        foundSurfaceAnchor,
       };
   }
 }

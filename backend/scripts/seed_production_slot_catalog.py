@@ -87,7 +87,7 @@ async def seed_slots(session) -> int:
                 "match_signals": build_match_signals(slot_key, design_type),
                 "prompt_pack": build_prompt_pack(slot_key, label_en, inst),
                 "optional_tags": optional_tags,
-                "enabled_by_default": True,
+                "enabled_by_default": bool(inst.get("enabled_by_default", True)),
                 "sort_order": (idx + 1) * 10,
                 "status": "active",
             }

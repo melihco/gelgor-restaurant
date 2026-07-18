@@ -107,11 +107,13 @@ export function BrandSlotFacilitiesPanel({
     for (const slot of overview?.slots ?? []) {
       for (const f of slot.required_facilities ?? []) keys.add(f);
     }
+    // Always surface opt-in service facilities (hiring / events calendar)
+    for (const opt of overview?.facility_options ?? []) {
+      if (!opt.enabled) keys.add(opt.key);
+    }
     // Fallback: show common venue toggles even if catalog tags empty
     if (keys.size === 0) {
-      for (const opt of overview?.facility_options ?? []) {
-        if (!opt.enabled) keys.add(opt.key);
-      }
+      for (const opt of overview?.facility_options ?? []) keys.add(opt.key);
     }
     return keys;
   }, [overview]);

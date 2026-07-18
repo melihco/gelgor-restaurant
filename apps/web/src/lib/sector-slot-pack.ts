@@ -10,7 +10,11 @@ import { buildDesignedStoryPromptPack } from '@/lib/catalog-slot-visual-defaults
 
 export type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
 
-/** Facility hints stored on brand_theme.slot_facilities (opt-out model). */
+/**
+ * Facility hints on brand_theme.slot_facilities.
+ * Venue amenities default ON (opt-out). Service-surface keys in
+ * OPT_IN_SLOT_FACILITIES default OFF (opt-in).
+ */
 export interface BrandSlotFacilities {
   pool?: boolean;
   dj_stage?: boolean;
@@ -22,6 +26,10 @@ export interface BrandSlotFacilities {
   classes?: boolean;
   kids_area?: boolean;
   delivery?: boolean;
+  /** Opt-in — iş ilanı / kariyer slotları */
+  hiring?: boolean;
+  /** Opt-in — harici etkinlik takvimi / program feed slotları */
+  events_calendar?: boolean;
 }
 
 export interface SlotArchetypeInstance {
@@ -63,7 +71,7 @@ export function parseFacilityFromTag(tag: string): keyof BrandSlotFacilities | n
   return key in DEFAULT_SLOT_FACILITIES ? key : null;
 }
 
-/** Opt-out default — all facilities assumed present until brand disables. */
+/** Opt-out defaults for venue amenities; opt-in keys stay false until brand enables. */
 export const DEFAULT_SLOT_FACILITIES: BrandSlotFacilities = {
   pool: true,
   dj_stage: true,
@@ -75,7 +83,65 @@ export const DEFAULT_SLOT_FACILITIES: BrandSlotFacilities = {
   classes: true,
   kids_area: true,
   delivery: true,
+  hiring: false,
+  events_calendar: false,
 };
+
+/** Facilities that stay OFF until the brand explicitly enables them. */
+export const OPT_IN_SLOT_FACILITIES: ReadonlyArray<keyof BrandSlotFacilities> = [
+  'hiring',
+  'events_calendar',
+];
+
+/**
+ * Cross-sector service-surface slots — appended to every canonical pack.
+ * Gated by requires:hiring / requires:events_calendar (default facility OFF).
+ */
+export const CROSS_SECTOR_SERVICE_SLOTS: SlotArchetypeInstance[] = [
+  {
+    suffix: 'hiring_open_role_post',
+    labelTr: 'İş ilanı',
+    labelEn: 'Open role hiring',
+    format: 'post',
+    optionalTags: ['requires:hiring'],
+    designTemplateType: 'announcement_formal',
+  },
+  {
+    suffix: 'hiring_team_story',
+    labelTr: 'Ekibe katıl story',
+    labelEn: 'Join the team story',
+    format: 'story',
+    optionalTags: ['requires:hiring'],
+    designTemplateType: 'announcement_formal',
+    pipeline: 'fal_story',
+    slotRole: 'campaign_story_motion',
+  },
+  {
+    suffix: 'events_calendar_post',
+    labelTr: 'Etkinlik takvimi',
+    labelEn: 'Events calendar',
+    format: 'post',
+    optionalTags: ['requires:events_calendar'],
+    designTemplateType: 'event_special',
+  },
+  {
+    suffix: 'events_calendar_story',
+    labelTr: 'Etkinlik takvimi story',
+    labelEn: 'Events calendar story',
+    format: 'story',
+    optionalTags: ['requires:events_calendar'],
+    designTemplateType: 'event_special',
+    pipeline: 'fal_story',
+    slotRole: 'campaign_story_motion',
+  },
+];
+
+function withCrossSectorServiceSlots(pack: SectorSlotPack): SectorSlotPack {
+  const existing = new Set(pack.instances.map((i) => i.suffix));
+  const extras = CROSS_SECTOR_SERVICE_SLOTS.filter((s) => !existing.has(s.suffix));
+  if (extras.length === 0) return pack;
+  return { ...pack, instances: [...pack.instances, ...extras] };
+}
 
 export function resolveBrandSlotFacilities(
   input?: BrandSlotFacilities | Record<string, unknown> | null,
@@ -105,6 +171,8 @@ export function slotEnabledByFacilities(
 function inferDesignTemplateType(slotKey: string): string {
   const key = slotKey.toLowerCase();
   if (/typography_poster/.test(key)) return 'campaign_announcement';
+  if (/hiring|open_role|job_posting|join_the_team/.test(key)) return 'announcement_formal';
+  if (/events_calendar/.test(key)) return 'event_special';
   if (/event_announcement/.test(key)) return 'event_special';
   if (/social_proof|testimonial|review|ugc|guest_social|client_testimonial|member_story/.test(key)) {
     return 'social_proof';
@@ -163,6 +231,16 @@ function inferLibrarySlotKey(slotKey: string, designType: string): string | null
 
 function buildMatchSignals(slotKey: string, designType: string): Record<string, unknown> {
   const signals: Record<string, unknown> = { design_template_type: designType };
+  if (/hiring|open_role|job_posting|join_the_team/.test(slotKey)) {
+    signals.announcement_types = ['hiring', 'job_posting', 'open_role'];
+    signals.keywords = ['iş ilanı', 'ekip arkadaşı', 'hiring', 'we are hiring', 'kariyer', 'işe alım'];
+    return signals;
+  }
+  if (/events_calendar/.test(slotKey)) {
+    signals.announcement_types = ['event_teaser', 'event_announcement', 'events_calendar'];
+    signals.keywords = ['etkinlik', 'takvim', 'program', 'lineup', 'bu hafta'];
+    return signals;
+  }
   if (/typography_poster/.test(slotKey)) {
     signals.announcement_types = ['campaign_offer', 'offer_campaign'];
     signals.typography_forward = true;
@@ -193,7 +271,7 @@ function buildMatchSignals(slotKey: string, designType: string): Record<string, 
 
 // ─── Sector packs (18 canonical sectors) ─────────────────────────────────────
 
-export const SECTOR_SLOT_PACKS: SectorSlotPack[] = [
+const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
   {
     sectorId: 'beach_club',
     labelTr: 'Beach Club',
@@ -705,6 +783,11 @@ export const SECTOR_SLOT_PACKS: SectorSlotPack[] = [
   },
 ];
 
+/** All canonical packs with shared hiring / events_calendar service slots. */
+export const SECTOR_SLOT_PACKS: SectorSlotPack[] = SECTOR_SLOT_PACKS_BASE.map(
+  withCrossSectorServiceSlots,
+);
+
 const PACK_BY_SECTOR = new Map(SECTOR_SLOT_PACKS.map((p) => [p.sectorId, p]));
 
 export function getSectorSlotPack(sectorId: string): SectorSlotPack | null {
@@ -809,6 +892,8 @@ export const FACILITY_HINT_LABELS_TR: Record<keyof BrandSlotFacilities, string> 
   classes: 'Grup dersi yoksa kapatabilirsiniz',
   kids_area: 'Çocuk alanı yoksa kapatabilirsiniz',
   delivery: 'Teslimat yoksa kapatabilirsiniz',
+  hiring: 'İş ilanı içerikleri için açın',
+  events_calendar: 'Etkinlik takvimi / program duyuruları için açın',
 };
 
 export function facilityHintForSlot(optionalTags?: string[]): string | null {

@@ -91,6 +91,8 @@ class FacilityOptionOut(BaseModel):
     enabled: bool
     label_tr: str
     hint_tr: str
+    # True for service-surface facilities that default OFF (hiring, events_calendar).
+    opt_in: bool = False
 
 
 class BrandSlotFacilitiesOut(BaseModel):

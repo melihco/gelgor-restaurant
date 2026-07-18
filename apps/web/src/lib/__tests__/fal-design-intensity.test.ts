@@ -6,6 +6,7 @@ import {
   resolveFalDesignIntensityDirectives,
   resolveFalDesignIntensityForChannel,
   resolveFalDesignIntensityMode,
+  resolveFoundSurfaceTypographyDirective,
   resolveSlotFalDesignIntensity,
   readIdeaAnnouncementType,
 } from '@/lib/fal-design-intensity';
@@ -50,23 +51,40 @@ describe('resolveFalDesignIntensityDirectives', () => {
     expect(d.photoRules.join(' ')).toMatch(/88–95%/);
     expect(d.forbiddenLayouts.join(' ')).toMatch(/FORBIDDEN.*top horizontal/i);
     expect(d.priorityBlock).toMatch(/PHOTO-FIRST/i);
+    expect(d.foundSurfaceAnchor).toMatch(/FOUND-SURFACE TYPOGRAPHY \(L1 PRIORITY\)/i);
   });
 
   it('balanced keeps 52–62% photo rule for vertical', () => {
     const d = resolveFalDesignIntensityDirectives('balanced', 'reel');
     expect(d.photoRules.join(' ')).toMatch(/52–62%/);
+    expect(d.foundSurfaceAnchor).toMatch(/XOR brand panel/i);
   });
 
   it('bold_editorial forbids large photo share', () => {
     const d = resolveFalDesignIntensityDirectives('bold_editorial', 'reel');
     expect(d.forbiddenLayouts.join(' ')).toMatch(/more than 38%/);
     expect(d.typographyAnchor).toMatch(/OVERSIZED/i);
+    expect(d.foundSurfaceAnchor).toMatch(/L4–5 OPTIONAL/i);
   });
 
   it('channel resolver reads theme', () => {
     expect(resolveFalDesignIntensityForChannel({
       fal_design_intensity: { post: 'designed' },
     }, 'post')).toBe('designed');
+  });
+});
+
+describe('resolveFoundSurfaceTypographyDirective', () => {
+  it('prioritizes found surfaces at photo_first and elegant_light', () => {
+    expect(resolveFoundSurfaceTypographyDirective('photo_first')).toMatch(/L1 PRIORITY/);
+    expect(resolveFoundSurfaceTypographyDirective('elegant_light')).toMatch(/L2 PRIORITY/);
+    expect(resolveFoundSurfaceTypographyDirective('photo_first')).toMatch(/NEVER invent a fake painted panel/i);
+  });
+
+  it('allows brand panels at designed/bold without stacking', () => {
+    const designed = resolveFoundSurfaceTypographyDirective('designed');
+    expect(designed).toMatch(/OPTIONAL/);
+    expect(designed).toMatch(/do NOT stack/i);
   });
 });
 

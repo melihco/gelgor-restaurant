@@ -39,6 +39,10 @@ def infer_design_template_type(slot_key: str) -> str:
     key = slot_key.lower()
     if "typography_poster" in key:
         return "campaign_announcement"
+    if any(x in key for x in ("hiring", "open_role", "job_posting", "join_the_team")):
+        return "announcement_formal"
+    if "events_calendar" in key:
+        return "event_special"
     if "event_announcement" in key:
         return "event_special"
     if any(x in key for x in ("social_proof", "testimonial", "review", "ugc", "guest_social")):
@@ -219,6 +223,26 @@ def humanize_slot_key(slot_key: str) -> tuple[str, str]:
 
 def build_match_signals(slot_key: str, design_template_type: str) -> dict:
     signals: dict = {"design_template_type": design_template_type}
+    key = slot_key.lower()
+    if any(x in key for x in ("hiring", "open_role", "job_posting", "join_the_team")):
+        signals["announcement_types"] = ["hiring", "job_posting", "open_role"]
+        signals["keywords"] = [
+            "iş ilanı",
+            "ekip arkadaşı",
+            "hiring",
+            "we are hiring",
+            "kariyer",
+            "işe alım",
+        ]
+        return signals
+    if "events_calendar" in key:
+        signals["announcement_types"] = [
+            "event_teaser",
+            "event_announcement",
+            "events_calendar",
+        ]
+        signals["keywords"] = ["etkinlik", "takvim", "program", "lineup", "bu hafta"]
+        return signals
     if "typography_poster" in slot_key:
         signals["announcement_types"] = ["campaign_offer", "offer_campaign"]
         signals["typography_forward"] = True

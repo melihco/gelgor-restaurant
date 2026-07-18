@@ -395,8 +395,8 @@ export function buildIntensityTypographyBlock(input: {
     const lines = [
       'TYPOGRAPHY (photo-first): Gallery photo is absolute hero — 88–95% of frame untouched.',
       `If any text appears: ONE small tagline only, max 5 words, in ${spec.fontDescription}.`,
-      `Style: ${spec.styleDirective} — bottom-edge placement or thin scrim, never poster-scale.`,
-      'Do NOT render a large headline. No event-card layout. No upper-zone text blocks.',
+      `Style: ${spec.styleDirective} — prefer type on a real painted/flat photo surface; else bottom-edge thin scrim — never poster-scale.`,
+      'Do NOT render a large headline. No event-card layout. No upper-zone text blocks. Never invent a fake painted panel.',
     ];
     if (input.subtitle?.trim() && isMeaningfulFalOverlayText(input.subtitle)) {
       lines.push(`Preferred tagline (exact, small): "${input.subtitle.trim().slice(0, 48)}"`);
@@ -408,9 +408,9 @@ export function buildIntensityTypographyBlock(input: {
 
   if (input.level === 'elegant_light') {
     return [
-      'TYPOGRAPHY (elegant/light): Refined bottom-zone headline on soft translucent scrim only.',
-      'Reject loud poster type — medium-small display letterforms, max 15% frame height.',
-      `${formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription)} — bottom-aligned, never upper-zone.`,
+      'TYPOGRAPHY (elegant/light): Refined headline — seat on a found painted/flat photo surface when clear; else soft translucent scrim.',
+      'Reject loud poster type — medium-small display letterforms, max 15% frame height. Align type to the surface axis.',
+      `${formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription)} — found-surface or bottom-aligned, never upper-zone poster band.`,
       `Style energy: ${spec.styleDirective} — delicate, premium, whisper-quiet hierarchy.`,
     ];
   }
@@ -732,10 +732,11 @@ function buildDesignedDesignCardPrompt(
   });
 
   const logoBlock = [logoRefNote, brandMarkInstruction].filter(Boolean).join(' ');
-  // +280 reserves room for FAL_SUBJECT_CLEARANCE_DIRECTIVE without trimming logo/photo contracts.
+  // Clearance + found-surface + logo contract headroom (logo block is long; must not trim Photo hero rule).
   const promptLimit = (isReel || input.aspectRatio === '9:16' ? 3800 : 3200)
-    + (input.logoUrl ? 400 : 0)
-    + 280;
+    + (input.logoUrl ? 900 : 0)
+    + 280
+    + 180;
   // Keep contract + scene + brand directives early so finalizeFalPrompt trim cannot drop them.
   const promptBody = [
     role,
@@ -745,6 +746,7 @@ function buildDesignedDesignCardPrompt(
     onCanvasTextContract,
     // Before long typography blocks — must survive finalizeFalPrompt maxChars trim.
     FAL_SUBJECT_CLEARANCE_DIRECTIVE,
+    intensityDirectives.foundSurfaceAnchor,
     captionMessageLock,
     premiumBar,
     input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',

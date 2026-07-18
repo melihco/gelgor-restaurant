@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
+  CROSS_SECTOR_SERVICE_SLOTS,
+  DEFAULT_SLOT_FACILITIES,
   SECTOR_SLOT_PACKS,
   buildSlotKeysBySectorFromPacks,
   getSectorSlotPack,
   instanceToSlotDefinition,
   listSectorSlotPackIds,
+  slotEnabledByFacilities,
   slotKeyForSector,
+  synthesizeSectorSlotDefinitions,
 } from '@/lib/sector-slot-pack';
 
 describe('sector-slot-pack coverage', () => {
@@ -38,17 +42,48 @@ describe('sector-slot-pack coverage', () => {
     }
   });
 
-  it('each sector has 12–22 unique slot keys', () => {
+  it('each sector has 12–30 unique slot keys', () => {
     const keysBySector = buildSlotKeysBySectorFromPacks();
     for (const pack of SECTOR_SLOT_PACKS) {
       const keys = keysBySector[pack.sectorId] ?? [];
       expect(keys.length).toBeGreaterThanOrEqual(12);
-      expect(keys.length).toBeLessThanOrEqual(22);
+      expect(keys.length).toBeLessThanOrEqual(30);
       expect(new Set(keys).size).toBe(keys.length);
       for (const key of keys) {
         expect(key.startsWith(`${pack.sectorId}_`)).toBe(true);
       }
     }
+  });
+
+  it('every sector includes opt-in hiring + events_calendar service slots', () => {
+    expect(DEFAULT_SLOT_FACILITIES.hiring).toBe(false);
+    expect(DEFAULT_SLOT_FACILITIES.events_calendar).toBe(false);
+    expect(CROSS_SECTOR_SERVICE_SLOTS.length).toBe(4);
+
+    for (const pack of SECTOR_SLOT_PACKS) {
+      for (const extra of CROSS_SECTOR_SERVICE_SLOTS) {
+        const inst = pack.instances.find((i) => i.suffix === extra.suffix);
+        expect(inst, `${pack.sectorId} missing ${extra.suffix}`).toBeTruthy();
+        expect(inst!.optionalTags).toEqual(extra.optionalTags);
+      }
+    }
+
+    const beach = synthesizeSectorSlotDefinitions('beach_club');
+    const hiring = beach.find((s) => s.slot_key === 'beach_club_hiring_open_role_post');
+    expect(hiring?.match_signals?.announcement_types).toEqual(
+      expect.arrayContaining(['hiring', 'job_posting']),
+    );
+    expect(hiring?.design_template_type).toBe('announcement_formal');
+    expect(slotEnabledByFacilities(hiring?.optional_tags, DEFAULT_SLOT_FACILITIES)).toBe(false);
+    expect(
+      slotEnabledByFacilities(hiring?.optional_tags, { ...DEFAULT_SLOT_FACILITIES, hiring: true }),
+    ).toBe(true);
+
+    const events = beach.find((s) => s.slot_key === 'beach_club_events_calendar_story');
+    expect(events?.design_template_type).toBe('event_special');
+    expect(events?.match_signals?.announcement_types).toEqual(
+      expect.arrayContaining(['events_calendar', 'event_announcement']),
+    );
   });
 
   it('format mix includes post, story, reel, and carousel', () => {

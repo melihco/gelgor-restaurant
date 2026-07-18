@@ -178,6 +178,8 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('DESIGN INTENSITY: PHOTO-FIRST');
     expect(prompt).toContain('FORBIDDEN: top horizontal color band');
     expect(prompt).toContain('TYPOGRAPHY (photo-first)');
+    expect(prompt).toContain('FOUND-SURFACE TYPOGRAPHY (L1 PRIORITY)');
+    expect(prompt).toContain('NEVER invent a fake painted panel');
     expect(prompt).not.toContain('TYPOGRAPHY STANDARD (MANDATORY)');
     expect(prompt).toContain('photo-first): Sun-washed Aegean restraint');
   });

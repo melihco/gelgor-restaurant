@@ -33,7 +33,12 @@ _DEFAULT_SLOT_FACILITIES: dict[str, bool] = {
     "classes": True,
     "kids_area": True,
     "delivery": True,
+    # Opt-in service surface — OFF until brand enables
+    "hiring": False,
+    "events_calendar": False,
 }
+
+_OPT_IN_FACILITIES = frozenset({"hiring", "events_calendar"})
 
 _FACILITY_LABELS_TR: dict[str, str] = {
     "pool": "Havuz",
@@ -46,6 +51,8 @@ _FACILITY_LABELS_TR: dict[str, str] = {
     "classes": "Grup dersi",
     "kids_area": "Çocuk alanı",
     "delivery": "Teslimat",
+    "hiring": "İş ilanı / kariyer",
+    "events_calendar": "Etkinlik takvimi",
 }
 
 _FACILITY_HINTS_TR: dict[str, str] = {
@@ -59,6 +66,8 @@ _FACILITY_HINTS_TR: dict[str, str] = {
     "classes": "Grup dersi yoksa kapatabilirsiniz",
     "kids_area": "Çocuk alanı yoksa kapatabilirsiniz",
     "delivery": "Teslimat yoksa kapatabilirsiniz",
+    "hiring": "İş ilanı içerikleri için açın",
+    "events_calendar": "Etkinlik takvimi / program duyuruları için açın",
 }
 
 # Fixed 7 shelves — mirrors apps/web brand-template-library BRAND_LIBRARY_SLOT_SPECS keys.
@@ -95,9 +104,10 @@ def facility_options(facilities: dict[str, bool]) -> list[dict[str, Any]]:
     return [
         {
             "key": key,
-            "enabled": bool(facilities.get(key, True)),
+            "enabled": bool(facilities.get(key, _DEFAULT_SLOT_FACILITIES[key])),
             "label_tr": _FACILITY_LABELS_TR.get(key, key),
             "hint_tr": _FACILITY_HINTS_TR.get(key, ""),
+            "opt_in": key in _OPT_IN_FACILITIES,
         }
         for key in _DEFAULT_SLOT_FACILITIES
     ]
@@ -158,7 +168,7 @@ async def _load_brand_context(
 
 
 async def load_brand_slot_facilities(db: AsyncSession, workspace_id: uuid.UUID) -> dict[str, bool]:
-    """Read brand_theme.slot_facilities — opt-out model (missing keys default True)."""
+    """Read brand_theme.slot_facilities — venue keys default ON; opt-in keys default OFF."""
     result = await db.execute(
         select(BrandContext.brand_theme).where(BrandContext.workspace_id == workspace_id)
     )
@@ -479,10 +489,12 @@ async def sync_facilities_to_assignments(
     db: AsyncSession,
     workspace_id: uuid.UUID,
 ) -> dict[str, Any]:
-    """Soft-disable assignment rows blocked by current facilities (no deletes)."""
+    """Sync facility gates ↔ assignments: disable blocked, enable/create unblocked defaults."""
     facilities = await _load_brand_slot_facilities(db, workspace_id)
     assignments = await list_tenant_assignments(db, workspace_id)
+    assignment_map = {a.slot_key: a for a in assignments}
     disabled_keys: list[str] = []
+    enabled_keys: list[str] = []
 
     for assignment in assignments:
         if not assignment.enabled:
@@ -497,6 +509,40 @@ async def sync_facilities_to_assignments(
             assignment.assignment_source = "facility_sync"
         disabled_keys.append(assignment.slot_key)
 
+    sector_id = await resolve_workspace_sector_id(db, workspace_id)
+    if sector_id:
+        sector_slots = await list_slot_definitions(
+            db, sector_id=sector_id, active_only=True,
+        )
+        for idx, slot in enumerate(sector_slots):
+            req = required_facilities_from_tags(slot.optional_tags)
+            if not req:
+                continue
+            if not slot.enabled_by_default:
+                continue
+            if not _slot_enabled_by_facilities(slot.optional_tags, facilities):
+                continue
+            current = assignment_map.get(slot.slot_key)
+            if current:
+                if current.assignment_source == "operator" and not current.enabled:
+                    continue
+                if not current.enabled:
+                    current.enabled = True
+                    if current.assignment_source != "operator":
+                        current.assignment_source = "facility_sync"
+                    enabled_keys.append(slot.slot_key)
+            else:
+                db.add(
+                    TenantSlotAssignment(
+                        workspace_id=workspace_id,
+                        slot_key=slot.slot_key,
+                        enabled=True,
+                        priority=(idx + 1) * 10,
+                        assignment_source="facility_sync",
+                    )
+                )
+                enabled_keys.append(slot.slot_key)
+
     await db.flush()
     overview = await build_tenant_slot_overview(db, workspace_id)
     sector_id = overview.get("sector_id")
@@ -504,12 +550,15 @@ async def sync_facilities_to_assignments(
         "tenant_slot_facility_sync",
         workspace_id=str(workspace_id),
         disabled=len(disabled_keys),
+        enabled=len(enabled_keys),
     )
     return {
         "workspace_id": workspace_id,
         "sector_id": sector_id,
         "disabled": len(disabled_keys),
         "disabled_slot_keys": disabled_keys,
+        "enabled": len(enabled_keys),
+        "enabled_slot_keys": enabled_keys,
         "coverage": overview["coverage"],
     }
 
