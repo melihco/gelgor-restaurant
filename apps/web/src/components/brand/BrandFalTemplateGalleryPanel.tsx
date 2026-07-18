@@ -106,6 +106,7 @@ function GalleryCard({
   onSignatureCompare,
   onGenerateSlot,
   slotGenerating,
+  signatureComparing,
   onToggleSlot,
   slotSaving,
 }: {
@@ -117,6 +118,8 @@ function GalleryCard({
   onSignatureCompare?: (row: CatalogDesignGalleryRow) => void;
   onGenerateSlot?: (row: CatalogDesignGalleryRow) => void;
   slotGenerating?: boolean;
+  /** Signature compare sheet open for this card — show busy state on the button. */
+  signatureComparing?: boolean;
   onToggleSlot?: (row: CatalogDesignGalleryRow, enabled: boolean) => void;
   slotSaving?: boolean;
 }) {
@@ -299,22 +302,28 @@ function GalleryCard({
         {row && onSignatureCompare && (
           <button
             type="button"
-            disabled={slotGenerating}
-            onClick={() => onSignatureCompare(row)}
+            disabled={slotGenerating || signatureComparing}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSignatureCompare(row);
+            }}
             style={{
               marginTop: 6,
               width: '100%',
-              padding: '7px 10px',
+              minHeight: 44,
+              padding: '10px 12px',
               borderRadius: 8,
-              border: `1px solid ${t.goldBorder ?? t.accentBorder}`,
-              background: t.isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.08)',
-              color: t.gold ?? t.accent,
-              fontSize: 11,
+              border: `1px solid ${t.goldBorder}`,
+              background: t.isDark ? 'rgba(200,168,106,0.14)' : 'rgba(200,168,106,0.12)',
+              color: t.gold,
+              fontSize: 12,
               fontWeight: 700,
-              cursor: slotGenerating ? 'not-allowed' : 'pointer',
+              cursor: (slotGenerating || signatureComparing) ? 'wait' : 'pointer',
+              opacity: signatureComparing ? 0.8 : 1,
             }}
           >
-            Marka imzası dene
+            {signatureComparing ? 'İmza karşılaştırılıyor…' : 'Marka imzası dene'}
           </button>
         )}
       </div>
@@ -826,6 +835,7 @@ export function BrandFalTemplateGalleryPanel({
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
                 slotGenerating={generatingSlotKey === row.slotKey}
+                signatureComparing={signatureRow?.slotKey === row.slotKey}
                 slotSaving={slotSavingKey === row.slotKey}
               />
             ))}
@@ -852,6 +862,7 @@ export function BrandFalTemplateGalleryPanel({
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
                 slotGenerating={generatingSlotKey === row.slotKey}
+                signatureComparing={signatureRow?.slotKey === row.slotKey}
                 slotSaving={slotSavingKey === row.slotKey}
               />
             ))}

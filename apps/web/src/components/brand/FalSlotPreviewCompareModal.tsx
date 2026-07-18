@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { T } from '@/app/mobile/_components/theme-context';
 import { fetchTenantBff } from '@/lib/bff-fetch';
 import { FAL_DESIGN_INTENSITY_LABELS, type FalDesignIntensityLevel } from '@/lib/fal-design-intensity';
@@ -28,12 +29,17 @@ export function FalSlotPreviewCompareModal({
   onClose: () => void;
   onApplied?: () => void;
 }) {
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'compare' | 'regenerate' | null>(null);
   const [variants, setVariants] = useState<PreviewVariant[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const runPreview = async (previewMode: 'compare' | 'regenerate') => {
     setLoading(true);
@@ -118,19 +124,22 @@ export function FalSlotPreviewCompareModal({
     }
   };
 
-  return (
+  if (!mounted || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 1200,
+        zIndex: 10050,
         background: 'rgba(0,0,0,0.55)',
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
         padding: 16,
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
       }}
       onClick={onClose}
     >
@@ -247,7 +256,8 @@ export function FalSlotPreviewCompareModal({
           </button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

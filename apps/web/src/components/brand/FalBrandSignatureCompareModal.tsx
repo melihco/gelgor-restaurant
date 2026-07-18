@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { T } from '@/app/mobile/_components/theme-context';
 import { fetchTenantBff } from '@/lib/bff-fetch';
 import { resolveClientMediaUrl } from '@/lib/media-url';
@@ -26,18 +27,27 @@ export function FalBrandSignatureCompareModal({
   row,
   t,
   onClose,
+  /** When true (default), start the 2-arm Fal compare as soon as the sheet opens. */
+  autoStart = true,
 }: {
   tenantId: string;
   sector: string;
   row: CatalogDesignGalleryRow;
   t: T;
   onClose: () => void;
+  autoStart?: boolean;
 }) {
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [variants, setVariants] = useState<SignatureVariant[]>([]);
   const [summary, setSummary] = useState<SignatureSummary | null>(null);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const startedForKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const runCompare = async () => {
     setLoading(true);
@@ -80,6 +90,14 @@ export function FalBrandSignatureCompareModal({
     }
   };
 
+  useEffect(() => {
+    if (!autoStart) return;
+    if (startedForKey.current === row.slotKey) return;
+    startedForKey.current = row.slotKey;
+    void runCompare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- start once per opened slot
+  }, [autoStart, row.slotKey]);
+
   const summaryBits = summary
     ? [
         summary.grading ? `Grading: ${summary.grading}` : '',
@@ -89,19 +107,23 @@ export function FalBrandSignatureCompareModal({
       ].filter(Boolean)
     : [];
 
-  return (
+  if (!mounted || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal
+      aria-label="Marka imzası karşılaştırma"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 1200,
-        background: 'rgba(0,0,0,0.55)',
+        zIndex: 10050,
+        background: 'rgba(0,0,0,0.62)',
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
         padding: 16,
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
       }}
       onClick={onClose}
     >
@@ -110,12 +132,13 @@ export function FalBrandSignatureCompareModal({
         style={{
           width: '100%',
           maxWidth: 640,
-          maxHeight: '90vh',
+          maxHeight: '90dvh',
           overflow: 'auto',
           borderRadius: 18,
           background: t.isDark ? '#131A24' : '#fff',
           border: `0.5px solid ${t.separator}`,
           padding: 16,
+          boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
@@ -128,15 +151,24 @@ export function FalBrandSignatureCompareModal({
           <button
             type="button"
             onClick={onClose}
-            style={{ border: 'none', background: 'transparent', color: t.textMuted, fontSize: 18, cursor: 'pointer' }}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: t.textMuted,
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: 'pointer',
+              minWidth: 44,
+              minHeight: 44,
+            }}
           >
             ×
           </button>
         </div>
 
         <p style={{ margin: '0 0 12px', fontSize: 12, color: t.textSecondary, lineHeight: 1.45 }}>
-          Aynı slot için iki önizleme üretir: solda bugünkü recipe, sağda vibe/grading/composition
-          imza paketi. Sonuçlar sadece bu ekranda kalır; şablon kütüphanesine veya mission’a yazılmaz.
+          Aynı slot için iki önizleme: solda bugünkü recipe, sağda vibe/grading/composition imza paketi.
+          Sonuçlar sadece bu ekranda kalır.
         </p>
 
         <button
@@ -145,15 +177,16 @@ export function FalBrandSignatureCompareModal({
           onClick={() => void runCompare()}
           style={{
             width: '100%',
+            minHeight: 44,
             padding: '12px 14px',
             borderRadius: 12,
             border: 'none',
-            background: t.gold ?? t.accent,
+            background: t.gold,
             color: '#111',
             fontWeight: 700,
             fontSize: 13,
             cursor: loading ? 'wait' : 'pointer',
-            opacity: loading ? 0.7 : 1,
+            opacity: loading ? 0.75 : 1,
             marginBottom: 12,
           }}
         >
@@ -176,10 +209,10 @@ export function FalBrandSignatureCompareModal({
             padding: '10px 12px',
             borderRadius: 10,
             background: t.isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.1)',
-            border: `1px solid ${t.goldBorder ?? t.separator}`,
+            border: `1px solid ${t.goldBorder}`,
           }}
           >
-            <div style={{ fontSize: 11, fontWeight: 700, color: t.gold ?? t.accent, marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.gold, marginBottom: 6 }}>
               İmza paketi (preview)
             </div>
             {summaryBits.map((bit) => (
@@ -200,7 +233,7 @@ export function FalBrandSignatureCompareModal({
                 <div
                   key={`${variant.arm ?? variant.label}-${idx}`}
                   style={{
-                    border: `1.5px solid ${isSignature ? (t.goldBorder ?? t.accentBorder) : t.separator}`,
+                    border: `1.5px solid ${isSignature ? t.goldBorder : t.separator}`,
                     borderRadius: 12,
                     overflow: 'hidden',
                     background: 'transparent',
@@ -245,6 +278,7 @@ export function FalBrandSignatureCompareModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
