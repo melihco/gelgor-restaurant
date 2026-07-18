@@ -16,7 +16,6 @@ type BrandProfileCoreSnapshot = {
   description?: string;
   instagramHandle?: string;
   googleBusinessUrl?: string;
-  brandImageUrls?: string[];
   primaryFont?: string;
   secondaryFont?: string;
   brandColors?: string[];

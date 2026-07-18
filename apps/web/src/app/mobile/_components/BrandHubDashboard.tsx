@@ -215,7 +215,6 @@ export function BrandHubDashboard({
   statusBanners,
 }: BrandHubDashboardProps) {
   const readinessGood = readinessScore >= 80;
-  const accentGlow = readinessGood ? 'rgba(138,171,189,0.45)' : 'rgba(245,158,11,0.4)';
 
   return (
     <div
@@ -265,42 +264,49 @@ export function BrandHubDashboard({
         <div className="brand-hub-hero-sweep" aria-hidden />
 
         <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div className="brand-hub-hero-mark">
-            <div className="brand-hub-hero-orbit" aria-hidden />
-            <div className="brand-hub-hero-glow" aria-hidden style={{ background: `radial-gradient(circle, ${accentGlow} 0%, transparent 70%)` }} />
-            <div style={{
-              width: 112, height: 112, borderRadius: 30, overflow: 'hidden', position: 'relative',
-              background: logoUrl
-                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.94)')
-                : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
-              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)'}`,
-              boxShadow: t.isDark
-                ? `0 18px 44px rgba(0,0,0,0.5), 0 0 0 1px ${brandPrimary}33`
-                : '0 16px 34px rgba(15,23,42,0.12)',
+          <div
+            className="brand-hub-hero-mark"
+            style={{
+              /* Gutter ≥ score size so the ring sits clear of the logo corner. */
+              paddingRight: 48,
+              paddingBottom: 48,
             }}
-            >
-              {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={resolveGalleryImageSrc(logoUrl)}
-                  alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 14 }}
-                />
-              ) : (
-                <div style={{
-                  width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 34, fontWeight: 800, color: '#fff', letterSpacing: '-0.05em',
-                }}
-                >
-                  {monogram}
-                </div>
-              )}
+          >
+            <div style={{ position: 'relative', width: 112, height: 112 }}>
+              <div style={{
+                width: 112, height: 112, borderRadius: 30, overflow: 'hidden', position: 'relative',
+                background: logoUrl
+                  ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.94)')
+                  : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
+                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)'}`,
+                boxShadow: t.isDark
+                  ? `0 18px 44px rgba(0,0,0,0.5), 0 0 0 1px ${brandPrimary}33`
+                  : '0 16px 34px rgba(15,23,42,0.12)',
+              }}
+              >
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={resolveGalleryImageSrc(logoUrl)}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 14 }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 34, fontWeight: 800, color: '#fff', letterSpacing: '-0.05em',
+                  }}
+                  >
+                    {monogram}
+                  </div>
+                )}
+              </div>
             </div>
             <div
               className="brand-hub-hero-score"
               style={{
-                position: 'absolute', right: -6, bottom: -6,
-                width: 58, height: 58, borderRadius: '50%',
+                position: 'absolute', right: 0, bottom: 0,
+                width: 46, height: 46, borderRadius: '50%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: t.isDark ? 'rgba(12,14,18,0.94)' : 'rgba(255,255,255,0.96)',
                 border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)'}`,
@@ -309,14 +315,15 @@ export function BrandHubDashboard({
                   : '0 8px 20px rgba(15,23,42,0.1)',
               }}
             >
-              <div style={{ position: 'relative', width: 54, height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ position: 'relative', width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <ReadinessRing
                   score={readinessScore}
+                  size={42}
                   accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
                   track={t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'}
                 />
                 <span style={{
-                  position: 'absolute', fontSize: 15, fontWeight: 800, letterSpacing: '-0.04em',
+                  position: 'absolute', fontSize: 13, fontWeight: 800, letterSpacing: '-0.04em',
                   color: t.textPrimary, fontVariantNumeric: 'tabular-nums',
                 }}
                 >
@@ -326,22 +333,25 @@ export function BrandHubDashboard({
             </div>
           </div>
 
-          <h1
-            className="brand-hub-hero-title"
-            style={{
-              margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.045em', lineHeight: 1.05,
-              color: t.textPrimary, textAlign: 'center', maxWidth: '100%',
-              textShadow: t.isDark ? '0 2px 24px rgba(0,0,0,0.45)' : 'none',
-            }}
-          >
-            {brandName || 'Markanız'}
-          </h1>
+          {/* Logo already carries the brand wordmark — only show name when no logo. */}
+          {!logoUrl && (
+            <h1
+              className="brand-hub-hero-title"
+              style={{
+                margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.045em', lineHeight: 1.05,
+                color: t.textPrimary, textAlign: 'center', maxWidth: '100%',
+                textShadow: t.isDark ? '0 2px 24px rgba(0,0,0,0.45)' : 'none',
+              }}
+            >
+              {brandName || 'Markanız'}
+            </h1>
+          )}
 
           {(industryLabel || locationLabel) && (
             <p
               className="brand-hub-hero-meta"
               style={{
-                margin: '10px 0 0', fontSize: 13, fontWeight: 500, letterSpacing: '0.04em',
+                margin: logoUrl ? '14px 0 0' : '10px 0 0', fontSize: 13, fontWeight: 500, letterSpacing: '0.04em',
                 color: t.textMuted, textAlign: 'center', lineHeight: 1.45, textTransform: 'uppercase' as const,
               }}
             >

@@ -99,16 +99,16 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
 
   return (
     <div className="onboarding-shell onboarding-shell--login">
-      <OnboardingChromeBackdrop />
+      <OnboardingChromeBackdrop showMark={false} />
 
-      <main className="onboarding-main onboarding-login-main">
-        <div className="login-content">
-          <div className="login-hero">
-            <SmartAgencyLogo variant="full" priority className="login-logo" />
-          </div>
+      {/* Upper band — logo optically centers the top third */}
+      <header className="login-brand-band">
+        <SmartAgencyLogo variant="full" priority className="login-logo" />
+      </header>
 
-          <form className="onboarding-auth-form login-form" onSubmit={handleLogin} noValidate>
-            <div className="onboarding-fields">
+      <main className="login-main">
+        <form className="login-form" onSubmit={handleLogin} noValidate>
+          <div className="onboarding-fields login-fields">
             <label className="onboarding-field">
               <span className="onboarding-field-label">E-posta</span>
               <input
@@ -150,24 +150,23 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
                 </button>
               </div>
             </label>
-            </div>
+          </div>
 
-            {error && <p className="onboarding-error">{error}</p>}
+          {error && <p className="onboarding-error login-error">{error}</p>}
 
-            <div className="onboarding-actions onboarding-actions--login">
-              <button
-                type="submit"
-                disabled={loading}
-                className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
-              >
-                {loading ? 'Bağlanıyor…' : 'Devam et'}
-              </button>
-            </div>
-          </form>
-        </div>
+          <div className="login-actions">
+            <button
+              type="submit"
+              disabled={loading}
+              className={`onboarding-cta${loading ? ' onboarding-cta--loading' : ''}`}
+            >
+              {loading ? 'Bağlanıyor…' : 'Giriş yap'}
+            </button>
+          </div>
+        </form>
       </main>
 
-      <footer className="onboarding-footer onboarding-footer--login">
+      <footer className="login-footer">
         {onSignup && (
           <button type="button" onClick={onSignup} className="onboarding-login-link">
             Hesabınız yok mu? <span>Yeni hesap oluştur</span>

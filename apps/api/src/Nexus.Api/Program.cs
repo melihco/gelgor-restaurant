@@ -564,7 +564,7 @@ static async Task ApplySchemaPatches(NexusDbContext ctx)
     {
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"InstagramHandle\" varchar(100) NOT NULL DEFAULT '';",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"GoogleBusinessUrl\" varchar(500) NOT NULL DEFAULT '';",
-        "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"BrandImageUrls\" varchar(2000) NOT NULL DEFAULT '';",
+        "ALTER TABLE \"CompanyProfiles\" DROP COLUMN IF EXISTS \"BrandImageUrls\";",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"BrandAnalysis\" text NOT NULL DEFAULT '';",
         "DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='CompanyProfiles' AND column_name='BrandAnalysis' AND data_type='character varying') THEN ALTER TABLE \"CompanyProfiles\" ALTER COLUMN \"BrandAnalysis\" TYPE text; END IF; END $$;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"BrandAnalyzedAt\" timestamp with time zone;",
@@ -573,7 +573,7 @@ static async Task ApplySchemaPatches(NexusDbContext ctx)
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"BrandColors\" varchar(500) NOT NULL DEFAULT '';",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"AccentColors\" varchar(500) NOT NULL DEFAULT '';",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"SocialTemplateStyle\" varchar(1000) NOT NULL DEFAULT '';",
-        "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"LogoUsageRules\" varchar(1000) NOT NULL DEFAULT '';",
+        "ALTER TABLE \"CompanyProfiles\" DROP COLUMN IF EXISTS \"LogoUsageRules\";",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"PlatformProfiles\" jsonb NOT NULL DEFAULT '[]'::jsonb;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"ContentNeeds\" jsonb NOT NULL DEFAULT '[]'::jsonb;",
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"OperatingCapabilities\" jsonb NOT NULL DEFAULT '[]'::jsonb;",

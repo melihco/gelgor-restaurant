@@ -121,7 +121,6 @@ export async function POST(request: NextRequest) {
         brandColors: '',
         accentColors: '',
         socialTemplateStyle: '',
-        logoUsageRules: '',
         defaultApprovalMode: 'SuggestAndWait',
         setupCompleted: false,
         instagramHandle: instagramHandle || undefined,

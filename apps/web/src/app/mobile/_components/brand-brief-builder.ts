@@ -19,6 +19,9 @@ const ANALYTICS_TASKS = new Set(['traffic_analysis', 'conversion_report', 'weekl
  * Builds a task-specific brief string enriched with brand intelligence.
  * Injected as `brief` in inputData so agents receive full brand context
  * beyond the base BrandInfo backstory already included by .NET.
+ *
+ * Intentionally omits templateFamilies / design-template lists — production
+ * binds templates via matcher; stale or verbose template hints mislead agents.
  */
 export function buildBrandAwareBrief(
   profile: CompanyProfile,
@@ -52,7 +55,6 @@ export function buildBrandAwareBrief(
     if (profile.systemIntelligence) {
       lines.push(`Marka zekası:\n${profile.systemIntelligence.slice(0, 500)}`);
     }
-    if (profile.templateFamilies) lines.push(`Şablon aileleri: ${profile.templateFamilies}`);
   }
 
   if (REVIEW_TASKS.has(taskType)) {

@@ -1018,7 +1018,7 @@ export default function BrandHubPage() {
       <GlassPanel tone="cyan">
         <SectionHeader
           title="Tenant sosyal medya brand kit"
-          subtitle="Şirket profilinden gelen font, renk ve logo kuralları AI kreatifleri ve Canva template eşleşmesini yönlendirir."
+          subtitle="Şirket profilinden gelen font, renk ve şablon stili AI kreatifleri ve Canva template eşleşmesini yönlendirir."
         />
         <div className="grid gap-3 md:grid-cols-3">
           <BrandKitItem label="Primary font" value={companyProfile?.primaryFont} fallback="Tanımlanmadı" />
@@ -1026,7 +1026,6 @@ export default function BrandHubPage() {
           <BrandKitItem label="Brand colors" value={companyProfile?.brandColors} fallback="Tanımlanmadı" />
           <BrandKitItem label="Accent colors" value={companyProfile?.accentColors} fallback="Tanımlanmadı" />
           <BrandKitItem label="Template style" value={companyProfile?.socialTemplateStyle} fallback={companyProfile?.visualStyle || 'Tanımlanmadı'} />
-          <BrandKitItem label="Logo rules" value={companyProfile?.logoUsageRules} fallback="Tanımlanmadı" />
         </div>
       </GlassPanel>
 

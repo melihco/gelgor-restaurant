@@ -4232,12 +4232,6 @@
           "googleBusinessUrl": {
             "type": "string"
           },
-          "brandImageUrls": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
           "primaryFont": {
             "type": "string"
           },
@@ -4581,9 +4575,6 @@
           "socialTemplateStyle": {
             "type": "string"
           },
-          "logoUsageRules": {
-            "type": "string"
-          },
           "defaultApprovalMode": {
             "$ref": "#/components/schemas/ApprovalMode"
           },
@@ -4599,9 +4590,6 @@
             "type": "string"
           },
           "googleBusinessUrl": {
-            "type": "string"
-          },
-          "brandImageUrls": {
             "type": "string"
           },
           "brandAnalysis": {
@@ -5444,9 +5432,6 @@
           "googleBusinessUrl": {
             "type": "string"
           },
-          "brandImageUrls": {
-            "type": "string"
-          },
           "primaryFont": {
             "type": "string"
           },
@@ -5460,9 +5445,6 @@
             "type": "string"
           },
           "socialTemplateStyle": {
-            "type": "string"
-          },
-          "logoUsageRules": {
             "type": "string"
           },
           "platformProfiles": {

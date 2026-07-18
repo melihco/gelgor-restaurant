@@ -33,6 +33,31 @@ export function canonicalSectorFromCategory(category: string): string {
   return CATEGORY_TO_CANONICAL_SECTOR[key] ?? key;
 }
 
+/** Reverse map — sector playbook slug → service-profile category for manual edits. */
+const SECTOR_TO_SERVICE_CATEGORY: Record<string, string> = {
+  beach_club: 'beach_club_bar',
+  restaurant_cafe: 'restaurant_bar',
+  coffee_shop: 'cafe_bakery',
+  hospitality: 'hotel_hospitality',
+  beauty_wellness: 'beauty_wellness',
+  fitness_gym: 'fitness_studio',
+  healthcare_clinic: 'clinic_healthcare',
+  local_products_shop: 'local_products_shop',
+  fashion_boutique: 'fashion_retail',
+  wedding_event: 'wedding_event_service',
+};
+
+/**
+ * When the operator edits sector in Marka, write the matching SP category
+ * so readiness (Sector / SP alignment) and production kits stay in sync.
+ */
+export function serviceProfileCategoryForSector(sector: string): string {
+  const key = normalizeSectorId(str(sector));
+  if (!key || key === 'general_business') return '';
+  if (CATEGORY_TO_CANONICAL_SECTOR[key]) return key; // already a category slug
+  return SECTOR_TO_SERVICE_CATEGORY[key] ?? '';
+}
+
 /** Authoritative sector for prompts, template kits, and Nexus CompanyProfile.industry. */
 export function resolveAuthoritativeIndustry(py: Record<string, unknown>): string {
   const sp = py.brand_service_profile as Record<string, unknown> | undefined;

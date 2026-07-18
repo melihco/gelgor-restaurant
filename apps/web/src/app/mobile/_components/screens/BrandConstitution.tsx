@@ -25,14 +25,18 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/types';
 import type { T } from '../theme-context';
-import { normalizeSectorId } from '@/lib/announcement-template-library';
 import {
   buildCompanyProfilePatchFromPython,
   isCompanyProfileSparse,
 } from '@/lib/sync-company-profile-from-python';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
 import { resolveCoherentLogoUrl, isCrossTenantPollutionName } from '@/lib/brand-identity-coherence';
-import { resolveTenantCanonicalSector, shouldRefreshIndustryFromPython } from '@/lib/canonical-sector';
+import {
+  resolveTenantCanonicalSector,
+  serviceProfileCategoryForSector,
+  shouldRefreshIndustryFromPython,
+} from '@/lib/canonical-sector';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
 import { TENANT_INDUSTRY_PLAYBOOKS } from '@/lib/tenant-operating-policy';
 import {
   MOTION_STYLE_OPTIONS,
@@ -3585,6 +3589,30 @@ export function BrandConstitution() {
       void syncSecondaryFontToTheme(value);
       return;
     }
+    // Sektör: Nexus industry alone is not enough — readiness + kits read SP.category.
+    if (field === 'industry') {
+      const sector = normalizeSectorId(value);
+      const category = serviceProfileCategoryForSector(sector);
+      const existingSp = (
+        (pyCtx as { brand_service_profile?: Record<string, unknown> } | undefined)
+          ?.brand_service_profile
+      ) ?? {};
+      const patch: Record<string, unknown> = {
+        business_type: sector || value.trim(),
+      };
+      if (category) {
+        patch.brand_service_profile = {
+          ...existingSp,
+          category,
+          source: 'manual_override',
+          category_confidence: 1,
+          category_reason: `Operator sector edit → ${category}`,
+        };
+      }
+      patchPythonBrandFields(patch);
+      queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
+      return;
+    }
 
     const pythonKey = PYTHON_FIELD_MAP[field];
     if (!pythonKey) return;
@@ -5098,10 +5126,6 @@ export function BrandConstitution() {
 
             <SCard t={t} title="Sosyal Medya Şablon Stili">
               <Field t={t} label="Şablon Stili" value={p.socialTemplateStyle ?? ''} onSave={save('socialTemplateStyle')} multiline />
-            </SCard>
-
-            <SCard t={t} title="Logo Kullanım Kuralları">
-              <Field t={t} label="Logo Kuralları" value={p.logoUsageRules ?? ''} onSave={save('logoUsageRules')} multiline hint="Logo nasıl kullanılmalı, nasıl kullanılmamalı..." />
             </SCard>
 
             {(p as any).setupCompletedAt && (

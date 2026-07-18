@@ -15,7 +15,6 @@ public record BrandProfileCoreSnapshotDto(
     string Description,
     string InstagramHandle,
     string GoogleBusinessUrl,
-    IReadOnlyList<string> BrandImageUrls,
     string PrimaryFont,
     string SecondaryFont,
     IReadOnlyList<string> BrandColors,

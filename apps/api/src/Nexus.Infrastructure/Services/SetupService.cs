@@ -54,11 +54,9 @@ public class SetupService : ISetupService
         profile.BrandColors = request.BrandColors ?? "";
         profile.AccentColors = request.AccentColors ?? "";
         profile.SocialTemplateStyle = request.SocialTemplateStyle ?? "";
-        profile.LogoUsageRules = request.LogoUsageRules ?? "";
         profile.DefaultApprovalMode = request.DefaultApprovalMode;
         profile.InstagramHandle = request.InstagramHandle ?? "";
         profile.GoogleBusinessUrl = request.GoogleBusinessUrl ?? "";
-        profile.BrandImageUrls = request.BrandImageUrls ?? "";
         profile.PlatformProfiles = NormalizeJson(request.PlatformProfiles, "[]");
         profile.ContentNeeds = NormalizeJson(request.ContentNeeds, "[]");
         profile.OperatingCapabilities = NormalizeJson(request.OperatingCapabilities, "[]");
@@ -109,13 +107,11 @@ public class SetupService : ISetupService
         p.BrandColors,
         p.AccentColors,
         p.SocialTemplateStyle,
-        p.LogoUsageRules,
         p.DefaultApprovalMode,
         p.SetupCompleted,
         p.SetupCompletedAt,
         p.InstagramHandle,
         p.GoogleBusinessUrl,
-        p.BrandImageUrls,
         p.BrandAnalysis,
         p.BrandAnalyzedAt,
         p.PlatformProfiles,
@@ -149,11 +145,9 @@ public class SetupService : ISetupService
         string.Empty,
         string.Empty,
         string.Empty,
-        string.Empty,
         ApprovalMode.SuggestAndWait,
         false,
         null,
-        string.Empty,
         string.Empty,
         string.Empty,
         string.Empty,

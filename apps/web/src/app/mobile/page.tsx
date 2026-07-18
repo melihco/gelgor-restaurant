@@ -511,77 +511,294 @@ const CSS = `
     object-fit: contain;
     filter: drop-shadow(0 4px 24px rgba(0,0,0,0.35));
   }
+  /* ── Login — brand owns upper band, form mid, footer docked ── */
+  @keyframes loginBrandIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes loginFormIn {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .sa-mobile .onboarding-shell--login {
+    justify-content: flex-start;
+  }
+  .sa-mobile .onboarding-shell--login .onboarding-ambient {
+    background:
+      radial-gradient(ellipse 110% 52% at 50% 6%, rgba(90,130,160,0.22) 0%, transparent 58%),
+      radial-gradient(ellipse 70% 36% at 85% 100%, rgba(201,169,110,0.055) 0%, transparent 52%);
+  }
+  .sa-mobile .onboarding-shell--login .onboarding-chrome-hairline {
+    display: none;
+  }
+  .sa-mobile .login-brand-band {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 30%;
+    min-height: 148px;
+    max-height: 36dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 8px)
+      max(24px, calc(env(safe-area-inset-left, 0px) + 24px))
+      4px
+      max(24px, calc(env(safe-area-inset-right, 0px) + 24px));
+  }
   .sa-mobile .login-logo {
     display: block;
     margin: 0 auto;
-    width: min(220px, 68vw);
+    width: min(252px, 74vw);
     height: auto !important;
+    max-width: none;
     object-fit: contain;
-    filter: drop-shadow(0 4px 16px rgba(0,0,0,0.22));
+    filter: drop-shadow(0 8px 28px rgba(0,0,0,0.35));
+    animation: loginBrandIn 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  .sa-mobile .onboarding-shell--login {
-    justify-content: center;
-  }
-  .sa-mobile .onboarding-shell--login .onboarding-fields {
+  .sa-mobile .login-main {
+    position: relative;
+    z-index: 1;
     flex: 0 0 auto;
-    gap: 12px;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    padding:
+      4px
+      max(28px, calc(env(safe-area-inset-right, 0px) + 28px))
+      8px
+      max(28px, calc(env(safe-area-inset-left, 0px) + 28px));
+    animation: loginFormIn 560ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  }
+  .sa-mobile .login-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .sa-mobile .login-fields {
+    flex: 0 0 auto;
+    gap: 14px;
+  }
+  .sa-mobile .login-error {
+    margin-top: 10px;
+  }
+  .sa-mobile .login-actions {
+    margin-top: 18px;
+    flex-shrink: 0;
+  }
+  .sa-mobile .login-footer {
+    position: relative;
+    z-index: 1;
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding:
+      24px
+      max(20px, calc(env(safe-area-inset-left, 0px) + 20px))
+      max(22px, env(safe-area-inset-bottom, 0px))
+      max(20px, calc(env(safe-area-inset-right, 0px) + 20px));
+  }
+  .sa-mobile .onboarding-shell--login .onboarding-login-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 12px;
   }
   .sa-mobile .onboarding-auth-form {
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
   }
-  .sa-mobile .onboarding-shell--login .onboarding-login-main {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    justify-content: center;
-    align-items: center;
-    padding:
-      calc(env(safe-area-inset-top, 0px) + 16px)
-      max(24px, calc(env(safe-area-inset-right, 0px) + 24px))
-      16px
-      max(24px, calc(env(safe-area-inset-left, 0px) + 24px));
-  }
-  .sa-mobile .login-content {
-    width: 100%;
-    max-width: 320px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .sa-mobile .login-hero {
-    text-align: center;
-    margin-bottom: 28px;
-  }
-  .sa-mobile .login-form {
-    width: 100%;
-  }
-  .sa-mobile .onboarding-actions--login {
-    margin-top: 16px;
-    padding-top: 0;
-    flex-shrink: 0;
-  }
-  .sa-mobile .onboarding-footer--login {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding-left: max(20px, calc(env(safe-area-inset-left, 0px) + 20px));
-    padding-right: max(20px, calc(env(safe-area-inset-right, 0px) + 20px));
-    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
-  }
-  @media (max-height: 700px) {
-    .sa-mobile .login-hero {
-      margin-bottom: 20px;
+  @media (max-height: 720px) {
+    .sa-mobile .login-brand-band {
+      flex: 0 1 24%;
+      min-height: 112px;
+      max-height: 28dvh;
     }
     .sa-mobile .login-logo {
-      width: min(188px, 58vw);
+      width: min(212px, 64vw);
+    }
+    .sa-mobile .login-actions {
+      margin-top: 14px;
     }
   }
+  @media (max-height: 560px) {
+    .sa-mobile .login-brand-band {
+      flex: 0 0 auto;
+      min-height: 72px;
+      max-height: 18dvh;
+      padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
+      padding-bottom: 0;
+    }
+    .sa-mobile .login-logo {
+      width: min(176px, 52vw);
+    }
+    .sa-mobile .login-footer {
+      padding-top: 12px;
+      gap: 4px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sa-mobile .login-logo,
+    .sa-mobile .login-main,
+    .sa-mobile .signup-logo,
+    .sa-mobile .signup-main {
+      animation: none !important;
+    }
+  }
+
+  /* ── Sign-up (URL step) — same language as login ── */
+  .sa-mobile .onboarding-shell--signup {
+    justify-content: flex-start;
+  }
+  .sa-mobile .onboarding-shell--signup .onboarding-ambient {
+    background:
+      radial-gradient(ellipse 110% 52% at 50% 6%, rgba(90,130,160,0.22) 0%, transparent 58%),
+      radial-gradient(ellipse 70% 36% at 85% 100%, rgba(201,169,110,0.055) 0%, transparent 52%);
+  }
+  .sa-mobile .onboarding-shell--signup .onboarding-chrome-hairline {
+    display: none;
+  }
+  .sa-mobile .signup-brand-band {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 18px)
+      max(24px, calc(env(safe-area-inset-left, 0px) + 24px))
+      8px
+      max(24px, calc(env(safe-area-inset-right, 0px) + 24px));
+  }
+  .sa-mobile .signup-logo {
+    display: block;
+    margin: 0 auto;
+    width: min(220px, 68vw);
+    height: auto !important;
+    max-width: none;
+    object-fit: contain;
+    filter: drop-shadow(0 8px 28px rgba(0,0,0,0.35));
+    animation: loginBrandIn 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .sa-mobile .signup-main {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding:
+      4px
+      max(28px, calc(env(safe-area-inset-right, 0px) + 28px))
+      12px
+      max(28px, calc(env(safe-area-inset-left, 0px) + 28px));
+    animation: loginFormIn 560ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  }
+  .sa-mobile .signup-intro {
+    text-align: center;
+    margin-bottom: 22px;
+  }
+  .sa-mobile .signup-title {
+    margin: 0 0 8px;
+    font-size: clamp(24px, 6.2vw, 28px);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.15;
+    color: #F4F4F8;
+  }
+  .sa-mobile .signup-lead {
+    margin: 0 auto;
+    max-width: 300px;
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 400;
+    color: rgba(160,160,180,0.68);
+  }
+  .sa-mobile .signup-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .sa-mobile .signup-segment {
+    margin-bottom: 18px;
+  }
+  .sa-mobile .signup-fields {
+    flex: 0 0 auto;
+    gap: 14px;
+  }
+  .sa-mobile .signup-error {
+    margin-top: 10px;
+  }
+  .sa-mobile .signup-actions {
+    margin-top: 18px;
+    flex-shrink: 0;
+  }
+  .sa-mobile .signup-actions .onboarding-note {
+    margin: 12px 0 0;
+  }
+  .sa-mobile .signup-footer {
+    position: relative;
+    z-index: 1;
+    margin-top: auto;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding:
+      16px
+      max(20px, calc(env(safe-area-inset-left, 0px) + 20px))
+      max(22px, env(safe-area-inset-bottom, 0px))
+      max(20px, calc(env(safe-area-inset-right, 0px) + 20px));
+  }
+  .sa-mobile .onboarding-shell--signup .onboarding-login-link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 12px;
+  }
+  @media (max-height: 720px) {
+    .sa-mobile .signup-brand-band {
+      padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+      padding-bottom: 4px;
+    }
+    .sa-mobile .signup-logo {
+      width: min(188px, 58vw);
+    }
+    .sa-mobile .signup-intro {
+      margin-bottom: 16px;
+    }
+    .sa-mobile .signup-title {
+      font-size: 22px;
+    }
+    .sa-mobile .signup-actions {
+      margin-top: 14px;
+    }
+  }
+  @media (max-height: 560px) {
+    .sa-mobile .signup-brand-band {
+      padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
+    }
+    .sa-mobile .signup-logo {
+      width: min(160px, 48vw);
+    }
+    .sa-mobile .signup-intro {
+      margin-bottom: 12px;
+    }
+    .sa-mobile .signup-lead {
+      display: none;
+    }
+  }
+
   .sa-mobile .auth-password-wrap {
     position: relative;
   }
@@ -2379,7 +2596,8 @@ const CSS = `
       margin-right: auto;
       width: 100%;
     }
-    .sa-mobile .login-content {
+    .sa-mobile .login-main,
+    .sa-mobile .signup-main {
       max-width: 380px;
     }
     .sa-mobile .sa-chrome-nav-dock {

@@ -113,11 +113,9 @@ export default function SetupWizard() {
     brandColors: '',
     accentColors: '',
     socialTemplateStyle: '',
-    logoUsageRules: '',
     defaultApprovalMode: 'SuggestAndWait' as ApprovalMode,
     instagramHandle: '',
     googleBusinessUrl: '',
-    brandImageUrls: '',
     platformProfiles: '[]',
     contentNeeds: '[]',
     templateFamilies: '[]',
@@ -149,11 +147,9 @@ export default function SetupWizard() {
       brandColors: profile.brandColors || '',
       accentColors: profile.accentColors || '',
       socialTemplateStyle: profile.socialTemplateStyle || '',
-      logoUsageRules: profile.logoUsageRules || '',
       defaultApprovalMode: (profile.defaultApprovalMode as ApprovalMode) || 'SuggestAndWait',
       instagramHandle: profile.instagramHandle || '',
       googleBusinessUrl: profile.googleBusinessUrl || '',
-      brandImageUrls: profile.brandImageUrls || '',
       platformProfiles: profile.platformProfiles || '[]',
       contentNeeds: profile.contentNeeds || '[]',
       templateFamilies: profile.templateFamilies || '[]',
@@ -866,7 +862,6 @@ function CompanyStep({
           </div>
           <div className="mt-4 grid gap-4">
             <TextArea label="Sosyal template stili" value={form.socialTemplateStyle ?? ''} onChange={(v) => updateField('socialTemplateStyle', v)} placeholder="Örn: büyük başlık, bol boşluk, gerçek fotoğraf üstüne minimal CTA..." rows={2} />
-            <TextArea label="Logo kullanım kuralları" value={form.logoUsageRules ?? ''} onChange={(v) => updateField('logoUsageRules', v)} placeholder="Örn: logo sağ üstte küçük kullanılsın..." rows={2} />
           </div>
         </div>
         <TextArea label="Kampanya hedefleri" value={form.campaignGoals} onChange={(v) => updateField('campaignGoals', v)} placeholder="Marka bilinirliği, satış artışı, müşteri sadakati..." rows={2} />

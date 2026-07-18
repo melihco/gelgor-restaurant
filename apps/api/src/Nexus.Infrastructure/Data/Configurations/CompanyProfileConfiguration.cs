@@ -29,11 +29,9 @@ public class CompanyProfileConfiguration : IEntityTypeConfiguration<CompanyProfi
         builder.Property(e => e.BrandColors).HasMaxLength(500);
         builder.Property(e => e.AccentColors).HasMaxLength(500);
         builder.Property(e => e.SocialTemplateStyle).HasMaxLength(1000);
-        builder.Property(e => e.LogoUsageRules).HasMaxLength(1000);
 
         builder.Property(e => e.InstagramHandle).HasMaxLength(100);
         builder.Property(e => e.GoogleBusinessUrl).HasMaxLength(500);
-        builder.Property(e => e.BrandImageUrls).HasMaxLength(2000);
         builder.Property(e => e.BrandAnalysis).HasColumnType("text");
         builder.Property(e => e.BrandAnalyzedAt);
         builder.Property(e => e.PlatformProfiles).HasColumnType("jsonb");

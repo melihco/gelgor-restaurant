@@ -4,14 +4,21 @@ import type { ReactNode } from 'react';
 import { SA_ONBOARDING } from './sa-chrome';
 
 /** Shared backdrop for login + onboarding — matches SaChromeShell language. */
-export function OnboardingChromeBackdrop({ success = false }: { success?: boolean }) {
+export function OnboardingChromeBackdrop({
+  success = false,
+  showMark = true,
+}: {
+  success?: boolean;
+  /** Bottom wordmark watermark — off on login so footer copy stays clean. */
+  showMark?: boolean;
+}) {
   return (
     <>
       <div
         className={`onboarding-ambient${success ? ' onboarding-ambient--success' : ''}`}
         aria-hidden
       />
-      <div className="onboarding-chrome-mark" aria-hidden />
+      {showMark && <div className="onboarding-chrome-mark" aria-hidden />}
       <div className="onboarding-chrome-hairline" aria-hidden />
     </>
   );

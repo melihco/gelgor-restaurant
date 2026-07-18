@@ -34,17 +34,11 @@ public class CompanyProfile : TenantEntity
     /// <summary>Default social template style rules for Canva and image generation.</summary>
     public string SocialTemplateStyle { get; set; } = string.Empty;
 
-    /// <summary>Do/don't rules for logo placement in generated creatives.</summary>
-    public string LogoUsageRules { get; set; } = string.Empty;
-
     /// <summary>Instagram handle without @, e.g. "cafebosphorus"</summary>
     public string InstagramHandle { get; set; } = string.Empty;
 
     /// <summary>Google Business Profile URL or Place ID</summary>
     public string GoogleBusinessUrl { get; set; } = string.Empty;
-
-    /// <summary>Comma-separated public image URLs representing brand visuals</summary>
-    public string BrandImageUrls { get; set; } = string.Empty;
 
     /// <summary>Auto-generated brand analysis from connected accounts. JSON string.</summary>
     public string BrandAnalysis { get; set; } = string.Empty;

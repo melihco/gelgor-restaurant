@@ -402,7 +402,6 @@ function tenantBrandContextFor(profile?: CompanyProfile): string | undefined {
     profile.brandColors ? `Brand colors: ${profile.brandColors}` : undefined,
     profile.accentColors ? `Accent colors: ${profile.accentColors}` : undefined,
     profile.socialTemplateStyle ? `Social template style: ${profile.socialTemplateStyle}` : undefined,
-    profile.logoUsageRules ? `Logo usage rules: ${profile.logoUsageRules}` : undefined,
     profile.campaignGoals ? `Campaign goals: ${profile.campaignGoals}` : undefined,
     profile.customRules ? `Brand rules: ${profile.customRules}` : undefined,
     profile.brandAnalysis ? `Learned brand analysis: ${profile.brandAnalysis}` : undefined,

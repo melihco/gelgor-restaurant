@@ -3716,7 +3716,6 @@ export interface components {
             description?: string;
             instagramHandle?: string;
             googleBusinessUrl?: string;
-            brandImageUrls?: string[];
             primaryFont?: string;
             secondaryFont?: string;
             brandColors?: string[];
@@ -3837,14 +3836,12 @@ export interface components {
             brandColors?: string;
             accentColors?: string;
             socialTemplateStyle?: string;
-            logoUsageRules?: string;
             defaultApprovalMode?: components["schemas"]["ApprovalMode"];
             setupCompleted?: boolean;
             /** Format: date-time */
             setupCompletedAt?: string | null;
             instagramHandle?: string;
             googleBusinessUrl?: string;
-            brandImageUrls?: string;
             brandAnalysis?: string;
             /** Format: date-time */
             brandAnalyzedAt?: string | null;
@@ -4140,13 +4137,11 @@ export interface components {
             defaultApprovalMode?: components["schemas"]["ApprovalMode"];
             instagramHandle?: string;
             googleBusinessUrl?: string;
-            brandImageUrls?: string;
             primaryFont?: string;
             secondaryFont?: string;
             brandColors?: string;
             accentColors?: string;
             socialTemplateStyle?: string;
-            logoUsageRules?: string;
             platformProfiles?: string;
             contentNeeds?: string;
             operatingCapabilities?: string;

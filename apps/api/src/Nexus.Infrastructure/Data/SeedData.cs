@@ -556,7 +556,6 @@ public static class SeedData
             Description = "Sunu Event, 1987 yılında Türk Halk Dansları gösterileriyle başlayıp bugün 4 kıtada 20+ ülkede faaliyet gösteren uluslararası bir etkinlik ve organizasyon şirketidir. Bodrum merkezli şirket; animasyon ekipleri, dans gösterileri, dinner show prodüksiyonları, festival ve konser organizasyonları ile açılış ve lansman etkinlikleri alanlarında hizmet vermektedir. 300+ profesyonel personel ve 30+ özgün sahne gösterisi ile turizm sektörüne premium etkinlik deneyimi sunar.",
             InstagramHandle = "sunuevent",
             GoogleBusinessUrl = "https://maps.app.goo.gl/SunuEventBodrum",
-            BrandImageUrls = "https://www.sunuevent.com/images/logo.png,https://www.sunuevent.com/images/amblem.png",
             DefaultApprovalMode = ApprovalMode.SuggestAndWait,
             SetupCompleted = true,
             SetupCompletedAt = DateTime.UtcNow,

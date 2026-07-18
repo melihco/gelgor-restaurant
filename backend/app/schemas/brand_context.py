@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.schemas.common import OrmBase
@@ -79,6 +81,8 @@ class BrandContextUpdate(BaseModel):
     brand_primary_color: str | None = None
     brand_accent_color: str | None = None
     brand_font_family: str | None = None
+    # Manual sector / SP corrections from Marka UI (merged with existing JSON).
+    brand_service_profile: dict[str, Any] | None = None
 
 
 class BrandContextRead(OrmBase):

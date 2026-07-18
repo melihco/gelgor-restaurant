@@ -27,10 +27,8 @@ public static class CompanyProfileFieldTrimmer
         profile.BrandColors = Truncate(profile.BrandColors, 500);
         profile.AccentColors = Truncate(profile.AccentColors, 500);
         profile.SocialTemplateStyle = Truncate(profile.SocialTemplateStyle, 1000);
-        profile.LogoUsageRules = Truncate(profile.LogoUsageRules, 1000);
         profile.InstagramHandle = Truncate(profile.InstagramHandle, 100);
         profile.GoogleBusinessUrl = Truncate(profile.GoogleBusinessUrl, 500);
-        profile.BrandImageUrls = Truncate(profile.BrandImageUrls, 2000);
         profile.BrandAnalysis = Truncate(profile.BrandAnalysis, 12000);
         profile.CustomerVisibleSummary = Truncate(profile.CustomerVisibleSummary, 2000);
         profile.SystemIntelligence = Truncate(profile.SystemIntelligence, 24000);

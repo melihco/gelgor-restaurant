@@ -129,7 +129,6 @@ public class SetupController : ControllerBase
             profile.Description,
             profile.InstagramHandle,
             profile.GoogleBusinessUrl,
-            SplitCsv(profile.BrandImageUrls),
             profile.PrimaryFont,
             profile.SecondaryFont,
             SplitCsv(profile.BrandColors),

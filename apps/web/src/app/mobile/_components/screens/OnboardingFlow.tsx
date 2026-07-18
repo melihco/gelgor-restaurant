@@ -150,101 +150,127 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
   const hasMenuInput = menuUrl.trim().length > 0;
 
   return (
-    <div className="onboarding-shell">
-      <OnboardingChromeBackdrop />
+    <div className="onboarding-shell onboarding-shell--signup">
+      <OnboardingChromeBackdrop showMark={false} />
 
-      <header className="onboarding-header">
-        <OnboardingLogoMark />
-        <h1 className="onboarding-title">Markanızı tanıyalım</h1>
-        <p className="onboarding-lead">
-          Web siteniz ve sosyal profilinizden marka kimliğinizi çıkarıyoruz.
-        </p>
+      <header className="signup-brand-band">
+        <SmartAgencyLogo variant="full" priority className="signup-logo" />
       </header>
 
-      <main className="onboarding-main">
-        <div className="onboarding-segment">
-          {([
-            { key: 'web' as const, label: 'Web sitesi' },
-            { key: 'social' as const, label: 'Instagram' },
-          ]).map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => { setMode(opt.key); setError(''); }}
-              className={`onboarding-segment-btn${mode === opt.key ? ' onboarding-segment-btn--on' : ''}`}
-            >
-              {opt.label}
+      <main className="signup-main">
+        <div className="signup-intro">
+          <h1 className="signup-title">Markanızı tanıyalım</h1>
+          <p className="signup-lead">
+            Web siteniz ve Instagram’dan marka kimliğinizi çıkarıyoruz.
+          </p>
+        </div>
+
+        <form
+          className="signup-form"
+          onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+          noValidate
+        >
+          <div className="onboarding-segment signup-segment" role="tablist" aria-label="Kaynak">
+            {([
+              { key: 'web' as const, label: 'Web sitesi' },
+              { key: 'social' as const, label: 'Instagram' },
+            ]).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                role="tab"
+                aria-selected={mode === opt.key}
+                onClick={() => { setMode(opt.key); setError(''); }}
+                className={`onboarding-segment-btn${mode === opt.key ? ' onboarding-segment-btn--on' : ''}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'web' ? (
+            <div className="onboarding-fields signup-fields">
+              <label className="onboarding-field">
+                <span className="onboarding-field-label">Web siteniz</span>
+                <input
+                  ref={inputRef}
+                  value={url}
+                  onChange={(e) => { setUrl(e.target.value); setError(''); }}
+                  placeholder="siteniz.com"
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
+                  enterKeyHint="next"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`onboarding-input${hasWebInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
+                />
+              </label>
+              <label className="onboarding-field">
+                <span className="onboarding-field-label onboarding-field-label--muted">Menü linki · opsiyonel</span>
+                <input
+                  value={menuUrl}
+                  onChange={(e) => { setMenuUrl(e.target.value); setError(''); }}
+                  placeholder="menu.siteniz.com"
+                  type="url"
+                  inputMode="url"
+                  enterKeyHint="next"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`onboarding-input${hasMenuInput ? ' onboarding-input--filled' : ''}`}
+                />
+              </label>
+              <label className="onboarding-field">
+                <span className="onboarding-field-label onboarding-field-label--muted">Instagram · opsiyonel</span>
+                <input
+                  value={ig}
+                  onChange={(e) => { setIg(e.target.value); setError(''); }}
+                  placeholder="@markaniz"
+                  inputMode="text"
+                  enterKeyHint="go"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}`}
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="onboarding-fields signup-fields">
+              <label className="onboarding-field">
+                <span className="onboarding-field-label">Instagram kullanıcı adı</span>
+                <input
+                  ref={inputRef}
+                  value={ig}
+                  onChange={(e) => { setIg(e.target.value); setError(''); }}
+                  placeholder="markaniz"
+                  inputMode="text"
+                  enterKeyHint="go"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
+                />
+              </label>
+            </div>
+          )}
+
+          {error && <p className="onboarding-error signup-error">{error}</p>}
+
+          <div className="signup-actions">
+            <button type="submit" className="onboarding-cta">
+              Analizi başlat
             </button>
-          ))}
-        </div>
-
-        {mode === 'web' ? (
-          <div className="onboarding-fields">
-            <label className="onboarding-field">
-              <span className="onboarding-field-label">Web siteniz</span>
-              <input
-                ref={inputRef}
-                value={url}
-                onChange={(e) => { setUrl(e.target.value); setError(''); }}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                placeholder="siteniz.com"
-                type="url"
-                autoComplete="url"
-                className={`onboarding-input${hasWebInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
-              />
-            </label>
-            <label className="onboarding-field">
-              <span className="onboarding-field-label onboarding-field-label--muted">Menü linki · opsiyonel</span>
-              <input
-                value={menuUrl}
-                onChange={(e) => { setMenuUrl(e.target.value); setError(''); }}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                placeholder="menu.siteniz.com"
-                type="url"
-                className={`onboarding-input${hasMenuInput ? ' onboarding-input--filled' : ''}`}
-              />
-            </label>
-            <label className="onboarding-field">
-              <span className="onboarding-field-label onboarding-field-label--muted">Instagram · opsiyonel</span>
-              <input
-                value={ig}
-                onChange={(e) => { setIg(e.target.value); setError(''); }}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                placeholder="@markaniz"
-                className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}`}
-              />
-            </label>
+            <p className="onboarding-note">Marka analizi genelde 2–4 dakika sürer.</p>
           </div>
-        ) : (
-          <div className="onboarding-fields">
-            <label className="onboarding-field">
-              <span className="onboarding-field-label">Instagram kullanıcı adı</span>
-              <input
-                ref={inputRef}
-                value={ig}
-                onChange={(e) => { setIg(e.target.value); setError(''); }}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                placeholder="markaniz"
-                autoCapitalize="none"
-                className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
-              />
-            </label>
-          </div>
-        )}
-
-        {error && <p className="onboarding-error">{error}</p>}
-
-        <div className="onboarding-actions">
-          <button type="button" onClick={handleSubmit} className="onboarding-cta">
-            Analizi Başlat
-          </button>
-          <p className="onboarding-note">Marka analizi genelde 2–4 dakika sürer.</p>
-        </div>
+        </form>
       </main>
 
-      <footer className="onboarding-footer">
+      <footer className="signup-footer">
         <button type="button" onClick={onLogin} className="onboarding-login-link">
-          Zaten hesabınız var mı? <span>Giriş Yap</span>
+          Zaten hesabınız var mı? <span>Giriş yap</span>
         </button>
       </footer>
     </div>

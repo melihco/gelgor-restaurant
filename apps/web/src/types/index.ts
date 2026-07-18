@@ -292,13 +292,11 @@ export interface CompanyProfile {
   brandColors: string;
   accentColors: string;
   socialTemplateStyle: string;
-  logoUsageRules: string;
   defaultApprovalMode: ApprovalMode;
   setupCompleted: boolean;
   setupCompletedAt?: string;
   instagramHandle?: string;
   googleBusinessUrl?: string;
-  brandImageUrls?: string;
   brandAnalysis?: string;
   brandAnalyzedAt?: string;
   platformProfiles: string;
@@ -377,14 +375,11 @@ export interface SaveCompanyProfileRequest {
   brandColors?: string;
   accentColors?: string;
   socialTemplateStyle?: string;
-  logoUsageRules?: string;
   defaultApprovalMode: ApprovalMode;
   /** Instagram handle without @, e.g. "cafebosphorus" */
   instagramHandle?: string;
   /** Google Business Profile URL */
   googleBusinessUrl?: string;
-  /** Comma-separated public brand image URLs */
-  brandImageUrls?: string;
   platformProfiles?: string;
   contentNeeds?: string;
   operatingCapabilities?: string;

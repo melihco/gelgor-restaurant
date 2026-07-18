@@ -73,7 +73,7 @@ export function AssignMissionSheet({ agentId, agentName, agentTypeString, agentC
       const isReviewTask = selected.taskType === 'single_review_response' || selected.taskType === 'review_analysis';
       const baseInput = selected.buildInput(isReviewTask ? (customNote || undefined) : undefined);
 
-      // Brand-aware brief: enriches with brand identity, season, competitors, content pillars
+      // Brand-aware brief: identity / season / goals — no template lists
       const brief = companyProfile
         ? buildBrandAwareBrief(companyProfile, selected.taskType, isReviewTask ? undefined : (customNote || undefined))
         : (customNote || '');

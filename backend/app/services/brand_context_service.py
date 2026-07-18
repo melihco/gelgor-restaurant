@@ -143,6 +143,30 @@ async def update_brand_context(
 ) -> BrandContext | None:
     ctx = await ensure_brand_context(db, workspace_id)
     updates = data.model_dump(exclude_unset=True)
+
+    # Merge service-profile JSON (operator sector corrections) instead of replace-all.
+    incoming_sp = updates.pop("brand_service_profile", None)
+    if isinstance(incoming_sp, dict):
+        from datetime import datetime as _dt, timezone as _tz
+
+        from app.services.brand_service_profile_service import (
+            context_updates_from_service_profile,
+        )
+
+        existing_sp = ctx.brand_service_profile if isinstance(ctx.brand_service_profile, dict) else {}
+        merged_sp = {**existing_sp, **incoming_sp}
+        ctx.brand_service_profile = merged_sp
+        ctx.brand_service_profile_updated_at = _dt.now(_tz.utc)
+        for field, value in context_updates_from_service_profile(merged_sp).items():
+            # Explicit PATCH fields win over SP-derived sync.
+            if field not in updates:
+                setattr(ctx, field, value)
+        logger.info(
+            "brand_service_profile_merged_via_patch",
+            workspace_id=str(workspace_id),
+            category=merged_sp.get("category"),
+        )
+
     for field, value in updates.items():
         setattr(ctx, field, value)
     if "reference_image_urls" in updates:
@@ -167,6 +191,7 @@ async def update_brand_context(
                 )
     await db.flush()
     _brand_info_memory_cache.pop(str(workspace_id), None)
+    await invalidate_brand_info_cache(workspace_id)
     return ctx
 
 def _extract_location_from_sources(instagram: dict, google: dict) -> str:
