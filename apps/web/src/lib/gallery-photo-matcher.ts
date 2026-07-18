@@ -2029,7 +2029,23 @@ export function assignPhotosToContents(
   return ordered;
 }
 
-/** Pick up to `count` carousel slides — each must clear minScore; no unscored padding. */
+/** Soft floor for carousel slide 2+ when strict minScore starves the set. Hard vetoes still apply. */
+export const CAROUSEL_SECONDARY_MIN_SCORE = 18;
+/** Publishable Instagram carousel needs ≥2 caption-aligned slides. */
+export const CAROUSEL_MIN_SCORED_SLIDES = 2;
+
+export interface PickScoredCarouselSlidesOptions {
+  /** Minimum caption-aligned slides to aim for (default 2). */
+  minCount?: number;
+  /** Relaxed bar used only to reach minCount / fill remaining slots after strict pass. */
+  secondaryMinScore?: number;
+}
+
+/**
+ * Pick up to `count` carousel slides scored against caption/headline/subject.
+ * Never pads with unscored URLs. If strict minScore yields fewer than minCount,
+ * a secondary pass uses a lower bar (hard theme/product vetoes still apply).
+ */
 export function pickScoredCarouselSlides(
   input: MatchPhotoInput,
   candidateUrls: string[],
@@ -2037,17 +2053,61 @@ export function pickScoredCarouselSlides(
   excludeUrls: string[],
   count: number,
   minScore = MIN_ACCEPT_SCORE,
+  options?: PickScoredCarouselSlidesOptions,
 ): PhotoMatchResult[] {
-  const lookup = buildGalleryLookup(galleryAnalysis, candidateUrls);
+  const minCount = Math.max(0, Math.min(count, options?.minCount ?? CAROUSEL_MIN_SCORED_SLIDES));
+  const secondaryMin = Math.min(
+    minScore,
+    options?.secondaryMinScore
+      ?? Math.max(CAROUSEL_SECONDARY_MIN_SCORE, Math.floor(minScore * 0.65)),
+  );
+
+  const scopedCandidates = preferSubjectAlignedCandidates(
+    candidateUrls,
+    galleryAnalysis,
+    input.subjectKey,
+  );
+  // Prefer subject-scoped pool when it can support a carousel; else full gallery.
+  const pool = scopedCandidates.length >= minCount ? scopedCandidates : candidateUrls;
+
+  const lookup = buildGalleryLookup(galleryAnalysis, pool);
   const usedBases = new Set(excludeUrls.map(normalizeGalleryUrl));
   const picked: PhotoMatchResult[] = [];
 
-  for (let i = 0; i < count; i += 1) {
-    const ranked = rankPhotosForContent(input, candidateUrls, lookup, usedBases, galleryAnalysis);
-    const best = ranked.find((r) => r.score >= minScore);
-    if (!best) break;
-    picked.push(best);
-    usedBases.add(normalizeGalleryUrl(best.url));
+  const takeUntil = (threshold: number, target: number) => {
+    while (picked.length < target) {
+      const ranked = rankPhotosForContent(input, pool, lookup, usedBases, galleryAnalysis);
+      const best = ranked.find((r) => r.score >= threshold);
+      if (!best) break;
+      picked.push(best);
+      usedBases.add(normalizeGalleryUrl(best.url));
+    }
+  };
+
+  takeUntil(minScore, count);
+  if (picked.length < minCount) {
+    takeUntil(secondaryMin, minCount);
+  }
+  if (picked.length < count && picked.length >= minCount) {
+    takeUntil(secondaryMin, count);
+  }
+
+  // Subject pool too thin — retry remaining slots from full candidate list.
+  if (picked.length < minCount && pool !== candidateUrls) {
+    const fullLookup = buildGalleryLookup(galleryAnalysis, candidateUrls);
+    while (picked.length < minCount) {
+      const ranked = rankPhotosForContent(
+        input,
+        candidateUrls,
+        fullLookup,
+        usedBases,
+        galleryAnalysis,
+      );
+      const best = ranked.find((r) => r.score >= secondaryMin);
+      if (!best) break;
+      picked.push(best);
+      usedBases.add(normalizeGalleryUrl(best.url));
+    }
   }
 
   return picked;

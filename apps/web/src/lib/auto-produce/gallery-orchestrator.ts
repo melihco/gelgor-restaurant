@@ -292,6 +292,10 @@ export async function buildMissionGalleryAssignments(
         ideationCaption: caption,
         ideationHeadline: headline,
         subjectKey,
+        mood: String(idea.mood ?? idea.photo_mood ?? '').trim(),
+        visualDirection: String(idea.visual_direction ?? '').trim()
+          || String((idea.visual_production_spec as { scene_hint?: string } | undefined)?.scene_hint ?? '').trim(),
+        strategicPurpose: String(idea.strategic_purpose ?? '').trim(),
       }),
       ...(globalUsageCounts ? { globalUsageCounts } : {}),
     };

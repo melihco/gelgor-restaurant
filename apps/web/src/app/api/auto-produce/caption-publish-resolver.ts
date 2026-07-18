@@ -172,6 +172,11 @@ export function captionHasExplicitBeautyService(caption: string, headline: strin
   return EXPLICIT_BEAUTY_TERMS.some(t => text.includes(t));
 }
 
+export type GalleryPickMatchExtras = {
+  visualDirection?: string;
+  strategicPurpose?: string;
+};
+
 export function pickGalleryPhotoForIdea(
   caption: string,
   headline: string,
@@ -187,6 +192,7 @@ export function pickGalleryPhotoForIdea(
   tieBreakSeed?: number,
   globalUsageCounts?: ReadonlyMap<string, number>,
   subjectKey?: string,
+  matchExtras?: GalleryPickMatchExtras,
 ): string | null {
   if (!candidateUrls.length) return null;
 
@@ -203,12 +209,17 @@ export function pickGalleryPhotoForIdea(
   );
   if (!scopedCandidates.length) return null;
 
+  const visualDirection = String(matchExtras?.visualDirection ?? '').trim() || undefined;
+  const strategicPurpose = String(matchExtras?.strategicPurpose ?? '').trim() || undefined;
+
   const input = {
     caption,
     headline,
     mood,
     contentType,
     businessType,
+    ...(visualDirection ? { visualDirection } : {}),
+    ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };
@@ -269,6 +280,7 @@ export async function pickGalleryPhotoForIdeaAsync(
     missionId?: string;
     slotKey?: string;
   },
+  matchExtras?: GalleryPickMatchExtras,
 ): Promise<string | null> {
   const picked = pickGalleryPhotoForIdea(
     caption,
@@ -285,14 +297,19 @@ export async function pickGalleryPhotoForIdeaAsync(
     tieBreakSeed,
     globalUsageCounts,
     subjectKey,
+    matchExtras,
   );
   const alignedSubjectKey = resolveGalleryMatchSubjectKey({ caption, headline, subjectKey });
+  const visualDirection = String(matchExtras?.visualDirection ?? '').trim() || undefined;
+  const strategicPurpose = String(matchExtras?.strategicPurpose ?? '').trim() || undefined;
   const input = {
     caption,
     headline,
     mood,
     contentType,
     businessType,
+    ...(visualDirection ? { visualDirection } : {}),
+    ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };

@@ -134,6 +134,9 @@ export function buildSlotGalleryMatchInput(input: {
   ideationCaption?: string;
   ideationHeadline?: string;
   subjectKey?: string;
+  mood?: string;
+  visualDirection?: string;
+  strategicPurpose?: string;
 }): MatchPhotoInput {
   const format = slotFormatFromAssignment(input.assignment);
   const hint = String(input.visualSubjectHint ?? '').trim();
@@ -141,6 +144,9 @@ export function buildSlotGalleryMatchInput(input: {
   const caption = String(input.ideationCaption ?? '').trim();
   const brief = String(input.creativeBrief ?? '').trim().slice(0, 160);
   const brandLine = `${input.brandName} ${input.brandDescription ?? ''}`.trim();
+  const mood = String(input.mood ?? '').trim();
+  const visualDirection = String(input.visualDirection ?? '').trim() || undefined;
+  const strategicPurpose = String(input.strategicPurpose ?? '').trim() || undefined;
 
   const syntheticHeadline = hint || headline || brief || input.brandName;
   const syntheticCaption = caption
@@ -155,12 +161,14 @@ export function buildSlotGalleryMatchInput(input: {
   return {
     caption: syntheticCaption,
     headline: syntheticHeadline,
-    mood: '',
+    mood,
     contentType: formatToContentType(format),
     businessType: input.businessType,
     storySequenceRole: format === 'story'
       ? storySequenceRole(input.storyIndex ?? 0)
       : undefined,
+    ...(visualDirection ? { visualDirection } : {}),
+    ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(subjectKey ? { subjectKey } : {}),
   };
 }
@@ -262,6 +270,9 @@ export async function resolveGalleryFirstForSlot(input: {
   ideationCaption?: string;
   ideationHeadline?: string;
   subjectKey?: string;
+  mood?: string;
+  visualDirection?: string;
+  strategicPurpose?: string;
   existingCaptions?: string[];
   slotBackfillPass?: boolean;
   ideaIndex?: number;
@@ -273,6 +284,9 @@ export async function resolveGalleryFirstForSlot(input: {
   const ideationHeadline = String(input.ideationHeadline ?? '').trim();
   const subjectKey = String(input.subjectKey ?? '').trim() || undefined;
   const tieBreakSeed = input.ideaIndex;
+  const mood = String(input.mood ?? '').trim();
+  const visualDirection = String(input.visualDirection ?? '').trim() || undefined;
+  const strategicPurpose = String(input.strategicPurpose ?? '').trim() || undefined;
 
   const matchInput = buildSlotGalleryMatchInput({
     assignment: input.assignment,
@@ -285,6 +299,9 @@ export async function resolveGalleryFirstForSlot(input: {
     ideationCaption,
     ideationHeadline,
     subjectKey,
+    mood,
+    visualDirection,
+    strategicPurpose,
   });
 
   let pick: PhotoMatchResult | null = null;
@@ -306,6 +323,9 @@ export async function resolveGalleryFirstForSlot(input: {
           galleryAnalysis: input.galleryMeta,
           businessType: input.businessType,
           subjectKey,
+          mood,
+          visualDirection,
+          strategicPurpose,
         });
         if (forcedScore >= MIN_ACCEPT_SCORE) {
           pick = {

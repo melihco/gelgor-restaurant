@@ -1,7 +1,8 @@
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
-export const CAROUSEL_MIN_SLIDES = 3;
+/** Soft quality target for logging; publish gate is ≥2. */
+export const CAROUSEL_MIN_SLIDES = 2;
 export const CAROUSEL_TARGET_SLIDES = 4;
 
 export function isCarouselAssignment(

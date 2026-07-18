@@ -610,6 +610,7 @@ describe('local product carousel — honey caption must not pick olive oil', () 
         caption: 'Datça\'nın en özel süzme çiçek balını keşfedin',
         headline: 'Saf Lezzet',
         businessType: 'local_products_shop',
+        subjectKey: 'honey',
       },
       [OIL_PHOTO, HONEY_PHOTO],
       gallery,
@@ -620,6 +621,36 @@ describe('local product carousel — honey caption must not pick olive oil', () 
     expect(slides.length).toBeGreaterThanOrEqual(1);
     expect(slides.every((s) => s.url === HONEY_PHOTO)).toBe(true);
     expect(slides.some((s) => s.url === OIL_PHOTO)).toBe(false);
+  });
+
+  it('pickScoredCarouselSlides aims for at least 2 caption-aligned slides via secondary bar', () => {
+    const honeyB = 'https://cdn.example.com/gallery/honey-jar-02.jpg';
+    const galleryTwo: Record<string, GalleryPhotoMeta> = {
+      ...gallery,
+      [honeyB]: {
+        contentTags: ['honey', 'jar', 'local'],
+        description: 'Second honey jar on wooden table, golden light.',
+        primarySubject: 'honey',
+        subjectConfidence: 0.85,
+      },
+    };
+    const slides = pickScoredCarouselSlides(
+      {
+        caption: 'Çiçek balı — kahvaltı sofrasına saf lezzet',
+        headline: 'Saf Bal',
+        businessType: 'local_products_shop',
+        subjectKey: 'honey',
+      },
+      [OIL_PHOTO, HONEY_PHOTO, honeyB],
+      galleryTwo,
+      [],
+      4,
+      STRONG_MATCH_SCORE,
+      { minCount: 2 },
+    );
+    expect(slides.length).toBeGreaterThanOrEqual(2);
+    expect(slides.every((s) => s.url !== OIL_PHOTO)).toBe(true);
+    expect(new Set(slides.map((s) => s.url)).size).toBe(slides.length);
   });
 
   it('preferSubjectAlignedCandidates keeps only primarySubject matches', () => {

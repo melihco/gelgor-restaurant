@@ -1,12 +1,10 @@
 import { shouldPreserveVenuePhotos, shouldUpscaleSmallGalleryPhoto } from '@/lib/venue-photo-policy';
 import {
   pickScoredCarouselSlides,
-  matchPhotoToContent,
-  isHardGalleryThemeMismatch,
+  MIN_ACCEPT_SCORE,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
-import { MIN_ACCEPT_SCORE } from '@/lib/gallery-photo-matcher';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import {
@@ -406,13 +404,19 @@ export async function generateVibeCarousel(opts: {
   location?: string;
   businessType?: string;
   mood?: string;
+  visualDirection?: string;
+  strategicPurpose?: string;
+  subjectKey?: string;
   galleryAnalysis: Record<string, GalleryPhotoMeta>;
   candidateUrls: string[];
   excludeUrls: string[];
   count: number;
   minScore?: number;
+  /** Minimum caption-aligned slides (default 2 for IG carousel). */
+  minSlides?: number;
 }): Promise<{ enhancedUrls: string[]; galleryUrls: string[] }> {
   const baseUrl = getNextjsInternalOrigin();
+  const minSlides = Math.max(2, opts.minSlides ?? 2);
 
   const localUsed = [...opts.excludeUrls];
   const candidates = opts.candidateUrls.filter(
@@ -426,6 +430,9 @@ export async function generateVibeCarousel(opts: {
     mood: opts.mood ?? '',
     contentType: 'carousel',
     businessType: opts.businessType,
+    visualDirection: opts.visualDirection,
+    strategicPurpose: opts.strategicPurpose,
+    subjectKey: opts.subjectKey,
   };
 
   const scored = pickScoredCarouselSlides(
@@ -435,11 +442,12 @@ export async function generateVibeCarousel(opts: {
     localUsed,
     opts.count,
     opts.minScore ?? MIN_ACCEPT_SCORE,
+    { minCount: minSlides },
   );
   let picked = scored.map((r) => r.url);
 
   if (
-    picked.length === 0
+    picked.length < minSlides
     && (opts.minScore ?? MIN_ACCEPT_SCORE) > MIN_ACCEPT_SCORE
   ) {
     const relaxed = pickScoredCarouselSlides(
@@ -449,25 +457,32 @@ export async function generateVibeCarousel(opts: {
       localUsed,
       opts.count,
       MIN_ACCEPT_SCORE,
+      { minCount: minSlides },
     );
-    picked = relaxed.map((r) => r.url);
-  }
-
-  if (!picked.length) {
-    const hero = matchPhotoToContent(matchInput, candidates, opts.galleryAnalysis, {
-      excludeUrls: localUsed,
-      bestEffort: true,
-    });
-    if (
-      hero?.url
-      && !isHardGalleryThemeMismatch(matchInput, undefined, hero.url)
-      && (hero.score ?? 0) >= MIN_ACCEPT_SCORE
-    ) {
-      picked = [hero.url];
+    if (relaxed.length > picked.length) {
+      picked = relaxed.map((r) => r.url);
     }
   }
 
-  if (!picked.length) return { enhancedUrls: [], galleryUrls: [] };
+  // Last resort: still require caption-aligned picks — never invent a 1-slide "carousel".
+  if (picked.length < minSlides) {
+    const retry = pickScoredCarouselSlides(
+      matchInput,
+      candidates,
+      opts.galleryAnalysis,
+      localUsed,
+      Math.max(opts.count, minSlides),
+      MIN_ACCEPT_SCORE,
+      { minCount: minSlides, secondaryMinScore: 16 },
+    );
+    if (retry.length > picked.length) {
+      picked = retry.map((r) => r.url);
+    }
+  }
+
+  if (picked.length < minSlides) {
+    return { enhancedUrls: [], galleryUrls: [] };
+  }
 
   if (shouldPreserveVenuePhotos()) {
     return { enhancedUrls: picked.slice(0, opts.count), galleryUrls: picked.slice(0, opts.count) };

@@ -36,6 +36,7 @@ import {
   rankPhotosForContent,
   rankPhotosForContentSeeded,
   enrichGalleryAnalysis,
+  pickScoredCarouselSlides,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
@@ -2350,36 +2351,64 @@ function IdeaCard({
         story: storyRes.imageUrl,
       };
 
-      // Carousel: 3 slides (hook, story, CTA) via Canvas — fast, consistent
+      // Carousel: caption-aligned gallery slides (≥2), then Canvas overlays
       const carouselSlides: string[] = [];
       const SLIDE_ROLES = [
         { textHint: headline.slice(0, 40),        ctaHint: '' },
         { textHint: caption.slice(0, 60),         ctaHint: '' },
         { textHint: purpose.slice(0, 40),         ctaHint: cta || 'Hemen İncele' },
       ];
-      const slidePhotos = brandRefImages.length >= 3
-        ? [brandRefImages[0]!, brandRefImages[1]!, brandRefImages[2]!]
-        : [basePhoto, basePhoto, basePhoto];
+      const carouselSubjectKey = String(
+        (idea as Record<string, unknown>).subject_key
+          ?? (idea as Record<string, unknown>).subjectKey
+          ?? '',
+      ).trim() || undefined;
+      const carouselPhotoPool = brandRefImages.filter(
+        (u) => !u.toLowerCase().includes('logo') && !u.toLowerCase().endsWith('.png'),
+      );
+      const scoredCarousel = pickScoredCarouselSlides(
+        {
+          caption,
+          headline,
+          mood: getIdeaField(idea, 'mood', 'tone', 'vibe'),
+          contentType: 'carousel',
+          businessType: String(b?.business_type ?? b?.industry ?? ''),
+          visualDirection: visualDir || undefined,
+          strategicPurpose: purpose || undefined,
+          subjectKey: carouselSubjectKey,
+        },
+        carouselPhotoPool.length ? carouselPhotoPool : brandRefImages,
+        galleryAnalysis as Record<string, GalleryPhotoMeta>,
+        [],
+        3,
+        undefined,
+        { minCount: 2 },
+      );
+      const slidePhotos = scoredCarousel.length >= 2
+        ? scoredCarousel.map((s) => s.url)
+        : [];
 
-      for (let i = 0; i < SLIDE_ROLES.length; i++) {
-        const s = SLIDE_ROLES[i]!;
-        try {
-          const url = await composeBrandPhotoCard({
-            photoUrl: slidePhotos[i]!,
-            headline: s.textHint || headline.slice(0, 40),
-            cta: s.ctaHint,
-            contentType: 'post',
-            styleIdx: i % CANVAS_STYLES.length,
-            logoUrl: brandCtx?.logo_url ?? '',
-            logoPosition: postDesignDefaults.logoPosition,
-            textEffect: i % 2 === 0 ? postDesignDefaults.textEffect : 'gradient_stack',
-            fontPreset: i % 2 === 0 ? postDesignDefaults.fontPreset : 'condensed_impact',
-            accentColor: postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
-          });
-          carouselSlides.push(url);
-        } catch { /* skip */ }
+      if (slidePhotos.length >= 2) {
+        for (let i = 0; i < Math.min(SLIDE_ROLES.length, slidePhotos.length); i++) {
+          const s = SLIDE_ROLES[i]!;
+          try {
+            const url = await composeBrandPhotoCard({
+              photoUrl: slidePhotos[i]!,
+              headline: s.textHint || headline.slice(0, 40),
+              cta: s.ctaHint,
+              contentType: 'post',
+              styleIdx: i % CANVAS_STYLES.length,
+              logoUrl: brandCtx?.logo_url ?? '',
+              logoPosition: postDesignDefaults.logoPosition,
+              textEffect: i % 2 === 0 ? postDesignDefaults.textEffect : 'gradient_stack',
+              fontPreset: i % 2 === 0 ? postDesignDefaults.fontPreset : 'condensed_impact',
+              accentColor: postDesignDefaults.accentColor ?? brandCtx?.brand_accent_color ?? '#ff2f8f',
+            });
+            carouselSlides.push(url);
+          } catch { /* skip */ }
+        }
       }
-      result.carousel = carouselSlides;
+      result.carousel = carouselSlides.length >= 2 ? carouselSlides : undefined;
 
       setAllFormatsResult(result);
 
@@ -2397,7 +2426,7 @@ function IdeaCard({
           content: JSON.stringify({ imageUrl: storyRes.imageUrl, caption, kind: 'instagram_story' }),
           metadata: { imageUrl: storyRes.imageUrl, caption },
         }),
-        carouselSlides.length > 0 && carouselSlides[0] && apiClient.saveCreativeArtifact({
+        carouselSlides.length >= 2 && carouselSlides[0] && apiClient.saveCreativeArtifact({
           title: `${headline || brandName} — Carousel (${carouselSlides.length} slide)`,
           contentUrl: carouselSlides[0],
           platform: 'instagram', contentType: 'instagram_carousel',
@@ -2406,14 +2435,14 @@ function IdeaCard({
             caption,
             kind: 'instagram_carousel',
             slides: carouselSlides,
-            carousel_urls: carouselSlides.length >= 2 ? carouselSlides : undefined,
-            carousel_multi_photo: carouselSlides.length >= 2,
+            carousel_urls: carouselSlides,
+            carousel_multi_photo: true,
           }),
           metadata: {
             imageUrl: carouselSlides[0],
             caption,
-            carousel_urls: carouselSlides.length >= 2 ? carouselSlides : undefined,
-            carousel_multi_photo: carouselSlides.length >= 2,
+            carousel_urls: carouselSlides,
+            carousel_multi_photo: true,
           },
         }),
       ].filter(Boolean);

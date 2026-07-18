@@ -43,6 +43,8 @@ import {
   matchPhotoToContent,
   pickMissionDiverseFallbackPhoto,
   isHardGalleryThemeMismatch,
+  rankPhotosForContent,
+  buildGalleryLookup,
   MIN_ACCEPT_SCORE,
   REEL_GALLERY_MIN_SCORE,
   resolveGalleryMatchSubjectKey,
@@ -53,6 +55,7 @@ import {
   captionRequiresStrictGalleryMatch,
   scoreIdeationPhotoMatch,
 } from '@/lib/caption-photo-alignment';
+import type { GalleryPickMatchExtras } from '@/app/api/auto-produce/caption-publish-resolver';
 import { shouldAutoProduceEnhanceGallery } from '@/lib/venue-photo-policy';
 import {
   filterReachableGalleryUrls,
@@ -470,18 +473,55 @@ function canRetryBrandGalleryRecovery(pipeline: string, slotRole: string): boole
     || pipeline === 'gallery_photo';
 }
 
+/**
+ * Rematch a broken gallery URL among reachable brand photos.
+ * When matchInput is provided, only caption-aligned candidates (≥ minScore) are tried —
+ * never fall back to the first reachable brand photo without scoring.
+ */
 async function rematchMirroredBrandGalleryUrl(opts: {
   workspaceId: string;
   primaryUrl: string | null | undefined;
   galleryPhotos: string[];
+  matchInput?: MatchPhotoInput;
+  galleryMeta?: Record<string, GalleryPhotoMeta>;
+  minScore?: number;
 }): Promise<string | null> {
   const photos = opts.galleryPhotos.filter((u) => Boolean(u?.trim()));
-  const primary = (opts.primaryUrl || photos[0] || '').trim();
+  if (!photos.length) return null;
+
+  const minScore = opts.minScore ?? MIN_ACCEPT_SCORE;
+  let ordered = photos;
+
+  if (opts.matchInput && opts.galleryMeta) {
+    const lookup = buildGalleryLookup(opts.galleryMeta, photos);
+    const ranked = rankPhotosForContent(
+      opts.matchInput,
+      photos,
+      lookup,
+      new Set(),
+      opts.galleryMeta,
+    ).filter((r) => r.score >= minScore);
+    if (!ranked.length) {
+      console.warn(
+        '[auto-produce] rematch refused — no caption-aligned reachable candidates above floor',
+      );
+      return null;
+    }
+    ordered = ranked.map((r) => r.url);
+  }
+
+  const primary = (
+    opts.primaryUrl
+    && ordered.some((u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(opts.primaryUrl!))
+      ? opts.primaryUrl
+      : ordered[0]
+  )!.trim();
   if (!primary) return null;
+
   const picked = await pickReachableProductionGalleryUrl(
     opts.workspaceId,
     primary,
-    photos,
+    ordered,
     { timeoutMs: 12_000 },
   );
   return picked?.url ?? null;
@@ -787,6 +827,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const globalGalleryUsageCounts = buildGlobalGalleryUsageCounts(galleryUsage);
   /** Closed over by pickMissionGallery — set per-slot from ideation subject_key. */
   let activeGallerySubjectKey: string | undefined;
+  /** Closed over — visual_direction / strategic_purpose for caption↔photo scoring. */
+  let activeGalleryMatchExtras: GalleryPickMatchExtras = {};
   const pickMissionGallery = (
     caption: string,
     headline: string,
@@ -816,6 +858,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       tieBreakSeed,
       globalGalleryUsageCounts,
       activeGallerySubjectKey,
+      activeGalleryMatchExtras,
     );
 
   // galleryMetaRaw alias for code that still references it directly
@@ -1333,10 +1376,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const postType = kindToPostType(kind);
     let galleryEscalatedToFalOnly = false;
     const fmt = kind.replace('instagram_', '');
-    const mood = String(
-      idea.mood ?? idea.photo_mood ?? idea.visual_direction ?? '',
-    ).trim();
+    const mood = String(idea.mood ?? idea.photo_mood ?? '').trim();
     const strategicPurpose = idea.strategic_purpose || '';
+    const visualDirectionForMatch = String(idea.visual_direction ?? '').trim()
+      || String(
+        (idea.visual_production_spec as { scene_hint?: string } | undefined)?.scene_hint ?? '',
+      ).trim()
+      || undefined;
+    activeGalleryMatchExtras = {
+      ...(visualDirectionForMatch ? { visualDirection: visualDirectionForMatch } : {}),
+      ...(String(strategicPurpose).trim()
+        ? { strategicPurpose: String(strategicPurpose).trim() }
+        : {}),
+    };
     const ideaPremiumComposition = extractPremiumComposition(idea);
     let treatmentLower = ((idea.treatment ?? idea.visual_production_spec?.treatment) || '').toLowerCase();
     if (ideaPremiumComposition && treatmentLower === 'pure_photo') {
@@ -1381,6 +1433,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ideationCaption,
         ideationHeadline: galleryMatchHeadline,
         subjectKey: ideationSubjectKey,
+        mood,
+        visualDirection: visualDirectionForMatch,
+        strategicPurpose: String(strategicPurpose || '').trim() || undefined,
         existingCaptions: missionSessionCaptions,
         slotBackfillPass,
         ideaIndex,
@@ -1623,6 +1678,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           businessType: brandBusinessType,
           subjectKey: ideationSubjectKey,
           globalUsageCounts: globalGalleryUsageCounts,
+          ...activeGalleryMatchExtras,
         },
         galleryPhotos,
         galleryMeta,
@@ -1652,6 +1708,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             businessType: brandBusinessType,
             subjectKey: ideationSubjectKey,
             globalUsageCounts: globalGalleryUsageCounts,
+            ...activeGalleryMatchExtras,
           };
           const agentMeta = galleryMeta[normalizeGalleryUrl(pooledAgentUrl)]
             ?? Object.entries(galleryMeta).find(
@@ -1803,6 +1860,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               mood,
               contentType: postType,
               subjectKey: ideationSubjectKey,
+              visualDirection: activeGalleryMatchExtras.visualDirection,
+              strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
             });
           }
           }
@@ -1909,6 +1968,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           mood,
           contentType: postType,
           subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
         });
         console.log(
           `[auto-produce] AI OFF — galeri passthrough: "${ideationHeadline.slice(0, 48)}" → ${referenceUrl.slice(0, 72)}`,
@@ -2055,7 +2116,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             postType,
             null,
             brandBusinessType,
-            false,
+            Boolean(missionId),
             ideaIndex,
           )
         : null;
@@ -2064,6 +2125,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           workspaceId,
           primaryUrl: heuristicPick || referenceUrl,
           galleryPhotos,
+          matchInput: {
+            caption: ideationCaption,
+            headline: galleryMatchHeadline,
+            mood,
+            contentType: postType,
+            businessType: brandBusinessType,
+            subjectKey: ideationSubjectKey,
+            ...activeGalleryMatchExtras,
+          },
+          galleryMeta,
         })
         : null;
       if (rematched) {
@@ -2138,7 +2209,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             postType,
             null,
             brandBusinessType,
-            false,
+            Boolean(missionId),
             ideaIndex,
           )
         : null;
@@ -2181,7 +2252,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             postType,
             null,
             brandBusinessType,
-            false,
+            Boolean(missionId),
             ideaIndex,
           )
         : null;
@@ -2195,6 +2266,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             workspaceId,
             primaryUrl: referenceUrl,
             galleryPhotos,
+            matchInput: {
+              caption: ideationCaption,
+              headline: galleryMatchHeadline,
+              mood,
+              contentType: postType,
+              businessType: brandBusinessType,
+              subjectKey: ideationSubjectKey,
+              ...activeGalleryMatchExtras,
+            },
+            galleryMeta,
           })
           : null;
         if (rematched) {
@@ -2445,15 +2526,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         mood,
         contentType: postType,
         subjectKey: ideationSubjectKey,
+        visualDirection: activeGalleryMatchExtras.visualDirection,
+        strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
       });
 
+      // Full caption + visualDirection rescoring is authoritative (no batch score floor).
       galleryMatchScore = scorePhoto(normalizedResolvedReferenceUrl);
-      if (batchSourcedGalleryPick && slotBatchDecision) {
-        // Loop rescoring may only raise, never sink, a batch-confirmed pick.
-        galleryMatchScore = Math.max(galleryMatchScore, slotBatchDecision.score);
+      if (
+        batchSourcedGalleryPick
+        && slotBatchDecision
+        && galleryMatchScore >= MIN_ACCEPT_SCORE
+      ) {
+        console.log(
+          `[auto-produce] batch gallery confirmed score=${galleryMatchScore} (batch=${slotBatchDecision.score}): "${ideationHeadline.slice(0, 40)}"`,
+        );
       }
 
-      if (galleryMatchScore < MIN_ACCEPT_SCORE && !batchSourcedGalleryPick) {
+      if (galleryMatchScore < MIN_ACCEPT_SCORE) {
         let bestUrl = resolvedReferenceUrl ?? '';
         let bestScore = galleryMatchScore;
         for (const candidate of galleryPhotos) {
@@ -2591,6 +2680,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           mood,
           contentType: postType,
           subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
         });
         agentIdeationGalleryLock = false;
         hardThemeConflict = false;
@@ -2679,6 +2770,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           mood,
           contentType: kind,
           subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
         });
       } else if (decision.action === 'reject') {
         console.warn(
@@ -2824,6 +2917,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           galleryPhotos: galleryPhotos.filter(
             (u) => normalizeGalleryUrl(u) !== normalizeGalleryUrl(resolvedReferenceUrl ?? ''),
           ),
+          matchInput: {
+            caption: ideationCaption,
+            headline: galleryMatchHeadline,
+            mood,
+            contentType: postType,
+            businessType: brandBusinessType,
+            subjectKey: ideationSubjectKey,
+            ...activeGalleryMatchExtras,
+          },
+          galleryMeta,
         })
         : null;
       if (rematched) {
@@ -2844,6 +2947,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           mood,
           contentType: kind,
           subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
         });
       } else if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
         console.warn(
@@ -3641,14 +3746,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const carouselExclude = getExcludeUrlsForPostType(
         galleryUsage, 'carousel', batchUsedByType.carousel,
       );
-      const carouselMatchInput: MatchPhotoInput = {
-        caption,
-        headline,
-        mood,
-        contentType: 'carousel',
-        businessType: brandBusinessType,
-      };
       const carouselMinScore = MIN_ACCEPT_SCORE;
+      const carouselVisualDirection = String(idea.visual_direction ?? '').trim() || undefined;
 
       if (hasGallery) {
         const carouselResult = await generateVibeCarousel({
@@ -3659,11 +3758,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           location:     brandLocation,
           businessType: brandBusinessType,
           mood,
+          visualDirection: carouselVisualDirection,
+          strategicPurpose: strategicPurpose || undefined,
+          subjectKey: ideationSubjectKey || undefined,
           galleryAnalysis: galleryMeta,
           candidateUrls: galleryPhotos,
           excludeUrls: carouselExclude,
           count:        CAROUSEL_TARGET_SLIDES,
           minScore:     carouselMinScore,
+          minSlides:    CAROUSEL_MIN_SLIDES,
         });
         carouselUrls = carouselResult.enhancedUrls;
         carouselGalleryUrls = carouselResult.galleryUrls;
@@ -3679,16 +3782,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       carouselUrls = filled.carouselUrls;
       carouselGalleryUrls = filled.carouselGalleryUrls;
-      if (carouselUrls.length === 0 && referenceUrl) {
-        carouselUrls = [referenceUrl];
-        carouselGalleryUrls = [referenceUrl];
+      // Do not pad a failed carousel with a single reference photo — publish path
+      // degrades to feed post when <2 caption-aligned slides remain.
+      if (carouselUrls.length < CAROUSEL_MIN_SLIDES) {
         console.log(
-          `[auto-produce] Carousel degraded to single gallery photo — "${headline.slice(0, 40)}"`,
+          `[auto-produce] Carousel under-filled (${carouselUrls.length}/${CAROUSEL_MIN_SLIDES} caption-aligned) — "${headline.slice(0, 40)}"`,
         );
-      }
-      if (carouselUrls.length >= CAROUSEL_MIN_SLIDES) {
+      } else {
         console.log(
-          `[auto-produce] Carousel slides: ${carouselUrls.length} (gallery=${carouselGalleryUrls.length}) — "${headline.slice(0, 40)}"`,
+          `[auto-produce] Carousel slides: ${carouselUrls.length} (gallery=${carouselGalleryUrls.length}`
+          + `${ideationSubjectKey ? `, subject=${ideationSubjectKey}` : ''}) — "${headline.slice(0, 40)}"`,
         );
       }
       // ── Branded carousel frame overlay ──────────────────────────────────
@@ -4814,6 +4917,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ?? (idea as Record<string, unknown>).subjectKey
         ?? '',
       ).trim() || undefined;
+      activeGalleryMatchExtras = {
+        ...(String(idea.visual_direction ?? '').trim()
+          ? { visualDirection: String(idea.visual_direction).trim() }
+          : {}),
+        ...(String(idea.strategic_purpose ?? '').trim()
+          ? { strategicPurpose: String(idea.strategic_purpose).trim() }
+          : {}),
+      };
       const referenceUrl = pickMissionGallery(
         caption,
         headline,

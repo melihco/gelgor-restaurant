@@ -288,6 +288,8 @@ export function scoreIdeationPhotoMatch(params: {
   storySequenceRole?: 'hook' | 'proof' | 'cta';
   /** Canonical product subject from ideation — SSOT for product↔photo matching. */
   subjectKey?: string;
+  visualDirection?: string;
+  strategicPurpose?: string;
 }): number {
   const match = matchPhotoToContent(
     {
@@ -298,6 +300,8 @@ export function scoreIdeationPhotoMatch(params: {
       businessType: params.businessType,
       storySequenceRole: params.storySequenceRole,
       subjectKey: params.subjectKey,
+      visualDirection: params.visualDirection,
+      strategicPurpose: params.strategicPurpose,
     },
     [params.photoUrl],
     params.galleryAnalysis,
