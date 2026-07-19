@@ -56,7 +56,9 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
 
     expect(plan.resolvedVibe).toBe('warm_coastal');
     expect(plan.vibeSource).toBe('brand_theme.typography_design.vibe');
-    expect(plan.intensitySource).toBe('announcement:product_reveal');
+    // product_reveal proposes designed; brand story ceiling is photo_first → capped
+    expect(plan.intensity).toBe('photo_first');
+    expect(plan.intensitySource).toBe('announcement:product_reveal+ceiling:brand.story');
     expect(plan.promptConflicts).toHaveLength(0);
     expect(plan.artifactMetadata.resolved_vibe).toBe('warm_coastal');
     expect(plan.artifactMetadata.vibe_source).toBe('brand_theme.typography_design.vibe');
@@ -92,10 +94,17 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
 });
 
 describe('resolveProposedCalendarIntensity', () => {
-  it('maps product_reveal to photo_first and offer_campaign to designed', () => {
+  it('applies brand ceiling over announcement proposals', () => {
+    // YULA_PROPOSED story ceiling = photo_first → designed proposals clamp down
     expect(resolveProposedCalendarIntensity('product_reveal', 'story', YULA_PROPOSED_BRAND_THEME).level)
       .toBe('photo_first');
     expect(resolveProposedCalendarIntensity('offer_campaign', 'story', YULA_PROPOSED_BRAND_THEME).level)
+      .toBe('photo_first');
+
+    const openCeiling = {
+      fal_design_intensity: { story: 'designed', reel: 'designed', post: 'designed' },
+    };
+    expect(resolveProposedCalendarIntensity('offer_campaign', 'story', openCeiling).level)
       .toBe('designed');
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildBrandIntelligenceDirectives,
+  buildBrandSlotDesignRecipe,
   buildDesignTemplateGenerationJobs,
   resolveDefaultTemplateHeroPhoto,
 } from '@/lib/brand-design-template-engine';
@@ -86,12 +87,39 @@ describe('buildBrandIntelligenceDirectives', () => {
     const prompt = directives.join(' ');
     expect(prompt).toContain('BRAND DESIGN CONTRACT');
     expect(prompt).toContain('VISUAL DNA — PRIMARY DESIGN SOURCE');
+    expect(prompt).toContain('BRAND UNIQUENESS');
     expect(prompt).toContain('Scorpios');
     expect(prompt).toContain('Premium beach club');
     expect(prompt).toContain('sunset dining');
     expect(prompt).toContain('story uses elegant_light');
     expect(prompt).toContain('LAYOUT RECIPE');
     expect(prompt).toContain('reusable brand recipes');
+  });
+});
+
+describe('buildBrandSlotDesignRecipe', () => {
+  it('gives a concrete per-slot brand design idea for template generation', () => {
+    const recipe = buildBrandSlotDesignRecipe({
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      location: 'Bodrum',
+      primary: '#00C5CC',
+      accent: '#f5a25d',
+      slotKey: 'restaurant_cafe_cocktail_bar_reel',
+      slotName: 'Kokteyl bar reel',
+      channel: 'reel',
+      level: 'designed',
+      layoutFamily: 'magazine_cover_overlap',
+      visualDna: 'Aegean coastal warmth, carved wood, turquoise accents',
+      brandTone: 'warm, inviting, boutique',
+      sampleHeadline: 'Bugünün Önerisi',
+    });
+    expect(recipe).toContain('BRAND SLOT DESIGN RECIPE');
+    expect(recipe).toContain('Yula Bodrum');
+    expect(recipe).toContain('magazine_cover_overlap');
+    expect(recipe).toContain('#00C5CC');
+    expect(recipe).toContain('Bugünün Önerisi');
+    expect(recipe).toContain('carved wood');
   });
 });
 

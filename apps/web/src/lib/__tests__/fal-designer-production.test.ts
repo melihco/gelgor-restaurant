@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCreativeDesignBrief,
   buildDesignedPostDesignCardPrompt,
+  buildDesignedStoryDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
   buildIntensityTypographyBlock,
   FAL_SUBJECT_CLEARANCE_DIRECTIVE,
@@ -85,11 +87,17 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     });
 
     expect(prompt).toContain('real rooftop sunset crowd with warm ambient light');
-    expect(prompt).toContain('TYPOGRAPHY STANDARD (MANDATORY)');
-    expect(prompt).toContain('Reject amateur output');
-    expect(prompt).toContain('PHOTO HERO ZONE');
+    expect(prompt).toContain('═══ CREATIVE BRIEF ═══');
+    expect(prompt).toContain('═══ HARD CONTRACTS ═══');
+    expect(prompt).toContain('Boutique social-agency Art Director brief');
+    expect(prompt).toContain('REF BAR:');
+    expect(prompt).toContain('TYPE CRAFT:');
+    expect(prompt).toContain('TASTE FAIL');
+    expect(prompt).toContain('PHOTO×TYPE:');
+    expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('SUBJECT CLEARANCE (MANDATORY)');
     expect(prompt).toContain(FAL_SUBJECT_CLEARANCE_DIRECTIVE);
+    expect(prompt).not.toContain('GRAPHIC ZONE: Upper 38');
   });
 
   it('maps Ideogram photo_overlay to gradient_mesh when a gallery reference exists', () => {
@@ -105,6 +113,104 @@ describe('buildDesignedPostDesignCardPrompt', () => {
   });
 });
 
+describe('buildCreativeDesignBrief', () => {
+  it('ships craft package (REF / TYPE / SPACE / TASTE) without zone percentages', () => {
+    const brief = buildCreativeDesignBrief({
+      mode: 'feed_post',
+      brand: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      aspect: 'portrait 4:5 feed post (1080×1350)',
+      premiumVenue: true,
+      vibe: 'warm_coastal',
+      visualDnaTone: 'Aegean coastal warmth',
+      briefMood: 'sunset terrace dining',
+      designIntensityLevel: 'elegant_light',
+      headline: 'Sunset Terrace',
+    });
+    expect(brief).toContain('CREATIVE BRIEF');
+    expect(brief).toContain('Boutique social-agency Art Director');
+    expect(brief).toContain('REF BAR:');
+    expect(brief).toContain('TYPE CRAFT:');
+    expect(brief).toContain('SPACE CRAFT:');
+    expect(brief).toContain('PHOTO×TYPE:');
+    expect(brief).toContain('TASTE FAIL');
+    expect(brief).toContain('ONE IDEA: "Sunset Terrace"');
+    expect(brief).toContain('Aegean coastal');
+    expect(brief).toContain('type ON photo');
+    expect(brief).toContain('color-band ≥25%');
+    expect(brief).not.toContain('Canva Pro');
+    expect(brief.length).toBeLessThan(1100);
+  });
+
+  it('asks designed intensity for graphic craft, not plain photo+text or sandwiches', () => {
+    const brief = buildCreativeDesignBrief({
+      mode: 'story',
+      brand: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      aspect: '1080×1920 vertical portrait frame (9:16 aspect ratio)',
+      premiumVenue: true,
+      vibe: 'warm_coastal',
+      designIntensityLevel: 'designed',
+      headline: 'Mutlu Bayramlar',
+    });
+    expect(brief).toContain('REQUIRED graphic craft');
+    expect(brief).toContain('plain photo+floating text');
+    expect(brief).toContain('Canva sandwich');
+    expect(brief).not.toContain('graphic zone + photo hero strip');
+  });
+});
+
+describe('buildDesignedStoryDesignCardPrompt', () => {
+  it('locks 9:16 Instagram Story language even when aspectRatio is wrongly 4:5', () => {
+    const prompt = buildDesignedStoryDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Join us today',
+      subtitle: 'Book your table',
+      brandColors: { primary: '#0d4f4f', accent: '#f5a623' },
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      aspectRatio: '4:5',
+    });
+
+    expect(prompt).toContain('Boutique social-agency Art Director brief for Yula Bodrum');
+    expect(prompt).toContain('REF BAR:');
+    expect(prompt).toContain('1080×1920 vertical portrait frame (9:16 aspect ratio)');
+    expect(prompt).toContain('Instagram Story design');
+    expect(prompt).toContain('CREATIVE BRIEF');
+    expect(prompt).toContain('HARD CONTRACTS');
+    expect(prompt).toContain('ONE IDEA: "Join us today"');
+    expect(prompt).not.toContain('4:5 feed post');
+    expect(prompt).not.toContain('scroll-stopping feed post');
+  });
+
+  it('keeps designed layout families in the protected head even when optional tail is huge', () => {
+    const prompt = buildDesignedStoryDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Mutlu Bayramlar',
+      subtitle: 'Sizinle kutluyoruz',
+      brandColors: { primary: '#00C5CC', accent: '#f5a25d' },
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      aspectRatio: '9:16',
+      designIntensityLevel: 'designed',
+      layoutFamilySeed: 'restaurant_cafe_event_announcement_story',
+      sceneHint: 'real Yula Bodrum coastal celebration atmosphere with carved wood and sea',
+      brandDirectives: Array.from({ length: 40 }, (_, i) =>
+        `EXTRA DIRECTIVE ${i}: filler text to force optional-tail trim without eating intensity lock.`,
+      ),
+    });
+
+    expect(prompt).toContain('DESIGN INTENSITY: DESIGNED');
+    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).toContain('TYPE CONTAINMENT');
+    expect(prompt).toContain('GRAPHIC SYSTEM');
+    expect(prompt).toMatch(/horizontal sandwich|paint sandwich|Canva sandwich/i);
+    expect(prompt).toContain('HARD CONTRACTS');
+    expect(prompt).toContain('Mutlu Bayramlar');
+    expect(prompt.indexOf('LAYOUT LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
+  });
+});
+
 describe('buildDesignedVideoReelDesignCardPrompt', () => {
   it('frames an art-director designed template while preserving the photo hero zone', () => {
     const prompt = buildDesignedVideoReelDesignCardPrompt({
@@ -117,15 +223,16 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
       aspectRatio: '9:16',
     });
 
-    expect(prompt).toContain('ART DIRECTOR for Yula Bodrum');
+    expect(prompt).toContain('Boutique social-agency Art Director brief for Yula Bodrum');
+    expect(prompt).toContain('REF BAR: Scorpios');
     expect(prompt).toContain('beach club');
-    expect(prompt).toContain('hand-crafted');
-    expect(prompt).toContain('PHOTO HERO ZONE');
+    expect(prompt).toContain('TYPE CRAFT:');
+    expect(prompt).toContain('CREATIVE BRIEF');
+    expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('Cheers to Our');
     expect(prompt).toContain('ON-CANVAS TEXT CONTRACT');
     expect(prompt).toContain('Headline word order (3 words');
     expect(prompt).toContain('MOTION-READY');
-    expect(prompt).toContain('TYPOGRAPHY STANDARD (MANDATORY)');
   });
 
   it('weaves the brand soul and a special occasion into the brand palette', () => {
@@ -140,10 +247,9 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
       occasion: { name: 'Anneler Gunu', mood: 'warm gratitude, family, soft florals' },
     });
 
-    expect(prompt).toContain('BRAND DNA (general): bohemian Aegean leisure');
+    expect(prompt).toContain('Brand DNA: bohemian Aegean leisure');
     expect(prompt).toContain('OCCASION — Anneler Gunu');
     expect(prompt).toContain('WOVEN INTO');
-    expect(prompt).toContain('Never clashing holiday-cliché colors');
   });
 
   it('includes logo integrity and placement contract when logoUrl is provided', () => {
@@ -159,8 +265,8 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
 
     expect(prompt).toContain('BRAND LOGO CONTRACT');
     expect(prompt).toContain('DO NOT draw, generate');
-    expect(prompt).toContain('Photo hero rule');
     expect(prompt).toContain('LOGO ASSET');
+    expect(prompt).toContain('RESERVED');
     expect(prompt).not.toContain('BRAND MARK (small corner wordmark');
   });
 
@@ -181,7 +287,7 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('FOUND-SURFACE TYPOGRAPHY (L1 PRIORITY)');
     expect(prompt).toContain('NEVER invent a fake painted panel');
     expect(prompt).not.toContain('TYPOGRAPHY STANDARD (MANDATORY)');
-    expect(prompt).toContain('photo-first): Sun-washed Aegean restraint');
+    expect(prompt).toMatch(/SECTOR STYLE \(beach club — photo-first\)|Sun-washed Aegean/);
   });
 
   it('bold_editorial story prompt demands oversized caps headline', () => {
@@ -196,8 +302,9 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     });
 
     expect(prompt).toContain('BOLD EDITORIAL');
-    expect(prompt).toContain('ALL-CAPS');
-    expect(prompt).toContain('TYPOGRAPHY (bold editorial)');
+    expect(prompt).toMatch(/ALL[- ]CAPS/);
+    expect(prompt).toContain('TYPE CONTAINMENT');
+    expect(prompt).toContain('LAYOUT LOCK:');
   });
 });
 

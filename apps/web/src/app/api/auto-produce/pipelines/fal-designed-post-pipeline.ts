@@ -12,7 +12,7 @@
 import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   buildDesignedPostDesignCardPrompt,
-  buildDesignedVideoReelDesignCardPrompt,
+  buildDesignedStoryDesignCardPrompt,
   produceFalDesignedPostStill,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
@@ -204,7 +204,7 @@ export async function produceFalDesignedPost(
             subtitle: dedupedSubtitle,
           })
         : (aspectRatio === '9:16'
-        ? buildDesignedVideoReelDesignCardPrompt
+        ? buildDesignedStoryDesignCardPrompt
         : buildDesignedPostDesignCardPrompt)({
         vibe: designVibe,
         headline: canvasHeadline,

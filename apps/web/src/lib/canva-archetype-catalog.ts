@@ -487,7 +487,9 @@ export function buildCanvaArchetypeDirective(
 ): string {
   return [
     `CANVA ARCHETYPE: ${archetype.name} (${archetype.id}) — ${archetype.description}`,
-    `Match this Pro ${format === 'post' ? 'feed 4:5' : 'vertical 9:16'} template pattern exactly — custom, not stock.`,
+    `Match this Pro ${
+      format === 'post' ? 'feed 4:5' : format === 'story' ? 'story 9:16' : 'reel 9:16'
+    } template pattern exactly — custom, not stock.`,
   ].join(' ');
 }
 

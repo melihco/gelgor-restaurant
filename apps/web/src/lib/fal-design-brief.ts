@@ -256,13 +256,16 @@ function synthesizeFalDesignBrief(
 ): FalDesignBrief {
   const useCase = inferTemplateUseCase(input);
   const hook = distillCaptionHook(input.caption ?? '') || str(input.headline).slice(0, 80);
-  const isReel = input.format === 'reel' || input.format === 'story';
+  const isStory = input.format === 'story';
+  const isReel = input.format === 'reel';
   const hasPhoto = Boolean(input.referencePhotoUrl);
+  const channelLabel = isStory ? 'Instagram Story' : isReel ? 'Reels' : 'feed';
+  const channelNoun = isStory ? 'vertical story poster' : isReel ? 'vertical reel' : 'feed post';
 
   const base: FalDesignBrief = {
     creativeHook: hook
-      ? `Turn "${hook}" into a scroll-stopping ${isReel ? 'Reels' : 'feed'} design — Canva Pro "${archetype.name}" energy, not a raw photo dump.`
-      : `Premium ${isReel ? 'vertical reel' : 'feed post'} — Canva Pro "${archetype.name}" for "${str(input.headline).slice(0, 50)}"`,
+      ? `Turn "${hook}" into a scroll-stopping ${channelLabel} design — boutique agency layout "${archetype.name}", hand-crafted, not a raw photo dump.`
+      : `Premium ${channelNoun} — boutique agency layout "${archetype.name}" for "${str(input.headline).slice(0, 50)}"`,
     layoutPattern: archetype.layoutPattern,
     typographyMode: archetype.typographyMode,
     photoZone: hasPhoto
@@ -390,8 +393,9 @@ export function buildFalDesignBriefDirectives(
 ): string[] {
   const channel = format === 'story' ? 'story' : format === 'reel' ? 'reel' : 'feed_post';
   const spec = brief.canvaArchetypeId ? getCanvaArchetype(brief.canvaArchetypeId) : undefined;
+  const archetypeFormat = format === 'story' ? 'story' : format === 'reel' ? 'reel' : 'post';
   const archetypeDirective = spec
-    ? buildCanvaArchetypeDirective(spec, brief.motionCue ? 'reel' : 'post')
+    ? buildCanvaArchetypeDirective(spec, archetypeFormat)
     : undefined;
 
   const reelPremium = format === 'reel'
@@ -428,7 +432,7 @@ export function buildFalDesignBriefDirectives(
     brief.avoidPatterns.length
       ? `DESIGNER REJECT LIST: ${brief.avoidPatterns.join('; ')}.`
       : undefined,
-    'Evaluate as a senior social designer: hierarchy, negative space, and on-brand color must feel Canva Pro premium — never template stock, never plain system-font overlay text.',
+    'Evaluate as a senior boutique-agency social designer: hierarchy, negative space, and on-brand color must feel portfolio-grade — never template SaaS stock, never plain system-font overlay text.',
   ];
   return lines.filter((item): item is string => Boolean(item));
 }

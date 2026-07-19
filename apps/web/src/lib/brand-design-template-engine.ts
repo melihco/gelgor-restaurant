@@ -20,7 +20,6 @@ import {
 } from '@/lib/fal-designer-production';
 import { normalizeGeneratedImageAspect, POST_CANVAS, STORY_CANVAS } from '@/lib/design-canvas-aspect';
 import {
-  resolveFalTemplateIntensityForChannel,
   resolveFalTemplateBackgroundStyle,
   resolveTemplateLibraryDesignIntensity,
   shouldProminentLogoInFalTemplate,
@@ -33,7 +32,14 @@ import {
   resolveFalDesignBrief,
 } from '@/lib/fal-design-brief';
 import type { FalDesignChannel } from '@/lib/fal-design-intensity';
-import { clampDesignIntensityForArchetype } from '@/lib/fal-design-intensity';
+import {
+  clampDesignIntensityForArchetype,
+  describeDesignCraftLayoutFamily,
+  resolveCalendarFalDesignIntensity,
+  resolveDesignCraftLayoutFamily,
+  type DesignCraftLayoutFamily,
+  type FalDesignIntensityLevel,
+} from '@/lib/fal-design-intensity';
 import {
   DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT,
   resolveFalUseCaseForDesignTemplate,
@@ -41,6 +47,7 @@ import {
   type DesignTemplatePreset,
   resolveDesignTemplatePresets,
 } from '@/lib/brand-design-template-presets';
+import { normalizeLibraryPromptForFormat } from '@/lib/brand-design-template-production';
 import { resolveCalendarDesignLayout } from '@/lib/calendar-design-layout';
 import {
   isTypographyDesignConfirmed,
@@ -327,7 +334,7 @@ function compactObjectSummary(value: Record<string, unknown> | null | undefined,
 export function buildBrandIntelligenceDirectives(
   input: DesignTemplateEngineInput,
   channel: FalDesignChannel,
-  level: import('@/lib/fal-design-intensity').FalDesignIntensityLevel,
+  level: FalDesignIntensityLevel,
 ): string[] {
   const intel = input.brandIntelligence;
   if (!intel) return [];
@@ -348,13 +355,59 @@ export function buildBrandIntelligenceDirectives(
     ctas.length ? `Native CTA language: ${ctas.join(' | ')}.` : '',
     vibe ? `Vibe profile signals: ${vibe}.` : '',
     service ? `Service/venue profile signals: ${service}.` : '',
-    `Template channel/intensity: ${channel} uses ${level}. Build a reusable LAYOUT RECIPE with visible graphic architecture (zones, panels, hierarchy, brand-color accents) — not a raw photo with floating center text. At photo_first/elegant_light keep quiet luxury but still show designed zones; at balanced/designed/bold_editorial increase canvas composition, editorial typography and brand-specific structure while preserving the real gallery photo and visual DNA.`,
+    `BRAND UNIQUENESS: A stranger should recognize this as ${input.brandName} from color (${input.brandColors.primary}/${input.brandColors.accent}), venue photo, and type energy — never a stock ${input.sector} Canva pack that could belong to any competitor.`,
+    `Template channel/intensity: ${channel} uses ${level}. Build a DISTINCT LAYOUT RECIPE for THIS slot role — vary composition across the library while keeping brand DNA, palette, and typography vibe consistent. Never generic identical Canva header strips across every template.`,
   ].filter(Boolean);
 
   return [
     lines.join(' '),
     'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers. Keep text exact and legible; never invent or misspell Turkish words.',
   ];
+}
+
+/**
+ * Per-slot creative brief for template library — gives the image model a concrete
+ * brand-specific design idea (not just sector defaults + intensity).
+ */
+export function buildBrandSlotDesignRecipe(input: {
+  brandName: string;
+  sector: string;
+  location?: string;
+  primary: string;
+  accent: string;
+  slotKey: string;
+  slotName: string;
+  channel: FalDesignChannel;
+  level: FalDesignIntensityLevel;
+  layoutFamily: DesignCraftLayoutFamily | null;
+  visualDna?: string;
+  brandTone?: string;
+  vibeProfileSummary?: string;
+  sampleHeadline?: string;
+}): string {
+  const place = input.location?.trim() || input.sector.replace(/_/g, ' ');
+  const dnaCue = input.visualDna?.trim()
+    ? input.visualDna.trim().slice(0, 160)
+    : `${input.brandName} authentic ${place} atmosphere`;
+  const toneCue = input.brandTone?.trim()?.slice(0, 80)
+    || input.vibeProfileSummary?.slice(0, 80)
+    || 'on-brand, intentional, boutique';
+  const familyLine = input.layoutFamily
+    ? `Execute layout family "${input.layoutFamily}": ${describeDesignCraftLayoutFamily(input.layoutFamily)}`
+    : 'Pick one craft composition that feels hand-designed for this brand.';
+  const idea = input.sampleHeadline?.trim()
+    ? `Design idea for "${input.sampleHeadline.trim().slice(0, 48)}": make the craft system feel like ${input.brandName}'s own social studio — ${toneCue}.`
+    : `Design idea: a reusable ${input.channel} recipe that could only belong to ${input.brandName}.`;
+
+  return [
+    `═══ BRAND SLOT DESIGN RECIPE ═══`,
+    `Slot: ${input.slotName} (${input.slotKey}) · ${input.channel} · intensity ${input.level}.`,
+    idea,
+    `Motifs from brand world: ${dnaCue}.`,
+    `Color craft: use ${input.primary} + ${input.accent} as intentional accents/plates/rules — never random teal/orange stock packs.`,
+    familyLine,
+    'Reject: competitor-generic sector flyer, identical library clones, text escaping its plate.',
+  ].join(' ');
 }
 
 async function generateOne(
@@ -375,7 +428,6 @@ async function generateOne(
     : preset.format === 'story'
       ? 'story'
       : 'post';
-  const productionIntensity = resolveFalTemplateIntensityForChannel(theme, intensityChannel);
   const picked = defaultHeroPhoto ?? pickPhotoForPreset(preset, input, usedUrls);
   if (picked && !defaultHeroPhoto) usedUrls.add(normalizeGalleryUrl(picked.url));
   const briefFormat = preset.format === 'reel_cover'
@@ -403,6 +455,14 @@ async function generateOne(
     layoutFamilyHint: preset.catalogSlotKey ?? calendarLayout.canvaArchetypeId,
     explicitCanvaArchetypeId: calendarLayout.canvaArchetypeId,
   });
+  // Slot/announcement role drives intensity (library diversity); theme is fallback.
+  // Brand DNA + vibe stay shared across templates — layout energy must not.
+  const slotIntensity = resolveCalendarFalDesignIntensity({
+    announcementType,
+    channel: intensityChannel,
+    brandTheme: theme,
+  });
+  const productionIntensity = slotIntensity.level;
   const designIntensityLevel = clampDesignIntensityForArchetype(
     resolveTemplateLibraryDesignIntensity(productionIntensity),
     layoutBrief.canvaArchetypeId,
@@ -443,34 +503,69 @@ async function generateOne(
       : buildDesignedPostDesignCardPrompt;
   const gptDesignCardMode: 'post' | 'reel' = preset.format === 'post' ? 'post' : 'reel';
 
-  const prompt = buildPrompt({
-    vibe,
-    headline: headline || input.brandName,
-    subtitle,
-    sceneHint,
-    brandColors: input.brandColors,
+  const layoutFamilySeed = preset.catalogSlotKey ?? preset.name;
+  const needsCraftFamily = designIntensityLevel === 'designed'
+    || designIntensityLevel === 'bold_editorial'
+    || designIntensityLevel === 'balanced';
+  const layoutFamily = needsCraftFamily
+    ? resolveDesignCraftLayoutFamily(layoutFamilySeed)
+    : null;
+  const slotDesignRecipe = buildBrandSlotDesignRecipe({
     brandName: input.brandName,
     sector: input.sector,
-    aspectRatio: aspect,
-    visualDnaTone: input.visualDnaTone,
-    designIntensityLevel,
-    occasion,
-    brandDirectives: [
-      ...brandIntelligenceDirectives,
-      'LAYOUT TEMPLATE CONTRACT: This output is a reusable brand layout recipe for future missions — it MUST show intentional graphic architecture (zones, panels, type hierarchy, brand-color accents), not a raw gallery photo with floating center text.',
-      preset.format === 'post'
-        ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'
-        : '',
-      'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
-      'FORBIDDEN LOGO: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone.',
-      'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
-      picked?.url
-        ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
-        : '',
-      ...layoutDirectives,
-      ...(antiPatternDirective ? [antiPatternDirective] : []),
-    ].filter(Boolean),
+    location: input.location,
+    primary: input.brandColors.primary,
+    accent: input.brandColors.accent,
+    slotKey: layoutFamilySeed,
+    slotName: preset.name,
+    channel: intensityChannel,
+    level: designIntensityLevel,
+    layoutFamily,
+    visualDna: input.brandIntelligence?.visualDna ?? input.visualDnaTone,
+    brandTone: input.brandIntelligence?.brandTone,
+    vibeProfileSummary: compactObjectSummary(input.brandIntelligence?.vibeProfile, 120),
+    sampleHeadline: headline || preset.sampleHeadline,
   });
+
+  const prompt = normalizeLibraryPromptForFormat(
+    buildPrompt({
+      vibe,
+      headline: headline || input.brandName,
+      subtitle,
+      sceneHint,
+      brandColors: input.brandColors,
+      brandName: input.brandName,
+      sector: input.sector,
+      aspectRatio: aspect,
+      visualDnaTone: input.visualDnaTone,
+      designIntensityLevel,
+      layoutFamilySeed,
+      layoutFamily,
+      occasion,
+      brandDirectives: [
+        ...brandIntelligenceDirectives,
+        slotDesignRecipe,
+        'LAYOUT TEMPLATE CONTRACT: reusable brand layout recipe — graphic craft system (rail/plate/L/rules/soft split) + photo + type. NOT a raw photo with floating center text, and NOT a solid painted header panel + photo strip Canva sandwich.',
+        `SLOT: ${layoutFamilySeed}`,
+        preset.format === 'post'
+          ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'
+          : preset.format === 'story'
+            ? 'STORY CANVAS LOCK: Exact Instagram Story 9:16 (1080×1920). Compose as a vertical story poster — full-height frame, safe-zone typography. FORBIDDEN: 4:5 feed crop language, square feed composition, or feed-post framing.'
+            : preset.format === 'reel_cover'
+              ? 'REEL CANVAS LOCK: Exact Instagram Reel 9:16 (1080×1920). Compose as a reel cover — full-height frame, motion-ready typography. FORBIDDEN: 4:5 feed crop language or square feed composition.'
+              : '',
+        'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
+        'FORBIDDEN LOGO: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone.',
+        'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
+        picked?.url
+          ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
+          : '',
+        ...layoutDirectives,
+        ...(antiPatternDirective ? [antiPatternDirective] : []),
+      ].filter(Boolean),
+    }),
+    preset.format === 'reel_cover' ? 'reel' : preset.format,
+  );
 
   let thumbnailUrl: string | null = null;
   let generator: 'gpt-image-1' | 'fal-ideogram' | 'none' = 'none';

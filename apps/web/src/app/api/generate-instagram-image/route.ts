@@ -560,8 +560,8 @@ function buildReferenceEditDirective(
       'Render ONLY the text listed in the ON-CANVAS TEXT CONTRACT below. Do NOT translate, paraphrase, or invent slogans. Zero tolerance for gibberish or misspelled words.',
       'If an official brand logo is configured, follow BRAND LOGO CONTRACT — leave the reserved logo zone empty; the exact logo file is composited after generation. Do NOT draw or reinterpret the mark.',
       '',
-      'You are the in-house ART DIRECTOR. You are given a REAL PHOTOGRAPH from the brand\'s actual venue.',
-      'Transform it into a hand-crafted 9:16 Instagram Story/Reel cover — premium social design, NOT a generic template.',
+      'Award-winning Art Director brief. You are given a REAL PHOTOGRAPH from the brand\'s actual venue.',
+      'Create one finished hand-crafted 9:16 Instagram Story/Reel cover — Awwwards/Behance social design, NOT a generic template. One dominant visual idea, clear type hierarchy, generous negative space.',
       hasTemplateLayoutRef
         ? 'Design layers must follow the TEMPLATE LAYOUT REPLICA contract above — copy IMAGE 2\'s composition instead of inventing a new one.'
         : 'MUST ADD visible design layers ON TOP of the photo: large stacked headline typography, brand color blocks, accent bars, decorative cues from the brand world.',
@@ -585,8 +585,8 @@ function buildReferenceEditDirective(
       'Render ONLY the text listed in the ON-CANVAS TEXT CONTRACT below. Do NOT translate, paraphrase, or invent slogans. Zero tolerance for gibberish or misspelled words.',
       'If an official brand logo is configured, follow BRAND LOGO CONTRACT — leave the reserved logo zone empty; the exact logo file is composited after generation. Do NOT draw or reinterpret the mark.',
       '',
-      'You are given a REAL PHOTOGRAPH of the actual business venue.',
-      'Your task: add designed social-media graphic layers ON TOP of this photo — typography, color blocks, localized scrims.',
+      'Award-winning Art Director brief. You are given a REAL PHOTOGRAPH of the actual business venue.',
+      'Create one finished Instagram feed design: add graphic layers ON TOP of this photo — typography, color blocks, localized scrims. One dominant visual idea, clear hierarchy, high-contrast readable type.',
       'PHOTO PRESERVATION (CRITICAL): Do NOT replace, re-render, blur, or globally recolor the photograph.',
       'Keep the original photo pixels authentic: same people, lighting, colors, and venue details.',
       'PHOTO FRAMING: Scale the entire reference photograph to fit inside the output frame (object-fit contain). Never crop off hero subjects, plates, faces, or products — use letterbox/split layout if needed.',

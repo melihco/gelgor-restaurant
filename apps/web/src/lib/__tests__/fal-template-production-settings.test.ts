@@ -100,10 +100,11 @@ describe('resolveFalTemplateIntensityForChannel', () => {
 });
 
 describe('resolveTemplateLibraryDesignIntensity', () => {
-  it('raises soft production intensities for layout-rich template recipes', () => {
-    expect(resolveTemplateLibraryDesignIntensity('photo_first')).toBe('elegant_light');
-    expect(resolveTemplateLibraryDesignIntensity('elegant_light')).toBe('balanced');
+  it('preserves per-slot intensity levels (does not flatten diversity)', () => {
+    expect(resolveTemplateLibraryDesignIntensity('photo_first')).toBe('photo_first');
+    expect(resolveTemplateLibraryDesignIntensity('elegant_light')).toBe('elegant_light');
     expect(resolveTemplateLibraryDesignIntensity('balanced')).toBe('balanced');
     expect(resolveTemplateLibraryDesignIntensity('designed')).toBe('designed');
+    expect(resolveTemplateLibraryDesignIntensity('bold_editorial')).toBe('bold_editorial');
   });
 });

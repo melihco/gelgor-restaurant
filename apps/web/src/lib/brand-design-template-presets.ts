@@ -217,7 +217,7 @@ export const DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT: Partial<Record<DesignTemp
   daily_story: 'behind_the_scenes',
   announcement_formal: 'offer_campaign',
   brand_identity: 'venue_showcase',
-  reel_cover: 'behind_the_scenes',
+  reel_cover: 'reel_cover',
 };
 
 /** Fal designer use-case ids (must match canva-archetype-catalog useCases). */

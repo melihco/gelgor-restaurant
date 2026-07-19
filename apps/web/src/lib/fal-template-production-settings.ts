@@ -101,11 +101,14 @@ export function resolveFalTemplateProductionSettings(
   };
 }
 
+/**
+ * Pass-through for library intensity.
+ * Do NOT collapse levels (balanced→elegant_light killed per-template diversity).
+ * Anti-Canva rules live inside each intensity's directives, not by flattening levels.
+ */
 export function resolveTemplateLibraryDesignIntensity(
   level: FalDesignIntensityLevel,
 ): FalDesignIntensityLevel {
-  if (level === 'photo_first') return 'elegant_light';
-  if (level === 'elegant_light') return 'balanced';
   return level;
 }
 

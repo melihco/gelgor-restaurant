@@ -312,12 +312,139 @@ export interface TemplateReplicaSpec {
   sampleHeadline: string | null;
   sampleSubtitle: string | null;
   forbiddenTexts: string[];
+  format?: 'story' | 'post' | 'reel';
+}
+
+/**
+ * Rewrite legacy library prompts that stored feed 4:5 language on story/reel
+ * templates (or the reverse) so mission replica matches the slot canvas.
+ */
+export function normalizeLibraryPromptForFormat(
+  prompt: string,
+  format: 'story' | 'post' | 'reel' | 'reel_cover' | null | undefined,
+): string {
+  const channel = format === 'reel' || format === 'reel_cover'
+    ? 'reel'
+    : format === 'story'
+      ? 'story'
+      : format === 'post'
+        ? 'post'
+        : null;
+  if (!channel || !prompt.trim()) return prompt;
+
+  let out = prompt;
+
+  if (channel === 'story' || channel === 'reel') {
+    const channelOpener = channel === 'story'
+      ? 'a scroll-stopping Instagram Story'
+      : 'a scroll-stopping reel cover';
+    const channelNoun = channel === 'story' ? 'Instagram Story' : 'Reels';
+    const canvaPattern = channel === 'story' ? 'story 9:16' : 'reel 9:16';
+
+    const verticalDeliverable = channel === 'story'
+      ? 'one finished Instagram Story design (1080×1920 vertical portrait frame (9:16 aspect ratio)) — scroll-stopping vertical story poster'
+      : 'one finished Instagram Reel cover design (1080×1920 vertical portrait frame (9:16 aspect ratio)) — scroll-stopping reel cover, hand-crafted';
+
+    out = out.replace(
+      /Design ONE portrait 4:5 feed post \(1080×1350\):\s*a scroll-stopping feed post/gi,
+      `Design ONE 1080×1920 vertical portrait frame (9:16 aspect ratio): ${channelOpener}`,
+    );
+    out = out.replace(
+      /Design ONE square 1:1 feed post \(1080×1080\):\s*a scroll-stopping feed post/gi,
+      `Design ONE 1080×1920 vertical portrait frame (9:16 aspect ratio): ${channelOpener}`,
+    );
+    out = out.replace(
+      /one finished Instagram feed post design \(portrait 4:5 feed post \(1080×1350\)\) — scroll-stopping feed post/gi,
+      verticalDeliverable,
+    );
+    out = out.replace(
+      /one finished Instagram feed post design \(square 1:1 feed post \(1080×1080\)\) — scroll-stopping feed post/gi,
+      verticalDeliverable,
+    );
+    out = out.replace(
+      /portrait 4:5 feed post \(1080×1350\)/gi,
+      '1080×1920 vertical portrait frame (9:16 aspect ratio)',
+    );
+    out = out.replace(
+      /square 1:1 feed post \(1080×1080\)/gi,
+      '1080×1920 vertical portrait frame (9:16 aspect ratio)',
+    );
+    out = out.replace(
+      /a scroll-stopping feed post/gi,
+      channelOpener,
+    );
+    out = out.replace(
+      /scroll-stopping feed post/gi,
+      channel === 'story' ? 'scroll-stopping vertical story poster' : 'scroll-stopping reel cover',
+    );
+    out = out.replace(
+      /one finished Instagram feed post design/gi,
+      channel === 'story'
+        ? 'one finished Instagram Story design'
+        : 'one finished Instagram Reel cover design',
+    );
+    out = out.replace(
+      /scroll-stopping feed design/gi,
+      `scroll-stopping ${channelNoun} design`,
+    );
+    out = out.replace(
+      /Premium feed post —/gi,
+      `Premium ${channel === 'story' ? 'vertical story poster' : 'vertical reel'} —`,
+    );
+    out = out.replace(
+      /Match this Pro feed 4:5 template pattern/gi,
+      `Match this Pro ${canvaPattern} template pattern`,
+    );
+    out = out.replace(
+      /PHOTO FRAMING \(4:5 feed\):[^.]*\./gi,
+      'PHOTO FRAMING (9:16): Scale the full gallery photograph to fit inside the frame — object-fit contain. Never crop off plates, faces, hands, or hero subjects. Letterbox with brand-color bands if aspect ratios differ.',
+    );
+    out = out.replace(
+      /FEED CANVAS LOCK:[^.]*\./gi,
+      channel === 'story'
+        ? 'STORY CANVAS LOCK: Exact Instagram Story 9:16 (1080×1920). Compose as a vertical story poster — full-height frame, safe-zone typography. FORBIDDEN: 4:5 feed crop language or square feed composition.'
+        : 'REEL CANVAS LOCK: Exact Instagram Reel 9:16 (1080×1920). Compose as a reel cover — full-height frame, motion-ready typography. FORBIDDEN: 4:5 feed crop language or square feed composition.',
+    );
+  } else {
+    out = out.replace(
+      /Design ONE 1080×1920 vertical portrait frame \(9:16 aspect ratio\):\s*a scroll-stopping Instagram Story/gi,
+      'Design ONE portrait 4:5 feed post (1080×1350): a scroll-stopping feed post',
+    );
+    out = out.replace(
+      /Design ONE 1080×1920 vertical portrait frame \(9:16 aspect ratio\):\s*a scroll-stopping reel cover/gi,
+      'Design ONE portrait 4:5 feed post (1080×1350): a scroll-stopping feed post',
+    );
+    out = out.replace(
+      /one finished Instagram Story design \(1080×1920 vertical portrait frame \(9:16 aspect ratio\)\) — scroll-stopping vertical story poster/gi,
+      'one finished Instagram feed post design (portrait 4:5 feed post (1080×1350)) — scroll-stopping feed post',
+    );
+    out = out.replace(
+      /one finished Instagram Reel cover design \(1080×1920 vertical portrait frame \(9:16 aspect ratio\)\) — scroll-stopping reel cover, hand-crafted/gi,
+      'one finished Instagram feed post design (portrait 4:5 feed post (1080×1350)) — scroll-stopping feed post',
+    );
+    out = out.replace(
+      /Match this Pro (?:story|reel|vertical) 9:16 template pattern/gi,
+      'Match this Pro feed 4:5 template pattern',
+    );
+    out = out.replace(
+      /STORY CANVAS LOCK:[^.]*\./gi,
+      'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.',
+    );
+    out = out.replace(
+      /REEL CANVAS LOCK:[^.]*\./gi,
+      'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.',
+    );
+  }
+
+  return out;
 }
 
 /**
  * Replica spec for real (hard/soft) template matches. The stored onboarding
- * prompt is reused verbatim in production so the textual instruction and the
+ * prompt is reused in production so the textual instruction and the
  * thumbnail layout reference describe the SAME design instead of fighting.
+ * Channel language is normalized to the template format so legacy 4:5 feed
+ * wording on story/reel library rows cannot leak into mission renders.
  */
 export function templateReplicaSpecFromBinding(
   binding: BrandTemplateFalBinding | null | undefined,
@@ -326,11 +453,15 @@ export function templateReplicaSpecFromBinding(
   if (!isRenderableDesignTemplateMatch(matched)) return null;
   const prompt = matched?.designSpecPrompt?.trim();
   if (!prompt) return null;
+  const format = matched.format === 'story' || matched.format === 'post' || matched.format === 'reel'
+    ? matched.format
+    : undefined;
   return {
-    prompt,
+    prompt: normalizeLibraryPromptForFormat(prompt, format),
     sampleHeadline: matched?.sampleHeadline ?? null,
     sampleSubtitle: matched?.sampleSubtitle ?? null,
     forbiddenTexts: collectTemplatePlaceholderTexts(matched),
+    format,
   };
 }
 

@@ -100,6 +100,22 @@ describe('fal-design-brief', () => {
     expect(brief.motionCue).toContain('gentle push');
   });
 
+  it('uses Instagram Story channel language for story format (not feed 4:5)', () => {
+    const brief = resolveFalDesignBrief({
+      caption: 'Join us for tonight\'s tasting',
+      headline: 'Join us today',
+      format: 'story',
+    });
+    expect(brief.creativeHook).toMatch(/Instagram Story/i);
+    expect(brief.creativeHook).not.toMatch(/\bfeed\b/i);
+    expect(brief.motionCue).toBeUndefined();
+
+    const directives = buildFalDesignBriefDirectives(brief, 'story');
+    expect(directives.some((d) => d.includes('story 9:16'))).toBe(true);
+    expect(directives.some((d) => d.includes('feed 4:5'))).toBe(false);
+    expect(directives.some((d) => d.includes('REEL PREMIUM BAR'))).toBe(false);
+  });
+
   it('prefers Feed Art Director reel_art_direction as motionCue and adds reel premium bar', () => {
     const brief = resolveFalDesignBrief({
       caption: 'Sunset cocktails on the terrace',

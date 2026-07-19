@@ -37,9 +37,12 @@ import {
   resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
 import {
+  describeDesignCraftLayoutFamily,
+  resolveDesignCraftLayoutFamily,
   resolveFalDesignIntensityDirectives,
   resolveFalDesignIntensityForChannel,
   resolveFalDesignIntensityMode,
+  type DesignCraftLayoutFamily,
   type FalDesignChannel,
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
@@ -417,19 +420,19 @@ export function buildIntensityTypographyBlock(input: {
 
   if (input.level === 'bold_editorial') {
     return [
-      'TYPOGRAPHY (bold editorial): OVERSIZED ALL-CAPS headline dominates upper zone — poster impact.',
-      'Stack headline lines large — 35–50% of frame height. Typography leads; photo supports below.',
+      'TYPOGRAPHY (bold editorial): OVERSIZED display ON the photograph — magazine-cover impact, not a painted brick.',
+      'Stack headline lines large — 28–42% of frame height overlapping or locking into the photo. Typography leads.',
       `${formatFalOnImageHeadlineDirective(safeHeadline, `heavy display caps — ${spec.fontDescription}`)}`,
-      `Style energy: ${spec.styleDirective} — magazine cover, maximum typographic presence.`,
+      `Style energy: ${spec.styleDirective} — magazine cover on photo, maximum typographic presence.`,
     ];
   }
 
   if (input.level === 'designed') {
     return [
-      'TYPOGRAPHY (designed campaign): Bold headline on solid brand-color upper panel — campaign poster energy.',
-      'Headline 25–35% frame height in upper graphic zone. Photo strip below stays separate.',
+      'TYPOGRAPHY (designed): Bold custom-feel display crafted into the photo — asymmetric or magazine lockup.',
+      'Headline 18–28% frame height. Prefer found surface / soft scrim; tiny accent plate OK (<18%). Never a full-width paint header.',
       `${formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription)}`,
-      `Style energy: ${spec.styleDirective} — designer-grade, intentional color blocks.`,
+      `Style energy: ${spec.styleDirective} — boutique-agency craft, not Canva stacked blocks.`,
     ];
   }
 
@@ -465,6 +468,10 @@ type DesignCardPromptInput = {
    */
   occasion?: { name: string; mood?: string };
   designIntensityLevel?: FalDesignIntensityLevel;
+  /** Catalog slot key / seed — locks a craft layout family for library diversity. */
+  layoutFamilySeed?: string | null;
+  /** Explicit craft layout family override (otherwise derived from layoutFamilySeed). */
+  layoutFamily?: DesignCraftLayoutFamily | null;
   /** Template slot font personality (display_bold, serif_editorial, …). */
   fontPersonality?: string;
   headingFont?: string;
@@ -485,17 +492,19 @@ export function buildDesignedPostDesignCardPrompt(input: DesignCardPromptInput):
 /**
  * Instagram Story poster — venue photo hero + ideation headline panel.
  * Used for fal_story when a gallery photo anchors the design.
+ * Always locks canvas language to 9:16 story (never 4:5 feed).
  */
 export function buildDesignedStoryDesignCardPrompt(input: DesignCardPromptInput): string {
-  return buildDesignedDesignCardPrompt(input, 'story');
+  return buildDesignedDesignCardPrompt({ ...input, aspectRatio: '9:16' }, 'story');
 }
 
 /**
  * Premium Reels/TikTok creator template — bold Canva Pro graphics + photo hero zone.
  * Used for fal_reel / fal_only_reel when a gallery photo anchors the design.
+ * Always locks canvas language to 9:16 reel (never 4:5 feed).
  */
 export function buildDesignedVideoReelDesignCardPrompt(input: DesignCardPromptInput): string {
-  return buildDesignedDesignCardPrompt(input, 'reel');
+  return buildDesignedDesignCardPrompt({ ...input, aspectRatio: '9:16' }, 'reel');
 }
 
 type DesignCardMode = 'feed_post' | 'reel' | 'story';
@@ -572,10 +581,10 @@ function resolveSectorDesignLanguage(
   intensityLevel: FalDesignIntensityLevel = 'balanced',
 ): string {
   const base = mode === 'reel'
-    ? 'Build a confident editorial graphic system: headline, supporting line, brand-color panel. MOTION-READY: keep design layers visually separate from the photo for parallax animation.'
+    ? 'Build a confident editorial system: headline + supporting line crafted onto the photo. MOTION-READY layers without inventing opaque paint slabs.'
     : mode === 'story'
-      ? 'Compose a branded vertical story poster: real venue/product photography hero + headline panel. Static story frame for Instagram — NOT a motion template, NOT a generic creator card.'
-      : 'Compose a hand-crafted editorial design. Composite ONLY graphic layers on top of the photo.';
+      ? 'Compose a branded vertical story: real venue photography as the canvas; type locked into the photo. Static Instagram Story — NOT a Canva sandwich, NOT a motion template.'
+      : 'Compose a hand-crafted editorial design. Composite type and light accents on the photo — not painted geometric zones.';
 
   if (!sector) return base;
   const s = sector.toLowerCase();
@@ -595,7 +604,7 @@ function resolveSectorDesignLanguage(
     return `${base} SECTOR STYLE (fine dining/restaurant): Elegant restraint. Use thin serif or modern didone headline, generous white/cream space, a single fine accent line in the brand accent color. Minimal decorative elements — let the food photography speak. Think Michelin guide meets Condé Nast Traveller ad.`;
   }
   if (s.includes('cafe') || s.includes('coffee') || s.includes('bakery') || s.includes('brunch')) {
-    return `${base} SECTOR STYLE (café/bakery): Warm, approachable, artisanal feel. Rounded sans-serif or hand-drawn script headline, kraft/earth-tone panels, hand-illustrated decorative elements (coffee beans, leaves, doodles). Think indie café menu board meets Pinterest food blogger aesthetic.`;
+    return `${base} SECTOR STYLE (café/bakery): Warm, approachable, artisanal feel. Rounded sans or hand-drawn script on the photo, soft earth accents, light illustrative touches — never kraft cardboard paint slabs. Think indie café lookbook, not menu-board Canva.`;
   }
   if (s.includes('hotel') || s.includes('resort') || s.includes('spa')) {
     return `${base} SECTOR STYLE (luxury hotel/spa): Serene sophistication. Ultra-light serif, expansive negative space, muted gold or champagne accents. Thin hairline dividers, no heavy blocks. Breathing room everywhere. Think Four Seasons brand book meets Wallpaper* magazine.`;
@@ -624,6 +633,150 @@ function resolveSectorDesignLanguage(
   return base;
 }
 
+/** Canvas label is driven by channel mode — story/reel never inherit feed 4:5 wording. */
+function designCardAspectLabel(mode: DesignCardMode, aspectRatio?: AspectRatio): string {
+  if (mode === 'story' || mode === 'reel') {
+    return '1080×1920 vertical portrait frame (9:16 aspect ratio)';
+  }
+  if (aspectRatio === '1:1') return 'square 1:1 feed post (1080×1080)';
+  return 'portrait 4:5 feed post (1080×1350)';
+}
+
+/** Boutique-agency reference bar — class, not template SaaS energy. */
+function resolveAgencyReferenceBar(sector?: string, premiumVenue?: boolean): string {
+  const s = (sector ?? '').toLowerCase();
+  if (s.includes('beach') || s.includes('club') || s.includes('nightclub')) {
+    return 'REF BAR: Scorpios / Nobu / Aman — quiet luxury coastal.';
+  }
+  if (s.includes('restaurant') || s.includes('fine_dining') || s.includes('gastro') || s.includes('cafe')) {
+    return 'REF BAR: Michelin / Condé Nast Traveller — editorial venue.';
+  }
+  if (s.includes('hotel') || s.includes('resort') || s.includes('spa')) {
+    return 'REF BAR: Four Seasons / Wallpaper* — serene hospitality.';
+  }
+  if (s.includes('bar') || s.includes('cocktail')) {
+    return 'REF BAR: speakeasy cocktail lookbook — moody, crafted.';
+  }
+  if (s.includes('beauty') || s.includes('salon') || s.includes('fashion') || s.includes('boutique')) {
+    return 'REF BAR: Glossier / Vogue Beauty — fashion-editorial.';
+  }
+  if (s.includes('product') || s.includes('shop') || s.includes('retail') || s.includes('local_products')) {
+    return 'REF BAR: Aesop / premium DTC — product hero restraint.';
+  }
+  if (premiumVenue) {
+    return 'REF BAR: boutique agency portfolio — understated, brand-true.';
+  }
+  return 'REF BAR: boutique social agency — hand-crafted, never template pack.';
+}
+
+/**
+ * Image-model opener: boutique AD + concrete deliverable (craft over roleplay).
+ * Keep short — creative brief must leave room for HARD CONTRACTS after finalizeFalPrompt trim.
+ */
+function buildAwardWinningArtDirectorOpener(input: {
+  mode: DesignCardMode;
+  brand: string;
+  sector?: string;
+  aspect: string;
+  premiumVenue: boolean;
+}): string {
+  const { mode, brand, sector, aspect, premiumVenue } = input;
+  const deliverable = mode === 'story'
+    ? `Instagram Story design (${aspect})`
+    : mode === 'reel'
+      ? `Instagram Reel cover (${aspect})`
+      : `Instagram feed post (${aspect})`;
+  const craft = mode === 'story'
+    ? 'Thumb-readable in 1s; photo+type inseparable.'
+    : mode === 'reel'
+      ? 'Motion-ready frozen headline; photo-led.'
+      : 'Win the feed thumbnail before the caption.';
+
+  return [
+    `Boutique social-agency Art Director brief for ${brand}${sector ? ` (${sector})` : ''}.`,
+    `Create one finished ${deliverable}. ${craft}`,
+    resolveAgencyReferenceBar(sector, premiumVenue),
+    premiumVenue ? 'Quiet luxury.' : 'Portfolio piece, not template SaaS.',
+  ].join(' ');
+}
+
+/**
+ * Agency-grade creative brief — craft first (REF / TYPE / SPACE / TASTE).
+ * Kept compact so HARD CONTRACTS + intensity survive finalizeFalPrompt trim.
+ */
+export function buildCreativeDesignBrief(input: {
+  mode: DesignCardMode;
+  brand: string;
+  sector?: string;
+  aspect: string;
+  premiumVenue: boolean;
+  vibe: TypographyVibe;
+  visualDnaTone?: string;
+  briefMood?: string;
+  sceneHint?: string;
+  designIntensityLevel?: FalDesignIntensityLevel;
+  headline?: string;
+}): string {
+  const opener = buildAwardWinningArtDirectorOpener({
+    mode: input.mode,
+    brand: input.brand,
+    sector: input.sector,
+    aspect: input.aspect,
+    premiumVenue: input.premiumVenue,
+  });
+  const vibeSpec = getVibePromptSpec(input.vibe);
+  const dna = input.visualDnaTone?.trim()
+    ? `Brand DNA: ${input.visualDnaTone.trim().slice(0, 100)}.`
+    : '';
+  const mood = (input.briefMood || input.sceneHint)?.trim()
+    ? `Mood: ${(input.briefMood || input.sceneHint)!.trim().slice(0, 90)}.`
+    : '';
+  const level = input.designIntensityLevel ?? 'elegant_light';
+  const campaignOk = level === 'designed' || level === 'bold_editorial';
+  const craftOk = campaignOk || level === 'balanced';
+  const boldOk = level === 'bold_editorial';
+  const oneIdea = input.headline?.trim()
+    ? `ONE IDEA: "${input.headline.trim().slice(0, 64)}" — silence everything else.`
+    : 'ONE IDEA: one clear message only.';
+
+  const typeCraft = boldOk
+    ? 'TYPE CRAFT: oversized custom-feel display in a graphic system; one family; never system sans; never clip.'
+    : campaignOk
+      ? 'TYPE CRAFT: bold designer display locked into the graphic system; clear hierarchy; never centered Arial on a paint slab.'
+      : craftOk
+        ? 'TYPE CRAFT: refined display inside a light craft lockup; never default UI sans watermark.'
+        : 'TYPE CRAFT: refined brand-drawn display; optical kerning; never default UI sans.';
+
+  const spaceCraft = craftOk
+    ? 'SPACE CRAFT: photo hero + intentional graphic system; one eye path; no cluttered sandwich zones.'
+    : 'SPACE CRAFT: 30–40% empty air; one eye path; cut optional elements.';
+
+  const photoType = boldOk
+    ? 'PHOTO×TYPE: magazine-cover GRAPHIC SYSTEM required — type + brand shapes/rules; FORBIDDEN opaque header/footer sandwich AND plain photo+caption.'
+    : campaignOk
+      ? 'PHOTO×TYPE: REQUIRED graphic craft (rail/plate/L/diagonal/inset/rules) with the photo. FORBIDDEN: plain photo+floating text; FORBIDDEN: Canva header/footer sandwich.'
+      : craftOk
+        ? 'PHOTO×TYPE: light craft required (scrim plate / corner accent / brand rules). Plain photo+caption = fail.'
+        : 'PHOTO×TYPE: type ON photo (scrim/found surface/asymmetric) — never painted rectangle strip.';
+
+  const tasteFail = craftOk
+    ? 'TASTE FAIL: text escaping its color plate/scrim (letters half on orange/teal, half on photo); plain photo+caption; Canva sandwich; sticker CTA; meta labels (STORY/REEL/POST).'
+    : 'TASTE FAIL: color-band ≥25%; system-sans; sticker CTA; carnival gradient; dual focus; template-pack; meta labels (STORY/REEL/POST).';
+
+  return [
+    '═══ CREATIVE BRIEF ═══',
+    opener,
+    oneIdea,
+    `Vibe: ${input.vibe.replace(/_/g, ' ')} — ${vibeSpec.styleDirective.slice(0, 70)}`,
+    dna,
+    mood,
+    typeCraft,
+    spaceCraft,
+    photoType,
+    tasteFail,
+  ].filter(Boolean).join(' ');
+}
+
 function buildDesignedDesignCardPrompt(
   input: DesignCardPromptInput,
   mode: DesignCardMode,
@@ -631,39 +784,39 @@ function buildDesignedDesignCardPrompt(
   const spec = getVibePromptSpec(input.vibe);
   const isReel = mode === 'reel';
   const isStory = mode === 'story';
-  const isVertical = input.aspectRatio === '9:16';
-  const aspect = isVertical
-    ? '1080×1920 vertical portrait frame (9:16 aspect ratio)'
-    : input.aspectRatio === '4:5'
-      ? 'portrait 4:5 feed post (1080×1350)'
-      : 'square 1:1 feed post (1080×1080)';
+  const isVertical = isStory || isReel || input.aspectRatio === '9:16';
+  const aspect = designCardAspectLabel(mode, input.aspectRatio);
 
   const brand = input.brandName?.trim() || 'the brand';
   const sector = input.sector?.trim();
-  const intensityLevel = input.designIntensityLevel ?? 'balanced';
-  const intensityMode = resolveFalDesignIntensityMode(input.aspectRatio, isReel || isStory);
+  const intensityLevel = input.designIntensityLevel ?? 'elegant_light';
+  const intensityMode = resolveFalDesignIntensityMode(
+    isStory || isReel ? '9:16' : input.aspectRatio,
+    isReel || isStory,
+  );
 
   const premiumVenue = isPremiumVenueSector(sector);
-  const role = isStory
-    ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''} at a top-tier global digital agency. Design ONE ${aspect}: a scroll-stopping Instagram Story — real venue/product photography + branded headline — Awwwards / Behance quality. NOT a generic Canva template, NOT meta labels like "STORY" or "REEL", NOT a raw photo dump.${premiumVenue ? ' Quiet luxury: understated, editorial, never carnival flyer.' : ''}`
-    : isReel
-      ? `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''} at a top-tier global digital agency. Design ONE ${aspect}: a scroll-stopping reel cover — hand-crafted, award-level social design. NOT a raw photo dump and NOT a generic template card.${premiumVenue ? ' Quiet luxury: photo-led, refined type, never neon party poster.' : ''}`
-      : `You are the in-house ART DIRECTOR for ${brand}${sector ? `, a ${sector} brand` : ''} at a top-tier global digital agency. Design ONE ${aspect}: a scroll-stopping feed post — Awwwards / Behance / Condé Nast Traveller quality. NOT a raw photo dump and NOT a generic template card.${premiumVenue ? ' Quiet luxury: editorial restraint, brand-true, never stock Canva.' : ''}`;
-
-  const soul = input.visualDnaTone
-    ? `BRAND DNA (general): ${input.visualDnaTone.slice(0, 220)} — this brand's visual identity leads every design choice (typography character, color blocks, decorative rhythm). Apply to graphic layers only — never recolor the photo. Every post should feel like THIS brand's art director made it — consistent identity, unique composition for THIS caption.`
-    : `BRAND DNA: stay true to ${brand}'s authentic aesthetic — refined, intentional, premium — never generic stock. Unique composition for this post while staying on-brand.`;
+  const creativeBrief = buildCreativeDesignBrief({
+    mode,
+    brand,
+    sector,
+    aspect,
+    premiumVenue,
+    vibe: input.vibe,
+    visualDnaTone: input.visualDnaTone,
+    briefMood: input.briefMood,
+    sceneHint: input.sceneHint,
+    designIntensityLevel: intensityLevel,
+    headline: input.headline,
+  });
 
   const captionAnchor = (input.caption ?? '').trim().slice(0, 220);
-  const postVibe = input.briefMood || captionAnchor
-    ? `POST VIBE (this specific idea): ${(input.briefMood || captionAnchor).slice(0, 160)} — the design must express THIS post's message and energy, not a one-size-fits-all sector template. Vary layout rhythm across posts while keeping brand DNA.`
-    : '';
   const captionMessageLock = captionAnchor
     ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, or nightlife copy for a food caption). Never paint calendar/signal labels like season names, "15 Temmuz", "plaj/havuz", or internal strategy phrases — ONLY the contracted headline/subtitle below.`
     : '';
   const premiumBar = premiumVenue
-    ? 'PREMIUM BAR: Global luxury hospitality social standard — generous breathing room, intentional type hierarchy, photo as hero, zero clutter, zero emoji-as-design, zero festival flyer energy. If it could belong to a mid-tier Canva template pack, reject that look.'
-    : 'PREMIUM BAR: Agency-grade social design — intentional hierarchy, brand-true color, no amateur system-font dump.';
+    ? 'PREMIUM BAR: Global luxury hospitality Instagram standard — generous breathing room, intentional type hierarchy, photo as hero, zero clutter, zero emoji-as-design, zero festival flyer energy. If it could belong to a mid-tier Canva template pack, reject that look.'
+    : 'PREMIUM BAR: Agency-grade Instagram design — intentional hierarchy, brand-true color, no amateur system-font dump.';
 
   const occasion = input.occasion
     ? `OCCASION — ${input.occasion.name}: honour its spirit${input.occasion.mood ? ` (${input.occasion.mood.slice(0, 90)})` : ''} tastefully WOVEN INTO ${brand}'s palette and visual world — symbolic, subtle accents only. Never clashing holiday-cliché colors, literal flags, balloons, or stock holiday graphics.`
@@ -711,12 +864,6 @@ function buildDesignedDesignCardPrompt(
     logoProvided: Boolean(input.logoUrl),
   });
 
-  // Brief mood/vibe energy
-  const moodDirective = input.briefMood
-    ? `DESIGN ENERGY / VIBE: This design should FEEL "${input.briefMood}" — let this mood influence the typography weight, color temperature, decorative rhythm, and overall intensity. The viewer should sense this energy at first glance.`
-    : '';
-
-  // BCD art direction — specific composition and style guidance for this brief×brand combination
   const artDirectionBlock = input.artDirection
     ? `ART DIRECTION (brief-specific): ${input.artDirection.slice(0, 250)}`
     : '';
@@ -732,50 +879,115 @@ function buildDesignedDesignCardPrompt(
   });
 
   const logoBlock = [logoRefNote, brandMarkInstruction].filter(Boolean).join(' ');
-  // Clearance + found-surface + logo contract headroom (logo block is long; must not trim Photo hero rule).
-  const promptLimit = (isReel || input.aspectRatio === '9:16' ? 3800 : 3200)
+  // Vertical prompts need more room: intensity lock + text contracts both must survive.
+  const promptLimit = (isReel || isStory || input.aspectRatio === '9:16' ? 4600 : 3900)
     + (input.logoUrl ? 900 : 0)
-    + 280
-    + 180;
-  // Keep contract + scene + brand directives early so finalizeFalPrompt trim cannot drop them.
-  const promptBody = [
-    role,
+    + 320
+    + 220;
+
+  const needsCraftLock = intensityLevel === 'designed'
+    || intensityLevel === 'bold_editorial'
+    || intensityLevel === 'balanced';
+  const layoutFamily = needsCraftLock
+    ? (input.layoutFamily
+      ?? resolveDesignCraftLayoutFamily(
+        input.layoutFamilySeed
+          ?? input.brandDirectives?.find((d) => d.startsWith('SLOT:'))?.slice(5)
+          ?? `${input.brandName ?? 'brand'}:${intensityLevel}:${mode}:${input.headline}`,
+      ))
+    : null;
+  const layoutLock = layoutFamily
+    ? `LAYOUT LOCK: use ONLY "${layoutFamily}" — ${describeDesignCraftLayoutFamily(layoutFamily)}`
+    : '';
+  const typeContainment = needsCraftLock
+    ? 'TYPE CONTAINMENT (MANDATORY): Every letter of headline/subtitle/brand mark must sit fully inside its plate, rail, L, mat, or soft scrim — ≥8% padding from that shape\'s edges. FORBIDDEN: text straddling a hard color edge onto the photo (amateur overflow). If copy is long, shrink type or widen the plate — never clip or spill.'
+    : '';
+
+  // Protected head — never trimmed. Layout families used to die at the end of finalizeFalPrompt.
+  const intensityLock = [
     intensityDirectives.priorityBlock,
-    ...(input.brandDirectives ?? []),
-    ...intensityDirectives.forbiddenLayouts,
-    onCanvasTextContract,
-    // Before long typography blocks — must survive finalizeFalPrompt maxChars trim.
-    FAL_SUBJECT_CLEARANCE_DIRECTIVE,
-    intensityDirectives.foundSurfaceAnchor,
-    captionMessageLock,
-    premiumBar,
-    input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 180)}.` : '',
-    logoBlock,
-    soul,
-    postVibe,
-    moodDirective,
-    artDirectionBlock,
-    occasion,
-    sectorDesignLanguage,
+    layoutLock,
+    typeContainment,
     ...photoRules,
-    ...premiumTypography,
-    isVertical
-      ? 'PHOTO FRAMING (9:16): Scale the full gallery photograph to fit inside the frame — object-fit contain. Never crop off plates, faces, hands, or hero subjects. Letterbox with brand-color bands if aspect ratios differ.'
-      : 'PHOTO FRAMING (4:5 feed): Show the ENTIRE gallery photograph within the design — scale-to-fit (object-fit contain). Do NOT center-crop or zoom-crop the venue photo. If the photo is wider than 4:5, use side bands or a split layout; never cut off food, people, or products.',
-    isVertical
-      ? `SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must stay within the inner 85% of the frame — minimum 7.5% margin from every edge. Protect the top 12% and bottom 15% from important content (platform UI overlaps). ${isStory ? 'Story poster: headline must be fully readable — shrink type rather than clip letters.' : 'Reel cover: keep headline panel inside safe zone for motion.'}`
-      : 'SAFE ZONE (MANDATORY): ALL text, logos, and graphic elements must be placed within the inner 85% of the frame — keep a minimum 7.5% margin from every edge. Keep headline and CTA inside the central 4:5 safe area — nothing clipped by feed crop.',
-    `BRAND COLORS: Use ${input.brandColors.primary} and ${input.brandColors.accent} for headline, shapes, color blocks, and accents — never as a global photo filter.`,
+    ...intensityDirectives.forbiddenLayouts,
     intensityDirectives.typographyAnchor,
-    spec.colorUsage(input.brandColors.primary, input.brandColors.accent),
     intensityDirectives.layoutNote,
-    `The result must look like ${brand}'s own art director made it — premium social media design quality, unique to this brand and this post.`,
+    intensityDirectives.foundSurfaceAnchor,
   ].filter(Boolean).join(' ');
-  let prompt = finalizeFalPrompt(promptBody, {
-    maxChars: promptLimit,
-    kind: 'image',
-    label: isStory ? 'fal-designer-story' : 'fal-designer',
-  });
+
+  const hardContracts = [
+    '═══ HARD CONTRACTS ═══',
+    onCanvasTextContract,
+    FAL_SUBJECT_CLEARANCE_DIRECTIVE,
+    captionMessageLock,
+    logoBlock,
+    isVertical
+      ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping.'
+      : 'SAFE ZONE: keep all text/logos inside inner 85% (7.5% edge margin); headline/CTA inside central 4:5 crop.',
+    isVertical
+      ? 'PHOTO FRAMING (9:16): Full-bleed gallery photo preferred; never invent brand-color letterbox bands as the design.'
+      : 'PHOTO FRAMING (4:5): Show the entire gallery photo (contain); soft letterbox only if needed — never paint slabs as composition.',
+    intensityLevel === 'designed' || intensityLevel === 'bold_editorial'
+      ? `BRAND COLORS: ${input.brandColors.primary} + ${input.brandColors.accent} for headline/thin accents — never full-width opaque paint slabs.`
+      : `BRAND COLORS: ${input.brandColors.primary} + ${input.brandColors.accent} for headline/scrims — never full-width opaque header slabs.`,
+  ].filter(Boolean).join(' ');
+
+  // Occasion + sector are brand-critical — keep a compact form in the protected head.
+  const occasionLock = occasion ? occasion.slice(0, 220) : '';
+  const sectorLock = sectorDesignLanguage ? sectorDesignLanguage.slice(0, 280) : '';
+
+  const label = isStory ? 'fal-designer-story' : 'fal-designer';
+  const coreLock = [intensityLock, hardContracts].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+  // Prefer: creative brief → intensity/layout → hard contracts → occasion/sector.
+  // On overflow: never cut intensity/contracts from the end — trim soft brand context instead.
+  let protectedHead = [creativeBrief, intensityLock, hardContracts, occasionLock, sectorLock]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (protectedHead.length > promptLimit) {
+    if (coreLock.length >= promptLimit) {
+      protectedHead = truncateAtWordBoundary(coreLock, promptLimit);
+      console.warn(
+        `[fal-prompt:${label}] core intensity+contracts alone ${coreLock.length}→${protectedHead.length} (limit ${promptLimit})`,
+      );
+    } else {
+      const softBudget = promptLimit - coreLock.length - 1;
+      const soft = [creativeBrief, occasionLock, sectorLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      const trimmedSoft = truncateAtWordBoundary(soft, softBudget);
+      // Keep intensity immediately after whatever soft prefix fits.
+      protectedHead = [trimmedSoft, coreLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      console.warn(
+        `[fal-prompt:${label}] trimmed soft context ${soft.length}→${trimmedSoft.length}; `
+        + `kept intensity+contracts ${coreLock.length} (limit ${promptLimit})`,
+      );
+    }
+  }
+
+  // Optional tail — trimmed first when over budget.
+  const optionalTail = [
+    ...(input.brandDirectives ?? []),
+    ...premiumTypography,
+    premiumBar,
+    input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 120)}.` : '',
+    artDirectionBlock,
+    spec.colorUsage(input.brandColors.primary, input.brandColors.accent),
+    `FINISH: Looks like ${brand}'s boutique Art Director shipped it — modern Instagram craft, ready to publish.`,
+  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+  const tailBudget = Math.max(0, promptLimit - protectedHead.length - 1);
+  const trimmedTail = tailBudget > 0
+    ? truncateAtWordBoundary(optionalTail, tailBudget)
+    : '';
+  if (optionalTail.length > trimmedTail.length) {
+    console.warn(
+      `[fal-prompt:${label}] protected-head kept ${protectedHead.length} chars; `
+      + `trimmed optional tail ${optionalTail.length}→${trimmedTail.length} (limit ${promptLimit})`,
+    );
+  }
+
+  let prompt = [protectedHead, trimmedTail].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   if (intensityLevel === 'photo_first') {
     prompt = harmonizePhotoFirstDesignPrompt(prompt, {
       vibe: input.vibe,

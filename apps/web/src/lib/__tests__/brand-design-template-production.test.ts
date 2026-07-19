@@ -19,6 +19,7 @@ import {
   bindBrandTemplateForFalProduction,
   allowSoftTemplateFallbackForCatalogPin,
   dropConflictingLayoutDirectives,
+  normalizeLibraryPromptForFormat,
   requiresLibraryTemplateReplica,
   pickTemplateReferenceUrls,
   resolveFalTemplateLockOptions,
@@ -213,6 +214,25 @@ describe('template replica prompt', () => {
     expect(spec!.prompt).toBe('Bold diagonal panel with neon headline block.');
     expect(spec!.sampleHeadline).toBe('Gün batımı');
     expect(spec!.forbiddenTexts).toContain('Gün batımı');
+  });
+
+  it('rewrites legacy 4:5 feed language on story library prompts at replica time', () => {
+    const legacy =
+      'You are the in-house ART DIRECTOR for Demo. Design ONE portrait 4:5 feed post (1080×1350): a scroll-stopping feed post — quality. ' +
+      'DESIGNER BRIEF: Turn "Hello" into a scroll-stopping feed design — Canva Pro. ' +
+      'Match this Pro feed 4:5 template pattern exactly — custom, not stock. ' +
+      'PHOTO FRAMING (4:5 feed): Show the ENTIRE gallery photograph within the design.';
+    expect(normalizeLibraryPromptForFormat(legacy, 'story')).toContain('9:16 aspect ratio');
+    expect(normalizeLibraryPromptForFormat(legacy, 'story')).toContain('Instagram Story');
+    expect(normalizeLibraryPromptForFormat(legacy, 'story')).not.toContain('4:5 feed post');
+    expect(normalizeLibraryPromptForFormat(legacy, 'story')).toContain('story 9:16');
+
+    const spec = templateReplicaSpecFromBinding({
+      ...binding,
+      matched: { ...matched, format: 'story', designSpecPrompt: legacy },
+    })!;
+    expect(spec.prompt).toContain('scroll-stopping Instagram Story');
+    expect(spec.prompt).not.toContain('scroll-stopping feed post');
   });
 
   it('returns null for format fallback or missing stored prompt', () => {

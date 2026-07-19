@@ -42,7 +42,7 @@ export const FAL_DESIGN_INTENSITY_LABELS: Record<
   },
   balanced: {
     tr: 'Dengeli',
-    desc: 'Galeri hero + marka renkli blok — mevcut standart',
+    desc: 'Fotoğraf odaklı modern editorial — scrim / found-surface / köşe tipografi',
     level: 3,
   },
   designed: {
@@ -91,7 +91,7 @@ export function resolveFalDesignIntensityConfig(
     String(typography?.text_overlay_density ?? typography?.textOverlayDensity ?? ''),
   );
 
-  const fallback = legacyLevel ?? 'balanced';
+  const fallback = legacyLevel ?? 'elegant_light';
   return {
     story: raw?.story ?? fallback,
     reel: raw?.reel ?? fallback,
@@ -105,6 +105,48 @@ export function resolveFalDesignIntensityForChannel(
 ): FalDesignIntensityLevel {
   const cfg = resolveFalDesignIntensityConfig(theme);
   return cfg[channel];
+}
+
+/** Rank for clamp/ceiling — higher = more graphic energy. */
+export const FAL_DESIGN_INTENSITY_RANK: Record<FalDesignIntensityLevel, number> = {
+  photo_first: 1,
+  elegant_light: 2,
+  balanced: 3,
+  designed: 4,
+  bold_editorial: 5,
+};
+
+/**
+ * Brand channel intensity as a ceiling: slot may propose higher energy, but never above brand.
+ * Does not raise below-ceiling proposals (photo_first under elegant_light stays photo_first).
+ */
+export function clampDesignIntensityToCeiling(
+  proposed: FalDesignIntensityLevel,
+  ceiling: FalDesignIntensityLevel,
+): FalDesignIntensityLevel {
+  if (FAL_DESIGN_INTENSITY_RANK[proposed] <= FAL_DESIGN_INTENSITY_RANK[ceiling]) {
+    return proposed;
+  }
+  return ceiling;
+}
+
+/**
+ * Brand Hub "Tasarım yoğunluğu" ceiling for a channel.
+ * Prefers fal_template_production.intensity (panel SSOT), else fal_design_intensity.
+ */
+export function resolveBrandDesignIntensityCeiling(
+  theme: Record<string, unknown> | null | undefined,
+  channel: FalDesignChannel,
+): FalDesignIntensityLevel {
+  const t = readThemeRecord(theme);
+  const ftp = (t.fal_template_production ?? t.falTemplateProduction) as
+    | { intensity?: Partial<BrandFalDesignIntensityConfig> }
+    | undefined;
+  const fromPanel = ftp?.intensity?.[channel];
+  if (fromPanel && FAL_DESIGN_INTENSITY_LEVELS.includes(fromPanel)) {
+    return fromPanel;
+  }
+  return resolveFalDesignIntensityForChannel(theme, channel);
 }
 
 export interface FalDesignIntensityDirectives {
@@ -149,8 +191,8 @@ export function resolveFoundSurfaceTypographyDirective(
     case 'designed':
     case 'bold_editorial':
       return (
-        `FOUND-SURFACE TYPOGRAPHY (L4–5 OPTIONAL): ${surfaces} `
-        + 'Brand graphic panels OK. If using a found surface, it is the sole text plate — do NOT stack a brand block on it.'
+        `FOUND-SURFACE TYPOGRAPHY (L4–5 PREFERRED): ${surfaces} `
+        + 'Seat type on real photo surfaces or soft scrims first. Small accent shapes OK; FORBIDDEN: inventing full-width opaque paint slabs as the layout.'
       );
     case 'balanced':
     default:
@@ -229,73 +271,75 @@ export function resolveFalDesignIntensityDirectives(
     case 'designed':
       return {
         priorityBlock:
-          '═══ DESIGN INTENSITY: DESIGNED / CAMPAIGN (level 4/5) ═══ Strong designer layout — brand-color graphic zone + photo hero strip.',
+          '═══ DESIGN INTENSITY: DESIGNED (level 4/5) ═══ REQUIRED graphic craft system — photo + typography + brand-color shapes/rules. If the frame is only a photo with floating text, FAIL (that is level 1–2).',
         photoRules: isVertical
           ? [
-            'PHOTO ZONE: Brand photo in lower 38–48% of frame — natural colors, venue unchanged, full width.',
-            'DESIGN ZONE: Upper 52–62% — solid brand-color panel with bold headline, shapes, and campaign energy.',
+            'PHOTO STAGE: Brand photo remains the hero (~55–75% visible) — natural colors, venue unchanged.',
+            'GRAPHIC SYSTEM (REQUIRED): Include visible brand-color design elements — corner plate, side rail, L-accent, diagonal soft cut, inset mat, or thin rule system. Type alone on photo is NOT enough.',
+            'LAYOUT FAMILIES (pick ONE): asymmetric_corner_plate | magazine_cover_overlap | diagonal_soft_cut | side_rail_frame | l_shape_accent | inset_photo_frame — NEVER horizontal paint sandwich (solid header + photo + solid footer).',
           ]
           : [
             'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
-            'PHOTO FIDELITY: Keep 45–60% of the feed frame as the ORIGINAL photograph — natural colors only.',
-            'Prefer feed-native layouts: left/right editorial split, magazine corner lockup, or a short lower-third band (≤32% height). Avoid tall upper story panels.',
+            'PHOTO STAGE: Keep ~50–70% as the ORIGINAL photograph — natural colors.',
+            'GRAPHIC SYSTEM (REQUIRED): brand-color craft (side rail, soft editorial split, corner plate, inset frame, or rule system). Floating centered text on full-bleed photo = FAIL.',
+            'LAYOUT FAMILIES (pick ONE): magazine_cover_overlap | editorial_split_soft | side_rail_frame | asymmetric_corner_plate | inset_photo_frame — no tall opaque story headers.',
           ],
         typographyAnchor: isVertical
-          ? 'Headline: bold designer display type on solid brand-color panel — high contrast, 25–35% frame height, upper zone. Optional: a clear found photo surface may replace the invented panel (one plate only).'
-          : 'Headline: bold designer display type on a compact brand-color plate or side column — high contrast, 18–28% of frame height. Feed poster energy, not story stack.',
+          ? 'Headline: bold custom-feel display locked into the graphic system — 18–28% frame height, asymmetric/magazine placement, high contrast.'
+          : 'Headline: bold designer display inside the craft system — 16–24% frame height. Feed craft, not story sandwich.',
         layoutNote: isVertical
-          ? 'Campaign-ready — clear graphic/text zone vs photo zone. Designer hierarchy, not a photo with a caption.'
-          : 'Feed campaign card — designed hierarchy on 4:5. Look like an Instagram feed post, never a cropped story.',
+          ? 'Designed = boutique agency Story with a real layout system. Reject both Canva sandwiches AND plain photo+caption.'
+          : 'Designed feed = intentional graphic hierarchy on 4:5. Reject Canva paint stacks AND plain photo+caption.',
         forbiddenLayouts: isVertical
           ? [
-            'FORBIDDEN: photo occupying more than 50% of frame (photo must be supporting strip, not dominant).',
-            'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
-            'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
-            'FORBIDDEN: stacking a brand color block over a found painted surface that already holds the headline.',
+            'FORBIDDEN: photo + floating text only (no graphic system).',
+            'FORBIDDEN: horizontal sandwich — opaque header + photo + opaque footer/brand bar.',
+            'FORBIDDEN: solid opaque block ≥35% used only to host centered white sans.',
+            'FORBIDDEN: random off-brand colors — accents only from brand primary/accent.',
           ]
           : [
-            'FORBIDDEN: story-style stacked layout (upper ≥45% solid panel + thin photo strip) on a 4:5 feed post.',
-            'FORBIDDEN: rendering a 9:16 story canvas or letterboxing a story into the feed frame.',
-            'FORBIDDEN: tiny corner text on a full-bleed photo — that is level 1–2, not level 4.',
-            'FORBIDDEN: random colors — use ONLY brand primary and accent for graphic zones.',
-            'FORBIDDEN: stacking a brand color block over a found painted surface that already holds the headline.',
+            'FORBIDDEN: photo + floating text only (no graphic system).',
+            'FORBIDDEN: story-style stacked layout (upper ≥40% solid panel + thin photo) on 4:5.',
+            'FORBIDDEN: solid opaque header/footer bands as the primary composition.',
+            'FORBIDDEN: random off-brand colors — accents only from brand primary/accent.',
           ],
         foundSurfaceAnchor,
       };
     case 'bold_editorial':
       return {
         priorityBlock:
-          '═══ DESIGN INTENSITY: BOLD EDITORIAL (level 5/5) ═══ Poster-first — typography dominates, photo is accent.',
+          '═══ DESIGN INTENSITY: BOLD EDITORIAL (level 5/5) ═══ Magazine-cover craft — oversized type leads; photo still fills most of the frame as atmosphere, not a thin strip under paint.',
         photoRules: isVertical
           ? [
-            'PHOTO ACCENT: Brand photo as a supporting strip in lower 22–35% of frame — natural colors, never recolored.',
-            'EDITORIAL ZONE: Upper 65–78% — oversized ALL-CAPS headline, layered brand-color blocks, maximum typographic impact.',
+            'PHOTO STAGE: Brand photo fills 55–75% of frame — full-bleed or large bleed; natural colors.',
+            'LAYOUT FAMILIES (pick ONE): magazine_cover_stack | overlapping_display | diagonal_crop_accent | giant_type_on_photo — NEVER opaque header/footer sandwich.',
+            'Graphic accents: overlapping letterforms, thin bars, small color chips — not full-width paint slabs ≥40%.',
           ]
           : [
             'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
-            'PHOTO FIDELITY: Photo as a supporting accent (28–42%) — natural colors only; prefer side column, inset frame, or short lower band.',
-            'Editorial feed poster: oversized headline with magazine-cover energy inside 4:5 — not a vertical story stack.',
+            'PHOTO FIDELITY: Photo remains a major stage (50–70%) — natural colors; oversized type overlaps or locks into a corner/edge.',
+            'Editorial feed poster: magazine-cover energy inside 4:5 — not a vertical story paint stack.',
           ],
         typographyAnchor: isVertical
-          ? 'Headline: OVERSIZED all-caps display type — 35–50% of frame height, stacked lines, poster-level impact. Typography LEADS (brand panel or one found surface — not both).'
-          : 'Headline: OVERSIZED display type — 28–40% of the 4:5 frame, stacked lines, magazine-cover impact. Typography leads without turning the post into a 9:16 story.',
+          ? 'Headline: OVERSIZED display (ALL CAPS or heavy display) — 28–42% frame height, stacked optical lines ON or into the photo. Type leads; do not hide type inside a painted rectangle.'
+          : 'Headline: OVERSIZED display — 24–36% of the 4:5 frame, stacked lines, magazine-cover impact overlapping the photo.',
         layoutNote: isVertical
-          ? 'Bold editorial poster — viewer reads headline first, photo second. Maximum typographic presence.'
-          : 'Bold editorial feed post — headline-first on 4:5, photo second. Never mimic Instagram Story proportions.',
+          ? 'Bold editorial = type-first magazine Story. Viewer reads headline on the photograph, not on a solid color brick.'
+          : 'Bold editorial feed — headline-first on 4:5 over photo, never mimic Instagram Story paint proportions.',
         forbiddenLayouts: isVertical
           ? [
-            'FORBIDDEN: photo occupying more than 38% of frame.',
-            'FORBIDDEN: small or medium headline — must be poster-scale, dominant, upper-zone.',
-            'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
-            'FORBIDDEN: balanced 50/50 photo-text split — typography must clearly dominate.',
-            'FORBIDDEN: inventing a fake painted wall solely to host type when using a graphic panel layout.',
+            'FORBIDDEN: opaque header/footer sandwich with photo trapped in the middle.',
+            'FORBIDDEN: solid paint slab ≥40% of frame as the only place for the headline.',
+            'FORBIDDEN: small or timid headline — must feel poster-scale ON the image.',
+            'FORBIDDEN: lowercase-only timid UI type — use ALL CAPS or heavy display for impact.',
+            'FORBIDDEN: shrinking the photo to a thin strip under a painted block.',
           ]
           : [
             'FORBIDDEN: story-style upper-panel stack that makes a 4:5 post read as 9:16.',
             'FORBIDDEN: rendering or padding to 9:16 story dimensions.',
-            'FORBIDDEN: small or medium headline — must be poster-scale and dominant inside the feed frame.',
-            'FORBIDDEN: lowercase-only headline — use ALL CAPS or heavy display caps for impact.',
-            'FORBIDDEN: inventing a fake painted wall solely to host type when using a graphic panel layout.',
+            'FORBIDDEN: solid opaque header/footer sandwich as the composition.',
+            'FORBIDDEN: small or timid headline — must feel poster-scale.',
+            'FORBIDDEN: lowercase-only timid UI type — use ALL CAPS or heavy display for impact.',
           ],
         foundSurfaceAnchor,
       };
@@ -303,37 +347,39 @@ export function resolveFalDesignIntensityDirectives(
     default:
       return {
         priorityBlock:
-          '═══ DESIGN INTENSITY: BALANCED (level 3/5) ═══ Gallery hero + brand graphic accent — current production standard.',
+          '═══ DESIGN INTENSITY: BALANCED (level 3/5) ═══ Modern editorial WITH craft — photo leads, but include a light graphic system (scrim plate, corner accent, or brand rules). Plain photo+caption = FAIL.',
         photoRules: isVertical
           ? [
-            'PHOTO HERO ZONE: Brand photo in lower 52–62% of frame — natural colors, faces, venue details unchanged.',
-            'GRAPHIC ZONE: Upper 38–48% — found painted surface if clear, else brand-color panel or rounded badge with headline.',
+            'PHOTO HERO: Brand photo fills 62–80% of frame — natural colors unchanged.',
+            'CRAFT (REQUIRED, light): soft scrim plate, asymmetric corner accent (<20%), found-surface type lockup, OR thin brand-color rules — pick ONE layout family.',
+            'LAYOUT FAMILIES (pick ONE): corner_lockup | soft_scrim_plate | found_surface | type_with_brand_rules | asymmetric_corner_plate — NOT a solid upper color band sandwich.',
           ]
           : [
-            'CANVAS: Instagram feed 4:5 (1080×1350) — shorter than Stories; do NOT compose like a 9:16 story.',
-            'PHOTO FIDELITY (CRITICAL): Keep 55–70% of the feed frame as the ORIGINAL photograph — natural colors unchanged.',
-            'Typography placement: found-surface, corner lockup, side caption column, or short bottom scrim (≤28% height) — not a tall upper story band.',
+            'CANVAS: Instagram feed 4:5 (1080×1350) — do NOT compose like a 9:16 story.',
+            'PHOTO FIDELITY: Keep 60–78% as the ORIGINAL photograph — natural colors.',
+            'CRAFT (REQUIRED, light): corner lockup, soft scrim plate, editorial soft split, or brand rules — not floating center caption alone.',
+            'LAYOUT FAMILIES (pick ONE): corner_lockup | soft_scrim_plate | editorial_split_soft | type_with_brand_rules — never a tall opaque header stack.',
           ],
         typographyAnchor: isVertical
-          ? 'Headline on ONE text plate — prefer a clear found photo surface, else brand-color panel in upper zone — crisp, high-contrast, 18–25% frame height.'
-          : 'Headline on ONE text plate — found surface, corner badge, or compact brand panel — crisp, high-contrast, 14–22% of the 4:5 frame height.',
+          ? 'Headline: refined display in the craft lockup — 14–22% frame height; high contrast; not timid watermark text.'
+          : 'Headline: refined display in the craft lockup — 12–20% of the 4:5 frame; compact accent — not a painted header block.',
         layoutNote: isVertical
-          ? 'Balanced editorial — intentional hierarchy: designed text plate + authentic photo zone (found surface preferred when obvious).'
-          : 'Balanced Instagram feed editorial on 4:5 — photo-led with a designed accent, never a cropped story layout.',
+          ? 'Balanced = photo-led editorial with a designed accent system. Reject Canva sandwiches AND bare photo+text.'
+          : 'Balanced feed editorial on 4:5 — photo-led craft, never cropped story paint stack or bare caption overlay.',
         forbiddenLayouts: isVertical
           ? [
-            'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
-            'FORBIDDEN: photo strip smaller than 45% (that is level 4–5).',
-            'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
-            'FORBIDDEN: stacking found-surface type and a brand color panel on the same region.',
+            'FORBIDDEN: photo + floating text only with zero graphic craft.',
+            'FORBIDDEN: flat opaque header band ≥30% with centered white sans only.',
+            'FORBIDDEN: horizontal sandwich (header + photo + footer bars).',
+            'FORBIDDEN: global photo filters or recoloring the venue photo.',
           ]
           : [
-            'FORBIDDEN: story-style stacked layout (tall upper color band + thin lower photo) on a 4:5 feed post.',
+            'FORBIDDEN: photo + floating text only with zero graphic craft.',
+            'FORBIDDEN: flat opaque header/footer band ≥30% with centered white sans only.',
+            'FORBIDDEN: story-style stacked layout on a 4:5 feed post.',
             'FORBIDDEN: outputting or composing for 9:16 story dimensions.',
-            'FORBIDDEN: full-bleed photo with tiny corner text (that is level 1).',
-            'FORBIDDEN: photo share smaller than 50% (that is level 4–5).',
-            'FORBIDDEN: global photo filters, orange/teal re-grading, or blurring photo pixels.',
-            'FORBIDDEN: stacking found-surface type and a brand color panel on the same region.',
+            'FORBIDDEN: global photo filters or recoloring the venue photo.',
+            'FORBIDDEN: Canva sandwich (opaque header + photo + opaque footer).',
           ],
         foundSurfaceAnchor,
       };
@@ -354,37 +400,102 @@ export const CALENDAR_GALLERY_DESIGN_INTENSITY: FalDesignIntensityLevel = 'photo
 
 /**
  * Announcement-type defaults for calendar / enriched ideation fal slots.
- * Sector-agnostic — tenant may still override via brand_theme.fal_design_intensity.
+ * Sector-agnostic slot proposals — brand channel intensity clamps as a ceiling.
+ */
+/**
+ * Per-slot intensity spread — brand DNA/vibe stay consistent; layout energy varies by role.
+ * Most library slots must produce GRAPHIC craft (not photo+caption only).
+ * photo_first reserved for true ambient BTS / gallery moments.
  */
 export const CALENDAR_ANNOUNCEMENT_INTENSITY: Record<string, FalDesignIntensityLevel> = {
-  product_reveal: 'photo_first',
-  venue_showcase: 'photo_first',
+  product_reveal: 'designed',
+  venue_showcase: 'balanced',
   behind_the_scenes: 'photo_first',
-  event_teaser: 'elegant_light',
+  event_teaser: 'designed',
   offer_campaign: 'designed',
-  social_proof: 'elegant_light',
+  social_proof: 'balanced',
+  event_announcement: 'bold_editorial',
+  campaign_offer: 'designed',
+  product_highlight: 'designed',
+  daily_story: 'balanced',
+  reel_cover: 'designed',
 };
+
+/** Craft layout families — graphic systems that are NOT Canva header/footer sandwiches. */
+export const DESIGN_CRAFT_LAYOUT_FAMILIES = [
+  'asymmetric_corner_plate',
+  'magazine_cover_overlap',
+  'diagonal_soft_cut',
+  'side_rail_frame',
+  'l_shape_accent',
+  'type_with_brand_rules',
+  'inset_photo_frame',
+  'editorial_split_soft',
+] as const;
+
+export type DesignCraftLayoutFamily = (typeof DESIGN_CRAFT_LAYOUT_FAMILIES)[number];
+
+const LAYOUT_FAMILY_BRIEF: Record<DesignCraftLayoutFamily, string> = {
+  asymmetric_corner_plate:
+    'Asymmetric corner brand-color plate (<22% frame) holding headline fully inside the plate (≥8% inner padding); photo dominates the rest.',
+  magazine_cover_overlap:
+    'Magazine cover: oversized display ON a brand-color plate or soft scrim with 1–2 thin rules. ALL letters must sit fully inside the plate/scrim — never half-on / half-off the color field.',
+  diagonal_soft_cut:
+    'Soft diagonal brand-color wedge (≤28% frame); type fully inside the wedge (≥8% padding) — never a horizontal sandwich.',
+  side_rail_frame:
+    'Vertical side rail (≤24% width) in brand color; stacked type fully inside the rail with padding; photo fills the rest.',
+  l_shape_accent:
+    'L-shaped brand accent (≤30% combined); headline fully inside the L with padding; photo stays the hero.',
+  type_with_brand_rules:
+    'Type-led craft: bold headline on photo + thin brand-color rules/chips — NO opaque paint rectangles; type must not collide with busy photo edges.',
+  inset_photo_frame:
+    'Inset photo inside a brand-color mat; type fully on the mat (not spilling onto the inset photo) with ≥8% padding from mat edges.',
+  editorial_split_soft:
+    'Soft editorial split: photo ~60% + soft brand field ~40%; type fully inside the brand field with padding — never straddling the photo edge.',
+};
+
+/** Deterministic per-slot layout family so library templates diversify. */
+export function resolveDesignCraftLayoutFamily(seed?: string | null): DesignCraftLayoutFamily {
+  const families = DESIGN_CRAFT_LAYOUT_FAMILIES;
+  const raw = (seed ?? 'default').trim().toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
+  }
+  return families[hash % families.length]!;
+}
+
+export function describeDesignCraftLayoutFamily(family: DesignCraftLayoutFamily): string {
+  return LAYOUT_FAMILY_BRIEF[family];
+}
 
 function normalizeAnnouncementKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
 /**
- * Resolve fal design intensity for a calendar row or calendar-enriched ideation slot.
- * Priority: announcement_type override → brand_theme.fal_design_intensity[channel].
+ * Resolve fal design intensity for a calendar / template-library slot.
+ * Slot announcement proposes energy; brand channel intensity is a ceiling (never exceeded).
  */
 export function resolveCalendarFalDesignIntensity(input: {
   announcementType: string;
   channel: FalDesignChannel;
   brandTheme?: Record<string, unknown> | null;
 }): { level: FalDesignIntensityLevel; source: string } {
-  const fromTheme = resolveFalDesignIntensityForChannel(input.brandTheme, input.channel);
+  const ceiling = resolveBrandDesignIntensityCeiling(input.brandTheme, input.channel);
   const key = normalizeAnnouncementKey(input.announcementType);
-  const override = key ? CALENDAR_ANNOUNCEMENT_INTENSITY[key] : undefined;
-  if (override) {
-    return { level: override, source: `announcement:${key}` };
+  const proposed = key ? CALENDAR_ANNOUNCEMENT_INTENSITY[key] : undefined;
+  if (proposed) {
+    const level = clampDesignIntensityToCeiling(proposed, ceiling);
+    if (level !== proposed) {
+      return {
+        level,
+        source: `announcement:${key}+ceiling:brand.${input.channel}`,
+      };
+    }
+    return { level: proposed, source: `announcement:${key}` };
   }
-  return { level: fromTheme, source: `brand_theme.fal_design_intensity.${input.channel}` };
+  return { level: ceiling, source: `brand_theme.fal_design_intensity.${input.channel}` };
 }
 
 /** Extract announcement type from any production idea record (calendar or ideation). */
