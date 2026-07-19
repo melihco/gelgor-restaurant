@@ -57,7 +57,14 @@ type AspectRatio = '9:16' | '1:1' | '4:5';
  * Kept short so finalizeFalPrompt maxChars trim cannot drop it or crowd logo rules.
  */
 export const FAL_SUBJECT_CLEARANCE_DIRECTIVE =
-  'SUBJECT CLEARANCE (MANDATORY): Put headlines/CTAs/panels only on empty areas (sky, wall, blur, letterbox). NEVER cover faces, hands, glassware, plates, vehicles/scooters, seated groups, or the product hero — flip type to the opposite clear third/side; shrink type before overlapping.';
+  'SUBJECT CLEARANCE (MANDATORY): Never cover faces, hands, glassware, plates, vehicles/scooters, seated groups, or the product hero with type or opaque paint. Design zones and photo window are separate — type stays in painted/craft zones only.';
+
+/**
+ * Design-first compose: paint layout + type, then place the gallery photo in the leftover window.
+ * Prevents craft plates from landing on wine glasses / dishes after a full-bleed photo underlay.
+ */
+export const FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE =
+  'COMPOSE ORDER (MANDATORY): (1) Paint the craft layout (rail/plate/L/mat/soft split) and place ALL headline/subtitle fully inside those design zones with padding. (2) Place the gallery photo ONLY in the remaining clear rectangle — object-fit contain so the FULL photo is visible (no crop of glassware/faces/plates/product). (3) Never paint opaque design or type on top of the photo after it is placed. FORBIDDEN: full-bleed photo underlay then covering the hero with a color plate; FORBIDDEN: header/footer Canva sandwich.';
 
 export interface FalDesignerInput {
   workspaceId?: string;
@@ -420,17 +427,17 @@ export function buildIntensityTypographyBlock(input: {
 
   if (input.level === 'bold_editorial') {
     return [
-      'TYPOGRAPHY (bold editorial): OVERSIZED display ON the photograph — magazine-cover impact, not a painted brick.',
-      'Stack headline lines large — 28–42% of frame height overlapping or locking into the photo. Typography leads.',
+      'TYPOGRAPHY (bold editorial): OVERSIZED display inside reserved craft zones — magazine-cover impact, not a full-width paint brick over the photo.',
+      'Stack headline lines large — 28–42% frame height fully inside the craft plate/rail/L. Photo window stays clear.',
       `${formatFalOnImageHeadlineDirective(safeHeadline, `heavy display caps — ${spec.fontDescription}`)}`,
-      `Style energy: ${spec.styleDirective} — magazine cover on photo, maximum typographic presence.`,
+      `Style energy: ${spec.styleDirective} — magazine cover craft beside a contained photo window.`,
     ];
   }
 
   if (input.level === 'designed') {
     return [
-      'TYPOGRAPHY (designed): Bold custom-feel display crafted into the photo — asymmetric or magazine lockup.',
-      'Headline 18–28% frame height. Prefer found surface / soft scrim; tiny accent plate OK (<18%). Never a full-width paint header.',
+      'TYPOGRAPHY (designed): Bold custom-feel display locked inside craft zones — asymmetric or magazine lockup.',
+      'Headline 18–28% frame height fully inside plate/rail/mat. Never paint type over the photo window. Never a full-width paint header sandwich.',
       `${formatFalOnImageHeadlineDirective(safeHeadline, spec.fontDescription)}`,
       `Style energy: ${spec.styleDirective} — boutique-agency craft, not Canva stacked blocks.`,
     ];
@@ -748,19 +755,19 @@ export function buildCreativeDesignBrief(input: {
         : 'TYPE CRAFT: refined brand-drawn display; optical kerning; never default UI sans.';
 
   const spaceCraft = craftOk
-    ? 'SPACE CRAFT: photo hero + intentional graphic system; one eye path; no cluttered sandwich zones.'
+    ? 'SPACE CRAFT: paint craft zones first, then photo window in the leftover area; one eye path; no cluttered sandwich zones.'
     : 'SPACE CRAFT: 30–40% empty air; one eye path; cut optional elements.';
 
   const photoType = boldOk
-    ? 'PHOTO×TYPE: magazine-cover GRAPHIC SYSTEM required — type + brand shapes/rules; FORBIDDEN opaque header/footer sandwich AND plain photo+caption.'
+    ? 'PHOTO×TYPE: magazine-cover GRAPHIC SYSTEM — type + brand shapes in reserved zones; photo contained in the remaining window. FORBIDDEN opaque header/footer sandwich AND plain photo+caption.'
     : campaignOk
-      ? 'PHOTO×TYPE: REQUIRED graphic craft (rail/plate/L/diagonal/inset/rules) with the photo. FORBIDDEN: plain photo+floating text; FORBIDDEN: Canva header/footer sandwich.'
+      ? 'PHOTO×TYPE: REQUIRED graphic craft (rail/plate/L/diagonal/inset/rules) first; gallery photo fills only the leftover window (contain). FORBIDDEN: paint over the photo; FORBIDDEN: Canva header/footer sandwich.'
       : craftOk
-        ? 'PHOTO×TYPE: light craft required (scrim plate / corner accent / brand rules). Plain photo+caption = fail.'
-        : 'PHOTO×TYPE: type ON photo (scrim/found surface/asymmetric) — never painted rectangle strip.';
+        ? 'PHOTO×TYPE: light craft zones first (scrim plate / corner accent / brand rules); photo contained in remainder. Plain photo+caption = fail.'
+        : 'PHOTO×TYPE: type on found surface or tiny clear zone — never painted rectangle covering the hero subject.';
 
   const tasteFail = craftOk
-    ? 'TASTE FAIL: text escaping its color plate/scrim (letters half on orange/teal, half on photo); plain photo+caption; Canva sandwich; sticker CTA; meta labels (STORY/REEL/POST).'
+    ? 'TASTE FAIL: text escaping its color plate; paint covering glassware/faces/product; plain photo+caption; Canva sandwich; sticker CTA; meta labels (STORY/REEL/POST).'
     : 'TASTE FAIL: color-band ≥25%; system-sans; sticker CTA; carnival gradient; dual focus; template-pack; meta labels (STORY/REEL/POST).';
 
   return [
@@ -915,14 +922,16 @@ function buildDesignedDesignCardPrompt(
     ? `LAYOUT LOCK: use ONLY "${layoutFamily}" — ${describeDesignCraftLayoutFamily(layoutFamily)}`
     : '';
   const typeContainment = needsCraftLock
-    ? 'TYPE CONTAINMENT (MANDATORY): Every letter of headline/subtitle/brand mark must sit fully inside its plate, rail, L, mat, or soft scrim — ≥8% padding from that shape\'s edges. FORBIDDEN: text straddling a hard color edge onto the photo (amateur overflow). If copy is long, shrink type or widen the plate — never clip or spill.'
+    ? 'TYPE CONTAINMENT (MANDATORY): Every letter of headline/subtitle/brand mark must sit fully inside its plate, rail, L, mat, or soft scrim — ≥8% padding from that shape\'s edges. FORBIDDEN: text straddling a hard color edge onto the photo window (amateur overflow). If copy is long, shrink type or widen the plate — never clip or spill.'
     : '';
+  const photoWindowCompose = needsCraftLock ? FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE : '';
 
   // Protected head — never trimmed. Layout families used to die at the end of finalizeFalPrompt.
   const intensityLock = [
     intensityDirectives.priorityBlock,
     layoutLock,
     typeContainment,
+    photoWindowCompose,
     ...photoRules,
     ...intensityDirectives.forbiddenLayouts,
     intensityDirectives.typographyAnchor,
@@ -939,11 +948,15 @@ function buildDesignedDesignCardPrompt(
     isVertical
       ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping.'
       : 'SAFE ZONE: keep all text/logos inside inner 85% (7.5% edge margin); headline/CTA inside central 4:5 crop.',
-    isVertical
-      ? 'PHOTO FRAMING (9:16): Full-bleed gallery photo preferred; never invent brand-color letterbox bands as the design.'
-      : 'PHOTO FRAMING (4:5): Show the entire gallery photo (contain); soft letterbox only if needed — never paint slabs as composition.',
+    needsCraftLock
+      ? (isVertical
+        ? 'PHOTO FRAMING (9:16): After craft+type zones are reserved, contain the FULL gallery photo in the leftover photo window — no crop of hero subjects; never paint over the photo.'
+        : 'PHOTO FRAMING (4:5): After craft+type zones are reserved, contain the FULL gallery photo in the leftover photo window — no crop of hero subjects; never paint slabs over the photo.')
+      : (isVertical
+        ? 'PHOTO FRAMING (9:16): Full-bleed gallery photo preferred; never invent brand-color letterbox bands as the design.'
+        : 'PHOTO FRAMING (4:5): Show the entire gallery photo (contain); soft letterbox only if needed — never paint slabs as composition.'),
     intensityLevel === 'designed' || intensityLevel === 'bold_editorial'
-      ? `BRAND COLORS: ${input.brandColors.primary} + ${input.brandColors.accent} for headline/thin accents — never full-width opaque paint slabs.`
+      ? `BRAND COLORS: ${input.brandColors.primary} + ${input.brandColors.accent} for craft zones/type — never full-width opaque paint slabs that swallow the photo window.`
       : `BRAND COLORS: ${input.brandColors.primary} + ${input.brandColors.accent} for headline/scrims — never full-width opaque header slabs.`,
   ].filter(Boolean).join(' ');
 

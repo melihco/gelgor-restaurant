@@ -62,7 +62,8 @@ describe('resolveFalDesignIntensityDirectives', () => {
     expect(d.photoRules.join(' ')).toMatch(/LAYOUT FAMILIES/);
     expect(d.photoRules.join(' ')).toMatch(/CRAFT \(REQUIRED/);
     expect(d.forbiddenLayouts.join(' ')).toMatch(/floating text only/i);
-    expect(d.foundSurfaceAnchor).toMatch(/PREFERRED|PRIORITY|OPTIONAL/i);
+    expect(d.foundSurfaceAnchor).toMatch(/CRAFT-ZONE TYPOGRAPHY/);
+    expect(d.foundSurfaceAnchor).toMatch(/photo window/i);
   });
 
   it('balanced feed_post forbids story-stack and solid color-band splits on 4:5', () => {
@@ -74,20 +75,21 @@ describe('resolveFalDesignIntensityDirectives', () => {
     expect(d.forbiddenLayouts.join(' ')).toMatch(/sandwich|opaque header/i);
   });
 
-  it('bold_editorial forbids paint sandwich and keeps photo as stage', () => {
+  it('bold_editorial forbids paint sandwich and keeps a clear photo window', () => {
     const d = resolveFalDesignIntensityDirectives('bold_editorial', 'reel');
     expect(d.forbiddenLayouts.join(' ')).toMatch(/sandwich/i);
     expect(d.photoRules.join(' ')).toMatch(/55–75%/);
+    expect(d.photoRules.join(' ')).toMatch(/COMPOSE|contain/i);
     expect(d.typographyAnchor).toMatch(/OVERSIZED/i);
-    expect(d.foundSurfaceAnchor).toMatch(/L4–5 PREFERRED/i);
+    expect(d.foundSurfaceAnchor).toMatch(/CRAFT-ZONE TYPOGRAPHY/);
   });
 
-  it('designed requires graphic craft and forbids plain photo+text', () => {
+  it('designed requires graphic craft and forbids paint-over-photo / plain photo+text', () => {
     const d = resolveFalDesignIntensityDirectives('designed', 'reel');
     expect(d.priorityBlock).toMatch(/REQUIRED graphic craft/i);
     expect(d.photoRules.join(' ')).toMatch(/LAYOUT FAMILIES/);
-    expect(d.photoRules.join(' ')).toMatch(/GRAPHIC SYSTEM/);
-    expect(d.forbiddenLayouts.join(' ')).toMatch(/floating text only|photo \+ floating text/i);
+    expect(d.photoRules.join(' ')).toMatch(/GRAPHIC SYSTEM|COMPOSE/i);
+    expect(d.forbiddenLayouts.join(' ')).toMatch(/floating text only|photo \+ floating text|paint.*full-bleed/i);
     expect(d.forbiddenLayouts.join(' ')).toMatch(/sandwich/i);
   });
 
@@ -105,9 +107,10 @@ describe('resolveFoundSurfaceTypographyDirective', () => {
     expect(resolveFoundSurfaceTypographyDirective('photo_first')).toMatch(/NEVER invent a fake painted panel/i);
   });
 
-  it('prefers found surfaces at designed/bold and forbids paint slabs', () => {
+  it('keeps designed/bold type inside craft zones away from the photo window', () => {
     const designed = resolveFoundSurfaceTypographyDirective('designed');
-    expect(designed).toMatch(/PREFERRED/);
+    expect(designed).toMatch(/CRAFT-ZONE TYPOGRAPHY/);
+    expect(designed).toMatch(/photo window/i);
     expect(designed).toMatch(/paint slabs/i);
   });
 });

@@ -6,6 +6,7 @@ import {
   buildDesignedStoryDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
   buildIntensityTypographyBlock,
+  FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE,
   FAL_SUBJECT_CLEARANCE_DIRECTIVE,
   resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
@@ -136,7 +137,7 @@ describe('buildCreativeDesignBrief', () => {
     expect(brief).toContain('TASTE FAIL');
     expect(brief).toContain('ONE IDEA: "Sunset Terrace"');
     expect(brief).toContain('Aegean coastal');
-    expect(brief).toContain('type ON photo');
+    expect(brief).toContain('found surface');
     expect(brief).toContain('color-band ≥25%');
     expect(brief).not.toContain('Canva Pro');
     expect(brief.length).toBeLessThan(1100);
@@ -154,7 +155,8 @@ describe('buildCreativeDesignBrief', () => {
       headline: 'Mutlu Bayramlar',
     });
     expect(brief).toContain('REQUIRED graphic craft');
-    expect(brief).toContain('plain photo+floating text');
+    expect(brief).toContain('leftover window');
+    expect(brief).toContain('paint over the photo');
     expect(brief).toContain('Canva sandwich');
     expect(brief).not.toContain('graphic zone + photo hero strip');
   });
@@ -203,8 +205,11 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt).toContain('DESIGN INTENSITY: DESIGNED');
     expect(prompt).toContain('LAYOUT LOCK:');
     expect(prompt).toContain('TYPE CONTAINMENT');
+    expect(prompt).toContain('COMPOSE ORDER (MANDATORY)');
+    expect(prompt).toContain(FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE);
     expect(prompt).toContain('GRAPHIC SYSTEM');
     expect(prompt).toMatch(/horizontal sandwich|paint sandwich|Canva sandwich/i);
+    expect(prompt).toContain('leftover photo window');
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('Mutlu Bayramlar');
     expect(prompt.indexOf('LAYOUT LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
