@@ -880,10 +880,25 @@ function buildDesignedDesignCardPrompt(
 
   const logoBlock = [logoRefNote, brandMarkInstruction].filter(Boolean).join(' ');
   // Vertical prompts need more room: intensity lock + text contracts both must survive.
-  const promptLimit = (isReel || isStory || input.aspectRatio === '9:16' ? 4600 : 3900)
+  // Feed posts get a slightly higher budget so brand recipe + creative brief can coexist
+  // with LAYOUT LOCK / TYPE CONTAINMENT / HARD CONTRACTS.
+  const promptLimit = (isReel || isStory || input.aspectRatio === '9:16' ? 4800 : 4300)
     + (input.logoUrl ? 900 : 0)
     + 320
     + 220;
+
+  // Brand slot recipe is product-critical for template library uniqueness — never leave it
+  // only in optionalTail (tail often gets zero budget when intensity+contracts fill the limit).
+  const brandRecipeRaw = (input.brandDirectives ?? []).find((d) =>
+    d.includes('BRAND SLOT DESIGN RECIPE'),
+  );
+  const brandDirectivesRest = (input.brandDirectives ?? []).filter(
+    (d) => !d.includes('BRAND SLOT DESIGN RECIPE'),
+  );
+  const brandRecipeLock = brandRecipeRaw
+    ? truncateAtWordBoundary(brandRecipeRaw.replace(/\s+/g, ' ').trim(), 320)
+    : '';
+  const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 321) : 0;
 
   const needsCraftLock = intensityLevel === 'designed'
     || intensityLevel === 'bold_editorial'
@@ -939,22 +954,40 @@ function buildDesignedDesignCardPrompt(
   const label = isStory ? 'fal-designer-story' : 'fal-designer';
   const coreLock = [intensityLock, hardContracts].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
-  // Prefer: creative brief → intensity/layout → hard contracts → occasion/sector.
+  // Prefer: creative brief → brand recipe → intensity/layout → hard contracts → occasion/sector.
   // On overflow: never cut intensity/contracts from the end — trim soft brand context instead.
-  let protectedHead = [creativeBrief, intensityLock, hardContracts, occasionLock, sectorLock]
+  // Brand recipe keeps priority over creative brief / occasion when soft budget is tight.
+  let protectedHead = [
+    creativeBrief,
+    brandRecipeLock,
+    intensityLock,
+    hardContracts,
+    occasionLock,
+    sectorLock,
+  ]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
   if (protectedHead.length > promptLimit) {
-    if (coreLock.length >= promptLimit) {
-      protectedHead = truncateAtWordBoundary(coreLock, promptLimit);
+    const coreBudget = Math.max(1200, promptLimit - recipeReserve);
+    if (coreLock.length >= coreBudget) {
+      const trimmedCore = truncateAtWordBoundary(coreLock, coreBudget);
+      protectedHead = [trimmedCore, brandRecipeLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      if (protectedHead.length > promptLimit) {
+        protectedHead = truncateAtWordBoundary(protectedHead, promptLimit);
+      }
       console.warn(
-        `[fal-prompt:${label}] core intensity+contracts alone ${coreLock.length}→${protectedHead.length} (limit ${promptLimit})`,
+        `[fal-prompt:${label}] core intensity+contracts alone ${coreLock.length}→${trimmedCore.length}; `
+        + `reserved recipe ${recipeReserve} (limit ${promptLimit})`,
       );
     } else {
       const softBudget = promptLimit - coreLock.length - 1;
-      const soft = [creativeBrief, occasionLock, sectorLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      const soft = [brandRecipeLock, creativeBrief, occasionLock, sectorLock]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
       const trimmedSoft = truncateAtWordBoundary(soft, softBudget);
       // Keep intensity immediately after whatever soft prefix fits.
       protectedHead = [trimmedSoft, coreLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
@@ -967,7 +1000,7 @@ function buildDesignedDesignCardPrompt(
 
   // Optional tail — trimmed first when over budget.
   const optionalTail = [
-    ...(input.brandDirectives ?? []),
+    ...brandDirectivesRest,
     ...premiumTypography,
     premiumBar,
     input.sceneHint ? `Scene emphasis (photo zone only — do not repaint): ${input.sceneHint.slice(0, 120)}.` : '',

@@ -209,6 +209,38 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt).toContain('Mutlu Bayramlar');
     expect(prompt.indexOf('LAYOUT LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
   });
+
+  it('keeps BRAND SLOT DESIGN RECIPE in the protected head under designed intensity pressure', () => {
+    const recipe = [
+      '═══ BRAND SLOT DESIGN RECIPE ═══',
+      'Slot: İmza tabak (restaurant_cafe_signature_dish_post) · post · intensity designed.',
+      'Design idea for "İmza tabak": make the craft system feel like Yula Bodrum\'s own social studio.',
+      'Motifs from brand world: Aegean coastal warmth, carved wood, turquoise accents.',
+      'Color craft: use #00C5CC + #f5a25d as intentional accents/plates/rules.',
+    ].join(' ');
+    const prompt = buildDesignedPostDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'İmza tabak',
+      subtitle: 'Yula Bodrum',
+      brandColors: { primary: '#00C5CC', accent: '#f5a25d' },
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      aspectRatio: '4:5',
+      designIntensityLevel: 'designed',
+      layoutFamilySeed: 'restaurant_cafe_signature_dish_post',
+      brandDirectives: [
+        recipe,
+        ...Array.from({ length: 30 }, (_, i) =>
+          `EXTRA DIRECTIVE ${i}: filler to force optional-tail trim without eating brand recipe.`,
+        ),
+      ],
+    });
+
+    expect(prompt).toContain('BRAND SLOT DESIGN RECIPE');
+    expect(prompt).toContain('Yula Bodrum');
+    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).toContain('HARD CONTRACTS');
+  });
 });
 
 describe('buildDesignedVideoReelDesignCardPrompt', () => {

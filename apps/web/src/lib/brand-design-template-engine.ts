@@ -428,8 +428,11 @@ async function generateOne(
     : preset.format === 'story'
       ? 'story'
       : 'post';
-  const picked = defaultHeroPhoto ?? pickPhotoForPreset(preset, input, usedUrls);
-  if (picked && !defaultHeroPhoto) usedUrls.add(normalizeGalleryUrl(picked.url));
+  // Prefer per-slot matcher (diverse library). Default venue hero is fallback only —
+  // locking every template to one aerial/terrace shot collapsed the whole set.
+  const matchedPhoto = pickPhotoForPreset(preset, input, usedUrls);
+  const picked = matchedPhoto ?? defaultHeroPhoto ?? null;
+  if (picked?.url) usedUrls.add(normalizeGalleryUrl(picked.url));
   const briefFormat = preset.format === 'reel_cover'
     ? 'reel'
     : preset.format === 'story'
