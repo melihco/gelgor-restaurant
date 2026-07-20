@@ -79,7 +79,7 @@ export const FAL_SUBJECT_CLEARANCE_DIRECTIVE =
  * Prevents craft plates from landing on wine glasses / dishes after a full-bleed photo underlay.
  */
 export const FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE =
-  'COMPOSE ORDER (MANDATORY): (1) Paint the craft layout (rail/plate/L/mat/soft split) and place ALL headline/subtitle fully inside those design zones with padding. (2) Place the gallery photo ONLY in the remaining clear rectangle — object-fit contain so the FULL photo is visible (no crop of glassware/faces/plates/product). (3) Never paint opaque design or type on top of the photo after it is placed. FORBIDDEN: full-bleed photo underlay then covering the hero with a color plate; FORBIDDEN: header/footer Canva sandwich.';
+  'COMPOSE ORDER (MANDATORY for bold craft locks): (1) Reserve brand craft zones from the locked layout family and place ALL headline/subtitle fully inside those zones with padding. (2) Place the gallery photo ONLY in the remaining clear rectangle — object-fit contain so the FULL photo is visible (no crop of glassware/faces/plates/product). (3) Never cover the photo hero afterward. FORBIDDEN: full-bleed underlay then opaque cover-up; FORBIDDEN: header/footer Canva sandwich.';
 
 export interface FalDesignerInput {
   workspaceId?: string;
@@ -789,27 +789,27 @@ export function buildCreativeDesignBrief(input: {
     : 'ONE IDEA: one clear message only.';
 
   const typeCraft = boldOk
-    ? 'TYPE CRAFT: oversized custom-feel display in a graphic system; one family; never system sans; never clip.'
+    ? 'TYPE CRAFT: oversized custom-feel display unique to this brand; one family; never system sans; never clip.'
     : campaignOk
-      ? 'TYPE CRAFT: bold designer display locked into the graphic system; clear hierarchy; never centered Arial on a paint slab.'
+      ? 'TYPE CRAFT: bold designer display with clear hierarchy for THIS brand+slot; never centered Arial on a paint slab.'
       : craftOk
-        ? 'TYPE CRAFT: refined display inside a light craft lockup; never default UI sans watermark.'
+        ? 'TYPE CRAFT: refined display inside a light brand lockup; never default UI sans watermark.'
         : 'TYPE CRAFT: refined brand-drawn display; optical kerning; never default UI sans.';
 
   const spaceCraft = craftOk
-    ? 'SPACE CRAFT: paint craft zones first, then photo window in the leftover area; one eye path; no cluttered sandwich zones.'
+    ? 'SPACE CRAFT: brand type/accents + clear photo hero; one eye path; no cluttered sandwich zones; no stock geometry kits.'
     : 'SPACE CRAFT: 30–40% empty air; one eye path; cut optional elements.';
 
   const photoType = boldOk
-    ? 'PHOTO×TYPE: magazine-cover GRAPHIC SYSTEM — type + brand shapes in reserved zones; photo contained in the remaining window. FORBIDDEN opaque header/footer sandwich AND plain photo+caption.'
+    ? 'PHOTO×TYPE: magazine-cover energy — oversized brand type with a clear photo window. FORBIDDEN: opaque header/footer sandwich, plain photo+caption, and generic rail/L geometry kits.'
     : campaignOk
-      ? 'PHOTO×TYPE: REQUIRED graphic craft (rail/plate/L/diagonal/inset/rules) first; gallery photo fills only the leftover window (contain). FORBIDDEN: paint over the photo; FORBIDDEN: Canva header/footer sandwich.'
+      ? 'PHOTO×TYPE: brand+slot craft (type-led editorial, soft scrim/rules, small accents) with a clear gallery photo. FORBIDDEN: paint over the photo; FORBIDDEN: Canva sandwich; FORBIDDEN: stock rail/L/diagonal kits.'
       : craftOk
-        ? 'PHOTO×TYPE: light craft zones first (scrim plate / corner accent / brand rules); photo contained in remainder. Plain photo+caption = fail.'
+        ? 'PHOTO×TYPE: light brand zones (scrim / corner accent / rules) with photo clear. Plain photo+caption = fail.'
         : 'PHOTO×TYPE: type on found surface or tiny clear zone — never painted rectangle covering the hero subject.';
 
   const tasteFail = craftOk
-    ? 'TASTE FAIL: text escaping its color plate; paint covering glassware/faces/product; plain photo+caption; Canva sandwich; sticker CTA; meta labels (STORY/REEL/POST).'
+    ? 'TASTE FAIL: text escaping its zone; covering glassware/faces/product; plain photo+caption; Canva sandwich; stock rail/L geometry; sticker CTA; meta labels (STORY/REEL/POST).'
     : 'TASTE FAIL: color-band ≥25%; system-sans; sticker CTA; carnival gradient; dual focus; template-pack; meta labels (STORY/REEL/POST).';
 
   return [
@@ -960,9 +960,9 @@ function buildDesignedDesignCardPrompt(
     (d) => !d.includes('BRAND SLOT DESIGN RECIPE'),
   );
   const brandRecipeLock = brandRecipeRaw
-    ? truncateAtWordBoundary(brandRecipeRaw.replace(/\s+/g, ' ').trim(), 320)
+    ? truncateAtWordBoundary(brandRecipeRaw.replace(/\s+/g, ' ').trim(), 480)
     : '';
-  const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 321) : 0;
+  const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 481) : 0;
 
   const needsCraftLock = shouldApplyCraftLayoutFamily(intensityLevel, layoutLanguage);
   const layoutFamily = needsCraftLock

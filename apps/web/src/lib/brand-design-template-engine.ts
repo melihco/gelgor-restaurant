@@ -434,20 +434,20 @@ export function buildBrandSlotDesignRecipe(input: {
     || input.vibeProfileSummary?.slice(0, 80)
     || 'on-brand, intentional, boutique';
   const familyLine = input.layoutFamily
-    ? `Execute layout family "${input.layoutFamily}": ${describeDesignCraftLayoutFamily(input.layoutFamily)}`
-    : 'Pick one craft composition that feels hand-designed for this brand.';
+    ? `Layout accent (bold pack only): "${input.layoutFamily}" — ${describeDesignCraftLayoutFamily(input.layoutFamily)}`
+    : `Layout: invent a composition that could ONLY be ${input.brandName}'s ${input.slotName} — type-led editorial with brand accents; do NOT default to rail/L/diagonal geometry kits.`;
   const idea = input.sampleHeadline?.trim()
-    ? `Design idea for "${input.sampleHeadline.trim().slice(0, 48)}": make the craft system feel like ${input.brandName}'s own social studio — ${toneCue}.`
-    : `Design idea: a reusable ${input.channel} recipe that could only belong to ${input.brandName}.`;
+    ? `Design idea for "${input.sampleHeadline.trim().slice(0, 48)}": make this feel like ${input.brandName}'s own social studio for THIS slot — ${toneCue}.`
+    : `Design idea: a reusable ${input.channel} recipe that could only belong to ${input.brandName} for slot ${input.slotName}.`;
 
   return [
     `═══ BRAND SLOT DESIGN RECIPE ═══`,
     `Slot: ${input.slotName} (${input.slotKey}) · ${input.channel} · intensity ${input.level}.`,
     idea,
     `Motifs from brand world: ${dnaCue}.`,
-    `Color craft: use ${input.primary} + ${input.accent} as intentional accents/plates/rules — never random teal/orange stock packs.`,
+    `Color craft: use ${input.primary} + ${input.accent} as intentional accents/scrims/rules — never random teal/orange stock packs, never generic geometry stickers.`,
     familyLine,
-    'Reject: competitor-generic sector flyer, identical library clones, text escaping its plate.',
+    'Reject: competitor-generic sector flyer, identical library clones, painted rail/L kits reused across brands.',
   ].join(' ');
 }
 
@@ -658,7 +658,7 @@ async function generateOne(
         ...brandIntelligenceDirectives,
         slotDesignRecipe,
         brandMark.xorDirective,
-        'LAYOUT TEMPLATE CONTRACT: reusable brand layout recipe — graphic craft system (rail/plate/L/rules/soft split) + photo + type. NOT a raw photo with floating center text, and NOT a solid painted header panel + photo strip Canva sandwich.',
+        'LAYOUT TEMPLATE CONTRACT: reusable brand+slot recipe — intentional type hierarchy + brand accents + clear photo. NOT raw photo+floating caption, NOT Canva header/footer sandwich, NOT generic painted rail/L/diagonal geometry kits.',
         `SLOT: ${layoutFamilySeed}`,
         preset.format === 'post'
           ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'

@@ -191,8 +191,8 @@ export function resolveFoundSurfaceTypographyDirective(
     case 'designed':
     case 'bold_editorial':
       return (
-        `CRAFT-ZONE TYPOGRAPHY (L4–5): Place type only inside painted craft zones (plate/rail/L/mat/scrim). `
-        + 'Do not seat headlines on glassware/faces inside the photo window. Small accent shapes OK; FORBIDDEN: full-width opaque paint slabs that crush the photo window.'
+        `BRAND TYPE ZONES (L4–5): Place headline in intentional brand type zones (soft plate/scrim/rules or found surface) — never over glassware/faces. `
+        + 'FORBIDDEN: full-width opaque paint slabs; FORBIDDEN: defaulting to rail/L/diagonal geometry kits.'
       );
     case 'balanced':
     default:
@@ -271,38 +271,38 @@ export function resolveFalDesignIntensityDirectives(
     case 'designed':
       return {
         priorityBlock:
-          '═══ DESIGN INTENSITY: DESIGNED (level 4/5) ═══ REQUIRED graphic craft system — paint craft+type first, then contain the gallery photo in the leftover window. If the frame is only a photo with floating text, FAIL (that is level 1–2).',
+          '═══ DESIGN INTENSITY: DESIGNED (level 4/5) ═══ Brand+slot specific art direction — a boutique-agency composition unique to THIS brand and THIS slot. Intentional hierarchy + brand color accents; NOT a generic painted geometry kit (rails/L-shapes/diagonal wedges reused across tenants).',
         photoRules: isVertical
           ? [
-            'COMPOSE: Paint craft zones + type first; photo window second (~55–75% of frame) with the FULL gallery photo contained — natural colors, venue unchanged.',
-            'GRAPHIC SYSTEM (REQUIRED): corner plate, side rail, L-accent, diagonal soft cut, inset mat, or thin rule system — type lives only inside these zones.',
-            'LAYOUT FAMILIES (pick ONE): asymmetric_corner_plate | magazine_cover_overlap | diagonal_soft_cut | side_rail_frame | l_shape_accent | inset_photo_frame — NEVER horizontal paint sandwich (solid header + photo + solid footer).',
+            'COMPOSE: Gallery photo is a clear hero (~60–80% of frame) with brand-true type/scrim/rules that feel hand-designed for this slot — natural colors, venue unchanged.',
+            'GRAPHIC CRAFT: prefer type-led lockups, soft brand scrims, thin rules, or a small corner accent from brand colors — only when it serves the slot brief.',
+            'FORBIDDEN as default: repeating side-rail / L-shape / diagonal-wedge geometry packs that look identical across brands.',
           ]
           : [
             'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
-            'COMPOSE: Paint craft zones + type first; contain the FULL gallery photo in the leftover window (~50–70%) — never paint over glassware/faces/product.',
-            'GRAPHIC SYSTEM (REQUIRED): side rail, soft editorial split, corner plate, inset frame, or rule system. Floating centered text on full-bleed photo = FAIL.',
-            'LAYOUT FAMILIES (pick ONE): magazine_cover_overlap | editorial_split_soft | side_rail_frame | asymmetric_corner_plate | inset_photo_frame — no tall opaque story headers.',
+            'COMPOSE: Keep the FULL gallery photo readable (~55–75%); build brand+slot typography and accents around it — never paint over glassware/faces/product.',
+            'GRAPHIC CRAFT: type-led editorial, soft plates/scrims, thin brand rules — unique per slot. Floating centered caption alone = FAIL; generic rail/L geometry kit = FAIL.',
           ],
         typographyAnchor: isVertical
-          ? 'Headline: bold custom-feel display locked into the craft zones — 18–28% frame height, asymmetric/magazine placement, high contrast — never on the photo window.'
-          : 'Headline: bold designer display inside the craft zones — 16–24% frame height. Feed craft, not story sandwich.',
+          ? 'Headline: bold custom-feel display — 16–26% frame height, asymmetric/magazine placement, high contrast — owned by this brand\'s type language.'
+          : 'Headline: bold designer display — 14–22% frame height. Feed craft unique to this brand/slot, not a story sandwich.',
         layoutNote: isVertical
-          ? 'Designed = boutique agency Story with a real layout system. Reject both Canva sandwiches AND plain photo+caption.'
-          : 'Designed feed = intentional graphic hierarchy on 4:5. Reject Canva paint stacks AND plain photo+caption.',
+          ? 'Designed = boutique agency Story for THIS brand+slot. Reject Canva sandwiches, plain photo+caption, AND stock geometric paint kits.'
+          : 'Designed feed = intentional brand hierarchy on 4:5. Reject Canva paint stacks, plain photo+caption, AND generic geometry templates.',
         forbiddenLayouts: isVertical
           ? [
-            'FORBIDDEN: photo + floating text only (no graphic system).',
+            'FORBIDDEN: photo + floating text only (no intentional brand craft).',
             'FORBIDDEN: painting opaque plates over a full-bleed photo hero (glassware/faces covered).',
             'FORBIDDEN: horizontal sandwich — opaque header + photo + opaque footer/brand bar.',
-            'FORBIDDEN: solid opaque block ≥35% used only to host centered white sans.',
+            'FORBIDDEN: defaulting to side-rail / L-shape / diagonal-wedge geometry when the brand recipe asks for something else.',
             'FORBIDDEN: random off-brand colors — accents only from brand primary/accent.',
           ]
           : [
-            'FORBIDDEN: photo + floating text only (no graphic system).',
+            'FORBIDDEN: photo + floating text only (no intentional brand craft).',
             'FORBIDDEN: painting opaque plates over a full-bleed photo hero (glassware/faces covered).',
             'FORBIDDEN: story-style stacked layout (upper ≥40% solid panel + thin photo) on 4:5.',
             'FORBIDDEN: solid opaque header/footer bands as the primary composition.',
+            'FORBIDDEN: defaulting to side-rail / L-shape / diagonal-wedge geometry when the brand recipe asks for something else.',
             'FORBIDDEN: random off-brand colors — accents only from brand primary/accent.',
           ],
         foundSurfaceAnchor,
@@ -310,24 +310,24 @@ export function resolveFalDesignIntensityDirectives(
     case 'bold_editorial':
       return {
         priorityBlock:
-          '═══ DESIGN INTENSITY: BOLD EDITORIAL (level 5/5) ═══ Magazine-cover craft — oversized type leads in reserved craft zones; contain the gallery photo in the leftover window (not a thin strip under a full-width paint brick).',
+          '═══ DESIGN INTENSITY: BOLD EDITORIAL (level 5/5) ═══ Magazine-cover energy unique to THIS brand — oversized type leads; gallery photo stays a clear hero window (not crushed under a paint brick or geometry kit).',
         photoRules: isVertical
           ? [
-            'COMPOSE: Paint oversized type zones + accents first; contain the FULL gallery photo in the remaining window (~55–75%) — natural colors.',
-            'LAYOUT FAMILIES (pick ONE): magazine_cover_overlap | diagonal_soft_cut | side_rail_frame | l_shape_accent | inset_photo_frame — NEVER opaque header/footer sandwich.',
-            'Graphic accents: large type plates, thin bars, small color chips — not full-width paint slabs ≥40% that crush the photo window.',
+            'COMPOSE: Oversized brand type + accents with the FULL gallery photo still clearly readable (~55–75%) — natural colors.',
+            'Graphic accents: large type plates, thin bars, small color chips from brand colors — not full-width paint slabs ≥40%.',
+            'FORBIDDEN as default: stock side-rail / L-shape / diagonal-wedge kits reused across tenants.',
           ]
           : [
             'CANVAS: Instagram feed 4:5 (1080×1350) — NOT a 9:16 story frame.',
-            'COMPOSE: Oversized type in reserved craft zones; contain the FULL gallery photo in the leftover window (~50–70%) — natural colors.',
-            'Editorial feed poster: magazine-cover energy inside 4:5 — not a vertical story paint stack.',
+            'COMPOSE: Oversized type with a clear photo window (~50–70%) — natural colors.',
+            'Editorial feed poster: magazine-cover energy inside 4:5 — not a vertical story paint stack or geometry sticker pack.',
           ],
         typographyAnchor: isVertical
-          ? 'Headline: OVERSIZED display (ALL CAPS or heavy display) — 28–42% frame height, stacked optical lines fully inside craft zones. Type leads; never cover the photo window.'
-          : 'Headline: OVERSIZED display — 24–36% of the 4:5 frame, stacked lines inside craft zones; photo window stays clear.',
+          ? 'Headline: OVERSIZED display (ALL CAPS or heavy display) — 28–42% frame height, stacked optical lines in brand type zones. Type leads; never cover the photo hero.'
+          : 'Headline: OVERSIZED display — 24–36% of the 4:5 frame, stacked lines in brand type zones; photo window stays clear.',
         layoutNote: isVertical
-          ? 'Bold editorial = type-first magazine Story. Viewer reads headline in the craft system beside a contained photo window.'
-          : 'Bold editorial feed — headline-first craft zones on 4:5 with a clear photo window, never mimic Instagram Story paint proportions.',
+          ? 'Bold editorial = type-first magazine Story for THIS brand. Reject Canva sandwiches AND generic geometry kits.'
+          : 'Bold editorial feed — headline-first on 4:5 with a clear photo window; never Instagram Story paint proportions or stock geometry.',
         forbiddenLayouts: isVertical
           ? [
             'FORBIDDEN: opaque header/footer sandwich with photo trapped in the middle.',
@@ -336,6 +336,7 @@ export function resolveFalDesignIntensityDirectives(
             'FORBIDDEN: small or timid headline — must feel poster-scale.',
             'FORBIDDEN: lowercase-only timid UI type — use ALL CAPS or heavy display for impact.',
             'FORBIDDEN: shrinking the photo to a thin strip under a painted block.',
+            'FORBIDDEN: defaulting to rail/L/diagonal geometry when brand+slot recipe asks otherwise.',
           ]
           : [
             'FORBIDDEN: story-style upper-panel stack that makes a 4:5 post read as 9:16.',
@@ -344,6 +345,7 @@ export function resolveFalDesignIntensityDirectives(
             'FORBIDDEN: painting oversized type over glassware/faces on a full-bleed underlay.',
             'FORBIDDEN: small or timid headline — must feel poster-scale.',
             'FORBIDDEN: lowercase-only timid UI type — use ALL CAPS or heavy display for impact.',
+            'FORBIDDEN: defaulting to rail/L/diagonal geometry when brand+slot recipe asks otherwise.',
           ],
         foundSurfaceAnchor,
       };
@@ -441,21 +443,21 @@ export type DesignCraftLayoutFamily = (typeof DESIGN_CRAFT_LAYOUT_FAMILIES)[numb
 
 const LAYOUT_FAMILY_BRIEF: Record<DesignCraftLayoutFamily, string> = {
   asymmetric_corner_plate:
-    'Paint an asymmetric corner brand-color plate (<22% frame) with headline fully inside (≥8% padding); contain the FULL gallery photo in the remaining clear window — never paint over the photo.',
+    'Compose an asymmetric corner brand-color accent (<22% frame) with headline fully inside (≥8% padding); keep the FULL gallery photo clear in the remaining window — brand-unique, not a stock sticker.',
   magazine_cover_overlap:
-    'Magazine cover energy: oversized display fully inside a brand-color plate/soft field with 1–2 thin rules; contain the FULL gallery photo in the leftover window beside/below the plate — never half-on/half-off the color field onto the photo.',
+    'Magazine-cover energy: oversized display inside a brand-color soft field with 1–2 thin rules; keep the FULL gallery photo in the leftover window — never half-on/half-off the color field.',
   diagonal_soft_cut:
-    'Paint a soft diagonal brand-color wedge (≤28% frame) with type fully inside (≥8% padding); contain the FULL gallery photo in the remaining triangular/rect window — never a horizontal sandwich.',
+    'Soft diagonal brand-color accent (≤28% frame) with type fully inside; keep the FULL gallery photo clear — never a horizontal sandwich.',
   side_rail_frame:
-    'Paint a vertical side rail (≤24% width) with stacked type fully inside; contain the FULL gallery photo in the remaining wide window.',
+    'Vertical brand side rail (≤24% width) with stacked type inside; keep the FULL gallery photo in the wide window — nightlife/bold packs only.',
   l_shape_accent:
-    'Paint an L-shaped brand accent (≤30% combined) with headline fully inside; contain the FULL gallery photo in the open rectangle of the L.',
+    'L-shaped brand accent (≤30% combined) with headline inside; keep the FULL gallery photo in the open rectangle — nightlife/bold packs only.',
   type_with_brand_rules:
-    'Type-led craft: reserve a light plate/scrim for the headline + thin brand-color rules/chips; contain the FULL gallery photo in the leftover window — never opaque paint over glassware/faces.',
+    'Type-led craft: light plate/scrim for the headline + thin brand-color rules/chips; keep the FULL gallery photo clear — never opaque paint over glassware/faces.',
   inset_photo_frame:
-    'Paint a brand-color mat with type fully on the mat (≥8% padding); contain the FULL gallery photo as an inset window inside the mat — photo never cropped or painted over.',
+    'Brand-color mat with type on the mat (≥8% padding); gallery photo as an inset window — photo never cropped or covered.',
   editorial_split_soft:
-    'Paint a soft brand field (~35–40%) with type fully inside; contain the FULL gallery photo in the remaining ~60–65% window — never straddling the photo edge.',
+    'Soft brand field (~35–40%) with type inside; FULL gallery photo in the remaining ~60–65% — never straddling the photo edge.',
 };
 
 /**

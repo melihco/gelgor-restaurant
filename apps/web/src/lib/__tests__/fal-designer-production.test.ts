@@ -143,7 +143,7 @@ describe('buildCreativeDesignBrief', () => {
     expect(brief.length).toBeLessThan(1100);
   });
 
-  it('asks designed intensity for graphic craft, not plain photo+text or sandwiches', () => {
+  it('asks designed intensity for brand+slot craft, not plain photo+text or geometry kits', () => {
     const brief = buildCreativeDesignBrief({
       mode: 'story',
       brand: 'Yula Bodrum',
@@ -154,10 +154,10 @@ describe('buildCreativeDesignBrief', () => {
       designIntensityLevel: 'designed',
       headline: 'Mutlu Bayramlar',
     });
-    expect(brief).toContain('REQUIRED graphic craft');
-    expect(brief).toContain('leftover window');
+    expect(brief).toContain('brand+slot craft');
     expect(brief).toContain('paint over the photo');
     expect(brief).toContain('Canva sandwich');
+    expect(brief).toMatch(/rail\/L|geometry/i);
     expect(brief).not.toContain('graphic zone + photo hero strip');
   });
 });
@@ -185,7 +185,7 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt).not.toContain('scroll-stopping feed post');
   });
 
-  it('keeps designed layout families in the protected head even when optional tail is huge', () => {
+  it('keeps brand+slot designed intensity in the protected head even when optional tail is huge', () => {
     const prompt = buildDesignedStoryDesignCardPrompt({
       vibe: 'warm_coastal',
       headline: 'Mutlu Bayramlar',
@@ -203,16 +203,12 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     });
 
     expect(prompt).toContain('DESIGN INTENSITY: DESIGNED');
-    expect(prompt).toContain('LAYOUT LOCK:');
-    expect(prompt).toContain('TYPE CONTAINMENT');
-    expect(prompt).toContain('COMPOSE ORDER (MANDATORY)');
-    expect(prompt).toContain(FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE);
-    expect(prompt).toContain('GRAPHIC SYSTEM');
-    expect(prompt).toMatch(/horizontal sandwich|paint sandwich|Canva sandwich/i);
-    expect(prompt).toMatch(/leftover (photo )?window/i);
+    expect(prompt).toContain('Brand+slot specific');
+    expect(prompt).toMatch(/COMPOSITION PRIORITY|brand slot recipe/i);
+    expect(prompt).not.toContain('LAYOUT LOCK:');
+    expect(prompt).toMatch(/Canva sandwich|geometry kit|rail\/L/i);
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('Mutlu Bayramlar');
-    expect(prompt.indexOf('LAYOUT LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
   });
 
   it('keeps BRAND SLOT DESIGN RECIPE in the protected head under designed intensity pressure', () => {
@@ -243,8 +239,31 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
 
     expect(prompt).toContain('BRAND SLOT DESIGN RECIPE');
     expect(prompt).toContain('Yula Bodrum');
-    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).not.toContain('LAYOUT LOCK:');
     expect(prompt).toContain('HARD CONTRACTS');
+  });
+
+  it('hard LAYOUT LOCK still applies for nightlife bold packs', () => {
+    const prompt = buildDesignedStoryDesignCardPrompt({
+      vibe: 'neon_glow',
+      headline: 'DJ Night',
+      subtitle: 'After dark',
+      brandColors: { primary: '#111827', accent: '#F472B6' },
+      brandName: 'Club Neon',
+      sector: 'nightclub_lounge',
+      aspectRatio: '9:16',
+      designIntensityLevel: 'designed',
+      layoutFamilySeed: 'nightclub_lounge_dj_night_story',
+      visualDnaTone: 'neon nightlife after-dark electric energy DJ booth',
+      brandDirectives: [
+        '═══ BRAND SLOT DESIGN RECIPE ═══ Slot: DJ Night · story · intensity designed.',
+      ],
+    });
+
+    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).toContain('TYPE CONTAINMENT');
+    expect(prompt).toContain(FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE);
+    expect(prompt.indexOf('LAYOUT LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
   });
 });
 
@@ -327,7 +346,7 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toMatch(/SECTOR STYLE \(beach club — photo-first\)|Sun-washed Aegean/);
   });
 
-  it('bold_editorial story prompt demands oversized caps headline', () => {
+  it('bold_editorial story prompt demands oversized caps headline without soft-pack geometry lock', () => {
     const prompt = buildDesignedPostDesignCardPrompt({
       vibe: 'warm_coastal',
       headline: 'Summer Festival',
@@ -340,8 +359,8 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
 
     expect(prompt).toContain('BOLD EDITORIAL');
     expect(prompt).toMatch(/ALL[- ]CAPS/);
-    expect(prompt).toContain('TYPE CONTAINMENT');
-    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).not.toContain('LAYOUT LOCK:');
+    expect(prompt).toMatch(/geometry kit|rail\/L/i);
   });
 });
 

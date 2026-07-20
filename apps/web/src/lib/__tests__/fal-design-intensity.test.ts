@@ -81,16 +81,16 @@ describe('resolveFalDesignIntensityDirectives', () => {
     expect(d.photoRules.join(' ')).toMatch(/55–75%/);
     expect(d.photoRules.join(' ')).toMatch(/COMPOSE|contain/i);
     expect(d.typographyAnchor).toMatch(/OVERSIZED/i);
-    expect(d.foundSurfaceAnchor).toMatch(/CRAFT-ZONE TYPOGRAPHY/);
+    expect(d.foundSurfaceAnchor).toMatch(/BRAND TYPE ZONES/);
   });
 
-  it('designed requires graphic craft and forbids paint-over-photo / plain photo+text', () => {
+  it('designed requires brand+slot craft and forbids geometry kits / plain photo+text', () => {
     const d = resolveFalDesignIntensityDirectives('designed', 'reel');
-    expect(d.priorityBlock).toMatch(/REQUIRED graphic craft/i);
-    expect(d.photoRules.join(' ')).toMatch(/LAYOUT FAMILIES/);
-    expect(d.photoRules.join(' ')).toMatch(/GRAPHIC SYSTEM|COMPOSE/i);
+    expect(d.priorityBlock).toMatch(/Brand\+slot specific|boutique-agency/i);
+    expect(d.photoRules.join(' ')).toMatch(/COMPOSE|GRAPHIC CRAFT/i);
+    expect(d.photoRules.join(' ')).toMatch(/rail\/L|geometry/i);
     expect(d.forbiddenLayouts.join(' ')).toMatch(/floating text only|photo \+ floating text|paint.*full-bleed/i);
-    expect(d.forbiddenLayouts.join(' ')).toMatch(/sandwich/i);
+    expect(d.forbiddenLayouts.join(' ')).toMatch(/sandwich|geometry/i);
   });
 
   it('channel resolver reads theme', () => {
@@ -107,11 +107,11 @@ describe('resolveFoundSurfaceTypographyDirective', () => {
     expect(resolveFoundSurfaceTypographyDirective('photo_first')).toMatch(/NEVER invent a fake painted panel/i);
   });
 
-  it('keeps designed/bold type inside craft zones away from the photo window', () => {
+  it('keeps designed/bold type in brand zones away from geometry kits', () => {
     const designed = resolveFoundSurfaceTypographyDirective('designed');
-    expect(designed).toMatch(/CRAFT-ZONE TYPOGRAPHY/);
-    expect(designed).toMatch(/photo window/i);
-    expect(designed).toMatch(/paint slabs/i);
+    expect(designed).toMatch(/BRAND TYPE ZONES/);
+    expect(designed).toMatch(/glassware\/faces|paint slabs/i);
+    expect(designed).toMatch(/rail\/L|geometry/i);
   });
 });
 

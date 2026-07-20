@@ -161,17 +161,18 @@ function pack(
     composeMode,
     preferPhotoLedCraft,
     directives: [
-      `LAYOUT LANGUAGE PACK: ${id} — composition policy from brand visual/vibe DNA (not palette alone).`,
+      `LAYOUT LANGUAGE PACK: ${id} — brand visual/vibe DNA shapes composition (not palette alone).`,
       `Intensity is driven by brand design parameters + slot role — DNA does not override Brand Hub intensity.`,
-      `DNA craft bias (soft): prefer around ${suggestedIntensity} energy, but never below/above the brand parameter ceiling.`,
-      craftAllowlist.length
-        ? `Craft allowlist ONLY: ${craftAllowlist.join(', ')}. Forbidden: any other painted geometry family.`
-        : 'Craft allowlist: NONE — photo + type only; no painted plate/rail/L/split systems.',
+      preferPhotoLedCraft || composeMode !== 'craft_window'
+        ? 'COMPOSITION PRIORITY: brand slot recipe + Canva/slot archetype first — unique to THIS brand and THIS slot. Soft type/scrim/rules OK; forbid generic painted rail/L/diagonal geometry kits.'
+        : craftAllowlist.length
+          ? `Bold craft pack: if a hard layout lock is applied, stay within ${craftAllowlist.join(', ')} — still brand-unique, not a stock geometry sticker.`
+          : 'Craft allowlist: NONE — photo + type only.',
       composeMode === 'photo_first'
         ? 'Compose mode: PHOTO-FIRST — venue/product photo is the design; type is a quiet caption layer.'
         : composeMode === 'type_on_photo'
           ? 'Compose mode: TYPE-ON-PHOTO — typography lives on the photo via scrim/found surface; no large painted color fields.'
-          : 'Compose mode: CRAFT-WINDOW — graphic craft allowed only from the allowlist; photo stays a clear window.',
+          : 'Compose mode: CRAFT-WINDOW — intentional brand craft with a clear photo window — never generic Canva geometry.',
       ...extraDirectives,
     ],
   };
@@ -306,10 +307,10 @@ export function resolveBrandLayoutLanguage(
   return pack(
     'balanced_default',
     'designed',
-    ALL_CRAFT,
+    SOFT_CRAFT,
     'craft_window',
-    false,
-    ['Balanced default: full craft library — diversify per slot seed within allowlist.'],
+    true,
+    ['Balanced default: brand+slot recipe led — soft type/rules craft only; no heavy rail/L geometry kit.'],
   );
 }
 
@@ -355,20 +356,20 @@ export function resolveTemplateLibraryEffectiveIntensity(input: {
 }
 
 /**
- * Whether painted craft lock should run for this intensity + pack.
- * Intensity comes from brand parameters; DNA only restricts which craft families.
+ * Hard LAYOUT LOCK (rail/plate/L geometry) — only for bold nightlife/street packs.
+ * Soft / photo-led DNA packs must stay brand+slot recipe led (the quality we had
+ * before geometry kits overrode every template).
  */
 export function shouldApplyCraftLayoutFamily(
   level: FalDesignIntensityLevel,
   language: BrandLayoutLanguagePack,
 ): boolean {
   if (language.craftAllowlist.length === 0) return false;
-  // Parameter-driven: photo_first / elegant_light stay type-light (no craft lock).
-  if (level === 'photo_first' || level === 'elegant_light') return false;
-  if (language.preferPhotoLedCraft && level === 'balanced') {
-    return language.craftAllowlist.some((f) => SOFT_CRAFT.includes(f) || f === 'type_with_brand_rules');
-  }
-  return level === 'balanced' || level === 'designed' || level === 'bold_editorial';
+  if (level === 'photo_first' || level === 'elegant_light' || level === 'balanced') return false;
+  if (language.preferPhotoLedCraft) return false;
+  if (language.composeMode === 'type_on_photo' || language.composeMode === 'photo_first') return false;
+  // Nightlife / street bold packs only.
+  return level === 'designed' || level === 'bold_editorial';
 }
 
 export function buildBrandLayoutLanguageDirectives(
