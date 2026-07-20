@@ -56,6 +56,11 @@ import {
   resolveCraftAllowlistForPack,
   shouldApplyCraftLayoutFamily,
 } from '@/lib/brand-layout-language';
+import {
+  lockImageToCanvas,
+  POST_CANVAS,
+  STORY_CANVAS,
+} from '@/lib/design-canvas-aspect';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 
@@ -205,12 +210,29 @@ async function finalizeFalStillWithOfficialLogo(
   result: FalDesignerStillResult,
   input: Pick<FalDesignerInput, 'logoUrl' | 'logoPlacement' | 'aspectRatio' | 'workspaceId' | 'deferLogoComposite'>,
 ): Promise<FalDesignerStillResult> {
+  if (!result.imageUrl) return result;
+
+  // GPT grounded edits return 1024×1536 (2:3). Lock post→4:5 / story→9:16 before
+  // persist so library + production never ship the same tall slab for both formats.
+  const target = input.aspectRatio === '9:16' ? STORY_CANVAS : POST_CANVAS;
+  const locked = await lockImageToCanvas(result.imageUrl, target);
+  let imageUrl = locked.url;
+  let typographyModel = result.typographyModel;
+  if (locked.locked) {
+    typographyModel = `${typographyModel}+canvas-${locked.label}`;
+    console.log(
+      `[fal-designer] canvas locked to ${locked.label} (${target.width}x${target.height})`,
+    );
+  }
+
   const logoUrl = input.logoUrl?.trim();
-  if (input.deferLogoComposite || !logoUrl || !result.imageUrl) return result;
+  if (input.deferLogoComposite || !logoUrl) {
+    return { ...result, imageUrl, typographyModel };
+  }
 
   const channel = input.aspectRatio === '9:16' ? 'reel' : 'feed_post';
   const composited = await compositeOfficialLogoOnFrameUrl({
-    frameUrl: result.imageUrl,
+    frameUrl: imageUrl,
     logoUrl,
     placement: input.logoPlacement ?? null,
     channel,
@@ -221,13 +243,13 @@ async function finalizeFalStillWithOfficialLogo(
     console.warn(
       '[fal-designer] Official logo composite failed — AI may have drawn a substitute mark; check logo URL and frame persistence',
     );
-    return result;
+    return { ...result, imageUrl, typographyModel };
   }
 
   return {
     ...result,
     imageUrl: composited.imageUrl,
-    typographyModel: `${result.typographyModel}+logo-composite`,
+    typographyModel: `${typographyModel}+logo-composite`,
   };
 }
 

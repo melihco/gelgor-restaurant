@@ -18,7 +18,10 @@ import {
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
-import { normalizeGeneratedImageAspect, POST_CANVAS, STORY_CANVAS } from '@/lib/design-canvas-aspect';
+import {
+  lockImageToCanvas,
+  resolveTargetCanvasForFormat,
+} from '@/lib/design-canvas-aspect';
 import {
   resolveFalTemplateBackgroundStyle,
   resolveTemplateLibraryDesignIntensity,
@@ -804,9 +807,18 @@ async function lockTemplatePreviewAspect(
   url: string,
   format: DesignTemplateFormat,
 ): Promise<string> {
-  const target = format === 'post' ? POST_CANVAS : STORY_CANVAS;
-  const normalized = await normalizeGeneratedImageAspect(url, target);
-  return normalized ?? url;
+  const target = resolveTargetCanvasForFormat(format);
+  const locked = await lockImageToCanvas(url, target);
+  if (!locked.locked) {
+    console.warn(
+      `[design-template-engine] canvas lock skipped for ${format} → ${target.label} — source may remain GPT 2:3`,
+    );
+  } else {
+    console.log(
+      `[design-template-engine] canvas locked to ${target.label} (${target.width}x${target.height}) format=${format}`,
+    );
+  }
+  return locked.url;
 }
 
 async function mirrorPreview(url: string, workspaceId: string): Promise<string | null> {

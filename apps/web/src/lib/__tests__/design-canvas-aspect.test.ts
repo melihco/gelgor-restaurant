@@ -6,6 +6,7 @@ import {
   canvasNeedsNormalization,
   normalizeCanvasBuffer,
   resolveTargetCanvas,
+  resolveTargetCanvasForFormat,
 } from '@/lib/design-canvas-aspect';
 
 async function makeImage(width: number, height: number): Promise<Buffer> {
@@ -33,6 +34,14 @@ describe('resolveTargetCanvas', () => {
   });
 });
 
+describe('resolveTargetCanvasForFormat', () => {
+  it('maps template formats to post 4:5 vs story/reel 9:16', () => {
+    expect(resolveTargetCanvasForFormat('post')).toEqual(POST_CANVAS);
+    expect(resolveTargetCanvasForFormat('story')).toEqual(STORY_CANVAS);
+    expect(resolveTargetCanvasForFormat('reel_cover')).toEqual(STORY_CANVAS);
+  });
+});
+
 describe('canvasNeedsNormalization', () => {
   it('flags the GPT-image 1024x1536 (2:3) canvas for both post and story targets', () => {
     expect(canvasNeedsNormalization(1024, 1536, POST_CANVAS)).toBe(true);
@@ -47,16 +56,21 @@ describe('canvasNeedsNormalization', () => {
 });
 
 describe('normalizeCanvasBuffer', () => {
-  it('fits a 2:3 design card onto exact 4:5 post canvas without cropping', async () => {
+  it('cover-fills a 2:3 design card onto exact 4:5 post canvas (no letterbox bars)', async () => {
     const img = await makeImage(1024, 1536);
     const out = await normalizeCanvasBuffer(img, POST_CANVAS);
     expect(out).not.toBeNull();
     const meta = await sharp(out!).metadata();
     expect(meta.width).toBe(1080);
     expect(meta.height).toBe(1350);
+    // Cover must not leave empty pillarbox — every output pixel is image content.
+    // Spot-check corner is not the letterbox navy background.
+    const { data } = await sharp(out!).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    // top-left pixel
+    expect(data[0]).not.toBe(8);
   });
 
-  it('fits a 2:3 design card onto exact 9:16 story canvas without cropping', async () => {
+  it('cover-fills a 2:3 design card onto exact 9:16 story canvas', async () => {
     const img = await makeImage(1024, 1536);
     const out = await normalizeCanvasBuffer(img, STORY_CANVAS);
     expect(out).not.toBeNull();

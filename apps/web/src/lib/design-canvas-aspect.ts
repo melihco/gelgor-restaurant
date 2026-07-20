@@ -4,9 +4,8 @@
  *
  * GPT-image models only support 1024×1024 / 1024×1536 / 1536×1024 canvases, so
  * portrait design cards come back as 2:3 regardless of the target channel.
- * Without normalization, feed posts render story-tall and stories render
- * shorter than 9:16 — the exact "story sized posts / post sized stories"
- * inconsistency seen in production feeds.
+ * Without normalization, feed posts render story-tall and stories/posts look
+ * the same height in the library and production feed.
  */
 
 export interface TargetCanvas {
@@ -15,17 +14,53 @@ export interface TargetCanvas {
   /** width / height */
   ratio: number;
   label: '4:5' | '9:16';
+  /**
+   * How to map GPT's 2:3 canvas onto the target:
+   * - cover: fill the frame (post default — true 4:5 feed, crops excess)
+   * - contain: letterbox (legacy; leaves bars that make posts look story-tall)
+   */
+  fit?: 'cover' | 'contain';
 }
 
-export const POST_CANVAS: TargetCanvas = { width: 1080, height: 1350, ratio: 1080 / 1350, label: '4:5' };
-export const STORY_CANVAS: TargetCanvas = { width: 1080, height: 1920, ratio: 1080 / 1920, label: '9:16' };
+export const POST_CANVAS: TargetCanvas = {
+  width: 1080,
+  height: 1350,
+  ratio: 1080 / 1350,
+  label: '4:5',
+  fit: 'cover',
+};
+export const STORY_CANVAS: TargetCanvas = {
+  width: 1080,
+  height: 1920,
+  ratio: 1080 / 1920,
+  label: '9:16',
+  fit: 'cover',
+};
 
 /** Aspect drift tolerance — below this the image is considered already correct. */
 const RATIO_TOLERANCE = 0.02;
 
 function isStoryContentType(contentType: string): boolean {
   const ct = contentType.toLowerCase();
-  return ct === 'story' || ct.includes('story') || ct.includes('reel');
+  return (
+    ct === 'story'
+    || ct === 'instagram_story'
+    || ct === 'reel'
+    || ct === 'instagram_reel'
+    || ct.includes('story')
+    || ct.includes('reel')
+  );
+}
+
+function isFeedPostContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase();
+  if (isStoryContentType(ct)) return false;
+  return (
+    ct === 'post'
+    || ct === 'instagram_post'
+    || ct.includes('feed')
+    || ct.includes('post')
+  );
 }
 
 /**
@@ -39,9 +74,18 @@ export function resolveTargetCanvas(
 ): TargetCanvas | null {
   if (isStoryContentType(contentType)) return STORY_CANVAS;
   // Designed feed cards are produced on the 1024×1536 portrait canvas but the
-  // feed contract is 4:5.
+  // feed contract is 4:5. Organic (non-design) posts stay native (often 1:1).
+  if (isDesignCard && isFeedPostContentType(contentType)) return POST_CANVAS;
   if (isDesignCard) return POST_CANVAS;
   return null;
+}
+
+/** Resolve canvas from template / fal channel format. */
+export function resolveTargetCanvasForFormat(
+  format: 'post' | 'story' | 'reel' | 'reel_cover' | string,
+): TargetCanvas {
+  if (format === 'post' || format === 'carousel') return POST_CANVAS;
+  return STORY_CANVAS;
 }
 
 export function canvasNeedsNormalization(
@@ -55,11 +99,11 @@ export function canvasNeedsNormalization(
 }
 
 /**
- * Fit + pad a raw image onto the target canvas (never crop).
+ * Map a raw image onto the target canvas.
  *
- * GPT-image returns 1024×1536 (2:3). Cover-cropping that to 4:5 / 9:16
- * chops the top/bottom (or sides) — exactly where designed headlines/CTAs live.
- * Contain + letterbox keeps every pixel of typography readable in the feed.
+ * Post (4:5): cover-fill so the frame is a real feed post — not a letterboxed
+ * 2:3 story slab. Story/reel (9:16): cover-fill to true vertical.
+ * GPT safe-zone prompts keep type inside the retained region.
  */
 export async function normalizeCanvasBuffer(
   buffer: Buffer,
@@ -69,9 +113,10 @@ export async function normalizeCanvasBuffer(
   const meta = await sharp(buffer).metadata();
   if (!meta.width || !meta.height) return null;
   if (!canvasNeedsNormalization(meta.width, meta.height, target)) return null;
+  const fit = target.fit ?? 'cover';
   return sharp(buffer)
     .resize(target.width, target.height, {
-      fit: 'contain',
+      fit,
       position: 'centre',
       background: { r: 8, g: 10, b: 14, alpha: 1 },
     })
@@ -97,7 +142,7 @@ async function fetchImageBuffer(imageUrl: string): Promise<Buffer | null> {
   });
   if (!res.ok) return null;
   const mime = res.headers.get('content-type')?.split(';')[0] ?? '';
-  if (mime && !mime.startsWith('image/')) return null;
+  if (mime && !mime.startsWith('image/') && !mime.includes('octet-stream')) return null;
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -123,4 +168,19 @@ export async function normalizeGeneratedImageAspect(
     );
     return null;
   }
+}
+
+/**
+ * Hard canvas lock for template library / fal stills.
+ * Always returns a URL; logs when the source could not be rewritten.
+ */
+export async function lockImageToCanvas(
+  imageUrl: string,
+  target: TargetCanvas,
+): Promise<{ url: string; locked: boolean; label: TargetCanvas['label'] }> {
+  const normalized = await normalizeGeneratedImageAspect(imageUrl, target);
+  if (normalized) {
+    return { url: normalized, locked: true, label: target.label };
+  }
+  return { url: imageUrl, locked: false, label: target.label };
 }
