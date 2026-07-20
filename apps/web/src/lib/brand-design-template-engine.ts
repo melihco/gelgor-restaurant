@@ -39,6 +39,8 @@ import type { FalDesignChannel } from '@/lib/fal-design-intensity';
 import {
   clampDesignIntensityForArchetype,
   describeDesignCraftLayoutFamily,
+  FAL_DESIGN_INTENSITY_RANK,
+  resolveBrandDesignIntensityCeiling,
   resolveCalendarFalDesignIntensity,
   resolveDesignCraftLayoutFamily,
   type DesignCraftLayoutFamily,
@@ -545,9 +547,21 @@ async function generateOne(
     channel: intensityChannel,
     brandTheme: theme,
   });
+  const brandCeiling = resolveBrandDesignIntensityCeiling(theme, intensityChannel);
+  // Hub intensity is a ceiling for production, but for the template library it is also
+  // the target: if the brand set bold_editorial, do not ship elegant_light caption cards
+  // just because the slot default was "designed" and DNA noise crushed energy.
+  // Ambient / BTS slots stay photo_first.
   const productionIntensity = slotIntensity.level;
+  const libraryIntensity = (() => {
+    if (productionIntensity === 'photo_first') return productionIntensity;
+    if (FAL_DESIGN_INTENSITY_RANK[brandCeiling] > FAL_DESIGN_INTENSITY_RANK[productionIntensity]) {
+      return brandCeiling;
+    }
+    return productionIntensity;
+  })();
   const designIntensityLevel = clampDesignIntensityForArchetype(
-    resolveTemplateLibraryDesignIntensity(productionIntensity),
+    resolveTemplateLibraryDesignIntensity(libraryIntensity),
     layoutBrief.canvaArchetypeId,
   );
   const brandIntelligenceDirectives = buildBrandIntelligenceDirectives(

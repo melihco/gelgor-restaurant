@@ -57,8 +57,15 @@ export interface BrandLayoutLanguageInput {
   typographyVibe?: string | null;
 }
 
+/**
+ * Quiet-luxury signals — keep STRICT.
+ * Do NOT match bare "editorial" / "serene" / "premium": those appear in vibe-profile
+ * typography noise and falsely crushed Yula (bold Hub) down to elegant_light caption-only.
+ */
 const QUIET_RX =
-  /\b(quiet\s*luxury|lüks|luxury|premium|refined|understated|restrained|editorial|sophisticated|aman|nobu|serene|minimal\s*luxury)\b/i;
+  /\b(quiet\s*luxury|understated(\s+luxury)?|restrained|aman|nobu|award.?level\s+restraint|lüks\s*sade)\b/i;
+const VIBRANT_RX =
+  /\b(vibrant|citrus|joy|social|unhurried|drink\s*&\s*chill|fresh|playful|energetic|party\s*day)\b/i;
 const COASTAL_RX =
   /\b(coastal|aegean|cycladic|mediterranean|beach|marina|sun.?wash|turquoise|seaside|bodrum|mykonos)\b/i;
 const ARTISAN_RX =
@@ -108,11 +115,14 @@ const BOLD_CRAFT: DesignCraftLayoutFamily[] = [
 
 const ALL_CRAFT = [...DESIGN_CRAFT_LAYOUT_FAMILIES];
 
+/** Full blob for coastal/artisan/nightlife motifs (vibe profile OK). */
 function vibeBlob(input: BrandLayoutLanguageInput): string {
   const vibeBits: string[] = [];
   const vibe = input.vibeProfile;
   if (vibe && typeof vibe === 'object') {
     for (const [k, v] of Object.entries(vibe)) {
+      // Skip typography machinery keys — they pollute quiet/luxury detection.
+      if (/font|typography|heading|overlay|density|personality/i.test(k)) continue;
       if (typeof v === 'string') vibeBits.push(`${k}:${v}`);
       else if (Array.isArray(v)) vibeBits.push(`${k}:${v.filter((x) => typeof x === 'string').slice(0, 4).join(',')}`);
     }
@@ -123,6 +133,15 @@ function vibeBlob(input: BrandLayoutLanguageInput): string {
     input.brandTone ?? '',
     input.typographyVibe ?? '',
     ...vibeBits,
+  ].join('\n');
+}
+
+/** Quiet detection uses soul text only — not nested vibe-profile typography JSON. */
+function soulBlob(input: BrandLayoutLanguageInput): string {
+  return [
+    input.visualDnaTone ?? '',
+    input.visualDna ?? '',
+    input.brandTone ?? '',
   ].join('\n');
 }
 
@@ -165,10 +184,13 @@ export function resolveBrandLayoutLanguage(
   input: BrandLayoutLanguageInput,
 ): BrandLayoutLanguagePack {
   const text = vibeBlob(input);
+  const soul = soulBlob(input);
   const sector = (input.sector ?? '').toLowerCase();
+  const isQuietSoul = QUIET_RX.test(soul);
+  const isVibrantSoul = VIBRANT_RX.test(soul);
 
   // Nightlife DNA wins even on beach_club (real club nights) — otherwise quiet packs win for venues.
-  if (NIGHTLIFE_RX.test(text) && !QUIET_RX.test(text)) {
+  if (NIGHTLIFE_RX.test(text) && !isQuietSoul) {
     return pack(
       'nightlife_bold',
       'bold_editorial',
@@ -179,7 +201,7 @@ export function resolveBrandLayoutLanguage(
     );
   }
 
-  if (STREET_RX.test(text) && !QUIET_RX.test(text)) {
+  if (STREET_RX.test(text) && !isQuietSoul) {
     return pack(
       'street_energy',
       'bold_editorial',
@@ -190,20 +212,34 @@ export function resolveBrandLayoutLanguage(
     );
   }
 
-  if (QUIET_RX.test(text) || (isPremiumVenueSector(sector) && !NIGHTLIFE_RX.test(text) && !STREET_RX.test(text))) {
-    // Premium venues default quiet unless DNA screams party/street.
-    if (COASTAL_RX.test(text) || /beach|marina|resort/i.test(sector)) {
+  // Coastal / beach: vibrant daybed brands keep craft-window (Yula). Only true quiet-luxury soul
+  // collapses to type-led minimal. Never let vibe-profile "serene/editorial" force caption-only.
+  if (COASTAL_RX.test(text) || /beach|marina|resort/i.test(sector)) {
+    if (isQuietSoul && !isVibrantSoul) {
       return pack(
         'coastal_editorial',
-        QUIET_RX.test(text) ? 'elegant_light' : 'balanced',
-        QUIET_RX.test(text) ? ['type_with_brand_rules'] : COASTAL_CRAFT,
-        QUIET_RX.test(text) ? 'type_on_photo' : 'craft_window',
+        'elegant_light',
+        ['type_with_brand_rules'],
+        'type_on_photo',
         true,
         [
-          'Coastal editorial: sun-washed photo leads; thin rules/scrims only — forbid 50/50 color-band sandwiches and heavy L/rail paint.',
+          'Coastal quiet luxury: sun-washed photo leads; thin rules/scrims only — forbid 50/50 color-band sandwiches and heavy L/rail paint.',
         ],
       );
     }
+    return pack(
+      'coastal_editorial',
+      'designed',
+      COASTAL_CRAFT,
+      'craft_window',
+      false,
+      [
+        'Coastal editorial craft: intentional plates/rules + clear photo window — Aegean social energy, not caption-on-photo only, not EDM flyer.',
+      ],
+    );
+  }
+
+  if (isQuietSoul || (isPremiumVenueSector(sector) && !NIGHTLIFE_RX.test(text) && !STREET_RX.test(text) && !isVibrantSoul)) {
     return pack(
       'quiet_luxury',
       'elegant_light',
@@ -252,17 +288,6 @@ export function resolveBrandLayoutLanguage(
       'type_on_photo',
       true,
       ['Clean minimal: negative space and type hierarchy; forbid dense painted geometry.'],
-    );
-  }
-
-  if (COASTAL_RX.test(text) || /beach|marina|resort|hotel/i.test(sector)) {
-    return pack(
-      'coastal_editorial',
-      'balanced',
-      COASTAL_CRAFT,
-      'craft_window',
-      true,
-      ['Coastal editorial default: soft craft families only.'],
     );
   }
 
