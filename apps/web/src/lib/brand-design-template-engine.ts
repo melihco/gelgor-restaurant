@@ -24,6 +24,7 @@ import {
 } from '@/lib/design-canvas-aspect';
 import {
   resolveFalTemplateBackgroundStyle,
+  resolveFalTemplateProductionSettings,
   resolveTemplateLibraryDesignIntensity,
   shouldProminentLogoInFalTemplate,
   applyFalProductionOverridesToTheme,
@@ -49,6 +50,7 @@ import {
   resolveCraftAllowlistForPack,
   shouldApplyCraftLayoutFamily,
 } from '@/lib/brand-layout-language';
+import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
 import {
   DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT,
   resolveFalUseCaseForDesignTemplate,
@@ -178,6 +180,8 @@ export interface GeneratedDesignTemplate {
     intent: string;
     prominentLogo: boolean;
     logoUrl?: string;
+    /** official_logo | text_wordmark | none — never logo + typed name together. */
+    brandMarkMode?: 'official_logo' | 'text_wordmark' | 'none';
     /** Set for event_special templates so production can match by date. */
     specialDay?: { name: string; mmdd: string; category: string };
     generatedAt: string;
@@ -575,8 +579,15 @@ async function generateOne(
     theme,
     referencePhotoUrl: picked?.url,
   });
-  const useOfficialLogo = Boolean(input.logoUrl?.trim());
-  const prominentLogo = useOfficialLogo || shouldProminentLogoInFalTemplate(theme, preset.prominentLogo);
+  const productionSettings = resolveFalTemplateProductionSettings(theme);
+  const brandMark = resolveBrandMarkMode({
+    logoUrl: input.logoUrl,
+    brandName: input.brandName,
+    logoTreatment: productionSettings.logo_treatment,
+    wantBrandMark: shouldProminentLogoInFalTemplate(theme, preset.prominentLogo)
+      || Boolean(input.logoUrl?.trim()),
+  });
+  const prominentLogo = brandMark.mode === 'official_logo';
   const antiPatternDirective = (input.antiPatterns ?? []).length
     ? `Avoid: ${input.antiPatterns!.slice(0, 6).join('; ')}.`
     : undefined;
@@ -637,6 +648,7 @@ async function generateOne(
       brandDirectives: [
         ...brandIntelligenceDirectives,
         slotDesignRecipe,
+        brandMark.xorDirective,
         'LAYOUT TEMPLATE CONTRACT: reusable brand layout recipe — graphic craft system (rail/plate/L/rules/soft split) + photo + type. NOT a raw photo with floating center text, and NOT a solid painted header panel + photo strip Canva sandwich.',
         `SLOT: ${layoutFamilySeed}`,
         preset.format === 'post'
@@ -647,7 +659,11 @@ async function generateOne(
               ? 'REEL CANVAS LOCK: Exact Instagram Reel 9:16 (1080×1920). Compose as a reel cover — full-height frame, motion-ready typography. FORBIDDEN: 4:5 feed crop language or square feed composition.'
               : '',
         'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
-        'FORBIDDEN LOGO: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone.',
+        brandMark.mode === 'official_logo'
+          ? 'FORBIDDEN LOGO PAINT: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone. Do not also type the brand name.'
+          : brandMark.mode === 'text_wordmark'
+            ? `BRAND WORDMARK: type "${input.brandName}" once as a small corner mark — do not invent a logo icon.`
+            : 'FORBIDDEN BRAND MARK: no logo and no typed brand name on this canvas.',
         'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
         picked?.url
           ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
@@ -655,6 +671,9 @@ async function generateOne(
         ...layoutDirectives,
         ...(antiPatternDirective ? [antiPatternDirective] : []),
       ].filter(Boolean),
+      // Only pass logo into the image pipeline when XOR mode is official_logo —
+      // otherwise generators may both composite logo and type the name.
+      logoUrl: brandMark.logoUrl,
     }),
     preset.format === 'reel_cover' ? 'reel' : preset.format,
   );
@@ -678,7 +697,7 @@ async function generateOne(
         format: imageFormatForFormat(preset.format),
         location: input.location,
         businessType: input.sector,
-        logoUrl: prominentLogo ? input.logoUrl : undefined,
+        logoUrl: brandMark.logoUrl,
         overlayColor: input.brandColors.primary,
         backgroundIntent: sceneHint,
       });
@@ -715,7 +734,7 @@ async function generateOne(
         sceneHint,
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
-        logoUrl: prominentLogo ? input.logoUrl : undefined,
+        logoUrl: brandMark.logoUrl,
         logoPlacement: layoutBrief.logoPlacement ?? undefined,
         location: input.location,
         sector: input.sector,
@@ -764,7 +783,8 @@ async function generateOne(
       defaultHeroPhotoLock: Boolean(defaultHeroPhoto),
       intent: preset.intent,
       prominentLogo,
-      logoUrl: input.logoUrl,
+      logoUrl: brandMark.logoUrl,
+      brandMarkMode: brandMark.mode,
       designIntensityLevel,
       productionIntensityLevel: productionIntensity,
       catalogSlotKey: preset.catalogSlotKey ?? null,

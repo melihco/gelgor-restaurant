@@ -60,6 +60,7 @@ import {
   POST_CANVAS,
   STORY_CANVAS,
 } from '@/lib/design-canvas-aspect';
+import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 
@@ -900,22 +901,28 @@ function buildDesignedDesignCardPrompt(
       : isVertical
         ? 'story'
         : 'feed_post';
+  const brandMark = resolveBrandMarkMode({
+    logoUrl: input.logoUrl,
+    brandName: input.brandName,
+    wantBrandMark: true,
+  });
+  const logoProvided = brandMark.mode === 'official_logo';
   const brandMarkInstruction = buildFalLogoPlacementContract({
-    logoProvided: Boolean(input.logoUrl),
+    logoProvided,
     brandName: input.brandName,
     channel: logoChannel,
     hasPhotoHero: true,
     placement: input.logoPlacement ?? null,
   });
-  const logoRefNote = input.logoUrl
-    ? 'LOGO ASSET: Official logo is composited after generation — leave the reserved logo zone empty; do not paint any brand mark in this image.'
+  const logoRefNote = logoProvided
+    ? 'LOGO ASSET: Official logo is composited after generation — leave the reserved logo zone empty; do not paint any brand mark or type the brand name in this image.'
     : '';
 
   const onCanvasTextContract = buildFalOnCanvasTextContract({
     headline: safeHeadline,
     subtitle: safeSubtitle,
-    brandName: input.brandName,
-    logoProvided: Boolean(input.logoUrl),
+    brandName: brandMark.typeWordmark ? input.brandName : undefined,
+    logoProvided,
     channel: logoChannel,
   });
 
@@ -933,7 +940,9 @@ function buildDesignedDesignCardPrompt(
     bodyFont: input.bodyFont,
   });
 
-  const logoBlock = [logoRefNote, brandMarkInstruction].filter(Boolean).join(' ');
+  const logoBlock = [brandMark.xorDirective, logoRefNote, brandMarkInstruction]
+    .filter(Boolean)
+    .join(' ');
   // Vertical prompts need more room: intensity lock + text contracts both must survive.
   // Feed posts get a slightly higher budget so brand recipe + creative brief can coexist
   // with LAYOUT LOCK / TYPE CONTAINMENT / HARD CONTRACTS.
@@ -1087,8 +1096,8 @@ function buildDesignedDesignCardPrompt(
     prompt = harmonizePhotoFirstDesignPrompt(prompt, {
       vibe: input.vibe,
       subtitle: input.subtitle,
-      brandName: input.brandName,
-      logoProvided: Boolean(input.logoUrl),
+      brandName: brandMark.typeWordmark ? input.brandName : undefined,
+      logoProvided,
       channel: logoChannel,
     });
   }
@@ -1129,7 +1138,7 @@ export function buildHarmonizedPhotoFirstTypographyBlock(input: {
   vibe: TypographyVibe;
   subtitle?: string;
   brandName?: string;
-  /** When true, never AI-type the brand — official logo is composited later. */
+  /** When true, official logo is composited — never type the brand name. */
   logoProvided?: boolean;
   channel?: FalLogoCanvasChannel;
 }): string[] {
@@ -1145,9 +1154,9 @@ export function buildHarmonizedPhotoFirstTypographyBlock(input: {
       `Preferred tagline text (exact): "${input.subtitle.trim().slice(0, 48)}" — small, refined, vibe-aligned.`,
     );
   }
-  if (input.logoProvided && input.brandName?.trim()) {
+  if (input.logoProvided) {
     lines.push(
-      `BRAND: official logo composited in post — leave a quiet corner empty; do NOT type or spell "${input.brandName.trim()}".`,
+      'BRAND MARK XOR: official logo composited later — leave a quiet corner empty; do NOT type or invent a brand wordmark.',
     );
   } else if (input.brandName?.trim()) {
     const mark = resolveBrandMarkLockup(input.brandName);

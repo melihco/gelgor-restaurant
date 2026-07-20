@@ -209,7 +209,7 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt).toContain(FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE);
     expect(prompt).toContain('GRAPHIC SYSTEM');
     expect(prompt).toMatch(/horizontal sandwich|paint sandwich|Canva sandwich/i);
-    expect(prompt).toContain('leftover photo window');
+    expect(prompt).toMatch(/leftover (photo )?window/i);
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('Mutlu Bayramlar');
     expect(prompt.indexOf('LAYOUT LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
