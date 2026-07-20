@@ -5061,11 +5061,16 @@ export function MissionHub() {
       queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
       queryClient.invalidateQueries({ queryKey: ['usage-cost', wsId] });
       if (data.proposals_created === 0) {
-        if (data.skip_reason === 'blocking_missions') {
+        const skip = String(data.skip_reason ?? '');
+        const isBlocked =
+          skip === 'blocking_missions'
+          || skip === 'awaiting_approval'
+          || skip === 'active_mission';
+        if (isBlocked) {
           void queryClient.invalidateQueries({ queryKey: ['missions', wsId] });
         }
         const msg = data.message?.trim()
-          || (data.skip_reason === 'blocking_missions'
+          || (isBlocked
             ? 'Önce bekleyen veya aktif misyonu onaylayın / reddedin.'
             : 'Yeni öneri üretilemedi — birkaç dakika sonra tekrar deneyin.');
         setProposeError(msg);
@@ -5424,7 +5429,11 @@ export function MissionHub() {
           errLower.includes('429') ||
           errLower.includes('openai');
         const isBlockingError =
-          errLower.includes('bekleyen/aktif') || errLower.includes('bitirin veya reddedin');
+          errLower.includes('bekleyen')
+          || errLower.includes('onaylayın')
+          || errLower.includes('reddedin')
+          || errLower.includes('bitirin')
+          || errLower.includes('aktif misyon');
         const blockingList = [...proposed, ...active];
         // Only surface brand-field gaps after snapshot load; never mask API errors (blocking, quota, etc.).
         const showBrandMissing =

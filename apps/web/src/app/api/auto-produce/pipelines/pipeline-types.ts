@@ -105,6 +105,11 @@ export interface SlotProductionInputs {
   reelMotionSpec?: Record<string, unknown> | null;
   /** Extra gallery URLs for sequential beat montage (excludes primary ref). */
   montagePhotoUrls?: string[];
+  /**
+   * Gallery analysis map (url → meta) for idea→photo rematch inside pipelines
+   * that compose on gallery (e.g. premium_editorial).
+   */
+  galleryAnalysis?: Record<string, unknown> | null;
   /** Tenant-enabled catalog snapshot — matcher excludes disabled slot templates. */
   brandActiveSlots?: import('@/lib/brand-active-slot-resolver').BrandActiveSlotSet | null;
   /** New Brief form — user-intent driven fal art-director production. */

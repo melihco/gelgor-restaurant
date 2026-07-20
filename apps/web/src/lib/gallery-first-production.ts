@@ -56,6 +56,8 @@ const SLOT_FORMAT: Partial<Record<ProductionSlotRole, SlotFormat>> = {
   campaign_reel_motion: 'reel',
   paid_ad_creative: 'post',
   paid_ad_google_creative: 'post',
+  premium_editorial_campaign_post: 'post',
+  premium_editorial_campaign_story: 'story',
 };
 
 export function slotFormatFromAssignment(assignment: ProductionAssignment): SlotFormat {

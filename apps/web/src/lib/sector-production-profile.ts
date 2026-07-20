@@ -352,7 +352,8 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     hasPhysicalVenue: false,
     galleryReliability: 'low',
     defaultVisualSubject: 'product_closeup',
-    defaultEnhanceLevel: 'strong',
+    // moderate: full restage too often morphs packaging/labels
+    defaultEnhanceLevel: 'moderate',
     forceAdaptiveScene: true,
     captionDrivenDefault: false,
     galleryRevisionDefault: true,
@@ -370,7 +371,7 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     colorGrade: 'neutral',
     reelPacing: 'mid_tempo',
     headlineFallback: 'Yeni Ürün',
-    recommendedEnhanceLevelLabel: 'Strong — product photographer staging',
+    recommendedEnhanceLevelLabel: 'Moderate — product BG staging, packaging locked',
     menuIsServiceList: false,
   },
 
@@ -380,7 +381,8 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     hasPhysicalVenue: true,
     galleryReliability: 'low',
     defaultVisualSubject: 'product_closeup',
-    defaultEnhanceLevel: 'strong',
+    // moderate: protect real SKU labels over aggressive BG restage
+    defaultEnhanceLevel: 'moderate',
     forceAdaptiveScene: true,
     captionDrivenDefault: false,
     galleryRevisionDefault: true,
@@ -398,7 +400,7 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     colorGrade: 'warm',
     reelPacing: 'mid_tempo',
     headlineFallback: 'Yerel Lezzet',
-    recommendedEnhanceLevelLabel: 'Strong — artisan product photographer staging',
+    recommendedEnhanceLevelLabel: 'Moderate — artisan packaging locked, BG staging',
     menuIsServiceList: false,
   },
 
@@ -408,7 +410,7 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     hasPhysicalVenue: false,
     galleryReliability: 'low',
     defaultVisualSubject: 'product_closeup',
-    defaultEnhanceLevel: 'strong',
+    defaultEnhanceLevel: 'moderate',
     forceAdaptiveScene: true,
     captionDrivenDefault: false,
     galleryRevisionDefault: true,
@@ -420,7 +422,7 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     colorGrade: 'warm',
     reelPacing: 'slow_burn',
     headlineFallback: 'El Yapımı',
-    recommendedEnhanceLevelLabel: 'Strong — handcraft product staging',
+    recommendedEnhanceLevelLabel: 'Moderate — handcraft packaging locked',
     menuIsServiceList: false,
   },
 

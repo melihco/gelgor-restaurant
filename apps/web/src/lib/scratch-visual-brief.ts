@@ -256,6 +256,19 @@ export function buildScratchCreativePromptLines(input: {
       'WARNING: Thin idea brief — do not invent unrelated products or venues; stay on-brand.',
     );
   }
+  const productCue = Boolean(
+    brief.productType
+    || /\bproduct\b/i.test(brief.visualSubjectHint)
+    || /\bproduct\b/i.test(brief.slotRole)
+    || /\bproduct\b/i.test(brief.catalogSlotKey),
+  );
+  if (productCue) {
+    lines.push(
+      'PACKAGING FIDELITY: NEVER invent or approximate brand logos/labels on jars or bottles.',
+      'Without a real product reference photo: blank unlabeled packaging only — no fake brand text.',
+      'With a real product reference: keep label/logo letter-perfect; change only the environment.',
+    );
+  }
   const headline = trimStr(input.headline, 120);
   const caption = trimStr(input.caption, 400);
   if (headline) lines.push(`Asset title (not text in image): ${headline}`);

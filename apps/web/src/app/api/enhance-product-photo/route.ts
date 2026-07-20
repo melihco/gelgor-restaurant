@@ -61,6 +61,12 @@ import { recordWorkspaceUsageCost } from '@/lib/usage-cost-client';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { serverConfig } from '@/lib/server-config';
+import {
+  PRODUCT_PACKAGING_PRESERVE_BLOCK,
+  ensurePackagingFidelityPrompt,
+  productStagingLevelLock,
+} from '@/lib/product-packaging-fidelity';
+import { stageProductPackagingSafe } from '@/lib/product-packaging-composite';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -154,11 +160,7 @@ function preservationBlock(
 • Only adjust lighting, color grade, and atmosphere to match brand identity + post brief
 • Do NOT invent signage, menus, or text overlays in the image`;
   }
-  return `⚠️ CRITICAL PRESERVATION RULES — NEVER VIOLATE:
-• ALL text on the product (label copy, brand name, ingredients, weight) stays EXACTLY as written
-• The product's logo, colors, shape, and position are preserved pixel-perfect
-• Packaging design and graphics are UNTOUCHED
-• Do NOT stylize, recolor, or redesign the product in any way`;
+  return PRODUCT_PACKAGING_PRESERVE_BLOCK;
 }
 
 function buildQuickSceneBrief(
@@ -186,9 +188,9 @@ function buildQuickSceneBrief(
         full: 'Cinematic lighting and editorial color grade on the SAME venue photo. Props only at edges if they exist in frame — never fake a new location.',
       }
     : {
-        subtle: `ONLY enhance: (1) lighting — add warm professional light, soft shadows; (2) color balance — more vivid but natural. DO NOT change background or surroundings.`,
-        moderate: `Change: (1) background to "${bg}"; (2) add warm professional lighting with gentle bokeh; (3) add max 1 contextually relevant prop that does NOT overlap the product.`,
-        full: `Full scene transformation: (1) new background: "${bg}"; (2) cinematic golden-hour or editorial lighting; (3) 1-2 contextual props at scene edges; (4) lens compression, shallow depth of field; (5) magazine-quality composition.`,
+        subtle: `ONLY enhance: (1) lighting — add warm professional light, soft shadows; (2) color balance — more vivid but natural. DO NOT change background or surroundings. ${productStagingLevelLock('subtle')}`,
+        moderate: `Change ONLY outside the product: (1) background to "${bg}"; (2) warm professional lighting with gentle bokeh; (3) max 1 contextual prop that does NOT overlap or touch the product. ${productStagingLevelLock('moderate')}`,
+        full: `Background/atmosphere transformation OUTSIDE the locked product: (1) new background "${bg}"; (2) cinematic lighting; (3) at most 1-2 edge props that never touch the label; (4) shallow depth of field on the BACKGROUND only. ${productStagingLevelLock('full')} Magazine look must NOT regenerate or restyle the SKU.`,
       };
 
   const prompt = `${isDigital ? 'Digital product' : isVenue ? 'Venue' : 'Product'} photography enhancement for ${brandName}.
@@ -358,6 +360,7 @@ type EnhanceRunOpts = {
   embedLogo: boolean;
   referenceImageUrls: string[];
   sceneBrief: Record<string, unknown>;
+  visualSubject: ResolvedVisualSubject;
 };
 
 async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
@@ -367,6 +370,73 @@ async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
 }> {
   const stages: string[] = [`scene_director:${opts.sceneBrief._source ?? 'crewai'}`];
   const enhancePrompt = String(opts.sceneBrief.gpt_image2_prompt || '');
+
+  // Product hero: cutout + empty plate — never generative-edit packaging pixels.
+  if (opts.visualSubject === 'product_hero' && opts.level !== 'subtle') {
+    console.log(
+      `[enhance-product] packaging-safe cutout path `
+      + `level=${opts.level} url=${opts.photoUrl.slice(0, 72)}`,
+    );
+    const staged = await stageProductPackagingSafe({
+      productImageUrl: opts.photoUrl,
+      businessType: opts.businessType,
+      brandName: opts.brandName,
+      productType: opts.productType,
+      backgroundConcept: String(opts.sceneBrief.background_concept ?? ''),
+    });
+    if (staged) {
+      console.log(`[enhance-product] packaging-safe ok stages=${staged.stages.join('>')}`);
+      stages.push(...staged.stages);
+      let finalBuffer = staged.buffer;
+      let logoApplied = false;
+      if (opts.embedLogo) {
+        const logoUrl = opts.explicitLogoUrl || detectLogoUrl(opts.referenceImageUrls);
+        if (logoUrl) {
+          try {
+            const logoResult = await compositeLogoOnPhoto({
+              baseImageBuffer: finalBuffer,
+              logoUrl,
+              placement: (opts.sceneBrief.logo_placement as LogoPlacement) || 'bottom_right',
+              sizePct: Number(opts.sceneBrief.logo_size_pct ?? 12),
+              opacity: Number(opts.sceneBrief.logo_opacity ?? 0.75),
+              padding: 20,
+            });
+            if (logoResult.logoApplied) {
+              finalBuffer = logoResult.buffer;
+              logoApplied = true;
+              stages.push(`logo_compositor:${opts.sceneBrief.logo_placement ?? 'bottom_right'}`);
+            }
+          } catch (err) {
+            console.warn('[enhance-product] logo composite skipped:', err);
+          }
+        }
+      }
+      const r2Url = await uploadEnhancedBufferToR2(finalBuffer, opts.workspaceId);
+      if (r2Url) stages.push('r2_upload');
+      return {
+        imageUrl: r2Url ?? `data:image/jpeg;base64,${finalBuffer.toString('base64')}`,
+        logoApplied,
+        stages,
+      };
+    }
+    // Never GPT-edit packaging pixels — return source photo (lighting untouched beats morph).
+    console.warn(
+      '[enhance-product] packaging-safe composite unavailable — passthrough original (no GPT morph)',
+    );
+    stages.push('packaging_passthrough_original');
+    const sourceBuf = await fetchImageBuffer(opts.photoUrl);
+    if (!sourceBuf) {
+      throw new Error(`Could not fetch source image: ${opts.photoUrl.slice(0, 80)}`);
+    }
+    const r2Url = await uploadEnhancedBufferToR2(sourceBuf, opts.workspaceId);
+    if (r2Url) stages.push('r2_upload');
+    return {
+      imageUrl: r2Url ?? `data:image/jpeg;base64,${sourceBuf.toString('base64')}`,
+      logoApplied: false,
+      stages,
+    };
+  }
+
   const openai = new OpenAI({ apiKey: opts.apiKey });
 
   const imageBuffer = await fetchImageBuffer(opts.photoUrl);
@@ -515,7 +585,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const missionBrief = body.missionBrief ?? '';
   const brandName = body.brandName ?? 'Marka';
   const productType = body.productType ?? 'ürün';
-  const level = (body.level ?? 'moderate') as EnhanceLevel;
+  let level = (body.level ?? 'moderate') as EnhanceLevel;
   const businessType = body.businessType ?? 'local_artisan';
   const workspaceId = body.workspaceId ?? '';
   const explicitLogoUrl = body.logoUrl;
@@ -523,6 +593,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const referenceImageUrls = body.referenceImageUrls ?? [];
   const rawSubject = (body.visualSubject ?? 'auto') as AiVisualSubject;
   const visualSubject = resolveVisualSubject(rawSubject, businessType);
+  // full BG restage frequently regenerates labels — cap product_hero at moderate
+  if (visualSubject === 'product_hero' && level === 'full') {
+    console.warn('[enhance-product] capping product_hero enhance level full → moderate (packaging fidelity)');
+    level = 'moderate';
+  }
 
   const directorCaption = resolveDirectorCaption(caption, headline, missionBrief);
   const missionId = body.missionId;
@@ -551,6 +626,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             : fingerprint,
         };
       }
+      // Always force packaging lock for physical product staging (Crew/prebuilt/quick).
+      if (visualSubject === 'product_hero') {
+        brief = {
+          ...brief,
+          gpt_image2_prompt: ensurePackagingFidelityPrompt(
+            String(brief.gpt_image2_prompt || ''),
+          ),
+        };
+      }
       return brief;
     })();
 
@@ -571,6 +655,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             embedLogo,
             referenceImageUrls,
             sceneBrief,
+            visualSubject,
           });
           return { original: photoUrl, imageUrl };
         } catch (err: unknown) {

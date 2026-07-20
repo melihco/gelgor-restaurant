@@ -31,7 +31,8 @@ export type ProductionPipeline =
   | 'meta_ad'            // Meta reklam kreatifi
   | 'google_ad'          // Google Ads RSA / görsel kreatif
   | 'carousel_gallery'   // Çoklu galeri slayt
-  | 'product_showcase';  // Ürün vitrin (AI arka plan değişimi)
+  | 'product_showcase'   // Ürün vitrin (AI arka plan değişimi)
+  | 'premium_editorial'; // Premium Editorial Campaign — layered prompt architecture
 
 /**
  * Feed'de caption/hashtag gösterilir mi?
@@ -75,7 +76,11 @@ export type ProductionSlotRole =
   /** Meta reklam kreatifi */
   | 'paid_ad_creative'
   /** Google Ads RSA / görsel kreatif */
-  | 'paid_ad_google_creative';
+  | 'paid_ad_google_creative'
+  /** Premium Editorial Campaign — layered Brand DNA → QA post */
+  | 'premium_editorial_campaign_post'
+  /** Premium Editorial Campaign story (9:16) */
+  | 'premium_editorial_campaign_story';
 
 export interface MissionProductionSlot {
   role: ProductionSlotRole;
@@ -829,6 +834,7 @@ export function pipelineForSlotRole(role: ProductionSlotRole): ProductionPipelin
   if (role === 'fal_only_post') return 'fal_only_post';
   if (role === 'fal_only_reel') return 'fal_only_reel';
   if (role === 'product_showcase_post' || role === 'product_showcase_story') return 'product_showcase';
+  if (role === 'premium_editorial_campaign_post' || role === 'premium_editorial_campaign_story') return 'premium_editorial';
   const slot = [
     ...WEEKLY_ORGANIC,
     ...OPPORTUNITY_ORGANIC,

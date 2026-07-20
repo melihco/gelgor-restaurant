@@ -248,14 +248,16 @@ export function buildAdaptiveScenePromptBlock(input: {
     lines.push(
       `Instagram product-hero presentation for: "${brief}".`,
       'Clean editorial framing, premium shadows, scroll-stopping composition.',
-      'Preserve product shape, label, and branding; upgrade only environment, light, and staging.',
-      'Jewelry/accessories: boutique display or lifestyle flat-lay; packaged goods: contextual props at edges only.',
+      'LOCKED PRODUCT: shape, lid, label, logo, and every printed character stay letter-perfect from the source photo.',
+      'Upgrade ONLY environment, light, and staging outside the product silhouette — never rewrite or invent packaging.',
+      'Jewelry/accessories: boutique display or lifestyle flat-lay; packaged goods: contextual props at edges only (never overlapping the label).',
     );
   } else {
     lines.push(
       `Lifestyle composite scene for: "${brief}".`,
       'Merge subject with a believable real-world setting (e.g. olive grove for olive oil, workshop for artisan goods).',
       'The final image must read as one coherent photograph — not a pasted cutout.',
+      'If a packaged product is the hero: keep label/logo letter-perfect; change only background and props outside the SKU.',
       'Props and background support the caption story; never obscure the hero subject.',
     );
   }

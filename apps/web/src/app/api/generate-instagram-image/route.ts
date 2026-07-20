@@ -19,6 +19,10 @@ import {
   buildScratchCreativePromptLines,
   buildScratchVisualBrief,
 } from '@/lib/scratch-visual-brief';
+import {
+  expectsProductPackaging,
+  packagingAwareTextConstraints,
+} from '@/lib/product-packaging-fidelity';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -807,12 +811,17 @@ function buildPrompt(input: InstagramImageInput) {
   const sectorNegativeGuards = getSectorImageNegativeGuards(input.industry ?? input.businessType);
   const sectorProfile = getSectorProfile(input.industry ?? input.businessType);
   const isVenueFood = sectorProfile.defaultVisualSubject === 'venue_interior' && !sectorMenuIsServiceList(input.industry ?? input.businessType);
+  const packagingExpected = expectsProductPackaging({
+    businessType: input.industry ?? input.businessType,
+    productType: input.productType,
+    visualSubjectHint: input.sceneHint,
+    slotRole: input.slotRole,
+  });
 
   const negativeConstraints = compactLines([
     'ABSOLUTELY FORBIDDEN: fake Instagram screenshot, phone screen, social media UI, like/comment/share icons, profile header, caption block, hashtag text, post frame, story frame, browser window, app interface.',
     'Avoid: AI poster look, over-designed graphic, illustration, 3D render, cartoon, collage, flyer, menu board, stock-photo cliche, theatrical staged composition.',
-    'CRITICAL — NO TEXT IN IMAGE: Do not render any letters, words, numbers, glyphs, symbols, typography, captions, subtitles, watermarks, logos, banners, labels, price tags, menus, signs, headlines, or any text artifact of any kind inside the generated image. Text must be completely absent. Any visible character will disqualify the image.',
-    'No random brand names, no fake business names, no event sponsor names, no readable signs, no garbled or partial text, no text artifacts, no letterforms of any kind.',
+    ...packagingAwareTextConstraints(packagingExpected),
     // Sector-specific guards from profile table
     ...sectorNegativeGuards,
     isVenueFood
@@ -1469,7 +1478,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     try {
-      const enhancePrompt = buildEnhancePrompt(input.brandName, input.enhanceContext, input.assetIntent, input.logoUrl, input.brandVibeProfile);
+      // productShowcaseMode sends a packaging-preserve BG prompt in enhanceContext —
+      // do NOT replace it with the generic retouch prompt (that ignored BG + packaging rules).
+      const enhancePrompt = input.productShowcaseMode
+        ? (typeof input.enhanceContext === 'string' && input.enhanceContext.trim()
+          ? input.enhanceContext.trim()
+          : buildProductBackgroundPrompt({
+              brandName: input.brandName,
+              businessType: input.industry ?? input.businessType,
+              location: input.location,
+              visualDna: input.visualDna,
+              brandTone: input.brandTone,
+              logoUrl: input.logoUrl,
+            }))
+        : buildEnhancePrompt(input.brandName, input.enhanceContext, input.assetIntent, input.logoUrl, input.brandVibeProfile);
       const urls = await selectUrlsForEnhance();
       const enhanced = await Promise.all(
         urls.map((photoUrl) => enhanceWithOpenAI(photoUrl, contentType, enhancePrompt)),

@@ -14,10 +14,13 @@ const LIFESTYLE_USE_CASES = new Set([
 ]);
 
 const DESIGNED_ROLES = new Set<ProductionSlotRole>([
+
   'designed_post',
   'campaign_story_motion',
   'campaign_reel_motion',
   'paid_ad_creative',
+  'premium_editorial_campaign_post',
+  'premium_editorial_campaign_story',
 ]);
 
 function normalizeUseCase(idea: Record<string, unknown>): string {

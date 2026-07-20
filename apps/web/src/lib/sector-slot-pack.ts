@@ -48,6 +48,10 @@ export interface SlotArchetypeInstance {
   designTemplateType?: string;
   /** Designed Fal story — ideation + production get premium_composition defaults. */
   requiresPremiumComposition?: boolean;
+  /** Catalog tier override (default: reel/carousel → premium, else standard). */
+  tier?: 'standard' | 'premium';
+  /** Extra prompt_pack fields merged into the slot definition. */
+  promptPackExtras?: Record<string, unknown>;
 }
 
 export interface SectorSlotPack {
@@ -136,9 +140,55 @@ export const CROSS_SECTOR_SERVICE_SLOTS: SlotArchetypeInstance[] = [
   },
 ];
 
+/**
+ * Premium Editorial Campaign — enabled by default on every sector pack.
+ * Kept separate from facility-gated CROSS_SECTOR_SERVICE_SLOTS.
+ */
+export const CROSS_SECTOR_PREMIUM_EDITORIAL_SLOTS: SlotArchetypeInstance[] = [
+  {
+    suffix: 'premium_editorial_campaign_post',
+    labelTr: 'Premium Editorial Campaign',
+    labelEn: 'Premium Editorial Campaign',
+    format: 'post',
+    pipeline: 'premium_editorial',
+    slotRole: 'premium_editorial_campaign_post',
+    designTemplateType: 'campaign_announcement',
+    requiresPremiumComposition: true,
+    tier: 'premium',
+    enabledByDefault: true,
+    promptPackExtras: {
+      premium_editorial: true,
+      slot_code: 'PREMIUM_EDITORIAL_CAMPAIGN',
+      quality_preset: 'PremiumMediterraneanEditorialV1',
+      prompt_architecture_version: 'premium-editorial-v1',
+    },
+  },
+  {
+    suffix: 'premium_editorial_campaign_story',
+    labelTr: 'Premium Editorial Story',
+    labelEn: 'Premium Editorial Story',
+    format: 'story',
+    pipeline: 'premium_editorial',
+    slotRole: 'premium_editorial_campaign_story',
+    designTemplateType: 'campaign_announcement',
+    requiresPremiumComposition: true,
+    tier: 'premium',
+    enabledByDefault: true,
+    promptPackExtras: {
+      premium_editorial: true,
+      slot_code: 'PREMIUM_EDITORIAL_CAMPAIGN',
+      quality_preset: 'PremiumMediterraneanEditorialV1',
+      prompt_architecture_version: 'premium-editorial-v1',
+    },
+  },
+];
+
 function withCrossSectorServiceSlots(pack: SectorSlotPack): SectorSlotPack {
   const existing = new Set(pack.instances.map((i) => i.suffix));
-  const extras = CROSS_SECTOR_SERVICE_SLOTS.filter((s) => !existing.has(s.suffix));
+  const extras = [
+    ...CROSS_SECTOR_SERVICE_SLOTS,
+    ...CROSS_SECTOR_PREMIUM_EDITORIAL_SLOTS,
+  ].filter((s) => !existing.has(s.suffix));
   if (extras.length === 0) return pack;
   return { ...pack, instances: [...pack.instances, ...extras] };
 }
@@ -816,16 +866,19 @@ export function instanceToSlotDefinition(
     slot_role: instance.slotRole ?? inferSlotRole(instance.format),
     design_template_type: designType,
     library_slot_key: inferLibrarySlotKey(slotKey, designType),
-    tier: instance.format === 'reel' || instance.format === 'carousel' ? 'premium' : 'standard',
+    tier: instance.tier ?? (instance.format === 'reel' || instance.format === 'carousel' ? 'premium' : 'standard'),
     match_signals: buildMatchSignals(slotKey, designType),
-    prompt_pack: instance.requiresPremiumComposition
-      ? {
-        ...buildDesignedStoryPromptPack(instance.labelEn),
-        scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
-      }
-      : {
-        scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
-      },
+    prompt_pack: {
+      ...(instance.requiresPremiumComposition
+        ? {
+          ...buildDesignedStoryPromptPack(instance.labelEn),
+          scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
+        }
+        : {
+          scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
+        }),
+      ...(instance.promptPackExtras ?? {}),
+    },
     optional_tags: instance.optionalTags ?? [],
     enabled_by_default: instance.enabledByDefault ?? true,
     sort_order: sortOrder,

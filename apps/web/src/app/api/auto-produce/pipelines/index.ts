@@ -19,6 +19,7 @@ export { falVideoHandler } from './fal-video-pipeline';
 export { productShowcaseHandler } from './product-showcase-pipeline';
 export { produceFalOnlySlot, falOnlyHandler } from './fal-only-pipeline';
 export { produceFalDesignedPost, falDesignHandler } from './fal-designed-post-pipeline';
+export { premiumEditorialHandler } from './premium-editorial-pipeline';
 export type { FalOnlySlotInput, FalOnlySlotResult } from './fal-only-pipeline';
 export type { FalDesignedPostInput, FalDesignedPostResult } from './fal-designed-post-pipeline';
 export {

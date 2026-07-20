@@ -357,6 +357,7 @@ import { falVideoHandler } from './pipelines/fal-video-pipeline';
 import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
 import { falOnlyHandler, produceFalOnlySlot } from './pipelines/fal-only-pipeline';
 import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
+import { premiumEditorialHandler } from './pipelines/premium-editorial-pipeline';
 import { runPipelineStages } from './pipelines/pipeline-types';
 import type { SlotProductionContext, VideoProduceMeta } from './pipelines/pipeline-types';
 import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
@@ -3556,6 +3557,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             }
             return extras.length ? extras : undefined;
           })(),
+          galleryAnalysis: galleryMeta,
           brandActiveSlots,
           falAspectRatio: resolveFalSlotAspectRatio({
             isPaidAd: isPaidAdSlot,
@@ -3605,6 +3607,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       };
       await runPipelineStages(slotCtx, [
         falVideoHandler,
+        premiumEditorialHandler,
         falDesignHandler,
         falOnlyHandler,
         productShowcaseHandler,

@@ -48,6 +48,7 @@ import {
 import { StoryAudioSettingsPanel } from '@/components/brand/StoryAudioSettingsPanel';
 import { ReelMotionSettingsPanel } from '@/components/brand/ReelMotionSettingsPanel';
 import { BrandProductShowcasePanel } from '@/components/brand/BrandProductShowcasePanel';
+import { BrandPremiumEditorialPanel } from '@/components/brand/BrandPremiumEditorialPanel';
 import { BrandProductionEnginesPanel } from '@/components/brand/BrandProductionEnginesPanel';
 import { TenantOperatingCapabilitiesEditor } from '@/components/brand/TenantOperatingCapabilitiesEditor';
 import { TenantGalleryPolicyBanner } from '@/components/brand/TenantGalleryPolicyBanner';
@@ -5138,10 +5139,24 @@ export function BrandConstitution() {
             <CollapsibleGroup
               t={t}
               title="Tasarım motorları & hareket"
-              subtitle="Ürün vitrini, üretim motorları, hareket stili, reel ve story sesi"
+              subtitle="Premium Editorial, ürün vitrini, üretim motorları, hareket stili, reel ve story sesi"
               accent="#8B5CF6"
               defaultOpen
             >
+
+            {tenantId && (
+              <SCard t={t} title="Premium Editorial Campaign" accent="#C9A227">
+                <BrandPremiumEditorialPanel
+                  tenantId={tenantId}
+                  t={t}
+                  galleryUrls={galleryRefUrls}
+                  logoUrl={typeof (pyCtx as { logo_url?: string } | undefined)?.logo_url === 'string'
+                    ? (pyCtx as { logo_url?: string }).logo_url
+                    : null}
+                />
+              </SCard>
+            )}
+
             {tenantId && (
               <SCard t={t} title="Ürün Vitrin (Product Showcase)" accent="#10B981">
                 <BrandProductShowcasePanel

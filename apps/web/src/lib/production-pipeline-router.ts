@@ -455,7 +455,8 @@ export function assignmentImpliesReel(role: ProductionSlotRole): boolean {
 export function assignmentImpliesStoryFormat(role: ProductionSlotRole): boolean {
   return role === 'campaign_story_motion'
     || role === 'organic_story_still'
-    || role === 'product_showcase_story';
+    || role === 'product_showcase_story'
+    || role === 'premium_editorial_campaign_story';
 }
 
 /**

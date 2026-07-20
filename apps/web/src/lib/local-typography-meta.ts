@@ -22,4 +22,6 @@ export const LOCAL_TYPOGRAPHY_ROLES: ReadonlySet<string> = new Set([
   'fal_designed_post',
   'fal_only_story',
   'fal_only_post',
+  'premium_editorial_campaign_post',
+  'premium_editorial_campaign_story',
 ]);

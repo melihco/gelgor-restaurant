@@ -49,6 +49,7 @@ function formatForSlotRole(role: ProductionSlotRole): SlotFormat {
     case 'fal_story_motion':
     case 'fal_only_story':
     case 'product_showcase_story':
+    case 'premium_editorial_campaign_story':
       return 'story';
     case 'organic_reel':
     case 'campaign_reel_motion':
@@ -61,6 +62,7 @@ function formatForSlotRole(role: ProductionSlotRole): SlotFormat {
     case 'fal_designed_post':
     case 'fal_only_post':
     case 'product_showcase_post':
+    case 'premium_editorial_campaign_post':
     case 'paid_ad_creative':
     case 'paid_ad_google_creative':
     default:

@@ -142,14 +142,19 @@ export function applyAgencyProductionThemeDefaults(
 
   // Enhance level: sector-specific default (only if not set).
   // Map sector vocabulary (strong/light/none) → theme UI vocabulary (full/subtle/moderate).
+  // Product packaging sectors default to moderate — full BG restage too often morphs labels.
   if (!base.ai_photo_enhance_level) {
+    const productPackaging = profile.defaultVisualSubject === 'product_closeup';
     const levelMap: Record<string, string> = {
-      strong: 'full',
+      strong: productPackaging ? 'moderate' : 'full',
       moderate: 'moderate',
       light: 'subtle',
       none: 'subtle',
     };
     base.ai_photo_enhance_level = levelMap[enhanceLevel] ?? 'moderate';
+    if (productPackaging && enhanceLevel === 'strong') {
+      reasons.push(`product_enhance_cap:moderate:${profile.sectorId}`);
+    }
   }
 
   // Product-shop sectors: lock subject + adaptive mode when still on auto/unset

@@ -98,6 +98,8 @@ export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   paid_ad_google_creative: 'Google Ads kreatifi',
   product_showcase_post: 'Ürün showcase post',
   product_showcase_story: 'Ürün showcase story',
+  premium_editorial_campaign_post: 'Premium Editorial Campaign',
+  premium_editorial_campaign_story: 'Premium Editorial Story',
 };
 
 /** Slot roles that route to Satori when global + brand flags are on. */

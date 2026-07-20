@@ -22,6 +22,7 @@ export type PipelineFamily =
   | 'fal_only' // pure fal.ai slots (fal_only_*)
   | 'gallery' // direct gallery photo attach (no render)
   | 'product_showcase' // product scene studio
+  | 'premium_editorial' // Premium Editorial Campaign layered stills
   | 'other';
 
 export interface PipelineDescriptor {
@@ -71,6 +72,7 @@ export const PIPELINE_REGISTRY: Readonly<Record<string, PipelineDescriptor>> = {
   // gallery + product
   gallery_photo: d('gallery_photo', 'gallery', { retryable: false }),
   product_showcase: d('product_showcase', 'product_showcase', { isVideo: true, retryable: true }),
+  premium_editorial: d('premium_editorial', 'premium_editorial', { usesFalDesigner: false, retryable: true }),
 };
 
 function normalize(pipeline: string | undefined | null): string {
@@ -125,4 +127,10 @@ export function isFalOnlyPostPipeline(pipeline: string | undefined | null): bool
 /** Whether the pipeline produces a video artifact. */
 export function isVideoPipeline(pipeline: string | undefined | null): boolean {
   return getPipelineDescriptor(pipeline)?.isVideo ?? false;
+}
+
+
+/** Premium Editorial Campaign layered stills: `premium_editorial`. */
+export function isPremiumEditorialPipeline(pipeline: string | undefined | null): boolean {
+  return inFamily(pipeline, 'premium_editorial');
 }
