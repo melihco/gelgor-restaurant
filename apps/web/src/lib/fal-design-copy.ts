@@ -1,22 +1,21 @@
 /**
  * Mission Fal design copy — on-canvas headline/subtitle for designed posts.
  *
- * Ideation `headline` is often a calendar/signal label ("Yaz sezonu", "15 Temmuz anması").
- * Overlay text must be a short, caption-aligned marketing line in the caption's language.
- *
- * Priority (feed): canva_field_copy / text_layers → calendar tagline → punchy ideation
- * title → caption-derived complete sentence (never mid-phrase 32-char stubs).
+ * Priority: mission tagline (quoted calendar line) → canva_field_copy → ideation
+ * title → caption-derived line (last resort only).
  */
 
 import {
   detectOverlayLocale,
   FAL_FEED_OVERLAY_MAX_CHARS,
+  areFalOverlayTextsRedundant,
   isIncompleteOverlayPhrase,
   isMeaningfulFalOverlayText,
   resolveFalDisplayHeadline,
   resolveFalOverlayCopy,
   resolveFalProductionOverlayHeadline,
   resolveFalSubtitle,
+  resolveMissionPlannedOverlayLine,
   type OverlayLocale,
 } from '@/lib/fal-caption-headline';
 import {
@@ -26,6 +25,7 @@ import {
 } from '@/lib/production-headline-quality';
 import { rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
 import { preferBrandToneHeadline } from '@/lib/brand-tone-headline';
+import { resolveIdeationTagline } from '@/lib/production-idea-parse';
 
 export interface FalDesignCopyIdea {
   headline?: string;
@@ -160,9 +160,21 @@ function finalizeMissionOverlay(input: {
   return { headline: rebased.headline, subtitle: rebased.subtitle };
 }
 
+function resolvePlannedOverlayLine(
+  line: string,
+  fallbacks: string[],
+  channel: 'reel' | 'feed_post' | 'story',
+): string {
+  return resolveMissionPlannedOverlayLine(line, fallbacks, channel);
+}
+
+function extractMissionTagline(idea: FalDesignCopyIdea): string {
+  return resolveIdeationTagline(idea as Record<string, unknown>);
+}
+
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
- * Priority: canva/calendar marketing line → ideation title → caption sentence.
+ * Priority: mission tagline → canva/text_layers → ideation title → caption.
  */
 export function resolveMissionFalDesignCopy(input: {
   idea: FalDesignCopyIdea;
@@ -185,7 +197,7 @@ export function resolveMissionFalDesignCopy(input: {
   const captionLoc = detectOverlayLocale(caption);
   const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
 
-  const acceptClampedMarketingLine = (line: string): boolean => {
+  const acceptPlannedOverlayLine = (line: string): boolean => {
     if (!line || isIncompleteOverlayPhrase(line)) return false;
     if (!isMeaningfulFalOverlayText(line)) return false;
     if (isMeaninglessBrandEchoHeadline(line, brandName)) return false;
@@ -193,32 +205,41 @@ export function resolveMissionFalDesignCopy(input: {
     return true;
   };
 
-  // 1) Purpose-built overlay from canva_field_copy / text_layers (calendar hooks live here).
-  // Do NOT run caption rebias — it was replacing full marketing lines with mid-phrase stubs.
-  const extracted = extractIdeationDesignCopy(input.idea);
-  if (extracted.headline && isPublishableOverlayLine(extracted.headline, brandName, captionLoc)) {
-    const headline = resolveFalProductionOverlayHeadline(extracted.headline, [], channel);
-    if (headline && acceptClampedMarketingLine(headline)) {
-      const subtitle = resolveFalSubtitle({
-        caption,
-        headline,
-        cta: extracted.subtitle || input.cta,
-      }) ?? undefined;
-      return { headline, subtitle, source: extracted.source };
+  // 1) Mission tagline / subline — quoted line from calendar & ideation cards.
+  const missionTagline = extractMissionTagline(input.idea);
+  if (missionTagline && isPublishableOverlayLine(missionTagline, brandName, captionLoc)) {
+    const headline = resolvePlannedOverlayLine(missionTagline, [], channel);
+    if (headline && acceptPlannedOverlayLine(headline)) {
+      const ideationTitle = input.ideationHeadline.trim()
+        || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim();
+      const subtitle = ideationTitle
+        && !areFalOverlayTextsRedundant(headline, ideationTitle)
+        && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
+        ? resolvePlannedOverlayLine(ideationTitle, [headline], channel) || undefined
+        : resolveFalSubtitle({
+          caption,
+          headline,
+          cta: input.cta,
+        }) ?? undefined;
+      return { headline, subtitle, source: 'mission_tagline' };
     }
   }
 
-  // 2) Calendar tagline / subline — often the real marketing sentence.
-  const tagline = String(input.idea.tagline ?? input.idea.subline ?? '').trim();
-  if (tagline && isPublishableOverlayLine(tagline, brandName, captionLoc)) {
-    const headline = resolveFalProductionOverlayHeadline(tagline, [], channel);
-    if (headline && acceptClampedMarketingLine(headline)) {
-      const subtitle = resolveFalSubtitle({
-        caption,
-        headline,
-        cta: input.cta,
-      }) ?? undefined;
-      return { headline, subtitle, source: 'calendar_tagline' };
+  // 2) Purpose-built overlay from canva_field_copy / text_layers.
+  const extracted = extractIdeationDesignCopy(input.idea);
+  if (extracted.headline && isPublishableOverlayLine(extracted.headline, brandName, captionLoc)) {
+    const headline = resolvePlannedOverlayLine(extracted.headline, [], channel);
+    if (headline && acceptPlannedOverlayLine(headline)) {
+      const subtitleRaw = extracted.subtitle || input.cta;
+      const subtitle = subtitleRaw
+        && !areFalOverlayTextsRedundant(headline, subtitleRaw)
+        ? resolvePlannedOverlayLine(subtitleRaw, [headline], channel) || undefined
+        : resolveFalSubtitle({
+          caption,
+          headline,
+          cta: extracted.subtitle || input.cta,
+        }) ?? undefined;
+      return { headline, subtitle, source: extracted.source };
     }
   }
 

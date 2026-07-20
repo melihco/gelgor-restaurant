@@ -1285,8 +1285,13 @@ class ApiClient {
     await this.request(`/api/integrations/${connectionId}`, { method: 'DELETE' });
   }
 
-  async getGoogleAuthUrl(scopes: string = 'ads,analytics,search_console'): Promise<{ authUrl: string; requestedScopes: string }> {
-    return this.request(`/api/integrations/google/auth-url?scopes=${scopes}`);
+  async getGoogleAuthUrl(
+    scopes: string = 'ads,analytics,search_console',
+    returnTo?: string,
+  ): Promise<{ authUrl: string; requestedScopes: string }> {
+    const params = new URLSearchParams({ scopes });
+    if (returnTo?.trim()) params.set('returnTo', returnTo.trim());
+    return this.request(`/api/integrations/google/auth-url?${params.toString()}`);
   }
 
   async getAdsCampaigns(dateRange: string = 'LAST_30_DAYS'): Promise<any> {

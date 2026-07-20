@@ -136,8 +136,26 @@ export function resolveIdeationHeadline(rec: Record<string, unknown>): string {
     'title',
     'headline',
     'hook',
-    'subline',
   );
+}
+
+/**
+ * Mission-planned on-canvas tagline — the quoted line in calendar/ideation cards
+ * ("Taste the essence of summer."). Separate from concept title / headline.
+ */
+export function resolveIdeationTagline(rec: Record<string, unknown>): string {
+  const canva = (rec.canva_field_copy ?? rec.canvaFieldCopy) as Record<string, unknown> | undefined;
+  const fromCanva = canva
+    ? firstStr(canva, 'tagline', 'subtitle', 'subline', 'supporting')
+    : '';
+  const fromEvent = (rec.event_details as Record<string, unknown> | undefined)?.tagline;
+  return firstStr(
+    rec,
+    'tagline',
+    'subline',
+  )
+    || (typeof fromEvent === 'string' ? fromEvent.trim() : '')
+    || fromCanva;
 }
 
 /**

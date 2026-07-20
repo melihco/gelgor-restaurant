@@ -96,6 +96,7 @@ import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConf
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
 import { BrandHubDashboard, buildBrandHubNavItems } from '../BrandHubDashboard';
+import { SA_STUDIO_ACCENTS } from '../sa-chrome';
 import { MoreMenuPanel } from './MoreMenu';
 
 const BrandChatbotProfileCard = dynamic(
@@ -513,9 +514,32 @@ function buildAiBrandDescription(input: {
 }
 
 // ─── Inline field editor (iOS Settings row) ─────────────────────────────
-function Field({ t, label, value, onSave, multiline = false, hint }: {
+function formatChannelDisplay(raw: string): string {
+  const value = raw.trim();
+  if (!value) return '';
+  if (value.startsWith('@')) return value.slice(1);
+  try {
+    const url = new URL(value.startsWith('http') ? value : `https://${value}`);
+    const host = url.hostname.replace(/^www\./, '');
+    if (host.includes('google.') && (url.pathname.includes('/maps') || url.pathname.includes('/place'))) {
+      return 'Google Maps profili';
+    }
+    if (host.includes('business.google') || host.includes('g.page')) {
+      return 'Google Business';
+    }
+    if (host.includes('instagram.com')) {
+      const handle = url.pathname.split('/').filter(Boolean)[0];
+      return handle ? `@${handle}` : 'Instagram';
+    }
+    return host;
+  } catch {
+    return value.length > 34 ? `${value.slice(0, 32)}…` : value;
+  }
+}
+
+function Field({ t, label, value, onSave, multiline = false, hint, displayValue }: {
   t: T; label: string; value: string; onSave: (v: string) => void;
-  multiline?: boolean; hint?: string;
+  multiline?: boolean; hint?: string; displayValue?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -545,7 +569,8 @@ function Field({ t, label, value, onSave, multiline = false, hint }: {
     );
   }
 
-  const display = value || hint || 'Ekle';
+  const shown = (displayValue ?? value).trim();
+  const display = shown || hint || 'Ekle';
   const isPlaceholder = !value;
 
   if (multiline) {
@@ -1174,14 +1199,14 @@ function SCard({ t, title, children, accent }: { t: T; title: string; children: 
   );
 
   return (
-    <section style={{ marginBottom: 28 }}>
+    <section style={{ marginBottom: 22 }}>
       <SLabel t={t} text={title} accent={accent} />
       {allFields ? (
         <div className="brand-grouped-fields" style={{ ...t.surfaceGroup }}>
           {children}
         </div>
       ) : (
-        <div style={{ ...t.surfaceCard, padding: '16px' }}>
+        <div style={{ ...t.surfaceCard, padding: '14px 16px' }}>
           {children}
         </div>
       )}
@@ -3852,7 +3877,7 @@ export function BrandConstitution() {
 
       {/* ── SECTION CONTENT ── */}
       {view === 'section' && (
-      <div style={{ padding: '20px 20px 0' }}>
+      <div style={{ padding: '16px 18px 0' }}>
         {sharedStatusBanners}
 
         {tab === 'design' && productionReadiness?.productionProfile
@@ -3923,44 +3948,29 @@ export function BrandConstitution() {
             <div
               style={{
                 position: 'relative',
-                marginBottom: 18,
-                borderRadius: 22,
+                marginBottom: 16,
+                borderRadius: 20,
                 overflow: 'hidden',
-                padding: '22px 18px 18px',
+                padding: '18px 16px',
                 background: t.isDark
-                  ? `linear-gradient(145deg, ${brandPrimary}22 0%, rgba(20,20,24,0.95) 48%, rgba(12,12,14,1) 100%)`
-                  : `linear-gradient(145deg, ${brandPrimary}18 0%, #F7F5F1 42%, #FFFFFF 100%)`,
+                  ? `linear-gradient(145deg, ${brandPrimary}1f 0%, rgba(16,18,24,0.96) 52%, rgba(8,10,14,1) 100%)`
+                  : `linear-gradient(145deg, ${brandPrimary}14 0%, #F7F5F1 42%, #FFFFFF 100%)`,
                 border: `0.5px solid ${t.separator}`,
-                boxShadow: t.isDark
-                  ? 'inset 0 1px 0 rgba(255,255,255,0.06)'
-                  : '0 10px 28px rgba(20,16,12,0.06)',
               }}
             >
-              <div
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: t.isDark
-                    ? 'radial-gradient(ellipse 80% 60% at 12% 0%, rgba(255,255,255,0.08), transparent 55%)'
-                    : 'radial-gradient(ellipse 70% 50% at 10% 0%, rgba(255,255,255,0.85), transparent 50%)',
-                  pointerEvents: 'none',
-                }}
-              />
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div
                   style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 18,
+                    width: 58,
+                    height: 58,
+                    borderRadius: 16,
                     overflow: 'hidden',
                     flexShrink: 0,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    background: t.isDark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.88)',
+                    background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
                     border: `0.5px solid ${t.separator}`,
-                    boxShadow: t.isDark ? '0 8px 20px rgba(0,0,0,0.35)' : '0 8px 18px rgba(20,16,12,0.08)',
                   }}
                 >
                   {logoUrl ? (
@@ -3971,44 +3981,112 @@ export function BrandConstitution() {
                       style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }}
                     />
                   ) : (
-                    <span style={{ fontSize: 22, fontWeight: 800, color: t.textMuted, letterSpacing: '-0.04em' }}>
+                    <span style={{ fontSize: 20, fontWeight: 800, color: t.textMuted, letterSpacing: '-0.04em' }}>
                       {monogram}
                     </span>
                   )}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 4 }}>
-                    Marka profili
-                  </div>
                   <div style={{
-                    fontSize: 22, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.04em',
+                    fontSize: 20, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.035em',
                     lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {brandNameDisplay || 'Marka adı'}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                    {industryDisplay && (
-                      <span style={{
-                        fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999,
-                        color: t.textSecondary,
-                        background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                      }}>
-                        {industryDisplay}
-                      </span>
-                    )}
-                    {locationDisplay && (
-                      <span style={{
-                        fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999,
-                        color: t.textSecondary,
-                        background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                      }}>
-                        {locationDisplay}
-                      </span>
-                    )}
-                  </div>
+                  {(industryDisplay || locationDisplay) && (
+                    <div style={{
+                      marginTop: 5, fontSize: 12.5, fontWeight: 600, color: t.textMuted,
+                      letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {[industryDisplay, locationDisplay].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
+
+            {/* İçerik · Tasarım · Galeri — profile detail shortcuts */}
+            <section style={{ marginBottom: 22 }}>
+              <SLabel t={t} text="Marka bölümleri" />
+              <div
+                className="brand-grouped-fields"
+                style={{ ...t.surfaceGroup, overflow: 'hidden' }}
+              >
+                {([
+                  {
+                    key: 'content' as const,
+                    label: 'İçerik',
+                    hint: pillarsCount > 0 || ctasCount > 0
+                      ? `${pillarsCount} sütun · ${ctasCount} CTA`
+                      : 'Ses, strateji, sütunlar',
+                    accent: SA_STUDIO_ACCENTS.content,
+                  },
+                  {
+                    key: 'design' as const,
+                    label: 'Tasarım',
+                    hint: pprReady
+                      ? 'Üretime hazır'
+                      : `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
+                    accent: SA_STUDIO_ACCENTS.design,
+                  },
+                  {
+                    key: 'gallery' as const,
+                    label: 'Galeri',
+                    hint: photoCount > 0 ? `${photoCount} fotoğraf` : 'Fotoğraf ekle',
+                    accent: SA_STUDIO_ACCENTS.gallery,
+                  },
+                ]).map((item, index, list) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => openSection(item.key)}
+                    style={{
+                      width: '100%',
+                      minHeight: 56,
+                      padding: '12px 14px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      textAlign: 'left',
+                      borderBottom: index < list.length - 1
+                        ? `0.5px solid ${t.separator}`
+                        : 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 12,
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: `linear-gradient(135deg, ${item.accent}28, ${item.accent}12)`,
+                        border: `0.5px solid ${item.accent}33`,
+                      }}
+                    >
+                      <SectionIcon name={item.key} color={item.accent} size={20} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
+                        {item.label}
+                      </div>
+                      <div style={{
+                        marginTop: 2, fontSize: 12, color: t.textMuted,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {item.hint}
+                      </div>
+                    </div>
+                    <ChevronRight color={t.textTertiary} />
+                  </button>
+                ))}
+              </div>
+            </section>
 
             <BrandLogoPreviewCard
               t={t}
@@ -4027,68 +4105,105 @@ export function BrandConstitution() {
             </div>
 
             <div data-brand-form="discovery-channels">
-              <SCard t={t} title="Kanallar" accent="#3FB6AE">
-                <Field t={t} label="Web Sitesi" value={websiteDisplay} onSave={save('websiteUrl')} hint="https://..." />
-                <Field t={t} label="Instagram" value={instagramDisplay} onSave={save('instagramHandle')} hint="Kullanıcı adı, @ olmadan" />
-                <Field t={t} label="Google Business" value={(p as any).googleBusinessUrl ?? ''} onSave={save('googleBusinessUrl')} hint="Maps veya Business profil linki" />
+              <SCard t={t} title="Kanallar">
+                <Field
+                  t={t}
+                  label="Web Sitesi"
+                  value={websiteDisplay}
+                  displayValue={formatChannelDisplay(websiteDisplay)}
+                  onSave={save('websiteUrl')}
+                  hint="https://..."
+                />
+                <Field
+                  t={t}
+                  label="Instagram"
+                  value={instagramDisplay}
+                  displayValue={formatChannelDisplay(instagramDisplay)}
+                  onSave={save('instagramHandle')}
+                  hint="Kullanıcı adı"
+                />
+                <Field
+                  t={t}
+                  label="Google Business"
+                  value={(p as any).googleBusinessUrl ?? ''}
+                  displayValue={formatChannelDisplay(String((p as any).googleBusinessUrl ?? ''))}
+                  onSave={save('googleBusinessUrl')}
+                  hint="Maps veya Business linki"
+                />
               </SCard>
-              <SCard t={t} title="İçerik dili">
-                <p style={{ fontSize: 12, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-                  Caption, story metinleri ve chatbot yanıtları için varsayılan dil.
-                </p>
-                <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                  {(['tr', 'en'] as const).map((lang) => {
-                    const active = contentLanguage === lang;
-                    return (
-                      <button
-                        key={lang}
-                        type="button"
-                        onClick={() => save('languages')(lang)}
-                        style={{
-                          flex: 1, padding: '10px 0', borderRadius: 8, border: 'none',
-                          background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
-                          color: active ? t.textPrimary : t.textTertiary,
-                          fontWeight: 600, fontSize: 15, cursor: 'pointer',
-                          boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
-                        }}
-                      >
-                        {lang === 'tr' ? 'Türkçe' : 'English'}
-                      </button>
-                    );
-                  })}
+
+              <section style={{ marginBottom: 22 }}>
+                <SLabel t={t} text="İçerik dili" />
+                <div style={{ ...t.surfaceGroup, padding: 12 }}>
+                  <p style={{ fontSize: 12, color: t.textMuted, margin: '0 0 10px', lineHeight: 1.45 }}>
+                    Caption, story ve chatbot için varsayılan dil.
+                  </p>
+                  <div style={{
+                    display: 'flex', gap: 3, padding: 3, borderRadius: 12,
+                    background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                  }}>
+                    {(['tr', 'en'] as const).map((lang) => {
+                      const active = contentLanguage === lang;
+                      return (
+                        <button
+                          key={lang}
+                          type="button"
+                          onClick={() => save('languages')(lang)}
+                          style={{
+                            flex: 1, minHeight: 44, padding: '10px 0', borderRadius: 10, border: 'none',
+                            background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
+                            color: active ? t.textPrimary : t.textTertiary,
+                            fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                            boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
+                          }}
+                        >
+                          {lang === 'tr' ? 'Türkçe' : 'English'}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </SCard>
+              </section>
             </div>
 
             <div data-brand-form="brand-about">
-            <SCard t={t} title="Marka açıklaması" accent="#C79A4B">
-              <div style={{ padding: '14px 16px 0' }}>
-                <button
-                  type="button"
-                  onClick={() => descriptionAiMutation.mutate()}
-                  disabled={descriptionAiMutation.isPending}
-                  style={{
-                    width: '100%', padding: '12px 14px', borderRadius: 14,
-                    border: `0.5px solid ${t.accentBorder}`, background: t.accentDim, color: t.accent,
-                    fontSize: 14, fontWeight: 700, cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  }}
-                >
-                  {descriptionAiMutation.isPending ? 'AI markayı analiz ediyor…' : 'AI ile analiz et ve doldur'}
-                </button>
-                {descriptionAiFeedback && (
-                  <div style={{
-                    marginTop: 8, padding: '9px 11px', borderRadius: 10, fontSize: 12, lineHeight: 1.45,
-                    color: descriptionAiFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
-                    background: descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.12)' : (t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)'),
-                    border: `0.5px solid ${descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.28)'}`,
-                  }}>
-                    {descriptionAiFeedback.text}
-                  </div>
-                )}
-              </div>
-              <Field t={t} label="Açıklama & Ürünler" value={descriptionDisplay} onSave={save('description')} multiline hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin." />
-            </SCard>
+              <SCard t={t} title="Marka açıklaması">
+                <div style={{ marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => descriptionAiMutation.mutate()}
+                    disabled={descriptionAiMutation.isPending}
+                    style={{
+                      width: '100%', minHeight: 44, padding: '12px 14px', borderRadius: 14,
+                      border: `0.5px solid ${t.accentBorder}`, background: t.accentDim, color: t.accent,
+                      fontSize: 14, fontWeight: 700, cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    }}
+                  >
+                    {descriptionAiMutation.isPending ? 'AI markayı analiz ediyor…' : 'AI ile analiz et ve doldur'}
+                  </button>
+                  {descriptionAiFeedback && (
+                    <div style={{
+                      marginTop: 8, padding: '9px 11px', borderRadius: 10, fontSize: 12, lineHeight: 1.45,
+                      color: descriptionAiFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
+                      background: descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.12)' : (t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)'),
+                      border: `0.5px solid ${descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.28)'}`,
+                    }}>
+                      {descriptionAiFeedback.text}
+                    </div>
+                  )}
+                </div>
+                <div style={{ margin: '0 -16px -14px' }}>
+                  <Field
+                    t={t}
+                    label="Açıklama & Ürünler"
+                    value={descriptionDisplay}
+                    onSave={save('description')}
+                    multiline
+                    hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin."
+                  />
+                </div>
+              </SCard>
             </div>
           </>
         )}

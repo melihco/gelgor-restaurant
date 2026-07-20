@@ -303,13 +303,15 @@ export function normalizeCalendarPlanToProductionIdea(
     title: headline,
     tagline: tagline || undefined,
     subline: tagline || undefined,
-    // Overlay SSOT for designed posts — prefer full calendar marketing line over caption stubs.
-    canva_field_copy: headline
+    // Overlay SSOT: mission tagline (quoted calendar line) is the on-canvas headline.
+    canva_field_copy: tagline
       ? {
-          headline,
-          ...(tagline ? { subtitle: tagline } : {}),
+          headline: tagline,
+          ...(headline && headline !== tagline ? { subtitle: headline } : {}),
         }
-      : undefined,
+      : headline
+        ? { headline }
+        : undefined,
     caption_draft: caption,
     caption,
     content_brief: contentBrief || undefined,

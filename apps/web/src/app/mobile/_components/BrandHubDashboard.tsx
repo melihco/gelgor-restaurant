@@ -86,6 +86,116 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
   }
 }
 
+function BrandHubTile({
+  item,
+  t,
+  onOpen,
+  variant = 'primary',
+}: {
+  item: BrandHubNavItem;
+  t: T;
+  onOpen: (tab: BrandTab) => void;
+  variant?: 'primary' | 'nested';
+}) {
+  const barColor = item.status === 'done' ? item.accent : item.status === 'warn' ? '#F59E0B' : t.textMuted;
+  const isNested = variant === 'nested';
+
+  return (
+    <button
+      type="button"
+      className={`brand-hub-tile${isNested ? ' brand-hub-tile--nested' : ''}`}
+      onClick={() => onOpen(item.target)}
+      style={{
+        position: 'relative',
+        width: '100%',
+        minHeight: isNested ? 58 : 74,
+        padding: isNested ? '11px 14px 11px 12px' : '14px 16px',
+        borderRadius: isNested ? 14 : 20,
+        cursor: 'pointer',
+        textAlign: 'left',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        gap: isNested ? 12 : 14,
+        border: 'none',
+        background: 'transparent',
+      }}
+    >
+      {!isNested && (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: -20,
+            left: -20,
+            width: 64,
+            height: 64,
+            borderRadius: '50%',
+            background: item.accent,
+            opacity: t.isDark ? 0.14 : 0.09,
+            filter: 'blur(14px)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      <div
+        style={{
+          position: 'relative',
+          width: isNested ? 38 : 46,
+          height: isNested ? 38 : 46,
+          borderRadius: isNested ? 12 : 14,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: `linear-gradient(135deg, ${item.accent}${isNested ? '24' : '2e'}, ${item.accent}${isNested ? '10' : '14'})`,
+          border: `0.5px solid ${item.accent}${isNested ? '30' : '3d'}`,
+        }}
+      >
+        <SectionIcon name={item.key} color={item.accent} size={isNested ? 21 : 25} />
+      </div>
+      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: isNested ? 14 : 15,
+          fontWeight: 700,
+          color: t.textPrimary,
+          letterSpacing: '-0.02em',
+          lineHeight: 1.2,
+        }}
+        >
+          {item.label}
+        </div>
+        <div style={{
+          marginTop: isNested ? 5 : 6,
+          height: 2.5,
+          borderRadius: 999,
+          overflow: 'hidden',
+          background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+        }}
+        >
+          <div style={{
+            width: `${Math.max(8, item.completion * 100)}%`,
+            height: '100%',
+            borderRadius: 999,
+            background: barColor,
+            opacity: item.status === 'neutral' ? 0.45 : 0.95,
+          }}
+          />
+        </div>
+      </div>
+      <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}>
+        <path
+          d="M1.5 1.5 7.5 7.5l-6 6"
+          stroke={t.textTertiary}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
 function ReadinessRing({ score, accent, track, size = 54 }: {
   score: number; accent: string; track: string; size?: number;
 }) {
@@ -215,6 +325,16 @@ export function BrandHubDashboard({
   statusBanners,
 }: BrandHubDashboardProps) {
   const readinessGood = readinessScore >= 80;
+  const identityItem = navItems.find((item) => item.key === 'identity');
+  const profileChildItems = navItems.filter((item) =>
+    item.key === 'content' || item.key === 'design' || item.key === 'gallery',
+  );
+  const standaloneItems = navItems.filter((item) =>
+    item.key !== 'identity'
+    && item.key !== 'content'
+    && item.key !== 'design'
+    && item.key !== 'gallery',
+  );
 
   return (
     <div
@@ -240,134 +360,143 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      {/* Hero — brand stage with open-with-wow motion */}
+      {/* Hero — compact horizontal brand card (logo · meta · readiness) */}
       <div
         className="brand-hub-hero sa-chrome-card"
         style={{
           position: 'relative',
           marginBottom: 22,
-          padding: '30px 20px 24px',
-          borderRadius: 28,
+          padding: '18px 18px 16px',
+          borderRadius: 24,
           overflow: 'hidden',
           ['--hub-brand' as string]: brandPrimary || SA_CHROME.steel300,
           ['--hub-accent' as string]: t.accent || SA_CHROME.steel500,
           background: t.isDark
-            ? `radial-gradient(130% 100% at 50% -18%, ${brandPrimary}28 0%, rgba(7,9,15,0.98) 52%),
+            ? `radial-gradient(120% 90% at 12% -20%, ${brandPrimary}24 0%, transparent 55%),
                linear-gradient(165deg, rgba(12,16,22,0.98) 0%, rgba(5,7,12,1) 100%)`
-            : `radial-gradient(130% 100% at 50% -18%, ${brandPrimary}22 0%, rgba(255,255,255,0.98) 52%),
+            : `radial-gradient(120% 90% at 12% -20%, ${brandPrimary}18 0%, transparent 55%),
                linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(244,246,250,0.98) 100%)`,
         }}
       >
         <div className="brand-hub-hero-aurora" aria-hidden />
         <div className="brand-hub-hero-aurora-2" aria-hidden />
         <div className="brand-hub-hero-grid" aria-hidden />
-        <div className="brand-hub-hero-sweep" aria-hidden />
 
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div
+          className="brand-hub-hero-inner"
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            width: '100%',
+          }}
+        >
           <div
             className="brand-hub-hero-mark"
-            style={{
-              /* Gutter ≥ score size so the ring sits clear of the logo corner. */
-              paddingRight: 48,
-              paddingBottom: 48,
-            }}
+            style={{ flexShrink: 0, position: 'relative' }}
           >
-            <div style={{ position: 'relative', width: 112, height: 112 }}>
-              <div style={{
-                width: 112, height: 112, borderRadius: 30, overflow: 'hidden', position: 'relative',
-                background: logoUrl
-                  ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.94)')
-                  : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
-                border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)'}`,
-                boxShadow: t.isDark
-                  ? `0 18px 44px rgba(0,0,0,0.5), 0 0 0 1px ${brandPrimary}33`
-                  : '0 16px 34px rgba(15,23,42,0.12)',
-              }}
-              >
-                {logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={resolveGalleryImageSrc(logoUrl)}
-                    alt=""
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 14 }}
-                  />
-                ) : (
-                  <div style={{
-                    width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 34, fontWeight: 800, color: '#fff', letterSpacing: '-0.05em',
-                  }}
-                  >
-                    {monogram}
-                  </div>
-                )}
-              </div>
+            <div style={{
+              width: 72, height: 72, borderRadius: 20, overflow: 'hidden', position: 'relative',
+              background: logoUrl
+                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.94)')
+                : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
+              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.06)'}`,
+              boxShadow: t.isDark
+                ? `0 10px 28px rgba(0,0,0,0.42), 0 0 0 1px ${brandPrimary}28`
+                : '0 10px 24px rgba(15,23,42,0.1)',
+            }}
+            >
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={resolveGalleryImageSrc(logoUrl)}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 10 }}
+                />
+              ) : (
+                <div style={{
+                  width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 26, fontWeight: 800, color: '#fff', letterSpacing: '-0.05em',
+                }}
+                >
+                  {monogram}
+                </div>
+              )}
             </div>
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {!logoUrl && (
+              <h1
+                className="brand-hub-hero-title"
+                style={{
+                  margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.15,
+                  color: t.textPrimary, textAlign: 'left',
+                }}
+              >
+                {brandName || 'Markanız'}
+              </h1>
+            )}
+
+            {(industryLabel || locationLabel) && (
+              <p
+                className="brand-hub-hero-meta"
+                style={{
+                  margin: 0, fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em',
+                  color: t.textMuted, textAlign: 'left', lineHeight: 1.35,
+                  textTransform: 'uppercase' as const,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}
+              >
+                {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
+              </p>
+            )}
+
             <div
-              className="brand-hub-hero-score"
+              className="brand-hub-hero-readiness"
               style={{
-                position: 'absolute', right: 0, bottom: 0,
-                width: 46, height: 46, borderRadius: '50%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: t.isDark ? 'rgba(12,14,18,0.94)' : 'rgba(255,255,255,0.96)',
-                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)'}`,
-                boxShadow: t.isDark
-                  ? `0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px ${readinessGood ? brandPrimary : '#F59E0B'}44`
-                  : '0 8px 20px rgba(15,23,42,0.1)',
+                display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+                marginTop: industryLabel || locationLabel || !logoUrl ? 0 : 2,
+                padding: '5px 10px 5px 6px', borderRadius: 999,
+                background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
               }}
             >
-              <div style={{ position: 'relative', width: 42, height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ position: 'relative', width: 32, height: 32, flexShrink: 0 }}>
                 <ReadinessRing
                   score={readinessScore}
-                  size={42}
+                  size={32}
                   accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
                   track={t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'}
                 />
                 <span style={{
-                  position: 'absolute', fontSize: 13, fontWeight: 800, letterSpacing: '-0.04em',
+                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800, letterSpacing: '-0.04em',
                   color: t.textPrimary, fontVariantNumeric: 'tabular-nums',
                 }}
                 >
                   {readinessScore}
                 </span>
               </div>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSecondary, letterSpacing: '-0.01em' }}>
+                {readinessGood ? 'Üretime hazır' : 'Profil tamamlanıyor'}
+              </span>
             </div>
           </div>
+        </div>
 
-          {/* Logo already carries the brand wordmark — only show name when no logo. */}
-          {!logoUrl && (
-            <h1
-              className="brand-hub-hero-title"
-              style={{
-                margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.045em', lineHeight: 1.05,
-                color: t.textPrimary, textAlign: 'center', maxWidth: '100%',
-                textShadow: t.isDark ? '0 2px 24px rgba(0,0,0,0.45)' : 'none',
-              }}
-            >
-              {brandName || 'Markanız'}
-            </h1>
-          )}
+        <div className="brand-hub-hero-rule" aria-hidden style={{ marginTop: 14 }} />
 
-          {(industryLabel || locationLabel) && (
-            <p
-              className="brand-hub-hero-meta"
-              style={{
-                margin: logoUrl ? '14px 0 0' : '10px 0 0', fontSize: 13, fontWeight: 500, letterSpacing: '0.04em',
-                color: t.textMuted, textAlign: 'center', lineHeight: 1.45, textTransform: 'uppercase' as const,
-              }}
-            >
-              {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
-            </p>
-          )}
-
-          <div className="brand-hub-hero-rule" aria-hidden />
-
+        <div style={{ position: 'relative', zIndex: 1 }}>
           {!constitutionConfirmedAt && (
             <button
               type="button"
               onClick={() => void onConfirmConstitution()}
               disabled={confirmingConstitution}
               style={{
-                marginTop: 18, width: '100%', padding: '13px 18px', borderRadius: 16, border: 'none',
+                marginTop: 14, width: '100%', padding: '13px 18px', borderRadius: 16, border: 'none',
                 cursor: confirmingConstitution ? 'wait' : 'pointer',
                 fontSize: 14, fontWeight: 700, letterSpacing: '-0.02em', color: '#1a1200',
                 background: 'linear-gradient(135deg, #F5D08A 0%, #E8B86D 48%, #D4A055 100%)',
@@ -425,93 +554,71 @@ export function BrandHubDashboard({
           margin: '0 0 12px',
         }}
       >
-        {navItems.map((item) => {
-          const barColor = item.status === 'done' ? item.accent : item.status === 'warn' ? '#F59E0B' : t.textMuted;
-          return (
-            <button
-              key={item.key}
-              type="button"
-              className="brand-hub-tile sa-chrome-card"
-              onClick={() => onOpenSection(item.target)}
-              style={{
-                position: 'relative',
-                width: '100%',
-                minHeight: 74,
-                padding: '14px 16px',
-                borderRadius: 20,
-                cursor: 'pointer',
-                textAlign: 'left',
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-              }}
-            >
+        {identityItem && (
+          <div
+            className="brand-hub-group sa-chrome-card"
+            style={{
+              width: '100%',
+              borderRadius: 20,
+              overflow: 'hidden',
+              padding: '4px 0 6px',
+            }}
+          >
+            <BrandHubTile
+              item={identityItem}
+              t={t}
+              onOpen={(tab) => onOpenSection(tab)}
+            />
+
+            {profileChildItems.length > 0 && (
               <div
-                aria-hidden
+                className="brand-hub-group-children"
                 style={{
-                  position: 'absolute',
-                  top: -20,
-                  left: -20,
-                  width: 64,
-                  height: 64,
-                  borderRadius: '50%',
-                  background: item.accent,
-                  opacity: t.isDark ? 0.14 : 0.09,
-                  filter: 'blur(14px)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <div
-                style={{
-                  position: 'relative',
-                  width: 46,
-                  height: 46,
-                  borderRadius: 14,
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: `linear-gradient(135deg, ${item.accent}2e, ${item.accent}14)`,
-                  border: `0.5px solid ${item.accent}3d`,
+                  margin: '0 12px 6px',
+                  padding: '4px 0 2px',
+                  borderRadius: 16,
+                  background: t.isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.025)',
+                  border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.05)'}`,
                 }}
               >
-                <SectionIcon name={item.key} color={item.accent} size={25} />
+                {profileChildItems.map((item, index) => (
+                  <React.Fragment key={item.key}>
+                    {index > 0 && (
+                      <div
+                        aria-hidden
+                        style={{
+                          height: 0.5,
+                          margin: '0 14px',
+                          background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+                        }}
+                      />
+                    )}
+                    <BrandHubTile
+                      item={item}
+                      t={t}
+                      variant="nested"
+                      onOpen={(tab) => onOpenSection(tab)}
+                    />
+                  </React.Fragment>
+                ))}
               </div>
-              <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', lineHeight: 1.2,
-                }}
-                >
-                  {item.label}
-                </div>
-                <div style={{
-                  marginTop: 6, height: 2.5, borderRadius: 999, overflow: 'hidden',
-                  background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
-                }}
-                >
-                  <div style={{
-                    width: `${Math.max(8, item.completion * 100)}%`,
-                    height: '100%',
-                    borderRadius: 999,
-                    background: barColor,
-                    opacity: item.status === 'neutral' ? 0.45 : 0.95,
-                  }}
-                  />
-                </div>
-              </div>
-              <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}>
-                <path
-                  d="M1.5 1.5 7.5 7.5l-6 6"
-                  stroke={t.textTertiary}
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          );
-        })}
+            )}
+          </div>
+        )}
+
+        {standaloneItems.map((item) => (
+          <div
+            key={item.key}
+            className="brand-hub-group sa-chrome-card"
+            style={{ width: '100%', borderRadius: 20, overflow: 'hidden', padding: '4px 0' }}
+          >
+            <BrandHubTile
+              item={item}
+              t={t}
+              onOpen={(tab) => onOpenSection(tab)}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );

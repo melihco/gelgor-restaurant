@@ -25,6 +25,48 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
 });
 
 describe('resolveMissionFalDesignCopy', () => {
+  it('uses mission tagline verbatim on story — no 28-char caption stub', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        concept_title: 'Crafting Citrus Cocktails',
+        headline: 'Crafting Citrus Cocktails',
+        tagline: 'Discover the art of cocktail making.',
+        caption_draft:
+          'Show our talented bartenders preparing cocktails, capturing the dynamic bar atmosphere.',
+      },
+      ideationHeadline: 'Crafting Citrus Cocktails',
+      caption:
+        'Show our talented bartenders preparing cocktails, capturing the dynamic bar atmosphere.',
+      brandName: 'Yula',
+      channel: 'story',
+      businessType: 'beach_club',
+    });
+    expect(result.source).toBe('mission_tagline');
+    expect(result.headline).toBe('Discover the art of cocktail making');
+    expect(result.headline.length).toBeGreaterThan(28);
+  });
+
+  it('prefers quoted tagline over ideation title for citrus calendar row', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        concept_title: 'Relax with a View',
+        headline: 'Relax with a View',
+        tagline: 'Relax with breathtaking views.',
+        canva_field_copy: {
+          headline: 'Relax with breathtaking views.',
+          subtitle: 'Relax with a View',
+        },
+      },
+      ideationHeadline: 'Relax with a View',
+      caption: 'Highlight the stunning views from our outdoor seating area.',
+      brandName: 'Yula',
+      channel: 'story',
+      businessType: 'beach_club',
+    });
+    expect(result.headline).toBe('Relax with breathtaking views');
+    expect(result.headline.length).toBeGreaterThan(28);
+  });
+
   it('prefers canva_field_copy marketing line over series-style ideation', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {

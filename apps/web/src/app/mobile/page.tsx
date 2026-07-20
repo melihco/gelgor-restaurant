@@ -27,6 +27,11 @@ import { TenantBrandProvider } from './_components/TenantBrandProvider';
 import { MobileScreenRouter } from './_components/MobileScreenRouter';
 import { initNativeBridge } from './_lib/native-bridge';
 import { OfflineBanner } from './_components/OfflineBanner';
+import {
+  clearMobileIntegrationsOAuthQuery,
+  parseMobileIntegrationsOAuthReturn,
+  stashMobileIntegrationsOAuthFlash,
+} from '@/lib/mobile-integration-connect';
 
 /* ─── Mobile-scoped CSS ──────────────────────────────────────────────
  * IMPORTANT: All rules MUST be scoped to .sa-mobile to avoid leaking
@@ -2107,6 +2112,12 @@ const CSS = `
   .sa-mobile .brand-hub-tile:active {
     transform: scale(0.97);
   }
+  .sa-mobile .brand-hub-tile--nested:active {
+    transform: scale(0.985);
+  }
+  .sa-mobile .brand-hub-group {
+    isolation: isolate;
+  }
   .sa-mobile .brand-hub-gap-cta:active {
     transform: scale(0.985);
   }
@@ -2224,9 +2235,10 @@ const CSS = `
     animation: brandHubSweep 1.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
   }
   .sa-mobile .brand-hub-hero-mark {
-    position: relative;
-    margin-bottom: 18px;
     animation: brandHubLogoIn 780ms cubic-bezier(0.34, 1.25, 0.64, 1) 0.08s both;
+  }
+  .sa-mobile .brand-hub-hero-inner {
+    animation: brandHubTitleIn 700ms cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
   }
   .sa-mobile .brand-hub-hero-orbit {
     position: absolute;
@@ -2265,21 +2277,22 @@ const CSS = `
     animation: brandHubMetaIn 640ms cubic-bezier(0.22, 1, 0.36, 1) 0.42s both;
   }
   .sa-mobile .brand-hub-hero-rule {
-    width: 56px;
-    height: 2px;
-    margin: 14px auto 0;
+    width: 100%;
+    height: 1px;
+    margin: 0;
     border-radius: 999px;
+    opacity: 0.55;
     background: linear-gradient(
       90deg,
       transparent,
-      color-mix(in srgb, var(--hub-brand) 85%, #fff) 40%,
-      color-mix(in srgb, var(--hub-accent) 80%, #fff) 70%,
+      color-mix(in srgb, var(--hub-brand) 70%, #fff) 18%,
+      color-mix(in srgb, var(--hub-accent) 65%, #fff) 82%,
       transparent
     );
     transform-origin: center;
     animation: brandHubRuleIn 620ms cubic-bezier(0.22, 1, 0.36, 1) 0.5s both;
   }
-  .sa-mobile .brand-hub-hero-score {
+  .sa-mobile .brand-hub-hero-readiness {
     animation: brandHubMetaIn 620ms cubic-bezier(0.22, 1, 0.36, 1) 0.36s both;
   }
 
@@ -2287,14 +2300,14 @@ const CSS = `
     .sa-mobile .brand-hub-hero,
     .sa-mobile .brand-hub-hero-aurora,
     .sa-mobile .brand-hub-hero-aurora-2,
-    .sa-mobile .brand-hub-hero-sweep,
     .sa-mobile .brand-hub-hero-orbit,
     .sa-mobile .brand-hub-hero-glow,
     .sa-mobile .brand-hub-hero-mark,
+    .sa-mobile .brand-hub-hero-inner,
+    .sa-mobile .brand-hub-hero-readiness,
     .sa-mobile .brand-hub-hero-title,
     .sa-mobile .brand-hub-hero-meta,
-    .sa-mobile .brand-hub-hero-rule,
-    .sa-mobile .brand-hub-hero-score {
+    .sa-mobile .brand-hub-hero-rule {
       animation: none !important;
       filter: none !important;
       opacity: 1 !important;
@@ -2746,6 +2759,7 @@ function AppShell() {
   const tenantId = useActiveTenantId();
   const queryClient = useQueryClient();
   const screen = useMobileStore(s => s.screen);
+  const navigate = useMobileStore(s => s.navigate);
   const noNav = NO_NAV.has(screen);
 
   // Show login form vs onboarding
@@ -2825,6 +2839,20 @@ function AppShell() {
     const t = setTimeout(prefetch, 800);
     return () => clearTimeout(t);
   }, [isAuthenticated, tenantId, queryClient]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const { shouldOpenSettings, connected } = parseMobileIntegrationsOAuthReturn(window.location.search);
+    if (!shouldOpenSettings) return;
+    void queryClient.invalidateQueries({ queryKey: ['integrations'] });
+    navigate('settings');
+    stashMobileIntegrationsOAuthFlash(
+      connected.length
+        ? `Google bağlandı: ${connected.join(', ')}`
+        : 'Entegrasyonlar güncellendi.',
+    );
+    clearMobileIntegrationsOAuthQuery();
+  }, [queryClient, navigate]);
 
   useEffect(() => {
     const onAuthChanged = () => {

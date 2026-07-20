@@ -270,6 +270,14 @@ function enrichIdeationWithCalendarPlan(
     ...(brief ? { content_brief: brief } : {}),
     ...(tagline ? { tagline, subline: tagline } : {}),
     ...(mood ? { photo_mood: mood, mood, visual_direction: mood } : {}),
+    ...(tagline
+      ? {
+          canva_field_copy: {
+            headline: tagline,
+            ...(headline && headline !== tagline ? { subtitle: headline } : {}),
+          },
+        }
+      : {}),
     content_type: calendarFormatToContentType(fmt),
     content_kind: calendarFormatToContentType(fmt),
     format: fmt,

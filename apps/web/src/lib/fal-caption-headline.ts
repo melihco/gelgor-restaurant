@@ -797,10 +797,57 @@ export function formatFalOnImageSubtitleDirective(subtitle: string): string {
 /** Feed designed posts — allow full marketing sentences (calendar/canva hooks ~28–48). */
 export const FAL_FEED_OVERLAY_MAX_CHARS = 48;
 
+/** Agent-planned mission taglines — complete sentences, not caption stubs. */
+export const FAL_MISSION_TAGLINE_MAX_CHARS = 48;
+
 /**
  * Clamp overlay copy to lengths image models can spell reliably.
  * Reels/stories stay short; feed posts keep complete calendar/marketing lines ≤48.
  */
+/**
+ * Clamp agent-planned taglines/subtitles for on-canvas overlay.
+ * Preserves the full planned sentence (≤48 chars) on story/reel — never the old
+ * 22/28 caption-stub truncation that made designs look amateur.
+ */
+export function clampMissionTaglineForCanvas(
+  headline: string,
+  _channel: 'reel' | 'feed_post' | 'story',
+): string {
+  const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
+  if (!clean) return '';
+  if (isInternalStrategyBriefing(clean)) return '';
+  if (clean.length <= FAL_MISSION_TAGLINE_MAX_CHARS && !isIncompleteOverlayPhrase(clean)) {
+    return clean;
+  }
+  const result = truncateAtWordBoundary(clean, FAL_MISSION_TAGLINE_MAX_CHARS);
+  if (result && isMeaningfulFalOverlayText(result) && !isIncompleteOverlayPhrase(result)) {
+    return result;
+  }
+  const sentence = clean.split(/[.!?…]/)[0]?.trim() ?? '';
+  if (
+    sentence.length >= 8
+    && sentence.length <= FAL_MISSION_TAGLINE_MAX_CHARS
+    && !isIncompleteOverlayPhrase(sentence)
+  ) {
+    return sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?')
+      ? sentence
+      : `${sentence}.`;
+  }
+  return '';
+}
+
+/** Overlay line from mission tagline / canva_field_copy — not caption-derived. */
+export function resolveMissionPlannedOverlayLine(
+  primary: string,
+  fallbacks: string[] = [],
+  channel: 'reel' | 'feed_post' | 'story',
+): string {
+  const raw = ensureMeaningfulFalOverlayText(primary, fallbacks);
+  if (!raw) return '';
+  const clamped = clampMissionTaglineForCanvas(raw, channel);
+  return clamped && isMeaningfulFalOverlayText(clamped) ? clamped : '';
+}
+
 export function clampFalOverlayHeadlineForCanvas(
   headline: string,
   channel: 'reel' | 'feed_post' | 'story',

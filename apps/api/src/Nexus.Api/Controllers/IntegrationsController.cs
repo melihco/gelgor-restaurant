@@ -115,7 +115,10 @@ public class IntegrationsController : ControllerBase
     // ── Google OAuth Flow ─────────────────────────────────────────────────────
 
     [HttpGet("google/auth-url")]
-    public async Task<ActionResult<GoogleAuthUrlResponse>> GetGoogleAuthUrl([FromQuery] string scopes = "ads,analytics,search_console", CancellationToken cancellationToken = default)
+    public async Task<ActionResult<GoogleAuthUrlResponse>> GetGoogleAuthUrl(
+        [FromQuery] string scopes = "ads,analytics,search_console",
+        [FromQuery] string? returnTo = null,
+        CancellationToken cancellationToken = default)
     {
         if (!await _permissionService.HasPermissionAsync(Permissions.IntegrationsManage, cancellationToken))
             return Forbid();
@@ -126,6 +129,8 @@ public class IntegrationsController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(clientId))
             return BadRequest(new { error = "Google OAuth is not configured. Set Google:OAuth:ClientId." });
+
+        var safeReturnTo = IsSafeMobileReturnPath(returnTo) ? returnTo!.Trim() : "/setup";
 
         var scopeList = new List<string>();
         var scopeParts = scopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -154,6 +159,7 @@ public class IntegrationsController : ControllerBase
                 tenantId = _requestContext.TenantId,
                 userId = _requestContext.UserId,
                 scopes,
+                returnTo = safeReturnTo,
                 issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             })));
 
@@ -204,6 +210,7 @@ public class IntegrationsController : ControllerBase
         // Parse state to get requested scopes
         Guid tenantId = _requestContext.TenantId;
         var requestedScopes = "ads,analytics,search_console";
+        var returnPath = "/setup";
         try
         {
             var stateBytes = Convert.FromBase64String(state);
@@ -213,6 +220,12 @@ public class IntegrationsController : ControllerBase
             if (stateObj.RootElement.TryGetProperty("tenantId", out var tenantEl) &&
                 Guid.TryParse(tenantEl.GetString(), out var parsedTenant))
                 tenantId = parsedTenant;
+            if (stateObj.RootElement.TryGetProperty("returnTo", out var returnEl))
+            {
+                var candidate = returnEl.GetString();
+                if (IsSafeMobileReturnPath(candidate))
+                    returnPath = candidate!.Trim();
+            }
         }
         catch { }
 
@@ -250,7 +263,18 @@ public class IntegrationsController : ControllerBase
         }
 
         var frontendUrl = _configuration["Frontend:BaseUrl"] ?? "http://localhost:3000";
-        return Redirect($"{frontendUrl}/setup?google_connected={string.Join(",", created)}");
+        var separator = returnPath.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return Redirect($"{frontendUrl}{returnPath}{separator}google_connected={Uri.EscapeDataString(string.Join(",", created))}");
+    }
+
+    private static bool IsSafeMobileReturnPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var trimmed = path.Trim();
+        if (!trimmed.StartsWith("/mobile", StringComparison.OrdinalIgnoreCase)) return false;
+        if (trimmed.Contains("://", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal))
+            return false;
+        return true;
     }
 
     // ── Ads Data Proxy ────────────────────────────────────────────────────────
