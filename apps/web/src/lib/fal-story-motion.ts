@@ -138,11 +138,12 @@ async function runMotionModel(
   prompt: string,
   timeoutMs: number,
   preserveExistingText = false,
+  durationSecs = 5,
 ): Promise<string | null> {
   const payload = buildFalI2vEnqueuePayload(modelId, {
     imageUrl,
     prompt,
-    durationSecs: 5,
+    durationSecs,
     aspectRatio: '9:16',
     preserveExistingText,
     lumaResolution: serverConfig.ai.tier === 'premium' ? '720p' : '540p',
@@ -245,6 +246,8 @@ export async function generateStoryMotionPlate(input: {
   preserveExistingText?: boolean;
   pipeline?: 'fal_story' | 'fal_reel';
   designerMotionCue?: string;
+  /** Kling/Luma duration hint from reel recipe (default 5). */
+  durationSecs?: number;
 }): Promise<StoryMotionResult> {
   const apiKey = serverConfig.fal.apiKey;
   if (!apiKey) throw new Error('FAL_API_KEY not set — story motion plates unavailable');
@@ -270,7 +273,11 @@ export async function generateStoryMotionPlate(input: {
   });
   console.log(`[fal-story-motion] prompt_chars=${prompt.length}`);
   const timeoutMs = input.timeoutMs ?? 120_000;
-  const storyMotionModels = resolveFalI2vModelChain('story_motion', serverConfig.ai.tier);
+  const durationSecs = input.durationSecs && input.durationSecs > 0 ? input.durationSecs : 5;
+  const storyMotionModels = resolveFalI2vModelChain(
+    input.preserveExistingText === true ? 'story_motion' : 'raw_gallery',
+    serverConfig.ai.tier,
+  );
 
   let lastError = 'no models configured';
   for (const modelId of storyMotionModels) {
@@ -283,10 +290,11 @@ export async function generateStoryMotionPlate(input: {
         prompt,
         timeoutMs,
         input.preserveExistingText === true,
+        durationSecs,
       );
       if (url) {
         console.log(`[fal-story-motion] success: ${modelId} → ${url.slice(0, 80)}`);
-        return { videoUrl: url, model: modelId, style, durationSecs: 5 };
+        return { videoUrl: url, model: modelId, style, durationSecs };
       }
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);

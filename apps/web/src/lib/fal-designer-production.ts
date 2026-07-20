@@ -146,6 +146,11 @@ export interface FalDesignerInput {
   templateReplica?: import('@/lib/brand-design-template-production').TemplateReplicaSpec | null;
   /** economy/agency/starter — VIDEO_TIER_SCOPE caps reel I2V retries. */
   productionTier?: string | null;
+  /**
+   * Resolved reel production recipe (slot + template + brand).
+   * Controls photo_plate vs locked_graphics I2V path for fal_reel.
+   */
+  reelRecipe?: import('@/lib/reel-production-recipe').ReelRecipe | null;
 }
 
 export interface FalDesignerStillResult {
@@ -1510,6 +1515,11 @@ export async function produceFalDesignerStill(
 export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'aspectRatio'> & {
   pipeline: 'fal_story' | 'fal_reel';
 }): Promise<FalDesignerVideoResult> {
+  const {
+    resolveEffectiveReelMotionMode,
+    reelRecipeDurationForFal,
+  } = await import('@/lib/reel-production-recipe');
+
   const groundedRequired = input.requireGroundedGallery ?? resolveFalRequireGroundedGallery({
     requireGroundedGallery: false,
     referencePhotoUrl: input.referencePhotoUrl,
@@ -1529,26 +1539,42 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
     requireGroundedGallery: groundedRequired,
   });
 
+  const recipe = input.pipeline === 'fal_reel' ? (input.reelRecipe ?? null) : null;
+  const effectiveMotionMode = recipe
+    ? resolveEffectiveReelMotionMode(recipe)
+    : 'locked_graphics';
+  // photo_plate: I2V the gallery photo (no baked type) → logo composite.
+  // Designed still remains the feed cover (imageUrl) — kills frame-3 gibberish.
+  const motionSourceUrl = effectiveMotionMode === 'photo_plate'
+    && input.referencePhotoUrl?.trim()
+    ? input.referencePhotoUrl.trim()
+    : still.imageUrl;
+  const preserveText = effectiveMotionMode !== 'photo_plate';
+
   const motionStyle = input.pipeline === 'fal_reel'
-    ? 'social_reel_graphics' as const
+    ? (effectiveMotionMode === 'photo_plate'
+        ? resolveMotionStyle(input.sector, input.mood)
+        : 'social_reel_graphics' as const)
     : resolveMotionStyle(input.sector, input.mood);
 
   const motionTimeout = input.pipeline === 'fal_reel' ? 150_000 : 130_000;
+  const durationSecs = recipe ? reelRecipeDurationForFal(recipe) : 5;
 
   let motion: StoryMotionResult;
   try {
     motion = await generateStoryMotionPlateWithRetry({
-      imageUrl: still.imageUrl,
+      imageUrl: motionSourceUrl,
       headline: still.resolvedHeadline ?? input.headline,
       sector: input.sector,
       brandName: input.brandName,
       mood: input.mood,
       style: motionStyle,
       timeoutMs: motionTimeout,
-      preserveExistingText: true,
+      preserveExistingText: preserveText,
       pipeline: input.pipeline,
       designerMotionCue: input.designerMotionCue,
       productionTier: input.productionTier,
+      durationSecs,
     });
   } catch (motionErr) {
     const message = motionErr instanceof Error ? motionErr.message : String(motionErr);
@@ -1569,12 +1595,16 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
   }
 
   console.log(
-    `[fal-designer] designed video: typo=${still.typographyModel} motion=${motion.model} headline="${still.resolvedHeadline ?? input.headline}"`,
+    `[fal-designer] designed video: typo=${still.typographyModel} motion=${motion.model} `
+    + `mode=${effectiveMotionMode} headline="${still.resolvedHeadline ?? input.headline}"`,
   );
 
   let finalVideoUrl = motion.videoUrl;
   const logoUrl = input.logoUrl?.trim();
-  if (logoUrl && motion.videoUrl.startsWith('http')) {
+  const shouldCompositeLogo = Boolean(logoUrl)
+    && motion.videoUrl.startsWith('http')
+    && (recipe?.logoPolicy !== 'baked_allowed' || effectiveMotionMode === 'photo_plate');
+  if (shouldCompositeLogo && logoUrl) {
     const videoWithLogo = await compositeOfficialLogoOnVideoUrl({
       videoUrl: motion.videoUrl,
       logoUrl,

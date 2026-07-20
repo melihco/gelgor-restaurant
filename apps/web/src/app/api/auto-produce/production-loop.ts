@@ -352,7 +352,7 @@ import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
 import { falOnlyHandler, produceFalOnlySlot } from './pipelines/fal-only-pipeline';
 import { falDesignHandler } from './pipelines/fal-designed-post-pipeline';
 import { runPipelineStages } from './pipelines/pipeline-types';
-import type { SlotProductionContext } from './pipelines/pipeline-types';
+import type { SlotProductionContext, VideoProduceMeta } from './pipelines/pipeline-types';
 import { resolveFalDesignIntensityForChannel } from '@/lib/fal-design-intensity';
 import {
   GALLERY_THEME_MISMATCH_CODE,
@@ -3321,16 +3321,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let imageUrl: string | null = null;
     let videoUrl: string | null = null;
     let carouselUrls: string[] = [];
-    let videoProduceMeta: {
-      source: 'kling' | 'luma' | 'fal_video';
-      strategy?: string;
-      photoCount?: number;
-      cameraMotion?: string;
-      reelPace?: string;
-      sectorId?: string;
-      i2vReused?: boolean;
-      reusedFromArtifactId?: string;
-    } | null = null;
+    let videoProduceMeta: VideoProduceMeta | null = null;
 
     // ── Product Showcase pipeline (AI background replacement) ───────
     const isProductShowcase = assignment.pipeline === 'product_showcase'
@@ -3621,6 +3612,38 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           announcementType: calendarAnnouncementType || templateUseCase || undefined,
           templateUseCase: templateUseCase || undefined,
           catalogSlotKey: assignment.catalog_slot_key ?? (ideaRecord.catalog_slot_key as string | undefined),
+          slotPromptPack: (() => {
+            const key = String(
+              assignment.catalog_slot_key ?? ideaRecord.catalog_slot_key ?? '',
+            ).trim();
+            if (!key || !brandActiveSlots) return null;
+            const hit = brandActiveSlots.slots.find((s) => s.slotKey === key);
+            return hit?.promptPack ?? null;
+          })(),
+          reelMotionSpec: (() => {
+            const direct = ideaRecord.reel_motion_spec ?? ideaRecord.reelMotionSpec;
+            if (direct && typeof direct === 'object') return direct as Record<string, unknown>;
+            const vps = ideaRecord.visual_production_spec;
+            if (vps && typeof vps === 'object') {
+              const nested = (vps as Record<string, unknown>).reel_motion_spec
+                ?? (vps as Record<string, unknown>).reelMotionSpec;
+              if (nested && typeof nested === 'object') return nested as Record<string, unknown>;
+            }
+            return null;
+          })(),
+          montagePhotoUrls: (() => {
+            if (!isFalMissionVideo && !isFalOnlyVideo) return undefined;
+            const primary = referenceUrl ? normalizeGalleryUrl(referenceUrl) : '';
+            const extras: string[] = [];
+            for (const u of galleryPhotos) {
+              if (!u?.trim()) continue;
+              if (primary && normalizeGalleryUrl(u) === primary) continue;
+              if (isStockGalleryPhotoUrl(u)) continue;
+              extras.push(u);
+              if (extras.length >= 4) break;
+            }
+            return extras.length ? extras : undefined;
+          })(),
           brandActiveSlots,
           falAspectRatio: resolveFalSlotAspectRatio({
             isPaidAd: isPaidAdSlot,
@@ -4510,6 +4533,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         camera_motion: videoProduceMeta.cameraMotion ?? null,
         reel_pace: videoProduceMeta.reelPace ?? null,
         sector_id: videoProduceMeta.sectorId ?? normalizeSectorId(brandBusinessType),
+        ...(videoProduceMeta.reelRecipe ? { reel_recipe: videoProduceMeta.reelRecipe } : {}),
+        ...(videoProduceMeta.motionMode ? { reel_motion_mode: videoProduceMeta.motionMode } : {}),
         ...(videoProduceMeta.i2vReused ? {
           i2v_reused: true,
           i2v_reused_from_artifact_id: videoProduceMeta.reusedFromArtifactId ?? null,
@@ -4521,8 +4546,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           || videoProduceMeta.source === 'luma'
           || videoProduceMeta.source === 'fal_video')
         ? {
-          i2v_source_image_url: pickedGallerySourceUrl ?? referenceUrl ?? null,
-          i2v_motion_type: 'raw_gallery',
+          i2v_source_image_url: videoProduceMeta.motionMode === 'photo_plate'
+            ? (pickedGallerySourceUrl ?? referenceUrl ?? null)
+            : (pickedGallerySourceUrl ?? referenceUrl ?? null),
+          i2v_motion_type: videoProduceMeta.motionMode === 'photo_plate'
+            ? 'photo_plate'
+            : videoProduceMeta.motionMode === 'locked_graphics'
+              ? 'locked_graphics'
+              : 'raw_gallery',
         }
         : {}),
       canvas_produced: isCanvas,

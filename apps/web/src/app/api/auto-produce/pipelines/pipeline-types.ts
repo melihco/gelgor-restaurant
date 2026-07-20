@@ -15,6 +15,10 @@ export interface VideoProduceMeta {
   sectorId?: string;
   i2vReused?: boolean;
   reusedFromArtifactId?: string;
+  /** Resolved reel recipe JSON stamped for feed/debug. */
+  reelRecipe?: Record<string, unknown>;
+  /** Effective I2V path: photo_plate | locked_graphics. */
+  motionMode?: string;
 }
 
 /**
@@ -95,6 +99,12 @@ export interface SlotProductionInputs {
   templateUseCase?: string | null;
   /** DB catalog slot key — tenant-enabled production slot (Faz 5 bridge). */
   catalogSlotKey?: string | null;
+  /** Catalog prompt_pack — may include reel_policy defaults for the slot family. */
+  slotPromptPack?: Record<string, unknown> | null;
+  /** Ideation reel_motion_spec for this idea (pace/camera/audio soft override). */
+  reelMotionSpec?: Record<string, unknown> | null;
+  /** Extra gallery URLs for sequential beat montage (excludes primary ref). */
+  montagePhotoUrls?: string[];
   /** Tenant-enabled catalog snapshot — matcher excludes disabled slot templates. */
   brandActiveSlots?: import('@/lib/brand-active-slot-resolver').BrandActiveSlotSet | null;
   /** New Brief form — user-intent driven fal art-director production. */

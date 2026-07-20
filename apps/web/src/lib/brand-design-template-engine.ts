@@ -61,6 +61,18 @@ import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { generateDesignedPostImage } from '@/app/api/auto-produce/handlers/image-generators';
 import { generateStorageKey, isR2Configured, uploadImageFromUrl } from '@/lib/r2-storage';
 import { serverConfig } from '@/lib/server-config';
+import { parseMotionProfileFromTheme } from '@/lib/brand-motion-profile';
+import { resolveBrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
+import {
+  reelRecipeToJson,
+  seedReelRecipeForTemplate,
+} from '@/lib/reel-production-recipe';
+import {
+  buildReelCoverDiversityDirectives,
+  preferCoverCanvaForReelArchetype,
+  resolveReelArchetypeForProduction,
+} from '@/lib/reel-canva-archetypes';
+import { getCanvaArchetype } from '@/lib/canva-archetype-catalog';
 
 /** A special day (DB-resolved) the brand should get a dedicated event template for. */
 export interface EngineSpecialDay {
@@ -165,6 +177,11 @@ export interface GeneratedDesignTemplate {
     layoutPattern?: string;
     typographyMode?: string;
     designBriefDirectives?: string[];
+    /**
+     * Reel production recipe (motion/kurgu/audio) — seeded for reel_cover
+     * templates so slot match carries brand-specific fal_reel policy.
+     */
+    reel_recipe?: Record<string, unknown>;
   };
 }
 
@@ -446,6 +463,28 @@ async function generateOne(
     channel: layoutChannel,
     sector: input.sector,
   });
+  const reelArchetypeForCover = preset.format === 'reel_cover'
+    ? resolveReelArchetypeForProduction({
+        canvaArchetypeId: calendarLayout.canvaArchetypeId,
+        caption: subtitle ?? undefined,
+        headline: headline || input.brandName,
+        sector: input.sector,
+        catalogSlotKey: preset.catalogSlotKey,
+        templateType: preset.templateType,
+      })
+    : null;
+  const preferredReelCoverCanva = reelArchetypeForCover
+    ? preferCoverCanvaForReelArchetype(
+        reelArchetypeForCover.id,
+        calendarLayout.canvaArchetypeId,
+      )
+    : undefined;
+  // Bias reel_cover library toward archetype-preferred Canva families (diversity).
+  const explicitCoverCanva = preferredReelCoverCanva
+    && getCanvaArchetype(preferredReelCoverCanva)
+    ? preferredReelCoverCanva
+    : calendarLayout.canvaArchetypeId;
+
   const layoutBrief = resolveFalDesignBrief({
     caption: subtitle ?? headline ?? preset.name,
     headline: headline || input.brandName,
@@ -456,7 +495,7 @@ async function generateOne(
     referencePhotoUrl: picked?.url,
     tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(theme),
     layoutFamilyHint: preset.catalogSlotKey ?? calendarLayout.canvaArchetypeId,
-    explicitCanvaArchetypeId: calendarLayout.canvaArchetypeId,
+    explicitCanvaArchetypeId: explicitCoverCanva,
   });
   // Slot/announcement role drives intensity (library diversity); theme is fallback.
   // Brand DNA + vibe stay shared across templates — layout energy must not.
@@ -485,7 +524,15 @@ async function generateOne(
       visualDnaTone: input.visualDnaTone,
       lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
     });
-  const layoutDirectives = buildFalDesignBriefDirectives(layoutBrief, briefFormat);
+  const layoutDirectives = [
+    ...buildFalDesignBriefDirectives(layoutBrief, briefFormat),
+    ...(reelArchetypeForCover
+      ? buildReelCoverDiversityDirectives({
+          reelArchetype: reelArchetypeForCover,
+          coverCanvaId: layoutBrief.canvaArchetypeId,
+        })
+      : []),
+  ];
   const backgroundStyle: TypographyBackgroundStyle = resolveFalTemplateBackgroundStyle({
     theme,
     referencePhotoUrl: picked?.url,
@@ -684,6 +731,24 @@ async function generateOne(
       layoutPattern: layoutBrief.layoutPattern,
       typographyMode: layoutBrief.typographyMode,
       designBriefDirectives: layoutDirectives,
+      ...(preset.format === 'reel_cover'
+        ? {
+            reel_recipe: reelRecipeToJson(
+              seedReelRecipeForTemplate({
+                catalogSlotKey: preset.catalogSlotKey,
+                templateType: preset.templateType,
+                canvaArchetypeId: layoutBrief.canvaArchetypeId,
+                sector: input.sector,
+                headline,
+                caption: subtitle,
+                brandReelParams: resolveBrandReelProductionParams(
+                  parseMotionProfileFromTheme(theme, { sector: input.sector }),
+                  input.sector,
+                ),
+              }),
+            ),
+          }
+        : {}),
       ...(special
         ? { specialDay: { name: special.name, mmdd: special.mmdd, category: special.category } }
         : {}),

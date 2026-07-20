@@ -32,6 +32,22 @@ import {
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
+import {
+  buildReelRecipeMotionCue,
+  resolveEffectiveReelMotionMode,
+  resolveReelProductionRecipe,
+  reelRecipeToJson,
+} from '@/lib/reel-production-recipe';
+import {
+  buildReelCoverDiversityDirectives,
+  getReelArchetype,
+  resolveReelArchetypeForProduction,
+} from '@/lib/reel-canva-archetypes';
+import {
+  assembleReelBeatMontage,
+  pickReelBeatPhotoUrls,
+  shouldRunReelBeatMontage,
+} from '@/lib/reel-beat-montage';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export async function runFalStoryPosterProduction(input: {
@@ -182,10 +198,6 @@ export const falVideoHandler: ProductionPipelineHandler = {
           reelSupportingSubjects: inputs.reelSupportingSubjects,
         })
       : null;
-    const reelMotionCue = falPipeline === 'fal_reel'
-      ? mergeFalReelMotionCue(inputs.designerMotionCue, reelAgencyPack?.motionCue)
-      : inputs.designerMotionCue;
-
     const templateBinding = await bindBrandTemplateForFalProduction({
       workspaceId: inputs.workspaceId,
       slotRole: inputs.slotRole,
@@ -236,6 +248,52 @@ export const falVideoHandler: ProductionPipelineHandler = {
       state.brandDesignTemplateName = templateBinding.matched.templateName;
       state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
     }
+
+    const reelRecipe = falPipeline === 'fal_reel'
+      ? resolveReelProductionRecipe({
+          sector: inputs.brandBusinessType,
+          catalogSlotKey: inputs.catalogSlotKey,
+          templateType: templateBinding.matched?.templateType,
+          canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
+          headline: inputs.headline,
+          caption: inputs.caption,
+          slotPromptPack: inputs.slotPromptPack ?? null,
+          templateRecipe: templateBinding.matched?.reelRecipe ?? null,
+          brandReelParams: reelAgencyPack?.motionParams ?? null,
+          missionReelMotionSpec: inputs.reelMotionSpec ?? null,
+        })
+      : null;
+
+    const reelArchetype = falPipeline === 'fal_reel'
+      ? (getReelArchetype(reelRecipe?.reelArchetypeId)
+        ?? resolveReelArchetypeForProduction({
+          canvaArchetypeId: templateBinding.matched?.canvaArchetypeId ?? reelRecipe?.coverCanvaId,
+          headline: inputs.headline,
+          caption: inputs.caption,
+          sector: inputs.brandBusinessType,
+          catalogSlotKey: inputs.catalogSlotKey,
+          templateType: templateBinding.matched?.templateType,
+          reelJob: reelRecipe?.reelJob,
+        }))
+      : null;
+
+    const reelCoverDirectives = reelArchetype
+      ? buildReelCoverDiversityDirectives({
+          reelArchetype,
+          coverCanvaId: reelRecipe?.coverCanvaId ?? templateBinding.matched?.canvaArchetypeId,
+        })
+      : [];
+
+    const reelMotionCue = falPipeline === 'fal_reel'
+      ? mergeFalReelMotionCue(
+          inputs.designerMotionCue,
+          [
+            reelAgencyPack?.motionCue,
+            reelRecipe ? buildReelRecipeMotionCue(reelRecipe) : undefined,
+            reelArchetype ? `archetype ${reelArchetype.id}: ${reelArchetype.motionRecipe}` : undefined,
+          ].filter(Boolean).join(' · ') || undefined,
+        )
+      : inputs.designerMotionCue;
 
     // Catalog-pinned story/reel slots must clone the library template (same as posts).
     // Fail closed rather than inventing a generic Ideogram/Satori layout.
@@ -430,6 +488,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
             templateBinding.matched,
           ),
           ...(reelAgencyPack?.stillDirectives ?? []),
+          ...reelCoverDirectives,
         ],
         visualDnaTone: falBrand.visualDnaTone,
         designerMotionCue: reelMotionCue,
@@ -439,17 +498,76 @@ export const falVideoHandler: ProductionPipelineHandler = {
         templateLayoutImageUrl: templateLayoutReferenceUrl(templateBinding),
         templateReplica: templateReplicaSpecFromBinding(templateBinding),
         productionTier: inputs.productionTier,
+        reelRecipe,
       });
-      if (falPipeline === 'fal_reel' && reelAgencyPack) {
+      if (falPipeline === 'fal_reel' && (reelAgencyPack || reelRecipe)) {
         console.log(
-          `[auto-produce] [fal-track] reel agency pack: `
-          + `directives=${reelAgencyPack.stillDirectives.length} `
-          + `motion=${reelAgencyPack.summary.motion?.slice(0, 60) ?? '—'} `
-          + `agency=${reelAgencyPack.summary.agencyLevel ? 'yes' : 'no'} `
-          + `grading=${reelAgencyPack.summary.grading ? 'yes' : 'no'}`,
+          `[auto-produce] [fal-track] reel recipe: `
+          + `arch=${reelRecipe?.reelArchetypeId ?? '—'} `
+          + `cover=${reelRecipe?.coverCanvaId ?? '—'} `
+          + `mode=${reelRecipe ? resolveEffectiveReelMotionMode(reelRecipe) : '—'} `
+          + `job=${reelRecipe?.reelJob ?? '—'} `
+          + `edit=${reelRecipe?.editStyle ?? '—'} `
+          + `directives=${(reelAgencyPack?.stillDirectives.length ?? 0) + reelCoverDirectives.length}`,
         );
       }
-      state.videoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
+
+      let finalVideoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
+      if (
+        falPipeline === 'fal_reel'
+        && reelRecipe
+        && finalVideoUrl
+        && shouldRunReelBeatMontage({
+          recipe: reelRecipe,
+          photoUrls: [
+            photoUrl,
+            ...(inputs.montagePhotoUrls ?? []),
+          ].filter(Boolean) as string[],
+          productionTier: inputs.productionTier,
+        })
+      ) {
+        const beatPhotos = pickReelBeatPhotoUrls({
+          primaryUrl: photoUrl,
+          candidates: inputs.montagePhotoUrls ?? [],
+          beatCount: reelRecipe.beatCount,
+        });
+        try {
+          const montage = await assembleReelBeatMontage({
+            photoUrls: beatPhotos,
+            recipe: reelRecipe,
+            sector: inputs.brandBusinessType,
+            brandName: inputs.resolvedBrandName,
+            mood: inputs.mood,
+            designerMotionCue: reelMotionCue,
+            workspaceId: inputs.workspaceId,
+          });
+          if (montage && isPlayableVideoUrl(montage.videoUrl)) {
+            finalVideoUrl = montage.videoUrl;
+            console.log(
+              `[auto-produce] [fal-track] beat montage: ${montage.beatCount} beats `
+              + `arch=${reelRecipe.reelArchetypeId} model=${montage.model}`,
+            );
+            if (inputs.brandLogoUrl && reelRecipe.logoPolicy === 'composite_only') {
+              const { compositeOfficialLogoOnVideoUrl } = await import('@/lib/fal-logo-composite');
+              const withLogo = await compositeOfficialLogoOnVideoUrl({
+                videoUrl: finalVideoUrl,
+                logoUrl: inputs.brandLogoUrl,
+                placement: inputs.falLogoPlacement ?? null,
+                channel: 'reel',
+                workspaceId: inputs.workspaceId,
+              });
+              if (withLogo.logoApplied) finalVideoUrl = withLogo.videoUrl;
+            }
+          }
+        } catch (montageErr) {
+          console.warn(
+            '[auto-produce] [fal-track] beat montage failed — keeping single clip:',
+            montageErr instanceof Error ? montageErr.message : montageErr,
+          );
+        }
+      }
+
+      state.videoUrl = finalVideoUrl;
       // Reels: only keep the designed 9:16 still — never fall back to a raw gallery 4:5.
       state.imageUrl = designer.imageUrl
         || (falPipeline === 'fal_reel' ? null : (photoUrl || referenceUrl));
@@ -466,6 +584,15 @@ export const falVideoHandler: ProductionPipelineHandler = {
               reelPace: reelAgencyPack.motionParams.reelPacing,
               cameraMotion: reelAgencyPack.motionParams.cameraMotion,
               strategy: reelAgencyPack.motionParams.strategy,
+            }
+          : {}),
+        ...(reelRecipe
+          ? {
+              reelPace: reelRecipe.pace === 'auto' ? reelAgencyPack?.motionParams?.reelPacing : reelRecipe.pace,
+              cameraMotion: reelRecipe.camera,
+              strategy: reelRecipe.editStyle,
+              reelRecipe: reelRecipeToJson(reelRecipe),
+              motionMode: resolveEffectiveReelMotionMode(reelRecipe),
             }
           : {}),
       };

@@ -59,6 +59,8 @@ export interface MatchedDesignTemplate {
   designBriefDirectives?: string[];
   canvaArchetypeId?: string | null;
   canvaArchetypeName?: string | null;
+  /** Persisted fal_reel policy from design_spec.reel_recipe (reel_cover). */
+  reelRecipe?: Record<string, unknown> | null;
   /**
    * How the template was bound to the slot:
    * - `hard`   — exact `catalog_slot_key` match with compatible format (1A pin)
@@ -656,6 +658,12 @@ export async function matchDesignTemplateToSlot(
       : [],
     canvaArchetypeId: typeof sd.canvaArchetypeId === 'string' ? sd.canvaArchetypeId : null,
     canvaArchetypeName: typeof sd.canvaArchetypeName === 'string' ? sd.canvaArchetypeName : null,
+    reelRecipe: (() => {
+      const raw = sd.reel_recipe ?? sd.reelRecipe;
+      return raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? (raw as Record<string, unknown>)
+        : null;
+    })(),
     matchQuality,
   };
 }
