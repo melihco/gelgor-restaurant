@@ -7,6 +7,7 @@
  */
 
 import {
+  clampDesignIntensityToCeiling,
   DESIGN_CRAFT_LAYOUT_FAMILIES,
   type DesignCraftLayoutFamily,
   type FalDesignIntensityLevel,
@@ -232,9 +233,9 @@ export function resolveBrandLayoutLanguage(
       'designed',
       COASTAL_CRAFT,
       'craft_window',
-      false,
+      true,
       [
-        'Coastal editorial craft: intentional plates/rules + clear photo window — Aegean social energy, not caption-on-photo only, not EDM flyer.',
+        'Coastal editorial craft: soft plates/rules + clear photo window — Aegean brand energy, not caption-on-photo only, not bold poster geometry.',
       ],
     );
   }
@@ -313,13 +314,43 @@ export function resolveBrandLayoutLanguage(
 }
 
 /**
- * @deprecated Intensity is brand-parameter driven. Kept as identity helper so
- * callers stop clamping via DNA; always returns `proposed`.
+ * Identity helper for mission paths — Hub/slot intensity already resolved.
+ * Template library should use `resolveTemplateLibraryEffectiveIntensity` instead.
  */
 export function clampIntensityToLayoutLanguage(
   proposed: FalDesignIntensityLevel,
   _language: BrandLayoutLanguagePack,
 ): FalDesignIntensityLevel {
+  return proposed;
+}
+
+/**
+ * Template-library intensity: keep slot proposal under Hub ceiling (already applied),
+ * and soft-cap DNA packs so Hub bold_editorial cannot force painted poster geometry.
+ *
+ * Never raises energy to the Hub ceiling — that regression turned Kokteyl Promo /
+ * coastal templates into generic plate/rail/L paint after DNA vibe fixes.
+ */
+export function resolveTemplateLibraryEffectiveIntensity(input: {
+  productionIntensity: FalDesignIntensityLevel;
+  language: BrandLayoutLanguagePack;
+}): FalDesignIntensityLevel {
+  const proposed = input.productionIntensity;
+  if (proposed === 'photo_first') return 'photo_first';
+
+  if (input.language.composeMode === 'photo_first') {
+    return clampDesignIntensityToCeiling(proposed, 'elegant_light');
+  }
+
+  // Soft / type-led packs: designed craft recipes are enough — bold_editorial
+  // intensity directives literally require heavy painted geometry.
+  if (
+    input.language.preferPhotoLedCraft
+    || input.language.composeMode === 'type_on_photo'
+  ) {
+    return clampDesignIntensityToCeiling(proposed, 'designed');
+  }
+
   return proposed;
 }
 

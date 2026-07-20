@@ -3,12 +3,18 @@ import {
   clampIntensityToLayoutLanguage,
   resolveBrandLayoutLanguage,
   resolveCraftAllowlistForPack,
+  resolveTemplateLibraryEffectiveIntensity,
   shouldApplyCraftLayoutFamily,
 } from '@/lib/brand-layout-language';
-import { resolveDesignCraftLayoutFamily } from '@/lib/fal-design-intensity';
+import {
+  CALENDAR_ANNOUNCEMENT_INTENSITY,
+  resolveDesignCraftLayoutFamily,
+} from '@/lib/fal-design-intensity';
+import { DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT } from '@/lib/brand-design-template-presets';
+import { instanceToSlotDefinition, getSectorSlotPack } from '@/lib/sector-slot-pack';
 
 describe('resolveBrandLayoutLanguage', () => {
-  it('keeps vibrant beach_club (Yula-like) on coastal craft-window — not caption-only', () => {
+  it('keeps vibrant beach_club (Yula-like) on coastal craft-window — soft bias, not caption-only', () => {
     const pack = resolveBrandLayoutLanguage({
       sector: 'beach_club',
       visualDna:
@@ -22,9 +28,19 @@ describe('resolveBrandLayoutLanguage', () => {
     });
     expect(pack.id).toBe('coastal_editorial');
     expect(pack.composeMode).toBe('craft_window');
+    expect(pack.preferPhotoLedCraft).toBe(true);
     expect(pack.craftAllowlist.length).toBeGreaterThan(1);
     expect(pack.craftAllowlist).toContain('asymmetric_corner_plate');
-    expect(shouldApplyCraftLayoutFamily('bold_editorial', pack)).toBe(true);
+    expect(shouldApplyCraftLayoutFamily('designed', pack)).toBe(true);
+    // Library must not inherit Hub bold_editorial paint language.
+    expect(resolveTemplateLibraryEffectiveIntensity({
+      productionIntensity: 'designed',
+      language: pack,
+    })).toBe('designed');
+    expect(resolveTemplateLibraryEffectiveIntensity({
+      productionIntensity: 'bold_editorial',
+      language: pack,
+    })).toBe('designed');
     expect(clampIntensityToLayoutLanguage('bold_editorial', pack)).toBe('bold_editorial');
   });
 
@@ -59,6 +75,38 @@ describe('resolveBrandLayoutLanguage', () => {
     });
     expect(pack.id).toBe('nightlife_bold');
     expect(pack.craftAllowlist).toContain('side_rail_frame');
+    expect(pack.preferPhotoLedCraft).toBe(false);
+    expect(resolveTemplateLibraryEffectiveIntensity({
+      productionIntensity: 'bold_editorial',
+      language: pack,
+    })).toBe('bold_editorial');
+  });
+});
+
+describe('Kokteyl Promo story routing (beach_club pack)', () => {
+  it('resolves campaign_announcement → offer_campaign → designed under coastal soft cap', () => {
+    const pack = getSectorSlotPack('beach_club');
+    expect(pack).toBeTruthy();
+    const instance = pack!.instances.find((i) => i.suffix === 'cocktail_promo_story');
+    expect(instance).toBeTruthy();
+    const def = instanceToSlotDefinition(pack!, instance!, 10);
+    expect(def.slot_key).toBe('beach_club_cocktail_promo_story');
+    expect(def.design_template_type).toBe('campaign_announcement');
+
+    const announcement = DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT.campaign_announcement;
+    expect(announcement).toBe('offer_campaign');
+    expect(CALENDAR_ANNOUNCEMENT_INTENSITY.offer_campaign).toBe('designed');
+
+    const language = resolveBrandLayoutLanguage({
+      sector: 'beach_club',
+      visualDna: 'Aegean coastal vibrant citrus Drink & Chill',
+      brandTone: 'vibrant, fresh, social',
+    });
+    expect(language.id).toBe('coastal_editorial');
+    expect(resolveTemplateLibraryEffectiveIntensity({
+      productionIntensity: CALENDAR_ANNOUNCEMENT_INTENSITY.offer_campaign,
+      language,
+    })).toBe('designed');
   });
 });
 

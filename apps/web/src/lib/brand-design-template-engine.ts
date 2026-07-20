@@ -39,8 +39,6 @@ import type { FalDesignChannel } from '@/lib/fal-design-intensity';
 import {
   clampDesignIntensityForArchetype,
   describeDesignCraftLayoutFamily,
-  FAL_DESIGN_INTENSITY_RANK,
-  resolveBrandDesignIntensityCeiling,
   resolveCalendarFalDesignIntensity,
   resolveDesignCraftLayoutFamily,
   type DesignCraftLayoutFamily,
@@ -50,6 +48,7 @@ import {
   buildBrandLayoutLanguageDirectives,
   resolveBrandLayoutLanguage,
   resolveCraftAllowlistForPack,
+  resolveTemplateLibraryEffectiveIntensity,
   shouldApplyCraftLayoutFamily,
 } from '@/lib/brand-layout-language';
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
@@ -547,19 +546,15 @@ async function generateOne(
     channel: intensityChannel,
     brandTheme: theme,
   });
-  const brandCeiling = resolveBrandDesignIntensityCeiling(theme, intensityChannel);
-  // Hub intensity is a ceiling for production, but for the template library it is also
-  // the target: if the brand set bold_editorial, do not ship elegant_light caption cards
-  // just because the slot default was "designed" and DNA noise crushed energy.
-  // Ambient / BTS slots stay photo_first.
+  // Hub is a ceiling only (already applied in resolveCalendar). Never raise the
+  // library to Hub bold_editorial — that forced painted plate/rail/L geometry over
+  // the brand-specific designed recipes (e.g. Kokteyl Promo story → offer_campaign).
+  // Soft DNA packs further cap below bold poster intensity directives.
   const productionIntensity = slotIntensity.level;
-  const libraryIntensity = (() => {
-    if (productionIntensity === 'photo_first') return productionIntensity;
-    if (FAL_DESIGN_INTENSITY_RANK[brandCeiling] > FAL_DESIGN_INTENSITY_RANK[productionIntensity]) {
-      return brandCeiling;
-    }
-    return productionIntensity;
-  })();
+  const libraryIntensity = resolveTemplateLibraryEffectiveIntensity({
+    productionIntensity,
+    language: layoutLanguage,
+  });
   const designIntensityLevel = clampDesignIntensityForArchetype(
     resolveTemplateLibraryDesignIntensity(libraryIntensity),
     layoutBrief.canvaArchetypeId,
