@@ -12,6 +12,7 @@ const AI_KEYS_SNAKE = [
   'ai_adaptive_scene',
   'ai_adaptive_scene_mode',
   'ai_caption_driven_visual',
+  'visual_source_mode',
   'enable_visual_production_director',
 ] as const;
 
@@ -27,6 +28,7 @@ const CAMEL_TO_SNAKE: Record<string, string> = {
   aiAdaptiveScene: 'ai_adaptive_scene',
   aiAdaptiveSceneMode: 'ai_adaptive_scene_mode',
   aiCaptionDrivenVisual: 'ai_caption_driven_visual',
+  visualSourceMode: 'visual_source_mode',
   enableVisualProductionDirector: 'enable_visual_production_director',
 };
 

@@ -7,11 +7,14 @@
 import type { AiEnhanceLevel } from '@/lib/ai-gallery-enhance';
 import { shouldAiEnhanceGalleryPipeline } from '@/lib/ai-gallery-enhance';
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
-import { isNonVenueSector } from '@/lib/sector-gallery-seed';
+import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
 import {
-  isNonVenueSectorProfile,
-  getDefaultVisualSubject,
-} from '@/lib/sector-production-profile';
+  resolveAutoVisualSubject,
+  type ResolveVisualSubjectOptions,
+} from '@/lib/resolve-visual-subject';
+
+export type { GallerySubjectEvidence, ResolveVisualSubjectOptions } from '@/lib/resolve-visual-subject';
+export { inferVisualSubjectFromGallery } from '@/lib/resolve-visual-subject';
 
 export type AiEnhanceFormat = 'post' | 'story' | 'carousel' | 'reel';
 export type AiVisualSubject = 'auto' | 'venue_ambiance' | 'product_hero' | 'digital_ui';
@@ -63,16 +66,14 @@ import { normalizeBrandThemeRecord } from '@/lib/brand-theme-normalize';
 
 /**
  * Resolve the top-level visual source mode from brand_theme.
- * Reads `visual_source_mode` if explicitly set; otherwise infers from flags.
+ * Flags (`ai_photo_enhance` / `ai_caption_driven_visual`) are the production SSOT —
+ * `visual_source_mode` is a write macro that expands into those flags.
+ * Reading flags first prevents radio vs advanced-toggle drift.
  */
 export function resolveVisualSourceMode(
   brandTheme: Record<string, unknown> | null | undefined,
 ): VisualSourceMode {
   brandTheme = normalizeBrandThemeRecord(brandTheme);
-  const explicit = brandTheme?.visual_source_mode;
-  if (explicit === 'gallery_only' || explicit === 'gallery_enhanced' || explicit === 'ai_generated') {
-    return explicit;
-  }
   const enhance = Boolean(brandTheme?.ai_photo_enhance);
   const captionDriven = Boolean(brandTheme?.ai_caption_driven_visual);
   if (captionDriven && enhance) return 'ai_generated';
@@ -262,24 +263,16 @@ export function buildAdaptiveScenePromptBlock(input: {
   return lines.join('\n');
 }
 
+/**
+ * Resolve theme subject → concrete production subject.
+ * When `auto`, optional gallery meta can override sector defaults (see resolve-visual-subject.ts).
+ */
 export function resolveVisualSubject(
   subject: AiVisualSubject,
   businessType: string,
+  opts?: ResolveVisualSubjectOptions,
 ): ResolvedVisualSubject {
-  if (subject === 'digital_ui') return 'digital_ui';
-  if (subject === 'venue_ambiance' || subject === 'product_hero') return subject;
-
-  // Map profile's DefaultVisualSubject to this file's ResolvedVisualSubject type
-  const profileSubject = getDefaultVisualSubject(businessType);
-  if (profileSubject === 'digital_ui') return 'digital_ui';
-  if (profileSubject === 'product_closeup') return 'product_hero';
-  if (profileSubject === 'venue_interior' || profileSubject === 'service_person' || profileSubject === 'lifestyle') {
-    return 'venue_ambiance';
-  }
-
-  // Fallback: auto or unknown — use non-venue check
-  if (isNonVenueSectorProfile(businessType)) return 'digital_ui';
-  return 'venue_ambiance';
+  return resolveAutoVisualSubject(subject, businessType, opts);
 }
 
 export function contentKindToAiFormat(contentKind: string): AiEnhanceFormat | null {

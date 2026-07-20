@@ -15,8 +15,12 @@ import {
 import type { MissionVisualDesignCard } from '@/lib/mission-visual-design-cards';
 import type { ProductionIdea } from '@/types/production-idea';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+import {
+  buildScratchVisualBrief,
+  type ScratchVisualBrief,
+} from '@/lib/scratch-visual-brief';
 
-export async function generateVibeImage(opts: {
+export type GenerateVibeImageOpts = {
   workspaceId: string;
   headline: string;
   caption: string;
@@ -36,8 +40,29 @@ export async function generateVibeImage(opts: {
   vibeProfile?: Record<string, unknown> | null;
   logoUrl?: string;
   referenceImageUrls?: string[];
+  /** Compat flag — scratch/brief-driven generation (not caption-only). */
   captionDrivenMode?: boolean;
-}): Promise<string | null> {
+  /** Alias for captionDrivenMode (same semantics). */
+  scratchBriefMode?: boolean;
+  /** Primary scene brief — preferred over caption for scratch path. */
+  concept?: string;
+  visualDirection?: string;
+  strategicPurpose?: string;
+  mood?: string;
+  sceneHint?: string;
+  productType?: string;
+  missionBrief?: string;
+  imageEditPrompt?: string;
+  shotType?: string;
+  slotRole?: string;
+  catalogSlotKey?: string;
+  promptPackSummary?: string;
+  scratchBriefSources?: string[];
+  scratchBriefThin?: boolean;
+};
+
+export async function generateVibeImage(opts: GenerateVibeImageOpts): Promise<string | null> {
+  const scratchMode = Boolean(opts.captionDrivenMode || opts.scratchBriefMode);
   if (shouldPreserveVenuePhotos() && opts.referenceImageUrl) {
     try {
       const baseUrl = getNextjsInternalOrigin();
@@ -89,9 +114,26 @@ export async function generateVibeImage(opts: {
         ? opts.referenceImageUrls
         : opts.referenceImageUrl ? [opts.referenceImageUrl] : undefined,
       brandVibeProfile: opts.vibeProfile ?? undefined,
-      enhanceMode:    Boolean(opts.referenceImageUrl) && !opts.captionDrivenMode,
-      enhanceContext: opts.referenceImageUrl && !opts.captionDrivenMode ? enhancePrompt : undefined,
-      captionDrivenMode: opts.captionDrivenMode === true,
+      enhanceMode:    Boolean(opts.referenceImageUrl) && !scratchMode,
+      enhanceContext: opts.referenceImageUrl && !scratchMode ? enhancePrompt : undefined,
+      captionDrivenMode: scratchMode,
+      scratchBriefMode: scratchMode,
+      ...(opts.concept ? { concept: opts.concept } : {}),
+      ...(opts.visualDirection ? { visualDirection: opts.visualDirection } : {}),
+      ...(opts.strategicPurpose ? { strategicPurpose: opts.strategicPurpose } : {}),
+      ...(opts.mood ? { mood: opts.mood } : {}),
+      ...(opts.sceneHint ? { sceneHint: opts.sceneHint } : {}),
+      ...(opts.productType ? { productType: opts.productType } : {}),
+      ...(opts.missionBrief ? { missionBrief: opts.missionBrief } : {}),
+      ...(opts.imageEditPrompt ? { imageEditPrompt: opts.imageEditPrompt } : {}),
+      ...(opts.shotType ? { shotType: opts.shotType } : {}),
+      ...(opts.slotRole ? { slotRole: opts.slotRole } : {}),
+      ...(opts.catalogSlotKey ? { catalogSlotKey: opts.catalogSlotKey } : {}),
+      ...(opts.promptPackSummary ? { promptPackSummary: opts.promptPackSummary } : {}),
+      ...(opts.scratchBriefSources?.length
+        ? { scratchBriefSources: opts.scratchBriefSources }
+        : {}),
+      ...(opts.scratchBriefThin != null ? { scratchBriefThin: opts.scratchBriefThin } : {}),
       ...(opts.antiPatterns?.length && !opts.vibeProfile ? {
         brandVibeProfile: { anti_patterns: opts.antiPatterns } as Record<string, unknown>,
       } : {}),
@@ -113,6 +155,94 @@ export async function generateVibeImage(opts: {
     console.warn('[auto-produce] vibe image gen error', err);
     return null;
   }
+}
+
+/** Brand + idea → scratch vibe image with idea/brief priority stack. */
+export async function generateScratchVibeImage(opts: {
+  workspaceId: string;
+  headline: string;
+  caption: string;
+  contentType: string;
+  brandName: string;
+  location?: string;
+  businessType?: string;
+  brandTone?: string;
+  brandDescription?: string;
+  targetAudience?: string;
+  visualStyle?: string;
+  visualDna?: string;
+  vibeProfile?: Record<string, unknown> | null;
+  logoUrl?: string;
+  referenceImageUrls?: string[];
+  referenceImageUrl?: string;
+  lutDirective?: string;
+  antiPatterns?: string[];
+  idea: Record<string, unknown>;
+  mood?: string;
+  assignment?: {
+    slot_role?: string;
+    pipeline?: string;
+    catalog_slot_key?: string;
+    visual_subject_hint?: string;
+    fal_design_hint?: string;
+    prompt_pack?: Record<string, unknown> | null;
+  } | null;
+  missionBrief?: string | null;
+  /** Default true — scratch/brief-driven (compat: captionDrivenMode). */
+  captionDrivenMode?: boolean;
+}): Promise<{ imageUrl: string | null; brief: ScratchVisualBrief }> {
+  const brief = buildScratchVisualBrief({
+    idea: opts.idea,
+    headline: opts.headline,
+    caption: opts.caption,
+    mood: opts.mood,
+    assignment: opts.assignment,
+    missionBrief: opts.missionBrief,
+  });
+  if (brief.briefThin) {
+    console.warn(
+      `[auto-produce] scratch brief thin (sources=${brief.sources.join(',')}) `
+      + `"${opts.headline.slice(0, 40)}"`,
+    );
+  }
+  const imageUrl = await generateVibeImage({
+    workspaceId: opts.workspaceId,
+    headline: opts.headline,
+    caption: opts.caption,
+    contentType: opts.contentType,
+    brandName: opts.brandName,
+    location: opts.location,
+    businessType: opts.businessType,
+    brandTone: opts.brandTone,
+    brandDescription: opts.brandDescription,
+    targetAudience: opts.targetAudience,
+    visualStyle: opts.visualStyle,
+    visualDna: opts.visualDna,
+    vibeProfile: opts.vibeProfile,
+    logoUrl: opts.logoUrl,
+    referenceImageUrls: opts.referenceImageUrls,
+    referenceImageUrl: opts.referenceImageUrl,
+    lutDirective: opts.lutDirective,
+    antiPatterns: opts.antiPatterns,
+    agentImageEditPrompt: brief.imageEditPrompt || undefined,
+    captionDrivenMode: opts.captionDrivenMode !== false,
+    scratchBriefMode: opts.captionDrivenMode !== false,
+    concept: brief.sceneBrief || undefined,
+    visualDirection: brief.visualDirection || undefined,
+    strategicPurpose: brief.strategicPurpose || undefined,
+    mood: brief.mood || undefined,
+    sceneHint: brief.sceneHint || undefined,
+    productType: brief.productType || undefined,
+    missionBrief: brief.missionBrief || undefined,
+    imageEditPrompt: brief.imageEditPrompt || undefined,
+    shotType: brief.shotType || undefined,
+    slotRole: brief.slotRole || undefined,
+    catalogSlotKey: brief.catalogSlotKey || undefined,
+    promptPackSummary: brief.promptPackSummary || undefined,
+    scratchBriefSources: brief.sources,
+    scratchBriefThin: brief.briefThin,
+  });
+  return { imageUrl, brief };
 }
 
 export async function generateDesignedImageFromMissionCard(opts: {

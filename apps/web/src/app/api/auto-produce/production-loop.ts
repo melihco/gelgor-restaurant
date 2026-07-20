@@ -247,6 +247,7 @@ import { resolveSlotLogoForRender } from '@/lib/brand-logo-production';
 import {
   fetchBrandThemeForProduction,
   resolveProductionVisualStandard,
+  resolveVisualSourceMode,
 } from '@/lib/brand-theme-ai-settings';
 import { auditPosterOverlayCopy, resolvePosterOverlayCopy } from '@/lib/poster-copy';
 import type { StoryCompositionId } from '@/lib/story-composition-types';
@@ -338,12 +339,17 @@ import {
 } from './caption-publish-resolver';
 import {
   generateVibeImage,
+  generateScratchVibeImage,
   generateDesignedImageFromMissionCard,
   generateEventOverlayImage,
   generateMarkyLayerCard,
   generateVibeCarousel,
   renderEventCardFromPayload,
 } from './handlers/image-generators';
+import {
+  scratchBriefTelemetry,
+  type ScratchVisualBrief,
+} from '@/lib/scratch-visual-brief';
 import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
 import { isFalOnlyPipeline } from '@/lib/pipeline-registry';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
@@ -591,8 +597,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const brandKitId = pctx.kitId;
   const aiPhotoEnhance = pctx.aiPhotoEnhanceEnabled;
   const aiPhotoEnhanceLevel = pctx.aiPhotoEnhanceLevel;
-  const aiVisualStandard = pctx.aiVisualStandard;
-  const resolvedVisualSubject = pctx.resolvedVisualSubject;
+  /** May be refined after gallery analysis when theme subject is `auto`. */
+  let aiVisualStandard = pctx.aiVisualStandard;
+  let resolvedVisualSubject = pctx.resolvedVisualSubject;
   const missionVisualBrief = pctx.missionVisualBrief;
   const tenantLearning = pctx.tenantLearning;
   const tenantLearningBrief = pctx.tenantLearningBrief;
@@ -806,6 +813,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       galleryMeta = analysisGate.meta;
     }
   }
+
+  // P3 — auto subject: gallery density → sector default (explicit theme subject untouched).
+  if (pctx.aiVisualStandard.visualSubject === 'auto') {
+    const fromAuto = resolveVisualSubject('auto', brandBusinessType, { galleryMeta });
+    if (fromAuto !== resolvedVisualSubject) {
+      console.log(
+        `[auto-produce] auto visual subject: ${resolvedVisualSubject} → ${fromAuto} `
+        + `(galleryEvidence=${Object.keys(galleryMeta).length})`,
+      );
+    }
+    resolvedVisualSubject = fromAuto;
+    aiVisualStandard = {
+      ...aiVisualStandard,
+      visualSubject: fromAuto,
+    };
+  }
+
   // Brief'ten gelen kullanıcı fotoğraflarını galeri yoksa inject et (hasGallery ve PIS için)
   const briefPhotoUrls: string[] = ideas
     .map((idea) => (idea as Record<string, unknown>).selected_gallery_url)
@@ -1637,9 +1661,53 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // ── Step 1: find best gallery reference photo (per post type) ─────
     let referenceUrl: string | null = null;
     let captionDrivenGenerated = false;
+    /** Last idea/brief-driven scratch brief (telemetry when captionDrivenGenerated). */
+    let lastScratchBrief: ScratchVisualBrief | null = null;
+    let lastScratchBriefSources: string[] = [];
     let carouselGalleryUrls: string[] = [];
     let enhancedGallerySet: string[] = [];
     let galleryMatchScore: number | null = galleryMatchScoreEarly;
+
+    const runScratchVibeImage = async (extra?: {
+      referenceImageUrls?: string[];
+      referenceImageUrl?: string;
+      captionDrivenMode?: boolean;
+    }): Promise<string | null> => {
+      const result = await generateScratchVibeImage({
+        workspaceId,
+        headline,
+        caption,
+        contentType: kind,
+        brandName: resolvedBrandName,
+        location: brandLocation,
+        businessType: brandBusinessType,
+        brandTone: String(brandCtx.brand_tone ?? ''),
+        brandDescription: String(brandCtx.description ?? ''),
+        targetAudience: String(brandCtx.target_audience ?? ''),
+        visualStyle: String(brandCtx.visual_style ?? ''),
+        visualDna: String(brandCtx.visual_dna ?? ''),
+        vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
+        logoUrl: brandLogoUrl || undefined,
+        lutDirective: brandLutDirective || undefined,
+        antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+        idea: idea as unknown as Record<string, unknown>,
+        mood,
+        assignment: {
+          slot_role: assignment.slot_role,
+          pipeline: assignment.pipeline,
+          catalog_slot_key: assignment.catalog_slot_key,
+          visual_subject_hint: assignment.visual_subject_hint,
+          fal_design_hint: assignment.fal_design_hint,
+        },
+        missionBrief: missionVisualBrief,
+        ...extra,
+      });
+      if (result.imageUrl) {
+        lastScratchBrief = result.brief;
+        lastScratchBriefSources = [...result.brief.sources];
+      }
+      return result.imageUrl;
+    };
 
     const attachedPhotoUrls = Array.isArray(idea.attached_photo_urls)
       ? idea.attached_photo_urls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
@@ -1753,31 +1821,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && !forceAttachedPhotos
       && !(hasRealBrandPhotos && usesFalDesignerTrackEarly)
     ) {
-      const aiFromCaption = await generateVibeImage({
-        workspaceId,
-        headline,
-        caption,
-        contentType: kind,
-        brandName: resolvedBrandName,
-        location: brandLocation,
-        businessType: brandBusinessType,
-        brandTone: String(brandCtx.brand_tone ?? ''),
-        brandDescription: String(brandCtx.description ?? ''),
-        targetAudience: String(brandCtx.target_audience ?? ''),
-        visualStyle: String(brandCtx.visual_style ?? ''),
-        visualDna: String(brandCtx.visual_dna ?? ''),
-        vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-        logoUrl: brandLogoUrl || undefined,
-        lutDirective: brandLutDirective || undefined,
-        antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-        captionDrivenMode: true,
-      });
+      const aiFromCaption = await runScratchVibeImage();
       if (aiFromCaption) {
         referenceUrl = aiFromCaption;
         captionDrivenGenerated = true;
         galleryMatchScore = null;
         console.log(
-          `[auto-produce] caption-driven AI (gallery skipped): "${headline.slice(0, 50)}"`,
+          `[auto-produce] idea-brief scratch AI (gallery skipped): "${headline.slice(0, 50)}" `
+          + `sources=${lastScratchBriefSources.join(',') || '—'}`,
         );
       }
     }
@@ -2037,27 +2088,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         console.log(`[auto-produce] no gallery photo → AI image generation for: "${headline.slice(0, 50)}"`);
       }
-      const baseUrl = getNextjsInternalOrigin();
-      const aiGenerated = await generateVibeImage({
-        workspaceId,
-        headline,
-        caption,
-        contentType: kind,
-        brandName: resolvedBrandName,
-        location: brandLocation,
-        businessType: brandBusinessType,
-        brandTone: String(brandCtx.brand_tone ?? ''),
-        brandDescription: String(brandCtx.description ?? ''),
-        targetAudience: String(brandCtx.target_audience ?? ''),
-        visualStyle: String(brandCtx.visual_style ?? ''),
-        visualDna: String(brandCtx.visual_dna ?? ''),
-        vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-        logoUrl: brandLogoUrl || undefined,
+      const aiGenerated = await runScratchVibeImage({
         referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
-        agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-          ?.image_edit_prompt as string | undefined,
-        lutDirective: brandLutDirective || undefined,
-        antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
         captionDrivenMode: isNonVenueSectorProfile(brandBusinessType) || isCaptionDrivenDefault(brandBusinessType),
       });
       if (!aiGenerated) {
@@ -2066,6 +2098,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         continue;
       }
       referenceUrl = aiGenerated;
+      if (isNonVenueSectorProfile(brandBusinessType) || isCaptionDrivenDefault(brandBusinessType)) {
+        captionDrivenGenerated = true;
+      }
       galleryMatchScore = null;
       console.log(`[auto-produce] AI image generated: ${aiGenerated.slice(0, 80)}`);
     }
@@ -2148,27 +2183,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.warn(
           `[auto-produce] no brand gallery rematch — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
         );
-        const recovered = await generateVibeImage({
-          workspaceId,
-          headline,
-          caption,
-          contentType: kind,
-          brandName: resolvedBrandName,
-          location: brandLocation,
-          businessType: brandBusinessType,
-          brandTone: String(brandCtx.brand_tone ?? ''),
-          brandDescription: String(brandCtx.description ?? ''),
-          targetAudience: String(brandCtx.target_audience ?? ''),
-          visualStyle: String(brandCtx.visual_style ?? ''),
-          visualDna: String(brandCtx.visual_dna ?? ''),
-          vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-          logoUrl: brandLogoUrl || undefined,
+        const recovered = await runScratchVibeImage({
           referenceImageUrls: undefined,
-          agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-            ?.image_edit_prompt as string | undefined,
-          lutDirective: brandLutDirective || undefined,
-          antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-          captionDrivenMode: true,
         });
         if (!recovered) {
           results.push({
@@ -2289,28 +2305,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           console.warn(
             `[auto-produce] broken internal/no gallery — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
           );
-          const recovered = await generateVibeImage({
-            workspaceId,
-            headline,
-            caption,
-            contentType: kind,
-            brandName: resolvedBrandName,
-            location: brandLocation,
-            businessType: brandBusinessType,
-            brandTone: String(brandCtx.brand_tone ?? ''),
-            brandDescription: String(brandCtx.description ?? ''),
-            targetAudience: String(brandCtx.target_audience ?? ''),
-            visualStyle: String(brandCtx.visual_style ?? ''),
-            visualDna: String(brandCtx.visual_dna ?? ''),
-            vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-            logoUrl: brandLogoUrl || undefined,
-            referenceImageUrls: undefined,
-            agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-              ?.image_edit_prompt as string | undefined,
-            lutDirective: brandLutDirective || undefined,
-            antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-            captionDrivenMode: true,
-          });
+          const recovered = await runScratchVibeImage({
+          referenceImageUrls: undefined,
+        });
           if (!recovered) {
             results.push({
               title: headline,
@@ -2361,28 +2358,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             console.warn(
               `[auto-produce] mirror failed — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
             );
-            const recovered = await generateVibeImage({
-              workspaceId,
-              headline,
-              caption,
-              contentType: kind,
-              brandName: resolvedBrandName,
-              location: brandLocation,
-              businessType: brandBusinessType,
-              brandTone: String(brandCtx.brand_tone ?? ''),
-              brandDescription: String(brandCtx.description ?? ''),
-              targetAudience: String(brandCtx.target_audience ?? ''),
-              visualStyle: String(brandCtx.visual_style ?? ''),
-              visualDna: String(brandCtx.visual_dna ?? ''),
-              vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-              logoUrl: brandLogoUrl || undefined,
-              referenceImageUrls: undefined,
-              agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-                ?.image_edit_prompt as string | undefined,
-              lutDirective: brandLutDirective || undefined,
-              antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-              captionDrivenMode: true,
-            });
+            const recovered = await runScratchVibeImage({
+          referenceImageUrls: undefined,
+        });
             if (!recovered) {
               results.push({
                 title: headline,
@@ -2413,28 +2391,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.warn('[auto-produce] pickReachableProductionGalleryUrl failed:', mirrorErr);
         if (!referenceUrl.startsWith('/api/media?key=')) {
           if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
-            const recovered = await generateVibeImage({
-              workspaceId,
-              headline,
-              caption,
-              contentType: kind,
-              brandName: resolvedBrandName,
-              location: brandLocation,
-              businessType: brandBusinessType,
-              brandTone: String(brandCtx.brand_tone ?? ''),
-              brandDescription: String(brandCtx.description ?? ''),
-              targetAudience: String(brandCtx.target_audience ?? ''),
-              visualStyle: String(brandCtx.visual_style ?? ''),
-              visualDna: String(brandCtx.visual_dna ?? ''),
-              vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-              logoUrl: brandLogoUrl || undefined,
-              referenceImageUrls: undefined,
-              agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-                ?.image_edit_prompt as string | undefined,
-              lutDirective: brandLutDirective || undefined,
-              antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-              captionDrivenMode: true,
-            });
+            const recovered = await runScratchVibeImage({
+          referenceImageUrls: undefined,
+        });
             if (!recovered) {
               results.push({
                 title: headline,
@@ -2848,26 +2807,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     ) {
       referenceIsStock = false;
       captionDrivenGenerated = true;
-      const aiGenerated = await generateVibeImage({
-        workspaceId,
-        headline,
-        caption,
-        contentType: kind,
-        brandName: resolvedBrandName,
-        location: brandLocation,
-        businessType: brandBusinessType,
-        brandTone: String(brandCtx.brand_tone ?? ''),
-        brandDescription: String(brandCtx.description ?? ''),
-        targetAudience: String(brandCtx.target_audience ?? ''),
-        visualStyle: String(brandCtx.visual_style ?? ''),
-        visualDna: String(brandCtx.visual_dna ?? ''),
-        vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-        logoUrl: brandLogoUrl || undefined,
+      const aiGenerated = await runScratchVibeImage({
         referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
-        agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-          ?.image_edit_prompt as string | undefined,
-        lutDirective: brandLutDirective || undefined,
-        antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
+        captionDrivenMode: true,
       });
       if (!aiGenerated) {
         console.warn(
@@ -2952,30 +2894,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         });
       } else if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
         console.warn(
-          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — caption scratch (non-venue) for "${headline.slice(0, 40)}"`,
+          `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — idea-brief scratch (non-venue) for "${headline.slice(0, 40)}"`,
         );
-        const recovered = await generateVibeImage({
-          workspaceId,
-          headline,
-          caption,
-          contentType: kind,
-          brandName: resolvedBrandName,
-          location: brandLocation,
-          businessType: brandBusinessType,
-          brandTone: String(brandCtx.brand_tone ?? ''),
-          brandDescription: String(brandCtx.description ?? ''),
-          targetAudience: String(brandCtx.target_audience ?? ''),
-          visualStyle: String(brandCtx.visual_style ?? ''),
-          visualDna: String(brandCtx.visual_dna ?? ''),
-          vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-          logoUrl: brandLogoUrl || undefined,
-          referenceImageUrls: undefined,
-          agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-            ?.image_edit_prompt as string | undefined,
-          lutDirective: brandLutDirective || undefined,
-          antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-          captionDrivenMode: true,
-        });
+        const recovered = await runScratchVibeImage({ referenceImageUrls: undefined });
         if (!recovered) {
           if (!escalateGalleryFailureToFalOnly('weak_gallery_caption_scratch')) {
             results.push({
@@ -3107,15 +3028,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       : undefined;
     let aiEnhanceApiFailed = false;
 
-    // ── Designed-post background enhance ────────────────────────────────────
-    // Run a photo-quality-only pass for designed_post BEFORE the Remotion overlay render.
-    // Unlike story/reel enhance, this must NOT add text — Remotion handles that.
+    // ── Designed / fal background enhance ───────────────────────────────────
+    // Photo pass BEFORE Remotion/fal typography compose. Gated by aiVisualStandard
+    // (gallery_only → no-op). Product staging may run even for non-venue e-commerce.
+    const designedBgProductStaging =
+      resolvedVisualSubject === 'product_hero'
+      || aiVisualStandard.visualSubject === 'product_hero'
+      || aiVisualStandard.adaptiveSceneMode === 'product_showcase';
     if (
       !captionDrivenGenerated
-      && isDesignedPostSlotEarly
+      && isFalDesignedPostSlotEarly
       && referenceUrl
       && aiVisualStandard.enabled
-      && !isNonVenueSector(brandBusinessType)
+      && (!isNonVenueSectorProfile(brandBusinessType) || designedBgProductStaging)
     ) {
       const bgEnhance = await runGptImageEnhanceForIdea({
         baseUrl: routeBaseUrl,
@@ -3129,7 +3054,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         visualStandard: aiVisualStandard,
         brandCtx: brandCtxForVisual,
         brandTheme,
-        sceneBrief: null,
+        // Product: full scene brief for staging. Venue: brief for lighting/mood only;
+        // enhance-product-photo preserves venue via visualSubject.
+        sceneBrief: sceneBrief,
         caption,
         headline,
         strategicPurpose,
@@ -3159,7 +3086,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceUrl = bgEnhance.photoUrls[0];
         aiEnhanceApplied = true;
         aiEnhanceSkipReason = undefined;
-        console.log(`[auto-produce] designed_post background enhanced: "${headline.slice(0, 40)}"`);
+        console.log(
+          `[auto-produce] designed/fal background enhanced `
+          + `(pipeline=${assignment.pipeline}, subject=${resolvedVisualSubject}): `
+          + `"${headline.slice(0, 40)}"`,
+        );
       } else {
         aiEnhanceSkipReason = bgEnhance.skipReason ?? 'designed_post_bg_skipped';
       }
@@ -3245,33 +3176,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           );
         } else if (!hasRealBrandPhotos && !productionProfile.skipAggressiveEnhance && !isNonVenueSector(brandBusinessType)) {
           // Stock-only gallery → fresh AI from brand + caption (physical venues only).
-          console.log(`[auto-produce] GPT enhance failed on seed photo → fresh AI generation for: "${headline.slice(0, 40)}"`);
-          const baseUrl = getNextjsInternalOrigin();
-          const freshImage = await generateVibeImage({
-            workspaceId,
-            headline,
-            caption,
-            contentType: kind,
-            brandName: resolvedBrandName,
-            location: brandLocation,
-            businessType: brandBusinessType,
-            brandTone: String(brandCtx.brand_tone ?? ''),
-            brandDescription: String(brandCtx.description ?? ''),
-            targetAudience: String(brandCtx.target_audience ?? ''),
-            visualStyle: String(brandCtx.visual_style ?? ''),
-            visualDna: String(brandCtx.visual_dna ?? ''),
-            vibeProfile: hasVibe ? (brandCtx.brand_vibe_profile as Record<string, unknown>) : null,
-            logoUrl: brandLogoUrl || undefined,
-            agentImageEditPrompt: (idea.visual_production_spec as Record<string, unknown> | undefined)
-              ?.image_edit_prompt as string | undefined,
-            lutDirective: brandLutDirective || undefined,
-            antiPatterns: brandAntiPatterns.length ? brandAntiPatterns : undefined,
-          });
+          console.log(`[auto-produce] GPT enhance failed on seed photo → idea-brief scratch for: "${headline.slice(0, 40)}"`);
+          const freshImage = await runScratchVibeImage({ captionDrivenMode: true });
           if (freshImage) {
             referenceUrl = freshImage;
             enhancedGallerySet = [freshImage];
             aiEnhanceApplied = true;
             aiEnhanceSkipReason = undefined;
+            captionDrivenGenerated = true;
             galleryMatchScore = null;
             costEstimate += 0.04; // gpt-image-1 flat rate estimate
             console.log(`[auto-produce] Fresh AI image generated: ${freshImage.slice(0, 80)}`);
@@ -4589,10 +4501,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ai_enhance_failed: aiVisualStandard.enabled && !aiEnhanceApplied,
       ...(aiEnhanceSkipReason ? { ai_enhance_skip_reason: aiEnhanceSkipReason } : {}),
       ...(aiEnhanceApiFailed ? { ai_enhance_api_failed: true } : {}),
+      ...(captionDrivenGenerated && lastScratchBrief
+        ? scratchBriefTelemetry(lastScratchBrief)
+        : {}),
       ai_enhance_level: aiVisualStandard.enabled ? aiPhotoEnhanceLevel : undefined,
       ai_visual_standard_enabled: aiVisualStandard.enabled,
-      ai_visual_standard: buildAiVisualStandardMetadata(aiVisualStandard, aiPhotoEnhanceLevel),
+      ai_visual_standard: buildAiVisualStandardMetadata(aiVisualStandard, aiPhotoEnhanceLevel, {
+        visualSourceMode: resolveVisualSourceMode(brandTheme),
+        resolvedVisualSubject,
+      }),
       ai_visual_subject_resolved: resolvedVisualSubject,
+      visual_source_mode: resolveVisualSourceMode(brandTheme),
       visual_pipeline_steps: resolveVisualPipelineSteps(aiVisualStandard, kind, assignment, {
         willStoryOverlay: false,
         willDesignedPost: false,

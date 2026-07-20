@@ -15,6 +15,10 @@ import {
 import { buildFalLogoPlacementContract } from '@/lib/fal-caption-headline';
 import { compositeOfficialLogoOnFrameUrl } from '@/lib/fal-logo-composite';
 import type { ResolvedFalLogoPlacement } from '@/lib/fal-logo-placement';
+import {
+  buildScratchCreativePromptLines,
+  buildScratchVisualBrief,
+} from '@/lib/scratch-visual-brief';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -157,10 +161,25 @@ type InstagramImageInput = {
    * Stored on brand_contexts.brand_vibe_profile.
    */
   /**
-   * Caption + brand DNA fresh generation — skips gallery reference edit;
-   * forces OpenAI and uses full buildPrompt with vibe/location/logo hints.
+   * Scratch / idea-brief fresh generation — skips gallery reference edit;
+   * forces OpenAI and uses brief-priority buildPrompt (compat name: captionDriven).
    */
   captionDrivenMode?: boolean;
+  /** Alias for captionDrivenMode — same scratch/brief-driven semantics. */
+  scratchBriefMode?: boolean;
+  visualDirection?: string;
+  strategicPurpose?: string;
+  mood?: string;
+  sceneHint?: string;
+  productType?: string;
+  missionBrief?: string;
+  imageEditPrompt?: string;
+  shotType?: string;
+  slotRole?: string;
+  catalogSlotKey?: string;
+  promptPackSummary?: string;
+  scratchBriefSources?: string[];
+  scratchBriefThin?: boolean;
   brandVibeProfile?: {
     palette?: { primary?: string; accent?: string; neutral?: string; shadow?: string; palette_description?: string };
     grading?: { look?: string; lut_directive?: string };
@@ -725,13 +744,54 @@ function buildPrompt(input: InstagramImageInput) {
     clean(input.websiteUrl) ? `Website reference for brand context only: ${clean(input.websiteUrl)}` : undefined,
   ]);
 
-  const creativeSection = compactLines([
-    `Scene brief: ${clean(input.concept) ?? clean(input.title)}`,
-    clean(input.campaignContext) ? `Full content plan context for consistency. Generate only the selected visual, but use this plan to understand the series:\n${clean(input.campaignContext)}` : undefined,
-    clean(input.title) ? `Asset title: ${clean(input.title)}` : undefined,
-    clean(input.caption) ? `Narrative meaning to imply visually, never as written text: ${clean(input.caption)}` : undefined,
-    input.tags?.length ? `Scene cues, not text to render: ${input.tags.map(cleanTheme).filter(Boolean).join(', ')}` : undefined,
-  ]);
+  const scratchBriefMode = Boolean(input.captionDrivenMode || input.scratchBriefMode);
+  const creativeSectionFinal = scratchBriefMode
+    ? (() => {
+      const brief = buildScratchVisualBrief({
+        idea: {
+          visual_direction: input.visualDirection,
+          scene_hint: input.sceneHint,
+          mood: input.mood,
+          strategic_purpose: input.strategicPurpose,
+          product_type: input.productType,
+          visual_production_spec: {
+            image_edit_prompt: input.imageEditPrompt,
+            shot_type: input.shotType,
+          },
+          catalog_slot_key: input.catalogSlotKey,
+        },
+        headline: input.title,
+        caption: input.caption,
+        mood: input.mood,
+        assignment: {
+          slot_role: input.slotRole,
+          catalog_slot_key: input.catalogSlotKey,
+        },
+        missionBrief: input.missionBrief,
+        promptPack: input.promptPackSummary
+          ? { scene_hint: input.promptPackSummary }
+          : null,
+      });
+      // Production may pass a pre-assembled concept — prefer when richer.
+      const concept = clean(input.concept);
+      if (concept && concept.length >= brief.sceneBrief.length) {
+        brief.sceneBrief = concept;
+      }
+      return compactLines(
+        buildScratchCreativePromptLines({
+          brief,
+          headline: input.title,
+          caption: input.caption,
+        }),
+      );
+    })()
+    : compactLines([
+      `Scene brief: ${clean(input.concept) ?? clean(input.title)}`,
+      clean(input.campaignContext) ? `Full content plan context for consistency. Generate only the selected visual, but use this plan to understand the series:\n${clean(input.campaignContext)}` : undefined,
+      clean(input.title) ? `Asset title: ${clean(input.title)}` : undefined,
+      clean(input.caption) ? `Narrative meaning to imply visually, never as written text: ${clean(input.caption)}` : undefined,
+      input.tags?.length ? `Scene cues, not text to render: ${input.tags.map(cleanTheme).filter(Boolean).join(', ')}` : undefined,
+    ]);
 
   const photographyDirection = compactLines([
     'RAW CAMERA PHOTO ONLY. Create a realistic commercial lifestyle photograph, not a graphic design asset.',
@@ -834,7 +894,7 @@ function buildPrompt(input: InstagramImageInput) {
     brandSection || 'Use a premium, trustworthy local business brand identity.',
     '',
     'CONTENT BRIEF',
-    creativeSection,
+    creativeSectionFinal,
     '',
     'PHOTOGRAPHIC DIRECTION',
     photographyDirection,
@@ -1464,11 +1524,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? input.designCardPrompt!
     : await maybeExpandImageScenePrompt(buildPrompt(input));
 
-  const preferredProvider: ImageProvider = isDesignedCard || input.captionDrivenMode
+  const scratchMode = Boolean(input.captionDrivenMode || input.scratchBriefMode);
+  const preferredProvider: ImageProvider = isDesignedCard || scratchMode
     ? 'openai'
     : (serverConfig.imageProvider as ImageProvider);
 
-  const scratchReferenceUrls = input.captionDrivenMode
+  const scratchReferenceUrls = scratchMode
     ? undefined
     : referenceImageUrls;
 

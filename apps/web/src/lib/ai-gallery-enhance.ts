@@ -41,6 +41,8 @@ const ENHANCE_PIPELINES = new Set([
   'story_still',
   'carousel_gallery',
   'fal_reel',
+  /** Designed feed post — BG photo enhance before fal typography compose. */
+  'fal_design',
 ]);
 
 export function isAiEnhanceEnabled(brandTheme: Record<string, unknown> | null | undefined): boolean {

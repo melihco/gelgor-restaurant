@@ -23,7 +23,6 @@ import {
 } from '@/lib/gpt-enhance-policy';
 import type { BrandContextForVisual } from '@/lib/ai-visual-production-standard';
 import { resolveVisualSubject } from '@/lib/ai-visual-production-standard';
-import { isNonVenueSector } from '@/lib/sector-gallery-seed';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
 
 /** Mission Hub brief + tenant learning — "Brief sahneyi yönetir" için. */
@@ -40,6 +39,7 @@ export function resolveMissionVisualBrief(
 export function buildAiVisualStandardMetadata(
   standard: AiVisualProductionStandard,
   level: AiEnhanceLevel,
+  extras?: { visualSourceMode?: string; resolvedVisualSubject?: string },
 ): Record<string, unknown> {
   return {
     enabled: standard.enabled,
@@ -53,6 +53,10 @@ export function buildAiVisualStandardMetadata(
     adaptive_scene: standard.adaptiveScene,
     adaptive_scene_mode: standard.adaptiveSceneMode,
     caption_driven_visual: standard.captionDrivenVisual,
+    ...(extras?.visualSourceMode ? { visual_source_mode: extras.visualSourceMode } : {}),
+    ...(extras?.resolvedVisualSubject
+      ? { visual_subject_resolved: extras.resolvedVisualSubject }
+      : {}),
   };
 }
 
@@ -132,13 +136,6 @@ export async function runGptImageEnhanceForIdea(
   const originals = input.photoUrls.filter((u) => u?.trim());
   if (!originals.length) return { photoUrls: [], applied: false };
 
-  if (isNonVenueSectorProfile(input.businessType)) {
-    console.log(
-      `[auto-produce] GPT enhance skipped (non_venue_saas) sector=${input.businessType}`,
-    );
-    return { photoUrls: originals, applied: false, skipReason: 'non_venue_saas' };
-  }
-
   const policyInput: GptEnhancePolicyInput | null = input.enhancePolicy
     ? {
       visualStandard: input.visualStandard,
@@ -148,6 +145,15 @@ export async function runGptImageEnhanceForIdea(
       ...input.enhancePolicy,
     }
     : null;
+
+  // Non-venue SaaS skip lives in gpt-enhance-policy (product_hero staging may still run).
+  // Without an enhancePolicy, keep the legacy hard skip for digital sectors.
+  if (!policyInput && isNonVenueSectorProfile(input.businessType)) {
+    console.log(
+      `[auto-produce] GPT enhance skipped (non_venue_saas) sector=${input.businessType}`,
+    );
+    return { photoUrls: originals, applied: false, skipReason: 'non_venue_saas' };
+  }
 
   if (policyInput) {
     const skipReason = resolveGptEnhanceSkipReason(policyInput);

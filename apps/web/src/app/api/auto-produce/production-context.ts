@@ -83,6 +83,10 @@ export interface ProductionContext {
   readonly aiPhotoEnhanceEnabled: boolean;
   readonly aiPhotoEnhanceLevel: AiEnhanceLevel;
   readonly aiVisualStandard: AiVisualProductionStandard;
+  /**
+   * Sector-resolved subject at context build time.
+   * When theme subject is `auto`, production-loop re-resolves with gallery analysis.
+   */
   readonly resolvedVisualSubject: string;
 
   // ── Grading / LUT ────────────────────────────────────────────────────────

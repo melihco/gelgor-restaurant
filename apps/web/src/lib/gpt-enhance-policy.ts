@@ -46,11 +46,21 @@ export type GptEnhanceSkipCode =
   | 'stock_only'
   | 'non_venue_saas';
 
+/** Product staging brands — high GIS ≠ ready-to-ship; phone snaps need BG work. */
+export function isProductHeroStaging(
+  standard: Pick<AiVisualProductionStandard, 'visualSubject' | 'adaptiveSceneMode'>,
+): boolean {
+  return standard.visualSubject === 'product_hero'
+    || standard.adaptiveSceneMode === 'product_showcase';
+}
+
 /**
  * Faz 1.4 — designed_post arka-plan enhance'i, fotoğraf güçlü bir marka-galeri
  * eşleşmesiyse (stok değil) render-zamanı cinematic grade ile karşılanabilir.
+ * Product-hero staging never skips — packaging shots still need lifestyle BG.
  */
 function canSkipDesignedPostEnhanceForGrade(input: GptEnhancePolicyInput): boolean {
+  if (isProductHeroStaging(input.visualStandard)) return false;
   return Boolean(
     input.skipEnhanceForDesignedGrade
     && input.designedPostPhotoEnhance
@@ -65,26 +75,29 @@ function isGalleryRevisionMode(standard: GptEnhancePolicyInput['visualStandard']
   return standard.enabled && standard.enhanceGallerySelected;
 }
 
+/** SaaS/digital non-venue — except product_hero e-commerce staging. */
+function shouldSkipNonVenueEnhance(input: GptEnhancePolicyInput): boolean {
+  if (!input.businessType || !isNonVenueSectorProfile(input.businessType)) return false;
+  return !isProductHeroStaging(input.visualStandard);
+}
+
 /** Machine-readable skip reason — Mission Hub + logs. */
 export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEnhanceSkipCode | null {
-  if (input.businessType && isNonVenueSectorProfile(input.businessType)) return 'non_venue_saas';
-  if (isGalleryRevisionMode(input.visualStandard)) {
-    if (!shouldAiEnhanceForOutput(input.visualStandard, input.contentKind, input.assignment)) {
-      if (!input.visualStandard.enabled) return 'disabled';
-      return 'format_excluded';
-    }
-    return null;
-  }
-
+  if (shouldSkipNonVenueEnhance(input)) return 'non_venue_saas';
   if (!shouldAiEnhanceForOutput(input.visualStandard, input.contentKind, input.assignment)) {
     if (!input.visualStandard.enabled) return 'disabled';
     return 'format_excluded';
   }
 
-  if (input.referenceIsStock) return null;
-
-  // Faz 1.4 — güçlü galeri fotoğrafında designed_post arka-plan enhance'i atla (flag).
+  // Faz 1.4 — venue + strong gallery: skip designed BG when cinematic grade covers it.
+  // Honored even in gallery-revision mode (cost gate). Product staging never skips.
   if (canSkipDesignedPostEnhanceForGrade(input)) return 'designed_grade';
+
+  if (isGalleryRevisionMode(input.visualStandard)) {
+    return null;
+  }
+
+  if (input.referenceIsStock) return null;
 
   const pipeline = input.assignment.pipeline;
   const role = input.assignment.slot_role;
@@ -107,9 +120,7 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
   // is on — rewriting a good venue photo rarely improves organic stills.
   // Product-hero brands (e-commerce / local products) keep enhance: phone snaps of
   // olive oil / jars often score "high" on topic match but still need staged BG.
-  const productHeroStaging =
-    input.visualStandard.visualSubject === 'product_hero'
-    || input.visualStandard.adaptiveSceneMode === 'product_showcase';
+  const productHeroStaging = isProductHeroStaging(input.visualStandard);
   if (
     !productHeroStaging
     && input.pickedFromBrandGallery
@@ -133,20 +144,23 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
 }
 
 export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean {
-  if (input.businessType && isNonVenueSectorProfile(input.businessType)) {
+  if (shouldSkipNonVenueEnhance(input)) {
     return false;
   }
-  // Tasarım+Grafiker yolu ham galeri kullanır — enhance Marky kısayolunu tetiklemesin.
-  if (input.productionProfile?.requireDesignedVisuals) {
+  // Agency/premium: skip Marky organic enhance shortcut — but designed/fal BG
+  // photo pass is intentional when visual standard is on.
+  if (input.productionProfile?.requireDesignedVisuals && !input.designedPostPhotoEnhance) {
     return false;
-  }
-
-  if (isGalleryRevisionMode(input.visualStandard)) {
-    return shouldAiEnhanceForOutput(input.visualStandard, input.contentKind, input.assignment);
   }
 
   if (!shouldAiEnhanceForOutput(input.visualStandard, input.contentKind, input.assignment)) {
     return false;
+  }
+
+  if (canSkipDesignedPostEnhanceForGrade(input)) return false;
+
+  if (isGalleryRevisionMode(input.visualStandard)) {
+    return true;
   }
 
   if (input.productionProfile?.skipAggressiveEnhance) {
@@ -155,6 +169,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
       && !input.referenceIsStock
       && input.galleryMatchScore != null
       && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE - 8
+      && !isProductHeroStaging(input.visualStandard)
     ) {
       return false;
     }
@@ -164,9 +179,6 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
     return true;
   }
 
-  // Faz 1.4 — güçlü galeri fotoğrafında designed_post arka-plan enhance'i atla (flag).
-  if (canSkipDesignedPostEnhanceForGrade(input)) return false;
-
   const pipeline = input.assignment.pipeline;
   const role = input.assignment.slot_role;
 
@@ -175,9 +187,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
     if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return false;
   }
 
-  const productHeroStaging =
-    input.visualStandard.visualSubject === 'product_hero'
-    || input.visualStandard.adaptiveSceneMode === 'product_showcase';
+  const productHeroStaging = isProductHeroStaging(input.visualStandard);
   if (
     !productHeroStaging
     && input.pickedFromBrandGallery

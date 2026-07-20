@@ -74,6 +74,14 @@ import { isDebugUiMode } from '../mobile-client-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import type { VisualSourceMode } from '@/lib/brand-theme-ai-settings';
+import {
+  buildVisualSourceModeFromFlags,
+  buildVisualSourceModePatch,
+  getEmptyGalleryWarning,
+  getVisualSourceModeCopy,
+  getVisualSourceModeHint,
+  labelAiVisualSubject,
+} from '@/lib/visual-source-ui-copy';
 import { invalidateBrandContextWriteQueries } from '@/lib/query-client-bridge';
 import {
   afterPillarsMirroredToPython,
@@ -2831,12 +2839,13 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
 }
 
 // ─── Advanced Visual Settings (collapsible sub-component) ───────────────
-function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseIdentity, aiBriefDrives, aiEmbedLogo, aiSubject, aiCaptionDriven: _aiCaptionDriven, aiAdaptiveScene, aiAdaptiveMode, aiFormats, currentTheme, saveAiSetting, toggleFormat }: {
+function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseIdentity, aiBriefDrives, aiEmbedLogo, aiSubject, aiCaptionDriven, aiAdaptiveScene, aiAdaptiveMode, aiFormats, currentTheme, sector, saveAiSetting, toggleFormat }: {
   t: T; aiEnabled: boolean; aiLevel: string; aiGalleryRevise: boolean;
   aiUseIdentity: boolean; aiBriefDrives: boolean; aiEmbedLogo: boolean;
   aiSubject: string; aiCaptionDriven: boolean; aiAdaptiveScene: boolean;
   aiAdaptiveMode: string; aiFormats: Set<string>;
   currentTheme: Record<string, unknown>;
+  sector?: string | null;
   saveAiSetting: (patch: Record<string, unknown>) => void;
   toggleFormat: (fmt: string) => void;
 }) {
@@ -2862,11 +2871,17 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>AI Fotoğraf İyileştirme</div>
               <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                {aiEnabled ? 'Aktif' : 'Kapalı — ham galeri / passthrough'}
+                {aiEnabled ? 'Aktif — üstteki kaynak tercihiyle uyumlu' : 'Kapalı — ham galeri / passthrough'}
               </div>
             </div>
             <button
-              onClick={() => saveAiSetting({ ai_photo_enhance: !aiEnabled, ai_enhance_gallery_selected: !aiEnabled })}
+              onClick={() => {
+                const next = !aiEnabled;
+                saveAiSetting(buildVisualSourceModeFromFlags({
+                  aiPhotoEnhance: next,
+                  aiCaptionDrivenVisual: next ? aiCaptionDriven : false,
+                }));
+              }}
               style={{ width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer', background: aiEnabled ? t.accent : t.separator, position: 'relative' }}>
               <div style={{ position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', left: aiEnabled ? 25 : 3, transition: 'left 0.2s' }} />
             </button>
@@ -2918,11 +2933,12 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
 
               <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '12px 0 8px' }}>Görsel konu</div>
               {[
-                { id: 'auto', label: 'Otomatik' },
-                { id: 'venue_ambiance', label: 'Mekan / ambiyans' },
-                { id: 'product_hero', label: 'Ürün hero' },
-              ].map(({ id, label }) => {
+                { id: 'auto' },
+                { id: 'venue_ambiance' },
+                { id: 'product_hero' },
+              ].map(({ id }) => {
                 const active = aiSubject === id;
+                const label = labelAiVisualSubject(id, sector);
                 return (
                   <button key={id} onClick={() => saveAiSetting({ ai_visual_subject: id })}
                     style={{ width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', marginBottom: 6, background: active ? (t as any).accentDim ?? 'rgba(139,171,189,0.1)' : 'transparent', border: `0.5px solid ${active ? t.accent : t.separator}` }}>
@@ -4907,24 +4923,25 @@ export function BrandConstitution() {
                 <SCard t={t} title="Görsel Kaynak Tercihi" accent={t.accent}>
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 16 }}>
-                      Üretimde kullanılacak görsel kaynağını seçin. Galeri boşsa AI görseller otomatik üretilir.
+                      Üretimde kullanılacak görsel kaynağını seçin. Bu tercih şablon, organik ve fal üretimlerinde fotoğraf katmanını yönetir; galeri boşsa AI görseller otomatik üretilir.
                     </div>
 
                     {/* ── 3-mode radio cards ── */}
                     {(() => {
                       const currentMode = resolveVisualSourceMode(currentTheme);
-                      const modes: { id: VisualSourceMode; icon: string; title: string; desc: string }[] = [
-                        { id: 'gallery_only', icon: '\u{1F4F7}', title: 'Mekan fotoğrafları', desc: 'Galeri / Instagram\'dan gelen gerçek mekan görselleri' },
-                        { id: 'gallery_enhanced', icon: '\u2728', title: 'Mekan foto + AI düzeltme', desc: 'Gerçek fotoğraflara ışık, mood ve sahne düzeltmesi' },
-                        { id: 'ai_generated', icon: '\u{1F916}', title: 'AI üretimi', desc: 'Caption\'dan sıfırdan yapay zeka görseli oluştur' },
-                      ];
+                      const modes = getVisualSourceModeCopy(industrySlug);
+                      const modeHint = getVisualSourceModeHint(currentMode, {
+                        sector: industrySlug,
+                        level: aiLevel,
+                        subject: aiSubject,
+                      });
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                           {modes.map(({ id, icon, title, desc }) => {
                             const active = currentMode === id;
                             return (
                               <button key={id}
-                                onClick={() => saveAiSetting({ visual_source_mode: id })}
+                                onClick={() => saveAiSetting(buildVisualSourceModePatch(id as VisualSourceMode))}
                                 style={{
                                   width: '100%', padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
                                   textAlign: 'left', display: 'flex', alignItems: 'center', gap: 14,
@@ -4949,9 +4966,9 @@ export function BrandConstitution() {
                               </button>
                             );
                           })}
-                          {currentMode === 'gallery_enhanced' && (
+                          {modeHint && (
                             <div style={{ fontSize: 10, color: t.textMuted, padding: '0 4px', lineHeight: 1.5 }}>
-                              Varsayılan mod — galeri fotoğrafları GPT images.edit ile iyileştirilir.
+                              {modeHint}
                             </div>
                           )}
                           {(currentMode === 'gallery_only' || currentMode === 'gallery_enhanced') && (() => {
@@ -4967,8 +4984,7 @@ export function BrandConstitution() {
                               }}>
                                 <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{'\u26A0\uFE0F'}</span>
                                 <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>
-                                  Henüz mekan fotoğrafınız yok. <strong>Galeri</strong> sekmesinden yükleyin —
-                                  o zamana kadar AI görseller otomatik üretilir.
+                                  {getEmptyGalleryWarning(industrySlug)}
                                 </div>
                               </div>
                             );
@@ -4992,6 +5008,7 @@ export function BrandConstitution() {
                       aiAdaptiveMode={aiAdaptiveMode}
                       aiFormats={aiFormats}
                       currentTheme={currentTheme}
+                      sector={industrySlug}
                       saveAiSetting={saveAiSetting}
                       toggleFormat={toggleFormat}
                     />
