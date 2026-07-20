@@ -22,17 +22,20 @@ describe('resolveBrandLayoutLanguage', () => {
     expect(pack.preferPhotoLedCraft).toBe(true);
   });
 
-  it('keeps local_products_shop on product_catalog — no heavy rail/L splits', () => {
+  it('keeps local_products_shop on product_catalog — soft craft, no heavy rail/L splits', () => {
     const pack = resolveBrandLayoutLanguage({
       sector: 'local_products_shop',
       visualDna: 'artisan jars, warm wood, natural packaging',
       brandTone: 'samimi, organik',
     });
     expect(pack.id).toBe('product_catalog');
-    expect(pack.intensityCeiling).toBe('elegant_light');
+    // balanced ceiling keeps designed social craft; elegant_light was photo+caption only
+    expect(pack.intensityCeiling).toBe('balanced');
     expect(pack.craftAllowlist).toEqual(['type_with_brand_rules', 'inset_photo_frame']);
     expect(pack.craftAllowlist).not.toContain('side_rail_frame');
     expect(pack.craftAllowlist).not.toContain('l_shape_accent');
+    expect(shouldApplyCraftLayoutFamily('balanced', pack)).toBe(true);
+    expect(clampIntensityToLayoutLanguage('designed', pack)).toBe('balanced');
   });
 
   it('allows bold craft for nightlife DNA without quiet signals', () => {

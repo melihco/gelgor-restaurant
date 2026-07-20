@@ -213,14 +213,18 @@ export function resolveBrandLayoutLanguage(
   }
 
   if (/local_products|retail_product|jewelry|gift_shop/i.test(sector) || PRODUCT_RX.test(text)) {
+    // Ceiling is balanced (not elegant_light): product shops still need a designed
+    // social system (type plate / inset frame). elegant_light killed craft and
+    // produced "photo + floating caption only". Packaging fidelity is enforced by
+    // allowlist (no heavy rail/L/split) + prompt — not by zeroing intensity.
     return pack(
       'product_catalog',
-      'elegant_light',
+      'balanced',
       PRODUCT_CRAFT,
       'type_on_photo',
       true,
       [
-        'Product catalog: packaging/product fidelity first. Prefer inset or type-led craft — never paint over labels or invent jar geometry.',
+        'Product catalog: packaging/product fidelity first. Soft type-led or inset craft only — never paint over labels, invent jar geometry, or use heavy rail/L/split color slabs.',
       ],
     );
   }
