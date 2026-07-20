@@ -458,9 +458,21 @@ const LAYOUT_FAMILY_BRIEF: Record<DesignCraftLayoutFamily, string> = {
     'Paint a soft brand field (~35–40%) with type fully inside; contain the FULL gallery photo in the remaining ~60–65% window — never straddling the photo edge.',
 };
 
-/** Deterministic per-slot layout family so library templates diversify. */
-export function resolveDesignCraftLayoutFamily(seed?: string | null): DesignCraftLayoutFamily {
-  const families = DESIGN_CRAFT_LAYOUT_FAMILIES;
+/**
+ * Deterministic per-slot layout family so library templates diversify.
+ * Optional allowlist (from brand layout language / DNA) restricts the pool —
+ * brands with quiet/product packs never land on heavy rail/L/split geometry.
+ */
+export function resolveDesignCraftLayoutFamily(
+  seed?: string | null,
+  allowlist?: readonly DesignCraftLayoutFamily[] | null,
+): DesignCraftLayoutFamily {
+  const allowed = (allowlist?.length
+    ? DESIGN_CRAFT_LAYOUT_FAMILIES.filter((f) => allowlist.includes(f))
+    : [...DESIGN_CRAFT_LAYOUT_FAMILIES]);
+  const families = allowed.length > 0
+    ? allowed
+    : (['type_with_brand_rules'] as DesignCraftLayoutFamily[]);
   const raw = (seed ?? 'default').trim().toLowerCase();
   let hash = 0;
   for (let i = 0; i < raw.length; i += 1) {

@@ -130,6 +130,12 @@ describe('resolveDesignCraftLayoutFamily', () => {
     expect(a).toBe(a2);
     expect(a).not.toBe(b);
   });
+
+  it('respects DNA craft allowlist pool', () => {
+    const allow = ['type_with_brand_rules', 'inset_photo_frame'] as const;
+    const family = resolveDesignCraftLayoutFamily('any-slot-key', allow);
+    expect(allow).toContain(family);
+  });
 });
 
 describe('clampDesignIntensityToCeiling', () => {

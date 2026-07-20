@@ -41,6 +41,13 @@ import {
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
 import {
+  buildBrandLayoutLanguageDirectives,
+  clampIntensityToLayoutLanguage,
+  resolveBrandLayoutLanguage,
+  resolveCraftAllowlistForPack,
+  shouldApplyCraftLayoutFamily,
+} from '@/lib/brand-layout-language';
+import {
   DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT,
   resolveFalUseCaseForDesignTemplate,
   type DesignTemplateFormat,
@@ -497,8 +504,14 @@ async function generateOne(
     layoutFamilyHint: preset.catalogSlotKey ?? calendarLayout.canvaArchetypeId,
     explicitCanvaArchetypeId: explicitCoverCanva,
   });
-  // Slot/announcement role drives intensity (library diversity); theme is fallback.
-  // Brand DNA + vibe stay shared across templates — layout energy must not.
+  // Slot/announcement proposes energy; brand theme + DNA/vibe layout language clamp it.
+  const layoutLanguage = resolveBrandLayoutLanguage({
+    sector: input.sector,
+    visualDna: input.brandIntelligence?.visualDna,
+    brandTone: input.brandIntelligence?.brandTone,
+    visualDnaTone: input.visualDnaTone,
+    vibeProfile: input.brandIntelligence?.vibeProfile,
+  });
   const slotIntensity = resolveCalendarFalDesignIntensity({
     announcementType,
     channel: intensityChannel,
@@ -506,7 +519,10 @@ async function generateOne(
   });
   const productionIntensity = slotIntensity.level;
   const designIntensityLevel = clampDesignIntensityForArchetype(
-    resolveTemplateLibraryDesignIntensity(productionIntensity),
+    clampIntensityToLayoutLanguage(
+      resolveTemplateLibraryDesignIntensity(productionIntensity),
+      layoutLanguage,
+    ),
     layoutBrief.canvaArchetypeId,
   );
   const brandIntelligenceDirectives = buildBrandIntelligenceDirectives(
@@ -525,6 +541,7 @@ async function generateOne(
       lockPremiumVibe: Boolean(input.visualDnaTone?.trim()),
     });
   const layoutDirectives = [
+    ...buildBrandLayoutLanguageDirectives(layoutLanguage),
     ...buildFalDesignBriefDirectives(layoutBrief, briefFormat),
     ...(reelArchetypeForCover
       ? buildReelCoverDiversityDirectives({
@@ -554,11 +571,12 @@ async function generateOne(
   const gptDesignCardMode: 'post' | 'reel' = preset.format === 'post' ? 'post' : 'reel';
 
   const layoutFamilySeed = preset.catalogSlotKey ?? preset.name;
-  const needsCraftFamily = designIntensityLevel === 'designed'
-    || designIntensityLevel === 'bold_editorial'
-    || designIntensityLevel === 'balanced';
+  const needsCraftFamily = shouldApplyCraftLayoutFamily(designIntensityLevel, layoutLanguage);
   const layoutFamily = needsCraftFamily
-    ? resolveDesignCraftLayoutFamily(layoutFamilySeed)
+    ? resolveDesignCraftLayoutFamily(
+      layoutFamilySeed,
+      resolveCraftAllowlistForPack(layoutLanguage),
+    )
     : null;
   const slotDesignRecipe = buildBrandSlotDesignRecipe({
     brandName: input.brandName,

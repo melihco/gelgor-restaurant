@@ -46,6 +46,13 @@ import {
   type FalDesignChannel,
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
+import {
+  buildBrandLayoutLanguageDirectives,
+  clampIntensityToLayoutLanguage,
+  resolveBrandLayoutLanguage,
+  resolveCraftAllowlistForPack,
+  shouldApplyCraftLayoutFamily,
+} from '@/lib/brand-layout-language';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 
@@ -801,7 +808,15 @@ function buildDesignedDesignCardPrompt(
 
   const brand = input.brandName?.trim() || 'the brand';
   const sector = input.sector?.trim();
-  const intensityLevel = input.designIntensityLevel ?? 'elegant_light';
+  const layoutLanguage = resolveBrandLayoutLanguage({
+    sector: sector ?? '',
+    visualDnaTone: input.visualDnaTone,
+    typographyVibe: input.vibe,
+  });
+  const intensityLevel = clampIntensityToLayoutLanguage(
+    input.designIntensityLevel ?? 'elegant_light',
+    layoutLanguage,
+  );
   const intensityMode = resolveFalDesignIntensityMode(
     isStory || isReel ? '9:16' : input.aspectRatio,
     isReel || isStory,
@@ -912,15 +927,14 @@ function buildDesignedDesignCardPrompt(
     : '';
   const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 321) : 0;
 
-  const needsCraftLock = intensityLevel === 'designed'
-    || intensityLevel === 'bold_editorial'
-    || intensityLevel === 'balanced';
+  const needsCraftLock = shouldApplyCraftLayoutFamily(intensityLevel, layoutLanguage);
   const layoutFamily = needsCraftLock
     ? (input.layoutFamily
       ?? resolveDesignCraftLayoutFamily(
         input.layoutFamilySeed
           ?? input.brandDirectives?.find((d) => d.startsWith('SLOT:'))?.slice(5)
           ?? `${input.brandName ?? 'brand'}:${intensityLevel}:${mode}:${input.headline}`,
+        resolveCraftAllowlistForPack(layoutLanguage),
       ))
     : null;
   const layoutLock = layoutFamily
@@ -932,7 +946,9 @@ function buildDesignedDesignCardPrompt(
   const photoWindowCompose = needsCraftLock ? FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE : '';
 
   // Protected head — never trimmed. Layout families used to die at the end of finalizeFalPrompt.
+  const layoutLanguageLock = buildBrandLayoutLanguageDirectives(layoutLanguage).join(' ');
   const intensityLock = [
+    layoutLanguageLock,
     intensityDirectives.priorityBlock,
     layoutLock,
     typeContainment,
