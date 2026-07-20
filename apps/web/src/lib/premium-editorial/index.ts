@@ -1,3 +1,9 @@
+/**
+ * Server barrel for premium-editorial.
+ * Client components must import from `@/lib/premium-editorial/client` only —
+ * this barrel pulls sharp / node builtins via vision-qa + orchestrator.
+ */
+
 export * from './types';
 export * from './quality-preset';
 export * from './brand-visual-dna';

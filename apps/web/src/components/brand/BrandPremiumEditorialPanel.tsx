@@ -13,7 +13,7 @@ import {
   EDITORIAL_LAYOUT_FAMILIES,
   type CreativeVariationKey,
   type EditorialLayoutFamily,
-} from '@/lib/premium-editorial';
+} from '@/lib/premium-editorial/client';
 
 type OutputFormat = 'post' | 'story' | 'square';
 
