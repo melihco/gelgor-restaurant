@@ -129,7 +129,18 @@ function GalleryCard({
       ? galleryRowSubtitle(row)
       : '';
   const format = orphan?.format ?? row?.format ?? 'post';
-  const previewUrl = resolveClientMediaUrl(tmpl?.thumbnail_url ?? undefined) ?? tmpl?.thumbnail_url ?? null;
+  const previewBase = resolveClientMediaUrl(tmpl?.thumbnail_url ?? undefined) ?? tmpl?.thumbnail_url ?? null;
+  // Bust browser/CDN hour-long /api/media cache after regenerate (new key still helps;
+  // same relative path without query can stick for an hour).
+  const previewCacheKey = tmpl?.updated_at
+    || (tmpl?.design_spec && typeof tmpl.design_spec === 'object'
+      ? String((tmpl.design_spec as Record<string, unknown>).previewRegeneratedAt
+        ?? (tmpl.design_spec as Record<string, unknown>).generatedAt
+        ?? '')
+      : '');
+  const previewUrl = previewBase
+    ? `${previewBase}${previewBase.includes('?') ? '&' : '?'}v=${encodeURIComponent(previewCacheKey || '1')}`
+    : null;
   const hasPreview = Boolean(previewUrl);
   const slotEnabled = row?.enabled ?? true;
 
@@ -534,8 +545,14 @@ export function BrandFalTemplateGalleryPanel({
       const typoNote = data.typography_confirmed === false
         ? ' (sektör varsayılan tipografi — Renk & Tipografi onayı önerilir)'
         : '';
-      setStatus(`"${row.labelTr}" hazır — mission üretiminde kullanılabilir.${typoNote}`);
+      const variant0 = Array.isArray(data.variants)
+        ? (data.variants[0] as Record<string, unknown> | undefined)
+        : undefined;
+      const intensityNote = variant0?.intensity ? ` · ${String(variant0.intensity)}` : '';
+      const generatorNote = variant0?.generator ? ` · ${String(variant0.generator)}` : '';
+      setStatus(`"${row.labelTr}" hazır${intensityNote}${generatorNote}.${typoNote}`);
       await queryClient.invalidateQueries({ queryKey: ['brand-design-templates', tenantId] });
+      await queryClient.refetchQueries({ queryKey: ['brand-design-templates', tenantId] });
     } catch {
       setStatusKind('error');
       setStatus('Bağlantı hatası');

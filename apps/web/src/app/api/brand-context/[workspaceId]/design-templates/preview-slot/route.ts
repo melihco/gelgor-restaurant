@@ -31,6 +31,35 @@ import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 export const runtime = 'nodejs';
 export const maxDuration = 600;
 
+function parseMaybeJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseMaybeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? '').trim()).filter(Boolean);
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item ?? '').trim()).filter(Boolean);
+  } catch {
+    /* fall through */
+  }
+  return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
 type PreviewMode = 'regenerate' | 'compare';
 
 interface PreviewVariantResult {
@@ -136,6 +165,24 @@ export async function POST(
   const preset = buildDesignPresetFromCatalogSlot(slot);
   const channel = intensityChannelForCatalogFormat(slot.format);
   const baseSettings = resolveFalTemplateProductionSettings(brandTheme);
+
+  // Prefer a different gallery photo + craft family than the locked preview.
+  let previousGalleryRef: string | null = null;
+  if (body.template_id) {
+    const existingRes = await fetchCrewBackendJson<{
+      thumbnail_url?: string | null;
+      design_spec?: Record<string, unknown> | null;
+    }>(
+      `/api/v1/design-templates/${workspaceId}/${body.template_id}`,
+      { workspaceId, timeoutMs: 15_000 },
+    );
+    if (existingRes.ok && existingRes.data) {
+      const spec = existingRes.data.design_spec;
+      const ref = typeof spec?.galleryRef === 'string' ? spec.galleryRef.trim() : '';
+      previousGalleryRef = ref || null;
+    }
+  }
+
   const engineBase = {
     workspaceId,
     sector,
@@ -149,6 +196,22 @@ export async function POST(
       brandTone: brandCtx.brand_tone as string | undefined,
       brandDescription: brandCtx.description as string | undefined,
     }),
+    brandIntelligence: {
+      description: typeof brandCtx.description === 'string' ? brandCtx.description : undefined,
+      brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+      visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+      visualStyle: typeof brandCtx.visual_style === 'string' ? brandCtx.visual_style : undefined,
+      targetAudience: typeof brandCtx.target_audience === 'string' ? brandCtx.target_audience : undefined,
+      campaignGoals: typeof brandCtx.campaign_goals === 'string' ? brandCtx.campaign_goals : undefined,
+      contentPillars: parseMaybeStringArray(brandCtx.content_pillars),
+      defaultCtas: parseMaybeStringArray(brandCtx.default_ctas),
+      vibeProfile: parseMaybeJsonRecord(brandCtx.brand_vibe_profile),
+      serviceProfile: parseMaybeJsonRecord(
+        brandCtx.service_profile
+        ?? brandTheme?.service_profile
+        ?? brandTheme?.serviceProfile,
+      ),
+    },
     brandTheme,
     antiPatterns,
     galleryPhotoUrls: gctx.photos,
@@ -158,6 +221,8 @@ export async function POST(
 
   const variants: PreviewVariantResult[] = [];
   let regenerateResult: GeneratedDesignTemplate | null = null;
+  const layoutFamilySalt = `${mode}:${Date.now().toString(36)}`;
+  const excludeGalleryUrls = previousGalleryRef ? [previousGalleryRef] : undefined;
 
   if (mode === 'compare') {
     const levels = (Array.isArray(body.compare_intensities) && body.compare_intensities.length
@@ -176,11 +241,13 @@ export async function POST(
               [channel]: level,
             },
           },
+          excludeGalleryUrls,
+          layoutFamilySalt: `${layoutFamilySalt}:${level}`,
         },
       );
       variants.push({
         label: FAL_DESIGN_INTENSITY_LABELS[level]?.tr ?? level,
-        intensity: level,
+        intensity: generated.design_spec.designIntensityLevel ?? level,
         thumbnail_url: generated.thumbnail_url,
         design_spec: generated.design_spec,
         generator: generated.design_spec.generator,
@@ -190,12 +257,17 @@ export async function POST(
     const generated = await generateSingleDesignTemplatePreset(
       engineBase,
       preset,
-      { productionOverrides: body.parameter_overrides },
+      {
+        productionOverrides: body.parameter_overrides,
+        excludeGalleryUrls,
+        layoutFamilySalt,
+      },
     );
     regenerateResult = generated;
     variants.push({
       label: 'Güncel parametreler',
-      intensity: baseSettings.intensity[channel],
+      intensity: generated.design_spec.designIntensityLevel
+        ?? baseSettings.intensity[channel],
       thumbnail_url: generated.thumbnail_url,
       design_spec: generated.design_spec,
       generator: generated.design_spec.generator,

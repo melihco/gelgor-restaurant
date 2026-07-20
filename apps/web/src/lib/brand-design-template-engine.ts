@@ -144,6 +144,16 @@ export interface DesignTemplateEngineInput {
    * this flag only affects the fal fallback path. Default true.
    */
   templatePreviewMode?: boolean;
+  /**
+   * Gallery URLs to skip when picking a photo (per-slot regenerate should not
+   * reuse the previous anchor — otherwise the preview looks "unchanged").
+   */
+  excludeGalleryUrls?: string[];
+  /**
+   * Salt mixed into craft layout-family seed so regenerate diversifies composition
+   * even when catalog slot key stays the same.
+   */
+  layoutFamilySalt?: string;
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -454,8 +464,19 @@ async function generateOne(
       : 'post';
   // Prefer per-slot matcher (diverse library). Default venue hero is fallback only —
   // locking every template to one aerial/terrace shot collapsed the whole set.
+  // Per-slot regenerate seeds exclusions so the same cocktail glass isn't locked forever.
+  for (const url of input.excludeGalleryUrls ?? []) {
+    const n = normalizeGalleryUrl(url);
+    if (n) usedUrls.add(n);
+    if (url.trim()) usedUrls.add(url.trim());
+  }
   const matchedPhoto = pickPhotoForPreset(preset, input, usedUrls);
-  const picked = matchedPhoto ?? defaultHeroPhoto ?? null;
+  const heroFallback = defaultHeroPhoto
+    && !usedUrls.has(normalizeGalleryUrl(defaultHeroPhoto.url))
+    && !usedUrls.has(defaultHeroPhoto.url)
+    ? defaultHeroPhoto
+    : null;
+  const picked = matchedPhoto ?? heroFallback ?? null;
   if (picked?.url) usedUrls.add(normalizeGalleryUrl(picked.url));
   const briefFormat = preset.format === 'reel_cover'
     ? 'reel'
@@ -570,7 +591,10 @@ async function generateOne(
       : buildDesignedPostDesignCardPrompt;
   const gptDesignCardMode: 'post' | 'reel' = preset.format === 'post' ? 'post' : 'reel';
 
-  const layoutFamilySeed = preset.catalogSlotKey ?? preset.name;
+  const layoutFamilySeed = [
+    preset.catalogSlotKey ?? preset.name,
+    input.layoutFamilySalt?.trim() || '',
+  ].filter(Boolean).join('::');
   const needsCraftFamily = shouldApplyCraftLayoutFamily(designIntensityLevel, layoutLanguage);
   const layoutFamily = needsCraftFamily
     ? resolveDesignCraftLayoutFamily(
@@ -870,11 +894,17 @@ export async function generateBrandDesignTemplates(
 export async function generateSingleDesignTemplatePreset(
   input: DesignTemplateEngineInput,
   preset: DesignTemplatePreset,
-  options?: { productionOverrides?: Partial<BrandFalTemplateProductionConfig> },
+  options?: {
+    productionOverrides?: Partial<BrandFalTemplateProductionConfig>;
+    excludeGalleryUrls?: string[];
+    layoutFamilySalt?: string;
+  },
 ): Promise<GeneratedDesignTemplate> {
   const engineInput = {
     ...input,
     productionOverrides: options?.productionOverrides ?? input.productionOverrides,
+    excludeGalleryUrls: options?.excludeGalleryUrls ?? input.excludeGalleryUrls,
+    layoutFamilySalt: options?.layoutFamilySalt ?? input.layoutFamilySalt,
   };
   return generateOne(
     preset,
