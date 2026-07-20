@@ -203,10 +203,9 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     });
 
     expect(prompt).toContain('DESIGN INTENSITY: DESIGNED');
-    expect(prompt).toContain('Brand+slot specific');
-    expect(prompt).toMatch(/COMPOSITION PRIORITY|brand slot recipe/i);
-    expect(prompt).not.toContain('LAYOUT LOCK:');
-    expect(prompt).toMatch(/Canva sandwich|geometry kit|rail\/L/i);
+    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).toContain('TYPE CONTAINMENT');
+    expect(prompt).toMatch(/Canva sandwich|geometry|rail\/L|type_with_brand_rules/i);
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('Mutlu Bayramlar');
   });
@@ -239,7 +238,7 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
 
     expect(prompt).toContain('BRAND SLOT DESIGN RECIPE');
     expect(prompt).toContain('Yula Bodrum');
-    expect(prompt).not.toContain('LAYOUT LOCK:');
+    expect(prompt).toContain('LAYOUT LOCK:');
     expect(prompt).toContain('HARD CONTRACTS');
   });
 
@@ -346,7 +345,7 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toMatch(/SECTOR STYLE \(beach club — photo-first\)|Sun-washed Aegean/);
   });
 
-  it('bold_editorial story prompt demands oversized caps headline without soft-pack geometry lock', () => {
+  it('bold_editorial coastal prompt keeps soft LAYOUT LOCK (not rail/L kits)', () => {
     const prompt = buildDesignedPostDesignCardPrompt({
       vibe: 'warm_coastal',
       headline: 'Summer Festival',
@@ -355,12 +354,15 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
       sector: 'beach_club',
       aspectRatio: '9:16',
       designIntensityLevel: 'bold_editorial',
+      visualDnaTone: 'Aegean coastal vibrant citrus Drink & Chill',
     });
 
     expect(prompt).toContain('BOLD EDITORIAL');
     expect(prompt).toMatch(/ALL[- ]CAPS/);
-    expect(prompt).not.toContain('LAYOUT LOCK:');
-    expect(prompt).toMatch(/geometry kit|rail\/L/i);
+    expect(prompt).toContain('LAYOUT LOCK:');
+    expect(prompt).toMatch(/type_with_brand_rules|asymmetric_corner_plate|magazine_cover_overlap|diagonal_soft_cut/);
+    expect(prompt).not.toMatch(/LAYOUT LOCK: use ONLY "side_rail_frame"/);
+    expect(prompt).not.toMatch(/LAYOUT LOCK: use ONLY "l_shape_accent"/);
   });
 });
 

@@ -161,18 +161,20 @@ function pack(
     composeMode,
     preferPhotoLedCraft,
     directives: [
-      `LAYOUT LANGUAGE PACK: ${id} — brand visual/vibe DNA shapes composition (not palette alone).`,
-      `Intensity is driven by brand design parameters + slot role — DNA does not override Brand Hub intensity.`,
-      preferPhotoLedCraft || composeMode !== 'craft_window'
-        ? 'COMPOSITION PRIORITY: brand slot recipe + Canva/slot archetype first — unique to THIS brand and THIS slot. Soft type/scrim/rules OK; forbid generic painted rail/L/diagonal geometry kits.'
-        : craftAllowlist.length
-          ? `Bold craft pack: if a hard layout lock is applied, stay within ${craftAllowlist.join(', ')} — still brand-unique, not a stock geometry sticker.`
-          : 'Craft allowlist: NONE — photo + type only.',
+      `LAYOUT LANGUAGE PACK: ${id} — composition policy from brand visual/vibe DNA (not palette alone).`,
+      preferPhotoLedCraft
+        ? `Intensity soft-cap: ${suggestedIntensity === 'elegant_light' ? 'elegant_light' : 'balanced'}. Soft coastal/product packs stay type-led — never Hub bold_editorial paint energy.`
+        : 'Intensity is driven by brand design parameters + slot role — DNA does not override Brand Hub intensity.',
+      craftAllowlist.length
+        ? preferPhotoLedCraft
+          ? `Craft allowlist ONLY: ${craftAllowlist.join(', ')}. Forbidden: any other painted geometry family (no side_rail / L-shape kits).`
+          : `Bold craft pack: if a hard layout lock is applied, stay within ${craftAllowlist.join(', ')} — still brand-unique, not a stock geometry sticker.`
+        : 'Craft allowlist: NONE — photo + type only.',
       composeMode === 'photo_first'
         ? 'Compose mode: PHOTO-FIRST — venue/product photo is the design; type is a quiet caption layer.'
         : composeMode === 'type_on_photo'
           ? 'Compose mode: TYPE-ON-PHOTO — typography lives on the photo via scrim/found surface; no large painted color fields.'
-          : 'Compose mode: CRAFT-WINDOW — intentional brand craft with a clear photo window — never generic Canva geometry.',
+          : 'Compose mode: CRAFT-WINDOW — graphic craft allowed only from the allowlist; photo stays a clear window.',
       ...extraDirectives,
     ],
   };
@@ -343,32 +345,45 @@ export function resolveTemplateLibraryEffectiveIntensity(input: {
     return clampDesignIntensityToCeiling(proposed, 'elegant_light');
   }
 
-  // Soft / type-led packs: designed craft recipes are enough — bold_editorial
-  // intensity directives literally require heavy painted geometry.
+  // Soft / type-led packs: match the winning coastal library era (balanced +
+  // type_with_brand_rules). Never let Hub bold_editorial override soft DNA.
   if (
     input.language.preferPhotoLedCraft
     || input.language.composeMode === 'type_on_photo'
   ) {
-    return clampDesignIntensityToCeiling(proposed, 'designed');
+    const softCeiling = input.language.suggestedIntensity === 'elegant_light'
+      ? 'elegant_light'
+      : 'balanced';
+    return clampDesignIntensityToCeiling(proposed, softCeiling);
   }
 
   return proposed;
 }
 
 /**
- * Hard LAYOUT LOCK (rail/plate/L geometry) — only for bold nightlife/street packs.
- * Soft / photo-led DNA packs must stay brand+slot recipe led (the quality we had
- * before geometry kits overrode every template).
+ * Soft DNA packs (coastal/product/artisan): LAYOUT LOCK from soft allowlist
+ * (typically type_with_brand_rules) — the quality path that produced the good
+ * Hafta sonu / Kokteyl bar library renders.
+ * Bold nightlife/street packs: hard craft lock at designed+.
  */
 export function shouldApplyCraftLayoutFamily(
   level: FalDesignIntensityLevel,
   language: BrandLayoutLanguagePack,
 ): boolean {
   if (language.craftAllowlist.length === 0) return false;
-  if (level === 'photo_first' || level === 'elegant_light' || level === 'balanced') return false;
-  if (language.preferPhotoLedCraft) return false;
-  if (language.composeMode === 'type_on_photo' || language.composeMode === 'photo_first') return false;
-  // Nightlife / street bold packs only.
+  if (level === 'photo_first' || level === 'elegant_light') return false;
+
+  const softPack = language.preferPhotoLedCraft
+    || language.composeMode === 'type_on_photo';
+  if (softPack) {
+    if (level !== 'balanced' && level !== 'designed' && level !== 'bold_editorial') return false;
+    return language.craftAllowlist.some(
+      (f) => SOFT_CRAFT.includes(f) || f === 'type_with_brand_rules' || f === 'inset_photo_frame',
+    );
+  }
+
+  if (language.composeMode === 'photo_first') return false;
+  // Nightlife / street bold packs.
   return level === 'designed' || level === 'bold_editorial';
 }
 

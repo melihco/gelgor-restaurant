@@ -31,18 +31,18 @@ describe('resolveBrandLayoutLanguage', () => {
     expect(pack.preferPhotoLedCraft).toBe(true);
     expect(pack.craftAllowlist.length).toBeGreaterThan(1);
     expect(pack.craftAllowlist).toContain('asymmetric_corner_plate');
-    // Soft coastal packs: no hard LAYOUT LOCK — brand+slot recipe leads.
-    expect(shouldApplyCraftLayoutFamily('designed', pack)).toBe(false);
-    expect(shouldApplyCraftLayoutFamily('bold_editorial', pack)).toBe(false);
-    // Library must not inherit Hub bold_editorial paint language.
+    // Soft coastal: restore LAYOUT LOCK at balanced+ (type_with_brand_rules era).
+    expect(shouldApplyCraftLayoutFamily('balanced', pack)).toBe(true);
+    expect(shouldApplyCraftLayoutFamily('designed', pack)).toBe(true);
+    // Library soft-cap at balanced — matches winning coastal renders.
     expect(resolveTemplateLibraryEffectiveIntensity({
       productionIntensity: 'designed',
       language: pack,
-    })).toBe('designed');
+    })).toBe('balanced');
     expect(resolveTemplateLibraryEffectiveIntensity({
       productionIntensity: 'bold_editorial',
       language: pack,
-    })).toBe('designed');
+    })).toBe('balanced');
     expect(clampIntensityToLayoutLanguage('bold_editorial', pack)).toBe('bold_editorial');
   });
 
@@ -66,10 +66,11 @@ describe('resolveBrandLayoutLanguage', () => {
     expect(pack.id).toBe('product_catalog');
     expect(pack.craftAllowlist).toEqual(['type_with_brand_rules', 'inset_photo_frame']);
     expect(pack.craftAllowlist).not.toContain('side_rail_frame');
-    expect(shouldApplyCraftLayoutFamily('designed', pack)).toBe(false);
+    expect(shouldApplyCraftLayoutFamily('balanced', pack)).toBe(true);
+    expect(shouldApplyCraftLayoutFamily('designed', pack)).toBe(true);
   });
 
-  it('allows hard craft lock only for nightlife DNA without quiet signals', () => {
+  it('allows hard craft lock for nightlife DNA without quiet signals', () => {
     const pack = resolveBrandLayoutLanguage({
       sector: 'nightclub_lounge',
       visualDna: 'neon nightlife, after-dark electric energy, DJ booth',
@@ -109,7 +110,7 @@ describe('Kokteyl Promo story routing (beach_club pack)', () => {
     expect(resolveTemplateLibraryEffectiveIntensity({
       productionIntensity: CALENDAR_ANNOUNCEMENT_INTENSITY.offer_campaign,
       language,
-    })).toBe('designed');
+    })).toBe('balanced');
   });
 });
 
