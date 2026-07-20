@@ -111,9 +111,13 @@ export interface BrandDesignTemplateRow {
   catalog_slot_key?: string | null;
   usage_count?: number;
   status?: string;
+  /** ISO timestamp — used to cache-bust gallery thumbnails after regenerate. */
+  updated_at?: string | null;
+  design_spec?: Record<string, unknown> | null;
 }
 
 export function normalizeDesignTemplateRow(raw: Record<string, unknown>): BrandDesignTemplateRow {
+  const designSpecRaw = raw.design_spec ?? raw.designSpec;
   return {
     id: String(raw.id ?? ''),
     template_type: String(raw.template_type ?? raw.templateType ?? ''),
@@ -123,6 +127,10 @@ export function normalizeDesignTemplateRow(raw: Record<string, unknown>): BrandD
     catalog_slot_key: (raw.catalog_slot_key ?? raw.catalogSlotKey) as string | null | undefined,
     usage_count: Number(raw.usage_count ?? raw.usageCount ?? 0),
     status: String(raw.status ?? 'active'),
+    updated_at: (raw.updated_at ?? raw.updatedAt) as string | null | undefined,
+    design_spec: designSpecRaw && typeof designSpecRaw === 'object' && !Array.isArray(designSpecRaw)
+      ? designSpecRaw as Record<string, unknown>
+      : null,
   };
 }
 
