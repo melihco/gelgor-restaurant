@@ -451,15 +451,15 @@ export function templateReplicaSpecFromBinding(
 ): TemplateReplicaSpec | null {
   const matched = binding?.matched ?? null;
   if (!isRenderableDesignTemplateMatch(matched)) return null;
-  const prompt = matched?.designSpecPrompt?.trim();
+  const prompt = matched.designSpecPrompt?.trim();
   if (!prompt) return null;
   const format = matched.format === 'story' || matched.format === 'post' || matched.format === 'reel'
     ? matched.format
     : undefined;
   return {
     prompt: normalizeLibraryPromptForFormat(prompt, format),
-    sampleHeadline: matched?.sampleHeadline ?? null,
-    sampleSubtitle: matched?.sampleSubtitle ?? null,
+    sampleHeadline: matched.sampleHeadline ?? null,
+    sampleSubtitle: matched.sampleSubtitle ?? null,
     forbiddenTexts: collectTemplatePlaceholderTexts(matched),
     format,
   };

@@ -78,9 +78,9 @@ export type DesignTemplateMatchQuality = 'hard' | 'soft' | 'format_fallback';
  * last-resort same-format pick with no real design intent, so callers may still
  * route it to the cheap Satori text-overlay path.
  */
-export function isRenderableDesignTemplateMatch(
-  matched: Pick<MatchedDesignTemplate, 'matchQuality'> | null | undefined,
-): boolean {
+export function isRenderableDesignTemplateMatch<T extends Pick<MatchedDesignTemplate, 'matchQuality'>>(
+  matched: T | null | undefined,
+): matched is T {
   if (!matched) return false;
   return matched.matchQuality === 'hard' || matched.matchQuality === 'soft';
 }
