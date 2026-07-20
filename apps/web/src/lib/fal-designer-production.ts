@@ -51,7 +51,6 @@ import {
 } from '@/lib/fal-design-intensity';
 import {
   buildBrandLayoutLanguageDirectives,
-  clampIntensityToLayoutLanguage,
   resolveBrandLayoutLanguage,
   resolveCraftAllowlistForPack,
   shouldApplyCraftLayoutFamily,
@@ -843,10 +842,8 @@ function buildDesignedDesignCardPrompt(
     visualDnaTone: input.visualDnaTone,
     typographyVibe: input.vibe,
   });
-  const intensityLevel = clampIntensityToLayoutLanguage(
-    input.designIntensityLevel ?? 'elegant_light',
-    layoutLanguage,
-  );
+  // Intensity from caller / brand parameters — DNA only shapes craft allowlist.
+  const intensityLevel = input.designIntensityLevel ?? 'elegant_light';
   const intensityMode = resolveFalDesignIntensityMode(
     isStory || isReel ? '9:16' : input.aspectRatio,
     isReel || isStory,

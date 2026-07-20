@@ -1,13 +1,12 @@
 /**
  * Brand layout language — maps visual DNA / vibe / sector → composition policy.
  *
- * Colors alone do not make a brand-specific design. This SSOT turns brand soul
- * signals into: intensity ceiling, craft-family allowlist, and compose mode so
- * template library + fal designer stop painting generic geometry on every tenant.
+ * Intensity (how bold) = Brand Hub parameters + slot role.
+ * DNA/vibe here only chooses craft allowlist + compose mode (how it looks),
+ * so product shops (Karaman) keep designed energy while avoiding heavy geometry.
  */
 
 import {
-  clampDesignIntensityToCeiling,
   DESIGN_CRAFT_LAYOUT_FAMILIES,
   type DesignCraftLayoutFamily,
   type FalDesignIntensityLevel,
@@ -31,8 +30,12 @@ export type BrandLayoutComposeMode =
 
 export interface BrandLayoutLanguagePack {
   id: BrandLayoutLanguagePackId;
-  /** Max graphic energy — slot proposals are clamped down to this. */
-  intensityCeiling: FalDesignIntensityLevel;
+  /**
+   * Soft sector/DNA hint only — NOT an intensity clamp.
+   * Graphic energy comes from Brand Hub fal_design_intensity /
+   * fal_template_production (slot proposal + brand parameter ceiling).
+   */
+  suggestedIntensity: FalDesignIntensityLevel;
   /**
    * Allowed painted craft systems when intensity requires craft.
    * Empty → never force a paint family (photo/type-led only).
@@ -125,7 +128,7 @@ function vibeBlob(input: BrandLayoutLanguageInput): string {
 
 function pack(
   id: BrandLayoutLanguagePackId,
-  intensityCeiling: FalDesignIntensityLevel,
+  suggestedIntensity: FalDesignIntensityLevel,
   craftAllowlist: DesignCraftLayoutFamily[],
   composeMode: BrandLayoutComposeMode,
   preferPhotoLedCraft: boolean,
@@ -133,13 +136,14 @@ function pack(
 ): BrandLayoutLanguagePack {
   return {
     id,
-    intensityCeiling,
+    suggestedIntensity,
     craftAllowlist,
     composeMode,
     preferPhotoLedCraft,
     directives: [
       `LAYOUT LANGUAGE PACK: ${id} — composition policy from brand visual/vibe DNA (not palette alone).`,
-      `Intensity ceiling: ${intensityCeiling}. Never exceed this graphic energy for this brand.`,
+      `Intensity is driven by brand design parameters + slot role — DNA does not override Brand Hub intensity.`,
+      `DNA craft bias (soft): prefer around ${suggestedIntensity} energy, but never below/above the brand parameter ceiling.`,
       craftAllowlist.length
         ? `Craft allowlist ONLY: ${craftAllowlist.join(', ')}. Forbidden: any other painted geometry family.`
         : 'Craft allowlist: NONE — photo + type only; no painted plate/rail/L/split systems.',
@@ -283,27 +287,29 @@ export function resolveBrandLayoutLanguage(
   );
 }
 
-/** Clamp a proposed intensity to the brand layout-language ceiling. */
+/**
+ * @deprecated Intensity is brand-parameter driven. Kept as identity helper so
+ * callers stop clamping via DNA; always returns `proposed`.
+ */
 export function clampIntensityToLayoutLanguage(
   proposed: FalDesignIntensityLevel,
-  language: BrandLayoutLanguagePack,
+  _language: BrandLayoutLanguagePack,
 ): FalDesignIntensityLevel {
-  return clampDesignIntensityToCeiling(proposed, language.intensityCeiling);
+  return proposed;
 }
 
 /**
  * Whether painted craft lock should run for this intensity + pack.
- * Photo-led packs suppress paint systems even if a slot proposed balanced+.
+ * Intensity comes from brand parameters; DNA only restricts which craft families.
  */
 export function shouldApplyCraftLayoutFamily(
   level: FalDesignIntensityLevel,
   language: BrandLayoutLanguagePack,
 ): boolean {
-  if (language.composeMode === 'photo_first') return false;
   if (language.craftAllowlist.length === 0) return false;
+  // Parameter-driven: photo_first / elegant_light stay type-light (no craft lock).
   if (level === 'photo_first' || level === 'elegant_light') return false;
   if (language.preferPhotoLedCraft && level === 'balanced') {
-    // Soft packs may use only the quietest allowlist family via seed — still allow craft lock.
     return language.craftAllowlist.some((f) => SOFT_CRAFT.includes(f) || f === 'type_with_brand_rules');
   }
   return level === 'balanced' || level === 'designed' || level === 'bold_editorial';

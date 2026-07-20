@@ -45,7 +45,6 @@ import {
 } from '@/lib/fal-design-intensity';
 import {
   buildBrandLayoutLanguageDirectives,
-  clampIntensityToLayoutLanguage,
   resolveBrandLayoutLanguage,
   resolveCraftAllowlistForPack,
   shouldApplyCraftLayoutFamily,
@@ -528,7 +527,8 @@ async function generateOne(
     layoutFamilyHint: preset.catalogSlotKey ?? calendarLayout.canvaArchetypeId,
     explicitCanvaArchetypeId: explicitCoverCanva,
   });
-  // Slot/announcement proposes energy; brand theme + DNA/vibe layout language clamp it.
+  // Slot proposes energy; Brand Hub fal_* intensity is the only ceiling.
+  // DNA/vibe layout language shapes craft allowlist + compose — not intensity.
   const layoutLanguage = resolveBrandLayoutLanguage({
     sector: input.sector,
     visualDna: input.brandIntelligence?.visualDna,
@@ -543,10 +543,7 @@ async function generateOne(
   });
   const productionIntensity = slotIntensity.level;
   const designIntensityLevel = clampDesignIntensityForArchetype(
-    clampIntensityToLayoutLanguage(
-      resolveTemplateLibraryDesignIntensity(productionIntensity),
-      layoutLanguage,
-    ),
+    resolveTemplateLibraryDesignIntensity(productionIntensity),
     layoutBrief.canvaArchetypeId,
   );
   const brandIntelligenceDirectives = buildBrandIntelligenceDirectives(
