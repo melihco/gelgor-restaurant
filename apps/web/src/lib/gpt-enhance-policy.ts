@@ -105,8 +105,14 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
 
   // Strong brand-gallery match: skip GPT enhance (~$0.21) even when adaptiveScene
   // is on — rewriting a good venue photo rarely improves organic stills.
+  // Product-hero brands (e-commerce / local products) keep enhance: phone snaps of
+  // olive oil / jars often score "high" on topic match but still need staged BG.
+  const productHeroStaging =
+    input.visualStandard.visualSubject === 'product_hero'
+    || input.visualStandard.adaptiveSceneMode === 'product_showcase';
   if (
-    input.pickedFromBrandGallery
+    !productHeroStaging
+    && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
     && (pipeline === 'gallery_photo' || pipeline === 'story_still')
@@ -169,8 +175,12 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
     if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') return false;
   }
 
+  const productHeroStaging =
+    input.visualStandard.visualSubject === 'product_hero'
+    || input.visualStandard.adaptiveSceneMode === 'product_showcase';
   if (
-    input.pickedFromBrandGallery
+    !productHeroStaging
+    && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
     && (pipeline === 'gallery_photo' || pipeline === 'story_still')
@@ -179,7 +189,8 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
   }
 
   if (
-    input.pickedFromBrandGallery
+    !productHeroStaging
+    && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
     && pipeline === 'carousel_gallery'

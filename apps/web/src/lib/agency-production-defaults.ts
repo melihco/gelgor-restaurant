@@ -140,9 +140,29 @@ export function applyAgencyProductionThemeDefaults(
     base.ai_brief_drives_scene = true;
   }
 
-  // Enhance level: sector-specific default (only if not set)
+  // Enhance level: sector-specific default (only if not set).
+  // Map sector vocabulary (strong/light/none) → theme UI vocabulary (full/subtle/moderate).
   if (!base.ai_photo_enhance_level) {
-    base.ai_photo_enhance_level = enhanceLevel;
+    const levelMap: Record<string, string> = {
+      strong: 'full',
+      moderate: 'moderate',
+      light: 'subtle',
+      none: 'subtle',
+    };
+    base.ai_photo_enhance_level = levelMap[enhanceLevel] ?? 'moderate';
+  }
+
+  // Product-shop sectors: lock subject + adaptive mode when still on auto/unset
+  // so poor phone product snaps get staged scenes instead of venue preservation.
+  if (profile.defaultVisualSubject === 'product_closeup') {
+    if (!base.ai_visual_subject || base.ai_visual_subject === 'auto') {
+      base.ai_visual_subject = 'product_hero';
+      reasons.push(`product_subject_default:${profile.sectorId}`);
+    }
+    if (!base.ai_adaptive_scene_mode || base.ai_adaptive_scene_mode === 'auto') {
+      base.ai_adaptive_scene_mode = 'product_showcase';
+      reasons.push(`product_adaptive_mode:${profile.sectorId}`);
+    }
   }
 
   // Apply to all formats by default

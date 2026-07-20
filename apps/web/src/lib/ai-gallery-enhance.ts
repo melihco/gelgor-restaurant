@@ -52,8 +52,12 @@ export function resolveAiEnhanceLevel(
   brandTheme: Record<string, unknown> | null | undefined,
 ): AiEnhanceLevel {
   brandTheme = normalizeBrandThemeRecord(brandTheme);
-  const raw = String(brandTheme?.ai_photo_enhance_level ?? 'moderate');
-  if (raw === 'subtle' || raw === 'full') return raw;
+  const raw = String(brandTheme?.ai_photo_enhance_level ?? 'moderate').trim().toLowerCase();
+  // Theme UI: subtle | moderate | full
+  // Sector profiles: light | moderate | strong | none → map into theme levels
+  if (raw === 'subtle' || raw === 'light') return 'subtle';
+  if (raw === 'full' || raw === 'strong') return 'full';
+  if (raw === 'none' || raw === 'off') return 'subtle';
   return 'moderate';
 }
 

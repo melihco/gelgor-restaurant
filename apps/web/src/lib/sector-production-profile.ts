@@ -350,19 +350,27 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
   {
     sectorId: 'ecommerce_retail',
     hasPhysicalVenue: false,
-    galleryReliability: 'medium',
+    galleryReliability: 'low',
     defaultVisualSubject: 'product_closeup',
-    defaultEnhanceLevel: 'moderate',
-    forceAdaptiveScene: false,
+    defaultEnhanceLevel: 'strong',
+    forceAdaptiveScene: true,
     captionDrivenDefault: false,
     galleryRevisionDefault: true,
-    backgroundScenePrompt: 'clean product photography, minimal studio background, premium e-commerce aesthetic, soft diffused light, hero product in focus',
-    imageNegativeGuards: ['No cluttered background', 'no people unless styled'],
-    sceneLockSubject: 'hero product shot with premium minimal background and editorial lighting',
+    backgroundScenePrompt:
+      'professional commercial product photography, hero product sharp and true to packaging, '
+      + 'styled lifestyle or clean studio background replacing messy/phone backgrounds, '
+      + 'soft diffused key light, shallow depth of field, premium e-commerce aesthetic — '
+      + 'as if shot by a product photographer, not a phone snap',
+    imageNegativeGuards: [
+      'Do not invent a different product or alter packaging text/logo',
+      'No cluttered bedroom/table mess',
+      'no people unless styled',
+    ],
+    sceneLockSubject: 'hero product shot with premium staged background and editorial lighting',
     colorGrade: 'neutral',
     reelPacing: 'mid_tempo',
     headlineFallback: 'Yeni Ürün',
-    recommendedEnhanceLevelLabel: 'Moderate — product hero',
+    recommendedEnhanceLevelLabel: 'Strong — product photographer staging',
     menuIsServiceList: false,
   },
 
@@ -370,19 +378,27 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
   {
     sectorId: 'local_products_shop',
     hasPhysicalVenue: true,
-    galleryReliability: 'medium',
+    galleryReliability: 'low',
     defaultVisualSubject: 'product_closeup',
-    defaultEnhanceLevel: 'moderate',
-    forceAdaptiveScene: false,
+    defaultEnhanceLevel: 'strong',
+    forceAdaptiveScene: true,
     captionDrivenDefault: false,
     galleryRevisionDefault: true,
-    backgroundScenePrompt: 'artisan product lifestyle shot, natural textures, warm light, local market or boutique shop atmosphere',
-    imageNegativeGuards: [],
-    sceneLockSubject: 'artisan product in lifestyle context with warm natural textures',
+    backgroundScenePrompt:
+      'artisan product lifestyle photography for local specialty foods/oils/gifts — '
+      + 'keep the real product packaging and shape exact, replace poor phone backgrounds with '
+      + 'warm Aegean table / linen / olive-wood / coastal kitchen atmosphere, natural window light, '
+      + 'editorial food-product styling as a professional still-life photographer would stage it',
+    imageNegativeGuards: [
+      'Do not replace or morph the product into a different SKU',
+      'Do not invent fake brand labels',
+      'No restaurant dining plates unless the product is food being served',
+    ],
+    sceneLockSubject: 'artisan product in warm lifestyle still-life with natural textures',
     colorGrade: 'warm',
     reelPacing: 'mid_tempo',
     headlineFallback: 'Yerel Lezzet',
-    recommendedEnhanceLevelLabel: 'Moderate — artisan product quality',
+    recommendedEnhanceLevelLabel: 'Strong — artisan product photographer staging',
     menuIsServiceList: false,
   },
 
@@ -390,19 +406,21 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
   {
     sectorId: 'handmade_product_brand',
     hasPhysicalVenue: false,
-    galleryReliability: 'medium',
+    galleryReliability: 'low',
     defaultVisualSubject: 'product_closeup',
-    defaultEnhanceLevel: 'moderate',
-    forceAdaptiveScene: false,
+    defaultEnhanceLevel: 'strong',
+    forceAdaptiveScene: true,
     captionDrivenDefault: false,
     galleryRevisionDefault: true,
-    backgroundScenePrompt: 'handcrafted product in beautiful flat-lay or lifestyle scene, natural linen, botanical props, artisan craft aesthetic, warm editorial light',
-    imageNegativeGuards: ['No mass-produced factory look', 'no plastic packaging'],
+    backgroundScenePrompt:
+      'handcrafted product flat-lay or lifestyle scene, natural linen, botanical props, '
+      + 'artisan craft aesthetic, warm editorial light — professional product photographer grade',
+    imageNegativeGuards: ['No mass-produced factory look', 'no plastic packaging', 'keep product identity'],
     sceneLockSubject: 'handcrafted product styled with natural textures and artisan aesthetic',
     colorGrade: 'warm',
     reelPacing: 'slow_burn',
     headlineFallback: 'El Yapımı',
-    recommendedEnhanceLevelLabel: 'Moderate — handcraft authenticity',
+    recommendedEnhanceLevelLabel: 'Strong — handcraft product staging',
     menuIsServiceList: false,
   },
 
