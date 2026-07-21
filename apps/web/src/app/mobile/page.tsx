@@ -2225,18 +2225,22 @@ const CSS = `
     will-change: transform, opacity;
   }
   .sa-mobile .brand-hub-hero-aurora {
-    width: 72%;
-    height: 70%;
-    top: -28%;
-    left: 14%;
+    width: 70%;
+    height: 58%;
+    top: -30%;
+    left: 0;
+    right: 0;
+    margin-inline: auto;
     background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 55%, transparent) 0%, transparent 70%);
     animation: brandHubAuroraDrift 7.5s ease-in-out infinite;
   }
   .sa-mobile .brand-hub-hero-aurora-2 {
-    width: 58%;
-    height: 56%;
-    right: -12%;
-    bottom: -22%;
+    width: 52%;
+    height: 48%;
+    left: 0;
+    right: 0;
+    bottom: -26%;
+    margin-inline: auto;
     background: radial-gradient(circle, color-mix(in srgb, var(--hub-accent) 42%, transparent) 0%, transparent 72%);
     animation: brandHubAuroraDrift 9.2s ease-in-out infinite reverse;
   }

@@ -4024,9 +4024,7 @@ export function BrandConstitution() {
                   {
                     key: 'design' as const,
                     label: 'Tasarım',
-                    hint: pprReady
-                      ? 'Üretime hazır'
-                      : `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
+                    hint: `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
                     accent: SA_STUDIO_ACCENTS.design,
                   },
                   {

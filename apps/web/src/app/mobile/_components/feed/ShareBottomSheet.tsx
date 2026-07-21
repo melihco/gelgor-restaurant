@@ -34,6 +34,8 @@ export function ShareBottomSheet({
   shareText,
   mode = 'content',
   referralContext,
+  /** Optional publish / schedule block (Akış pending posts). */
+  publishActions,
 }: {
   open: boolean;
   onClose: () => void;
@@ -42,6 +44,7 @@ export function ShareBottomSheet({
   shareText?: string;
   mode?: ShareMode;
   referralContext?: AppReferralShareContext;
+  publishActions?: React.ReactNode;
 }) {
   const { t } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -199,6 +202,29 @@ export function ShareBottomSheet({
             WebkitOverflowScrolling: 'touch',
           }}>
             {referralMessage}
+          </div>
+        )}
+
+        {publishActions && (
+          <div style={{
+            margin: '12px 16px 4px',
+            padding: '12px 12px 14px',
+            borderRadius: 16,
+            background: previewBg,
+            border: `1px solid ${previewBorder}`,
+          }}>
+            <div style={{
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: subtle,
+              marginBottom: 8,
+              paddingLeft: 2,
+            }}>
+              Yayınla / Zamanla
+            </div>
+            {publishActions}
           </div>
         )}
 

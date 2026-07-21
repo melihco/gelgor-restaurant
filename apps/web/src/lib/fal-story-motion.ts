@@ -51,7 +51,7 @@ const MOTION_PROMPTS: Record<StoryMotionStyle, string> = {
   product_hero:
     'Ultra-slow 360-degree subtle rotation showcasing the product from slightly different angle. Premium studio lighting. Clean background.',
   social_reel_graphics:
-    'Quiet luxury Instagram Reel motion. Ultra-slow push-in on the photo hero only. Microscopic parallax between color panel and photo. Soft light breath — editorial, restrained, premium. No party energy, no neon chaos, no busy motion graphics.',
+    'Premium Instagram Reel I2V: 35mm shallow-DOF editorial still brought to life. Ultra-slow dolly push-in on the photo hero only; microscopic parallax between craft panel and photograph; soft volumetric light breath. Luxury hospitality color science — warm highlights, calm midtones, natural optical depth. Agency-grade finish: restrained, cinematic, photo-real. No party energy, neon chaos, or busy motion graphics.',
 };
 
 export function resolveMotionStyle(sector?: string, mood?: string): StoryMotionStyle {
@@ -86,17 +86,19 @@ export function buildStoryMotionPrompt(input: {
       input.sector ? `Industry: ${input.sector}.` : '',
       'FROZEN TEXT (NON-NEGOTIABLE): Treat every letter, number, diacritic, and glyph as frozen pixels. Zero new characters. Zero OCR rewrite. Zero language change. Zero word morphing. If text exists, it must be identical in every frame.',
       isReelGraphics
-        ? 'LOCKED TYPOGRAPHY: Finished premium reel cover — headline/subtitle/panels stay pixel-perfect from frame 1 to end. Quiet luxury, not carnival motion graphics.'
+        ? 'LOCKED TYPOGRAPHY: Finished premium reel cover — headline/subtitle/panels stay pixel-perfect, sharp, and unmoved from frame 1 to end. Quiet luxury editorial, never carnival motion graphics.'
         : 'LOCKED COMPOSITION: Professional branded design frame — typography stays pixel-perfect from frame 1 to end.',
       'LOCKED LOGO: Brand mark stays identical — same shape, colors, position. Allowed: tiny opacity breath only. FORBIDDEN: redraw, morph, recolor, replace.',
       isReelGraphics
-        ? 'Allowed motion ONLY: ultra-slow push-in on the photo zone, microscopic panel parallax, soft light breath. FORBIDDEN motion: shake, whip pans, particle storms, neon flashes, sticker pop-ins, emoji, kinetic type, bouncing UI.'
+        ? 'Allowed motion ONLY: ultra-slow push-in on the photo zone, microscopic panel parallax, soft light breath with physically stable timing and temporal consistency. FORBIDDEN motion: shake, whip pans, particle storms, neon flashes, sticker pop-ins, emoji, kinetic type, bouncing UI, layout drift.'
         : 'Allowed motion: microscopic ambient light shift, ultra-subtle bokeh breath. NOTHING else.',
       'FORBIDDEN: text distortion, letter mutation, blurred/warped type, typography movement, gibberish words, invented slogans, cropped headline, mutating shapes.',
       isReelGraphics
-        ? 'Duration: 5s. Aspect 9:16. Output = restrained agency Reel — editorial breathing still with design locked, not a generative party video.'
+        ? 'Duration: 5s. Aspect 9:16. Output = restrained agency Reel — photo realism preserved, design locked, editorial breathing still; not a generative party video.'
         : 'Duration: 5s. Aspect 9:16. Premium breathing still, not generative animation.',
-      'Quality: niche high-end brand content — less clutter wins.',
+      isReelGraphics
+        ? 'Quality: agency commercial finish — calm luxury hospitality aesthetic, consistent frames, optical realism; less clutter wins.'
+        : 'Quality: niche high-end brand content — less clutter wins.',
       input.designerMotionCue
         ? `Art director motion (photo/light only — never alter text): ${input.designerMotionCue.slice(0, 220)}.`
         : '',

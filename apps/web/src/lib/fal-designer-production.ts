@@ -30,11 +30,14 @@ import {
   clampFalOverlayHeadlineForCanvas,
   shortenFalOverlayForImageRetry,
   truncateAtWordBoundary,
+  buildFalBrandMarkPlacementDirective,
   buildFalLogoPlacementContract,
   buildFalOnCanvasTextContract,
+  resolveBrandMarkLockup,
   resolveFalProductionOverlayHeadline,
   areFalOverlayTextsRedundant,
   resolveFalOverlayCopy,
+  type FalLogoCanvasChannel,
 } from '@/lib/fal-caption-headline';
 import {
   describeDesignCraftLayoutFamily,
@@ -889,6 +892,7 @@ function buildDesignedDesignCardPrompt(
     subtitle: safeSubtitle,
     brandName: input.brandName,
     logoProvided: Boolean(input.logoUrl),
+    channel: logoChannel,
   });
 
   const artDirectionBlock = input.artDirection
@@ -1060,6 +1064,8 @@ function buildDesignedDesignCardPrompt(
       vibe: input.vibe,
       subtitle: input.subtitle,
       brandName: input.brandName,
+      logoProvided: Boolean(input.logoUrl),
+      channel: logoChannel,
     });
   }
   return prompt;
@@ -1075,6 +1081,8 @@ export function harmonizePhotoFirstDesignPrompt(
     vibe: TypographyVibe;
     subtitle?: string;
     brandName?: string;
+    logoProvided?: boolean;
+    channel?: FalLogoCanvasChannel;
   },
 ): string {
   const withoutLegacyTypography = prompt
@@ -1097,6 +1105,9 @@ export function buildHarmonizedPhotoFirstTypographyBlock(input: {
   vibe: TypographyVibe;
   subtitle?: string;
   brandName?: string;
+  /** When true, never AI-type the brand — official logo is composited later. */
+  logoProvided?: boolean;
+  channel?: FalLogoCanvasChannel;
 }): string[] {
   const spec = getVibePromptSpec(input.vibe);
   const lines = [
@@ -1110,8 +1121,20 @@ export function buildHarmonizedPhotoFirstTypographyBlock(input: {
       `Preferred tagline text (exact): "${input.subtitle.trim().slice(0, 48)}" — small, refined, vibe-aligned.`,
     );
   }
-  if (input.brandName) {
-    lines.push(`Optional: tiny "${input.brandName}" watermark — max 8% frame width.`);
+  if (input.logoProvided && input.brandName?.trim()) {
+    lines.push(
+      `BRAND: official logo composited in post — leave a quiet corner empty; do NOT type or spell "${input.brandName.trim()}".`,
+    );
+  } else if (input.brandName?.trim()) {
+    const mark = resolveBrandMarkLockup(input.brandName);
+    if (mark) {
+      lines.push(
+        buildFalBrandMarkPlacementDirective({
+          brandName: input.brandName,
+          channel: input.channel ?? 'feed_post',
+        }),
+      );
+    }
   }
   return lines;
 }

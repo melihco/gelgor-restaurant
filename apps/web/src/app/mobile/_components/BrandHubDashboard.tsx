@@ -335,21 +335,21 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      {/* Hero — compact horizontal brand card (logo · meta · readiness) */}
+      {/* Hero — centered brand card · score badge top-right */}
       <div
         className="brand-hub-hero sa-chrome-card"
         style={{
           position: 'relative',
           marginBottom: 22,
-          padding: '18px 18px 16px',
-          borderRadius: 24,
+          padding: '22px 20px 18px',
+          borderRadius: 26,
           overflow: 'hidden',
           ['--hub-brand' as string]: brandPrimary || SA_CHROME.steel300,
           ['--hub-accent' as string]: t.accent || SA_CHROME.steel500,
           background: t.isDark
-            ? `radial-gradient(120% 90% at 12% -20%, ${brandPrimary}24 0%, transparent 55%),
+            ? `radial-gradient(110% 80% at 50% -10%, ${brandPrimary}28 0%, transparent 58%),
                linear-gradient(165deg, rgba(12,16,22,0.98) 0%, rgba(5,7,12,1) 100%)`
-            : `radial-gradient(120% 90% at 12% -20%, ${brandPrimary}18 0%, transparent 55%),
+            : `radial-gradient(110% 80% at 50% -10%, ${brandPrimary}1c 0%, transparent 58%),
                linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(244,246,250,0.98) 100%)`,
         }}
       >
@@ -357,30 +357,88 @@ export function BrandHubDashboard({
         <div className="brand-hub-hero-aurora-2" aria-hidden />
         <div className="brand-hub-hero-grid" aria-hidden />
 
+        {/* Readiness score — top-right badge only (no status copy) */}
+        <div
+          className="brand-hub-hero-readiness"
+          aria-label={`Hazırlık skoru ${readinessScore}`}
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            zIndex: 2,
+            width: 40,
+            height: 40,
+            borderRadius: 999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: t.isDark ? 'rgba(8,10,14,0.72)' : 'rgba(255,255,255,0.88)',
+            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)'}`,
+            boxShadow: t.isDark
+              ? '0 8px 20px rgba(0,0,0,0.35)'
+              : '0 6px 16px rgba(15,23,42,0.1)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+          }}
+        >
+          <div style={{ position: 'relative', width: 34, height: 34 }}>
+            <ReadinessRing
+              score={readinessScore}
+              size={34}
+              accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
+              track={t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)'}
+            />
+            <span style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: '-0.04em',
+              color: t.textPrimary,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+            >
+              {readinessScore}
+            </span>
+          </div>
+        </div>
+
         <div
           className="brand-hub-hero-inner"
           style={{
             position: 'relative',
             zIndex: 1,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            gap: 14,
+            textAlign: 'center',
             width: '100%',
+            paddingTop: 4,
+            paddingInline: 28,
+            gap: 12,
           }}
         >
           <div
             className="brand-hub-hero-mark"
-            style={{ flexShrink: 0, position: 'relative' }}
+            style={{ position: 'relative', flexShrink: 0 }}
           >
+            <div className="brand-hub-hero-glow" aria-hidden />
             <div style={{
-              width: 72, height: 72, borderRadius: 20, overflow: 'hidden', position: 'relative',
+              width: 88,
+              height: 88,
+              borderRadius: 26,
+              overflow: 'hidden',
+              position: 'relative',
               background: logoUrl
-                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.94)')
+                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.96)')
                 : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
-              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.06)'}`,
+              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)'}`,
               boxShadow: t.isDark
-                ? `0 10px 28px rgba(0,0,0,0.42), 0 0 0 1px ${brandPrimary}28`
-                : '0 10px 24px rgba(15,23,42,0.1)',
+                ? `0 14px 36px rgba(0,0,0,0.45), 0 0 0 1px ${brandPrimary}30`
+                : '0 12px 28px rgba(15,23,42,0.12)',
             }}
             >
               {logoUrl ? (
@@ -388,12 +446,19 @@ export function BrandHubDashboard({
                 <img
                   src={resolveGalleryImageSrc(logoUrl)}
                   alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 10 }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 12 }}
                 />
               ) : (
                 <div style={{
-                  width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 26, fontWeight: 800, color: '#fff', letterSpacing: '-0.05em',
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 28,
+                  fontWeight: 800,
+                  color: '#fff',
+                  letterSpacing: '-0.05em',
                 }}
                 >
                   {monogram}
@@ -402,67 +467,45 @@ export function BrandHubDashboard({
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {!logoUrl && (
-              <h1
-                className="brand-hub-hero-title"
-                style={{
-                  margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.15,
-                  color: t.textPrimary, textAlign: 'left',
-                }}
-              >
-                {brandName || 'Markanız'}
-              </h1>
-            )}
-
-            {(industryLabel || locationLabel) && (
-              <p
-                className="brand-hub-hero-meta"
-                style={{
-                  margin: 0, fontSize: 11.5, fontWeight: 600, letterSpacing: '0.06em',
-                  color: t.textMuted, textAlign: 'left', lineHeight: 1.35,
-                  textTransform: 'uppercase' as const,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}
-              >
-                {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
-              </p>
-            )}
-
-            <div
-              className="brand-hub-hero-readiness"
+          {!logoUrl && (
+            <h1
+              className="brand-hub-hero-title"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
-                marginTop: industryLabel || locationLabel || !logoUrl ? 0 : 2,
-                padding: '5px 10px 5px 6px', borderRadius: 999,
-                background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
-                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}`,
+                margin: 0,
+                fontSize: 22,
+                fontWeight: 800,
+                letterSpacing: '-0.035em',
+                lineHeight: 1.15,
+                color: t.textPrimary,
+                textAlign: 'center',
+                maxWidth: '100%',
               }}
             >
-              <div style={{ position: 'relative', width: 32, height: 32, flexShrink: 0 }}>
-                <ReadinessRing
-                  score={readinessScore}
-                  size={32}
-                  accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
-                  track={t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)'}
-                />
-                <span style={{
-                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 800, letterSpacing: '-0.04em',
-                  color: t.textPrimary, fontVariantNumeric: 'tabular-nums',
-                }}
-                >
-                  {readinessScore}
-                </span>
-              </div>
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSecondary, letterSpacing: '-0.01em' }}>
-                {readinessGood ? 'Üretime hazır' : 'Profil tamamlanıyor'}
-              </span>
-            </div>
-          </div>
+              {brandName || 'Markanız'}
+            </h1>
+          )}
+
+          {(industryLabel || locationLabel) && (
+            <p
+              className="brand-hub-hero-meta"
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.14em',
+                color: t.textMuted,
+                textAlign: 'center',
+                lineHeight: 1.4,
+                textTransform: 'uppercase' as const,
+                maxWidth: '100%',
+              }}
+            >
+              {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
+            </p>
+          )}
         </div>
 
-        <div className="brand-hub-hero-rule" aria-hidden style={{ marginTop: 14 }} />
+        <div className="brand-hub-hero-rule" aria-hidden style={{ marginTop: 16 }} />
 
         <div style={{ position: 'relative', zIndex: 1 }}>
           {!constitutionConfirmedAt && (

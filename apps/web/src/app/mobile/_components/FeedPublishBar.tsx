@@ -32,6 +32,8 @@ export function FeedPublishBar({
   hardBlockLabel,
   revisioning = false,
   dark = true,
+  /** When true — compact block for ShareBottomSheet (no post chrome). */
+  embedded = false,
 }: {
   onShareNow: () => void;
   onSchedule: () => void;
@@ -44,6 +46,7 @@ export function FeedPublishBar({
   hardBlockLabel?: string;
   revisioning?: boolean;
   dark?: boolean;
+  embedded?: boolean;
 }) {
   const chrome = resolveIgFeedChrome(dark);
   const shareLabel = sharing
@@ -52,7 +55,7 @@ export function FeedPublishBar({
       ? hardBlockLabel
       : softWarning
         ? 'Yine de paylaş'
-        : 'Paylaş';
+        : 'Şimdi yayınla';
 
   const shareDisabled = disabled || sharing;
   const shareBg = shareDisabled
@@ -64,7 +67,11 @@ export function FeedPublishBar({
 
   return (
     <div
-      style={{
+      style={embedded ? {
+        margin: 0,
+        padding: 0,
+        background: 'transparent',
+      } : {
         marginTop: 2,
         padding: '0 14px 14px',
         background: chrome.shell,

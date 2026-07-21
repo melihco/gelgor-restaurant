@@ -903,6 +903,92 @@ export function shortenFalOverlayForImageRetry(
   return normalized && isMeaningfulFalOverlayText(normalized) ? normalized : '';
 }
 
+export type FalLogoCanvasChannel = 'feed_post' | 'reel' | 'story';
+
+/**
+ * Corner wordmark lockup — prefer a short, legible mark when the legal name is long.
+ * Multi-tenant: never hardcode brand names; only length/token heuristics.
+ */
+export function resolveBrandMarkLockup(brandName: string, maxChars = 18): string {
+  const raw = sanitizeFalOverlayText(brandName).trim();
+  if (!raw) return '';
+  if (raw.length <= maxChars) return raw;
+
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return raw.slice(0, maxChars);
+
+  // Prefer first distinctive token (e.g. "Yula" from "Yula Drink & Chill").
+  const first = tokens[0] ?? '';
+  if (first.length >= 3 && first.length <= maxChars) {
+    // Keep a two-token lockup when both fit (e.g. "Sarnıç Beach").
+    if (tokens.length >= 2) {
+      const two = `${tokens[0]} ${tokens[1]}`;
+      if (two.length <= maxChars) return two;
+    }
+    return first;
+  }
+
+  // Word-boundary truncate — never mid-glyph.
+  let out = '';
+  for (const t of tokens) {
+    const next = out ? `${out} ${t}` : t;
+    if (next.length > maxChars) break;
+    out = next;
+  }
+  return out || first.slice(0, maxChars);
+}
+
+function formatBrandMarkCharacterLock(mark: string): string {
+  if (!mark.trim()) return '';
+  const chars = [...mark].map((ch) => (ch === ' ' ? '·' : ch)).join(' ');
+  return `BRAND MARK CHARACTER LOCK (copy glyph-by-glyph — exact spelling, diacritics, casing): ${chars}`;
+}
+
+function formatBrandMarkWordOrder(mark: string): string {
+  const words = mark.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  return `Brand mark word order (${words.length} tokens, do not reorder/misspell/abbreviate): ${
+    words.map((w, i) => `${i + 1}="${w}"`).join(' · ')
+  }`;
+}
+
+/**
+ * Slot-aware brand wordmark directive when no official logo asset is available.
+ * Logo path must use {@link buildFalLogoPlacementContract} instead — never AI-type the brand.
+ */
+export function buildFalBrandMarkPlacementDirective(input: {
+  brandName: string;
+  channel?: FalLogoCanvasChannel;
+}): string {
+  const mark = resolveBrandMarkLockup(input.brandName);
+  if (!mark) return '';
+
+  const channel = input.channel ?? 'feed_post';
+  const placement: Record<FalLogoCanvasChannel, string> = {
+    feed_post:
+      'small refined corner wordmark (top-right OR bottom-right) — quiet watermark, never poster-scale, never competing with the headline',
+    story:
+      'small top-right watermark below the Instagram UI safe zone — soft, elegant, low visual weight',
+    reel:
+      'tiny top-right watermark below the top 12% UI chrome (or bottom-right above the bottom 15%) — never over the hero subject',
+  };
+
+  const vibe: Record<FalLogoCanvasChannel, string> = {
+    feed_post: 'clean editorial lockup, brand-color accent or soft white/cream, subtle opacity',
+    story: 'premium story watermark — light tracking, no neon shout, no fake badge icons',
+    reel: 'motion-safe tiny lockup — high legibility at small size, no decorative flourishes that break letters',
+  };
+
+  return [
+    `BRAND MARK PLACEMENT (${channel}): Paint ONLY the exact wordmark "${mark}" as a ${placement[channel]}.`,
+    `Vibe: ${vibe[channel]}.`,
+    formatBrandMarkWordOrder(mark),
+    formatBrandMarkCharacterLock(mark),
+    'FORBIDDEN: misspelling, inventing letters, dropping diacritics, abbreviating, translating, adding taglines next to the mark, fake sun/pin badges, or redrawing a logo emblem.',
+    'If the mark cannot be spelled perfectly, omit the wordmark entirely — never guess.',
+  ].filter(Boolean).join(' ');
+}
+
 /**
  * Explicit on-canvas text contract for fal/Ideogram/GPT-image prompts.
  * Lists the only strings that may appear as visible text — prevents gibberish output.
@@ -912,6 +998,8 @@ export function buildFalOnCanvasTextContract(input: {
   subtitle?: string;
   brandName?: string;
   logoProvided?: boolean;
+  /** Slot channel — tunes brand-mark vibe when no logo. */
+  channel?: FalLogoCanvasChannel;
 }): string {
   const headline = sanitizeFalOverlayText(input.headline);
   const headlineWords = headline.split(/\s+/).filter(Boolean);
@@ -937,7 +1025,23 @@ export function buildFalOnCanvasTextContract(input: {
   }
 
   if (input.brandName?.trim() && !input.logoProvided) {
-    lines.push(`BRAND MARK (small corner wordmark only): "${input.brandName.trim()}"`);
+    const mark = resolveBrandMarkLockup(input.brandName);
+    if (mark) {
+      lines.push(`BRAND MARK (small corner wordmark only — exact spelling): "${mark}"`);
+      const wordOrder = formatBrandMarkWordOrder(mark);
+      if (wordOrder) lines.push(wordOrder);
+      lines.push(formatBrandMarkCharacterLock(mark));
+      // Placement vibe is added separately via buildFalBrandMarkPlacementDirective (slot channel).
+      if (input.channel) {
+        lines.push(
+          `Brand mark channel: ${input.channel} — keep mark small, corner-anchored, and vibe-aligned; never poster-scale.`,
+        );
+      }
+    }
+  } else if (input.brandName?.trim() && input.logoProvided) {
+    lines.push(
+      `BRAND NAME LOCK: official logo will be composited — do NOT type, spell, abbreviate, or stylize "${input.brandName.trim()}" (or any variant) anywhere on canvas.`,
+    );
   }
 
   lines.push(
@@ -957,8 +1061,6 @@ function formatTurkishDiacriticCharacterLock(text: string): string {
   const chars = [...text].map((ch) => (ch === ' ' ? '·' : ch)).join(' ');
   return `SUBTITLE CHARACTER LOCK (copy glyph-by-glyph): ${chars}`;
 }
-
-export type FalLogoCanvasChannel = 'feed_post' | 'reel' | 'story';
 
 /**
  * Logo placement + integrity contract for fal/Ideogram/GPT-image designed posts.

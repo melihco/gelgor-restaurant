@@ -15,6 +15,8 @@ import {
   resolveFalProductionOverlayHeadline,
   buildFalOnCanvasTextContract,
   buildFalLogoPlacementContract,
+  buildFalBrandMarkPlacementDirective,
+  resolveBrandMarkLockup,
   truncateAtWordBoundary,
   shortenFalOverlayForImageRetry,
   areFalOverlayTextsRedundant,
@@ -381,26 +383,63 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
   });
 });
 
+describe('resolveBrandMarkLockup', () => {
+  it('keeps short names intact', () => {
+    expect(resolveBrandMarkLockup('Yula')).toBe('Yula');
+    expect(resolveBrandMarkLockup('Sarnıç Beach')).toBe('Sarnıç Beach');
+  });
+
+  it('shortens long legal names to a legible lockup', () => {
+    expect(resolveBrandMarkLockup('Yula Drink & Chill Bodrum')).toBe('Yula Drink');
+    expect(resolveBrandMarkLockup('Local Products Shop Karaman Artisan Collective')).toBe(
+      'Local Products',
+    );
+  });
+});
+
+describe('buildFalBrandMarkPlacementDirective', () => {
+  it('locks exact spelling and slot vibe for feed vs reel', () => {
+    const feed = buildFalBrandMarkPlacementDirective({
+      brandName: 'Sarnıç Beach',
+      channel: 'feed_post',
+    });
+    const reel = buildFalBrandMarkPlacementDirective({
+      brandName: 'Sarnıç Beach',
+      channel: 'reel',
+    });
+    expect(feed).toContain('exact wordmark "Sarnıç Beach"');
+    expect(feed).toContain('CHARACTER LOCK');
+    expect(feed).toContain('quiet watermark');
+    expect(reel).toContain('motion-safe tiny lockup');
+    expect(reel).toContain('omit the wordmark entirely');
+  });
+});
+
 describe('buildFalOnCanvasTextContract', () => {
   it('lists explicit headline words and forbids gibberish', () => {
     const contract = buildFalOnCanvasTextContract({
       headline: 'Sunset Session',
       subtitle: 'Rezervasyon açık',
       brandName: 'Sarnıç Beach',
+      channel: 'feed_post',
     });
     expect(contract).toContain('HEADLINE: "Sunset Session"');
     expect(contract).toContain('1="Sunset"');
     expect(contract).toContain('SUBTITLE');
+    expect(contract).toContain('BRAND MARK (small corner wordmark only');
+    expect(contract).toContain('Brand mark channel: feed_post');
     expect(contract).toContain('FORBIDDEN on canvas: gibberish');
   });
 
-  it('omits text wordmark when logo is provided', () => {
+  it('forbids typing brand name when logo is provided', () => {
     const contract = buildFalOnCanvasTextContract({
       headline: 'Sunset Session',
       brandName: 'Sarnıç Beach',
       logoProvided: true,
     });
-    expect(contract).not.toContain('BRAND MARK');
+    expect(contract).not.toContain('BRAND MARK (small corner');
+    expect(contract).toContain('BRAND NAME LOCK');
+    expect(contract).toContain('do NOT type');
   });
 });
 

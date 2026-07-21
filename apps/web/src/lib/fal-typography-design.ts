@@ -18,6 +18,7 @@ import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-th
 import { serverConfig } from './server-config';
 import { finalizeFalPrompt } from './fal-prompt';
 import {
+  buildFalBrandMarkPlacementDirective,
   buildFalLogoPlacementContract,
   buildFalOnCanvasTextContract,
   clampFalOverlayHeadlineForCanvas,
@@ -222,6 +223,7 @@ function buildTypographyPrompt(input: {
       subtitle: safeSubtitle,
       brandName: input.brandName,
       logoProvided: Boolean(input.logoUrl),
+      channel: 'reel',
     });
     const logoLine = input.logoUrl
       ? buildFalLogoPlacementContract({
@@ -232,7 +234,7 @@ function buildTypographyPrompt(input: {
           placement: input.logoPlacement ?? null,
         })
       : input.brandName
-        ? ` Place "${input.brandName}" brand name at top-right corner — small, clean watermark.`
+        ? ` ${buildFalBrandMarkPlacementDirective({ brandName: input.brandName, channel: 'reel' })}`
         : '';
     const reelPrompt = [
       `Premium Canva Pro Instagram Reel / TikTok cover frame, ${aspect}.`,
@@ -270,6 +272,7 @@ function buildTypographyPrompt(input: {
       subtitle: safeSubtitle,
       brandName: input.brandName,
       logoProvided: Boolean(input.logoUrl),
+      channel: 'story',
     });
     const logoLine = input.logoUrl
       ? buildFalLogoPlacementContract({
@@ -280,7 +283,7 @@ function buildTypographyPrompt(input: {
           placement: input.logoPlacement ?? null,
         })
       : input.brandName
-        ? ` Place "${input.brandName}" brand name at top-right corner — small, clean watermark.`
+        ? ` ${buildFalBrandMarkPlacementDirective({ brandName: input.brandName, channel: 'story' })}`
         : '';
     const storyPrompt = [
       `Premium branded vertical story poster, ${aspect}.`,
@@ -319,6 +322,7 @@ function buildTypographyPrompt(input: {
     subtitle: safeSubtitle,
     brandName: input.brandName,
     logoProvided: Boolean(input.logoUrl),
+    channel: canvasChannel,
   });
 
   const logoLine = input.logoUrl
@@ -330,7 +334,7 @@ function buildTypographyPrompt(input: {
         placement: input.logoPlacement ?? null,
       })
     : input.brandName
-      ? ` Place "${input.brandName}" brand name in a clean, minimal style at the top-right or bottom-right corner. Small but legible. Brand watermark presence is mandatory.`
+      ? ` ${buildFalBrandMarkPlacementDirective({ brandName: input.brandName, channel: canvasChannel })}`
       : '';
 
   const postPrompt = [

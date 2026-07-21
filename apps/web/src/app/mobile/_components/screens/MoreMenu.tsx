@@ -331,23 +331,6 @@ export function MoreMenuPanel({
         </button>
       </div>
 
-      {/* ─── Footer ───────────────────────────────────────────────────── */}
-      <div style={{ padding: `24px ${horizontalPadding}px 0`, textAlign: 'center' }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '6px 14px', borderRadius: 20,
-          background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-          border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
-        }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: t.accent, opacity: 0.6,
-          }} />
-          <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>
-            Smart Agency · Müşteri paneli
-          </span>
-        </div>
-      </div>
     </>
   );
 }

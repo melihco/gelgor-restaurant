@@ -438,65 +438,22 @@ const NativeFeedCard = React.memo(function NativeFeedCard({
   const formatTag: import('../platform-native-previews').FeedFormatTag | undefined =
     isAdCreative ? 'ad' : kind === 'carousel' ? 'carousel' : kind === 'reel' ? 'reel' : 'post';
 
-  const [publishDockOpen, setPublishDockOpen] = React.useState(false);
-  const publishBar = igHome && isPending && !isAdCreative && !isRendering ? (
-    consumerMode ? (
-      <div style={{
-        padding: '0 14px 12px',
-        borderTop: `0.5px solid ${igHomeChrome.separator}`,
-      }}>
-        <button
-          type="button"
-          aria-expanded={publishDockOpen}
-          aria-label="Yayın seçenekleri"
-          onClick={() => setPublishDockOpen((v) => !v)}
-          style={{
-            width: '100%',
-            minHeight: 44,
-            borderRadius: 12,
-            border: `0.5px solid ${igHomeChrome.separator}`,
-            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-            color: igHomeChrome.textMuted,
-            fontSize: 13,
-            fontWeight: 650,
-            cursor: 'pointer',
-          }}
-        >
-          {publishDockOpen ? 'Yayın seçeneklerini gizle' : 'Yayınla / Zamanla'}
-        </button>
-        {publishDockOpen && (
-          <div style={{ marginTop: 8 }}>
-            <FeedPublishBar
-              onShareNow={handleApproveClick}
-              onSchedule={() => setScheduleOpen(true)}
-              onEdit={() => openApproval(artifact.id)}
-              onRevise={() => onRevision(artifact.id)}
-              scheduleSubtitle={scheduleSubtitle}
-              sharing={approving}
-              revisioning={revisioning}
-              disabled={!canApproveHard || isRendering}
-              softWarning={hasSoftWarnings && !softApproveAck}
-              hardBlockLabel={hardBlockButtonLabel}
-              dark={t.isDark}
-            />
-          </div>
-        )}
-      </div>
-    ) : (
-      <FeedPublishBar
-        onShareNow={handleApproveClick}
-        onSchedule={() => setScheduleOpen(true)}
-        onEdit={() => openApproval(artifact.id)}
-        onRevise={() => onRevision(artifact.id)}
-        scheduleSubtitle={scheduleSubtitle}
-        sharing={approving}
-        revisioning={revisioning}
-        disabled={!canApproveHard || isRendering}
-        softWarning={hasSoftWarnings && !softApproveAck}
-        hardBlockLabel={hardBlockButtonLabel}
-        dark={t.isDark}
-      />
-    )
+  // Consumer Akış: Yayınla/Zamanla lives in Paylaş sheet (native IG feed).
+  // Operator mode keeps the inline bar under the post.
+  const publishBar = !consumerMode && isPending && !isAdCreative && !isRendering ? (
+    <FeedPublishBar
+      onShareNow={handleApproveClick}
+      onSchedule={() => setScheduleOpen(true)}
+      onEdit={() => openApproval(artifact.id)}
+      onRevise={() => onRevision(artifact.id)}
+      scheduleSubtitle={scheduleSubtitle}
+      sharing={approving}
+      revisioning={revisioning}
+      disabled={!canApproveHard || isRendering}
+      softWarning={hasSoftWarnings && !softApproveAck}
+      hardBlockLabel={hardBlockButtonLabel}
+      dark={t.isDark}
+    />
   ) : null;
 
   return (
@@ -1846,6 +1803,9 @@ function PlatformFeedInner() {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareMode, setShareMode] = useState<'content' | 'referral'>('content');
+  /** Schedule opened from Paylaş sheet (consumer Akış). */
+  const [scheduleShareArtifact, setScheduleShareArtifact] = useState<OutputArtifact | null>(null);
+  const [shareSoftAckId, setShareSoftAckId] = useState<string | null>(null);
   const [seenStoryIds, setSeenStoryIds] = useState<Set<string>>(() => new Set());
   const [storyPaused, setStoryPaused] = useState(false);
   const storyHoldRef = useRef(false);
@@ -2656,6 +2616,20 @@ function PlatformFeedInner() {
   const handleOpenGoogleAd = useCallback(() => {
     navigate('ads');
   }, [navigate]);
+
+  const shareTargetArtifact = useMemo(() => {
+    if (!sheetTargetId || shareMode !== 'content') return null;
+    return (
+      artifactsRef.current.find((a) => a.id === sheetTargetId)
+      ?? allArtifacts.find((a) => a.id === sheetTargetId)
+      ?? null
+    );
+  }, [sheetTargetId, shareMode, allArtifacts, artifacts, shareOpen]);
+
+  const sharePublishVm = useMemo(() => {
+    if (!shareTargetArtifact || shareTargetArtifact.status !== 'pending_review') return null;
+    return buildFeedArtifactViewModel(shareTargetArtifact, missionIdeationLookup);
+  }, [shareTargetArtifact, missionIdeationLookup]);
 
   const feedBg = !operatorMode
     ? (t.isDark ? '#000' : t.bg)
@@ -3850,13 +3824,94 @@ function PlatformFeedInner() {
 
       <ShareBottomSheet
         open={shareOpen}
-        onClose={() => setShareOpen(false)}
+        onClose={() => {
+          setShareOpen(false);
+          setShareSoftAckId(null);
+        }}
         mode={shareMode}
         shareText={sheetTargetId && shareMode === 'content' ? 'Akış içeriği' : undefined}
         referralContext={{
           brandName: tenantBrand.brandName || feedHandle.replace('@', ''),
         }}
+        publishActions={
+          !operatorMode
+          && sharePublishVm
+          && shareTargetArtifact
+          && !sharePublishVm.isAdCreative
+          && !sharePublishVm.isRendering
+            ? (
+              <FeedPublishBar
+                embedded
+                dark={t.isDark}
+                onShareNow={() => {
+                  if (sharePublishVm.quality.hardBlock) return;
+                  if (
+                    sharePublishVm.quality.softWarnings.length > 0
+                    && shareSoftAckId !== shareTargetArtifact.id
+                  ) {
+                    setShareSoftAckId(shareTargetArtifact.id);
+                    return;
+                  }
+                  handleApproveById(shareTargetArtifact.id);
+                  setShareSoftAckId(null);
+                  setShareOpen(false);
+                }}
+                onSchedule={() => {
+                  setShareOpen(false);
+                  setShareSoftAckId(null);
+                  setScheduleShareArtifact(shareTargetArtifact);
+                }}
+                onEdit={() => {
+                  setShareOpen(false);
+                  setShareSoftAckId(null);
+                  openApproval(shareTargetArtifact.id);
+                }}
+                onRevise={() => {
+                  setShareOpen(false);
+                  setShareSoftAckId(null);
+                  handleRevisionById(shareTargetArtifact.id);
+                }}
+                scheduleSubtitle={formatScheduleButtonSubtitle(sharePublishVm.meta)}
+                sharing={approveMutation.isPending && approveMutation.variables?.id === shareTargetArtifact.id}
+                revisioning={revisionMutation.isPending && revisionMutation.variables === shareTargetArtifact.id}
+                disabled={sharePublishVm.quality.hardBlock || sharePublishVm.isRendering}
+                softWarning={
+                  sharePublishVm.quality.softWarnings.length > 0
+                  && shareSoftAckId !== shareTargetArtifact.id
+                }
+                hardBlockLabel={
+                  sharePublishVm.quality.hardBlockReason?.includes('Grafiker')
+                    ? '⚠ Kalite düşük'
+                    : sharePublishVm.quality.hardBlockReason?.includes('metin')
+                      ? '⚠ Metin hatalı'
+                      : sharePublishVm.quality.hardBlock
+                        ? '⚠ Onay kapalı'
+                        : undefined
+                }
+              />
+            )
+            : undefined
+        }
       />
+
+      {scheduleShareArtifact && (() => {
+        const svm = buildFeedArtifactViewModel(scheduleShareArtifact, missionIdeationLookup);
+        const publishType: 'feed' | 'reel' | 'story' =
+          svm.kind === 'reel' ? 'reel' : svm.kind === 'story' ? 'story' : 'feed';
+        return (
+          <ScheduleSheet
+            isOpen
+            onClose={() => setScheduleShareArtifact(null)}
+            publishType={publishType}
+            imageUrl={svm.content.imageUrl ?? undefined}
+            videoUrl={svm.content.videoUrl ?? undefined}
+            caption={svm.content.caption}
+            hashtags={svm.content.hashtags}
+            artifactTitle={scheduleShareArtifact.title}
+            defaultScheduledAt={resolveSuggestedScheduleISO(svm.meta) ?? undefined}
+          />
+        );
+      })()}
 
       {/* Feed */}
       {feedPostsLoading ? (

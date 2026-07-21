@@ -226,13 +226,10 @@ export function buildMoreMenuGroups(opts: {
           badgeKind: 'count',
         },
         { label: 'Kullanım & Plan', sub: 'Kredi, plan ve ödeme', iconBg: '#9DBECE', iconText: '◇', screen: 'billing' },
+        ...growthItems,
       ],
     },
   ];
-
-  if (growthItems.length > 0) {
-    clientGroups.push({ title: 'Büyüme', items: growthItems });
-  }
 
   if (!isMobileOperatorMode()) return clientGroups;
 
