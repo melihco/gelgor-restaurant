@@ -109,7 +109,7 @@ function BrandHubTile({
   );
 }
 
-function ReadinessRing({ score, accent, track, size = 54 }: {
+export function ReadinessRing({ score, accent, track, size = 54 }: {
   score: number; accent: string; track: string; size?: number;
 }) {
   const clamped = Math.max(0, Math.min(100, score));
@@ -201,7 +201,6 @@ export interface BrandHubDashboardProps {
   brandPrimary: string;
   industryLabel?: string | null;
   locationLabel?: string | null;
-  readinessScore: number;
   navItems: BrandHubNavItem[];
   constitutionConfirmedAt: string | null | undefined;
   confirmingConstitution: boolean;
@@ -226,7 +225,6 @@ export function BrandHubDashboard({
   brandPrimary,
   industryLabel,
   locationLabel,
-  readinessScore,
   navItems,
   constitutionConfirmedAt,
   confirmingConstitution,
@@ -237,7 +235,6 @@ export function BrandHubDashboard({
   pprScore,
   statusBanners,
 }: BrandHubDashboardProps) {
-  const readinessGood = readinessScore >= 80;
   // İçerik / Tasarım / Galeri live under Marka Profili detail — hub only lists top-level entries.
   const hubItems = navItems.filter((item) =>
     item.key !== 'content' && item.key !== 'design' && item.key !== 'gallery',
@@ -475,49 +472,6 @@ export function BrandHubDashboard({
               t={t}
               onOpen={(tab) => onOpenSection(tab)}
             />
-            {item.key === 'identity' && readinessScore < 100 && (
-              <button
-                type="button"
-                className="brand-hub-tile-readiness"
-                onClick={() => onOpenSection('identity')}
-                aria-label={`Profil hazırlığı ${readinessScore} — Marka Profiline git`}
-                style={{
-                  width: '100%',
-                  minHeight: 36,
-                  padding: '0 14px 10px',
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-start',
-                }}
-              >
-                <span
-                  style={{
-                    minHeight: 28,
-                    padding: '0 10px',
-                    borderRadius: 999,
-                    border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.35)' : 'rgba(217,119,6,0.28)'}`,
-                    background: t.isDark ? 'rgba(245,158,11,0.12)' : 'rgba(255,251,235,0.9)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    color: t.textPrimary,
-                  }}
-                >
-                  <ReadinessRing
-                    score={readinessScore}
-                    size={16}
-                    accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
-                    track={t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)'}
-                  />
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em' }}>
-                    Hazırlık {readinessScore}
-                  </span>
-                </span>
-              </button>
-            )}
           </div>
         ))}
       </div>

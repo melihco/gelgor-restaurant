@@ -1636,20 +1636,39 @@ async def persist_discovery_result(
     if isinstance(refs, list) and refs:
         seen: set[str] = set()
         raw_refs: list[str] = []
+
+        def _remember(url: str) -> None:
+            if len(raw_refs) >= 120:
+                return
+            key = _normalize_gallery_url_key(url)
+            if not key or key in seen:
+                return
+            if not _is_usable_gallery_url(url):
+                return
+            seen.add(key)
+            raw_refs.append(url)
+
+        # Never drop tenant uploads (/api/media, R2) when rediscovery refreshes crawl URLs.
+        # Replacing the list used to make mobile Gallery "lose" photos after re-login.
+        for u in _parse_reference_image_urls(ctx.reference_image_urls):
+            s = str(u).strip()
+            lower = s.lower()
+            if (
+                lower.startswith("/api/media")
+                or "r2.dev" in lower
+                or "r2.cloudflarestorage.com" in lower
+                or "imagedelivery.net" in lower
+                or "cdn.smartagency" in lower
+            ):
+                _remember(s)
+
         for u in refs:
             if not isinstance(u, str):
                 continue
             s = u.strip()
-            if not (s.startswith("http://") or s.startswith("https://")):
+            if not (s.startswith("http://") or s.startswith("https://") or s.startswith("/api/media")):
                 continue
-            if not _is_usable_gallery_url(s):
-                continue
-            if s in seen:
-                continue
-            seen.add(s)
-            raw_refs.append(s)
-            if len(raw_refs) >= 120:
-                break
+            _remember(s)
 
         ctx.reference_image_urls = json.dumps(raw_refs)
 

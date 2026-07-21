@@ -6,7 +6,7 @@ import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
 
 export type BrandConstitutionTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 export type BrandIdentityGroup = 'basics' | 'channels' | 'about';
-export type BrandContentGroup = 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
+export type BrandContentGroup = 'about' | 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
 export type BrandDesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
 export type BrandGalleryGroup = 'upload' | 'analyze' | 'photos';
 
@@ -75,6 +75,12 @@ const CHECK_TARGETS: Record<string, BrandReadinessNavTarget> = {
     identityGroup: 'basics',
     anchor: 'service-profile',
     label: 'Hizmet profili',
+  },
+  brand_about: {
+    tab: 'content',
+    contentGroup: 'about',
+    anchor: 'brand-about',
+    label: 'Açıklama & Ürünler',
   },
   production_visual_dna: {
     tab: 'design',

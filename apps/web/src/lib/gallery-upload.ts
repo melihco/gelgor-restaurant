@@ -33,6 +33,29 @@ export function filterGalleryAnalysisKeys(meta: Record<string, unknown>): string
   return Object.keys(meta).filter(isBrandGalleryPersistedUrl);
 }
 
+/**
+ * Merge gallery URL lists (refs + analysis keys + assets) without duplicates.
+ * Prefer earlier lists' order — typically uploaded `/api/media` first.
+ */
+export function mergeBrandGalleryUrls(...lists: Array<readonly string[] | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const list of lists) {
+    if (!list?.length) continue;
+    for (const raw of list) {
+      const url = String(raw ?? '').trim();
+      if (!isBrandGalleryPersistedUrl(url)) continue;
+      const key = url.toLowerCase().includes('/api/media?')
+        ? (new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('key') || url).toLowerCase()
+        : url.split('?')[0]!.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(url);
+    }
+  }
+  return out;
+}
+
 /** OpenAI Vision input — relative /api/media URLs become base64 data URIs. */
 export async function resolveVisionImageUrl(url: string): Promise<string> {
   const trimmed = url.trim();
