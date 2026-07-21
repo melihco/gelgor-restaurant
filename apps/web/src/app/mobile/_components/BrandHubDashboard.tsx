@@ -335,13 +335,13 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      {/* Hero — centered brand card · score badge top-right */}
+      {/* Hero — brand mark first; readiness only when incomplete + labeled */}
       <div
         className="brand-hub-hero sa-chrome-card"
         style={{
           position: 'relative',
           marginBottom: 22,
-          padding: '22px 20px 18px',
+          padding: '20px 18px 16px',
           borderRadius: 26,
           overflow: 'hidden',
           ['--hub-brand' as string]: brandPrimary || SA_CHROME.steel300,
@@ -357,55 +357,6 @@ export function BrandHubDashboard({
         <div className="brand-hub-hero-aurora-2" aria-hidden />
         <div className="brand-hub-hero-grid" aria-hidden />
 
-        {/* Readiness score — top-right badge only (no status copy) */}
-        <div
-          className="brand-hub-hero-readiness"
-          aria-label={`Hazırlık skoru ${readinessScore}`}
-          style={{
-            position: 'absolute',
-            top: 12,
-            right: 12,
-            zIndex: 2,
-            width: 40,
-            height: 40,
-            borderRadius: 999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: t.isDark ? 'rgba(8,10,14,0.72)' : 'rgba(255,255,255,0.88)',
-            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)'}`,
-            boxShadow: t.isDark
-              ? '0 8px 20px rgba(0,0,0,0.35)'
-              : '0 6px 16px rgba(15,23,42,0.1)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-          }}
-        >
-          <div style={{ position: 'relative', width: 34, height: 34 }}>
-            <ReadinessRing
-              score={readinessScore}
-              size={34}
-              accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
-              track={t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(15,23,42,0.1)'}
-            />
-            <span style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: '-0.04em',
-              color: t.textPrimary,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-            >
-              {readinessScore}
-            </span>
-          </div>
-        </div>
-
         <div
           className="brand-hub-hero-inner"
           style={{
@@ -416,9 +367,9 @@ export function BrandHubDashboard({
             alignItems: 'center',
             textAlign: 'center',
             width: '100%',
-            paddingTop: 4,
-            paddingInline: 28,
-            gap: 12,
+            paddingTop: 2,
+            paddingInline: 8,
+            gap: 10,
           }}
         >
           <div
@@ -427,18 +378,16 @@ export function BrandHubDashboard({
           >
             <div className="brand-hub-hero-glow" aria-hidden />
             <div style={{
-              width: 88,
-              height: 88,
-              borderRadius: 26,
+              width: 112,
+              height: 112,
+              borderRadius: 28,
               overflow: 'hidden',
               position: 'relative',
               background: logoUrl
-                ? (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.96)')
+                ? 'transparent'
                 : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
-              border: `1px solid ${t.isDark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.06)'}`,
-              boxShadow: t.isDark
-                ? `0 14px 36px rgba(0,0,0,0.45), 0 0 0 1px ${brandPrimary}30`
-                : '0 12px 28px rgba(15,23,42,0.12)',
+              border: 'none',
+              boxShadow: 'none',
             }}
             >
               {logoUrl ? (
@@ -446,7 +395,7 @@ export function BrandHubDashboard({
                 <img
                   src={resolveGalleryImageSrc(logoUrl)}
                   alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 12 }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }}
                 />
               ) : (
                 <div style={{
@@ -455,7 +404,7 @@ export function BrandHubDashboard({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 28,
+                  fontSize: 34,
                   fontWeight: 800,
                   color: '#fff',
                   letterSpacing: '-0.05em',
@@ -502,6 +451,39 @@ export function BrandHubDashboard({
             >
               {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
             </p>
+          )}
+
+          {/* Only when incomplete — bare corner "100" was meaningless next to the logo */}
+          {readinessScore < 100 && (
+            <button
+              type="button"
+              className="brand-hub-hero-readiness"
+              onClick={() => onOpenSection('identity')}
+              aria-label={`Profil hazırlığı ${readinessScore} — Marka Profiline git`}
+              style={{
+                marginTop: 2,
+                minHeight: 36,
+                padding: '0 12px',
+                borderRadius: 999,
+                border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.35)' : 'rgba(217,119,6,0.28)'}`,
+                background: t.isDark ? 'rgba(245,158,11,0.12)' : 'rgba(255,251,235,0.9)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                color: t.textPrimary,
+              }}
+            >
+              <ReadinessRing
+                score={readinessScore}
+                size={18}
+                accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
+                track={t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)'}
+              />
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                Hazırlık {readinessScore}
+              </span>
+            </button>
           )}
         </div>
 

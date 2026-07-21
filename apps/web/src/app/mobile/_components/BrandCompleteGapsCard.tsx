@@ -14,7 +14,7 @@ export function BrandCompleteGapsCard({
   if (!gapActive) return null;
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 12 }}>
       <button
         type="button"
         disabled={brandGaps.running}

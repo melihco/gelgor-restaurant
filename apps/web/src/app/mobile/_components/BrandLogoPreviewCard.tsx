@@ -11,12 +11,15 @@ export function BrandLogoPreviewCard({
   logoSource,
   monogram,
   onSave,
+  /** When true, renders as an iOS Settings row inside a grouped list (no outer card). */
+  embedded = false,
 }: {
   t: T;
   logoUrl: string;
   logoSource: string;
   monogram: string;
   onSave: (url: string) => void;
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(logoSource);
@@ -75,77 +78,126 @@ export function BrandLogoPreviewCard({
     }
   };
 
-  return (
-    <>
-      <div style={{ marginBottom: 16 }}>
-        <button
-          type="button"
-          data-brand-fix="brand-logo"
-          onClick={openSheet}
-          className="brand-hub-gap-cta"
-          style={{
-            width: '100%',
-            padding: '16px 18px',
-            borderRadius: 20,
-            border: 'none',
-            cursor: 'pointer',
-            textAlign: 'left',
-            background: t.isDark
-              ? 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)'
-              : 'linear-gradient(135deg, rgba(0,0,0,0.04) 0%, rgba(0,0,0,0.02) 100%)',
-            boxShadow: t.isDark
-              ? 'inset 0 1px 0 rgba(255,255,255,0.06)'
-              : 'inset 0 1px 0 rgba(255,255,255,0.65)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div
+  const thumb = (
+    <div
+      style={{
+        width: embedded ? 36 : 40,
+        height: embedded ? 36 : 40,
+        borderRadius: embedded ? 10 : 12,
+        flexShrink: 0,
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)',
+        border: `0.5px solid ${t.separator}`,
+      }}
+    >
+      {displaySrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={displaySrc}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'contain', padding: embedded ? 4 : 0 }}
+        />
+      ) : (
+        <span style={{ fontSize: embedded ? 13 : 14, fontWeight: 700, color: t.textMuted }}>
+          {monogram.slice(0, 2).toUpperCase() || 'LG'}
+        </span>
+      )}
+    </div>
+  );
+
+  const chevron = (
+    <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden>
+      <path
+        d="M1.5 1.5 7.5 7.5l-6 6"
+        stroke={embedded ? t.textMuted : t.textTertiary}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+
+  const trigger = (
+    <button
+      type="button"
+      data-brand-form="brand-logo"
+      onClick={openSheet}
+      className={embedded ? undefined : 'brand-hub-gap-cta'}
+      style={
+        embedded
+          ? {
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 16px',
+              minHeight: 56,
+              border: 'none',
+              cursor: 'pointer',
+              textAlign: 'left',
+              background: 'transparent',
+            }
+          : {
+              width: '100%',
+              padding: '16px 18px',
+              borderRadius: 20,
+              border: 'none',
+              cursor: 'pointer',
+              textAlign: 'left',
+              background: t.isDark
+                ? 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%)'
+                : 'linear-gradient(135deg, rgba(0,0,0,0.04) 0%, rgba(0,0,0,0.02) 100%)',
+              boxShadow: t.isDark
+                ? 'inset 0 1px 0 rgba(255,255,255,0.06)'
+                : 'inset 0 1px 0 rgba(255,255,255,0.65)',
+            }
+      }
+    >
+      {embedded ? (
+        <>
+          {thumb}
+          <span style={{ fontSize: 16, fontWeight: 400, color: t.textPrimary, flexShrink: 0 }}>
+            Logo
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, justifyContent: 'flex-end' }}>
+            <span
               style={{
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                flexShrink: 0,
+                fontSize: 15,
+                color: hasLogo ? t.textTertiary : t.textMuted,
                 overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)',
-                border: `0.5px solid ${t.separator}`,
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}
             >
-              {displaySrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={displaySrc}
-                  alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
-              ) : (
-                <span style={{ fontSize: 14, fontWeight: 700, color: t.textMuted }}>
-                  {monogram.slice(0, 2).toUpperCase() || 'LG'}
-                </span>
-              )}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em' }}>
-                Logo
-              </div>
-              <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 3, letterSpacing: '-0.01em' }}>
-                {hasLogo ? 'Önizle veya değiştir' : 'Yükle veya URL ekle'}
-              </div>
-            </div>
-            <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden>
-              <path
-                d="M1.5 1.5 7.5 7.5l-6 6"
-                stroke={t.textTertiary}
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+              {hasLogo ? 'Değiştir' : 'Ekle'}
+            </span>
+            {chevron}
           </div>
-        </button>
-      </div>
+        </>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {thumb}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.03em' }}>
+              Logo
+            </div>
+            <div style={{ fontSize: 12.5, color: t.textMuted, marginTop: 3, letterSpacing: '-0.01em' }}>
+              {hasLogo ? 'Önizle veya değiştir' : 'Yükle veya URL ekle'}
+            </div>
+          </div>
+          {chevron}
+        </div>
+      )}
+    </button>
+  );
+
+  return (
+    <>
+      {/* Single DOM node so grouped-list separators stay correct when sheet mounts */}
+      {embedded ? <div>{trigger}</div> : <div style={{ marginBottom: 16 }}>{trigger}</div>}
 
       {open && (
         <ResponsiveAppSheet

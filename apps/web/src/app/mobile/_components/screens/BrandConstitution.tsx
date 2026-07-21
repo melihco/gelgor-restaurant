@@ -3904,28 +3904,28 @@ export function BrandConstitution() {
           </div>
         )}
 
-        {/* Marka Profili — tek ekran (temel + logo + kanallar + açıklama) */}
+        {/* Marka Profili — kimlik alanları önce; studio kısayolları sonda */}
         {tab === 'identity' && (
           <>
             {!constitutionConfirmedAt && (
               <div
                 data-brand-form="constitution-confirm"
                 style={{
-                  marginBottom: 16,
-                  padding: '16px',
-                  borderRadius: 16,
+                  marginBottom: 12,
+                  padding: '14px 14px',
+                  borderRadius: 14,
                   background: t.isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)',
                   border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.28)' : 'rgba(245,158,11,0.22)'}`,
                 }}
               >
-                <div style={{ fontSize: 15, fontWeight: 600, color: t.textPrimary, marginBottom: 6, letterSpacing: '-0.02em' }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: t.textPrimary, marginBottom: 4, letterSpacing: '-0.02em' }}>
                   Marka Anayasası onay bekliyor
                 </div>
-                <div style={{ fontSize: 13, color: t.textTertiary, lineHeight: 1.5, marginBottom: 14 }}>
-                  Profil bilgilerini gözden geçirip onaylayın — hazırlık skoruna +20 puan ekler.
+                <div style={{ fontSize: 12.5, color: t.textTertiary, lineHeight: 1.45, marginBottom: 12 }}>
+                  Profili gözden geçirip onaylayın — hazırlık skoruna +20 puan.
                 </div>
                 {constitutionConfirmError && (
-                  <div style={{ fontSize: 13, color: t.danger, lineHeight: 1.45, marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: t.dangerDim }}>
+                  <div style={{ fontSize: 13, color: t.danger, lineHeight: 1.45, marginBottom: 10, padding: '10px 12px', borderRadius: 10, background: t.dangerDim }}>
                     {constitutionConfirmError}
                   </div>
                 )}
@@ -3934,8 +3934,8 @@ export function BrandConstitution() {
                   onClick={() => void handleConfirmConstitution()}
                   disabled={confirmingConstitution}
                   style={{
-                    width: '100%', padding: '13px 16px', borderRadius: 12, border: 'none',
-                    cursor: confirmingConstitution ? 'wait' : 'pointer', fontSize: 16, fontWeight: 600, color: '#fff',
+                    width: '100%', padding: '12px 16px', minHeight: 44, borderRadius: 12, border: 'none',
+                    cursor: confirmingConstitution ? 'wait' : 'pointer', fontSize: 15, fontWeight: 600, color: '#fff',
                     background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                   }}
                 >
@@ -3946,197 +3946,60 @@ export function BrandConstitution() {
 
             {tenantId && <BrandCompleteGapsCard t={t} brandGaps={brandGaps} />}
 
-            <div
-              style={{
-                position: 'relative',
-                marginBottom: 16,
-                borderRadius: 20,
-                overflow: 'hidden',
-                padding: '18px 16px',
-                background: t.isDark
-                  ? `linear-gradient(145deg, ${brandPrimary}1f 0%, rgba(16,18,24,0.96) 52%, rgba(8,10,14,1) 100%)`
-                  : `linear-gradient(145deg, ${brandPrimary}14 0%, #F7F5F1 42%, #FFFFFF 100%)`,
-                border: `0.5px solid ${t.separator}`,
-              }}
-            >
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div
-                  style={{
-                    width: 58,
-                    height: 58,
-                    borderRadius: 16,
-                    overflow: 'hidden',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.92)',
-                    border: `0.5px solid ${t.separator}`,
-                  }}
-                >
-                  {logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={logoUrl}
-                      alt=""
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }}
-                    />
-                  ) : (
-                    <span style={{ fontSize: 20, fontWeight: 800, color: t.textMuted, letterSpacing: '-0.04em' }}>
-                      {monogram}
-                    </span>
-                  )}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 20, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.035em',
-                    lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {brandNameDisplay || 'Marka adı'}
-                  </div>
-                  {(industryDisplay || locationDisplay) && (
-                    <div style={{
-                      marginTop: 5, fontSize: 12.5, fontWeight: 600, color: t.textMuted,
-                      letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {[industryDisplay, locationDisplay].filter(Boolean).join(' · ')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* İçerik · Tasarım · Galeri — profile detail shortcuts */}
-            <section style={{ marginBottom: 22 }}>
-              <SLabel t={t} text="Marka bölümleri" />
-              <div
-                className="brand-grouped-fields"
-                style={{ ...t.surfaceGroup, overflow: 'hidden' }}
-              >
-                {([
-                  {
-                    key: 'content' as const,
-                    label: 'İçerik',
-                    hint: pillarsCount > 0 || ctasCount > 0
-                      ? `${pillarsCount} sütun · ${ctasCount} CTA`
-                      : 'Ses, strateji, sütunlar',
-                    accent: SA_STUDIO_ACCENTS.content,
-                  },
-                  {
-                    key: 'design' as const,
-                    label: 'Tasarım',
-                    hint: `Profil ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
-                    accent: SA_STUDIO_ACCENTS.design,
-                  },
-                  {
-                    key: 'gallery' as const,
-                    label: 'Galeri',
-                    hint: photoCount > 0 ? `${photoCount} fotoğraf` : 'Fotoğraf ekle',
-                    accent: SA_STUDIO_ACCENTS.gallery,
-                  },
-                ]).map((item, index, list) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openSection(item.key)}
-                    style={{
-                      width: '100%',
-                      minHeight: 56,
-                      padding: '12px 14px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      textAlign: 'left',
-                      borderBottom: index < list.length - 1
-                        ? `0.5px solid ${t.separator}`
-                        : 'none',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 12,
-                        flexShrink: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: `linear-gradient(135deg, ${item.accent}28, ${item.accent}12)`,
-                        border: `0.5px solid ${item.accent}33`,
-                      }}
-                    >
-                      <SectionIcon name={item.key} color={item.accent} size={20} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
-                        {item.label}
-                      </div>
-                      <div style={{
-                        marginTop: 2, fontSize: 12, color: t.textMuted,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {item.hint}
-                      </div>
-                    </div>
-                    <ChevronRight color={t.textTertiary} />
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <BrandLogoPreviewCard
-              t={t}
-              logoUrl={logoUrl ?? ''}
-              logoSource={String(logoCandidate || '')}
-              monogram={monogram}
-              onSave={save('logoUrl')}
-            />
-
+            {/* Kimlik: logo + temel alanlar tek grup */}
             <div data-brand-form="service-profile">
-              <SCard t={t} title="Temel bilgiler">
-                <Field t={t} label="Marka Adı" value={brandNameDisplay} onSave={save('brandName')} />
-                <Field t={t} label="Sektör" value={industryDisplay} onSave={save('industry')} hint={industrySlug !== industryDisplay ? industrySlug : undefined} />
-                <Field t={t} label="Konum" value={locationDisplay} onSave={save('location')} hint="Şehir veya bölge" />
-              </SCard>
+              <section style={{ marginBottom: 16 }}>
+                <SLabel t={t} text="Kimlik" />
+                <div className="brand-grouped-fields" style={{ ...t.surfaceGroup, overflow: 'hidden' }}>
+                  <BrandLogoPreviewCard
+                    t={t}
+                    embedded
+                    logoUrl={logoUrl ?? ''}
+                    logoSource={String(logoCandidate || '')}
+                    monogram={monogram}
+                    onSave={save('logoUrl')}
+                  />
+                  <Field t={t} label="Marka Adı" value={brandNameDisplay} onSave={save('brandName')} />
+                  <Field t={t} label="Sektör" value={industryDisplay} onSave={save('industry')} hint={industrySlug !== industryDisplay ? industrySlug : undefined} />
+                  <Field t={t} label="Konum" value={locationDisplay} onSave={save('location')} hint="Şehir veya bölge" />
+                </div>
+              </section>
             </div>
 
             <div data-brand-form="discovery-channels">
-              <SCard t={t} title="Kanallar">
-                <Field
-                  t={t}
-                  label="Web Sitesi"
-                  value={websiteDisplay}
-                  displayValue={formatChannelDisplay(websiteDisplay)}
-                  onSave={save('websiteUrl')}
-                  hint="https://..."
-                />
-                <Field
-                  t={t}
-                  label="Instagram"
-                  value={instagramDisplay}
-                  displayValue={formatChannelDisplay(instagramDisplay)}
-                  onSave={save('instagramHandle')}
-                  hint="Kullanıcı adı"
-                />
-                <Field
-                  t={t}
-                  label="Google Business"
-                  value={(p as any).googleBusinessUrl ?? ''}
-                  displayValue={formatChannelDisplay(String((p as any).googleBusinessUrl ?? ''))}
-                  onSave={save('googleBusinessUrl')}
-                  hint="Maps veya Business linki"
-                />
-              </SCard>
+              <section style={{ marginBottom: 16 }}>
+                <SLabel t={t} text="Kanallar" />
+                <div className="brand-grouped-fields" style={{ ...t.surfaceGroup, overflow: 'hidden' }}>
+                  <Field
+                    t={t}
+                    label="Web Sitesi"
+                    value={websiteDisplay}
+                    displayValue={formatChannelDisplay(websiteDisplay)}
+                    onSave={save('websiteUrl')}
+                    hint="https://..."
+                  />
+                  <Field
+                    t={t}
+                    label="Instagram"
+                    value={instagramDisplay}
+                    displayValue={formatChannelDisplay(instagramDisplay)}
+                    onSave={save('instagramHandle')}
+                    hint="Kullanıcı adı"
+                  />
+                  <Field
+                    t={t}
+                    label="Google Business"
+                    value={(p as any).googleBusinessUrl ?? ''}
+                    displayValue={formatChannelDisplay(String((p as any).googleBusinessUrl ?? ''))}
+                    onSave={save('googleBusinessUrl')}
+                    hint="Maps veya Business linki"
+                  />
+                </div>
+              </section>
 
-              <section style={{ marginBottom: 22 }}>
+              <section style={{ marginBottom: 16 }}>
                 <SLabel t={t} text="İçerik dili" />
-                <div style={{ ...t.surfaceGroup, padding: 12 }}>
-                  <p style={{ fontSize: 12, color: t.textMuted, margin: '0 0 10px', lineHeight: 1.45 }}>
-                    Caption, story ve chatbot için varsayılan dil.
-                  </p>
+                <div style={{ ...t.surfaceGroup, padding: 10 }}>
                   <div style={{
                     display: 'flex', gap: 3, padding: 3, borderRadius: 12,
                     background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
@@ -4166,14 +4029,15 @@ export function BrandConstitution() {
             </div>
 
             <div data-brand-form="brand-about">
-              <SCard t={t} title="Marka açıklaması">
-                <div style={{ marginBottom: 10 }}>
+              <section style={{ marginBottom: 16 }}>
+                <SLabel t={t} text="Marka açıklaması" />
+                <div style={{ ...t.surfaceCard, padding: '12px 14px' }}>
                   <button
                     type="button"
                     onClick={() => descriptionAiMutation.mutate()}
                     disabled={descriptionAiMutation.isPending}
                     style={{
-                      width: '100%', minHeight: 44, padding: '12px 14px', borderRadius: 14,
+                      width: '100%', minHeight: 44, padding: '12px 14px', borderRadius: 12,
                       border: `0.5px solid ${t.accentBorder}`, background: t.accentDim, color: t.accent,
                       fontSize: 14, fontWeight: 700, cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -4191,19 +4055,112 @@ export function BrandConstitution() {
                       {descriptionAiFeedback.text}
                     </div>
                   )}
+                  <div
+                    className="brand-grouped-fields"
+                    style={{
+                      marginTop: 10,
+                      marginLeft: -14,
+                      marginRight: -14,
+                      marginBottom: -12,
+                      borderTop: `0.5px solid ${t.separator}`,
+                    }}
+                  >
+                    <Field
+                      t={t}
+                      label="Açıklama & Ürünler"
+                      value={descriptionDisplay}
+                      onSave={save('description')}
+                      multiline
+                      hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin."
+                    />
+                  </div>
                 </div>
-                <div style={{ margin: '0 -16px -14px' }}>
-                  <Field
-                    t={t}
-                    label="Açıklama & Ürünler"
-                    value={descriptionDisplay}
-                    onSave={save('description')}
-                    multiline
-                    hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin."
-                  />
-                </div>
-              </SCard>
+              </section>
             </div>
+
+            {/* Studio kısayolları — kimlik düzenlemenin altında, ikincil navigasyon */}
+            <section style={{ marginBottom: 8 }}>
+              <SLabel t={t} text="Studio" />
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr 1fr',
+                  gap: 8,
+                }}
+              >
+                {([
+                  {
+                    key: 'content' as const,
+                    label: 'İçerik',
+                    hint: pillarsCount > 0 || ctasCount > 0
+                      ? `${pillarsCount} sütun`
+                      : 'Ses & CTA',
+                    accent: SA_STUDIO_ACCENTS.content,
+                  },
+                  {
+                    key: 'design' as const,
+                    label: 'Tasarım',
+                    hint: `${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
+                    accent: SA_STUDIO_ACCENTS.design,
+                  },
+                  {
+                    key: 'gallery' as const,
+                    label: 'Galeri',
+                    hint: photoCount > 0 ? `${photoCount}` : 'Ekle',
+                    accent: SA_STUDIO_ACCENTS.gallery,
+                  },
+                ]).map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => openSection(item.key)}
+                    style={{
+                      minHeight: 72,
+                      padding: '12px 8px',
+                      borderRadius: 14,
+                      border: `0.5px solid ${t.separator}`,
+                      background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: `linear-gradient(135deg, ${item.accent}28, ${item.accent}12)`,
+                        border: `0.5px solid ${item.accent}33`,
+                      }}
+                    >
+                      <SectionIcon name={item.key} color={item.accent} size={17} />
+                    </div>
+                    <div style={{ minWidth: 0, width: '100%' }}>
+                      <div style={{
+                        fontSize: 12.5, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {item.label}
+                      </div>
+                      <div style={{
+                        marginTop: 2, fontSize: 11, color: t.textMuted,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {item.hint}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
           </>
         )}
 
