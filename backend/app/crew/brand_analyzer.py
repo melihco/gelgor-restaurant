@@ -661,7 +661,7 @@ async def fetch_website_deep(
     result["title"] = scored_pages[0][1] or ""
 
     combined = "\n\n---\n\n".join(t for _, _, t in scored_pages)
-    result["text_snippet"] = combined[:20_000]
+    result["text_snippet"] = _sanitize_postgres_text(combined[:20_000])
 
     # Description from best page
     for line in scored_pages[0][2].split("\n"):
@@ -831,6 +831,23 @@ def _clean_html_text(value: str) -> str:
     return value.strip()
 
 
+def _sanitize_postgres_text(text: str) -> str:
+    """Strip NUL/C0 controls PostgreSQL cannot store in text columns."""
+    if not text:
+        return ""
+    return "".join(
+        ch if ch in "\t\n\r" or ord(ch) >= 32 else " "
+        for ch in text
+    )
+
+
+def _is_mostly_printable(text: str, *, min_ratio: float = 0.85) -> bool:
+    if not text:
+        return False
+    printable = sum(1 for ch in text if ch in "\t\n\r" or ord(ch) >= 32)
+    return (printable / max(len(text), 1)) >= min_ratio
+
+
 # ── Brand analysis synthesizer ────────────────────────────────────────────────
 
 def synthesize_brand_analysis(
@@ -862,12 +879,14 @@ def synthesize_brand_analysis(
             sections.append(f"Açıklama: {website_data['description'][:500]}")
 
         # Extract product names + prices from raw text (WooCommerce / e-commerce)
-        snippet = website_data.get("text_snippet", "")
-        if snippet:
+        snippet = _sanitize_postgres_text(website_data.get("text_snippet", "") or "")
+        if snippet and _is_mostly_printable(snippet):
             product_lines: list[str] = []
             price_pattern = re.compile(r"[₺$€]\s?[\d.,]+|[\d.,]+\s?[₺$€]")
             for line in snippet.split("\n"):
                 line = line.strip()
+                if not _is_mostly_printable(line):
+                    continue
                 # Product/price lines: short, has price or is all-caps product name
                 if price_pattern.search(line) or (line.isupper() and 4 < len(line) < 80):
                     product_lines.append(line)
@@ -880,8 +899,9 @@ def synthesize_brand_analysis(
             sections.append(f"\nAnahtar kelimeler: {', '.join(website_data['keywords'][:15])}")
 
         # Full crawl text for agents (truncated but generous)
-        if snippet:
-            sections.append(f"\nSayfa içeriği:\n{snippet[:8000]}")
+        clean_snippet = _clean_text_block(snippet, 8000) if snippet else ""
+        if clean_snippet:
+            sections.append(f"\nSayfa içeriği:\n{clean_snippet}")
 
     # ── Instagram insights ──────────────────────────────────────────────────
     if instagram_data.get("raw_fetch_ok") or instagram_data.get("bio"):
@@ -939,7 +959,7 @@ def synthesize_brand_analysis(
         return ""
 
     header = f"# {brand_name} — Hesap Analizi\n"
-    return header + "\n".join(sections)
+    return _sanitize_postgres_text(header + "\n".join(sections))
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -955,10 +975,12 @@ def _clean_text_block(text: str, max_chars: int = 3500) -> str:
     """Strip JS/tracking lines from any text block and truncate."""
     if not text:
         return ""
+    text = _sanitize_postgres_text(text)
     lines = [
         ln for ln in text.split("\n")
         if len(ln.strip()) > 5
         and len(ln.strip()) < 2000
+        and _is_mostly_printable(ln)
         and not _JS_LINE.search(ln)
     ]
     return "\n".join(lines)[:max_chars].strip()

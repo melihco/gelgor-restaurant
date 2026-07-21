@@ -451,19 +451,23 @@ public class SetupController : ControllerBase
 
                 if (!string.IsNullOrWhiteSpace(analysisText))
                 {
+                    var memoryContent = CompanyProfileFieldTrimmer.TruncateForStorage(
+                        $"Industry: {report.Industry}\n" +
+                        $"Tone: {report.BrandTone}\n" +
+                        $"Audience: {string.Join(", ", report.TargetAudience)}\n" +
+                        $"ContentPillars: {string.Join(", ", report.ContentPillars)}\n" +
+                        $"TemplateNeeds: {string.Join(", ", report.TemplateNeeds)}\n" +
+                        $"MissingQuestions: {string.Join(" | ", report.MissingQuestions)}\n\n" +
+                        analysisText,
+                        24000);
                     _db.BrandMemoryDocuments.Add(new BrandMemoryDocument
                     {
                         TenantId = _requestContext.TenantId,
                         DocumentType = "brand_profile:discovery_report",
-                        Title = $"Brand Discovery • {FirstNonEmpty(profile.BrandName, report.BrandName, "Tenant")}",
-                        Content =
-                            $"Industry: {report.Industry}\n" +
-                            $"Tone: {report.BrandTone}\n" +
-                            $"Audience: {string.Join(", ", report.TargetAudience)}\n" +
-                            $"ContentPillars: {string.Join(", ", report.ContentPillars)}\n" +
-                            $"TemplateNeeds: {string.Join(", ", report.TemplateNeeds)}\n" +
-                            $"MissingQuestions: {string.Join(" | ", report.MissingQuestions)}\n\n" +
-                            analysisText,
+                        Title = CompanyProfileFieldTrimmer.TruncateForStorage(
+                            $"Brand Discovery • {FirstNonEmpty(profile.BrandName, report.BrandName, "Tenant")}",
+                            500),
+                        Content = memoryContent,
                         CreatedBy = _requestContext.UserId,
                         UpdatedBy = _requestContext.UserId
                     });
@@ -487,7 +491,7 @@ public class SetupController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, FormatPersistenceError(ex));
         }
     }
 
@@ -901,8 +905,21 @@ public class SetupController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, FormatPersistenceError(ex));
         }
+    }
+
+    private static object FormatPersistenceError(Exception ex)
+    {
+        var detail = ex.InnerException?.Message;
+        if (ex is DbUpdateException dbEx && dbEx.InnerException != null)
+            detail = dbEx.InnerException.Message;
+
+        return new
+        {
+            error = ex.Message,
+            detail,
+        };
     }
 
     private static bool? GetOptionalBool(JsonElement element, string propertyName)
