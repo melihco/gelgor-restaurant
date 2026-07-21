@@ -29,6 +29,16 @@ describe('typography-design-policy', () => {
     })).toBe(false);
   });
 
+  it('accepts camelCase typographyDesign.confirmedAt from theme BFF', () => {
+    expect(isTypographyDesignConfirmed({
+      typographyDesign: {
+        vibe: 'retro_poster',
+        source: 'user',
+        confirmedAt: '2026-07-21T11:51:37.935931Z',
+      },
+    })).toBe(true);
+  });
+
   it('suggests sector default when vibe missing', () => {
     const cfg = resolveSuggestedTypographyConfig({}, 'beach_club');
     expect(cfg.vibe).toBe('warm_coastal');

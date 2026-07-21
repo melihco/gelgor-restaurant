@@ -37,7 +37,17 @@ export function readTypographyDesignConfig(
   if (!theme) return null;
   const raw = theme.typography_design ?? theme.typographyDesign;
   if (!raw || typeof raw !== 'object') return null;
-  return raw as Partial<BrandDesignTypographyConfig>;
+  const obj = raw as Record<string, unknown>;
+  // Theme BFF camelCases keys — accept both wire formats.
+  const confirmedAt = obj.confirmed_at ?? obj.confirmedAt;
+  return {
+    ...(obj as Partial<BrandDesignTypographyConfig>),
+    confirmed_at: typeof confirmedAt === 'string' ? confirmedAt : undefined,
+    text_effect: (obj.text_effect ?? obj.textEffect) as BrandDesignTypographyConfig['text_effect'],
+    accent_color: (obj.accent_color ?? obj.accentColor) as string | undefined,
+    background_style: (obj.background_style ?? obj.backgroundStyle) as BrandDesignTypographyConfig['background_style'],
+    logo_treatment: (obj.logo_treatment ?? obj.logoTreatment) as BrandDesignTypographyConfig['logo_treatment'],
+  };
 }
 
 export function isTypographyDesignConfirmed(
@@ -67,9 +77,12 @@ export function resolveSuggestedTypographyConfig(
 export function buildUserConfirmedTypographyPatch(
   config: BrandDesignTypographyConfig,
 ): BrandDesignTypographyConfig {
+  const confirmedAt = new Date().toISOString();
   return {
     ...config,
     source: 'user',
-    confirmed_at: new Date().toISOString(),
-  };
+    confirmed_at: confirmedAt,
+    // Persist camelCase twin so Next theme JSON round-trips still count as confirmed.
+    confirmedAt,
+  } as BrandDesignTypographyConfig & { confirmedAt: string };
 }

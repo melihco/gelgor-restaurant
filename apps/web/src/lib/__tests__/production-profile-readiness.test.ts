@@ -85,4 +85,24 @@ describe('production profile readiness', () => {
     });
     expect(result.checks.find((c) => c.id === 'sector_consistency')?.passed).toBe(true);
   });
+
+  it('accepts camelCase theme wire format for production layers', () => {
+    const result = computeProductionProfileReadiness({
+      serviceProfile: { category: 'restaurant_bar' },
+      businessType: 'restaurant_cafe',
+      visualDna: productionVisualDna,
+      brandTheme: {
+        typographyDesign: {
+          vibe: 'retro_poster',
+          confirmedAt: '2026-07-21T11:51:37.935931Z',
+          source: 'user',
+        },
+        falDesignIntensity: { story: 'photo_first', post: 'elegant_light' },
+        antiPatterns: ['neon stickers', 'stock packaging', 'fake badges'],
+      },
+    });
+    expect(result.checks.find((c) => c.id === 'production_theme_layers')?.passed).toBe(true);
+    expect(result.score).toBe(100);
+    expect(result.isProductionReady).toBe(true);
+  });
 });

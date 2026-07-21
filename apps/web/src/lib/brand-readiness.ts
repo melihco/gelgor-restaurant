@@ -324,8 +324,8 @@ export function isProductionFormatVisualDna(dna: string | null | undefined): boo
 
 function hasProductionThemeLayers(theme: Record<string, unknown> | null | undefined): boolean {
   if (!theme) return false;
-  const intensity = theme.fal_design_intensity;
-  const antiPatterns = theme.anti_patterns;
+  const intensity = theme.fal_design_intensity ?? theme.falDesignIntensity;
+  const antiPatterns = theme.anti_patterns ?? theme.antiPatterns;
   return (
     isTypographyDesignConfirmed(theme)
     && Boolean(intensity && typeof intensity === 'object')

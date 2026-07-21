@@ -307,14 +307,18 @@ export async function runCompleteBrandGaps(
       }
     }
 
+    const sectorJustSynced = steps.some(
+      (s) => s.id === 'sector_sync' && s.ok && s.detail !== 'already_aligned',
+    );
     const needsPprRepair = pprScore < PRODUCTION_PROFILE_THRESHOLD
       || pprMissing.has('production_visual_dna')
       || pprMissing.has('production_theme_layers')
-      || pprMissing.has('service_profile');
+      || pprMissing.has('service_profile')
+      || sectorJustSynced;
 
     if (needsPprRepair) {
-      const needsVisualDna = pprMissing.has('production_visual_dna');
-      const needsThemeLayers = pprMissing.has('production_theme_layers');
+      const needsVisualDna = pprMissing.has('production_visual_dna') || sectorJustSynced;
+      const needsThemeLayers = pprMissing.has('production_theme_layers') || sectorJustSynced;
 
       if (
         (needsVisualDna || needsThemeLayers)
