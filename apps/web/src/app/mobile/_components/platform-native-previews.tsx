@@ -492,7 +492,8 @@ export function InstagramFeedNative({
   const images = content.carouselUrls?.length ? content.carouselUrls : content.imageUrl ? [content.imageUrl] : [];
   const current = images[slide] ?? null;
   const isCarousel = images.length > 1;
-  const aspectRatio = useIgFeedMediaAspectRatio(current, IG_FEED_DEFAULT_RATIO);
+  // Lock frame to first slide (native IG) so carousel height doesn't jump and media stays full-bleed.
+  const aspectRatio = useIgFeedMediaAspectRatio(images[0] ?? null, IG_FEED_DEFAULT_RATIO);
 
   useEffect(() => {
     setLiked(eng.isLiked);
@@ -576,17 +577,23 @@ export function InstagramFeedNative({
         <DoubleTapHeart visible={heartBurst > 0} key={heartBurst} />
         {current ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={current} alt="" referrerPolicy="no-referrer"
+          <img
+            src={current}
+            alt=""
+            referrerPolicy="no-referrer"
             style={{
+              position: 'absolute',
+              inset: 0,
               width: '100%',
               height: '100%',
               display: 'block',
-              objectFit: 'contain',
+              objectFit: 'cover',
               objectPosition: 'center',
-            }} />
+            }}
+          />
         ) : (
           <div style={{
-            width: '100%', height: '100%',
+            position: 'absolute', inset: 0,
             background: igChromeDark
               ? 'linear-gradient(135deg, #141820 0%, #0a0c12 100%)'
               : 'linear-gradient(135deg, #eef1f4 0%, #e4e8ec 100%)',
@@ -599,12 +606,18 @@ export function InstagramFeedNative({
         {isCarousel && (
           <>
             <div style={{
-              position: 'absolute', top: 12, right: 12, padding: '4px 10px', borderRadius: 12,
-              background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 12, fontWeight: 700,
+              position: 'absolute', top: 12, right: 12, zIndex: 2,
+              padding: '4px 10px', borderRadius: 12,
+              background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700,
+              letterSpacing: '0.02em',
+              pointerEvents: 'none',
             }}>
-              {slide + 1}/{images.length}
+              {slide + 1} / {images.length}
             </div>
-            <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 4 }}>
+            <div style={{
+              position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 2, display: 'flex', gap: 4, pointerEvents: 'none',
+            }}>
               {images.map((_, i) => (
                 <div key={i} style={{
                   width: i === slide ? 6 : 5, height: i === slide ? 6 : 5, borderRadius: '50%',
@@ -745,7 +758,7 @@ function IgFeedReelMediaStage({
             inset: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'contain',
+            objectFit: 'cover',
             objectPosition: 'center',
             display: 'block',
             pointerEvents: 'none',
@@ -762,7 +775,7 @@ function IgFeedReelMediaStage({
             inset: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'contain',
+            objectFit: 'cover',
             objectPosition: 'center',
             display: 'block',
             pointerEvents: 'none',
@@ -908,7 +921,7 @@ export function InstagramReelNative({ content, handle, logoUrl, isPending, immer
           poster={content.imageUrl ?? undefined}
           loop
           muted={muted}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center' }}
         />
       ) : (
         <div style={{

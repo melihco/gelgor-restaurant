@@ -90,88 +90,69 @@ function BrandHubTile({
   item,
   t,
   onOpen,
-  variant = 'primary',
 }: {
   item: BrandHubNavItem;
   t: T;
   onOpen: (tab: BrandTab) => void;
-  variant?: 'primary' | 'nested';
 }) {
   const barColor = item.status === 'done' ? item.accent : item.status === 'warn' ? '#F59E0B' : t.textMuted;
-  const isNested = variant === 'nested';
 
   return (
     <button
       type="button"
-      className={`brand-hub-tile${isNested ? ' brand-hub-tile--nested' : ''}`}
+      className="brand-hub-tile"
       onClick={() => onOpen(item.target)}
       style={{
         position: 'relative',
         width: '100%',
-        minHeight: isNested ? 58 : 74,
-        padding: isNested ? '11px 14px 11px 12px' : '14px 16px',
-        borderRadius: isNested ? 14 : 20,
         cursor: 'pointer',
         textAlign: 'left',
         overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
-        gap: isNested ? 12 : 14,
         border: 'none',
         background: 'transparent',
       }}
     >
-      {!isNested && (
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            top: -20,
-            left: -20,
-            width: 64,
-            height: 64,
-            borderRadius: '50%',
-            background: item.accent,
-            opacity: t.isDark ? 0.14 : 0.09,
-            filter: 'blur(14px)',
-            pointerEvents: 'none',
-          }}
-        />
-      )}
       <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: -16,
+          left: -16,
+          width: 48,
+          height: 48,
+          borderRadius: '50%',
+          background: item.accent,
+          opacity: t.isDark ? 0.14 : 0.09,
+          filter: 'blur(12px)',
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        className="brand-hub-tile__icon"
         style={{
           position: 'relative',
-          width: isNested ? 38 : 46,
-          height: isNested ? 38 : 46,
-          borderRadius: isNested ? 12 : 14,
-          flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: `linear-gradient(135deg, ${item.accent}${isNested ? '24' : '2e'}, ${item.accent}${isNested ? '10' : '14'})`,
-          border: `0.5px solid ${item.accent}${isNested ? '30' : '3d'}`,
+          background: `linear-gradient(135deg, ${item.accent}2e, ${item.accent}14)`,
+          border: `0.5px solid ${item.accent}3d`,
         }}
       >
-        <SectionIcon name={item.key} color={item.accent} size={isNested ? 21 : 25} />
+        <SectionIcon name={item.key} color={item.accent} size={18} />
       </div>
       <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: isNested ? 14 : 15,
-          fontWeight: 700,
-          color: t.textPrimary,
-          letterSpacing: '-0.02em',
-          lineHeight: 1.2,
-        }}
-        >
+        <div className="brand-hub-tile__label" style={{ color: t.textPrimary }}>
           {item.label}
         </div>
-        <div style={{
-          marginTop: isNested ? 5 : 6,
-          height: 2.5,
-          borderRadius: 999,
-          overflow: 'hidden',
-          background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
-        }}
+        <div
+          className="brand-hub-tile__bar"
+          style={{
+            borderRadius: 999,
+            overflow: 'hidden',
+            background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+          }}
         >
           <div style={{
             width: `${Math.max(8, item.completion * 100)}%`,
@@ -325,15 +306,9 @@ export function BrandHubDashboard({
   statusBanners,
 }: BrandHubDashboardProps) {
   const readinessGood = readinessScore >= 80;
-  const identityItem = navItems.find((item) => item.key === 'identity');
-  const profileChildItems = navItems.filter((item) =>
-    item.key === 'content' || item.key === 'design' || item.key === 'gallery',
-  );
-  const standaloneItems = navItems.filter((item) =>
-    item.key !== 'identity'
-    && item.key !== 'content'
-    && item.key !== 'design'
-    && item.key !== 'gallery',
+  // İçerik / Tasarım / Galeri live under Marka Profili detail — hub only lists top-level entries.
+  const hubItems = navItems.filter((item) =>
+    item.key !== 'content' && item.key !== 'design' && item.key !== 'gallery',
   );
 
   return (
@@ -546,71 +521,13 @@ export function BrandHubDashboard({
 
       <div
         className="brand-hub-list"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          width: '100%',
-          margin: '0 0 12px',
-        }}
+        style={{ width: '100%', margin: 0 }}
       >
-        {identityItem && (
-          <div
-            className="brand-hub-group sa-chrome-card"
-            style={{
-              width: '100%',
-              borderRadius: 20,
-              overflow: 'hidden',
-              padding: '4px 0 6px',
-            }}
-          >
-            <BrandHubTile
-              item={identityItem}
-              t={t}
-              onOpen={(tab) => onOpenSection(tab)}
-            />
-
-            {profileChildItems.length > 0 && (
-              <div
-                className="brand-hub-group-children"
-                style={{
-                  margin: '0 12px 6px',
-                  padding: '4px 0 2px',
-                  borderRadius: 16,
-                  background: t.isDark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.025)',
-                  border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.05)'}`,
-                }}
-              >
-                {profileChildItems.map((item, index) => (
-                  <React.Fragment key={item.key}>
-                    {index > 0 && (
-                      <div
-                        aria-hidden
-                        style={{
-                          height: 0.5,
-                          margin: '0 14px',
-                          background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
-                        }}
-                      />
-                    )}
-                    <BrandHubTile
-                      item={item}
-                      t={t}
-                      variant="nested"
-                      onOpen={(tab) => onOpenSection(tab)}
-                    />
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {standaloneItems.map((item) => (
+        {hubItems.map((item) => (
           <div
             key={item.key}
             className="brand-hub-group sa-chrome-card"
-            style={{ width: '100%', borderRadius: 20, overflow: 'hidden', padding: '4px 0' }}
+            style={{ width: '100%', overflow: 'hidden' }}
           >
             <BrandHubTile
               item={item}

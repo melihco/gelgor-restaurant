@@ -941,9 +941,6 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
           <div style={{ fontSize: 11, color: t.textMuted }}>{timeAgo(artifact.createdAt)}</div>
         </div>
         <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-          {total > 1 && (
-            <span style={{ fontSize: 10, color: t.textMuted }}>{slide + 1}/{total}</span>
-          )}
           {isApproved && <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 10,
             fontWeight: 700, background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>✓ Onaylı</span>}
           {artifact.status === 'pending_review' && <span style={{ fontSize: 10, padding: '3px 8px',
@@ -953,28 +950,38 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
         </div>
       </div>
 
-      {/* Carousel image frame — tam görünüm, kırpma yok */}
-      <div style={{ width: '100%', position: 'relative', background: t.isDark ? '#0a0a12' : '#f4f4f4',
-        overflow: 'hidden', minHeight: 80 }}>
+      {/* Carousel — native IG: full-bleed cover, 1/N over the media */}
+      <div style={{
+        width: '100%', position: 'relative', aspectRatio: '1 / 1',
+        background: '#000', overflow: 'hidden',
+      }}>
         {currentImg ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={currentImg} alt="" referrerPolicy="no-referrer" aria-hidden="true"
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%',
-                objectFit: 'cover', filter: 'blur(18px) brightness(0.55)', transform: 'scale(1.1)',
-                pointerEvents: 'none' }} />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={currentImg} alt="" referrerPolicy="no-referrer"
-              style={{ display: 'block', position: 'relative', width: '100%', height: 'auto',
-                maxHeight: 'min(80vw, 560px)', objectFit: 'contain',
-                imageRendering: '-webkit-optimize-contrast' as const }}
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-          </>
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={currentImg}
+            alt=""
+            referrerPolicy="no-referrer"
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              objectFit: 'cover', objectPosition: 'center', display: 'block',
+            }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
         ) : (
-          <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 48, opacity: 0.08 }}>❑</div>
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 48, opacity: 0.08,
+          }}>❑</div>
         )}
-        {/* Swipe overlay areas — absolute over the image */}
+        {total > 1 && (
+          <div style={{
+            position: 'absolute', top: 12, right: 12, zIndex: 2,
+            padding: '4px 10px', borderRadius: 12, pointerEvents: 'none',
+            background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700,
+          }}>
+            {slide + 1} / {total}
+          </div>
+        )}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           {slide > 0 && (
             <button onClick={() => setSlide(s => s - 1)}
@@ -1003,19 +1010,14 @@ function IGCarouselCard({ artifact, onApprove, onRevision, approving, revisionin
                 >
                   <span
                     style={{
-                      width: i === slide ? 16 : 6, height: 6, borderRadius: 3,
-                      background: i === slide ? '#fff' : 'rgba(255,255,255,0.45)',
+                      width: i === slide ? 6 : 5, height: i === slide ? 6 : 5, borderRadius: '50%',
+                      background: i === slide ? '#0095F6' : 'rgba(255,255,255,0.45)',
                       transition: 'all 0.2s', display: 'block',
                     }}
                   />
                 </button>
               ))}
             </div>
-          )}
-          {slide < total - 1 && (
-            <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-              background: 'rgba(255,255,255,0.22)', borderRadius: '50%', width: 28, height: 28,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>›</div>
           )}
         </div>
       </div>
@@ -1178,52 +1180,42 @@ function IGPostCard({ artifact, onApprove, onRevision, approving, revisioning, t
         </div>
       </div>
 
-      {/* Image — tam görünüm, kırpma yok */}
-      {/* Instagram standart: 4:5 portrait → 1.91:1 landscape arası desteklenir */}
+      {/* Image — native IG full-bleed cover (4:5) */}
       <div style={{
         width: '100%',
         position: 'relative',
-        background: t.isDark ? '#0a0a12' : '#f4f4f4',
+        aspectRatio: '4 / 5',
+        background: '#000',
         overflow: 'hidden',
-        minHeight: 80,
       }}>
         {awaitingBrandedPoster ? (
-          <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 10, background: t.isDark ? '#12121a' : '#f0f0f0' }}>
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 10, background: t.isDark ? '#12121a' : '#f0f0f0',
+          }}>
             <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${t.separator}`,
               borderTop: '3px solid #8AABBD', animation: 'spinSlow 0.9s linear infinite' }} />
             <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Marka şablonu uygulanıyor…</span>
           </div>
         ) : img ? (
-          <>
-            {/* Blurred backdrop — letterbox alanlarını doldurmak için */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img} alt="" referrerPolicy="no-referrer" aria-hidden="true"
-              style={{
-                position: 'absolute', inset: 0,
-                width: '100%', height: '100%',
-                objectFit: 'cover', display: 'block',
-                filter: 'blur(18px) brightness(0.55)',
-                transform: 'scale(1.1)',
-                pointerEvents: 'none',
-              }} />
-            {/* Asıl görsel — tam boyut; galeri URL fallback */}
-            <SafeCoverImage
-              src={img}
-              fallbacks={[galleryImg, resolveImg(brandedUrl ?? undefined), resolveImg(posterUrl ?? undefined)]}
-              style={{
-                display: 'block',
-                position: 'relative',
-                width: '100%',
-                height: 'auto',
-                maxHeight: 'min(80vw, 560px)',
-                objectFit: 'contain',
-              }}
-            />
-          </>
+          <SafeCoverImage
+            src={img}
+            fallbacks={[galleryImg, resolveImg(brandedUrl ?? undefined), resolveImg(posterUrl ?? undefined)]}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'center',
+              display: 'block',
+            }}
+          />
         ) : (
-          <div style={{ width: '100%', aspectRatio: '1/1', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 48, opacity: 0.08 }}>✦</div>
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 48, opacity: 0.08,
+          }}>✦</div>
         )}
       </div>
 
@@ -1358,7 +1350,7 @@ function IGReelCard({ artifact, onApprove, approving, t }: {
         ) : thumbUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={thumbUrl} alt="" referrerPolicy="no-referrer"
-            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }} />
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block', imageRendering: '-webkit-optimize-contrast' as const }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center',
             justifyContent: 'center', background: 'linear-gradient(135deg,#1a1a2e,#16213e)',

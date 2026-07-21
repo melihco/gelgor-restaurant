@@ -1876,7 +1876,7 @@ const CSS = `
     background: #000;
   }
 
-  /* Reels in home feed — native 9:16 frame; media contained inside (no crop) */
+  /* Reels in home feed — native 9:16 frame; media cover-fills like Instagram */
   .sa-mobile .ig-feed-reel-stage {
     width: 100%;
     max-width: none;
@@ -1884,12 +1884,18 @@ const CSS = `
     margin-inline: 0;
   }
 
-  /* Posts — IG clamped aspect (4:5 … 1.91:1), media contained inside frame */
+  /* Posts — IG clamped aspect (4:5 … 1.91:1); media cover-fills edge-to-edge */
   .sa-mobile .ig-feed-post-stage {
     width: 100%;
     max-width: none;
     margin-inline: 0;
     overflow: hidden;
+  }
+
+  .sa-mobile .ig-feed-post-stage > img,
+  .sa-mobile .ig-feed-reel-stage > video,
+  .sa-mobile .ig-feed-reel-stage > img {
+    object-fit: cover;
   }
 
   .sa-mobile .ig-feed-post {
@@ -2105,18 +2111,46 @@ const CSS = `
   }
 
   /* Brand hub — premium studio tiles */
-  .sa-mobile .brand-hub-tile {
+  /* Compact hub + menu rows — same height for Marka Profili, Chatbot, İçerik Planı, … */
+  .sa-mobile .brand-hub-tile,
+  .sa-mobile .brand-hub-tile.sa-chrome-card {
+    min-height: 52px !important;
+    height: 52px;
+    padding: 0 14px !important;
+    border-radius: 16px !important;
+    gap: 11px !important;
+    box-sizing: border-box;
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease;
     -webkit-tap-highlight-color: transparent;
   }
   .sa-mobile .brand-hub-tile:active {
     transform: scale(0.97);
   }
-  .sa-mobile .brand-hub-tile--nested:active {
-    transform: scale(0.985);
+  .sa-mobile .brand-hub-tile__icon {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+    flex-shrink: 0;
+  }
+  .sa-mobile .brand-hub-tile__label {
+    font-size: 14px !important;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15 !important;
+  }
+  .sa-mobile .brand-hub-tile__bar {
+    margin-top: 3px !important;
+    height: 2px !important;
+  }
+  .sa-mobile .brand-hub-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px !important;
   }
   .sa-mobile .brand-hub-group {
     isolation: isolate;
+    border-radius: 16px !important;
+    margin-bottom: 0 !important;
   }
   .sa-mobile .brand-hub-gap-cta:active {
     transform: scale(0.985);

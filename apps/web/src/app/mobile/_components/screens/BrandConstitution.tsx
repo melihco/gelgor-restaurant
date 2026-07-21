@@ -3837,8 +3837,8 @@ export function BrandConstitution() {
             statusBanners={sharedStatusBanners}
           />
           {/* Menü — aynı full-width list rows as hub nav (no grid cards). */}
-          <div style={{ marginTop: 4 }}>
-            <MoreMenuPanel horizontalPadding={18} />
+          <div style={{ marginTop: 0 }}>
+            <MoreMenuPanel horizontalPadding={18} flushTop />
           </div>
         </>
       )}

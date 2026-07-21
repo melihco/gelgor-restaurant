@@ -56,7 +56,14 @@ function MenuItemIcon({ iconBg, label, size = 18 }: { iconBg: string; label: str
  * Rendered both inside the Marka hub (brand logo tap) and the legacy
  * `more` stack screen (reachable from the Instagram profile hamburger).
  */
-export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: number }) {
+export function MoreMenuPanel({
+  horizontalPadding = 22,
+  flushTop = false,
+}: {
+  horizontalPadding?: number;
+  /** When true, no top padding — sits flush under BrandHub (Chatbot → İçerik Planı). */
+  flushTop?: boolean;
+}) {
   const { t } = useTheme();
   const { navigate, setTab } = useMobileStore();
   const { setUser } = useAuthStore();
@@ -139,7 +146,10 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
       {groups.map((group, groupIdx) => (
         <div
           key={group.title || group.items[0]?.label || `group-${groupIdx}`}
-          style={{ padding: `16px ${horizontalPadding}px 0` }}
+          style={{
+            /* flushTop: continue hub list with same 6px rhythm (Chatbot → İçerik Planı) */
+            padding: `${flushTop && groupIdx === 0 ? 6 : 16}px ${horizontalPadding}px 0`,
+          }}
         >
           {group.title ? (
             <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
@@ -149,7 +159,7 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
 
           <div
             className="brand-hub-list"
-            style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}
+            style={{ display: 'flex', flexDirection: 'column', width: '100%' }}
           >
             {group.items.map((item) => {
               const accent = item.iconBg;
@@ -172,39 +182,33 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                   style={{
                     position: 'relative',
                     width: '100%',
-                    minHeight: 74,
-                    padding: '14px 16px',
-                    borderRadius: 20,
                     cursor: 'pointer',
                     textAlign: 'left',
                     overflow: 'hidden',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 14,
+                    border: 'none',
                   }}
                 >
                   <div
                     aria-hidden
                     style={{
                       position: 'absolute',
-                      top: -20,
-                      left: -20,
-                      width: 64,
-                      height: 64,
+                      top: -16,
+                      left: -16,
+                      width: 48,
+                      height: 48,
                       borderRadius: '50%',
                       background: accent,
                       opacity: t.isDark ? 0.14 : 0.09,
-                      filter: 'blur(14px)',
+                      filter: 'blur(12px)',
                       pointerEvents: 'none',
                     }}
                   />
                   <div
+                    className="brand-hub-tile__icon"
                     style={{
                       position: 'relative',
-                      width: 46,
-                      height: 46,
-                      borderRadius: 14,
-                      flexShrink: 0,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -212,7 +216,7 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                       border: `0.5px solid ${accent}3d`,
                     }}
                   >
-                    <MenuItemIcon iconBg={accent} label={item.label} size={25} />
+                    <MenuItemIcon iconBg={accent} label={item.label} size={18} />
                     {isCount && (
                       <span
                         aria-label={`${item.badge} bildirim`}
@@ -220,15 +224,15 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                           position: 'absolute',
                           top: -4,
                           right: -4,
-                          minWidth: 18,
-                          height: 18,
-                          padding: '0 5px',
+                          minWidth: 16,
+                          height: 16,
+                          padding: '0 4px',
                           borderRadius: 999,
                           background: '#EF4444',
                           color: '#fff',
-                          fontSize: 10,
+                          fontSize: 9,
                           fontWeight: 800,
-                          lineHeight: '18px',
+                          lineHeight: '16px',
                           textAlign: 'center',
                           boxShadow: '0 2px 6px rgba(239,68,68,0.45)',
                           border: `1.5px solid ${t.isDark ? '#1a1a1f' : '#fff'}`,
@@ -243,11 +247,12 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                       display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
                     }}
                     >
-                      <span style={{
-                        fontSize: 15, fontWeight: 700, color: t.textPrimary,
-                        letterSpacing: '-0.02em', lineHeight: 1.2,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}
+                      <span
+                        className="brand-hub-tile__label"
+                        style={{
+                          color: t.textPrimary,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}
                       >
                         {item.label}
                       </span>
@@ -263,10 +268,13 @@ export function MoreMenuPanel({ horizontalPadding = 22 }: { horizontalPadding?: 
                         </span>
                       )}
                     </div>
-                    <div style={{
-                      marginTop: 6, height: 2.5, borderRadius: 999, overflow: 'hidden',
-                      background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
-                    }}
+                    <div
+                      className="brand-hub-tile__bar"
+                      style={{
+                        borderRadius: 999,
+                        overflow: 'hidden',
+                        background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
+                      }}
                     >
                       <div style={{
                         width: `${Math.max(8, completion * 100)}%`,
