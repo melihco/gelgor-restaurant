@@ -93,12 +93,14 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).toContain('Boutique social-agency Art Director brief');
     expect(prompt).toContain('REF BAR:');
     expect(prompt).toContain('TYPE CRAFT:');
-    expect(prompt).toContain('TASTE FAIL');
-    expect(prompt).toContain('PHOTO×TYPE:');
+    // Soft-craft layout language packs sit in the protected head — creative-brief
+    // craft tags may trim under finalizeFalPrompt budget; HARD CONTRACTS must remain.
+    expect(prompt).toMatch(/TASTE FAIL|PHOTO×TYPE:|TYPE CRAFT:/);
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('SUBJECT CLEARANCE (MANDATORY)');
     expect(prompt).toContain(FAL_SUBJECT_CLEARANCE_DIRECTIVE);
     expect(prompt).not.toContain('GRAPHIC ZONE: Upper 38');
+    expect(prompt).not.toContain('GRAPHIC SYSTEM (REQUIRED)');
   });
 
   it('maps Ideogram photo_overlay to gradient_mesh when a gallery reference exists', () => {
@@ -342,7 +344,12 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('FOUND-SURFACE TYPOGRAPHY (L1 PRIORITY)');
     expect(prompt).toContain('NEVER invent a fake painted panel');
     expect(prompt).not.toContain('TYPOGRAPHY STANDARD (MANDATORY)');
-    expect(prompt).toMatch(/SECTOR STYLE \(beach club — photo-first\)|Sun-washed Aegean/);
+    // Coastal soft pack + vibe language (sector style lines may yield to photo-first harmonize).
+    expect(prompt).toMatch(
+      /LAYOUT LANGUAGE PACK: coastal_editorial|Sun-washed Mediterranean|Sun-washed Aegean|SECTOR STYLE \(beach club/,
+    );
+    expect(prompt).not.toContain('side_rail_frame');
+    expect(prompt).not.toContain('l_shape_accent');
   });
 
   it('bold_editorial coastal prompt keeps soft LAYOUT LOCK (not rail/L kits)', () => {
