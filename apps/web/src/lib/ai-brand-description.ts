@@ -47,8 +47,8 @@ export const BRAND_DESCRIPTION_FIELD_CONTRACT_EN = [
   'Tone: professional, fluent, no crawl/nav paste.',
 ].join(' ');
 
-function cleanLine(raw: string): string {
-  return raw.replace(/\s+/g, ' ').trim();
+function cleanLine(raw: string | null | undefined): string {
+  return String(raw ?? '').replace(/\s+/g, ' ').trim();
 }
 
 /** Drop nav crumbs, meta labels, and ultra-short noise from discovery blobs. */

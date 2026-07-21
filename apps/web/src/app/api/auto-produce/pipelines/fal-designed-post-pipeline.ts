@@ -192,7 +192,7 @@ export async function produceFalDesignedPost(
       });
       const canvasHeadline = overlayCopy.headline;
       const dedupedSubtitle = resolveSlotSublineForRender(overlayCopy.subtitle, {
-        matchedShowSubline: binding.matched?.showSubline,
+        matchedShowSubline: binding?.matched?.showSubline,
       });
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
