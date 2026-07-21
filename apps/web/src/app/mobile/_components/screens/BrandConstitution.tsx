@@ -2167,13 +2167,19 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
       };
 
       if (!res.ok) {
-        const errMsg = data.error === 'file_too_large_max_10mb'
-          ? 'Dosya 10 MB sınırını aşıyor.'
-          : data.error === 'images_only_jpg_png_webp'
-            ? 'Sadece JPG, PNG veya WebP yükleyebilirsiniz.'
-            : data.error === 'tenant_required' || data.error?.includes('X-Tenant-Id')
-              ? 'Oturum hatası — çıkış yapıp tekrar giriş yapın.'
-              : (data.error || `Yükleme başarısız (${res.status})`);
+        const errMap: Record<string, string> = {
+          file_too_large_max_10mb: 'Dosya 10 MB sınırını aşıyor.',
+          images_only_jpg_png_webp: 'Sadece JPG, PNG, WebP veya HEIC yükleyebilirsiniz.',
+          heic_unsupported_convert_to_jpg: 'HEIC dönüştürülemedi — fotoğrafı JPG olarak kaydedip tekrar yükleyin.',
+          no_files: 'Dosya seçilemedi — tekrar deneyin.',
+          'R2 storage not configured': 'Depolama yapılandırması eksik — destek ile iletişime geçin.',
+          tenant_required: 'Oturum hatası — çıkış yapıp tekrar giriş yapın.',
+        };
+        const raw = data.error ?? '';
+        const errMsg = errMap[raw]
+          || (raw.includes('X-Tenant-Id') ? errMap.tenant_required : null)
+          || raw
+          || `Yükleme başarısız (${res.status})`;
         throw new Error(errMsg);
       }
 
@@ -2350,28 +2356,61 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
             Bu tür görseller onay bekleyecek şekilde işlenir.
           </p>
         )}
-        <label style={{
-          width: '100%', padding: '13px 14px', borderRadius: 14, cursor: uploading ? 'default' : 'pointer',
-          opacity: uploading ? 0.6 : 1,
-          background: 'rgba(255,255,255,0.03)', border: `0.5px solid ${t.separator}`,
-          color: t.textSecondary, fontSize: 13, fontWeight: 600,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          pointerEvents: uploading ? 'none' : 'auto',
-        }}>
-          {uploading ? '⏳ Yükleniyor…' : '📷 Yeni Fotoğraf Yükle'}
+        <div style={{ position: 'relative', width: '100%' }}>
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => {
+              if (uploading) return;
+              const el = galleryFileInputRef.current;
+              if (!el) {
+                setAnalyzeStatus('Dosya seçici açılamadı — sayfayı yenileyip tekrar deneyin.');
+                return;
+              }
+              el.value = '';
+              el.click();
+            }}
+            style={{
+              width: '100%',
+              minHeight: 48,
+              padding: '13px 14px',
+              borderRadius: 14,
+              cursor: uploading ? 'wait' : 'pointer',
+              opacity: uploading ? 0.6 : 1,
+              background: 'rgba(255,255,255,0.03)',
+              border: `0.5px solid ${t.separator}`,
+              color: t.textSecondary,
+              fontSize: 14,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
+          >
+            {uploading ? 'Yükleniyor…' : 'Yeni Fotoğraf Yükle'}
+          </button>
           <input
             ref={galleryFileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
             multiple
             disabled={uploading}
-            style={{ display: 'none' }}
-            onChange={e => {
+            // WebView: keep in DOM (not display:none) so programmatic click() opens picker.
+            style={{
+              position: 'absolute',
+              width: 1,
+              height: 1,
+              opacity: 0,
+              overflow: 'hidden',
+              pointerEvents: 'none',
+            }}
+            onChange={(e) => {
               const fs = Array.from(e.target.files ?? []);
               if (fs.length > 0) void handleUpload(fs);
             }}
           />
-        </label>
+        </div>
         <p style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', marginTop: 6 }}>
           JPG, PNG, WebP · max 10MB · yükleme sonrası otomatik AI analiz
         </p>
