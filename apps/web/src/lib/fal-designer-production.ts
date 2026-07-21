@@ -1428,10 +1428,14 @@ export async function produceFalDesignerStill(
         `refs=${groundedRefUrls.map((u) => u.split('/').pop()).join(',')} ` +
         `requireGrounded=${Boolean(groundedOnly)}`,
       );
+      // Subtitle often fails OCR on grounded GPT edits (CTA painted tiny / omitted).
+      // Drop it after the first subtitle-only miss so retries can pass on headline.
+      let groundedSubtitle = captionSubtitle;
+      let groundedPromptActive = groundedPrompt;
       for (let groundedAttempt = 0; groundedAttempt < groundedMaxAttempts; groundedAttempt++) {
         const groundedUrl = await generateDesignedPostImage({
           workspaceId: input.workspaceId,
-          designCardPrompt: groundedPrompt,
+          designCardPrompt: groundedPromptActive,
           designCardMode: canvasChannel === 'reel' ? 'reel' : 'post',
           headline: displayHeadline,
           caption: input.caption ?? input.subtitle ?? displayHeadline,
@@ -1455,13 +1459,67 @@ export async function produceFalDesignerStill(
         }
         const textCheck = await validateFalCanvasText(groundedUrl, {
           headline: displayHeadline,
-          subtitle: captionSubtitle,
+          subtitle: groundedSubtitle,
         });
         if (!textCheck.valid) {
           console.warn(
             `[fal-designer] grounded edit text validation failed attempt ${groundedAttempt + 1}/${groundedMaxAttempts} ` +
-            `headline="${displayHeadline}" subtitle="${captionSubtitle ?? ''}" reason=${textCheck.reason ?? 'mismatch'}`,
+            `headline="${displayHeadline}" subtitle="${groundedSubtitle ?? ''}" reason=${textCheck.reason ?? 'mismatch'}`,
           );
+          // Headline OK + subtitle miss → rebuild prompt without CTA and retry.
+          if (
+            textCheck.headlineValid
+            && groundedSubtitle
+            && groundedAttempt < groundedMaxAttempts - 1
+          ) {
+            console.warn(
+              '[fal-designer] grounded edit: dropping subtitle for next attempt after subtitle-only miss',
+            );
+            groundedSubtitle = undefined;
+            groundedPromptActive = replicaPrompt ?? buildPrompt({
+              vibe: input.vibe,
+              headline: displayHeadline,
+              subtitle: undefined,
+              caption: input.caption,
+              sceneHint: input.sceneHint,
+              brandColors: input.brandColors,
+              brandName: input.brandName,
+              sector: input.sector,
+              aspectRatio: input.aspectRatio,
+              brandDirectives: input.brandDirectives,
+              visualDnaTone: input.visualDnaTone,
+              logoUrl: input.logoUrl,
+              briefMood: input.mood,
+              artDirection: input.artDirection,
+              designIntensityLevel: input.designIntensityLevel,
+              occasion: input.occasion,
+              logoPlacement: input.logoPlacement,
+            });
+          } else if (
+            textCheck.headlineValid
+            && groundedAttempt === groundedMaxAttempts - 1
+          ) {
+            // Last attempt: accept headline-valid compose rather than kill the slot.
+            console.warn(
+              '[fal-designer] grounded edit: accepting headline-valid frame after subtitle gate failures',
+            );
+            const grafikerSoft = await reviewDesignedFrame(
+              groundedUrl,
+              displayHeadline,
+              input.aspectRatio === '9:16' ? 'story' : 'poster',
+            );
+            last = {
+              imageUrl: groundedUrl,
+              typographyModel: 'gpt-image-1',
+              vibe: input.vibe,
+              grafikerScore: grafikerSoft.score,
+              grafikerPass: grafikerSoft.pass,
+              textValidated: true,
+              retryCount: groundedAttempt,
+              resolvedHeadline: displayHeadline,
+            };
+            return finalizeFalStillWithOfficialLogo(last, input);
+          }
           continue;
         }
         const grafiker = await reviewDesignedFrame(

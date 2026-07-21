@@ -2443,12 +2443,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
     const escalateGalleryFailureToFalOnly = (stage: string): boolean => {
       if (galleryEscalatedToFalOnly || !missionId) return false;
+      const rejectedRef = referenceUrl ?? resolvedReferenceUrl;
       const venueFallback = pickVenueEscalationFallbackPhoto({
-        currentReferenceUrl: referenceUrl ?? resolvedReferenceUrl,
+        currentReferenceUrl: rejectedRef,
         galleryPhotos,
         brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
         sector: brandBusinessType,
         hasRealBrandPhotos,
+        // After judge/hard veto, try a different gallery photo before reusing the reject.
+        excludeUrls: (
+          stage === 'judge_reject' || stage === 'hard_veto'
+        ) && rejectedRef
+          ? [rejectedRef]
+          : undefined,
       });
       const escalated = tryGalleryFailureEscalation({
         assignment,
@@ -2858,8 +2865,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
+    // Already escalated to fal_only_* — do not re-litigate the gallery floor.
+    // When judge_reject clears the photo, shouldSkip sees !hasReference and would
+    // call escalate again (no-op) then hard-fail with "Galeri–caption eşleşmesi…".
     if (
-      shouldSkipProductionForWeakGallery({
+      !galleryEscalatedToFalOnly
+      && shouldSkipProductionForWeakGallery({
         missionProduction: Boolean(missionId),
         galleryMatchScore,
         pickedFromBrandGallery,

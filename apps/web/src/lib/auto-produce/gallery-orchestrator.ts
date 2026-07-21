@@ -115,6 +115,8 @@ export function pickVenueEscalationFallbackPhoto(input: {
   brandReferenceImageUrls?: string[];
   sector?: string;
   hasRealBrandPhotos?: boolean;
+  /** Judge/hard-veto rejected URL — prefer a different gallery photo first. */
+  excludeUrls?: string[];
 }): string | null {
   const profile = getSectorProfile(input.sector);
   const venueGrounded = Boolean(
@@ -124,15 +126,32 @@ export function pickVenueEscalationFallbackPhoto(input: {
   );
   if (!venueGrounded) return null;
 
+  const excluded = new Set(
+    (input.excludeUrls ?? [])
+      .map((u) => normalizeGalleryUrl(String(u ?? '').trim()))
+      .filter(Boolean),
+  );
+
+  // Prefer alternate gallery photos over the rejected pick; keep current as last resort.
   const candidates = [
-    input.currentReferenceUrl,
     ...(input.galleryPhotos ?? []),
     ...(input.brandReferenceImageUrls ?? []),
+    input.currentReferenceUrl,
   ];
   for (const raw of candidates) {
     const url = String(raw ?? '').trim();
     if (!url || !isUsableGalleryPhotoUrl(url) || isStockGalleryPhotoUrl(url)) continue;
+    if (excluded.has(normalizeGalleryUrl(url))) continue;
     return url;
+  }
+  // Last resort: rejected URL still beats Ideogram invent for venue brands.
+  const rejectedKeep = String(input.currentReferenceUrl ?? '').trim();
+  if (
+    rejectedKeep
+    && isUsableGalleryPhotoUrl(rejectedKeep)
+    && !isStockGalleryPhotoUrl(rejectedKeep)
+  ) {
+    return rejectedKeep;
   }
   return null;
 }

@@ -204,12 +204,23 @@ describe('tryGalleryFailureEscalation', () => {
 });
 
 describe('pickVenueEscalationFallbackPhoto', () => {
-  it('keeps a gallery photo for restaurant_cafe when match fails', () => {
+  it('prefers an alternate gallery photo over the rejected pick', () => {
     expect(pickVenueEscalationFallbackPhoto({
       currentReferenceUrl: 'https://cdn.example.com/gallery/a.jpg',
       galleryPhotos: ['https://cdn.example.com/gallery/b.jpg'],
       sector: 'restaurant_cafe',
       hasRealBrandPhotos: true,
+      excludeUrls: ['https://cdn.example.com/gallery/a.jpg'],
+    })).toBe('https://cdn.example.com/gallery/b.jpg');
+  });
+
+  it('falls back to the rejected photo when no alternate exists', () => {
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: 'https://cdn.example.com/gallery/a.jpg',
+      galleryPhotos: ['https://cdn.example.com/gallery/a.jpg'],
+      sector: 'restaurant_cafe',
+      hasRealBrandPhotos: true,
+      excludeUrls: ['https://cdn.example.com/gallery/a.jpg'],
     })).toBe('https://cdn.example.com/gallery/a.jpg');
   });
 
