@@ -228,7 +228,12 @@ def _normalize_weekly_catalog_first(
         ):
             if donor.get(hint_key) is not None:
                 entry[hint_key] = donor[hint_key]
-        apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
+        apply_catalog_slot_to_entry(
+            entry,
+            catalog_slots,
+            used_catalog_keys,
+            idea=idea if isinstance(idea, dict) else None,
+        )
         entry.pop("library_slot_key", None)
         final_assignments.append(entry)
 
@@ -315,7 +320,14 @@ def _normalize_production_assignments(
                     "rationale": f"auto_fill_{role}",
                 }
             role = str(entry.get("slot_role") or "")
-            apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
+            idea_i = int(entry.get("idea_index", slot_i))
+            idea = ideas[idea_i] if (ideas and 0 <= idea_i < len(ideas)) else None
+            apply_catalog_slot_to_entry(
+                entry,
+                catalog_slots,
+                used_catalog_keys,
+                idea=idea if isinstance(idea, dict) else None,
+            )
             entry.pop("library_slot_key", None)
             final_assignments.append(entry)
         report["production_assignments"] = final_assignments
@@ -395,7 +407,12 @@ def _normalize_production_assignments(
         entry["publish_channel"] = str(
             entry.get("publish_channel") or _publish_channel_for_role(role)
         )
-        apply_catalog_slot_to_entry(entry, catalog_slots, used_catalog_keys)
+        apply_catalog_slot_to_entry(
+            entry,
+            catalog_slots,
+            used_catalog_keys,
+            idea=idea if isinstance(idea, dict) else None,
+        )
         entry.pop("library_slot_key", None)
         final_assignments.append(entry)
 

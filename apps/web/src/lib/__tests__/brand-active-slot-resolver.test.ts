@@ -326,6 +326,100 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     expect(queue[0]!.assignment.library_slot_key).not.toBe('beach_club_dj_night_teaser_post');
   });
 
+  it('dedupes repeated preferred catalog keys across designed posts (restaurant_cafe)', () => {
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-gelgor',
+      sector: 'restaurant_cafe',
+      sectorSlots: [
+        mockSlot('restaurant_cafe_signature_dish_post', 'post', {
+          design_template_type: 'menu_highlight',
+          slot_role: 'fal_designed_post',
+        }),
+        mockSlot('restaurant_cafe_customer_review_post', 'post', {
+          design_template_type: 'social_proof',
+          slot_role: 'fal_designed_post',
+        }),
+        mockSlot('restaurant_cafe_dining_ambiance_post', 'post', {
+          design_template_type: 'venue_showcase',
+          slot_role: 'fal_designed_post',
+        }),
+      ],
+      tenantAssignments: [
+        mockAssignment('restaurant_cafe_signature_dish_post', true),
+        mockAssignment('restaurant_cafe_customer_review_post', true),
+        mockAssignment('restaurant_cafe_dining_ambiance_post', true),
+      ],
+    });
+
+    const queue = enrichProductionQueueWithBrandSlots(
+      [
+        {
+          queueIndex: 0,
+          ideaIndex: 0,
+          idea: {
+            headline: 'Serpme kahvaltı',
+            announcement_type: 'product_reveal',
+            caption_draft: 'Bahçede serpme köy kahvaltısı',
+            content_type: 'instagram_post',
+            catalog_slot_key: 'restaurant_cafe_signature_dish_post',
+          },
+          assignment: {
+            idea_index: 0,
+            slot_role: 'fal_designed_post',
+            pipeline: 'fal_design',
+            copy_bundle_id: 'week',
+            publish_channel: 'instagram_organic',
+            catalog_slot_key: 'restaurant_cafe_signature_dish_post',
+          },
+        },
+        {
+          queueIndex: 1,
+          ideaIndex: 2,
+          idea: {
+            headline: 'Müşteri yorumları',
+            announcement_type: 'social_proof',
+            caption_draft: 'Müşterilerimizden gelen geri bildirimler',
+            content_type: 'instagram_post',
+            catalog_slot_key: 'restaurant_cafe_signature_dish_post',
+          },
+          assignment: {
+            idea_index: 2,
+            slot_role: 'fal_designed_post',
+            pipeline: 'fal_design',
+            copy_bundle_id: 'week',
+            publish_channel: 'instagram_organic',
+            catalog_slot_key: 'restaurant_cafe_signature_dish_post',
+          },
+        },
+        {
+          queueIndex: 2,
+          ideaIndex: 5,
+          idea: {
+            headline: 'Bahçe deneyimi',
+            announcement_type: 'offer_campaign',
+            caption_draft: 'Bu yaz bahçemizde eşsiz bir deneyim',
+            content_type: 'instagram_post',
+            catalog_slot_key: 'restaurant_cafe_signature_dish_post',
+          },
+          assignment: {
+            idea_index: 5,
+            slot_role: 'fal_designed_post',
+            pipeline: 'fal_design',
+            copy_bundle_id: 'week',
+            publish_channel: 'instagram_organic',
+            catalog_slot_key: 'restaurant_cafe_signature_dish_post',
+          },
+        },
+      ],
+      activeSet,
+    );
+
+    const keys = queue.map((row) => row.assignment.catalog_slot_key);
+    expect(keys[0]).toBe('restaurant_cafe_signature_dish_post');
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[1]).not.toBe('restaurant_cafe_signature_dish_post');
+  });
+
   it('keeps all ideas when the brand has fewer enabled catalog slots than queue rows', () => {
     const activeSet = resolveBrandActiveSlotKeys({
       workspaceId: 'ws-1',

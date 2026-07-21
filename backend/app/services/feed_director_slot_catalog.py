@@ -196,11 +196,80 @@ def catalog_slot_key_valid(
     return str(slot.get("format") or "") == target
 
 
+def _idea_match_haystack(idea: dict[str, Any] | None) -> str:
+    if not idea:
+        return ""
+    parts = [
+        idea.get("headline"),
+        idea.get("concept_title"),
+        idea.get("title"),
+        idea.get("caption"),
+        idea.get("caption_draft"),
+        idea.get("calendar_announcement_type"),
+        idea.get("announcement_type"),
+        idea.get("template_use_case"),
+        idea.get("visual_direction"),
+        idea.get("tagline"),
+    ]
+    return " ".join(str(p) for p in parts if p).lower()
+
+
+def score_catalog_slot_for_idea(
+    slot: dict[str, str],
+    idea: dict[str, Any] | None,
+) -> int:
+    """Prefer catalog rows that match the idea's announcement / caption theme."""
+    if not idea:
+        return 0
+    hay = _idea_match_haystack(idea)
+    announcement = str(
+        idea.get("calendar_announcement_type")
+        or idea.get("announcement_type")
+        or idea.get("template_use_case")
+        or ""
+    ).strip().lower().replace(" ", "_")
+    key = str(slot.get("slot_key") or "").lower()
+    dtype = str(slot.get("design_template_type") or "").lower()
+    label = str(slot.get("label_tr") or "").lower()
+    blob = f"{key} {dtype} {label}"
+    score = 0
+
+    def bump(points: int, *needles: str) -> None:
+        nonlocal score
+        if any(n in blob for n in needles):
+            score += points
+
+    if any(t in announcement for t in ("social_proof", "social", "review", "testimonial")):
+        bump(48, "customer", "review", "social_proof", "testimonial", "yorum")
+    if any(t in announcement for t in ("product_reveal", "product", "showcase")):
+        bump(36, "signature", "dish", "menu_highlight", "product", "imza", "brunch")
+    if any(t in announcement for t in ("offer_campaign", "offer", "promo", "campaign")):
+        bump(36, "offer", "promo", "campaign", "brunch", "reservation", "rezerv")
+    if any(t in announcement for t in ("educational", "behind_the_scenes", "bts")):
+        bump(36, "seasonal", "ingredient", "farm", "kitchen", "bts", "malzeme")
+    if any(t in announcement for t in ("event_teaser", "event")):
+        bump(36, "event", "etkinlik")
+
+    if any(t in hay for t in ("müşteri", "yorum", "review", "feedback", "geri bildirim")):
+        bump(28, "customer", "review", "social", "yorum")
+    if any(t in hay for t in ("kahvalt", "brunch", "serpme", "breakfast")):
+        bump(24, "brunch", "signature", "menu", "kahvalt", "breakfast")
+    if any(t in hay for t in ("bahçe", "garden", "teras", "ambiance", "atmosfer")):
+        bump(24, "ambiance", "dining", "venue", "atmosphere", "bahçe")
+    if any(t in hay for t in ("kokteyl", "cocktail", "bar")):
+        bump(24, "cocktail", "bar", "drink")
+    if any(t in hay for t in ("malzeme", "ingredient", "hasat", "farm")):
+        bump(24, "seasonal", "ingredient", "farm", "malzeme")
+
+    return score
+
+
 def pick_catalog_slot_key(
     role: str,
     pipeline: str,
     catalog_slots: list[dict[str, str]],
     used_keys: set[str],
+    idea: dict[str, Any] | None = None,
 ) -> str | None:
     target = target_format_for_assignment(role, pipeline)
     if target is None or not catalog_slots:
@@ -218,34 +287,54 @@ def pick_catalog_slot_key(
     ]
     if role_aligned:
         candidates = role_aligned
+
+    unused: list[dict[str, str]] = []
     for slot in candidates:
         key = str(slot.get("slot_key") or "")
         if key and key not in used_keys:
-            return key
-    return str(candidates[0]["slot_key"]) if candidates else None
+            unused.append(slot)
+    pool = unused if unused else list(candidates)
+    if not pool:
+        return None
+
+    pool.sort(
+        key=lambda s: (
+            -score_catalog_slot_for_idea(s, idea),
+            str(s.get("slot_key") or ""),
+        )
+    )
+    return str(pool[0].get("slot_key") or "") or None
 
 
 def resolve_catalog_slot_key(
     entry: dict[str, Any],
     catalog_slots: list[dict[str, str]] | None,
     used_keys: set[str],
+    idea: dict[str, Any] | None = None,
 ) -> str | None:
     if not catalog_slots:
         return None
     role = str(entry.get("slot_role") or "")
     pipeline = str(entry.get("pipeline") or "")
     existing = str(entry.get("catalog_slot_key") or "").strip()
-    if existing and catalog_slot_key_valid(existing, role, pipeline, catalog_slots):
+    # Keep FD's pick only when unique in this mission — duplicates force a rematch
+    # so three posts don't hard-pin the same onboarding template.
+    if (
+        existing
+        and existing not in used_keys
+        and catalog_slot_key_valid(existing, role, pipeline, catalog_slots)
+    ):
         return existing
-    return pick_catalog_slot_key(role, pipeline, catalog_slots, used_keys)
+    return pick_catalog_slot_key(role, pipeline, catalog_slots, used_keys, idea=idea)
 
 
 def apply_catalog_slot_to_entry(
     entry: dict[str, Any],
     catalog_slots: list[dict[str, str]] | None,
     used_keys: set[str],
+    idea: dict[str, Any] | None = None,
 ) -> None:
-    key = resolve_catalog_slot_key(entry, catalog_slots, used_keys)
+    key = resolve_catalog_slot_key(entry, catalog_slots, used_keys, idea=idea)
     if key:
         entry["catalog_slot_key"] = key
         used_keys.add(key)

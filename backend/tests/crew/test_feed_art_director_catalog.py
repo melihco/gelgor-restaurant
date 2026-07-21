@@ -33,6 +33,30 @@ RESTAURANT_CATALOG = [
         "design_template_type": "campaign_announcement",
     },
     {
+        "slot_key": "restaurant_cafe_signature_dish_post",
+        "label_tr": "İmza tabak",
+        "format": "post",
+        "pipeline": "fal_design",
+        "slot_role": "fal_designed_post",
+        "design_template_type": "menu_highlight",
+    },
+    {
+        "slot_key": "restaurant_cafe_customer_review_post",
+        "label_tr": "Müşteri yorumu",
+        "format": "post",
+        "pipeline": "fal_design",
+        "slot_role": "fal_designed_post",
+        "design_template_type": "social_proof",
+    },
+    {
+        "slot_key": "restaurant_cafe_dining_ambiance_post",
+        "label_tr": "Yemek atmosferi",
+        "format": "post",
+        "pipeline": "fal_design",
+        "slot_role": "fal_designed_post",
+        "design_template_type": "venue_showcase",
+    },
+    {
         "slot_key": "restaurant_cafe_new_menu_story",
         "label_tr": "Yeni menü story",
         "format": "story",
@@ -68,6 +92,76 @@ def test_resolve_catalog_slot_key_preserves_valid_fd_choice():
     }
     key = resolve_catalog_slot_key(entry, RESTAURANT_CATALOG, used)
     assert key == "restaurant_cafe_brunch_offer_post"
+
+
+def test_resolve_catalog_slot_key_rejects_duplicate_and_picks_idea_match():
+    """Gel Gör bug: FD stamped İmza tabak on every post — rematch uniquely."""
+    used = {"restaurant_cafe_signature_dish_post"}
+    entry = {
+        "slot_role": "fal_designed_post",
+        "pipeline": "fal_design",
+        "catalog_slot_key": "restaurant_cafe_signature_dish_post",
+    }
+    idea = {
+        "announcement_type": "social_proof",
+        "caption_draft": "Müşterilerimizden gelen geri bildirimlere kulak veriyoruz.",
+    }
+    key = resolve_catalog_slot_key(entry, RESTAURANT_CATALOG, used, idea=idea)
+    assert key == "restaurant_cafe_customer_review_post"
+    assert key not in used
+
+
+def test_normalize_dedupes_repeated_signature_dish_across_posts():
+    report = {
+        "production_assignments": [
+            {
+                "idea_index": 0,
+                "slot_role": "fal_designed_post",
+                "pipeline": "fal_design",
+                "catalog_slot_key": "restaurant_cafe_signature_dish_post",
+            },
+            {
+                "idea_index": 1,
+                "slot_role": "fal_designed_post",
+                "pipeline": "fal_design",
+                "catalog_slot_key": "restaurant_cafe_signature_dish_post",
+            },
+            {
+                "idea_index": 2,
+                "slot_role": "fal_designed_post",
+                "pipeline": "fal_design",
+                "catalog_slot_key": "restaurant_cafe_signature_dish_post",
+            },
+        ]
+    }
+    ideas = [
+        {
+            "content_type": "post",
+            "announcement_type": "product_reveal",
+            "caption_draft": "Bahçemizde serpme köy kahvaltısını tadın",
+        },
+        {
+            "content_type": "post",
+            "announcement_type": "social_proof",
+            "caption_draft": "Müşterilerimiz kahvaltılarımızı çok sevdi",
+        },
+        {
+            "content_type": "post",
+            "announcement_type": "offer_campaign",
+            "caption_draft": "Bu yaz bahçemizde eşsiz bir deneyim",
+        },
+    ]
+    _normalize_production_assignments(
+        report,
+        len(ideas),
+        ideas=ideas,
+        production_package="weekly_content",
+        catalog_slots=RESTAURANT_CATALOG,
+    )
+    keys = [a["catalog_slot_key"] for a in report["production_assignments"]]
+    assert keys[0] == "restaurant_cafe_signature_dish_post"
+    assert keys[1] == "restaurant_cafe_customer_review_post"
+    assert len(set(keys)) == 3
 
 
 def test_pick_catalog_slot_key_rotates_story_slots():
