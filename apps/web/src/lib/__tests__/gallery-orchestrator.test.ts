@@ -7,7 +7,12 @@
  * local_products_shop AND beach_club.
  */
 import { describe, it, expect } from 'vitest';
-import { resolveQueueGalleryCapacityReroutes, missionGallerySlotKey, tryGalleryFailureEscalation } from '@/lib/auto-produce/gallery-orchestrator';
+import {
+  pickVenueEscalationFallbackPhoto,
+  resolveQueueGalleryCapacityReroutes,
+  missionGallerySlotKey,
+  tryGalleryFailureEscalation,
+} from '@/lib/auto-produce/gallery-orchestrator';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 
@@ -160,6 +165,20 @@ describe('tryGalleryFailureEscalation', () => {
     expect(out?.referenceUrl).toBeNull();
   });
 
+  it('keeps venue fallback photo when gallery match fails for restaurant brands', () => {
+    const venuePhoto = 'https://cdn.example.com/gallery/gelgor-dining.jpg';
+    const out = tryGalleryFailureEscalation({
+      assignment: { slot_role: 'designed_post', pipeline: 'fal_design' },
+      postType: 'feed',
+      missionId: 'm-1',
+      stage: 'judge_reject',
+      fallbackReferenceUrl: venuePhoto,
+    });
+    expect(out?.assignment.pipeline).toBe('fal_only_post');
+    expect(out?.referenceUrl).toBe(venuePhoto);
+    expect(out?.pickedFromBrandGallery).toBe(true);
+  });
+
   it('reroutes carousel slots to fal_only_post (last-resort, avoids exhaustion)', () => {
     // Carousel gallery failures (e.g. testimonial slot with no customer photos)
     // now escalate to fal_only_post so the slot produces something rather than exhausting.
@@ -181,5 +200,24 @@ describe('tryGalleryFailureEscalation', () => {
       stage: 'hard_veto',
     });
     expect(out).toBeNull();
+  });
+});
+
+describe('pickVenueEscalationFallbackPhoto', () => {
+  it('keeps a gallery photo for restaurant_cafe when match fails', () => {
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: 'https://cdn.example.com/gallery/a.jpg',
+      galleryPhotos: ['https://cdn.example.com/gallery/b.jpg'],
+      sector: 'restaurant_cafe',
+      hasRealBrandPhotos: true,
+    })).toBe('https://cdn.example.com/gallery/a.jpg');
+  });
+
+  it('returns null for low-reliability / no-venue sectors', () => {
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: 'https://cdn.example.com/gallery/a.jpg',
+      sector: 'ecommerce_retail',
+      hasRealBrandPhotos: true,
+    })).toBeNull();
   });
 });

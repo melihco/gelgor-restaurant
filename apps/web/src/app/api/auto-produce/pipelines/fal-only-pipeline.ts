@@ -139,7 +139,9 @@ export async function produceFalOnlySlot(
       input.brandColors,
       binding?.brandColors,
     );
-    const photoUrl = binding?.referencePhotoUrl ?? input.referencePhotoUrl;
+    const photoUrl = binding?.referencePhotoUrl
+      ?? input.referencePhotoUrl
+      ?? input.brandReferenceImageUrls?.find((u) => isUsableGalleryPhotoUrl(u));
     const styleRefs = templateStyleReferenceUrls(
       binding ?? {
         matched: null,
@@ -320,7 +322,9 @@ export async function produceFalOnlySlot(
       input.brandColors,
       binding?.brandColors,
     );
-      const photoUrl = binding?.referencePhotoUrl ?? input.referencePhotoUrl;
+      const photoUrl = binding?.referencePhotoUrl
+        ?? input.referencePhotoUrl
+        ?? input.brandReferenceImageUrls?.find((u) => isUsableGalleryPhotoUrl(u));
       const styleRefs = templateStyleReferenceUrls(
         binding ?? {
           matched: null,

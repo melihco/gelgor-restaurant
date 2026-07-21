@@ -41,6 +41,15 @@ describe('resolveFalRequireGroundedGallery', () => {
       captionDrivenGenerated: false,
     })).toBe(true);
   });
+
+  it('requires grounded gallery for restaurant brands even without a pre-bound photo', () => {
+    expect(resolveFalRequireGroundedGallery({
+      hasRealBrandGallery: true,
+      referencePhotoUrl: null,
+      sector: 'restaurant_cafe',
+      captionDrivenGenerated: false,
+    })).toBe(true);
+  });
 });
 
 describe('resolveTypographyVibeFromContext', () => {

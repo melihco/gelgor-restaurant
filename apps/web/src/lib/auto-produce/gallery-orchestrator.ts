@@ -33,6 +33,8 @@ import {
   getMissionWideExcludeUrls,
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
+import { isStockGalleryPhotoUrl, isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { getSectorProfile } from '@/lib/sector-production-profile';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -102,7 +104,40 @@ function falLastResortPipelineForPostType(
   return 'fal_only_post';
 }
 
-/** Runtime gallery gate failure → reroute to AI visual instead of permanent withhold. */
+/**
+ * Venue / high-reliability gallery brands must keep a real photo when gallery
+ * match fails — fal_only without a venue image falls through to Ideogram T2I
+ * and invents a fake location.
+ */
+export function pickVenueEscalationFallbackPhoto(input: {
+  currentReferenceUrl?: string | null;
+  galleryPhotos?: string[];
+  brandReferenceImageUrls?: string[];
+  sector?: string;
+  hasRealBrandPhotos?: boolean;
+}): string | null {
+  const profile = getSectorProfile(input.sector);
+  const venueGrounded = Boolean(
+    input.hasRealBrandPhotos
+    && profile.hasPhysicalVenue
+    && profile.galleryReliability !== 'low',
+  );
+  if (!venueGrounded) return null;
+
+  const candidates = [
+    input.currentReferenceUrl,
+    ...(input.galleryPhotos ?? []),
+    ...(input.brandReferenceImageUrls ?? []),
+  ];
+  for (const raw of candidates) {
+    const url = String(raw ?? '').trim();
+    if (!url || !isUsableGalleryPhotoUrl(url) || isStockGalleryPhotoUrl(url)) continue;
+    return url;
+  }
+  return null;
+}
+
+/** Runtime gallery gate failure → reroute to fal_only instead of permanent withhold. */
 export function tryGalleryFailureEscalation<
   A extends { pipeline?: string; slot_role?: string },
 >(input: {
@@ -110,21 +145,28 @@ export function tryGalleryFailureEscalation<
   postType: 'feed' | 'story' | 'reel' | 'carousel';
   missionId?: string;
   stage: string;
+  /**
+   * Keep a venue/product photo for fal_only when gallery match failed.
+   * Null clears the photo (legacy Ideogram-only path — avoid for venue brands).
+   */
+  fallbackReferenceUrl?: string | null;
 }): {
   assignment: A;
-  referenceUrl: null;
-  pickedFromBrandGallery: false;
+  referenceUrl: string | null;
+  pickedFromBrandGallery: boolean;
   galleryMatchScore: null;
   captionDrivenGenerated: false;
   agentIdeationGalleryLock: false;
 } | null {
   if (!input.missionId?.trim()) return null;
   const fallbackPipeline = falLastResortPipelineForPostType(input.postType);
+  const kept = String(input.fallbackReferenceUrl ?? '').trim();
+  const referenceUrl = kept && isUsableGalleryPhotoUrl(kept) ? kept : null;
   return {
     // fal_only_* is a valid ProductionPipeline for every assignment shape used here.
     assignment: { ...input.assignment, pipeline: fallbackPipeline } as A,
-    referenceUrl: null,
-    pickedFromBrandGallery: false,
+    referenceUrl,
+    pickedFromBrandGallery: Boolean(referenceUrl),
     galleryMatchScore: null,
     captionDrivenGenerated: false,
     agentIdeationGalleryLock: false,

@@ -14,6 +14,7 @@ import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedStoryDesignCardPrompt,
   produceFalDesignedPostStill,
+  resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
@@ -85,6 +86,9 @@ export interface FalDesignedPostInput {
   designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
   /** Gallery-grounded design required (venue brands / New Brief / calendar). */
   requireGroundedGallery?: boolean;
+  /** Brand has analyzed venue/product gallery — blocks Ideogram-only invent. */
+  hasRealBrandGallery?: boolean;
+  captionDrivenGenerated?: boolean;
   /** True only for ad-hoc New Brief — weakens template lock options. */
   adHocBrief?: boolean;
   /** Onboarding brand template lock (layout + vibe + colors). */
@@ -362,7 +366,12 @@ export async function produceFalDesignedPost(
         mood: input.mood,
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
-        requireGroundedGallery: false,
+        requireGroundedGallery: resolveFalRequireGroundedGallery({
+          referencePhotoUrl: referenceUrl,
+          sector: input.sector,
+          hasRealBrandGallery: input.hasRealBrandGallery,
+          captionDrivenGenerated: input.captionDrivenGenerated,
+        }),
         designIntensityLevel: input.designIntensityLevel,
         templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
         templateReplica: templateReplicaSpecFromBinding(binding),
@@ -596,6 +605,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
       ],
       visualDnaTone: falBrand.visualDnaTone,
       requireGroundedGallery: Boolean(inputs.requireGroundedGallery || inputs.adHocBrief),
+      hasRealBrandGallery: inputs.hasRealBrandGallery,
+      captionDrivenGenerated: inputs.captionDrivenGenerated,
       adHocBrief: Boolean(inputs.adHocBrief),
       designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
       brandTemplateBinding: templateBinding,

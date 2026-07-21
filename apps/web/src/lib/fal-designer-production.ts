@@ -607,15 +607,15 @@ export function resolveFalRequireGroundedGallery(input: {
     sector: input.sector,
   });
   if (groundedByPolicy) return true;
-  // Gallery-backed physical venues: Fal paints on the caption-matched photo — never Ideogram-only.
-  if (
+  const profile = getSectorProfile(input.sector);
+  const venueGalleryBrand = Boolean(
     input.hasRealBrandGallery
-    && input.referencePhotoUrl?.trim()
-    && !input.captionDrivenGenerated
-  ) {
-    const profile = getSectorProfile(input.sector);
-    if (profile.hasPhysicalVenue && profile.galleryReliability !== 'low') return true;
-  }
+    && profile.hasPhysicalVenue
+    && profile.galleryReliability !== 'low',
+  );
+  // Venue brands with a real gallery must never Ideogram-invent the place —
+  // even when caption match failed and no single photo was pre-bound.
+  if (venueGalleryBrand) return true;
   if (input.captionDrivenGenerated) return false;
   return false;
 }
@@ -1371,6 +1371,12 @@ export async function produceFalDesignerStill(
     Boolean(url) && arr.indexOf(url) === index,
   ).slice(0, 2);
 
+  if (groundedOnly && groundedRefUrls.length === 0) {
+    throw new Error(
+      'Brand gallery design required — no venue/product photo was supplied to fal designer. '
+      + 'Synthetic Ideogram-only generation is disabled for gallery-backed venue brands.',
+    );
+  }
 
   if (input.workspaceId && groundedRefUrls.length > 0) {
     // Prefer the photo-grounded result: it composes the design ON the real

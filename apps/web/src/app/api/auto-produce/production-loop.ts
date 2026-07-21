@@ -292,6 +292,7 @@ import {
   buildMissionGalleryAssignments,
   missionGallerySlotKey,
   assignmentUsesGalleryPhoto,
+  pickVenueEscalationFallbackPhoto,
   resolveQueueGalleryCapacityReroutes,
   tryGalleryFailureEscalation,
 } from '@/lib/auto-produce/gallery-orchestrator';
@@ -2442,21 +2443,32 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
     const escalateGalleryFailureToFalOnly = (stage: string): boolean => {
       if (galleryEscalatedToFalOnly || !missionId) return false;
+      const venueFallback = pickVenueEscalationFallbackPhoto({
+        currentReferenceUrl: referenceUrl ?? resolvedReferenceUrl,
+        galleryPhotos,
+        brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
+        sector: brandBusinessType,
+        hasRealBrandPhotos,
+      });
       const escalated = tryGalleryFailureEscalation({
         assignment,
         postType,
         missionId,
         stage,
+        fallbackReferenceUrl: venueFallback,
       });
       if (!escalated) return false;
       console.warn(
         `[auto-produce] gallery ${stage} → ${String(escalated.assignment.pipeline)} `
-        + `(fal_only escalation) "${headline.slice(0, 40)}"`,
+        + `(fal_only escalation${escalated.referenceUrl ? ', venue photo kept' : ', no venue photo'}) `
+        + `"${headline.slice(0, 40)}"`,
       );
       assignment = escalated.assignment;
       referenceUrl = escalated.referenceUrl;
       resolvedReferenceUrl = escalated.referenceUrl;
-      galleryPreviewUrl = null;
+      galleryPreviewUrl = escalated.referenceUrl
+        ? (toFeedPreviewUrl(escalated.referenceUrl) ?? escalated.referenceUrl)
+        : null;
       pickedFromBrandGallery = escalated.pickedFromBrandGallery;
       galleryMatchScore = escalated.galleryMatchScore;
       captionDrivenGenerated = escalated.captionDrivenGenerated;
@@ -3580,9 +3592,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             kind,
             explicit: isCalendarSlot && pkgFmt === 'story' ? '9:16' : null,
           }),
-          requireGroundedGallery: galleryEscalatedToFalOnly
-            ? false
-            : resolveFalRequireGroundedGallery({
+          requireGroundedGallery: resolveFalRequireGroundedGallery({
             requireGroundedGallery: isCalendarSlot || adHocBrief || isPaidAdSlot,
             referencePhotoUrl: referenceUrl,
             sector: brandBusinessType,
@@ -3590,7 +3600,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             pipeline: isFalMissionVideo
               ? (assignment.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story')
               : undefined,
-            captionDrivenGenerated,
+            // Escalation may keep a venue fallback photo — still grounded.
+            captionDrivenGenerated: galleryEscalatedToFalOnly ? false : captionDrivenGenerated,
           }),
           hasRealBrandGallery: hasRealBrandPhotos,
           captionDrivenGenerated,
@@ -4019,6 +4030,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.warn(
           `[auto-produce] Designed post slot withheld (no branded poster) — trying fal_only fallback: "${headline.slice(0, 40)}"`,
         );
+        const designedFallbackPhoto = pickVenueEscalationFallbackPhoto({
+          currentReferenceUrl: referenceUrl,
+          galleryPhotos,
+          brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
+          sector: brandBusinessType,
+          hasRealBrandPhotos,
+        }) ?? referenceUrl ?? undefined;
         const designedFallback = await produceFalOnlySlot({
           pipeline: 'fal_only_post',
           workspaceId,
@@ -4038,11 +4056,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           sceneHint: falSceneHint || undefined,
           logoUrl: brandLogoUrl || undefined,
           grafikerMaxRetries,
-          referencePhotoUrl: undefined,
+          referencePhotoUrl: designedFallbackPhoto,
           brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
-          requireGroundedGallery: false,
+          requireGroundedGallery: resolveFalRequireGroundedGallery({
+            referencePhotoUrl: designedFallbackPhoto,
+            sector: brandBusinessType,
+            hasRealBrandGallery: hasRealBrandPhotos,
+            captionDrivenGenerated: false,
+          }),
           hasRealBrandGallery: hasRealBrandPhotos,
-          captionDrivenGenerated: true,
+          captionDrivenGenerated: false,
         });
         if (designedFallback?.imageUrl) {
           imageUrl = designedFallback.imageUrl;
