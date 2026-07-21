@@ -148,7 +148,7 @@ export function parseBrandGalleryPhotos(
   );
 
   const analysisKeys = filterGalleryAnalysisKeys(meta as Record<string, unknown>);
-  let candidateUrls = refs.length > 0 ? refs : analysisKeys;
+  let candidateUrls = Array.from(new Set([...refs, ...analysisKeys]));
 
   candidateUrls = stripStockGalleryUrls(candidateUrls);
 

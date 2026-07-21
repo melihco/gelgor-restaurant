@@ -3,6 +3,7 @@ import {
   buildBrandIntelligenceDirectives,
   buildBrandSlotDesignRecipe,
   buildDesignTemplateGenerationJobs,
+  pickPhotoForPreset,
   resolveDefaultTemplateHeroPhoto,
 } from '@/lib/brand-design-template-engine';
 import type { DesignTemplatePreset } from '@/lib/brand-design-template-presets';
@@ -146,5 +147,65 @@ describe('resolveDefaultTemplateHeroPhoto', () => {
       },
     });
     expect(hero?.url).toContain('terrace');
+  });
+
+  it('still returns a restaurant gallery photo when all tags are weak event_photo', () => {
+    const hero = resolveDefaultTemplateHeroPhoto({
+      workspaceId: 'tenant-gelgor',
+      sector: 'restaurant_cafe',
+      brandName: 'Gel Gör',
+      brandColors: { primary: '#111', accent: '#c9a86a' },
+      galleryPhotoUrls: [
+        'https://brand.example.com/gelgor/cocktails.jpg',
+        'https://brand.example.com/gelgor/meze.jpg',
+      ],
+      galleryAnalysis: {
+        'https://brand.example.com/gelgor/cocktails.jpg': {
+          suggestedAssetType: 'event_photo',
+          description: 'two hands clinking cocktail glasses happy customers',
+          qualityScore: null,
+        },
+        'https://brand.example.com/gelgor/meze.jpg': {
+          suggestedAssetType: 'event_photo',
+          description: 'two hands clinking cocktail glasses happy customers',
+          qualityScore: null,
+        },
+      },
+    });
+    expect(hero?.url).toBeTruthy();
+    expect(hero!.score).toBeGreaterThan(-80);
+  });
+});
+
+describe('pickPhotoForPreset', () => {
+  it('hard-falls back to any gallery photo when semantic match fails', () => {
+    const picked = pickPhotoForPreset(
+      {
+        templateType: 'menu_highlight',
+        name: 'İmza tabak',
+        format: 'post',
+        intent: 'product',
+        sampleHeadline: 'İmza tabak',
+        preferredAssetTypes: ['food_drink_photo', 'product_image'],
+        matchKeywords: 'signature plate seafood meze',
+        prominentLogo: true,
+      },
+      {
+        workspaceId: 'tenant-gelgor',
+        sector: 'restaurant_cafe',
+        brandName: 'Gel Gör',
+        brandColors: { primary: '#111', accent: '#c9a86a' },
+        galleryPhotoUrls: ['https://brand.example.com/gelgor/only.jpg'],
+        galleryAnalysis: {
+          'https://brand.example.com/gelgor/only.jpg': {
+            suggestedAssetType: 'event_photo',
+            description: 'unrelated abstract texture with no food keywords xyz',
+            contentTags: ['abstract'],
+          },
+        },
+      },
+      new Set(),
+    );
+    expect(picked?.url).toContain('only.jpg');
   });
 });

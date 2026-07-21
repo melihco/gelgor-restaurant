@@ -70,9 +70,11 @@ import {
   matchPhotoToContent,
 } from '@/lib/gallery-photo-matcher';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { generateDesignedPostImage } from '@/app/api/auto-produce/handlers/image-generators';
 import { generateStorageKey, isR2Configured, uploadImageFromUrl } from '@/lib/r2-storage';
 import { serverConfig } from '@/lib/server-config';
+import { getSectorProfile } from '@/lib/sector-production-profile';
 import { parseMotionProfileFromTheme } from '@/lib/brand-motion-profile';
 import { resolveBrandReelProductionParams } from '@/lib/brand-reel-motion-profile';
 import {
@@ -235,7 +237,21 @@ const HERO_ASSET_TYPE_SCORES: Array<[RegExp, number]> = [
   [/logo|icon/i, -120],
 ];
 
-function scoreDefaultHeroPhoto(url: string, meta: GalleryPhotoMeta | undefined): number {
+/** F&B / hospitality — plate & glass photos ARE the brand hero, not a penalty. */
+const FOOD_VENUE_HERO_ASSET_SCORES: Array<[RegExp, number]> = [
+  [/hero_image/i, 120],
+  [/venue_reference|venue_photo/i, 100],
+  [/food_drink_photo|product_image/i, 55],
+  [/brand_background/i, 50],
+  [/event_photo/i, 25],
+  [/logo|icon/i, -120],
+];
+
+function scoreDefaultHeroPhoto(
+  url: string,
+  meta: GalleryPhotoMeta | undefined,
+  sector?: string | null,
+): number {
   const assetType = String(meta?.suggestedAssetType ?? '');
   const description = String(
     (meta as GalleryPhotoMeta & { description?: unknown; caption?: unknown; summary?: unknown } | undefined)?.description
@@ -250,8 +266,13 @@ function scoreDefaultHeroPhoto(url: string, meta: GalleryPhotoMeta | undefined):
       ?? 0,
   );
 
+  const sectorId = String(sector ?? '');
+  const foodVenue = getSectorProfile(sector).hasPhysicalVenue
+    && /restaurant|cafe|bar|bakery|local_products|hospitality|hotel/i.test(sectorId);
+  const assetScores = foodVenue ? FOOD_VENUE_HERO_ASSET_SCORES : HERO_ASSET_TYPE_SCORES;
+
   let score = Number.isFinite(quality) ? Math.min(quality, 100) / 5 : 0;
-  for (const [rx, value] of HERO_ASSET_TYPE_SCORES) {
+  for (const [rx, value] of assetScores) {
     if (rx.test(assetType)) score += value;
   }
   if (/water|sea|beach|shore|venue|terrace|table|entrance|harbor|sunset|view|mekan|sahil|deniz|pool|infinity|aerial|drone|panoram/.test(description)) {
@@ -260,22 +281,53 @@ function scoreDefaultHeroPhoto(url: string, meta: GalleryPhotoMeta | undefined):
   if (/paddle|surfboard|sup board|kayak|single board|product only|haute boards|brand on product/.test(description)) {
     score -= 35;
   }
-  if (/cocktail|drink|food|burger|fries|salad|taco|plate|glass|champagne|dj|party|people celebrating/.test(description)) {
+  if (!foodVenue
+    && /cocktail|drink|food|burger|fries|salad|taco|plate|glass|champagne|dj|party|people celebrating/.test(description)) {
     score -= 12;
+  }
+  if (foodVenue
+    && /food|yemek|dish|meal|plate|tabak|menu|menü|cocktail|drink|glass|meze|restaurant|dining/.test(description)) {
+    score += 18;
   }
   if (/assets\/img|ikonlar|logo|\.svg/i.test(url)) score -= 100;
   return score;
 }
 
-/** Pick one brand-owned venue/hero image to anchor the whole template set. */
+/**
+ * Pick one brand-owned venue/hero image to anchor the whole template set.
+ * Prefer a strong venue hero; if none clears the ideal bar, still return the
+ * best usable gallery photo so generation never falls through to Ideogram-only.
+ */
 export function resolveDefaultTemplateHeroPhoto(input: DesignTemplateEngineInput): { url: string; score: number } | null {
   let best: { url: string; score: number } | null = null;
   for (const url of input.galleryPhotoUrls) {
+    if (!isUsableGalleryPhotoUrl(url)) continue;
     const meta = input.galleryAnalysis[normalizeGalleryUrl(url)] ?? input.galleryAnalysis[url];
-    const score = scoreDefaultHeroPhoto(url, meta);
+    const score = scoreDefaultHeroPhoto(url, meta, input.sector);
     if (!best || score > best.score) best = { url, score };
   }
-  return best && best.score > 40 ? best : null;
+  if (!best) return null;
+  // Ideal bar for a dedicated "hero" lock — keep when available.
+  if (best.score > 40) return best;
+  // Soft fallback: any non-logo brand photo beats fal-without-venue.
+  if (best.score > -80) return best;
+  return null;
+}
+
+/** Last-resort: any unused usable gallery URL (never leave a venue template photo-less). */
+function pickAnyUnusedGalleryPhoto(
+  input: DesignTemplateEngineInput,
+  usedUrls: Set<string>,
+): { url: string; score: number } | null {
+  for (const url of input.galleryPhotoUrls) {
+    if (!isUsableGalleryPhotoUrl(url)) continue;
+    const n = normalizeGalleryUrl(url);
+    if (usedUrls.has(n) || usedUrls.has(url)) continue;
+    return { url, score: 1 };
+  }
+  // If every photo was already used in this set, reuse the first usable one.
+  const first = input.galleryPhotoUrls.find((url) => isUsableGalleryPhotoUrl(url));
+  return first ? { url: first, score: 1 } : null;
 }
 
 /**
@@ -284,9 +336,10 @@ export function resolveDefaultTemplateHeroPhoto(input: DesignTemplateEngineInput
  * Prefers photos whose vision-tagged `suggestedAssetType` matches the preset's
  * preferred types; falls back to the full pool. Uses the gallery matcher for
  * semantic scoring and excludes already-used photos so the template set covers
- * varied imagery.
+ * varied imagery. Always returns a gallery URL when the brand has photos —
+ * venue sectors must never generate Ideogram-only templates.
  */
-function pickPhotoForPreset(
+export function pickPhotoForPreset(
   preset: DesignTemplatePreset,
   input: DesignTemplateEngineInput,
   usedUrls: Set<string>,
@@ -318,7 +371,8 @@ function pickPhotoForPreset(
     );
     if (match) return { url: match.url, score: match.score };
   }
-  return null;
+
+  return pickAnyUnusedGalleryPhoto(input, usedUrls);
 }
 
 /** Resolve the headline/subtitle/sceneHint for a preset, special-day aware. */
@@ -485,7 +539,9 @@ async function generateOne(
     && !usedUrls.has(defaultHeroPhoto.url)
     ? defaultHeroPhoto
     : null;
-  const picked = matchedPhoto ?? heroFallback ?? null;
+  // pickPhotoForPreset already hard-falls back to any gallery URL; hero is a
+  // secondary anchor when the matcher skipped (empty pool edge cases).
+  const picked = matchedPhoto ?? heroFallback ?? pickAnyUnusedGalleryPhoto(input, usedUrls);
   if (picked?.url) usedUrls.add(normalizeGalleryUrl(picked.url));
   const briefFormat = preset.format === 'reel_cover'
     ? 'reel'

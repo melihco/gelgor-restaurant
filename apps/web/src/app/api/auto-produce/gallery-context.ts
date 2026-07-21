@@ -86,7 +86,10 @@ export async function fetchGalleryContext(
   let refs: string[] = parseBrandReferenceUrls(brandCtxRaw.reference_image_urls);
 
   const analysisKeys = filterGalleryAnalysisKeys(metaRaw as Record<string, unknown>);
-  let candidates = refs.length > 0 ? refs : analysisKeys;
+  // Union refs + analyzed keys. Preferring refs alone dropped tenant R2 uploads
+  // (`/api/media?key=…`) whenever website crawl URLs were still on the profile —
+  // Gel Gör had 12 gallery photos in analysis but template gen only saw 5 site URLs.
+  let candidates = Array.from(new Set([...refs, ...analysisKeys]));
 
   // Remove known non-photo patterns (logos, maps, etc.)
   candidates = filterUsableGalleryPhotoUrls(

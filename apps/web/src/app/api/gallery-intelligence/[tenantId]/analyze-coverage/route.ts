@@ -14,6 +14,7 @@ import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import { parseStringOrArray, filterUsablePhotos } from '@/lib/brand-readiness';
 import { galleryUrlIdentityKey } from '@/lib/gallery-display-url';
+import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import type { GalleryPhotoAnalysis } from '@/app/api/analyze-gallery/route';
 
 export const runtime = 'nodejs';
@@ -71,7 +72,11 @@ export async function POST(
     : {}) as Record<string, Partial<GalleryPhotoAnalysis>>;
   const existingKeys = new Set(Object.keys(existing).map(normalizeKey));
 
-  const usablePhotos = filterUsablePhotos(parseStringOrArray(ctx.reference_image_urls), ctx.logo_url);
+  const refPhotos = filterUsablePhotos(parseStringOrArray(ctx.reference_image_urls), ctx.logo_url);
+  // Include gallery-analysis keys (tenant R2 /api/media uploads) — refs alone can be
+  // a short website-crawl list that omits manually uploaded brand photos.
+  const analysisPhotoUrls = Object.keys(existing).filter((u) => isUsableGalleryPhotoUrl(u));
+  const usablePhotos = Array.from(new Set([...refPhotos, ...analysisPhotoUrls]));
 
   // 2. Determine missing URLs.
   const missing = body.forceReanalyze
