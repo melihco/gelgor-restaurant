@@ -35,6 +35,30 @@ const FOOD_ONLY_META: GalleryPhotoMeta = {
   bestFor: ['food_showcase'],
 };
 
+describe('captionPhotoConflictPenalty — drink vs food', () => {
+  it('hard-vetoes cocktail caption against plated meat photo', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'Yazın serinletici kokteyllerine hazır mısın? Hadi tatlarına bak!',
+        'steak meat beef plate dish food grilled herbs fork dining',
+      ),
+    ).toBe(true);
+    const penalty = captionPhotoConflictPenalty(
+      'Vibrant cocktail with a refreshing appearance. Serinletici yaz kokteylleri.',
+      'food dish plate steak meat roast beef kitchen',
+    );
+    expect(penalty).toBeGreaterThanOrEqual(HARD_CAPTION_PHOTO_CONFLICT);
+  });
+
+  it('does not penalize cocktail caption against drink photo', () => {
+    const penalty = captionPhotoConflictPenalty(
+      'Yazın serinletici kokteyllerine hazır mısın?',
+      'cocktail drink glass bar beverage ice garnish',
+    );
+    expect(penalty).toBe(0);
+  });
+});
+
 describe('captionPhotoConflictPenalty — nightlife vs food', () => {
   it('hard-vetoes DJ caption against food-only gallery meta', () => {
     const penalty = captionPhotoConflictPenalty(

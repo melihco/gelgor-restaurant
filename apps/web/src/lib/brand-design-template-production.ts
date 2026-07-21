@@ -16,6 +16,7 @@ import {
 } from '@/lib/brand-design-template-matcher';
 import type { BrandActiveSlotSet } from '@/lib/brand-active-slot-resolver';
 import { collectTemplatePlaceholderTexts } from '@/lib/template-placeholder-guard';
+import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 
 export interface BrandTemplateFalBinding {
   matched: MatchedDesignTemplate | null;
@@ -288,7 +289,10 @@ export async function bindBrandTemplateForFalProduction(input: {
       brandDirectives: [
         ...buildTemplateLayoutDirectives(matched, {
           headline: input.headline,
-          subtitle: input.subtitle ?? input.caption,
+          // Never fall back to full caption as subline; respect template showSubline flag.
+          subtitle: resolveSlotSublineForRender(input.subtitle, {
+            matchedShowSubline: matched.showSubline,
+          }),
         }),
         ...dropConflictingLayoutDirectives(input.baseDirectives, matched),
       ],
@@ -311,6 +315,8 @@ export interface TemplateReplicaSpec {
   prompt: string;
   sampleHeadline: string | null;
   sampleSubtitle: string | null;
+  /** false → replica prompt forces NO SUBTITLE */
+  showSubline?: boolean;
   forbiddenTexts: string[];
   format?: 'story' | 'post' | 'reel';
 }
@@ -460,6 +466,7 @@ export function templateReplicaSpecFromBinding(
     prompt: normalizeLibraryPromptForFormat(prompt, format),
     sampleHeadline: matched.sampleHeadline ?? null,
     sampleSubtitle: matched.sampleSubtitle ?? null,
+    showSubline: matched.showSubline !== false,
     forbiddenTexts: collectTemplatePlaceholderTexts(matched),
     format,
   };
@@ -474,9 +481,12 @@ export function templateReplicaSpecFromBinding(
 export function buildTemplateReplicaPrompt(
   spec: TemplateReplicaSpec,
   mission: { headline: string; subtitle?: string | null },
+  opts?: { showSubline?: boolean | null },
 ): string {
   let prompt = spec.prompt.trim();
-  const missionSubtitle = (mission.subtitle ?? '').trim();
+  const missionSubtitle = resolveSlotSublineForRender(mission.subtitle, {
+    matchedShowSubline: opts?.showSubline ?? spec.showSubline,
+  }) ?? '';
 
   const swap = (from: string | null, to: string) => {
     const needle = from?.trim();

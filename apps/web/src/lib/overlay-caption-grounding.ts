@@ -135,6 +135,8 @@ export function rebiasUngroundedOverlayCopy(input: {
   businessType?: string;
   channel: 'reel' | 'feed_post' | 'story';
   cta?: string;
+  /** Keep calendar/mission punchline — do not replace with caption-derived hook. */
+  preserveHeadline?: boolean;
 }): { headline: string; subtitle?: string; rebased: boolean } {
   const caption = input.caption.trim();
   const brandName = (input.brandName ?? '').trim();
@@ -146,8 +148,11 @@ export function rebiasUngroundedOverlayCopy(input: {
   const subtitleWasGeneric = Boolean(subtitle && isGenericRetailOverlayCta(subtitle, caption));
 
   const headlineBad =
-    !overlayHeadlineGroundedInCaption(headline, caption)
-    || isOffTopicTourismOverlay(headline, caption, input.businessType);
+    !input.preserveHeadline
+    && (
+      !overlayHeadlineGroundedInCaption(headline, caption)
+      || isOffTopicTourismOverlay(headline, caption, input.businessType)
+    );
 
   if (headlineBad && caption.length >= 16) {
     const productHook = extractProductBiasedCaptionHook(

@@ -65,6 +65,8 @@ export interface BrandTemplateLibrarySlot {
   bodyFont?: string;
   /** false = bu slotta logo gösterilmez (varsayılan: göster) */
   showLogo?: boolean;
+  /** false = bu slotta subline/alt yazı gösterilmez (varsayılan: göster) */
+  showSubline?: boolean;
 }
 
 export interface BrandTemplateLibrary {
@@ -954,7 +956,7 @@ export function patchLibrarySlot(
   slotKey: string,
   patch: Partial<Pick<
     BrandTemplateLibrarySlot,
-    'storyTemplateId' | 'posterTemplateId' | 'enabled' | 'fontMode' | 'fontPersonality' | 'headingFont' | 'bodyFont' | 'showLogo'
+    'storyTemplateId' | 'posterTemplateId' | 'enabled' | 'fontMode' | 'fontPersonality' | 'headingFont' | 'bodyFont' | 'showLogo' | 'showSubline'
   >>,
 ): BrandTemplateLibrary {
   return validateLibrarySlotIds({
@@ -978,6 +980,7 @@ export function validateLibrarySlotIds(library: BrandTemplateLibrary): BrandTemp
         ...typoBackfill,
         fontMode: slot.fontMode ?? 'brand',
         showLogo: slot.showLogo ?? true,
+        showSubline: slot.showSubline ?? true,
       };
     }),
   };

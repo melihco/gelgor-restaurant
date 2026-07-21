@@ -867,8 +867,15 @@ function buildDesignedDesignCardPrompt(
 
   const captionAnchor = (input.caption ?? '').trim().slice(0, 220);
   const captionMessageLock = captionAnchor
-    ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, or nightlife copy for a food caption). Never paint calendar/signal labels like season names, "15 Temmuz", "plaj/havuz", or internal strategy phrases — ONLY the contracted headline/subtitle below.`
+    ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, nightlife copy for a food caption, or plated-meat heroes for a cocktail caption). Never paint calendar/signal labels like season names, "15 Temmuz", "plaj/havuz", or internal strategy phrases — ONLY the contracted headline/subtitle below.`
     : '';
+  const designHarmonyLock = [
+    'DESIGN HARMONY LOCK (mandatory): Photo subject, on-canvas headline, supporting line, logo zone, and color craft must read as ONE boutique-agency composition.',
+    'The hero photo MUST depict the same topic as the headline/caption (cocktail post → drink/glass; food post → plated food; DJ → nightlife — never mix).',
+    'Paint the HEADLINE string EXACTLY as contracted — do not invent romantic fillers ("özlemle", "sizi bekliyoruz") or brand-name slogans.',
+    'Logo: official mark only in its reserved quiet corner; never compete with the headline or cover the product hero.',
+    'Typography hierarchy: one dominant punchline, optional short support — not two competing poster slogans.',
+  ].join(' ');
   const premiumBar = premiumVenue
     ? 'PREMIUM BAR: Global luxury hospitality Instagram standard — generous breathing room, intentional type hierarchy, photo as hero, zero clutter, zero emoji-as-design, zero festival flyer energy. If it could belong to a mid-tier Canva template pack, reject that look.'
     : 'PREMIUM BAR: Agency-grade Instagram design — intentional hierarchy, brand-true color, no amateur system-font dump.';
@@ -890,6 +897,8 @@ function buildDesignedDesignCardPrompt(
     caption: input.caption,
     channel: canvasChannel,
     lockIdeationCopy: input.captionAwareHeadline !== true,
+    // Mission/calendar punchlines are authoritative — never rebias to caption stubs.
+    preservePlannedHeadline: input.captionAwareHeadline !== true,
   });
   const safeHeadline = overlayCopy.headline;
   const safeSubtitle = overlayCopy.subtitle;
@@ -1002,6 +1011,7 @@ function buildDesignedDesignCardPrompt(
     onCanvasTextContract,
     FAL_SUBJECT_CLEARANCE_DIRECTIVE,
     captionMessageLock,
+    designHarmonyLock,
     logoBlock,
     isVertical
       ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping.'
@@ -1385,12 +1395,13 @@ export async function produceFalDesignerStill(
         replicaPrompt = buildTemplateReplicaPrompt(input.templateReplica, {
           headline: displayHeadline,
           subtitle: captionSubtitle,
-        });
+        }, { showSubline: input.templateReplica.showSubline });
       }
+      const replicaSublineOff = input.templateReplica?.showSubline === false;
       const groundedPrompt = replicaPrompt ?? buildPrompt({
         vibe: input.vibe,
         headline: displayHeadline,
-        subtitle: captionSubtitle,
+        subtitle: replicaSublineOff ? undefined : captionSubtitle,
         caption: input.caption,
         sceneHint: input.sceneHint,
         brandColors: input.brandColors,

@@ -143,19 +143,28 @@ export function resolveIdeationHeadline(rec: Record<string, unknown>): string {
  * Mission-planned on-canvas tagline — the quoted line in calendar/ideation cards
  * ("Taste the essence of summer."). Separate from concept title / headline.
  */
+function unwrapIdeationQuote(raw: string): string {
+  const clean = raw.trim();
+  const m = clean.match(/^[«"„“‘'](.+?)[»"”’']$/);
+  return (m?.[1] ?? clean).trim();
+}
+
 export function resolveIdeationTagline(rec: Record<string, unknown>): string {
   const canva = (rec.canva_field_copy ?? rec.canvaFieldCopy) as Record<string, unknown> | undefined;
+  // Punchline fields only — canva.headline is handled by extractIdeationDesignCopy
+  // (pack mirrors tagline → canva.headline, but root `tagline` remains SSOT).
   const fromCanva = canva
-    ? firstStr(canva, 'tagline', 'subtitle', 'subline', 'supporting')
+    ? firstStr(canva, 'tagline', 'subline', 'supporting')
     : '';
   const fromEvent = (rec.event_details as Record<string, unknown> | undefined)?.tagline;
-  return firstStr(
+  const raw = firstStr(
     rec,
     'tagline',
     'subline',
   )
     || (typeof fromEvent === 'string' ? fromEvent.trim() : '')
     || fromCanva;
+  return unwrapIdeationQuote(raw);
 }
 
 /**

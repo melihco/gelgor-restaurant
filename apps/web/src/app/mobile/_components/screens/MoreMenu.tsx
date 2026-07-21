@@ -302,30 +302,37 @@ export function MoreMenuPanel({
         </div>
       ))}
 
-      {/* ─── Logout ───────────────────────────────────────────────────── */}
-      <div style={{ padding: `18px ${horizontalPadding}px 0` }}>
+      {/* ─── Logout — same compact row height as hub tiles ─────────────── */}
+      <div style={{ padding: `6px ${horizontalPadding}px 0` }}>
         <button
+          type="button"
+          className="brand-hub-tile"
           onClick={handleLogout}
           disabled={loggingOut}
           style={{
-            width: '100%', padding: '13px 16px', borderRadius: 16,
+            width: '100%',
             cursor: loggingOut ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', gap: 12,
+            display: 'flex',
+            alignItems: 'center',
             background: t.dangerDim,
-            border: `0.5px solid rgba(248,113,113,0.20)`,
+            border: '0.5px solid rgba(248,113,113,0.20)',
             opacity: loggingOut ? 0.55 : 1,
             transition: 'opacity 160ms ease',
           }}
         >
-          <div style={{
-            width: 34, height: 34, borderRadius: 10,
-            background: 'rgba(248,113,113,0.12)',
-            border: '0.5px solid rgba(248,113,113,0.20)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+          <div
+            className="brand-hub-tile__icon"
+            style={{
+              background: 'rgba(248,113,113,0.12)',
+              border: '0.5px solid rgba(248,113,113,0.20)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
             <IcoLogout size={15} color={t.danger} />
           </div>
-          <span style={{ fontSize: 14, fontWeight: 700, color: t.danger, letterSpacing: '-0.01em' }}>
+          <span className="brand-hub-tile__label" style={{ color: t.danger }}>
             {loggingOut ? 'Çıkış yapılıyor…' : 'Çıkış Yap'}
           </span>
         </button>

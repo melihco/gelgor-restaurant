@@ -26,7 +26,19 @@ const EVENT_PHOTO_HINTS = [
 
 const DRINK_PHOTO_HINTS = [
   'cocktail', 'cocktails', 'drink', 'beverage', 'bar', 'wine', 'champagne', 'beer',
-  'kokteyl', 'içecek', 'icecek', 'glass', 'bottle', 'spirits',
+  'kokteyl', 'içecek', 'icecek', 'glass', 'bottle', 'spirits', 'mocktail', 'aperol',
+];
+
+/** Caption / tagline signals that the on-canvas topic is drink/cocktail (not plated food). */
+const DRINK_CAPTION_HINTS = [
+  'cocktail', 'cocktails', 'kokteyl', 'kokteyller', 'mocktail', 'drink', 'drinks',
+  'beverage', 'bar', 'wine', 'champagne', 'beer', 'içecek', 'icecek', 'aperitif',
+  'serinletici', 'serinletici yaz', 'happy hour',
+];
+
+const MEAT_FOOD_PHOTO_HINTS = [
+  'steak', 'meat', 'beef', 'lamb', 'grill', 'bbq', 'roast', 'burger', 'et', 'ızgara',
+  'izgara', 'biftek', 'kırmızı et', 'kirmizi et', 'kebap', 'kebab', 'pirzola',
 ];
 
 /** Strong nightlife intent in caption (DJ / party / live music). */
@@ -153,6 +165,7 @@ export function captionRequiresStrictGalleryMatch(
 ): boolean {
   const text = `${caption} ${headline}`.toLowerCase();
   if (textHits(text, NIGHTLIFE_CAPTION_HINTS) >= 1) return true;
+  if (textHits(text, DRINK_CAPTION_HINTS) >= 1) return true;
   if (textHits(text, FOOD_CAPTION_HINTS) >= 2) return true;
   if (textHits(text, BEAUTY_NAIL_CAPTION) >= 1) return true;
   if (textHits(text, BEAUTY_LASH_CAPTION) >= 1) return true;
@@ -183,6 +196,16 @@ export function captionPhotoConflictPenalty(
   }
   if (captionFood >= 1 && photoDrink >= 1 && photoFood === 0 && photoEvent === 0) {
     return 28;
+  }
+
+  // Reverse: cocktail/drink caption or punchline must not land on plated food/meat heroes.
+  const captionDrink = textHits(caption, DRINK_CAPTION_HINTS);
+  const photoMeat = textHits(photo, MEAT_FOOD_PHOTO_HINTS);
+  if (captionDrink >= 1 && photoFood >= 1 && photoDrink === 0) {
+    return photoMeat >= 1 || captionDrink >= 2 ? 72 : 48;
+  }
+  if (captionDrink >= 1 && photoMeat >= 1) {
+    return 72;
   }
   const emptyVenue =
     (photo.includes('interior') || photo.includes('seating') || photo.includes('booth')

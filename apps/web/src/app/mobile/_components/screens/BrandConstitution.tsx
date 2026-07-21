@@ -471,49 +471,6 @@ function cleanProfileText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function uniqueNonEmpty(items: Array<unknown>): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of items) {
-    const text = cleanProfileText(item);
-    if (!text) continue;
-    const key = text.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(text);
-  }
-  return out;
-}
-
-function buildAiBrandDescription(input: {
-  brandName: string;
-  industry: string;
-  location?: string;
-  websiteSummary?: string;
-  instagramBio?: string;
-  targetAudience?: string;
-  brandTone?: string;
-  visualStyle?: string;
-  contentPillars?: string[];
-  defaultCtas?: string[];
-}): string {
-  const intro = uniqueNonEmpty([
-    input.brandName && `${input.brandName}${input.location ? `, ${input.location}` : ''} merkezli ${input.industry || 'yerel işletme'} markasıdır.`,
-    input.websiteSummary,
-    input.instagramBio && `Instagram bio: ${input.instagramBio}`,
-  ]).join(' ');
-
-  const productionContext = uniqueNonEmpty([
-    input.targetAudience && `Hedef kitle: ${input.targetAudience}.`,
-    input.brandTone && `Marka tonu: ${input.brandTone}.`,
-    input.visualStyle && `Görsel dünya: ${input.visualStyle}.`,
-    input.contentPillars?.length ? `İçerik üretiminde ana odaklar: ${input.contentPillars.slice(0, 8).join(', ')}.` : '',
-    input.defaultCtas?.length ? `Kampanya ve CTA yönü: ${input.defaultCtas.slice(0, 6).join(', ')}.` : '',
-  ]).join(' ');
-
-  return uniqueNonEmpty([intro, productionContext]).join('\n\n').slice(0, 1900);
-}
-
 // ─── Inline field editor (iOS Settings row) ─────────────────────────────
 function formatChannelDisplay(raw: string): string {
   const value = raw.trim();
@@ -3311,19 +3268,59 @@ export function BrandConstitution() {
         || cleanProfileText(analysis.inferred_industry)
         || cleanProfileText(ctx.business_type)
         || cleanProfileText(ctx.industry);
-      const nextDescription = buildAiBrandDescription({
-        brandName: cleanProfileText(current.brandName || ctx.business_name),
-        industry,
-        location: cleanProfileText(current.location || ctx.location),
-        websiteSummary: cleanProfileText(analysis.website_summary || ctx.website_summary || ctx.description),
-        instagramBio: cleanProfileText(analysis.instagram_bio || ctx.instagram_bio),
-        targetAudience: cleanProfileText(current.targetAudience || ctx.target_audience),
-        brandTone: cleanProfileText(analysis.inferred_tone || ctx.brand_tone || current.brandTone),
-        visualStyle: cleanProfileText(current.visualStyle || ctx.visual_style),
-        contentPillars: pillars,
-        defaultCtas: ctas,
-      });
+      const langRaw = String(current.languages || (pyCtx as Record<string, unknown> | undefined)?.languages || 'tr')
+        .split(',')[0]
+        ?.trim()
+        .toLowerCase() || 'tr';
+      const language = langRaw.startsWith('en') ? 'en' : 'tr';
 
+      const sp = ctx.brand_service_profile;
+      const signatureOfferings = Array.isArray((sp as Record<string, unknown> | undefined)?.signature_offerings)
+        ? ((sp as Record<string, unknown>).signature_offerings as unknown[])
+            .map((x) => cleanProfileText(x))
+            .filter(Boolean)
+        : [];
+
+      const synthRes = await fetchTenantBff(
+        `/api/brand-context/${tenantId}/synthesize-description`,
+        tenantId,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getTenantBffHeaders(tenantId),
+          },
+          body: JSON.stringify({
+            language,
+            brandName: cleanProfileText(current.brandName || ctx.business_name),
+            industry,
+            location: cleanProfileText(current.location || ctx.location),
+            websiteSummary: cleanProfileText(analysis.website_summary || ctx.website_summary || ctx.description),
+            instagramBio: cleanProfileText(analysis.instagram_bio || ctx.instagram_bio),
+            googleDescription: cleanProfileText(ctx.google_description),
+            targetAudience: cleanProfileText(current.targetAudience || ctx.target_audience),
+            brandTone: cleanProfileText(analysis.inferred_tone || ctx.brand_tone || current.brandTone),
+            contentPillars: pillars,
+            defaultCtas: ctas,
+            signatureOfferings,
+          }),
+        },
+      );
+      const synthJson = (await synthRes.json().catch(() => ({}))) as {
+        description?: string;
+        message?: string;
+        error?: string;
+      };
+      if (!synthRes.ok) {
+        throw new Error(
+          synthJson.message || synthJson.error || 'AI açıklama sentezi başarısız oldu.',
+        );
+      }
+      const nextDescription = String(synthJson.description ?? '')
+        .replace(/\r/g, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
       if (!nextDescription) throw new Error('AI analizinden açıklama üretilemedi.');
 
       const updates: Partial<SaveCompanyProfileRequest> = {
@@ -3351,7 +3348,10 @@ export function BrandConstitution() {
       return nextDescription;
     },
     onSuccess: () => {
-      setDescriptionAiFeedback({ kind: 'ok', text: 'AI açıklaması oluşturuldu ve kaydedildi.' });
+      setDescriptionAiFeedback({
+        kind: 'ok',
+        text: 'AI açıklama + ürün/hizmet listesi oluşturuldu ve kaydedildi.',
+      });
       queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
       void invalidateBrandContextWriteQueries(queryClient, tenantId);
       setSaved(true);
@@ -4071,7 +4071,7 @@ export function BrandConstitution() {
                       value={descriptionDisplay}
                       onSave={save('description')}
                       multiline
-                      hint="Markanızı tanımlayın; ürün/hizmet kataloğunu da buraya ekleyin."
+                      hint="Önce kısa marka tanımı; ardından Ürünler / Hizmetler listesi (gerçekte sunduklarınız)."
                     />
                   </div>
                 </div>

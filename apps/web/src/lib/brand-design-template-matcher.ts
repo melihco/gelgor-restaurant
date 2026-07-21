@@ -55,6 +55,11 @@ export interface MatchedDesignTemplate {
   /** Preview placeholder headline — forbidden in production output. */
   sampleHeadline?: string | null;
   sampleSubtitle?: string | null;
+  /**
+   * When false, production must not paint a supporting subline for this template.
+   * Persisted on design_spec.showSubline (default true when unset).
+   */
+  showSubline?: boolean;
   layoutPattern?: string | null;
   designBriefDirectives?: string[];
   canvaArchetypeId?: string | null;
@@ -652,6 +657,12 @@ export async function matchDesignTemplateToSlot(
     directive: buildDirective(r),
     sampleHeadline: typeof sd.sampleHeadline === 'string' ? sd.sampleHeadline : null,
     sampleSubtitle: typeof sd.sampleSubtitle === 'string' ? sd.sampleSubtitle : null,
+    showSubline: (() => {
+      const raw = sd.showSubline ?? sd.show_subline;
+      if (typeof raw === 'boolean') return raw;
+      // Unset → enabled (legacy templates keep current dual-line behaviour).
+      return true;
+    })(),
     layoutPattern: typeof sd.layoutPattern === 'string' ? sd.layoutPattern : null,
     designBriefDirectives: Array.isArray(sd.designBriefDirectives)
       ? sd.designBriefDirectives.filter((line): line is string => typeof line === 'string')

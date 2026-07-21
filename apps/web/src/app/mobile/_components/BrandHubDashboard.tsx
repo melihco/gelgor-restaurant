@@ -452,39 +452,6 @@ export function BrandHubDashboard({
               {[industryLabel, locationLabel].filter(Boolean).join(' · ')}
             </p>
           )}
-
-          {/* Only when incomplete — bare corner "100" was meaningless next to the logo */}
-          {readinessScore < 100 && (
-            <button
-              type="button"
-              className="brand-hub-hero-readiness"
-              onClick={() => onOpenSection('identity')}
-              aria-label={`Profil hazırlığı ${readinessScore} — Marka Profiline git`}
-              style={{
-                marginTop: 2,
-                minHeight: 36,
-                padding: '0 12px',
-                borderRadius: 999,
-                border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.35)' : 'rgba(217,119,6,0.28)'}`,
-                background: t.isDark ? 'rgba(245,158,11,0.12)' : 'rgba(255,251,235,0.9)',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                color: t.textPrimary,
-              }}
-            >
-              <ReadinessRing
-                score={readinessScore}
-                size={18}
-                accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
-                track={t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)'}
-              />
-              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em' }}>
-                Hazırlık {readinessScore}
-              </span>
-            </button>
-          )}
         </div>
 
         <div className="brand-hub-hero-rule" aria-hidden style={{ marginTop: 16 }} />
@@ -559,6 +526,49 @@ export function BrandHubDashboard({
               t={t}
               onOpen={(tab) => onOpenSection(tab)}
             />
+            {item.key === 'identity' && readinessScore < 100 && (
+              <button
+                type="button"
+                className="brand-hub-tile-readiness"
+                onClick={() => onOpenSection('identity')}
+                aria-label={`Profil hazırlığı ${readinessScore} — Marka Profiline git`}
+                style={{
+                  width: '100%',
+                  minHeight: 36,
+                  padding: '0 14px 10px',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                }}
+              >
+                <span
+                  style={{
+                    minHeight: 28,
+                    padding: '0 10px',
+                    borderRadius: 999,
+                    border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.35)' : 'rgba(217,119,6,0.28)'}`,
+                    background: t.isDark ? 'rgba(245,158,11,0.12)' : 'rgba(255,251,235,0.9)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    color: t.textPrimary,
+                  }}
+                >
+                  <ReadinessRing
+                    score={readinessScore}
+                    size={16}
+                    accent={readinessGood ? SA_CHROME.steel300 : '#F59E0B'}
+                    track={t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)'}
+                  />
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                    Hazırlık {readinessScore}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
         ))}
       </div>

@@ -158,6 +158,12 @@ export interface FalOverlayCopyInput {
   channel: 'reel' | 'feed_post' | 'story';
   /** Mission production: render ideation headline + CTA verbatim (no caption hook rewrite). */
   lockIdeationCopy?: boolean;
+  /**
+   * When true, keep the planned mission/calendar headline verbatim —
+   * do not rebias to a caption substring (punchy quotes like "Hadi tatlarına bak!"
+   * are intentional and often not literal caption slices).
+   */
+  preservePlannedHeadline?: boolean;
   brandName?: string;
   businessType?: string;
 }
@@ -226,21 +232,27 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
   let subtitle: string | undefined;
 
   if (input.lockIdeationCopy !== false) {
-    const themeFix = resolveCaptionAlignedOverlayWhenThemeConflicts({
-      caption: input.caption ?? '',
-      headline: rawHeadline,
-      cta: input.cta,
-      channel: input.channel,
-      targetLocale,
-    });
-    if (themeFix) {
-      return themeFix;
+    // Planned calendar/mission quotes win even when theme heuristics disagree —
+    // never replace "Hadi tatlarına bak!" with a caption rewrite.
+    if (!input.preservePlannedHeadline) {
+      const themeFix = resolveCaptionAlignedOverlayWhenThemeConflicts({
+        caption: input.caption ?? '',
+        headline: rawHeadline,
+        cta: input.cta,
+        channel: input.channel,
+        targetLocale,
+      });
+      if (themeFix) {
+        return themeFix;
+      }
     }
 
     headline = correctTurkishSpelling(rawHeadline, {
       locale: detectOverlayLocale(rawHeadline) === 'unknown' ? targetLocale : detectOverlayLocale(rawHeadline),
     });
-    headline = resolveFalProductionOverlayHeadline(headline, [], input.channel);
+    headline = input.preservePlannedHeadline
+      ? (clampMissionTaglineForCanvas(headline, input.channel) || headline)
+      : resolveFalProductionOverlayHeadline(headline, [], input.channel);
     if (rawCta && isMeaningfulFalOverlayText(rawCta) && !areFalOverlayTextsRedundant(headline, rawCta)) {
       const ctaLoc = detectOverlayLocale(rawCta);
       if (localesCompatible(targetLocale, ctaLoc) && !isGenericRetailOverlayCta(rawCta, input.caption ?? '')) {
@@ -248,6 +260,20 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
           ? correctTurkishSpelling(rawCta, { locale: 'tr' })
           : rawCta;
       }
+    }
+    if (input.preservePlannedHeadline) {
+      // May still clean a generic retail subtitle — never rewrite the headline.
+      const rebased = rebiasUngroundedOverlayCopy({
+        headline,
+        subtitle,
+        caption: input.caption ?? '',
+        brandName: input.brandName,
+        businessType: input.businessType,
+        channel: input.channel,
+        cta: input.cta,
+        preserveHeadline: true,
+      });
+      return { headline: rebased.headline, subtitle: rebased.subtitle };
     }
     const rebased = rebiasUngroundedOverlayCopy({
       headline,
@@ -601,8 +627,11 @@ export function sanitizeFalOverlayText(raw: string | undefined | null): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Drop leading/trailing punctuation left after stripping
+  // Keep terminal !/? for punchy calendar quotes ("Hadi tatlarına bak!");
+  // still strip leading junk and trailing commas/periods/colons.
+  const endPunch = text.match(/([!?]+)$/)?.[1]?.charAt(0) ?? '';
   text = text.replace(/^[\s\-–—:;,.!?]+|[\s\-–—:;,.!?]+$/g, '').trim();
+  if (endPunch && !/[!?]$/.test(text)) text = `${text}${endPunch}`;
 
   const lower = text.toLowerCase();
   if (PROMPT_LEAK_WORDS.has(lower)) return '';
@@ -1047,8 +1076,9 @@ export function buildFalOnCanvasTextContract(input: {
   lines.push(
     'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, apostrophes inside words, extra slogans, URLs, hashtags, dates, auto-translation, mixed-language lines, or any text not listed above.',
     'FORBIDDEN META WORDS on canvas: never paint "STORY", "REEL", "POST", "INSTAGRAM", "TIKTOK", "FEED", "ÜNLÜ", "VIRAL", "SHARE", or any platform/format label — only the quoted headline/subtitle above.',
+    'FORBIDDEN FILLER SLOGANS: never invent brand-wait lines like "sizi bekliyoruz", "özlemle", "buradayız", or paraphrase the headline into a different marketing sentence.',
     'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
-    'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, or nightlife copy for a food caption.',
+    'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, nightlife copy for a food caption, or food-plate copy for a cocktail caption.',
     'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec" or "Sinirli sure".',
     'If space is tight, shrink typography — never invent alternate wording or truncate mid-word.',
   );

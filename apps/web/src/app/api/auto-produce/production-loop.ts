@@ -244,6 +244,7 @@ import {
   type PremiumCompositionMeta,
 } from './production-candidate-types';
 import { resolveSlotLogoForRender } from '@/lib/brand-logo-production';
+import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 import {
   fetchBrandThemeForProduction,
   resolveProductionVisualStandard,
@@ -1348,8 +1349,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           );
           headline = designCopy.headline;
         }
-        if (designCopy.subtitle?.trim()) {
-          cta = designCopy.subtitle.trim();
+        const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {
+          librarySlot: assignment.library_slot_key
+            ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
+            : undefined,
+        });
+        if (gatedSub) {
+          cta = gatedSub;
+        } else if (designCopy.subtitle?.trim()) {
+          // Slot/template closed subline — drop support line entirely.
+          cta = '';
         }
       }
     }
@@ -3331,7 +3340,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       headline = calendarEventOverlay.headline;
       ideationHeadline = calendarEventOverlay.headline;
     }
-    const falCalendarSubtitle = isCalendarSlot
+    const falTypoSlot = assignment.library_slot_key
+      ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
+      : undefined;
+    const falCalendarSubtitleRaw = isCalendarSlot
       ? (
         calendarEventOverlay?.subtitle
         ?? String(
@@ -3341,9 +3353,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ).trim()
       ) || undefined
       : undefined;
-    const falTypoSlot = assignment.library_slot_key
-      ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
-      : undefined;
+    // Library slot showSubline=false → never paint calendar support line.
+    const falCalendarSubtitle = resolveSlotSublineForRender(falCalendarSubtitleRaw, {
+      librarySlot: falTypoSlot,
+    });
     const falSlotTypography = usesFalDesignerTrack
       ? resolveSlotRenderTypography({
         slot: {

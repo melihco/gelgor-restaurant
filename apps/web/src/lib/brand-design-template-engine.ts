@@ -176,6 +176,8 @@ export interface GeneratedDesignTemplate {
     brandColors: { primary: string; accent: string };
     sampleHeadline: string;
     sampleSubtitle?: string;
+    /** false = headline-only layout for this template slot */
+    showSubline?: boolean;
     galleryRef: string | null;
     galleryMatchScore: number | null;
     intent: string;
@@ -787,6 +789,8 @@ async function generateOne(
       brandColors: input.brandColors,
       sampleHeadline: headline,
       sampleSubtitle: subtitle,
+      // Headline-only presets persist showSubline=false so production never invents a support line.
+      showSubline: Boolean(String(subtitle ?? '').trim()),
       galleryRef: picked?.url ?? null,
       galleryMatchScore: picked?.score ?? null,
       defaultHeroPhotoLock: Boolean(defaultHeroPhoto),

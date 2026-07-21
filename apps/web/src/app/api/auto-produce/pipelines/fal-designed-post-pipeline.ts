@@ -35,6 +35,7 @@ import {
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
+import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
@@ -190,7 +191,9 @@ export async function produceFalDesignedPost(
         businessType: input.sector,
       });
       const canvasHeadline = overlayCopy.headline;
-      const dedupedSubtitle = overlayCopy.subtitle;
+      const dedupedSubtitle = resolveSlotSublineForRender(overlayCopy.subtitle, {
+        matchedShowSubline: binding.matched?.showSubline,
+      });
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
@@ -515,6 +518,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
         `[auto-produce] [fal-design] brand template "${templateBinding.matched.templateName}" (${templateBinding.matched.templateType})`,
       );
     }
+    const gatedFalSubtitle = resolveSlotSublineForRender(inputs.falSubtitle || inputs.cta, {
+      matchedShowSubline: templateBinding.matched?.showSubline,
+    });
 
     const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
     if (catalogPinned && !requiresLibraryTemplateReplica(templateBinding.matched)) {
@@ -595,7 +601,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       brandTemplateBinding: templateBinding,
       aspectRatio: inputs.falAspectRatio,
       captionAwareHeadline: inputs.captionAwareHeadline,
-      subtitle: inputs.falSubtitle,
+      subtitle: gatedFalSubtitle,
       fontPersonality: inputs.falFontPersonality,
       headingFont: inputs.falHeadingFont,
       bodyFont: inputs.falBodyFont,

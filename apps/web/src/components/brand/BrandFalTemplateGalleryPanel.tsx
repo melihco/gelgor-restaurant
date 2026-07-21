@@ -106,6 +106,8 @@ function GalleryCard({
   slotGenerating,
   onToggleSlot,
   slotSaving,
+  onToggleSubline,
+  sublineSaving,
 }: {
   row: CatalogDesignGalleryRow | null;
   template?: BrandDesignTemplateRow | null;
@@ -116,6 +118,8 @@ function GalleryCard({
   slotGenerating?: boolean;
   onToggleSlot?: (row: CatalogDesignGalleryRow, enabled: boolean) => void;
   slotSaving?: boolean;
+  onToggleSubline?: (row: CatalogDesignGalleryRow, enabled: boolean) => void;
+  sublineSaving?: boolean;
 }) {
   const tmpl = orphan ?? row?.template ?? null;
   const title = orphan
@@ -143,6 +147,10 @@ function GalleryCard({
     : null;
   const hasPreview = Boolean(previewUrl);
   const slotEnabled = row?.enabled ?? true;
+  const designSpec = (tmpl?.design_spec && typeof tmpl.design_spec === 'object'
+    ? tmpl.design_spec
+    : {}) as Record<string, unknown>;
+  const showSubline = designSpec.showSubline !== false && designSpec.show_subline !== false;
 
   return (
     <div
@@ -255,6 +263,35 @@ function GalleryCard({
             }}
           >
             {slotSaving ? 'Kaydediliyor…' : slotEnabled ? 'Slotu kapat' : 'Slotu aç'}
+          </button>
+        )}
+        {row && tmpl && onToggleSubline && slotEnabled && (
+          <button
+            type="button"
+            disabled={sublineSaving || slotGenerating || slotSaving}
+            onClick={() => onToggleSubline(row, !showSubline)}
+            aria-pressed={showSubline}
+            style={{
+              marginTop: 6,
+              width: '100%',
+              minHeight: 44,
+              padding: '7px 10px',
+              borderRadius: 8,
+              border: `1px solid ${showSubline ? t.accentBorder : t.separator}`,
+              background: showSubline
+                ? (t.isDark ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.08)')
+                : 'transparent',
+              color: showSubline ? t.accent : t.textMuted,
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: (sublineSaving || slotGenerating) ? 'wait' : 'pointer',
+            }}
+          >
+            {sublineSaving
+              ? 'Kaydediliyor…'
+              : showSubline
+                ? 'Alt yazı (subline): açık'
+                : 'Alt yazı (subline): kapalı'}
           </button>
         )}
         {row && onGenerateSlot && slotEnabled && (
@@ -458,6 +495,43 @@ export function BrandFalTemplateGalleryPanel({
   const totalSlotCount = galleryRows.length;
   const templateReadyCount = enabledRows.filter((r) => Boolean(r.template?.thumbnail_url)).length;
   const isLoading = templatesLoading || catalogLoading;
+
+  const toggleSublinePreference = async (row: CatalogDesignGalleryRow, enabled: boolean) => {
+    if (!tenantId || !row.template?.id || slotSavingKey) return;
+    setSlotSavingKey(`subline:${row.slotKey}`);
+    setStatus('');
+    try {
+      const prevSpec = (row.template.design_spec && typeof row.template.design_spec === 'object'
+        ? row.template.design_spec
+        : {}) as Record<string, unknown>;
+      const res = await fetchTenantBff(
+        `/api/brand-context/${tenantId}/design-templates/${row.template.id}`,
+        tenantId,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            design_spec: {
+              ...prevSpec,
+              showSubline: enabled,
+            },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(err.message || err.error || `HTTP ${res.status}`);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['brand-design-templates', tenantId] });
+      setStatus(enabled
+        ? `${galleryRowTitle(row)} — alt yazı açıldı`
+        : `${galleryRowTitle(row)} — alt yazı kapatıldı (yalnızca headline)`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Alt yazı ayarı kaydedilemedi');
+    } finally {
+      setSlotSavingKey(null);
+    }
+  };
 
   const toggleSlotPreference = async (row: CatalogDesignGalleryRow, enabled: boolean) => {
     if (!tenantId || slotSavingKey) return;
@@ -816,8 +890,10 @@ export function BrandFalTemplateGalleryPanel({
                 onPreviewSlot={row.enabled ? setCompareRow : undefined}
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
+                onToggleSubline={(r, enabled) => void toggleSublinePreference(r, enabled)}
                 slotGenerating={generatingSlotKey === row.slotKey}
                 slotSaving={slotSavingKey === row.slotKey}
+                sublineSaving={slotSavingKey === `subline:${row.slotKey}`}
               />
             ))}
           </div>
@@ -841,8 +917,10 @@ export function BrandFalTemplateGalleryPanel({
                 onPreviewSlot={row.enabled ? setCompareRow : undefined}
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
+                onToggleSubline={(r, enabled) => void toggleSublinePreference(r, enabled)}
                 slotGenerating={generatingSlotKey === row.slotKey}
                 slotSaving={slotSavingKey === row.slotKey}
+                sublineSaving={slotSavingKey === `subline:${row.slotKey}`}
               />
             ))}
           </div>

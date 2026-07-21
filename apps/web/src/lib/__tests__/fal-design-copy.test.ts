@@ -25,6 +25,32 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
 });
 
 describe('resolveMissionFalDesignCopy', () => {
+  it('uses quoted calendar punchline as headline (Hadi tatlarına bak!)', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        concept_title: 'Serinletici Yaz Kokteylleri!',
+        headline: 'Serinletici Yaz Kokteylleri!',
+        tagline: '"Hadi tatlarına bak!"',
+        canva_field_copy: {
+          headline: '"Hadi tatlarına bak!"',
+          subtitle: 'Serinletici Yaz Kokteylleri!',
+        },
+        caption_draft:
+          'Yazın serinletici kokteyllerine hazır mısın? Sarnıç Beach’te ferahlatıcı lezzetler seni bekliyor.',
+      },
+      ideationHeadline: 'Serinletici Yaz Kokteylleri!',
+      caption:
+        'Yazın serinletici kokteyllerine hazır mısın? Sarnıç Beach’te ferahlatıcı lezzetler seni bekliyor.',
+      brandName: 'Sarnıç Beach',
+      channel: 'feed_post',
+      businessType: 'beach_club',
+    });
+    expect(result.source).toBe('mission_tagline');
+    expect(result.headline).toMatch(/^Hadi tatlarına bak!?$/);
+    expect(result.headline.length).toBeLessThanOrEqual(48);
+    expect(result.headline.toLowerCase()).not.toMatch(/sizi bekliyoruz|özlemle|serinletici yaz/);
+  });
+
   it('uses mission tagline verbatim on story — no 28-char caption stub', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {

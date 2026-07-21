@@ -132,11 +132,15 @@ function librarySlotForAnnouncement(type: string): string | undefined {
 }
 
 export function calendarGalleryMatchCaption(idea: Record<string, unknown>): string {
-  const brief = String(idea.content_brief ?? idea.caption_draft ?? idea.caption ?? '').trim();
-  const mood = String(idea.photo_mood ?? idea.mood ?? idea.visual_direction ?? '').trim();
-  const headline = String(idea.headline ?? idea.concept_title ?? '').trim();
+  // On-canvas topic first (tagline + publish caption) so cocktail quotes don't
+  // match meat plates from a mismatched content_brief.
   const tagline = String(idea.tagline ?? idea.subline ?? '').trim();
-  return [brief, mood, tagline, headline].filter(Boolean).join(' — ');
+  const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
+  const headline = String(idea.headline ?? idea.concept_title ?? '').trim();
+  const subject = String(idea.subject_key ?? idea.subjectKey ?? '').replace(/_/g, ' ').trim();
+  const mood = String(idea.photo_mood ?? idea.mood ?? idea.visual_direction ?? '').trim();
+  const brief = String(idea.content_brief ?? idea.brief ?? idea.description ?? '').trim();
+  return [tagline, caption, subject, headline, mood, brief].filter(Boolean).join(' — ');
 }
 
 export { CALENDAR_GALLERY_DESIGN_INTENSITY };

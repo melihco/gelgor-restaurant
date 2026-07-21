@@ -88,13 +88,22 @@ function localesClash(captionLoc: OverlayLocale, headlineLoc: OverlayLocale): bo
   return captionLoc !== headlineLoc;
 }
 
+/** Strip wrapping quotes from calendar punchlines: "Hadi tatlarına bak!" → Hadi tatlarına bak! */
+export function unwrapQuotedOverlayLine(line: string): string {
+  const clean = line.trim();
+  const m = clean.match(/^[«"„“‘'](.+?)[»"”’']$/);
+  return (m?.[1] ?? clean).trim();
+}
+
 function isPublishableOverlayLine(
   line: string,
   brandName: string,
   captionLoc: OverlayLocale,
 ): boolean {
-  const clean = line.trim();
-  if (!clean || clean.length < 8) return false;
+  const clean = unwrapQuotedOverlayLine(line);
+  // Punchy calendar quotes may be short (e.g. "Tadına bak!") — keep ≥6 chars / 2+ words.
+  if (!clean || clean.length < 6) return false;
+  if (clean.length < 8 && clean.split(/\s+/).filter(Boolean).length < 2) return false;
   if (isLabelStyleHeadline(clean)) return false;
   if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
   if (isIncompleteOverlayPhrase(clean)) return false;
@@ -198,29 +207,31 @@ export function resolveMissionFalDesignCopy(input: {
   const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
 
   const acceptPlannedOverlayLine = (line: string): boolean => {
-    if (!line || isIncompleteOverlayPhrase(line)) return false;
-    if (!isMeaningfulFalOverlayText(line)) return false;
-    if (isMeaninglessBrandEchoHeadline(line, brandName)) return false;
-    if (localesClash(captionLoc, detectOverlayLocale(line))) return false;
+    const clean = unwrapQuotedOverlayLine(line);
+    if (!clean || isIncompleteOverlayPhrase(clean)) return false;
+    if (!isMeaningfulFalOverlayText(clean)) return false;
+    if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
+    if (localesClash(captionLoc, detectOverlayLocale(clean))) return false;
     return true;
   };
 
   // 1) Mission tagline / subline — quoted line from calendar & ideation cards.
-  const missionTagline = extractMissionTagline(input.idea);
+  const missionTagline = unwrapQuotedOverlayLine(extractMissionTagline(input.idea));
   if (missionTagline && isPublishableOverlayLine(missionTagline, brandName, captionLoc)) {
     const headline = resolvePlannedOverlayLine(missionTagline, [], channel);
     if (headline && acceptPlannedOverlayLine(headline)) {
-      const ideationTitle = input.ideationHeadline.trim()
-        || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim();
+      const ideationTitle = unwrapQuotedOverlayLine(
+        input.ideationHeadline.trim()
+          || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim(),
+      );
+      // Supporting line only when short + distinct — never brand-echo "sizi bekliyoruz" dual slogans.
       const subtitle = ideationTitle
+        && ideationTitle.length <= 36
         && !areFalOverlayTextsRedundant(headline, ideationTitle)
         && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
+        && !isMeaninglessBrandEchoHeadline(ideationTitle, brandName)
         ? resolvePlannedOverlayLine(ideationTitle, [headline], channel) || undefined
-        : resolveFalSubtitle({
-          caption,
-          headline,
-          cta: input.cta,
-        }) ?? undefined;
+        : undefined;
       return { headline, subtitle, source: 'mission_tagline' };
     }
   }
