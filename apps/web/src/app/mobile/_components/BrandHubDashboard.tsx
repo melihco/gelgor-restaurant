@@ -5,6 +5,7 @@ import type { T } from './theme-context';
 import { PRODUCTION_PROFILE_THRESHOLD } from '@/lib/brand-readiness';
 import { resolveGalleryImageSrc } from '@/lib/gallery-display-url';
 import { SA_CHROME, SA_STUDIO_ACCENTS } from './sa-chrome';
+import { MobileBrandNavbar } from './MobileBrandNavbar';
 
 type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 
@@ -312,29 +313,36 @@ export function BrandHubDashboard({
   );
 
   return (
-    <div
-      className="brand-hub-root"
-      style={{ padding: `calc(env(safe-area-inset-top,0px) + ${showStackBack ? 10 : 16}px) 18px 0` }}
-    >
-      {showStackBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Geri"
-          style={{
-            width: 44, height: 44, borderRadius: 14, marginBottom: 14,
-            border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-            color: t.textSecondary,
-          }}
-        >
-          <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden>
-            <path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      )}
+    <div className="brand-hub-root">
+      {/* Match Feed chrome — Smart Agency logo centered under safe-area */}
+      <MobileBrandNavbar
+        dark={t.isDark}
+        logoCentered
+        style={{
+          background: t.bg,
+          borderBottom: `0.5px solid ${t.separator}`,
+        }}
+        leftSlot={showStackBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Geri"
+            style={{
+              width: 44, height: 44, borderRadius: 14,
+              border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+              color: t.textSecondary,
+            }}
+          >
+            <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden>
+              <path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : undefined}
+      />
 
+      <div style={{ padding: '14px 18px 0' }}>
       {/* Hero — brand mark first; readiness only when incomplete + labeled */}
       <div
         className="brand-hub-hero sa-chrome-card"
@@ -571,6 +579,7 @@ export function BrandHubDashboard({
             )}
           </div>
         ))}
+      </div>
       </div>
     </div>
   );

@@ -54,6 +54,7 @@ export function MobileBrandNavbar({
   brandName,
   showMenuButton = false,
   logoCentered = false,
+  leftSlot,
   rightSlot,
   onMenu,
   className,
@@ -72,6 +73,8 @@ export function MobileBrandNavbar({
   showMenuButton?: boolean;
   /** Grid layout — logo optically centered regardless of right actions width. */
   logoCentered?: boolean;
+  /** Optional left control (e.g. back) — keeps logo optically centered. */
+  leftSlot?: ReactNode;
   rightSlot?: ReactNode;
   onMenu?: () => void;
   className?: string;
@@ -108,12 +111,22 @@ export function MobileBrandNavbar({
         minHeight: 44,
       }}>
         {logoCentered ? (
-          <div style={{ width: 44, minHeight: 44 }} aria-hidden />
+          leftSlot ? (
+            <div style={{ justifySelf: 'start', display: 'flex', alignItems: 'center', minHeight: 44 }}>
+              {leftSlot}
+            </div>
+          ) : (
+            <div style={{ width: 44, minHeight: 44 }} aria-hidden />
+          )
         ) : showMenuButton ? (
           <MobileNavMenuButton
             onClick={onMenu ?? (() => navigate('more'))}
             dark={dark}
           />
+        ) : leftSlot ? (
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', minHeight: 44 }}>
+            {leftSlot}
+          </div>
         ) : (
           <div style={{ width: SLOT_W, flexShrink: 0 }} aria-hidden />
         )}
