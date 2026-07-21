@@ -3,8 +3,9 @@
 
 import React from 'react';
 import type { T } from './theme-context';
-import { IcoBack, IcoClose } from './Icons';
+import { IcoClose } from './Icons';
 import { nativeBridge } from '../_lib/native-bridge';
+import { MobileBrandNavbar } from './MobileBrandNavbar';
 
 // ─── Circular Progress Ring (SVG) ─────────────────────────────────────
 export function CircleProgress({
@@ -189,7 +190,7 @@ export function ThemeToggleButton({ t, onToggle }: { t: T; onToggle: () => void 
   );
 }
 
-// ─── Native stack header (iOS-style back + centered title) ─────────────
+// ─── Visioner stack header — SA logo chrome + screen title eyebrow ─────
 export function MobileStackHeader({
   t,
   title,
@@ -207,90 +208,63 @@ export function MobileStackHeader({
   closeButton?: 'back' | 'x-right';
   headerBackground?: string;
 }) {
-  const headerBg = headerBackground
-    ?? (t.isDark ? 'rgba(5,7,12,0.78)' : 'rgba(247,249,251,0.84)');
+  const headerBg = headerBackground ?? t.bg;
+  const chromeBtn: React.CSSProperties = {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+    color: t.textSecondary,
+    padding: 0,
+  };
+
+  const leftSlot = closeButton === 'back' ? (
+    <button type="button" onClick={onBack} aria-label="Geri" style={chromeBtn}>
+      <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden>
+        <path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  ) : undefined;
+
+  const rightSlot = closeButton === 'x-right' ? (
+    <button type="button" onClick={onBack} aria-label="Kapat" style={chromeBtn}>
+      <IcoClose size={18} color={t.textSecondary} strokeWidth={2.2} />
+    </button>
+  ) : (
+    right ?? <div style={{ width: 44, minHeight: 44 }} aria-hidden />
+  );
 
   return (
-    <header
+    <div
       className="sa-chrome-header"
-      style={{
-        ...(sticky ? { position: 'sticky' as const, top: 0, zIndex: 30 } : {}),
-        background: headerBg,
-        backdropFilter: 'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-        borderBottom: 'none',
-      }}
+      style={sticky ? { position: 'sticky', top: 0, zIndex: 30 } : undefined}
     >
-      <div
+      <MobileBrandNavbar
+        dark={t.isDark}
+        logoCentered
+        leftSlot={leftSlot}
+        rightSlot={rightSlot}
         style={{
-          display: 'grid',
-          gridTemplateColumns: '44px 1fr 44px',
-          alignItems: 'center',
-          minHeight: 44,
-          padding: '2px 10px',
+          background: headerBg,
+          borderBottom: `0.5px solid ${t.separator}`,
         }}
-      >
-        {closeButton === 'back' ? (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Geri"
-            style={{
-              ...t.backBtn,
-              width: 44,
-              height: 44,
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              justifySelf: 'start',
-            }}
-          >
-            <IcoBack color={t.textSecondary} />
-          </button>
-        ) : (
-          <div aria-hidden style={{ width: 44, height: 44 }} />
-        )}
-        <h1
+      />
+      {title.trim() ? (
+        <div
           style={{
-            margin: 0,
-            fontSize: 17,
-            fontWeight: 600,
-            color: t.textPrimary,
-            letterSpacing: '-0.02em',
-            textAlign: 'center',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            padding: '10px 18px 4px',
+            background: headerBg,
           }}
         >
-          {title}
-        </h1>
-        <div style={{ justifySelf: 'end', minWidth: 44, display: 'flex', justifyContent: 'flex-end' }}>
-          {closeButton === 'x-right' ? (
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Kapat"
-              style={{
-                ...t.backBtn,
-                width: 44,
-                height: 44,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <IcoClose size={18} color={t.textSecondary} strokeWidth={2.2} />
-            </button>
-          ) : right}
+          <div className="sa-chrome-eyebrow">{title}</div>
         </div>
-      </div>
-    </header>
+      ) : null}
+    </div>
   );
 }
 

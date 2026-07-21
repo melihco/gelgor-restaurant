@@ -58,9 +58,29 @@ export function serviceProfileCategoryForSector(sector: string): string {
   return SECTOR_TO_SERVICE_CATEGORY[key] ?? '';
 }
 
+function parseServiceProfile(
+  raw: unknown,
+): Record<string, unknown> | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return null;
+}
+
 /** Authoritative sector for prompts, template kits, and Nexus CompanyProfile.industry. */
 export function resolveAuthoritativeIndustry(py: Record<string, unknown>): string {
-  const sp = py.brand_service_profile as Record<string, unknown> | undefined;
+  const sp = parseServiceProfile(py.brand_service_profile);
   const category = sp && typeof sp.category === 'string' ? sp.category.trim() : '';
   if (category) {
     return normalizeSectorId(canonicalSectorFromCategory(category));
@@ -68,6 +88,57 @@ export function resolveAuthoritativeIndustry(py: Record<string, unknown>): strin
   const businessType = str(py.business_type);
   if (!businessType) return '';
   return normalizeSectorId(businessType);
+}
+
+export type SectorSyncPatch = {
+  business_type?: string;
+  brand_service_profile?: Record<string, unknown>;
+  /** Signal callers to rebuild industry_calendar / mission brief seasonality. */
+  rebuildIndustryCalendar: boolean;
+  detail: string;
+};
+
+/**
+ * Reconcile stale business_type ↔ brand_service_profile.category.
+ * Default: SP wins (matches resolveAuthoritativeIndustry + agent BrandInfo).
+ * When SP.source === 'manual_override', operator sector (business_type) wins and SP is rewritten.
+ */
+export function buildSectorSyncPatch(py: Record<string, unknown>): SectorSyncPatch | null {
+  const sp = parseServiceProfile(py.brand_service_profile);
+  const category = sp && typeof sp.category === 'string' ? sp.category.trim() : '';
+  const stored = normalizeSectorId(str(py.business_type));
+  const source = sp && typeof sp.source === 'string' ? sp.source.trim() : '';
+
+  if (source === 'manual_override' && stored && stored !== 'general_business') {
+    const expectedCategory = serviceProfileCategoryForSector(stored);
+    if (!expectedCategory) return null;
+    const currentCanon = category
+      ? normalizeSectorId(canonicalSectorFromCategory(category))
+      : '';
+    if (currentCanon === stored) return null;
+    return {
+      brand_service_profile: {
+        ...(sp ?? {}),
+        category: expectedCategory,
+        source: 'manual_override',
+        category_confidence: 1,
+        category_reason: `Sector sync: align SP category to operator sector ${stored}`,
+      },
+      rebuildIndustryCalendar: true,
+      detail: `manual_override: SP.category → ${expectedCategory} (sector ${stored})`,
+    };
+  }
+
+  if (!category) return null;
+  const auth = normalizeSectorId(canonicalSectorFromCategory(category));
+  if (!auth) return null;
+  if (auth === stored) return null;
+
+  return {
+    business_type: auth,
+    rebuildIndustryCalendar: true,
+    detail: `SP-authoritative: business_type ${stored || '—'} → ${auth}`,
+  };
 }
 
 /**
@@ -101,7 +172,7 @@ export function shouldRefreshIndustryFromPython(
   const current = str(profile.industry).toLowerCase();
   if (!current || WEAK_INDUSTRY_VALUES.has(current)) return true;
 
-  const sp = py.brand_service_profile as Record<string, unknown> | undefined;
+  const sp = parseServiceProfile(py.brand_service_profile);
   const category = sp && typeof sp.category === 'string' ? sp.category.trim() : '';
   const confidence = Number(sp?.category_confidence ?? 0);
   if (category && confidence >= 0.55) return true;

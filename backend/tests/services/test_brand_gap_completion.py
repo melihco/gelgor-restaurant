@@ -74,3 +74,25 @@ def test_detect_gaps_local_products_shop():
     assert "visual_dna_missing" in ids
     assert "brand_dna_sparse" in ids
     assert "content_pillars_low" in ids
+
+
+def test_detect_sector_sp_mismatch_restaurant_vs_local_products():
+    ctx = _ctx(
+        business_type="local_products_shop",
+        brand_service_profile={"category": "restaurant_bar", "category_confidence": 0.9},
+        industry_calendar='{"industry_type": "local_products_shop"}',
+    )
+    gaps = detect_brand_gaps(ctx)
+    ids = {g["id"] for g in gaps}
+    assert "sector_sp_mismatch" in ids
+
+
+def test_no_sector_sp_mismatch_when_aligned():
+    ctx = _ctx(
+        business_type="restaurant_cafe",
+        brand_service_profile={"category": "restaurant_bar"},
+        industry_calendar='{"industry_type": "restaurant_cafe"}',
+    )
+    gaps = detect_brand_gaps(ctx)
+    ids = {g["id"] for g in gaps}
+    assert "sector_sp_mismatch" not in ids

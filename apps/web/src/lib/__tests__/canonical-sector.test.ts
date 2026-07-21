@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSectorSyncPatch,
   resolveAuthoritativeIndustry,
   resolveTenantCanonicalSector,
   shouldRefreshIndustryFromPython,
@@ -17,6 +18,43 @@ describe('canonical sector sync', () => {
       },
     };
     expect(resolveAuthoritativeIndustry(py)).toBe('beach_club');
+  });
+
+  it('buildSectorSyncPatch aligns stale business_type to SP (restaurant)', () => {
+    const patch = buildSectorSyncPatch({
+      business_type: 'local_products_shop',
+      brand_service_profile: {
+        category: 'restaurant_bar',
+        category_confidence: 0.88,
+      },
+    });
+    expect(patch).toMatchObject({
+      business_type: 'restaurant_cafe',
+      rebuildIndustryCalendar: true,
+    });
+    expect(patch?.detail).toContain('restaurant_cafe');
+  });
+
+  it('buildSectorSyncPatch is a no-op when already aligned', () => {
+    expect(buildSectorSyncPatch({
+      business_type: 'restaurant_cafe',
+      brand_service_profile: { category: 'restaurant_bar' },
+    })).toBeNull();
+  });
+
+  it('buildSectorSyncPatch respects manual_override — rewrites SP to operator sector', () => {
+    const patch = buildSectorSyncPatch({
+      business_type: 'local_products_shop',
+      brand_service_profile: {
+        category: 'restaurant_bar',
+        source: 'manual_override',
+      },
+    });
+    expect(patch?.brand_service_profile).toMatchObject({
+      category: 'local_products_shop',
+      source: 'manual_override',
+    });
+    expect(patch?.business_type).toBeUndefined();
   });
 
   it('overwrites general_business in Nexus profile', () => {

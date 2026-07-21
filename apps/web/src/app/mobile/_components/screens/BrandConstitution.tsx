@@ -92,11 +92,13 @@ import {
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { BrandLogoPreviewCard } from '../BrandLogoPreviewCard';
-import { BrandCompleteGapsCard } from '../BrandCompleteGapsCard';
+import { BrandProductionRepairCard } from '../BrandProductionRepairCard';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
 import { BrandHubDashboard, buildBrandHubNavItems } from '../BrandHubDashboard';
+import { BrandVisionerGroup, BrandVisionerList, BrandVisionerNavRow } from '../BrandVisionerNavRow';
+import { MobileBrandNavbar } from '../MobileBrandNavbar';
 import { SA_STUDIO_ACCENTS } from '../sa-chrome';
 import { MoreMenuPanel } from './MoreMenu';
 
@@ -153,67 +155,62 @@ function ChevronRight({ color }: { color: string }) {
   );
 }
 
-/** Mission statement per design group — hero copy for group screens. */
+/** Short mission under visioner sub-nav — one line, no hero card. */
 const DESIGN_GROUP_MISSIONS: Record<string, string> = {
-  colors: 'Markanızın görsel imzası. Palet, tipografi ve görsel dil buradaki kararlarla her üretime yansır.',
-  templates: 'Tesis özelliklerini ayarlayın, rafları görün ve şablonlarınızı yönetin. Beğendiğiniz tasarımlar üretimde otomatik kullanılır.',
-  engines: 'İçeriklerinizin nasıl canlanacağı: hareket stili, müzik ve üretim motorları.',
-  dna: 'AI\'ın markanızdan öğrendiği görsel karakter. Analizi yenileyerek güncel tutun.',
-  rules: 'Üretim sınırları ve onay akışı. AI\'ın neyi, nasıl ve ne zaman yayınlayacağını belirleyin.',
+  colors: 'Palet, tipografi ve görsel dil — her üretime yansır.',
+  templates: 'Tesis özellikleri ve şablonlar; beğenilenler üretimde kullanılır.',
+  engines: 'Hareket, müzik ve üretim motorları.',
+  dna: 'AI’ın öğrendiği görsel karakter — analizi güncel tutun.',
+  rules: 'Üretim sınırları ve onay akışı.',
 };
 
-/** Premium hero header for a design sub-screen — mission-specific identity. */
-function DesignGroupHero({
-  t, groupKey, label, accent, onBack,
+/** Compact back + eyebrow — matches hub visioner chrome on all sub-screens. */
+function VisionerSubNav({
+  t,
+  parentLabel,
+  title,
+  mission,
+  onBack,
 }: {
-  t: T; groupKey: string; label: string; accent: string; onBack: () => void;
+  t: T;
+  parentLabel: string;
+  title: string;
+  mission?: string;
+  onBack: () => void;
 }) {
   return (
-    <div style={{
-      position: 'relative', borderRadius: 20, padding: '16px 18px 18px', marginBottom: 18,
-      overflow: 'hidden',
-      background: t.isDark
-        ? `linear-gradient(150deg, ${accent}1f 0%, ${accent}08 55%, transparent 100%)`
-        : `linear-gradient(150deg, ${accent}17 0%, ${accent}06 55%, transparent 100%)`,
-      border: `0.5px solid ${accent}30`,
-    }}>
-      <div style={{
-        position: 'absolute', top: -36, right: -28, width: 130, height: 130, borderRadius: '50%',
-        background: accent, opacity: t.isDark ? 0.1 : 0.07, filter: 'blur(28px)', pointerEvents: 'none',
-      }} />
+    <div style={{ marginBottom: 16 }}>
       <button
         type="button"
         onClick={onBack}
         style={{
-          position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6,
-          border: 'none', background: 'none', cursor: 'pointer', padding: '2px 0',
-          color: t.textTertiary, fontSize: 12.5, fontWeight: 600, marginBottom: 12, minHeight: 32,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          border: 'none',
+          background: 'none',
+          cursor: 'pointer',
+          color: t.accent,
+          fontSize: 14,
+          fontWeight: 600,
+          padding: 0,
+          minHeight: 44,
+          marginBottom: 2,
         }}
       >
-        <svg width="7" height="12" viewBox="0 0 9 15" fill="none" aria-hidden>
+        <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden>
           <path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        Tasarım
+        {parentLabel}
       </button>
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div style={{
-          width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: `linear-gradient(135deg, ${accent}32, ${accent}14)`,
-          border: `0.5px solid ${accent}45`,
-          boxShadow: `0 6px 18px ${accent}22, inset 0 1px 0 rgba(255,255,255,0.08)`,
-        }}>
-          <SectionIcon name={groupKey} color={accent} size={23} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 19, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.03em', lineHeight: 1.15 }}>
-            {label}
-          </div>
-          <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 4, lineHeight: 1.5 }}>
-            {DESIGN_GROUP_MISSIONS[groupKey] ?? ''}
-          </div>
-        </div>
+      <div className="sa-chrome-eyebrow" style={{ marginBottom: mission ? 6 : 0 }}>
+        {title}
       </div>
+      {mission ? (
+        <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.45 }}>
+          {mission}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -437,13 +434,8 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
   }
 }
 
-function SLabel({ t, text, accent }: { t: T; text: string; accent?: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 4px', marginBottom: 8 }}>
-      {accent ? <div style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} /> : null}
-      <span style={{ fontSize: 13, fontWeight: 600, color: t.textSecondary, letterSpacing: '-0.01em' }}>{text}</span>
-    </div>
-  );
+function SLabel({ text }: { t?: T; text: string; accent?: string }) {
+  return <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>{text}</div>;
 }
 function parseArr(raw: unknown): string[] {
   if (!raw) return [];
@@ -2231,47 +2223,29 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
   return (
     <>
       {galleryGroup === null && (
-        <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {GALLERY_GROUPS.map((g) => (
-              <button
-                key={g.key}
-                type="button"
+        <BrandVisionerList>
+          {GALLERY_GROUPS.map((g) => (
+            <BrandVisionerGroup key={g.key}>
+              <BrandVisionerNavRow
+                t={t}
+                label={g.label}
+                hint={g.hint}
+                accent={g.accent}
+                icon={<SectionIcon name={g.key} color={g.accent} size={18} />}
                 onClick={() => openGalleryGroup(g.key)}
-                style={{
-                  position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
-                  ...t.surfaceGroup, overflow: 'hidden',
-                  display: 'flex', alignItems: 'center', gap: 14,
-                }}
-              >
-                <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
-                <div style={{
-                  position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
-                }}>
-                  <SectionIcon name={g.key} color={g.accent} />
-                </div>
-                <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
-                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
-                </div>
-                <ChevronRight color={t.textTertiary} />
-              </button>
-            ))}
-          </div>
-        </>
+              />
+            </BrandVisionerGroup>
+          ))}
+        </BrandVisionerList>
       )}
 
-      {galleryGroup !== null && (
-        <button
-          type="button"
-          onClick={() => openGalleryGroup(null)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
-        >
-          <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          Galeri · <span style={{ color: t.textPrimary }}>{activeGalleryGroup?.label}</span>
-        </button>
+      {galleryGroup !== null && activeGalleryGroup && (
+        <VisionerSubNav
+          t={t}
+          parentLabel="Galeri"
+          title={activeGalleryGroup.label}
+          onBack={() => openGalleryGroup(null)}
+        />
       )}
 
       {galleryGroup === 'analyze' && (
@@ -3763,10 +3737,13 @@ export function BrandConstitution() {
   ];
   const activeContentGroup = CONTENT_GROUPS.find((g) => g.key === contentGroup);
 
-  const activeNavLabel = (() => {
+  /** Top-level section only — subgroup titles live in VisionerSubNav. */
+  const sectionEyebrow = (() => {
     if (tab === 'identity') return 'Marka Profili';
-    if (tab === 'content' && contentGroup) return activeContentGroup?.label ?? 'İçerik';
-    if (tab === 'design' && designGroup) return activeDesignGroup?.label ?? 'Tasarım';
+    if (tab === 'content') return 'İçerik';
+    if (tab === 'design') return 'Tasarım';
+    if (tab === 'gallery') return 'Galeri';
+    if (tab === 'chatbot') return 'Chatbot';
     return HUB_NAV_ITEMS.find((n) => n.target === tab)?.label
       ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
   })();
@@ -3844,41 +3821,62 @@ export function BrandConstitution() {
         </>
       )}
 
-      {/* ── SECTION HEADER (sticky) ── */}
+      {/* ── SECTION HEADER — same visioner chrome as Marka hub ── */}
       {view === 'section' && (
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 20,
-          padding: 'calc(env(safe-area-inset-top,0px) + 8px) 16px 10px',
-          background: t.isDark ? 'rgba(20,20,22,0.82)' : 'rgba(250,250,252,0.82)',
-          backdropFilter: 'saturate(180%) blur(20px)', WebkitBackdropFilter: 'saturate(180%) blur(20px)',
-          borderBottom: `0.5px solid ${t.separator}`,
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <button
-            type="button"
-            onClick={() => setView('dashboard')}
-            aria-label="Marka ayarlarına dön"
-            style={{ display: 'flex', alignItems: 'center', gap: 3, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 15, fontWeight: 500, minWidth: 44, minHeight: 44, padding: '10px 8px 10px 0', flexShrink: 0 }}
-          >
-            <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            Marka
-          </button>
-          <div style={{ flex: 1, fontSize: 17, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', textAlign: 'center' }}>
-            {activeNavLabel}
-          </div>
-          <div style={{ minWidth: 44, display: 'flex', justifyContent: 'flex-end' }}>
-            {saveMutation.isPending ? (
-              <div style={{ width: 16, height: 16, borderRadius: '50%', border: `1.5px solid ${t.separator}`, borderTopColor: t.accent, animation: 'spinSlow 0.8s linear infinite' }} />
-            ) : saved ? (
-              <span style={{ fontSize: 14, fontWeight: 600, color: t.success }}>✓</span>
-            ) : null}
-          </div>
-        </div>
+        <MobileBrandNavbar
+          dark={t.isDark}
+          logoCentered
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 20,
+            background: t.bg,
+            borderBottom: `0.5px solid ${t.separator}`,
+          }}
+          leftSlot={(
+            <button
+              type="button"
+              onClick={() => setView('dashboard')}
+              aria-label="Marka ayarlarına dön"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                color: t.textSecondary,
+              }}
+            >
+              <svg width="9" height="15" viewBox="0 0 9 15" fill="none" aria-hidden>
+                <path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+          rightSlot={(
+            <div style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+              {saveMutation.isPending ? (
+                <div style={{ width: 16, height: 16, borderRadius: '50%', border: `1.5px solid ${t.separator}`, borderTopColor: t.accent, animation: 'spinSlow 0.8s linear infinite' }} />
+              ) : saved ? (
+                <span style={{ fontSize: 14, fontWeight: 600, color: t.success }}>✓</span>
+              ) : null}
+            </div>
+          )}
+        />
       )}
 
       {/* ── SECTION CONTENT ── */}
       {view === 'section' && (
-      <div style={{ padding: '16px 18px 0' }}>
+      <div style={{ padding: '10px 18px 0' }}>
+        {!(
+          (tab === 'content' && contentGroup !== null)
+          || (tab === 'design' && designGroup !== null)
+        ) && (
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 14 }}>{sectionEyebrow}</div>
+        )}
         {sharedStatusBanners}
 
         {tab === 'design' && productionReadiness?.productionProfile
@@ -3944,7 +3942,13 @@ export function BrandConstitution() {
               </div>
             )}
 
-            {tenantId && <BrandCompleteGapsCard t={t} brandGaps={brandGaps} />}
+            {tenantId && (
+              <BrandProductionRepairCard
+                t={t}
+                brandGaps={brandGaps}
+                productionProfile={productionReadiness?.productionProfile ?? null}
+              />
+            )}
 
             {/* Kimlik: logo + temel alanlar tek grup */}
             <div data-brand-form="service-profile">
@@ -4078,136 +4082,73 @@ export function BrandConstitution() {
               </section>
             </div>
 
-            {/* Studio kısayolları — kimlik düzenlemenin altında, ikincil navigasyon */}
+            {/* Studio kısayolları — aynı visioner tile satırları */}
             <section style={{ marginBottom: 8 }}>
-              <SLabel t={t} text="Studio" />
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 1fr',
-                  gap: 8,
-                }}
-              >
+              <SLabel text="Studio" />
+              <BrandVisionerList>
                 {([
                   {
                     key: 'content' as const,
                     label: 'İçerik',
                     hint: pillarsCount > 0 || ctasCount > 0
-                      ? `${pillarsCount} sütun`
-                      : 'Ses & CTA',
+                      ? `${pillarsCount} sütun · ses & CTA`
+                      : 'Ses, sütunlar & CTA',
                     accent: SA_STUDIO_ACCENTS.content,
                   },
                   {
                     key: 'design' as const,
                     label: 'Tasarım',
-                    hint: `${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
+                    hint: `Üretim profili ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
                     accent: SA_STUDIO_ACCENTS.design,
                   },
                   {
                     key: 'gallery' as const,
                     label: 'Galeri',
-                    hint: photoCount > 0 ? `${photoCount}` : 'Ekle',
+                    hint: photoCount > 0 ? `${photoCount} görsel` : 'Fotoğraf ekle',
                     accent: SA_STUDIO_ACCENTS.gallery,
                   },
                 ]).map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openSection(item.key)}
-                    style={{
-                      minHeight: 72,
-                      padding: '12px 8px',
-                      borderRadius: 14,
-                      border: `0.5px solid ${t.separator}`,
-                      background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 10,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: `linear-gradient(135deg, ${item.accent}28, ${item.accent}12)`,
-                        border: `0.5px solid ${item.accent}33`,
-                      }}
-                    >
-                      <SectionIcon name={item.key} color={item.accent} size={17} />
-                    </div>
-                    <div style={{ minWidth: 0, width: '100%' }}>
-                      <div style={{
-                        fontSize: 12.5, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {item.label}
-                      </div>
-                      <div style={{
-                        marginTop: 2, fontSize: 11, color: t.textMuted,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {item.hint}
-                      </div>
-                    </div>
-                  </button>
+                  <BrandVisionerGroup key={item.key}>
+                    <BrandVisionerNavRow
+                      t={t}
+                      label={item.label}
+                      hint={item.hint}
+                      accent={item.accent}
+                      icon={<SectionIcon name={item.key} color={item.accent} size={18} />}
+                      onClick={() => openSection(item.key)}
+                    />
+                  </BrandVisionerGroup>
                 ))}
-              </div>
+              </BrandVisionerList>
             </section>
           </>
         )}
 
         {/* Content group index */}
         {tab === 'content' && contentGroup === null && (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {CONTENT_GROUPS.map((g) => (
-                <button
-                  key={g.key}
-                  type="button"
+          <BrandVisionerList>
+            {CONTENT_GROUPS.map((g) => (
+              <BrandVisionerGroup key={g.key}>
+                <BrandVisionerNavRow
+                  t={t}
+                  label={g.label}
+                  hint={g.hint}
+                  accent={g.accent}
+                  icon={<SectionIcon name={g.key} color={g.accent} size={18} />}
                   onClick={() => openContentGroup(g.key)}
-                  style={{
-                    position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
-                    ...t.surfaceGroup, overflow: 'hidden',
-                    display: 'flex', alignItems: 'center', gap: 14,
-                  }}
-                >
-                  <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
-                  <div style={{
-                    position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
-                  }}>
-                    <SectionIcon name={g.key} color={g.accent} />
-                  </div>
-                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
-                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
-                  </div>
-                  <ChevronRight color={t.textTertiary} />
-                </button>
-              ))}
-            </div>
-          </>
+                />
+              </BrandVisionerGroup>
+            ))}
+          </BrandVisionerList>
         )}
 
-        {/* Content group sticky sub-header */}
-        {tab === 'content' && contentGroup !== null && (
-          <button
-            type="button"
-            onClick={() => openContentGroup(null)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
-          >
-            <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            İçerik · <span style={{ color: t.textPrimary }}>{activeContentGroup?.label}</span>
-          </button>
+        {tab === 'content' && contentGroup !== null && activeContentGroup && (
+          <VisionerSubNav
+            t={t}
+            parentLabel="İçerik"
+            title={activeContentGroup.label}
+            onBack={() => openContentGroup(null)}
+          />
         )}
 
         {tab === 'content' && contentGroup === 'voice' && (
@@ -4394,45 +4335,28 @@ export function BrandConstitution() {
 
         {/* Design group index */}
         {tab === 'design' && designGroup === null && (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {DESIGN_GROUPS.map((g) => (
-                <button
-                  key={g.key}
-                  type="button"
+          <BrandVisionerList>
+            {DESIGN_GROUPS.map((g) => (
+              <BrandVisionerGroup key={g.key}>
+                <BrandVisionerNavRow
+                  t={t}
+                  label={g.label}
+                  hint={g.hint}
+                  accent={g.accent}
+                  icon={<SectionIcon name={g.key} color={g.accent} size={18} />}
                   onClick={() => openDesignGroup(g.key)}
-                  style={{
-                    position: 'relative', textAlign: 'left', padding: 15, borderRadius: 18, cursor: 'pointer',
-                    ...t.surfaceGroup, overflow: 'hidden',
-                    display: 'flex', alignItems: 'center', gap: 14,
-                  }}
-                >
-                  <div style={{ position: 'absolute', top: -24, left: -24, width: 80, height: 80, borderRadius: '50%', background: g.accent, opacity: t.isDark ? 0.14 : 0.09, filter: 'blur(16px)', pointerEvents: 'none' }} />
-                  <div style={{
-                    position: 'relative', width: 44, height: 44, borderRadius: 13, flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: `linear-gradient(135deg, ${g.accent}2e, ${g.accent}14)`, border: `0.5px solid ${g.accent}3d`,
-                  }}>
-                    <SectionIcon name={g.key} color={g.accent} />
-                  </div>
-                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
-                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
-                  </div>
-                  <ChevronRight color={t.textTertiary} />
-                </button>
-              ))}
-            </div>
-          </>
+                />
+              </BrandVisionerGroup>
+            ))}
+          </BrandVisionerList>
         )}
 
-        {/* Design group hero — mission-specific screen identity */}
         {tab === 'design' && designGroup !== null && activeDesignGroup && (
-          <DesignGroupHero
+          <VisionerSubNav
             t={t}
-            groupKey={activeDesignGroup.key}
-            label={activeDesignGroup.label}
-            accent={activeDesignGroup.accent}
+            parentLabel="Tasarım"
+            title={activeDesignGroup.label}
+            mission={DESIGN_GROUP_MISSIONS[activeDesignGroup.key]}
             onBack={() => openDesignGroup(null)}
           />
         )}

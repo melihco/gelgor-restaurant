@@ -6,6 +6,7 @@ import { PRODUCTION_PROFILE_THRESHOLD } from '@/lib/brand-readiness';
 import { resolveGalleryImageSrc } from '@/lib/gallery-display-url';
 import { SA_CHROME, SA_STUDIO_ACCENTS } from './sa-chrome';
 import { MobileBrandNavbar } from './MobileBrandNavbar';
+import { BrandVisionerNavRow } from './BrandVisionerNavRow';
 
 type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 
@@ -96,85 +97,15 @@ function BrandHubTile({
   t: T;
   onOpen: (tab: BrandTab) => void;
 }) {
-  const barColor = item.status === 'done' ? item.accent : item.status === 'warn' ? '#F59E0B' : t.textMuted;
-
   return (
-    <button
-      type="button"
-      className="brand-hub-tile"
+    <BrandVisionerNavRow
+      t={t}
+      label={item.label}
+      accent={item.accent}
+      completion={item.completion}
+      icon={<SectionIcon name={item.key} color={item.accent} size={18} />}
       onClick={() => onOpen(item.target)}
-      style={{
-        position: 'relative',
-        width: '100%',
-        cursor: 'pointer',
-        textAlign: 'left',
-        overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        border: 'none',
-        background: 'transparent',
-      }}
-    >
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          top: -16,
-          left: -16,
-          width: 48,
-          height: 48,
-          borderRadius: '50%',
-          background: item.accent,
-          opacity: t.isDark ? 0.14 : 0.09,
-          filter: 'blur(12px)',
-          pointerEvents: 'none',
-        }}
-      />
-      <div
-        className="brand-hub-tile__icon"
-        style={{
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: `linear-gradient(135deg, ${item.accent}2e, ${item.accent}14)`,
-          border: `0.5px solid ${item.accent}3d`,
-        }}
-      >
-        <SectionIcon name={item.key} color={item.accent} size={18} />
-      </div>
-      <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-        <div className="brand-hub-tile__label" style={{ color: t.textPrimary }}>
-          {item.label}
-        </div>
-        <div
-          className="brand-hub-tile__bar"
-          style={{
-            borderRadius: 999,
-            overflow: 'hidden',
-            background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
-          }}
-        >
-          <div style={{
-            width: `${Math.max(8, item.completion * 100)}%`,
-            height: '100%',
-            borderRadius: 999,
-            background: barColor,
-            opacity: item.status === 'neutral' ? 0.45 : 0.95,
-          }}
-          />
-        </div>
-      </div>
-      <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}>
-        <path
-          d="M1.5 1.5 7.5 7.5l-6 6"
-          stroke={t.textTertiary}
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
+    />
   );
 }
 

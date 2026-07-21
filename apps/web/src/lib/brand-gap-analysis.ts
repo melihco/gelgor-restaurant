@@ -245,12 +245,17 @@ export const AUTO_FIXABLE_GAP_IDS = new Set([
   'visual_dna_missing',
   'brand_dna_sparse',
   'service_profile_missing',
+  'sector_sp_mismatch',
   'industry_calendar_stale',
   'content_pillars_low',
   'default_ctas_missing',
   'brand_theme_missing',
   'template_library_incomplete',
   'gallery_coverage_low',
+  'ppr_sector_consistency',
+  'ppr_production_theme_layers',
+  'ppr_production_visual_dna',
+  'ppr_service_profile',
 ]);
 
 /** Gaps that need operator action (re-analyze, manual identity edit). */
@@ -269,8 +274,14 @@ export function formatCompleteGapsFeedback(input: {
   gapsAfter?: BrandGapItem[];
 }): string {
   const { resolvedCount, steps = [], gapsAfter = [] } = input;
-  if (resolvedCount > 0) {
-    return `${resolvedCount} eksik alan güncellendi — agent profili güçlendirildi.`;
+  const sectorOk = steps.find((s) => s.id === 'sector_sync' && s.ok && s.detail !== 'already_aligned');
+  const typoOk = steps.some((s) => s.id === 'typography_confirm' && s.ok);
+  if (resolvedCount > 0 || sectorOk || typoOk) {
+    const bits: string[] = [];
+    if (resolvedCount > 0) bits.push(`${resolvedCount} eksik alan`);
+    if (sectorOk) bits.push(`sektör sync (${sectorOk.detail})`);
+    if (typoOk) bits.push('tipografi onayı');
+    return `${bits.join(' · ')} — tasarım / brief profili güncellendi.`;
   }
 
   const failed = steps.filter((s) => !s.ok);

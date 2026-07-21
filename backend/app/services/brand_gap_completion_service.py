@@ -132,6 +132,53 @@ def _resolve_sector(ctx: Any) -> str:
     return normalize_industry_id(str(getattr(ctx, "business_type", None) or "general_business"))
 
 
+# Mirrors apps/web canonical-sector SECTOR_TO_SERVICE_CATEGORY for manual_override repairs.
+_SECTOR_TO_SERVICE_CATEGORY: dict[str, str] = {
+    "beach_club": "beach_club_bar",
+    "restaurant_cafe": "restaurant_bar",
+    "coffee_shop": "cafe_bakery",
+    "hospitality": "hotel_hospitality",
+    "beauty_wellness": "beauty_wellness",
+    "fitness_gym": "fitness_studio",
+    "healthcare_clinic": "clinic_healthcare",
+    "local_products_shop": "local_products_shop",
+    "fashion_boutique": "fashion_retail",
+    "wedding_event": "wedding_event_service",
+}
+
+
+def _sector_sp_mismatch(ctx: Any) -> tuple[bool, str]:
+    """Return (mismatched, detail) for business_type ↔ SP.category drift."""
+    sp = _read_service_profile(ctx)
+    category = str(sp.get("category") or "").strip()
+    stored = normalize_industry_id(str(getattr(ctx, "business_type", None) or ""))
+    source = str(sp.get("source") or "").strip()
+    if not category and not stored:
+        return False, ""
+
+    if source == "manual_override" and stored and stored != "general_business":
+        expected_cat = _SECTOR_TO_SERVICE_CATEGORY.get(stored, "")
+        if not expected_cat:
+            return False, ""
+        from app.services.brand_service_profile_service import canonical_sector_from_category
+
+        current_canon = normalize_industry_id(canonical_sector_from_category(category)) if category else ""
+        if current_canon == stored:
+            return False, ""
+        return True, f"manual_override: SP {category or '—'} vs sector {stored}"
+
+    if not category:
+        return False, ""
+    from app.services.brand_service_profile_service import canonical_sector_from_category
+
+    auth = normalize_industry_id(canonical_sector_from_category(category))
+    if not auth or not stored:
+        return False, ""
+    if auth == stored:
+        return False, ""
+    return True, f"{stored} vs {category}→{auth}"
+
+
 def detect_brand_gaps(ctx: Any) -> list[dict[str, Any]]:
     """Return actionable gaps for this tenant's brand_context row."""
     if ctx is None:
@@ -178,6 +225,15 @@ def detect_brand_gaps(ctx: Any) -> list[dict[str, Any]]:
             "id": "service_profile_missing",
             "label": "Service profile (sektör) eksik",
             "severity": "medium",
+            "fix": "identity",
+        })
+
+    mismatched, mismatch_detail = _sector_sp_mismatch(ctx)
+    if mismatched:
+        gaps.append({
+            "id": "sector_sp_mismatch",
+            "label": f"Sektör / service profile uyumsuz ({mismatch_detail})",
+            "severity": "high",
             "fix": "identity",
         })
 
@@ -343,6 +399,56 @@ async def complete_brand_gaps(
     ctx = await brand_context_service.get_brand_context(db, workspace_id)
     if not ctx:
         return {"ok": False, "error": "brand_context_lost", "steps": steps, "gaps": gaps_before}
+
+    # ── 3b. Sector ↔ SP sync (stale business_type vs validated category) ───
+    if "sector_sp_mismatch" in target_ids:
+        try:
+            from app.services.brand_service_profile_service import (
+                canonical_sector_from_category,
+                context_updates_from_service_profile,
+            )
+
+            sp = _read_service_profile(ctx)
+            category = str(sp.get("category") or "").strip()
+            source = str(sp.get("source") or "").strip()
+            stored = normalize_industry_id(str(getattr(ctx, "business_type", None) or ""))
+            synced = False
+
+            if source == "manual_override" and stored and stored != "general_business":
+                expected_cat = _SECTOR_TO_SERVICE_CATEGORY.get(stored, "")
+                if expected_cat and expected_cat != category:
+                    merged = {
+                        **sp,
+                        "category": expected_cat,
+                        "source": "manual_override",
+                        "category_confidence": 1,
+                        "category_reason": f"Sector sync: align SP to operator sector {stored}",
+                    }
+                    ctx.brand_service_profile = merged
+                    for field, value in context_updates_from_service_profile(merged).items():
+                        setattr(ctx, field, value)
+                    await db.flush()
+                    synced = True
+                    await _step("sector_sync", True, f"manual_override SP→{expected_cat}")
+            elif category:
+                auth = normalize_industry_id(canonical_sector_from_category(category))
+                if auth and auth != stored:
+                    ctx.business_type = auth
+                    await db.flush()
+                    synced = True
+                    await _step("sector_sync", True, f"business_type {stored or '—'}→{auth}")
+                    # Force calendar rebuild for mission brief seasonality
+                    target_ids = set(target_ids)
+                    target_ids.add("industry_calendar_stale")
+
+            if not synced:
+                await _step("sector_sync", True, "already_aligned")
+        except Exception as exc:
+            await _step("sector_sync", False, str(exc))
+
+        ctx = await brand_context_service.get_brand_context(db, workspace_id)
+        if not ctx:
+            return {"ok": False, "error": "brand_context_lost", "steps": steps, "gaps": gaps_before}
 
     # ── 4. Visual DNA (GPT-4o Vision) ─────────────────────────────────────
     if "visual_dna_missing" in target_ids and openai_api_key:

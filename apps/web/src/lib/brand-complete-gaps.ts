@@ -15,7 +15,7 @@ import {
   isTypographyDesignConfirmed,
   resolveSuggestedTypographyConfig,
 } from '@/lib/typography-design-policy';
-import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
+import { buildSectorSyncPatch, resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 import type { BrandGapItem } from '@/lib/brand-gap-analysis';
 
 export interface CompleteGapsStep {
@@ -220,7 +220,7 @@ export async function runCompleteBrandGaps(
     }
   }
 
-  // PPR repair — Fal production visual_dna + confirmed typography layers
+  // PPR repair — sector sync, Fal visual_dna, confirmed typography / theme layers
   try {
     const origin = getNextjsInternalOrigin();
     const readinessRes = await fetch(`${origin}/api/brand-readiness/${tenantId}?refresh=1`, {
@@ -237,11 +237,85 @@ export async function runCompleteBrandGaps(
       (readiness?.productionProfile?.missing ?? []).map((m) => m.id),
     );
 
-    if (pprScore < PRODUCTION_PROFILE_THRESHOLD) {
+    // Sector / SP alignment — always reconcile when flagged (even if score ≥ threshold)
+    if (pprMissing.has('sector_consistency') || gapIds.has('sector_sp_mismatch')) {
+      const ctxRes = await fetchCrewBackendJson<Record<string, unknown>>(
+        `/api/v1/brand-context/${tenantId}`,
+        { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
+      );
+      const syncPatch = ctxRes.ok && ctxRes.data
+        ? buildSectorSyncPatch(ctxRes.data)
+        : null;
+      if (syncPatch) {
+        const body: Record<string, unknown> = {};
+        if (syncPatch.business_type) body.business_type = syncPatch.business_type;
+        if (syncPatch.brand_service_profile) {
+          body.brand_service_profile = syncPatch.brand_service_profile;
+        }
+        const patchRes = await fetchCrewBackendJson<Record<string, unknown>>(
+          `/api/v1/brand-context/${tenantId}`,
+          {
+            method: 'PATCH',
+            workspaceId: tenantId,
+            timeoutMs: 30_000,
+            headers: forwardHeaders,
+            body,
+          },
+        );
+        steps.push({
+          id: 'sector_sync',
+          ok: patchRes.ok,
+          detail: patchRes.ok ? syncPatch.detail : (patchRes.error ?? `HTTP ${patchRes.status}`),
+        });
+
+        if (patchRes.ok && syncPatch.rebuildIndustryCalendar) {
+          const calRes = await fetchCrewBackendJson<{ industry_type?: string }>(
+            `/api/v1/brand-context/${tenantId}/industry-intelligence`,
+            {
+              method: 'POST',
+              workspaceId: tenantId,
+              timeoutMs: 180_000,
+              headers: forwardHeaders,
+              body: {},
+            },
+          );
+          steps.push({
+            id: 'industry_calendar_after_sector',
+            ok: calRes.ok,
+            detail: calRes.ok
+              ? (calRes.data?.industry_type ?? 'rebuilt')
+              : (calRes.error ?? 'calendar_rebuild_skipped'),
+          });
+        }
+
+        // Refresh Nexus CompanyProfile.industry from authoritative Python sector
+        steps.push({
+          ...(await postInternal(
+            `/api/brand-context/${tenantId}/hydrate-company-profile`,
+            tenantId,
+            forwardHeaders,
+            60_000,
+          )),
+          id: 'hydrate_after_sector_sync',
+        });
+      } else {
+        steps.push({
+          id: 'sector_sync',
+          ok: true,
+          detail: 'already_aligned',
+        });
+      }
+    }
+
+    const needsPprRepair = pprScore < PRODUCTION_PROFILE_THRESHOLD
+      || pprMissing.has('production_visual_dna')
+      || pprMissing.has('production_theme_layers')
+      || pprMissing.has('service_profile');
+
+    if (needsPprRepair) {
       const needsVisualDna = pprMissing.has('production_visual_dna');
       const needsThemeLayers = pprMissing.has('production_theme_layers');
 
-      // Gallery skip-scrape vibe before PDP when DNA/theme thin (skip if already ran above)
       if (
         (needsVisualDna || needsThemeLayers)
         && !steps.some((s) => s.id === 'visual_identity_enrich')
@@ -258,7 +332,7 @@ export async function runCompleteBrandGaps(
       }
 
       if (
-        (needsVisualDna || needsThemeLayers)
+        (needsVisualDna || needsThemeLayers || pprMissing.has('service_profile'))
         && !steps.some((s) => s.id === 'production_design_profile')
       ) {
         const pdpRes = await fetchCrewBackendJson<{ ok?: boolean; profile?: { source?: string } }>(
@@ -285,7 +359,7 @@ export async function runCompleteBrandGaps(
           `/api/v1/brand-context/${tenantId}`,
           { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
         );
-        const sector = resolveAuthoritativeIndustry(ctxRes.data ?? {}) ?? 'general_business';
+        const sector = resolveAuthoritativeIndustry(ctxRes.data ?? {}) || 'general_business';
         const themeRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
           headers: { 'X-Tenant-Id': tenantId, ...forwardHeaders },
           signal: AbortSignal.timeout(30_000),
