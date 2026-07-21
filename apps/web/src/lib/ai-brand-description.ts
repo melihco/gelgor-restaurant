@@ -170,7 +170,7 @@ export function buildSynthesizeDescriptionSystemPrompt(language: AiBrandDescript
 
 export function buildSynthesizeDescriptionUserPrompt(input: AiBrandDescriptionSignals): string {
   const lang = input.language === 'en' ? 'en' : 'tr';
-  const offerings = uniqueLines(input.signatureOfferings).slice(0, 10);
+  const offerings = uniqueLines(input.signatureOfferings ?? []).slice(0, 10);
   const lines = [
     `Language: ${lang === 'en' ? 'English' : 'Turkish'}`,
     `Brand: ${cleanLine(input.brandName) || '—'}`,
