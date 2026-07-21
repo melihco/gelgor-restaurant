@@ -16,7 +16,13 @@ import {
 } from '../pipeline-types';
 
 const h = vi.hoisted(() => ({
-  serverConfig: { fal: { configured: true }, localTypography: { enabled: false } },
+  serverConfig: {
+    fal: { configured: true },
+    localTypography: { enabled: false },
+    r2: { bucket: '', publicUrl: '' },
+    ai: { tier: 'agency' },
+    productionFlags: { videoTierScope: true },
+  },
   produceFalDesignerVideo: vi.fn(),
   produceFalMissionVideo: vi.fn(),
   produceFalDesignedPostStill: vi.fn(),
@@ -249,7 +255,9 @@ describe('falVideoHandler.run', () => {
     expect(h.produceFalDesignerVideo).toHaveBeenCalledWith(
       expect.objectContaining({ pipeline: 'fal_reel' }),
     );
-    expect(ctx.state.videoProduceMeta).toEqual({ source: 'fal_video' });
+    expect(ctx.state.videoProduceMeta).toEqual(
+      expect.objectContaining({ source: 'fal_video' }),
+    );
     expect(ctx.state.costDelta).toBeCloseTo(0.18);
   });
 

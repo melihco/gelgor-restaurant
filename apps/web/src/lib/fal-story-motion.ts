@@ -11,6 +11,8 @@
 import {
   buildFalI2vEnqueuePayload,
   formatFalEnqueueError,
+  isKlingI2vModel,
+  isLumaRayI2vModel,
   resolveFalI2vModelChain,
 } from '@/lib/fal-i2v-models';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
@@ -20,9 +22,30 @@ import { serverConfig } from './server-config';
 const FAL_QUEUE_BASE = 'https://queue.fal.run';
 const FAL_AUTH = (key: string) => ({ Authorization: `Key ${key}` });
 
-/** Reel slots retry Kling/Luma before failing — avoids still_fallback PNG-as-video. */
-export const FAL_REEL_MOTION_ATTEMPTS = 3;
+/**
+ * Full-chain retries for fal_reel. Keep at 1 — Kling→Luma already falls through
+ * inside one attempt. Higher values × multi-model chain = 2–6× fal token burn
+ * when Kling times out client-side while still completing on fal.
+ */
+export const FAL_REEL_MOTION_ATTEMPTS = 1;
 export const FAL_REEL_MOTION_RETRY_DELAY_MS = 4_000;
+
+/** Kling I2V often needs 4–5 min; short poll budgets abandon paid jobs and start Luma. */
+export const FAL_KLING_MOTION_POLL_MS = 360_000;
+export const FAL_LUMA_MOTION_POLL_MS = 120_000;
+/** Extra wait once if job is still IN_PROGRESS at the primary deadline. */
+export const FAL_MOTION_IN_PROGRESS_GRACE_MS = 90_000;
+
+function resolveMotionPollTimeoutMs(modelId: string, requestedMs?: number): number {
+  const modelDefault = isKlingI2vModel(modelId)
+    ? FAL_KLING_MOTION_POLL_MS
+    : isLumaRayI2vModel(modelId)
+      ? FAL_LUMA_MOTION_POLL_MS
+      : 180_000;
+  if (requestedMs == null || requestedMs <= 0) return modelDefault;
+  // Never shorten below model defaults — caller timeouts used to cut Kling at 150s.
+  return Math.max(requestedMs, modelDefault);
+}
 
 export function isPlayableVideoUrl(url: string | null | undefined): boolean {
   return Boolean(url && /\.(mp4|mov|webm)(\?|$)/i.test(String(url).trim()));
@@ -116,6 +139,14 @@ export function buildStoryMotionPrompt(input: {
   return finalizeFalPrompt(`${base} ${context}`, { kind: 'video', label: 'story-motion-plate' });
 }
 
+/** Thrown when a paid fal job is still running — callers must not enqueue the next model. */
+export class FalMotionInFlightTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'FalMotionInFlightTimeoutError';
+  }
+}
+
 interface FalQueueSubmit {
   request_id: string;
   response_url: string;
@@ -142,6 +173,7 @@ async function runMotionModel(
   preserveExistingText = false,
   durationSecs = 5,
 ): Promise<string | null> {
+  const pollBudgetMs = resolveMotionPollTimeoutMs(modelId, timeoutMs);
   const payload = buildFalI2vEnqueuePayload(modelId, {
     imageUrl,
     prompt,
@@ -186,7 +218,9 @@ async function runMotionModel(
   const statusUrl = queued.status_url ?? `${FAL_QUEUE_BASE}/${modelId}/requests/${queued.request_id}/status`;
   const resultUrl = queued.response_url ?? `${FAL_QUEUE_BASE}/${modelId}/requests/${queued.request_id}`;
 
-  const deadline = Date.now() + timeoutMs;
+  let deadline = Date.now() + pollBudgetMs;
+  let graceUsed = false;
+  let lastStatus: FalQueueStatus['status'] | 'UNKNOWN' = 'UNKNOWN';
   let pollInterval = 4_000;
 
   while (Date.now() < deadline) {
@@ -200,6 +234,7 @@ async function runMotionModel(
     if (!statusRes.ok) continue;
 
     const status = (await statusRes.json()) as FalQueueStatus;
+    lastStatus = status.status;
     if (status.status === 'FAILED') {
       markFalRequestFailed(queued.request_id, status.error ?? 'fal story motion job failed');
       throw new Error(status.error ?? 'fal story motion job failed');
@@ -222,8 +257,63 @@ async function runMotionModel(
     throw new Error('fal story motion result has no video URL');
   }
 
-  markFalRequestFailed(queued.request_id, `fal story motion timed out after ${timeoutMs / 1000}s`);
-  throw new Error(`fal story motion timed out after ${timeoutMs / 1000}s`);
+  // Job still running on fal — wait once more instead of enqueueing the next model
+  // (abandoning an IN_PROGRESS Kling job is what caused Kling+Luma double billing).
+  if (
+    !graceUsed
+    && (lastStatus === 'IN_QUEUE' || lastStatus === 'IN_PROGRESS' || lastStatus === 'UNKNOWN')
+  ) {
+    graceUsed = true;
+    deadline = Date.now() + FAL_MOTION_IN_PROGRESS_GRACE_MS;
+    console.warn(
+      `[fal-story-motion] ${modelId} still ${lastStatus} after ${Math.round(pollBudgetMs / 1000)}s `
+      + `— grace +${Math.round(FAL_MOTION_IN_PROGRESS_GRACE_MS / 1000)}s before fallback `
+      + `(request ${queued.request_id})`,
+    );
+    pollInterval = 6_000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, pollInterval));
+      pollInterval = Math.min(pollInterval * 1.4, 12_000);
+
+      const statusRes = await fetch(statusUrl, {
+        headers: FAL_AUTH(apiKey),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!statusRes.ok) continue;
+
+      const status = (await statusRes.json()) as FalQueueStatus;
+      lastStatus = status.status;
+      if (status.status === 'FAILED') {
+        markFalRequestFailed(queued.request_id, status.error ?? 'fal story motion job failed');
+        throw new Error(status.error ?? 'fal story motion job failed');
+      }
+      if (status.status !== 'COMPLETED') continue;
+
+      const resultRes = await fetch(resultUrl, {
+        headers: FAL_AUTH(apiKey),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!resultRes.ok) throw new Error(`result fetch failed ${resultRes.status}`);
+
+      const result = (await resultRes.json()) as FalVideoResult;
+      const url = result.video?.url ?? result.videoUrl ?? result.output?.url;
+      if (url) {
+        markFalRequestCompleted(queued.request_id, url);
+        return url;
+      }
+      markFalRequestFailed(queued.request_id, 'fal story motion result has no video URL');
+      throw new Error('fal story motion result has no video URL');
+    }
+  }
+
+  const waitedSec = Math.round((pollBudgetMs + (graceUsed ? FAL_MOTION_IN_PROGRESS_GRACE_MS : 0)) / 1000);
+  const msg = `fal story motion timed out after ${waitedSec}s (last=${lastStatus})`;
+  markFalRequestFailed(queued.request_id, msg);
+  // IN_PROGRESS/IN_QUEUE timeout: job may still complete & bill on fal — do not chain Luma.
+  if (lastStatus === 'IN_QUEUE' || lastStatus === 'IN_PROGRESS' || lastStatus === 'UNKNOWN') {
+    throw new FalMotionInFlightTimeoutError(msg);
+  }
+  throw new Error(msg);
 }
 
 export interface StoryMotionResult {
@@ -301,6 +391,10 @@ export async function generateStoryMotionPlate(input: {
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       console.warn(`[fal-story-motion] ${modelId} failed:`, lastError);
+      // Do not start Luma (or any next model) while Kling may still be billing.
+      if (err instanceof FalMotionInFlightTimeoutError) {
+        throw err;
+      }
     }
   }
   throw new Error(`All fal.ai story motion models failed: ${lastError}`);

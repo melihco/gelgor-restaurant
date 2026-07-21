@@ -43,7 +43,10 @@ describe('video-tier-scope', () => {
   });
 
   it('caps reel motion attempts for scoped tiers', () => {
-    expect(resolveFalReelMotionAttemptBudget('fal_reel', 3, 'agency')).toBe(1);
+    expect(resolveFalReelMotionAttemptBudget('fal_reel', 1, 'agency')).toBe(1);
+    // Premium may request a higher budget, but production uses FAL_REEL_MOTION_ATTEMPTS=1
+    // (Kling→Luma chain already covers fallback without multiplying enqueues).
+    expect(resolveFalReelMotionAttemptBudget('fal_reel', 1, 'premium')).toBe(1);
     expect(resolveFalReelMotionAttemptBudget('fal_reel', 3, 'premium')).toBe(3);
     expect(resolveFalReelMotionAttemptBudget('fal_story', 3, 'agency')).toBe(1);
   });

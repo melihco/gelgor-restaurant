@@ -161,6 +161,11 @@ export interface FalDesignerInput {
    * Controls photo_plate vs locked_graphics I2V path for fal_reel.
    */
   reelRecipe?: import('@/lib/reel-production-recipe').ReelRecipe | null;
+  /**
+   * Skip Kling/Luma when the caller will run beat-montage I2V instead.
+   * Prevents paying for a full locked-graphics clip that is immediately discarded.
+   */
+  skipMotion?: boolean;
 }
 
 export interface FalDesignerStillResult {
@@ -1596,8 +1601,22 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
         : 'social_reel_graphics' as const)
     : resolveMotionStyle(input.sector, input.mood);
 
-  const motionTimeout = input.pipeline === 'fal_reel' ? 150_000 : 130_000;
+  // Kling needs ~4–5 min; short budgets caused timeout→Luma double billing.
+  const motionTimeout = input.pipeline === 'fal_reel' ? 360_000 : 180_000;
   const durationSecs = recipe ? reelRecipeDurationForFal(recipe) : 5;
+
+  if (input.skipMotion) {
+    console.log(
+      `[fal-designer] skipMotion — cover still only (montage/I2V deferred) `
+      + `headline="${still.resolvedHeadline ?? input.headline}"`,
+    );
+    return {
+      ...still,
+      videoUrl: still.imageUrl,
+      motionModel: 'motion_deferred',
+      motionStyle,
+    };
+  }
 
   let motion: StoryMotionResult;
   try {
