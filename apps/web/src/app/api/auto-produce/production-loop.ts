@@ -1332,6 +1332,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           cta = cardSub.slice(0, 48);
         }
       } else {
+        const themeIntensity = (
+          brandTheme as { fal_design_intensity?: { post?: string; story?: string; reel?: string } } | null
+        )?.fal_design_intensity?.[
+          falChannel === 'reel' ? 'reel' : falChannel === 'story' ? 'story' : 'post'
+        ] ?? null;
         const designCopy = resolveMissionFalDesignCopy({
           idea: idea as FalDesignCopyIdea,
           ideationHeadline: headline,
@@ -1342,12 +1347,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           businessType: brandBusinessType,
           brandTone: String(brandCtx.brand_tone ?? ''),
           language: brandLanguageCode,
+          designIntensity: themeIntensity,
         });
-        if (designCopy.headline && designCopy.headline !== headline) {
-          console.log(
-            `[auto-produce] fal design copy (${designCopy.source}): `
-            + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
-          );
+        if (designCopy.headline) {
+          if (designCopy.headline !== headline) {
+            console.log(
+              `[auto-produce] fal design copy (${designCopy.source}): `
+              + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+            );
+          }
           headline = designCopy.headline;
         }
         const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {

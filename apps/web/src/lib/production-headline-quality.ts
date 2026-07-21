@@ -43,6 +43,26 @@ function tokenizeForBrandCompare(text: string): string[] {
  * Examples caught: "MÜŞTERİ BAŞARI", "Günlük Story", "Doğal Ürünler", "Kampanya"
  * Examples passed: "Lezzet Turu İçin Hazırlanın!", "Bugün Ne Yiyoruz?"
  */
+/**
+ * Soulless daypart / menu-board lines — never on-canvas social hooks.
+ * e.g. "Klasik Pazar Kahvaltısı", "Öğlen Menüsü", "Akşam Kokteyli".
+ */
+export function isSoullessMenuHourHeadline(headline: string): boolean {
+  const lower = headline.trim().toLowerCase();
+  if (!lower) return true;
+  const patterns = [
+    /klasik\s+(pazar\s+)?kahvaltı/i,
+    /(öğlen|akşam|sabah)\s+(menü|menüsü|yemeği|yemek)/i,
+    /(günün|daily)\s+(menü|menüsü|soup|çorba|yemeği)/i,
+    /(akşam|gece)\s+(kokteyl|kokteyli|cocktail)/i,
+    /(lunch|dinner|breakfast)\s+menu/i,
+    /happy\s*hour/i,
+    /(market|pazar)\s+kahvaltısı/i,
+    /classic\s+(breakfast|brunch|lunch|dinner)/i,
+  ];
+  return patterns.some((p) => p.test(lower));
+}
+
 export function isLabelStyleHeadline(headline: string): boolean {
   const h = headline.trim();
   if (!h) return true;
@@ -51,6 +71,7 @@ export function isLabelStyleHeadline(headline: string): boolean {
   const lower = h.toLowerCase();
 
   if (words.length <= 1 && h.length < 15) return true;
+  if (isSoullessMenuHourHeadline(h)) return true;
 
   // Context-signal / calendar / occasion noun phrases — never on-canvas social copy.
   // e.g. "Gündüz plaj/havuz", "Yaz sezonu", "15 Temmuz anması", "Yaz zirvesi — plaj"
@@ -95,10 +116,15 @@ export function isLabelStyleHeadline(headline: string): boolean {
     }
   }
 
+  // Concrete product / atmosphere hooks are valid short overlays (≤4 words).
+  // e.g. "Serpme Köy Kahvaltısı", "Bahçede Serpme Keyfi", "Doğanın Tazeliği"
+  const hasAtmosphereSubject = /\b(kahvaltı|kahvaltısı|serpme|kokteyl|kokteyli|cocktail|breakfast|brunch|bahçe|bahçede|garden|zeytinyağı|reçel|bal|lezzet|lezzetleri|tadım|hasat|harvest|mezze|gün\s*batımı|sunset|sunrise|gece|gecesi|keyfi|tazeliği|doğallığı|stars|night)\b/i.test(lower);
+
   // 3-word noun stacks without verb/CTA energy (signal hooks pasted as headlines)
   if (
     words.length <= 3
     && !/[!?.]$/.test(h)
+    && !hasAtmosphereSubject
     && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir|for|with|your|our|the)\b/i.test(h)
   ) {
     const hasVerbEnergy =

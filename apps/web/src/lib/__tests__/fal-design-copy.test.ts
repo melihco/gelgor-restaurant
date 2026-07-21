@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { isLabelStyleHeadline } from '../production-headline-quality';
-import { resolveMissionFalDesignCopy } from '../fal-design-copy';
+import {
+  isLabelStyleHeadline,
+  isSoullessMenuHourHeadline,
+} from '../production-headline-quality';
+import {
+  extractCaptionAlignedPunchline,
+  resolveMissionFalDesignCopy,
+} from '../fal-design-copy';
+import { resolveOverlayHeadlineWordBudget } from '../fal-caption-headline';
 
 describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
   it('rejects calendar and season label headlines', () => {
@@ -11,16 +18,63 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
     expect(isLabelStyleHeadline('Yeni Sezon')).toBe(true);
   });
 
-  it('keeps real marketing hooks', () => {
+  it('rejects soulless menu-hour boards', () => {
+    expect(isSoullessMenuHourHeadline('Klasik Pazar Kahvaltısı')).toBe(true);
+    expect(isSoullessMenuHourHeadline('Öğlen Menüsü')).toBe(true);
+    expect(isSoullessMenuHourHeadline('Akşam Kokteyli')).toBe(true);
+    expect(isLabelStyleHeadline('Lunch Menu')).toBe(true);
+  });
+
+  it('keeps real marketing hooks and short atmosphere punchlines', () => {
     expect(isLabelStyleHeadline('Bu Yaz Keşfetmeye Hazır mısın?')).toBe(false);
     expect(isLabelStyleHeadline('Meet us under the stars')).toBe(false);
     expect(isLabelStyleHeadline('Sıcak gecelerde buluşalım')).toBe(false);
+    expect(isLabelStyleHeadline('Bahçede Serpme Keyfi')).toBe(false);
+    expect(isLabelStyleHeadline('Serpme Kahvaltı Keyfi')).toBe(false);
   });
 
   it('rejects catalog slot labels with format suffix', () => {
     expect(isLabelStyleHeadline('Çiftlik ziyareti story')).toBe(true);
     expect(isLabelStyleHeadline('DJ gecesi reel')).toBe(true);
     expect(isLabelStyleHeadline('Menü öne çıkar post')).toBe(true);
+  });
+});
+
+describe('resolveOverlayHeadlineWordBudget', () => {
+  it('keeps feed overlays at 3–4 words by intensity', () => {
+    expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'photo_first' }).maxWords).toBe(2);
+    expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'balanced' }).maxWords).toBe(3);
+    expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'bold_editorial' }).maxWords).toBe(4);
+    expect(resolveOverlayHeadlineWordBudget({ channel: 'reel' }).maxWords).toBe(3);
+  });
+});
+
+describe('extractCaptionAlignedPunchline', () => {
+  it('builds a short breakfast hook for restaurant captions (not menu boards)', () => {
+    const punch = extractCaptionAlignedPunchline({
+      caption:
+        "Gel Gör Restoran'da bahçemizde serpme köy kahvaltısını tadın! Taze yerel malzemelerle hazırlanır.",
+      brandName: 'Gel Gör',
+      maxWords: 3,
+      maxLen: 36,
+    });
+    expect(punch.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(punch.toLowerCase()).toMatch(/serpme|kahvalt|bahçe/);
+    expect(isSoullessMenuHourHeadline(punch)).toBe(false);
+    expect(punch.toLowerCase()).not.toMatch(/öğlen menü|klasik pazar|gel gör/);
+  });
+
+  it('builds a cocktail hook for beach club captions', () => {
+    const punch = extractCaptionAlignedPunchline({
+      caption:
+        'Yazın serinletici kokteyllerine hazır mısın? Sarnıç Beach’te ferahlatıcı lezzetler seni bekliyor.',
+      brandName: 'Sarnıç Beach',
+      maxWords: 3,
+      maxLen: 36,
+    });
+    expect(punch.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(punch.toLowerCase()).toMatch(/kokteyl|cocktail|serin/);
+    expect(punch.toLowerCase()).not.toMatch(/kahvalt|öğlen|menü/);
   });
 });
 
@@ -44,14 +98,15 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Sarnıç Beach',
       channel: 'feed_post',
       businessType: 'beach_club',
+      designIntensity: 'balanced',
     });
     expect(result.source).toBe('mission_tagline');
-    expect(result.headline).toMatch(/^Hadi tatlarına bak!?$/);
-    expect(result.headline.length).toBeLessThanOrEqual(48);
+    expect(result.headline.toLowerCase()).toMatch(/hadi|tat/);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(4);
     expect(result.headline.toLowerCase()).not.toMatch(/sizi bekliyoruz|özlemle|serinletici yaz/);
   });
 
-  it('uses mission tagline verbatim on story — no 28-char caption stub', () => {
+  it('tightens long mission taglines to the word budget on story', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {
         concept_title: 'Crafting Citrus Cocktails',
@@ -66,31 +121,11 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Yula',
       channel: 'story',
       businessType: 'beach_club',
+      designIntensity: 'balanced',
     });
     expect(result.source).toBe('mission_tagline');
-    expect(result.headline).toBe('Discover the art of cocktail making');
-    expect(result.headline.length).toBeGreaterThan(28);
-  });
-
-  it('prefers quoted tagline over ideation title for citrus calendar row', () => {
-    const result = resolveMissionFalDesignCopy({
-      idea: {
-        concept_title: 'Relax with a View',
-        headline: 'Relax with a View',
-        tagline: 'Relax with breathtaking views.',
-        canva_field_copy: {
-          headline: 'Relax with breathtaking views.',
-          subtitle: 'Relax with a View',
-        },
-      },
-      ideationHeadline: 'Relax with a View',
-      caption: 'Highlight the stunning views from our outdoor seating area.',
-      brandName: 'Yula',
-      channel: 'story',
-      businessType: 'beach_club',
-    });
-    expect(result.headline).toBe('Relax with breathtaking views');
-    expect(result.headline.length).toBeGreaterThan(28);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.toLowerCase()).toMatch(/discover|cocktail|art/);
   });
 
   it('prefers canva_field_copy marketing line over series-style ideation', () => {
@@ -107,9 +142,11 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Karaman Datça',
       channel: 'feed_post',
       businessType: 'local_products_shop',
+      designIntensity: 'balanced',
     });
     expect(result.source).toBe('canva_field_copy');
-    expect(result.headline.toLowerCase()).toMatch(/doğal lezzet|tadını/);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.toLowerCase()).toMatch(/doğal|lezzet|tad/);
     expect(result.headline.toLowerCase()).not.toMatch(/serisi|yaparken kargo|el yapımı$/);
   });
 
@@ -127,13 +164,15 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Scorpios Bodrum',
       channel: 'reel',
       businessType: 'beach_club',
+      designIntensity: 'balanced',
     });
     expect(result.source).toBe('canva_field_copy');
     expect(result.headline.toLowerCase()).not.toMatch(/sezon/);
     expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak/);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
   });
 
-  it('derives overlay from caption when ideation is a slot format label', () => {
+  it('derives short punchline from caption when ideation is a slot format label', () => {
     const result = resolveMissionFalDesignCopy({
       idea: { headline: 'Çiftlik ziyareti story' },
       ideationHeadline: 'Çiftlik ziyareti story',
@@ -143,11 +182,12 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Karaman Datça',
       channel: 'feed_post',
       businessType: 'local_products_shop',
+      designIntensity: 'balanced',
     });
-    expect(result.source).toMatch(/caption_design_copy/);
+    expect(result.source).toMatch(/caption_/);
     expect(result.headline.toLowerCase()).not.toMatch(/çiftlik ziyareti|story/);
-    expect(result.headline.length).toBeLessThanOrEqual(48);
-    expect(result.headline.toLowerCase()).not.toMatch(/yaparken kargo|el yapımı$/);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.toLowerCase()).toMatch(/hasat|zeytin|tadım|erken/);
   });
 
   it('derives overlay from caption when ideation is a season label', () => {
@@ -159,10 +199,28 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Scorpios Bodrum',
       channel: 'feed_post',
       businessType: 'beach_club',
+      designIntensity: 'balanced',
     });
-    expect(result.source).toMatch(/caption_design_copy/);
+    expect(result.source).toMatch(/caption_/);
     expect(result.headline.toLowerCase()).not.toMatch(/plaj\/havuz|gündüz/);
-    expect(result.headline.length).toBeGreaterThan(4);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+  });
+
+  it('never ships a long caption sentence as the feed overlay', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: { headline: 'Yaz sezonu / serinletici menü' },
+      ideationHeadline: 'Yaz sezonu / serinletici menü',
+      caption:
+        "Gel Gör Restoran'da bahçemizde serpme köy kahvaltısını tadın! Taze yerel malzemelerle hazırlanır.",
+      brandName: 'Gel Gör',
+      channel: 'feed_post',
+      businessType: 'restaurant_cafe',
+      designIntensity: 'balanced',
+    });
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.length).toBeLessThanOrEqual(36);
+    expect(result.headline.toLowerCase()).not.toMatch(/gel gör restoran|yaz sezonu|öğlen|menü/);
+    expect(result.headline.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|keyfi/);
   });
 
   it('keeps English overlay language when caption is English', () => {
@@ -175,8 +233,10 @@ describe('resolveMissionFalDesignCopy', () => {
       brandName: 'Scorpios Bodrum',
       channel: 'story',
       businessType: 'beach_club',
+      designIntensity: 'balanced',
     });
-    expect(result.headline).toMatch(/Meet|stars|Reserve|Join|summer|nights/i);
+    expect(result.headline).toMatch(/Meet|stars|night|Join|summer/i);
     expect(result.headline).not.toMatch(/sezon|anması|plaj/i);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
   });
 });

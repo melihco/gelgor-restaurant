@@ -327,7 +327,7 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
 
 // ── Caption-Derived Headline Extraction ───────────────────────────────────────
 
-const FILLER_WORDS = /\b(ve|ile|için|bu|bir|her|da|de|olan|gibi|kadar|şimdi|hemen)\b/gi;
+const FILLER_WORDS = /\b(ve|ile|için|bu|bir|her|da|de|olan|gibi|kadar|şimdi|hemen|the|of|a|an|to|for|with|our|your)\b/gi;
 const EMOJI_RX = /[\u{1F600}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
 const HASHTAG_RX = /#\S+/g;
 const MENTION_RX = /@\S+/g;
@@ -800,10 +800,11 @@ export function resolveFalProductionOverlayHeadline(
   primary: string,
   fallbacks: string[] = [],
   channel: 'reel' | 'feed_post' | 'story',
+  designIntensity?: string | null,
 ): string {
   const raw = ensureMeaningfulFalOverlayText(primary, fallbacks);
   if (!raw) return '';
-  const clamped = clampFalOverlayHeadlineForCanvas(raw, channel);
+  const clamped = clampFalOverlayHeadlineForCanvas(raw, channel, designIntensity);
   return clamped && isMeaningfulFalOverlayText(clamped) ? clamped : '';
 }
 
@@ -823,8 +824,47 @@ export function formatFalOnImageSubtitleDirective(subtitle: string): string {
   return `Secondary tagline below headline (ONLY this copy): «${safe}». Designed complement font — not plain body text.`;
 }
 
-/** Feed designed posts — allow full marketing sentences (calendar/canva hooks ~28–48). */
-export const FAL_FEED_OVERLAY_MAX_CHARS = 48;
+/** Feed designed posts — char ceiling; word budget usually bites first (3–4 words). */
+export const FAL_FEED_OVERLAY_MAX_CHARS = 36;
+
+export type OverlayHeadlineChannel = 'reel' | 'feed_post' | 'story';
+
+/**
+ * On-canvas word budget from channel + design paint density.
+ * Dense paint (bold) can hold 4 words; photo-first / elegant stays at 2–3.
+ */
+export function resolveOverlayHeadlineWordBudget(input: {
+  channel: OverlayHeadlineChannel;
+  designIntensity?: string | null;
+}): { maxWords: number; maxLen: number } {
+  const intensity = String(input.designIntensity ?? '').trim().toLowerCase();
+  const channel = input.channel;
+
+  let maxWords = channel === 'reel' ? 3 : channel === 'story' ? 3 : 4;
+  if (
+    intensity === 'photo_first'
+    || intensity === 'elegant_light'
+  ) {
+    maxWords = 2;
+  } else if (intensity === 'balanced') {
+    maxWords = 3;
+  } else if (intensity === 'designed' || intensity === 'bold_editorial') {
+    maxWords = Math.min(4, maxWords + (channel === 'feed_post' ? 0 : 0));
+    maxWords = channel === 'feed_post' ? 4 : 3;
+  }
+
+  const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
+  return { maxWords, maxLen };
+}
+
+/** Tighten any channel overlay to a complete ≤N-word phrase. */
+export function tightenOverlayHeadline(
+  text: string,
+  maxLen: number,
+  maxWords: number,
+): string {
+  return tightenVideoHeadline(text, maxLen, maxWords);
+}
 
 /** Agent-planned mission taglines — complete sentences, not caption stubs. */
 export const FAL_MISSION_TAGLINE_MAX_CHARS = 48;
@@ -880,28 +920,22 @@ export function resolveMissionPlannedOverlayLine(
 export function clampFalOverlayHeadlineForCanvas(
   headline: string,
   channel: 'reel' | 'feed_post' | 'story',
+  designIntensity?: string | null,
 ): string {
   const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
   if (!clean) return '';
   if (isInternalStrategyBriefing(clean)) return '';
   if (isIncompleteOverlayPhrase(clean) && clean.length > FAL_FEED_OVERLAY_MAX_CHARS) return '';
-  if (channel === 'reel') return tightenVideoHeadline(clean, 22, 3);
-  if (channel === 'story') return tightenVideoHeadline(clean, 28, 4);
-  if (clean.length <= FAL_FEED_OVERLAY_MAX_CHARS && !isIncompleteOverlayPhrase(clean)) {
-    return clean;
+  const budget = resolveOverlayHeadlineWordBudget({ channel, designIntensity });
+  const tightened = tightenOverlayHeadline(clean, budget.maxLen, budget.maxWords);
+  if (tightened && isMeaningfulFalOverlayText(tightened) && !isIncompleteOverlayPhrase(tightened)) {
+    return tightened;
   }
-  const result = truncateAtWordBoundary(clean, FAL_FEED_OVERLAY_MAX_CHARS);
+  if (channel === 'reel') return tightenVideoHeadline(clean, 22, 3);
+  if (channel === 'story') return tightenVideoHeadline(clean, 28, 3);
+  const result = truncateAtWordBoundary(clean, budget.maxLen);
   if (result && isMeaningfulFalOverlayText(result) && !isIncompleteOverlayPhrase(result)) {
     return result;
-  }
-  // Prefer a closed short sentence over a mid-phrase 3-word stub.
-  const sentence = clean.split(/[.!?…]/)[0]?.trim() ?? '';
-  if (
-    sentence.length >= 8
-    && sentence.length <= FAL_FEED_OVERLAY_MAX_CHARS
-    && !isIncompleteOverlayPhrase(sentence)
-  ) {
-    return sentence;
   }
   return '';
 }
@@ -1160,6 +1194,19 @@ function tightenVideoHeadline(text: string, maxLen: number, maxWords: number): s
   if (!normalized) return '';
 
   const words = normalized.split(/\s+/).filter(Boolean);
+  // Already within budget — keep articles ("Meet the Maker").
+  if (words.length <= maxWords && normalized.length <= maxLen) {
+    let compact = capitalizeFirst(stripDanglingOverlayTail(normalized.replace(/[,.!?]+$/g, '').trim()));
+    while (compact && isIncompleteOverlayPhrase(compact)) {
+      const parts = compact.split(/\s+/).filter(Boolean);
+      if (parts.length <= 1) return '';
+      parts.pop();
+      compact = capitalizeFirst(stripDanglingOverlayTail(parts.join(' ')));
+    }
+    const sanitized = sanitizeFalOverlayText(compact);
+    return sanitized && isMeaningfulFalOverlayText(sanitized) ? sanitized : '';
+  }
+
   const filtered = words.filter((word, index) => {
     const lower = word.toLowerCase();
     if (index === 0 && /^(yaz|kış|bahar|sonbahar)$/.test(lower)) return true;

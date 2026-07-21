@@ -1,8 +1,9 @@
 /**
  * Mission Fal design copy — on-canvas headline/subtitle for designed posts.
  *
- * Priority: mission tagline (quoted calendar line) → canva_field_copy → ideation
- * title → caption-derived line (last resort only).
+ * Priority: mission tagline (quoted calendar line) → canva_field_copy →
+ * caption-aligned short punchline → ideation title (last resort).
+ * Overlays stay ≤3–4 words from channel + design intensity paint density.
  */
 
 import {
@@ -16,11 +17,14 @@ import {
   resolveFalProductionOverlayHeadline,
   resolveFalSubtitle,
   resolveMissionPlannedOverlayLine,
+  resolveOverlayHeadlineWordBudget,
+  tightenOverlayHeadline,
   type OverlayLocale,
 } from '@/lib/fal-caption-headline';
 import {
   isLabelStyleHeadline,
   isMeaninglessBrandEchoHeadline,
+  isSoullessMenuHourHeadline,
   resolveMeaningfulProductionHeadline,
 } from '@/lib/production-headline-quality';
 import { rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
@@ -95,6 +99,94 @@ export function unwrapQuotedOverlayLine(line: string): string {
   return (m?.[1] ?? clean).trim();
 }
 
+const PUNCHLINE_STOP = new Set([
+  'bir', 'bu', 've', 'ile', 'için', 'da', 'de', 'ki', 'mi', 'mu', 'mü',
+  'the', 'a', 'an', 'and', 'with', 'for', 'our', 'your', 'from', 'to',
+  'restoran', 'restaurant', 'cafe', 'café', 'otel', 'hotel', 'beach', 'club',
+  'tadın', 'tadini', 'çıkarın', 'cikarin', 'hazır', 'hazir', 'mısın', 'misin',
+  'seni', 'sizi', 'bekliyor', 'bekliyoruz', 'gelin', 'gel', 'hemen', 'şimdi',
+  'show', 'our', 'capturing', 'highlight', 'highlighting',
+]);
+
+/**
+ * Theme-aware short hooks from caption — never daypart menu boards.
+ * Deterministic; multi-tenant (no brand UUID branches).
+ */
+export function extractCaptionAlignedPunchline(input: {
+  caption: string;
+  brandName: string;
+  maxWords: number;
+  maxLen: number;
+}): string {
+  const caption = input.caption.trim();
+  if (caption.length < 12) return '';
+
+  const lower = caption.toLowerCase();
+  const brandTokens = input.brandName
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 2);
+
+  const themeHooks: Array<{ pattern: RegExp; tr: string; en: string }> = [
+    { pattern: /serpme[\s\S]{0,40}kahvalt/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
+    { pattern: /kahvalt/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
+    { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow' },
+    { pattern: /zeytinyağ/i, tr: 'Erken Hasat Tadım', en: 'Early Harvest Taste' },
+    { pattern: /reçel|\bjam\b/i, tr: 'Kavanozda Doğallık', en: 'Jarred With Care' },
+    { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars' },
+    { pattern: /bahçe|garden|teras|terrace/i, tr: 'Bahçede Yaz Keyfi', en: 'Garden Summer Mood' },
+  ];
+
+  const looksEnglish = /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail)\b/i.test(caption)
+    && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe)/i.test(caption);
+
+  for (const hook of themeHooks) {
+    if (!hook.pattern.test(lower)) continue;
+    const candidate = looksEnglish ? hook.en : hook.tr;
+    if (isSoullessMenuHourHeadline(candidate) || isLabelStyleHeadline(candidate)) continue;
+    const tight = tightenOverlayHeadline(candidate, input.maxLen, input.maxWords);
+    if (tight && isMeaningfulFalOverlayText(tight) && !isSoullessMenuHourHeadline(tight)) {
+      return tight;
+    }
+  }
+
+  // Content-word extract: strip brand + stopwords, keep atmosphere nouns/verbs.
+  const cleaned = caption
+    .replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, ' ')
+    .replace(/#\S+/g, ' ')
+    .replace(/@\S+/g, ' ')
+    .split(/[.!?\n]/)[0]
+    ?.trim() ?? caption;
+  const words = cleaned
+    .replace(/[«»"'„“‘’():;[\]{}]+/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .filter((w) => {
+      const lw = w.toLowerCase().replace(/['’].*$/, '');
+      if (lw.length < 3) return false;
+      if (PUNCHLINE_STOP.has(lw)) return false;
+      if (brandTokens.some((b) => lw.includes(b) || b.includes(lw))) return false;
+      return true;
+    });
+
+  if (words.length >= 2) {
+    const joined = words.slice(0, Math.max(input.maxWords + 2, 4)).join(' ');
+    const tight = tightenOverlayHeadline(joined, input.maxLen, input.maxWords);
+    if (
+      tight
+      && tight.split(/\s+/).filter(Boolean).length >= 2
+      && isMeaningfulFalOverlayText(tight)
+      && !isSoullessMenuHourHeadline(tight)
+      && !isLabelStyleHeadline(tight)
+    ) {
+      return tight;
+    }
+  }
+
+  return '';
+}
+
 function isPublishableOverlayLine(
   line: string,
   brandName: string,
@@ -104,6 +196,7 @@ function isPublishableOverlayLine(
   // Punchy calendar quotes may be short (e.g. "Tadına bak!") — keep ≥6 chars / 2+ words.
   if (!clean || clean.length < 6) return false;
   if (clean.length < 8 && clean.split(/\s+/).filter(Boolean).length < 2) return false;
+  if (isSoullessMenuHourHeadline(clean)) return false;
   if (isLabelStyleHeadline(clean)) return false;
   if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
   if (isIncompleteOverlayPhrase(clean)) return false;
@@ -120,6 +213,7 @@ function finalizeMissionOverlay(input: {
   businessType?: string;
   brandTone?: string;
   lockIdeationCopy?: boolean;
+  designIntensity?: string | null;
 }): { headline: string; subtitle?: string } {
   const overlay = resolveFalOverlayCopy({
     headline: input.headline,
@@ -130,8 +224,19 @@ function finalizeMissionOverlay(input: {
     brandName: input.brandName,
     businessType: input.businessType,
   });
+  const budget = resolveOverlayHeadlineWordBudget({
+    channel: input.channel,
+    designIntensity: input.designIntensity,
+  });
+  const headline = resolveFalProductionOverlayHeadline(
+    overlay.headline,
+    [],
+    input.channel,
+    input.designIntensity,
+  ) || tightenOverlayHeadline(overlay.headline, budget.maxLen, budget.maxWords);
+
   const rebased = rebiasUngroundedOverlayCopy({
-    headline: overlay.headline,
+    headline: headline || overlay.headline,
     subtitle: overlay.subtitle,
     caption: input.caption,
     brandName: input.brandName,
@@ -151,7 +256,7 @@ function finalizeMissionOverlay(input: {
       missionTitle: rebased.headline,
       brandName: input.brandName,
       cta: input.cta,
-      maxLen: input.channel === 'reel' ? 22 : 28,
+      maxLen: budget.maxLen,
     }).headline;
     const toned = preferBrandToneHeadline({
       current: rebased.headline,
@@ -160,21 +265,42 @@ function finalizeMissionOverlay(input: {
     });
     if (toned && toned !== rebased.headline) {
       return {
-        headline: resolveFalProductionOverlayHeadline(toned, [rebased.headline], input.channel),
+        headline: resolveFalProductionOverlayHeadline(
+          toned,
+          [rebased.headline],
+          input.channel,
+          input.designIntensity,
+        ),
         subtitle: rebased.subtitle,
       };
     }
   }
 
-  return { headline: rebased.headline, subtitle: rebased.subtitle };
+  const finalHeadline = resolveFalProductionOverlayHeadline(
+    rebased.headline,
+    [],
+    input.channel,
+    input.designIntensity,
+  ) || rebased.headline;
+
+  return { headline: finalHeadline, subtitle: rebased.subtitle };
 }
 
 function resolvePlannedOverlayLine(
   line: string,
   fallbacks: string[],
   channel: 'reel' | 'feed_post' | 'story',
+  designIntensity?: string | null,
 ): string {
-  return resolveMissionPlannedOverlayLine(line, fallbacks, channel);
+  const planned = resolveMissionPlannedOverlayLine(line, fallbacks, channel);
+  if (!planned) return '';
+  const budget = resolveOverlayHeadlineWordBudget({ channel, designIntensity });
+  // Quoted punchlines that already fit the budget stay verbatim.
+  const words = planned.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
+  if (words.length <= budget.maxWords && planned.length <= budget.maxLen) {
+    return planned;
+  }
+  return tightenOverlayHeadline(planned, budget.maxLen, budget.maxWords) || planned;
 }
 
 function extractMissionTagline(idea: FalDesignCopyIdea): string {
@@ -183,7 +309,7 @@ function extractMissionTagline(idea: FalDesignCopyIdea): string {
 
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
- * Priority: mission tagline → canva/text_layers → ideation title → caption.
+ * Priority: mission tagline → canva/text_layers → caption punchline → ideation title.
  */
 export function resolveMissionFalDesignCopy(input: {
   idea: FalDesignCopyIdea;
@@ -195,6 +321,8 @@ export function resolveMissionFalDesignCopy(input: {
   businessType?: string;
   brandTone?: string;
   language?: string | null;
+  /** Paint density — drives 2–4 word overlay budget. */
+  designIntensity?: string | null;
 }): {
   headline: string;
   subtitle?: string;
@@ -204,12 +332,17 @@ export function resolveMissionFalDesignCopy(input: {
   const brandName = input.brandName.trim();
   const channel = input.channel;
   const captionLoc = detectOverlayLocale(caption);
-  const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
+  const budget = resolveOverlayHeadlineWordBudget({
+    channel,
+    designIntensity: input.designIntensity,
+  });
+  const maxLen = budget.maxLen;
 
   const acceptPlannedOverlayLine = (line: string): boolean => {
     const clean = unwrapQuotedOverlayLine(line);
     if (!clean || isIncompleteOverlayPhrase(clean)) return false;
     if (!isMeaningfulFalOverlayText(clean)) return false;
+    if (isSoullessMenuHourHeadline(clean)) return false;
     if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
     if (localesClash(captionLoc, detectOverlayLocale(clean))) return false;
     return true;
@@ -218,19 +351,23 @@ export function resolveMissionFalDesignCopy(input: {
   // 1) Mission tagline / subline — quoted line from calendar & ideation cards.
   const missionTagline = unwrapQuotedOverlayLine(extractMissionTagline(input.idea));
   if (missionTagline && isPublishableOverlayLine(missionTagline, brandName, captionLoc)) {
-    const headline = resolvePlannedOverlayLine(missionTagline, [], channel);
+    const headline = resolvePlannedOverlayLine(
+      missionTagline,
+      [],
+      channel,
+      input.designIntensity,
+    );
     if (headline && acceptPlannedOverlayLine(headline)) {
       const ideationTitle = unwrapQuotedOverlayLine(
         input.ideationHeadline.trim()
           || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim(),
       );
-      // Supporting line only when short + distinct — never brand-echo "sizi bekliyoruz" dual slogans.
       const subtitle = ideationTitle
         && ideationTitle.length <= 36
         && !areFalOverlayTextsRedundant(headline, ideationTitle)
         && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
         && !isMeaninglessBrandEchoHeadline(ideationTitle, brandName)
-        ? resolvePlannedOverlayLine(ideationTitle, [headline], channel) || undefined
+        ? resolvePlannedOverlayLine(ideationTitle, [headline], channel, input.designIntensity) || undefined
         : undefined;
       return { headline, subtitle, source: 'mission_tagline' };
     }
@@ -239,12 +376,17 @@ export function resolveMissionFalDesignCopy(input: {
   // 2) Purpose-built overlay from canva_field_copy / text_layers.
   const extracted = extractIdeationDesignCopy(input.idea);
   if (extracted.headline && isPublishableOverlayLine(extracted.headline, brandName, captionLoc)) {
-    const headline = resolvePlannedOverlayLine(extracted.headline, [], channel);
+    const headline = resolvePlannedOverlayLine(
+      extracted.headline,
+      [],
+      channel,
+      input.designIntensity,
+    );
     if (headline && acceptPlannedOverlayLine(headline)) {
       const subtitleRaw = extracted.subtitle || input.cta;
       const subtitle = subtitleRaw
         && !areFalOverlayTextsRedundant(headline, subtitleRaw)
-        ? resolvePlannedOverlayLine(subtitleRaw, [headline], channel) || undefined
+        ? resolvePlannedOverlayLine(subtitleRaw, [headline], channel, input.designIntensity) || undefined
         : resolveFalSubtitle({
           caption,
           headline,
@@ -254,7 +396,79 @@ export function resolveMissionFalDesignCopy(input: {
     }
   }
 
-  // 3) Punchy ideation / concept title (not series labels).
+  // 3) Caption-aligned short punchline (never long first-sentence dumps).
+  if (caption.length >= 24) {
+    const punch = extractCaptionAlignedPunchline({
+      caption,
+      brandName,
+      maxWords: budget.maxWords,
+      maxLen,
+    });
+    if (punch && acceptPlannedOverlayLine(punch)) {
+      const subtitle = resolveFalSubtitle({
+        caption,
+        headline: punch,
+        cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
+      }) ?? undefined;
+      return { headline: punch, subtitle, source: 'caption_punchline' };
+    }
+
+    const fromCaption = resolveFalDisplayHeadline({
+      caption,
+      missionTitle: input.ideationHeadline || brandName,
+      brandName,
+      cta: input.cta,
+      maxLen: Math.min(maxLen + 12, FAL_FEED_OVERLAY_MAX_CHARS + 12),
+    });
+    let headline = resolveFalProductionOverlayHeadline(
+      fromCaption.headline,
+      [input.ideationHeadline, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+      channel,
+      input.designIntensity,
+    );
+    if (
+      !headline
+      || isLabelStyleHeadline(headline)
+      || isSoullessMenuHourHeadline(headline)
+      || isIncompleteOverlayPhrase(headline)
+    ) {
+      const qa = resolveMeaningfulProductionHeadline({
+        headline: '',
+        caption,
+        brandName,
+        businessType: input.businessType,
+        language: input.language,
+        maxLen,
+      });
+      headline = resolveFalProductionOverlayHeadline(
+        qa.headline,
+        [],
+        channel,
+        input.designIntensity,
+      );
+    }
+    if (headline && !isSoullessMenuHourHeadline(headline) && !isLabelStyleHeadline(headline)) {
+      const subtitle = resolveFalSubtitle({
+        caption,
+        headline,
+        cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
+      }) ?? undefined;
+      const overlay = finalizeMissionOverlay({
+        headline,
+        cta: subtitle || input.cta,
+        caption,
+        channel,
+        brandName,
+        businessType: input.businessType,
+        brandTone: input.brandTone,
+        lockIdeationCopy: true,
+        designIntensity: input.designIntensity,
+      });
+      return { ...overlay, source: 'caption_design_copy' };
+    }
+  }
+
+  // 4) Punchy ideation / concept title (not series labels) — last resort.
   const ideation = input.ideationHeadline.trim()
     || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim();
   if (isPublishableOverlayLine(ideation, brandName, captionLoc)) {
@@ -267,53 +481,15 @@ export function resolveMissionFalDesignCopy(input: {
       businessType: input.businessType,
       brandTone: input.brandTone,
       lockIdeationCopy: true,
+      designIntensity: input.designIntensity,
     });
-    if (overlay.headline && !isIncompleteOverlayPhrase(overlay.headline)) {
+    if (
+      overlay.headline
+      && !isIncompleteOverlayPhrase(overlay.headline)
+      && !isSoullessMenuHourHeadline(overlay.headline)
+    ) {
       return { ...overlay, source: 'ideation_title' };
     }
-  }
-
-  // 4) Caption → complete sentence (never mid-phrase stubs).
-  if (caption.length >= 24) {
-    const fromCaption = resolveFalDisplayHeadline({
-      caption,
-      missionTitle: ideation || brandName,
-      brandName,
-      cta: input.cta,
-      maxLen,
-    });
-    let headline = resolveFalProductionOverlayHeadline(
-      fromCaption.headline,
-      [ideation, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
-      channel,
-    );
-    if (!headline || isLabelStyleHeadline(headline) || isIncompleteOverlayPhrase(headline)) {
-      const qa = resolveMeaningfulProductionHeadline({
-        headline: '',
-        caption,
-        brandName,
-        businessType: input.businessType,
-        language: input.language,
-        maxLen,
-      });
-      headline = resolveFalProductionOverlayHeadline(qa.headline, [], channel);
-    }
-    const subtitle = resolveFalSubtitle({
-      caption,
-      headline,
-      cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
-    }) ?? undefined;
-    const overlay = finalizeMissionOverlay({
-      headline,
-      cta: subtitle || input.cta,
-      caption,
-      channel,
-      brandName,
-      businessType: input.businessType,
-      brandTone: input.brandTone,
-      lockIdeationCopy: true,
-    });
-    return { ...overlay, source: 'caption_design_copy' };
   }
 
   const overlay = finalizeMissionOverlay({
@@ -325,9 +501,23 @@ export function resolveMissionFalDesignCopy(input: {
     businessType: input.businessType,
     brandTone: input.brandTone,
     lockIdeationCopy: true,
+    designIntensity: input.designIntensity,
   });
 
   if (overlay.headline && isLabelStyleHeadline(overlay.headline) && caption.length >= 24) {
+    const punch = extractCaptionAlignedPunchline({
+      caption,
+      brandName,
+      maxWords: budget.maxWords,
+      maxLen,
+    });
+    if (punch && !isLabelStyleHeadline(punch) && !isSoullessMenuHourHeadline(punch)) {
+      return {
+        headline: punch,
+        subtitle: resolveFalSubtitle({ caption, headline: punch, cta: input.cta }) ?? undefined,
+        source: 'caption_design_copy_rescue',
+      };
+    }
     const forced = resolveFalDisplayHeadline({
       caption,
       missionTitle: overlay.headline,
@@ -335,8 +525,18 @@ export function resolveMissionFalDesignCopy(input: {
       cta: input.cta,
       maxLen,
     });
-    const headline = resolveFalProductionOverlayHeadline(forced.headline, [overlay.headline], channel);
-    if (headline && !isLabelStyleHeadline(headline) && !isIncompleteOverlayPhrase(headline)) {
+    const headline = resolveFalProductionOverlayHeadline(
+      forced.headline,
+      [overlay.headline],
+      channel,
+      input.designIntensity,
+    );
+    if (
+      headline
+      && !isLabelStyleHeadline(headline)
+      && !isSoullessMenuHourHeadline(headline)
+      && !isIncompleteOverlayPhrase(headline)
+    ) {
       return {
         headline,
         subtitle: resolveFalSubtitle({ caption, headline, cta: input.cta }) ?? undefined,
