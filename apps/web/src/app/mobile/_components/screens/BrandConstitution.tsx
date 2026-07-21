@@ -3099,16 +3099,20 @@ export function BrandConstitution() {
       if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
       return;
     }
-    // Unified Marka Profili — subgroups only scroll to in-page anchors.
+    // Kanallar — Studio alt ekranı (Marka Profili ana listesinden ayrıldı).
+    if (g === 'channels') {
+      setTab('identity');
+      setView('section');
+      setIdentityGroup('channels');
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+      return;
+    }
+    // Basics — scroll to Kimlik on the main Marka Profili screen.
     setIdentityGroup(null);
     if (typeof window === 'undefined') return;
-    const anchor =
-      g === 'channels' ? 'discovery-channels'
-        : g === 'basics' ? 'service-profile'
-          : null;
-    if (anchor) {
+    if (g === 'basics') {
       window.setTimeout(() => {
-        const el = document.querySelector(`[data-brand-form="${anchor}"]`);
+        const el = document.querySelector('[data-brand-form="service-profile"]');
         el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 80);
       return;
@@ -3970,6 +3974,7 @@ export function BrandConstitution() {
         {!(
           (tab === 'content' && contentGroup !== null)
           || (tab === 'design' && designGroup !== null)
+          || (tab === 'identity' && identityGroup !== null)
         ) && (
           <div className="sa-chrome-eyebrow" style={{ marginBottom: 14 }}>{sectionEyebrow}</div>
         )}
@@ -3998,8 +4003,50 @@ export function BrandConstitution() {
           </div>
         )}
 
+        {/* Marka Profili → Kanallar (Studio alt ekranı) */}
+        {tab === 'identity' && identityGroup === 'channels' && (
+          <>
+            <VisionerSubNav
+              t={t}
+              parentLabel="Marka Profili"
+              title="Kanallar"
+              onBack={() => openIdentityGroup(null)}
+            />
+            <div data-brand-form="discovery-channels">
+              <section style={{ marginBottom: 16 }}>
+                <div className="brand-grouped-fields" style={{ ...t.surfaceGroup, overflow: 'hidden' }}>
+                  <Field
+                    t={t}
+                    label="Web Sitesi"
+                    value={websiteDisplay}
+                    displayValue={formatChannelDisplay(websiteDisplay)}
+                    onSave={save('websiteUrl')}
+                    hint="https://..."
+                  />
+                  <Field
+                    t={t}
+                    label="Instagram"
+                    value={instagramDisplay}
+                    displayValue={formatChannelDisplay(instagramDisplay)}
+                    onSave={save('instagramHandle')}
+                    hint="Kullanıcı adı"
+                  />
+                  <Field
+                    t={t}
+                    label="Google Business"
+                    value={(p as any).googleBusinessUrl ?? ''}
+                    displayValue={formatChannelDisplay(String((p as any).googleBusinessUrl ?? ''))}
+                    onSave={save('googleBusinessUrl')}
+                    hint="Maps veya Business linki"
+                  />
+                </div>
+              </section>
+            </div>
+          </>
+        )}
+
         {/* Marka Profili — kimlik alanları önce; studio kısayolları sonda */}
-        {tab === 'identity' && (
+        {tab === 'identity' && identityGroup === null && (
           <>
             {!constitutionConfirmedAt && (
               <div
@@ -4103,72 +4150,50 @@ export function BrandConstitution() {
               </section>
             </div>
 
-            <div data-brand-form="discovery-channels">
-              <section style={{ marginBottom: 16 }}>
-                <SLabel t={t} text="Kanallar" />
-                <div className="brand-grouped-fields" style={{ ...t.surfaceGroup, overflow: 'hidden' }}>
-                  <Field
-                    t={t}
-                    label="Web Sitesi"
-                    value={websiteDisplay}
-                    displayValue={formatChannelDisplay(websiteDisplay)}
-                    onSave={save('websiteUrl')}
-                    hint="https://..."
-                  />
-                  <Field
-                    t={t}
-                    label="Instagram"
-                    value={instagramDisplay}
-                    displayValue={formatChannelDisplay(instagramDisplay)}
-                    onSave={save('instagramHandle')}
-                    hint="Kullanıcı adı"
-                  />
-                  <Field
-                    t={t}
-                    label="Google Business"
-                    value={(p as any).googleBusinessUrl ?? ''}
-                    displayValue={formatChannelDisplay(String((p as any).googleBusinessUrl ?? ''))}
-                    onSave={save('googleBusinessUrl')}
-                    hint="Maps veya Business linki"
-                  />
+            <section style={{ marginBottom: 16 }}>
+              <SLabel t={t} text="İçerik dili" />
+              <div style={{ ...t.surfaceGroup, padding: 10 }}>
+                <div style={{
+                  display: 'flex', gap: 3, padding: 3, borderRadius: 12,
+                  background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                }}>
+                  {(['tr', 'en'] as const).map((lang) => {
+                    const active = contentLanguage === lang;
+                    return (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => save('languages')(lang)}
+                        style={{
+                          flex: 1, minHeight: 44, padding: '10px 0', borderRadius: 10, border: 'none',
+                          background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
+                          color: active ? t.textPrimary : t.textTertiary,
+                          fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                          boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
+                        }}
+                      >
+                        {lang === 'tr' ? 'Türkçe' : 'English'}
+                      </button>
+                    );
+                  })}
                 </div>
-              </section>
+              </div>
+            </section>
 
-              <section style={{ marginBottom: 16 }}>
-                <SLabel t={t} text="İçerik dili" />
-                <div style={{ ...t.surfaceGroup, padding: 10 }}>
-                  <div style={{
-                    display: 'flex', gap: 3, padding: 3, borderRadius: 12,
-                    background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                  }}>
-                    {(['tr', 'en'] as const).map((lang) => {
-                      const active = contentLanguage === lang;
-                      return (
-                        <button
-                          key={lang}
-                          type="button"
-                          onClick={() => save('languages')(lang)}
-                          style={{
-                            flex: 1, minHeight: 44, padding: '10px 0', borderRadius: 10, border: 'none',
-                            background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
-                            color: active ? t.textPrimary : t.textTertiary,
-                            fontWeight: 600, fontSize: 15, cursor: 'pointer',
-                            boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
-                          }}
-                        >
-                          {lang === 'tr' ? 'Türkçe' : 'English'}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            {/* Studio kısayolları — aynı visioner tile satırları */}
+            {/* Studio kısayolları — Kanallar + içerik/tasarım/galeri */}
             <section style={{ marginBottom: 8 }}>
               <SLabel text="Studio" />
               <BrandVisionerList>
+                <BrandVisionerGroup>
+                  <BrandVisionerNavRow
+                    t={t}
+                    label="Kanallar"
+                    hint={channelsConnected ? 'Web · Instagram · Google' : 'Keşif kanallarını bağla'}
+                    accent="#6B9BD1"
+                    icon={<SectionIcon name="channels" color="#6B9BD1" size={18} />}
+                    onClick={() => openIdentityGroup('channels')}
+                  />
+                </BrandVisionerGroup>
                 {([
                   {
                     key: 'content' as const,

@@ -437,6 +437,77 @@ export async function runCompleteBrandGaps(
           ok: analyzeRes.ok,
           detail: analyzeRes.ok ? 'brand_analyze_ok' : (analyzeRes.error ?? 'analyze_failed'),
         });
+
+        // Analyze can re-infer local_products_shop and wipe typography confirmedAt.
+        // Re-seal sector + typography so PPR does not regress after rediscovery.
+        if (analyzeRes.ok) {
+          const afterCtx = await fetchCrewBackendJson<Record<string, unknown>>(
+            `/api/v1/brand-context/${tenantId}`,
+            { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
+          );
+          const resealPatch = afterCtx.ok && afterCtx.data
+            ? buildSectorSyncPatch(afterCtx.data)
+            : null;
+          if (resealPatch) {
+            const body: Record<string, unknown> = {};
+            if (resealPatch.business_type) body.business_type = resealPatch.business_type;
+            if (resealPatch.brand_service_profile) {
+              body.brand_service_profile = resealPatch.brand_service_profile;
+            }
+            const resealRes = await fetchCrewBackendJson<Record<string, unknown>>(
+              `/api/v1/brand-context/${tenantId}`,
+              {
+                method: 'PATCH',
+                workspaceId: tenantId,
+                timeoutMs: 30_000,
+                headers: forwardHeaders,
+                body,
+              },
+            );
+            steps.push({
+              id: 'sector_reseal_after_discovery',
+              ok: resealRes.ok,
+              detail: resealRes.ok
+                ? resealPatch.detail
+                : (resealRes.error ?? `HTTP ${resealRes.status}`),
+            });
+          }
+
+          const origin = getNextjsInternalOrigin();
+          const themeRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
+            headers: { 'X-Tenant-Id': tenantId, ...forwardHeaders },
+            signal: AbortSignal.timeout(30_000),
+          });
+          const themeJson = themeRes.ok
+            ? ((await themeRes.json()) as { theme?: Record<string, unknown> | null })
+            : { theme: null };
+          const theme = themeJson.theme ?? {};
+          if (!isTypographyDesignConfirmed(theme)) {
+            const sector = resolveAuthoritativeIndustry(afterCtx.data ?? {}) || 'general_business';
+            const suggested = resolveSuggestedTypographyConfig(theme, sector);
+            const confirmed = buildUserConfirmedTypographyPatch(suggested);
+            const putRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Tenant-Id': tenantId,
+                ...forwardHeaders,
+              },
+              body: JSON.stringify({
+                theme: {
+                  ...theme,
+                  typographyDesign: confirmed,
+                },
+              }),
+              signal: AbortSignal.timeout(45_000),
+            });
+            steps.push({
+              id: 'typography_reseal_after_discovery',
+              ok: putRes.ok,
+              detail: putRes.ok ? confirmed.vibe : `HTTP ${putRes.status}`,
+            });
+          }
+        }
       } else {
         steps.push({
           id: 'discovery_reanalyze',
