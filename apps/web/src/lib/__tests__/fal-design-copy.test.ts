@@ -7,7 +7,10 @@ import {
   extractCaptionAlignedPunchline,
   resolveMissionFalDesignCopy,
 } from '../fal-design-copy';
-import { resolveOverlayHeadlineWordBudget } from '../fal-caption-headline';
+import {
+  isIncompleteOverlayPhrase,
+  resolveOverlayHeadlineWordBudget,
+} from '../fal-caption-headline';
 
 describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
   it('rejects calendar and season label headlines', () => {
@@ -221,6 +224,32 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(result.headline.length).toBeLessThanOrEqual(36);
     expect(result.headline.toLowerCase()).not.toMatch(/gel gör restoran|yaz sezonu|öğlen|menü/);
     expect(result.headline.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|keyfi/);
+  });
+
+  it('never paints a truncated caption stub for social-proof breakfast copy', () => {
+    const caption = 'Müşterilerimiz kahvaltımızdan vazgeçemiyor. Gerçek lezzetlerden...';
+    const punch = extractCaptionAlignedPunchline({
+      caption,
+      brandName: 'gel gör',
+      maxWords: 3,
+      maxLen: 36,
+    });
+    expect(punch.toLowerCase()).not.toMatch(/müşterilerimiz kahvaltımızdan/);
+    expect(isIncompleteOverlayPhrase(punch)).toBe(false);
+    expect(punch.toLowerCase()).toMatch(/kahvalt|serpme|keyfi|vazgeçilmez|lezzet/);
+
+    const result = resolveMissionFalDesignCopy({
+      idea: { headline: 'Kahvaltı post' },
+      ideationHeadline: 'Kahvaltı post',
+      caption,
+      brandName: 'gel gör',
+      channel: 'feed_post',
+      businessType: 'restaurant_cafe',
+      designIntensity: 'balanced',
+    });
+    expect(result.headline.toLowerCase()).not.toMatch(/müşterilerimiz kahvaltımızdan/);
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.toLowerCase()).toMatch(/kahvalt|serpme|keyfi|vazgeçilmez|lezzet/);
   });
 
   it('keeps English overlay language when caption is English', () => {

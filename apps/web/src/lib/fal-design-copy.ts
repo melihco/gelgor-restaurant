@@ -8,6 +8,7 @@
 
 import {
   detectOverlayLocale,
+  extractCaptionThemePunchline,
   FAL_FEED_OVERLAY_MAX_CHARS,
   areFalOverlayTextsRedundant,
   fitMissionOverlayToTemplateBudget,
@@ -122,42 +123,33 @@ export function extractCaptionAlignedPunchline(input: {
   const caption = input.caption.trim();
   if (caption.length < 12) return '';
 
-  const lower = caption.toLowerCase();
+  // Theme punchline first — never a truncated caption sentence.
+  const theme = extractCaptionThemePunchline({
+    caption,
+    maxWords: input.maxWords,
+    maxLen: input.maxLen,
+  });
+  if (
+    theme
+    && !isSoullessMenuHourHeadline(theme)
+    && !isLabelStyleHeadline(theme)
+    && !isIncompleteOverlayPhrase(theme)
+  ) {
+    return theme;
+  }
+
   const brandTokens = input.brandName
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length >= 2);
 
-  const themeHooks: Array<{ pattern: RegExp; tr: string; en: string }> = [
-    { pattern: /serpme[\s\S]{0,40}kahvalt/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
-    { pattern: /kahvalt/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
-    { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow' },
-    { pattern: /zeytinyağ/i, tr: 'Erken Hasat Tadım', en: 'Early Harvest Taste' },
-    { pattern: /reçel|\bjam\b/i, tr: 'Kavanozda Doğallık', en: 'Jarred With Care' },
-    { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars' },
-    { pattern: /bahçe|garden|teras|terrace/i, tr: 'Bahçede Yaz Keyfi', en: 'Garden Summer Mood' },
-  ];
-
-  const looksEnglish = /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail)\b/i.test(caption)
-    && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe)/i.test(caption);
-
-  for (const hook of themeHooks) {
-    if (!hook.pattern.test(lower)) continue;
-    const candidate = looksEnglish ? hook.en : hook.tr;
-    if (isSoullessMenuHourHeadline(candidate) || isLabelStyleHeadline(candidate)) continue;
-    const tight = tightenOverlayHeadline(candidate, input.maxLen, input.maxWords);
-    if (tight && isMeaningfulFalOverlayText(tight) && !isSoullessMenuHourHeadline(tight)) {
-      return tight;
-    }
-  }
-
-  // Content-word extract: strip brand + stopwords, keep atmosphere nouns/verbs.
+  // Content-word extract across the full caption (not first-sentence dump).
   const cleaned = caption
     .replace(/[\u{1F600}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, ' ')
     .replace(/#\S+/g, ' ')
     .replace(/@\S+/g, ' ')
-    .split(/[.!?\n]/)[0]
-    ?.trim() ?? caption;
+    .replace(/[.!?\n]+/g, ' ')
+    .trim();
   const words = cleaned
     .replace(/[«»"'„“‘’():;[\]{}]+/g, ' ')
     .split(/\s+/)
@@ -168,6 +160,8 @@ export function extractCaptionAlignedPunchline(input: {
       if (lw.length < 3) return false;
       if (PUNCHLINE_STOP.has(lw)) return false;
       if (brandTokens.some((b) => lw.includes(b) || b.includes(lw))) return false;
+      // Drop ablative/case-dangling stems that only work mid-sentence.
+      if (/(dan|den|tan|ten)$/i.test(lw)) return false;
       return true;
     });
 
@@ -178,6 +172,7 @@ export function extractCaptionAlignedPunchline(input: {
       tight
       && tight.split(/\s+/).filter(Boolean).length >= 2
       && isMeaningfulFalOverlayText(tight)
+      && !isIncompleteOverlayPhrase(tight)
       && !isSoullessMenuHourHeadline(tight)
       && !isLabelStyleHeadline(tight)
     ) {
@@ -495,9 +490,14 @@ export function resolveMissionFalDesignCopy(input: {
       cta: input.cta,
       maxLen: Math.min(maxLen + 12, FAL_FEED_OVERLAY_MAX_CHARS + 12),
     });
+    const themePunch = extractCaptionThemePunchline({
+      caption,
+      maxWords: budget.maxWords,
+      maxLen,
+    });
     let headline = resolveFalProductionOverlayHeadline(
-      fromCaption.headline,
-      [input.ideationHeadline, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+      themePunch || fromCaption.headline,
+      [fromCaption.headline, input.ideationHeadline].filter(Boolean),
       channel,
       input.designIntensity,
       budget,

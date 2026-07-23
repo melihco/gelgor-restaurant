@@ -5,6 +5,8 @@
  */
 
 import {
+  extractCaptionThemePunchline,
+  isIncompleteOverlayPhrase,
   resolveFalDisplayHeadline,
   resolveFalProductionOverlayHeadline,
   resolveFalSubtitle,
@@ -161,6 +163,11 @@ export function rebiasUngroundedOverlayCopy(input: {
       brandName,
       maxLen,
     );
+    const themePunch = extractCaptionThemePunchline({
+      caption,
+      maxLen,
+      maxWords: input.channel === 'reel' ? 3 : 3,
+    });
     const resolved = resolveFalDisplayHeadline({
       caption,
       missionTitle: headline,
@@ -168,15 +175,21 @@ export function rebiasUngroundedOverlayCopy(input: {
       cta: input.cta,
       maxLen,
     });
-    const candidate = productHook ?? resolved.headline;
+    // Prefer theme punchline / product hook — never a truncated caption sentence.
+    const candidate = productHook ?? themePunch ?? resolved.headline;
     const clamped = resolveFalProductionOverlayHeadline(
       candidate,
-      [headline, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+      [themePunch, resolved.headline, headline].filter(Boolean),
       input.channel,
     );
     if (
       clamped
-      && overlayHeadlineGroundedInCaption(clamped, caption)
+      && !isIncompleteOverlayPhrase(clamped)
+      && (
+        overlayHeadlineGroundedInCaption(clamped, caption)
+        || Boolean(themePunch && clamped === themePunch)
+        || Boolean(themePunch && clamped.toLowerCase() === themePunch.toLowerCase())
+      )
       && !isOffTopicTourismOverlay(clamped, caption, input.businessType)
     ) {
       headline = clamped;

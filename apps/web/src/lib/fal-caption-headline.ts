@@ -183,23 +183,28 @@ function resolveCaptionAlignedOverlayWhenThemeConflicts(input: {
   if (!caption || !hasCaptionHeadlineThemeConflict(caption, input.headline)) {
     return null;
   }
+  const maxLen = input.channel === 'reel' ? 22 : FAL_FEED_OVERLAY_MAX_CHARS;
+  const themePunch = extractCaptionThemePunchline({ caption, maxLen, maxWords: 3 });
   const resolved = resolveFalDisplayHeadline({
     caption,
     missionTitle: input.headline,
     brandName: '',
     cta: input.cta,
-    maxLen: input.channel === 'reel' ? 22 : FAL_FEED_OVERLAY_MAX_CHARS,
+    maxLen,
   });
   let headline = resolveFalProductionOverlayHeadline(
-    resolved.headline,
-    [input.headline, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+    themePunch || resolved.headline,
+    [resolved.headline, input.headline].filter(Boolean),
     input.channel,
   );
-  if (!headline || hasCaptionHeadlineThemeConflict(caption, headline)) {
-    const firstLine = caption.split(/[.!?\n]/)[0]?.trim() ?? '';
-    headline = resolveFalProductionOverlayHeadline(firstLine, [input.headline], input.channel);
+  if (!headline || hasCaptionHeadlineThemeConflict(caption, headline) || isIncompleteOverlayPhrase(headline)) {
+    headline = resolveFalProductionOverlayHeadline(
+      themePunch,
+      [resolved.headline].filter(Boolean),
+      input.channel,
+    );
   }
-  if (!headline) return null;
+  if (!headline || isIncompleteOverlayPhrase(headline)) return null;
   if (input.targetLocale === 'tr') {
     headline = correctTurkishSpelling(headline, { locale: 'tr' });
   }
@@ -294,9 +299,14 @@ export function resolveFalOverlayCopy(input: FalOverlayCopyInput): {
     cta: input.cta,
     maxLen: input.channel === 'reel' ? 22 : FAL_FEED_OVERLAY_MAX_CHARS,
   });
+  const themePunch = extractCaptionThemePunchline({
+    caption: input.caption ?? '',
+    maxLen: input.channel === 'reel' ? 22 : FAL_FEED_OVERLAY_MAX_CHARS,
+    maxWords: 3,
+  });
   headline = resolveFalProductionOverlayHeadline(
-    resolved.headline,
-    [input.headline, input.caption?.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
+    themePunch || resolved.headline,
+    [resolved.headline, input.headline].filter(Boolean),
     input.channel,
   );
   const sub = resolveFalSubtitle({
@@ -352,6 +362,49 @@ type FalHeadlineSource =
   | 'mission_title';
 
 /**
+ * Caption-theme punchline for on-canvas overlay — never a truncated first sentence.
+ * Used by display-headline + grounding rebias when literal caption slices are incomplete.
+ */
+export function extractCaptionThemePunchline(input: {
+  caption: string;
+  maxWords?: number;
+  maxLen?: number;
+}): string {
+  const caption = input.caption.trim();
+  if (caption.length < 12) return '';
+  const maxLen = input.maxLen ?? FAL_FEED_OVERLAY_MAX_CHARS;
+  const maxWords = input.maxWords ?? 3;
+  const lower = caption.toLowerCase();
+  const looksEnglish = /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail)\b/i.test(caption)
+    && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe)/i.test(caption);
+
+  const themeHooks: Array<{ pattern: RegExp; tr: string; en: string }> = [
+    { pattern: /serpme[\s\S]{0,40}kahvalt/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
+    { pattern: /kahvalt/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
+    { pattern: /vazgeçemiyor|bayılıyor|favorimiz|favori\s+lezzet/i, tr: 'Vazgeçilmez Lezzet', en: 'They Keep Coming Back' },
+    { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow' },
+    { pattern: /zeytinyağ/i, tr: 'Erken Hasat Tadım', en: 'Early Harvest Taste' },
+    { pattern: /reçel|\bjam\b/i, tr: 'Kavanozda Doğallık', en: 'Jarred With Care' },
+    { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars' },
+    { pattern: /bahçe|garden|teras|terrace/i, tr: 'Bahçede Yaz Keyfi', en: 'Garden Summer Mood' },
+  ];
+
+  for (const hook of themeHooks) {
+    if (!hook.pattern.test(lower)) continue;
+    const candidate = looksEnglish ? hook.en : hook.tr;
+    const tight = tightenOverlayHeadline(candidate, maxLen, maxWords);
+    if (
+      tight
+      && isMeaningfulFalOverlayText(tight)
+      && !isIncompleteOverlayPhrase(tight)
+    ) {
+      return tight;
+    }
+  }
+  return '';
+}
+
+/**
  * Extract a unique, caption-derived display headline that differs from the
  * mission title. Falls back to a shortened mission title only when no
  * meaningful alternative exists.
@@ -364,6 +417,17 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
   const caption = cleanCaption(input.caption);
   const missionTitle = input.missionTitle.trim();
   const brandName = input.brandName.trim().toLowerCase();
+
+  // Strategy 0: Theme punchline — caption-appropriate, never a cut sentence.
+  const themePunch = extractCaptionThemePunchline({ caption, maxLen, maxWords: 3 });
+  if (
+    themePunch
+    && themePunch.toLowerCase() !== missionTitle.toLowerCase()
+    && !isOffTopicTourismOverlay(themePunch, caption)
+  ) {
+    const finalized = finalizeHeadline(themePunch, maxLen);
+    if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
+  }
 
   // Strategy 1: Extract a question from the caption (great engagement hook)
   const question = extractQuestion(caption, brandName, maxLen);
@@ -383,6 +447,7 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
     productHook
     && productHook.toLowerCase() !== missionTitle.toLowerCase()
     && !isOffTopicTourismOverlay(productHook, caption)
+    && !isIncompleteOverlayPhrase(productHook)
   ) {
     const finalized = finalizeHeadline(productHook, maxLen);
     if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
@@ -395,6 +460,7 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
     && hook.toLowerCase() !== missionTitle.toLowerCase()
     && overlayHeadlineGroundedInCaption(hook, caption)
     && !isOffTopicTourismOverlay(hook, caption)
+    && !isIncompleteOverlayPhrase(hook)
   ) {
     const finalized = finalizeHeadline(hook, maxLen);
     if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
@@ -406,20 +472,14 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
     if (ctaClean.length >= 6 && ctaClean.length <= maxLen
       && ctaClean.toLowerCase() !== missionTitle.toLowerCase()
       && !ctaClean.toLowerCase().includes(brandName)
-      && !isGenericRetailOverlayCta(ctaClean, caption)) {
+      && !isGenericRetailOverlayCta(ctaClean, caption)
+      && !isIncompleteOverlayPhrase(ctaClean)) {
       const finalized = finalizeHeadline(ctaClean, maxLen);
       if (finalized) return { headline: finalized.headline, source: 'caption_cta' };
     }
   }
 
-  // Strategy 4: First meaningful caption sentence (broader fallback)
-  const captionSentence = extractCaptionHook(caption, '', brandName, maxLen + 20);
-  if (captionSentence && captionSentence.toLowerCase() !== missionTitle.toLowerCase()) {
-    const finalized = finalizeHeadline(captionSentence, maxLen);
-    if (finalized) return { headline: finalized.headline, source: 'caption_hook' };
-  }
-
-  // Fallback: Use mission title with spell-check
+  // Fallback: Use mission title with spell-check — never dump a cut caption sentence.
   const missionFallback = finalizeHeadline(missionTitle, maxLen);
   return {
     headline: missionFallback?.headline ?? correctTurkishSpelling(truncateClean(missionTitle, maxLen)),
@@ -522,7 +582,10 @@ function extractBestPhrase(sentence: string, maxLen: number): string {
   }
 
   const truncated = truncateAtWordBoundary(normalized, maxLen);
-  return truncated ? capitalizeFirst(truncated) : '';
+  if (!truncated || isIncompleteOverlayPhrase(truncated) || !isMeaningfulFalOverlayText(truncated)) {
+    return '';
+  }
+  return capitalizeFirst(truncated);
 }
 
 function capitalizeFirst(text: string): string {
@@ -707,6 +770,20 @@ const INCOMPLETE_TR_WHILE_CLAUSE_RX =
 const INCOMPLETE_TR_GENITIVE_MODIFIER_RX =
   /\b[\p{L}']+(nın|nin|nun|nün|'nın|'nin|'nun|'nün)\s+(el\s+yapımı|doğal|taze|yeni|özel|organik)\s*$/iu;
 
+/**
+ * Ablative case left dangling — "Müşterilerimiz kahvaltımızdan" (verb cut by maxLen).
+ * Marketing overlays almost never end on ablative alone.
+ */
+const INCOMPLETE_TR_ABLATIVE_TAIL_RX =
+  /\b[\p{L}']+(dan|den|tan|ten|'dan|'den|'tan|'ten)\s*$/iu;
+
+/**
+ * Lone 1st-person-plural possessive subject after truncation —
+ * "Müşterilerimiz" with no claim/verb left.
+ */
+const INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX =
+  /^(?:[\p{L}']+(larımız|lerimiz|ımız|imiz|umuz|ümüz))\s*$/iu;
+
 /** Headline ends mid-thought — unsuitable for publish or fal canvas. */
 export function isIncompleteOverlayPhrase(text: string): boolean {
   const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
@@ -717,11 +794,13 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_POSSESSIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_ABLATIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_SEASON_CTA_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_WHILE_CLAUSE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_GENITIVE_MODIFIER_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1 && INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX.test(words[0]!)) return true;
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
   return false;
 }
@@ -947,11 +1026,12 @@ export function fitMissionOverlayToTemplateBudget(input: {
     budget.headline.maxLen,
     budget.headline.maxWords,
   );
-  if (!headline || !isMeaningfulFalOverlayText(headline)) {
+  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
     headline = truncateAtWordBoundary(rawH, budget.headline.maxLen);
   }
-  if (!headline || !isMeaningfulFalOverlayText(headline)) {
-    headline = rawH.slice(0, budget.headline.maxLen).trim();
+  // Never character-slice captions into incomplete phrases (e.g. ablative stubs).
+  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+    headline = '';
   }
 
   if (!budget.subtitle || !budget.showSubline) {

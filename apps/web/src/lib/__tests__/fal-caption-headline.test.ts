@@ -7,6 +7,7 @@ import {
   sanitizeFalOverlayText,
   isMeaningfulFalOverlayText,
   ensureMeaningfulFalOverlayText,
+  extractCaptionThemePunchline,
   formatFalOnImageHeadlineDirective,
   clampFalOverlayHeadlineForCanvas,
   isInternalStrategyBriefing,
@@ -331,6 +332,27 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(
       resolveFalProductionOverlayHeadline('Highlight the exclusivity and', [], 'feed_post'),
     ).toBe('');
+  });
+
+  it('rejects ablative caption stubs like "Müşterilerimiz kahvaltımızdan"', () => {
+    expect(isIncompleteOverlayPhrase('Müşterilerimiz kahvaltımızdan')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Müşterilerimiz')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Müşterilerimiz kahvaltımızdan')).toBe(false);
+    const punch = extractCaptionThemePunchline({
+      caption: 'Müşterilerimiz kahvaltımızdan vazgeçemiyor. Gerçek lezzetlerden...',
+      maxWords: 3,
+      maxLen: 36,
+    });
+    expect(punch.toLowerCase()).toMatch(/kahvalt|serpme|keyfi/);
+    expect(punch.toLowerCase()).not.toMatch(/müşterilerimiz kahvaltımızdan/);
+    expect(
+      resolveFalDisplayHeadline({
+        caption: 'Müşterilerimiz kahvaltımızdan vazgeçemiyor. Gerçek lezzetlerden...',
+        missionTitle: 'Kahvaltı',
+        brandName: 'gel gör',
+        maxLen: 36,
+      }).headline.toLowerCase(),
+    ).not.toMatch(/müşterilerimiz kahvaltımızdan/);
   });
 
   it('rejects truncated Turkish participle fragments like "Kartta yeni gelen"', () => {

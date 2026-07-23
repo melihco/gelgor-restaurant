@@ -51,4 +51,17 @@ describe('overlay-caption-grounding', () => {
     expect(result.subtitle?.toLowerCase()).not.toMatch(/hızlı sipariş|hizli siparis/);
     expect(overlayHeadlineGroundedInCaption(result.headline, KARAMAN_CAPTION)).toBe(true);
   });
+
+  it('rebias never falls back to a truncated caption first sentence', () => {
+    const caption = 'Müşterilerimiz kahvaltımızdan vazgeçemiyor. Gerçek lezzetlerden vazgeçmiyoruz.';
+    const result = rebiasUngroundedOverlayCopy({
+      headline: 'Agro-Turizm ile Tanıştınız mı?',
+      caption,
+      brandName: 'gel gör',
+      businessType: 'restaurant_cafe',
+      channel: 'feed_post',
+    });
+    expect(result.headline.toLowerCase()).not.toMatch(/müşterilerimiz kahvaltımızdan$/);
+    expect(result.headline.toLowerCase()).toMatch(/kahvalt|serpme|keyfi|vazgeçilmez|lezzet|hasat/);
+  });
 });
