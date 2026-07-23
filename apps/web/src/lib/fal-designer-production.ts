@@ -63,6 +63,7 @@ import {
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
+import { serverConfig } from '@/lib/server-config';
 
 type AspectRatio = '9:16' | '1:1' | '4:5';
 
@@ -80,6 +81,36 @@ export const FAL_SUBJECT_CLEARANCE_DIRECTIVE =
  */
 export const FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE =
   'COMPOSE ORDER (MANDATORY for bold craft locks): (1) Reserve brand craft zones from the locked layout family and place ALL headline/subtitle fully inside those zones with padding. (2) Place the gallery photo ONLY in the remaining clear rectangle — object-fit contain so the FULL photo is visible (no crop of glassware/faces/plates/product). (3) Never cover the photo hero afterward. FORBIDDEN: full-bleed underlay then opaque cover-up; FORBIDDEN: header/footer Canva sandwich.';
+
+/**
+ * Forces painted craft fills to brand primary/accent so corporate colors read as the
+ * graphic system — not cream/beige Canva plates with brand-colored letters only.
+ */
+export function buildBrandColorSurfaceLock(input: {
+  primary: string;
+  accent: string;
+  intensityLevel: FalDesignIntensityLevel;
+  craftActive: boolean;
+}): string {
+  const primary = (input.primary || '').trim() || '#1a1a1a';
+  const accent = (input.accent || '').trim() || primary;
+  const strong = input.craftActive
+    || input.intensityLevel === 'designed'
+    || input.intensityLevel === 'bold_editorial';
+  if (strong) {
+    return (
+      `COLOR SURFACE LOCK (MANDATORY): Every painted craft fill (plate, rail, diagonal field, mat, L-shape, soft split) `
+      + `must use ${primary} and/or ${accent} as the surface — solid or 60–85% tint/opacity of those hexes. `
+      + `FORBIDDEN as craft fill: cream, beige, ivory, off-white, kraft paper, warm-tan Canva panels. `
+      + `Type/ink may be white, near-black, or the other brand hex for contrast; thin rules/chips from brand hexes. `
+      + `Brand colors ARE the painted system — never brand-letter color on a cream sticker.`
+    );
+  }
+  return (
+    `COLOR SURFACE LOCK: Any scrim/plate/rule uses ${primary}/${accent} (or soft tint). `
+    + `FORBIDDEN: cream/beige/off-white painted panels as the graphic system.`
+  );
+}
 
 export interface FalDesignerInput {
   workspaceId?: string;
@@ -99,6 +130,8 @@ export interface FalDesignerInput {
   mood?: string;
   /** BCD-generated art direction for this specific brief×brand. */
   artDirection?: string;
+  /** CrewAI formatted slot art-direction block (protected head). */
+  slotArtDirectionBlock?: string;
   /** Gallery photo for photo_overlay backgrounds */
   referencePhotoUrl?: string;
   /**
@@ -144,10 +177,16 @@ export interface FalDesignerInput {
    */
   deferLogoComposite?: boolean;
   /**
-   * Brand Hub per-slot preview — skip slow GPT grounded edit + Grafiker loops.
-   * Uses a single Ideogram typography pass (~30–90s). Mission production keeps full QA.
+   * Legacy fast Ideogram shortcut (no QA). Prefer `libraryQualityFalFallback`
+   * so Fal still ships purpose-built designs when GPT fails.
    */
   templatePreviewMode?: boolean;
+  /**
+   * Template-library Fal fallback: pass PURPOSE/recipe directives into Ideogram,
+   * skip the empty gradient preview shortcut, and allow synthetic Ideogram after
+   * grounded GPT fails so the slot still gets a usable designed poster.
+   */
+  libraryQualityFalFallback?: boolean;
   /**
    * Approved brand template preview — second GPT edit image so the grounded
    * compose replicates the template's exact layout (photo + text swapped).
@@ -511,6 +550,11 @@ type DesignCardPromptInput = {
   /** BCD-generated art direction — composition, style reference, color temperature guidance specific to this brief×brand combination. */
   artDirection?: string;
   /**
+   * CrewAI marka×slot art direction block (already formatted). When set, hard
+   * LAYOUT LOCK craft families are skipped — agent owns composition identity.
+   */
+  slotArtDirectionBlock?: string;
+  /**
    * Special occasion this design celebrates (e.g. "Anneler Günü"). Its spirit is
    * woven into the BRAND palette as subtle, tasteful accents — never as clashing
    * holiday-cliché colors or stock graphics. `mood` is a short creative cue.
@@ -750,6 +794,104 @@ function buildAwardWinningArtDirectorOpener(input: {
 }
 
 /**
+ * Prioritize PURPOSE / recipe / copy-fit for Ideogram's ~1.5k prompt budget
+ * when GPT fails and Fal must still ship a usable library template.
+ */
+export function pickFalLibraryFallbackDirectives(
+  directives: string[] | undefined,
+  maxChars = 900,
+): string[] {
+  const list = (directives ?? []).map((d) => d.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (!list.length) return [];
+  const rank = (d: string): number => {
+    if (d.includes('TEMPLATE PURPOSE')) return 0;
+    if (d.includes('BRAND SLOT DESIGN RECIPE')) return 1;
+    if (d.includes('BRAND DESIGN CONTRACT') || d.includes('VISUAL DNA')) return 2;
+    if (d.includes('COPY FIT')) return 3;
+    if (d.includes('FONT / VIBE')) return 4;
+    if (d.startsWith('SLOT:')) return 5;
+    return 9;
+  };
+  const sorted = [...list].sort((a, b) => rank(a) - rank(b));
+  const out: string[] = [];
+  let used = 0;
+  for (const d of sorted) {
+    const slice = d.length > 420 ? truncateAtWordBoundary(d, 420) : d;
+    if (used + slice.length + 1 > maxChars) continue;
+    out.push(slice);
+    used += slice.length + 1;
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+/**
+ * Compact brand-identity lock for the protected prompt head.
+ * Pulls VISUAL DNA / uniqueness from library brandDirectives so they are not
+ * relegated to optionalTail (where craft pressure used to erase brand soul).
+ */
+export function buildBrandSoulLock(input: {
+  brandName?: string;
+  sector?: string;
+  brandColors: { primary: string; accent: string };
+  visualDnaTone?: string;
+  brandDirectives?: string[];
+}): string {
+  const brand = input.brandName?.trim() || 'the brand';
+  const sector = input.sector?.trim();
+  const dirs = input.brandDirectives ?? [];
+  const source = dirs.find((d) => d.includes('BRAND DESIGN CONTRACT'))
+    ?? dirs.find((d) => d.includes('VISUAL DNA'))
+    ?? '';
+
+  let dna = '';
+  const dnaMatch = source.match(
+    /VISUAL DNA[^:]*:\s*([^.]{12,400}(?:\.[^.]{0,80})?)/i,
+  );
+  if (dnaMatch?.[1]) {
+    dna = dnaMatch[1].replace(/\s+/g, ' ').trim().slice(0, 280);
+  } else if (input.visualDnaTone?.trim()) {
+    dna = input.visualDnaTone.trim().slice(0, 220);
+  }
+
+  let uniqueness = '';
+  const uniqMatch = source.match(/BRAND UNIQUENESS:\s*([^.]+(?:\.[^.]+)?)/i);
+  if (uniqMatch?.[1]) {
+    uniqueness = uniqMatch[1].replace(/\s+/g, ' ').trim().slice(0, 220);
+  } else {
+    uniqueness = (
+      `A stranger should recognize this as ${brand} from color `
+      + `(${input.brandColors.primary}/${input.brandColors.accent}), venue photo, `
+      + `and type energy — never a stock ${sector || 'sector'} Canva pack.`
+    );
+  }
+
+  if (!dna && !source && !input.visualDnaTone?.trim()) {
+    // Still emit a short uniqueness lock so brand+palette stay above generic craft.
+    return truncateAtWordBoundary(
+      [
+        '═══ BRAND SOUL LOCK ═══',
+        `This composition must feel unmistakably like ${brand}${sector ? ` (${sector})` : ''} — not a generic sector template.`,
+        `Uniqueness: ${uniqueness}`,
+        `Palette accents: ${input.brandColors.primary} + ${input.brandColors.accent} — brand-true only.`,
+      ].join(' '),
+      520,
+    );
+  }
+
+  return truncateAtWordBoundary(
+    [
+      '═══ BRAND SOUL LOCK ═══',
+      `This composition must feel unmistakably like ${brand}${sector ? ` (${sector})` : ''} — not a generic sector template.`,
+      dna ? `Visual DNA (highest style authority after on-canvas text): ${dna}.` : '',
+      `Uniqueness: ${uniqueness}`,
+      `Palette accents: ${input.brandColors.primary} + ${input.brandColors.accent} — brand-true only.`,
+    ].filter(Boolean).join(' '),
+    550,
+  );
+}
+
+/**
  * Agency-grade creative brief — craft first (REF / TYPE / SPACE / TASTE).
  * Kept compact so HARD CONTRACTS + intensity survive finalizeFalPrompt trim.
  */
@@ -775,7 +917,7 @@ export function buildCreativeDesignBrief(input: {
   });
   const vibeSpec = getVibePromptSpec(input.vibe);
   const dna = input.visualDnaTone?.trim()
-    ? `Brand DNA: ${input.visualDnaTone.trim().slice(0, 100)}.`
+    ? `Brand DNA: ${input.visualDnaTone.trim().slice(0, 220)}.`
     : '';
   const mood = (input.briefMood || input.sceneHint)?.trim()
     ? `Mood: ${(input.briefMood || input.sceneHint)!.trim().slice(0, 90)}.`
@@ -869,12 +1011,10 @@ function buildDesignedDesignCardPrompt(
   const captionMessageLock = captionAnchor
     ? `CAPTION MESSAGE LOCK: The Instagram caption for this post is: "${captionAnchor}". Typography, mood, and graphic energy must support THIS message. Never invent a different topic (e.g. kitchen/menu copy for a DJ/nightlife caption, nightlife copy for a food caption, or plated-meat heroes for a cocktail caption). Never paint calendar/signal labels like season names, "15 Temmuz", "plaj/havuz", or internal strategy phrases — ONLY the contracted headline/subtitle below.`
     : '';
+  // Compact — room for BRAND SOUL / recipe; keep topic match + exact headline (quality-critical).
   const designHarmonyLock = [
-    'DESIGN HARMONY LOCK (mandatory): Photo subject, on-canvas headline, supporting line, logo zone, and color craft must read as ONE boutique-agency composition.',
-    'The hero photo MUST depict the same topic as the headline/caption (cocktail post → drink/glass; food post → plated food; DJ → nightlife — never mix).',
-    'Paint the HEADLINE string EXACTLY as contracted — do not invent romantic fillers ("özlemle", "sizi bekliyoruz") or brand-name slogans.',
-    'Logo: official mark only in its reserved quiet corner; never compete with the headline or cover the product hero.',
-    'Typography hierarchy: one dominant punchline, optional short support — not two competing poster slogans.',
+    'DESIGN HARMONY LOCK: photo, headline, support, logo, and brand color craft = ONE boutique composition; hero photo topic must match headline/caption (never mix cocktail/food/DJ subjects).',
+    'Paint the HEADLINE EXACTLY as contracted — no romantic fillers or invented slogans; one dominant punchline + optional short support; logo stays in its quiet corner.',
   ].join(' ');
   const premiumBar = premiumVenue
     ? 'PREMIUM BAR: Global luxury hospitality Instagram standard — generous breathing room, intentional type hierarchy, photo as hero, zero clutter, zero emoji-as-design, zero festival flyer energy. If it could belong to a mid-tier Canva template pack, reject that look.'
@@ -935,7 +1075,8 @@ function buildDesignedDesignCardPrompt(
     channel: logoChannel,
   });
 
-  const artDirectionBlock = input.artDirection
+  const slotArtDirectionLock = (input.slotArtDirectionBlock ?? '').replace(/\s+/g, ' ').trim();
+  const artDirectionBlock = !slotArtDirectionLock && input.artDirection
     ? `ART DIRECTION (brief-specific): ${input.artDirection.slice(0, 250)}`
     : '';
 
@@ -953,28 +1094,58 @@ function buildDesignedDesignCardPrompt(
     .filter(Boolean)
     .join(' ');
   // Vertical prompts need more room: intensity lock + text contracts both must survive.
-  // Feed posts get a slightly higher budget so brand recipe + creative brief can coexist
-  // with LAYOUT LOCK / TYPE CONTAINMENT / HARD CONTRACTS.
-  const promptLimit = (isReel || isStory || input.aspectRatio === '9:16' ? 4800 : 4300)
+  // Extra headroom so BRAND SOUL + slot recipe + creative brief are not crushed by
+  // intensity/HARD CONTRACTS (GPT design-card path tolerates longer prompts).
+  const promptLimit = (isReel || isStory || input.aspectRatio === '9:16' ? 6200 : 5600)
     + (input.logoUrl ? 900 : 0)
     + 320
     + 220;
 
-  // Brand slot recipe is product-critical for template library uniqueness — never leave it
-  // only in optionalTail (tail often gets zero budget when intensity+contracts fill the limit).
+  // Brand soul + slot recipe + copy-fit — product-critical; keep in protected head.
+  const brandSoulLock = buildBrandSoulLock({
+    brandName: input.brandName,
+    sector,
+    brandColors: input.brandColors,
+    visualDnaTone: input.visualDnaTone,
+    brandDirectives: input.brandDirectives,
+  });
   const brandRecipeRaw = (input.brandDirectives ?? []).find((d) =>
     d.includes('BRAND SLOT DESIGN RECIPE'),
   );
-  const brandDirectivesRest = (input.brandDirectives ?? []).filter(
-    (d) => !d.includes('BRAND SLOT DESIGN RECIPE'),
+  const copyFitRaw = (input.brandDirectives ?? []).find((d) =>
+    d.includes('COPY FIT (TEMPLATE LIBRARY)'),
   );
+  const vibeFontRaw = (input.brandDirectives ?? []).find((d) =>
+    d.includes('FONT / VIBE LOCK'),
+  );
+  // Full BRAND DESIGN CONTRACT / VISUAL DNA blob is compressed into soul lock —
+  // keep TEMPLATE RULE and other directives in the optional tail only.
+  const brandDirectivesRest = (input.brandDirectives ?? []).filter(
+    (d) => !d.includes('BRAND SLOT DESIGN RECIPE')
+      && !d.includes('COPY FIT (TEMPLATE LIBRARY)')
+      && !d.includes('FONT / VIBE LOCK')
+      && !d.includes('BRAND DESIGN CONTRACT')
+      && !d.includes('VISUAL DNA — PRIMARY'),
+  );
+  // PURPOSE + brand recipe must survive — diversity depends on the job line.
   const brandRecipeLock = brandRecipeRaw
-    ? truncateAtWordBoundary(brandRecipeRaw.replace(/\s+/g, ' ').trim(), 480)
+    ? truncateAtWordBoundary(brandRecipeRaw.replace(/\s+/g, ' ').trim(), 980)
     : '';
-  const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 481) : 0;
+  const copyFitLock = copyFitRaw
+    ? truncateAtWordBoundary(copyFitRaw.replace(/\s+/g, ' ').trim(), 280)
+    : '';
+  const vibeFontLock = vibeFontRaw
+    ? truncateAtWordBoundary(vibeFontRaw.replace(/\s+/g, ' ').trim(), 220)
+    : '';
+  const soulReserve = brandSoulLock ? Math.min(brandSoulLock.length + 1, 551) : 0;
+  const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 981) : 0;
+  const brandReserve = soulReserve + recipeReserve;
 
   const needsCraftLock = shouldApplyCraftLayoutFamily(intensityLevel, layoutLanguage);
-  const layoutFamily = needsCraftLock
+  const agentOwnsLayout = Boolean(slotArtDirectionLock);
+  // Soft craft zones still apply with agent art direction (photo window + colors),
+  // but hard craft-family LAYOUT LOCK is skipped so 100 brands don't share one kit.
+  const layoutFamily = needsCraftLock && !agentOwnsLayout
     ? (input.layoutFamily
       ?? resolveDesignCraftLayoutFamily(
         input.layoutFamilySeed
@@ -986,17 +1157,37 @@ function buildDesignedDesignCardPrompt(
   const layoutLock = layoutFamily
     ? `LAYOUT LOCK: use ONLY "${layoutFamily}" — ${describeDesignCraftLayoutFamily(layoutFamily)}`
     : '';
-  const typeContainment = needsCraftLock
-    ? 'TYPE CONTAINMENT (MANDATORY): Every letter of headline/subtitle/brand mark must sit fully inside its plate, rail, L, mat, or soft scrim — ≥8% padding from that shape\'s edges. FORBIDDEN: text straddling a hard color edge onto the photo window (amateur overflow). If copy is long, shrink type or widen the plate — never clip or spill.'
+  const slotDiversityLock = layoutFamily
+    ? (
+      `SLOT DIVERSITY LOCK: This composition must read as "${layoutFamily}" at a glance — `
+      + `not a reusable cream/beige corner card with serif title reused across slots. `
+      + `Reject look: identical hospitality sticker template; invent brand-true geometry for THIS family only.`
+    )
     : '';
-  const photoWindowCompose = needsCraftLock ? FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE : '';
+  const craftZonesActive = needsCraftLock || agentOwnsLayout;
+  const typeContainment = craftZonesActive
+    ? 'TYPE CONTAINMENT (MANDATORY): every letter of headline/subtitle/brand mark stays inside its plate/rail/scrim with ≥8% padding — never straddle a hard color edge onto the photo; shrink type or widen the plate before clipping.'
+    : '';
+  const photoWindowCompose = craftZonesActive ? FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE : '';
+
+  // Color surface sits with layout locks (early in core) — if placed at the end of
+  // HARD CONTRACTS, prompt-budget trim drops it and GPT falls back to cream plates.
+  const colorSurfaceLock = buildBrandColorSurfaceLock({
+    primary: input.brandColors.primary,
+    accent: input.brandColors.accent,
+    intensityLevel,
+    craftActive: craftZonesActive,
+  });
 
   // Protected head — never trimmed. Layout families used to die at the end of finalizeFalPrompt.
   const layoutLanguageLock = buildBrandLayoutLanguageDirectives(layoutLanguage).join(' ');
   const intensityLock = [
+    slotArtDirectionLock,
     layoutLanguageLock,
     intensityDirectives.priorityBlock,
     layoutLock,
+    slotDiversityLock,
+    colorSurfaceLock,
     typeContainment,
     photoWindowCompose,
     ...photoRules,
@@ -1009,6 +1200,8 @@ function buildDesignedDesignCardPrompt(
   const hardContracts = [
     '═══ HARD CONTRACTS ═══',
     onCanvasTextContract,
+    copyFitLock,
+    vibeFontLock,
     FAL_SUBJECT_CLEARANCE_DIRECTIVE,
     captionMessageLock,
     designHarmonyLock,
@@ -1016,7 +1209,7 @@ function buildDesignedDesignCardPrompt(
     isVertical
       ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping.'
       : 'SAFE ZONE: keep all text/logos inside inner 85% (7.5% edge margin); headline/CTA inside central 4:5 crop.',
-    needsCraftLock
+    craftZonesActive
       ? (isVertical
         ? 'PHOTO FRAMING (9:16): After craft+type zones are reserved, contain the FULL gallery photo in the leftover photo window — no crop of hero subjects; never paint over the photo.'
         : 'PHOTO FRAMING (4:5): After craft+type zones are reserved, contain the FULL gallery photo in the leftover photo window — no crop of hero subjects; never paint slabs over the photo.')
@@ -1035,12 +1228,12 @@ function buildDesignedDesignCardPrompt(
   const label = isStory ? 'fal-designer-story' : 'fal-designer';
   const coreLock = [intensityLock, hardContracts].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
-  // Prefer: creative brief → brand recipe → intensity/layout → hard contracts → occasion/sector.
-  // On overflow: never cut intensity/contracts from the end — trim soft brand context instead.
-  // Brand recipe keeps priority over creative brief / occasion when soft budget is tight.
+  // Prefer: brand soul → slot recipe → creative brief → intensity → hard contracts → occasion/sector.
+  // On overflow: reserve soul+recipe first; never drop them for generic craft verbosity.
   let protectedHead = [
-    creativeBrief,
+    brandSoulLock,
     brandRecipeLock,
+    creativeBrief,
     intensityLock,
     hardContracts,
     occasionLock,
@@ -1051,29 +1244,53 @@ function buildDesignedDesignCardPrompt(
     .replace(/\s+/g, ' ')
     .trim();
   if (protectedHead.length > promptLimit) {
-    const coreBudget = Math.max(1200, promptLimit - recipeReserve);
+    const coreBudget = Math.max(1200, promptLimit - brandReserve);
     if (coreLock.length >= coreBudget) {
       const trimmedCore = truncateAtWordBoundary(coreLock, coreBudget);
-      protectedHead = [trimmedCore, brandRecipeLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-      if (protectedHead.length > promptLimit) {
-        protectedHead = truncateAtWordBoundary(protectedHead, promptLimit);
-      }
-      console.warn(
-        `[fal-prompt:${label}] core intensity+contracts alone ${coreLock.length}→${trimmedCore.length}; `
-        + `reserved recipe ${recipeReserve} (limit ${promptLimit})`,
-      );
-    } else {
-      const softBudget = promptLimit - coreLock.length - 1;
-      const soft = [brandRecipeLock, creativeBrief, occasionLock, sectorLock]
+      protectedHead = [brandSoulLock, brandRecipeLock, trimmedCore]
         .filter(Boolean)
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
-      const trimmedSoft = truncateAtWordBoundary(soft, softBudget);
-      // Keep intensity immediately after whatever soft prefix fits.
-      protectedHead = [trimmedSoft, coreLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      if (protectedHead.length > promptLimit) {
+        // Last resort: keep soul+recipe, then fill remainder with core.
+        const identity = [brandSoulLock, brandRecipeLock].filter(Boolean).join(' ').trim();
+        const restBudget = Math.max(400, promptLimit - identity.length - 1);
+        protectedHead = [identity, truncateAtWordBoundary(trimmedCore, restBudget)]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
       console.warn(
-        `[fal-prompt:${label}] trimmed soft context ${soft.length}→${trimmedSoft.length}; `
+        `[fal-prompt:${label}] core intensity+contracts alone ${coreLock.length}→${trimmedCore.length}; `
+        + `reserved soul+recipe ${brandReserve} (limit ${promptLimit})`,
+      );
+    } else {
+      const softBudget = promptLimit - coreLock.length - 1;
+      // Pin brand identity + occasion fully; trim only flexible creative/sector context.
+      const pinnedSoft = [brandSoulLock, brandRecipeLock, occasionLock]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const flexibleSoft = [creativeBrief, sectorLock]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const flexibleBudget = Math.max(0, softBudget - (pinnedSoft ? pinnedSoft.length + 1 : 0));
+      const trimmedFlexible = flexibleBudget > 0
+        ? truncateAtWordBoundary(flexibleSoft, flexibleBudget)
+        : '';
+      const trimmedSoft = [pinnedSoft, trimmedFlexible].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      protectedHead = [trimmedSoft, coreLock].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      if (protectedHead.length > promptLimit) {
+        protectedHead = truncateAtWordBoundary(protectedHead, promptLimit);
+      }
+      console.warn(
+        `[fal-prompt:${label}] trimmed soft context pinned=${pinnedSoft.length} `
+        + `flexible ${flexibleSoft.length}→${trimmedFlexible.length}; `
         + `kept intensity+contracts ${coreLock.length} (limit ${promptLimit})`,
       );
     }
@@ -1266,8 +1483,13 @@ export async function produceFalDesignerStill(
     };
   }
 
-  // ── Full typography still path ─────────────────────────────────────────────
-  if (input.templatePreviewMode && !input.referencePhotoUrl?.trim()) {
+  // ── Legacy fast preview shortcut ───────────────────────────────────────────
+  // Library quality fallback skips this — empty grain gradients failed the product bar.
+  if (
+    input.templatePreviewMode
+    && !input.libraryQualityFalFallback
+    && !input.referencePhotoUrl?.trim()
+  ) {
     const previewChannel = resolveFalCanvasChannel({
       pipeline: input.pipeline,
       aspectRatio: input.aspectRatio,
@@ -1383,7 +1605,10 @@ export async function produceFalDesignerStill(
     // gallery photo (the brand's venue/product), which is far more brand-faithful
     // than a synthetic Ideogram background. Retry once before falling back so a
     // single weak Grafiker score doesn't drop us to a photo-less design.
-    const groundedMaxAttempts = groundedOnly ? 3 : 2;
+    // Library fal fallback: one grounded attempt — multi-retry × 2min made UI look stuck.
+    const groundedMaxAttempts = input.libraryQualityFalFallback
+      ? 1
+      : (groundedOnly ? 3 : 2);
     try {
       const { generateDesignedPostImage } = await import('@/app/api/auto-produce/handlers/image-generators');
       const buildPrompt = input.pipeline === 'fal_story'
@@ -1419,6 +1644,7 @@ export async function produceFalDesignerStill(
         logoUrl: input.logoUrl,
         briefMood: input.mood,
         artDirection: input.artDirection,
+        slotArtDirectionBlock: input.slotArtDirectionBlock,
         designIntensityLevel: input.designIntensityLevel,
         occasion: input.occasion,
         logoPlacement: input.logoPlacement,
@@ -1510,7 +1736,7 @@ export async function produceFalDesignerStill(
             );
             last = {
               imageUrl: groundedUrl,
-              typographyModel: 'gpt-image-1',
+              typographyModel: serverConfig.imageGen.model,
               vibe: input.vibe,
               grafikerScore: grafikerSoft.score,
               grafikerPass: grafikerSoft.pass,
@@ -1529,7 +1755,7 @@ export async function produceFalDesignerStill(
         );
         last = {
           imageUrl: groundedUrl,
-          typographyModel: 'gpt-image-1',
+          typographyModel: serverConfig.imageGen.model,
           vibe: input.vibe,
           grafikerScore: grafiker.score,
           grafikerPass: grafiker.pass,
@@ -1575,7 +1801,8 @@ export async function produceFalDesignerStill(
     }
   }
 
-  if (groundedOnly || input.templateReplica) {
+  // Library Fal fallback may continue to quality Ideogram when GPT grounded fails.
+  if ((groundedOnly || input.templateReplica) && !input.libraryQualityFalFallback) {
     throw new Error(
       input.templateReplica
         ? 'library template replica: grounded gallery design failed — synthetic Ideogram fallback disabled when a library template is locked'
@@ -1583,6 +1810,11 @@ export async function produceFalDesignerStill(
           ? 'fal_story: grounded gallery design failed — synthetic Ideogram fallback disabled for story slots'
           : 'Brand gallery design failed — could not compose the art-director design on the matched venue photo. ' +
             'Synthetic Ideogram fallback disabled when a brand gallery photo is available.',
+    );
+  }
+  if (input.libraryQualityFalFallback && groundedOnly) {
+    console.warn(
+      '[fal-designer] library quality Fal fallback — continuing to purpose-built Ideogram after grounded GPT miss',
     );
   }
 
@@ -1649,7 +1881,16 @@ export async function produceFalDesignerStill(
     );
   }
 
-  if (!last || !last.textValidated || !last.grafikerPass) {
+  if (!last || !last.textValidated) {
+    throw new Error('fal designer still failed text/Grafiker quality gate');
+  }
+  if (!last.grafikerPass) {
+    if (input.libraryQualityFalFallback) {
+      console.warn(
+        `[fal-designer] library Fal fallback keeping best Ideogram (grafiker ${last.grafikerScore ?? '—'}/10) — still purpose-built vs empty preview`,
+      );
+      return finalizeFalStillWithOfficialLogo(last, input);
+    }
     throw new Error('fal designer still failed text/Grafiker quality gate');
   }
   return finalizeFalStillWithOfficialLogo(last, input);

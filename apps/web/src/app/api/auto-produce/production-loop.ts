@@ -225,6 +225,7 @@ import {
   resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
 import { resolveMissionFalDesignCopy, type FalDesignCopyIdea } from '@/lib/fal-design-copy';
+import { resolveSlotSampleCopy } from '@/lib/slot-sample-copy';
 import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
 import {
@@ -1337,6 +1338,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         )?.fal_design_intensity?.[
           falChannel === 'reel' ? 'reel' : falChannel === 'story' ? 'story' : 'post'
         ] ?? null;
+        const falDesignLibrarySlot = assignment.library_slot_key
+          ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
+          : undefined;
+        // Soft early budget from slot sample; fal-designed-post refits to matched template sample.
+        const falSlotSample = resolveSlotSampleCopy({
+          catalogSlotKey: assignment.catalog_slot_key ?? assignment.library_slot_key,
+          showSubline: falDesignLibrarySlot?.showSubline,
+          sector: brandBusinessType,
+        });
         const designCopy = resolveMissionFalDesignCopy({
           idea: idea as FalDesignCopyIdea,
           ideationHeadline: headline,
@@ -1348,6 +1358,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           brandTone: String(brandCtx.brand_tone ?? ''),
           language: brandLanguageCode,
           designIntensity: themeIntensity,
+          sampleHeadline: falSlotSample.headline,
+          sampleSubtitle: falSlotSample.subtitle,
+          showSubline: falDesignLibrarySlot?.showSubline,
         });
         if (designCopy.headline) {
           if (designCopy.headline !== headline) {
@@ -1359,9 +1372,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           headline = designCopy.headline;
         }
         const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {
-          librarySlot: assignment.library_slot_key
-            ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
-            : undefined,
+          librarySlot: falDesignLibrarySlot,
         });
         if (gatedSub) {
           cta = gatedSub;
@@ -3628,7 +3639,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ?? falGridIntensityOverride,
           falBackgroundStyleOverride: falGridBackgroundOverride,
           falGridSurfaceKind: slotFalGridSurface ?? undefined,
-          captionAwareHeadline: true,
+          // Strong ideation caption is publish + overlay SSOT — do not rewrite
+          // on-canvas copy away from the Instagram under-post text.
+          captionAwareHeadline: originalIdeationCaption.trim().length < 24,
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
           falHeadingFont: falSlotTypography?.headingFont,

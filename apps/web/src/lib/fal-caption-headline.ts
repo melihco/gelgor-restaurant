@@ -801,27 +801,29 @@ export function resolveFalProductionOverlayHeadline(
   fallbacks: string[] = [],
   channel: 'reel' | 'feed_post' | 'story',
   designIntensity?: string | null,
+  budgetOverride?: { maxWords: number; maxLen: number } | null,
 ): string {
   const raw = ensureMeaningfulFalOverlayText(primary, fallbacks);
   if (!raw) return '';
-  const clamped = clampFalOverlayHeadlineForCanvas(raw, channel, designIntensity);
+  const clamped = clampFalOverlayHeadlineForCanvas(raw, channel, designIntensity, budgetOverride);
   return clamped && isMeaningfulFalOverlayText(clamped) ? clamped : '';
 }
 
 /** Image-model-safe headline directive — avoids "EXACTLY" and similar leak words. */
 export function formatFalOnImageHeadlineDirective(headline: string, fontDescription: string): string {
   const safe = sanitizeFalOverlayText(headline);
+  // Prefer ASCII quotes — Ideogram often paints « » guillemets literally on canvas.
   return [
-    `Main on-image headline — render ONLY this copy: «${safe}».`,
+    `Main on-image headline — render ONLY this copy: "${safe}".`,
     `Typography style: ${fontDescription}.`,
-    'Do not paint prompt instructions or any text outside the quoted headline.',
+    'Do not paint prompt instructions, quotation marks, French guillemets, or any text outside the headline words.',
   ].join(' ');
 }
 
 /** Image-model-safe subtitle/tagline directive. */
 export function formatFalOnImageSubtitleDirective(subtitle: string): string {
   const safe = sanitizeFalOverlayText(subtitle);
-  return `Secondary tagline below headline (ONLY this copy): «${safe}». Designed complement font — not plain body text.`;
+  return `Secondary tagline below headline (ONLY this copy): "${safe}". Designed complement font — not plain body text. Never paint quotation marks or French guillemets around the words.`;
 }
 
 /** Feed designed posts — char ceiling; word budget usually bites first (3–4 words). */
@@ -832,10 +834,14 @@ export type OverlayHeadlineChannel = 'reel' | 'feed_post' | 'story';
 /**
  * On-canvas word budget from channel + design paint density.
  * Dense paint (bold) can hold 4 words; photo-first / elegant stays at 2–3.
+ * Optional sampleHeadline from the brand template locks the ceiling to what
+ * the designed type zone actually holds (prevents mission overflow).
  */
 export function resolveOverlayHeadlineWordBudget(input: {
   channel: OverlayHeadlineChannel;
   designIntensity?: string | null;
+  /** Library design_spec.sampleHeadline — when set, never exceed its length/words. */
+  sampleHeadline?: string | null;
 }): { maxWords: number; maxLen: number } {
   const intensity = String(input.designIntensity ?? '').trim().toLowerCase();
   const channel = input.channel;
@@ -853,8 +859,133 @@ export function resolveOverlayHeadlineWordBudget(input: {
     maxWords = channel === 'feed_post' ? 4 : 3;
   }
 
-  const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
+  let maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
+
+  const sample = String(input.sampleHeadline ?? '').trim();
+  if (sample.length >= 2) {
+    const sampleWords = sample.split(/\s+/).filter(Boolean).length;
+    // Type zone was composed for this sample — mission copy must match that footprint.
+    maxLen = Math.min(maxLen, sample.length);
+    maxWords = Math.min(maxWords, Math.max(1, sampleWords));
+  }
+
   return { maxWords, maxLen };
+}
+
+export type TemplateOverlayCopyBudget = {
+  headline: { maxWords: number; maxLen: number };
+  subtitle: { maxWords: number; maxLen: number } | null;
+  showSubline: boolean;
+  source: 'template_sample' | 'channel_default';
+};
+
+/**
+ * Mission overlay budget locked to the matched template's sample copy footprint.
+ * Idea / design / type / visual stay coherent when paint fits the same zone.
+ */
+export function resolveTemplateOverlayCopyBudget(input: {
+  channel: OverlayHeadlineChannel;
+  designIntensity?: string | null;
+  sampleHeadline?: string | null;
+  sampleSubtitle?: string | null;
+  showSubline?: boolean | null;
+}): TemplateOverlayCopyBudget {
+  const sampleH = String(input.sampleHeadline ?? '').trim();
+  const sampleS = String(input.sampleSubtitle ?? '').trim();
+  const showSubline = input.showSubline === false
+    ? false
+    : input.showSubline === true
+      ? true
+      : Boolean(sampleS);
+
+  const headline = resolveOverlayHeadlineWordBudget({
+    channel: input.channel,
+    designIntensity: input.designIntensity,
+    sampleHeadline: sampleH || null,
+  });
+
+  let subtitle: TemplateOverlayCopyBudget['subtitle'] = null;
+  if (showSubline) {
+    const channelSubLen = input.channel === 'reel' ? 18 : input.channel === 'story' ? 22 : 24;
+    const channelSubWords = 3;
+    if (sampleS.length >= 2) {
+      const sw = sampleS.split(/\s+/).filter(Boolean).length;
+      subtitle = {
+        maxLen: Math.min(channelSubLen, sampleS.length),
+        maxWords: Math.min(channelSubWords, Math.max(1, sw)),
+      };
+    } else {
+      subtitle = { maxLen: channelSubLen, maxWords: channelSubWords };
+    }
+  }
+
+  return {
+    headline,
+    subtitle,
+    showSubline: Boolean(subtitle),
+    source: sampleH.length >= 2 ? 'template_sample' : 'channel_default',
+  };
+}
+
+/**
+ * Fit mission idea copy into the template type-zone budget (no overflow).
+ * Prefers tightened mission line; falls back to word-safe truncation.
+ */
+export function fitMissionOverlayToTemplateBudget(input: {
+  headline: string;
+  subtitle?: string | null;
+  channel: OverlayHeadlineChannel;
+  designIntensity?: string | null;
+  sampleHeadline?: string | null;
+  sampleSubtitle?: string | null;
+  showSubline?: boolean | null;
+}): { headline: string; subtitle?: string; budget: TemplateOverlayCopyBudget } {
+  const budget = resolveTemplateOverlayCopyBudget(input);
+  const rawH = correctTurkishSpelling(sanitizeFalOverlayText(input.headline));
+  let headline = tightenOverlayHeadline(
+    rawH,
+    budget.headline.maxLen,
+    budget.headline.maxWords,
+  );
+  if (!headline || !isMeaningfulFalOverlayText(headline)) {
+    headline = truncateAtWordBoundary(rawH, budget.headline.maxLen);
+  }
+  if (!headline || !isMeaningfulFalOverlayText(headline)) {
+    headline = rawH.slice(0, budget.headline.maxLen).trim();
+  }
+
+  if (!budget.subtitle || !budget.showSubline) {
+    return { headline, budget };
+  }
+
+  const rawS = correctTurkishSpelling(sanitizeFalOverlayText(String(input.subtitle ?? '')));
+  if (!rawS || areFalOverlayTextsRedundant(headline, rawS)) {
+    return { headline, budget };
+  }
+  let subtitle = tightenOverlayHeadline(
+    rawS,
+    budget.subtitle.maxLen,
+    budget.subtitle.maxWords,
+  );
+  if (!subtitle) {
+    subtitle = truncateAtWordBoundary(rawS, budget.subtitle.maxLen);
+  }
+  if (!subtitle) {
+    subtitle = rawS.slice(0, budget.subtitle.maxLen).trim();
+  }
+  // Template sample zones are often 1 short word (e.g. "Misafir") — skip the
+  // general ≥8-char meaningfulness gate when locked to sample footprint.
+  const subtitleOk = budget.source === 'template_sample'
+    ? Boolean(subtitle && subtitle.length >= 2 && !areFalOverlayTextsRedundant(headline, subtitle))
+    : Boolean(
+      subtitle
+      && isMeaningfulFalOverlayText(subtitle)
+      && !areFalOverlayTextsRedundant(headline, subtitle),
+    );
+  if (!subtitleOk) {
+    return { headline, budget };
+  }
+  return { headline, subtitle, budget };
 }
 
 /** Tighten any channel overlay to a complete ≤N-word phrase. */
@@ -921,18 +1052,21 @@ export function clampFalOverlayHeadlineForCanvas(
   headline: string,
   channel: 'reel' | 'feed_post' | 'story',
   designIntensity?: string | null,
+  budgetOverride?: { maxWords: number; maxLen: number } | null,
 ): string {
   const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
   if (!clean) return '';
   if (isInternalStrategyBriefing(clean)) return '';
   if (isIncompleteOverlayPhrase(clean) && clean.length > FAL_FEED_OVERLAY_MAX_CHARS) return '';
-  const budget = resolveOverlayHeadlineWordBudget({ channel, designIntensity });
+  const budget = budgetOverride ?? resolveOverlayHeadlineWordBudget({ channel, designIntensity });
   const tightened = tightenOverlayHeadline(clean, budget.maxLen, budget.maxWords);
   if (tightened && isMeaningfulFalOverlayText(tightened) && !isIncompleteOverlayPhrase(tightened)) {
     return tightened;
   }
-  if (channel === 'reel') return tightenVideoHeadline(clean, 22, 3);
-  if (channel === 'story') return tightenVideoHeadline(clean, 28, 3);
+  if (!budgetOverride) {
+    if (channel === 'reel') return tightenVideoHeadline(clean, 22, 3);
+    if (channel === 'story') return tightenVideoHeadline(clean, 28, 3);
+  }
   const result = truncateAtWordBoundary(clean, budget.maxLen);
   if (result && isMeaningfulFalOverlayText(result) && !isIncompleteOverlayPhrase(result)) {
     return result;

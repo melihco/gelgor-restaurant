@@ -580,7 +580,7 @@ export function BrandFalTemplateGalleryPanel({
     setGeneratingSlotKey(row.slotKey);
     setStatus('');
     setStatusKind('info');
-    setStatus(`"${row.labelTr}" üretiliyor… (1 Fal çağrısı, ~1–3 dk sürebilir)`);
+    setStatus(`"${row.labelTr}" üretiliyor… (Crew art direction + GPT Image, ~1–3 dk)`);
     try {
       const res = await fetchTenantBff(
         `/api/brand-context/${tenantId}/design-templates/preview-slot`,
@@ -594,15 +594,25 @@ export function BrandFalTemplateGalleryPanel({
             mode: 'regenerate',
             persist: true,
             template_id: row.template?.id,
+            show_subline: (() => {
+              const spec = (row.template?.design_spec && typeof row.template.design_spec === 'object'
+                ? row.template.design_spec
+                : {}) as Record<string, unknown>;
+              if (typeof spec.showSubline === 'boolean') return spec.showSubline;
+              if (typeof spec.show_subline === 'boolean') return spec.show_subline;
+              return true;
+            })(),
           }),
         },
       );
-      const data = res.ok ? ((await res.json()) as Record<string, unknown>) : null;
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (!res.ok) {
         setStatusKind('error');
         const msg = String(data?.message ?? data?.error ?? '');
         if (res.status === 503 || msg.includes('unavailable')) {
           setStatus('Python servisi kapalı — birkaç saniye sonra tekrar deneyin.');
+        } else if (res.status === 502 || data?.error === 'preview_generation_failed') {
+          setStatus(msg || 'Görsel üretilemedi — OpenAI/Fal çıktı vermedi. Tekrar deneyin.');
         } else if (data?.error === 'no_gallery_photos') {
           setStatus('Galeri fotoğrafı yok — önce Galeri sekmesine foto ekleyin.');
         } else {
@@ -610,7 +620,10 @@ export function BrandFalTemplateGalleryPanel({
         }
         return;
       }
-      if (!data?.persisted) {
+      const variant0 = Array.isArray(data?.variants)
+        ? (data!.variants[0] as Record<string, unknown> | undefined)
+        : undefined;
+      if (!variant0?.thumbnail_url || !data?.persisted) {
         setStatusKind('error');
         setStatus('Önizleme üretildi ama kaydedilemedi — thumbnail boş olabilir.');
         return;
@@ -619,14 +632,13 @@ export function BrandFalTemplateGalleryPanel({
       const typoNote = data.typography_confirmed === false
         ? ' (sektör varsayılan tipografi — Renk & Tipografi onayı önerilir)'
         : '';
-      const variant0 = Array.isArray(data.variants)
-        ? (data.variants[0] as Record<string, unknown> | undefined)
-        : undefined;
       const intensityNote = variant0?.intensity ? ` · ${String(variant0.intensity)}` : '';
       const generatorNote = variant0?.generator ? ` · ${String(variant0.generator)}` : '';
       setStatus(`"${row.labelTr}" hazır${intensityNote}${generatorNote}.${typoNote}`);
       await queryClient.invalidateQueries({ queryKey: ['brand-design-templates', tenantId] });
+      await queryClient.invalidateQueries({ queryKey: ['catalog-gallery-slots', tenantId, sector] });
       await queryClient.refetchQueries({ queryKey: ['brand-design-templates', tenantId] });
+      await queryClient.refetchQueries({ queryKey: ['catalog-gallery-slots', tenantId, sector] });
     } catch {
       setStatusKind('error');
       setStatus('Bağlantı hatası');

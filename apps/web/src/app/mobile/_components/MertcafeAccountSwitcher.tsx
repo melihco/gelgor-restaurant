@@ -74,6 +74,8 @@ export function MertcafeAccountSwitcher({
   const igOk = Boolean(status?.instagram_connected);
   const hasApiKey = Boolean(status?.has_tenant_api_key);
   const tenantReady = Boolean(status?.is_tenant_ready);
+  const apiKeyInvalid = status?.mertcafe_auth_ok === false
+    || status?.code === 'MERTCAFE_UNAUTHORIZED';
 
   const flash = (text: string, ok = true) => {
     setMessage({ text, ok });
@@ -311,6 +313,15 @@ export function MertcafeAccountSwitcher({
             >
               {syncOAuthMutation.isPending ? 'Uygulanıyor…' : 'Bu hesabı yayın hesabı yap'}
             </button>
+          </div>
+        )}
+
+        {apiKeyInvalid && (
+          <div style={{ margin: '0 18px 14px', padding: '12px 14px', borderRadius: 12,
+            background: 'rgba(239,68,68,0.07)', border: '0.5px solid rgba(239,68,68,0.22)',
+            fontSize: 11.5, color: '#f87171', lineHeight: 1.5 }}>
+            {status?.error
+              || 'Mertcafe API anahtarı geçersiz — Instagram paylaşımı için Ayarlar’dan yeniden bağlayın veya yeni hesap oluşturun.'}
           </div>
         )}
 

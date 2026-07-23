@@ -38,6 +38,10 @@ import {
   estimateOpenAiUsd,
   type OpenAiUsageLike,
 } from '@/lib/ai-cost-telemetry';
+import {
+  buildGalleryPhotoSearchable,
+  themeConflictNeedsAiJudge,
+} from '@/lib/caption-photo-alignment';
 
 /** Candidate photo metadata the judge is allowed to see (no raw image). */
 export interface GalleryJudgeCandidate {
@@ -112,10 +116,16 @@ Decide whether ONE of the candidate brand gallery photos truly matches the post 
 Rules:
 - The caption/headline may be Turkish, English, or mixed. Reason about MEANING, not language.
 - All subjects use canonical English snake_case tokens (e.g. "olive_oil", "honey", "fig_jam", "haircut").
-- Pick a candidate ONLY if it clearly depicts the same product/subject/service the copy is about.
+- Pick a candidate ONLY if it clearly depicts the same product/subject/service/scene the copy is about.
 - If the copy names a specific product and NO candidate shows it, you MUST return pickIndex null.
 - A generic family caption (e.g. "our jams" / "reçel çeşitlerimiz") may match any specific variant of that family.
 - Never pick a photo of a different product just because it looks nice or is on-brand.
+- Theme alignment (meaning over keywords):
+  * Nightlife / DJ / party / dance copy → need nightlife proof (DJ booth, stage, dancing crowd, neon party). A food plate is NOT OK.
+  * Food / menu / plated dish copy → need food proof. A DJ stage is NOT OK.
+  * Cocktail / drink-hero copy → need a drink/bar hero. A steak/pasta plate is NOT OK.
+  * Cocktail mention inside a nightlife/DJ caption MAY match a nightlife crowd/DJ photo (cocktails are atmosphere, not the hero subject).
+  * Beauty: nail copy must not pick lash/hair heroes and vice versa.
 - confidence is your honest probability (0..1) that the pick is correct. Be conservative.
 
 Return STRICT JSON only, no prose:
@@ -281,15 +291,31 @@ export async function confirmGalleryPickWithAiJudge(
     canonicalSubject,
   };
 
-  // Fast path: a strong deterministic score is trusted — no AI needed.
-  if (typeof score === 'number' && score >= GIS_PILOT_MIN_SCORE) {
+  const selectedMeta = resolveMetaForUrl(params.selectedUrl, params.galleryAnalysis);
+  const themeRisk = themeConflictNeedsAiJudge(
+    `${params.headline} ${params.caption}`,
+    buildGalleryPhotoSearchable(selectedMeta, params.selectedUrl),
+  );
+
+  // Fast path: strong score AND no cross-theme risk — skip AI.
+  // Theme-risk picks always go to the judge (keyword heuristics are soft-only).
+  if (typeof score === 'number' && score >= GIS_PILOT_MIN_SCORE && !themeRisk) {
     return { ...base, action: 'accept', confidence: 1, reason: `strong deterministic score (${score})` };
   }
 
-  // Judge unavailable → keep the deterministic decision (hard conflicts already
-  // blocked upstream). We never fabricate a match, but we also don't block the
-  // whole pipeline when the model is down.
+  // Judge unavailable → keep the deterministic decision unless theme risk is
+  // present (soft heuristics alone must not ship a nightlife↔food mismatch).
   if (!enabled) {
+    if (themeRisk) {
+      return {
+        ...base,
+        url: undefined,
+        action: 'reject',
+        confidence: 0,
+        reason: 'theme risk without ai judge — fail closed',
+        rejectReason: 'ai_judge_required_for_theme',
+      };
+    }
     return { ...base, action: 'accept', confidence: 0.5, reason: 'ai judge disabled — deterministic pick kept' };
   }
 
@@ -404,16 +430,26 @@ export async function confirmGalleryPickWithAiJudge(
   };
 }
 
-/** Diversity fallback picks always need judge confirmation — never reserve blindly. */
-function batchAssignmentNeedsJudge(match: PhotoMatchResult): boolean {
+/** Diversity / gray / theme-risk picks need judge confirmation. */
+function batchAssignmentNeedsJudge(
+  match: PhotoMatchResult,
+  input: MatchPhotoInput,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+): boolean {
   if (match.reason === 'mission_diversity_fallback') return true;
-  return match.score < GIS_PILOT_MIN_SCORE;
+  if (match.score < GIS_PILOT_MIN_SCORE) return true;
+  const meta = resolveMetaForUrl(match.url, galleryAnalysis);
+  return themeConflictNeedsAiJudge(
+    `${input.headline ?? ''} ${input.caption}`,
+    buildGalleryPhotoSearchable(meta, match.url),
+  );
 }
 
 /**
  * Post-process a batch/deterministic gallery assignment through the AI judge
- * when the pick is in the gray zone. Returns null when the judge rejects
- * (fail-closed) so greedy batch dedup does not reserve a wrong photo.
+ * when the pick is in the gray zone or shows cross-theme risk. Returns null
+ * when the judge rejects (fail-closed) so greedy batch dedup does not reserve
+ * a wrong photo.
  */
 export async function gatePhotoMatchResult(
   match: PhotoMatchResult | null,
@@ -430,7 +466,7 @@ export async function gatePhotoMatchResult(
   },
 ): Promise<PhotoMatchResult | null> {
   if (!match?.url) return match;
-  if (!batchAssignmentNeedsJudge(match)) return match;
+  if (!batchAssignmentNeedsJudge(match, input, galleryAnalysis)) return match;
 
   const decision = await confirmGalleryPickWithAiJudge({
     caption: input.caption,

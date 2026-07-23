@@ -41,8 +41,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { ok, status, data } = await mertcafeGet('/api/status', tenant.apiKey);
     if (!ok) {
+      // Upstream 401/403 = invalid/expired tenant Mertcafe key — not Smart Agency auth.
+      // Return 200 so the UI can show "reconnect" without console Unauthorized noise.
+      if (status === 401 || status === 403) {
+        return NextResponse.json({
+          instagram_connected: false,
+          meta_ads_connected: false,
+          instagram_account_id: tenant.publishAccountId ?? null,
+          publish_account_id: tenant.publishAccountId ?? null,
+          oauth_account_id: null,
+          saved_accounts: tenant.savedAccounts,
+          workspace_id: workspaceId,
+          has_tenant_api_key: true,
+          has_publish_account: tenant.hasPublishAccount,
+          is_tenant_ready: false,
+          publish_ready: false,
+          publish_blocker: 'mertcafe_api_key_invalid',
+          api_key_source: tenant.apiKeySource,
+          account_source: tenant.accountSource,
+          mertcafe_auth_ok: false,
+          error: 'Mertcafe API anahtarı geçersiz veya süresi dolmuş — Ayarlar’dan yeniden bağlayın.',
+          code: 'MERTCAFE_UNAUTHORIZED',
+        });
+      }
       return NextResponse.json(
-        { error: String(data.error || data.message || 'Status check failed'), code: 'MERTCAFE_STATUS_FAILED' },
+        {
+          error: String(data.error || data.message || 'Status check failed'),
+          code: 'MERTCAFE_STATUS_FAILED',
+          mertcafe_auth_ok: false,
+        },
         { status },
       );
     }
@@ -90,6 +117,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       publish_blocker: publishGate.blocker ?? null,
       api_key_source: tenant.apiKeySource,
       account_source: tenant.accountSource,
+      mertcafe_auth_ok: true,
     });
   } catch (err) {
     return NextResponse.json(

@@ -25,7 +25,8 @@ import {
 } from '@/lib/product-packaging-fidelity';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+/** gpt-image-2 high design cards regularly exceed 2 minutes. */
+export const maxDuration = 300;
 
 type OpenAiGptImageQuality = 'low' | 'high' | 'auto' | 'medium' | 'standard';
 
@@ -210,6 +211,13 @@ type GeneratedImage = {
 
 function isDalleModel(model: string) {
   return model.startsWith('dall-e');
+}
+
+/** gpt-image-1 accepts input_fidelity; gpt-image-2 returns 400 if sent. */
+function supportsOpenAiInputFidelity(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  if (!m.startsWith('gpt-image')) return false;
+  return !m.startsWith('gpt-image-2');
 }
 
 function sizeFor(contentType: string, model: string, isDesignCard = false) {
@@ -1052,9 +1060,9 @@ async function generateWithOpenAI(
     if (file) {
       try {
         const editModel = model;
-        // Design card prompts are detailed (fonts, positions, colors) — never truncate below 4000.
-        // gpt-image-2 supports up to 32 000 chars; gpt-image-1 was safe to 4000.
-        const promptLimit = isDesignCard ? 4000 : 1500;
+        // Design card prompts carry full craft + TEXT contract — 4k was cutting mid-brief.
+        // gpt-image-2 supports up to 32 000 chars; keep a safe headroom under that.
+        const promptLimit = isDesignCard ? 28_000 : 1500;
         const isVideoReel = isDesignCard && designCardMode === 'reel';
 
         // Template layout replica: second edit image = approved brand template
@@ -1068,12 +1076,23 @@ async function generateWithOpenAI(
           }
         }
 
-        const editPrompt = buildReferenceEditDirective(
+        const editPromptRaw = buildReferenceEditDirective(
           prompt,
           isDesignCard,
           isVideoReel,
           Boolean(templateFile),
-        ).slice(0, promptLimit);
+        );
+        const editPrompt = editPromptRaw.slice(0, promptLimit);
+        if (editPromptRaw.length > promptLimit) {
+          console.warn(
+            `[generate-instagram-image] design-card prompt truncated ${editPromptRaw.length}→${editPrompt.length} (limit ${promptLimit})`,
+          );
+        } else {
+          console.log(
+            `[generate-instagram-image] design-card edit prompt chars=${editPrompt.length}`
+            + (editPromptRaw.length > 4000 ? ' (would have been cut at old 4k limit)' : ''),
+          );
+        }
 
         // Logo is composited in post-production (sharp) — never as a GPT edit reference
         // (models tend to redraw/morph the mark instead of copying pixels faithfully).
@@ -1086,7 +1105,9 @@ async function generateWithOpenAI(
           n: 1,
           size: sizeFor(contentType, editModel, isDesignCard) as '1024x1024' | '1024x1536' | '1536x1024',
           quality: openAiEditQuality(quality),
-          ...(isDesignCard ? { input_fidelity: 'high' as const } : {}),
+          ...(isDesignCard && supportsOpenAiInputFidelity(editModel)
+            ? { input_fidelity: 'high' as const }
+            : {}),
         } satisfies Parameters<typeof openai.images.edit>[0];
         const editedRaw2 = await openai.images.edit(editPayload);
         const editedR = editedRaw2 as { data?: Array<{ url?: string; b64_json?: string }> };
@@ -1539,11 +1560,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // Designed card mode: the visual design agent already wrote the full prompt.
-  const isDesignedCard = Boolean(input.designCardPrompt);
+  // Designed card mode: full art-direction brief (fonts, zones, TEXT contract).
+  // Prefer designCardPrompt; accept isDesignCard + prompt as a compatible alias.
+  const designCardBrief = String(input.designCardPrompt ?? '').trim()
+    || ((input as { isDesignCard?: boolean }).isDesignCard === true
+      ? String(input.prompt ?? '').trim()
+      : '');
+  const isDesignedCard = designCardBrief.length > 0;
   const designCardMode = input.designCardMode ?? (input.contentType?.includes('story') ? 'reel' : 'post');
   const prompt = isDesignedCard
-    ? input.designCardPrompt!
+    ? designCardBrief
     : await maybeExpandImageScenePrompt(buildPrompt(input));
 
   const scratchMode = Boolean(input.captionDrivenMode || input.scratchBriefMode);

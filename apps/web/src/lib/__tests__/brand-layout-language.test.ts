@@ -14,7 +14,7 @@ import { DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT } from '@/lib/brand-design-tem
 import { instanceToSlotDefinition, getSectorSlotPack } from '@/lib/sector-slot-pack';
 
 describe('resolveBrandLayoutLanguage', () => {
-  it('keeps vibrant beach_club (Yula-like) on coastal craft-window — soft bias, not caption-only', () => {
+  it('keeps vibrant beach_club (Yula-like) on coastal craft-window with slot-diverse allowlist', () => {
     const pack = resolveBrandLayoutLanguage({
       sector: 'beach_club',
       visualDna:
@@ -28,21 +28,24 @@ describe('resolveBrandLayoutLanguage', () => {
     });
     expect(pack.id).toBe('coastal_editorial');
     expect(pack.composeMode).toBe('craft_window');
-    expect(pack.preferPhotoLedCraft).toBe(true);
-    expect(pack.craftAllowlist.length).toBeGreaterThan(1);
+    // Designed craft (not photo-led soft-cap) so GPT-image-2 keeps per-slot LAYOUT LOCKs.
+    expect(pack.preferPhotoLedCraft).toBe(false);
+    expect(pack.craftAllowlist.length).toBeGreaterThanOrEqual(6);
     expect(pack.craftAllowlist).toContain('asymmetric_corner_plate');
-    // Soft coastal: restore LAYOUT LOCK at balanced+ (type_with_brand_rules era).
+    expect(pack.craftAllowlist).toContain('editorial_split_soft');
+    expect(pack.craftAllowlist).toContain('l_shape_accent');
+    expect(pack.craftAllowlist).not.toContain('side_rail_frame');
+    // venue_showcase / daily_story propose balanced — craft-window must still lock a family.
     expect(shouldApplyCraftLayoutFamily('balanced', pack)).toBe(true);
     expect(shouldApplyCraftLayoutFamily('designed', pack)).toBe(true);
-    // Library soft-cap at balanced — matches winning coastal renders.
     expect(resolveTemplateLibraryEffectiveIntensity({
       productionIntensity: 'designed',
       language: pack,
-    })).toBe('balanced');
+    })).toBe('designed');
     expect(resolveTemplateLibraryEffectiveIntensity({
       productionIntensity: 'bold_editorial',
       language: pack,
-    })).toBe('balanced');
+    })).toBe('bold_editorial');
     expect(clampIntensityToLayoutLanguage('bold_editorial', pack)).toBe('bold_editorial');
   });
 
@@ -88,7 +91,7 @@ describe('resolveBrandLayoutLanguage', () => {
 });
 
 describe('Kokteyl Promo story routing (beach_club pack)', () => {
-  it('resolves campaign_announcement → offer_campaign → designed under coastal soft cap', () => {
+  it('resolves campaign_announcement → offer_campaign → designed for vibrant coastal', () => {
     const pack = getSectorSlotPack('beach_club');
     expect(pack).toBeTruthy();
     const instance = pack!.instances.find((i) => i.suffix === 'cocktail_promo_story');
@@ -110,7 +113,7 @@ describe('Kokteyl Promo story routing (beach_club pack)', () => {
     expect(resolveTemplateLibraryEffectiveIntensity({
       productionIntensity: CALENDAR_ANNOUNCEMENT_INTENSITY.offer_campaign,
       language,
-    })).toBe('balanced');
+    })).toBe('designed');
   });
 });
 
@@ -125,5 +128,21 @@ describe('craft allowlist + family resolver', () => {
       const family = resolveDesignCraftLayoutFamily(`slot-${i}-product`, allow);
       expect(allow).toContain(family);
     }
+  });
+
+  it('diversifies coastal slot families across seeds (not one cream plate)', () => {
+    const pack = resolveBrandLayoutLanguage({
+      sector: 'beach_club',
+      visualDna: 'Aegean coastal vibrant citrus Drink & Chill',
+      brandTone: 'vibrant, fresh, social',
+    });
+    const allow = resolveCraftAllowlistForPack(pack);
+    const picked = new Set(
+      Array.from({ length: 14 }, (_, i) =>
+        resolveDesignCraftLayoutFamily(`beach_club_slot_${i}_story`, allow)),
+    );
+    expect(picked.size).toBeGreaterThanOrEqual(4);
+    expect(allow).toContain('editorial_split_soft');
+    expect(allow).toContain('l_shape_accent');
   });
 });

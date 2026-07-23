@@ -9,6 +9,7 @@ import {
   type DesignTemplateType,
   resolveDesignTemplatePresets,
 } from '@/lib/brand-design-template-presets';
+import { resolveSlotSampleCopy } from '@/lib/slot-sample-copy';
 import { DESIGN_TEMPLATE_TYPE_LABELS } from '@/lib/fal-archetype-gallery';
 import {
   bootstrapTenantSlotAssignments,
@@ -41,10 +42,10 @@ const ASSET_TYPES_BY_TEMPLATE: Partial<Record<DesignTemplateType, string[]>> = {
   daily_story: ['venue_reference', 'food_drink_photo', 'product_image'],
   brand_identity: ['venue_reference', 'product_image'],
   campaign_announcement: ['venue_reference', 'product_image', 'food_drink_photo'],
-  event_special: ['venue_reference', 'food_drink_photo'],
+  event_special: ['event_photo', 'venue_reference'],
   seasonal_promo: ['venue_reference', 'product_image', 'food_drink_photo'],
   announcement_formal: ['venue_reference'],
-  reel_cover: ['venue_reference', 'food_drink_photo', 'product_image'],
+  reel_cover: ['venue_reference', 'food_drink_photo', 'product_image', 'event_photo'],
 };
 
 function slotFormatToDesignFormat(format: string): DesignTemplateFormat {
@@ -53,35 +54,34 @@ function slotFormatToDesignFormat(format: string): DesignTemplateFormat {
   return 'post';
 }
 
-const GENERIC_ONBOARDING_COPY = resolveDesignTemplatePresets('');
-
-function sampleCopyForType(templateType: DesignTemplateType): {
+function sampleCopyForSlot(slot: ProductionSlotDefinition): {
   headline: string;
   subtitle?: string;
 } {
-  const preset = GENERIC_ONBOARDING_COPY.find((p) => p.templateType === templateType);
-  if (preset?.sampleHeadline) {
-    return { headline: preset.sampleHeadline, subtitle: preset.sampleSubtitle };
+  const templateType = slot.design_template_type as DesignTemplateType;
+  const fromSlot = resolveSlotSampleCopy({
+    catalogSlotKey: slot.slot_key,
+    templateType,
+    format: slotFormatToDesignFormat(slot.format),
+  });
+  if (fromSlot.headline) return fromSlot;
+
+  const fallback = resolveDesignTemplatePresets('').find((p) => p.templateType === templateType);
+  if (fallback?.sampleHeadline) {
+    return { headline: fallback.sampleHeadline, subtitle: fallback.sampleSubtitle };
   }
   const meta = DESIGN_TEMPLATE_TYPE_LABELS[templateType];
-  if (templateType === 'social_proof') {
-    return { headline: '"Harika bir deneyim"', subtitle: '— Mutlu misafirimiz' };
-  }
   if (meta?.tr) {
-    const base = meta.tr.replace(/duyurusu$/i, '').trim();
-    return {
-      headline: base === 'Kampanya' ? 'Özel Kampanya' : base || 'Keşfetmeye Hazır mısın?',
-      subtitle: templateType === 'announcement_formal' ? 'Bilgilerinize' : 'Sınırlı süre',
-    };
+    return resolveSlotSampleCopy({ templateType, catalogSlotKey: slot.slot_key });
   }
-  return { headline: 'Keşfetmeye Hazır mısın?' };
+  return { headline: 'Keşfet' };
 }
 
 export function buildDesignPresetFromCatalogSlot(
   slot: ProductionSlotDefinition,
 ): DesignTemplatePreset {
   const templateType = slot.design_template_type as DesignTemplateType;
-  const copy = sampleCopyForType(templateType);
+  const copy = sampleCopyForSlot(slot);
   const keywords = [
     slot.label_tr,
     slot.label_en,

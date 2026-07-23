@@ -496,16 +496,24 @@ export function buildTemplateReplicaPrompt(
   swap(spec.sampleHeadline, mission.headline);
   swap(spec.sampleSubtitle, missionSubtitle);
 
+  const sampleH = String(spec.sampleHeadline ?? '').trim();
+  const sampleS = String(spec.sampleSubtitle ?? '').trim();
   const header = [
     '═══ MISSION COPY OVERRIDE (FINAL AUTHORITY) ═══',
     `ON-CANVAS HEADLINE (exact, Turkish diacritics preserved): "${mission.headline}"`,
     missionSubtitle
       ? `ON-CANVAS SUBTITLE (exact): "${missionSubtitle}"`
       : 'NO SUBTITLE — render only the headline above.',
+    sampleH
+      ? `TYPE ZONE BUDGET: headline ≤${sampleH.length} chars / ${sampleH.split(/\s+/).filter(Boolean).length} words (library sample was "${sampleH}") — do not paint longer copy.`
+      : '',
+    missionSubtitle && sampleS
+      ? `SUBLINE ZONE BUDGET: ≤${sampleS.length} chars (library sample was "${sampleS}").`
+      : '',
     spec.forbiddenTexts.length
       ? `FORBIDDEN TEXT (template placeholders — never render): ${spec.forbiddenTexts.map((t) => `"${t}"`).join(', ')}`
       : '',
-    'This is the brand\'s SAVED template spec re-issued: keep its layout, typography system, and colors exactly — only the text above and the mission photo change.',
+    'This is the brand\'s SAVED template spec re-issued: keep its layout, typography system, and colors exactly — only the text above and the mission photo change. Copy must fit the reserved type zone without overflow/clipping.',
   ].filter(Boolean).join('\n');
 
   return `${header}\n\n${prompt}`;

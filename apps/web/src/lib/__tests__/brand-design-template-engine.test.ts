@@ -5,6 +5,7 @@ import {
   buildDesignTemplateGenerationJobs,
   pickPhotoForPreset,
   resolveDefaultTemplateHeroPhoto,
+  resolveTemplatePurposeBrief,
 } from '@/lib/brand-design-template-engine';
 import type { DesignTemplatePreset } from '@/lib/brand-design-template-presets';
 
@@ -114,13 +115,63 @@ describe('buildBrandSlotDesignRecipe', () => {
       visualDna: 'Aegean coastal warmth, carved wood, turquoise accents',
       brandTone: 'warm, inviting, boutique',
       sampleHeadline: 'Bugünün Önerisi',
+      templateType: 'menu_highlight',
+      falUseCase: 'product_highlight',
     });
     expect(recipe).toContain('BRAND SLOT DESIGN RECIPE');
+    expect(recipe).toContain('TEMPLATE PURPOSE');
+    expect(recipe).toContain('PRODUCT / MENU HERO');
     expect(recipe).toContain('Yula Bodrum');
+    expect(recipe).toContain('could ONLY belong to Yula Bodrum');
     expect(recipe).toContain('magazine_cover_overlap');
     expect(recipe).toContain('#00C5CC');
+    expect(recipe).toContain('painted fields/plates/rails');
+    expect(recipe).toMatch(/cream\/beige|cream\/beige\/off-white/i);
     expect(recipe).toContain('Bugünün Önerisi');
+    expect(recipe).toContain('Short punchline for type zone');
     expect(recipe).toContain('carved wood');
+  });
+
+  it('states event-poster purpose for etkinlik duyuru slots', () => {
+    const recipe = buildBrandSlotDesignRecipe({
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      primary: '#00C5CC',
+      accent: '#f5a25d',
+      slotKey: 'restaurant_cafe_event_announcement_story',
+      slotName: 'Etkinlik duyuru afişi',
+      channel: 'story',
+      level: 'designed',
+      layoutFamily: null,
+      templateType: 'event_special',
+      falUseCase: 'event_announcement',
+      sampleHeadline: 'Bu Gece',
+    });
+    expect(recipe).toContain('TEMPLATE PURPOSE');
+    expect(recipe).toContain('EVENT ANNOUNCEMENT POSTER');
+    expect(recipe).toContain('event_announcement');
+    expect(recipe).toContain('Etkinlik duyuru afişi');
+    expect(recipe).toContain('Diversity lock');
+  });
+});
+
+describe('resolveTemplatePurposeBrief', () => {
+  it('diverges event vs social_proof design jobs', () => {
+    const event = resolveTemplatePurposeBrief({
+      slotName: 'Etkinlik duyuru afişi',
+      slotKey: 'beach_club_event_announcement_story',
+      templateType: 'event_special',
+      falUseCase: 'event_announcement',
+    });
+    const proof = resolveTemplatePurposeBrief({
+      slotName: 'Misafir yorumu',
+      slotKey: 'beach_club_guest_social_proof_post',
+      templateType: 'social_proof',
+      falUseCase: 'social_proof',
+    });
+    expect(event.designJob).toMatch(/EVENT ANNOUNCEMENT POSTER/);
+    expect(proof.designJob).toMatch(/SOCIAL PROOF/);
+    expect(event.designJob).not.toEqual(proof.designJob);
   });
 });
 

@@ -341,6 +341,11 @@ export async function buildMissionGalleryAssignments(
       headline,
       subjectKey: String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined,
     });
+    const catalogSlotKey = String(
+      queueItem.assignment.catalog_slot_key
+        ?? idea.catalog_slot_key
+        ?? '',
+    ).trim();
     const matchInput = {
       ...buildSlotGalleryMatchInput({
         assignment: queueItem.assignment,
@@ -348,6 +353,8 @@ export async function buildMissionGalleryAssignments(
         brandName: input.resolvedBrandName,
         brandDescription: input.brandDescription,
         businessType: input.brandBusinessType,
+        sectorId: input.brandBusinessType,
+        catalogSlotKey: catalogSlotKey || undefined,
         visualSubjectHint: String(queueItem.assignment.visual_subject_hint ?? ''),
         creativeBrief: input.creativeBrief,
         ideationCaption: caption,

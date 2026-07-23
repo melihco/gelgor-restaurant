@@ -300,6 +300,11 @@ function buildMatchSignals(slotKey: string, designType: string): Record<string, 
   }
   if (/event|dj|wedding/.test(slotKey)) {
     signals.announcement_types = ['event_teaser', 'event_announcement'];
+    if (!signals.keywords) {
+      signals.keywords = /dj/.test(slotKey)
+        ? ['dj', 'gece', 'party', 'night', 'crowd', 'dance', 'etkinlik', 'lineup']
+        : ['etkinlik', 'event', 'party', 'night', 'crowd', 'lineup'];
+    }
   }
   if (/offer|sale|promo/.test(slotKey)) {
     signals.announcement_types = ['offer_campaign'];

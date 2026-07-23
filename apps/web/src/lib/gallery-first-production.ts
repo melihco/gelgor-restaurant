@@ -16,6 +16,12 @@ import {
   type MatchPhotoInput,
   type PhotoMatchResult,
 } from '@/lib/gallery-photo-matcher';
+import {
+  blendCatalogMatchKeywords,
+  filterGalleryUrlsByPreferredAssetTypes,
+  isStrongIdeationCaption,
+  resolveCatalogSlotGalleryHints,
+} from '@/lib/catalog-slot-gallery';
 import { kindToPostType, normalizeGalleryUrl, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { buildInstagramCaptionFromGalleryMeta } from '@/lib/feed-display-caption';
@@ -131,6 +137,9 @@ export function buildSlotGalleryMatchInput(input: {
   brandName: string;
   brandDescription?: string;
   businessType?: string;
+  /** Sector id when distinct from businessType — catalog slot resolution. */
+  sectorId?: string;
+  catalogSlotKey?: string;
   visualSubjectHint?: string;
   creativeBrief?: string;
   ideationCaption?: string;
@@ -150,15 +159,38 @@ export function buildSlotGalleryMatchInput(input: {
   const visualDirection = String(input.visualDirection ?? '').trim() || undefined;
   const strategicPurpose = String(input.strategicPurpose ?? '').trim() || undefined;
 
-  const syntheticHeadline = hint || headline || brief || input.brandName;
-  const syntheticCaption = caption
+  const catalogSlotKey = String(
+    input.catalogSlotKey
+      ?? input.assignment.catalog_slot_key
+      ?? '',
+  ).trim();
+  const sectorId = String(input.sectorId ?? input.businessType ?? '').trim();
+  const catalogHints = resolveCatalogSlotGalleryHints({
+    sectorId,
+    catalogSlotKey,
+  });
+
+  const baseCaption = caption
     || [hint, brief, brandLine].filter(Boolean).join(' — ')
-    || input.brandName;
+    || '';
+  const captionIsStrong = isStrongIdeationCaption(caption);
+  // Strong publish caption → ideation headline wins (hint must not override).
+  // Thin caption → visual_subject_hint / catalog sample may fill the gap.
+  const syntheticHeadline = captionIsStrong
+    ? (headline || hint || catalogHints?.sampleHeadline || brief || input.brandName)
+    : (hint || headline || catalogHints?.sampleHeadline || brief || input.brandName);
+  // Resolve subject from ideation/brief only — catalog tokens like "teaser"
+  // must not poison subject_key (e.g. teaser → tea).
   const subjectKey = resolveGalleryMatchSubjectKey({
-    caption: syntheticCaption,
+    caption: baseCaption || catalogHints?.sampleHeadline || input.brandName,
     headline: syntheticHeadline,
     subjectKey: String(input.subjectKey ?? '').trim() || undefined,
   });
+  const syntheticCaption = blendCatalogMatchKeywords({
+    caption: baseCaption,
+    matchKeywords: catalogHints?.matchKeywords,
+    sampleHeadline: catalogHints?.sampleHeadline,
+  }) || input.brandName;
 
   return {
     caption: syntheticCaption,
@@ -172,6 +204,12 @@ export function buildSlotGalleryMatchInput(input: {
     ...(visualDirection ? { visualDirection } : {}),
     ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(subjectKey ? { subjectKey } : {}),
+    ...(catalogHints?.templateType
+      ? { templateUseCase: catalogHints.templateType }
+      : {}),
+    ...(catalogHints?.preferredAssetTypes?.length
+      ? { preferredAssetTypes: catalogHints.preferredAssetTypes }
+      : {}),
   };
 }
 
@@ -184,6 +222,8 @@ export function pickGalleryPhotoForSlot(input: {
   brandName: string;
   brandDescription?: string;
   businessType?: string;
+  sectorId?: string;
+  catalogSlotKey?: string;
   visualSubjectHint?: string;
   creativeBrief?: string;
   ideationCaption?: string;
@@ -197,25 +237,42 @@ export function pickGalleryPhotoForSlot(input: {
   const minScore = input.slotBackfillPass ? RELAXED_MATCH_SCORE : MIN_ACCEPT_SCORE;
   const lookup = buildGalleryLookup(input.galleryMeta, input.galleryPhotos);
 
-  const ranked = input.tieBreakSeed != null
-    ? rankPhotosForContentSeeded(
-      matchInput,
+  // Thin captions: hard-prefer catalog asset types (library parity).
+  // Strong publish captions: full gallery + soft preferredAssetTypes score only —
+  // never let slot archetype override caption semantics (burger vs DJ).
+  const captionIsStrong = isStrongIdeationCaption(input.ideationCaption);
+  const preferredPool = !captionIsStrong && matchInput.preferredAssetTypes?.length
+    ? filterGalleryUrlsByPreferredAssetTypes(
       input.galleryPhotos,
-      lookup,
-      input.tieBreakSeed,
-      usedBases,
       input.galleryMeta,
+      matchInput.preferredAssetTypes,
     )
-    : rankPhotosForContent(
-      matchInput,
-      input.galleryPhotos,
-      lookup,
-      usedBases,
-      input.galleryMeta,
-    );
+    : [];
+  const pools = preferredPool.length > 0
+    ? [preferredPool, input.galleryPhotos]
+    : [input.galleryPhotos];
 
-  const best = ranked[0];
-  if (best && best.score >= minScore) return best;
+  for (const pool of pools) {
+    const ranked = input.tieBreakSeed != null
+      ? rankPhotosForContentSeeded(
+        matchInput,
+        pool,
+        lookup,
+        input.tieBreakSeed,
+        usedBases,
+        input.galleryMeta,
+      )
+      : rankPhotosForContent(
+        matchInput,
+        pool,
+        lookup,
+        usedBases,
+        input.galleryMeta,
+      );
+
+    const best = ranked[0];
+    if (best && best.score >= minScore) return best;
+  }
 
   // Never accept sub-threshold scores on the normal pass — that shipped DJ+food pairs.
   // Backfill may still use RELAXED_MATCH_SCORE via minScore above.

@@ -38,7 +38,11 @@ import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-mat
 import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
-import { areFalOverlayTextsRedundant, resolveFalOverlayCopy } from '@/lib/fal-caption-headline';
+import {
+  areFalOverlayTextsRedundant,
+  fitMissionOverlayToTemplateBudget,
+  resolveFalOverlayCopy,
+} from '@/lib/fal-caption-headline';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { generateDesignedPostImage } from '../handlers/image-generators';
@@ -194,8 +198,27 @@ export async function produceFalDesignedPost(
         brandName: input.brandName,
         businessType: input.sector,
       });
-      const canvasHeadline = overlayCopy.headline;
-      const dedupedSubtitle = resolveSlotSublineForRender(overlayCopy.subtitle, {
+      // Lock mission copy to the template sample footprint so type doesn't overflow
+      // the designed zone (idea / layout / copy / photo stay coherent).
+      const fitted = fitMissionOverlayToTemplateBudget({
+        headline: overlayCopy.headline,
+        subtitle: overlayCopy.subtitle,
+        channel: canvasChannel,
+        designIntensity: input.designIntensityLevel,
+        sampleHeadline: binding?.matched?.sampleHeadline,
+        sampleSubtitle: binding?.matched?.sampleSubtitle,
+        showSubline: binding?.matched?.showSubline,
+      });
+      if (fitted.budget.source === 'template_sample') {
+        console.log(
+          `[auto-produce] [fal-design] template copy budget `
+          + `h≤${fitted.budget.headline.maxLen}/${fitted.budget.headline.maxWords}w `
+          + `sample="${String(binding?.matched?.sampleHeadline ?? '').slice(0, 24)}" `
+          + `"${overlayCopy.headline.slice(0, 36)}" → "${fitted.headline.slice(0, 36)}"`,
+        );
+      }
+      const canvasHeadline = fitted.headline;
+      const dedupedSubtitle = resolveSlotSublineForRender(fitted.subtitle, {
         matchedShowSubline: binding?.matched?.showSubline,
       });
       if (!canvasHeadline) {

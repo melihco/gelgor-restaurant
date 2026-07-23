@@ -26,6 +26,7 @@ import {
 } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
+import { photoMatchesPreferredAssetTypes } from '@/lib/gallery-asset-type-affinity';
 
 export interface GalleryPhotoMeta {
   contentTags?: string[];
@@ -89,6 +90,12 @@ export interface MatchPhotoInput {
    * the SSOT for product↔photo matching, bypassing the keyword dictionary.
    */
   subjectKey?: string;
+  /**
+   * Catalog / design-preset preferred vision asset types (e.g. venue_reference,
+   * food_drink_photo, event_photo). Production + template library share this so
+   * slot photo selection stays consistent across both paths.
+   */
+  preferredAssetTypes?: string[];
 }
 
 export interface PhotoMatchResult {
@@ -1383,6 +1390,17 @@ function scorePhotoForContent(
     if (roleHit) {
       score += 12;
       reasons.push(`role_fit:${input.storySequenceRole}`);
+    }
+  }
+
+  // ── Catalog / design-preset preferred asset types (library ↔ production) ──
+  if (input.preferredAssetTypes?.length) {
+    if (photoMatchesPreferredAssetTypes(meta.suggestedAssetType, input.preferredAssetTypes)) {
+      score += 14;
+      reasons.push('preferred_asset_type');
+    } else if (meta.suggestedAssetType) {
+      score -= 6;
+      reasons.push('non_preferred_asset_type');
     }
   }
 

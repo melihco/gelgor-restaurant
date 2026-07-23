@@ -354,20 +354,23 @@ export async function generateDesignedPostImage(opts: {
     });
     let res: Response | null = null;
     let lastFetchErr: unknown;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    // gpt-image-2 high often lands at ~110–140s; 120s client abort raced the
+    // successful server response and left template regenerate stuck in fal retries.
+    const designCardTimeoutMs = 240_000;
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: payload,
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(designCardTimeoutMs),
         });
         break;
       } catch (fetchErr) {
         lastFetchErr = fetchErr;
         const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
         const retryable = /connect timeout|fetch failed|ECONNREFUSED|socket hang up/i.test(msg);
-        if (!retryable || attempt >= 3) throw fetchErr;
+        if (!retryable || attempt >= 1) throw fetchErr;
         await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)));
       }
     }

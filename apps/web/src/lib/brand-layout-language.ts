@@ -86,11 +86,18 @@ const SOFT_CRAFT: DesignCraftLayoutFamily[] = [
   'magazine_cover_overlap',
 ];
 
+/**
+ * Vibrant coastal (Yula-like): wider craft pool so GPT-image-2 cannot collapse
+ * every slot into the same cream corner-plate. Quiet coastal stays type-led only.
+ */
 const COASTAL_CRAFT: DesignCraftLayoutFamily[] = [
   'type_with_brand_rules',
   'asymmetric_corner_plate',
   'magazine_cover_overlap',
   'diagonal_soft_cut',
+  'editorial_split_soft',
+  'inset_photo_frame',
+  'l_shape_accent',
 ];
 
 const ARTISAN_CRAFT: DesignCraftLayoutFamily[] = [
@@ -231,14 +238,16 @@ export function resolveBrandLayoutLanguage(
         ],
       );
     }
+    // preferPhotoLedCraft=false: library keeps designed intensity + LAYOUT LOCK per
+    // slot family (GPT-image-2 otherwise homogenizes to cream corner plates).
     return pack(
       'coastal_editorial',
       'designed',
       COASTAL_CRAFT,
       'craft_window',
-      true,
+      false,
       [
-        'Coastal editorial craft: soft plates/rules + clear photo window — Aegean brand energy, not caption-on-photo only, not bold poster geometry.',
+        'Coastal editorial craft: SLOT-UNIQUE composition from the allowlist — brand-color fields + clear photo window. Aegean energy, not caption-on-photo, not repeating cream corner stickers across slots.',
       ],
     );
   }
@@ -361,10 +370,11 @@ export function resolveTemplateLibraryEffectiveIntensity(input: {
 }
 
 /**
- * Soft DNA packs (coastal/product/artisan): LAYOUT LOCK from soft allowlist
- * (typically type_with_brand_rules) — the quality path that produced the good
- * Hafta sonu / Kokteyl bar library renders.
- * Bold nightlife/street packs: hard craft lock at designed+.
+ * Soft DNA packs (coastal/product/artisan): LAYOUT LOCK from allowlist at balanced+.
+ * Craft-window packs (vibrant coastal): also lock at balanced — venue_showcase /
+ * daily_story slots propose balanced; without this, GPT-image-2 skips LAYOUT LOCK
+ * and collapses to cream corner plates.
+ * Nightlife/street (non–craft_window bold): hard lock at designed+.
  */
 export function shouldApplyCraftLayoutFamily(
   level: FalDesignIntensityLevel,
@@ -377,12 +387,16 @@ export function shouldApplyCraftLayoutFamily(
     || language.composeMode === 'type_on_photo';
   if (softPack) {
     if (level !== 'balanced' && level !== 'designed' && level !== 'bold_editorial') return false;
-    return language.craftAllowlist.some(
-      (f) => SOFT_CRAFT.includes(f) || f === 'type_with_brand_rules' || f === 'inset_photo_frame',
-    );
+    // Apply LAYOUT LOCK whenever the pack has craft families — do not filter the
+    // allowlist down to SOFT_CRAFT only (that hid diagonal/split/L diversity).
+    return language.craftAllowlist.length > 0;
   }
 
   if (language.composeMode === 'photo_first') return false;
+  // Vibrant coastal craft-window: venue/daily slots are balanced — still need a family.
+  if (language.composeMode === 'craft_window') {
+    return level === 'balanced' || level === 'designed' || level === 'bold_editorial';
+  }
   // Nightlife / street bold packs.
   return level === 'designed' || level === 'bold_editorial';
 }

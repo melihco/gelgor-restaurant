@@ -14,6 +14,7 @@ import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedStoryDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
+  pickFalLibraryFallbackDirectives,
   produceFalDesignedPostStill,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
@@ -53,6 +54,11 @@ import {
 } from '@/lib/brand-layout-language';
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
 import {
+  fetchSlotTemplateArtDirection,
+  formatSlotArtDirectionPromptBlock,
+  type SlotArtDirection,
+} from '@/lib/slot-template-art-direction';
+import {
   DESIGN_TEMPLATE_TO_CALENDAR_ANNOUNCEMENT,
   resolveFalUseCaseForDesignTemplate,
   type DesignTemplateFormat,
@@ -69,6 +75,7 @@ import {
   type GalleryPhotoMeta,
   matchPhotoToContent,
 } from '@/lib/gallery-photo-matcher';
+import { filterGalleryUrlsByPreferredAssetTypes } from '@/lib/catalog-slot-gallery';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { generateDesignedPostImage } from '@/app/api/auto-produce/handlers/image-generators';
@@ -87,6 +94,12 @@ import {
   resolveReelArchetypeForProduction,
 } from '@/lib/reel-canva-archetypes';
 import { getCanvaArchetype } from '@/lib/canva-archetype-catalog';
+import {
+  buildSlotCopyFitDirective,
+  fitSlotPunchline,
+  resolveSlotSampleCopy,
+} from '@/lib/slot-sample-copy';
+import { showSublineFromSampleCopy } from '@/lib/slot-subline-policy';
 
 /** A special day (DB-resolved) the brand should get a dedicated event template for. */
 export interface EngineSpecialDay {
@@ -158,9 +171,16 @@ export interface DesignTemplateEngineInput {
   excludeGalleryUrls?: string[];
   /**
    * Salt mixed into craft layout-family seed so regenerate diversifies composition
-   * even when catalog slot key stays the same.
+   * even when catalog slot key stays the same. Also passed to CrewAI art direction.
    */
   layoutFamilySalt?: string;
+  /**
+   * Explicit subline preference from Brand Hub toggle / prior design_spec.
+   * false → headline-only; true → keep/ensure short support; unset → sample copy default.
+   */
+  forceShowSubline?: boolean | null;
+  /** When false, skip CrewAI slot art direction (tests / offline). Default true. */
+  enableSlotArtDirection?: boolean;
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -190,7 +210,7 @@ export interface GeneratedDesignTemplate {
     /** Set for event_special templates so production can match by date. */
     specialDay?: { name: string; mmdd: string; category: string };
     generatedAt: string;
-    generator: 'gpt-image-1' | 'fal-ideogram' | 'none';
+    generator: 'gpt-image-1' | 'gpt-image-2' | 'fal-ideogram' | 'none';
     /** Per-channel design intensity applied during generation. */
     designIntensityLevel?: import('@/lib/fal-design-intensity').FalDesignIntensityLevel;
     /** Original tenant setting before template-library layout enrichment. */
@@ -204,6 +224,8 @@ export interface GeneratedDesignTemplate {
     canvaArchetypeName?: string | null;
     layoutPattern?: string;
     typographyMode?: string;
+    /** CrewAI marka×slot art direction persisted for mission replica. */
+    slot_art_direction?: SlotArtDirection | null;
     designBriefDirectives?: string[];
     /**
      * Reel production recipe (motion/kurgu/audio) — seeded for reel_cover
@@ -347,24 +369,28 @@ export function pickPhotoForPreset(
   const exclude = Array.from(usedUrls);
 
   // First pass: restrict to preferred asset types when we have tagged photos.
-  const preferredPool = input.galleryPhotoUrls.filter((url) => {
-    const meta = input.galleryAnalysis[normalizeGalleryUrl(url)]
-      ?? input.galleryAnalysis[url];
-    const assetType = meta?.suggestedAssetType ?? '';
-    return preset.preferredAssetTypes.includes(assetType);
-  });
+  // Shared alias-aware filter — same as production pickGalleryPhotoForSlot.
+  const preferredPool = filterGalleryUrlsByPreferredAssetTypes(
+    input.galleryPhotoUrls,
+    input.galleryAnalysis,
+    preset.preferredAssetTypes,
+  );
 
   const tryPools = preferredPool.length > 0
     ? [preferredPool, input.galleryPhotoUrls]
     : [input.galleryPhotoUrls];
 
+  const matchInput = {
+    caption: `${preset.sampleHeadline} ${preset.matchKeywords}`.trim(),
+    headline: preset.sampleHeadline || preset.name,
+    businessType: input.sector,
+    templateUseCase: preset.templateType,
+    preferredAssetTypes: preset.preferredAssetTypes,
+  };
+
   for (const pool of tryPools) {
     const match = matchPhotoToContent(
-      {
-        caption: `${preset.sampleHeadline} ${preset.matchKeywords}`.trim(),
-        headline: preset.sampleHeadline || preset.name,
-        businessType: input.sector,
-      },
+      matchInput,
       pool,
       input.galleryAnalysis,
       { excludeUrls: exclude, bestEffort: true },
@@ -386,20 +412,46 @@ function resolveCopy(
   sceneHint: string;
   occasion?: { name: string; mood?: string };
 } {
+  const showSub = input.forceShowSubline;
+
   if (special) {
     // Keep the brand template + palette intact; the day's spirit is passed as an
     // `occasion` cue so the art-director prompt harmonises it into the brand world
     // instead of clashing holiday-cliché colors baked into the scene hint.
+    const specialHeadline = fitSlotPunchline(special.name, 3, 28) || special.name;
+    const specialSub = showSub === false
+      ? undefined
+      : fitSlotPunchline(input.brandName, 2, 20) || undefined;
     return {
-      headline: special.name,
-      subtitle: `${input.brandName} ile`,
+      headline: specialHeadline,
+      subtitle: specialSub,
       sceneHint: preset.matchKeywords,
       occasion: { name: special.name, mood: special.themeHint },
     };
   }
+
+  const slotCopy = resolveSlotSampleCopy({
+    catalogSlotKey: preset.catalogSlotKey,
+    templateType: preset.templateType,
+    format: preset.format,
+    showSubline: showSub,
+    sector: input.sector,
+  });
+  // Prefer slot-key punchline; fall back to tightened preset sample.
+  const headline = slotCopy.headline
+    || fitSlotPunchline(preset.sampleHeadline, 3, 28)
+    || preset.sampleHeadline
+    || input.brandName;
+  let subtitle = slotCopy.subtitle;
+  if (showSub === false) {
+    subtitle = undefined;
+  } else if (showSub !== true && !subtitle && preset.sampleSubtitle?.trim()) {
+    subtitle = fitSlotPunchline(preset.sampleSubtitle, 3, 24) || undefined;
+  }
+
   return {
-    headline: preset.sampleHeadline,
-    subtitle: preset.sampleSubtitle,
+    headline,
+    subtitle,
     sceneHint: preset.matchKeywords,
   };
 }
@@ -440,19 +492,19 @@ export function buildBrandIntelligenceDirectives(
   const ctas = compactList(intel.defaultCtas, 4);
   const vibe = compactObjectSummary(intel.vibeProfile, 420);
   const service = compactObjectSummary(intel.serviceProfile, 360);
+  // Uniqueness + visual DNA first — fal-designer extracts these into BRAND SOUL LOCK.
   const lines = [
     `BRAND DESIGN CONTRACT: This template set is for ${input.brandName}, sector=${input.sector}${input.location ? `, location=${input.location}` : ''}. Every layout, type choice, color block, crop, and decorative rhythm must come from THIS brand's visual identity, not from generic ${input.sector} presets.`,
+    `BRAND UNIQUENESS: A stranger should recognize this as ${input.brandName} from color (${input.brandColors.primary}/${input.brandColors.accent}), venue photo, and type energy — never a stock ${input.sector} Canva pack that could belong to any competitor.`,
     intel.visualDna ? `VISUAL DNA — PRIMARY DESIGN SOURCE: ${intel.visualDna.slice(0, 620)}. Treat this as the highest creative reference after the requested on-canvas text. If sector defaults conflict with visual DNA, visual DNA wins.` : '',
-    intel.brandTone ? `Brand tone: ${intel.brandTone.slice(0, 180)}.` : '',
-    intel.description ? `Brand description: ${intel.description.slice(0, 320)}.` : '',
-    intel.visualStyle ? `Visual style: ${intel.visualStyle.slice(0, 220)}.` : '',
-    intel.targetAudience ? `Target audience: ${intel.targetAudience.slice(0, 220)}.` : '',
-    intel.campaignGoals ? `Business/campaign goals: ${intel.campaignGoals.slice(0, 220)}.` : '',
+    intel.brandTone ? `Brand tone: ${intel.brandTone.slice(0, 160)}.` : '',
+    intel.visualStyle ? `Visual style: ${intel.visualStyle.slice(0, 180)}.` : '',
+    intel.description ? `Brand description: ${intel.description.slice(0, 220)}.` : '',
+    intel.targetAudience ? `Target audience: ${intel.targetAudience.slice(0, 160)}.` : '',
     pillars.length ? `Content pillars to reflect: ${pillars.join(' | ')}.` : '',
     ctas.length ? `Native CTA language: ${ctas.join(' | ')}.` : '',
-    vibe ? `Vibe profile signals: ${vibe}.` : '',
-    service ? `Service/venue profile signals: ${service}.` : '',
-    `BRAND UNIQUENESS: A stranger should recognize this as ${input.brandName} from color (${input.brandColors.primary}/${input.brandColors.accent}), venue photo, and type energy — never a stock ${input.sector} Canva pack that could belong to any competitor.`,
+    vibe ? `Vibe profile signals: ${vibe.slice(0, 280)}.` : '',
+    service ? `Service/venue profile signals: ${service.slice(0, 220)}.` : '',
     `Template channel/intensity: ${channel} uses ${level}. Build a DISTINCT LAYOUT RECIPE for THIS slot role — vary composition across the library while keeping brand DNA, palette, and typography vibe consistent. Never generic identical Canva header strips across every template.`,
   ].filter(Boolean);
 
@@ -460,6 +512,112 @@ export function buildBrandIntelligenceDirectives(
     lines.join(' '),
     'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers. Keep text exact and legible; never invent or misspell Turkish words.',
   ];
+}
+
+/**
+ * Why this template slot exists — drives distinct design jobs across the library
+ * (event poster ≠ menu card ≠ social-proof quote).
+ */
+export function resolveTemplatePurposeBrief(input: {
+  slotName: string;
+  slotKey?: string | null;
+  templateType?: string | null;
+  falUseCase?: string | null;
+  channel?: string | null;
+}): { jobLabel: string; designJob: string; rejectLook: string } {
+  const key = `${input.slotKey ?? ''} ${input.templateType ?? ''} ${input.falUseCase ?? ''} ${input.slotName}`
+    .toLowerCase();
+  const type = String(input.templateType ?? '').toLowerCase();
+  const useCase = String(input.falUseCase ?? '').toLowerCase();
+  const jobLabel = input.slotName.trim() || type || 'brand social template';
+
+  if (
+    /event_announcement|event_special|event_teaser|event_ticket|etkinlik|dj|lineup|konser/.test(key)
+    || useCase === 'event_announcement'
+    || type === 'event_special'
+  ) {
+    return {
+      jobLabel,
+      designJob:
+        'EVENT ANNOUNCEMENT POSTER: date/time hierarchy, event name energy, RSVP/come-tonight pull — masthead + photo window. Reads as a night/event flyer the brand would post, not a menu card or quiet ambiance story.',
+      rejectLook: 'daily venue ambiance-only, plated-food menu card, generic quote banner',
+    };
+  }
+  if (/social_proof|yorum|testimonial|review|misafir/.test(key) || type === 'social_proof') {
+    return {
+      jobLabel,
+      designJob:
+        'SOCIAL PROOF CARD: guest-voice punchline hierarchy, trust/warmth, short attribution energy — not a promo price stack or event ticket.',
+      rejectLook: 'event ticket stub, campaign price badge, formal corporate memo',
+    };
+  }
+  if (
+    /campaign|offer|promo|kampanya|seasonal|sezon/.test(key)
+    || type === 'campaign_announcement'
+    || type === 'seasonal_promo'
+    || useCase === 'campaign_offer'
+  ) {
+    return {
+      jobLabel,
+      designJob:
+        'CAMPAIGN / OFFER POSTER: clear offer hierarchy, urgency accents, brand-true promo craft — still boutique, never carnival sticker spam.',
+      rejectLook: 'quiet daily story, guest-review quote card, formal hours notice',
+    };
+  }
+  if (/menu|product|tabak|food|dish|kokteyl|cocktail/.test(key) || type === 'menu_highlight' || useCase === 'product_highlight') {
+    return {
+      jobLabel,
+      designJob:
+        'PRODUCT / MENU HERO: hero dish/drink photo window + short product punchline — appetite-led, not event date masthead.',
+      rejectLook: 'event ticket date block, review quote layout, full-frame venue only',
+    };
+  }
+  if (/venue|mekan|ambiance|atmosphere|havadan|aerial|showcase/.test(key) || type === 'venue_showcase') {
+    return {
+      jobLabel,
+      designJob:
+        'VENUE SHOWCASE: atmosphere-first photo window + brand-hex craft lockup (not cream paper) — invite to the place, not a priced promo or event lineup.',
+      rejectLook: 'ticket stub, price stack, dense flyer text, cream/beige Canva corner sticker',
+    };
+  }
+  if (/announcement_formal|duyuru|formal|hours|saat/.test(key) || type === 'announcement_formal') {
+    return {
+      jobLabel,
+      designJob:
+        'FORMAL ANNOUNCEMENT: clear informational hierarchy, calm institutional craft — readable notice, not nightlife flyer energy.',
+      rejectLook: 'neon club flyer, emoji promo, crowded event lineup',
+    };
+  }
+  if (/reel|kapak/.test(key) || type === 'reel_cover') {
+    return {
+      jobLabel,
+      designJob:
+        'REEL COVER FREEZE: motion-ready single punchline, thumb-stopping vertical craft — stable type for I2V, not a multi-line event programme.',
+      rejectLook: 'dense story programme, multi-block campaign flyer',
+    };
+  }
+  if (/daily|günaydın|story/.test(key) || type === 'daily_story' || useCase === 'daily_story') {
+    return {
+      jobLabel,
+      designJob:
+        'DAILY STORY BEAT: light day-part energy, soft brand lockup, photo-led — casual check-in, not a campaign poster.',
+      rejectLook: 'heavy promo stack, event ticket masthead, formal memo',
+    };
+  }
+  if (/brand_identity|kimlik/.test(key) || type === 'brand_identity') {
+    return {
+      jobLabel,
+      designJob:
+        'BRAND IDENTITY LOCKUP: mark/palette/type as the hero craft — identity system sample, not a one-off promo.',
+      rejectLook: 'busy event flyer, review quote card',
+    };
+  }
+  return {
+    jobLabel,
+    designJob:
+      `PURPOSE-BUILT ${String(input.channel ?? 'social').toUpperCase()} TEMPLATE: composition must serve "${jobLabel}" specifically — a stranger should guess the slot job from layout alone.`,
+    rejectLook: 'generic identical Canva sandwich reused across unrelated slots',
+  };
 }
 
 /**
@@ -481,10 +639,14 @@ export function buildBrandSlotDesignRecipe(input: {
   brandTone?: string;
   vibeProfileSummary?: string;
   sampleHeadline?: string;
+  /** Catalog design_template_type — drives PURPOSE diversity. */
+  templateType?: string | null;
+  /** Fal/Canva use-case id (e.g. event_announcement). */
+  falUseCase?: string | null;
 }): string {
   const place = input.location?.trim() || input.sector.replace(/_/g, ' ');
   const dnaCue = input.visualDna?.trim()
-    ? input.visualDna.trim().slice(0, 160)
+    ? input.visualDna.trim().slice(0, 280)
     : `${input.brandName} authentic ${place} atmosphere`;
   const toneCue = input.brandTone?.trim()?.slice(0, 80)
     || input.vibeProfileSummary?.slice(0, 80)
@@ -492,19 +654,37 @@ export function buildBrandSlotDesignRecipe(input: {
   const familyLine = input.layoutFamily
     ? `Layout accent (bold pack only): "${input.layoutFamily}" — ${describeDesignCraftLayoutFamily(input.layoutFamily)}`
     : `Layout: invent a composition that could ONLY be ${input.brandName}'s ${input.slotName} — type-led editorial with brand accents; do NOT default to rail/L/diagonal geometry kits.`;
-  const idea = input.sampleHeadline?.trim()
-    ? `Design idea for "${input.sampleHeadline.trim().slice(0, 48)}": make this feel like ${input.brandName}'s own social studio for THIS slot — ${toneCue}.`
-    : `Design idea: a reusable ${input.channel} recipe that could only belong to ${input.brandName} for slot ${input.slotName}.`;
+  const purpose = resolveTemplatePurposeBrief({
+    slotName: input.slotName,
+    slotKey: input.slotKey,
+    templateType: input.templateType,
+    falUseCase: input.falUseCase,
+    channel: input.channel,
+  });
+  // Brand + DNA first; sample punchline is the type-zone footprint, not the creative thesis.
+  const idea = [
+    `Design idea: a reusable ${input.channel} recipe that could ONLY belong to ${input.brandName} for slot ${input.slotName} — ${toneCue}.`,
+    input.sampleHeadline?.trim()
+      ? `Short punchline for type zone: "${input.sampleHeadline.trim().slice(0, 48)}".`
+      : '',
+  ].filter(Boolean).join(' ');
 
   return [
     `═══ BRAND SLOT DESIGN RECIPE ═══`,
     `Slot: ${input.slotName} (${input.slotKey}) · ${input.channel} · intensity ${input.level}.`,
+    `═══ TEMPLATE PURPOSE ═══`,
+    `Job: "${purpose.jobLabel}" — this canvas exists for that job; layout/type energy must read as that purpose at a glance.`,
+    input.templateType || input.falUseCase
+      ? `Type/use-case: ${[input.templateType, input.falUseCase].filter(Boolean).join(' · ')}.`
+      : '',
+    purpose.designJob,
+    `Diversity lock: invent a DISTINCT composition for THIS purpose vs other slots in the same library — never clone one layout across unrelated jobs. Reject look for this slot: ${purpose.rejectLook}.`,
     idea,
     `Motifs from brand world: ${dnaCue}.`,
-    `Color craft: use ${input.primary} + ${input.accent} as intentional accents/scrims/rules — never random teal/orange stock packs, never generic geometry stickers.`,
+    `Color craft: painted fields/plates/rails = ${input.primary} and/or ${input.accent} (solid or 60–85% tint) — never cream/beige/off-white Canva paper panels with brand-colored letters only; type may be white/ink for contrast.`,
     familyLine,
     'Reject: competitor-generic sector flyer, identical library clones, painted rail/L kits reused across brands.',
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 }
 
 async function generateOne(
@@ -578,10 +758,11 @@ async function generateOne(
     ? preferredReelCoverCanva
     : calendarLayout.canvaArchetypeId;
 
+  const falUseCase = resolveFalUseCaseForDesignTemplate(preset.templateType, preset.intent);
   const layoutBrief = resolveFalDesignBrief({
     caption: subtitle ?? headline ?? preset.name,
     headline: headline || input.brandName,
-    templateUseCase: resolveFalUseCaseForDesignTemplate(preset.templateType, preset.intent),
+    templateUseCase: falUseCase,
     format: briefFormat,
     sceneHint,
     sector: input.sector,
@@ -673,8 +854,42 @@ async function generateOne(
     preset.catalogSlotKey ?? preset.name,
     input.layoutFamilySalt?.trim() || '',
   ].filter(Boolean).join('::');
+  const purpose = resolveTemplatePurposeBrief({
+    slotName: preset.name,
+    slotKey: preset.catalogSlotKey || layoutFamilySeed,
+    templateType: preset.templateType,
+    falUseCase,
+    channel: intensityChannel,
+  });
+
+  let slotArtDirection: SlotArtDirection | null = null;
+  if (input.enableSlotArtDirection !== false) {
+    slotArtDirection = await fetchSlotTemplateArtDirection({
+      workspaceId: input.workspaceId,
+      brandName: input.brandName,
+      sector: input.sector,
+      location: input.location,
+      brandTone: input.brandIntelligence?.brandTone,
+      visualDna: input.brandIntelligence?.visualDna ?? input.visualDnaTone,
+      description: input.brandIntelligence?.description,
+      primaryColor: input.brandColors.primary,
+      accentColor: input.brandColors.accent,
+      catalogSlotKey: preset.catalogSlotKey || layoutFamilySeed,
+      slotName: preset.name,
+      format: preset.format,
+      templateType: preset.templateType,
+      purposeJob: purpose.designJob,
+      sampleHeadline: headline || preset.sampleHeadline,
+      diversitySalt: input.layoutFamilySalt?.trim() || '',
+    });
+  }
+  const slotArtDirectionBlock = slotArtDirection
+    ? formatSlotArtDirectionPromptBlock(slotArtDirection)
+    : '';
+
   const needsCraftFamily = shouldApplyCraftLayoutFamily(designIntensityLevel, layoutLanguage);
-  const layoutFamily = needsCraftFamily
+  // CrewAI owns composition when present — do not hard-pin a craft family kit.
+  const layoutFamily = needsCraftFamily && !slotArtDirectionBlock
     ? resolveDesignCraftLayoutFamily(
       layoutFamilySeed,
       resolveCraftAllowlistForPack(layoutLanguage),
@@ -686,7 +901,7 @@ async function generateOne(
     location: input.location,
     primary: input.brandColors.primary,
     accent: input.brandColors.accent,
-    slotKey: layoutFamilySeed,
+    slotKey: preset.catalogSlotKey || layoutFamilySeed,
     slotName: preset.name,
     channel: intensityChannel,
     level: designIntensityLevel,
@@ -695,7 +910,58 @@ async function generateOne(
     brandTone: input.brandIntelligence?.brandTone,
     vibeProfileSummary: compactObjectSummary(input.brandIntelligence?.vibeProfile, 120),
     sampleHeadline: headline || preset.sampleHeadline,
+    templateType: preset.templateType,
+    falUseCase,
   });
+
+  const copyFit = buildSlotCopyFitDirective({
+    headline: headline || input.brandName,
+    subtitle,
+  });
+  const themeTypography = (theme as { typography?: { headingFont?: string; bodyFont?: string; personality?: string } } | null)
+    ?.typography;
+  const vibeFontLock = [
+    `FONT / VIBE LOCK: typography vibe "${vibe}" — high-design letterforms matching this brand energy.`,
+    themeTypography?.headingFont
+      ? `Heading inspiration: ${themeTypography.headingFont}.`
+      : 'Heading inspiration: editorial display serif (Playfair / Didot class) for hospitality punchlines.',
+    themeTypography?.bodyFont
+      ? `Support inspiration: ${themeTypography.bodyFont}.`
+      : 'Support: clean grotesk for micro subline/CTA only.',
+    themeTypography?.personality
+      ? `Type personality: ${themeTypography.personality}.`
+      : '',
+  ].filter(Boolean).join(' ');
+
+  const templateBrandDirectives = [
+    copyFit,
+    vibeFontLock,
+    ...brandIntelligenceDirectives,
+    // slotArtDirectionBlock goes via prompt field slotArtDirectionBlock (protected head)
+    slotDesignRecipe,
+    brandMark.xorDirective,
+    'LAYOUT TEMPLATE CONTRACT: reusable brand+slot recipe — intentional type hierarchy + brand accents + clear photo. NOT raw photo+floating caption, NOT Canva header/footer sandwich, NOT generic painted rail/L/diagonal geometry kits.',
+    `SLOT: ${layoutFamilySeed}`,
+    preset.format === 'post'
+      ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'
+      : preset.format === 'story'
+        ? 'STORY CANVAS LOCK: Exact Instagram Story 9:16 (1080×1920). Compose as a vertical story poster — full-height frame, safe-zone typography. FORBIDDEN: 4:5 feed crop language, square feed composition, or feed-post framing.'
+        : preset.format === 'reel_cover'
+          ? 'REEL CANVAS LOCK: Exact Instagram Reel 9:16 (1080×1920). Compose as a reel cover — full-height frame, motion-ready typography. FORBIDDEN: 4:5 feed crop language or square feed composition.'
+          : '',
+    'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
+    brandMark.mode === 'official_logo'
+      ? 'FORBIDDEN LOGO PAINT: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone. Do not also type the brand name.'
+      : brandMark.mode === 'text_wordmark'
+        ? `BRAND WORDMARK: type "${input.brandName}" once as a small corner mark — do not invent a logo icon.`
+        : 'FORBIDDEN BRAND MARK: no logo and no typed brand name on this canvas.',
+    'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
+    picked?.url
+      ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
+      : '',
+    ...layoutDirectives,
+    ...(antiPatternDirective ? [antiPatternDirective] : []),
+  ].filter(Boolean);
 
   const prompt = normalizeLibraryPromptForFormat(
     buildPrompt({
@@ -711,33 +977,11 @@ async function generateOne(
       designIntensityLevel,
       layoutFamilySeed,
       layoutFamily,
+      slotArtDirectionBlock: slotArtDirectionBlock || undefined,
       occasion,
-      brandDirectives: [
-        ...brandIntelligenceDirectives,
-        slotDesignRecipe,
-        brandMark.xorDirective,
-        'LAYOUT TEMPLATE CONTRACT: reusable brand+slot recipe — intentional type hierarchy + brand accents + clear photo. NOT raw photo+floating caption, NOT Canva header/footer sandwich, NOT generic painted rail/L/diagonal geometry kits.',
-        `SLOT: ${layoutFamilySeed}`,
-        preset.format === 'post'
-          ? 'FEED CANVAS LOCK: Exact Instagram feed 4:5 (1080×1350). Compose as a feed post — corner/side/lower-third typography. FORBIDDEN: 9:16 story proportions or tall upper story panels that make the post look like a cropped story.'
-          : preset.format === 'story'
-            ? 'STORY CANVAS LOCK: Exact Instagram Story 9:16 (1080×1920). Compose as a vertical story poster — full-height frame, safe-zone typography. FORBIDDEN: 4:5 feed crop language, square feed composition, or feed-post framing.'
-            : preset.format === 'reel_cover'
-              ? 'REEL CANVAS LOCK: Exact Instagram Reel 9:16 (1080×1920). Compose as a reel cover — full-height frame, motion-ready typography. FORBIDDEN: 4:5 feed crop language or square feed composition.'
-              : '',
-        'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
-        brandMark.mode === 'official_logo'
-          ? 'FORBIDDEN LOGO PAINT: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone. Do not also type the brand name.'
-          : brandMark.mode === 'text_wordmark'
-            ? `BRAND WORDMARK: type "${input.brandName}" once as a small corner mark — do not invent a logo icon.`
-            : 'FORBIDDEN BRAND MARK: no logo and no typed brand name on this canvas.',
-        'FORBIDDEN TEXT: misspelled Turkish diacritics, invented subtitle words, or ASCII-only approximations of contracted copy.',
-        picked?.url
-          ? 'DEFAULT VENUE/HERO PHOTO LOCK: Use the provided reference image as the immutable brand venue anchor for this template. Preserve the actual place, coastline, furniture, colors, and atmosphere. Do not invent a synthetic beach, sand dune, generic sea, fake architecture, or alternate venue.'
-          : '',
-        ...layoutDirectives,
-        ...(antiPatternDirective ? [antiPatternDirective] : []),
-      ].filter(Boolean),
+      headingFont: themeTypography?.headingFont,
+      bodyFont: themeTypography?.bodyFont,
+      brandDirectives: templateBrandDirectives,
       // Only pass logo into the image pipeline when XOR mode is official_logo —
       // otherwise generators may both composite logo and type the name.
       logoUrl: brandMark.logoUrl,
@@ -746,7 +990,10 @@ async function generateOne(
   );
 
   let thumbnailUrl: string | null = null;
-  let generator: 'gpt-image-1' | 'fal-ideogram' | 'none' = 'none';
+  let generator: 'gpt-image-1' | 'gpt-image-2' | 'fal-ideogram' | 'none' = 'none';
+  const gptImageModel = serverConfig.imageGen.model.startsWith('gpt-image-2')
+    ? 'gpt-image-2' as const
+    : 'gpt-image-1' as const;
 
   // Agency template quality: GPT-image grounded on the gallery photo first.
   // Fal/Ideogram is last-resort only — templatePreviewMode previously let Ideogram
@@ -769,7 +1016,7 @@ async function generateOne(
         backgroundIntent: sceneHint,
       });
       if (generated) {
-        generator = 'gpt-image-1';
+        generator = gptImageModel;
         const aspectLocked = await lockTemplatePreviewAspect(generated, preset.format);
         thumbnailUrl = await mirrorPreview(aspectLocked, input.workspaceId) ?? aspectLocked;
       }
@@ -783,6 +1030,11 @@ async function generateOne(
 
   if (!thumbnailUrl && serverConfig.fal.configured) {
     try {
+      const falSceneHint = [
+        sceneHint,
+        occasion ? `occasion=${occasion.name}${occasion.mood ? ` (${occasion.mood})` : ''}` : '',
+        `slot_job=${preset.name}`,
+      ].filter(Boolean).join('; ');
       const still = await produceFalDesignedPostStill({
         workspaceId: input.workspaceId,
         headline: headline || input.brandName,
@@ -798,7 +1050,7 @@ async function generateOne(
         aspectRatio: aspect,
         referencePhotoUrl: picked?.url,
         brandReferenceImageUrls: picked?.url ? [picked.url] : undefined,
-        sceneHint,
+        sceneHint: falSceneHint,
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
         logoUrl: brandMark.logoUrl,
@@ -806,14 +1058,20 @@ async function generateOne(
         location: input.location,
         sector: input.sector,
         captionAwareHeadline: false,
-        requireGroundedGallery: Boolean(picked?.url),
+        // Prefer GPT grounded when photo exists; if that fails, still allow
+        // purpose-built Ideogram so library slots are not empty grain posters.
+        requireGroundedGallery: false,
+        libraryQualityFalFallback: true,
         grafikerMaxRetries: 1,
-        // With a gallery photo, keep fal fallback grounded (no Ideogram-only shortcut).
-        templatePreviewMode: picked ? false : input.templatePreviewMode !== false,
+        templatePreviewMode: false,
+        brandDirectives: pickFalLibraryFallbackDirectives(templateBrandDirectives),
+        slotArtDirectionBlock: slotArtDirectionBlock || undefined,
         occasion,
       });
       if (still.imageUrl) {
-        generator = still.typographyModel.includes('gpt-image-1') ? 'gpt-image-1' : 'fal-ideogram';
+        generator = still.typographyModel.includes('gpt-image')
+          ? (still.typographyModel.includes('gpt-image-2') ? 'gpt-image-2' : gptImageModel)
+          : 'fal-ideogram';
         const aspectLocked = await lockTemplatePreviewAspect(still.imageUrl, preset.format);
         thumbnailUrl = (await mirrorPreview(aspectLocked, input.workspaceId)) ?? aspectLocked;
       }
@@ -845,8 +1103,12 @@ async function generateOne(
       brandColors: input.brandColors,
       sampleHeadline: headline,
       sampleSubtitle: subtitle,
-      // Headline-only presets persist showSubline=false so production never invents a support line.
-      showSubline: Boolean(String(subtitle ?? '').trim()),
+      // Explicit Brand Hub toggle wins; else headline-only when sample has no subtitle.
+      showSubline: input.forceShowSubline === false
+        ? false
+        : input.forceShowSubline === true
+          ? true
+          : showSublineFromSampleCopy(subtitle),
       galleryRef: picked?.url ?? null,
       galleryMatchScore: picked?.score ?? null,
       defaultHeroPhotoLock: Boolean(defaultHeroPhoto),
@@ -861,6 +1123,7 @@ async function generateOne(
       canvaArchetypeName: layoutBrief.canvaArchetypeName ?? null,
       layoutPattern: layoutBrief.layoutPattern,
       typographyMode: layoutBrief.typographyMode,
+      slot_art_direction: slotArtDirection,
       designBriefDirectives: layoutDirectives,
       ...(preset.format === 'reel_cover'
         ? {
@@ -996,6 +1259,8 @@ export async function generateSingleDesignTemplatePreset(
     productionOverrides?: Partial<BrandFalTemplateProductionConfig>;
     excludeGalleryUrls?: string[];
     layoutFamilySalt?: string;
+    forceShowSubline?: boolean | null;
+    enableSlotArtDirection?: boolean;
   },
 ): Promise<GeneratedDesignTemplate> {
   const engineInput = {
@@ -1003,6 +1268,8 @@ export async function generateSingleDesignTemplatePreset(
     productionOverrides: options?.productionOverrides ?? input.productionOverrides,
     excludeGalleryUrls: options?.excludeGalleryUrls ?? input.excludeGalleryUrls,
     layoutFamilySalt: options?.layoutFamilySalt ?? input.layoutFamilySalt,
+    forceShowSubline: options?.forceShowSubline ?? input.forceShowSubline,
+    enableSlotArtDirection: options?.enableSlotArtDirection ?? input.enableSlotArtDirection,
   };
   return generateOne(
     preset,

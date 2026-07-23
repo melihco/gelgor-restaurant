@@ -37,8 +37,11 @@ const DRINK_CAPTION_HINTS = [
 ];
 
 const MEAT_FOOD_PHOTO_HINTS = [
-  'steak', 'meat', 'beef', 'lamb', 'grill', 'bbq', 'roast', 'burger', 'et', 'ızgara',
+  'steak', 'meat', 'beef', 'lamb', 'grill', 'bbq', 'roast', 'burger', 'ızgara',
   'izgara', 'biftek', 'kırmızı et', 'kirmizi et', 'kebap', 'kebab', 'pirzola',
+  // Bare "et" is too short for includes() — it false-positives inside event_photo /
+  // energetic / announcement. Match as a word only via spaced tokens below.
+  ' et ', ' et,', ' et.',
 ];
 
 /** Strong nightlife intent in caption (DJ / party / live music). */
@@ -174,65 +177,34 @@ export function captionRequiresStrictGalleryMatch(
   return false;
 }
 
-/** Penalty applied inside gallery-photo-matcher scoring (0 = no conflict). */
-export function captionPhotoConflictPenalty(
+/**
+ * Vision `suggestedAssetType` slugs like `food_drink_photo` contain the
+ * substring "drink" and must not count as drink-hero proof.
+ */
+function photoBodyForThemeHints(photoSearchable: string): string {
+  return photoSearchable
+    .toLowerCase()
+    .replace(/\bfood_drink_photo\b/g, 'food_photo')
+    .replace(/\bevent_photo\b/g, 'event')
+    .replace(/\bbrand_background\b/g, 'background');
+}
+
+/**
+ * Cheap cross-theme signal used ONLY to trigger the AI gallery judge.
+ * Never invent nested keyword exceptions here — the judge owns meaning.
+ */
+export function themeConflictNeedsAiJudge(
   captionText: string,
   photoSearchable: string,
-): number {
+): boolean {
   const caption = captionText.toLowerCase();
-  const photo = photoSearchable.toLowerCase();
+  const photo = photoBodyForThemeHints(photoSearchable);
   const captionFood = textHits(caption, FOOD_CAPTION_HINTS);
   const captionNightlife = textHits(caption, NIGHTLIFE_CAPTION_HINTS);
+  const captionDrink = textHits(caption, DRINK_CAPTION_HINTS);
   const photoFood = textHits(photo, FOOD_PHOTO_HINTS);
-  const photoEvent = textHits(photo, EVENT_PHOTO_HINTS);
   const photoDrink = textHits(photo, DRINK_PHOTO_HINTS);
   const photoNightlifeHard = textHits(photo, NIGHTLIFE_HARD_PHOTO_HINTS);
-
-  if (captionFood >= 2 && photoEvent >= 1 && photoFood === 0) {
-    return 48;
-  }
-  if (captionFood >= 2 && photoDrink >= 2 && photoFood === 0) {
-    return 42;
-  }
-  if (captionFood >= 1 && photoDrink >= 1 && photoFood === 0 && photoEvent === 0) {
-    return 28;
-  }
-
-  // Reverse: cocktail/drink caption or punchline must not land on plated food/meat heroes.
-  const captionDrink = textHits(caption, DRINK_CAPTION_HINTS);
-  const photoMeat = textHits(photo, MEAT_FOOD_PHOTO_HINTS);
-  if (captionDrink >= 1 && photoFood >= 1 && photoDrink === 0) {
-    return photoMeat >= 1 || captionDrink >= 2 ? 72 : 48;
-  }
-  if (captionDrink >= 1 && photoMeat >= 1) {
-    return 72;
-  }
-  const emptyVenue =
-    (photo.includes('interior') || photo.includes('seating') || photo.includes('booth')
-      || photo.includes('lounge') || photo.includes('restaurant'))
-    && photoFood === 0;
-  if (captionFood >= 2 && emptyVenue) {
-    return 22;
-  }
-
-  // Nightlife / DJ captions must not land on food heroes — soft "people" tags do not clear this.
-  const foodDominantPhoto = photoFood >= 1;
-  const nightlifeProofMissing = photoNightlifeHard === 0;
-  if (captionNightlife >= 1 && foodDominantPhoto && nightlifeProofMissing) {
-    // Hard veto magnitude — must survive positive food synonym stacking in the scorer.
-    return captionNightlife >= 2 ? 80 : 72;
-  }
-  // Nightlife caption + drink-only bar shot without nightlife proof is weak, not hard-veto.
-  if (captionNightlife >= 2 && photoDrink >= 1 && nightlifeProofMissing && photoFood === 0) {
-    return 34;
-  }
-
-  // Reverse: food/menu caption must not land on nightlife stage/crowd heroes.
-  if (captionFood >= 2 && photoNightlifeHard >= 1 && photoFood === 0) {
-    return 64;
-  }
-
-  // ── Beauty sub-service cross-service conflict ────────────────────────────
   const captionNail = textHits(caption, BEAUTY_NAIL_CAPTION);
   const captionLash = textHits(caption, BEAUTY_LASH_CAPTION);
   const captionHair = textHits(caption, BEAUTY_HAIR_CAPTION);
@@ -240,20 +212,81 @@ export function captionPhotoConflictPenalty(
   const photoLash = textHits(photo, BEAUTY_LASH_PHOTO);
   const photoHair = textHits(photo, BEAUTY_HAIR_PHOTO);
 
-  if (captionNail >= 1 && photoLash >= 1 && photoNail === 0) {
-    return 45;
+  if (captionNightlife >= 1 && photoFood >= 1) return true;
+  if (captionFood >= 2 && photoNightlifeHard >= 1) return true;
+  if (captionDrink >= 1 && photoFood >= 1 && photoDrink === 0) return true;
+  if (captionNightlife >= 1 && photoDrink >= 1 && photoNightlifeHard === 0) return true;
+  if (captionNail >= 1 && (photoLash >= 1 || photoHair >= 1) && photoNail === 0) return true;
+  if (captionLash >= 1 && (photoNail >= 1 || photoHair >= 1) && photoLash === 0) return true;
+  if (captionHair >= 2 && (photoNail >= 1 || photoLash >= 1) && photoHair === 0) return true;
+  return false;
+}
+
+/**
+ * Deterministic conflict scoring.
+ *
+ * Hard vetoes are ONLY for unambiguous nightlife ↔ plated-food swaps.
+ * Drink/cocktail/beauty gray cases stay soft (< HARD) — the AI gallery judge
+ * owns those rejects (no nested keyword exception ladders).
+ */
+export function captionPhotoConflictPenalty(
+  captionText: string,
+  photoSearchable: string,
+): number {
+  const caption = captionText.toLowerCase();
+  const photo = photoBodyForThemeHints(photoSearchable);
+  const captionFood = textHits(caption, FOOD_CAPTION_HINTS);
+  const captionNightlife = textHits(caption, NIGHTLIFE_CAPTION_HINTS);
+  const captionDrink = textHits(caption, DRINK_CAPTION_HINTS);
+  const photoFood = textHits(photo, FOOD_PHOTO_HINTS);
+  const photoDrink = textHits(photo, DRINK_PHOTO_HINTS);
+  const photoNightlifeHard = textHits(photo, NIGHTLIFE_HARD_PHOTO_HINTS);
+  const photoMeat = textHits(photo, MEAT_FOOD_PHOTO_HINTS);
+
+  // ── Hard (clear nightlife ↔ food plate) ──────────────────────────────────
+  if (captionNightlife >= 1 && photoFood >= 1 && photoNightlifeHard === 0) {
+    return captionNightlife >= 2 ? 80 : 72;
   }
-  if (captionNail >= 1 && photoHair >= 2 && photoNail === 0) {
-    return 38;
-  }
-  if (captionLash >= 1 && photoNail >= 1 && photoLash === 0) {
-    return 40;
-  }
-  if (captionHair >= 2 && photoNail >= 1 && photoHair === 0) {
-    return 35;
+  if (captionFood >= 2 && photoNightlifeHard >= 1 && photoFood === 0) {
+    return 64;
   }
 
-  return 0;
+  // ── Soft (AI judge owns hard reject) ─────────────────────────────────────
+  let soft = 0;
+  if (captionDrink >= 1 && photoFood >= 1 && photoDrink === 0) {
+    soft = Math.max(soft, 28);
+  }
+  if (captionDrink >= 1 && photoMeat >= 1 && photoDrink === 0) {
+    soft = Math.max(soft, 28);
+  }
+  if (captionNightlife >= 2 && photoDrink >= 1 && photoNightlifeHard === 0 && photoFood === 0) {
+    soft = Math.max(soft, 24);
+  }
+  if (captionFood >= 2 && photoDrink >= 2 && photoFood === 0) {
+    soft = Math.max(soft, 26);
+  }
+
+  const emptyVenue =
+    (photo.includes('interior') || photo.includes('seating') || photo.includes('booth')
+      || photo.includes('lounge') || photo.includes('restaurant'))
+    && photoFood === 0;
+  if (captionFood >= 2 && emptyVenue) {
+    soft = Math.max(soft, 18);
+  }
+
+  const captionNail = textHits(caption, BEAUTY_NAIL_CAPTION);
+  const captionLash = textHits(caption, BEAUTY_LASH_CAPTION);
+  const captionHair = textHits(caption, BEAUTY_HAIR_CAPTION);
+  const photoNail = textHits(photo, BEAUTY_NAIL_PHOTO);
+  const photoLash = textHits(photo, BEAUTY_LASH_PHOTO);
+  const photoHair = textHits(photo, BEAUTY_HAIR_PHOTO);
+
+  if (captionNail >= 1 && photoLash >= 1 && photoNail === 0) soft = Math.max(soft, 32);
+  if (captionNail >= 1 && photoHair >= 2 && photoNail === 0) soft = Math.max(soft, 30);
+  if (captionLash >= 1 && photoNail >= 1 && photoLash === 0) soft = Math.max(soft, 30);
+  if (captionHair >= 2 && photoNail >= 1 && photoHair === 0) soft = Math.max(soft, 28);
+
+  return Math.min(soft, HARD_CAPTION_PHOTO_CONFLICT - 1);
 }
 
 function resolveMetaForUrl(

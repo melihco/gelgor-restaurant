@@ -245,8 +245,9 @@ describe('sanitizeFalOverlayText', () => {
 
   it('prompt directive avoids the word EXACTLY', () => {
     const line = formatFalOnImageHeadlineDirective('Yaz Lezzetleri', 'bold serif');
-    expect(line.toLowerCase()).not.toMatch(/\bexactly "${/);
-    expect(line).toContain('«Yaz Lezzetleri»');
+    expect(line.toLowerCase()).not.toMatch(/\bexactly\b/);
+    expect(line).toContain('"Yaz Lezzetleri"');
+    expect(line).not.toContain('«');
   });
 
   it('ensureMeaningfulFalOverlayText falls back to caption sentence', () => {

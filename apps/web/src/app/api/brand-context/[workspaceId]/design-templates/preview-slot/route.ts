@@ -81,6 +81,8 @@ export async function POST(
     mode?: PreviewMode;
     persist?: boolean;
     template_id?: string;
+    /** Brand Hub alt yazı toggle — when set, regenerate respects headline-only vs support. */
+    show_subline?: boolean;
     parameter_overrides?: Partial<BrandFalTemplateProductionConfig>;
     compare_intensities?: FalDesignIntensityLevel[];
   };
@@ -168,6 +170,8 @@ export async function POST(
 
   // Prefer a different gallery photo + craft family than the locked preview.
   let previousGalleryRef: string | null = null;
+  let forceShowSubline: boolean | null =
+    typeof body.show_subline === 'boolean' ? body.show_subline : null;
   if (body.template_id) {
     const existingRes = await fetchCrewBackendJson<{
       thumbnail_url?: string | null;
@@ -180,6 +184,10 @@ export async function POST(
       const spec = existingRes.data.design_spec;
       const ref = typeof spec?.galleryRef === 'string' ? spec.galleryRef.trim() : '';
       previousGalleryRef = ref || null;
+      if (forceShowSubline === null && spec) {
+        const raw = spec.showSubline ?? spec.show_subline;
+        if (typeof raw === 'boolean') forceShowSubline = raw;
+      }
     }
   }
 
@@ -243,6 +251,7 @@ export async function POST(
           },
           excludeGalleryUrls,
           layoutFamilySalt: `${layoutFamilySalt}:${level}`,
+          forceShowSubline,
         },
       );
       variants.push({
@@ -261,6 +270,7 @@ export async function POST(
         productionOverrides: body.parameter_overrides,
         excludeGalleryUrls,
         layoutFamilySalt,
+        forceShowSubline,
       },
     );
     regenerateResult = generated;
@@ -272,6 +282,25 @@ export async function POST(
       design_spec: generated.design_spec,
       generator: generated.design_spec.generator,
     });
+  }
+
+  const producedCount = variants.filter((v) => Boolean(v.thumbnail_url)).length;
+  if (producedCount === 0) {
+    return NextResponse.json(
+      {
+        error: 'preview_generation_failed',
+        message:
+          'Slot görseli üretilemedi (OpenAI/Fal çıktı vermedi). Model kalitesi, API kotası ve galeri fotoğraflarını kontrol edin.',
+        workspaceId,
+        catalog_slot_key: catalogSlotKey,
+        slot_label: slot.label_tr,
+        mode,
+        channel,
+        variants,
+        persisted: false,
+      },
+      { status: 502 },
+    );
   }
 
   let persisted = false;

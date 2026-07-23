@@ -3,6 +3,7 @@ import {
   captionPhotoConflictPenalty,
   captionRequiresStrictGalleryMatch,
   isHardCaptionPhotoConflict,
+  themeConflictNeedsAiJudge,
   HARD_CAPTION_PHOTO_CONFLICT,
 } from '../caption-photo-alignment';
 import {
@@ -35,19 +36,24 @@ const FOOD_ONLY_META: GalleryPhotoMeta = {
   bestFor: ['food_showcase'],
 };
 
-describe('captionPhotoConflictPenalty — drink vs food', () => {
-  it('hard-vetoes cocktail caption against plated meat photo', () => {
+describe('captionPhotoConflictPenalty — drink vs food (AI owns hard reject)', () => {
+  it('soft-penalizes cocktail caption vs plated meat — does not hard-veto via keywords', () => {
     expect(
       isHardCaptionPhotoConflict(
         'Yazın serinletici kokteyllerine hazır mısın? Hadi tatlarına bak!',
         'steak meat beef plate dish food grilled herbs fork dining',
       ),
-    ).toBe(true);
+    ).toBe(false);
     const penalty = captionPhotoConflictPenalty(
       'Vibrant cocktail with a refreshing appearance. Serinletici yaz kokteylleri.',
       'food dish plate steak meat roast beef kitchen',
     );
-    expect(penalty).toBeGreaterThanOrEqual(HARD_CAPTION_PHOTO_CONFLICT);
+    expect(penalty).toBeGreaterThan(0);
+    expect(penalty).toBeLessThan(HARD_CAPTION_PHOTO_CONFLICT);
+    expect(themeConflictNeedsAiJudge(
+      'Yazın serinletici kokteyllerine hazır mısın?',
+      'steak meat beef plate dish food',
+    )).toBe(true);
   });
 
   it('does not penalize cocktail caption against drink photo', () => {
@@ -56,6 +62,23 @@ describe('captionPhotoConflictPenalty — drink vs food', () => {
       'cocktail drink glass bar beverage ice garnish',
     );
     expect(penalty).toBe(0);
+  });
+
+  it('does not hard-veto nightlife photo when caption mentions cocktails (AI theme rule)', () => {
+    const nightlifeSearchable = [
+      ...(NIGHTLIFE_META.contentTags ?? []),
+      NIGHTLIFE_META.description,
+      'event_photo energetic feed_post',
+    ].join(' ');
+    expect(isHardCaptionPhotoConflict(
+      'DJ nights with dancing guests enjoying cocktails.',
+      nightlifeSearchable,
+    )).toBe(false);
+    // Cross-theme signal may still ask the judge — nightlife proof + cocktails is OK for AI to accept.
+    expect(themeConflictNeedsAiJudge(
+      'DJ nights with dancing guests enjoying cocktails.',
+      nightlifeSearchable,
+    )).toBe(false);
   });
 });
 

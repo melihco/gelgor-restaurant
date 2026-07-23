@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildBrandColorSurfaceLock,
+  buildBrandSoulLock,
   buildCreativeDesignBrief,
   buildDesignedPostDesignCardPrompt,
   buildDesignedStoryDesignCardPrompt,
@@ -8,10 +10,53 @@ import {
   buildIntensityTypographyBlock,
   FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE,
   FAL_SUBJECT_CLEARANCE_DIRECTIVE,
+  pickFalLibraryFallbackDirectives,
   resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '../fal-designer-production';
+
+describe('buildBrandColorSurfaceLock', () => {
+  it('forces brand hex craft fills and bans cream panels at designed intensity', () => {
+    const lock = buildBrandColorSurfaceLock({
+      primary: '#00C5CC',
+      accent: '#f5a25d',
+      intensityLevel: 'designed',
+      craftActive: true,
+    });
+    expect(lock).toContain('COLOR SURFACE LOCK');
+    expect(lock).toContain('#00C5CC');
+    expect(lock).toContain('#f5a25d');
+    expect(lock).toMatch(/cream|beige/i);
+    expect(lock).toContain('painted system');
+  });
+
+  it('keeps a shorter anti-cream lock for photo_first', () => {
+    const lock = buildBrandColorSurfaceLock({
+      primary: '#112233',
+      accent: '#aabbcc',
+      intensityLevel: 'photo_first',
+      craftActive: false,
+    });
+    expect(lock).toContain('COLOR SURFACE LOCK');
+    expect(lock).toContain('#112233');
+    expect(lock).not.toContain('MANDATORY');
+  });
+});
+
+describe('pickFalLibraryFallbackDirectives', () => {
+  it('keeps TEMPLATE PURPOSE ahead of filler when budget is tight', () => {
+    const picked = pickFalLibraryFallbackDirectives([
+      'EXTRA: long filler that should not crowd purpose',
+      '═══ TEMPLATE PURPOSE ═══ Job: Etkinlik duyuru — EVENT ANNOUNCEMENT POSTER.',
+      '═══ COPY FIT (TEMPLATE LIBRARY) ═══ HEADLINE budget: max 3 words.',
+      '═══ BRAND SLOT DESIGN RECIPE ═══ Slot: Etkinlik · story.',
+    ], 500);
+    expect(picked[0]).toContain('TEMPLATE PURPOSE');
+    expect(picked.some((d) => d.includes('BRAND SLOT DESIGN RECIPE'))).toBe(true);
+    expect(picked.join(' ').length).toBeLessThanOrEqual(520);
+  });
+});
 
 describe('resolveFalRequireGroundedGallery', () => {
   it('requires grounded gallery for physical-venue brands with real gallery photos', () => {
@@ -108,6 +153,10 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('SUBJECT CLEARANCE (MANDATORY)');
     expect(prompt).toContain(FAL_SUBJECT_CLEARANCE_DIRECTIVE);
+    expect(prompt).toContain('COLOR SURFACE LOCK');
+    expect(prompt).toContain('#123456');
+    expect(prompt).toContain('#f59e0b');
+    expect(prompt).toMatch(/cream|beige/i);
     expect(prompt).not.toContain('GRAPHIC ZONE: Upper 38');
     expect(prompt).not.toContain('GRAPHIC SYSTEM (REQUIRED)');
   });
@@ -253,6 +302,67 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt).toContain('HARD CONTRACTS');
   });
 
+  it('keeps BRAND SOUL LOCK (DNA) in protected head when optional tail is trimmed', () => {
+    const contract = [
+      'BRAND DESIGN CONTRACT: This template set is for Yula Bodrum, sector=restaurant_cafe.',
+      'BRAND UNIQUENESS: A stranger should recognize this as Yula Bodrum from color (#00C5CC/#f5a25d), venue photo, and type energy — never a stock restaurant_cafe Canva pack.',
+      'VISUAL DNA — PRIMARY DESIGN SOURCE: Aegean coastal warmth with carved wood and turquoise sea glass motifs. Treat this as the highest creative reference after the requested on-canvas text.',
+    ].join(' ');
+    const recipe = [
+      '═══ BRAND SLOT DESIGN RECIPE ═══',
+      'Slot: Kokteyl (restaurant_cafe_cocktail_post) · post · intensity designed.',
+      'Design idea: a reusable post recipe that could ONLY belong to Yula Bodrum for slot Kokteyl.',
+      'Motifs from brand world: Aegean coastal warmth, carved wood, turquoise accents.',
+    ].join(' ');
+    const prompt = buildDesignedPostDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'İmza Kokteyl',
+      subtitle: 'Menü',
+      brandColors: { primary: '#00C5CC', accent: '#f5a25d' },
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      aspectRatio: '4:5',
+      designIntensityLevel: 'designed',
+      layoutFamilySeed: 'restaurant_cafe_cocktail_post',
+      visualDnaTone: 'Aegean coastal warmth carved wood turquoise',
+      brandDirectives: [
+        contract,
+        recipe,
+        '═══ COPY FIT (TEMPLATE LIBRARY) ═══ Paint ONLY the ON-CANVAS TEXT CONTRACT. HEADLINE budget: max 3 words.',
+        ...Array.from({ length: 40 }, (_, i) =>
+          `EXTRA DIRECTIVE ${i}: long filler ${'x'.repeat(80)} to force optional-tail trim without eating brand soul.`,
+        ),
+      ],
+    });
+
+    expect(prompt).toContain('BRAND SOUL LOCK');
+    expect(prompt).toContain('carved wood');
+    expect(prompt).toContain('BRAND SLOT DESIGN RECIPE');
+    expect(prompt).toContain('HARD CONTRACTS');
+    // Soul must appear before generic craft intensity / hard contracts.
+    expect(prompt.indexOf('BRAND SOUL LOCK')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
+    expect(prompt.indexOf('BRAND SOUL LOCK')).toBeLessThan(prompt.indexOf('LAYOUT LOCK:'));
+  });
+
+  it('buildBrandSoulLock extracts DNA and uniqueness from brandDirectives', () => {
+    const lock = buildBrandSoulLock({
+      brandName: 'Yula Bodrum',
+      sector: 'restaurant_cafe',
+      brandColors: { primary: '#00C5CC', accent: '#f5a25d' },
+      brandDirectives: [
+        [
+          'BRAND DESIGN CONTRACT: This template set is for Yula Bodrum.',
+          'BRAND UNIQUENESS: A stranger should recognize this as Yula Bodrum from color (#00C5CC/#f5a25d).',
+          'VISUAL DNA — PRIMARY DESIGN SOURCE: Hand-painted sun motifs and warm Aegean leisure. Treat this as highest.',
+        ].join(' '),
+      ],
+    });
+    expect(lock).toContain('BRAND SOUL LOCK');
+    expect(lock).toContain('Hand-painted sun motifs');
+    expect(lock).toContain('Yula Bodrum');
+    expect(lock.length).toBeLessThanOrEqual(550);
+  });
+
   it('hard LAYOUT LOCK still applies for nightlife bold packs', () => {
     const prompt = buildDesignedStoryDesignCardPrompt({
       vibe: 'neon_glow',
@@ -297,7 +407,8 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('HARD CONTRACTS');
     expect(prompt).toContain('Cheers to Our');
     expect(prompt).toContain('ON-CANVAS TEXT CONTRACT');
-    expect(prompt).toContain('Headline word order (3 words');
+    // Full mission punchline stays contracted (word-order lock matches actual word count).
+    expect(prompt).toMatch(/Headline word order \(\d+ words/);
     expect(prompt).toContain('MOTION-READY');
   });
 
@@ -313,9 +424,11 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
       occasion: { name: 'Anneler Gunu', mood: 'warm gratitude, family, soft florals' },
     });
 
-    expect(prompt).toContain('Brand DNA: bohemian Aegean leisure');
+    // DNA lives in BRAND SOUL LOCK (protected); brief may still echo Brand DNA when space allows.
+    expect(prompt).toMatch(/Brand DNA: bohemian Aegean leisure|Visual DNA[^\n]*bohemian Aegean leisure/);
     expect(prompt).toContain('OCCASION — Anneler Gunu');
     expect(prompt).toContain('WOVEN INTO');
+    expect(prompt).toContain('BRAND SOUL LOCK');
   });
 
   it('includes logo integrity and placement contract when logoUrl is provided', () => {
@@ -353,15 +466,16 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('FOUND-SURFACE TYPOGRAPHY (L1 PRIORITY)');
     expect(prompt).toContain('NEVER invent a fake painted panel');
     expect(prompt).not.toContain('TYPOGRAPHY STANDARD (MANDATORY)');
-    // Coastal soft pack + vibe language (sector style lines may yield to photo-first harmonize).
+    // Coastal pack + vibe language (sector style lines may yield to photo-first harmonize).
     expect(prompt).toMatch(
       /LAYOUT LANGUAGE PACK: coastal_editorial|Sun-washed Mediterranean|Sun-washed Aegean|SECTOR STYLE \(beach club/,
     );
+    // photo_first must not hard-lock a craft family (allowlist text may still list families).
+    expect(prompt).not.toContain('LAYOUT LOCK:');
     expect(prompt).not.toContain('side_rail_frame');
-    expect(prompt).not.toContain('l_shape_accent');
   });
 
-  it('bold_editorial coastal prompt keeps soft LAYOUT LOCK (not rail/L kits)', () => {
+  it('bold_editorial coastal prompt locks a slot family from the coastal allowlist (not nightlife rail)', () => {
     const prompt = buildDesignedPostDesignCardPrompt({
       vibe: 'warm_coastal',
       headline: 'Summer Festival',
@@ -376,9 +490,11 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('BOLD EDITORIAL');
     expect(prompt).toMatch(/ALL[- ]CAPS/);
     expect(prompt).toContain('LAYOUT LOCK:');
-    expect(prompt).toMatch(/type_with_brand_rules|asymmetric_corner_plate|magazine_cover_overlap|diagonal_soft_cut/);
+    expect(prompt).toContain('SLOT DIVERSITY LOCK');
+    expect(prompt).toMatch(
+      /LAYOUT LOCK: use ONLY "(type_with_brand_rules|asymmetric_corner_plate|magazine_cover_overlap|diagonal_soft_cut|editorial_split_soft|inset_photo_frame|l_shape_accent)"/,
+    );
     expect(prompt).not.toMatch(/LAYOUT LOCK: use ONLY "side_rail_frame"/);
-    expect(prompt).not.toMatch(/LAYOUT LOCK: use ONLY "l_shape_accent"/);
   });
 });
 

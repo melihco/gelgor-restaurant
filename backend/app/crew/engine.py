@@ -50,6 +50,7 @@ from app.crew.crews.review_crew import (
 )
 from app.crew.crews.strategist_crew import run_mission_planning
 from app.crew.crews.visual_design_crew import run_visual_design_cards
+from app.crew.crews.slot_art_direction_crew import run_slot_template_art_direction
 from app.crew.registry import (
     first_task_type_for_role,
     get_agent_roles,
@@ -80,7 +81,12 @@ def _normalize_input_keys(value: Any) -> Any:
 # Instagram/content-creation tasks: if the UI sends the wrong agent (e.g. Ads analyst + content ideation),
 # run them on content_agent instead of coercing to ads_agent → campaign_analysis (no ideas / no imagery).
 CONTENT_SHAPED_TASK_TYPES = frozenset(
-    {"content_ideation", "content_calendar", "visual_design_cards"}
+    {
+        "content_ideation",
+        "content_calendar",
+        "visual_design_cards",
+        "slot_template_art_direction",
+    }
 )
 
 
@@ -122,6 +128,7 @@ _STRUCTURAL_LITE_TASKS = {
     "content_calendar",
     "visual_design_cards",
     "feed_cohesion_review",
+    "slot_template_art_direction",
 }
 
 
@@ -351,6 +358,22 @@ def _adapt_visual_design_cards(brand, data, llm):
     )
 
 
+def _adapt_slot_template_art_direction(brand, data, llm):
+    return run_slot_template_art_direction(
+        brand,
+        catalog_slot_key=str(data.get("catalog_slot_key") or data.get("catalogSlotKey") or ""),
+        slot_name=str(data.get("slot_name") or data.get("slotName") or ""),
+        format=str(data.get("format") or "post"),
+        template_type=str(data.get("template_type") or data.get("templateType") or ""),
+        purpose_job=str(data.get("purpose_job") or data.get("purposeJob") or ""),
+        sample_headline=str(data.get("sample_headline") or data.get("sampleHeadline") or ""),
+        primary_color=str(data.get("primary_color") or data.get("primaryColor") or ""),
+        accent_color=str(data.get("accent_color") or data.get("accentColor") or ""),
+        diversity_salt=str(data.get("diversity_salt") or data.get("diversitySalt") or ""),
+        llm=llm,
+    )
+
+
 def _adapt_content_strategy(brand, data, llm):
     return run_content_strategy(
         brand,
@@ -424,6 +447,7 @@ _DISPATCH_TABLE: dict[tuple[str, str], _DispatchAdapter] = {
     ("content_agent", "content_ideation"): _adapt_content_ideation,
     ("content_agent", "content_calendar"): _adapt_content_calendar,
     ("content_agent", "visual_design_cards"): _adapt_visual_design_cards,
+    ("content_agent", "slot_template_art_direction"): _adapt_slot_template_art_direction,
     ("content_strategy_agent", "content_strategy"): _adapt_content_strategy,
     ("feed_art_director", "feed_cohesion_review"): _adapt_feed_cohesion_review,
     ("ads_agent", "campaign_analysis"): _adapt_campaign_analysis,

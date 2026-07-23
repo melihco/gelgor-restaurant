@@ -172,12 +172,17 @@ function buildTypographyPrompt(input: {
   const aspect = ASPECT_LABELS[input.aspectRatio];
   const sceneHint = distillSceneHint(input.sceneHint);
 
+  const hasPurposeJob = (input.brandDirectives ?? []).some((d) =>
+    d.includes('TEMPLATE PURPOSE') || d.includes('EVENT ANNOUNCEMENT') || d.includes('BRAND SLOT DESIGN RECIPE'),
+  );
   const bgDirective = input.backgroundStyle === 'photo_overlay'
-    ? 'Cinematic blurred background photo atmosphere. Subtle dark gradient depth.'
+    ? 'Cinematic photographic background atmosphere with subtle dark gradient depth — real venue/product energy, not empty grain.'
     : input.backgroundStyle === 'solid_brand'
       ? `Solid brand color background (${input.brandColors.primary}). Clean, editorial, agency-quality.`
       : input.backgroundStyle === 'gradient_mesh'
-        ? `Abstract gradient mesh background blending ${input.brandColors.primary} and ${input.brandColors.accent}. Smooth organic shapes, premium depth.`
+        ? (hasPurposeJob
+          ? `PHOTOGRAPHIC DESIGNED POSTER BACKGROUND: invent a realistic venue/atmosphere photo scene matching the TEMPLATE PURPOSE and brand world; brand colors ${input.brandColors.primary}/${input.brandColors.accent} as accents/scrims only. FORBIDDEN: empty abstract grain gradients, flat peach-to-teal washes, or text-only void canvases.`
+          : `Rich photographic atmosphere with soft brand-color accents (${input.brandColors.primary}/${input.brandColors.accent}) — premium depth. FORBIDDEN: empty grainy abstract gradients with no subject.`)
         : 'Transparent/clean background.';
 
   const sceneLine = sceneHint

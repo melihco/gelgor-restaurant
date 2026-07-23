@@ -149,6 +149,7 @@ export async function generateEditorialBackground(opts: {
           designPrompt,
         ].join('\n').slice(0, limit);
 
+        const supportsInputFidelity = /^gpt-image(?!-2)/i.test(model);
         const editedRaw = await openai.images.edit({
           model,
           image: file,
@@ -156,7 +157,7 @@ export async function generateEditorialBackground(opts: {
           n: 1,
           size,
           quality,
-          input_fidelity: 'high',
+          ...(supportsInputFidelity ? { input_fidelity: 'high' as const } : {}),
         } as Parameters<typeof openai.images.edit>[0]);
 
         const edited = editedRaw as { data?: Array<{ url?: string; b64_json?: string }> };

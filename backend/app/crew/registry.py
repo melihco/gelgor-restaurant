@@ -22,7 +22,12 @@ AGENT_ROLE_REGISTRY: Final[dict[str, dict[str, object]]] = {
         "display_name": "Content Agent",
         "description": "Creates Instagram content strategy and concepts",
         "category": "content",
-        "task_types": ["content_ideation", "content_calendar", "visual_design_cards"],
+        "task_types": [
+            "content_ideation",
+            "content_calendar",
+            "visual_design_cards",
+            "slot_template_art_direction",
+        ],
     },
     "content_strategy_agent": {
         "display_name": "Content Strategy Agent",

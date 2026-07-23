@@ -78,6 +78,7 @@ _TASK_ARTIFACT_TYPE_MAP = {
     "content_ideation": "instagram_caption",
     "content_calendar": "instagram_caption",
     "visual_design_cards": "instagram_caption",
+    "slot_template_art_direction": "design_brief",
     "campaign_analysis": "strategy_document",
     "ad_creative_generation": "ad_copy",
     "auto_budget_optimize": "strategy_document",
@@ -329,6 +330,8 @@ async def execute_internal_agent(
             "review_context": result.get("review_context"),
             "fallback_content": used_fallback,
             "tokens_used": tokens_used,
+            **({"slot_art_direction": result["slot_art_direction"]}
+               if isinstance(result.get("slot_art_direction"), dict) else {}),
             **({"creative_director_review": cd_review} if cd_review else {}),
         },
         correlation_id=request.correlation_id,

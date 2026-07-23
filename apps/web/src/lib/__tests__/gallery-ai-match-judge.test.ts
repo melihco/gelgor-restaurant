@@ -195,6 +195,66 @@ describe('confirmGalleryPickWithAiJudge — fail-closed gate', () => {
   });
 });
 
+describe('confirmGalleryPickWithAiJudge — theme risk forces AI', () => {
+  const STEAK = 'https://cdn.example.com/steak.jpg';
+  const COCKTAIL = 'https://cdn.example.com/cocktail.jpg';
+  const drinkGallery = (): Record<string, GalleryPhotoMeta> => ({
+    [STEAK]: {
+      contentTags: ['steak', 'meat', 'plate', 'food'],
+      description: 'Grilled steak on a plate',
+      suggestedAssetType: 'food_drink_photo',
+    },
+    [COCKTAIL]: {
+      contentTags: ['cocktail', 'drink', 'glass', 'bar'],
+      description: 'Colorful cocktail in a glass',
+      suggestedAssetType: 'food_drink_photo',
+    },
+  });
+
+  it('beach_club: strong score still judges cocktail caption vs steak photo', async () => {
+    let called = false;
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Yazın serinletici kokteyllerine hazır mısın?',
+      headline: 'Kokteyl',
+      businessType: 'beach_club',
+      selectedUrl: STEAK,
+      deterministicScore: 70,
+      galleryAnalysis: drinkGallery(),
+      candidateUrls: [STEAK, COCKTAIL],
+      enabled: true,
+      judgeFn: async () => {
+        called = true;
+        return {
+          pickIndex: 1,
+          confidence: 0.92,
+          reason: 'cocktail glass matches drink caption',
+          model,
+          usage: null,
+        };
+      },
+    });
+    expect(called).toBe(true);
+    expect(decision.action).toBe('swap');
+    expect(decision.url).toBe(COCKTAIL);
+    expect(decision.judged).toBe(true);
+  });
+
+  it('rejects theme-risk pick when AI judge is disabled (fail closed)', async () => {
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Yazın serinletici kokteyllerine hazır mısın?',
+      headline: 'Kokteyl',
+      businessType: 'beach_club',
+      selectedUrl: STEAK,
+      deterministicScore: 70,
+      galleryAnalysis: drinkGallery(),
+      candidateUrls: [STEAK, COCKTAIL],
+      enabled: false,
+    });
+    expect(decision.action).toBe('reject');
+    expect(decision.rejectReason).toBe('ai_judge_required_for_theme');
+  });
+});
+
 describe('gatePhotoMatchResult — batch pre-assignment gate', () => {
   const HONEY = 'https://cdn.example.com/honey.jpg';
   const gallery = (): Record<string, GalleryPhotoMeta> => ({

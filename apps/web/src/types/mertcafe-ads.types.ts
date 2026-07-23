@@ -25,6 +25,10 @@ export interface MertcafeStatus {
   /** Same gate as POST /api/mertcafe/post — UI can show before approve. */
   publish_ready?: boolean;
   publish_blocker?: string | null;
+  /** Upstream Mertcafe rejected the stored API key (not Smart Agency session). */
+  mertcafe_auth_ok?: boolean;
+  error?: string;
+  code?: string;
 }
 
 export interface MertcafeProvisionResult {

@@ -10,6 +10,7 @@ import {
   detectOverlayLocale,
   FAL_FEED_OVERLAY_MAX_CHARS,
   areFalOverlayTextsRedundant,
+  fitMissionOverlayToTemplateBudget,
   isIncompleteOverlayPhrase,
   isMeaningfulFalOverlayText,
   resolveFalDisplayHeadline,
@@ -214,6 +215,9 @@ function finalizeMissionOverlay(input: {
   brandTone?: string;
   lockIdeationCopy?: boolean;
   designIntensity?: string | null;
+  sampleHeadline?: string | null;
+  sampleSubtitle?: string | null;
+  showSubline?: boolean | null;
 }): { headline: string; subtitle?: string } {
   const overlay = resolveFalOverlayCopy({
     headline: input.headline,
@@ -227,12 +231,14 @@ function finalizeMissionOverlay(input: {
   const budget = resolveOverlayHeadlineWordBudget({
     channel: input.channel,
     designIntensity: input.designIntensity,
+    sampleHeadline: input.sampleHeadline,
   });
   const headline = resolveFalProductionOverlayHeadline(
     overlay.headline,
     [],
     input.channel,
     input.designIntensity,
+    budget,
   ) || tightenOverlayHeadline(overlay.headline, budget.maxLen, budget.maxWords);
 
   const rebased = rebiasUngroundedOverlayCopy({
@@ -264,15 +270,23 @@ function finalizeMissionOverlay(input: {
       brandTone: input.brandTone,
     });
     if (toned && toned !== rebased.headline) {
-      return {
-        headline: resolveFalProductionOverlayHeadline(
-          toned,
-          [rebased.headline],
-          input.channel,
-          input.designIntensity,
-        ),
+      const tonedHeadline = resolveFalProductionOverlayHeadline(
+        toned,
+        [rebased.headline],
+        input.channel,
+        input.designIntensity,
+        budget,
+      ) || toned;
+      const fittedTone = fitMissionOverlayToTemplateBudget({
+        headline: tonedHeadline,
         subtitle: rebased.subtitle,
-      };
+        channel: input.channel,
+        designIntensity: input.designIntensity,
+        sampleHeadline: input.sampleHeadline,
+        sampleSubtitle: input.sampleSubtitle,
+        showSubline: input.showSubline,
+      });
+      return { headline: fittedTone.headline, subtitle: fittedTone.subtitle };
     }
   }
 
@@ -281,9 +295,19 @@ function finalizeMissionOverlay(input: {
     [],
     input.channel,
     input.designIntensity,
+    budget,
   ) || rebased.headline;
 
-  return { headline: finalHeadline, subtitle: rebased.subtitle };
+  const fitted = fitMissionOverlayToTemplateBudget({
+    headline: finalHeadline,
+    subtitle: rebased.subtitle,
+    channel: input.channel,
+    designIntensity: input.designIntensity,
+    sampleHeadline: input.sampleHeadline,
+    sampleSubtitle: input.sampleSubtitle,
+    showSubline: input.showSubline,
+  });
+  return { headline: fitted.headline, subtitle: fitted.subtitle };
 }
 
 function resolvePlannedOverlayLine(
@@ -291,10 +315,15 @@ function resolvePlannedOverlayLine(
   fallbacks: string[],
   channel: 'reel' | 'feed_post' | 'story',
   designIntensity?: string | null,
+  sampleHeadline?: string | null,
 ): string {
   const planned = resolveMissionPlannedOverlayLine(line, fallbacks, channel);
   if (!planned) return '';
-  const budget = resolveOverlayHeadlineWordBudget({ channel, designIntensity });
+  const budget = resolveOverlayHeadlineWordBudget({
+    channel,
+    designIntensity,
+    sampleHeadline,
+  });
   // Quoted punchlines that already fit the budget stay verbatim.
   const words = planned.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
   if (words.length <= budget.maxWords && planned.length <= budget.maxLen) {
@@ -323,6 +352,10 @@ export function resolveMissionFalDesignCopy(input: {
   language?: string | null;
   /** Paint density — drives 2–4 word overlay budget. */
   designIntensity?: string | null;
+  /** Matched library sample — locks mission overlay to designed type-zone size. */
+  sampleHeadline?: string | null;
+  sampleSubtitle?: string | null;
+  showSubline?: boolean | null;
 }): {
   headline: string;
   subtitle?: string;
@@ -335,6 +368,7 @@ export function resolveMissionFalDesignCopy(input: {
   const budget = resolveOverlayHeadlineWordBudget({
     channel,
     designIntensity: input.designIntensity,
+    sampleHeadline: input.sampleHeadline,
   });
   const maxLen = budget.maxLen;
 
@@ -348,6 +382,33 @@ export function resolveMissionFalDesignCopy(input: {
     return true;
   };
 
+  const lockToTemplate = (result: {
+    headline: string;
+    subtitle?: string;
+    source: string;
+  }): { headline: string; subtitle?: string; source: string } => {
+    const fitted = fitMissionOverlayToTemplateBudget({
+      headline: result.headline,
+      subtitle: result.subtitle,
+      channel,
+      designIntensity: input.designIntensity,
+      sampleHeadline: input.sampleHeadline,
+      sampleSubtitle: input.sampleSubtitle,
+      showSubline: input.showSubline,
+    });
+    return {
+      headline: fitted.headline,
+      subtitle: fitted.subtitle,
+      source: result.source,
+    };
+  };
+
+  const templateFitOpts = {
+    sampleHeadline: input.sampleHeadline,
+    sampleSubtitle: input.sampleSubtitle,
+    showSubline: input.showSubline,
+  };
+
   // 1) Mission tagline / subline — quoted line from calendar & ideation cards.
   const missionTagline = unwrapQuotedOverlayLine(extractMissionTagline(input.idea));
   if (missionTagline && isPublishableOverlayLine(missionTagline, brandName, captionLoc)) {
@@ -356,6 +417,7 @@ export function resolveMissionFalDesignCopy(input: {
       [],
       channel,
       input.designIntensity,
+      input.sampleHeadline,
     );
     if (headline && acceptPlannedOverlayLine(headline)) {
       const ideationTitle = unwrapQuotedOverlayLine(
@@ -367,9 +429,15 @@ export function resolveMissionFalDesignCopy(input: {
         && !areFalOverlayTextsRedundant(headline, ideationTitle)
         && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
         && !isMeaninglessBrandEchoHeadline(ideationTitle, brandName)
-        ? resolvePlannedOverlayLine(ideationTitle, [headline], channel, input.designIntensity) || undefined
+        ? resolvePlannedOverlayLine(
+          ideationTitle,
+          [headline],
+          channel,
+          input.designIntensity,
+          input.sampleHeadline,
+        ) || undefined
         : undefined;
-      return { headline, subtitle, source: 'mission_tagline' };
+      return lockToTemplate({ headline, subtitle, source: 'mission_tagline' });
     }
   }
 
@@ -381,18 +449,25 @@ export function resolveMissionFalDesignCopy(input: {
       [],
       channel,
       input.designIntensity,
+      input.sampleHeadline,
     );
     if (headline && acceptPlannedOverlayLine(headline)) {
       const subtitleRaw = extracted.subtitle || input.cta;
       const subtitle = subtitleRaw
         && !areFalOverlayTextsRedundant(headline, subtitleRaw)
-        ? resolvePlannedOverlayLine(subtitleRaw, [headline], channel, input.designIntensity) || undefined
+        ? resolvePlannedOverlayLine(
+          subtitleRaw,
+          [headline],
+          channel,
+          input.designIntensity,
+          input.sampleHeadline,
+        ) || undefined
         : resolveFalSubtitle({
           caption,
           headline,
           cta: extracted.subtitle || input.cta,
         }) ?? undefined;
-      return { headline, subtitle, source: extracted.source };
+      return lockToTemplate({ headline, subtitle, source: extracted.source });
     }
   }
 
@@ -410,7 +485,7 @@ export function resolveMissionFalDesignCopy(input: {
         headline: punch,
         cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
       }) ?? undefined;
-      return { headline: punch, subtitle, source: 'caption_punchline' };
+      return lockToTemplate({ headline: punch, subtitle, source: 'caption_punchline' });
     }
 
     const fromCaption = resolveFalDisplayHeadline({
@@ -425,6 +500,7 @@ export function resolveMissionFalDesignCopy(input: {
       [input.ideationHeadline, caption.split(/[.!?\n]/)[0]?.trim() ?? ''].filter(Boolean),
       channel,
       input.designIntensity,
+      budget,
     );
     if (
       !headline
@@ -445,6 +521,7 @@ export function resolveMissionFalDesignCopy(input: {
         [],
         channel,
         input.designIntensity,
+        budget,
       );
     }
     if (headline && !isSoullessMenuHourHeadline(headline) && !isLabelStyleHeadline(headline)) {
@@ -463,8 +540,9 @@ export function resolveMissionFalDesignCopy(input: {
         brandTone: input.brandTone,
         lockIdeationCopy: true,
         designIntensity: input.designIntensity,
+        ...templateFitOpts,
       });
-      return { ...overlay, source: 'caption_design_copy' };
+      return lockToTemplate({ ...overlay, source: 'caption_design_copy' });
     }
   }
 
@@ -482,13 +560,14 @@ export function resolveMissionFalDesignCopy(input: {
       brandTone: input.brandTone,
       lockIdeationCopy: true,
       designIntensity: input.designIntensity,
+      ...templateFitOpts,
     });
     if (
       overlay.headline
       && !isIncompleteOverlayPhrase(overlay.headline)
       && !isSoullessMenuHourHeadline(overlay.headline)
     ) {
-      return { ...overlay, source: 'ideation_title' };
+      return lockToTemplate({ ...overlay, source: 'ideation_title' });
     }
   }
 
@@ -502,6 +581,7 @@ export function resolveMissionFalDesignCopy(input: {
     brandTone: input.brandTone,
     lockIdeationCopy: true,
     designIntensity: input.designIntensity,
+    ...templateFitOpts,
   });
 
   if (overlay.headline && isLabelStyleHeadline(overlay.headline) && caption.length >= 24) {
@@ -512,11 +592,11 @@ export function resolveMissionFalDesignCopy(input: {
       maxLen,
     });
     if (punch && !isLabelStyleHeadline(punch) && !isSoullessMenuHourHeadline(punch)) {
-      return {
+      return lockToTemplate({
         headline: punch,
         subtitle: resolveFalSubtitle({ caption, headline: punch, cta: input.cta }) ?? undefined,
         source: 'caption_design_copy_rescue',
-      };
+      });
     }
     const forced = resolveFalDisplayHeadline({
       caption,
@@ -530,6 +610,7 @@ export function resolveMissionFalDesignCopy(input: {
       [overlay.headline],
       channel,
       input.designIntensity,
+      budget,
     );
     if (
       headline
@@ -537,13 +618,13 @@ export function resolveMissionFalDesignCopy(input: {
       && !isSoullessMenuHourHeadline(headline)
       && !isIncompleteOverlayPhrase(headline)
     ) {
-      return {
+      return lockToTemplate({
         headline,
         subtitle: resolveFalSubtitle({ caption, headline, cta: input.cta }) ?? undefined,
         source: 'caption_design_copy_rescue',
-      };
+      });
     }
   }
 
-  return { ...overlay, source: 'ideation_locked' };
+  return lockToTemplate({ ...overlay, source: 'ideation_locked' });
 }

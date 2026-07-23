@@ -214,8 +214,8 @@ describe('serverConfig', () => {
   describe('imageGen', () => {
     it('applies starter-tier defaults', () => {
       expect(serverConfig.ai.tier).toBe('starter');
-      expect(serverConfig.imageGen.model).toBe('gpt-image-1');
-      expect(serverConfig.imageGen.editModel).toBe('gpt-image-1');
+      expect(serverConfig.imageGen.model).toBe('gpt-image-2');
+      expect(serverConfig.imageGen.editModel).toBe('gpt-image-2');
       expect(serverConfig.imageGen.quality).toBe('medium');
       expect(serverConfig.imageGen.falModel).toBe('fal-ai/flux/schnell');
       expect(serverConfig.imageGen.preferFalDesignedPosts).toBe(true);
@@ -235,7 +235,7 @@ describe('serverConfig', () => {
       process.env.OPENAI_IMAGE_MODEL = 'gpt-image-1';
       expect(serverConfig.imageGen.model).toBe('gpt-image-1');
       // editModel ignores OPENAI_IMAGE_MODEL (matches legacy behavior)
-      expect(serverConfig.imageGen.editModel).toBe('gpt-image-1');
+      expect(serverConfig.imageGen.editModel).toBe('gpt-image-2');
       process.env.SMART_AGENCY_IMAGE_MODEL = 'gpt-image-custom';
       expect(serverConfig.imageGen.model).toBe('gpt-image-custom');
       expect(serverConfig.imageGen.editModel).toBe('gpt-image-custom');

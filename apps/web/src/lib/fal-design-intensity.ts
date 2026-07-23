@@ -443,21 +443,21 @@ export type DesignCraftLayoutFamily = (typeof DESIGN_CRAFT_LAYOUT_FAMILIES)[numb
 
 const LAYOUT_FAMILY_BRIEF: Record<DesignCraftLayoutFamily, string> = {
   asymmetric_corner_plate:
-    'Compose an asymmetric corner brand-color accent (<22% frame) with headline fully inside (≥8% padding); keep the FULL gallery photo clear in the remaining window — brand-unique, not a stock sticker.',
+    'FAMILY asymmetric_corner_plate ONLY: one irregular brand-hex corner plate (<22%) with headline fully inside (≥8% padding); opposite side stays open photo. FORBIDDEN: cream/beige paper card, centered caption, diagonal split, full side rail.',
   magazine_cover_overlap:
-    'Magazine-cover energy: oversized display inside a brand-color soft field with 1–2 thin rules; keep the FULL gallery photo in the leftover window — never half-on/half-off the color field.',
+    'FAMILY magazine_cover_overlap ONLY: oversized display on a brand-hex soft field + 1–2 thin brand rules; photo fills the leftover window. FORBIDDEN: small cream corner sticker, 50/50 beige split, timid caption bar.',
   diagonal_soft_cut:
-    'Soft diagonal brand-color accent (≤28% frame) with type fully inside; keep the FULL gallery photo clear — never a horizontal sandwich.',
+    'FAMILY diagonal_soft_cut ONLY: soft diagonal brand-hex wedge (≤28%) with type fully inside; photo on the other side of the cut. FORBIDDEN: axis-aligned cream rectangle, horizontal sandwich, tiny corner chip.',
   side_rail_frame:
-    'Vertical brand side rail (≤24% width) with stacked type inside; keep the FULL gallery photo in the wide window — nightlife/bold packs only.',
+    'FAMILY side_rail_frame ONLY: vertical brand-hex rail (≤24% width) with stacked type inside; wide photo window beside it. FORBIDDEN: cream corner plate, diagonal wedge, centered floating caption.',
   l_shape_accent:
-    'L-shaped brand accent (≤30% combined) with headline inside; keep the FULL gallery photo in the open rectangle — nightlife/bold packs only.',
+    'FAMILY l_shape_accent ONLY: brand-hex L (bottom+side, ≤30% combined) with headline inside the L; open photo rectangle. FORBIDDEN: cream paper corner card, pure diagonal split, floating centered type.',
   type_with_brand_rules:
-    'Type-led craft: light plate/scrim for the headline + thin brand-color rules/chips; keep the FULL gallery photo clear — never opaque paint over glassware/faces.',
+    'FAMILY type_with_brand_rules ONLY: type-led lockup on a light brand-tint scrim + thin brand-hex rules/chips — no large opaque geometry. FORBIDDEN: cream Canva sticker plate, heavy rail/L/diagonal paint, covering glassware/faces.',
   inset_photo_frame:
-    'Brand-color mat with type on the mat (≥8% padding); gallery photo as an inset window — photo never cropped or covered.',
+    'FAMILY inset_photo_frame ONLY: brand-hex mat/border with type on the mat (≥8% padding); gallery photo as a clear inset window (never cropped/covered). FORBIDDEN: cream corner sticker on full-bleed photo, diagonal cut.',
   editorial_split_soft:
-    'Soft brand field (~35–40%) with type inside; FULL gallery photo in the remaining ~60–65% — never straddling the photo edge.',
+    'FAMILY editorial_split_soft ONLY: soft brand-hex field ~35–40% (left or top) with type inside; photo ~60–65% in the remaining zone — hard edge, no straddle. FORBIDDEN: small cream corner card, thin caption bar only, identical diagonal-wedge clone.',
 };
 
 /**
