@@ -38,6 +38,52 @@ export interface ProductionSlotDefinition {
   enabled_by_default: boolean;
   sort_order: number;
   status: string;
+  /** null = sector-global; set = brand-private custom slot */
+  owner_workspace_id?: string | null;
+}
+
+export type SlotCatalogScope = 'visible' | 'global' | 'brand' | 'all';
+
+export interface CatalogSlotCreateInput {
+  sector_id: string;
+  slot_key?: string;
+  suffix?: string;
+  label_tr: string;
+  label_en: string;
+  format: 'post' | 'story' | 'reel' | 'carousel';
+  pipeline?: string;
+  slot_role?: string;
+  design_template_type?: string;
+  library_slot_key?: string | null;
+  tier?: 'standard' | 'premium';
+  match_signals?: Record<string, unknown>;
+  prompt_pack?: Record<string, unknown>;
+  optional_tags?: string[];
+  enabled_by_default?: boolean;
+  sort_order?: number;
+  owner_workspace_id?: string | null;
+  assign_to_owner?: boolean;
+  priority?: number;
+  notes?: string | null;
+}
+
+export interface BrandCustomSlotCreateInput {
+  suffix: string;
+  label_tr: string;
+  label_en: string;
+  format: 'post' | 'story' | 'reel' | 'carousel';
+  pipeline?: string;
+  slot_role?: string;
+  design_template_type?: string;
+  library_slot_key?: string | null;
+  tier?: 'standard' | 'premium';
+  match_signals?: Record<string, unknown>;
+  prompt_pack?: Record<string, unknown>;
+  optional_tags?: string[];
+  sort_order?: number;
+  priority?: number;
+  notes?: string | null;
+  sector_id?: string;
 }
 
 export function resolveSectorSlotsWithPackFallback(
@@ -112,14 +158,141 @@ export async function fetchCanonicalSectors(
 export async function fetchSectorSlotDefinitions(
   workspaceId: string,
   sectorId: string,
-  opts?: { facilities?: BrandSlotFacilities | Record<string, unknown> | null },
+  opts?: {
+    facilities?: BrandSlotFacilities | Record<string, unknown> | null;
+    scope?: SlotCatalogScope;
+    includeArchived?: boolean;
+  },
 ): Promise<ProductionSlotDefinition[]> {
+  const params = new URLSearchParams();
+  params.set('scope', opts?.scope ?? 'visible');
+  params.set('workspace_id', workspaceId);
+  if (opts?.includeArchived) params.set('include_archived', 'true');
   const res = await fetchCrewBackendJson<ProductionSlotDefinition[]>(
-    `/api/v1/slot-catalog/sectors/${encodeURIComponent(sectorId)}/slots`,
+    `/api/v1/slot-catalog/sectors/${encodeURIComponent(sectorId)}/slots?${params}`,
     { workspaceId, timeoutMs: 10_000 },
   );
   const dbSlots = res.ok && Array.isArray(res.data) ? res.data : [];
   return resolveSectorSlotsWithPackFallback(sectorId, dbSlots, opts?.facilities);
+}
+
+export async function createCatalogSlot(
+  workspaceId: string,
+  input: CatalogSlotCreateInput,
+): Promise<ProductionSlotDefinition | null> {
+  const res = await fetchCrewBackendJson<ProductionSlotDefinition>(
+    '/api/v1/slot-catalog/slots',
+    {
+      workspaceId,
+      method: 'POST',
+      timeoutMs: 20_000,
+      body: input,
+    },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function patchCatalogSlot(
+  workspaceId: string,
+  slotKey: string,
+  patch: Partial<CatalogSlotCreateInput>,
+): Promise<ProductionSlotDefinition | null> {
+  const res = await fetchCrewBackendJson<ProductionSlotDefinition>(
+    `/api/v1/slot-catalog/slots/${encodeURIComponent(slotKey)}`,
+    {
+      workspaceId,
+      method: 'PATCH',
+      timeoutMs: 15_000,
+      body: patch,
+    },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function archiveCatalogSlot(
+  workspaceId: string,
+  slotKey: string,
+): Promise<ProductionSlotDefinition | null> {
+  const res = await fetchCrewBackendJson<ProductionSlotDefinition>(
+    `/api/v1/slot-catalog/slots/${encodeURIComponent(slotKey)}/archive`,
+    { workspaceId, method: 'POST', timeoutMs: 15_000, body: {} },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function activateCatalogSlot(
+  workspaceId: string,
+  slotKey: string,
+): Promise<ProductionSlotDefinition | null> {
+  const res = await fetchCrewBackendJson<ProductionSlotDefinition>(
+    `/api/v1/slot-catalog/slots/${encodeURIComponent(slotKey)}/activate`,
+    { workspaceId, method: 'POST', timeoutMs: 15_000, body: {} },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function cloneCatalogSlot(
+  workspaceId: string,
+  sourceSlotKey: string,
+  input: {
+    suffix?: string;
+    slot_key?: string;
+    sector_id?: string;
+    owner_workspace_id?: string | null;
+    label_tr?: string;
+    label_en?: string;
+    assign_to_owner?: boolean;
+  },
+): Promise<ProductionSlotDefinition | null> {
+  const res = await fetchCrewBackendJson<ProductionSlotDefinition>(
+    `/api/v1/slot-catalog/slots/${encodeURIComponent(sourceSlotKey)}/clone`,
+    {
+      workspaceId,
+      method: 'POST',
+      timeoutMs: 20_000,
+      body: input,
+    },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function createBrandCustomSlot(
+  workspaceId: string,
+  input: BrandCustomSlotCreateInput,
+): Promise<ProductionSlotDefinition | null> {
+  const res = await fetchCrewBackendJson<ProductionSlotDefinition>(
+    `/api/v1/slot-catalog/tenants/${workspaceId}/custom-slots`,
+    {
+      workspaceId,
+      method: 'POST',
+      timeoutMs: 20_000,
+      body: input,
+    },
+  );
+  return res.ok && res.data ? res.data : null;
+}
+
+export async function createCatalogSector(
+  workspaceId: string,
+  input: {
+    sector_id: string;
+    label_tr: string;
+    label_en: string;
+    aliases?: string[];
+    is_active?: boolean;
+    sort_order?: number;
+  },
+): Promise<CanonicalSector | null> {
+  const res = await fetchCrewBackendJson<CanonicalSector>(
+    '/api/v1/slot-catalog/sectors',
+    {
+      workspaceId,
+      method: 'POST',
+      timeoutMs: 15_000,
+      body: input,
+    },
+  );
+  return res.ok && res.data ? res.data : null;
 }
 
 export async function fetchTenantSlotAssignments(

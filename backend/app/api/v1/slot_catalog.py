@@ -12,17 +12,24 @@ from app.api.deps import get_db
 from app.api.deps import verify_internal_api_key
 from app.schemas.slot_catalog import (
     BootstrapTenantSlotsResponse,
+    BrandCustomSlotCreate,
     BrandSlotFacilitiesOut,
     BrandSlotFacilitiesUpdateRequest,
     BrandSlotFacilitiesUpdateResponse,
     BulkTenantSlotAssignmentRequest,
+    CanonicalSectorCreate,
     CanonicalSectorOut,
+    CanonicalSectorUpdate,
     FacilityOptionOut,
     LibraryShelfOut,
+    ProductionSlotCloneRequest,
+    ProductionSlotDefinitionCreate,
     ProductionSlotDefinitionOut,
+    ProductionSlotDefinitionUpdate,
     ResetTenantSlotsRequest,
     ResetTenantSlotsResponse,
     ShelfSummaryOut,
+    SlotStatusRequest,
     SyncFacilitiesToAssignmentsResponse,
     SyncSlotCatalogSeedResponse,
     TenantSlotAdminOverviewOut,
@@ -33,6 +40,7 @@ from app.schemas.slot_catalog import (
     CoverageOut,
 )
 from app.models.slot_catalog import CanonicalSector, ProductionSlotDefinition
+from app.services import slot_catalog_authoring as authoring
 from app.services import slot_catalog_service as svc
 
 logger = structlog.get_logger()
@@ -69,6 +77,7 @@ def _slot_out(row) -> ProductionSlotDefinitionOut:
         enabled_by_default=row.enabled_by_default,
         sort_order=row.sort_order,
         status=row.status,
+        owner_workspace_id=getattr(row, "owner_workspace_id", None),
     )
 
 
@@ -120,27 +129,197 @@ async def list_library_shelves():
 
 
 @router.get("/sectors", response_model=list[CanonicalSectorOut])
-async def list_catalog_sectors(db: AsyncSession = Depends(get_db)):
-    rows = await svc.list_sectors(db)
+async def list_catalog_sectors(
+    active_only: bool = True,
+    db: AsyncSession = Depends(get_db),
+):
+    rows = await svc.list_sectors(db, active_only=active_only)
     return [_sector_out(r) for r in rows]
 
 
+@router.post("/sectors", response_model=CanonicalSectorOut, status_code=201)
+async def create_catalog_sector(
+    body: CanonicalSectorCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.create_sector(db, body.model_dump())
+        await db.commit()
+        return _sector_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/sectors/{sector_id}", response_model=CanonicalSectorOut)
+async def patch_catalog_sector(
+    sector_id: str,
+    body: CanonicalSectorUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.update_sector(
+            db, sector_id, body.model_dump(exclude_unset=True),
+        )
+        await db.commit()
+        return _sector_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        code = 404 if str(exc).startswith("unknown_sector") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
+
+
 @router.get("/sectors/{sector_id}/slots", response_model=list[ProductionSlotDefinitionOut])
-async def list_sector_slots(sector_id: str, db: AsyncSession = Depends(get_db)):
+async def list_sector_slots(
+    sector_id: str,
+    scope: str = "global",
+    workspace_id: uuid.UUID | None = None,
+    include_archived: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     sector = await db.get(CanonicalSector, sector_id)
     if not sector:
         raise HTTPException(status_code=404, detail=f"unknown sector: {sector_id}")
-    rows = await svc.list_slot_definitions(db, sector_id=sector_id)
+    try:
+        rows = await authoring.list_slot_definitions_for_scope(
+            db,
+            sector_id=sector_id,
+            workspace_id=workspace_id,
+            active_only=not include_archived,
+            scope=scope,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return [_slot_out(r) for r in rows]
 
 
 @router.get("/slots", response_model=list[ProductionSlotDefinitionOut])
 async def list_all_slots(
     sector_id: str | None = None,
+    scope: str = "global",
+    workspace_id: uuid.UUID | None = None,
+    include_archived: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    rows = await svc.list_slot_definitions(db, sector_id=sector_id)
+    try:
+        rows = await authoring.list_slot_definitions_for_scope(
+            db,
+            sector_id=sector_id,
+            workspace_id=workspace_id,
+            active_only=not include_archived,
+            scope=scope,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return [_slot_out(r) for r in rows]
+
+
+@router.get("/slots/{slot_key}", response_model=ProductionSlotDefinitionOut)
+async def get_catalog_slot(slot_key: str, db: AsyncSession = Depends(get_db)):
+    row = await svc.get_slot_definition(db, slot_key)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"unknown slot_key: {slot_key}")
+    return _slot_out(row)
+
+
+@router.post("/slots", response_model=ProductionSlotDefinitionOut, status_code=201)
+async def create_catalog_slot(
+    body: ProductionSlotDefinitionCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        payload = body.model_dump()
+        assign = bool(payload.pop("assign_to_owner", True))
+        row = await authoring.create_slot_definition(
+            db, payload, assign_to_owner=assign,
+        )
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.patch("/slots/{slot_key}", response_model=ProductionSlotDefinitionOut)
+async def patch_catalog_slot(
+    slot_key: str,
+    body: ProductionSlotDefinitionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.update_slot_definition(
+            db, slot_key, body.model_dump(exclude_unset=True),
+        )
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        code = 404 if str(exc).startswith("unknown_slot_key") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
+
+
+@router.post("/slots/{slot_key}/archive", response_model=ProductionSlotDefinitionOut)
+async def archive_catalog_slot(
+    slot_key: str,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.set_slot_status(db, slot_key, "archived")
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        code = 404 if str(exc).startswith("unknown_slot_key") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
+
+
+@router.post("/slots/{slot_key}/activate", response_model=ProductionSlotDefinitionOut)
+async def activate_catalog_slot(
+    slot_key: str,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.set_slot_status(db, slot_key, "active")
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        code = 404 if str(exc).startswith("unknown_slot_key") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
+
+
+@router.post("/slots/{slot_key}/status", response_model=ProductionSlotDefinitionOut)
+async def set_catalog_slot_status(
+    slot_key: str,
+    body: SlotStatusRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.set_slot_status(db, slot_key, body.status)
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        code = 404 if str(exc).startswith("unknown_slot_key") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
+
+
+@router.post("/slots/{slot_key}/clone", response_model=ProductionSlotDefinitionOut, status_code=201)
+async def clone_catalog_slot(
+    slot_key: str,
+    body: ProductionSlotCloneRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        row = await authoring.clone_slot_definition(
+            db, slot_key, body.model_dump(exclude_unset=True),
+        )
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        code = 404 if str(exc).startswith("unknown_slot_key") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
 
 
 @router.get("/tenants/{workspace_id}/assignments", response_model=list[TenantSlotAssignmentOut])
@@ -172,6 +351,33 @@ async def list_tenant_slot_assignments(
             )
         )
     return out
+
+
+@router.post(
+    "/tenants/{workspace_id}/custom-slots",
+    response_model=ProductionSlotDefinitionOut,
+    status_code=201,
+)
+async def create_tenant_custom_slot(
+    workspace_id: uuid.UUID,
+    body: BrandCustomSlotCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a brand-private slot under the tenant's sector and auto-assign it."""
+    try:
+        sector_id = body.sector_id or await svc.resolve_workspace_sector_id(db, workspace_id)
+        if not sector_id:
+            raise ValueError("workspace sector could not be resolved")
+        payload = body.model_dump(exclude={"sector_id"})
+        payload["sector_id"] = sector_id
+        payload["owner_workspace_id"] = workspace_id
+        payload["enabled_by_default"] = False
+        row = await authoring.create_slot_definition(db, payload, assign_to_owner=True)
+        await db.commit()
+        return _slot_out(row)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/tenants/{workspace_id}/bootstrap", response_model=BootstrapTenantSlotsResponse)

@@ -53,6 +53,10 @@ class ProductionSlotDefinition(CatalogBase):
     enabled_by_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    # NULL = sector-global; set = brand-private custom slot for that workspace.
+    owner_workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True,
+    )
 
 
 class TenantSlotAssignment(BaseModel):

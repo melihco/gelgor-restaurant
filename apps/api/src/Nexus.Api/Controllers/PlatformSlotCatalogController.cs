@@ -35,14 +35,62 @@ public sealed class PlatformSlotCatalogController : PlatformProxyControllerBase
         if (workspaceId == Guid.Empty)
             return Unauthorized();
 
+        var qs = HttpContext.Request.QueryString.HasValue
+            ? HttpContext.Request.QueryString.Value
+            : string.Empty;
         return await ProxyJsonAsync(
             HttpMethod.Get,
             workspaceId,
-            "/api/v1/slot-catalog/sectors",
+            $"/api/v1/slot-catalog/sectors{qs}",
             cancellationToken);
     }
 
-    /// <summary>Slots for a sector (optional query: format, tier).</summary>
+    /// <summary>Create a canonical sector.</summary>
+    [HttpPost("slot-catalog/sectors")]
+    public async Task<IActionResult> CreateSector(CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        return await ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            "/api/v1/slot-catalog/sectors",
+            cancellationToken,
+            forwardBody: true);
+    }
+
+    /// <summary>Patch a canonical sector.</summary>
+    [HttpPatch("slot-catalog/sectors/{sectorId}")]
+    public async Task<IActionResult> PatchSector(
+        string sectorId,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(sectorId);
+        return await ProxyJsonAsync(
+            HttpMethod.Patch,
+            workspaceId,
+            $"/api/v1/slot-catalog/sectors/{safe}",
+            cancellationToken,
+            forwardBody: true);
+    }
+
+    /// <summary>Slots for a sector (query: scope, workspace_id, include_archived).</summary>
     [HttpGet("slot-catalog/sectors/{sectorId}/slots")]
     public async Task<IActionResult> ListSectorSlots(
         string sectorId,
@@ -58,12 +106,165 @@ public sealed class PlatformSlotCatalogController : PlatformProxyControllerBase
             return Unauthorized();
 
         var safe = Uri.EscapeDataString(sectorId);
+        var qs = HttpContext.Request.QueryString.HasValue
+            ? HttpContext.Request.QueryString.Value
+            : string.Empty;
         return await ProxyJsonAsync(
             HttpMethod.Get,
             workspaceId,
-            $"/api/v1/slot-catalog/sectors/{safe}/slots",
+            $"/api/v1/slot-catalog/sectors/{safe}/slots{qs}",
             cancellationToken);
     }
+
+    /// <summary>Create a sector-global or brand-private catalog slot.</summary>
+    [HttpPost("slot-catalog/slots")]
+    public async Task<IActionResult> CreateSlot(CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        return await ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            "/api/v1/slot-catalog/slots",
+            cancellationToken,
+            forwardBody: true);
+    }
+
+    /// <summary>Get one catalog slot by key.</summary>
+    [HttpGet("slot-catalog/slots/{slotKey}")]
+    public async Task<IActionResult> GetSlot(
+        string slotKey,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(slotKey);
+        return await ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/slot-catalog/slots/{safe}",
+            cancellationToken);
+    }
+
+    /// <summary>Patch a catalog slot definition.</summary>
+    [HttpPatch("slot-catalog/slots/{slotKey}")]
+    public async Task<IActionResult> PatchSlot(
+        string slotKey,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(slotKey);
+        return await ProxyJsonAsync(
+            HttpMethod.Patch,
+            workspaceId,
+            $"/api/v1/slot-catalog/slots/{safe}",
+            cancellationToken,
+            forwardBody: true);
+    }
+
+    /// <summary>Archive a catalog slot (soft remove from production defaults).</summary>
+    [HttpPost("slot-catalog/slots/{slotKey}/archive")]
+    public async Task<IActionResult> ArchiveSlot(
+        string slotKey,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(slotKey);
+        return await ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/slots/{safe}/archive",
+            cancellationToken);
+    }
+
+    /// <summary>Re-activate an archived catalog slot.</summary>
+    [HttpPost("slot-catalog/slots/{slotKey}/activate")]
+    public async Task<IActionResult> ActivateSlot(
+        string slotKey,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(slotKey);
+        return await ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/slots/{safe}/activate",
+            cancellationToken);
+    }
+
+    /// <summary>Clone a catalog slot under a new key (optionally brand-private).</summary>
+    [HttpPost("slot-catalog/slots/{slotKey}/clone")]
+    public async Task<IActionResult> CloneSlot(
+        string slotKey,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(slotKey);
+        return await ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/slots/{safe}/clone",
+            cancellationToken,
+            forwardBody: true);
+    }
+
+    /// <summary>Create a brand-private custom slot and auto-assign it.</summary>
+    [HttpPost("slot-catalog/tenants/{workspaceId:guid}/custom-slots")]
+    public Task<IActionResult> CreateTenantCustomSlot(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/custom-slots",
+            cancellationToken,
+            forwardBody: true);
 
     /// <summary>Tenant slot enable/priority assignments.</summary>
     [HttpGet("slot-catalog/tenants/{workspaceId:guid}/assignments")]

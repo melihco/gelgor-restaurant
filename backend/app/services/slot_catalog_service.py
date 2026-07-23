@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -246,7 +246,15 @@ async def list_slot_definitions(
     *,
     sector_id: str | None = None,
     active_only: bool = True,
+    workspace_id: uuid.UUID | None = None,
+    include_brand_owned: bool = False,
 ) -> list[ProductionSlotDefinition]:
+    """List catalog slots.
+
+    By default returns sector-global rows only (owner_workspace_id IS NULL).
+    Pass workspace_id to also include that brand's private custom slots.
+    Pass include_brand_owned=True with no workspace to return all rows (admin).
+    """
     q = select(ProductionSlotDefinition).order_by(
         ProductionSlotDefinition.sector_id,
         ProductionSlotDefinition.sort_order,
@@ -256,6 +264,18 @@ async def list_slot_definitions(
         q = q.where(ProductionSlotDefinition.sector_id == sector_id)
     if active_only:
         q = q.where(ProductionSlotDefinition.status == "active")
+
+    if workspace_id is not None:
+        q = q.where(
+            or_(
+                ProductionSlotDefinition.owner_workspace_id.is_(None),
+                ProductionSlotDefinition.owner_workspace_id == workspace_id,
+            )
+        )
+    elif not include_brand_owned:
+        # Column may be missing until migration 0041 — getattr-safe filter via IS NULL.
+        q = q.where(ProductionSlotDefinition.owner_workspace_id.is_(None))
+
     result = await db.execute(q)
     return list(result.scalars().all())
 
@@ -323,11 +343,20 @@ async def bootstrap_tenant_slot_assignments(
     if not resolved_sector:
         raise ValueError("workspace sector could not be resolved")
 
-    defaults = await list_slot_definitions(db, sector_id=resolved_sector, active_only=True)
+    # Bootstrap only sector-global defaults — never other brands' private slots.
+    defaults = await list_slot_definitions(
+        db,
+        sector_id=resolved_sector,
+        active_only=True,
+        workspace_id=None,
+        include_brand_owned=False,
+    )
     facilities = await _load_brand_slot_facilities(db, workspace_id)
     defaults = [
         s for s in defaults
-        if s.enabled_by_default and _slot_enabled_by_facilities(s.optional_tags, facilities)
+        if s.enabled_by_default
+        and getattr(s, "owner_workspace_id", None) is None
+        and _slot_enabled_by_facilities(s.optional_tags, facilities)
     ]
     if not defaults:
         raise ValueError(f"no default slots for sector {resolved_sector}")
@@ -710,7 +739,12 @@ async def build_tenant_slot_overview(
     )
 
     sector_slots = (
-        await list_slot_definitions(db, sector_id=sector_id, active_only=False)
+        await list_slot_definitions(
+            db,
+            sector_id=sector_id,
+            active_only=False,
+            workspace_id=workspace_id,
+        )
         if sector_id
         else []
     )

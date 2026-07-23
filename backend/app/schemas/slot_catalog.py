@@ -35,6 +35,121 @@ class ProductionSlotDefinitionOut(BaseModel):
     enabled_by_default: bool = True
     sort_order: int = 0
     status: str = "active"
+    """NULL = sector-global; set = brand-private custom slot."""
+    owner_workspace_id: UUID | None = None
+
+
+class CanonicalSectorCreate(BaseModel):
+    sector_id: str
+    label_tr: str
+    label_en: str
+    aliases: list[str] = Field(default_factory=list)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class CanonicalSectorUpdate(BaseModel):
+    label_tr: str | None = None
+    label_en: str | None = None
+    aliases: list[str] | None = None
+    is_active: bool | None = None
+    sort_order: int | None = None
+
+
+class ProductionSlotDefinitionCreate(BaseModel):
+    """Create a sector-global or brand-private catalog slot."""
+
+    sector_id: str
+    """Explicit key, or omit and pass suffix to auto-compose."""
+    slot_key: str | None = None
+    """Suffix after sector_id_ — e.g. brunch_social_post → restaurant_cafe_brunch_social_post."""
+    suffix: str | None = None
+    label_tr: str
+    label_en: str
+    format: Literal["post", "story", "reel", "carousel"]
+    pipeline: str | None = None
+    slot_role: str | None = None
+    design_template_type: str | None = None
+    library_slot_key: str | None = None
+    tier: Literal["standard", "premium"] = "standard"
+    match_signals: dict[str, Any] = Field(default_factory=dict)
+    prompt_pack: dict[str, Any] = Field(default_factory=dict)
+    optional_tags: list[str] = Field(default_factory=list)
+    enabled_by_default: bool = True
+    sort_order: int = 0
+    status: Literal["active", "archived"] = "active"
+    """When set, slot is private to this brand and auto-assigned (unless assign_to_owner=false)."""
+    owner_workspace_id: UUID | None = None
+    assign_to_owner: bool = True
+    priority: int = 50
+    notes: str | None = None
+
+
+class ProductionSlotDefinitionUpdate(BaseModel):
+    label_tr: str | None = None
+    label_en: str | None = None
+    format: Literal["post", "story", "reel", "carousel"] | None = None
+    pipeline: str | None = None
+    slot_role: str | None = None
+    design_template_type: str | None = None
+    library_slot_key: str | None = None
+    tier: Literal["standard", "premium"] | None = None
+    match_signals: dict[str, Any] | None = None
+    prompt_pack: dict[str, Any] | None = None
+    optional_tags: list[str] | None = None
+    enabled_by_default: bool | None = None
+    sort_order: int | None = None
+    status: Literal["active", "archived"] | None = None
+
+
+class ProductionSlotCloneRequest(BaseModel):
+    """Clone an existing slot under a new key (optionally brand-private)."""
+
+    suffix: str | None = None
+    slot_key: str | None = None
+    sector_id: str | None = None
+    label_tr: str | None = None
+    label_en: str | None = None
+    format: Literal["post", "story", "reel", "carousel"] | None = None
+    pipeline: str | None = None
+    slot_role: str | None = None
+    design_template_type: str | None = None
+    library_slot_key: str | None = None
+    tier: Literal["standard", "premium"] | None = None
+    match_signals: dict[str, Any] | None = None
+    prompt_pack: dict[str, Any] | None = None
+    optional_tags: list[str] | None = None
+    enabled_by_default: bool | None = None
+    sort_order: int | None = None
+    owner_workspace_id: UUID | None = None
+    assign_to_owner: bool = True
+    priority: int = 50
+    notes: str | None = None
+
+
+class SlotStatusRequest(BaseModel):
+    status: Literal["active", "archived"]
+
+
+class BrandCustomSlotCreate(BaseModel):
+    """Convenience: create a brand-private slot for a tenant (sector from workspace)."""
+
+    suffix: str
+    label_tr: str
+    label_en: str
+    format: Literal["post", "story", "reel", "carousel"]
+    pipeline: str | None = None
+    slot_role: str | None = None
+    design_template_type: str | None = None
+    library_slot_key: str | None = None
+    tier: Literal["standard", "premium"] = "standard"
+    match_signals: dict[str, Any] = Field(default_factory=dict)
+    prompt_pack: dict[str, Any] = Field(default_factory=dict)
+    optional_tags: list[str] = Field(default_factory=list)
+    sort_order: int = 0
+    priority: int = 50
+    notes: str | None = None
+    sector_id: str | None = None
 
 
 class TenantSlotAssignmentOut(BaseModel):
