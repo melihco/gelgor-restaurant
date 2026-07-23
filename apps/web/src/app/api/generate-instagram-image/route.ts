@@ -1563,8 +1563,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Designed card mode: full art-direction brief (fonts, zones, TEXT contract).
   // Prefer designCardPrompt; accept isDesignCard + prompt as a compatible alias.
   const designCardBrief = String(input.designCardPrompt ?? '').trim()
-    || ((input as { isDesignCard?: boolean }).isDesignCard === true
-      ? String(input.prompt ?? '').trim()
+    || ((input as { isDesignCard?: boolean; prompt?: string }).isDesignCard === true
+      ? String((input as { prompt?: string }).prompt ?? '').trim()
       : '');
   const isDesignedCard = designCardBrief.length > 0;
   const designCardMode = input.designCardMode ?? (input.contentType?.includes('story') ? 'reel' : 'post');

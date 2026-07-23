@@ -499,14 +499,14 @@ export async function renderGeometricDesignedPost(
             .resize(logoSize, logoSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
             .png()
             .toBuffer();
-          out = await sharp(out)
+          out = Buffer.from(await sharp(out)
             .composite([{
               input: logoResized,
               top: dims.height - logoSize - Math.round(dims.height * 0.04),
               left: dims.width - logoSize - Math.round(dims.width * 0.06),
             }])
             .png()
-            .toBuffer();
+            .toBuffer());
         }
       } catch { /* logo optional */ }
     }
