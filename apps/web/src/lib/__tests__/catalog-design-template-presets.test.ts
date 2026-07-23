@@ -177,15 +177,26 @@ describe('resolveSectorSlotsWithPackFallback', () => {
     expect(slots.some((s) => s.slot_key.includes('latte'))).toBe(true);
   });
 
-  it('prefers DB slots when present', () => {
+  it('keeps DB custom slots and fills missing pack keys', () => {
     const dbSlot = mockSlot({
       slot_key: 'coffee_shop_custom_post',
       design_template_type: 'campaign_announcement',
       sector_id: 'coffee_shop',
     });
     const slots = resolveSectorSlotsWithPackFallback('coffee_shop', [dbSlot]);
-    expect(slots).toHaveLength(1);
-    expect(slots[0].slot_key).toBe('coffee_shop_custom_post');
+    expect(slots.some((s) => s.slot_key === 'coffee_shop_custom_post')).toBe(true);
+    expect(slots.length).toBeGreaterThan(1);
+    expect(slots.some((s) => s.slot_key.includes('latte'))).toBe(true);
+  });
+
+  it('fills a stale beach_club DB missing daybed_offer_post', () => {
+    const stale = mockSlot({
+      slot_key: 'beach_club_sunset_ambiance_post',
+      design_template_type: 'venue_showcase',
+      sector_id: 'beach_club',
+    });
+    const slots = resolveSectorSlotsWithPackFallback('beach_club', [stale]);
+    expect(slots.some((s) => s.slot_key === 'beach_club_daybed_offer_post')).toBe(true);
   });
 
   it('disables delivery promo when delivery facility off in pack fallback', () => {

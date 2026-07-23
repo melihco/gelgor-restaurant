@@ -15,6 +15,7 @@ import {
   generateSingleDesignTemplatePreset,
   type GeneratedDesignTemplate,
 } from '@/lib/brand-design-template-engine';
+import { resolveSectorSlotsWithPackFallback } from '@/lib/production-slot-catalog';
 import {
   applyFalProductionOverridesToTheme,
   FAL_SLOT_COMPARE_INTENSITIES,
@@ -131,12 +132,24 @@ export async function POST(
   }
 
   const slotsRes = await fetchCrewBackendJson<ProductionSlotDefinition[]>(
-    `/api/v1/slot-catalog/sectors/${encodeURIComponent(sector)}/slots`,
+    `/api/v1/slot-catalog/sectors/${encodeURIComponent(sector)}/slots?scope=visible&workspace_id=${encodeURIComponent(workspaceId)}`,
     { workspaceId, timeoutMs: 15_000 },
   );
-  const slot = (slotsRes.ok && Array.isArray(slotsRes.data)
-    ? slotsRes.data.find((s) => s.slot_key === catalogSlotKey)
-    : null) ?? null;
+  const dbSlots = slotsRes.ok && Array.isArray(slotsRes.data) ? slotsRes.data : [];
+  // Match Brand Hub gallery: stale/partial DB catalogs still resolve pack slots
+  // (e.g. beach_club_daybed_offer_post added after initial seed).
+  const sectorSlots = resolveSectorSlotsWithPackFallback(sector, dbSlots);
+  let slot = sectorSlots.find((s) => s.slot_key === catalogSlotKey) ?? null;
+
+  if (!slot) {
+    const oneRes = await fetchCrewBackendJson<ProductionSlotDefinition>(
+      `/api/v1/slot-catalog/slots/${encodeURIComponent(catalogSlotKey)}`,
+      { workspaceId, timeoutMs: 10_000 },
+    );
+    if (oneRes.ok && oneRes.data?.slot_key) {
+      slot = oneRes.data;
+    }
+  }
 
   if (!slot) {
     return NextResponse.json({ error: 'catalog_slot_not_found', catalog_slot_key: catalogSlotKey }, { status: 404 });

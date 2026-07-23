@@ -574,7 +574,11 @@ async def sync_slot_catalog_seed(db: AsyncSession = Depends(get_db)):
     """Upsert canonical_sectors + production_slot_definitions from sector_slot_pack (live ops)."""
     from sqlalchemy import select
 
+    from app.services.slot_catalog_bootstrap import ensure_slot_catalog_schema
     from scripts.seed_production_slot_catalog import seed_sectors, seed_slots
+
+    # Prod DBs often miss additive columns (0041 owner_workspace_id) — apply before ORM.
+    await ensure_slot_catalog_schema()
 
     sectors = await seed_sectors(db)
     slots = await seed_slots(db)

@@ -91,14 +91,18 @@ export function resolveSectorSlotsWithPackFallback(
   dbSlots: ProductionSlotDefinition[],
   facilities?: BrandSlotFacilities | Record<string, unknown> | null,
 ): ProductionSlotDefinition[] {
+  const resolvedFacilities = resolveBrandSlotFacilities(facilities);
+  const packSlots = synthesizeSectorSlotDefinitions(sectorId, resolvedFacilities);
   if (dbSlots.length === 0) {
-    const resolvedFacilities = resolveBrandSlotFacilities(facilities);
-    return synthesizeSectorSlotDefinitions(sectorId, resolvedFacilities);
+    return packSlots;
   }
   return enrichDbSlotsWithSectorPackDefaults(sectorId, dbSlots, facilities);
 }
 
-/** Overlay sector-pack prompt_pack (and pipeline hints) when live DB rows are stale. */
+/**
+ * Overlay sector-pack prompt_pack (and pipeline hints) when live DB rows are stale,
+ * and append pack slots that were never seeded into the DB (common after catalog updates).
+ */
 export function enrichDbSlotsWithSectorPackDefaults(
   sectorId: string,
   dbSlots: ProductionSlotDefinition[],
@@ -111,7 +115,9 @@ export function enrichDbSlotsWithSectorPackDefaults(
   if (packSlots.length === 0) return dbSlots;
 
   const packByKey = new Map(packSlots.map((s) => [s.slot_key, s]));
-  return dbSlots.map((slot) => {
+  const dbKeys = new Set(dbSlots.map((s) => s.slot_key));
+
+  const enriched = dbSlots.map((slot) => {
     const pack = packByKey.get(slot.slot_key);
     if (!pack) return slot;
 
@@ -130,6 +136,13 @@ export function enrichDbSlotsWithSectorPackDefaults(
       prompt_pack: { ...dbPack, ...packPack },
     };
   });
+
+  const missing = packSlots.filter((s) => !dbKeys.has(s.slot_key));
+  if (missing.length === 0) return enriched;
+
+  return [...enriched, ...missing].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.slot_key.localeCompare(b.slot_key),
+  );
 }
 
 export interface TenantSlotAssignment {
