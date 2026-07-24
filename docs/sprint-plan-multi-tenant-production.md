@@ -43,7 +43,7 @@ flowchart LR
 | **MT-8** | Orta | BFF path ≠ JWT tenant | **Düzeltildi** — `middleware.ts` + route guard’ları + `remotion/render` body |
 | **MT-9** | Düşük | missionId cross-tenant | **Düzeltildi** — `assertMissionBelongsToWorkspace` |
 | **MT-10** | Orta | Tenant learning üretime yansımıyordu | **Düzeltildi** — `tenant-learning` endpoint + Runway `missionBrief` |
-| **MT-5** | Orta | `NEXT_PUBLIC_USE_DEMO_CONTEXT=true` → sabit demo tenant | **Açık** — prod’da kapalı |
+| **MT-5** | Orta | `NEXT_PUBLIC_USE_DEMO_CONTEXT=true` → sabit demo tenant | **Kapalı** — `isDemoContextEnabled()` prod’da hard-block |
 | **MT-11** | Orta | İki DB mirror; onboarding eksik tenant | **Açık** — Hub onboarding mesajları |
 | **MT-12** | Orta | FD yokken heuristik atama | **Açık** — eski misyonlar; yeni graf FD node ile |
 | **APO-5** | UI | Feed slot + publish schedule | **Kısmen** — alt filtreler + Hub saat/format etiketi |

@@ -29,7 +29,9 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     logger.info("starting_up", env=settings.app_env)
 
-    # In development, auto-create tables (production uses Alembic migrations)
+    # In development, auto-create tables. Additive columns still need
+    # backend/migrations/*.sql (or schema_gate additive DDL) — create_all
+    # does not ALTER existing tables.
     if settings.is_development:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -40,6 +42,19 @@ async def lifespan(app: FastAPI):
 
         from app.services.special_days_seed import seed_special_days
         await seed_special_days()
+
+    # Fail-loud schema gate before factory watchdog / slot drain.
+    from app.services.schema_gate import resolve_schema_gate_mode, run_schema_gate
+
+    schema_mode = resolve_schema_gate_mode(
+        configured=settings.schema_gate_mode,
+        is_development=settings.is_development,
+    )
+    app.state.schema_gate = await run_schema_gate(
+        engine,
+        mode=schema_mode,
+        apply_additive=True,
+    )
 
     if settings.enable_public_api:
         logger.warning(
@@ -67,7 +82,12 @@ async def lifespan(app: FastAPI):
         from app.services.slot_catalog_bootstrap import ensure_slot_catalog_ready
         await ensure_slot_catalog_ready()
     except Exception as exc:
-        logger.warning("slot_catalog_bootstrap_failed", error=str(exc)[:300])
+        # Schema/seed failures must not be silent in staging/prod.
+        if settings.is_development:
+            logger.warning("slot_catalog_bootstrap_failed", error=str(exc)[:300])
+        else:
+            logger.error("slot_catalog_bootstrap_failed", error=str(exc)[:300])
+            raise
 
     # Factory watchdog — resume open production_jobs without Celery Beat (dev + prod safety net).
     async def _factory_watchdog_loop() -> None:
@@ -128,12 +148,29 @@ app.include_router(internal_router, prefix="/internal/v1")
 @app.get("/health")
 async def health():
     from app.services.scheduler_service import get_scheduler_status
+    from app.services.schema_gate import inspect_schema
+
+    schema_cached = getattr(app.state, "schema_gate", None)
+    try:
+        schema_live = await inspect_schema(engine)
+        schema_payload = {
+            "ok": schema_live.ok,
+            "missing": schema_live.missing,
+            "applied_additive_on_boot": bool(
+                getattr(schema_cached, "applied_additive", False)
+            ),
+        }
+    except Exception as exc:
+        schema_payload = {"ok": False, "missing": [], "error": str(exc)[:200]}
+
+    overall = "ok" if schema_payload.get("ok") else "degraded"
     return {
-        "status": "ok",
+        "status": overall,
         "version": "0.1.0",
         "public_api_enabled": settings.enable_public_api,
         "approval_source_of_truth": "nexus-db",
         "scheduler": get_scheduler_status(),
+        "schema": schema_payload,
         "warnings": [
             "Legacy /api/v1 Task/Suggestion approval routes are enabled; keep them isolated from Nexus SuggestedAction approvals."
         ] if settings.enable_public_api else [],

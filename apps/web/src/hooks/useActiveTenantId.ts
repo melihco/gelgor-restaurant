@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { isDemoContextEnabled } from '@/lib/demo-context';
 import { DEFAULT_TENANT_ID, getSessionTenantId } from '@/lib/runtime-config';
 
 /** Effective tenant for API + feed — JWT wins, then demo default, then store. */
@@ -8,7 +9,7 @@ export function resolveActiveTenantId(storeTenantId?: string | null): string | n
   if (typeof window !== 'undefined') {
     const session = getSessionTenantId();
     if (session) return session;
-    if (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true') return DEFAULT_TENANT_ID;
+    if (isDemoContextEnabled()) return DEFAULT_TENANT_ID;
     return null;
   }
   const stored = storeTenantId?.trim();
@@ -33,6 +34,6 @@ export function useActiveTenantId(): string | null {
 
   return (
     sessionTenantId
-    ?? (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true' ? DEFAULT_TENANT_ID : null)
+    ?? (isDemoContextEnabled() ? DEFAULT_TENANT_ID : null)
   );
 }

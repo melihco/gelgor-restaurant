@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-to-a-random-64-char-string"
     internal_api_key: str = "smartagency-internal-dev-key"
     enable_public_api: bool = True
+    # Schema gate: fail|warn|off — empty = warn in development, fail elsewhere.
+    # Catches missing factory columns when manual SQL migrations were not applied.
+    schema_gate_mode: str = ""
 
     # ── Database ─────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://nexus:nexus_dev_2024@localhost:5432/nexus_db"

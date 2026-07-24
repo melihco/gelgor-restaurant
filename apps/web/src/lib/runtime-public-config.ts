@@ -1,4 +1,5 @@
 import { normalizeBackendOrigin, resolveServerApiBaseUrl, resolveServerSignalrBaseUrl } from '@/lib/backend-origin';
+import { isDemoContextEnabled } from '@/lib/demo-context';
 
 export type RuntimePublicConfig = {
   apiUrl: string;
@@ -10,7 +11,8 @@ export function getServerRuntimePublicConfig(): RuntimePublicConfig {
   return {
     apiUrl: resolveServerApiBaseUrl(),
     signalrUrl: resolveServerSignalrBaseUrl(),
-    useDemoContext: process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true',
+    // Prod hard-block — never advertise demo auth in production (MT-5).
+    useDemoContext: isDemoContextEnabled(),
   };
 }
 

@@ -40,7 +40,13 @@ When the Python service is down, `.NET` falls back to mock responses automatical
 
 ## Database Migrations
 
-No Alembic is configured. New ORM columns require a manual SQL migration:
+No Alembic is configured. New ORM columns require a manual SQL migration. Startup runs a **schema gate** (`backend/app/services/schema_gate.py`) that checks factory-critical columns (`production_jobs.slot_key`, slot catalog `owner_workspace_id` / `optional_tags`, etc.), applies safe `ADD COLUMN IF NOT EXISTS` patches, then **fails loud in staging/prod** if still missing (`SCHEMA_GATE_MODE=fail|warn|off`). Verify anytime with:
+
+```bash
+cd backend && source .venv/bin/activate && python scripts/verify_schema.py
+```
+
+`/health` includes a `schema` object (`ok` / `missing`).
 
 ```bash
 # Run against the running postgres

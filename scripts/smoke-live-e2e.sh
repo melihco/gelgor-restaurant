@@ -21,6 +21,15 @@ echo "crew: $CREW_BACKEND_URL"
 echo "api: $NEXUS_API_URL"
 echo "workspace: $SMOKE_WORKSPACE_ID"
 
+# Ops gate first — worker / schema / demo / provider (no tenant UUID).
+if [[ "${RUN_OPS_PREFLIGHT:-1}" == "1" ]]; then
+  echo
+  echo "== Production ops preflight =="
+  WEB_URL="$WEB_URL" CREW_URL="$CREW_BACKEND_URL" \
+    INTERNAL_API_KEY="$INTERNAL_API_KEY" \
+    bash "$ROOT_DIR/scripts/smoke-production-ops-preflight.sh"
+fi
+
 if [[ "$RUN_PRODUCTION_SMOKE" == "1" ]]; then
   echo
   echo "== Production read-only smoke =="

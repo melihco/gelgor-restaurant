@@ -5,6 +5,7 @@ import {
   resolvePublicSignalrUrl,
 } from '@/lib/runtime-public-config';
 import { decodeJwtPayload } from '@/lib/jwt-tenant';
+import { isDemoContextEnabled } from '@/lib/demo-context';
 
 /** Server-side module init; browser code must call getApiBaseUrl(). */
 export const API_BASE_URL = resolveServerApiBaseUrl();
@@ -73,7 +74,7 @@ export const DEFAULT_OFFICE_ID =
 /** Tarayıcıda session JWT var mı veya demo başlıkları kullanılıyor mu (kimlik gerektiren API için). */
 export function hasBrowserApiAuthContext(): boolean {
   if (typeof window === 'undefined') return false;
-  if (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true') return true;
+  if (isDemoContextEnabled()) return true;
   return !!getSessionToken();
 }
 
@@ -109,7 +110,8 @@ export function getRequestContextHeaders(): Record<string, string> {
     }
   }
 
-  if (process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true') {
+  // Prod hard-block: never inject demo tenant even if NEXT_PUBLIC flag is mis-set (MT-5).
+  if (isDemoContextEnabled()) {
     headers['X-Tenant-Id'] = DEFAULT_TENANT_ID;
     headers['X-User-Id'] = DEFAULT_USER_ID;
     headers['X-Office-Id'] = DEFAULT_OFFICE_ID;

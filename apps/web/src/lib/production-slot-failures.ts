@@ -57,6 +57,15 @@ export function humanizeProductionSlotError(error?: string | null): string | nul
   if (lower.includes('image_provider_not_configured')) {
     return 'Görsel sağlayıcı yapılandırılmamış — OPENAI_API_KEY veya FAL_API_KEY gerekli';
   }
+  if (lower.includes('brand_constitution_required')) {
+    return 'Marka Anayasası onaylanmadan üretim yapılamaz';
+  }
+  if (lower.includes('brand_gallery_insufficient')) {
+    return 'Galeri yetersiz — Marka Galeri’ye kullanılabilir foto ekleyin';
+  }
+  if (lower.includes('brand_identity_stub') || lower.includes('brand_context_unavailable')) {
+    return 'Marka bağlamı eksik — onboarding / mirror senkronunu tamamlayın';
+  }
   if (lower.includes('gallery_theme_mismatch') || lower.includes('caption–görsel') || lower.includes('caption-görsel')) {
     return raw.length > 90 ? `${raw.slice(0, 87)}…` : raw;
   }

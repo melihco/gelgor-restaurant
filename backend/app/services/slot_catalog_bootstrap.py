@@ -21,9 +21,13 @@ _CATALOG_TABLES = [
     TenantSlotAssignment.__table__,
 ]
 
-# create_all does not ADD columns on existing tables — keep these in sync with
-# backend/migrations/0041_slot_catalog_owner_workspace.sql
+# create_all does not ADD columns on existing tables — keep in sync with
+# backend/migrations/0038_slot_optional_tags.sql + 0041_slot_catalog_owner_workspace.sql
 _SCHEMA_DDL = (
+    """
+    ALTER TABLE production_slot_definitions
+        ADD COLUMN IF NOT EXISTS optional_tags JSONB NOT NULL DEFAULT '[]'::jsonb
+    """,
     """
     ALTER TABLE production_slot_definitions
         ADD COLUMN IF NOT EXISTS owner_workspace_id UUID NULL

@@ -283,6 +283,10 @@ import {
   resolveArtifactPublishReady,
   stampPublishReadyMetadata,
 } from '@/lib/artifact-publish-ready';
+import {
+  getBrandContextProducePreflight,
+  httpStatusForBrandContextPreflight,
+} from '@/lib/brand-context-produce-preflight';
 import { preferAiCatalogSlotsOnIdeas } from '@/lib/catalog-slot-ai-picker';
 import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
 import {
@@ -610,9 +614,24 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   }
 
   const resolvedBrandName = pctx.brandName;
-  if (!resolvedBrandName || resolvedBrandName === 'Brand') {
-    // Try to proceed with best guess — don't hard-block since pctx.brandName always has a fallback
-    console.warn(`[auto-produce:${workspaceId}] brand name missing — using fallback`);
+  // Dual-DB gate: stub/missing constitution/gallery must not drain a mission.
+  const brandPreflight = getBrandContextProducePreflight({
+    raw: pctx.raw,
+    brandName: resolvedBrandName,
+  });
+  if (!brandPreflight.ok) {
+    console.warn(
+      `[auto-produce:${workspaceId}] brand preflight blocked: ${brandPreflight.code} — ${brandPreflight.reason}`,
+    );
+    return NextResponse.json(
+      attachPipelineTrace({
+        error: brandPreflight.code,
+        detail: brandPreflight.reason,
+        brand: brandPreflight.details,
+        produced: 0,
+      }, pipelineRun),
+      { status: httpStatusForBrandContextPreflight(brandPreflight.code) },
+    );
   }
 
   // Alias to legacy variable names used throughout the rest of the function

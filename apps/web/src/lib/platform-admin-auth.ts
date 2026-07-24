@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { isDemoContextEnabled } from '@/lib/demo-context';
 import { extractTenantIdFromAuthHeader } from '@/lib/jwt-tenant';
 
 const NEXUS_API = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, '');
@@ -29,8 +30,8 @@ function copyForwardHeaders(req: NextRequest): HeadersInit {
 function isPlatformAdminDevBypass(): boolean {
   if (process.env.NODE_ENV === 'production') return false;
   return (
-    process.env.NEXT_PUBLIC_PLATFORM_ADMIN === 'true' ||
-    process.env.NEXT_PUBLIC_USE_DEMO_CONTEXT === 'true'
+    process.env.NEXT_PUBLIC_PLATFORM_ADMIN === 'true'
+    || isDemoContextEnabled()
   );
 }
 
