@@ -120,12 +120,19 @@ export function resolveArtifactPublishReady(input: {
   const fmt = formatOf(meta, content, input.format);
 
   if (meta.publish_blocked === true) {
-    return {
-      ready: false,
-      blockFeed: true,
-      reason: String(meta.publish_block_reason ?? 'Yayın engellendi'),
-      code: 'publish_blocked',
-    };
+    const stampedCode = String(meta.publish_block_code ?? '');
+    // Produce-time used to stamp not_ready when bundleReadyNow=false even after
+    // fal_designer_produced/fal_only — recompute those instead of permanently hiding.
+    const staleNotReady =
+      stampedCode === 'not_ready' && hasDesignedOrAgencyVisual(meta);
+    if (!staleNotReady) {
+      return {
+        ready: false,
+        blockFeed: true,
+        reason: String(meta.publish_block_reason ?? 'Yayın engellendi'),
+        code: 'publish_blocked',
+      };
+    }
   }
 
   const mismatch =
@@ -183,22 +190,17 @@ export function resolveArtifactPublishReady(input: {
     || isDesignedVisualPipeline(pipeline, role)
     || String(meta.production_route ?? '') === 'designed_grafiker';
 
+  // designedVisualReady=false must NOT override fal_designer_produced / fal_only /
+  // grafiker_pass already present on meta (bundleReadyNow is a weaker signal).
   const designedReady = input.designedVisualReady === true || hasDesignedOrAgencyVisual(meta);
   if (designedRequired && !designedReady) {
     return {
       ready: false,
       blockFeed: true,
-      reason: 'Tasarlanmış görsel gerekli — ham galeri feed’e düşmez',
-      code: 'designed_visual_required',
-    };
-  }
-
-  if (input.designedVisualReady === false && designedRequired) {
-    return {
-      ready: false,
-      blockFeed: true,
-      reason: 'Tasarım henüz hazır değil',
-      code: 'not_ready',
+      reason: input.designedVisualReady === false
+        ? 'Tasarım henüz hazır değil'
+        : 'Tasarlanmış görsel gerekli — ham galeri feed’e düşmez',
+      code: input.designedVisualReady === false ? 'not_ready' : 'designed_visual_required',
     };
   }
 

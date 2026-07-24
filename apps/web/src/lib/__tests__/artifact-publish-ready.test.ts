@@ -29,7 +29,7 @@ describe('resolveArtifactPublishReady', () => {
     });
     expect(d.ready).toBe(false);
     expect(d.blockFeed).toBe(true);
-    expect(d.code).toBe('designed_visual_required');
+    expect(d.code).toBe('not_ready');
   });
 
   it('local_products_shop: fal_designer_produced clears designed gate', () => {
@@ -47,6 +47,51 @@ describe('resolveArtifactPublishReady', () => {
       content: { kind: 'instagram_post' },
       format: 'post',
       designedVisualReady: true,
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+    expect(d.code).toBe('ready');
+  });
+
+  it('fal_only still ready when designedVisualReady=false (bundleReadyNow false)', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_only_post',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        fal_only: true,
+        auto_produced: true,
+        source: 'auto-produce',
+      },
+      content: {
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/x.jpg',
+      },
+      format: 'post',
+      designedVisualReady: false,
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+    expect(d.code).toBe('ready');
+  });
+
+  it('recomputes stale not_ready stamp when fal visual flags exist', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_only_post',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        fal_only: true,
+        publish_blocked: true,
+        publish_ready: false,
+        publish_block_code: 'not_ready',
+        publish_block_reason: 'Tasarım henüz hazır değil',
+      },
+      content: {
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/x.jpg',
+      },
+      format: 'post',
     });
     expect(d.ready).toBe(true);
     expect(d.blockFeed).toBe(false);

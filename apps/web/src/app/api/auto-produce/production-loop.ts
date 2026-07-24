@@ -4796,6 +4796,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     ]);
 
     // publishReady SSOT — stamp before save so feed filters see the same decision.
+    // Prefer fal/grafiker success flags over bundleReadyNow alone (bundle flag is
+    // often false for fal_only slots that already produced a designed still).
+    const designedVisualReadyNow = Boolean(
+      bundleReadyNow
+      || metadata.fal_designer_produced === true
+      || metadata.fal_only === true
+      || metadata.fal_video_produced === true
+      || metadata.designed_poster_sync === true
+      || metadata.grafiker_pass === true
+      || Boolean(metadata.fal_design_engine),
+    );
     const publishDecision = resolveArtifactPublishReady({
       meta: metadata,
       content: (() => {
@@ -4805,7 +4816,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           return {};
         }
       })(),
-      designedVisualReady: bundleReadyNow,
+      designedVisualReady: designedVisualReadyNow,
       requireDesignedVisuals: productionProfile.requireDesignedVisuals,
       format: effectiveFmt,
       hasPlayableVideo: isPlayableVideoUrl(videoUrl),
