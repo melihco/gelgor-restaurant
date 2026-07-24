@@ -203,13 +203,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: validation.error }, { status: validation.status });
   }
 
+  const resolvedWorkspaceId = validation.workspaceId;
   const direction = (extraDirection ?? description).trim();
   const ideaCount = clampBriefIdeaCount(count);
-  const tenantId = req.headers.get('X-Tenant-Id') || workspaceId;
+  const tenantId = req.headers.get('X-Tenant-Id') || resolvedWorkspaceId;
   const officeId = req.headers.get('X-Office-Id') || '';
 
   const productionParams: BriefProduceParams = {
-    workspaceId,
+    workspaceId: resolvedWorkspaceId,
     title: title.trim(),
     direction,
     outputType,

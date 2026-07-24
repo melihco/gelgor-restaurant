@@ -81,7 +81,9 @@ export function validateBriefProduceRequest(body: {
   workspaceId?: string;
   title?: string;
   outputType?: string;
-}): { ok: true } | { ok: false; error: string; status: number } {
+}):
+  | { ok: true; workspaceId: string }
+  | { ok: false; error: string; status: number } {
   if (!body.workspaceId) {
     return { ok: false, error: 'workspaceId required', status: 400 };
   }
@@ -91,5 +93,5 @@ export function validateBriefProduceRequest(body: {
   if (!['story', 'reel', 'post'].includes(String(body.outputType ?? 'post'))) {
     return { ok: false, error: 'outputType must be story, reel, or post', status: 400 };
   }
-  return { ok: true };
+  return { ok: true, workspaceId: body.workspaceId };
 }
