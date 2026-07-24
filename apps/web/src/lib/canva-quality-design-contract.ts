@@ -114,12 +114,13 @@ export function buildCanvaQualityDesignContract(input?: {
     'PHOTO LOCK (non-negotiable): Keep the EXACT venue/product photograph from the reference image(s). Same place, same furniture, same subjects. Light color grade OK. FORBIDDEN: inventing a different beach, resort, kitchen, or stock scene.',
     layoutLaw,
     ...geometry,
-    'TYPE FIT (non-negotiable): Every letter of headline/subtitle must sit fully inside its plate/scrim/band with ≥8% padding from that shape\'s edges. If copy is long, SHRINK point size or wrap to max 2–3 short lines — never expand paint past shell ratios, never let glyphs straddle plate→photo edges.',
+    'TYPE FIT (non-negotiable): Every letter of headline/subtitle must sit fully inside its plate/scrim/band with ≥8% padding from that shape\'s edges AND ≥8% inset from the outer frame edges. If copy is long, SHRINK point size or wrap to max 2–3 short lines — never expand paint past shell ratios, never let glyphs straddle plate→photo edges, never flush type to x=0 / y=0.',
+    'EDGE CLIP BAN (non-negotiable): No glyph may touch or cross the canvas border. Side rails / color panels that hug the left or right edge must still inset type ≥8% from the frame — clipped "Ö"/"K"/"S" (e.g. "ınırlı" instead of "Sınırlı") is an automatic fail.',
     'TYPE HIERARCHY: One dominant punchline at intentional scale; optional short support at ~⅓–⅖ headline size with contrasting weight/tracking; no dual competing slogans; no emoji-as-design; no meta labels (POST/STORY/REEL).',
     'TYPE PLACEMENT: Asymmetric / magazine lockup (offset masthead, lower-left, or corner stack) — never the sole look of dead-centered generic serif inside a thin empty rectangular frame.',
     'LOGO: Do NOT draw any brand mark. Leave a quiet empty corner for post-production composite — never over letterforms or the photo hero.',
     colors,
-    'TASTE FAIL (reject this look): amateur text overflow, clipart sun/icons instead of reserved logo zone, Canva sandwich paint slabs, opaque brand-color side/diagonal panel ≥20% with white text on paint, flat opaque header ≥25% with centered white sans only, thin empty border + centered Times as the only craft, system-sans dump, cramped edge-hugging type, foreign scene invention.',
+    'TASTE FAIL (reject this look): amateur text overflow, letters cut by the frame edge, clipart sun/icons instead of reserved logo zone, Canva sandwich paint slabs, opaque brand-color side/diagonal panel ≥20% with white text on paint, flat opaque header ≥25% with centered white sans only, thin empty border + centered Times as the only craft, system-sans dump, cramped edge-hugging type, foreign scene invention.',
     'PASS BAR: Photo-led editorial — type in negative space, thin accent rules. Mid-tier color-panel template-pack energy is a fail.',
   ].join('\n');
 }

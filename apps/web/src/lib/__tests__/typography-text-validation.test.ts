@@ -4,7 +4,11 @@
  * apostrophe makes it an amateur, unusable render.
  */
 import { describe, it, expect } from 'vitest';
-import { hasWordLevelSpellingDeviation, quickTextSimilarity } from '../typography-text-validation';
+import {
+  hasEdgeClippedLeadingGlyph,
+  hasWordLevelSpellingDeviation,
+  quickTextSimilarity,
+} from '../typography-text-validation';
 
 describe('hasWordLevelSpellingDeviation', () => {
   it('rejects misplaced apostrophe inside a word ("Koktey\'ller")', () => {
@@ -36,5 +40,17 @@ describe('hasWordLevelSpellingDeviation', () => {
     // so this gate stays silent; quickTextSimilarity catches the mismatch instead.
     expect(hasWordLevelSpellingDeviation('Mutfak Hikayesi', 'Ferahlatan Kokteyller')).toBe(false);
     expect(quickTextSimilarity('Mutfak Hikayesi', 'Ferahlatan Kokteyller')).toBeLessThan(0.55);
+  });
+});
+
+describe('hasEdgeClippedLeadingGlyph', () => {
+  it('rejects Yula-style left-edge clip ("ınırlı" ← "Sınırlı")', () => {
+    expect(hasEdgeClippedLeadingGlyph('ınırlı Süre', 'Sınırlı Süre')).toBe(true);
+    expect(hasEdgeClippedLeadingGlyph('zel Kampanya', 'Özel Kampanya')).toBe(true);
+  });
+
+  it('accepts complete Turkish copy', () => {
+    expect(hasEdgeClippedLeadingGlyph('Sınırlı Süre', 'Sınırlı Süre')).toBe(false);
+    expect(hasEdgeClippedLeadingGlyph('Özel Kampanya', 'Özel Kampanya')).toBe(false);
   });
 });

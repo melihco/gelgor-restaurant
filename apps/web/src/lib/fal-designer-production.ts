@@ -1166,7 +1166,7 @@ function buildDesignedDesignCardPrompt(
     : '';
   const craftZonesActive = needsCraftLock || agentOwnsLayout;
   const typeContainment = craftZonesActive
-    ? 'TYPE CONTAINMENT (MANDATORY): every letter of headline/subtitle/brand mark stays inside its plate/rail/scrim with ≥8% padding — never straddle a hard color edge onto the photo; shrink type or widen the plate before clipping.'
+    ? 'TYPE CONTAINMENT (MANDATORY): every letter of headline/subtitle/brand mark stays inside its plate/rail/scrim with ≥8% padding from the plate AND ≥8% from the outer frame — never flush to x=0/y=0; never straddle a hard color edge onto the photo; shrink type or widen the plate before clipping.'
     : '';
   const photoWindowCompose = craftZonesActive ? FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE : '';
 

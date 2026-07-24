@@ -147,12 +147,13 @@ async function callVisionCanvasValidator(
     '- "headline_matches" = true ONLY if the detected main/largest text matches the intended headline message',
     '- Transcribe detected text EXACTLY as painted, including any apostrophes, hyphens, or broken words',
     '- Reject if any word is misspelled, split incorrectly, or contains a misplaced apostrophe (e.g. "Koktey\'ller" instead of "Kokteyller")',
+    '- Reject if ANY letter is cut by the frame edge (partial Ö/K/S, truncated first letter). Example FAIL: intended "Sınırlı Süre" but painted/OCR "ınırlı Süre"',
     '- Reject if detected text is mostly platform/meta words: STORY, REEL, POST, INSTAGRAM, TIKTOK, ÜNLÜ, VIRAL',
     '- Reject if detected text is unrelated to the intended headline (invented slogans, random words)',
     '- Reject if the text looks like an internal production note (e.g. "…göstereceğiz", "…paylaşacağız") rather than consumer copy',
     '- Turkish diacritics must be exact — reject ASCII-only misspellings',
     '- Ignore decorative elements and small logo-area gibberish — focus on designed headline/subtitle only',
-    '- If text is partially obscured but readable and matches, still match',
+    '- Partially obscured but COMPLETE letters may still match; edge-clipped/truncated letters must NOT match',
   ].join('\n');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -218,21 +219,25 @@ async function callVisionCanvasValidator(
   const headlineSimilarity = quickTextSimilarity(detectedHeadline, intendedHeadline);
   const lowHeadlineSimilarity = detectedHeadline.length >= 4 && headlineSimilarity < 0.55;
   const spellingDeviation = hasWordLevelSpellingDeviation(detectedHeadline, intendedHeadline);
+  const edgeClippedHeadline = hasEdgeClippedLeadingGlyph(detectedHeadline, intendedHeadline);
   const headlineValid = (parsed.headline_matches ?? parsed.matches) !== false
     && !incompleteHeadline
     && !metaLeak
     && !metaOnly
     && !lowHeadlineSimilarity
-    && !spellingDeviation;
+    && !spellingDeviation
+    && !edgeClippedHeadline;
 
   let subtitleValid = true;
   if (intendedSubtitle) {
     const incompleteSubtitle = isRenderedOverlayTextIncomplete(detectedSubtitle);
     const subtitleSimilarity = quickTextSimilarity(detectedSubtitle, intendedSubtitle);
     const lowSubtitleSimilarity = detectedSubtitle.length >= 4 && subtitleSimilarity < 0.72;
+    const edgeClippedSubtitle = hasEdgeClippedLeadingGlyph(detectedSubtitle, intendedSubtitle);
     subtitleValid = parsed.subtitle_matches !== false
       && !incompleteSubtitle
-      && !lowSubtitleSimilarity;
+      && !lowSubtitleSimilarity
+      && !edgeClippedSubtitle;
   }
 
   return {
@@ -245,19 +250,52 @@ async function callVisionCanvasValidator(
     reason: !headlineValid
       ? (incompleteHeadline
         ? 'detected incomplete headline'
-        : metaOnly
-          ? 'detected meta-only canvas text'
-          : metaLeak
-            ? 'detected platform meta word'
-            : spellingDeviation
-              ? `word-level spelling deviation (detected="${detectedHeadline.slice(0, 40)}")`
-              : lowHeadlineSimilarity
-                ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
-                : parsed.reason)
+        : edgeClippedHeadline
+          ? `edge-clipped headline glyph (detected="${detectedHeadline.slice(0, 40)}")`
+          : metaOnly
+            ? 'detected meta-only canvas text'
+            : metaLeak
+              ? 'detected platform meta word'
+              : spellingDeviation
+                ? `word-level spelling deviation (detected="${detectedHeadline.slice(0, 40)}")`
+                : lowHeadlineSimilarity
+                  ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
+                  : parsed.reason)
       : !subtitleValid
-        ? `subtitle mismatch (detected="${detectedSubtitle.slice(0, 30)}")`
+        ? (hasEdgeClippedLeadingGlyph(detectedSubtitle, intendedSubtitle)
+          ? `edge-clipped subtitle glyph (detected="${detectedSubtitle.slice(0, 30)}")`
+          : `subtitle mismatch (detected="${detectedSubtitle.slice(0, 30)}")`)
         : parsed.reason,
   };
+}
+
+/**
+ * Detect classic left/right frame clips: OCR reads a word missing its first
+ * letter(s) vs intended ("ınırlı" ← "Sınırlı", "zel" ← "Özel").
+ */
+export function hasEdgeClippedLeadingGlyph(detected: string, intended: string): boolean {
+  if (!detected.trim() || !intended.trim()) return false;
+
+  const normalizeWord = (w: string) =>
+    w.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]/gu, '');
+  const words = (s: string) => s.split(/\s+/).map((w) => normalizeWord(w)).filter(Boolean);
+
+  const detectedWords = words(detected);
+  const intendedWords = words(intended);
+  if (detectedWords.length === 0 || intendedWords.length === 0) return false;
+
+  for (const dw of detectedWords) {
+    if (dw.length < 3) continue;
+    if (intendedWords.includes(dw)) continue;
+    const clipped = intendedWords.some((iw) => {
+      if (iw.length < 4) return false;
+      // Missing 1–2 leading chars, rest exact (edge crop / flush rail).
+      if (iw.length - dw.length < 1 || iw.length - dw.length > 2) return false;
+      return iw.endsWith(dw) && !iw.startsWith(dw);
+    });
+    if (clipped) return true;
+  }
+  return false;
 }
 
 /**

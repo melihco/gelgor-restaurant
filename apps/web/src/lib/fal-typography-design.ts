@@ -118,7 +118,7 @@ const ASPECT_LABELS: Record<AspectRatio, string> = {
 };
 
 const IDEOGRAM_SAFE_ZONE =
-  'SAFE ZONE (MANDATORY): ALL text and graphic elements must stay within the inner 85% of the frame — minimum 7.5% margin from every edge. For vertical 9:16, protect the top 12% and bottom 15% from important content. Shrink typography rather than clip letters.';
+  'SAFE ZONE (MANDATORY): ALL text and graphic elements must stay within the inner 85% of the frame — minimum 7.5% margin from every edge. Never flush type to the canvas border (left/right/top/bottom). Side color rails still inset letters ≥8% from the outer frame — clipped leading glyphs ("ınırlı" for "Sınırlı") are forbidden. For vertical 9:16, protect the top 12% and bottom 15% from important content. Shrink typography rather than clip letters.';
 
 // ── Prompt Builder ───────────────────────────────────────────────────────────
 
