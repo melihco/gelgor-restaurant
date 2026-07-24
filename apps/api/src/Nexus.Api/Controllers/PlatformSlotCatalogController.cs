@@ -266,6 +266,95 @@ public sealed class PlatformSlotCatalogController : PlatformProxyControllerBase
             cancellationToken,
             forwardBody: true);
 
+    /// <summary>Single sector detail.</summary>
+    [HttpGet("slot-catalog/sectors/{sectorId}")]
+    public async Task<IActionResult> GetSector(
+        string sectorId,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(sectorId);
+        return await ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/slot-catalog/sectors/{safe}",
+            cancellationToken);
+    }
+
+    /// <summary>Sector slot coverage + brand count.</summary>
+    [HttpGet("slot-catalog/sectors/{sectorId}/coverage")]
+    public async Task<IActionResult> GetSectorCoverage(
+        string sectorId,
+        CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var safe = Uri.EscapeDataString(sectorId);
+        return await ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/slot-catalog/sectors/{safe}/coverage",
+            cancellationToken);
+    }
+
+    /// <summary>Cross-sector slot list (query: sector_id, scope, workspace_id).</summary>
+    [HttpGet("slot-catalog/slots")]
+    public async Task<IActionResult> ListSlots(CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        var qs = HttpContext.Request.QueryString.HasValue
+            ? HttpContext.Request.QueryString.Value
+            : string.Empty;
+        return await ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/slot-catalog/slots{qs}",
+            cancellationToken);
+    }
+
+    /// <summary>Fixed 7-shelf library legend.</summary>
+    [HttpGet("slot-catalog/library-shelves")]
+    public async Task<IActionResult> ListLibraryShelves(CancellationToken cancellationToken)
+    {
+        var denied = await EnsurePlatformAccessAsync(cancellationToken);
+        if (denied is not null)
+            return denied;
+
+        var workspaceId = HttpContext.RequestServices
+            .GetRequiredService<IRequestContext>().TenantId;
+        if (workspaceId == Guid.Empty)
+            return Unauthorized();
+
+        return await ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            "/api/v1/slot-catalog/library-shelves",
+            cancellationToken);
+    }
+
     /// <summary>Tenant slot enable/priority assignments.</summary>
     [HttpGet("slot-catalog/tenants/{workspaceId:guid}/assignments")]
     public Task<IActionResult> GetAssignments(
@@ -301,6 +390,69 @@ public sealed class PlatformSlotCatalogController : PlatformProxyControllerBase
             cancellationToken,
             forwardBody: true);
 
+    [HttpGet("slot-catalog/tenants/{workspaceId:guid}/facilities")]
+    public Task<IActionResult> GetFacilities(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/facilities",
+            cancellationToken);
+
+    [HttpPut("slot-catalog/tenants/{workspaceId:guid}/facilities")]
+    public Task<IActionResult> PutFacilities(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Put,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/facilities",
+            cancellationToken,
+            forwardBody: true);
+
+    [HttpGet("slot-catalog/tenants/{workspaceId:guid}/overview")]
+    public Task<IActionResult> GetOverview(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/overview",
+            cancellationToken);
+
+    [HttpPost("slot-catalog/tenants/{workspaceId:guid}/preview")]
+    public Task<IActionResult> Preview(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/preview",
+            cancellationToken,
+            forwardBody: true);
+
+    [HttpPost("slot-catalog/tenants/{workspaceId:guid}/sync-facilities")]
+    public Task<IActionResult> SyncFacilities(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/sync-facilities",
+            cancellationToken);
+
+    [HttpPost("slot-catalog/tenants/{workspaceId:guid}/reset-defaults")]
+    public Task<IActionResult> ResetDefaults(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/slot-catalog/tenants/{workspaceId:D}/reset-defaults",
+            cancellationToken,
+            forwardBody: true);
+
     /// <summary>List brand design templates (catalog-keyed library).</summary>
     [HttpGet("design-templates/{workspaceId:guid}")]
     public Task<IActionResult> ListDesignTemplates(
@@ -312,6 +464,17 @@ public sealed class PlatformSlotCatalogController : PlatformProxyControllerBase
             $"/api/v1/design-templates/{workspaceId:D}",
             cancellationToken);
 
+    [HttpGet("design-templates/{workspaceId:guid}/{templateId:guid}")]
+    public Task<IActionResult> GetDesignTemplate(
+        Guid workspaceId,
+        Guid templateId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Get,
+            workspaceId,
+            $"/api/v1/design-templates/{workspaceId:D}/{templateId:D}",
+            cancellationToken);
+
     /// <summary>Create a design template.</summary>
     [HttpPost("design-templates/{workspaceId:guid}")]
     public Task<IActionResult> CreateDesignTemplate(
@@ -321,6 +484,17 @@ public sealed class PlatformSlotCatalogController : PlatformProxyControllerBase
             HttpMethod.Post,
             workspaceId,
             $"/api/v1/design-templates/{workspaceId:D}",
+            cancellationToken,
+            forwardBody: true);
+
+    [HttpPost("design-templates/{workspaceId:guid}/bulk")]
+    public Task<IActionResult> BulkDesignTemplates(
+        Guid workspaceId,
+        CancellationToken cancellationToken)
+        => ProxyJsonAsync(
+            HttpMethod.Post,
+            workspaceId,
+            $"/api/v1/design-templates/{workspaceId:D}/bulk",
             cancellationToken,
             forwardBody: true);
 

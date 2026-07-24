@@ -85,11 +85,6 @@ export function BrandSpecialDaysPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        Ülke ve sektörünüze göre yaklaşan bayram, kutlama ve sektör günleri.
-        Mission otomatik bu günleri önerebilir; tasarım ipuçları üretimde kullanılır.
-      </p>
-
       {data && (
         <p style={{ margin: 0, fontSize: 11, color: t.textSecondary }}>
           Takvim: {data.country_code} · Sektör: {data.sector.replace(/_/g, ' ')}

@@ -25,3 +25,9 @@ def test_resolve_factory_drain_batch_clamps_range(monkeypatch) -> None:
     monkeypatch.setenv("PRODUCTION_FACTORY_DRAIN_BATCH", "99")
 
     assert resolve_factory_drain_batch({}) == 5
+
+
+def test_resolve_factory_drain_batch_ignores_non_dict_engines(monkeypatch) -> None:
+    monkeypatch.setenv("PRODUCTION_FACTORY_DRAIN_BATCH", "2")
+    assert resolve_factory_drain_batch({"production_engines": "broken"}) == 2
+    assert resolve_factory_drain_batch({"production_engines": {"throughput": "nope"}}) == 2

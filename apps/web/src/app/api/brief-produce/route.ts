@@ -13,14 +13,19 @@
  * run after the response via Next.js `after()`.
  */
 import { NextRequest, NextResponse, after } from 'next/server';
-import type { ParsedIdea } from '../auto-produce/caption-publish-resolver';
-import { resolveBriefIntent, type BriefOutputType } from '@/lib/brief-intent-resolver';
+import { type BriefOutputType } from '@/lib/brief-intent-resolver';
 import { interpretBriefAsBrand, type BrandCreativeDirectorOutput } from '@/lib/brand-creative-director';
+import {
+  buildBriefProduceIdeas,
+  clampBriefIdeaCount,
+  validateBriefProduceRequest,
+} from '@/lib/brief-produce-plan';
 import { serverConfig } from '@/lib/server-config';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+/** Sync brief-produce waits on full auto-produce (image gen can exceed 5 min). */
+export const maxDuration = 480;
 
 interface BriefProduceParams {
   workspaceId: string;
@@ -38,60 +43,6 @@ interface BriefProduceResult {
   artifacts: Array<Record<string, unknown>>;
   brandInterpretation: string | null;
   error?: string;
-}
-
-function mapContentType(outputType: BriefOutputType): string {
-  switch (outputType) {
-    case 'story': return 'story';
-    case 'reel':  return 'reel';
-    case 'post':  return 'feed_post';
-    default:      return 'feed_post';
-  }
-}
-
-function attachUserPhotos(idea: ParsedIdea, photoUrls: string[], slotIndex: number): void {
-  if (photoUrls.length === 0) return;
-  idea.attached_photo_urls = photoUrls;
-  idea.force_attached_photos = true;
-  idea.selected_gallery_url = photoUrls[slotIndex % photoUrls.length];
-}
-
-function buildIdeas(
-  title: string,
-  extraDirection: string,
-  outputType: BriefOutputType,
-  count: number,
-  photoUrls: string[],
-  bcd: BrandCreativeDirectorOutput | null,
-): ParsedIdea[] {
-  const contentType = mapContentType(outputType);
-  return Array.from({ length: count }, (_, i) => {
-    if (bcd) {
-      const idea: ParsedIdea = {
-        headline: bcd.headline,
-        caption_draft: bcd.caption,
-        content_type: contentType,
-        visual_direction: bcd.visualDirection,
-        strategic_purpose: bcd.strategicPurpose,
-        mood: bcd.mood,
-        scene_hint: bcd.sceneHint,
-        motion_cue: bcd.motionCue,
-      };
-      attachUserPhotos(idea, photoUrls, i);
-      return idea;
-    }
-    const intent = resolveBriefIntent({ title, extraDirection, outputType });
-    const idea: ParsedIdea = {
-      headline: intent.headline,
-      caption_draft: intent.caption,
-      content_type: contentType,
-      visual_direction: intent.visualDirection,
-      strategic_purpose: intent.strategicPurpose,
-      mood: intent.mood,
-    };
-    attachUserPhotos(idea, photoUrls, i);
-    return idea;
-  });
 }
 
 async function loadBrandCreativeDirector(
@@ -147,7 +98,14 @@ async function executeBriefProduction(params: BriefProduceParams): Promise<Brief
   } = params;
 
   const bcd = await loadBrandCreativeDirector(workspaceId, title, direction, outputType);
-  const ideas = buildIdeas(title, direction, outputType, ideaCount, photoUrls, bcd);
+  const ideas = buildBriefProduceIdeas({
+    title,
+    extraDirection: direction,
+    outputType,
+    count: ideaCount,
+    photoUrls,
+    bcd,
+  });
 
   const BASE = getNextjsInternalOrigin();
   const INTERNAL_KEY = serverConfig.internal.apiKey;
@@ -169,7 +127,7 @@ async function executeBriefProduction(params: BriefProduceParams): Promise<Brief
       bundleCards: false,
       skipArtifactDedupe: false,
     }),
-    signal: AbortSignal.timeout(295_000),
+    signal: AbortSignal.timeout(450_000),
   });
 
   const data = await res.json() as Record<string, unknown>;
@@ -240,18 +198,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     background = false,
   } = body;
 
-  if (!workspaceId) {
-    return NextResponse.json({ error: 'workspaceId required' }, { status: 400 });
-  }
-  if (!title.trim()) {
-    return NextResponse.json({ error: 'title required' }, { status: 400 });
-  }
-  if (!['story', 'reel', 'post'].includes(outputType)) {
-    return NextResponse.json({ error: 'outputType must be story, reel, or post' }, { status: 400 });
+  const validation = validateBriefProduceRequest({ workspaceId, title, outputType });
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error }, { status: validation.status });
   }
 
   const direction = (extraDirection ?? description).trim();
-  const ideaCount = Math.min(Math.max(parseInt(String(count ?? 1), 10), 1), 10);
+  const ideaCount = clampBriefIdeaCount(count);
   const tenantId = req.headers.get('X-Tenant-Id') || workspaceId;
   const officeId = req.headers.get('X-Office-Id') || '';
 

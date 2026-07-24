@@ -37,3 +37,29 @@ export function isNonRetryableProductionFailure(
   if (!msg) return false;
   return GALLERY_THEME_MISMATCH_MESSAGE_MARKERS.some((marker) => msg.includes(marker));
 }
+
+/** Short operator-facing copy for flip cards / checklist (keeps technical detail when useful). */
+export function humanizeProductionSlotError(error?: string | null): string | null {
+  const raw = String(error ?? '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (lower.includes('aylık kredi limiti') || lower.includes('sa kredi')) {
+    return raw.length > 90 ? `${raw.slice(0, 87)}…` : raw;
+  }
+  if (lower.includes('fal.ai balance exhausted') || lower.includes('exhausted balance')) {
+    return 'fal.ai bakiyesi tükendi — billing’den yükleme gerekir';
+  }
+  if (lower.includes('gallery_theme_mismatch') || lower.includes('caption–görsel') || lower.includes('caption-görsel')) {
+    return raw.length > 90 ? `${raw.slice(0, 87)}…` : raw;
+  }
+  if (lower.includes('library_template_required') || lower.includes('no renderable template')) {
+    return 'Marka şablonu yok — Şablon Kütüphanesi’nden önizleme üretin';
+  }
+  if (lower.includes('erişilemiyor') || lower.includes('expired') || lower.includes('geçersiz url')) {
+    return 'Galeri fotoğrafı erişilemiyor — Galeri’den yenileyin';
+  }
+  if (lower.includes('production_in_flight') || lower.includes('enqueue_failed')) {
+    return 'Üretim kuyruğu meşgul — tekrar deneyin';
+  }
+  return raw.length > 90 ? `${raw.slice(0, 87)}…` : raw;
+}

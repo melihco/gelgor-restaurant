@@ -34,12 +34,31 @@ function isPlatformAdminDevBypass(): boolean {
   );
 }
 
+function platformAdminEmailAllowlist(): string[] {
+  const raw = process.env.PLATFORM_ADMIN_EMAILS?.trim() || '';
+  if (!raw) return [];
+  return raw
+    .split(/[,;\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.includes('@'));
+}
+
+function isAllowlistedPlatformAdminEmail(email: string | null | undefined): boolean {
+  const list = platformAdminEmailAllowlist();
+  if (!list.length || !email) return false;
+  return list.includes(email.trim().toLowerCase());
+}
+
 /** Client + server — platform admin yüzeyine erişim kontrolü. */
-export function canAccessPlatformAdmin(permissions: string[] | null | undefined): boolean {
+export function canAccessPlatformAdmin(
+  permissions: string[] | null | undefined,
+  email?: string | null,
+): boolean {
   if (isPlatformAdminDevBypass()) return true;
+  if (isAllowlistedPlatformAdminEmail(email)) return true;
 
   const perms = permissions ?? [];
-  if (perms.includes('users.manage')) return true;
+  if (perms.includes('platform.operate') || perms.includes('users.manage')) return true;
   const flagEnabled = process.env.NEXT_PUBLIC_PLATFORM_ADMIN === 'true';
   if (flagEnabled && perms.includes('operations.view')) return true;
   return false;
@@ -105,7 +124,7 @@ export async function assertPlatformAdminAccess(
       headers: { 'Content-Type': 'application/json' },
     });
   }
-  if (!canAccessPlatformAdmin(user.permissions)) {
+  if (!canAccessPlatformAdmin(user.permissions, user.email)) {
     if (isPlatformAdminDevBypass()) return { user };
     return new Response(JSON.stringify({ error: 'Forbidden', code: 'platform_admin_required' }), {
       status: 403,

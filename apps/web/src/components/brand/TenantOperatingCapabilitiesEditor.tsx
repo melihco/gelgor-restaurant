@@ -124,9 +124,6 @@ export function TenantOperatingCapabilitiesEditor({
     return (
       <div>
         <TenantGalleryPolicyBanner profile={resolved} variant="mobile" theme={theme} />
-        <p style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.55, marginBottom: 12 }}>
-          Sektörünüze uygun içerik ve galeri yeteneklerini seçin. Cafe/restoranlarda müşteri fotoğrafı varsayılan olarak kapalıdır.
-        </p>
         {contentCaps.length > 0 && (
           <>
             <p style={{ fontSize: 11, fontWeight: 700, color: theme.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -150,7 +147,6 @@ export function TenantOperatingCapabilitiesEditor({
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 600, color: theme.textPrimary }}>{cap.label}</div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>{cap.description}</div>
                   </button>
                 );
               })}
@@ -180,7 +176,6 @@ export function TenantOperatingCapabilitiesEditor({
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 600, color: theme.textPrimary }}>{cap.label}</div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>{cap.description}</div>
                   </button>
                 );
               })}

@@ -272,6 +272,7 @@ import {
   summarizeCatalogSlotStampCoverage,
   type BrandActiveSlotSet,
 } from '@/lib/brand-active-slot-resolver';
+import { preferAiCatalogSlotsOnIdeas } from '@/lib/catalog-slot-ai-picker';
 import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
 import {
   buildCalendarFalSceneHint,
@@ -736,9 +737,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     ? brandActiveSlots.slots.some((s) => s.format === 'post' && s.hasTemplate)
     : templateLibrary.slots.some((s) => s.enabled && s.format === 'post');
 
+  // New Brief / ad-hoc: AI picks one enabled catalog slot before heuristic stamp.
+  // Preferred `catalog_slot_key` wins in matchIdeaToBrandCatalogSlot.
+  let ideasForStamp = toProcess as Record<string, unknown>[];
+  if (adHocBrief && brandActiveSlots) {
+    ideasForStamp = await preferAiCatalogSlotsOnIdeas({
+      ideas: ideasForStamp,
+      activeSlots: brandActiveSlots,
+      sector: brandSector || undefined,
+    });
+  }
+
   const brandAwareToProcess = brandActiveSlots
-    ? stampIdeasWithBrandCatalogSlots(toProcess as Record<string, unknown>[], brandActiveSlots)
-    : (toProcess as Record<string, unknown>[]);
+    ? stampIdeasWithBrandCatalogSlots(ideasForStamp, brandActiveSlots)
+    : ideasForStamp;
 
   const routeBaseUrl = getNextjsInternalOrigin();
 
@@ -2629,7 +2641,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Product SKU + nightlife/food/beauty — isHardCaptionPhotoConflict alone misses
     // bal↔zeytinyağı and unlabeled packaging that still ships the wrong product.
     let hardThemeConflict = Boolean(
-      pickedFromBrandGallery
+      // New Brief user uploads are intentional — do not hard-veto the locked photo.
+      !forceAttachedPhotos
+      && pickedFromBrandGallery
       && resolvedReferenceUrl
       && isHardGalleryThemeMismatch(
         {
@@ -4606,6 +4620,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...(resolvedCatalogSlotKey ? { catalog_slot_key: resolvedCatalogSlotKey } : {}),
       ...(typeof ideaRecord.catalog_slot_label === 'string' && ideaRecord.catalog_slot_label
         ? { catalog_slot_label: ideaRecord.catalog_slot_label }
+        : {}),
+      ...(typeof ideaRecord.catalog_slot_picker === 'string' && ideaRecord.catalog_slot_picker
+        ? {
+          catalog_slot_picker: ideaRecord.catalog_slot_picker,
+          ...(typeof ideaRecord.catalog_slot_picker_reason === 'string'
+            && ideaRecord.catalog_slot_picker_reason
+            ? { catalog_slot_picker_reason: ideaRecord.catalog_slot_picker_reason }
+            : {}),
+        }
         : {}),
       ...(resolvedProductionSlotKey ? { library_slot_key: resolvedProductionSlotKey } : {}),
       visual_policy: galleryOnlyVisual ? 'gallery_only' : 'designed',

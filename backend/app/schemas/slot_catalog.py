@@ -329,3 +329,29 @@ class SyncFacilitiesToAssignmentsResponse(BaseModel):
     disabled: int
     disabled_slot_keys: list[str] = Field(default_factory=list)
     coverage: CoverageOut
+
+
+class SectorShelfCoverageOut(BaseModel):
+    key: str
+    label_tr: str
+    label_en: str
+    format: str
+    sort_order: int
+    active_count: int = 0
+
+
+class SectorCoverageOut(BaseModel):
+    """Admin sector management — slot mix + brand count for one sector."""
+
+    sector_id: str
+    label_tr: str
+    label_en: str
+    is_active: bool
+    total_slots: int
+    active_slots: int
+    archived_slots: int
+    enabled_by_default_count: int
+    by_format: dict[str, int] = Field(default_factory=dict)
+    by_design_template_type: dict[str, int] = Field(default_factory=dict)
+    shelves: list[SectorShelfCoverageOut] = Field(default_factory=list)
+    brand_count: int = 0

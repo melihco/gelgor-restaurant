@@ -777,12 +777,6 @@ export function BrandFalTemplateGalleryPanel({
       }}
       />
 
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        Marka DNA, sektör, vibe, galeri analizi ve tasarım yoğunluğu ayarlarıyla üretilen fal.ai şablon seti.
-        Mission üretiminde aynı marka reçetesi korunur; fotoğraf, metin ve slot amacı değişir.
-        İhtiyacınız olmayan slotları (ör. havuz yoksa havuz slotları) kapatabilirsiniz; üretim yalnızca açık slotlara eşlenir.
-      </p>
-
       {needsPreviewGeneration && (
         <div style={{
           padding: '12px 14px',

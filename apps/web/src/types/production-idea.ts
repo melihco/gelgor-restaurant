@@ -99,6 +99,17 @@ export interface ProductionIdea {
   brandConfidence?: number;
   /** Anti-pattern / learning flags raised during ideation. */
   flags?: string[];
+
+  // ── Ad-hoc New Brief (must survive ICS round-trip) ─────────────────────────────
+  /** User-uploaded / locked reference photos for New Brief. */
+  attachedPhotoUrls?: string[];
+  /** When true, production must not rematch gallery — use attached photos only. */
+  forceAttachedPhotos?: boolean;
+  mood?: string;
+  sceneHint?: string;
+  visualDirection?: string;
+  motionCue?: string;
+  strategicPurpose?: string;
 }
 
 /** Fields that must be present and non-empty for an idea to count as ICS-complete. */

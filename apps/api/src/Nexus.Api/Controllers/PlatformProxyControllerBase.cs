@@ -42,14 +42,22 @@ public abstract class PlatformProxyControllerBase : ControllerBase
         Guid workspaceId,
         string relativePath,
         CancellationToken cancellationToken,
-        bool forwardBody = false)
+        bool forwardBody = false,
+        string? overrideBodyJson = null)
     {
         var denied = await EnsurePlatformAccessAsync(cancellationToken);
         if (denied is not null)
             return denied;
 
         HttpContent? content = null;
-        if (forwardBody
+        if (!string.IsNullOrWhiteSpace(overrideBodyJson)
+            && (HttpMethods.IsPost(method.Method)
+                || HttpMethods.IsPut(method.Method)
+                || HttpMethods.IsPatch(method.Method)))
+        {
+            content = new StringContent(overrideBodyJson, Encoding.UTF8, "application/json");
+        }
+        else if (forwardBody
             && (HttpMethods.IsPost(method.Method)
                 || HttpMethods.IsPut(method.Method)
                 || HttpMethods.IsPatch(method.Method)))
@@ -62,7 +70,9 @@ public abstract class PlatformProxyControllerBase : ControllerBase
             content = new StringContent(raw, Encoding.UTF8, Request.ContentType ?? "application/json");
         }
 
-        var qs = Request.QueryString.HasValue ? Request.QueryString.Value : string.Empty;
+        var qs = string.IsNullOrWhiteSpace(overrideBodyJson) && Request.QueryString.HasValue
+            ? Request.QueryString.Value
+            : string.Empty;
         var path = relativePath + qs;
 
         using var upstream = await Crew.SendAsync(method, path, workspaceId, content, cancellationToken);

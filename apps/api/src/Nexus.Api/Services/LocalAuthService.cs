@@ -12,6 +12,15 @@ public interface ILocalAuthService
     string HashPassword(string password);
     bool VerifyPassword(string password, string passwordHash);
     string CreateSessionToken(User user, Guid officeId);
+    /// <summary>
+    /// Short-lived JWT for platform impersonation into a target tenant user.
+    /// Extra claims typically include impersonator_user_id / impersonator_tenant_id.
+    /// </summary>
+    string CreateSessionToken(
+        User user,
+        Guid officeId,
+        IReadOnlyDictionary<string, object?> extraClaims,
+        int sessionMinutes);
     bool TryValidateToken(string token, out ClaimsPrincipal principal);
     void AppendSessionCookie(HttpResponse response, string token);
     void ClearSessionCookie(HttpResponse response);
@@ -35,9 +44,21 @@ public sealed class LocalAuthService : ILocalAuthService
         Pbkdf2PasswordHasher.VerifyPassword(password, passwordHash);
 
     public string CreateSessionToken(User user, Guid officeId)
+        => CreateSessionToken(
+            user,
+            officeId,
+            extraClaims: null,
+            sessionMinutes: _configuration.GetValue<int?>("Auth:SessionMinutes") ?? 60 * 12);
+
+    public string CreateSessionToken(
+        User user,
+        Guid officeId,
+        IReadOnlyDictionary<string, object?>? extraClaims,
+        int sessionMinutes)
     {
         var now = DateTimeOffset.UtcNow;
-        var expiresAt = now.AddMinutes(_configuration.GetValue<int?>("Auth:SessionMinutes") ?? 60 * 12);
+        var minutes = Math.Clamp(sessionMinutes, 5, 60 * 24);
+        var expiresAt = now.AddMinutes(minutes);
         var header = new Dictionary<string, object>
         {
             ["alg"] = "HS256",
@@ -55,6 +76,15 @@ public sealed class LocalAuthService : ILocalAuthService
             ["iat"] = now.ToUnixTimeSeconds(),
             ["exp"] = expiresAt.ToUnixTimeSeconds()
         };
+
+        if (extraClaims is not null)
+        {
+            foreach (var (key, value) in extraClaims)
+            {
+                if (string.IsNullOrWhiteSpace(key) || value is null) continue;
+                payload[key] = value;
+            }
+        }
 
         var unsignedToken = $"{Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(header))}.{Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload))}";
         var signature = Sign(unsignedToken);

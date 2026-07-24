@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.services.scheduled_template_service import (
     is_template_active_now,
@@ -82,3 +83,35 @@ def test_resolve_active_templates_for_feed_keeps_archived_out_and_marks_active()
     assert [item.name for item in feed] == ["Active", "Paused"]
     assert feed[0].is_active_now is True
     assert feed[1].is_active_now is False
+
+
+def test_invalid_timezone_falls_back_to_istanbul() -> None:
+    # 07:30 UTC = 10:30 Europe/Istanbul in summer — active after 10:00.
+    assert is_template_active_now(
+        template(timezone="Not/AZone", schedule_time="10:00"),
+        dt_utc(2026, 6, 20, 7, 30),
+    )
+
+
+def test_invalid_schedule_time_defaults_to_ten() -> None:
+    assert is_template_active_now(
+        template(schedule_time="bad"),
+        dt_utc(2026, 6, 20, 7, 30),
+    )
+    assert not is_template_active_now(
+        template(schedule_time="bad"),
+        dt_utc(2026, 6, 20, 6, 30),
+    )
+
+
+def test_invalid_end_time_keeps_24h_window() -> None:
+    assert is_template_active_now(
+        template(schedule_time="10:00", schedule_end_time="xx:yy"),
+        dt_utc(2026, 6, 20, 12, 0),
+    )
+
+
+def test_is_template_active_now_uses_current_time_when_omitted() -> None:
+    with patch("app.services.scheduled_template_service.datetime") as mock_dt:
+        mock_dt.now.return_value = dt_utc(2026, 6, 20, 6, 30)  # 09:30 Istanbul
+        assert not is_template_active_now(template(schedule_time="10:00"))

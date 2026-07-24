@@ -101,11 +101,6 @@ export function BrandProductShowcasePanel({
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-        Ürün fotoğrafını koruyarak arka planı AI ile değiştirir. Her mission&apos;a ek post + story slotları ekler.
-        Logo ve ambalaj yazıları değiştirilmez.
-      </div>
-
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '12px 14px', borderRadius: 14, marginBottom: 14,
@@ -114,11 +109,11 @@ export function BrandProductShowcasePanel({
       }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Ürün Vitrin Üretimi</div>
-          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
-            {active.enabled
-              ? `Mission başına ${active.posts_per_mission} post + ${active.stories_per_mission} story`
-              : 'Kapalı — standart mission slotları kullanılır'}
-          </div>
+          {active.enabled ? (
+            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+              {active.posts_per_mission} post + {active.stories_per_mission} story
+            </div>
+          ) : null}
         </div>
         <button
           type="button"
@@ -165,7 +160,6 @@ export function BrandProductShowcasePanel({
                 <div style={{ fontSize: 13, fontWeight: active.background_style === opt.id ? 700 : 500, color: t.textPrimary }}>
                   {opt.label}
                 </div>
-                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{opt.desc}</div>
               </button>
             ))}
           </div>

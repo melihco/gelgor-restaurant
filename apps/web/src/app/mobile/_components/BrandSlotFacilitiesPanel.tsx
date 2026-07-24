@@ -284,14 +284,8 @@ export function BrandSlotFacilitiesPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, marginBottom: 4 }}>
-          Tesis özellikleri
-        </div>
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
-          İşletmenizde olmayan özellikleri kapatın. Kaydettiğinizde ilgili içerik slotları
-          üretimden çıkarılır (ör. havuz yoksa havuz içerikleri).
-        </p>
+      <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary }}>
+        Tesis özellikleri
       </div>
 
       {overview.using_sector_defaults && overview.assignment_row_count === 0 && (
@@ -358,9 +352,6 @@ export function BrandSlotFacilitiesPanel({
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>
                   {opt.label_tr}
-                </div>
-                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>
-                  {on ? 'Var — ilgili içerikler açık' : (opt.hint_tr || 'Kapalı')}
                 </div>
               </div>
               <div

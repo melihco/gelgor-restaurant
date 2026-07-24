@@ -112,7 +112,10 @@ export default function PlatformAdminPage() {
   }, [resolvedTenantId, setTenantFromSession]);
 
   const allowed = useMemo(
-    () => canAccessPlatformAdmin(securityQuery.data?.permissions),
+    () => canAccessPlatformAdmin(
+      securityQuery.data?.permissions,
+      securityQuery.data?.email,
+    ),
     [securityQuery.data?.permissions],
   );
 

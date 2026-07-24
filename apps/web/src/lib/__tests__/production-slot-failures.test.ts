@@ -1,35 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GALLERY_THEME_MISMATCH_CODE,
-  galleryThemeMismatchMessage,
+  humanizeProductionSlotError,
   isNonRetryableProductionFailure,
-} from '@/lib/production-slot-failures';
+} from '../production-slot-failures';
 
-describe('production-slot-failures', () => {
-  it('galleryThemeMismatchMessage uses stable Turkish copy', () => {
-    expect(galleryThemeMismatchMessage('Erken hasat zeytinyağı')).toBe(
-      'Caption–görsel tema çatışması — "Erken hasat zeytinyağı" için uygun galeri fotoğrafı yok',
-    );
+describe('humanizeProductionSlotError', () => {
+  it('keeps monthly credit limit message', () => {
+    const msg = 'Aylık kredi limiti doldu (25,277 / 25,000 SA Kredi)';
+    expect(humanizeProductionSlotError(msg)).toBe(msg);
   });
 
-  it('appends a machine-readable stage tag when provided', () => {
-    expect(galleryThemeMismatchMessage('Bal Çeşitlerimiz', 'judge_reject')).toBe(
-      'Caption–görsel tema çatışması — "Bal Çeşitlerimiz" için uygun galeri fotoğrafı yok [aşama: judge_reject]',
-    );
-    expect(galleryThemeMismatchMessage('Reçel', 'hard_veto')).toContain('[aşama: hard_veto]');
-  });
-
-  it('isNonRetryableProductionFailure matches errorCode and message markers', () => {
+  it('maps fal balance exhaustion', () => {
     expect(
-      isNonRetryableProductionFailure(
-        galleryThemeMismatchMessage('Reçel'),
-        GALLERY_THEME_MISMATCH_CODE,
+      humanizeProductionSlotError('fal.ai balance exhausted — top up at fal.ai/dashboard/billing'),
+    ).toMatch(/fal\.ai bakiyesi/);
+  });
+
+  it('maps missing library template', () => {
+    expect(
+      humanizeProductionSlotError(
+        'library_template_required: no renderable template for catalog_slot_key=x',
       ),
-    ).toBe(true);
-    // Stage-tagged messages must stay non-retryable (marker still present).
+    ).toMatch(/Marka şablonu yok/);
+  });
+});
+
+describe('isNonRetryableProductionFailure', () => {
+  it('detects gallery theme mismatch', () => {
     expect(
-      isNonRetryableProductionFailure(galleryThemeMismatchMessage('Bal', 'judge_reject')),
+      isNonRetryableProductionFailure('Caption–görsel tema çatışması — "Brunch" için uygun galeri fotoğrafı yok'),
     ).toBe(true);
-    expect(isNonRetryableProductionFailure('Remotion 422')).toBe(false);
   });
 });

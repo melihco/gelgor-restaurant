@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import Tenant
@@ -23,8 +23,26 @@ async def get_tenant_by_slug(db: AsyncSession, slug: str) -> Tenant | None:
     return result.scalar_one_or_none()
 
 
-async def list_tenants(db: AsyncSession) -> list[Tenant]:
-    result = await db.execute(select(Tenant).where(Tenant.is_active == True).order_by(Tenant.name))
+async def list_tenants(
+    db: AsyncSession,
+    *,
+    q: str | None = None,
+    include_inactive: bool = False,
+) -> list[Tenant]:
+    stmt = select(Tenant).order_by(Tenant.name)
+    if not include_inactive:
+        stmt = stmt.where(Tenant.is_active.is_(True))
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        stmt = stmt.where(
+            or_(
+                Tenant.name.ilike(like),
+                Tenant.slug.ilike(like),
+                Tenant.contact_email.ilike(like),
+            )
+        )
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 

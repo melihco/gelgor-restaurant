@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { T } from '@/app/mobile/_components/theme-context';
 import { fetchTenantBff } from '@/lib/bff-fetch';
 import {
@@ -12,6 +12,7 @@ import {
   type FalDesignChannel,
   type FalDesignIntensityLevel,
 } from '@/lib/fal-design-intensity';
+import { BrandChromeCombobox } from '@/components/brand/BrandChromeCombobox';
 
 type ThemeRecord = Record<string, unknown>;
 
@@ -88,89 +89,33 @@ export function BrandFalDesignIntensityPanel({
     }
   };
 
+  const intensityOptions = useMemo(
+    () => FAL_DESIGN_INTENSITY_LEVELS.map((level) => {
+      const meta = FAL_DESIGN_INTENSITY_LABELS[level];
+      return {
+        value: level,
+        label: meta.tr,
+        description: meta.desc,
+        badge: meta.level,
+      };
+    }),
+    [],
+  );
+
   const controlsLocked = saving || !tenantId;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        fal.ai tasarımlarında fotoğraf ile tipografi arasındaki dengeyi kanal bazında ayarlayın.
-        Varsayılan <strong style={{ color: t.textSecondary }}>Dengeli</strong> mevcut üretim kalitesine karşılık gelir.
-      </p>
-
       {(['story', 'reel', 'post'] as FalDesignChannel[]).map((channel) => (
-        <div key={channel}>
-          <p style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: t.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            margin: '0 0 8px',
-          }}
-          >
-            {FAL_DESIGN_CHANNEL_LABELS[channel]}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {FAL_DESIGN_INTENSITY_LEVELS.map((level) => {
-              const meta = FAL_DESIGN_INTENSITY_LABELS[level];
-              const selected = local[channel] === level;
-              return (
-                <button
-                  key={level}
-                  type="button"
-                  disabled={controlsLocked}
-                  onClick={() => void saveLevel(channel, level)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    cursor: controlsLocked ? 'not-allowed' : 'pointer',
-                    textAlign: 'left',
-                    background: selected
-                      ? 'rgba(90,130,160,0.14)'
-                      : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-                    border: `1px solid ${selected ? 'rgba(90,130,160,0.45)' : t.separator}`,
-                    opacity: controlsLocked ? 0.6 : 1,
-                  }}
-                >
-                  <span style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 6,
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: selected ? '#9DBECE' : t.textMuted,
-                    background: selected ? 'rgba(90,130,160,0.2)' : 'transparent',
-                    border: `1px solid ${selected ? 'rgba(90,130,160,0.35)' : t.separator}`,
-                  }}
-                  >
-                    {meta.level}
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{
-                      display: 'block',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: selected ? '#9DBECE' : t.textPrimary,
-                    }}
-                    >
-                      {meta.tr}
-                    </span>
-                    <span style={{ display: 'block', fontSize: 11, color: t.textMuted, marginTop: 2 }}>
-                      {meta.desc}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <BrandChromeCombobox
+          key={channel}
+          t={t}
+          label={FAL_DESIGN_CHANNEL_LABELS[channel]}
+          value={local[channel]}
+          options={intensityOptions}
+          disabled={controlsLocked}
+          onChange={(level) => void saveLevel(channel, level)}
+        />
       ))}
 
       {status && (

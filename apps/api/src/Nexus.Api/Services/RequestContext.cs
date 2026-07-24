@@ -8,6 +8,11 @@ public interface IRequestContext
     Guid UserId { get; }
     Guid OfficeId { get; }
     bool IsDemoFallback { get; }
+    /// <summary>
+    /// True when <c>X-Internal-Api-Key</c> matches configured INTERNAL_API_KEY.
+    /// Trusted S2S callers may set <c>X-Tenant-Id</c> / <c>X-User-Id</c> / <c>X-Office-Id</c>.
+    /// </summary>
+    bool IsTrustedInternal { get; }
 }
 
 public sealed class RequestContext : IRequestContext
@@ -55,12 +60,14 @@ public sealed class RequestContext : IRequestContext
         !(TrustClientHeaders && TryGetHeaderGuid("X-Tenant-Id", out _)) &&
         !TryGetAnyClaimGuid(new[] { "tenant_id" }, out _);
 
+    public bool IsTrustedInternal => IsTrustedInternalRequest();
+
     private Guid ResolveGuid(string headerName, string[] claimNames, string configKey, Guid fallback)
     {
         if (TryGetAnyClaimGuid(claimNames, out var claimValue))
             return claimValue;
 
-        if (IsTrustedInternalRequest())
+        if (IsTrustedInternal)
         {
             if (TryGetHeaderGuid(headerName, out var internalHeader))
                 return internalHeader;

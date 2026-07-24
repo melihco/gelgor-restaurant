@@ -66,6 +66,8 @@ interface MobileStore {
   pendingBriefJobs: PendingBriefJob[];
   /** Incremented when Akış tab is tapped — feed scrolls to top and refetches. */
   feedRefreshNonce: number;
+  /** Incremented when Marka tab is selected — BrandConstitution returns to dashboard root. */
+  brandHomeNonce: number;
 
   navigate: (screen: MobileScreen) => void;
   openProfile: () => void;
@@ -104,6 +106,7 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   feedListLimit: MOBILE_ARTIFACT_FEED_INITIAL,
   pendingBriefJobs: [],
   feedRefreshNonce: 0,
+  brandHomeNonce: 0,
 
   setFeedListLimit: (limit) => set((s) => (s.feedListLimit === limit ? s : { feedListLimit: limit })),
 
@@ -167,6 +170,8 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       screen,
       history: [screen],
       navTransition: tabSlideTransition(s.activeTab, tab),
+      // Tab panes stay mounted — bump so Marka always lands on the dashboard root.
+      ...(tab === 'brand' ? { brandHomeNonce: s.brandHomeNonce + 1 } : {}),
     }));
   },
 

@@ -32,19 +32,39 @@
 
 `MissionActionsPanel`: approve, reject, kick-feed-production, reproduce-feed, requeue-factory-jobs, reset-production, restart, cancel.
 
+## Backend P0 (Super Admin) — landed
+
+| Nexus | Next BFF | Purpose |
+|-------|----------|---------|
+| `GET/POST /api/platform/tenants` | `/api/admin/tenants` | Tenant registry + bootstrap create |
+| `POST /api/platform/impersonate` | `/api/admin/impersonate` | Short-lived Bearer for target brand |
+| `GET /api/platform/audit-logs` | `/api/admin/audit-logs` | DB audit (not process-memory) |
+| `PUT /api/platform/tenants/{id}/subscription` | `/api/admin/tenants/{id}/subscription` | CRM package assign |
+| `GET /api/platform/brands` | `/api/admin/brands` (`?source=brands\|nexus`) | Crew brands + Nexus tenants |
+| — | `/api/admin/workspace/{tenantId}/nexus/{...path}` | INTERNAL_API_KEY + `X-Platform-Admin` proxy for Users/Agents/Briefs/Tasks/Actions/Packages/Integrations/Setup |
+
+**Tenant-scoped screens:** prefer impersonate Bearer (`Authorization`) **or** BFF workspace proxy (server `INTERNAL_API_KEY` + `X-Platform-Admin: 1` + `X-Tenant-Id`).
+
 ## v3 roadmap
 
-- Cross-tenant registry + impersonation
 - Meta/Google OAuth from admin panel
 - Scheduled template "run now"
 - AI diff preview before save
-- Audit log per admin action
+- UI wiring: tenant dropdown + workspace BFF on Users/Agents/Briefs tabs
 - Desk sidebar link (env-gated)
 
 ## Env
 
 ```
 NEXT_PUBLIC_PLATFORM_ADMIN=true
+PLATFORM_ADMIN_EMAILS=ops@example.com   # prod: required allowlist (elevates platform.operate)
+INTERNAL_API_KEY=...                    # BFF → Nexus target-tenant reads/writes
+NEXUS_API_URL= / NEXT_PUBLIC_API_URL=
+CREW_API_URL=
+SESSION_SECRET= / Auth:JwtSecret
+SEED_ADMIN_ENABLED=false                # prod: off
 OPENAI_API_KEY=...
 OPENAI_ADMIN_EDIT_MODEL=gpt-4o-mini  # optional
 ```
+
+Regen OpenAPI after deploy: `cd apps/web && npm run codegen:api`

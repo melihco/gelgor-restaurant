@@ -85,7 +85,6 @@ import {
   buildVisualSourceModePatch,
   getEmptyGalleryWarning,
   getVisualSourceModeCopy,
-  getVisualSourceModeHint,
   labelAiVisualSubject,
 } from '@/lib/visual-source-ui-copy';
 import { invalidateBrandContextWriteQueries } from '@/lib/query-client-bridge';
@@ -174,12 +173,12 @@ function VisionerSubNav({
   t,
   parentLabel,
   title,
-  mission,
   onBack,
 }: {
   t: T;
   parentLabel: string;
   title: string;
+  /** @deprecated unused — kept for call-site compatibility */
   mission?: string;
   onBack: () => void;
 }) {
@@ -208,14 +207,9 @@ function VisionerSubNav({
         </svg>
         {parentLabel}
       </button>
-      <div className="sa-chrome-eyebrow" style={{ marginBottom: mission ? 6 : 0 }}>
+      <div className="sa-chrome-eyebrow">
         {title}
       </div>
-      {mission ? (
-        <div style={{ fontSize: 12.5, color: t.textMuted, lineHeight: 1.45 }}>
-          {mission}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -683,20 +677,17 @@ function ParameterHelpModal({
 function ParameterGroupHeader({
   t,
   title,
-  subtitle,
   onHelp,
 }: {
   t: T;
   title: string;
-  subtitle: string;
+  /** @deprecated unused — kept for call-site compatibility */
+  subtitle?: string;
   onHelp: () => void;
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-      <div>
-        <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.01em' }}>{title}</div>
-        <div style={{ fontSize: 10, color: t.textMuted, marginTop: 3, lineHeight: 1.35 }}>{subtitle}</div>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.01em' }}>{title}</div>
       <button
         type="button"
         onClick={onHelp}
@@ -725,14 +716,14 @@ function ParameterOptionCard({
   t,
   active,
   label,
-  desc,
-  functionText,
   onClick,
 }: {
   t: T;
   active: boolean;
   label: string;
+  /** @deprecated unused — kept for call-site compatibility */
   desc?: string;
+  /** @deprecated unused — kept for call-site compatibility */
   functionText?: string;
   onClick: () => void;
 }) {
@@ -752,7 +743,7 @@ function ParameterOptionCard({
         boxShadow: active ? '0 12px 28px rgba(0,0,0,0.12)' : 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: desc ? 5 : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{
           width: 8,
           height: 8,
@@ -763,8 +754,6 @@ function ParameterOptionCard({
         }} />
         <div style={{ fontSize: 13, fontWeight: 800, color: active ? t.accent : t.textPrimary }}>{label}</div>
       </div>
-      {desc ? <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.35, marginLeft: 16 }}>{desc}</div> : null}
-      {functionText ? <div style={{ fontSize: 10, color: t.textTertiary, lineHeight: 1.35, marginLeft: 16, marginTop: 6 }}>{functionText}</div> : null}
     </button>
   );
 }
@@ -776,13 +765,13 @@ function ParameterOptionCard({
 function CollapsibleGroup({
   t,
   title,
-  subtitle,
   defaultOpen = false,
   accent,
   children,
 }: {
   t: T;
   title: string;
+  /** @deprecated unused — kept for call-site compatibility */
   subtitle?: string;
   defaultOpen?: boolean;
   accent?: string;
@@ -811,9 +800,6 @@ function CollapsibleGroup({
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{title}</div>
-          {subtitle ? (
-            <div style={{ fontSize: 12, color: t.textTertiary, marginTop: 3, lineHeight: 1.4 }}>{subtitle}</div>
-          ) : null}
         </div>
         <span
           aria-hidden
@@ -926,7 +912,7 @@ function PostDesignDefaultsPanel({
             {selectedFont.label} · {selectedEffect.label} · Logo: {selectedLogo.label}
           </div>
           <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
-            Template: {selectedTemplate?.name ?? 'Otomatik'} · Bu standart post, carousel ve story→reel ara görsellerinde üretim karakterini belirler.
+            Template: {selectedTemplate?.name ?? 'Otomatik'}
           </div>
         </div>
 
@@ -1105,9 +1091,6 @@ function TypographyDesignPanel({
           </div>
           <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 700, lineHeight: 1.45 }}>
             {TYPOGRAPHY_VIBE_LABELS[active.vibe].emoji} {TYPOGRAPHY_VIBE_LABELS[active.vibe].tr} · {active.background_style}
-          </div>
-          <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
-            Sektör önerisi: {TYPOGRAPHY_VIBE_LABELS[suggestedVibe].tr} · AI (Ideogram V4) ile üretilen sosyal medya tipografi postları bu stili kullanır.
           </div>
         </div>
 
@@ -1526,10 +1509,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
 
       {/* Header Card */}
       <SCard t={t} title="Marka Kiti" accent={t.accent}>
-        <div style={{ fontSize: 13, color: t.textSecondary, lineHeight: 1.6, marginBottom: 16 }}>
-          Vibe DNA, görsel analiz ve marka renkleri birleştirilerek otomatik türetilen tasarım token seti. Tüm üretilen görsellere ve layout şablonlarına uygulanır.
-        </div>
-
         {theme && (
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -1572,8 +1551,8 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
 
       {!loading && !theme && (
         <SCard t={t} title="Tema Yok" accent={t.warning}>
-          <div style={{ fontSize: 13, color: t.textSecondary, marginBottom: 12 }}>
-            Henüz otomatik tema türetilmedi. Aşağıdaki Renk Paleti bölümünden renkleri manuel kaydedebilir veya Vibe DNA analizi sonrası "Yeniden Türet" ile otomatik oluşturabilirsin.
+          <div style={{ fontSize: 13, color: t.textSecondary }}>
+            Henüz otomatik tema yok — Yeniden Türet veya Renk Paleti ile oluştur.
           </div>
         </SCard>
       )}
@@ -1607,9 +1586,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
             </>
           ) : (
             <>
-              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
-                <strong>Vurgu</strong> rengi altın çizgiler, çerçeve ve CTA vurgusudur. <strong>Ana renk</strong> panel/arka plan tonları içindir.
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <PaletteColorEditor label="Ana Renk" value={editPrimary} fallback="#1a1a1a" onChange={setEditPrimary} t={t} />
                 <PaletteColorEditor label="Vurgu" value={editAccent} fallback="#4f8ef7" onChange={setEditAccent} t={t} />
@@ -1722,9 +1698,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
       {/* Manual typography override */}
       {tenantId && (
         <SCard t={t} title="Tipografi Düzenle" accent={t.accent}>
-          <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>
-            Başlık ve gövde fontlarını manuel olarak ayarla. Renkler için yukarıdaki Renk Paleti bölümünü kullan.
-          </div>
           <button
             onClick={() => setEditMode(v => !v)}
             style={{
@@ -1795,13 +1768,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
                       ))}
                     </div>
                   </div>
-                  <div style={{ fontSize: 10, color: t.textTertiary, lineHeight: 1.45 }}>
-                    {editDensity === 'minimal'
-                      ? 'Ürün/fotoğraf önde kalır; başlık altta ince panelde.'
-                      : editDensity === 'dense'
-                        ? 'Büyük kampanya başlığı, güçlü overlay.'
-                        : 'Dengeli post/story görünümü.'}
-                  </div>
                 </div>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -1850,7 +1816,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
 
       {theme && Array.isArray(theme.anti_patterns) && (theme.anti_patterns as string[]).length > 0 && (
         <SCard t={t} title="Anti-Pattern Kuralları" accent="#ef4444">
-          <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 8 }}>Bu görseller üretilmemeli:</div>
           {(theme.anti_patterns as string[]).map((p, i) => (
             <div key={i} style={{
               display: 'flex', gap: 8, alignItems: 'flex-start',
@@ -1866,9 +1831,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
       {/* Layout preview */}
       {!loading && tenantId && (
         <SCard t={t} title="Layout Önizleme" accent={t.accent}>
-          <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>
-            Bu markaya ait renk paleti ve tipografi ile feed post önizlemesi:
-          </div>
           <div style={{
             borderRadius: 12, overflow: 'hidden',
             boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
@@ -2318,9 +2280,6 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
             </div>
           )}
           <SCard t={t} title="Tümünü Analiz Et" accent={t.accent}>
-            <p style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.6, marginBottom: 12 }}>
-              Yalnızca yeni fotoğraflar işlenir; daha önce analiz edilenler atlanır.
-            </p>
             <button
               onClick={analyzeGallery}
               disabled={analyzing || displayUrls.length === 0}
@@ -2452,9 +2411,6 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
             }}
           />
         </div>
-        <p style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', marginTop: 6 }}>
-          JPG, PNG, WebP · max 10MB · yükleme sonrası otomatik AI analiz
-        </p>
         {analyzeStatus && (
           <p style={{
             fontSize: 12,
@@ -2707,13 +2663,7 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
 
   return (
     <>
-      {/* Intro card */}
       <SCard t={t} title="Vibe DNA" accent={t.accent}>
-        <div style={{ fontSize: 13, color: t.textSecondary, lineHeight: 1.6, marginBottom: 16 }}>
-          Hangi ajans-kaliteli hesapların görsel tarzını taklit etmek istiyorsun? Instagram hesaplarını gir, yapay zeka görselleri analiz edip marka DNA'sını çıkaracak. Bundan sonra üretilen tüm görseller bu vibe'ı uygular.
-        </div>
-
-        {/* Handle inputs */}
         <div style={{ marginBottom: 12 }}>
           {handles.map((h, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
@@ -2907,9 +2857,6 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
           }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>AI Fotoğraf İyileştirme</div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                {aiEnabled ? 'Aktif — üstteki kaynak tercihiyle uyumlu' : 'Kapalı — ham galeri / passthrough'}
-              </div>
             </div>
             <button
               onClick={() => {
@@ -2928,16 +2875,15 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
             <div>
               <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>Geliştirme Seviyesi</div>
               {[
-                { level: 'subtle', label: 'Hafif', desc: 'Işık ve renk iyileştirmesi' },
-                { level: 'moderate', label: 'Orta', desc: 'Sahne atmosferi güçlendirme' },
-                { level: 'full', label: 'Tam', desc: 'Tam sahne değişimi' },
-              ].map(({ level, label, desc }) => {
+                { level: 'subtle', label: 'Hafif' },
+                { level: 'moderate', label: 'Orta' },
+                { level: 'full', label: 'Tam' },
+              ].map(({ level, label }) => {
                 const isActive = aiLevel === level;
                 return (
                   <button key={level} onClick={() => saveAiSetting({ ai_photo_enhance_level: level })}
                     style={{ width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', textAlign: 'left', marginBottom: 6, background: isActive ? (t as any).accentDim ?? 'rgba(139,171,189,0.1)' : 'transparent', border: `0.5px solid ${isActive ? t.accent : t.separator}` }}>
                     <div style={{ fontSize: 13, fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : t.textPrimary }}>{label}</div>
-                    <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
                   </button>
                 );
               })}
@@ -2945,7 +2891,6 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 14, margin: '14px 0 8px', background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', border: `0.5px solid ${aiGalleryRevise ? t.accent : t.separator}` }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Galeri fotoğrafını düzelt</div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{aiGalleryRevise ? 'GPT images.edit ile iyileştirilir' : 'Kapalı'}</div>
                 </div>
                 <button onClick={() => saveAiSetting({ ai_enhance_gallery_selected: !aiGalleryRevise })}
                   style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: aiGalleryRevise ? '#10B981' : t.separator, position: 'relative' }}>
@@ -3055,7 +3000,7 @@ export function BrandConstitution() {
   const { tenantId: storeTenantId } = useWorkspaceStore();
   const tenantId = useActiveTenantId() ?? storeTenantId;
   const brandGaps = useBrandCompleteGaps(tenantId);
-  const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix, history } = useMobileStore();
+  const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix, history, brandHomeNonce } = useMobileStore();
   const debugUi = isDebugUiMode();
   type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
   type ContentGroup = 'about' | 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
@@ -3127,6 +3072,20 @@ export function BrandConstitution() {
 
   const [galleryInitialGroup, setGalleryInitialGroup] = useState<BrandGalleryGroup | null>(null);
   const [focusAnchor, setFocusAnchor] = useState<string | null>(null);
+
+  // Bottom Marka orb (and other setTab('brand') entry points) must always land on the hub,
+  // even though the brand tab pane stays mounted across navigation.
+  useEffect(() => {
+    if (brandHomeNonce === 0) return;
+    setTab('identity');
+    setView('dashboard');
+    setDesignGroup(null);
+    setContentGroup(null);
+    setIdentityGroup(null);
+    setGalleryInitialGroup(null);
+    setFocusAnchor(null);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, [brandHomeNonce]);
 
   useEffect(() => {
     if (!brandReadinessFix && !brandReadinessCheckId) return;
@@ -4303,7 +4262,7 @@ export function BrandConstitution() {
                     value={descriptionDisplay}
                     onSave={save('description')}
                     multiline
-                    hint="Önce kısa marka tanımı; ardından Ürünler / Hizmetler listesi (gerçekte sunduklarınız)."
+                    hint="Marka tanımı"
                   />
                 </div>
               </div>
@@ -4331,8 +4290,7 @@ export function BrandConstitution() {
                         boxShadow: isSelected ? '0 8px 24px rgba(0,0,0,0.12)' : 'none',
                         transition: 'all 0.15s',
                       }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: isSelected ? '#9DBECE' : t.textPrimary, marginBottom: 3 }}>{opt.label}</div>
-                      <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.35 }}>{opt.desc}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: isSelected ? '#9DBECE' : t.textPrimary }}>{opt.label}</div>
                     </button>
                   );
                 })}
@@ -4349,10 +4307,10 @@ export function BrandConstitution() {
         {tab === 'content' && contentGroup === 'audience' && (
           <>
             <SCard t={t} title="Hedef Kitle">
-              <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline hint="Kim için üretiyoruz? Yaş, ilgi alanı, konum..." />
+              <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline />
             </SCard>
             <SCard t={t} title="Kampanya Hedefleri">
-              <Field t={t} label="Hedefler" value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''} onSave={save('campaignGoals')} multiline hint="Ne başarmak istiyoruz? Rezervasyon, farkındalık, etkinlik..." />
+              <Field t={t} label="Hedefler" value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''} onSave={save('campaignGoals')} multiline />
             </SCard>
           </>
         )}
@@ -4674,15 +4632,8 @@ export function BrandConstitution() {
                 : 'Özel kurallar, risk sınırları ve işletme yetenekleri'}
               defaultOpen
             >
-            <SCard t={t} title="İçerik Üretimi" accent={t.accent}>
-              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
-                Post ve story görselleri marka şablonlarıyla otomatik üretilir — şablon seçimi veya tasarım ayarı gerekmez.
-                Hareket kütüphanesi için <strong>Görsel</strong> sekmesine bakın.
-              </p>
-            </SCard>
-
             <SCard t={t} title="Özel Kurallar" accent={t.warning}>
-              <Field t={t} label="Özel Kurallar & Kısıtlamalar" value={p.customRules ?? ''} onSave={save('customRules')} multiline hint="Yapılmaması gerekenler, özel talimatlar..." />
+              <Field t={t} label="Özel Kurallar & Kısıtlamalar" value={p.customRules ?? ''} onSave={save('customRules')} multiline />
             </SCard>
 
             {Object.keys(riskRules).length > 0 && (
@@ -4980,13 +4931,10 @@ export function BrandConstitution() {
           <>
             <SCard t={t} title="Onay Modu" accent={t.warning}>
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: t.textTertiary, marginBottom: 12, lineHeight: 1.5 }}>
-                  AI aksiyonları yayınlamadan önce onay gerekiyor mu?
-                </div>
                 {[
-                  { mode: 0, label: 'Sadece Öner', desc: 'AI önerir, otomatik yayınlamaz' },
-                  { mode: 1, label: 'Öner & Bekle', desc: 'AI önerir, onay bekler' },
-                  { mode: 2, label: 'Otomatik Yayınla', desc: 'AI onay almadan yayınlar' },
+                  { mode: 0, label: 'Sadece Öner' },
+                  { mode: 1, label: 'Öner & Bekle' },
+                  { mode: 2, label: 'Otomatik Yayınla' },
                 ].map(item => {
                   const isActive = Number(p.defaultApprovalMode ?? 1) === item.mode;
                   return (
@@ -4995,10 +4943,7 @@ export function BrandConstitution() {
                         <div style={{ width: 16, height: 16, borderRadius: '50%', border: `2px solid ${isActive ? t.accent : t.textMuted}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           {isActive && <div style={{ width: 8, height: 8, borderRadius: '50%', background: t.accent }} />}
                         </div>
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : t.textPrimary }}>{item.label}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>{item.desc}</div>
-                        </div>
+                        <div style={{ fontSize: 14, fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : t.textPrimary }}>{item.label}</div>
                       </div>
                     </button>
                   );
@@ -5077,22 +5022,13 @@ export function BrandConstitution() {
               return (
                 <SCard t={t} title="Görsel Kaynak Tercihi" accent={t.accent}>
                   <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 16 }}>
-                      Üretimde kullanılacak görsel kaynağını seçin. Bu tercih şablon, organik ve fal üretimlerinde fotoğraf katmanını yönetir; galeri boşsa AI görseller otomatik üretilir.
-                    </div>
-
                     {/* ── 3-mode radio cards ── */}
                     {(() => {
                       const currentMode = resolveVisualSourceMode(currentTheme);
                       const modes = getVisualSourceModeCopy(industrySlug);
-                      const modeHint = getVisualSourceModeHint(currentMode, {
-                        sector: industrySlug,
-                        level: aiLevel,
-                        subject: aiSubject,
-                      });
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-                          {modes.map(({ id, icon, title, desc }) => {
+                          {modes.map(({ id, icon, title }) => {
                             const active = currentMode === id;
                             return (
                               <button key={id}
@@ -5109,7 +5045,6 @@ export function BrandConstitution() {
                                 <div style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>{icon}</div>
                                 <div style={{ flex: 1 }}>
                                   <div style={{ fontSize: 14, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>{title}</div>
-                                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.4 }}>{desc}</div>
                                 </div>
                                 <div style={{
                                   width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
@@ -5121,11 +5056,6 @@ export function BrandConstitution() {
                               </button>
                             );
                           })}
-                          {modeHint && (
-                            <div style={{ fontSize: 10, color: t.textMuted, padding: '0 4px', lineHeight: 1.5 }}>
-                              {modeHint}
-                            </div>
-                          )}
                           {(currentMode === 'gallery_only' || currentMode === 'gallery_enhanced') && (() => {
                             const rawRefs = (pyCtx as any)?.reference_image_urls;
                             const hasGallery = Array.isArray(rawRefs) ? rawRefs.length > 0 : Boolean(rawRefs);
@@ -5228,9 +5158,6 @@ export function BrandConstitution() {
               const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
               const motionRaw = (currentTheme.motion_profile ?? currentTheme.motionProfile) as Record<string, unknown> | undefined;
               const activeStyle = String(motionRaw?.motion_style ?? motionRaw?.motionStyle ?? 'editorial') as MotionStyle;
-              const purePhotoPct = Math.round(
-                Number(motionRaw?.prefer_pure_photo_stories ?? motionRaw?.preferPurePhotoStories ?? 0.72) * 100,
-              );
               const sectorNorm = industrySlug;
 
               const saveMotionStyle = async (style: MotionStyle) => {
@@ -5256,11 +5183,8 @@ export function BrandConstitution() {
 
               return (
                 <SCard t={t} title="Motion Stili" accent={t.accent}>
-                  <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-                    Story motion ve composition ağırlıkları. Tasarım slotları şablon kütüphanesinden yönetilir.
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                    {MOTION_STYLE_OPTIONS.map(({ id, label, desc }) => {
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {MOTION_STYLE_OPTIONS.map(({ id, label }) => {
                       const isActive = activeStyle === id;
                       return (
                         <button
@@ -5278,13 +5202,9 @@ export function BrandConstitution() {
                           <div style={{ fontSize: 14, fontWeight: isActive ? 700 : 600, color: isActive ? t.accent : t.textPrimary }}>
                             {label}
                           </div>
-                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{desc}</div>
                         </button>
                       );
                     })}
-                  </div>
-                  <div style={{ fontSize: 11, color: t.textMuted }}>
-                    Saf fotoğraf story hedefi: ~{purePhotoPct}% · Aktif stil: <strong>{activeStyle}</strong>
                   </div>
                 </SCard>
               );

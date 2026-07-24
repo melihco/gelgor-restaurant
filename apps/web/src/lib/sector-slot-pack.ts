@@ -279,47 +279,103 @@ function inferLibrarySlotKey(slotKey: string, designType: string): string | null
   return 'campaign_post';
 }
 
+function mergeKeywords(signals: Record<string, unknown>, extra: string[]): void {
+  const prev = Array.isArray(signals.keywords) ? signals.keywords.map(String) : [];
+  const merged = [...new Set([...prev, ...extra])].slice(0, 14);
+  if (merged.length) signals.keywords = merged;
+}
+
+/**
+ * Sector-agnostic match signals from slot_key patterns (works for all packs).
+ * Keywords help AI / heuristic routers pick by brief intent without brand branches.
+ */
 function buildMatchSignals(slotKey: string, designType: string): Record<string, unknown> {
   const signals: Record<string, unknown> = { design_template_type: designType };
-  if (/hiring|open_role|job_posting|join_the_team/.test(slotKey)) {
+  const key = slotKey.toLowerCase();
+
+  if (/hiring|open_role|job_posting|join_the_team/.test(key)) {
     signals.announcement_types = ['hiring', 'job_posting', 'open_role'];
     signals.keywords = ['iş ilanı', 'ekip arkadaşı', 'hiring', 'we are hiring', 'kariyer', 'işe alım'];
     return signals;
   }
-  if (/events_calendar/.test(slotKey)) {
+  if (/events_calendar/.test(key)) {
     signals.announcement_types = ['event_teaser', 'event_announcement', 'events_calendar'];
     signals.keywords = ['etkinlik', 'takvim', 'program', 'lineup', 'bu hafta'];
     return signals;
   }
-  if (/typography_poster/.test(slotKey)) {
+  if (/typography_poster/.test(key)) {
     signals.announcement_types = ['campaign_offer', 'offer_campaign'];
     signals.typography_forward = true;
   }
-  if (/event_announcement/.test(slotKey)) {
+  if (/live_music|concert|konser|gig|setlist/.test(key)) {
+    signals.announcement_types = ['event_teaser', 'event_announcement'];
+    mergeKeywords(signals, [
+      'live music', 'canlı müzik', 'concert', 'konser', 'gig', 'night', 'gece', 'party',
+    ]);
+  }
+  if (/event_announcement/.test(key)) {
     signals.announcement_types = ['event_teaser', 'event_announcement'];
   }
-  if (/event|dj|wedding/.test(slotKey)) {
+  if (/event|dj|wedding|bridal|aftermovie|private_event/.test(key)) {
     signals.announcement_types = ['event_teaser', 'event_announcement'];
-    if (!signals.keywords) {
-      signals.keywords = /dj/.test(slotKey)
-        ? ['dj', 'gece', 'party', 'night', 'crowd', 'dance', 'etkinlik', 'lineup']
-        : ['etkinlik', 'event', 'party', 'night', 'crowd', 'lineup'];
+    if (/dj/.test(key)) {
+      mergeKeywords(signals, [
+        'dj', 'gece', 'party', 'night', 'crowd', 'dance', 'etkinlik', 'lineup', 'set',
+      ]);
+    } else {
+      mergeKeywords(signals, [
+        'etkinlik', 'event', 'party', 'night', 'gece', 'crowd', 'lineup', 'named night',
+      ]);
     }
   }
-  if (/offer|sale|promo/.test(slotKey)) {
-    signals.announcement_types = ['offer_campaign'];
+  if (/cocktail|mocktail|drink|beverage|bar_menu/.test(key)) {
+    // Drink/menu subject — not a named-night event unless slot also has event/dj tokens.
+    if (!signals.announcement_types) {
+      signals.announcement_types = /menu/.test(key)
+        ? ['product_reveal', 'product_showcase']
+        : ['offer_campaign', 'product_showcase'];
+    }
+    mergeKeywords(signals, [
+      'cocktail', 'kokteyl', 'drink', 'içecek', 'bar', 'menu', 'beverage', 'glass',
+    ]);
   }
-  if (/social|testimonial|review|ugc/.test(slotKey)) {
+  if (/day_pass|daybed|ticket|admission|entry_pass/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['offer_campaign'];
+    mergeKeywords(signals, [
+      'day pass', 'giriş', 'bilet', 'ticket', 'entry', 'admission', 'daybed',
+    ]);
+  }
+  if (/offer|sale|promo|flash|happy_hour|membership|trial|campaign/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['offer_campaign'];
+    if (!/cocktail|drink|event|dj/.test(key)) {
+      mergeKeywords(signals, ['kampanya', 'indirim', 'offer', 'sale', 'promo', 'fırsat']);
+    }
+  }
+  if (/social|testimonial|review|ugc|guest_social|member_story|client_testimonial/.test(key)) {
     signals.announcement_types = ['social_proof'];
+    mergeKeywords(signals, ['yorum', 'review', 'testimonial', 'ugc', 'misafir', 'sosyal kanıt']);
   }
-  if (/product|menu|dish|pastry|property/.test(slotKey)) {
-    signals.announcement_types = ['product_reveal', 'product_showcase'];
+  if (/product|new_arrival|limited_batch|unboxing|collection|retail|sku/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['product_reveal', 'product_showcase'];
+    mergeKeywords(signals, [
+      'product', 'ürün', 'packaging', 'hero', 'yeni ürün', 'batch', 'sku', 'raf',
+    ]);
   }
-  if (/venue|ambiance|facility|room|suite/.test(slotKey)) {
-    signals.announcement_types = ['venue_showcase'];
+  if (/menu|dish|pastry|recipe|plate|tasting/.test(key) && !/cocktail/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['product_reveal', 'product_showcase'];
+    mergeKeywords(signals, ['menu', 'menü', 'yemek', 'dish', 'plate', 'lezzet']);
   }
-  if (/booking|reservation/.test(slotKey)) {
-    signals.announcement_types = ['announcement', 'campaign_offer'];
+  if (/venue|ambiance|facility|room|suite|pool|aerial|interior|atmosphere/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['venue_showcase'];
+    mergeKeywords(signals, ['mekan', 'venue', 'ambiance', 'atmosfer', 'interior', 'view']);
+  }
+  if (/booking|reservation|appointment|consultation/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['announcement', 'campaign_offer'];
+    mergeKeywords(signals, ['rezervasyon', 'booking', 'randevu', 'appointment']);
+  }
+  if (/bts|behind|process|craft|morning|tip|nutrition/.test(key)) {
+    signals.announcement_types = signals.announcement_types ?? ['behind_the_scenes'];
+    mergeKeywords(signals, ['behind the scenes', 'süreç', 'craft', 'bts', 'yapım']);
   }
   return signals;
 }

@@ -26,6 +26,7 @@ export type AiCallType =
   | 'creative_director'
   | 'grafiker_vision'
   | 'gallery_match'
+  | 'catalog_slot_pick'
   | 'other';
 
 export interface OpenAiUsageLike {

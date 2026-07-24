@@ -24,6 +24,7 @@ import { resolveArtifactHubPreviewUrl } from '@/lib/content-calendar-artifact-li
 import { detectFeedArtifactKind, type FeedArtifactKind } from '@/lib/artifact-view-model';
 import { resolveClientMediaUrl } from '@/lib/media-url';
 import { SafeCoverImage } from './SafeCoverImage';
+import { humanizeProductionSlotError } from '@/lib/production-slot-failures';
 
 /** Brand design template row subset consumed for slot template previews (Faz 5). */
 export interface SlotShowcaseTemplate {
@@ -190,10 +191,15 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
   const fmt = FORMAT_META[format];
   const cardBg = t.isDark ? '#101418' : '#1A2028';
 
+  const errorHint = humanizeProductionSlotError(item.lastError);
+
   const detailRows: Array<{ label: string; value: string; color?: string }> = [
     { label: 'Format', value: fmt.label, color: fmt.color },
     { label: 'Üretim', value: pipelineLabel(item.pipeline) },
     { label: 'Durum', value: status.label, color: status.color },
+    ...(errorHint && item.status === 'failed'
+      ? [{ label: 'Hata', value: errorHint, color: '#F59E0B' }]
+      : []),
     ...(vm.templateName
       ? [{ label: 'Şablon', value: vm.templateName, color: GOLD }]
       : []),
@@ -261,16 +267,23 @@ function SlotFlipCard({ vm, index, onOpenArtifact, t }: {
               }}>
                 {fmt.glyph}
               </span>
-              <span style={{ position: 'relative', fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.05em' }}>
+              <span style={{
+                position: 'relative', fontSize: 10, fontWeight: 700,
+                color: item.status === 'failed' ? 'rgba(245,158,11,0.92)' : 'rgba(255,255,255,0.55)',
+                letterSpacing: '0.05em',
+                textAlign: 'center',
+                padding: '0 12px',
+                lineHeight: 1.35,
+              }}>
                 {item.status === 'rendering'
                   ? 'Görsel üretiliyor…'
                   : item.status === 'pending'
                     ? 'Üretim sırasında'
                     : item.status === 'failed'
-                      ? 'Üretim hatası'
+                      ? (errorHint || 'Üretim hatası')
                       : 'Henüz üretilmedi'}
               </span>
-              {vm.templateThumbUrl && (
+              {vm.templateThumbUrl && item.status !== 'failed' && (
                 <span style={{
                   position: 'relative', fontSize: 8.5, fontWeight: 700,
                   color: 'rgba(201,169,110,0.85)', letterSpacing: '0.05em',

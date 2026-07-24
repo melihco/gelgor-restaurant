@@ -7,22 +7,20 @@ import {
   type BrandMotionProfile,
 } from '@/lib/brand-motion-profile';
 import {
-  describeBrandReelPolicy,
   REEL_CAMERA_OPTIONS,
   REEL_PACE_OPTIONS,
 } from '@/lib/brand-reel-motion-profile';
-import { describeSectorReelMotionStandard } from '@/lib/sector-reel-motion-standard';
 import type { ReelMontageStrategy } from '@/lib/reel-multi-production';
 import type { ReelPacing } from '@/lib/sector-production-profile';
 import type { T } from '@/app/mobile/_components/theme-context';
 
 type ThemeRecord = Record<string, unknown>;
 
-const STRATEGY_OPTIONS: { id: ReelMontageStrategy | 'auto'; label: string; desc: string }[] = [
-  { id: 'auto', label: 'Otomatik', desc: 'Fotoğraf sayısı ve pace\'e göre seçilir' },
-  { id: 'single', label: 'Tek klip', desc: 'Sürekli sinematik reel' },
-  { id: 'sequential', label: 'Montaj', desc: 'Her fotoğraf ayrı klip, ardışık montaj' },
-  { id: 'multi_ref', label: 'Multi-ref', desc: 'Legacy blend (gen4_turbo ilk kare)' },
+const STRATEGY_OPTIONS: { id: ReelMontageStrategy | 'auto'; label: string }[] = [
+  { id: 'auto', label: 'Otomatik' },
+  { id: 'single', label: 'Tek klip' },
+  { id: 'sequential', label: 'Montaj' },
+  { id: 'multi_ref', label: 'Multi-ref' },
 ];
 
 export function ReelMotionSettingsPanel({
@@ -39,7 +37,6 @@ export function ReelMotionSettingsPanel({
   onSaved?: () => void;
 }) {
   const profile = parseMotionProfileFromTheme(theme, { sector, tenantId });
-  const sectorStandardHint = describeSectorReelMotionStandard(sector);
   const [saving, setSaving] = useState(false);
 
   const activePace = profile.reelPace && profile.reelPace !== 'auto'
@@ -90,27 +87,14 @@ export function ReelMotionSettingsPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 14 }}>
-        fal.ai reel üretiminde varsayılan tempo, kamera ve montaj stratejisi. İçerik fikrindeki
-        reel_motion_spec bu ayarların üzerine yazabilir.
-      </div>
-      <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 16 }}>
-        Aktif politika: {describeBrandReelPolicy(profile, sector ?? '')}
-        {sectorStandardHint ? (
-          <span style={{ display: 'block', marginTop: 6, color: t.textMuted }}>
-            Sektör standardı: {sectorStandardHint}
-          </span>
-        ) : null}
-      </div>
-
       <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         Ürün reklam filmi (fal.ai I2V)
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         {([
-          { on: true, label: 'Açık', desc: 'Gerçek ürün galeri karelerinde TVC tarzı dolly-in ve macro motion' },
-          { on: false, label: 'Kapalı', desc: 'Standart venue/fidelity kuralları — ürün TVC director prompt yok' },
-        ] as const).map(({ on, label, desc }) => {
+          { on: true, label: 'Açık' },
+          { on: false, label: 'Kapalı' },
+        ] as const).map(({ on, label }) => {
           const active = productSpotlightOn === on;
           return (
             <button
@@ -123,7 +107,6 @@ export function ReelMotionSettingsPanel({
               <div style={{ fontSize: 13, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>
                 {label}
               </div>
-              <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{desc}</div>
             </button>
           );
         })}
@@ -140,10 +123,10 @@ export function ReelMotionSettingsPanel({
           style={chipStyle(activePace === 'auto')}
         >
           <div style={{ fontSize: 13, fontWeight: activePace === 'auto' ? 700 : 600, color: activePace === 'auto' ? t.accent : t.textPrimary }}>
-            Otomatik (motion stili / sektör)
+            Otomatik
           </div>
         </button>
-        {REEL_PACE_OPTIONS.map(({ id, label, desc }) => {
+        {REEL_PACE_OPTIONS.map(({ id, label }) => {
           const active = activePace === id;
           return (
             <button
@@ -156,7 +139,6 @@ export function ReelMotionSettingsPanel({
               <div style={{ fontSize: 13, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>
                 {label}
               </div>
-              <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{desc}</div>
             </button>
           );
         })}
@@ -198,7 +180,7 @@ export function ReelMotionSettingsPanel({
         Montaj stratejisi
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {STRATEGY_OPTIONS.map(({ id, label, desc }) => {
+        {STRATEGY_OPTIONS.map(({ id, label }) => {
           const active = activeStrategy === id;
           return (
             <button
@@ -213,7 +195,6 @@ export function ReelMotionSettingsPanel({
               <div style={{ fontSize: 13, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>
                 {label}
               </div>
-              <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>{desc}</div>
             </button>
           );
         })}

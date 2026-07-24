@@ -272,11 +272,6 @@ export function BrandContentStrategyPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        Mission ve caption üretimi bu sütunlara ve CTA listesine göre yönlendirilir.
-        Analiz sonrası öneriler otomatik gelir; buradan düzenleyebilirsiniz.
-      </p>
-
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <p style={{

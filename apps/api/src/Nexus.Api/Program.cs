@@ -186,6 +186,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestContext, RequestContext>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ILocalAuthService, LocalAuthService>();
+builder.Services.AddScoped<PlatformTenantBootstrapService>();
 builder.Services.AddScoped<IIntegrationTokenService, IntegrationTokenService>();
 builder.Services.AddScoped<IUsageQuotaService, UsageQuotaService>();
 builder.Services.AddDataProtection();

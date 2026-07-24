@@ -54,6 +54,8 @@ export interface MissionSlotChecklistItem {
   catalogSlotKey?: string | null;
   /** Brand-facing catalog label (label_tr) — preferred over the role label in UI. */
   catalogSlotLabel?: string | null;
+  /** Durable factory last_error — shown on flip cards when status is failed. */
+  lastError?: string | null;
 }
 
 /** Minimal factory job slot shape consumed for catalog enrichment (API summary rows). */
@@ -65,6 +67,7 @@ export interface FactoryJobSlotLike {
   artifactId?: string | null;
   catalogSlotKey?: string | null;
   catalogSlotLabel?: string | null;
+  lastError?: string | null;
 }
 
 export interface MissionSlotChecklist {
@@ -452,6 +455,9 @@ function buildChecklistFromFactorySlots(input: {
       satoriEligible: isSatoriEligibleSlotRole(role),
       catalogSlotKey: catalogSlotKey ?? null,
       catalogSlotLabel: catalogSlotLabel ?? null,
+      lastError: typeof slot.lastError === 'string' && slot.lastError.trim()
+        ? slot.lastError.trim()
+        : null,
       ...engineChipFromArtifact(artifact),
       ...resolveAiEnhanceFromArtifact(artifact, debugMode),
     };

@@ -316,7 +316,7 @@ describe('bindBrandTemplateForFalProduction', () => {
     expect(binding.lockedVibe).toBe('warm_coastal');
   });
 
-  it('skips binding for ad-hoc brief', async () => {
+  it('skips binding for ad-hoc brief without catalog pin', async () => {
     const binding = await bindBrandTemplateForFalProduction({
       workspaceId: 'ws-yula',
       slotRole: 'fal_designed_post',
@@ -331,5 +331,24 @@ describe('bindBrandTemplateForFalProduction', () => {
     expect(binding.matched).toBeNull();
     expect(binding.brandDirectives).toEqual(['only-base']);
     expect(matchDesignTemplateToSlot).not.toHaveBeenCalled();
+  });
+
+  it('binds library template for ad-hoc brief when catalog slot is pinned', async () => {
+    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue(matched);
+    const binding = await bindBrandTemplateForFalProduction({
+      workspaceId: 'ws-yula',
+      slotRole: 'campaign_story_motion',
+      librarySlotKey: null,
+      format: 'story',
+      catalogSlotKey: 'beach_club_event_announcement_story',
+      adHocBrief: true,
+      missionReferenceUrl: 'https://cdn.example.com/mission.jpg',
+      baseDirectives: ['only-base'],
+      brandColors: { primary: '#000', accent: '#fff' },
+      brandVibe: null,
+    });
+    expect(matchDesignTemplateToSlot).toHaveBeenCalled();
+    expect(binding.matched?.id).toBe(matched.id);
+    expect(binding.styleReferenceUrl).toBe(matched.thumbnailUrl);
   });
 });

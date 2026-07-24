@@ -21,6 +21,7 @@ from app.schemas.slot_catalog import (
     CanonicalSectorOut,
     CanonicalSectorUpdate,
     FacilityOptionOut,
+    SectorCoverageOut,
     LibraryShelfOut,
     ProductionSlotCloneRequest,
     ProductionSlotDefinitionCreate,
@@ -165,6 +166,26 @@ async def patch_catalog_sector(
         return _sector_out(row)
     except ValueError as exc:
         await db.rollback()
+        code = 404 if str(exc).startswith("unknown_sector") else 400
+        raise HTTPException(status_code=code, detail=str(exc))
+
+
+@router.get("/sectors/{sector_id}", response_model=CanonicalSectorOut)
+async def get_catalog_sector(sector_id: str, db: AsyncSession = Depends(get_db)):
+    sector = await db.get(CanonicalSector, sector_id)
+    if not sector:
+        raise HTTPException(status_code=404, detail=f"unknown sector: {sector_id}")
+    return _sector_out(sector)
+
+
+@router.get("/sectors/{sector_id}/coverage", response_model=SectorCoverageOut)
+async def get_sector_coverage(sector_id: str, db: AsyncSession = Depends(get_db)):
+    from app.services.platform_brand_registry import build_sector_coverage
+
+    try:
+        data = await build_sector_coverage(db, sector_id)
+        return SectorCoverageOut(**data)
+    except ValueError as exc:
         code = 404 if str(exc).startswith("unknown_sector") else 400
         raise HTTPException(status_code=code, detail=str(exc))
 

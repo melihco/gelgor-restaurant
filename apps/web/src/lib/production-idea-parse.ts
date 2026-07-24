@@ -257,6 +257,17 @@ export function productionIdeaFromRecord(
     eventDetails: eventDate ? { eventDate, location: location || undefined } : undefined,
     assetIntent: firstStr(rec, 'asset_intent', 'assetIntent', 'asset_recommendation') || undefined,
     postingTime: firstStr(rec, 'posting_time_suggestion'),
+    attachedPhotoUrls: Array.isArray(rec.attached_photo_urls)
+      ? rec.attached_photo_urls.map((u) => String(u).trim()).filter(Boolean)
+      : Array.isArray(rec.attachedPhotoUrls)
+        ? rec.attachedPhotoUrls.map((u) => String(u).trim()).filter(Boolean)
+        : undefined,
+    forceAttachedPhotos: Boolean(rec.force_attached_photos ?? rec.forceAttachedPhotos),
+    mood: firstStr(rec, 'mood') || undefined,
+    sceneHint: firstStr(rec, 'scene_hint', 'sceneHint') || undefined,
+    visualDirection: firstStr(rec, 'visual_direction', 'visualDirection') || undefined,
+    motionCue: firstStr(rec, 'motion_cue', 'motionCue') || undefined,
+    strategicPurpose: firstStr(rec, 'strategic_purpose', 'strategicPurpose') || undefined,
   };
 }
 
@@ -280,10 +291,20 @@ export function productionIdeaToRecord(idea: ProductionIdea): Record<string, unk
     asset_intent: idea.assetIntent || undefined,
     event_date: idea.eventDetails?.eventDate || undefined,
     location: idea.eventDetails?.location || undefined,
-    strategic_purpose: idea.canvaFieldCopy.subtitle || undefined,
+    strategic_purpose: idea.strategicPurpose || idea.canvaFieldCopy.subtitle || undefined,
     posting_time_suggestion: idea.postingTime || undefined,
     canva_field_copy: idea.canvaFieldCopy,
     canvaFieldCopy: idea.canvaFieldCopy,
+    mood: idea.mood || undefined,
+    scene_hint: idea.sceneHint || undefined,
+    visual_direction: idea.visualDirection || vps?.imageEditPrompt || undefined,
+    motion_cue: idea.motionCue || undefined,
+    ...(idea.attachedPhotoUrls?.length
+      ? {
+          attached_photo_urls: idea.attachedPhotoUrls,
+          force_attached_photos: idea.forceAttachedPhotos === true,
+        }
+      : {}),
     visual_production_spec: vps
       ? {
           treatment: vps.treatment,

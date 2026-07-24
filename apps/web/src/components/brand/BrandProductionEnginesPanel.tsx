@@ -98,10 +98,6 @@ export function BrandProductionEnginesPanel({
       }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>Story & tipografi slotları</div>
-          <div style={{ fontSize: 11, color: t.textTertiary, marginTop: 2, lineHeight: 1.45 }}>
-            Metin ağırlıklı story/post slotlarında galeri fotoğrafı üzerine marka fontu ile üretim.
-            Kapalıyken fal.ai / gpt-image fallback devreye girer.
-          </div>
         </div>
         <button
           type="button"
@@ -128,14 +124,12 @@ export function BrandProductionEnginesPanel({
         {
           key: 'enabled' as const,
           label: 'Flip kart galerisi',
-          desc: 'Mission detayında üretilen içerikleri çevrilebilir kartlarla göster.',
         },
         {
           key: 'format_filters_enabled' as const,
           label: 'Format filtreleri',
-          desc: 'Galeride Tümü / Post / Story filtre çipleri.',
         },
-      ].map(({ key, label, desc }) => {
+      ].map(({ key, label }) => {
         const showcase = engines.showcase ?? { enabled: true, format_filters_enabled: true };
         const on = showcase[key];
         return (
@@ -146,7 +140,6 @@ export function BrandProductionEnginesPanel({
           }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{label}</div>
-              <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
             </div>
             <button
               type="button"
@@ -171,9 +164,9 @@ export function BrandProductionEnginesPanel({
         FAL.ai — Story Premium
       </div>
       {[
-        { key: 'motion_plates_enabled' as const, label: 'Motion Plate (I2V)', desc: 'Statik Ken Burns yerine video arka plan', color: '#8B5CF6' },
-        { key: 'typography_design_enabled' as const, label: 'Tipografi Tasarımı', desc: 'Kısa headline için AI tipografi fallback', color: '#3B82F6' },
-      ].map(({ key, label, desc, color }) => (
+        { key: 'motion_plates_enabled' as const, label: 'Motion Plate (I2V)', color: '#8B5CF6' },
+        { key: 'typography_design_enabled' as const, label: 'Tipografi Tasarımı', color: '#3B82F6' },
+      ].map(({ key, label, color }) => (
         <div key={key} style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '10px 12px', borderRadius: 12, marginBottom: 6,
@@ -181,7 +174,6 @@ export function BrandProductionEnginesPanel({
         }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{label}</div>
-            <div style={{ fontSize: 11, color: t.textMuted }}>{desc}</div>
           </div>
           <button
             type="button"

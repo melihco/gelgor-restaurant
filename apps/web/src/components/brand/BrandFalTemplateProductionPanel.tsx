@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { T } from '@/app/mobile/_components/theme-context';
 import { fetchTenantBff } from '@/lib/bff-fetch';
 import {
@@ -20,6 +20,7 @@ import {
   type BrandFalTemplateProductionConfig,
 } from '@/lib/fal-template-production-settings';
 import type { LogoTreatment, TypographyBackgroundStyle } from '@/types/brand-theme';
+import { BrandChromeCombobox } from '@/components/brand/BrandChromeCombobox';
 
 type ThemeRecord = Record<string, unknown>;
 
@@ -30,6 +31,7 @@ function ParamGroup({
   children,
 }: {
   title: string;
+  /** @deprecated unused */
   hint?: string;
   t: T;
   children: React.ReactNode;
@@ -44,89 +46,9 @@ function ParamGroup({
     >
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>{title}</div>
-        {hint && (
-          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3, lineHeight: 1.45 }}>{hint}</div>
-        )}
       </div>
       {children}
     </div>
-  );
-}
-
-function OptionButton({
-  selected,
-  disabled,
-  onClick,
-  title,
-  subtitle,
-  badge,
-  t,
-}: {
-  selected: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  title: string;
-  subtitle?: string;
-  badge?: string | number;
-  t: T;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        width: '100%',
-        padding: '10px 12px',
-        borderRadius: 12,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        textAlign: 'left',
-        background: selected
-          ? 'rgba(90,130,160,0.14)'
-          : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'),
-        border: `1px solid ${selected ? 'rgba(90,130,160,0.45)' : t.separator}`,
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      {badge != null && (
-        <span style={{
-          width: 22,
-          height: 22,
-          borderRadius: 6,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 11,
-          fontWeight: 800,
-          color: selected ? '#9DBECE' : t.textMuted,
-          background: selected ? 'rgba(90,130,160,0.2)' : 'transparent',
-          border: `1px solid ${selected ? 'rgba(90,130,160,0.35)' : t.separator}`,
-        }}
-        >
-          {badge}
-        </span>
-      )}
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{
-          display: 'block',
-          fontSize: 13,
-          fontWeight: 600,
-          color: selected ? '#9DBECE' : t.textPrimary,
-        }}
-        >
-          {title}
-        </span>
-        {subtitle && (
-          <span style={{ display: 'block', fontSize: 11, color: t.textMuted, marginTop: 2 }}>
-            {subtitle}
-          </span>
-        )}
-      </span>
-    </button>
   );
 }
 
@@ -210,6 +132,51 @@ export function BrandFalTemplateProductionPanel({
     });
   };
 
+  const intensityOptions = useMemo(
+    () => FAL_DESIGN_INTENSITY_LEVELS.map((level) => {
+      const meta = FAL_DESIGN_INTENSITY_LABELS[level];
+      return {
+        value: level,
+        label: meta.tr,
+        description: meta.desc,
+        badge: meta.level,
+      };
+    }),
+    [],
+  );
+
+  const backgroundOptions = useMemo(
+    () => (Object.keys(FAL_TEMPLATE_BACKGROUND_LABELS) as TypographyBackgroundStyle[]).map((style) => {
+      const meta = FAL_TEMPLATE_BACKGROUND_LABELS[style];
+      return { value: style, label: meta.tr, description: meta.desc };
+    }),
+    [],
+  );
+
+  const logoOptions = useMemo(
+    () => (Object.keys(FAL_TEMPLATE_LOGO_LABELS) as LogoTreatment[]).map((treatment) => {
+      const meta = FAL_TEMPLATE_LOGO_LABELS[treatment];
+      return { value: treatment, label: meta.tr, description: meta.desc };
+    }),
+    [],
+  );
+
+  const previewCapOptions = useMemo(
+    () => FAL_TEMPLATE_PREVIEW_CAP_OPTIONS.map((cap) => ({
+      value: String(cap),
+      label: `${cap} önizleme`,
+    })),
+    [],
+  );
+
+  const concurrencyOptions = useMemo(
+    () => FAL_TEMPLATE_CONCURRENCY_OPTIONS.map((c) => ({
+      value: String(c),
+      label: `${c}× paralel`,
+    })),
+    [],
+  );
+
   const themeHydrated = Boolean(
     theme?.workspaceId || theme?.workspace_id || theme?.derivedAt || theme?.derived_at
     || theme?.falTemplateProduction || theme?.fal_template_production
@@ -219,15 +186,6 @@ export function BrandFalTemplateProductionPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: t.textMuted }}>
-        fal.ai şablon üretimi ve mission tasarımları bu parametrelere göre çalışır.
-        Yoğunluk bir <strong style={{ color: t.textSecondary }}>tavan (ceiling)</strong>dır:
-        slot daha sade kalabilir, ama seçtiğiniz seviyeyi aşamaz.
-        Düşük tavan Scorpios gibi sakin premium; yüksek tavan kampanya / editoryal grafik açar.
-        Değişiklikler bir sonraki <strong style={{ color: t.textSecondary }}>Yeniden üret</strong>
-        {' '}veya mission üretiminde uygulanır.
-      </p>
-
       {!themeHydrated && (
         <p style={{ margin: 0, fontSize: 12, color: t.warning }}>
           Marka teması henüz tam yüklenmedi — seçimler yine de kaydedilir; ilk PATCH temayı oluşturur.
@@ -239,158 +197,79 @@ export function BrandFalTemplateProductionPanel({
         hint="Kanal bazlı tavan — slot bundan daha ağır olamaz"
         t={t}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {(['story', 'reel', 'post'] as FalDesignChannel[]).map((channel) => (
-            <div key={channel}>
-              <p style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: t.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                margin: '0 0 6px',
-              }}
-              >
-                {FAL_DESIGN_CHANNEL_LABELS[channel]}
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {FAL_DESIGN_INTENSITY_LEVELS.map((level) => {
-                  const meta = FAL_DESIGN_INTENSITY_LABELS[level];
-                  return (
-                    <OptionButton
-                      key={level}
-                      t={t}
-                      selected={local.intensity[channel] === level}
-                      disabled={controlsLocked}
-                      badge={meta.level}
-                      title={meta.tr}
-                      subtitle={meta.desc}
-                      onClick={() => void updateIntensity(channel, level)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+            <BrandChromeCombobox
+              key={channel}
+              t={t}
+              label={FAL_DESIGN_CHANNEL_LABELS[channel]}
+              value={local.intensity[channel]}
+              options={intensityOptions}
+              disabled={controlsLocked}
+              onChange={(level) => void updateIntensity(channel, level)}
+            />
           ))}
         </div>
       </ParamGroup>
 
       <ParamGroup title="Görsel yüzey" hint="Galeri fotoğrafı yokken veya overlay tercihi" t={t}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {(Object.keys(FAL_TEMPLATE_BACKGROUND_LABELS) as TypographyBackgroundStyle[]).map((style) => {
-            const meta = FAL_TEMPLATE_BACKGROUND_LABELS[style];
-            return (
-              <OptionButton
-                key={style}
-                t={t}
-                selected={local.background_style === style}
-                disabled={controlsLocked}
-                title={meta.tr}
-                subtitle={meta.desc}
-                onClick={() => void update({ background_style: style })}
-              />
-            );
-          })}
-          <label style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginTop: 8,
-            fontSize: 12,
-            color: t.textSecondary,
-            cursor: controlsLocked ? 'not-allowed' : 'pointer',
-          }}
-          >
-            <input
-              type="checkbox"
-              checked={local.prefer_gallery_photo}
-              disabled={controlsLocked}
-              onChange={(e) => void update({ prefer_gallery_photo: e.target.checked })}
-            />
-            Galeri fotoğrafı varsa her zaman fotoğraf üstü kullan
-          </label>
-        </div>
+        <BrandChromeCombobox
+          t={t}
+          aria-label="Görsel yüzey"
+          value={local.background_style}
+          options={backgroundOptions}
+          disabled={controlsLocked}
+          onChange={(style) => void update({ background_style: style })}
+        />
+        <label style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginTop: 10,
+          fontSize: 12,
+          color: t.textSecondary,
+          cursor: controlsLocked ? 'not-allowed' : 'pointer',
+        }}
+        >
+          <input
+            type="checkbox"
+            checked={local.prefer_gallery_photo}
+            disabled={controlsLocked}
+            onChange={(e) => void update({ prefer_gallery_photo: e.target.checked })}
+          />
+          Galeri fotoğrafı varsa her zaman fotoğraf üstü kullan
+        </label>
       </ParamGroup>
 
       <ParamGroup title="Logo" hint="Şablon önizlemelerinde logo davranışı" t={t}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {(Object.keys(FAL_TEMPLATE_LOGO_LABELS) as LogoTreatment[]).map((treatment) => {
-            const meta = FAL_TEMPLATE_LOGO_LABELS[treatment];
-            return (
-              <OptionButton
-                key={treatment}
-                t={t}
-                selected={local.logo_treatment === treatment}
-                disabled={controlsLocked}
-                title={meta.tr}
-                subtitle={meta.desc}
-                onClick={() => void update({ logo_treatment: treatment })}
-              />
-            );
-          })}
-        </div>
+        <BrandChromeCombobox
+          t={t}
+          aria-label="Logo davranışı"
+          value={local.logo_treatment}
+          options={logoOptions}
+          disabled={controlsLocked}
+          onChange={(treatment) => void update({ logo_treatment: treatment })}
+        />
       </ParamGroup>
 
       <ParamGroup title="Batch üretim" hint="Şablon seti oluştururken kullanılır" t={t}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, margin: '0 0 6px' }}>
-              Önizleme sayısı
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {FAL_TEMPLATE_PREVIEW_CAP_OPTIONS.map((cap) => (
-                <button
-                  key={cap}
-                  type="button"
-                  disabled={controlsLocked}
-                  onClick={() => void update({ preview_cap: cap })}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: controlsLocked ? 'not-allowed' : 'pointer',
-                    border: `1px solid ${local.preview_cap === cap ? t.accentBorder : t.separator}`,
-                    background: local.preview_cap === cap
-                      ? (t.isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)')
-                      : 'transparent',
-                    color: local.preview_cap === cap ? t.accent : t.textMuted,
-                  }}
-                >
-                  {cap}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, margin: '0 0 6px' }}>
-              Paralel üretim
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {FAL_TEMPLATE_CONCURRENCY_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  disabled={controlsLocked}
-                  onClick={() => void update({ concurrency: c })}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: controlsLocked ? 'not-allowed' : 'pointer',
-                    border: `1px solid ${local.concurrency === c ? t.accentBorder : t.separator}`,
-                    background: local.concurrency === c
-                      ? (t.isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)')
-                      : 'transparent',
-                    color: local.concurrency === c ? t.accent : t.textMuted,
-                  }}
-                >
-                  {c}×
-                </button>
-              ))}
-            </div>
-          </div>
+          <BrandChromeCombobox
+            t={t}
+            label="Önizleme sayısı"
+            value={String(local.preview_cap)}
+            options={previewCapOptions}
+            disabled={controlsLocked}
+            onChange={(cap) => void update({ preview_cap: Number(cap) })}
+          />
+          <BrandChromeCombobox
+            t={t}
+            label="Paralel üretim"
+            value={String(local.concurrency)}
+            options={concurrencyOptions}
+            disabled={controlsLocked}
+            onChange={(c) => void update({ concurrency: Number(c) })}
+          />
         </div>
       </ParamGroup>
 

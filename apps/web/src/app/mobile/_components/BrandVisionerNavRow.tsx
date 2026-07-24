@@ -10,7 +10,6 @@ import type { T } from './theme-context';
 export function BrandVisionerNavRow({
   t,
   label,
-  hint,
   accent,
   completion,
   icon,
@@ -18,9 +17,10 @@ export function BrandVisionerNavRow({
 }: {
   t: T;
   label: string;
+  /** @deprecated unused — row hints removed for density */
   hint?: string;
   accent: string;
-  /** 0–1 progress bar; omit when using hint-only rows */
+  /** 0–1 progress bar; omit for title-only rows */
   completion?: number;
   icon: React.ReactNode;
   onClick: () => void;
@@ -98,20 +98,6 @@ export function BrandVisionerNavRow({
               opacity: 0.95,
             }}
             />
-          </div>
-        ) : hint ? (
-          <div style={{
-            marginTop: 3,
-            fontSize: 11,
-            fontWeight: 600,
-            color: t.textMuted,
-            letterSpacing: '-0.01em',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          >
-            {hint}
           </div>
         ) : null}
       </div>

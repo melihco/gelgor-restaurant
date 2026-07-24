@@ -218,7 +218,11 @@ export async function bindBrandTemplateForFalProduction(input: {
   catalogSlotKey?: string | null;
   /** Tenant-enabled catalog snapshot — excludes disabled slot templates. */
   brandActiveSlots?: BrandActiveSlotSet | null;
-  /** True only for ad-hoc New Brief — skips onboarding template lock. */
+  /**
+   * Ad-hoc New Brief: skip generic onboarding template lock when no catalog pin.
+   * When catalog_slot_key is stamped (story/post/reel slots), still hard-pin —
+   * otherwise fal_story/fal_design withhold with library_template_required.
+   */
   adHocBrief?: boolean;
   missionReferenceUrl: string | null;
   baseDirectives: string[];
@@ -236,7 +240,8 @@ export async function bindBrandTemplateForFalProduction(input: {
     logoUrl: input.logoUrl,
     occasion: undefined,
   };
-  if (input.adHocBrief) return empty;
+  const catalogPinned = Boolean(String(input.catalogSlotKey ?? '').trim());
+  if (input.adHocBrief && !catalogPinned) return empty;
 
   try {
     const matched = await matchDesignTemplateToSlot(input.workspaceId, {

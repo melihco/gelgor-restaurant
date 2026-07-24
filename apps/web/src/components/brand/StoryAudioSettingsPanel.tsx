@@ -193,7 +193,6 @@ export function StoryAudioSettingsPanel({
               <div style={{ fontSize: 14, fontWeight: active ? 700 : 600, color: active ? t.accent : t.textPrimary }}>
                 {opt.label}
               </div>
-              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{opt.desc}</div>
             </button>
           );
         })}
@@ -203,9 +202,6 @@ export function StoryAudioSettingsPanel({
         <>
           <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Ses tonu (TTS)
-          </div>
-          <div style={{ fontSize: 11, color: t.textTertiary, lineHeight: 1.5, marginBottom: 10 }}>
-            Doğal konuşma hızı (0.92x) — story süresine uygun kısa metin; acele okuma yok. Önizleme ile dinleyin.
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {STORY_VOICE_OPTIONS.map((opt) => {

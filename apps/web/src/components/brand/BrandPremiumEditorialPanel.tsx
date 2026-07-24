@@ -138,11 +138,6 @@ export function BrandPremiumEditorialPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 12 }}>
-        Ajans seviyesinde editorial kampanya görselleri üretir. Marka DNA&apos;sı, yaratıcı yönlendirme,
-        kompozisyon planı ve görsel kalite kontrolü kullanır.
-      </div>
-
       <div style={labelStyle}>İçerik konusu *</div>
       <input
         value={contentTopic}

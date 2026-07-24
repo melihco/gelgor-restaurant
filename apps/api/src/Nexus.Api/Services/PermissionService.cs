@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nexus.Infrastructure.Data;
+using Microsoft.AspNetCore.Http;
 
 namespace Nexus.Api.Services;
 
@@ -52,6 +53,8 @@ public sealed class PermissionService : IPermissionService
         Permissions.PlatformOperate,
     };
 
+    private static readonly string[] TrustedInternalPlatformPermissions = AllPermissions;
+
     private static readonly IReadOnlyDictionary<string, string[]> RolePermissions =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -97,11 +100,19 @@ public sealed class PermissionService : IPermissionService
 
     private readonly NexusDbContext _db;
     private readonly IRequestContext _requestContext;
+    private readonly IConfiguration _configuration;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public PermissionService(NexusDbContext db, IRequestContext requestContext)
+    public PermissionService(
+        NexusDbContext db,
+        IRequestContext requestContext,
+        IConfiguration configuration,
+        IHttpContextAccessor httpContextAccessor)
     {
         _db = db;
         _requestContext = requestContext;
+        _configuration = configuration;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<CurrentUserSecurityDto> GetCurrentUserAsync(CancellationToken cancellationToken = default)
@@ -121,6 +132,13 @@ public sealed class PermissionService : IPermissionService
         }
 
         var permissions = ResolvePermissions(role);
+        if (ShouldElevateToPlatformAdmin(user?.Email))
+        {
+            permissions = AllPermissions;
+            if (string.IsNullOrWhiteSpace(role) || role.Equals("Viewer", StringComparison.OrdinalIgnoreCase))
+                role = "Admin";
+        }
+
         var tenantName = await _db.Tenants
             .AsNoTracking()
             .Where(t => t.Id == _requestContext.TenantId)
@@ -140,8 +158,24 @@ public sealed class PermissionService : IPermissionService
 
     public async Task<bool> HasPermissionAsync(string permission, CancellationToken cancellationToken = default)
     {
+        // Next platform-admin BFF: INTERNAL_API_KEY + X-Platform-Admin + X-Tenant-Id
+        // unlocks tenant-scoped Users/Agents/Briefs/Tasks/Actions/Packages/Integrations/Setup.
+        if (_requestContext.IsTrustedInternal
+            && PlatformAdminAccess.HasPlatformAdminHeader(_httpContextAccessor.HttpContext)
+            && TrustedInternalPlatformPermissions.Contains(permission, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         var currentUser = await GetCurrentUserAsync(cancellationToken);
         return currentUser.Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldElevateToPlatformAdmin(string? email)
+    {
+        if (!PlatformAdminAccess.EmailAllowlistConfigured(_configuration))
+            return false;
+        return PlatformAdminAccess.IsPlatformAdminEmail(email, _configuration);
     }
 
     private static string[] ResolvePermissions(string role)
