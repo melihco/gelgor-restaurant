@@ -1686,6 +1686,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error('[/api/generate-instagram-image] Unexpected error:', error);
     const lower = message.toLowerCase();
     if (lower.includes('billing') || lower.includes('exhausted balance') || lower.includes('hard limit')) {
+      const { recordProductionProviderBillingFailure } = await import(
+        '@/lib/production-provider-preflight'
+      );
+      recordProductionProviderBillingFailure(message);
       return NextResponse.json({
         error: 'Image generation provider billing limit reached',
         detail: message,

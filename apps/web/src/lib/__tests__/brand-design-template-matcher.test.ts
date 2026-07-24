@@ -155,7 +155,7 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
     });
   });
 
-  it('Faz B: missing catalog template fails closed even when soft candidates exist', () => {
+  it('missing catalog template soft-binds same-format shell (under-provisioned tenant)', () => {
     const active = [
       tpl({ id: 'popular', template_type: 'campaign_announcement', format: 'post', usage_count: 99 }),
       tpl({ id: 'daily', template_type: 'daily_story', format: 'story', usage_count: 50 }),
@@ -167,10 +167,33 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
       catalogSlotKey: 'beach_club_sunset_golden_story',
       announcementType: 'offer_campaign',
     });
-    expect(sel).toBeNull();
+    expect(sel?.record.id).toBe('popular');
+    expect(sel?.matchQuality).toBe('soft');
+    expect(sel?.hardPinMiss?.reason).toBe('missing_template');
     expect(
       diagnoseCatalogHardPinMiss(active, 'post', 'beach_club_sunset_golden_story').reason,
     ).toBe('missing_template');
+  });
+
+  it('local_products_shop: missing catalog key soft-binds post shell across sectors', () => {
+    const active = [
+      tpl({
+        id: 'harvest_post',
+        template_type: 'campaign_announcement',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_harvest_day_post',
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'fal_designed_post',
+      librarySlotKey: 'campaign_post',
+      format: 'post',
+      catalogSlotKey: 'local_products_shop_missing_catalog_key',
+      announcementType: 'offer_campaign',
+    });
+    expect(sel?.record.id).toBe('harvest_post');
+    expect(sel?.matchQuality).toBe('soft');
+    expect(sel?.hardPinMiss?.reason).toBe('missing_template');
   });
 
   it('allowSoftFallbackWhenHardMiss re-enables soft path for migration/debug', () => {

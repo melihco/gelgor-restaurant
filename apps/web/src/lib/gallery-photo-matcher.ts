@@ -2139,13 +2139,28 @@ export function isGalleryPhotoAnalyzed(meta: GalleryPhotoMeta | undefined): bool
   return tags.length >= 2 || desc.length >= 12;
 }
 
+/** Full coverage bar for matcher quality (BRS / ideal produce path). */
+export const GALLERY_ANALYSIS_SUFFICIENT_RATIO = 0.55;
+/**
+ * Floor before auto-produce may continue with partial tags.
+ * Below this, produce should wait for background analyze-coverage.
+ */
+export const GALLERY_ANALYSIS_PRODUCE_MIN_RATIO = 0.25;
+
 export function galleryAnalysisCoverageStats(
   photos: string[],
   galleryAnalysis: Record<string, GalleryPhotoMeta>,
-): { analyzed: number; total: number; sufficient: boolean } {
+): {
+  analyzed: number;
+  total: number;
+  ratio: number;
+  sufficient: boolean;
+  /** Partial tags OK for produce (weaker than sufficient). */
+  produceReady: boolean;
+} {
   const real = photos.filter((u) => isUsableGalleryPhotoUrl(u));
   if (real.length === 0) {
-    return { analyzed: 0, total: 0, sufficient: true };
+    return { analyzed: 0, total: 0, ratio: 1, sufficient: true, produceReady: true };
   }
   let analyzed = 0;
   const lookup = buildGalleryLookup(galleryAnalysis, real);
@@ -2155,8 +2170,12 @@ export function galleryAnalysisCoverageStats(
     if (isGalleryPhotoAnalyzed(entry?.meta)) analyzed += 1;
   }
   const ratio = analyzed / real.length;
-  const sufficient = analyzed >= Math.min(3, real.length) || ratio >= 0.55;
-  return { analyzed, total: real.length, sufficient };
+  const sufficient = analyzed >= Math.min(3, real.length) || ratio >= GALLERY_ANALYSIS_SUFFICIENT_RATIO;
+  const produceReady =
+    sufficient
+    || analyzed >= Math.min(2, real.length)
+    || ratio >= GALLERY_ANALYSIS_PRODUCE_MIN_RATIO;
+  return { analyzed, total: real.length, ratio, sufficient, produceReady };
 }
 export function resolveBestGalleryUrl(
   input: MatchPhotoInput,

@@ -67,8 +67,13 @@ export function resolveFalTemplateLockOptions(input: {
 }
 
 /**
- * When a catalog slot is pinned, only that library template may bind (fail-closed).
- * Without a pin, soft same-format match is allowed for pre-catalog missions.
+ * Soft fallback policy for catalog-pinned slots.
+ *
+ * Matcher SSOT (`selectBrandDesignTemplate`) already soft-binds on
+ * `missing_template` so under-provisioned tenants do not withhold fal slots.
+ * This flag only gates *dangerous* miss reasons (format_mismatch / off_season)
+ * — keep false when a catalog key is present so those stay fail-closed.
+ * Unpinned slots may soft-match freely.
  */
 export function allowSoftTemplateFallbackForCatalogPin(
   catalogSlotKey?: string | null,

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getProductionQueue } from '@/lib/queue-client';
 import { productionGlobalInflightMax } from '@/lib/production-global-inflight';
 import { getProductionQueueWorkerSnapshot } from '@/lib/production-queue-health';
+import { getProductionProviderPreflight } from '@/lib/production-provider-preflight';
 import { serverConfig } from '@/lib/server-config';
 import Redis from 'ioredis';
 
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const workerSnap = await getProductionQueueWorkerSnapshot();
     const workerCount = workerSnap.workerCount;
     const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
+    const providerPreflight = getProductionProviderPreflight();
 
     let globalInflight: number | null = null;
     const redisUrl = process.env.REDIS_URL;
@@ -67,6 +69,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       workerCount,
       globalInflight,
       globalInflightMax: productionGlobalInflightMax(),
+      providerPreflight,
       // Simple alert hints; thresholds tunable by the caller/monitor.
       alerts: {
         backlogHigh: depth > 500,
@@ -76,6 +79,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         /** Claimed/queued work with zero consumers — the Dolunay failure mode. */
         noWorkers: workerCount === 0 && backlog > 0,
         workerOffline: workerCount === 0,
+        providerBillingCircuit: !providerPreflight.ok
+          && providerPreflight.code === 'provider_billing_circuit_open',
+        imageProviderOffline: !providerPreflight.ok
+          && providerPreflight.code === 'image_provider_not_configured',
       },
     });
   } catch (err) {

@@ -286,17 +286,20 @@ export async function ensureGalleryAnalysisForProduction(
     }
   } catch { /* non-fatal */ }
 
-  // Proceed with partial analysis — production uses SKU conflict + token overlap
-  // even without full coverage; better a partial result than a timeout.
-  if (stats.analyzed > 0) {
+  // Partial tags are OK above produceReady floor; below that matching is too weak.
+  if (stats.produceReady) {
+    console.log(
+      `[gallery-context:${workspaceId}] proceeding with partial gallery coverage ` +
+        `${stats.analyzed}/${stats.total} (ratio=${stats.ratio.toFixed(2)})`,
+    );
     return { meta: aliasGalleryMetaForPhotoUrls(photos, enriched) };
   }
 
   return {
     meta: enriched,
     blocked:
-      `Galeri analizi başlatıldı (${stats.analyzed}/${stats.total} foto etiketli). ` +
-      'Birkaç dakika sonra tekrar üretin.',
+      `Galeri analizi yetersiz (${stats.analyzed}/${stats.total} foto etiketli). ` +
+      'Arka planda analiz sürüyor — birkaç dakika sonra tekrar üretin.',
   };
 }
 

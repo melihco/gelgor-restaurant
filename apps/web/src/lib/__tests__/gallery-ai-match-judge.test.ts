@@ -295,6 +295,44 @@ describe('confirmGalleryPickWithAiJudge — theme risk forces AI', () => {
     expect(decision.rejectReason).toBe('ai_judge_required_for_theme');
   });
 
+  it('beach_club: rejects no-subject-lock pick when judge disabled (fail closed)', async () => {
+    const VENUE = 'https://cdn.example.com/terrace.jpg';
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Join us for an unforgettable evening by the sea',
+      headline: 'Special night',
+      businessType: 'beach_club',
+      selectedUrl: VENUE,
+      deterministicScore: 70,
+      galleryAnalysis: {
+        [VENUE]: {
+          contentTags: ['terrace', 'daylight', 'breakfast'],
+          description: 'Sunny breakfast terrace',
+          primarySubject: 'breakfast_plate',
+        },
+      },
+      candidateUrls: [VENUE],
+      enabled: false,
+    });
+    expect(decision.action).toBe('reject');
+    expect(decision.rejectReason).toBe('ai_judge_required_without_subject_lock');
+  });
+
+  it('local_products_shop: judge transport failure without subject lock fails closed', async () => {
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Raflarda yeni ürünler',
+      headline: 'Yeni gelenler',
+      businessType: 'local_products_shop',
+      selectedUrl: HONEY,
+      deterministicScore: 40,
+      galleryAnalysis: shopGallery(),
+      candidateUrls: [HONEY, OLIVE_OIL],
+      enabled: true,
+      judgeFn: fixedJudge(null),
+    });
+    expect(decision.action).toBe('reject');
+    expect(decision.rejectReason).toBe('ai_judge_required_without_subject_lock');
+  });
+
 });
 
 describe('gatePhotoMatchResult — batch pre-assignment gate', () => {

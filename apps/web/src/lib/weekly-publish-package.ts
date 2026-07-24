@@ -13,6 +13,7 @@ import {
   resolveStoryVideoUrl,
 } from '@/lib/production-bundle';
 import { compareArtifactsByProductionTime } from '@/lib/artifact-production-time';
+import { resolveArtifactPublishReady } from '@/lib/artifact-publish-ready';
 import { nodeHasOutput, nodeOutputArray, nodeOutputObject } from '@/lib/mission-node-output';
 import { buildMissionProductionIdeas } from '@/lib/mission-production-plan';
 import { isPublishableMediaUrl } from '@/lib/media-url';
@@ -309,6 +310,17 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   const isVideoUrl = /\.(mp4|mov|webm)(\?|$)/i.test(contentUrl);
   const premiumPipeline = isPremiumMotionOrDesignedPipeline(pipeline, role);
 
+  // SSOT quality / designed-visual / reel gates — never bypass with auto_produced stills.
+  const publishDecision = resolveArtifactPublishReady({
+    artifact,
+    meta,
+    content,
+    format: fmt,
+    hasPlayableVideo: Boolean(videoUrl && isHttpMediaUrl(videoUrl))
+      || (isVideoUrl && isHttpMediaUrl(contentUrl)),
+  });
+  if (publishDecision.blockFeed) return false;
+
   const missionProduction = isMissionProductionArtifact(meta, content);
   const autoProduced = Boolean(
     meta.auto_produced === true
@@ -336,7 +348,8 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   );
 
   // Auto-produced stills are enough for posts/stories — not for reels (need MP4).
-  if (autoProduced && hasPreviewStill && fmt !== 'reel') {
+  // Quality/designed gates already applied above via resolveArtifactPublishReady.
+  if (autoProduced && hasPreviewStill && fmt !== 'reel' && publishDecision.ready) {
     return true;
   }
 
@@ -404,6 +417,8 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
   if (!isArtifactFeedPublishable(artifact)) return false;
 
   const { pipeline, role, meta, content } = readArtifactPipelineRole(artifact);
+  // Defend against callers that skip isArtifactFeedPublishable media path.
+  if (resolveArtifactPublishReady({ artifact, meta, content }).blockFeed) return false;
   const bundleStatus = getProductionBundleStatus(artifact);
   const rendering = isBundleRendering(artifact) || bundleStatus === 'rendering';
   if (rendering) {

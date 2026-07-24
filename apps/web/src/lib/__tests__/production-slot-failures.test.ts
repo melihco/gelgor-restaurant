@@ -13,7 +13,7 @@ describe('humanizeProductionSlotError', () => {
   it('maps fal balance exhaustion', () => {
     expect(
       humanizeProductionSlotError('fal.ai balance exhausted — top up at fal.ai/dashboard/billing'),
-    ).toMatch(/fal\.ai bakiyesi/);
+    ).toMatch(/bakiyesi tükendi/);
   });
 
   it('maps missing library template', () => {

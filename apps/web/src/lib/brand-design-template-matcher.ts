@@ -447,17 +447,23 @@ export function selectBrandDesignTemplate(
     return { record: hardMatch, matchQuality: 'hard' };
   }
 
-  // Faz B — catalog key requested but no valid hard pin: do not soft-bind a
-  // foreign template (same-colors / wrong-geometry leak across brands).
+  // Catalog key requested but hard pin missed.
+  // - missing_template: soft same-format shell (tenant under-provisioned) —
+  //   better than withholding the whole fal slot; telemetry keeps hardPinMiss.
+  // - format_mismatch / off_season / empty_active_set: fail closed unless
+  //   allowSoftFallbackWhenHardMiss is explicitly true (migration/debug).
   if (catalogKey) {
     const miss = diagnoseCatalogHardPinMiss(active, opts.format, catalogKey);
+    const softOk =
+      miss.reason === 'missing_template'
+      || opts.allowSoftFallbackWhenHardMiss === true;
     console.warn(
       `[design-matcher] hard pin MISS catalog_slot_key=${catalogKey} reason=${miss.reason}` +
         (miss.foundFormats.length ? ` found_formats=${miss.foundFormats.join(',')}` : '') +
         ` role=${opts.slotRole} format=${opts.format}` +
-        (opts.allowSoftFallbackWhenHardMiss ? ' (soft fallback allowed)' : ' (fail-closed)'),
+        (softOk ? ' (soft fallback)' : ' (fail-closed)'),
     );
-    if (!opts.allowSoftFallbackWhenHardMiss) {
+    if (!softOk) {
       return null;
     }
     const scored = pickBestDesignTemplate(active, candidates, formats, catalogKey);

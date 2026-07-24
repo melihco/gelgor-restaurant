@@ -15,6 +15,7 @@ import {
   type BrandReadinessInputs,
 } from '@/lib/brand-readiness';
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
+import { summarizeTemplateRowsHardPinHealth } from '@/lib/catalog-template-coverage';
 import { brsCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
@@ -174,7 +175,10 @@ export async function GET(
     ? templatesRes.data
     : []
   ).filter((t) => t.status !== 'archived');
-  const hasTemplateLibrary = activeFalTemplates.length >= 3;
+  const templateHardPinHealth = summarizeTemplateRowsHardPinHealth(activeFalTemplates);
+  // Count alone is not enough — keyed catalog slots need enough hard-pin rows.
+  const hasTemplateLibrary =
+    activeFalTemplates.length >= 3 && templateHardPinHealth.sufficient;
 
   const briefsData = briefsRes.ok && briefsRes.data
     ? briefsRes.data
@@ -231,6 +235,7 @@ export async function GET(
     tenantId,
     ...result,
     productionProfile,
+    templateHardPinHealth,
     inputs,
     sources: {
       brandContext: ctxRes.ok || fromDatabase,

@@ -273,6 +273,16 @@ import {
   summarizeCatalogSlotStampCoverage,
   type BrandActiveSlotSet,
 } from '@/lib/brand-active-slot-resolver';
+import { summarizeCatalogTemplateHardPinCoverage } from '@/lib/catalog-template-coverage';
+import {
+  getProductionProviderPreflight,
+  httpStatusForProviderPreflight,
+  recordProductionProviderBillingFailure,
+} from '@/lib/production-provider-preflight';
+import {
+  resolveArtifactPublishReady,
+  stampPublishReadyMetadata,
+} from '@/lib/artifact-publish-ready';
 import { preferAiCatalogSlotsOnIdeas } from '@/lib/catalog-slot-ai-picker';
 import { readBrandSlotFacilitiesFromTheme } from '@/lib/sector-slot-pack';
 import {
@@ -578,6 +588,24 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     return NextResponse.json(
       attachPipelineTrace({ error: 'Production context unavailable' }, pipelineRun),
       { status: 500 },
+    );
+  }
+
+  // Fail loud before draining slots when image providers are missing or billing
+  // circuits are open (avoids half-mission queues on exhausted fal/OpenAI).
+  const providerPreflight = getProductionProviderPreflight();
+  if (!providerPreflight.ok) {
+    console.warn(
+      `[auto-produce:${workspaceId}] provider preflight blocked: ${providerPreflight.code} — ${providerPreflight.reason}`,
+    );
+    return NextResponse.json(
+      attachPipelineTrace({
+        error: providerPreflight.code,
+        detail: providerPreflight.reason,
+        providers: providerPreflight.providers,
+        produced: 0,
+      }, pipelineRun),
+      { status: httpStatusForProviderPreflight(providerPreflight.code) },
     );
   }
 
@@ -963,6 +991,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ? ` (${coverage.missing} unbound → soft match only)`
           : ' (all hard-pin ready)'),
     );
+    const hardPin = summarizeCatalogTemplateHardPinCoverage(brandActiveSlots);
+    const hardLevel = hardPin.sufficient ? 'log' : 'warn';
+    console[hardLevel](
+      `[auto-produce] template hard-pin coverage ${hardPin.covered}/${hardPin.total}` +
+        ` (ratio=${hardPin.ratio.toFixed(2)})` +
+        (hardPin.missingKeys.length
+          ? ` missing=${hardPin.missingKeys.slice(0, 8).join(',')}`
+          : ''),
+    );
   }
 
   const fullProductionQueue = brandAwareQueue;
@@ -1077,6 +1114,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     : [];
 
   for (const queueItem of productionLoop) {
+    // Mid-run circuit: a prior slot may have tripped fal/OpenAI billing.
+    const liveProviderPreflight = getProductionProviderPreflight();
+    if (!liveProviderPreflight.ok) {
+      console.warn(
+        `[auto-produce:${workspaceId}] stopping slot drain — ${liveProviderPreflight.code}`,
+      );
+      results.push({
+        title: '(provider blocked)',
+        imageUrl: '',
+        error: `${liveProviderPreflight.code}: ${liveProviderPreflight.reason}`,
+        slotKey: `${queueItem.ideaIndex}:provider_preflight`,
+      });
+      break;
+    }
+
     const ideaCostBefore = costEstimate;
     const ideaIndex = queueItem.ideaIndex;
     const idea = queueItem.idea as ParsedIdea;
@@ -4724,6 +4776,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...carouselUrls,
     ]);
 
+    // publishReady SSOT — stamp before save so feed filters see the same decision.
+    const publishDecision = resolveArtifactPublishReady({
+      meta: metadata,
+      content: (() => {
+        try {
+          return JSON.parse(contentJson) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })(),
+      designedVisualReady: bundleReadyNow,
+      requireDesignedVisuals: productionProfile.requireDesignedVisuals,
+      format: effectiveFmt,
+      hasPlayableVideo: isPlayableVideoUrl(videoUrl),
+    });
+    Object.assign(metadata, stampPublishReadyMetadata(metadata, publishDecision));
+
     const saved = await nexusClient.saveArtifact(workspaceId, {
       title,
       contentUrl: persistContentUrl,
@@ -4736,7 +4805,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const publishReadyNow = Boolean(
       saved.id
       && !saved.error
-      && bundleReadyNow,
+      && publishDecision.ready,
     );
     results.push({
       id: saved.id,
@@ -4805,15 +4874,35 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           + orphanedFal.map((r) => `${r.model}:${r.requestId}`).join(', '),
         );
       }
-      console.error(`[auto-produce] slot failed (continuing): slotKey=${slotKey}`, slotErr);
+      const billingProvider = recordProductionProviderBillingFailure(message);
+      console.error(
+        `[auto-produce] slot failed${billingProvider ? ' (billing circuit)' : ' (continuing)'}: slotKey=${slotKey}`,
+        slotErr,
+      );
       results.push({
         title: headline || '(slot failed)',
         imageUrl: '',
         error: message,
         slotKey,
       });
+      // Stop draining remaining slots — further calls will also fail and pollute the queue.
+      if (billingProvider) {
+        console.warn(
+          `[auto-produce:${workspaceId}] aborting remaining slots — ${billingProvider} billing circuit open`,
+        );
+        break;
+      }
     } finally {
       clearFalRequestSlot();
+    }
+
+    // Soft-pushed billing errors (no throw) still trip the circuit and stop drain.
+    const lastResult = results[results.length - 1];
+    if (lastResult?.error && recordProductionProviderBillingFailure(lastResult.error)) {
+      console.warn(
+        `[auto-produce:${workspaceId}] aborting remaining slots — billing error on ${lastResult.slotKey}`,
+      );
+      break;
     }
   }
 

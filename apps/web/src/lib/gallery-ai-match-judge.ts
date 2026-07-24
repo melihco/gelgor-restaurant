@@ -13,8 +13,9 @@
  *   no cross-category theme risk → skip AI.
  * - Otherwise (no subject lock, gray score, diversity, theme risk) → AI judge
  *   confirms or swaps. Wrong photo ≫ judge cost.
- * - Judge unavailable + theme risk → fail closed. Else keep deterministic
- *   (hard category vetoes still apply).
+ * - Judge unavailable + (theme risk OR no subject lock) → fail closed.
+ *   Subject-aligned strong deterministic picks may keep without the judge.
+ *   Hard category vetoes still apply upstream.
  *
  * Sector-agnostic — no brand/tenant/scenario branches. Judge sees caption,
  * headline, canonical intent and candidate metadata — never raw pixels.
@@ -323,36 +324,40 @@ export async function confirmGalleryPickWithAiJudge(
     };
   }
 
-  // Judge unavailable → keep deterministic unless cross-category theme risk.
+  // Judge unavailable → fail closed without subject lock (or on theme risk).
+  // Subject-aligned picks may keep — they already cleared the meaning bar.
   if (!enabled) {
-    if (themeRisk) {
+    if (themeRisk || !subjectAligned) {
       return {
         ...base,
         url: undefined,
         action: 'reject',
         confidence: 0,
-        reason: 'theme risk without ai judge — fail closed',
-        rejectReason: 'ai_judge_required_for_theme',
+        reason: themeRisk
+          ? 'theme risk without ai judge — fail closed'
+          : 'no subject lock and ai judge disabled — fail closed',
+        rejectReason: themeRisk
+          ? 'ai_judge_required_for_theme'
+          : 'ai_judge_required_without_subject_lock',
       };
     }
     return {
       ...base,
       action: 'accept',
-      confidence: subjectAligned ? 0.55 : 0.4,
-      reason: subjectAligned
-        ? 'ai judge disabled — subject-aligned deterministic pick kept'
-        : 'ai judge disabled — deterministic pick kept (no subject lock)',
+      confidence: 0.55,
+      reason: 'ai judge disabled — subject-aligned deterministic pick kept',
     };
   }
 
   // Build the top-N candidate pool (selected photo first).
+  // Prefer derived canonical subject so ranking matches the judge's intent.
   const matchInput: MatchPhotoInput = {
     caption: params.caption,
     headline: params.headline,
     mood: params.mood,
     contentType: params.contentType,
     businessType: params.businessType,
-    subjectKey: params.subjectKey,
+    subjectKey: canonicalSubject || params.subjectKey,
   };
   const excludeBases = new Set((params.excludeUrls ?? []).map(normalizeGalleryUrl));
   const lookup = buildGalleryLookup(params.galleryAnalysis, params.candidateUrls);
@@ -396,9 +401,9 @@ export async function confirmGalleryPickWithAiJudge(
     : undefined;
   let action: GalleryJudgeAction;
   if (!verdict) {
-    // Judge transport/parse failure: theme-risk pairs fail closed (do not ship
-    // a nightlife↔food guess). Otherwise keep the deterministic pick.
-    action = themeRisk ? 'reject' : 'accept';
+    // Judge transport/parse failure: without a subject lock (or with theme risk)
+    // fail closed — do not ship an unverified meaning guess.
+    action = themeRisk || !subjectAligned ? 'reject' : 'accept';
   } else if (verdict.pickIndex == null || !decidedUrl || verdict.confidence < minConfidence) {
     action = 'reject';
   } else if (normalizeGalleryUrl(decidedUrl) === selectedBase) {
@@ -439,13 +444,17 @@ export async function confirmGalleryPickWithAiJudge(
       candidateCount: candidates.length,
       confidence: verdict?.confidence ?? 0,
       reason: verdict?.reason
-        || (themeRisk && !verdict
+        || (!verdict && themeRisk
           ? 'theme risk and ai judge unavailable — fail closed'
-          : 'ai judge rejected the pick'),
+          : !verdict && !subjectAligned
+            ? 'no subject lock and ai judge unavailable — fail closed'
+            : 'ai judge rejected the pick'),
       rejectReason: verdict?.rejectReason
-        || (themeRisk && !verdict
+        || (!verdict && themeRisk
           ? 'ai_judge_required_for_theme'
-          : `judge confidence ${(verdict?.confidence ?? 0).toFixed(2)} < ${minConfidence}`),
+          : !verdict && !subjectAligned
+            ? 'ai_judge_required_without_subject_lock'
+            : `judge confidence ${(verdict?.confidence ?? 0).toFixed(2)} < ${minConfidence}`),
       canonicalSubject: verdict?.canonicalSubject ?? canonicalSubject,
     };
   }

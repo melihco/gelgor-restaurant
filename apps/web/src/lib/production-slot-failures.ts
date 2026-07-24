@@ -46,8 +46,16 @@ export function humanizeProductionSlotError(error?: string | null): string | nul
   if (lower.includes('aylık kredi limiti') || lower.includes('sa kredi')) {
     return raw.length > 90 ? `${raw.slice(0, 87)}…` : raw;
   }
-  if (lower.includes('fal.ai balance exhausted') || lower.includes('exhausted balance')) {
-    return 'fal.ai bakiyesi tükendi — billing’den yükleme gerekir';
+  if (
+    lower.includes('fal.ai balance exhausted')
+    || lower.includes('exhausted balance')
+    || lower.includes('provider_billing_circuit_open')
+    || lower.includes('image generation provider billing')
+  ) {
+    return 'fal.ai / OpenAI bakiyesi tükendi — billing’den yükleme gerekir';
+  }
+  if (lower.includes('image_provider_not_configured')) {
+    return 'Görsel sağlayıcı yapılandırılmamış — OPENAI_API_KEY veya FAL_API_KEY gerekli';
   }
   if (lower.includes('gallery_theme_mismatch') || lower.includes('caption–görsel') || lower.includes('caption-görsel')) {
     return raw.length > 90 ? `${raw.slice(0, 87)}…` : raw;

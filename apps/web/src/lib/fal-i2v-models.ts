@@ -126,6 +126,10 @@ export function buildFalI2vEnqueuePayload(
 export function formatFalEnqueueError(status: number, body: string): string {
   const trimmed = body.trim().slice(0, 400);
   if (status === 403 && trimmed.includes('Exhausted balance')) {
+    // Lazy import avoids circular deps with production helpers.
+    void import('@/lib/production-provider-preflight').then(({ markFalBillingBlocked }) => {
+      markFalBillingBlocked();
+    }).catch(() => { /* non-fatal */ });
     return `enqueue failed ${status}: fal.ai balance exhausted — top up at fal.ai/dashboard/billing`;
   }
   if (status === 404 || trimmed.toLowerCase().includes('deprecated') || trimmed.includes('not found')) {
