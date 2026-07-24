@@ -34,6 +34,9 @@ backups/
 apps/web/public/remotion-showcase/*.mp4
 apps/web/public/remotion-showcase/*.MP4
 
+# ── Local ops logs (ensure-production-worker.sh) ──────────────────────────────
+.logs/
+
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

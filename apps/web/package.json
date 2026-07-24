@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:with-worker": "bash ../../scripts/dev-web-with-worker.sh",
     "dev:clean": "rm -rf .next && next dev -p 3000",
     "tunnel:3000": "ngrok http 3000",
     "canva:ngrok-env": "node scripts/print-ngrok-canva-env.mjs",

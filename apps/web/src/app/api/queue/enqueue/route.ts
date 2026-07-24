@@ -21,6 +21,7 @@ import {
   buildProductionSlotJobId,
   resolveEnqueuePriority,
 } from '@/lib/production-queue-enqueue';
+import { getProductionQueueWorkerSnapshot } from '@/lib/production-queue-health';
 import { serverConfig } from '@/lib/server-config';
 import {
   assertProductionJobEnvelope,
@@ -81,6 +82,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!queue) {
     return NextResponse.json(
       { error: 'BullMQ unavailable (REDIS_URL not set)', code: 'queue_unavailable' },
+      { status: 503 },
+    );
+  }
+
+  // Fail loud when no consumer is registered — otherwise Python marks jobs
+  // `running` and they sit until the stale-claim window (11+ min).
+  const workers = await getProductionQueueWorkerSnapshot();
+  if (workers.available && workers.workerCount < 1) {
+    console.error(
+      `[queue/enqueue] production_worker_offline mission=${missionId} ` +
+        `slots=${Array.isArray(factoryJobs) ? factoryJobs.length : 0} — ` +
+        'start: cd apps/web && npm run worker:production (or ./scripts/ensure-production-worker.sh)',
+    );
+    return NextResponse.json(
+      {
+        error:
+          'No BullMQ production worker is online. Jobs would stall in running. '
+          + 'Start npm run worker:production (deploy: smartagency-production-worker).',
+        code: 'production_worker_offline',
+        workerCount: 0,
+      },
       { status: 503 },
     );
   }

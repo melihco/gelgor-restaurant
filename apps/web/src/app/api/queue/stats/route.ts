@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProductionQueue } from '@/lib/queue-client';
 import { productionGlobalInflightMax } from '@/lib/production-global-inflight';
+import { getProductionQueueWorkerSnapshot } from '@/lib/production-queue-health';
 import { serverConfig } from '@/lib/server-config';
 import Redis from 'ioredis';
 
@@ -36,6 +37,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       'paused',
     );
     const depth = (counts.waiting ?? 0) + (counts.delayed ?? 0) + (counts.active ?? 0);
+    const workerSnap = await getProductionQueueWorkerSnapshot();
+    const workerCount = workerSnap.workerCount;
+    const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
 
     let globalInflight: number | null = null;
     const redisUrl = process.env.REDIS_URL;
@@ -60,6 +64,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       queue: queue.name,
       counts,
       depth,
+      workerCount,
       globalInflight,
       globalInflightMax: productionGlobalInflightMax(),
       // Simple alert hints; thresholds tunable by the caller/monitor.
@@ -68,6 +73,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         failuresHigh: (counts.failed ?? 0) > 100,
         globalInflightHigh:
           globalInflight != null && globalInflight >= productionGlobalInflightMax(),
+        /** Claimed/queued work with zero consumers — the Dolunay failure mode. */
+        noWorkers: workerCount === 0 && backlog > 0,
+        workerOffline: workerCount === 0,
       },
     });
   } catch (err) {

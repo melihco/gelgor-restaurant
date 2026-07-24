@@ -101,11 +101,11 @@ services:
           name: smartagency-redis
           type: keyvalue
           property: connectionString
-      # Üretim yürütücüsü: `http` = web instance içinde senkron (mevcut durum),
-      # `bullmq` = Redis kuyruğu + smartagency-production-worker (ölçekli mod).
-      # Worker servisi canlı ve env'leri dolu olduktan sonra `bullmq`'ya çevir.
+      # Üretim yürütücüsü — BullMQ + smartagency-production-worker (ayrı servis).
+      # Worker blueprint'te numInstances>=1; enqueue workerCount=0 ise 503 döner.
+      # Acil geri dönüş: value'yu `http` yap (senkron drain, web'i yükler).
       - key: PRODUCTION_EXECUTOR
-        value: http
+        value: bullmq
 
   - type: web
     name: smartagency-api

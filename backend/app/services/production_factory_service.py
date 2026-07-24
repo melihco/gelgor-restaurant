@@ -867,6 +867,9 @@ def _bullmq_defer_delay_sec(reason: str) -> float:
         return 45.0
     if reason == "auto_produce_unreachable":
         return 20.0
+    if reason == "production_worker_offline":
+        # Give ops time to bring the worker up; avoid tight reclaim loops.
+        return 60.0
     if reason in {"enqueue_failed", "bullmq enqueue failed"}:
         return 30.0
     return 45.0
@@ -876,6 +879,7 @@ def _bullmq_defer_reasons() -> frozenset[str]:
     return frozenset({
         "production_in_flight",
         "auto_produce_unreachable",
+        "production_worker_offline",
         "enqueue_failed",
         "bullmq enqueue failed",
         "route_still_running",

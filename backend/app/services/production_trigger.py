@@ -304,6 +304,22 @@ async def trigger_auto_produce(
                     slots=len(factory_jobs or []),
                 )
                 return {"reason": "enqueued_to_bullmq", "enqueued": len(factory_jobs or [])}
+            try:
+                ebody = eresp.json()
+            except Exception:
+                ebody = {}
+            err_code = str((ebody or {}).get("code") or "")
+            if err_code == "production_worker_offline":
+                logger.error(
+                    "auto_produce_worker_offline",
+                    mission_id=str(mission_id),
+                    slots=len(factory_jobs or []),
+                    hint="start apps/web worker:production or Render smartagency-production-worker",
+                )
+                return {
+                    "reason": "production_worker_offline",
+                    "error": str((ebody or {}).get("error") or "production worker offline")[:300],
+                }
             logger.warning(
                 "auto_produce_enqueue_failed",
                 mission_id=str(mission_id),

@@ -6,30 +6,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Service | Port | Notes |
 |---------|------|-------|
-| Next.js frontend | 3000 | `npm run dev` |
+| Next.js frontend | 3000 | `npm run dev` or `npm run dev:with-worker` |
+| BullMQ production worker | — | **required** when `PRODUCTION_EXECUTOR=bullmq` |
 | .NET Nexus API | 5050 (dev) / 5000 (docker) | 5000 conflicts with macOS AirPlay |
 | Python Crew service | 8000 | internal-only, not browser-accessible |
 | PostgreSQL | 5432 | `nexus_db`, user `nexus`, password `nexus_dev_2024` |
-| Redis | 6379 | |
+| Redis | 6379 | BullMQ `production-slots` queue |
 | Qdrant | 6333 | vector store, not yet wired to agents |
 
 ## Running the Stack
 
 ```bash
-# All infrastructure (postgres, redis, qdrant)
+# Preferred one-shot (infra + Python + Nexus + Next + BullMQ worker)
+./scripts/start-dev-stack.sh
+
+# Or piecemeal:
 docker compose up -d postgres redis qdrant
-
-# Python crew service (one-liner)
 ./scripts/start-crew-backend.sh
-# or manually:
-cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --port 8000
+cd apps/api/src/Nexus.Api && dotnet run   # :5050
 
-# .NET API
-cd apps/api/src/Nexus.Api && dotnet run
-
-# Frontend
-cd apps/web && npm run dev
+# Frontend — with feed production you MUST also run the worker:
+cd apps/web && npm run dev:with-worker
+# equivalent:
+#   ./scripts/ensure-production-worker.sh
+#   cd apps/web && npm run dev
 ```
+
+When `PRODUCTION_EXECUTOR=bullmq` (local `.env` / Render default) and the worker
+is down, `/api/queue/enqueue` returns `503 production_worker_offline` so jobs are
+not left stuck in `running`.
 
 When the Python service is down, `.NET` falls back to mock responses automatically (`OrchestrationService:UseDevMock` in `appsettings.Development.json`). Set `UseDevMock: false` to require real CrewAI execution.
 

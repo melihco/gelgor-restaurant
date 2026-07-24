@@ -47,9 +47,12 @@ psql "$DATABASE_URL" -f backend/migrations/0001_brand_context_discovery_fields.s
 
 .NET API ilk açılışta tabloları `EnsureCreated` ile kurar.
 
-## Üretim worker'ı (BullMQ) — yatay ölçekleme
+## Üretim worker'ı (BullMQ) — zorunlu ayrı servis
 
-`smartagency-production-worker` (type: worker) üretim hattını web'den izole eder:
+`smartagency-production-worker` (type: worker) üretim hattını web'den izole eder.
+Blueprint'te `PRODUCTION_EXECUTOR=bullmq` sabittir — worker yoksa feed üretimi
+**stall olmaz**: `/api/queue/enqueue` `503 production_worker_offline` döner ve
+Python job'ları `deferred` yapar (60s sonra yeniden dener).
 
 - Aynı Docker image, farklı entrypoint (`node start-worker.mjs`): container içinde
   **127.0.0.1'e bağlı özel bir Next.js instance'ı** + BullMQ consumer birlikte çalışır.
@@ -58,17 +61,17 @@ psql "$DATABASE_URL" -f backend/migrations/0001_brand_context_discovery_fields.s
 - Worker'lar Redis üzerinden koordine olur: BullMQ kuyruğu, global inflight cap
   (`PRODUCTION_GLOBAL_MAX_INFLIGHT`), workspace üretim kilitleri. Yüzlerce tenant
   için `numInstances` artırmak yeterli.
+- İzleme: `GET /api/queue/stats` → `workerCount`, `alerts.workerOffline` /
+  `alerts.noWorkers` (internal key).
 
-**Devreye alma sırası (güvenli):**
+**Deploy checklist:**
 
-1. Blueprint sync → worker servisi oluşur. `PRODUCTION_EXECUTOR=http` kaldığı sürece
-   worker boşta bekler, mevcut akış değişmez.
-2. Worker'ın `sync: false` env'lerini doldur (web ile aynı liste):
+1. Blueprint sync → `smartagency-production-worker` ayakta (`numInstances` ≥ 1).
+2. Worker `sync: false` env'leri web ile aynı (fal/OpenAI/R2):
    `python3 scripts/sync-render-env-from-local.py` veya dashboard.
-3. Worker loglarında `started. queue=production-slots` görünce:
-   `smartagency-crew` → `PRODUCTION_EXECUTOR=bullmq` yap.
-4. Geri dönüş: `PRODUCTION_EXECUTOR=http` — Python watchdog kuyruktaki claim'leri
-   stale-reclaim ile geri alır, HTTP drain kaldığı yerden devam eder.
+3. Worker log: `started. queue=production-slots` + private Next ready.
+4. Crew'da `PRODUCTION_EXECUTOR=bullmq` (blueprint default).
+5. Acil geri dönüş: crew'da `PRODUCTION_EXECUTOR=http` — senkron drain web'e biner.
 
 ## Maliyet notu
 
